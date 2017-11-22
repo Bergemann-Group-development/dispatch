@@ -217,6 +217,77 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
         pl.xlim(ylim); pl.ylim(zlim); pl.xlabel('y'); pl.ylabel('z')
         pl.tight_layout()
     pl.show()
+
+def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
+      keep=0, extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
+    '''
+    Display xz-image for given y
+    '''
+    pl.show()
+    print 'data:',data,' run:',run,' iout:',iout
+    pp=du.patches(run=run,data=data,iout=iout)
+    if np.size(pp)==0:
+        print "no files found"
+        return
+    def inside(p,y):
+        return y<=p.active_corners[1][1] and y>=p.active_corners[0][1]
+    pp=[p for p in pp if inside(p,y) and p.level<8]
+    if verbose: print np.size(pp),'patches in plane' 
+    vmin=1e9; vmax=-vmin
+    xlim=[vmin,vmax]
+    zlim=[vmin,vmax]
+    l=np.zeros(3,dtype=np.int32)
+    u=l+np.array(p.n)
+    def interpolate(p,y,y0,dy,n,f):
+        s=(y-y0)/dy
+        i=max(0,min(n-2,int(s)))
+        s=s-i
+        if verbose>1:
+            print 'id,iy,py:',p.id,i,s
+        return (1.0-s)*f[l[0]:u[0],i,l[2]:u[2]]+s*f[l[0]:u[0],i+1,l[2]:u[2]]
+    for p in pp:
+        p.cache()
+        p.stripit()
+        p.vars()
+        p.f=p.var[var]
+        ng=p.nghost[0]
+        py=p.y
+        if var=='u2' or var=='p2': py=p.ys
+        p.f=interpolate(p,y,py[0],p.dx[0],p.n[0],p.f)
+        e=p.extent[1]
+        xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
+        zlim=[min(zlim[0],e[2]),max(zlim[1],e[3])]
+    if extent:
+        xlim=extent[0:2]
+        zlim=extent[2:4]
+        def overlaps(p):
+            does = ((p.extent[1][0] > xlim[0] and p.extent[1][0] < xlim[1]) \
+                 or (p.extent[1][1] > xlim[0] and p.extent[1][1] < xlim[1])) \
+               and ((p.extent[1][2] > zlim[0] and p.extent[1][2] < zlim[1]) \
+                 or (p.extent[1][3] > zlim[0] and p.extent[1][3] < zlim[1]))
+            return does
+        #pp=[p for p in pp if overlaps(p)]
+        if verbose: print np.size(pp),'patches remain' 
+    if vlim:
+        vmin=vlim[0]
+        vmax=vlim[1]
+    else:
+        for p in pp:
+            vmin=min(vmin,p.f.min())
+            vmax=max(vmax,p.f.max())
+    if not keep:
+        pl.clf()
+    for p in pp:
+        image(p.f,extent=p.extent[1],vmin=vmin,vmax=vmax,cmap=cmap)
+        xz=[p.active_corners[0][0],p.active_corners[0][2]]
+        if labels and in_extent(p.extent[0],xz):
+            pl.text(xz[0],xz[1],p.id)
+    pl.title('var='+var+'   t={:3.2f}  y={:2.1f}'.format(p.time,y))
+    if not keep:
+        pl.colorbar(shrink=0.8,aspect=15,fraction=fraction,pad=0.02)
+        pl.xlim(xlim); pl.ylim(zlim); pl.xlabel('x'); pl.ylabel('z')
+        pl.tight_layout()
+    pl.show()
     
 def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
             verbose=0,fraction=0.1,extent=None,repeat=0,vlim=None,interval=200,\

@@ -98,7 +98,6 @@ def patch_files(iout=-1, run='', data='../data', verbose=0):
     else:
         dirs=[d for d in np.sort(os.listdir(rundir)) if os.path.isdir(rundir+d)]
         dirs=[d for d in dirs if re.match("^[0-9][0-9][0-9][0-9][0-9]$",d)]
-
     nsnaps=np.size(dirs)
     files=[]
     for dir in dirs:
@@ -293,7 +292,10 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
             f1=p.data[i,j,k  ,iv]*(1-w[1])+p.data[i,j+1,k,  iv]*w[1]
             f2=p.data[i,j,k+1,iv]*(1-w[1])+p.data[i,j+1,k+1,iv]*w[1]
             f=f1*(1-w[2])+f2*w[2]
-            ss.append(p.x[i])
+            if iv==p.varidx['p1']:
+                ss.append(p.xs[i])
+            else:
+                ss.append(p.x[i])
             ff.append(f)
     elif dir==1:
         i=ii[0]
@@ -302,7 +304,10 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
             f1=p.data[i,j,k  ,iv]*(1-w[0])+p.data[i+1,j,k  ,iv]*w[0]
             f2=p.data[i,j,k+1,iv]*(1-w[0])+p.data[i+1,j,k+1,iv]*w[0]
             f=f1*(1-w[2])+f2*w[2]
-            ss.append(p.y[j])
+            if iv==p.varidx['p2']:
+                ss.append(p.ys[i])
+            else:
+                ss.append(p.y[i])
             ff.append(f)
     else:
         i=ii[0]
@@ -311,7 +316,10 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
             f1=p.data[i,j  ,k,iv]*(1-w[0])+p.data[i+1,j  ,k,iv]*w[0]
             f2=p.data[i,j+1,k,iv]*(1-w[0])+p.data[i+1,j+1,k,iv]*w[0]
             f=f1*(1-w[1])+f2*w[1]
-            ss.append(p.z[k])
+            if iv==p.varidx['p3']:
+                ss.append(p.zs[k])
+            else:
+                ss.append(p.z[k])
             ff.append(f)
     return ss,ff
 

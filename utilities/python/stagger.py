@@ -18,23 +18,23 @@ def zup(f):
     return (f+roll(f,-1,2))*0.5
 
 def ddxdn(f,s):
-    c=s.n[0]/s.s[0]
+    c=s.n[0]/s.size[0]
     return (f-roll(f,1,0))*c
 def ddydn(f,s):
-    c=s.n[1]/s.s[1]
+    c=s.n[1]/s.size[1]
     return (f-roll(f,1,1))*c
 def ddzdn(f,s):
-    c=s.n[2]/s.s[2]
+    c=s.n[2]/s.size[2]
     return (f-roll(f,1,2))*c
 
 def ddxup(f,s):
-    c=s.n[0]/s.s[0]
+    c=s.n[0]/s.size[0]
     return (roll(f,-1,0)-f)*c
 def ddyup(f,s):
-    c=s.n[1]/s.s[1]
+    c=s.n[1]/s.size[1]
     return (roll(f,-1,1)-f)*c
 def ddzup(f,s):
-    c=s.n[2]/s.s[2]
+    c=s.n[2]/s.size[2]
     return (roll(f,-1,2)-f)*c
 
 # These functions may be used to calculate the velocity from the momenta and mass density
