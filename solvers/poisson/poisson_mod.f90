@@ -170,6 +170,9 @@ contains
     !-----------------------------------------------------------------------------
     c  = 1d0/ds**2
     n  = patch%mesh%nc
+    where (n == 1)
+      c = 0.0
+    end where
     li = patch%mesh%li
     !-----------------------------------------------------------------------------
     ! For periodic patches, wrap around
@@ -224,13 +227,18 @@ contains
   subroutine precond (res, out)
     real(8), dimension(:,:,:) :: res, out
     !.............................................................................
-    integer                   :: i, j, k, im1, jm1, km1, ip1, jp1, kp1, li(3), n(3)
-    real(8)                   :: a, b, c
+    integer                   :: i, j, k, im1, jm1, km1, ip1, jp1, kp1, li(3), n(3), &
+                                 ndim
+    real(8)                   :: a, b(3)
     !-----------------------------------------------------------------------------
     if (precondition) then
-      a = 1d0 + 1d0/12d0
-      b = 1d0/6d0
       n  = patch%mesh%nc
+      ndim = sum(merge(1,0,n > 1))
+      b = 0.5d0 / ndim
+      a = 1d0 + 0.25d0 / ndim
+      where (n == 1)
+        b = 0.0d0
+      end where
       li = patch%mesh%li
       !---------------------------------------------------------------------------
       ! For periodic patches, wrap around (cheap patch so no need to optimize)
@@ -245,9 +253,9 @@ contains
             do i=patch%mesh(1)%lb,patch%mesh(1)%ub
               ip1 = modulo(i-li(1)+1,n(1))+li(1)
               im1 = modulo(i-li(1)-1,n(1))+li(1)
-              out(i,j,k) = b*(res(ip1,j,k)+res(im1,j,k)  &
-                         +    res(i,jp1,k)+res(i,jm1,k)  &
-                         +    res(i,j,kp1)+res(i,j,km1)) &
+              out(i,j,k) = b(1)*(res(ip1,j,k)+res(im1,j,k))  &
+                         + b(2)*(res(i,jp1,k)+res(i,jm1,k))  &
+                         + b(3)*(res(i,j,kp1)+res(i,j,km1)) &
                          + a*res(i,j,k)
             end do
           end do
@@ -259,9 +267,9 @@ contains
         do k=patch%li(3),patch%ui(3)
           do j=patch%li(2),patch%ui(2)
             do i=patch%li(1),patch%ui(1)
-              out(i,j,k) = b*(res(i+ione,j,k)+res(i-ione,j,k)  &
-                         +    res(i,j+jone,k)+res(i,j-jone,k)  &
-                         +    res(i,j,k+kone)+res(i,j,k-kone)) &
+              out(i,j,k) = b(1)*(res(i+ione,j,k)+res(i-ione,j,k))  &
+                         + b(2)*(res(i,j+jone,k)+res(i,j-jone,k))  &
+                         + b(3)*(res(i,j,k+kone)+res(i,j,k-kone)) &
                          + a*res(i,j,k)
             end do
           end do
@@ -293,12 +301,15 @@ SUBROUTINE laplace (ds, phi, source, res)
 
   c = 1d0/ds**2
   m = shape(phi)
+  where (m == 1)
+    c = 0.0d0
+  end where
   do iz=2,m(3)-kone
   do iy=2,m(2)-jone
   do ix=2,m(1)-ione
-    res(ix,iy,iz) = c(1)*ione*(phi(ix+ione,iy,iz)+phi(ix-ione,iy,iz)-2d0*phi(ix,iy,iz)) &
-                  + c(2)*jone*(phi(ix,iy+jone,iz)+phi(ix,iy-jone,iz)-2d0*phi(ix,iy,iz)) &
-                  + c(3)*kone*(phi(ix,iy,iz+kone)+phi(ix,iy,iz-kone)-2d0*phi(ix,iy,iz)) &
+    res(ix,iy,iz) = c(1)*(phi(ix+ione,iy,iz)+phi(ix-ione,iy,iz)-2d0*phi(ix,iy,iz)) &
+                  + c(2)*(phi(ix,iy+jone,iz)+phi(ix,iy-jone,iz)-2d0*phi(ix,iy,iz)) &
+                  + c(3)*(phi(ix,iy,iz+kone)+phi(ix,iy,iz-kone)-2d0*phi(ix,iy,iz)) &
                   - source(ix,iy,iz)
   end do
   end do
