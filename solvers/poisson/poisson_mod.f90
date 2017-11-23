@@ -356,6 +356,7 @@ SUBROUTINE sor (self, patch, phi1, d, d0, detailed_timer)
 
   wc = wallclock()
   phi = phi1
+  source = fourPiG * (d - d0)
   ! Calculate 1 / [(2/dx + 2/dy + 2/dz)] prefactor according to dimensionality
   a = 0.0
   if (n(1) > 1) a = a + 2. / ds(1)**2
@@ -366,8 +367,8 @@ SUBROUTINE sor (self, patch, phi1, d, d0, detailed_timer)
   b2 = a / ds(2)**2 * jone
   b3 = a / ds(3)**2 * kone
 
-  error = 0.0
   do iter=1,max_iter
+    error = 0.0
     do sweep=0,1
       do k=l(3),u(3)
         do j=l(2),u(2)
