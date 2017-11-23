@@ -1,9 +1,6 @@
 !> =============================================================================
-!> Methods for solving the Poisson equation; derived from routines developed by
-!> Troels Haugbølle for the course Computational Astrophysics, and from papers
-!> on conjugate gradient methods cited in ramses/poisson/phi_fine_cg.f90:
-!>   http://www.sciencedirect.com/science/article/pii/S0167819113000719
-!>   http://www.vis.uni-stuttgart.de/~weiskopf/publications/pdp10.pdf
+!> Methods for solving the Poisson equation; partially derived from routines
+!> developed by Troels Haugbølle for the course Computational Astrophysics.
 !> =============================================================================
 MODULE poisson_mod
   USE mpi_mod
@@ -18,15 +15,20 @@ MODULE poisson_mod
   implicit none
   private
   type, public:: poisson_t
+    real(8):: omega_sor ! Overrelaxation parameter
+    real(8):: rjac2     ! Jacobi spectral radius squared
+    procedure(cg), pointer:: update => null()
   contains
     procedure:: init
     procedure:: cg
+    procedure:: sor
     procedure, nopass:: laplace
   end type
   real,    save:: floor=1e-2, tolerance=1e-4, fourPiG=1.0
   integer, save:: verbose=0
   integer, save:: max_iter=500
   logical, save:: precondition=.true.
+  real(8), parameter:: pi = asin(1.0) * 2.0
 CONTAINS
 
 !> =============================================================================
@@ -39,9 +41,8 @@ SUBROUTINE init (self)
   integer           :: iostat
   !.............................................................................
   character(len=12), save :: solver='cg'
-  real,              save :: omega_sor=0.0
   logical,           save :: first_time = .true.
-  namelist /poisson_params/ tolerance, floor, max_iter, fourPiG, precondition, verbose
+  namelist /poisson_params/ tolerance, floor, max_iter, fourPiG, precondition, verbose, solver
   !-----------------------------------------------------------------------------
   !$omp critical (poisson_cr)
   if (first_time) then
@@ -52,10 +53,27 @@ SUBROUTINE init (self)
     if (io%master) write (io%output, poisson_params)
   end if
   !$omp end critical (poisson_cr)
+  select case(trim(solver))
+  case ('cg')
+    self%update => cg
+  case ('sor')
+    self%update => sor
+  case default
+    if (io%master) then
+      write(*,*) 'Poisson solver '//trim(solver)//' is unknown'
+      write(*,*) 'Valid solvers are: cg, sor'
+      call mpi%abort()
+    end if
+  end select
 END SUBROUTINE init
 
 !> =============================================================================
 !> Conjugate gradient Poisson solver (Ghysels & Vanroose 2014, Algorithm 1)
+!>   http://www.sciencedirect.com/science/article/pii/S0167819113000719
+!> With the "incomplete Poisson" preconditioner from:
+!> http://www.vis.uni-stuttgart.de/~weiskopf/publications/pdp10.pdf 
+!> or http://ieeexplore.ieee.org/document/5452414/
+!> See also the CG method in RAMSES: `ramses/poisson/phi_fine_cg.f90`.
 !> =============================================================================
 SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
   class(poisson_t)       :: self
@@ -281,6 +299,120 @@ contains
     end if
   end subroutine precond
 END SUBROUTINE cg
+
+!> =============================================================================
+!> 2nd order successive over relaxation with red-black ordering
+!> =============================================================================
+SUBROUTINE sor (self, patch, phi1, d, d0, detailed_timer)
+  class(poisson_t)       :: self
+  class(patch_t)         :: patch
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi1
+  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: d
+  real(8):: d0
+  logical                :: detailed_timer
+  !.............................................................................
+  integer                :: i, j, k, sweep, ss, ione, jone, kone, m(3), iter, niter
+  real                   :: error, error0
+  real(8)                :: a, b, b1, b2, b3, res, numer, denom, wc, usppt
+  integer, save          :: itimer=0
+  real(8), dimension(:,:,:), allocatable:: phi, source
+
+  !-----------------------------------------------------------------------------
+  if (detailed_timer) call trace%begin ('poisson_t%sor_iter', itimer=itimer)
+
+  associate(n=>patch%n,ds=>patch%ds,l=>patch%li,u=>patch%ui,gn=>patch%gn)
+  allocate (phi(gn(1),gn(2),gn(3)), source(gn(1),gn(2),gn(3)))
+
+  !-------------------------------------------------------------------
+  ! Calculate optimal guess for the SOR prefactor depending on
+  ! dimensionality, ds, and grid points n:
+  !    delta = (1/sum(1/ds^2)) sum(1/ds^2 * cos(pi/n))
+  !    omega_sor = 2 / (1 + (1 - delta^2)^0.5)
+  ! For an even dimensionality grid
+  !    delta = cos(pi / n)
+  ! which for n > 10 is well approximated by
+  !    delta ~ 1 - 1/2 (pi/n)**2
+  ! and then
+  !    omega_sor = 2 / (1 + pi/n)
+  !-------------------------------------------------------------------
+  numer = 0.0
+  denom = 0.0
+  do i=1,3
+    if (patch%n(i) > 1) then
+      numer = numer + cos(pi / patch%n(i))
+      denom = denom + 1d0
+    end if
+  end do
+  self%rjac2 = (numer / denom)**2
+  self%omega_sor = 2d0 / (1d0 + sqrt(1d0 - self%rjac2))
+
+  if (patch%is_periodic()) call patch%make_periodic (phi)
+  ione = 1
+  jone = 1
+  kone = 1
+  if (n(1) <= 1) ione = 0
+  if (n(2) <= 1) jone = 0
+  if (n(3) <= 1) kone = 0
+
+  wc = wallclock()
+  phi = phi1
+  ! Calculate 1 / [(2/dx + 2/dy + 2/dz)] prefactor according to dimensionality
+  a = 0.0
+  if (n(1) > 1) a = a + 2. / ds(1)**2
+  if (n(2) > 1) a = a + 2. / ds(2)**2
+  if (n(3) > 1) a = a + 2. / ds(3)**2
+  a = 1. / a
+  b1 = a / ds(1)**2 * ione
+  b2 = a / ds(2)**2 * jone
+  b3 = a / ds(3)**2 * kone
+
+  error = 0.0
+  do iter=1,max_iter
+    do sweep=0,1
+      do k=l(3),u(3)
+        do j=l(2),u(2)
+          ss = modulo(j + k + sweep,2)
+          do i=l(1)+ss,u(1),2
+            !---------------------------------------------------------------------
+            ! This form of the residual has no factor in front of phi, which makes
+            ! it clear how to apply the over-relaxation factor
+            !---------------------------------------------------------------------
+            res = b1 * (phi(i+ione,j,k) + phi(i-ione,j,k)) &
+                + b2 * (phi(i,j+jone,k) + phi(i,j-jone,k)) &
+                + b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) &
+                - phi(i,j,k)- a * source(i,j,k)
+            phi(i,j,k) = phi(i,j,k) + self%omega_sor * res
+            error = max(abs(res / (d(i,j,k) + floor)), error)
+          end do
+        end do
+      end do
+    end do
+    !-----------------------------------------------------------------------------
+    ! We are supposed to return the residual as (Laplace(phi)-source)/d, so we
+    ! need to divide with the factor that source (FourPiGrho) was multiplied by
+    !-----------------------------------------------------------------------------
+    error = error / a
+    if (iter==1) error0 = error
+    if (verbose > 1) print *, 'poisson_t%sor: iter, error =', iter, error
+    if (error < tolerance) exit
+    !if (patch%is_periodic()) call patch%make_periodic (phi)
+  end do
+
+  if (iter==max_iter+1) then
+    print *, 'poisson_t%sor: no convergence, niter, error =', max_iter, error
+  else if (verbose > 0 .and. io%master) then
+    usppt = 1e6 * (wallclock() - wc) / product(shape(phi))
+    print '(a,i7,i5,3x,2e12.3,f8.2)', &
+     'poisson_t%sor: id, niter, initial/final error, us/pt =', &
+      patch%id, iter, error0, error, usppt
+  end if
+  niter = iter
+  phi1 = phi
+  deallocate (phi)
+
+  end associate
+  if (detailed_timer) call trace%end (itimer)
+END SUBROUTINE sor
 
 !> =============================================================================
 !> 2nd order Laplace operator

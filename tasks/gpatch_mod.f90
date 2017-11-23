@@ -171,7 +171,7 @@ SUBROUTINE gravity (self)
   else
     print *, self%id, 'using self%d0 =', self%d0
   end if
-  call self%poisson%cg (self, phi, d, self%d0, detailed_timer)
+  call self%poisson%update (self, phi, d, self%d0, detailed_timer)
   !-----------------------------------------------------------------------------
   ! compute estimate of dphi/dt
   !-----------------------------------------------------------------------------
