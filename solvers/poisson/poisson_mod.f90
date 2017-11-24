@@ -29,6 +29,8 @@ MODULE poisson_mod
   integer, save:: max_iter=500
   logical, save:: precondition=.true.
   real(8), parameter:: pi = asin(1.0) * 2.0
+  logical, save:: chebyshev = .true. ! Activate Chebyshev acceleration of SOR?
+
 CONTAINS
 
 !> =============================================================================
@@ -42,7 +44,8 @@ SUBROUTINE init (self)
   !.............................................................................
   character(len=12), save :: solver='cg'
   logical,           save :: first_time = .true.
-  namelist /poisson_params/ tolerance, floor, max_iter, fourPiG, precondition, verbose, solver
+  namelist /poisson_params/ tolerance, floor, max_iter, fourPiG, precondition, &
+                            verbose, solver, chebyshev
   !-----------------------------------------------------------------------------
   !$omp critical (poisson_cr)
   if (first_time) then
@@ -344,7 +347,13 @@ SUBROUTINE sor (self, patch, phi1, d, d0, detailed_timer)
     end if
   end do
   self%rjac2 = (numer / denom)**2
-  self%omega_sor = 2d0 / (1d0 + sqrt(1d0 - self%rjac2))
+  if (chebyshev) then
+    ! initial value for Chebyshev acceleration
+    self%omega_sor = 1.0
+  else
+    ! optimal value for the relaxation parameter
+    self%omega_sor = 2d0 / (1d0 + sqrt(1d0 - self%rjac2))
+  end if
 
   if (patch%is_periodic()) call patch%make_periodic (phi)
   ione = 1
@@ -387,6 +396,13 @@ SUBROUTINE sor (self, patch, phi1, d, d0, detailed_timer)
           end do
         end do
       end do
+      if (chebyshev) then
+        if (iter == 1) then
+          self%omega_sor = 1.0 / (1.0 - self%rjac2 * 0.5)
+        else
+          self%omega_sor = 1.0 / (1.0 - self%rjac2 * 0.25 * self%omega_sor)
+        end if
+      end if
     end do
     !-----------------------------------------------------------------------------
     ! We are supposed to return the residual as (Laplace(phi)-source)/d, so we
