@@ -1055,6 +1055,14 @@ SUBROUTINE output_direct (self)
     write (io%data_unit,'(3(1i8.1,1x),i2.1)') id, self%iout, self%istep, self%mesh_type
     close (io%data_unit)
     direct_output%filename = trim(filename)//'.dat'
+    !---------------------------------------------------------------------------
+    ! Make sure the directory needed next exists
+    !---------------------------------------------------------------------------
+    write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout+1
+    !$omp master
+    if (io%iodir/=self%iout+1) call io%mkdir (trim(filename))
+    io%iodir = self%iout+1
+    !$omp end master
   end if
   !-----------------------------------------------------------------------------
   ! Pass a chunk to the procedure that eventually writes a binary file
