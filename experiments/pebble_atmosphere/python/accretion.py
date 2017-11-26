@@ -1,11 +1,20 @@
 import numpy as np
+import matplotlib.pyplot as pl
 import fortranfile as ftf
 import dispatch_utils as du
+import scaling
 from time import time
+
+class particle():
+    def __init__(self,a):
+        self.p=a[0:3]
+        self.t=a[6]
+        self.s=a[7]
+        self.w=a[8]
 
 def mass(it,run,data):
     ''' compute mass and particle dict '''
-    print 'snapshot',it
+    print('snapshot',it)
     files=du.patch_files(iout=it,run=run,data=data)
     dict={}
     t0=time()
@@ -23,7 +32,7 @@ def mass(it,run,data):
         for i in range(dim[0]):
             dict[idx[i]]=a[i,8]
             m+=a[i,8]
-    print 'snapshot',it,m,time()-t0,npe
+    print('snapshot',it,m,time()-t0,npe)
     return m,dict
 
 def delta(it,run,data,dict):
@@ -38,6 +47,7 @@ def delta(it,run,data,dict):
     no=0
     na=0
     mindist=1e9
+    accr={}
     for file in files:
         f=ftf.FortranFile(file+'.peb','rb')
         fmt=f.readInts()
@@ -61,6 +71,7 @@ def delta(it,run,data,dict):
                     ma+=a[i,8]
                     na+=1
                     dict[idx[i]]=a[i,8]
+                    accr[idx[i]]=particle(a[i,:])
                 # lost at large distances
                 else:
                     no+=1
@@ -69,10 +80,16 @@ def delta(it,run,data,dict):
                         mindist=dist
                         #print 'min',mindist
     print 'snapshot',it,m,ma,mo,time()-t2,npe,no,na,mindist
-    return ma,dict
+    return ma,dict,accr
 
 def scan(it0,it1,run,data):
     ''' scan accretion over a range of snapshots '''
     m,pebs=mass(it1,run,data)
+    dict={}
     for it in range(it1-1,it0-1,-1):
-        dm,pebs=delta(it,run,data,pebs)
+        dm,pebs,accr=delta(it,run,data,pebs)
+        dict[it]=accr
+        s=cgs.r_earth*np.array([p.s for p in accr.values()])
+        pl.hist(np.log10(s))
+        pl.title(it)
+    return dict
