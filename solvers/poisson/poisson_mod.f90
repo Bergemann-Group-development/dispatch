@@ -155,6 +155,8 @@ SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
       patch%id, iter, error0, error, usppt
   end if
   phi1 = phi
+
+  deallocate (phi, source, r, p, s, u)
   if (detailed_timer) call trace%end (itimer)
 contains
   !> =============================================================================

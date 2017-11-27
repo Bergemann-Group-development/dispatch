@@ -345,6 +345,7 @@ SUBROUTINE download_link (link, all_cells, only)
 
   call target%check_density (" after download")
   deallocate (filled)
+  call clean_sorted_nbor_list (sorted_head)
 
   call trace%end (itimer)
 END SUBROUTINE download_link
@@ -893,5 +894,21 @@ SUBROUTINE sort_nbors_by_distance (this, head)
     print*,'----'
   end if
 END SUBROUTINE sort_nbors_by_distance
+
+!> =============================================================================
+SUBROUTINE clean_sorted_nbor_list (head)
+  class(link_t), pointer:: head
+  class(link_t), pointer:: next, prev
+  !.............................................................................
+  next => head%next
+  deallocate (head)
+
+  do while(associated(next))
+    prev => next
+    next => next%next
+    deallocate (prev)
+  end do
+
+END SUBROUTINE clean_sorted_nbor_list
 
 END MODULE
