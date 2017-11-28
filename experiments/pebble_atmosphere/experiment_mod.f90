@@ -153,9 +153,10 @@ SUBROUTINE init (self)
   !
   ! self%unsigned(self%i_d) = .true.
   ! self%pervolume(self%i_s) = .true.
+  !
+  ! Tests show that these should either both be true, or both be false.
   !----------------------------------------------------------------------------
   self%unsigned(self%i_d) = .true.
-  self%pervolume(self%i_s) = .false.
   !----------------------------------------------------------------------------
   ! Export the patch ids for debugging purposes
   !----------------------------------------------------------------------------
