@@ -345,7 +345,12 @@ SUBROUTINE download_link (link, all_cells, only)
 
   call target%check_density (" after download")
   deallocate (filled)
-  call clean_sorted_nbor_list (sorted_head)
+  nbor => sorted_head
+  if (associated(nbor)) then
+    call clean_sorted_nbor_list (sorted_head)
+  else
+    print *,' sorted_head not associated'
+  end if
 
   call trace%end (itimer)
 END SUBROUTINE download_link
@@ -902,13 +907,11 @@ SUBROUTINE clean_sorted_nbor_list (head)
   !.............................................................................
   next => head%next
   deallocate (head)
-
   do while(associated(next))
     prev => next
     next => next%next
     deallocate (prev)
   end do
-
 END SUBROUTINE clean_sorted_nbor_list
 
 END MODULE
