@@ -36,7 +36,7 @@ MODULE io_mod
     real(8):: out_time=1d0
     real(8):: print_time=0d0
     real:: flag_time=1.
-    real:: flag_max=60.
+    real:: flag_max=10.
     real:: ampl=0.0
   contains
     procedure:: init
@@ -265,6 +265,8 @@ SUBROUTINE check_flags (self)
   class (io_t)      :: self
   real(8), save     :: last_checked=0d0
   real(8)           :: flag_time, checked
+  logical           :: exists
+  character(len=80) :: file
   integer, save     :: itimer=0
   !.............................................................................
   call timer%begin ('io_t%check_flags', itimer)
@@ -274,25 +276,31 @@ SUBROUTINE check_flags (self)
   if (wallclock() > checked+flag_time) then
     !$omp critical (flag_cr)
     last_checked = wallclock()
-    ! logical
-    call check ('do_trace.flag'       , lvalue=self%do_trace)
-    call check ('do_flags.flag'       , lvalue=self%do_flags)
-    call check ('do_debug.flag'       , lvalue=self%do_debug)
-    call check ('do_output.flag'      , lvalue=self%do_output)
-    call check ('stop.flag'           , lvalue=self%do_stop)
-    ! integer
-    call check ('id_debug.flag'       , ivalue=self%id_debug)
-    call check ('id_track.flag'       , ivalue=self%id_track)
-    call check ('verbose.flag'        , ivalue=self%verbose)
-    ! single prec
-    call check ('flag_time.flag'      , rvalue=self%flag_time)
-    call check ('flag_max.flag'       , rvalue=self%flag_max)
-    call check ('ampl.flag'           , rvalue=self%ampl)
-    ! double prec
-    call check ('out_time.flag'       , dvalue=self%out_time)
-    call check ('print_time.flag'     , dvalue=self%print_time)
-    call check ('end_time.flag'       , dvalue=self%end_time)
-    call check ('sec_per_report.flag' , dvalue=timer%sec_per_report)
+    file = trim(io%outputname)//'flag'
+    inquire (file=trim(file), exist=exists)
+    if (exists) then
+      open (io_unit%flag, file=trim(file), form='formatted', status='old')
+      close (io_unit%flag, status='delete')
+      ! logical
+      call check ('do_trace.flag'       , lvalue=self%do_trace)
+      call check ('do_flags.flag'       , lvalue=self%do_flags)
+      call check ('do_debug.flag'       , lvalue=self%do_debug)
+      call check ('do_output.flag'      , lvalue=self%do_output)
+      call check ('stop.flag'           , lvalue=self%do_stop)
+      ! integer
+      call check ('id_debug.flag'       , ivalue=self%id_debug)
+      call check ('id_track.flag'       , ivalue=self%id_track)
+      call check ('verbose.flag'        , ivalue=self%verbose)
+      ! single prec
+      call check ('flag_time.flag'      , rvalue=self%flag_time)
+      call check ('flag_max.flag'       , rvalue=self%flag_max)
+      call check ('ampl.flag'           , rvalue=self%ampl)
+      ! double prec
+      call check ('out_time.flag'       , dvalue=self%out_time)
+      call check ('print_time.flag'     , dvalue=self%print_time)
+      call check ('end_time.flag'       , dvalue=self%end_time)
+      call check ('sec_per_report.flag' , dvalue=timer%sec_per_report)
+    end if
     !$omp end critical (flag_cr)
   end if
   call timer%end (itimer)
@@ -306,10 +314,12 @@ contains
   real(8), optional :: dvalue
   logical           :: exists
   integer           :: iostat
+  character(len=80) :: f
   !.............................................................................
-  inquire (file=trim(file), exist=exists)
+  f = trim(io%outputname)//trim(file)
+  inquire (file=trim(f), exist=exists)
   if (exists) then
-    open (io_unit%flag, file=trim(file), form='formatted', status='old', iostat=iostat)
+    open (io_unit%flag, file=trim(f), form='formatted', status='old', iostat=iostat)
     if (present(ivalue)) read (io_unit%flag,*) ivalue
     if (present(rvalue)) read (io_unit%flag,*) rvalue
     if (present(dvalue)) read (io_unit%flag,*) dvalue
