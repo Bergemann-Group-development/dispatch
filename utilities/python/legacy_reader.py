@@ -67,8 +67,8 @@ def read_version0 (self, fp, line, verbose):
     line = fp.readline().split()
     self.m      = np.array(line[ 0: 3],dtype=np.int32)
     self.nwrite =  (int(line[3]),int(line[4]), int(line[5]))
-    self.li     = np.array(line[ 6: 9],dtype=np.int32)
-    self.ui     = np.array(line[ 9:12],dtype=np.int32)
+    self.li     = np.array(line[ 6: 9],dtype=np.int32)-1
+    self.ui     = np.array(line[ 9:12],dtype=np.int32)-1
     self.n      = np.array(line[12:15],dtype=np.int32)
     self.gn     = np.array(line[15:18],dtype=np.int32)
     self.nghost = np.array(line[18:21],dtype=np.int32)
@@ -106,8 +106,8 @@ def read_version1 (self, fp, verbose):
     line = fp.readline().split()
     self.m      = np.array(line[ 0: 3],dtype=np.int32)
     self.nwrite =  (int(line[3]),int(line[4]), int(line[5]))
-    self.li     = np.array(line[ 6: 9],dtype=np.int32)
-    self.ui     = np.array(line[ 9:12],dtype=np.int32)
+    self.li     = np.array(line[ 6: 9],dtype=np.int32)-1
+    self.ui     = np.array(line[ 9:12],dtype=np.int32)-1
     self.n      = np.array(line[12:15],dtype=np.int32)
     self.gn     = np.array(line[15:18],dtype=np.int32)
     self.nghost = np.array(line[18:21],dtype=np.int32)
