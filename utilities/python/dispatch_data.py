@@ -128,15 +128,9 @@ class Patch(Task):
             self.Q  = self.data[:,:,:,self.varidx['Q']]
             self.S  = self.data[:,:,:,self.varidx['S']]
             self.rk = self.data[:,:,:,self.varidx['rk']]
-            self.xs=self.x-0.5*self.ds[0]
-            self.ys=self.y-0.5*self.ds[1]
-            self.zs=self.z-0.5*self.ds[2]
         elif self.kind[0:7]=='poisson':
             self.d = self.data[:,:,:,self.varidx['d']]
             self.phi = self.data[:,:,:,self.varidx['phi']]
-            self.xs=self.x-0.5*self.ds[0]
-            self.ys=self.y-0.5*self.ds[1]
-            self.zs=self.z-0.5*self.ds[2]
         else:
             #if not 'd' in dir(self):
             self.d =self.data[:,:,:,self.varidx['d']]
@@ -157,9 +151,6 @@ class Patch(Task):
                 self.u1=self.p1/np.exp(su.xdn(ln10*logd))
                 self.u2=self.p2/np.exp(su.ydn(ln10*logd))
                 self.u3=self.p3/np.exp(su.zdn(ln10*logd))
-                self.xs=self.x-0.5*self.ds[0]
-                self.ys=self.y-0.5*self.ds[1]
-                self.zs=self.z-0.5*self.ds[2]
                 if self.kind[0:9]=='stagger2_':
                     self.s =self.data[:,:,:,self.varidx['s']]
                     self.e =np.exp((self.s/self.d+ln10*logd)*g1)/g1

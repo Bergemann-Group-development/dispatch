@@ -150,5 +150,8 @@ def single_patch (self, fp, verbose=False):
         self.x = self.x - 0.5*self.ds[0]
         self.y = self.y - 0.5*self.ds[1]
         self.z = self.z - 0.5*self.ds[2]
+    self.xs = self.x - 0.5*self.ds[0]
+    self.ys = self.y - 0.5*self.ds[1]
+    self.zs = self.z - 0.5*self.ds[2]
     if (verbose):
         info (self)
