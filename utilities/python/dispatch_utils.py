@@ -397,3 +397,51 @@ def cache(pp):
     '''
     for p in pp:
         p.cache()
+    
+def shell_data(pp,radius=100,nds=2,verbose=0):
+    ''' return a dict with shell data '''
+    class shell_point():
+        def __init__(self,x,y,z,ds,data):
+            self.dv=np.product(ds)
+            self.x=x
+            self.y=y
+            self.z=z
+            self.data=data
+    s=[]
+    for p in pp:
+        l=p.li
+        u=p.ui
+        r2l=(radius-nds*p.ds[0])**2
+        r2u=(radius+nds*p.ds[0])**2
+        c2=p.corner_radii()
+        if c2.min()<radius and c2.max()>radius:
+            if verbose: print p.id
+            for i in range(l[0],u[0]):
+                x=p.x[i]                
+                for j in range(l[1],u[1]):
+                    y=p.y[j]                
+                    for k in range(l[2],u[2]):
+                        z=p.z[k]                
+                        r2=x**2+y**2+z**2
+                        if r2>r2l and r2<r2u:
+                            s.append(shell_point(x,y,z,p.ds,p.data[i,j,k]))
+    return s
+
+def mass_fluxes(pp,radius=100,nds=2):
+    ''' return the mass fluxes at given radius '''
+    s=shell_data(pp,radius=radius,nds=nds)
+    p=pp[0]
+    ix=p.varidx['p1']
+    iy=p.varidx['p2']
+    iz=p.varidx['p3']
+    f=[]
+    dv=[]
+    for pt in s:
+        f.append(pt.dv*(pt.x*pt.data[ix]++pt.y*pt.data[iy]+pt.z*pt.data[iz]))
+        dv.append(pt.dv)
+    return np.array(f),np.array(dv)
+
+def mass_flux(pp,radius=100,nds=2):
+    ''' return the net mass flux at given radius '''
+    f,dv=mass_fluxes(pp,radius=radius,nds=nds)
+    return np.sum(f)/np.sum(dv)

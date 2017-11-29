@@ -6,7 +6,7 @@
 
 import numpy as np
 from abc import abstractproperty, ABCMeta
-import os
+#import os
 
 import legacy_reader
 reload(legacy_reader)
@@ -224,6 +224,16 @@ class Patch(Task):
                         'u3':self.u3,\
                     'logd':np.log10(self.d),\
                     'loge':np.log10(self.e)}
+
+    def corner_radii(self):
+        ''' array of corner radiii '''
+        c=self.active_corners
+        pt=[]
+        for x in (c[0,0],c[1,0]):
+            for y in (c[0,1],c[1,1]):
+                for z in (c[0,2],c[1,2]):
+                    pt.append(x**2+y**2+z**2)
+        return np.sqrt(np.array(pt))
 
 def variable_indices(solver_type, read_derivs=False):
     """
