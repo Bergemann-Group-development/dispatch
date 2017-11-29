@@ -212,11 +212,17 @@ def along_z(point,pp,verbose=0):
     ''' Get the patches along the z direction through a point '''
     patches_along(point,pp,dir=2,verbose=verbose)
 
-def indices_and_weights(point,p):
+def indices_and_weights(point,p,iv=0):
     ''' 
         Return indices and interpolation weights for a point in a patch p 
     '''
-    corner=np.array([p.x[0],p.y[0],p.z[0]])
+    x0=p.x[0]
+    y0=p.y[0]
+    z0=p.z[0]
+    if iv==p.varidx['p1'] or  iv==p.varidx['b1']: x0=p.xs[0]
+    if iv==p.varidx['p2'] or  iv==p.varidx['b2']: y0=p.ys[0]
+    if iv==p.varidx['p3'] or  iv==p.varidx['b3']: z0=p.zs[0]
+    corner=np.array([x0,y0,z0])
     p=(point-corner)/p.ds
     indices=np.array(p,dtype=np.int32)
     weights=p-indices
@@ -232,7 +238,7 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
     ss=[]
     ff=[]
     for p in patches:
-        ii,w=indices_and_weights(point,p)
+        ii,w=indices_and_weights(point,p,iv)
         if all:
             m=np.zeros(3,dtype=np.int32)
             n=p.gn
@@ -246,7 +252,10 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
                 f1=p.data[i,j,k  ,iv]*(1-w[1])+p.data[i,j+1,k,  iv]*w[1]
                 f2=p.data[i,j,k+1,iv]*(1-w[1])+p.data[i,j+1,k+1,iv]*w[1]
                 f=f1*(1-w[2])+f2*w[2]
-                ss.append(p.x[i])
+                if iv==p.varidx['p1']:
+                    ss.append(p.xs[i])
+                else:
+                    ss.append(p.x[i])
                 ff.append(f)
         elif dir==1:
             i=ii[0]
@@ -255,7 +264,10 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
                 f1=p.data[i,j,k  ,iv]*(1-w[0])+p.data[i+1,j,k  ,iv]*w[0]
                 f2=p.data[i,j,k+1,iv]*(1-w[0])+p.data[i+1,j,k+1,iv]*w[0]
                 f=f1*(1-w[2])+f2*w[2]
-                ss.append(p.y[j])
+                if iv==p.varidx['p2']:
+                    ss.append(p.ys[i])
+                else:
+                    ss.append(p.y[i])
                 ff.append(f)
         else:
             i=ii[0]
@@ -264,10 +276,16 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
                 f1=p.data[i,j  ,k,iv]*(1-w[0])+p.data[i+1,j  ,k,iv]*w[0]
                 f2=p.data[i,j+1,k,iv]*(1-w[0])+p.data[i+1,j+1,k,iv]*w[0]
                 f=f1*(1-w[1])+f2*w[1]
-                ss.append(p.z[k])
+                if iv==p.varidx['p3']:
+                    ss.append(p.zs[k])
+                else:
+                    ss.append(p.z[k])
                 ff.append(f)
-                print ('{:5d} '+3*'{:3d}'+2*'{:10.6f}'+'{:12.4e}').format(
-                p.id,i,j,k,w[0],w[1],f)
+                if verbose:
+                    print ('{:5d} '+3*'{:3d}'+2*'{:10.6f}'+'{:12.4e}').format(
+                    p.id,i,j,k,w[0],w[1],f)
+    ss=np.array(ss)
+    ff=np.array(ff)
     return ss,ff
 
 def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
@@ -278,7 +296,10 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
     '''
     ss=[]
     ff=[]
-    ii,w=indices_and_weights(point,p)
+    ii,w=indices_and_weights(point,p,iv)
+    if verbose:
+        print '{:3d} {}   {} {:5.1f} {:4.1f} {:4.1f}'.\
+          format(p.id,iv,ii,w[0],w[1],w[2])
     if all:
         m=np.zeros(3,dtype=np.int32)
         n=p.gn
@@ -321,6 +342,8 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
             else:
                 ss.append(p.z[k])
             ff.append(f)
+    ss=np.array(ss)
+    ff=np.array(ff)
     return ss,ff
 
 def values_along_x(point,p,iv=0,verbose=0):
