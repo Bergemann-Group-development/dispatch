@@ -6,7 +6,8 @@
 
 import numpy as np
 from abc import abstractproperty, ABCMeta
-#import os
+import os
+from time import time
 
 import legacy_reader
 reload(legacy_reader)
@@ -25,13 +26,20 @@ class Task(object):
 class Patch(Task):
     """A derived class for patches."""
     __metaclass__ = ABCMeta
-    def __init__(self, filename, read_derivs=False, verbose=False):
+    def __init__(self, filename, read_derivs=False, verbose=False, fd=None):
         self.filename = filename
         self.__data = None
-        fp = open(filename+'.txt','r')
-        legacy_reader.single_patch (self, fp, verbose=False)
+        self.offset=0
+        if fd:
+            fp=fd
+        else:
+            fp = open(filename+'.txt','r')
+        legacy_reader.single_patch (self, fp, verbose=False, fd=fd)
         if read_derivs: self.nvar = 2 * self.nvar
-        fp.close()
+        if fd:
+            self.offset=(self.id-1)*np.product(self.nwrite)*self.nvar*4
+        else:
+            fp.close()
         self.varidx = variable_indices(self.kind, read_derivs)
         self.varnames = []
         self.__cached = 0
@@ -57,7 +65,7 @@ class Patch(Task):
     def _read_legacy_data(self, filename, dims, nvar):
         """Return a memory map pointing to MHD data."""
         myshape = dims + (nvar,)
-        return np.memmap(filename, dtype=np.float32, mode='r', order='F', shape=myshape)
+        return np.memmap(filename, dtype=np.float32, offset=self.offset, mode='r', order='F', shape=myshape)
 
     def _determine_corners(self, active_only=False):
         """
@@ -234,6 +242,55 @@ class Patch(Task):
                 for z in (c[0,2],c[1,2]):
                     pt.append(x**2+y**2+z**2)
         return np.sqrt(np.array(pt))
+
+def Search(fd, ip, verbose=False):
+    line=fd.readline().split()
+    ioformat=int(line[0])
+    status=False
+    while (True):
+        try:
+            line=fd.readline().split()
+            id=np.int(line[0])
+            if (verbose>1):
+                print id,ip
+            if id==ip:
+                status=True
+                if (verbose):
+                    print id,ip,status
+                break
+            nskip=np.int(line[1])
+            for i in range(nskip):
+                void=fd.readline()
+        except:
+            status=False
+            break
+    return status
+
+class Snapshot:
+    def __init__(self, iout=0, run='', data='../data', verbose=0):
+        start=time()
+        if run=='':
+            dir=data+'/{:05d}/'.format(iout)
+        else:
+            dir=data+'/'+run+'/{:05d}/'.format(iout)
+        self.directory=dir
+        self.rankfiles=[dir+f.replace('.txt','') for f in os.listdir(dir) if f.endswith('.rank.txt')]
+        # If .rank.txt files were found, add patches listed there
+        if np.size(self.rankfiles)>0:
+            for file in self.rankfiles:
+                self.patches=Patches(file,verbose=verbose)
+            self.files=[]
+            for p in self.patches:
+                file=self.directory+'{:05d}'.format(p.id)
+                self.files.append(file)
+        # If not, list .txt files, and add one patch from each file
+        else:
+            self.patches = []
+            self.files=[dir+f.replace('.txt','') for f in os.listdir(dir) if f.endswith('.txt')]
+            for file in self.files:
+                self.patches.append (Patch(file))
+        if verbose:
+            print '{} snapshot.patches ({:.2f} s)'.format(np.size(self.patches),time()-start)
 
 def variable_indices(solver_type, read_derivs=False):
     """

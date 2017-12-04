@@ -120,16 +120,23 @@ def read_version1 (self, fp, verbose):
     self.istep = np.int(line[2])
     self.mesh_type = get_mesh_type(int(line[3]))
 
-def single_patch (self, fp, verbose=False):
-    line=fp.readline()
-    chars=line[0:2]
-    if chars=='  ':
-        self.ioformat=0
-        line=line.split()
-        read_version0 (self, fp, line, verbose)
-    else:
-        self.ioformat=np.int(chars)
+def single_patch (self, fp, fd=None, verbose=False):
+    if fd:
+        self.ioformat=3
         read_version1 (self, fp, verbose)
+    else:
+        line=fp.readline()
+        chars=line[0:2]
+        if chars=='  ':
+            self.ioformat=0
+            line=line.split()
+            read_version0 (self, fp, line, verbose)
+        else:
+            self.ioformat=np.int(chars)
+            read_version1 (self, fp, verbose)
+    derived (self, verbose)
+
+def derived(self, verbose=False):
     self.dx   = self.ds
     self.corners        = self._determine_corners()
     self.active_corners = self._determine_corners(active_only=True)
@@ -143,7 +150,7 @@ def single_patch (self, fp, verbose=False):
     self.x=self.corners[0][0]+(0.5+np.arange(self.gn[0]))*self.ds[0]
     self.y=self.corners[0][1]+(0.5+np.arange(self.gn[1]))*self.ds[1]
     self.z=self.corners[0][2]+(0.5+np.arange(self.gn[2]))*self.ds[2]
-    if self.ioformat==2:
+    if self.ioformat==2 or self.ioformat==4:
         self.size = self.ds*(self.n-1)
         self.active_corners[1] = self.active_corners[1] - self.ds
         self.corners[1]        = self.corners[1]        - self.ds

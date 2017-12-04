@@ -23,6 +23,16 @@ def dispatch_utils():
     print "Type dispatch_utils?<RETURN> for help text, or dispach_utils(\
  for pop-up help in Canopy"
 
+def snapshot (iout=0, run='', data='../data', verbose=0):
+    snap=dd.Snapshot (iout, run, data, verbose)
+    snap.iout=iout
+    snap.run=run
+    snap.data=data
+    snap.dict={}
+    for p in snap.patches:
+        snap.dict[p.id]=p
+    return snap
+
 class limits():
     ''' Return extent limits in x,y,z,values '''
     def __init__(self,pp,ix=None,iy=None,iz=None,iv=0,verbose=0):
@@ -104,7 +114,7 @@ def patch_files(iout=-1, run='', data='../data', verbose=0):
         if verbose>1: print rundir+dir
         ff=np.sort(os.listdir(rundir+dir))
         ext='.txt'
-        ff=[rundir+dir+'/'+f.replace('.txt','') for f in ff if f.endswith(ext)]
+        ff=[rundir+dir+'/'+f.replace(ext,'') for f in ff if f.endswith(ext)]
         if np.size(ff)>0:
             npatch=np.size(ff)
         for f in ff:
@@ -124,14 +134,18 @@ def patch (id=2, iout=0, run='', data='../data', verbose=0, **kwargs):
     '''
     Return patch structure for a single patch, identified by id and iout
     '''
-    file=data+'/'+run+'/{:05d}/{:05d}'.format(iout,id)
-    if not os.path.isfile(file+'.txt'):
-        file=data+'/'+run+'/{:04d}_{:04d}'.format(id,iout)
-        print file,' not found'
-        if not os.path.isfile(file+'.txt'):
-            print file,' not found'
-            return None
-    return dd.Patch(file,verbose=verbose,**kwargs)
+    name=data+'/'+run+'/{:05d}/{:05d}'.format(iout,id)
+    if os.path.isfile(name+'.txt'):
+        return dd.Patch(name,verbose=verbose)
+    else:
+        files = patch_files(iout,run,data)
+        p=None
+        for file in files:
+            with open(file+'.txt','r') as fd:
+                success = dd.Search (fd, id, verbose)
+                if (success):
+                    p=dd.Patch(file,fd=fd,verbose=verbose)
+        return p
 
 def is_inside(point,p,verbose=0):
     ''' Return True/False depending on if the point is inside the patch 
@@ -373,11 +387,13 @@ def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None,
         patch_select = [p for p in pp if p.id==id]
     '''
     if verbose: print 'patches: run={} data={} iout={}'.format(run,data,iout)
-    files = patch_files (run=run, data=data, iout=iout, verbose=verbose)
+    #files = patch_files (run=run, data=data, iout=iout, verbose=verbose)
+    snap = snapshot(iout,run,data,verbose=verbose)
     pp=[]
     nghost=-1
-    for f in files:
-        s=dd.Patch(f,verbose=verbose)
+    #for f in files:
+    for s in snap.patches:
+        #s=dd.Patch(f,verbose=verbose)
         if same:
             if nghost==-1:
                 nghost=s.nghost[0]
