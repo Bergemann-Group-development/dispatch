@@ -266,6 +266,20 @@ def Search(fd, ip, verbose=False):
             break
     return status
 
+def Patches(file, verbose=False):
+    with open(file+'.txt','r') as fd:
+        patches=[]
+        line=fd.readline().split()
+        ioformat=int(line[0])
+        while (True):
+            try:
+                id,nskip=fd.readline().split()
+            except:
+                break
+            patch=Patch(file,fd=fd,verbose=verbose)
+            patches.append(patch)
+    return patches
+
 class Snapshot:
     def __init__(self, iout=0, run='', data='../data', verbose=0):
         start=time()
@@ -277,8 +291,11 @@ class Snapshot:
         self.rankfiles=[dir+f.replace('.txt','') for f in os.listdir(dir) if f.endswith('.rank.txt')]
         # If .rank.txt files were found, add patches listed there
         if np.size(self.rankfiles)>0:
+            self.patches=[]
             for file in self.rankfiles:
-                self.patches=Patches(file,verbose=verbose)
+                patches=Patches(file,verbose=verbose)
+                for patch in patches:
+                    self.patches.append(patch)
             self.files=[]
             for p in self.patches:
                 file=self.directory+'{:05d}'.format(p.id)
