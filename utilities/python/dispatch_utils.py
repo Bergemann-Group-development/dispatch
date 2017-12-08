@@ -1,3 +1,10 @@
+
+# Pythn 2/3 compatibility
+from __future__ import print_function
+import sys
+if sys.version_info[0]!=2:
+    from importlib import reload
+
 import numpy as np
 import os
 import re
@@ -20,8 +27,8 @@ def dispatch_utils():
         patch_files()    Return list of patch file root names
         p=patch()        Return one patch object    
     '''
-    print "Type dispatch_utils?<RETURN> for help text, or dispach_utils(\
- for pop-up help in Canopy"
+    print( "Type dispatch_utils?<RETURN> for help text, or dispach_utils(\
+ for pop-up help in Canopy")
 
 def snapshot (iout=0, run='', data='../data', verbose=0):
     snap=dd.Snapshot (iout, run, data, verbose)
@@ -79,10 +86,10 @@ class limits():
                 self.vlim[0]=np.minimum(self.vlim[0],np.min(p.data[:,:,iz,iv]))
                 self.vlim[1]=np.maximum(self.vlim[1],np.max(p.data[:,:,iz,iv]))
         if verbose:
-            print 'xlim:',self.xlim
-            print 'ylim:',self.ylim
-            print 'zlim:',self.zlim
-            print 'vlim:',self.vlim
+            print('xlim:',self.xlim)
+            print('ylim:',self.ylim)
+            print('zlim:',self.zlim)
+            print('vlim:',self.vlim)
 
 def fsplit(name):
     res=name.split('_')
@@ -97,7 +104,7 @@ def patch_files(iout=-1, run='', data='../data', verbose=0):
     Return a list of patch file root names, and count patches and snapshots,
     unless verbose is negative
     '''
-    if verbose>0: print 'patch_files: run={} data={} iout={}'.format(run,data,iout)
+    if verbose>0: print('patch_files: run={} data={} iout={}'.format(run,data,iout))
     rundir=data+'/'+run+'/'
     if iout>=0:
         dir='{:05d}'.format(iout)
@@ -111,23 +118,23 @@ def patch_files(iout=-1, run='', data='../data', verbose=0):
     nsnaps=np.size(dirs)
     files=[]
     for dir in dirs:
-        if verbose>1: print rundir+dir
+        if verbose>1: print(rundir+dir)
         ff=np.sort(os.listdir(rundir+dir))
         ext='.txt'
-        ff=[rundir+dir+'/'+f.replace(ext,'') for f in ff if f.endswith(ext)]
+        ff=[rundir+dir+'/'+f.replace('.txt','') for f in ff if f.endswith(ext)]
         if np.size(ff)>0:
             npatch=np.size(ff)
         for f in ff:
             files.append(f)
     if iout>=0 and np.size(files)>0:
-        if verbose>0: print npatch,'patches found'
+        if verbose>0: print(npatch,'patches found')
         return files
 
     if verbose>0:
         if iout<0:
-            print nsnaps,'snapshots with',npatch,'patches each found'
+            print(nsnaps,'snapshots with',npatch,'patches each found')
         else:
-            print npatch,'patches found'
+            print(npatch,'patches found')
     return files
 
 def patch (id=2, iout=0, run='', data='../data', verbose=0, **kwargs):
@@ -155,7 +162,7 @@ def is_inside(point,p,verbose=0):
     left1=p.centre[0]-p.size[0]*0.5
     left2=p.active_corners[0][0]
     if verbose>0:
-        print '{:03d}   {} {:8.1f} {:8.1f}'.format(p.id,p.centre,left1,left2)
+        print('{:03d}   {} {:8.1f} {:8.1f}'.format(p.id,p.centre,left1,left2))
     return left.all() and right.all()
 
 def count_inside(point,p,verbose=0):
@@ -166,7 +173,7 @@ def count_inside(point,p,verbose=0):
     left1=p.centre[0]-p.size[0]*0.5
     left2=p.active_corners[0][0]
     if verbose>0:
-        print '{:03d}   {} {:8.1f} {:8.1f}'.format(p.id,p.centre,left1,left2)
+        print('{:03d}   {} {:8.1f} {:8.1f}'.format(p.id,p.centre,left1,left2))
     count=0
     for i in range(3):
         if left[i] and right[i]:
@@ -193,7 +200,7 @@ def patches_along(point,pp,dir=0,verbose=0):
     if p:
         while p:
             if verbose>1:
-                print 'A  {:3d}{}{}'.format(p.id,p.centre,p.size)
+                print('A  {:3d}{}{}'.format(p.id,p.centre,p.size))
             pt[dir]=p.centre[dir]-p.size[dir]*0.6
             p=patch_at(pt,pp)
             if p:
@@ -203,12 +210,12 @@ def patches_along(point,pp,dir=0,verbose=0):
         while p:
             out.append(p)
             if verbose>1:
-                print 'B  {:3d}{}{}'.format(p.id,p.centre,p.size)
+                print('B  {:3d}{}{}'.format(p.id,p.centre,p.size))
             pt[dir]=p.centre[dir]+p.size[dir]*0.6
             p=patch_at(pt,pp)
         if verbose>0:
             for p in out:
-                print 'id: {:4d}        position: {}'.format(p.id,p.centre)
+                print('id: {:4d}        position: {}'.format(p.id,p.centre))
     else:
         out=None
     np.set_printoptions(formatter=None)
@@ -296,8 +303,8 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
                     ss.append(p.z[k])
                 ff.append(f)
                 if verbose:
-                    print ('{:5d} '+3*'{:3d}'+2*'{:10.6f}'+'{:12.4e}').format(
-                    p.id,i,j,k,w[0],w[1],f)
+                    print(('{:5d} '+3*'{:3d}'+2*'{:10.6f}'+'{:12.4e}').format(
+                    p.id,i,j,k,w[0],w[1],f))
     ss=np.array(ss)
     ff=np.array(ff)
     return ss,ff
@@ -312,8 +319,8 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
     ff=[]
     ii,w=indices_and_weights(point,p,iv)
     if verbose:
-        print '{:3d} {}   {} {:5.1f} {:4.1f} {:4.1f}'.\
-          format(p.id,iv,ii,w[0],w[1],w[2])
+        print('{:3d} {}   {} {:5.1f} {:4.1f} {:4.1f}'.\
+          format(p.id,iv,ii,w[0],w[1],w[2]))
     if all:
         m=np.zeros(3,dtype=np.int32)
         n=p.gn
@@ -386,7 +393,7 @@ def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None,
         time_select  = [p for p in pp if p.iout==iout]
         patch_select = [p for p in pp if p.id==id]
     '''
-    if verbose: print 'patches: run={} data={} iout={}'.format(run,data,iout)
+    if verbose: print('patches: run={} data={} iout={}'.format(run,data,iout))
     #files = patch_files (run=run, data=data, iout=iout, verbose=verbose)
     snap = snapshot(iout,run,data,verbose=verbose)
     pp=[]
@@ -454,7 +461,7 @@ def shell_data(pp,radius=100,nds=2,verbose=0):
         r2u=(radius+nds*p.ds[0])**2
         c2=p.corner_radii()
         if c2.min()<radius and c2.max()>radius:
-            if verbose: print p.id
+            if verbose: print(p.id)
             for i in range(l[0],u[0]):
                 x=p.x[i]                
                 for j in range(l[1],u[1]):

@@ -1,3 +1,9 @@
+# Pythn 2/3 compatibility
+from __future__ import print_function
+import sys
+if sys.version_info[0]!=2:
+    from importlib import reload
+
 import numpy as np
 
 """
@@ -23,26 +29,26 @@ def get_mesh_type(current_mesh_type):
     return mesh_string
               
 def info (self):
-    print "        patch id:", self.id
-    print "    no. of steps:", self.istep
-    print "         coords.:", self.mesh_type
-    print "      full patch:", self.m
-    print "   unigrid patch:", self.n
-    print "     total cells:", self.gn
-    print "   lower indices:", self.li
-    print "   upper indices:", self.ui
-    print "no. of variables:", self.nvar
-    print "     ghost cells:", self.nghost
-    print "            time:", self.time
-    print "        position:", self.pos
-    print "         delta s:", self.ds
-    print "        velocity:", self.vel
-    print "          origin:", self.origin
-    print "          l.l.c.:", self.llc
-    print "     vol. centre:", self.centre
-    print "           level:", self.level
-    print "         quality:", self.quality
-    print "       task type:", self.kind
+    print("        patch id:", self.id)
+    print("    no. of steps:", self.istep)
+    print("         coords.:", self.mesh_type)
+    print("      full patch:", self.m)
+    print("   unigrid patch:", self.n)
+    print("     total cells:", self.gn)
+    print("   lower indices:", self.li)
+    print("   upper indices:", self.ui)
+    print("no. of variables:", self.nvar)
+    print("     ghost cells:", self.nghost)
+    print("            time:", self.time)
+    print("        position:", self.pos)
+    print("         delta s:", self.ds)
+    print("        velocity:", self.vel)
+    print("          origin:", self.origin)
+    print("          l.l.c.:", self.llc)
+    print("     vol. centre:", self.centre)
+    print("           level:", self.level)
+    print("         quality:", self.quality)
+    print("       task type:", self.kind)
 
 def read_version0 (self, fp, line, verbose):
     """
@@ -123,7 +129,6 @@ def read_version1 (self, fp, verbose):
 def single_patch (self, fp, fd=None, verbose=False):
     if fd:
         self.ioformat=3
-        read_version1 (self, fp, verbose)
     else:
         line=fp.readline()
         chars=line[0:2]

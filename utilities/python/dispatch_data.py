@@ -4,6 +4,12 @@
    Support functions for reading DISPATCH2 data.
 """
 
+# Pythn 2/3 compatibility
+from __future__ import print_function
+import sys
+if sys.version_info[0]!=2:
+    from importlib import reload
+
 import numpy as np
 from abc import abstractproperty, ABCMeta
 import os
@@ -252,11 +258,11 @@ def Search(fd, ip, verbose=False):
             line=fd.readline().split()
             id=np.int(line[0])
             if (verbose>1):
-                print id,ip
+                print(id,ip)
             if id==ip:
                 status=True
                 if (verbose):
-                    print id,ip,status
+                    print(id,ip,status)
                 break
             nskip=np.int(line[1])
             for i in range(nskip):
@@ -307,7 +313,7 @@ class Snapshot:
             for file in self.files:
                 self.patches.append (Patch(file))
         if verbose:
-            print '{} snapshot.patches ({:.2f} s)'.format(np.size(self.patches),time()-start)
+            print('{} snapshot.patches ({:.2f} s)'.format(np.size(self.patches),time()-start))
 
 def variable_indices(solver_type, read_derivs=False):
     """

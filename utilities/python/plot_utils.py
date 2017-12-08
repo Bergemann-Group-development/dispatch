@@ -1,3 +1,9 @@
+# Pythn 2/3 compatibility
+from __future__ import print_function
+import sys
+if sys.version_info[0]!=2:
+    from importlib import reload
+
 import numpy as np
 import matplotlib.pyplot as pl
 import matplotlib.animation as an
@@ -15,24 +21,24 @@ def simple_slice(iout=0,run='',data='../data',x=None,y=None,z=None,iv=0,verbose=
     if not pp:
         pp=du.patches(iout=iout,run=run,data=data,x=x,y=y,z=z)
     if (np.size(pp)==0):
-        print 'no patches found'
+        print('no patches found')
         return
     if verbose:
         for p in pp:
-            print 'id={:04d} pos={}'.format(p.id,p.pos)
+            print('id={:04d} pos={}'.format(p.id,p.pos))
     ix=None; iy=None; iz=None
     if x:
         p = pp[0]
         ix=np.int((x-p.x[0])/p.ds[0]+0.5)
-        print 'ix =',ix,' xr=',p.active_corners[0:2,0]
+        print('ix =',ix,' xr=',p.active_corners[0:2,0])
     if y:
         p = pp[1]
         iy=np.int((y-p.y[0])/p.ds[1]+0.5)
-        print 'iy =',iy,' yr=',p.active_corners[0:2,1]
+        print('iy =',iy,' yr=',p.active_corners[0:2,1])
     if z:
         p = pp[0]
         iz=np.int((z-p.z[0])/p.ds[2]+0.5)
-        print 'iz =',iz,' zr=',p.active_corners[0:2,2]
+        print('iz =',iz,' zr=',p.active_corners[0:2,2])
     ll=du.limits(pp,ix=ix,iy=iy,iz=iz,iv=iv,verbose=verbose)
     pl.clf()
     p=pp[0]
@@ -63,7 +69,7 @@ def image(f,verbose=0,vlim=None,**kwargs):
     Turn images the Fortran way; 1st index increases to the right,
     2nd index upwards
     '''
-    if vlim:
+    if np.size(vlim)==2:
         im=pl.imshow(f.squeeze().transpose(),origin='lower',interpolation='nearest',\
           vmin=vlim[0],vmax=vlim[0],**kwargs)
     else:
@@ -84,12 +90,12 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
     pl.show()
     pp=du.patches(run=run,data=data,iout=iout)
     if np.size(pp)==0:
-        print "no files found"
+        print("no files found")
         return
     def inside(p, z):
         return z<=p.active_corners[1][2] and z>=p.active_corners[0][2]
     select=[p for p in pp if inside(p,z) and p.level<8]
-    if verbose: print np.size(pp),'patches in plane' 
+    if verbose: print(np.size(pp),'patches in plane' )
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
     ylim=[vmin,vmax]
@@ -100,7 +106,7 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
         i=max(0,min(n-2,int(s)))
         s=s-i
         if verbose>1:
-            print 'id,iz,pz:',p.id,i,s
+            print('id,iz,pz:',p.id,i,s)
         return (1.0-s)*f[l[0]:u[0],l[1]:u[1],i]+s*f[l[0]:u[0],l[1]:u[1],i+1]
     for p in select:
         p.cache()
@@ -124,8 +130,8 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
                  or (p.extent[0][3] > ylim[0] and p.extent[0][3] < ylim[1]))
             return does
         select=[p for p in select if overlaps(p)]
-        if verbose: print np.size(select),'patches remain' 
-    if vlim != None:
+        if verbose: print(np.size(select),'patches remain')
+    if np.size(vlim)==2:
         vmin=vlim[0]
         vmax=vlim[1]
     else:
@@ -133,7 +139,7 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
             vmin=min(vmin,p.f.min())
             vmax=max(vmax,p.f.max())
             if verbose:
-                print p.id,p.f.min(),p.f.max(),vmin,vmax
+                print(p.id,p.f.min(),p.f.max(),vmin,vmax)
     if not keep:
         pl.clf()
     for p in select:
@@ -156,12 +162,12 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
     pl.show()
     pp=du.patches(run=run,data=data,iout=iout)
     if np.size(pp)==0:
-        print "no files found"
+        print("no files found")
         return
     def inside(p,x):
         return x<=p.active_corners[1][0] and x>=p.active_corners[0][0]
     pp=[p for p in pp if inside(p,x) and p.level<8]
-    if verbose: print np.size(pp),'patches in plane' 
+    if verbose: print(np.size(pp),'patches in plane')
     vmin=1e9; vmax=-vmin
     ylim=[vmin,vmax]
     zlim=[vmin,vmax]
@@ -172,14 +178,13 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
         i=max(0,min(n-2,int(s)))
         s=s-i
         if verbose>1:
-            print 'id,ix,px:',p.id,i,s
+            print('id,ix,px:',p.id,i,s)
         return (1.0-s)*f[i,l[1]:u[1],l[2]:u[2]]+s*f[i+1,l[1]:u[1],l[2]:u[2]]
     for p in pp:
         p.cache()
         p.stripit()
         p.vars()
         p.f=p.var[var]
-        ng=p.nghost[0]
         px=p.x
         if var=='u1' or var=='p1': px=p.xs
         p.f=interpolate(p,x,px[0],p.dx[0],p.n[0],p.f)
@@ -196,8 +201,8 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
                  or (p.extent[0][3] > zlim[0] and p.extent[0][3] < zlim[1]))
             return does
         pp=[p for p in pp if overlaps(p)]
-        if verbose: print np.size(pp),'patches remain' 
-    if vlim:
+        if verbose: print(np.size(pp),'patches remain')
+    if np.size(vlim)==2:
         vmin=vlim[0]
         vmax=vlim[1]
     else:
@@ -224,15 +229,15 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
     Display xz-image for given y
     '''
     pl.show()
-    print 'data:',data,' run:',run,' iout:',iout
+    print('data:',data,' run:',run,' iout:',iout)
     pp=du.patches(run=run,data=data,iout=iout)
     if np.size(pp)==0:
-        print "no files found"
+        print("no files found")
         return
     def inside(p,y):
         return y<=p.active_corners[1][1] and y>=p.active_corners[0][1]
     pp=[p for p in pp if inside(p,y) and p.level<8]
-    if verbose: print np.size(pp),'patches in plane' 
+    if verbose: print(np.size(pp),'patches in plane')
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
     zlim=[vmin,vmax]
@@ -243,14 +248,13 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
         i=max(0,min(n-2,int(s)))
         s=s-i
         if verbose>1:
-            print 'id,iy,py:',p.id,i,s
+            print('id,iy,py:',p.id,i,s)
         return (1.0-s)*f[l[0]:u[0],i,l[2]:u[2]]+s*f[l[0]:u[0],i+1,l[2]:u[2]]
     for p in pp:
         p.cache()
         p.stripit()
         p.vars()
         p.f=p.var[var]
-        ng=p.nghost[0]
         py=p.y
         if var=='u2' or var=='p2': py=p.ys
         p.f=interpolate(p,y,py[0],p.dx[0],p.n[0],p.f)
@@ -267,8 +271,8 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
                  or (p.extent[1][3] > zlim[0] and p.extent[1][3] < zlim[1]))
             return does
         #pp=[p for p in pp if overlaps(p)]
-        if verbose: print np.size(pp),'patches remain' 
-    if vlim:
+        if verbose:(print(np.size(pp),'patches remain'))
+    if np.size(vlim)==2:
         vmin=vlim[0]
         vmax=vlim[1]
     else:
@@ -308,7 +312,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
             zmax=extent[5]
             #zmin=np.floor(zmin/dz+0.5)*dz
             #zmax=np.floor(zmax/dz+0.5)*dz
-            print zmin,zmax
+            print(zmin,zmax)
     def anim(z):
         def inside(p, z):
             ac=p.active_corners
@@ -318,7 +322,6 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
                 ok = ok and ac[1][1]>extent[2] and ac[0][1]<extent[3]
             return ok
         select=[p for p in pp if inside(p,z)]
-        #print np.size(select),'patches selected at z =',z
         p=select[0]
         title='var='+var+'   t={:d}  (:,:,{:d})'.format(np.int(p.time),np.int(z))
         vmin=1e9
@@ -331,7 +334,6 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
             s=(x-x0)/dx
             i=max(0,min(n-2,int(s)))
             s=s-i
-            #print p.id,i,s
             return (1.0-s)*f[l[0]:u[0],l[1]:u[1],i]+s*f[l[0]:u[0],l[1]:u[1],i+1]
         for p in select:
             p.cache()
@@ -416,7 +418,6 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
         def interpolate(p,x,x0,dx,n,f):
             s=(x-x0)/dx
             i=max(0,min(n-2,int(s)))
-            #print i,i+1
             s=s-i
             return (1.0-s)*f[i,l[1]:u[1],l[2]:u[2]]+s*f[i+1,l[1]:u[1],l[2]:u[2]]
         for p in select:
@@ -446,7 +447,6 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
             vmin=vlim[0]
             vmax=vlim[1]      
         for p in select:
-            #print np.shape(p.f)
             im=image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
             if labels:
                 pl.text(p.active_corners[0][1],p.active_corners[0][2],p.id)
