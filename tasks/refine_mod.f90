@@ -578,7 +578,7 @@ FUNCTION refine_region (self, patch) RESULT (refine_it)
 
   class(refine_t) :: self
   class(patch_t), pointer :: patch
-  class(mesh_t), dimension(:), pointer:: m
+  class(mesh_t), pointer:: m1, m2, m3, m(:)
   logical :: intersect
   logical :: refine_it
   integer :: ix, iy, iz
@@ -588,11 +588,14 @@ FUNCTION refine_region (self, patch) RESULT (refine_it)
   call trace%begin('refine_t%refine_on_box')
 
   refine_it = .false.
-  m => patch%mesh
+  m1 => patch%mesh(1)
+  m2 => patch%mesh(2)
+  m3 => patch%mesh(3)
+  m => patch%mesh(:)
 
   ! check if the patch (as a whole) intersects the box-shaped region of interest
   do ix=1,3
-    associate (mr => m(ix)%r)
+    associate (mr => patch%mesh(ix)%r)
     p_llc(ix) = m(ix)%p + mr(m(ix)%li) - 0.5 * m(ix)%d
     p_urc(ix) = m(ix)%p + mr(m(ix)%ui) + 0.5 * m(ix)%d
     end associate
@@ -607,12 +610,12 @@ FUNCTION refine_region (self, patch) RESULT (refine_it)
     return
   endif
 
-  do iz=m(3)%li,m(3)%ui
-    z = m(3)%p + m(3)%r(iz)
-    do iy=m(2)%li,m(2)%ui
-      y = m(2)%p + m(2)%r(iy)
-      do ix=m(1)%li,m(1)%ui
-        x = m(1)%p + m(1)%r(ix)
+  do iz=m3%li,m3%ui
+    z = m3%p + m3%r(iz)
+    do iy=m2%li,m2%ui
+      y = m2%p + m2%r(iy)
+      do ix=m1%li,m1%ui
+        x = m1%p + m1%r(ix)
         refine_it = refine_it .or. (x >= b_llc(1) .and. x <= b_urc(1) .and. &
                                     y >= b_llc(2) .and. y <= b_urc(2) .and. &
                                     z >= b_llc(3) .and. z <= b_urc(3) )
