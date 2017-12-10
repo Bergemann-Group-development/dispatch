@@ -7,6 +7,7 @@ import dispatch_grid as dg
 from derived_variables import *
 import itertools
 import fnmatch
+import os
 
 def phi_exact(x,y,r0=1.0):
     """
@@ -70,7 +71,10 @@ if __name__ == "__main__":
     istep_min, istep_max = [], []
     mi = 0
     for i in iters:
+        if not os.path.exists(data):
+            raise Exception("data dir not found!")
         patches = du.patches(data=data,iout=i)
+        if len(patches) == 0: raise Exception("no patches found!")
         for pp in patches:
             pp.cache()
             pp.stripit()
@@ -102,6 +106,12 @@ if __name__ == "__main__":
             print cmin[j],cmax[j]
 
             for pp in patches:
+                try:
+                    skipped.index(pp.id)
+                    print "Skipping ",pp.id," (user)"
+                    continue
+                except:
+                    pass
                 x_i = dg.dispatch_grid(pp)
                 xp, yp, cut_mask = dg.plotting_grid(pp, x_i, 3, 0.0)
                 # ghost zones *can* now be included (or not)
@@ -136,6 +146,10 @@ if __name__ == "__main__":
                 elif pltvar[j] == 'phie':
                     var = phi_exact(xp,yp,r0=r0)
                     var = var[iindex,jindex]
+                elif pltvar[j] == 'dd':
+                    var = pp.data[iindex,jindex,kindex,pp.varidx['d']]
+                    q0 = rho_exact(xp,yp,r0=r0)
+                    var = var.squeeze() - q0[iindex,jindex,kindex].squeeze()
                 else:
                     var = pp.data[iindex,jindex,kindex,pp.varidx[pltvar[j]]]
 
@@ -163,7 +177,6 @@ if __name__ == "__main__":
                     cax.annotate(str(pp.id),(gn_xpos,gn_ypos),color='k',weight='extra bold',
                                  fontsize=13,zorder=min(pp.dx))
 
-
             cbar = plt.colorbar(conf, ax=cax, fraction=0.03, pad=0.03)
             cbar.ax.annotate(spltvar,xy=(-0.10,-0.06),fontsize=14,xycoords='axes fraction')
 
@@ -177,6 +190,12 @@ if __name__ == "__main__":
         # print L2 and Linf norm of the result
         L2_iter, Linf_iter = [], []
         for pp in patches:
+            try:
+                skipped.index(pp.id)
+                print "Skipping ",pp.id," (user)"
+                continue
+            except:
+                pass
             x_i = dg.dispatch_grid(pp)
             xp, yp, cut_mask = dg.plotting_grid(pp, x_i, 3, 0.0)
             # ghost zones *can* now be included (or not)
@@ -184,9 +203,9 @@ if __name__ == "__main__":
             jone = (0,1)[pp.n[1] > 1]
             kone = (0,1)[pp.n[2] > 1]
             if np.any(pp.n != pp.nwrite):
-                iindex = slice(pp.nghost[0] - ione,pp.n[0] + pp.nghost[0] + ione)
-                jindex = slice(pp.nghost[1] - jone,pp.n[1] + pp.nghost[1] + jone)
-                kindex = slice(pp.nghost[2] - kone,pp.n[2] + pp.nghost[2] + kone)
+                iindex = slice(pp.li[0] - 1,pp.ui[0])
+                jindex = slice(pp.li[1] - 1,pp.ui[1])
+                kindex = slice(pp.li[2] - 1,pp.ui[2])
             else:
                 iindex = slice(0,pp.n[0])
                 jindex = slice(0,pp.n[1])
@@ -200,7 +219,7 @@ if __name__ == "__main__":
             Linfn = np.linalg.norm(dphi[iindex,jindex,kindex].flatten(),ord=np.inf)
             L2_iter.append(L2n/L2d)
             Linf_iter.append(Linfn/Linfd)
-            #print "i = {0}, p = {1}, n = {2}, L2-norm = {3:.3e}, Linf-norm = {4:.3e}".format(i,pp.id,pp.n,L2n/L2d,Linfn/Linfd)
+            print "i = {0}, p = {1}, n = {2}, L2-norm = {3:.3e}, Linf-norm = {4:.3e}".format(i,pp.id,pp.n,L2n/L2d,Linfn/Linfd)
 
         # accumulate L2, Linf results
         L2_min.append(np.min(L2_iter))
