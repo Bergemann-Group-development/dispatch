@@ -168,8 +168,6 @@ SUBROUTINE gravity (self)
   if (self%d0==-1.0) then
     self%d0 = total_mass/total_volume
     print *, self%id, 'setting self%d0 =', self%d0, self%faver(d)
-  else
-    print *, self%id, 'using self%d0 =', self%d0
   end if
   call self%poisson%update (self, phi, d, self%d0, detailed_timer)
   !-----------------------------------------------------------------------------
