@@ -286,9 +286,9 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
                 f2=p.data[i,j,k+1,iv]*(1-w[0])+p.data[i+1,j,k+1,iv]*w[0]
                 f=f1*(1-w[2])+f2*w[2]
                 if iv==p.varidx['p2']:
-                    ss.append(p.ys[i])
+                    ss.append(p.ys[j])
                 else:
-                    ss.append(p.y[i])
+                    ss.append(p.y[j])
                 ff.append(f)
         else:
             i=ii[0]
@@ -347,9 +347,9 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
             f2=p.data[i,j,k+1,iv]*(1-w[0])+p.data[i+1,j,k+1,iv]*w[0]
             f=f1*(1-w[2])+f2*w[2]
             if iv==p.varidx['p2']:
-                ss.append(p.ys[i])
+                ss.append(p.ys[j])
             else:
-                ss.append(p.y[i])
+                ss.append(p.y[j])
             ff.append(f)
     else:
         i=ii[0]
