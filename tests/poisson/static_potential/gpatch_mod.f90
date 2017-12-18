@@ -105,17 +105,30 @@ SUBROUTINE init (self)
     self%mem = 0.0
     ff => self%mem(:,:,:,:,1,1)
     call self%initial%condition (self%mesh, ff, self%idx)
-  end if
-  !-----------------------------------------------------------------------------
-  ! Sum up the total mass and total volume, to get the average density d0.
-  ! FIXME: This needs to be modified for MPI
-  !-----------------------------------------------------------------------------
-  if (self%time == 0.0) then
-    d => self%mem(:,:,:,self%idx%d,self%it,1)
-    !$omp atomic
-    total_mass = total_mass + self%fsum(d)*product(self%ds)
-    !$omp atomic
-    total_volume = total_volume + product(self%size)
+    !---------------------------------------------------------------------------
+    ! The first time, all patches that exist also have good GC values, and we
+    ! can freely dnload both densities and potential and then get a first
+    ! solution of the Poisson equation immediately.  The root grid does this
+    ! first, which means subsequent patches from initial refinement get their
+    ! BCs set correctly, for an immediately good startup.
+    !---------------------------------------------------------------------------
+    if (selfgravity) then
+      !-------------------------------------------------------------------------
+      ! Sum up the total mass and total volume, to get the average density d0.
+      ! FIXME: This needs to be modified for MPI
+      !-------------------------------------------------------------------------
+      if (self%time == 0.0 .and. self%id==1) then
+        d => self%mem(:,:,:,self%idx%d,self%it,1)
+        !$omp atomic
+        total_mass = total_mass + self%fsum(d)*product(self%ds)
+        !$omp atomic
+        total_volume = total_volume + product(self%size)
+      end if
+      call self%dnload (only=self%idx%d)
+      call self%dnload (only=self%idx%phi)
+      call pboundaries%conditions(self, self%it)
+      call self%gravity
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! If restart succeeded for some patch, use it to set time and output cadence.
@@ -162,7 +175,7 @@ SUBROUTINE gravity (self)
   class(gpatch_t):: self
   !.............................................................................
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi
-  real(8):: sec
+  real:: dmin, dmax
   integer:: iter, ix ,iy, iz
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -174,6 +187,10 @@ SUBROUTINE gravity (self)
     self%d0 = total_mass/total_volume
     print *, self%id, 'setting self%d0 =', self%d0, self%faver(d)
   end if
+  dmin = self%fminval (d)
+  dmax = self%fmaxval (d)
+  if (dmin==0.0) &
+    print *, self%id, 'WARNING: gpatch_t%gravity, dmin, dmax, it =', dmin, dmax, self%it
   call self%poisson%update (self, phi, d, self%d0, detailed_timer)
   !-----------------------------------------------------------------------------
   ! compute estimate of dphi/dt
@@ -197,6 +214,7 @@ SUBROUTINE update (self)
   if (self%poisson_time == self%time) then
     call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
     call self%rotate
+    self%rotated = .true.
     if (verbose>0) &
       print *, self%id, 'gpatch_t%update updated self%time to', self%time
   else
@@ -205,6 +223,7 @@ SUBROUTINE update (self)
     call pboundaries%conditions(self, self%it)
     call self%gravity
     self%poisson_time = self%time
+    self%rotated = .true.
     if (verbose>0) &
       print *, self%id, 'gpatch_t%update updated self%poisson_time to', self%poisson_time
   end if
