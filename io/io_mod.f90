@@ -45,6 +45,7 @@ MODULE io_mod
     procedure:: print_id => print_id_
     procedure, nopass:: mkdir
     procedure, nopass:: print_hl
+    procedure, nopass:: namelist_warning
   end type
   character(len=64), save:: inputname, outputname
   type(io_t), public:: io
@@ -323,5 +324,16 @@ contains
   end if
   end subroutine
 END SUBROUTINE check_flags
+
+SUBROUTINE namelist_warning (namelist)
+  character(len=*):: namelist
+  if (io%master) then
+    print *, '*************************************************************************************'
+    print *, '*************************************************************************************'
+    print *, '           WARNING: namelist '//trim(namelist)//' had read error'
+    print *, '*************************************************************************************'
+    print *, '*************************************************************************************'
+  end if
+END SUBROUTINE namelist_warning
 
 END MODULE io_mod

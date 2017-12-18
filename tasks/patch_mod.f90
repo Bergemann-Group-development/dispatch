@@ -53,6 +53,7 @@ MODULE patch_mod
     character(len=32):: opacity='none'
     integer:: file_offset(4)
     type(index_t):: idx
+    real(8):: poisson_time=-1.0
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------

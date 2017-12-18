@@ -5,7 +5,6 @@ MODULE experiment_mod
   USE bits_mod
   USE solver_mod
   USE initial_mod
-  USE pboundary_mod
   USE timestep_mod
   implicit none
   private
@@ -52,19 +51,8 @@ SUBROUTINE update (self)
   real:: error
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
-  
-  call pboundaries%conditions(self, self%it)
-  call self%gravity
-
   call self%output
-  call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
-
-  call self%rotate
-  call self%dnload (only=self%idx%d)
-  call self%dnload (only=self%idx%phi)
-  call pboundaries%conditions(self, self%it)
-  call self%gravity
-
+  call self%gpatch_t%update
   call trace%end
 END SUBROUTINE update
 

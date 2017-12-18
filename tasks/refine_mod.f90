@@ -47,7 +47,10 @@ MODULE refine_mod
   logical:: do_refine=.false.                 ! Flag to turn the entire process on or off 
   !
   type(refine_t), public:: refine
+
 CONTAINS
+!> =============================================================================
+!> Initialize refinement parameters
 !> =============================================================================
 SUBROUTINE init (self)
   class(refine_t):: self
@@ -64,7 +67,7 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, refine_params, iostat=iostat)
     if (io%master) then
-      if (iostat > 0) print *, 'WARNING: no refine_params or read error!'
+      if (iostat > 0) call io%namelist_warning ('refine_params')
       write (*, refine_params)
     end if
   end if
@@ -73,9 +76,7 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-!> Check if refinement is desired and needed for the current task; if so, push
-!> new tasks onto the (ready) queue with the same time as the parent, i.e., to
-!> the head of the queue.
+!> Check if refinement is desired and needed for the current task
 !> =============================================================================
 FUNCTION refine_needed (self, tasklist, link)
   class(refine_t):: self
@@ -160,13 +161,15 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   !.............................................................................
   was_refined = .false.
   if (.not. do_refine) return
+  if (io%verbose>1) &
+    print *, link%task%id, 'MK: refine_t%check_current, at t =', link%task%time
   if (link%task%level >= levelmax) return
   call trace%begin('refine_t%check_current', itimer=itimer)
   !
   patch => task2patch(link%task)
   if (patch%is_set(bits%not_leaf)) then
     if (.not.self%refine_needed (tasklist, link)) then
-      print *, patch%id, 'derefine suggested'
+      !print *, patch%id, 'derefine suggested'
       !$omp critical (queue_cr)
       !call self%join_patch (tasklist, link)
       call check_level_constraint
@@ -255,6 +258,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child%t(child%it) = child%time
   child%out_next = child%time                        ! force output now
   child%iout = max(0,child%iout - 1)                 ! correct output counter
+  child%parentid = parent%id                         ! for debugging
   !------------------------------------------------------------------------
   ! Reset flags (FIXME: Would it be better to just reset `status` to zero?)
   !------------------------------------------------------------------------
@@ -287,10 +291,10 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   if (parent%time > 0.0) call download%download_link (child_link, all_cells=.true.)
   if (io%verbose>0) then
     1 format(a,3i6,f10.6,2(2x,3f8.4))
-    print 1,'refine_mod::make_child_patch:  child, level, iout, time, size(3) =', &
-      child%id, child%level, child%iout, child%time, child%size
-    print 1,'                              parent, level, iout, time, size(3) =', &
-      parent%id, parent%level, parent%iout, parent%time, parent%size
+    print 1,'refine_t%make_child_patch:  child, level, iout, time, size(3), position(3) =', &
+      child%id, child%level, child%iout, child%time, child%size, child%position
+    print 1,'                           parent, level, iout, time, size(3), position(3) =', &
+      parent%id, parent%level, parent%iout, parent%time, parent%size, parent%position
   end if
 
   call tlist%check_ready(child_link)
