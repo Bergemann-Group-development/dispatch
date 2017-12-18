@@ -100,7 +100,7 @@ FUNCTION func_phi0 (x, y) result (phi0)
   real:: r, phi0
   !----------------------------------------------------------------------------
   r = sqrt((x - 0.5)**2 + (y - 0.5)**2)
-  phi0 = log((r / global_r0)**2 + 1.0)
+  phi0 = log((r / global_r0)**2 + 1.0) + 1.0
 
 END FUNCTION func_phi0
 

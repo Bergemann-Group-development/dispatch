@@ -20,7 +20,7 @@ def phi_exact(x,y,r0=1.0):
     else:
         xx, yy = x, y
     r = np.sqrt((xx-0.5)**2 + (yy-0.5)**2)
-    phi_e = np.log((r / r0)**2 + 1.0)
+    phi_e = np.log((r / r0)**2 + 1.0) + 1.0
 
     return phi_e
 
