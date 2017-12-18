@@ -21,6 +21,7 @@ MODULE refine_mod
   type:: refine_t
   contains
     procedure:: init
+    procedure:: refine_needed
     procedure:: check_current
     procedure:: check_jeans
     procedure:: shock_and_cd_detector
@@ -76,23 +77,22 @@ END SUBROUTINE init
 !> new tasks onto the (ready) queue with the same time as the parent, i.e., to
 !> the head of the queue.
 !> =============================================================================
-SUBROUTINE check_current (self, tasklist, link, was_refined)
+FUNCTION refine_needed (self, tasklist, link)
   class(refine_t):: self
   class(list_t):: tasklist
   class(link_t), pointer:: link
+  logical:: refine_needed
+  !.............................................................................
   class(patch_t), pointer:: patch
-  logical:: needed
-  logical, intent(out):: was_refined
   real:: dxmin, dxmax
   integer, save:: itimer=0
-  !.............................................................................
-  was_refined = .false.
+  !----------------------------------------------------------------------------
+  refine_needed = .false.
   if (.not. do_refine) return
-  call trace%begin('refine_t%check_current', itimer=itimer)
-
+  call trace%begin('refine_t%needed', itimer=itimer)
+  !
   patch => task2patch(link%task)
-  needed = .false.
-
+  !
   ! filter out patches which do not match the necessary criteria
   if (patch%is_set(bits%virtual)) then
     call trace%end (itimer)
@@ -116,41 +116,110 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
     call trace%end (itimer)
     return
   end if
-
+  !
   !------------------------------------------------------------------------
   ! Refinement Criteria
   !------------------------------------------------------------------------
   ! Jeans criterion
-  if (min_jeans > 0.0) needed = needed .or. self%check_Jeans(patch)
-
+  if (min_jeans > 0.0) refine_needed = refine_needed .or. self%check_Jeans(patch)
+  !
   ! shock and/or contact discontinuity detector
   if (tol_shock > 0.0 .or. tol_contact > 0.0) &
-    needed = needed .or. self%shock_and_cd_detector(patch)
-
+    refine_needed = refine_needed .or. self%shock_and_cd_detector(patch)
+  !
   ! gradient detector
-  if (any(tol_grad > 0.0) ) needed = needed .or. self%gradient_detector(patch)
-
+  if (any(tol_grad > 0.0) ) refine_needed = refine_needed .or. self%gradient_detector(patch)
+  !
   ! refine on (a) user-specified region(s)
   if (any(region_llc /= 0.0) .and. any(region_urc /= 0.0)) &
-    needed = needed .or. self%refine_region(patch)
-
+    refine_needed = refine_needed .or. self%refine_region(patch)
+  !
   ! Check that neighbors of `self` are not more than one level different.
   ! If they are, mark this patch for splitting so that support can be
   ! provided to the neighbors of `patch`.
-  needed = needed .or. self%check_nbor_support(tasklist, link)
-
+  refine_needed = refine_needed .or. self%check_nbor_support (tasklist, link)
+  !
   patch%check_refine_next = patch%istep + check_interval
-
-  !------------------------------------------------------------------------
-  ! If refinement has been deemed necessary, do it!
-  !------------------------------------------------------------------------
-  if (needed .and. patch%level < levelmax) then
-    if (io%verbose > 1) print*,'refine_t%needed!; patch:', patch%id
-    call self%split_patch (tasklist, link)
-    was_refined = .true.
-  end if
-
   call trace%end (itimer)
+END FUNCTION refine_needed
+
+!> =============================================================================
+!> Check if refinement is desired and needed for the current task; if so, push
+!> new tasks onto the (ready) queue with the same time as the parent, i.e., to
+!> the head of the queue.  If the task is not a leaf task, and refinement does
+!> not appear to be needed, suggest derefinement.
+!> =============================================================================
+SUBROUTINE check_current (self, tasklist, link, was_refined)
+  class(refine_t):: self
+  class(list_t):: tasklist
+  class(link_t), pointer:: link
+  class(patch_t), pointer:: patch
+  logical, intent(out):: was_refined
+  real:: dxmin, dxmax
+  integer, save:: itimer=0
+  !.............................................................................
+  was_refined = .false.
+  if (.not. do_refine) return
+  if (link%task%level >= levelmax) return
+  call trace%begin('refine_t%check_current', itimer=itimer)
+  !
+  patch => task2patch(link%task)
+  if (patch%is_set(bits%not_leaf)) then
+    if (.not.self%refine_needed (tasklist, link)) then
+      print *, patch%id, 'derefine suggested'
+      !$omp critical (queue_cr)
+      !call self%join_patch (tasklist, link)
+      call check_level_constraint
+      !$omp end critical  (queue_cr)
+    end if
+  else
+    if (self%refine_needed (tasklist, link)) then
+      !$omp critical (queue_cr)
+      call self%split_patch (tasklist, link)
+      call check_level_constraint
+      !$omp end critical  (queue_cr)
+      was_refined = .true.
+    end if
+  end if
+  !
+  call trace%end (itimer)
+contains
+  !> ===========================================================================
+  !> Iteratively check the nbor level constraint, splitting patches until the
+  !> there are no more violations.  Since this inserts new patches in the patch
+  !> list, and modifies the queue, it must be done in a critical region, blocking
+  !> other updates to the patch list.
+  !> ===========================================================================
+  subroutine check_level_constraint
+    class(link_t), pointer:: link
+    integer:: iteration
+    logical:: still_needed
+    !---------------------------------------------------------------------------
+    iteration = 0
+    still_needed = .true.
+    do while (still_needed)
+      still_needed = .false.
+      link => tasklist%head
+      do while (associated(link))
+        if (link%task%is_clear (bits%not_leaf)) then
+          if (self%check_nbor_support (tasklist, link)) then
+            if (io%verbose>2) &
+              print *, link%task%id, &
+              'check_level_constraint: patch needs splitting at level', &
+              link%task%level
+            call self%split_patch (tasklist, link)
+            still_needed = .true.
+            exit
+          end if
+        end if
+        link => link%next
+      end do
+      iteration = iteration+1
+      if (io%verbose>2) &
+        print *, 'check_level_constraint, iteration =', &
+        iteration, still_needed
+    end do
+  end subroutine check_level_constraint
 END SUBROUTINE check_current
 
 !> =============================================================================
