@@ -52,18 +52,19 @@ if __name__ == "__main__":
     plt.rc('font', size=18)
     plt.interactive(True)
 
-    data = './data/input_1p'
-    iters = [0,1,2]
+    data = './data/input_nested'
+    iters = [0,1,5,10,15]
     #iters = [0]
     pxsize = [ 0.0, 1.0]
     pysize = [ 0.0, 1.0]
-    pltvar = [ 'd','phie','phi','rdphi']
-    cmin   = [ 1.0,  0.0,  0.0,   1e-3]
-    cmax   = [ 1e2, 10.0, 10.0,    1e0]
-    clog   = [   1,    0,    0,      1]
+    pltvar = ['rdphi','phie', 'phi', 'rdd']
+    cmin   = [   1e-4,   1.0,   0.0,  1e-6]
+    cmax   = [    1.0,    5.,    5.,   0.5]
+    clog   = [      1,     1,     1,     1]
     showgrids = True
     showgridno = True
     ColMap = cm.RdBu_r
+    skipped = []
     r0 = 0.1
 
     L2_min, L2_max, L2_mean = [], [], []
