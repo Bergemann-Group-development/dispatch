@@ -38,7 +38,7 @@ SUBROUTINE init (self)
   call self%gpatch_t%init()
   call self%clear(bits%root_grid)
   self%kind = 'poisson'
-  self%dtime = 32.0 * minval(self%ds)
+  self%dtime = 1.0
   self%d0 = 0.0
 
   call trace%end
