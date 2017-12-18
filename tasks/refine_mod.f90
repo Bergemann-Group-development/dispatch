@@ -56,9 +56,9 @@ SUBROUTINE init (self)
   class(refine_t):: self
   integer:: iostat
   logical, save:: first_time = .true.
-  namelist /refine_params/ check_interval, refinement_ratio, refine_from_t, refine_until_t, &
-                           min_dx, max_dx, min_jeans, tol_shock, tol_contact, tol_grad, &
-                           grad_var, region_llc, region_urc, levelmax, do_refine
+  namelist /refine_params/ do_refine, levelmax, check_interval, refinement_ratio, &
+    refine_from_t, refine_until_t, min_dx, max_dx, min_jeans, tol_shock, &
+    tol_contact, tol_grad, grad_var, region_llc, region_urc
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%init')
   !$omp critical (refine_cr)
@@ -103,10 +103,6 @@ FUNCTION refine_needed (self, tasklist, link)
     call trace%end (itimer)
     return
   end if
-  if (patch%is_set(bits%not_leaf)) then
-    call trace%end (itimer)
-    return
-  end if
   dxmin = minval(patch%ds)
   dxmax = maxval(patch%ds)
   if (dxmin < min_dx .or. dxmax >= max_dx) then
@@ -123,22 +119,27 @@ FUNCTION refine_needed (self, tasklist, link)
   !------------------------------------------------------------------------
   ! Jeans criterion
   if (min_jeans > 0.0) refine_needed = refine_needed .or. self%check_Jeans(patch)
+  if (io%verbose>1) print *, patch%id, 'refine%needed (Jeans)   =', refine_needed
   !
   ! shock and/or contact discontinuity detector
   if (tol_shock > 0.0 .or. tol_contact > 0.0) &
     refine_needed = refine_needed .or. self%shock_and_cd_detector(patch)
+  if (io%verbose>1) print *, patch%id, 'refine%needed (shock)   =', refine_needed
   !
   ! gradient detector
   if (any(tol_grad > 0.0) ) refine_needed = refine_needed .or. self%gradient_detector(patch)
+  if (io%verbose>1) print *, patch%id, 'refine%needed (grad)    =', refine_needed
   !
   ! refine on (a) user-specified region(s)
   if (any(region_llc /= 0.0) .and. any(region_urc /= 0.0)) &
     refine_needed = refine_needed .or. self%refine_region(patch)
+  if (io%verbose>1) print *, patch%id, 'refine%needed (region)  =', refine_needed
   !
   ! Check that neighbors of `self` are not more than one level different.
   ! If they are, mark this patch for splitting so that support can be
   ! provided to the neighbors of `patch`.
   refine_needed = refine_needed .or. self%check_nbor_support (tasklist, link)
+  if (io%verbose>1) print *, patch%id, 'refine%needed (support) =', refine_needed
   !
   patch%check_refine_next = patch%istep + check_interval
   call trace%end (itimer)
@@ -162,7 +163,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   was_refined = .false.
   if (.not. do_refine) return
   if (io%verbose>1) &
-    print *, link%task%id, 'MK: refine_t%check_current, at t =', link%task%time
+    print *, link%task%id, 'MK: refine_t%check_current, at t =', link%task%time, link%task%level, levelmax
   if (link%task%level >= levelmax) return
   call trace%begin('refine_t%check_current', itimer=itimer)
   !
@@ -259,6 +260,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child%out_next = child%time                        ! force output now
   child%iout = max(0,child%iout - 1)                 ! correct output counter
   child%parentid = parent%id                         ! for debugging
+  child%check_refine_next = 0                        ! allow recursive refine
   !------------------------------------------------------------------------
   ! Reset flags (FIXME: Would it be better to just reset `status` to zero?)
   !------------------------------------------------------------------------
@@ -271,8 +273,9 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   !------------------------------------------------------------------------
   allocate (child_link)
   child_link%task => child
-  child_link%parent => parent_link                          ! link is the link to the new patch
-  call tlist%append_link (child_link)                       ! which is added to the patch list
+  child_link%parent => parent_link                   ! link is the link to the new patch
+  call tlist%append_link (child_link)                ! which is added to the patch list
+  io%ntask = tlist%n                                 ! update the task count
   !------------------------------------------------------------------------
   ! Make parent a neighbour of new child patch.
   ! This will be overwritten in `init_all_nbors` but is necessary here to permit
