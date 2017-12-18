@@ -811,6 +811,9 @@ SUBROUTINE different_restrict (target, source, filled, only)
           target_pos = target%myposition (ii, iv)
           target_lower_edges = target_pos - target%ds * 0.499999_8 ! to 1e-6 tolerance
           target_upper_edges = target_pos + target%ds * 0.499999_8
+          ! skip cells that are not *entirely* covered by the finer patch
+          if (any(target_lower_edges < source%llc_nat)) cycle
+          if (any(target_upper_edges > (source%llc_nat+source%size))) cycle
           call source%index_space (target_pos, iv, jj, pp)
           accumulate = 0.0
           filling_total = 0.0
