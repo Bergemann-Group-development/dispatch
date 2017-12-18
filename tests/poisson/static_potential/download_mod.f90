@@ -310,7 +310,7 @@ SUBROUTINE download_link (link, all_cells, only)
     if (io%verbose>1) &
       call target%check_density ("before download")
   end if
-  if (target%is_set(bits%root_grid)) call target%periodic_grid
+  if (target%is_periodic()) call target%periodic_grid
 
   ! Take the nbor list and produce a list sorted by decreasing distance from `target`.
   call sort_nbors_by_distance (link,sorted_head)

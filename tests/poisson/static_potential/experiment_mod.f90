@@ -36,7 +36,7 @@ SUBROUTINE init (self)
   self%periodic = .false.
   
   call self%gpatch_t%init()
-  call self%clear(bits%root_grid)
+  self%level = 1
   self%kind = 'poisson'
   self%dtime = 1.0
   self%d0 = 0.0

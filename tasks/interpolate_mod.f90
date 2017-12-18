@@ -231,7 +231,7 @@ FUNCTION interpolator_trilinear (q,i,j,k,iv,w) result(qtilde)
   real(kind=KindScalarVar):: qtilde, m(3)
   integer:: i1, j1, k1
   !-----------------------------------------------------------------------------
-  call trace_begin('interpolate_mod::trilinear', 2)
+  call trace_begin('interpolate_mod::trilinear', 3)
   i1 = merge(1,0,size(q,1) > 1)
   j1 = merge(1,0,size(q,2) > 1)
   k1 = merge(1,0,size(q,3) > 1)

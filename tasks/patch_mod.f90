@@ -565,7 +565,7 @@ SUBROUTINE rotate (self)
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%rotate')
-  if (self%is_set(bits%root_grid)) then
+  if (self%is_periodic()) then
     call self%periodic_grid                     ! periodic root grid
   else if (extrapolate_gz) then
     call self%extrapolate_guards                ! time-extrapolate guard cells
