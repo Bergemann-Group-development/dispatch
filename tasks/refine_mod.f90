@@ -603,8 +603,7 @@ FUNCTION refine_region (self, patch) RESULT (refine_it)
   b_llc = self%region_llc
   b_urc = self%region_urc
 
-  intersect = all(b_llc > p_llc .and. b_llc < p_urc) .or. &
-              all(b_urc > p_llc .and. b_urc < p_urc)
+  intersect = all((p_urc - b_llc) > 0) .and. all((b_urc - p_llc) > 0)
   if (.not. intersect) then
     call trace_end
     return
