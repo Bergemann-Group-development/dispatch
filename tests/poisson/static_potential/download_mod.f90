@@ -312,11 +312,15 @@ SUBROUTINE download_link (link, all_cells, only)
   end if
   if (target%is_periodic()) call target%periodic_grid
 
-  ! Take the nbor list and produce a list sorted by decreasing distance from `target`.
-  call sort_nbors_by_distance (link,sorted_head)
+  nbor => link%nbor
+  do while (associated(nbor))
+    source => task2patch(nbor%task)
+    print *, 'MK:download_link target:', target%id, target%level, ' source:', source%id, source%level
+    nbor => nbor%next
+  end do
 
   ! Walk through the sorted neighbour list
-  nbor => sorted_head
+  nbor => link%nbor
   do while (associated(nbor))
     source => task2patch(nbor%task)
     if (trim(target%kind)/='rt_solver') then
@@ -345,12 +349,6 @@ SUBROUTINE download_link (link, all_cells, only)
 
   call target%check_density (" after download")
   deallocate (filled)
-  nbor => sorted_head
-  if (associated(nbor)) then
-    call clean_sorted_nbor_list (sorted_head)
-  else
-    print *,' sorted_head not associated'
-  end if
 
   call trace%end (itimer)
 END SUBROUTINE download_link
@@ -633,6 +631,7 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
   logical                 :: all_cells_l
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_prolong', itimer=itimer)
+  print *,'MK different_prolong; target:', target%id, target%level, 'source:', source%id, source%level
   call source%time_interval (target%time, jt, pt)
   if (present(only)) then
     iv1 = only
