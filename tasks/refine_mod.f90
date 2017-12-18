@@ -17,20 +17,8 @@ MODULE refine_mod
   USE eos_mod
   implicit none
   private
-
+  !
   type:: refine_t
-    integer:: check_interval                    ! How often do we check refinement criteria
-                                                ! (given in number of steps/updates between checks)
-    integer:: refinement_ratio                  ! How does a patch split when it is refined
-    real:: min_dx, max_dx
-    real:: refine_from_t, refine_until_t        ! Time limits for occurence of refinement
-    real:: min_jeans                            ! Jeans number below which a patch is flagged for refinement
-    real:: tol_shock, tol_contact               ! Tolerance values for shock/discontinuity detectors
-    integer:: ngradvar=10
-    real, dimension(:), pointer:: tol_grad      ! Tolerance values for gradient detector
-    character(len=32), dimension(:), pointer:: grad_var
-    real, dimension(3):: region_llc, region_urc ! Sometimes you want to refine a region (manually)
-    logical:: do_refine                         ! Flag to turn the entire process on or off
   contains
     procedure:: init
     procedure:: check_current
@@ -41,53 +29,44 @@ MODULE refine_mod
     procedure:: gradient_detector
     procedure:: check_nbor_support
   end type
-
+  !
+  integer:: check_interval=50                 ! Number of steps betwen checks
+  integer:: refinement_ratio=2                ! How does a patch split when it is refined
+  real:: min_dx=0.0, max_dx=1e32              ! Min and max grid size
+  real:: refine_from_t=0.0                    ! Time limits for occurence of refinement
+  real:: refine_until_t=0.0                   ! Time limits for occurence of refinement
+  real:: min_jeans=0.0                        ! Jeans number below which a patch is flagged for refinement
+  real:: tol_shock=0.0, tol_contact=0.0       ! Tolerance values for shock/discontinuity detectors
+  integer, parameter:: ngradvar=10            ! Number of gradient variables
+  real, dimension(3):: region_llc=0.0         ! Sometimes you want to refine a region (manually)
+  real, dimension(3):: region_urc=0.0
+  real, dimension(ngradvar):: tol_grad=0.0    ! Tolerance values for gradient detector
+  character(len=32), dimension(ngradvar):: grad_var=""
+  logical:: do_refine=.false.                 ! Flag to turn the entire process on or off 
+  !
   type(refine_t), public:: refine
-
 CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(refine_t):: self
   integer:: iostat
-  integer:: check_interval=50, refinement_ratio=2
-  real:: refine_from_t=0.0, refine_until_t=1.0e32, min_jeans=0.0, min_dx=0.0, max_dx=1.0e32, &
-         tol_shock=0.0, tol_contact=0.0
-  real, dimension(3):: region_llc=0.0, region_urc=0.0
-  real, dimension(self%ngradvar):: tol_grad
-  character(len=32), dimension(self%ngradvar):: grad_var
-  logical:: do_refine=.false.
   logical, save:: first_time = .true.
   namelist /refine_params/ check_interval, refinement_ratio, refine_from_t, refine_until_t, &
                            min_dx, max_dx, min_jeans, tol_shock, tol_contact, tol_grad, &
                            grad_var, region_llc, region_urc, do_refine
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%init')
-
+  !$omp critical (refine_cr)
   if (first_time) then
     first_time=.false.
-    ! allocate and initialise gradient detector variables
-    allocate (self%tol_grad(self%ngradvar), self%grad_var(self%ngradvar))
-    tol_grad(:) = 0.0
-    grad_var(:) = ""
     rewind (io%input)
     read (io%input, refine_params, iostat=iostat)
-    if (io%master) write (*, refine_params)
+    if (io%master) then
+      if (iostat > 0) print *, 'WARNING: no refine_params or read error!'
+      write (*, refine_params)
+    end if
   end if
-  self%check_interval = check_interval
-  self%refinement_ratio = refinement_ratio
-  self%refine_from_t = refine_from_t
-  self%refine_until_t = refine_until_t
-  self%min_dx = min_dx
-  self%max_dx = max_dx
-  self%min_jeans = min_jeans
-  self%tol_shock = tol_shock
-  self%tol_contact = tol_contact
-  self%tol_grad = tol_grad
-  self%grad_var = grad_var
-  self%region_llc = region_llc
-  self%region_urc = region_urc
-  self%do_refine = do_refine
-
+  !$omp end critical (refine_cr)
   call trace%end
 END SUBROUTINE init
 
@@ -107,7 +86,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   integer, save:: itimer=0
   !.............................................................................
   was_refined = .false.
-  if (.not. self%do_refine) return
+  if (.not. do_refine) return
   call trace%begin('refine_t%check_current', itimer=itimer)
 
   patch => task2patch(link%task)
@@ -128,11 +107,11 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   end if
   dxmin = minval(patch%ds)
   dxmax = maxval(patch%ds)
-  if (dxmin < self%min_dx .or. dxmax >= self%max_dx) then
+  if (dxmin < min_dx .or. dxmax >= max_dx) then
     call trace%end (itimer)
     return
   end if
-  if (patch%time < self%refine_from_t .or. patch%time > self%refine_until_t) then
+  if (patch%time < refine_from_t .or. patch%time > refine_until_t) then
     call trace%end (itimer)
     return
   end if
@@ -141,17 +120,17 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   ! Refinement Criteria
   !------------------------------------------------------------------------
   ! Jeans criterion
-  if (self%min_jeans > 0.0) needed = needed .or. self%check_Jeans(patch)
+  if (min_jeans > 0.0) needed = needed .or. self%check_Jeans(patch)
 
   ! shock and/or contact discontinuity detector
-  if (self%tol_shock > 0.0 .or. self%tol_contact > 0.0) &
+  if (tol_shock > 0.0 .or. tol_contact > 0.0) &
     needed = needed .or. self%shock_and_cd_detector(patch)
 
   ! gradient detector
-  if (any(self%tol_grad > 0.0) ) needed = needed .or. self%gradient_detector(patch)
+  if (any(tol_grad > 0.0) ) needed = needed .or. self%gradient_detector(patch)
 
   ! refine on (a) user-specified region(s)
-  if (any(self%region_llc /= 0.0) .and. any(self%region_urc /= 0.0)) &
+  if (any(region_llc /= 0.0) .and. any(region_urc /= 0.0)) &
     needed = needed .or. self%refine_region(patch)
 
   ! Check that neighbors of `self` are not more than one level different.
@@ -159,7 +138,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   ! provided to the neighbors of `patch`.
   needed = needed .or. self%check_nbor_support(tasklist, link)
 
-  patch%check_refine_next = patch%istep + self%check_interval
+  patch%check_refine_next = patch%istep + check_interval
 
   !------------------------------------------------------------------------
   ! If refinement has been deemed necessary, do it!
@@ -202,7 +181,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child%llc_nat = child%llc_cart                     ! FIXME!: this form only applies for Cartesian coords.
   call child%init()                                  ! patch, for a new id
   child%level = parent%level + 1                     ! override the calculation in `patch_t%init`.
-  child%dt(child%it) = parent%dt(parent%it) / refine%refinement_ratio ! reset the time-step
+  child%dt(child%it) = parent%dt(parent%it) / refinement_ratio ! reset the time-step
   child%t(child%it) = child%time
   child%out_next = child%time                        ! force output now
   child%iout = max(0,child%iout - 1)                 ! correct output counter
@@ -265,7 +244,7 @@ SUBROUTINE split_patch (self, tlist, this)
   !.............................................................................
   if (this%task%is_set(bits%not_leaf)) return
   call trace%begin('refine_t%split_patch', 1)
-  nsplit = self%refinement_ratio
+  nsplit = refinement_ratio
 
   this_patch => task2patch(this%task)
 
@@ -374,9 +353,9 @@ FUNCTION check_jeans (self, patch) RESULT(refine_it)
   c_sound2 = patch%gamma * pg(l(1):u(1),l(2):u(2),l(3):u(3)) / d
   Jeans_length = minval(sqrt(scaling%pi * c_sound2 / (d*scaling%grav)))
   Jeans_num = minval(patch%mesh%d) / Jeans_length
-  refine_it = Jeans_num > self%min_jeans
+  refine_it = Jeans_num > min_jeans
 
-  if (io%verbose > 0) print*,'Jeans criterion:', patch%id, Jeans_num, self%min_jeans, refine_it
+  if (io%verbose > 0) print*,'Jeans criterion:', patch%id, Jeans_num, min_jeans, refine_it
 
   deallocate (c_sound2, pg)
   nullify (d,e)
@@ -435,17 +414,17 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine_it)
         dp3 = abs(pg(ix,iy,iz+kone) - pg(ix,iy,iz-kone)) &
             / (min(pg(ix,iy,iz+kone), pg(ix,iy,iz-kone)) + small )
 
-        if (self%tol_shock > 0.0) then
+        if (tol_shock > 0.0) then
           dv1 = v(ix  ,iy,iz,1) - v(ix+ione,iy,iz,1)
           dv2 = v(ix,iy  ,iz,2) - v(ix,iy+jone,iz,2)
           dv3 = v(ix,iy,iz  ,3) - v(ix,iy,iz+kone,3)
 
-          if ( dp1 > self%tol_shock .and. dv1 > small ) refine_it = .true.
-          if ( dp2 > self%tol_shock .and. dv2 > small ) refine_it = .true.
-          if ( dp3 > self%tol_shock .and. dv3 > small ) refine_it = .true.
+          if ( dp1 > tol_shock .and. dv1 > small ) refine_it = .true.
+          if ( dp2 > tol_shock .and. dv2 > small ) refine_it = .true.
+          if ( dp3 > tol_shock .and. dv3 > small ) refine_it = .true.
         end if
 
-        if (self%tol_contact > 0.0) then
+        if (tol_contact > 0.0) then
           dd1 = abs(d(ix+ione,iy,iz) - d(ix-ione,iy,iz)) &
               / (min(d(ix+ione,iy,iz), d(ix-ione,iy,iz)) + small )
           dd2 = abs(d(ix,iy+jone,iz) - d(ix,iy-jone,iz)) &
@@ -453,9 +432,9 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine_it)
           dd3 = abs(d(ix,iy,iz+kone) - d(ix,iy,iz-kone)) &
               / (min(d(ix,iy,iz+kone), d(ix,iy,iz-kone)) + small )
 
-          if ( dd1 > self%tol_contact .and. dp1 < 0.01*self%tol_contact ) refine_it = .true.
-          if ( dd2 > self%tol_contact .and. dp2 < 0.01*self%tol_contact ) refine_it = .true.
-          if ( dd3 > self%tol_contact .and. dp3 < 0.01*self%tol_contact ) refine_it = .true.
+          if ( dd1 > tol_contact .and. dp1 < 0.01*tol_contact ) refine_it = .true.
+          if ( dd2 > tol_contact .and. dp2 < 0.01*tol_contact ) refine_it = .true.
+          if ( dd3 > tol_contact .and. dp3 < 0.01*tol_contact ) refine_it = .true.
         end if
       end do
     end do
@@ -500,22 +479,22 @@ FUNCTION gradient_detector (self, patch) RESULT (refine_it)
   if (mz%n > 1) kone = 1
 
   refine_it = .false.
-  do n=1,size(self%grad_var)
-    if (trim(self%grad_var(n)) == '') exit
-    if (trim(self%grad_var(n)) == 'd')  q = patch%mem(:,:,:,patch%idx%d,patch%it,1)
-    if (trim(self%grad_var(n)) == 'e')  q = patch%mem(:,:,:,patch%idx%e,patch%it,1)
-    if (trim(self%grad_var(n)) == 'p1') q = patch%mem(:,:,:,patch%idx%px,patch%it,1)
-    if (trim(self%grad_var(n)) == 'p2') q = patch%mem(:,:,:,patch%idx%py,patch%it,1)
-    if (trim(self%grad_var(n)) == 'p3') q = patch%mem(:,:,:,patch%idx%pz,patch%it,1)
-    if (trim(self%grad_var(n)) == 'b1') q = patch%mem(:,:,:,patch%idx%bx,patch%it,1)
-    if (trim(self%grad_var(n)) == 'b2') q = patch%mem(:,:,:,patch%idx%by,patch%it,1)
-    if (trim(self%grad_var(n)) == 'b3') q = patch%mem(:,:,:,patch%idx%bz,patch%it,1)
+  do n=1,size(grad_var)
+    if (trim(grad_var(n)) == '') exit
+    if (trim(grad_var(n)) == 'd')  q = patch%mem(:,:,:,patch%idx%d,patch%it,1)
+    if (trim(grad_var(n)) == 'e')  q = patch%mem(:,:,:,patch%idx%e,patch%it,1)
+    if (trim(grad_var(n)) == 'p1') q = patch%mem(:,:,:,patch%idx%px,patch%it,1)
+    if (trim(grad_var(n)) == 'p2') q = patch%mem(:,:,:,patch%idx%py,patch%it,1)
+    if (trim(grad_var(n)) == 'p3') q = patch%mem(:,:,:,patch%idx%pz,patch%it,1)
+    if (trim(grad_var(n)) == 'b1') q = patch%mem(:,:,:,patch%idx%bx,patch%it,1)
+    if (trim(grad_var(n)) == 'b2') q = patch%mem(:,:,:,patch%idx%by,patch%it,1)
+    if (trim(grad_var(n)) == 'b3') q = patch%mem(:,:,:,patch%idx%bz,patch%it,1)
     select type(patch)
     class is (solver_t)
-      if (trim(self%grad_var(n)) == 'p')  q = patch%gas_pressure()
-      if (trim(self%grad_var(n)) == 'v1') q = patch%gas_velocity(1)
-      if (trim(self%grad_var(n)) == 'v2') q = patch%gas_velocity(2)
-      if (trim(self%grad_var(n)) == 'v3') q = patch%gas_velocity(3)
+      if (trim(grad_var(n)) == 'p')  q = patch%gas_pressure()
+      if (trim(grad_var(n)) == 'v1') q = patch%gas_velocity(1)
+      if (trim(grad_var(n)) == 'v2') q = patch%gas_velocity(2)
+      if (trim(grad_var(n)) == 'v3') q = patch%gas_velocity(3)
     class default
       call mpi%abort("Unrecognised patch type. Abort!")
     end select
@@ -557,7 +536,7 @@ FUNCTION gradient_detector (self, patch) RESULT (refine_it)
           dqmax = max ( dq1(i,j,k), dq1(ip1,j,k), dq1(im1,j,k) &
                       , dq2(i,j,k), dq2(i,jp1,k), dq2(i,jm1,k) &
                       , dq3(i,j,k), dq3(i,j,kp1), dq3(i,j,km1) )
-          if (dqmax > self%tol_grad(n)) refine_it = .true.
+          if (dqmax > tol_grad(n)) refine_it = .true.
         end do
       end do
     end do
@@ -600,8 +579,8 @@ FUNCTION refine_region (self, patch) RESULT (refine_it)
     p_urc(ix) = m(ix)%p + mr(m(ix)%ui) + 0.5 * m(ix)%d
     end associate
   end do
-  b_llc = self%region_llc
-  b_urc = self%region_urc
+  b_llc = region_llc
+  b_urc = region_urc
 
   intersect = all((p_urc - b_llc) > 0) .and. all((b_urc - p_llc) > 0)
   if (.not. intersect) then
