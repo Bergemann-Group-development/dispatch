@@ -827,16 +827,20 @@ SUBROUTINE different_restrict (target, source, filled, only)
                 filling_total = filling_total + filling_factor
                 ! one might note that `accumulate` should be multipled by `dWsource`.
                 ! but `filling_factor` should be divided by `dWsource`, so they cancel.
-                accumulate = accumulate &
-                           + (q1(jx,jy,jz) * pt(1) + q2(jx,jy,jz) * pt(2)) * filling_factor
+                if (filling_factor > 0.0) then
+                  accumulate = accumulate &
+                             + (q1(jx,jy,jz) * pt(1) + q2(jx,jy,jz) * pt(2)) * filling_factor
+                end if
               end do
             end do
           end do
           ! replace a portion of the current cell with values from the finer patch
-          target%mem(ix,iy,iz,iv,target%it,1) = accumulate * dWtargeti &
-                                              + target%mem(ix,iy,iz,iv,target%it,1) &
-                                                * (1.0 - filling_total * dWtargeti)
-          filled(ix,iy,iz,iv) = source%level
+          if (filling_total > 0.0) then
+            target%mem(ix,iy,iz,iv,target%it,1) = accumulate * dWtargeti &
+                                                + target%mem(ix,iy,iz,iv,target%it,1) &
+                                                  * (1.0 - filling_total * dWtargeti)
+            filled(ix,iy,iz,iv) = source%level
+          end if
         end do
       end do
     end do
