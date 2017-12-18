@@ -558,7 +558,8 @@ SUBROUTINE same (target, source, filled, all_cells, only)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
               ii = [ix,iy,iz]
-              if (filled(ix,iy,iz,iv) > source%level) cycle
+              ! prefer same level for filling guard zones
+              !!!if (filled(ix,iy,iz,iv) > source%level) cycle
               target%mem(ix,iy,iz,iv,target%it,1) = &
                 merge(target%mem(ix,iy,iz,iv,target%it,1), &
                   pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
@@ -779,6 +780,7 @@ SUBROUTINE different_restrict (target, source, filled, only)
   li = target%mesh%li
   ui = target%mesh%ui
   do iv=iv1,iv2
+    !!!if (iv == target%idx%phi) cycle
     qmask(:) = .true. ! logical mask to track if variable is averaged over a volume or an area
     if (iv == target%idx%bx) then
       dWsource = source%ds(2) * source%ds(3) ! only valid for Cartesian
@@ -803,6 +805,9 @@ SUBROUTINE different_restrict (target, source, filled, only)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii = [ix,iy,iz]
+          ! prefer same level for guard zone filling
+          if (filled(ix,iy,iz,iv) == target%level .and. &
+              (any(ii < target%li) .or. any(ii > target%ui))) cycle
           target_pos = target%myposition (ii, iv)
           target_lower_edges = target_pos - target%ds * 0.499999_8 ! to 1e-6 tolerance
           target_upper_edges = target_pos + target%ds * 0.499999_8
