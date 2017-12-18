@@ -31,6 +31,7 @@ MODULE refine_mod
   end type
   !
   integer:: check_interval=50                 ! Number of steps betwen checks
+  integer:: levelmax=1                        ! Max level of refinment
   integer:: refinement_ratio=2                ! How does a patch split when it is refined
   real:: min_dx=0.0, max_dx=1e32              ! Min and max grid size
   real:: refine_from_t=0.0                    ! Time limits for occurence of refinement
@@ -53,7 +54,7 @@ SUBROUTINE init (self)
   logical, save:: first_time = .true.
   namelist /refine_params/ check_interval, refinement_ratio, refine_from_t, refine_until_t, &
                            min_dx, max_dx, min_jeans, tol_shock, tol_contact, tol_grad, &
-                           grad_var, region_llc, region_urc, do_refine
+                           grad_var, region_llc, region_urc, levelmax, do_refine
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%init')
   !$omp critical (refine_cr)
@@ -143,7 +144,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   !------------------------------------------------------------------------
   ! If refinement has been deemed necessary, do it!
   !------------------------------------------------------------------------
-  if (needed) then
+  if (needed .and. patch%level < levelmax) then
     if (io%verbose > 1) print*,'refine_t%needed!; patch:', patch%id
     call self%split_patch (tasklist, link)
     was_refined = .true.
