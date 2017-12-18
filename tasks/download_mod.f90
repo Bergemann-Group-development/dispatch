@@ -665,7 +665,7 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
-          if (all_cells_l .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
+          if (all_cells_l .or. iv == target%idx%phi .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
             if (filled(ix,iy,iz,iv) > source%level) then
               if (target%id==io%id_debug .and. io%verbose>1) &
                 print *, target%id, 'DBG different_prolong: skipping', iv,ii, filled(ix,iy,iz,iv)
@@ -682,7 +682,7 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
               qint = interpolator%interpolator (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
                    + interpolator%interpolator (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
             end if
-            if (all((ii>=li.and.ii<=ui)) .and. .not. all_cells_l) then
+            if (all((ii>li.and.ii<ui)) .and. .not. all_cells_l) then
               print *,'INTERNAL BREACH!', ii
             end if
             target%mem(ix,iy,iz,iv,target%it,1) = qint
