@@ -18,7 +18,6 @@ MODULE gpatch_mod
   USE omp_timer_mod
   USE bits_mod
   USE timestep_mod
-  USE pboundary_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
@@ -126,7 +125,6 @@ SUBROUTINE init (self)
       end if
       call self%dnload (only=self%idx%d)
       call self%dnload (only=self%idx%phi)
-      call pboundaries%conditions(self, self%it)
       call self%gravity
     end if
   end if
@@ -220,7 +218,6 @@ SUBROUTINE update (self)
   else
     call self%dnload (only=self%idx%d)
     call self%dnload (only=self%idx%phi)
-    call pboundaries%conditions(self, self%it)
     call self%gravity
     self%poisson_time = self%time
     self%rotated = .true.
