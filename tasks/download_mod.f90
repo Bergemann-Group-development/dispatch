@@ -310,13 +310,10 @@ SUBROUTINE download_link (link, all_cells, only)
     if (io%verbose>1) &
       call target%check_density ("before download")
   end if
-  if (target%is_set(bits%root_grid)) call target%periodic_grid
+  if (target%is_periodic()) call target%periodic_grid
 
-  ! Take the nbor list and produce a list sorted by decreasing distance from `target`.
-  call sort_nbors_by_distance (link,sorted_head)
-
-  ! Walk through the sorted neighbour list
-  nbor => sorted_head
+  ! Walk through the nbor list
+  nbor => link%nbor
   do while (associated(nbor))
     source => task2patch(nbor%task)
     if (trim(target%kind)/='rt_solver') then
@@ -345,12 +342,6 @@ SUBROUTINE download_link (link, all_cells, only)
 
   call target%check_density (" after download")
   deallocate (filled)
-  nbor => sorted_head
-  if (associated(nbor)) then
-    call clean_sorted_nbor_list (sorted_head)
-  else
-    print *,' sorted_head not associated'
-  end if
 
   call trace%end (itimer)
 END SUBROUTINE download_link
@@ -493,6 +484,14 @@ SUBROUTINE same (target, source, filled, all_cells, only)
     all_cells_l = .false.
   end if
   do iv=iv1, iv2
+    if (iv == target%idx%phi) then
+      if (target%poisson_time > source%poisson_time + source%dtime*source%grace) then
+        if (io%verbose>1) print *, target%id, ' not using same level potential from', source%id
+        cycle
+      else
+        if (io%verbose>1) print *, target%id, '     using same level potential from', source%id
+      end if
+    end if
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
@@ -633,6 +632,9 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
   logical                 :: all_cells_l
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_prolong', itimer=itimer)
+  if (io%verbose > 1) &
+    print *,'MK different_prolong; target:', target%id, target%level, &
+                                  'source:', source%id, source%level
   call source%time_interval (target%time, jt, pt)
   if (present(only)) then
     iv1 = only
@@ -780,7 +782,11 @@ SUBROUTINE different_restrict (target, source, filled, only)
   li = target%mesh%li
   ui = target%mesh%ui
   do iv=iv1,iv2
-    !!!if (iv == target%idx%phi) cycle
+    if (iv == target%idx%phi) then
+      if (target%poisson_time > source%poisson_time + source%dtime*source%grace) then
+        cycle
+      end if
+    end if
     qmask(:) = .true. ! logical mask to track if variable is averaged over a volume or an area
     if (iv == target%idx%bx) then
       dWsource = source%ds(2) * source%ds(3) ! only valid for Cartesian
