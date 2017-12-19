@@ -51,8 +51,8 @@ SUBROUTINE update (self)
   real:: error
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
-  call self%output
   call self%gpatch_t%update
+  call self%output
   call trace%end
 END SUBROUTINE update
 
