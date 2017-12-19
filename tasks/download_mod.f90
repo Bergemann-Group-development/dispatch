@@ -312,7 +312,11 @@ SUBROUTINE download_link (link, all_cells, only)
   end if
   if (target%is_periodic()) call target%periodic_grid
 
-  ! Walk through the nbor list
+  ! Take the nbor list and produce a list sorted by decreasing distance from `target`.
+  !!!call sort_nbors_by_distance (link,sorted_head)
+
+  ! Walk through the sorted neighbour list
+  !!!nbor => sorted_head
   nbor => link%nbor
   do while (associated(nbor))
     source => task2patch(nbor%task)
@@ -342,6 +346,12 @@ SUBROUTINE download_link (link, all_cells, only)
 
   call target%check_density (" after download")
   deallocate (filled)
+  !!!nbor => sorted_head
+  !!!if (associated(nbor)) then
+  !!!  call clean_sorted_nbor_list (sorted_head)
+  !!!else
+  !!!  print *,' sorted_head not associated'
+  !!!end if
 
   call trace%end (itimer)
 END SUBROUTINE download_link
@@ -667,7 +677,7 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
-          if (all_cells_l .or. iv == target%idx%phi .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
+          if (all_cells_l .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
             if (filled(ix,iy,iz,iv) > source%level) then
               if (target%id==io%id_debug .and. io%verbose>1) &
                 print *, target%id, 'DBG different_prolong: skipping', iv,ii, filled(ix,iy,iz,iv)
