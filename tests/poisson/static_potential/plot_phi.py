@@ -19,7 +19,7 @@ def phi_exact(x,y,r0=1.0):
         xx, yy = np.meshgrid(x,y,indexing='ij')
     else:
         xx, yy = x, y
-    r = np.sqrt((xx-0.5)**2 + (yy-0.5)**2)
+    r = np.sqrt(xx**2 + yy**2)
     phi_e = np.log((r / r0)**2 + 1.0) + 1.0
 
     return phi_e
@@ -34,7 +34,7 @@ def rho_exact(x,y,r0=1.0):
         xx, yy = np.meshgrid(x,y,indexing='ij')
     else:
         xx, yy = x, y
-    r = np.sqrt((xx-0.5)**2 + (yy-0.5)**2)
+    r = np.sqrt(xx**2 + yy**2)
     rho_e = 4.0 * r0**2 / (r**2 + r0**2)**2
 
     return rho_e
@@ -52,11 +52,11 @@ if __name__ == "__main__":
     plt.rc('font', size=18)
     plt.interactive(True)
 
-    data = './data/input_nested'
-    iters = [0,1,5,10,15]
+    data = './data'
+    iters = [0,1,5]
     #iters = [0]
-    pxsize = [ 0.0, 1.0]
-    pysize = [ 0.0, 1.0]
+    pxsize = [-0.5, 0.5]
+    pysize = [-0.5, 0.5]
     pltvar = ['rdphi','phie', 'phi', 'rdd']
     cmin   = [   1e-4,   1.0,   0.0,  1e-6]
     cmax   = [    1.0,    5.,    5.,   0.5]
@@ -64,7 +64,8 @@ if __name__ == "__main__":
     showgrids = True
     showgridno = True
     ColMap = cm.RdBu_r
-    skipped = []
+    # for best results, skip patches which are entirely overlapped by finer patches
+    skipped = [1,10,19,28]
     r0 = 0.1
 
     L2_min, L2_max, L2_mean = [], [], []
