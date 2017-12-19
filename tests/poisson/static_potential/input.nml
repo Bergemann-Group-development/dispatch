@@ -3,7 +3,7 @@
 /
 
 &io_params
- verbose=0
+ verbose=1
  do_trace=f
  do_debug=f
  do_output=t
@@ -45,11 +45,8 @@
  refine_from_t=0.
  refine_until_t=0.
  refinement_ratio=3
- !min_dx=0.03
- !region_llc=0.45,0.45,-0.5
- !region_urc=0.55,0.55,-0.5
  check_interval=1
- tol_grad=0.1
+ tol_grad=0.55
  grad_var='d'
  levelmax=3
 /
@@ -66,7 +63,7 @@
  fourpiG=1.0
  max_iter=200
  precondition=t
- verbose=1
+ verbose=0
  solver='cg'
 /
 
