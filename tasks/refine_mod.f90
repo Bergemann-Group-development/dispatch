@@ -253,6 +253,15 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child%position = pos                               ! patch position
   child%llc_cart = child%position - merge(0.5,0.0,child%n>1) * child%size  ! lower left corner
   child%llc_nat = child%llc_cart                     ! FIXME!: this form only applies for Cartesian coords.
+  !------------------------------------------------------------------------
+  ! Reset flags (FIXME: Would it be better to just reset `status` to zero?)
+  !------------------------------------------------------------------------
+  call child%clear(bits%root_grid)
+  call child%clear(bits%ready)
+  call child%clear(bits%busy)
+  !------------------------------------------------------------------------
+  ! Initialise the new patch
+  !------------------------------------------------------------------------
   call child%init()                                  ! patch, for a new id
   child%level = parent%level + 1                     ! override the calculation in `patch_t%init`.
   child%dt(child%it) = parent%dt(parent%it) / refinement_ratio ! reset the time-step
@@ -261,12 +270,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child%iout = max(0,child%iout - 1)                 ! correct output counter
   child%parentid = parent%id                         ! for debugging
   child%check_refine_next = 0                        ! allow recursive refine
-  !------------------------------------------------------------------------
-  ! Reset flags (FIXME: Would it be better to just reset `status` to zero?)
-  !------------------------------------------------------------------------
-  call child%clear(bits%root_grid)
-  call child%clear(bits%ready)
-  call child%clear(bits%busy)
+  child%periodic = .false.
   !------------------------------------------------------------------------
   ! Append links to the new patch in the patch list, sorted by quality
   ! Neighbour lists are constructed at the end of `split_patch`.
