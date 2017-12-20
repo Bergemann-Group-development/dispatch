@@ -755,52 +755,59 @@ SUBROUTINE make_periodic4 (patch, f)
   real(4):: f(:,:,:)
   integer:: ix, iy, iz, n(3)
   !-----------------------------------------------------------------------------
-  ! x periodicity; make periodic inside the yz patch limits
-  !-----------------------------------------------------------------------------
   m => patch%mesh
   n = patch%ncell
-  do iz=m(3)%li,m(3)%ui
-  do ix=m(1)%lb,m(1)%lo
-    do iy=m(2)%li,m(2)%ui
-      f(ix,iy,iz) = f(ix+n(1),iy,iz)
+  !-----------------------------------------------------------------------------
+  ! x periodicity; make periodic inside the yz patch limits
+  !-----------------------------------------------------------------------------
+  if (n(1) > 1) then
+    do iz=m(3)%li,m(3)%ui
+      do ix=m(1)%lb,m(1)%lo
+        do iy=m(2)%li,m(2)%ui
+          f(ix,iy,iz) = f(ix+n(1),iy,iz)
+        end do
+      end do
+      do ix=m(1)%uo,m(1)%ub
+        do iy=m(2)%li,m(2)%ui
+          f(ix,iy,iz) = f(ix-n(1),iy,iz)
+        end do
+      end do
     end do
-  end do
-  do ix=m(1)%uo,m(1)%ub
-    do iy=m(2)%li,m(2)%ui
-      f(ix,iy,iz) = f(ix-n(1),iy,iz)
-    end do
-  end do
-  end do
+  end if
   !-----------------------------------------------------------------------------
   ! y periodicity, full range in x now
   !-----------------------------------------------------------------------------
-  do iz=m(3)%li,m(3)%ui
-  do iy=m(2)%lb,m(2)%lo
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy+n(2),iz)
+  if (n(2) > 1) then
+    do iz=m(3)%li,m(3)%ui
+      do iy=m(2)%lb,m(2)%lo
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy+n(2),iz)
+        end do
+      end do
+      do iy=m(2)%uo,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy-n(2),iz)
+        end do
+      end do
     end do
-  end do
-  do iy=m(2)%uo,m(2)%ub
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy-n(2),iz)
-    end do
-  end do
-  end do
+  end if
   !-----------------------------------------------------------------------------
   ! z periodicity, full range in xy
   !-----------------------------------------------------------------------------
-  do iy=m(2)%lb,m(2)%ub
-  do iz=m(3)%lb,m(3)%lo
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy,iz+n(3))
+  if (n(3) > 1) then
+    do iy=m(2)%lb,m(2)%ub
+      do iz=m(3)%lb,m(3)%lo
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy,iz+n(3))
+        end do
+      end do
+      do iz=m(3)%uo,m(3)%ub
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy,iz-n(3))
+        end do
+      end do
     end do
-  end do
-  do iz=m(3)%uo,m(3)%ub
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy,iz-n(3))
-    end do
-  end do
-  end do
+  end if
 END SUBROUTINE make_periodic4
 
 !> =====================================================================
@@ -812,52 +819,59 @@ SUBROUTINE make_periodic8 (patch, f)
   real(8):: f(:,:,:)
   integer:: ix, iy, iz, n(3)
   !-----------------------------------------------------------------------------
-  ! x periodicity; make periodic inside the yz patch limits
-  !-----------------------------------------------------------------------------
   m => patch%mesh
   n = patch%ncell
-  do iz=m(3)%li,m(3)%ui
-  do ix=m(1)%lb,m(1)%lo
-    do iy=m(2)%li,m(2)%ui
-      f(ix,iy,iz) = f(ix+n(1),iy,iz)
+  !-----------------------------------------------------------------------------
+  ! x periodicity; make periodic inside the yz patch limits
+  !-----------------------------------------------------------------------------
+  if (n(1) > 1) then
+    do iz=m(3)%li,m(3)%ui
+      do ix=m(1)%lb,m(1)%lo
+        do iy=m(2)%li,m(2)%ui
+          f(ix,iy,iz) = f(ix+n(1),iy,iz)
+        end do
+      end do
+      do ix=m(1)%uo,m(1)%ub
+        do iy=m(2)%li,m(2)%ui
+          f(ix,iy,iz) = f(ix-n(1),iy,iz)
+        end do
+      end do
     end do
-  end do
-  do ix=m(1)%uo,m(1)%ub
-    do iy=m(2)%li,m(2)%ui
-      f(ix,iy,iz) = f(ix-n(1),iy,iz)
-    end do
-  end do
-  end do
+  end if
   !-----------------------------------------------------------------------------
   ! y periodicity, full range in x now
   !-----------------------------------------------------------------------------
-  do iz=m(3)%li,m(3)%ui
-  do iy=m(2)%lb,m(2)%lo
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy+n(2),iz)
+  if (n(2) > 1) then
+    do iz=m(3)%li,m(3)%ui
+      do iy=m(2)%lb,m(2)%lo
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy+n(2),iz)
+        end do
+      end do
+      do iy=m(2)%uo,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy-n(2),iz)
+        end do
+      end do
     end do
-  end do
-  do iy=m(2)%uo,m(2)%ub
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy-n(2),iz)
-    end do
-  end do
-  end do
+  end if
   !-----------------------------------------------------------------------------
   ! z periodicity, full range in xy
   !-----------------------------------------------------------------------------
-  do iy=m(2)%lb,m(2)%ub
-  do iz=m(3)%lb,m(3)%lo
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy,iz+n(3))
+  if (n(3) > 1) then
+    do iy=m(2)%lb,m(2)%ub
+      do iz=m(3)%lb,m(3)%lo
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy,iz+n(3))
+        end do
+      end do
+      do iz=m(3)%uo,m(3)%ub
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy,iz-n(3))
+        end do
+      end do
     end do
-  end do
-  do iz=m(3)%uo,m(3)%ub
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy,iz-n(3))
-    end do
-  end do
-  end do
+  end if
 END SUBROUTINE make_periodic8
 
 !> =============================================================================
