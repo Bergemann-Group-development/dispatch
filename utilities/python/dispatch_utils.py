@@ -491,3 +491,41 @@ def mass_flux(pp,radius=100,nds=2):
     ''' return the net mass flux at given radius '''
     f,dv=mass_fluxes(pp,radius=radius,nds=nds)
     return np.sum(f)/np.sum(dv)
+
+def find_nan (it=1,run='',data='../data',id=2):
+    ''' check for NaN '''
+    print ("checking snapshot",it,"of "+data+run+" for NaN")
+    bad=True
+    while bad:
+        if id:
+            while bad:
+                p=patch(id,it,run,data)
+                bad=np.isnan(p.data[:,:,:,0]).any()
+                if bad:
+                    it=it-1
+                    print ("snapshot",it,"patch",id,"has NaN")
+                else:
+                    print ("snapshot",it,"patch",id,"has no NaN")
+                sys.stdout.flush()
+        print ("scanning",it)
+        pp=patches(it,run,data)
+        bad=False
+        for p in pp:
+            if np.isnan(p.data[:,:,:,0]).any():
+                bad=True
+                id=p.id
+                break
+        if bad:
+            print("has NaN")
+        else:
+            print("has no NaN")
+    print("first good:",it)
+    sys.stdout.flush()
+    it=it+1
+    print ("checking",it)
+    pp=patches(it,run,data)
+    n=0
+    for p in pp:
+        if np.isnan(p.data[:,:,:,0]).any():
+            n+=1
+    print ("snapshot",it,"has",n,"bad patches")
