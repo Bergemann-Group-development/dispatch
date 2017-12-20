@@ -88,6 +88,9 @@ SUBROUTINE init (self)
     self%kind = 'stagger2e_mhd_patch'
   else
     self%kind = 'stagger2e_hd_patch'
+    self%idx%bx = -1
+    self%idx%by = -1
+    self%idx%bz = -1
   end if
   if (self%nv == 0) then
     if (self%mhd) then
