@@ -147,7 +147,8 @@ SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
     !!!write (11) phi
   end do
   if (iter==max_iter+1) then
-    print *, 'poisson_t%cg: no convergence, niter, error =', max_iter, error
+    print *, 'poisson_t%cg: NO CONVERGENCE! id, niter, error0, error =', &
+             patch%id, max_iter, error0, error
   else if (verbose>0 .and. io%master) then
     usppt = 1e6*(wallclock()-wc)/product(shape(phi))
     print '(a,i7,i5,3x,2e12.3,f8.2)', &
