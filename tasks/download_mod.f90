@@ -525,7 +525,7 @@ SUBROUTINE same (target, source, filled, all_cells, only)
         do iz=l(3),u(3)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
-              if (filled(ix,iy,iz,iv) > source%level) cycle
+              !!!if (filled(ix,iy,iz,iv) > source%level) cycle
               target%mem(ix,iy,iz,iv,target%it,1) = exp( &
                 pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
                 pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
@@ -538,7 +538,7 @@ SUBROUTINE same (target, source, filled, all_cells, only)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
               ii = [ix,iy,iz]
-              if (filled(ix,iy,iz,iv) > source%level) cycle
+              !!!if (filled(ix,iy,iz,iv) > source%level) cycle
               target%mem(ix,iy,iz,iv,target%it,1) = &
                 merge(target%mem(ix,iy,iz,iv,target%it,1), &
                   exp(pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
@@ -554,7 +554,7 @@ SUBROUTINE same (target, source, filled, all_cells, only)
         do iz=l(3),u(3)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
-              if (filled(ix,iy,iz,iv) > source%level) cycle
+              !!!if (filled(ix,iy,iz,iv) > source%level) cycle
               target%mem(ix,iy,iz,iv,target%it,1) =  &
                 pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
                 pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
