@@ -38,7 +38,6 @@ MODULE task_list_mod
     real(8):: job_seconds=1d30
   contains
     procedure:: init
-    procedure:: init_bdries
     procedure:: startup
     procedure:: execute
     procedure:: update
@@ -95,89 +94,6 @@ SUBROUTINE init (self, name)
   call load_balance%init
   call trace_end
 END SUBROUTINE init
-
-!> =============================================================================
-!> Initialize boundary bits, which may (optionally) be used to apply boundary
-!> conditions in experiment_t%update() procedures.  This procedure must be called
-!> while each rank still has a list of all patches.
-!> =============================================================================
-SUBROUTINE init_bdries (self)
-  implicit none
-  class(task_list_t):: self
-  class(link_t), pointer:: link
-  class(task_t), pointer:: task
-  !-----------------------------------------------------------------------------
-  call trace%begin('task_list_t%init_bdries')
-  if (mpi%size > 1) error stop "task_list_t%init_bdries not MPI ready"
-  link => self%head
-  do while (associated(link))
-    self%lc = min(self%lc, link%task%position)
-    self%uc = max(self%uc, link%task%position)
-    self%llc = min(self%llc, link%task%position-0.5000000001_8*link%task%size)
-    self%urc = max(self%urc, link%task%position+0.5000000001_8*link%task%size)
-    link => link%next
-  end do
-  print *,'task_list%lc =', self%lc
-  print *,'task_list%uc =', self%uc
-  link => self%head
-  do while (associated(link))
-    task => link%task
-    select type (task)
-    class is (experiment_t)
-    !---------------------------------------------------------------------------
-    ! If at edge, set boundary bits
-    !---------------------------------------------------------------------------
-    if (.not.task%periodic(1)) then
-      if (task%position(1) <= self%lc(1)) then
-        call task%boundaries%set (bits%xl)
-        task%mesh(1)%lower_boundary = .true.
-      end if
-      if (task%position(1) >= self%uc(1)) then
-        call task%boundaries%set (bits%xu)
-        task%mesh(1)%upper_boundary = .true.
-      end if
-    end if
-    if (.not.task%periodic(2)) then
-      if (task%position(2) <= self%lc(2)) then
-        call task%boundaries%set (bits%yl)
-        task%mesh(2)%lower_boundary = .true.
-      end if
-      if (task%position(2) >= self%uc(2)) then
-        call task%boundaries%set (bits%yu)
-        task%mesh(2)%upper_boundary = .true.
-      end if
-    end if
-    if (.not.task%periodic(3)) then
-      if (task%position(3) <= self%lc(3)) then
-        call task%boundaries%set (bits%zl)
-        task%mesh(3)%lower_boundary = .true.
-      end if
-      if (task%position(3) >= self%uc(3)) then
-        call task%boundaries%set (bits%zu)
-        task%mesh(3)%upper_boundary = .true.
-      end if
-    end if
-    if (task%boundaries%bits /= 0) print '(2i6,2(2x,a6),o9,2(2x,3f10.0))', &
-      task%id, task%level, 'BCs: ', formatted(task), task%boundaries%bits, &
-      task%size, task%position
-    end select
-    link => link%next
-  end do
-  call trace_end
-contains
-  !-----------------------------------------------------------------------------
-  function formatted (task) result (out)
-  class(experiment_t):: task
-  character(len=6):: out
-  out = '......'
-  if (task%boundaries%is_set(bits%xl))  out(1:1) = 'T'
-  if (task%boundaries%is_set(bits%xu))  out(2:2) = 'T'
-  if (task%boundaries%is_set(bits%yl))  out(3:3) = 'T'
-  if (task%boundaries%is_set(bits%yu))  out(4:4) = 'T'
-  if (task%boundaries%is_set(bits%zl))  out(5:5) = 'T'
-  if (task%boundaries%is_set(bits%zu))  out(6:6) = 'T'
-  end function formatted
-END SUBROUTINE init_bdries
 
 !> =============================================================================
 !> Execute the task list, updating it until it is empty.  With !$omp parallel here,

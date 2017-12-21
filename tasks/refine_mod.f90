@@ -259,6 +259,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   call child%clear(bits%root_grid)
   call child%clear(bits%ready)
   call child%clear(bits%busy)
+  child%boundaries%bits = 0
   !------------------------------------------------------------------------
   ! Initialise the new patch
   !------------------------------------------------------------------------
@@ -354,6 +355,7 @@ SUBROUTINE split_patch (self, tlist, this)
     call tlist%check_ready (link)
     link => link%next
   end do
+  call tlist%init_bdries
 
   if (io%verbose > 0) call tlist%print_tasks()
 
