@@ -270,7 +270,6 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child%iout = max(0,child%iout - 1)                 ! correct output counter
   child%parentid = parent%id                         ! for debugging
   child%check_refine_next = 0                        ! allow recursive refine
-  child%periodic = .false.
   !------------------------------------------------------------------------
   ! Append links to the new patch in the patch list, sorted by quality
   ! Neighbour lists are constructed at the end of `split_patch`.
