@@ -29,6 +29,7 @@ SUBROUTINE init_experiment (self)
   self%nv = 5
   self%periodic = .true.
   self%mhd = .false.
+  self%level = 1
   call self%solver_t%init()
   call trace%end
 END SUBROUTINE init_experiment
