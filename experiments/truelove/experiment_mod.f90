@@ -7,6 +7,7 @@ MODULE experiment_mod
   USE kinds_mod
   USE bits_mod
   USE solver_mod
+  USE pboundary_mod
   implicit none
   private
 
@@ -31,6 +32,7 @@ SUBROUTINE init_experiment (self)
   self%mhd = .false.
   self%level = 1
   call self%solver_t%init()
+  call pboundaries%init(self)
   call trace%end
 END SUBROUTINE init_experiment
 
@@ -42,6 +44,7 @@ SUBROUTINE update_experiment (self)
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
 
+  call pboundaries%conditions(self, self%it)
   call self%solver_t%update()
 
   call trace%end
