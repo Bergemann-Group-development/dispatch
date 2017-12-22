@@ -1,3 +1,9 @@
+# Pythn 2/3 compatibility
+from __future__ import print_function
+import sys
+if sys.version_info[0]!=2:
+    from importlib import reload
+
 import numpy as np
 
 """
@@ -23,26 +29,26 @@ def get_mesh_type(current_mesh_type):
     return mesh_string
               
 def info (self):
-    print "        patch id:", self.id
-    print "    no. of steps:", self.istep
-    print "         coords.:", self.mesh_type
-    print "      full patch:", self.m
-    print "   unigrid patch:", self.n
-    print "     total cells:", self.gn
-    print "   lower indices:", self.li
-    print "   upper indices:", self.ui
-    print "no. of variables:", self.nvar
-    print "     ghost cells:", self.nghost
-    print "            time:", self.time
-    print "        position:", self.pos
-    print "         delta s:", self.ds
-    print "        velocity:", self.vel
-    print "          origin:", self.origin
-    print "          l.l.c.:", self.llc
-    print "     vol. centre:", self.centre
-    print "           level:", self.level
-    print "         quality:", self.quality
-    print "       task type:", self.kind
+    print("        patch id:", self.id)
+    print("    no. of steps:", self.istep)
+    print("         coords.:", self.mesh_type)
+    print("      full patch:", self.m)
+    print("   unigrid patch:", self.n)
+    print("     total cells:", self.gn)
+    print("   lower indices:", self.li)
+    print("   upper indices:", self.ui)
+    print("no. of variables:", self.nvar)
+    print("     ghost cells:", self.nghost)
+    print("            time:", self.time)
+    print("        position:", self.pos)
+    print("         delta s:", self.ds)
+    print("        velocity:", self.vel)
+    print("          origin:", self.origin)
+    print("          l.l.c.:", self.llc)
+    print("     vol. centre:", self.centre)
+    print("           level:", self.level)
+    print("         quality:", self.quality)
+    print("       task type:", self.kind)
 
 def read_version0 (self, fp, line, verbose):
     """
@@ -67,8 +73,8 @@ def read_version0 (self, fp, line, verbose):
     line = fp.readline().split()
     self.m      = np.array(line[ 0: 3],dtype=np.int32)
     self.nwrite =  (int(line[3]),int(line[4]), int(line[5]))
-    self.li     = np.array(line[ 6: 9],dtype=np.int32)
-    self.ui     = np.array(line[ 9:12],dtype=np.int32)
+    self.li     = np.array(line[ 6: 9],dtype=np.int32)-1
+    self.ui     = np.array(line[ 9:12],dtype=np.int32)-1
     self.n      = np.array(line[12:15],dtype=np.int32)
     self.gn     = np.array(line[15:18],dtype=np.int32)
     self.nghost = np.array(line[18:21],dtype=np.int32)
@@ -106,8 +112,8 @@ def read_version1 (self, fp, verbose):
     line = fp.readline().split()
     self.m      = np.array(line[ 0: 3],dtype=np.int32)
     self.nwrite =  (int(line[3]),int(line[4]), int(line[5]))
-    self.li     = np.array(line[ 6: 9],dtype=np.int32)
-    self.ui     = np.array(line[ 9:12],dtype=np.int32)
+    self.li     = np.array(line[ 6: 9],dtype=np.int32)-1
+    self.ui     = np.array(line[ 9:12],dtype=np.int32)-1
     self.n      = np.array(line[12:15],dtype=np.int32)
     self.gn     = np.array(line[15:18],dtype=np.int32)
     self.nghost = np.array(line[18:21],dtype=np.int32)
@@ -120,16 +126,22 @@ def read_version1 (self, fp, verbose):
     self.istep = np.int(line[2])
     self.mesh_type = get_mesh_type(int(line[3]))
 
-def single_patch (self, fp, verbose=False):
-    line=fp.readline()
-    chars=line[0:2]
-    if chars=='  ':
-        self.ioformat=0
-        line=line.split()
-        read_version0 (self, fp, line, verbose)
+def single_patch (self, fp, fd=None, verbose=False):
+    if fd:
+        self.ioformat=3
     else:
-        self.ioformat=np.int(chars)
-        read_version1 (self, fp, verbose)
+        line=fp.readline()
+        chars=line[0:2]
+        if chars=='  ':
+            self.ioformat=0
+            line=line.split()
+            read_version0 (self, fp, line, verbose)
+        else:
+            self.ioformat=np.int(chars)
+            read_version1 (self, fp, verbose)
+    derived (self, verbose)
+
+def derived(self, verbose=False):
     self.dx   = self.ds
     self.corners        = self._determine_corners()
     self.active_corners = self._determine_corners(active_only=True)
@@ -143,12 +155,15 @@ def single_patch (self, fp, verbose=False):
     self.x=self.corners[0][0]+(0.5+np.arange(self.gn[0]))*self.ds[0]
     self.y=self.corners[0][1]+(0.5+np.arange(self.gn[1]))*self.ds[1]
     self.z=self.corners[0][2]+(0.5+np.arange(self.gn[2]))*self.ds[2]
-    if self.ioformat==2:
+    if self.ioformat==2 or self.ioformat==4:
         self.size = self.ds*(self.n-1)
         self.active_corners[1] = self.active_corners[1] - self.ds
         self.corners[1]        = self.corners[1]        - self.ds
         self.x = self.x - 0.5*self.ds[0]
         self.y = self.y - 0.5*self.ds[1]
         self.z = self.z - 0.5*self.ds[2]
+    self.xs = self.x - 0.5*self.ds[0]
+    self.ys = self.y - 0.5*self.ds[1]
+    self.zs = self.z - 0.5*self.ds[2]
     if (verbose):
         info (self)

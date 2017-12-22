@@ -4,9 +4,16 @@
    Support functions for reading DISPATCH2 data.
 """
 
+# Pythn 2/3 compatibility
+from __future__ import print_function
+import sys
+if sys.version_info[0]!=2:
+    from importlib import reload
+
 import numpy as np
 from abc import abstractproperty, ABCMeta
 import os
+from time import time
 
 import legacy_reader
 reload(legacy_reader)
@@ -25,15 +32,23 @@ class Task(object):
 class Patch(Task):
     """A derived class for patches."""
     __metaclass__ = ABCMeta
-    def __init__(self, filename, read_derivs=False, verbose=False):
+    def __init__(self, filename, read_derivs=False, verbose=False, fd=None):
         self.filename = filename
         self.__data = None
-        fp = open(filename+'.txt','r')
-        legacy_reader.single_patch (self, fp, verbose=False)
+        self.offset=0
+        if fd:
+            fp=fd
+        else:
+            fp = open(filename+'.txt','r')
+        legacy_reader.single_patch (self, fp, verbose=False, fd=fd)
         if read_derivs: self.nvar = 2 * self.nvar
-        fp.close()
+        if fd:
+            self.offset=(self.id-1)*np.product(self.nwrite)*self.nvar*4
+        else:
+            fp.close()
         self.varidx = variable_indices(self.kind, read_derivs)
         self.varnames = []
+        self.__cached = 0
         for k in self.varidx.keys():
             self.varnames.append(k)
         for k in self.varidx.keys():
@@ -56,7 +71,7 @@ class Patch(Task):
     def _read_legacy_data(self, filename, dims, nvar):
         """Return a memory map pointing to MHD data."""
         myshape = dims + (nvar,)
-        return np.memmap(filename, dtype=np.float32, mode='r', order='F', shape=myshape)
+        return np.memmap(filename, dtype=np.float32, offset=self.offset, mode='r', order='F', shape=myshape)
 
     def _determine_corners(self, active_only=False):
         """
@@ -120,18 +135,16 @@ class Patch(Task):
         l=self.nghost[2]; u=l+self.n[2]; self.z = self.z[l:u]; self.zs = self.zs[l:u]
 
     def cache(self):
+        if self.__cached:
+            return
+        self.__cached=1
         if self.kind[0:9]=='rt_solver':
-            self.Q = self.data[:,:,:,self.varidx['Q']]
-            self.t = self.data[:,:,:,self.varidx['t']]
-            self.xs=self.x-0.5*self.ds[0]
-            self.ys=self.y-0.5*self.ds[1]
-            self.zs=self.z-0.5*self.ds[2]
+            self.Q  = self.data[:,:,:,self.varidx['Q']]
+            self.S  = self.data[:,:,:,self.varidx['S']]
+            self.rk = self.data[:,:,:,self.varidx['rk']]
         elif self.kind[0:7]=='poisson':
             self.d = self.data[:,:,:,self.varidx['d']]
             self.phi = self.data[:,:,:,self.varidx['phi']]
-            self.xs=self.x-0.5*self.ds[0]
-            self.ys=self.y-0.5*self.ds[1]
-            self.zs=self.z-0.5*self.ds[2]
         else:
             #if not 'd' in dir(self):
             self.d =self.data[:,:,:,self.varidx['d']]
@@ -152,9 +165,6 @@ class Patch(Task):
                 self.u1=self.p1/np.exp(su.xdn(ln10*logd))
                 self.u2=self.p2/np.exp(su.ydn(ln10*logd))
                 self.u3=self.p3/np.exp(su.zdn(ln10*logd))
-                self.xs=self.x-0.5*self.ds[0]
-                self.ys=self.y-0.5*self.ds[1]
-                self.zs=self.z-0.5*self.ds[2]
                 if self.kind[0:9]=='stagger2_':
                     self.s =self.data[:,:,:,self.varidx['s']]
                     self.e =np.exp((self.s/self.d+ln10*logd)*g1)/g1
@@ -176,14 +186,17 @@ class Patch(Task):
 
     def vars(self):
         '''Make arrays available in a .var dict'''
-        if self.kind[0:9]!='rt_solver':
-            if not 'd' in dir(self):
-                self.cache()
         if not 'var' in dir(self):
-            if self.nvar>8:
+            self.cache()
+            if self.kind=='rt_solver':
+               self.var={'Q':self.Q,\
+                        'S' :self.S,\
+                        'rk':self.rk}
+            elif self.nvar>8:
                 self.var={'d':self.d,\
                         'e':self.e,\
                         's':self.s,\
+                        'sd':self.sd,\
                         'p1':self.p1,\
                         'p2':self.p2,\
                         'p3':self.p3,\
@@ -200,6 +213,7 @@ class Patch(Task):
                 self.var={'d':self.d,\
                         'e':self.e,\
                         's':self.s,\
+                        'sd':self.sd,\
                         'p1':self.p1,\
                         'p2':self.p2,\
                         'p3':self.p3,\
@@ -215,6 +229,7 @@ class Patch(Task):
                  self.var={'d':self.d,\
                         'e':self.e,\
                         's':self.s,\
+                        'sd':self.sd,\
                         'p1':self.p1,\
                         'p2':self.p2,\
                         'p3':self.p3,\
@@ -223,6 +238,82 @@ class Patch(Task):
                         'u3':self.u3,\
                     'logd':np.log10(self.d),\
                     'loge':np.log10(self.e)}
+
+    def corner_radii(self):
+        ''' array of corner radiii '''
+        c=self.active_corners
+        pt=[]
+        for x in (c[0,0],c[1,0]):
+            for y in (c[0,1],c[1,1]):
+                for z in (c[0,2],c[1,2]):
+                    pt.append(x**2+y**2+z**2)
+        return np.sqrt(np.array(pt))
+
+def Search(fd, ip, verbose=False):
+    line=fd.readline().split()
+    ioformat=int(line[0])
+    status=False
+    while (True):
+        try:
+            line=fd.readline().split()
+            id=np.int(line[0])
+            if (verbose>1):
+                print(id,ip)
+            if id==ip:
+                status=True
+                if (verbose):
+                    print(id,ip,status)
+                break
+            nskip=np.int(line[1])
+            for i in range(nskip):
+                void=fd.readline()
+        except:
+            status=False
+            break
+    return status
+
+def Patches(file, verbose=False):
+    with open(file+'.txt','r') as fd:
+        patches=[]
+        line=fd.readline().split()
+        ioformat=int(line[0])
+        while (True):
+            try:
+                id,nskip=fd.readline().split()
+            except:
+                break
+            patch=Patch(file,fd=fd,verbose=verbose)
+            patches.append(patch)
+    return patches
+
+class Snapshot:
+    def __init__(self, iout=0, run='', data='../data', verbose=0):
+        start=time()
+        if run=='':
+            dir=data+'/{:05d}/'.format(iout)
+        else:
+            dir=data+'/'+run+'/{:05d}/'.format(iout)
+        self.directory=dir
+        self.rankfiles=[dir+f.replace('.txt','') for f in os.listdir(dir) if f.endswith('.rank.txt')]
+        # If .rank.txt files were found, add patches listed there
+        if np.size(self.rankfiles)>0:
+            self.patches=[]
+            for file in self.rankfiles:
+                patches=Patches(file,verbose=verbose)
+                for patch in patches:
+                    self.patches.append(patch)
+            self.files=[]
+            for p in self.patches:
+                file=self.directory+'{:05d}'.format(p.id)
+                self.files.append(file)
+        # If not, list .txt files, and add one patch from each file
+        else:
+            self.patches = []
+            self.files=[dir+f.replace('.txt','') for f in os.listdir(dir) if f.endswith('.txt')]
+            for file in self.files:
+                self.patches.append (Patch(file))
+        if verbose:
+            print('{} snapshot.patches ({:.2f} s)'.format(np.size(self.patches),time()-start))
 
 def variable_indices(solver_type, read_derivs=False):
     """
@@ -271,7 +362,8 @@ def variable_indices(solver_type, read_derivs=False):
                    'gp': 9}
     elif solver_type.lower() == 'rt_solver':
         indices = {'Q':  0,
-                   't': 1}
+                   'S':  1,
+                  'rk':  2}
     elif solver_type.lower() == 'poisson':
         indices = {'d': 0, 'phi': 1}
         if read_derivs:

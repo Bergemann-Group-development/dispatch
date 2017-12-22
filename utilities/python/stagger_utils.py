@@ -37,6 +37,16 @@ def ddzup(f,s):
     c=1./s.ds[2]
     return (roll(f,-1,2)-f)*c
 
+def ddx(f,s):
+    c=2./s.ds[0]
+    return (roll(f,-1,0)-roll(f,1,0))*c
+def ddy(f,s):
+    c=2./s.ds[1]
+    return (roll(f,-1,1)-roll(f,1,1))*c
+def ddz(f,s):
+    c=2./s.ds[2]
+    return (roll(f,-1,2)-roll(f,1,2))*c
+
 # These functions may be used to calculate the velocity from the momenta and mass density
 def fux(f):
     return xup(f.px/exp(xdn(log(f.d))))

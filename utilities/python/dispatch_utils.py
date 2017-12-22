@@ -1,3 +1,10 @@
+
+# Pythn 2/3 compatibility
+from __future__ import print_function
+import sys
+if sys.version_info[0]!=2:
+    from importlib import reload
+
 import numpy as np
 import os
 import re
@@ -20,8 +27,18 @@ def dispatch_utils():
         patch_files()    Return list of patch file root names
         p=patch()        Return one patch object    
     '''
-    print "Type dispatch_utils?<RETURN> for help text, or dispach_utils(\
- for pop-up help in Canopy"
+    print( "Type dispatch_utils?<RETURN> for help text, or dispach_utils(\
+ for pop-up help in Canopy")
+
+def snapshot (iout=0, run='', data='../data', verbose=0):
+    snap=dd.Snapshot (iout, run, data, verbose)
+    snap.iout=iout
+    snap.run=run
+    snap.data=data
+    snap.dict={}
+    for p in snap.patches:
+        snap.dict[p.id]=p
+    return snap
 
 class limits():
     ''' Return extent limits in x,y,z,values '''
@@ -69,10 +86,10 @@ class limits():
                 self.vlim[0]=np.minimum(self.vlim[0],np.min(p.data[:,:,iz,iv]))
                 self.vlim[1]=np.maximum(self.vlim[1],np.max(p.data[:,:,iz,iv]))
         if verbose:
-            print 'xlim:',self.xlim
-            print 'ylim:',self.ylim
-            print 'zlim:',self.zlim
-            print 'vlim:',self.vlim
+            print('xlim:',self.xlim)
+            print('ylim:',self.ylim)
+            print('zlim:',self.zlim)
+            print('vlim:',self.vlim)
 
 def fsplit(name):
     res=name.split('_')
@@ -87,7 +104,7 @@ def patch_files(iout=-1, run='', data='../data', verbose=0):
     Return a list of patch file root names, and count patches and snapshots,
     unless verbose is negative
     '''
-    if verbose>0: print 'patch_files: run={} data={} iout={}'.format(run,data,iout)
+    if verbose>0: print('patch_files: run={} data={} iout={}'.format(run,data,iout))
     rundir=data+'/'+run+'/'
     if iout>=0:
         dir='{:05d}'.format(iout)
@@ -98,11 +115,10 @@ def patch_files(iout=-1, run='', data='../data', verbose=0):
     else:
         dirs=[d for d in np.sort(os.listdir(rundir)) if os.path.isdir(rundir+d)]
         dirs=[d for d in dirs if re.match("^[0-9][0-9][0-9][0-9][0-9]$",d)]
-
     nsnaps=np.size(dirs)
     files=[]
     for dir in dirs:
-        if verbose>1: print rundir+dir
+        if verbose>1: print(rundir+dir)
         ff=np.sort(os.listdir(rundir+dir))
         ext='.txt'
         ff=[rundir+dir+'/'+f.replace('.txt','') for f in ff if f.endswith(ext)]
@@ -111,28 +127,32 @@ def patch_files(iout=-1, run='', data='../data', verbose=0):
         for f in ff:
             files.append(f)
     if iout>=0 and np.size(files)>0:
-        if verbose>0: print npatch,'patches found'
+        if verbose>0: print(npatch,'patches found')
         return files
 
     if verbose>0:
         if iout<0:
-            print nsnaps,'snapshots with',npatch,'patches each found'
+            print(nsnaps,'snapshots with',npatch,'patches each found')
         else:
-            print npatch,'patches found'
+            print(npatch,'patches found')
     return files
 
 def patch (id=2, iout=0, run='', data='../data', verbose=0, **kwargs):
     '''
     Return patch structure for a single patch, identified by id and iout
     '''
-    file=data+'/'+run+'/{:05d}/{:05d}'.format(iout,id)
-    if not os.path.isfile(file+'.txt'):
-        file=data+'/'+run+'/{:04d}_{:04d}'.format(id,iout)
-        print file,' not found'
-        if not os.path.isfile(file+'.txt'):
-            print file,' not found'
-            return None
-    return dd.Patch(file,verbose=verbose,**kwargs)
+    name=data+'/'+run+'/{:05d}/{:05d}'.format(iout,id)
+    if os.path.isfile(name+'.txt'):
+        return dd.Patch(name,verbose=verbose)
+    else:
+        files = patch_files(iout,run,data)
+        p=None
+        for file in files:
+            with open(file+'.txt','r') as fd:
+                success = dd.Search (fd, id, verbose)
+                if (success):
+                    p=dd.Patch(file,fd=fd,verbose=verbose)
+        return p
 
 def is_inside(point,p,verbose=0):
     ''' Return True/False depending on if the point is inside the patch 
@@ -142,7 +162,7 @@ def is_inside(point,p,verbose=0):
     left1=p.centre[0]-p.size[0]*0.5
     left2=p.active_corners[0][0]
     if verbose>0:
-        print '{:03d}   {} {:8.1f} {:8.1f}'.format(p.id,p.centre,left1,left2)
+        print('{:03d}   {} {:8.1f} {:8.1f}'.format(p.id,p.centre,left1,left2))
     return left.all() and right.all()
 
 def count_inside(point,p,verbose=0):
@@ -153,7 +173,7 @@ def count_inside(point,p,verbose=0):
     left1=p.centre[0]-p.size[0]*0.5
     left2=p.active_corners[0][0]
     if verbose>0:
-        print '{:03d}   {} {:8.1f} {:8.1f}'.format(p.id,p.centre,left1,left2)
+        print('{:03d}   {} {:8.1f} {:8.1f}'.format(p.id,p.centre,left1,left2))
     count=0
     for i in range(3):
         if left[i] and right[i]:
@@ -180,7 +200,7 @@ def patches_along(point,pp,dir=0,verbose=0):
     if p:
         while p:
             if verbose>1:
-                print 'A  {:3d}{}{}'.format(p.id,p.centre,p.size)
+                print('A  {:3d}{}{}'.format(p.id,p.centre,p.size))
             pt[dir]=p.centre[dir]-p.size[dir]*0.6
             p=patch_at(pt,pp)
             if p:
@@ -190,12 +210,12 @@ def patches_along(point,pp,dir=0,verbose=0):
         while p:
             out.append(p)
             if verbose>1:
-                print 'B  {:3d}{}{}'.format(p.id,p.centre,p.size)
+                print('B  {:3d}{}{}'.format(p.id,p.centre,p.size))
             pt[dir]=p.centre[dir]+p.size[dir]*0.6
             p=patch_at(pt,pp)
         if verbose>0:
             for p in out:
-                print 'id: {:4d}        position: {}'.format(p.id,p.centre)
+                print('id: {:4d}        position: {}'.format(p.id,p.centre))
     else:
         out=None
     np.set_printoptions(formatter=None)
@@ -213,11 +233,17 @@ def along_z(point,pp,verbose=0):
     ''' Get the patches along the z direction through a point '''
     patches_along(point,pp,dir=2,verbose=verbose)
 
-def indices_and_weights(point,p):
+def indices_and_weights(point,p,iv=0):
     ''' 
         Return indices and interpolation weights for a point in a patch p 
     '''
-    corner=np.array([p.x[0],p.y[0],p.z[0]])
+    x0=p.x[0]
+    y0=p.y[0]
+    z0=p.z[0]
+    if iv==p.varidx['p1'] or  iv==p.varidx['b1']: x0=p.xs[0]
+    if iv==p.varidx['p2'] or  iv==p.varidx['b2']: y0=p.ys[0]
+    if iv==p.varidx['p3'] or  iv==p.varidx['b3']: z0=p.zs[0]
+    corner=np.array([x0,y0,z0])
     p=(point-corner)/p.ds
     indices=np.array(p,dtype=np.int32)
     weights=p-indices
@@ -233,7 +259,7 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
     ss=[]
     ff=[]
     for p in patches:
-        ii,w=indices_and_weights(point,p)
+        ii,w=indices_and_weights(point,p,iv)
         if all:
             m=np.zeros(3,dtype=np.int32)
             n=p.gn
@@ -247,7 +273,10 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
                 f1=p.data[i,j,k  ,iv]*(1-w[1])+p.data[i,j+1,k,  iv]*w[1]
                 f2=p.data[i,j,k+1,iv]*(1-w[1])+p.data[i,j+1,k+1,iv]*w[1]
                 f=f1*(1-w[2])+f2*w[2]
-                ss.append(p.x[i])
+                if iv==p.varidx['p1']:
+                    ss.append(p.xs[i])
+                else:
+                    ss.append(p.x[i])
                 ff.append(f)
         elif dir==1:
             i=ii[0]
@@ -256,7 +285,10 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
                 f1=p.data[i,j,k  ,iv]*(1-w[0])+p.data[i+1,j,k  ,iv]*w[0]
                 f2=p.data[i,j,k+1,iv]*(1-w[0])+p.data[i+1,j,k+1,iv]*w[0]
                 f=f1*(1-w[2])+f2*w[2]
-                ss.append(p.y[j])
+                if iv==p.varidx['p2']:
+                    ss.append(p.ys[j])
+                else:
+                    ss.append(p.y[j])
                 ff.append(f)
         else:
             i=ii[0]
@@ -265,10 +297,16 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
                 f1=p.data[i,j  ,k,iv]*(1-w[0])+p.data[i+1,j  ,k,iv]*w[0]
                 f2=p.data[i,j+1,k,iv]*(1-w[0])+p.data[i+1,j+1,k,iv]*w[0]
                 f=f1*(1-w[1])+f2*w[1]
-                ss.append(p.z[k])
+                if iv==p.varidx['p3']:
+                    ss.append(p.zs[k])
+                else:
+                    ss.append(p.z[k])
                 ff.append(f)
-                print ('{:5d} '+3*'{:3d}'+2*'{:10.6f}'+'{:12.4e}').format(
-                p.id,i,j,k,w[0],w[1],f)
+                if verbose:
+                    print(('{:5d} '+3*'{:3d}'+2*'{:10.6f}'+'{:12.4e}').format(
+                    p.id,i,j,k,w[0],w[1],f))
+    ss=np.array(ss)
+    ff=np.array(ff)
     return ss,ff
 
 def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
@@ -279,7 +317,10 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
     '''
     ss=[]
     ff=[]
-    ii,w=indices_and_weights(point,p)
+    ii,w=indices_and_weights(point,p,iv)
+    if verbose:
+        print('{:3d} {}   {} {:5.1f} {:4.1f} {:4.1f}'.\
+          format(p.id,iv,ii,w[0],w[1],w[2]))
     if all:
         m=np.zeros(3,dtype=np.int32)
         n=p.gn
@@ -293,7 +334,10 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
             f1=p.data[i,j,k  ,iv]*(1-w[1])+p.data[i,j+1,k,  iv]*w[1]
             f2=p.data[i,j,k+1,iv]*(1-w[1])+p.data[i,j+1,k+1,iv]*w[1]
             f=f1*(1-w[2])+f2*w[2]
-            ss.append(p.x[i])
+            if iv==p.varidx['p1']:
+                ss.append(p.xs[i])
+            else:
+                ss.append(p.x[i])
             ff.append(f)
     elif dir==1:
         i=ii[0]
@@ -302,7 +346,10 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
             f1=p.data[i,j,k  ,iv]*(1-w[0])+p.data[i+1,j,k  ,iv]*w[0]
             f2=p.data[i,j,k+1,iv]*(1-w[0])+p.data[i+1,j,k+1,iv]*w[0]
             f=f1*(1-w[2])+f2*w[2]
-            ss.append(p.y[j])
+            if iv==p.varidx['p2']:
+                ss.append(p.ys[j])
+            else:
+                ss.append(p.y[j])
             ff.append(f)
     else:
         i=ii[0]
@@ -311,8 +358,13 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
             f1=p.data[i,j  ,k,iv]*(1-w[0])+p.data[i+1,j  ,k,iv]*w[0]
             f2=p.data[i,j+1,k,iv]*(1-w[0])+p.data[i+1,j+1,k,iv]*w[0]
             f=f1*(1-w[1])+f2*w[1]
-            ss.append(p.z[k])
+            if iv==p.varidx['p3']:
+                ss.append(p.zs[k])
+            else:
+                ss.append(p.z[k])
             ff.append(f)
+    ss=np.array(ss)
+    ff=np.array(ff)
     return ss,ff
 
 def values_along_x(point,p,iv=0,verbose=0):
@@ -330,7 +382,7 @@ def values_along_z(point,p,iv=0,verbose=0):
     s,f=values_along(point,p,dir=2,iv=iv,verbose=verbose)
     return s,f
 
-def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None):
+def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None, same=True):
     '''
     Return a list of structures s={id,iout,time,data,...}, where id,iout
     are the integer patch and snapshot numbers, time is in code units,
@@ -341,12 +393,21 @@ def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None)
         time_select  = [p for p in pp if p.iout==iout]
         patch_select = [p for p in pp if p.id==id]
     '''
-    if verbose: print 'patches: run={} data={} iout={}'.format(run,data,iout)
-    files = patch_files (run=run, data=data, iout=iout, verbose=verbose)
+    if verbose: print('patches: run={} data={} iout={}'.format(run,data,iout))
+    #files = patch_files (run=run, data=data, iout=iout, verbose=verbose)
+    snap = snapshot(iout,run,data,verbose=verbose)
     pp=[]
-    for f in files:
-        s=dd.Patch(f,verbose=verbose)
-        pp.append(s)
+    nghost=-1
+    #for f in files:
+    for s in snap.patches:
+        #s=dd.Patch(f,verbose=verbose)
+        if same:
+            if nghost==-1:
+                nghost=s.nghost[0]
+            if s.nghost[0]==nghost:
+                pp.append(s)
+        else:
+            pp.append(s)
     if x:
         pp=[p for p in pp if x>=p.active_corners[0,0] and x<p.active_corners[1,0]]
     if y:
@@ -382,3 +443,89 @@ def cache(pp):
     '''
     for p in pp:
         p.cache()
+    
+def shell_data(pp,radius=100,nds=2,verbose=0):
+    ''' return a dict with shell data '''
+    class shell_point():
+        def __init__(self,x,y,z,ds,data):
+            self.dv=np.product(ds)
+            self.x=x
+            self.y=y
+            self.z=z
+            self.data=data
+    s=[]
+    for p in pp:
+        l=p.li
+        u=p.ui
+        r2l=(radius-nds*p.ds[0])**2
+        r2u=(radius+nds*p.ds[0])**2
+        c2=p.corner_radii()
+        if c2.min()<radius and c2.max()>radius:
+            if verbose: print(p.id)
+            for i in range(l[0],u[0]):
+                x=p.x[i]                
+                for j in range(l[1],u[1]):
+                    y=p.y[j]                
+                    for k in range(l[2],u[2]):
+                        z=p.z[k]                
+                        r2=x**2+y**2+z**2
+                        if r2>r2l and r2<r2u:
+                            s.append(shell_point(x,y,z,p.ds,p.data[i,j,k]))
+    return s
+
+def mass_fluxes(pp,radius=100,nds=2):
+    ''' return the mass fluxes at given radius '''
+    s=shell_data(pp,radius=radius,nds=nds)
+    p=pp[0]
+    ix=p.varidx['p1']
+    iy=p.varidx['p2']
+    iz=p.varidx['p3']
+    f=[]
+    dv=[]
+    for pt in s:
+        f.append(pt.dv*(pt.x*pt.data[ix]++pt.y*pt.data[iy]+pt.z*pt.data[iz]))
+        dv.append(pt.dv)
+    return np.array(f),np.array(dv)
+
+def mass_flux(pp,radius=100,nds=2):
+    ''' return the net mass flux at given radius '''
+    f,dv=mass_fluxes(pp,radius=radius,nds=nds)
+    return np.sum(f)/np.sum(dv)
+
+def find_nan (it=1,run='',data='../data',id=2):
+    ''' check for NaN '''
+    print ("checking snapshot",it,"of "+data+run+" for NaN")
+    bad=True
+    while bad:
+        if id:
+            while bad:
+                p=patch(id,it,run,data)
+                bad=np.isnan(p.data[:,:,:,0]).any()
+                if bad:
+                    it=it-1
+                    print ("snapshot",it,"patch",id,"has NaN")
+                else:
+                    print ("snapshot",it,"patch",id,"has no NaN")
+                sys.stdout.flush()
+        print ("scanning",it)
+        pp=patches(it,run,data)
+        bad=False
+        for p in pp:
+            if np.isnan(p.data[:,:,:,0]).any():
+                bad=True
+                id=p.id
+                break
+        if bad:
+            print("has NaN")
+        else:
+            print("has no NaN")
+    print("first good:",it)
+    sys.stdout.flush()
+    it=it+1
+    print ("checking",it)
+    pp=patches(it,run,data)
+    n=0
+    for p in pp:
+        if np.isnan(p.data[:,:,:,0]).any():
+            n+=1
+    print ("snapshot",it,"has",n,"bad patches")

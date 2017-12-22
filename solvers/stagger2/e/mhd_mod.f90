@@ -39,6 +39,7 @@ MODULE mhd_mod
     real:: cdtd
     logical:: mhd=.false.
     logical:: first_time=.true.
+    logical:: isothermal=.false.
     type(force_t):: force
   contains
     procedure:: init
@@ -47,6 +48,7 @@ MODULE mhd_mod
     procedure:: output
     procedure:: gas_pressure
   end type
+  integer, save:: verbose=0
 CONTAINS
 
 !> =============================================================================
@@ -58,9 +60,9 @@ SUBROUTINE init (self)
   type(index_t):: idx
   integer:: i, iv
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
-  logical, save:: first_time=.true.
+  logical, save:: first_time=.true., isothermal=.false.
   character(len=16), save:: eos
-  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire, eos
+  namelist /mhd_params/ nu, gamma, csound, isothermal, cdtd, hardwire, eos, verbose
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -76,6 +78,7 @@ SUBROUTINE init (self)
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
   !$omp end critical (input_cr)
+  self%isothermal = isothermal
   self%eos = eos
   self%nu = nu
   self%gamma = gamma
@@ -108,7 +111,7 @@ SUBROUTINE init (self)
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
-  if (io%verbose>1 .and. self%track) then
+  if (verbose>1 .and. self%track) then
     do i=1,3
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
@@ -227,18 +230,18 @@ SUBROUTINE pde (self)
     ! Fast mode speed + velocity
     pa = self%nu(2)*d*du**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
-    if (io%verbose>3) then
+    if (verbose>3) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(ca)', u_max, self%u_max
+      print 1, 'u_max(ca)', u_max, self%u_max
     1 format(1x,a,1p,2g12.3)
       u_max = self%fmaxval(cs + sqrt(pp))
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
+      print 1, 'u_max(ca+u)', u_max, self%u_max
     end if
     u_max = self%fmaxval(cs + sqrt(pp) + du)
     self%u_max = max(self%u_max,u_max)
-    if (io%verbose>2) print 1, 'u_max(ca+u+du)', u_max, self%u_max
+    if (verbose>2) print 1, 'u_max(ca+u+du)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
@@ -256,17 +259,17 @@ SUBROUTINE pde (self)
     pa = self%nu(2)*d*du**2                          ! dimension: pressure      ! ops: 0 3 0
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
-    if (io%verbose>3) then
+    if (verbose>3) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(cs)', u_max, self%u_max
+      print 1, 'u_max(cs)', u_max, self%u_max
       u_max = self%fmaxval(cs + sqrt(pp))
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
+      print 1, 'u_max(cs+u)', u_max, self%u_max
     end if
     u_max = self%fmaxval(cs + sqrt(pp) + du)
     self%u_max = max(self%u_max,u_max)
-    if (io%verbose>2) print 1, 'u_max(cs+u+du)', u_max, self%u_max
+    if (verbose>2) print 1, 'u_max(cs+u+du)', u_max, self%u_max
     pp = pg + pa                                                                ! ops: 1 0 0
     ! Total diagondal stress, with density factor
     du = (maxval(ds)*self%nu(1))*cs                                             ! ops: 0 1 0
@@ -291,7 +294,7 @@ SUBROUTINE pde (self)
   dddt = -div(ds,fm)                                    ! density derivative
   u_max = self%cdtd*maxval(ds)*self%fmaxval(abs(dddt/d))                        ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
-  if (io%verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
+  if (verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -396,9 +399,11 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
   !-----------------------------------------------------------------------------
-  u_max = self%cdtd*maxval(ds)*self%fmaxval(abs((dedt-ee*dddt)/d))              ! ops: 1 1 1
-  self%u_max = max(self%u_max,u_max)
-  if (io%verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
+  if (.not.self%isothermal) then
+    u_max = self%cdtd*maxval(ds)*self%fmaxval(abs((dedt-ee*dddt)/d))            ! ops: 1 1 1
+    self%u_max = max(self%u_max,u_max)
+    if (verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
+  end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
   call deallocate_scalars (lnd, pa, du, ee, cs, pp, pb, Q)
@@ -416,6 +421,7 @@ END SUBROUTINE pde
 SUBROUTINE update (self)
   class(mhd_t):: self
   integer, save:: itimer=0
+  type(index_t):: idx
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
   call self%gravity
@@ -425,9 +431,13 @@ SUBROUTINE update (self)
   ! the call here will have no effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
   call self%output
+  if (self%isothermal) then
+    self%mem(:,:,:,idx%e,self%it,1) = &
+    self%mem(:,:,:,idx%d,self%it,1)*self%csound**2
+  end if
   call self%pde
   call self%courant_condition
-  if (io%verbose>2) &
+  if (verbose>2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
@@ -475,7 +485,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
     end if
   else
     call eos%lookup (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg)
-    if (io%verbose>1) then
+    if (verbose>1) then
       print *, self%id, 'lookup_table: lnd =', minval(self%lnd), maxval(self%lnd)
       print *, self%id, 'lookup_table:  ee =', minval(self%ee ), maxval(self%ee )
       print *, self%id, 'lookup_table:  pg =', minval(pg),       maxval(pg)

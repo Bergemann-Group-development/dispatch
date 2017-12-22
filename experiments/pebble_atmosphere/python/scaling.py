@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 class cgs:
     name='cgs'
     m_earth=5.972e27
@@ -38,10 +40,10 @@ def scaling(units=cgs,verbose=0):
     
         scgs=scaling(cgs)
         sSI=scaling(SI)
-        print cgs.k_b, SI.k_b
+        print (cgs.k_b, SI.k_b)
     '''
     if verbose>0:
-        print "using "+units.name+" units"
+        print("using "+units.name+" units")
     class s:
         system=units.name
         l=units.r_earth

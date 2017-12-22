@@ -98,15 +98,15 @@ MODULE patch_mod
     generic, public :: make_periodic  => make_periodic4 , make_periodic8
     procedure, private :: fsum4
     procedure, private :: fsum8
+    generic, public :: fsum    => fsum4, fsum8        ! interior sum
     procedure, private :: faver4
     procedure, private :: faver8
+    generic, public :: faver    => faver4, faver8     ! interior average
     procedure, private :: fminval4
     procedure, private :: fminval8
+    generic, public :: fminval => fminval4, fminval8  ! interior min value
     procedure, private :: fmaxval4
     procedure, private :: fmaxval8
-    generic, public :: fsum    => fsum4   , fsum8     ! interior sum
-    generic, public :: faver   => faver4  , faver8    ! interior average
-    generic, public :: fminval => fminval4, fminval8  ! interior min value
     generic, public :: fmaxval => fmaxval4, fmaxval8  ! interior max value
     procedure:: courant_condition
     procedure:: check_density
@@ -1051,10 +1051,18 @@ SUBROUTINE output_direct (self)
   !-----------------------------------------------------------------------------
   call trace_begin('patch_t%output_direct')
   !-----------------------------------------------------------------------------
+  ! Make sure the directory needed next exists
+  !-----------------------------------------------------------------------------
+  if (io%iodir/=self%iout+1) then
+    write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout+1
+    call io%mkdir (trim(filename))
+    io%iodir = self%iout+1
+  end if
+  !-----------------------------------------------------------------------------
   ! Write a small text file with info when the last chunk is being entered
   !-----------------------------------------------------------------------------
   if (direct_output%count==direct_output%nbuf-1) then
-    write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), id, self%iout
+    write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, id
     if (self%no_mans_land) then
       self%ioformat = 1
     else
