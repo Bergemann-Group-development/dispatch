@@ -263,8 +263,9 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   !------------------------------------------------------------------------
   ! Initialise the new patch
   !------------------------------------------------------------------------
+  child%level = parent%level + 1                     ! must be set before init!
   call child%init()                                  ! patch, for a new id
-  child%level = parent%level + 1                     ! override the calculation in `patch_t%init`.
+  child%level = parent%level + 1                     ! override possible calculation in `patch_t%init`.
   child%dt(child%it) = parent%dt(parent%it) / refinement_ratio ! reset the time-step
   child%t(child%it) = child%time
   child%out_next = child%time                        ! force output now

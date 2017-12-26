@@ -20,7 +20,8 @@ MODULE experiment_mod
 CONTAINS
 
 !> =============================================================================
-!> Initialise this experiment.
+!> Initialise this experiment.  The experiment can be run both as periodic and
+!> non-periodic, depending on the setting 'fixedbcs' in pboundary_mod.f90
 !> =============================================================================
 SUBROUTINE init_experiment (self)
   class(experiment_t) :: self
@@ -28,25 +29,23 @@ SUBROUTINE init_experiment (self)
   if (self%mem_allocated) return
   call trace%begin('experiment_t%init')
   self%nv = 5
-  self%periodic = .true.
+  self%periodic = .true.                ! possibly changed in pboundary_t%init
   self%mhd = .false.
-  self%level = 1
   call self%solver_t%init()
   call pboundaries%init(self)
   call trace%end
 END SUBROUTINE init_experiment
 
 !> =============================================================================
-!> Update procedure for this experiment.
+!> Update procedure for this experiment. In this case the call falls through to
+!> mhd_t%update, which organizes the preliminary and final selfgravity solutions
 !> =============================================================================
 SUBROUTINE update_experiment (self)
   class(experiment_t):: self
+  integer:: m
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
-
-  call pboundaries%conditions(self, self%it)
   call self%solver_t%update()
-
   call trace%end
 END SUBROUTINE update_experiment
 

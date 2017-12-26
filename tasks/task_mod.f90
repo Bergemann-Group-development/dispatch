@@ -23,7 +23,7 @@ MODULE task_mod
     integer:: n_nbors = 0
     integer:: istep = 0
     integer:: iout = 0
-    integer:: level
+    integer:: level = 0
     integer:: nt=3
     integer:: it=1
     integer:: new=2

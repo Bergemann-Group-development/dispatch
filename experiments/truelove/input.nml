@@ -3,7 +3,7 @@
 /
 
 &io_params
- verbose=1
+ verbose=3
  do_trace=f
  do_debug=f
  do_output=t
@@ -50,7 +50,7 @@
  check_interval=10
  refine_from_t=0.0
  refine_until_t=1.0
- levelmax=4
+ levelmax=3
 /
 
 &selfgravity_params
