@@ -31,10 +31,6 @@ MODULE list_mod
     integer:: ne=0                      ! external
     integer:: na=0                      ! active = internal+boundary
     integer:: nac=0                     ! active tasks
-    real(8):: lc(3) = +huge(0d0)        ! lower corner
-    real(8):: uc(3) = -huge(0d0)        ! upper corner
-    real(8):: llc(3) = +huge(0d0)       ! lower left corner
-    real(8):: urc(3) = -huge(0d0)       ! upper right corner
     real(8):: position(3) = 0.0_8       ! center offset
     real(8):: size(3) = 1.0_8           ! full extent = uc-lc
     integer:: n_behind=0, n_check=0, n_ready=0, n_nbor=0
@@ -1436,19 +1432,9 @@ SUBROUTINE init_bdries (self)
   class(list_t):: self
   class(link_t), pointer:: link
   class(task_t), pointer:: task
+  real(8):: position(3), limit(3)
   !-----------------------------------------------------------------------------
   call trace%begin('task_list_t%init_bdries')
-  if (mpi%size > 1) error stop "task_list_t%init_bdries not MPI ready"
-  link => self%head
-  do while (associated(link))
-    self%lc = min(self%lc, link%task%position)
-    self%uc = max(self%uc, link%task%position)
-    self%llc = min(self%llc, link%task%position-0.5000000001_8*link%task%size)
-    self%urc = max(self%urc, link%task%position+0.5000000001_8*link%task%size)
-    link => link%next
-  end do
-  print *,'task_list%lc =', self%lc
-  print *,'task_list%uc =', self%uc
   link => self%head
   do while (associated(link))
     task => link%task
@@ -1457,32 +1443,34 @@ SUBROUTINE init_bdries (self)
     !---------------------------------------------------------------------------
     ! If at edge, set boundary bits
     !---------------------------------------------------------------------------
+    position = task%position - self%position
+    limit = self%size - task%size/2d0 - task%mesh%d
     if (.not.task%periodic(1)) then
-      if (task%position(1) <= self%lc(1)) then
+      if (position(1)  <= -limit(1)) then
         call task%boundaries%set (bits%xl)
         task%mesh(1)%lower_boundary = .true.
       end if
-      if (task%position(1) >= self%uc(1)) then
+      if (position(1) >= +limit(1)) then
         call task%boundaries%set (bits%xu)
         task%mesh(1)%upper_boundary = .true.
       end if
     end if
     if (.not.task%periodic(2)) then
-      if (task%position(2) <= self%lc(2)) then
+      if (position(2)  <= -limit(2)) then
         call task%boundaries%set (bits%yl)
         task%mesh(2)%lower_boundary = .true.
       end if
-      if (task%position(2) >= self%uc(2)) then
+      if (position(2) >= +limit(2)) then
         call task%boundaries%set (bits%yu)
         task%mesh(2)%upper_boundary = .true.
       end if
     end if
     if (.not.task%periodic(3)) then
-      if (task%position(3) <= self%lc(3)) then
+      if (position(3)  <= -limit(3)) then
         call task%boundaries%set (bits%zl)
         task%mesh(3)%lower_boundary = .true.
       end if
-      if (task%position(3) >= self%uc(3)) then
+      if (position(3) >= +limit(3)) then
         call task%boundaries%set (bits%zu)
         task%mesh(3)%upper_boundary = .true.
       end if

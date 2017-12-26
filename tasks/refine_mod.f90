@@ -356,6 +356,9 @@ SUBROUTINE split_patch (self, tlist, this)
     call tlist%check_ready (link)
     link => link%next
   end do
+  !-----------------------------------------------------------------------------
+  ! FIXME: special care may be needed in multi-rank context
+  !-----------------------------------------------------------------------------
   call tlist%init_bdries
 
   if (io%verbose > 0) call tlist%print_tasks()

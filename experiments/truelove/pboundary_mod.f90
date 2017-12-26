@@ -41,6 +41,14 @@ SUBROUTINE init (self, patch)
   !$omp end critical (boundary_cr)
   if (fixedbcs) then
     patch%periodic = .false.
+    if (patch%is_set(bits%root_grid)) then
+      call patch%boundaries%set(bits%xl)
+      call patch%boundaries%set(bits%xu)
+      call patch%boundaries%set(bits%yl)
+      call patch%boundaries%set(bits%yu)
+      call patch%boundaries%set(bits%zl)
+      call patch%boundaries%set(bits%zu)
+    end if
   end if
 
 END SUBROUTINE init
