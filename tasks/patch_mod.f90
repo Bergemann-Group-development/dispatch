@@ -565,6 +565,7 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
+  if (self%rotated) return
   call trace%begin ('patch_t%rotate')
   if (self%is_periodic()) then
     call self%periodic_grid                     ! periodic root grid
