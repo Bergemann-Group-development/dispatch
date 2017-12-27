@@ -661,7 +661,7 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
   li = target%mesh%li
   ui = target%mesh%ui
   do iv=iv1,iv2
-    call dnload_range (target, source, iv, l, u)
+    call dnload_range (target, source, target%idx%d, l, u)
     !---------------------------------------------------------------------------
     ! For no-no-mans-land meshes, use guard zone values for the li index, to
     ! make fluxes up/down symmetric
