@@ -1445,7 +1445,6 @@ SUBROUTINE init_bdries (self)
     !---------------------------------------------------------------------------
     position = task%position - self%position
     limit = (self%size - task%size - task%mesh%d)/2d0
-    print '(i6,2x,a,3(2x,3f10.6))', task%id, 'BCs', position, limit, position-limit
     if (.not.task%periodic(1)) then
       if (position(1)  <= -limit(1)) then
         call task%boundaries%set (bits%xl)
