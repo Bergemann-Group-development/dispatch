@@ -530,3 +530,26 @@ def find_nan (it=1,run='',data='../data',id=2):
         if np.isnan(p.data[:,:,:,0]).any():
             n+=1
     print ("snapshot",it,"has",n,"bad patches")
+
+def fmax_rt(p,kappa):
+    '''
+    Return a data block, containing the f_max(RT) values. input is a patch
+    and kappa in cgs units.
+    
+        p.fmax_rt = du.fmax_rt(p,kappa)
+    '''
+    sc = scaling(cgs)
+    k=kappa*sc.m/sc.l**2
+    fmax = (p.pg/p.d)**4/p.pg*(k*p.d*p.dx.min())
+    fmax = fmax/(1.+(k*p.d*p.dx.min())**2)
+    return fmax
+
+def umax_rt(p, courant, cdtd):
+    '''
+    Return the umax value. Input is a patch, the courant number and cdtd
+    
+        p.umax_rt = du.umax_rt(p)
+    '''
+    sc = scaling(cgs)
+    u_max = sc.stefan*np.pi*16./3.*p.fmax_rt.max()*courant/cdtd
+    return u_max
