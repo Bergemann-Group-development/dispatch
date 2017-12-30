@@ -10,6 +10,7 @@ import os
 import re
 
 import dispatch_data as dd
+from scaling import *
 reload(dd)
 
 def dispatch_utils():
@@ -342,7 +343,7 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
     elif dir==1:
         i=ii[0]
         k=ii[2]
-        for j in range(m[1],m[1]+n[1]):
+        for j in range(0,m[1]+n[1]+m[1]):
             f1=p.data[i,j,k  ,iv]*(1-w[0])+p.data[i+1,j,k  ,iv]*w[0]
             f2=p.data[i,j,k+1,iv]*(1-w[0])+p.data[i+1,j,k+1,iv]*w[0]
             f=f1*(1-w[2])+f2*w[2]
@@ -491,3 +492,26 @@ def mass_flux(pp,radius=100,nds=2):
     ''' return the net mass flux at given radius '''
     f,dv=mass_fluxes(pp,radius=radius,nds=nds)
     return np.sum(f)/np.sum(dv)
+
+def fmax_rt(p,kappa):
+    '''
+    Return a data block, containing the f_max(RT) values. input is a patch
+    and kappa in cgs units.
+    
+        p.fmax_rt = du.fmax_rt(p,kappa)
+    '''
+    sc = scaling(cgs)
+    k=kappa*sc.m/sc.l**2
+    fmax = (p.pg/p.d)**4/p.pg*(k*p.d*p.dx.min())
+    fmax = fmax/(1.+(k*p.d*p.dx.min())**2)
+    return fmax
+
+def umax_rt(p, courant, cdtd):
+    '''
+    Return the umax value. Input is a patch, the courant number and cdtd
+    
+        p.umax_rt = du.umax_rt(p)
+    '''
+    sc = scaling(cgs)
+    u_max = sc.stefan*np.pi*16./3.*p.fmax_rt.max()*courant/cdtd
+    return u_max
