@@ -328,4 +328,29 @@ LOGICAL FUNCTION ahead_of (self, patch)
   end select
 END FUNCTION ahead_of
 
+
+!> =============================================================================
+!> Write output for Python analysis
+!> =============================================================================
+SUBROUTINE debug_output (self)
+  class(gpatch_t):: self
+  integer, save:: n=0
+  integer:: it, ii
+  real, pointer:: phi1(:,:,:), phi2(:,:,:)
+  !-----------------------------------------------------------------------------
+  n = n+1
+  print *,'debug_output: record', n
+  do it=1,self%nt
+    ii=self%iit(it)
+    phi1 => self%mem(:,:,:,self%idx%phi,ii,1)
+    phi2 => self%mem(:,:,:,self%idx%phi,ii,2)
+    print '(a,i6,2x,2i3,f10.6,2(2x,2f9.6))','debug_output:',self%id, &
+      it,ii,real(self%t(ii)),minval(phi1),maxval(phi1),minval(phi2),maxval(phi2)
+  end do
+  write (30) self%id, self%level, self%istep, self%gn
+  write (30) self%time
+  write (30) self%mem(:,:,:,self%idx%d  ,self%it,1)
+  write (30) self%mem(:,:,:,self%idx%phi,self%it,1)
+  write (30) self%mem(:,:,:,self%idx%px ,self%it,1)
+END SUBROUTINE debug_output
 END MODULE gpatch_mod
