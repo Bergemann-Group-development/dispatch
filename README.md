@@ -24,7 +24,8 @@ When committing changes to this repository, please use the following three-lette
 
 * DEV: code development (incl. additions and deletions)
 * ORG: organisational, no changes to functionality
-* BUG/FIX: bug fixes
+* BUG: bug with significant impact on previous work -- grepping should give restricted list
+* FIX: fixes that occur during development, which have essentially no impact on previous work
 * VIS: visualisation
 * OPT: optimisation
 * DBG: debugging
