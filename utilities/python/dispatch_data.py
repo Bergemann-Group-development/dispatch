@@ -46,7 +46,7 @@ class Patch(Task):
             self.offset=(self.id-1)*np.product(self.nwrite)*self.nvar*4
         else:
             fp.close()
-        self.varidx = variable_indices(self.kind, read_derivs)
+        self.varidx = self.variable_indices(read_derivs)
         self.varnames = []
         self.__cached = 0
         for k in self.varidx.keys():
@@ -99,6 +99,8 @@ class Patch(Task):
     def stripv (self, v):
         l=np.array(self.nghost)
         u=l+np.array(self.n)
+        if self.ioformat==2:
+            u=u-1
         return v[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
 
     def stripit(self):
@@ -124,20 +126,22 @@ class Patch(Task):
             self.p1 = self.stripv (self.p1)
             self.p2 = self.stripv (self.p2)
             self.p3 = self.stripv (self.p3)
-            if self.nvar>8:
+            if self.nvar==6 or self.nvar>8:
                 self.phi= self.stripv(self.phi)
             if self.nvar>=8:
                 self.b1 = self.stripv (self.b1)
                 self.b2 = self.stripv (self.b2)
                 self.b3 = self.stripv (self.b3)
-        l=self.nghost[0]; u=l+self.n[0]; self.x = self.x[l:u]; self.xs = self.xs[l:u]
-        l=self.nghost[1]; u=l+self.n[1]; self.y = self.y[l:u]; self.ys = self.ys[l:u]
-        l=self.nghost[2]; u=l+self.n[2]; self.z = self.z[l:u]; self.zs = self.zs[l:u]
+        l=self.nghost; u=l+self.n
+        if self.ioformat==2:
+            u=u-1
+        self.x = self.x[l[0]:u[0]]; self.xs = self.xs[l[0]:u[0]]
+        self.y = self.y[l[1]:u[1]]; self.ys = self.ys[l[1]:u[1]]
+        self.z = self.z[l[2]:u[2]]; self.zs = self.zs[l[2]:u[2]]
 
     def cache(self):
         if self.__cached:
             return
-        self.__cached=1
         if self.kind[0:9]=='rt_solver':
             self.Q  = self.data[:,:,:,self.varidx['Q']]
             self.S  = self.data[:,:,:,self.varidx['S']]
@@ -151,7 +155,7 @@ class Patch(Task):
             self.p1=self.data[:,:,:,self.varidx['p1']]
             self.p2=self.data[:,:,:,self.varidx['p2']]
             self.p3=self.data[:,:,:,self.varidx['p3']]
-            if self.nvar>8:
+            if self.nvar==6 or self.nvar>8:
                 self.phi=self.data[:,:,:,self.varidx['phi']]
             if self.nvar>=8:
                 self.b1=self.data[:,:,:,self.varidx['b1']]
@@ -183,61 +187,35 @@ class Patch(Task):
                 self.s=np.log(self.pg/self.d**self.gamma)/g1
             self.sd =self.s/self.d
             self.temp = self.pg/self.d
+        self.__cached=1
 
     def vars(self):
         '''Make arrays available in a .var dict'''
         if not 'var' in dir(self):
             self.cache()
             if self.kind=='rt_solver':
-               self.var={'Q':self.Q,\
-                        'S' :self.S,\
+                self.var={'Q':self.Q,\
+                         'S':self.S,\
                         'rk':self.rk}
-            elif self.nvar>8:
-                self.var={'d':self.d,\
-                        'e':self.e,\
-                        's':self.s,\
-                        'sd':self.sd,\
-                        'p1':self.p1,\
-                        'p2':self.p2,\
-                        'p3':self.p3,\
-                        'u1':self.u1,\
-                        'u2':self.u2,\
-                        'u3':self.u3,\
-                        'b1':self.b1,\
-                        'b2':self.b2,\
-                        'b3':self.b3,\
-                       'phi':self.phi,\
-                    'logd':np.log10(self.d),\
-                    'loge':np.log10(self.e)}
-            elif self.nvar>7:
-                self.var={'d':self.d,\
-                        'e':self.e,\
-                        's':self.s,\
-                        'sd':self.sd,\
-                        'p1':self.p1,\
-                        'p2':self.p2,\
-                        'p3':self.p3,\
-                        'u1':self.u1,\
-                        'u2':self.u2,\
-                        'u3':self.u3,\
-                        'b1':self.b1,\
-                        'b2':self.b2,\
-                        'b3':self.b3,\
-                    'logd':np.log10(self.d),\
-                    'loge':np.log10(self.e)}
             else:
-                 self.var={'d':self.d,\
-                        'e':self.e,\
-                        's':self.s,\
-                        'sd':self.sd,\
-                        'p1':self.p1,\
-                        'p2':self.p2,\
-                        'p3':self.p3,\
-                        'u1':self.u1,\
-                        'u2':self.u2,\
-                        'u3':self.u3,\
-                    'logd':np.log10(self.d),\
-                    'loge':np.log10(self.e)}
+                self.var={'d':self.d,\
+                          'e':self.e,\
+                          's':self.s,\
+                         'sd':self.sd,\
+                         'p1':self.p1,\
+                         'p2':self.p2,\
+                         'p3':self.p3,\
+                         'u1':self.u1,\
+                         'u2':self.u2,\
+                         'u3':self.u3,\
+                       'logd':np.log10(self.d),\
+                       'loge':np.log10(self.e)}
+            if self.nvar>7:
+                self.var['b1']=self.b1
+                self.var['b2']=self.b2
+                self.var['b3']=self.b3
+            if self.nvar==6 or self.nvar>8:
+                self.var['phi']=self.phi
 
     def corner_radii(self):
         ''' array of corner radiii '''
@@ -249,9 +227,73 @@ class Patch(Task):
                     pt.append(x**2+y**2+z**2)
         return np.sqrt(np.array(pt))
 
+    def variable_indices(self, read_derivs=False):
+        """
+        A simple function to provide the indices of the variable stored in the binary
+        dump.
+        """
+        assert isinstance(self.kind, str), "expecting a string for `self.kind`"
+        solver = self.kind.lower()
+        if solver[0:7]== 'stagger':
+            indices = {'d':  0,
+                       'p1': 2, 'p2': 3, 'p3': 4}
+            if solver[7:9] == '2e':
+                indices['e'] = 1
+            else:
+                indices['s'] = 1
+            if self.nvar==6:
+                indices['phi']=5
+            if self.nvar>=8:
+                indices['b1']=5
+                indices['b2']=6
+                indices['b3']=7
+            if self.nvar==11:
+                indices['v1']=8
+                indices['v2']=9
+                indices['v3']=10
+            if self.nvar==9:
+                indices['phi']=8
+            if read_derivs:
+                indicesd = {'dd': 8,
+                            'ds': 9,
+                            'dp1': 10, 'dp2': 11, 'dp3': 12,
+                            'db1': 13, 'db2': 14, 'db3': 15,}
+                indices.update(indicesd)
+        elif solver[0:6] == 'ramses':
+            indices = {'d':  0,
+                       'e':  4,
+                       'p1': 1, 'p2': 2, 'p3': 3,
+                       'b1': 5, 'b2': 6, 'b3': 7,
+                       'v1': 8, 'v2': 9, 'v3':10}
+            if read_derivs:
+                indicesd = {'dd': 1,
+                            'de': 9,
+                            'dp1': 10, 'dp2': 11, 'dp3': 12,
+                            'db1': 13, 'db2': 14, 'db3': 15,}
+                indices.update(indicesd)
+        elif solver[0:4] == 'zeus':
+            indices = {'d': 0,
+                       'e1': 1, 'et': 2,
+                       'gp': 3,
+                       'p1': 4, 'p2': 5, 'p3': 6,
+                       'b1': 7, 'b2': 8, 'b3': 9}
+        elif solver_type.lower() == 'rt_solver':
+            indices = {'Q':  0,
+                       'S':  1,
+                      'rk':  2}
+        elif solver_type.lower() == 'poisson':
+            indices = {'d': 0, 'phi': 1}
+            if read_derivs:
+                indicesd = {'dd': 0, 'dphi': 1}
+                indices.updates(indicesd)
+        else:
+            raise Exception("Unrecognised solver type! => "+solver_type.lower())
+        return indices
+
 def Search(fd, ip, verbose=False):
     line=fd.readline().split()
     ioformat=int(line[0])
+    ioformat=2
     status=False
     while (True):
         try:
@@ -277,6 +319,7 @@ def Patches(file, verbose=False):
         patches=[]
         line=fd.readline().split()
         ioformat=int(line[0])
+        ioformat=2
         while (True):
             try:
                 id,nskip=fd.readline().split()
@@ -315,60 +358,3 @@ class Snapshot:
         if verbose:
             print('{} snapshot.patches ({:.2f} s)'.format(np.size(self.patches),time()-start))
 
-def variable_indices(solver_type, read_derivs=False):
-    """
-    A simple function to provide the indices of the variable stored in the binary
-    dump.
-    """
-    assert isinstance(solver_type, str), "expecting a string for `solver_type`"
-    solver = solver_type.lower()
-    if solver[0:9]== 'stagger2e':
-        indices = {'d':  0,
-                   'e':  1,
-                 'phi':  8,
-                   'p1': 2, 'p2': 3, 'p3': 4,
-                   'b1': 5, 'b2': 6, 'b3': 7,
-                   'v1': 8, 'v2': 9, 'v3':10}
-    elif solver[0:7] == 'stagger':
-        indices = {'d':  0,
-                   's':  1,
-                 'phi':  8,
-                   'p1': 2, 'p2': 3, 'p3': 4,
-                   'b1': 5, 'b2': 6, 'b3': 7,
-                   'v1': 8, 'v2': 9, 'v3':10}
-        if read_derivs:
-            indicesd = {'dd': 8,
-                        'ds': 9,
-                        'dp1': 10, 'dp2': 11, 'dp3': 12,
-                        'db1': 13, 'db2': 14, 'db3': 15,}
-            indices.update(indicesd)
-    elif solver[0:6] == 'ramses':
-        indices = {'d':  0,
-                   'e':  4,
-                   'p1': 1, 'p2': 2, 'p3': 3,
-                   'b1': 5, 'b2': 6, 'b3': 7,
-                   'v1': 8, 'v2': 9, 'v3':10}
-        if read_derivs:
-            indicesd = {'dd': 1,
-                        'de': 9,
-                        'dp1': 10, 'dp2': 11, 'dp3': 12,
-                        'db1': 13, 'db2': 14, 'db3': 15,}
-            indices.update(indicesd)
-    elif solver[0:4] == 'zeus':
-        indices = {'d': 0,
-                   'e1': 1, 'et': 2,
-                   'gp': 3,
-                   'p1': 4, 'p2': 5, 'p3': 6,
-                   'b1': 7, 'b2': 8, 'b3': 9}
-    elif solver_type.lower() == 'rt_solver':
-        indices = {'Q':  0,
-                   'S':  1,
-                  'rk':  2}
-    elif solver_type.lower() == 'poisson':
-        indices = {'d': 0, 'phi': 1}
-        if read_derivs:
-            indicesd = {'dd': 0, 'dphi': 1}
-            indices.updates(indicesd)
-    else:
-        raise Exception("Unrecognised solver type! => "+solver_type.lower())
-    return indices
