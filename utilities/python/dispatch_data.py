@@ -100,6 +100,45 @@ class Patch(Task):
         l=np.array(self.nghost)
         u=l+np.array(self.n)
         return v[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
+    def trans(self,tr):
+        if self.kind[0:9]=='rt_solver':
+            self.t = self.t.transpose(tr)
+            self.Q = self.Q.transpose(tr)
+        elif self.kind[0:7]=='poisson':
+            self.d = self.d.transpose(tr)
+            self.phi = self.phi.transpose(tr)
+        else:
+            '''Remove guard cells from cached arrays'''
+            if not 'd' in dir(self):
+                self.cache()
+            self.d  = self.d.transpose(tr)
+            self.e  = self.e.transpose(tr)
+            self.s  = self.s.transpose(tr)
+            self.sd = self.sd.transpose(tr)
+            self.temp = self.temp.transpose(tr)
+            self.pg = self.pg.transpose(tr)
+            self.u1 = self.u1.transpose(tr)
+            self.u2 = self.u2.transpose(tr)
+            self.u3 = self.u3.transpose(tr)
+            self.p1 = self.p1.transpose(tr)
+            self.p2 = self.p2.transpose(tr)
+            self.p3 = self.p3.transpose(tr)
+            if self.nvar>8:
+                self.phi= self.phi.transpose(tr)
+            if self.nvar>=8:
+                self.b1 = self.b1.transpose(tr)
+                self.b2 = self.b2.transpose(tr)
+                self.b3 = self.b3.transpose(tr)
+            t1=[]
+            t1.append(self.x); t1.append(self.y); t1.append(self.z)
+            self.x=t1[tr[0]]; self.y=t1[tr[1]]; self.z=t1[tr[2]]
+            ac=self.active_corners
+            self.active_corners[0]=[ac[0][tr[0]],ac[0][tr[1]],ac[0][tr[2]]]
+            self.active_corners[1]=[ac[1][tr[0]],ac[1][tr[1]],ac[1][tr[2]]]
+            
+        l=self.nghost[0]; u=l+self.n[0]; self.x = self.x[l:u]; self.xs = self.xs[l:u]
+        l=self.nghost[1]; u=l+self.n[1]; self.y = self.y[l:u]; self.ys = self.ys[l:u]
+        l=self.nghost[2]; u=l+self.n[2]; self.z = self.z[l:u]; self.zs = self.zs[l:u]
 
     def stripit(self):
         if self.kind[0:9]=='rt_solver':
