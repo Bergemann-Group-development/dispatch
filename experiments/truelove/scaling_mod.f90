@@ -29,11 +29,22 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(units_t):: self
+  real(kind=8):: l0=3.12e16
   logical, save:: first_time=.true.
+  namelist / scaling_params / l0
+  !----------------------------------------------------------------------------
   if (.not.first_time) return
+  !$omp critical (input_cr)
+  if (first_time) then
+    rewind (io%input)
+    read (io%input, scaling_params)
+    if (io%master) write (*, scaling_params)
+  end if
+  !$omp end critical (input_cr)
   first_time = .false.
+
   call cgs%init
-  self%l = 3.12e16                                      ! length; cm
+  self%l = l0                                           ! length; cm
   self%m = cgs%m_sun                                    ! mass; g
   self%d = self%m/self%l**3                             ! mass density; g cm**-3
   self%grav = 0.25 / self%pi                            ! gravitational constant
