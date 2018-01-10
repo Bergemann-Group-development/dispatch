@@ -182,7 +182,7 @@ SUBROUTINE condition (self, m, f, idx)
       do i=m1%lb,m1%ub
         x = m1%centre_nat + m1%r(i)
         rzsq = (x - x0)**2 + (y - y0)**2 + (z - z0)**2
-        rz = sqrt( rzsq )
+        rz = sqrt(rzsq)
 
         if (rz <= r0) then
           phi0             = datan2(y - y0, x - x0)
@@ -190,8 +190,8 @@ SUBROUTINE condition (self, m, f, idx)
           nrg              = pcloud / (self%gamma - 1.0)
           f(i,j,k,idx%d)   = q1 * rho0
           f(i,j,k,idx%phi) = c1 + 2.0 * pi * scaling%grav * rho0 * rzsq / 3.0
-          f(i,j,k,idx%px ) =-omega * (y - y0) * f(i,j,k,idx%d)
-          f(i,j,k,idx%py)  = omega * (x - x0) * f(i,j,k,idx%d)
+          f(i,j,k,idx%px)  =-omega * rz * sin(phi0) * f(i,j,k,idx%d)
+          f(i,j,k,idx%py)  = omega * rz * cos(phi0) * f(i,j,k,idx%d)
           f(i,j,k,idx%pz)  = 0.0
         else
           nrg              = pamb / (self%gamma - 1.0)
