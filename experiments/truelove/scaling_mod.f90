@@ -48,7 +48,7 @@ SUBROUTINE init (self)
   self%m = cgs%m_sun                                    ! mass; g
   self%d = self%m/self%l**3                             ! mass density; g cm**-3
   self%grav = 0.25 / self%pi                            ! gravitational constant
-  self%t = sqrt(1.0 / self%grav / self%d)               ! time; s
+  self%t = sqrt(self%grav / cgs%grav / self%d)          ! time; s
   self%u = self%l/self%t                                ! speed
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
