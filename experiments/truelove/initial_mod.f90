@@ -107,7 +107,7 @@ SUBROUTINE condition (self, m, f, idx)
           , pcloud  , vol     , mass    , momi    , omega   , gammad   &
           , egrav   , etherm  , erot    , pamb    , rhoamb  , rz       &
           , rzsq    , tff     , cjlen   , cjnum   , csqiso  , vff      &
-          , nrg
+          , nrg     , rf1     , rf2
   real(8), parameter:: gammaad = 5.0 / 3.0
   real(8), parameter:: r2 = 1.0
   real(8):: x, y, z
@@ -181,7 +181,7 @@ SUBROUTINE condition (self, m, f, idx)
       y = m2%centre_nat + m2%r(j)
       do i=m1%lb,m1%ub
         x = m1%centre_nat + m1%r(i)
-        rzsq = (x - x0)**2 + (y - y0)**2 + (z - z0)**2
+        rzsq = (x - x0)**2 + (y - y0)**2 + (z - z0)**2 ! zone-centred
         rz = sqrt(rzsq)
 
         if (rz <= r0) then
@@ -190,17 +190,29 @@ SUBROUTINE condition (self, m, f, idx)
           nrg              = pcloud / (self%gamma - 1.0)
           f(i,j,k,idx%d)   = q1 * rho0
           f(i,j,k,idx%phi) = c1 + 2.0 * pi * scaling%grav * rho0 * rzsq / 3.0
-          f(i,j,k,idx%px)  =-omega * rz * sin(phi0) * f(i,j,k,idx%d)
-          f(i,j,k,idx%py)  = omega * rz * cos(phi0) * f(i,j,k,idx%d)
-          f(i,j,k,idx%pz)  = 0.0
         else
           nrg              = pamb / (self%gamma - 1.0)
           f(i,j,k,idx%d)   = rhoamb
           f(i,j,k,idx%phi) = c2 - c3 / rz + 2.0 * scaling%grav * pi * rhoamb * rzsq / 3.0
-          f(i,j,k,idx%px)  = 0.0
-          f(i,j,k,idx%py)  = 0.0
-          f(i,j,k,idx%pz)  = 0.0
         endif
+        ! set momenta for staggered solvers appropriately
+        f(i,j,k,idx%px)  = 0.0
+        f(i,j,k,idx%py)  = 0.0
+        f(i,j,k,idx%pz)  = 0.0
+        if (self%solver(1:7) == 'stagger' .or. trim(self%solver) == 'zeus_mhd_patch') then
+          rf1 = sqrt((x - 0.5*m1%d - x0)**2 + (y - y0)**2 + (z - z0)**2)
+          if (rf1 <= r0 .and. i > 1) &
+            f(i,j,k,idx%px)  =-omega * rf1 * sin(phi0) * 0.5 * (f(i,j,k,idx%d) + f(i-1,j,k,idx%d))
+          rf2 = sqrt((x - x0)**2 + (y - 0.5*m2%d - y0)**2 + (z - z0)**2)
+          if (rf2 <= r0 .and. j > 1) &
+            f(i,j,k,idx%py)  = omega * rf2 * cos(phi0) * 0.5 * (f(i,j,k,idx%d) + f(i,j-1,k,idx%d))
+        else
+          if (rz < r0) then
+            f(i,j,k,idx%px)  =-omega * rz * sin(phi0) * f(i,j,k,idx%d)
+            f(i,j,k,idx%py)  = omega * rz * cos(phi0) * f(i,j,k,idx%d)
+          end if
+        end if
+
         if (self%solver(1:9) == 'stagger2_') then
           f(i,j,k,idx%s) = (log(nrg * (self%gamma - 1.0)) - log(f(i,j,k,idx%d)) * self%gamma) &
                          * f(i,j,k,idx%d) / (self%gamma - 1.0)
