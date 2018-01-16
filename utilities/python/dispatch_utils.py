@@ -8,6 +8,7 @@ if sys.version_info[0]!=2:
 import numpy as np
 import os
 import re
+from time import time
 
 import dispatch_data as dd
 from scaling import *
@@ -26,7 +27,7 @@ def dispatch_utils():
             ... do something with the data in p.d, p.ux, ...
     Other methods:
         patch_files()    Return list of patch file root names
-        p=patch()        Return one patch object    
+        p=patch()        Return one patch object
     '''
     print( "Type dispatch_utils?<RETURN> for help text, or dispach_utils(\
  for pop-up help in Canopy")
@@ -99,7 +100,7 @@ def fsplit(name):
     else:
         res=name.split('/')
         return res[1],res[0]
- 
+
 def patch_files(iout=-1, run='', data='../data', verbose=0):
     '''
     Return a list of patch file root names, and count patches and snapshots,
@@ -153,10 +154,12 @@ def patch (id=2, iout=0, run='', data='../data', verbose=0, **kwargs):
                 success = dd.Search (fd, id, verbose)
                 if (success):
                     p=dd.Patch(file,fd=fd,verbose=verbose)
+        if not p:
+            print ('not found')
         return p
 
 def is_inside(point,p,verbose=0):
-    ''' Return True/False depending on if the point is inside the patch 
+    ''' Return True/False depending on if the point is inside the patch
     '''
     left=point>=p.active_corners[0]
     right=point<=p.active_corners[1]
@@ -180,15 +183,19 @@ def count_inside(point,p,verbose=0):
         if left[i] and right[i]:
             count+=1
     return count
-    
+
 def patch_at(point,pp,verbose=0):
-    ''' Find the patch at a given point 
+    ''' Find the patch at a given point
     '''
+    level=-1
+    p1=None
     for p in pp:
         if is_inside(point,p,verbose):
-            return p
-    return None
-    
+            if p.level>level:
+                p1=p
+                level=p.level
+    return p1
+
 def patches_along(point,pp,dir=0,verbose=0):
     ''' Get the patches along a given direction through a point
     '''
@@ -199,9 +206,10 @@ def patches_along(point,pp,dir=0,verbose=0):
         np.set_printoptions(formatter=dict)
     p=patch_at(pt,pp)
     if p:
+        p1=p
         while p:
             if verbose>1:
-                print('A  {:3d}{}{}'.format(p.id,p.centre,p.size))
+                print('A {:3d} {}{}'.format(p.id,p.centre,p.size))
             pt[dir]=p.centre[dir]-p.size[dir]*0.6
             p=patch_at(pt,pp)
             if p:
@@ -235,25 +243,30 @@ def along_z(point,pp,verbose=0):
     patches_along(point,pp,dir=2,verbose=verbose)
 
 def indices_and_weights(point,p,iv=0):
-    ''' 
-        Return indices and interpolation weights for a point in a patch p 
+    '''
+        Return indices and interpolation weights for a point in a patch p
     '''
     x0=p.x[0]
     y0=p.y[0]
     z0=p.z[0]
-    if iv==p.varidx['p1'] or  iv==p.varidx['b1']: x0=p.xs[0]
-    if iv==p.varidx['p2'] or  iv==p.varidx['b2']: y0=p.ys[0]
-    if iv==p.varidx['p3'] or  iv==p.varidx['b3']: z0=p.zs[0]
+    if 'p1' in p.varidx.keys():
+        if iv==p.varidx['p1']: x0=p.xs[0]
+        if iv==p.varidx['p2']: y0=p.ys[0]
+        if iv==p.varidx['p3']: z0=p.zs[0]
+    if 'b1' in p.varidx.keys():
+        if iv==p.varidx['b1']: x0=p.xs[0]
+        if iv==p.varidx['b2']: y0=p.ys[0]
+        if iv==p.varidx['b3']: z0=p.zs[0]
     corner=np.array([x0,y0,z0])
     p=(point-corner)/p.ds
     indices=np.array(p,dtype=np.int32)
     weights=p-indices
     return indices, weights
-    
-def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
-    ''' 
+
+def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
+    '''
         Return s,f(s) with s the coordinates and f the values in the iv
-        slot of data, taken along the direction v -- so far restricted 
+        slot of data, taken along the direction v -- so far restricted
         to axis values
     '''
     patches=patches_along(point,pp,dir=dir,verbose=verbose)
@@ -267,12 +280,17 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
         else:
             m=p.nghost
             n=p.n
+        if var:
+            p.vars()
+            data=p.var[var]
+        else:
+            data=p.data[:,:,:,iv]
         if dir==0:
             j=ii[1]
             k=ii[2]
             for i in range(m[0],m[0]+n[0]):
-                f1=p.data[i,j,k  ,iv]*(1-w[1])+p.data[i,j+1,k,  iv]*w[1]
-                f2=p.data[i,j,k+1,iv]*(1-w[1])+p.data[i,j+1,k+1,iv]*w[1]
+                f1=data[i,j,k  ]*(1-w[1])+data[i,j+1,k  ]*w[1]
+                f2=data[i,j,k+1]*(1-w[1])+data[i,j+1,k+1]*w[1]
                 f=f1*(1-w[2])+f2*w[2]
                 if iv==p.varidx['p1']:
                     ss.append(p.xs[i])
@@ -283,8 +301,8 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
             i=ii[0]
             k=ii[2]
             for j in range(m[1],m[1]+n[1]):
-                f1=p.data[i,j,k  ,iv]*(1-w[0])+p.data[i+1,j,k  ,iv]*w[0]
-                f2=p.data[i,j,k+1,iv]*(1-w[0])+p.data[i+1,j,k+1,iv]*w[0]
+                f1=data[i,j,k  ]*(1-w[0])+data[i+1,j,k  ]*w[0]
+                f2=data[i,j,k+1]*(1-w[0])+data[i+1,j,k+1]*w[0]
                 f=f1*(1-w[2])+f2*w[2]
                 if iv==p.varidx['p2']:
                     ss.append(p.ys[j])
@@ -295,17 +313,14 @@ def values_along(point,pp,dir=0,iv=0,verbose=0,all=0):
             i=ii[0]
             j=ii[1]
             for k in range(m[2],m[2]+n[2]):
-                f1=p.data[i,j  ,k,iv]*(1-w[0])+p.data[i+1,j  ,k,iv]*w[0]
-                f2=p.data[i,j+1,k,iv]*(1-w[0])+p.data[i+1,j+1,k,iv]*w[0]
+                f1=data[i,j  ,k]*(1-w[0])+data[i+1,j  ,k]*w[0]
+                f2=data[i,j+1,k]*(1-w[0])+data[i+1,j+1,k]*w[0]
                 f=f1*(1-w[1])+f2*w[1]
                 if iv==p.varidx['p3']:
                     ss.append(p.zs[k])
                 else:
                     ss.append(p.z[k])
                 ff.append(f)
-                if verbose:
-                    print(('{:5d} '+3*'{:3d}'+2*'{:10.6f}'+'{:12.4e}').format(
-                    p.id,i,j,k,w[0],w[1],f))
     ss=np.array(ss)
     ff=np.array(ff)
     return ss,ff
@@ -389,7 +404,7 @@ def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None,
     are the integer patch and snapshot numbers, time is in code units,
     data is a memory mapping of the patch data, and ... are a number of
     other patch properties returned by ThisPatch().
-    
+
         pp = patches('run')
         time_select  = [p for p in pp if p.iout==iout]
         patch_select = [p for p in pp if p.id==id]
@@ -444,35 +459,96 @@ def cache(pp):
     '''
     for p in pp:
         p.cache()
-    
-def shell_data(pp,radius=100,nds=2,verbose=0):
-    ''' return a dict with shell data '''
-    class shell_point():
-        def __init__(self,x,y,z,ds,data):
-            self.dv=np.product(ds)
-            self.x=x
-            self.y=y
-            self.z=z
-            self.data=data
-    s=[]
-    for p in pp:
-        l=p.li
-        u=p.ui
-        r2l=(radius-nds*p.ds[0])**2
-        r2u=(radius+nds*p.ds[0])**2
-        c2=p.corner_radii()
-        if c2.min()<radius and c2.max()>radius:
-            if verbose: print(p.id)
-            for i in range(l[0],u[0]):
-                x=p.x[i]                
-                for j in range(l[1],u[1]):
-                    y=p.y[j]                
-                    for k in range(l[2],u[2]):
-                        z=p.z[k]                
-                        r2=x**2+y**2+z**2
-                        if r2>r2l and r2<r2u:
-                            s.append(shell_point(x,y,z,p.ds,p.data[i,j,k]))
-    return s
+
+class shell_values:
+    def __init__(self,pp,r=10,dr=2.0,verbose=0):
+        ''' return dicts with shell values '''
+        if verbose:
+            start=time()
+        self.var={}
+        self.r=r
+        self.dr=dr
+        p=pp[0]
+        p.vars()
+        for key in p.var:
+            self.var[key]=np.array([],dtype=np.float32)
+        for key in ('r','dv','x','y','z'):
+            self.var[key]=np.array([],dtype=np.float32)
+        npatch=0
+        if verbose:
+            print ('vars:',np.sort(self.var.keys()))
+        for p in pp:
+            r2l=(r-dr)**2
+            r2u=(r+dr)**2
+            c2=p.corner_radii()
+            if c2.min()<r and c2.max()>r:
+                if verbose:
+                    if verbose>1:
+                        print(p.id)
+                    npatch+=1
+                p.cache()
+                p.stripit()
+                p.vars()
+                rr=np.meshgrid(p.x,p.y,p.z)
+                p.var['x']=rr[0]
+                p.var['y']=rr[1]
+                p.var['z']=rr[2]
+                r2=sum(np.array(rr)**2,0)
+                p.var['r']=np.sqrt(r2)
+                p.var['dv']=np.ones(np.shape(r2))*np.product(p.ds,dtype=np.float32)
+                cmp=(r2-r2l)*(r2-r2u)
+                w=np.where(cmp<0.0)
+                for key in self.var.keys():
+                    var=p.var[key][w[0],w[1],w[2]]
+                    self.var[key]=np.append(self.var[key],var)
+        if verbose:
+            print (npatch,'patches used',time()-start,'sec')
+
+    def radial_components(self):
+        ''' compute radial components of mass flux and velocity '''
+        self.var['pr']=(self.var['p1']*self.var['x']+self.var['p2']*self.var['y']+self.var['p3']*self.var['z'])/self.var['r']
+        self.var['ur']=(self.var['u1']*self.var['x']+self.var['u2']*self.var['y']+self.var['u3']*self.var['z'])/self.var['r']
+
+    def angles(self):
+        ''' compute latitude and longitude '''
+        self.var['mu']=self.var['z']/self.var['r']
+        self.var['lat']=np.arcsin(self.var['mu'])
+        self.var['lon']=np.arctan2(self.var['x'],self.var['y'])
+
+class shell_values2:
+    def __init__(self,pp,radius=10,nds=2,verbose=0):
+        ''' return a dict with shell data (slower) '''
+        if verbose:
+            start=time()
+        self.var={}
+        p=pp[0]
+        p.vars()
+        for key in p.var:
+            self.var[key]=[]
+        self.var['r2']=[]
+        npatch=0
+        for p in pp:
+            r2l=(radius-nds*p.ds[0])**2
+            r2u=(radius+nds*p.ds[0])**2
+            c2=p.corner_radii()
+            if c2.min()<radius and c2.max()>radius:
+                if verbose:
+                    if verbose>1:
+                        print(p.id)
+                    npatch+=1
+                p.cache()
+                p.stripit()
+                p.vars()
+                r2=sum(np.array(np.meshgrid(p.x,p.y,p.z))**2,0)
+                p.var['r2']=r2
+                cmp=(r2-r2l)*(r2-r2u)
+                w=np.where(cmp<0.0)
+                for key in self.var.keys():
+                    vv=p.var[key][w[0],w[1],w[2]]
+                    for v in vv:
+                        self.var[key].append(v)
+        if verbose:
+            print (npatch,'patches used',time()-start,'sec')
 
 def mass_fluxes(pp,radius=100,nds=2):
     ''' return the mass fluxes at given radius '''
@@ -493,35 +569,31 @@ def mass_flux(pp,radius=100,nds=2):
     f,dv=mass_fluxes(pp,radius=radius,nds=nds)
     return np.sum(f)/np.sum(dv)
 
-def find_nan (it=1,run='',data='../data',id=2):
+def find_nan (id=0,it=0,run='',data='../data'):
     ''' check for NaN '''
     print ("checking snapshot",it,"of "+data+run+" for NaN")
     bad=True
     while bad:
         if id:
             while bad:
+                print ('checking',it,)
                 p=patch(id,it,run,data)
-                bad=np.isnan(p.data[:,:,:,0]).any()
+                bad=any(np.isnan(p.data[:,:,:,0]))
                 if bad:
                     it=it-1
-                    print ("snapshot",it,"patch",id,"has NaN")
-                else:
-                    print ("snapshot",it,"patch",id,"has no NaN")
-                sys.stdout.flush()
-        print ("scanning",it)
+                    print ("bad")
         pp=patches(it,run,data)
         bad=False
         for p in pp:
-            if np.isnan(p.data[:,:,:,0]).any():
+            if any(np.isnan(p.data[:,:,:,0])):
                 bad=True
                 id=p.id
                 break
         if bad:
-            print("has NaN")
+            print("bad")
         else:
-            print("has no NaN")
+            print("good")
     print("first good:",it)
-    sys.stdout.flush()
     it=it+1
     print ("checking",it)
     pp=patches(it,run,data)
@@ -535,9 +607,10 @@ def fmax_rt(p,kappa):
     '''
     Return a data block, containing the f_max(RT) values. input is a patch
     and kappa in cgs units.
-    
+
         p.fmax_rt = du.fmax_rt(p,kappa)
     '''
+    from scaling import scaling, cgs
     sc = scaling(cgs)
     k=kappa*sc.m/sc.l**2
     fmax = (p.pg/p.d)**4/p.pg*(k*p.d*p.dx.min())
@@ -547,9 +620,22 @@ def fmax_rt(p,kappa):
 def umax_rt(p, courant, cdtd):
     '''
     Return the umax value. Input is a patch, the courant number and cdtd
-    
+
         p.umax_rt = du.umax_rt(p)
     '''
+    from scaling import scaling, cgs
     sc = scaling(cgs)
     u_max = sc.stefan*np.pi*16./3.*p.fmax_rt.max()*courant/cdtd
     return u_max
+
+def minloc(a):
+    ''' return the 3-D index of the maximum '''
+    i = a.argmin()
+    return np.unravel_index(i,np.shape(a))
+
+
+def maxloc(a):
+    ''' return the 3-D index of the maximum '''
+    i = a.argmax()
+    return np.unravel_index(i,np.shape(a))
+

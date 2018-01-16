@@ -64,16 +64,20 @@ def simple_slice(iout=0,run='',data='../data',x=None,y=None,z=None,iv=0,verbose=
             image(p.data[l[0]:u[0],l[1]:u[1],iz,iv],vmin=ll.vlim[0],vmax=ll.vlim[1],extent=p.extent[2])
     pl.colorbar()
 
-def image(f,verbose=0,vlim=None,**kwargs):
+def image(f,verbose=0,vlim=None,keep=False,**kwargs):
     '''
     Turn images the Fortran way; 1st index increases to the right,
     2nd index upwards
     '''
+    if not keep:
+        pl.clf()
     if np.size(vlim)==2:
         im=pl.imshow(f.squeeze().transpose(),origin='lower',interpolation='nearest',\
           vmin=vlim[0],vmax=vlim[0],**kwargs)
     else:
         im=pl.imshow(f.squeeze().transpose(),origin='lower',interpolation='nearest',**kwargs)
+    if not keep:
+        pl.colorbar()
     return im
 
 def in_extent(e,p):
@@ -83,12 +87,14 @@ def in_extent(e,p):
     return ok
 
 def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
-    keep=0, extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
+    keep=0, extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,\
+    pp=None,**kwargs):
     '''
-    Display xy-image for given z  
+    Display xy-image for given z
     '''
     pl.show()
-    pp=du.patches(run=run,data=data,iout=iout)
+    if type(pp)==type(None):
+        pp=du.patches(run=run,data=data,iout=iout)
     if np.size(pp)==0:
         print("no files found")
         return
@@ -143,7 +149,7 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
     if not keep:
         pl.clf()
     for p in select:
-        image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap)    
+        image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap,keep=1)
         yx=[p.active_corners[0][1],p.active_corners[0][0]]
         if labels and in_extent(p.extent[2],yx):
             pl.text(yx[0],yx[1],p.id)
@@ -212,7 +218,7 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
     if not keep:
         pl.clf()
     for p in pp:
-        image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap)
+        image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap,keep=1)
         yz=[p.active_corners[0][1],p.active_corners[0][2]]
         if labels and in_extent(p.extent[0],yz):
             pl.text(yz[0],yz[1],p.id)
@@ -282,7 +288,7 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
     if not keep:
         pl.clf()
     for p in pp:
-        image(p.f,extent=p.extent[1],vmin=vmin,vmax=vmax,cmap=cmap)
+        image(p.f,extent=p.extent[1],vmin=vmin,vmax=vmax,cmap=cmap,keep=1)
         xz=[p.active_corners[0][0],p.active_corners[0][2]]
         if labels and in_extent(p.extent[0],xz):
             pl.text(xz[0],xz[1],p.id)
@@ -292,12 +298,12 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
         pl.xlim(xlim); pl.ylim(zlim); pl.xlabel('x'); pl.ylabel('z')
         pl.tight_layout()
     pl.show()
-    
+
 def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
             verbose=0,fraction=0.1,extent=None,repeat=0,vlim=None,interval=200,\
             labels=None,**kwargs):
     '''
-    Display yx-image in steps of dz in z 
+    Display yx-image in steps of dz in z
     '''
     pl.show()
     pp=du.patches(run=run,data=data,iout=iout)
@@ -340,7 +346,7 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
             p.stripit()
             p.vars()
             p.f=p.var[var]
-            if p.ioformat==1: 
+            if p.ioformat==1:
                 z0=p.active_corners[0][2]+0.5*p.dx[2]
             else:
                 z0=p.active_corners[0][2]
@@ -362,13 +368,13 @@ def yx_scan(fig,run='',data='../data',iout=0,dz=50,var='logd',cmap='coolwarm',\
             pl.ylim(extent[0:2])    # x-axis is vertical
         pl.xlabel('y')
         pl.ylabel('x')
-        pl.tight_layout()        
+        pl.tight_layout()
         pl.title(title)
         if np.size(vlim)==2:
             vmin=vlim[0]
-            vmax=vlim[1]      
+            vmax=vlim[1]
         for p in select:
-            im=image(p.f,extent=p.ext,vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
+            im=image(p.f,extent=p.ext,vmin=vmin,vmax=vmax,cmap=cmap,keep=1,**kwargs)
             if labels:
                 pl.text(p.active_corners[0][1],p.active_corners[0][0],p.id)
         pl.colorbar(shrink=0.9,aspect=15,fraction=fraction,pad=0.02)
@@ -441,13 +447,13 @@ def yz_scan(fig,run='',data='../data',iout=0,dx=50,var='logd',cmap='coolwarm',\
             pl.ylim(extent[4:6])
         pl.xlabel('y')
         pl.ylabel('z')
-        pl.tight_layout()        
+        pl.tight_layout()
         pl.title(title)
         if np.size(vlim)==2:
             vmin=vlim[0]
-            vmax=vlim[1]      
+            vmax=vlim[1]
         for p in select:
-            im=image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap,**kwargs)    
+            im=image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap,keep=1,**kwargs)
             if labels:
                 pl.text(p.active_corners[0][1],p.active_corners[0][2],p.id)
         pl.colorbar(shrink=0.75,aspect=15,fraction=fraction,pad=0.02)
