@@ -3,7 +3,7 @@
 /
 
 &io_params
- verbose=3
+ verbose=1
  do_trace=f
  do_debug=f
  do_output=t
@@ -32,8 +32,48 @@
  no_mans_land=f
 /
 
+! uniform, non-rotating
+!&experiment_params
+! rho0=15.27026
+! r0=0.25
+! truealpha=0.0475
+! truebeta=0.0
+! perta=0.0
+! chipres=1.0
+! chirho=100.0
+!/
+!&scaling_params
+! l0=3.12e16
+!/
+
+! uniform, rotating
 &experiment_params
+ rho0=15.2783
+ r0=0.25
+ truealpha=0.0561
+ truebeta=0.0875
+ perta=0.0
+ chipres=1.0
+ chirho=100.0
 /
+&scaling_params
+ l0=2.890e17
+/
+
+! rotating, perturbed, 10%
+!&experiment_params
+! rho0=16.0130
+! r0=0.25
+! truealpha=0.26
+! truebeta=0.16
+! perta=0.1
+! pertm=2
+! chipres=10.0
+! chirho=100.0
+!/
+!&scaling_params
+! l0=2.0e17
+!/
 
 &boundary_params
   fixedbcs=t
@@ -47,7 +87,7 @@
  do_refine=t
  min_jeans=0.25
  refinement_ratio=3
- check_interval=10
+ check_interval=8
  refine_from_t=0.0
  refine_until_t=1.0
  levelmax=3
@@ -65,7 +105,7 @@
  max_iter=100
  precondition=t
  verbose=1
- solver='sor'
+ solver='cg'
 /
 
 &zeus_params
@@ -92,7 +132,9 @@
 
 &mhd_params
  gamma=1.0
- csound=0.077746
+ !csound=0.077746 ! non-rotating case
+ csound=0.08451 ! rotating case
+ !csound=0.1829 ! rotating, perturbed case
  nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
 /
