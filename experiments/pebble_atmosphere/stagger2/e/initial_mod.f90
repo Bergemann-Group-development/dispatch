@@ -84,8 +84,9 @@ END SUBROUTINE init
 !> =============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
-SUBROUTINE planet_atmosphere (self, m, mem, level)
+SUBROUTINE planet_atmosphere (self, m, mem, idx, level)
   class(initial_t) :: self
+  type(index_t):: idx
   real, dimension(:,:,:,:), pointer  :: mem
   class(mesh_t), pointer, dimension(:) :: m
   integer, optional :: level
@@ -168,8 +169,9 @@ END SUBROUTINE planet_atmosphere
 !> =============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
-SUBROUTINE disk (self, m, mem, level)
+SUBROUTINE disk (self, m, mem, idx, level)
   class(initial_t) :: self
+  type(index_t):: idx
   real, dimension(:,:,:,:), pointer  :: mem
   class(mesh_t), pointer, dimension(:) :: m
   integer, optional :: level
@@ -245,8 +247,9 @@ SUBROUTINE disk (self, m, mem, level)
   call trace%end (itimer)
 END SUBROUTINE disk
 
-SUBROUTINE snapshot (self, m, mem, level)
+SUBROUTINE snapshot (self, m, mem, idx, level)
   class(initial_t) :: self
+  type(index_t):: idx
   real, dimension(:,:,:,:), pointer  :: mem
   class(mesh_t), pointer, dimension(:) :: m
   integer, optional :: level

@@ -1,6 +1,6 @@
 !> =============================================================================
-!> Methods for solving the Poisson equation; derived from routines developed by
-!> Troels Haugbølle for the course Computational Astrophysics
+!> Methods for solving the Poisson equation; partially derived from routines
+!> developed by Troels Haugbølle for the course Computational Astrophysics.
 !> =============================================================================
 MODULE poisson_mod
   USE mpi_mod
@@ -9,149 +9,356 @@ MODULE poisson_mod
   USE kinds_mod
   USE patch_mod
   USE mesh_mod
-
+  USE bits_mod
+  USE scaling_mod
+  USE omp_timer_mod
   implicit none
   private
   type, public:: poisson_t
-    character(len=32):: kind
-    real:: omega_sor
-    procedure(sor_2nd), pointer :: update => null()
-    ! for use with ZEUS SOR solver
-    real(8):: rjac2 ! spectral radius
-    real(kind=KindScalarVar), dimension(:), allocatable:: dx1m2i, dx2m2i, dx1p2i, dx2p2i
-    real(kind=KindScalarVar), dimension(:,:,:), allocatable:: eta
+    real(8):: omega_sor ! Overrelaxation parameter
+    real(8):: rjac2     ! Jacobi spectral radius squared
+    procedure(cg), pointer:: update => null()
   contains
     procedure:: init
-    procedure:: check => check_poisson
+    procedure:: cg
+    procedure:: sor
+    procedure, nopass:: laplace
   end type
-
+  real,    save:: floor=1e-2, tolerance=1e-4, fourPiG=1.0
+  integer, save:: verbose=0
+  integer, save:: max_iter=500
+  logical, save:: precondition=.true.
   real(8), parameter:: pi = asin(1.0) * 2.0
+  logical, save:: chebyshev = .true. ! Activate Chebyshev acceleration of SOR?
 
 CONTAINS
 
 !> =============================================================================
 !> Initialize poisson_params
 !> =============================================================================
-SUBROUTINE init (self, patch, selfgravity)
+SUBROUTINE init (self)
   implicit none
   class(poisson_t)  :: self
-  class(patch_t)    :: patch
-  character(len=12) :: solver='sor_2nd'
-  integer           :: iostat
-  real,    save     :: omega_sor=0.0
-  logical, save     :: first_time = .true.
-  logical           :: selfgravity
-  namelist /poisson_params/ solver, omega_sor
   !.............................................................................
+  integer           :: iostat
+  !.............................................................................
+  character(len=12), save :: solver='cg'
+  logical,           save :: first_time = .true.
+  namelist /poisson_params/ tolerance, floor, max_iter, fourPiG, precondition, &
+                            verbose, solver, chebyshev
+  !-----------------------------------------------------------------------------
   !$omp critical (poisson_cr)
   if (first_time) then
     first_time = .false.
+    fourpiG = scaling%grav
     rewind (io%input)
     read (io%input, poisson_params, iostat=iostat)
     if (io%master) write (io%output, poisson_params)
   end if
   !$omp end critical (poisson_cr)
   select case(trim(solver))
-  case('sor_2nd')
-    self%omega_sor = omega_sor
-    call init_sor_2nd(self, patch)
-    self%update => sor_2nd
-    self%kind = solver
-  case('zeus_sor')
-    call init_zeus_sor(self, patch)
-    self%update => zeus_sor
-    self%kind = solver
+  case ('cg')
+    self%update => cg
+  case ('sor')
+    self%update => sor
   case default
     if (io%master) then
       write(*,*) 'Poisson solver '//trim(solver)//' is unknown'
-      write(*,*) 'Valid solvers are: sor_2nd, zeus_sor'
+      write(*,*) 'Valid solvers are: cg, sor'
+      call mpi%abort()
     end if
-    selfgravity = .false.
   end select
 END SUBROUTINE init
 
 !> =============================================================================
-!> Initialize SOR factor
+!> Conjugate gradient Poisson solver (Ghysels & Vanroose 2014, Algorithm 1)
+!>   http://www.sciencedirect.com/science/article/pii/S0167819113000719
+!> With the "incomplete Poisson" preconditioner from:
+!> http://www.vis.uni-stuttgart.de/~weiskopf/publications/pdp10.pdf 
+!> or http://ieeexplore.ieee.org/document/5452414/
+!> See also the CG method in RAMSES: `ramses/poisson/phi_fine_cg.f90`.
 !> =============================================================================
-SUBROUTINE init_sor_2nd (self, patch)
-  implicit none
-  class(poisson_t)  :: self
-  class(patch_t)    :: patch
+SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
+  class(poisson_t)       :: self
+  class(patch_t)         :: patch
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi1
+  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: d
+  real(8)                :: d0
+  logical                :: detailed_timer
   !.............................................................................
-  ! Calculate optimal guess for the SOR prefactor depending
+  integer                :: niter
+  real                   :: error, error0, usppt
+  real(8)                :: pap, ru, ru2, alpha, beta, ds(3), wc
+  integer                :: iter, m(3), ione, jone, kone
+  integer, save          :: itimer=0
+  real(8), dimension(:,:,:), allocatable:: source, phi, r, p, s, u
+  !-----------------------------------------------------------------------------
+  if (detailed_timer) call trace%begin('poisson_mod%cg', itimer=itimer)
+  ione = 1
+  jone = 1
+  kone = 1
+  if (size(phi1,1) <= 1) ione = 0
+  if (size(phi1,2) <= 1) jone = 0
+  if (size(phi1,3) <= 1) kone = 0
+  !-----------------------------------------------------------------------------
+  ! Allocate double precision scratch arrays
+  !-----------------------------------------------------------------------------
+  m = shape(phi1)
+  allocate (r(m(1),m(2),m(3)), p(m(1),m(2),m(3)))
+  allocate (s(m(1),m(2),m(3)), u(m(1),m(2),m(3)))
+  allocate (source(m(1),m(2),m(3)), phi(m(1),m(2),m(3)))
+  !-----------------------------------------------------------------------------
+  ! Calculate the initial residual = source - Laplace(phi)
+  !-----------------------------------------------------------------------------
+  wc = wallclock()
+  ds = patch%ds
+  phi = phi1
+  source = fourPiG*(d-d0)
+  call zero_boundaries (source)
+  p = 0d0
+  r = 0d0
+  s = 0d0
+  u = 0d0
+  call laplace (ds, phi, r)
+  r = source - r
+  error0 = patch%fmaxval(abs(r/(d+floor)))
+  if (verbose > 1) print "(i6,2x,'cg: iter = ',i4.1,3x,'error =',1p,g12.4)", &
+    patch%id, 0, error0
+  call precond (r, u)
+  ru = patch%fsum(r*u)
+  !-----------------------------------------------------------------------------
+  ! Iteratively improve the solution
+  !-----------------------------------------------------------------------------
+  p = u
+  do iter = 1,max_iter
+    call laplace (ds, p, s)
+    alpha = ru/patch%fsum(s*p)
+    phi = phi + alpha*p
+    r   = r   - alpha*s
+    error = patch%fmaxval(abs(r/(d+floor)))/fourPiG
+    call precond (r, u)
+    ru2 = patch%fsum(r*u)
+    if (error < tolerance) exit
+    beta = ru2/ru
+    p = u + beta*p
+    ru = ru2
+    if (verbose > 1) print "(i6,2x,'cg: iter = ',i4.1,3x,'error =',1p,g12.4)", &
+      patch%id, iter, error
+    !!!write (11) phi
+  end do
+  if (iter==max_iter+1) then
+    print *, 'poisson_t%cg: NO CONVERGENCE! id, niter, error0, error =', &
+             patch%id, max_iter, error0, error
+  else if (verbose>0 .and. io%master) then
+    usppt = 1e6*(wallclock()-wc)/product(shape(phi))
+    print '(a,i7,i5,3x,2e12.3,f8.2)', &
+     'poisson_t%cg: id, niter, initial/final error, us/pt =', &
+      patch%id, iter, error0, error, usppt
+  end if
+  phi1 = phi
+
+  deallocate (phi, source, r, p, s, u)
+  if (detailed_timer) call trace%end (itimer)
+contains
+  !> =============================================================================
+  !> Set scratch array outer boundary to zero
+  !> =============================================================================
+  subroutine zero_boundaries (f)
+    real(8):: f(:,:,:)
+    class(mesh_t), pointer:: m(:)
+    !.............................................................................
+    if (patch%is_periodic()) return
+    m => patch%mesh
+    if (size(f,1) > 1) then
+      f(m(1)%lb:m(1)%lo,:,:) = 0d0
+      f(m(1)%uo:m(1)%ub,:,:) = 0d0
+    end if
+    if (size(f,2) > 1) then
+      f(:,m(2)%lb:m(2)%lo,:) = 0d0
+      f(:,m(2)%uo:m(2)%ub,:) = 0d0
+    end if
+    if (size(f,3) > 1) then
+      f(:,:,m(3)%lb:m(3)%lo) = 0d0
+      f(:,:,m(3)%uo:m(3)%ub) = 0d0
+    end if
+  end subroutine zero_boundaries
+  !> =============================================================================
+  !> 2nd order Laplace operator
+  !> =============================================================================
+  subroutine laplace (ds, phi, out)
+    real(8)                   :: ds(3)
+    real(8), dimension(:,:,:) :: phi, out
+    !.............................................................................
+    integer                   :: i, j, k, im1, jm1, km1, ip1, jp1, kp1, li(3), n(3)
+    real(8)                   :: c(3)
+    !-----------------------------------------------------------------------------
+    c  = 1d0/ds**2
+    n  = patch%mesh%nc
+    where (n == 1)
+      c = 0.0
+    end where
+    li = patch%mesh%li
+    !-----------------------------------------------------------------------------
+    ! For periodic patches, wrap around
+    !-----------------------------------------------------------------------------
+    if (patch%is_periodic()) then
+      do k=patch%mesh(3)%lb,patch%mesh(3)%ub
+        kp1 = modulo(k-li(3)+1,n(3))+li(3)
+        km1 = modulo(k-li(3)-1,n(3))+li(3)
+        do j=patch%mesh(2)%lb,patch%mesh(2)%ub
+          jp1 = modulo(j-li(2)+1,n(2))+li(2)
+          jm1 = modulo(j-li(2)-1,n(2))+li(2)
+          do i=patch%mesh(1)%lb,patch%mesh(1)%lo
+            ip1 = modulo(i-li(1)+1,n(1))+li(1)
+            im1 = modulo(i-li(1)-1,n(1))+li(1)
+            out(i,j,k) = c(1)*(phi(ip1,j,k)+phi(im1,j,k)-2d0*phi(i,j,k)) &
+                       + c(2)*(phi(i,jp1,k)+phi(i,jm1,k)-2d0*phi(i,j,k)) &
+                       + c(3)*(phi(i,j,kp1)+phi(i,j,km1)-2d0*phi(i,j,k))
+          end do
+          do i=patch%mesh(1)%li,patch%mesh(1)%ui
+            out(i,j,k) = c(1)*(phi(i+ione,j,k)+phi(i-ione,j,k)-2d0*phi(i,j,k)) &
+                       + c(2)*(phi(i   ,jp1,k)+phi(i   ,jm1,k)-2d0*phi(i,j,k)) &
+                       + c(3)*(phi(i   ,j,kp1)+phi(i   ,j,km1)-2d0*phi(i,j,k))
+          end do
+          do i=patch%mesh(1)%uo,patch%mesh(1)%ub
+            ip1 = modulo(i-li(1)+1,n(1))+li(1)
+            im1 = modulo(i-li(1)-1,n(1))+li(1)
+            out(i,j,k) = c(1)*(phi(ip1,j,k)+phi(im1,j,k)-2d0*phi(i,j,k)) &
+                       + c(2)*(phi(i,jp1,k)+phi(i,jm1,k)-2d0*phi(i,j,k)) &
+                       + c(3)*(phi(i,j,kp1)+phi(i,j,km1)-2d0*phi(i,j,k))
+          end do
+        end do
+      end do
+    else
+    !-----------------------------------------------------------------------------
+    ! For non-periodic patches, loop from li to ui
+    !-----------------------------------------------------------------------------
+      call zero_boundaries (out)
+      do k=patch%mesh(3)%li,patch%mesh(3)%ui
+        do j=patch%mesh(2)%li,patch%mesh(2)%ui
+          do i=patch%mesh(1)%li,patch%mesh(1)%ui
+            out(i,j,k) = c(1)*(phi(i+ione,j,k)+phi(i-ione,j,k)-2d0*phi(i,j,k)) &
+                       + c(2)*(phi(i,j+jone,k)+phi(i,j-jone,k)-2d0*phi(i,j,k)) &
+                       + c(3)*(phi(i,j,k+kone)+phi(i,j,k-kone)-2d0*phi(i,j,k))
+          end do
+        end do
+      end do
+    end if
+  end subroutine laplace
+  !> =============================================================================
+  !> Preconditioner for conjugate gradient method
+  !> =============================================================================
+  subroutine precond (res, out)
+    real(8), dimension(:,:,:) :: res, out
+    !.............................................................................
+    integer                   :: i, j, k, im1, jm1, km1, ip1, jp1, kp1, li(3), n(3), &
+                                 ndim
+    real(8)                   :: a, b(3)
+    !-----------------------------------------------------------------------------
+    if (precondition) then
+      n  = patch%mesh%nc
+      ndim = sum(merge(1,0,n > 1))
+      b = 0.5d0 / ndim
+      a = 1d0 + 0.25d0 / ndim
+      where (n == 1)
+        b = 0.0d0
+      end where
+      li = patch%mesh%li
+      !---------------------------------------------------------------------------
+      ! For periodic patches, wrap around (cheap patch so no need to optimize)
+      !---------------------------------------------------------------------------
+      if (patch%is_periodic()) then
+        do k=patch%mesh(3)%lb,patch%mesh(3)%ub
+          kp1 = modulo(k-li(3)+1,n(3))+li(3)
+          km1 = modulo(k-li(3)-1,n(3))+li(3)
+          do j=patch%mesh(2)%lb,patch%mesh(2)%ub
+            jp1 = modulo(j-li(2)+1,n(2))+li(2)
+            jm1 = modulo(j-li(2)-1,n(2))+li(2)
+            do i=patch%mesh(1)%lb,patch%mesh(1)%ub
+              ip1 = modulo(i-li(1)+1,n(1))+li(1)
+              im1 = modulo(i-li(1)-1,n(1))+li(1)
+              out(i,j,k) = b(1)*(res(ip1,j,k)+res(im1,j,k))  &
+                         + b(2)*(res(i,jp1,k)+res(i,jm1,k))  &
+                         + b(3)*(res(i,j,kp1)+res(i,j,km1)) &
+                         + a*res(i,j,k)
+            end do
+          end do
+        end do
+      !---------------------------------------------------------------------------
+      ! For non- periodic patches, loop over internal cells
+      !---------------------------------------------------------------------------
+      else
+        do k=patch%li(3),patch%ui(3)
+          do j=patch%li(2),patch%ui(2)
+            do i=patch%li(1),patch%ui(1)
+              out(i,j,k) = b(1)*(res(i+ione,j,k)+res(i-ione,j,k))  &
+                         + b(2)*(res(i,j+jone,k)+res(i,j-jone,k))  &
+                         + b(3)*(res(i,j,k+kone)+res(i,j,k-kone)) &
+                         + a*res(i,j,k)
+            end do
+          end do
+        end do
+        call zero_boundaries (out)
+      end if
+    else
+      out = res
+    end if
+  end subroutine precond
+END SUBROUTINE cg
+
+!> =============================================================================
+!> 2nd order successive over relaxation with red-black ordering
+!> =============================================================================
+SUBROUTINE sor (self, patch, phi1, d, d0, detailed_timer)
+  class(poisson_t)       :: self
+  class(patch_t)         :: patch
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi1
+  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: d
+  real(8):: d0
+  logical                :: detailed_timer
+  !.............................................................................
+  integer                :: i, j, k, sweep, ss, ione, jone, kone, m(3), iter, niter
+  real                   :: error, error0
+  real(8)                :: a, b, b1, b2, b3, res, numer, denom, wc, usppt
+  integer, save          :: itimer=0
+  real(8), dimension(:,:,:), allocatable:: phi, source
+
+  !-----------------------------------------------------------------------------
+  if (detailed_timer) call trace%begin ('poisson_t%sor_iter', itimer=itimer)
+
+  associate(n=>patch%n,ds=>patch%ds,l=>patch%li,u=>patch%ui,gn=>patch%gn)
+  allocate (phi(gn(1),gn(2),gn(3)), source(gn(1),gn(2),gn(3)))
+
+  !-------------------------------------------------------------------
+  ! Calculate optimal guess for the SOR prefactor depending on
   ! dimensionality, ds, and grid points n:
-  !
   !    delta = (1/sum(1/ds^2)) sum(1/ds^2 * cos(pi/n))
   !    omega_sor = 2 / (1 + (1 - delta^2)^0.5)
-  !
   ! For an even dimensionality grid
-  !
   !    delta = cos(pi / n)
-  !
   ! which for n > 10 is well approximated by
-  !
   !    delta ~ 1 - 1/2 (pi/n)**2
-  !
   ! and then
-  !
   !    omega_sor = 2 / (1 + pi/n)
-  !
-  integer           :: i
-  real              :: delta, pref
-  real, parameter   :: pi=3.1415926536
-  character(len=16) :: comment
-  logical, save     :: first_time = .true.
-  !-----------------------------------------------------------------------------
-  if (self%omega_sor==0.) then
-    delta = 0.0; pref = 0.0
-    do i=1,3
-      if (patch%n(i) > 1) then
-        pref  = pref + 1.
-        delta = delta + cos(pi / patch%n(i))
-      endif
-    enddo
-    delta = delta / pref
-    self%omega_sor = 2.0 / (1. + sqrt(1.0 - delta**2))
-    comment =' (computed)'
+  !-------------------------------------------------------------------
+  numer = 0.0
+  denom = 0.0
+  do i=1,3
+    if (patch%n(i) > 1) then
+      numer = numer + cos(pi / patch%n(i))
+      denom = denom + 1d0
+    end if
+  end do
+  self%rjac2 = (numer / denom)**2
+  if (chebyshev) then
+    ! initial value for Chebyshev acceleration
+    self%omega_sor = 1.0
   else
-    comment =' (from namelist)'
-  endif
-  if (self%omega_sor < 0. .or. self%omega_sor>2) call mpi%abort( &
-    'omega_sor in Laplace_mod has to be between 0 and 2 for stability')
-  !$omp critical (poisson_cr2)
-  if (first_time .and. io%master) then
-    print '(a,f6.4,a)', 'poisson_mod: SOR prefactor set to: ', self%omega_sor, comment
-    first_time = .false.
-  endif
-  !$omp end critical (poisson_cr2)
-END SUBROUTINE init_sor_2nd
+    ! optimal value for the relaxation parameter
+    self%omega_sor = 2d0 / (1d0 + sqrt(1d0 - self%rjac2))
+  end if
 
-!> =============================================================================
-!> 3pt 2nd order Red-Black Gauss-Seidel iteration with SOR acceleration
-!>
-!> Make one iterative update for
-!>
-!>   (2/dx^2 + 2/dy^2 + 2/dz^2) phi_new_ijk =
-!>                                 (phi_i+1,j,k + phi_i-1,j,k)/dx^2
-!>                               + (phi_i,j+1,k + phi_i,j-1,k)/dy^2
-!>                               + (phi_i,j,k+1 + phi_i,j,k-1)/dz^2
-!>                               - FourPiGrho
-!>
-!> =============================================================================
-SUBROUTINE sor_2nd (self, patch, phi, resid, FourPiGrho, d, error, detailed_timer)
-  class(poisson_t):: self
-  class(patch_t)  :: patch
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi, resid
-  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: FourPiGrho, d
-  real   :: error
-  logical:: detailed_timer
-  integer:: i, j, k, sweep, ss, ione, jone, kone
-  real   :: a, b, b1, b2, b3, ustar
-  integer, save                  :: itimer=0
-  !-----------------------------------------------------------------------------
-  if (detailed_timer) call trace%begin ('poisson_t%sor_2nd_abs', itimer=itimer)
-  associate(n=>patch%n,ds=>patch%ds,l=>patch%li,u=>patch%ui,gn=>patch%gn,omega_sor=>self%omega_sor)
-
+  if (patch%is_periodic()) call patch%make_periodic (phi)
   ione = 1
   jone = 1
   kone = 1
@@ -159,253 +366,106 @@ SUBROUTINE sor_2nd (self, patch, phi, resid, FourPiGrho, d, error, detailed_time
   if (n(2) <= 1) jone = 0
   if (n(3) <= 1) kone = 0
 
+  wc = wallclock()
+  phi = phi1
+  source = fourPiG * (d - d0)
   ! Calculate 1 / [(2/dx + 2/dy + 2/dz)] prefactor according to dimensionality
   a = 0.0
   if (n(1) > 1) a = a + 2. / ds(1)**2
   if (n(2) > 1) a = a + 2. / ds(2)**2
   if (n(3) > 1) a = a + 2. / ds(3)**2
   a = 1. / a
+  b1 = a / ds(1)**2 * ione
+  b2 = a / ds(2)**2 * jone
+  b3 = a / ds(3)**2 * kone
 
-  error = 0.0
-  do sweep=0,1
-    ! Add up contributions
-    b1 = a / ds(1)**2 * ione
-    b2 = a / ds(2)**2 * jone
-    b3 = a / ds(3)**2 * kone
-    b = 2.0 * (b1 + b2 + b3)
-    do k=l(3),u(3)
-      do j=l(2),u(2)
-        ss = modulo(j + k + sweep,2)
-        do i=l(1)+ss,u(1),2
-          ustar = b1 * (phi(i+ione,j,k) + phi(i-ione,j,k)) &
+  do iter=1,max_iter
+    error = 0.0
+    do sweep=0,1
+      do k=l(3),u(3)
+        do j=l(2),u(2)
+          ss = modulo(j + k + sweep,2)
+          do i=l(1)+ss,u(1),2
+            !---------------------------------------------------------------------
+            ! This form of the residual has no factor in front of phi, which makes
+            ! it clear how to apply the over-relaxation factor
+            !---------------------------------------------------------------------
+            res = b1 * (phi(i+ione,j,k) + phi(i-ione,j,k)) &
                 + b2 * (phi(i,j+jone,k) + phi(i,j-jone,k)) &
                 + b3 * (phi(i,j,k+kone) + phi(i,j,k-kone)) &
-                - a * FourPiGrho(i,j,k)
-          phi(i,j,k)   = (1. - omega_sor) * phi(i,j,k) + omega_sor  * ustar
-          resid(i,j,k) = (phi(i,j,k) - ustar) / a
-          error = max(error, abs(ustar - b * phi(i,j,k)) / d(i,j,k))
+                - phi(i,j,k)- a * source(i,j,k)
+            phi(i,j,k) = phi(i,j,k) + self%omega_sor * res
+            error = max(abs(res / (d(i,j,k) + floor)), error)
+          end do
         end do
       end do
+      if (chebyshev) then
+        if (iter == 1) then
+          self%omega_sor = 1.0 / (1.0 - self%rjac2 * 0.5)
+        else
+          self%omega_sor = 1.0 / (1.0 - self%rjac2 * 0.25 * self%omega_sor)
+        end if
+      end if
     end do
-  end do
-  error = error / a
-  end associate
-
-  if (detailed_timer) call trace%end (itimer)
-END SUBROUTINE sor_2nd
-
-!> =====================================================================
-!> Initialise variables for the ZEUS SOR solver which are independent of
-!> the MHD update and iterative calls to the SOR solver.
-!> See accompanying `zeus_sor` procedure.
-!> =====================================================================
-SUBROUTINE init_zeus_sor (self, patch)
-  class(poisson_t):: self
-  class(patch_t):: patch
-  class(mesh_t), pointer:: m1, m2, m3
-  real(8):: q1, q2, q3, etaik, etajk, etakk, dx1a2i, dx2a2i, dx3a2i, dsi(3)
-  integer:: i, j, k
-  !---------------------------------------------------------------------
-  call trace%begin('poisson_t%init_zeus_sor')
-
-  m1 => patch%mesh(1)
-  m2 => patch%mesh(2)
-  m3 => patch%mesh(3)
-
-  dsi = 1.0 / patch%ds
-
-  allocate (self%dx1m2i(m1%gn), self%dx1p2i(m1%gn), self%dx2m2i(m2%gn), self%dx2p2i(m2%gn))
-  allocate (self%eta(m1%gn,m2%gn,m3%gn))
-
-  ! Compute grid-related quantities that don't change from one cycle to the next.
-  ! These are required for curvilinear coords and go 1.0/ds**2 in Cartesian coords.
-  ! Uniform cell sizes are assumed.
-  self%dx1m2i(:) = 0.0
-  self%dx1p2i(:) = 0.0
-  self%dx2m2i(:) = 0.0
-  self%dx2p2i(:) = 0.0
-  do i=m1%li,m1%ui
-    self%dx1m2i(i) = m1%h2f(i  ) * m1%h31f(i  ) / m1%h2c(i  ) / m1%h31c(i  ) * dsi(1)**2
-    self%dx1p2i(i) = m1%h2f(i+1) * m1%h31f(i+1) / m1%h2c(i  ) / m1%h31c(i  ) * dsi(1)**2
-  end do
-  do j=m2%li,m2%ui
-    self%dx2m2i(j) = m2%h32f(j  ) / m2%h32c(j) * dsi(2)**2
-    self%dx2p2i(j) = m2%h32f(j+1) / m2%h32c(j) * dsi(2)**2
+    !-----------------------------------------------------------------------------
+    ! We are supposed to return the residual as (Laplace(phi)-source)/d, so we
+    ! need to divide with the factor that source (FourPiGrho) was multiplied by
+    !-----------------------------------------------------------------------------
+    error = error / a
+    if (iter==1) error0 = error
+    if (verbose > 1) print *, 'poisson_t%sor: iter, error =', iter, error
+    if (error < tolerance) exit
+    !if (patch%is_periodic()) call patch%make_periodic (phi)
   end do
 
-  !  Evaluate quantities needed by the SOR iteration loop, but are independent
-  !  of phi.  These need only be calculated once for each patch. The Chebyshev
-  !  acceleration factor, `omega_sor`, is also initialised.
-  !
-  !  Note from D. Clarke: omega_sor is started off at omega(n+1/2) in the series given
-  !  by Press et al (page 859), and not omega(0) = 1.  This seems to allow
-  !  for more rapid convergence.
-  etakk  = 0.0
-  etajk  = 0.0
-  etaik  = 0.0
-  q1     = 0.0
-  q2     = 0.0
-  q3     = 0.0
-  dx1a2i = 0.0
-  dx2a2i = 0.0
-  dx3a2i = 0.0
-
-  if (patch%n(3) > 1) then
-    dx3a2i = dsi(3)**2
-    etakk  =-2.0 * dx3a2i
-    q3     = cos(pi / patch%n(3)) * dx3a2i
+  if (iter==max_iter+1) then
+    print *, 'poisson_t%sor: no convergence, niter, error =', max_iter, error
+  else if (verbose > 0 .and. io%master) then
+    usppt = 1e6 * (wallclock() - wc) / product(shape(phi))
+    print '(a,i7,i5,3x,2e12.3,f8.2)', &
+     'poisson_t%sor: id, niter, initial/final error, us/pt =', &
+      patch%id, iter, error0, error, usppt
   end if
-  if (patch%n(2) > 1) then
-    dx2a2i = dsi(2)**2
-    q2 = cos(pi / patch%n(2)) * dx2a2i
-  end if
-  if (patch%n(1) > 1) then
-    dx1a2i = dsi(1)**2
-    q1 = cos(pi / patch%n(1)) * dx1a2i
-  end if
-  self%rjac2 = ( ( q1 + q2 + q3 ) / ( dx1a2i + dx2a2i + dx3a2i ) )**2 ! Jacobi spectral radius squared
-  self%omega_sor = 1.0 / ( 1.0 - 0.5 * self%rjac2 )
-  do k=m3%li,m3%ui
-    do j=m2%li,m2%ui
-      if (patch%n(2) > 1) etajk =-self%dx2m2i(j) - self%dx2p2i(j)
-      do i=m1%li,m1%ui
-        if (patch%n(1) > 1) etaik =-self%dx1m2i(i) - self%dx1p2i(i)
-        self%eta(i,j,k) = etaik &
-                        + etajk / m1%h2c (i)**2 &
-                        + etakk / (m1%h31c(i) * m2%h32c(j))**2
-      end do
-    end do
-  end do
-
-  call trace%end
-END SUBROUTINE init_zeus_sor
-
-!> =====================================================================
-!> ZEUS-3D's version of SOR for solving Poisson's eqn.
-!> Extended for curvilinear coords.
-!> Originally written by Chris Howard in 2003 and modified by Alexander
-!> Men'shchikov (2003), David Clarke (2004) and Nick MacDonald (2005).
-!> Ported to DISPATCH by JPR (2017).
-!      The SOR algorithm from Numerical Recipes (Press et al.), has been
-  !  generalised for curvilinear geometries (XYZ, ZRP, RTP) and with any
-  !  symmetry (1-D, 2-D, or full 3-D).
-!> =====================================================================
-SUBROUTINE zeus_sor (self, patch, phi, resid, FourPiGrho, d, anorm, detailed_timer)
-  class(poisson_t):: self
-  class(patch_t):: patch
-  class(mesh_t), pointer:: m1, m2, m3
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi, resid
-  real(kind=KindScalarVar), dimension(:,:,:), pointer, intent(in):: FourPiGrho, d
-  real   :: anorm
-  logical:: detailed_timer
-  integer, save:: itimer = 0
-  integer:: ione, jone, kone, i, j, k, sweep, sw1, sw2, sw3 &
-          , inci, incj, inck, swi, swj, swk
-  real(8):: da, dx3a2i
-  !-----------------------------------------------------------------------
-  if (detailed_timer) call trace%begin('poisson_mod%zeus_sor', itimer=itimer)
-  associate (l => patch%li, u => patch%ui)
-
-  m1 => patch%mesh(1)
-  m2 => patch%mesh(2)
-  m3 => patch%mesh(3)
-
-  ione = 1
-  jone = 1
-  kone = 1
-  if (patch%n(1) <= 1) ione = 0
-  if (patch%n(2) <= 1) jone = 0
-  if (patch%n(3) <= 1) kone = 0
-  ! loop strides
-  inci = 1 + ione
-  inck = 1 + (1-ione) * (1-jone)
-  incj = 3 - inci*inck
-
-  !  The checkerboarding described in Press et al. is performed on the
-  !  innermost do-loop only, which is normally the i-loop.  However, if
-  !  the problem has inherant i-symmetry, it is necessary to perform the
-  !  checkerboarding on the j-loop, and if there is both i-symmetry and
-  !  j-symmetry, on the k-loop.  The variables inc* and sw*, *=i,j,k, are
-  !  introduced to perform the checkerboarding on the appropriate loop.
-  anorm = 0.0d0
-  dx3a2i = 1.0 / patch%ds(3)**2
-  do sweep=1,2
-    sw1 = sweep - 1
-    sw2 = sw1
-    swk = (inck-1) * sw1
-    do k=l(3)+swk,u(3),inck
-      sw3 = sw2
-      swj = (incj-1) * sw2
-      do j=l(2)+swj,u(2),incj
-        swi = (inci-1) * sw3
-        do i=l(1)+swi,u(1),inci
-          da = self%eta(i,j,k) * phi(i,j,k) - FourPiGrho(i,j,k) &
-             + ( phi(i+ione,j,k) * self%dx1p2i(i) + phi(i-ione,j,k) * self%dx1m2i(i) ) &
-               * ione &
-             + ( phi(i,j+jone,k) * self%dx2p2i(j) + phi(i,j-jone,k) * self%dx2m2i(j) ) &
-               / m1%h2c(i)**2 * jone &
-             + ( phi(i,j,k+kone) + phi(i,j,k-kone) ) * dx3a2i &
-               / m1%h31c(i)**2 / m2%h32c(j)**2 * kone
-          resid(i,j,k) = da
-          phi(i,j,k)   = phi(i,j,k) - self%omega_sor / self%eta(i,j,k) * da
-          anorm        = anorm + abs(da)
-        end do
-        sw3 = 1 - sw3
-      end do
-      sw2 = 1 - sw2
-    end do
-    !  Optimise omega using "Chebyshev acceleration".
-    self%omega_sor = 1.0 / ( 1.0 - self%rjac2 * 0.25 * self%omega_sor )
-  end do
+  niter = iter
+  phi1 = phi
+  deallocate (phi)
 
   end associate
   if (detailed_timer) call trace%end (itimer)
-END SUBROUTINE zeus_sor
+END SUBROUTINE sor
 
 !> =============================================================================
-!> Given a grav. pot. and a density, calculate Poisson's equation and return
-!> the residual.
+!> 2nd order Laplace operator
 !> =============================================================================
-SUBROUTINE check_poisson (self, patch, FourPiG, resid)
-  class(poisson_t):: self
-  class(patch_t):: patch
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: phi
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
-  real(kind=KindScalarVar), dimension(patch%gn(1),patch%gn(2),patch%gn(3)):: resid
-  real:: FourPiG
-  integer:: i, j, k, ione, jone, kone
-  real, dimension(3):: dsi2
+SUBROUTINE laplace (ds, phi, source, res)
+  real(8)                   :: ds(3)
+  real, dimension(:,:,:)    :: phi, source, res
   !.............................................................................
-  call trace%begin('experiment_t%check_poisson')
-  d => patch%mem(:,:,:,patch%i_d,patch%it,1)
-  phi => patch%mem(:,:,:,patch%i_phi,patch%it,1)
-
+  integer                   :: ix, iy, iz, m(3), ione, jone, kone
+  real(8)                   :: c(3)
+  !-----------------------------------------------------------------------------
   ione = 1
   jone = 1
   kone = 1
-  if (patch%n(1) <= 1) ione = 0
-  if (patch%n(2) <= 1) jone = 0
-  if (patch%n(3) <= 1) kone = 0
-  dsi2 = 1.0 / patch%ds**2
+  if (size(phi,1) <= 1) ione = 0
+  if (size(phi,2) <= 1) jone = 0
+  if (size(phi,3) <= 1) kone = 0
 
-  resid = 0.0
-  associate (l => patch%li, u => patch%ui)
-  do k=l(3),u(3)
-    do j=l(2),u(2)
-      do i=l(1),u(1)
-        resid(i,j,k) = (phi(i+ione,j,k) - 2.0 * phi(i,j,k) + phi(i-ione,j,k)) * dsi2(1) * ione &
-                     + (phi(i,j+jone,k) - 2.0 * phi(i,j,k) + phi(i,j-jone,k)) * dsi2(2) * jone &
-                     + (phi(i,j,k+kone) - 2.0 * phi(i,j,k) + phi(i,j,k-kone)) * dsi2(3) * kone &
-                     - FourPiG * d(i,j,k)
-        resid(i,j,k) = abs(resid(i,j,k))
-      end do
-    end do
+  c = 1d0/ds**2
+  m = shape(phi)
+  where (m == 1)
+    c = 0.0d0
+  end where
+  do iz=2,m(3)-kone
+  do iy=2,m(2)-jone
+  do ix=2,m(1)-ione
+    res(ix,iy,iz) = c(1)*(phi(ix+ione,iy,iz)+phi(ix-ione,iy,iz)-2d0*phi(ix,iy,iz)) &
+                  + c(2)*(phi(ix,iy+jone,iz)+phi(ix,iy-jone,iz)-2d0*phi(ix,iy,iz)) &
+                  + c(3)*(phi(ix,iy,iz+kone)+phi(ix,iy,iz-kone)-2d0*phi(ix,iy,iz)) &
+                  - source(ix,iy,iz)
   end do
-  end associate
-
-  print*,"Max. resid.:",maxval(resid)
-
-  call trace%end
-END SUBROUTINE check_poisson
+  end do
+  end do
+END SUBROUTINE laplace
 
 END MODULE poisson_mod

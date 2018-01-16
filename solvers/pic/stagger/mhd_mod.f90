@@ -116,8 +116,8 @@ SUBROUTINE p2U (self)
   call trace%begin ('experiment_mod::p2U')
   call allocate_scalars (self%gn, lnd)
   call allocate_vectors (self%gn, ld, self%dd, self%U)
-  self%d => self%mem(:,:,:,self%i_d,self%it,1)
-  self%p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
+  self%d => self%mem(:,:,:,self%idx%d,self%it,1)
+  self%p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   lnd = log(self%d)
   ld  = vup(lnd)
   self%dd  = exp(ld)
@@ -184,20 +184,20 @@ SUBROUTINE pde (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%pde',itimer=itimer)
-  self%d    => self%mem(:,:,:,self%i_d,self%it,1)
-  self%dddt => self%mem(:,:,:,self%i_d,self%it,2)
-  self%e    => self%mem(:,:,:,self%i_e,self%it,1)
-  self%dedt => self%mem(:,:,:,self%i_e,self%it,2)
-  self%p    => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
-  self%dpdt => self%mem(:,:,:,self%i_px:self%i_pz,self%it,2)
+  self%d    => self%mem(:,:,:,self%idx%d,self%it,1)
+  self%dddt => self%mem(:,:,:,self%idx%d,self%it,2)
+  self%e    => self%mem(:,:,:,self%idx%e,self%it,1)
+  self%dedt => self%mem(:,:,:,self%idx%e,self%it,2)
+  self%p    => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  self%dpdt => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,2)
   d=>self%d; dddt=>self%dddt
   e=>self%e; dedt=>self%dedt
   p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   if (self%mhd) then
-    self%B    => self%mem(:,:,:,self%i_bx:self%i_bz,self%it,1)
-    self%dBdt => self%mem(:,:,:,self%i_bx:self%i_bz,self%it,2)
+    self%B    => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
+    self%dBdt => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,2)
     B=>self%B; dBdt=>self%dBdt
     Bx   =>   B(:,:,:,1); By   =>   B(:,:,:,2); Bz   =>   B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);

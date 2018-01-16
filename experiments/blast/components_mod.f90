@@ -25,7 +25,6 @@ SUBROUTINE init_components (self)
   call trace_begin ('components_t%init')
 
   call self%rubiks_t%init_hierarchy
-  call self%task_list%remove_parents
 
   call trace_end
 END SUBROUTINE init_components

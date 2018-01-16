@@ -89,8 +89,9 @@ END SUBROUTINE cleanup
 !> =============================================================================
 !> Initialize from a snapshot file
 !> =============================================================================
-SUBROUTINE snapshot (self, m, ff)
+SUBROUTINE snapshot (self, m, ff, idx)
   class(initial_t):: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
   logical, save:: first_time=.true.
@@ -116,8 +117,9 @@ END SUBROUTINE snapshot
 !> =============================================================================
 !> Initialize from a legacy raw data file, with auxciliary grid file
 !> =============================================================================
-SUBROUTINE stagger (self, m, ff)
+SUBROUTINE stagger (self, m, ff, idx)
   class(initial_t):: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
   integer:: n(3), o(3), iv, recl, iy
@@ -245,8 +247,9 @@ END SUBROUTINE stagger
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-SUBROUTINE raw (self, m, ff)
+SUBROUTINE raw (self, m, ff, idx)
   class(initial_t):: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: ff
   integer:: n(3), i(3), iv, recl
@@ -300,8 +303,9 @@ END SUBROUTINE raw
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-SUBROUTINE single_solenoidal (self, m, ff)
+SUBROUTINE single_solenoidal (self, m, ff, idx)
   class(initial_t)      :: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:) :: ff
   !.............................................................................

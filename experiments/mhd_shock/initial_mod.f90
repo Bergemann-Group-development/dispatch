@@ -6,6 +6,7 @@ MODULE initial_mod
   USE trace_mod
   USE kinds_mod
   USE mesh_mod
+  USE index_mod
   implicit none
   private
 
@@ -25,8 +26,9 @@ SUBROUTINE init (self, solver)
   character(len=64):: solver
 END SUBROUTINE init
 
-SUBROUTINE condition (self, m, ff)
+SUBROUTINE condition (self, m, ff, idx)
   class(initial_t):: self
+  type(index_t):: idx
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: ff
   class(mesh_t), pointer, dimension(:):: m
 END SUBROUTINE condition

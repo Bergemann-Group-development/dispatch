@@ -48,6 +48,7 @@ MODULE link_mod
     procedure:: send_to_vnbors
     procedure:: print_nbors
     procedure:: test_nbor_status
+    procedure:: check_level_sort
   end type
   logical, save:: debug=.false.
 CONTAINS
@@ -194,6 +195,31 @@ SUBROUTINE test_nbor_status (self)
     nbor => nbor%next
   end do
 END SUBROUTINE test_nbor_status
+
+!> =============================================================================
+!> Check the status of a link and all nbor links
+!> =============================================================================
+SUBROUTINE check_level_sort (self)
+  class(link_t):: self
+  class(link_t), pointer:: nbor
+  integer:: level
+  !.............................................................................
+  nbor => self%nbor
+  level = -1
+  do while (associated(nbor))
+    if (nbor%task%level < level) then
+       print *, self%task%id, 'WARNING: nbors not sorted by level'
+       nbor => self%nbor
+       do while (associated(nbor))
+         print *, 'nbor, level =', nbor%task%id, nbor%task%level
+         nbor => nbor%next
+       end do
+       return
+    end if
+    level = nbor%task%level
+    nbor => nbor%next
+  end do
+END SUBROUTINE check_level_sort
 
 !> =============================================================================
 !> Check the status of a link task  with respect to its nbors

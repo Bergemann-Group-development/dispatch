@@ -12,6 +12,7 @@ MODULE initial_mod
   USE lagrange_mod
   USE units_mod
   USE scaling_mod
+  USE index_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -55,8 +56,9 @@ END SUBROUTINE init
 !> =============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
 !> =============================================================================
-SUBROUTINE planet_atmosphere (self, m, mem)
+SUBROUTINE planet_atmosphere (self, m, mem, idx)
   class(initial_t)             :: self
+  type(index_t):: idx
   real, dimension(:,:,:,:)     :: mem
   class(mesh_t), pointer, dimension(:) :: m
   !.............................................................................

@@ -65,9 +65,9 @@ SUBROUTINE init (self)
   call self%set (bits%static)
   call self%initial%init (self%kind)
   ff => self%mem(:,:,:,:,1,1)
-  call self%initial%condition (self%mesh, ff, self%level)
+  call self%initial%condition (self%mesh, ff, self%idx, self%idx, self%level)
   call self%boundaries%init (self%mesh, position=planet%position, radius=planet%radius)
-  do iv=self%i_px,self%i_pz
+  do iv=self%idx%px,self%idx%pz
     call self%boundaries%spherical (self%mem(:,:,:,iv,self%it,1), 0.0, self%mesh, iv)
   end do
   call trace_end
@@ -97,7 +97,7 @@ SUBROUTINE update (self)
       call self%mhd_t%update
     end if
     if (self%is_set (bits%spherical)) then
-      do iv=self%i_px,self%i_pz
+      do iv=self%idx%px,self%idx%pz
         call self%boundaries%spherical (self%mem(:,:,:,iv,it,2), 0.0, self%mesh, iv)
       end do
     end if
@@ -111,8 +111,8 @@ SUBROUTINE update (self)
     !------------------------------------------------------------------------
     if (self%boundaries%is_set (bits%spherical)) then
       allocate (mem(size(self%mem,1),size(self%mem,2),size(self%mem,3),2))
-      mem(:,:,:,1) = self%mem(:,:,:,self%i_d,self%it,1)
-      mem(:,:,:,2) = self%mem(:,:,:,self%i_e,self%it,1)
+      mem(:,:,:,1) = self%mem(:,:,:,self%idx%d,self%it,1)
+      mem(:,:,:,2) = self%mem(:,:,:,self%idx%e,self%it,1)
     end if
     !--------------------------------------------------------------------------
     ! Update the MHD state
@@ -133,13 +133,13 @@ SUBROUTINE update (self)
         else
           it = self%new
         end if
-        d => mem(:,:,:,self%i_d)
-        e => mem(:,:,:,self%i_e)
+        d => mem(:,:,:,self%idx%d)
+        e => mem(:,:,:,self%idx%e)
         call self%boundaries%init (radius=planet%radius-2.*self%ds(1))
-        call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_d,it,1), d, self%mesh, self%i_d)
-        call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%i_e,it,1), e, self%mesh, self%i_e)
+        call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%idx%d,it,1), d, self%mesh, self%idx%d)
+        call self%boundaries%spherical_extrapolate (self%mem(:,:,:,self%idx%e,it,1), e, self%mesh, self%idx%e)
         call self%boundaries%init (radius=planet%radius)
-        do iv=self%i_px,self%i_pz
+        do iv=self%idx%px,self%idx%pz
           call self%boundaries%spherical (self%mem(:,:,:,iv,it,1), 0.0, self%mesh, iv)
         end do
         deallocate (mem)
@@ -192,14 +192,14 @@ SUBROUTINE edge_boundary_conditions (self)
   ! Edge boundary conditions
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%edge_boundary_conditions')
-  d => self%mem(:,:,:,self%i_d,self%it,1)
-  e => self%mem(:,:,:,self%i_e,self%it,1)
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  e => self%mem(:,:,:,self%idx%e,self%it,1)
   allocate (u(size(d,1),size(d,2),size(d,3)))
   call self%boundaries%extrapolate (d)
   u = e/d
   call self%boundaries%symmetric (u)
   e = u*d
-  do iv=self%i_px,self%i_pz
+  do iv=self%idx%px,self%idx%pz
     p => self%mem(:,:,:,iv,self%it,1)
     u = p/d
     call self%boundaries%symmetric (u)

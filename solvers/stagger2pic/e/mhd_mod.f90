@@ -68,14 +68,6 @@ SUBROUTINE init (self)
     self%kind = 'stagger2e_hd_patch'
   end if
   call self%gpatch_t%init
-  self%i_d  = idx%d
-  self%i_px = idx%px
-  self%i_py = idx%py
-  self%i_pz = idx%pz
-  self%i_e  = idx%e
-  self%i_bx = idx%bx
-  self%i_by = idx%by
-  self%i_bz = idx%bz
   !$omp critical (mhd_input_cr)
   if (first_time) then
     first_time = .false.
@@ -123,20 +115,20 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
   st%m => self%mesh
-  self%d    => self%mem(:,:,:,self%i_d,self%it,1)
-  self%dddt => self%mem(:,:,:,self%i_d,self%it,2)
-  self%e    => self%mem(:,:,:,self%i_e,self%it,1)
-  self%dedt => self%mem(:,:,:,self%i_e,self%it,2)
-  self%p    => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
-  self%dpdt => self%mem(:,:,:,self%i_px:self%i_pz,self%it,2)
+  self%d    => self%mem(:,:,:,self%idx%d,self%it,1)
+  self%dddt => self%mem(:,:,:,self%idx%d,self%it,2)
+  self%e    => self%mem(:,:,:,self%idx%e,self%it,1)
+  self%dedt => self%mem(:,:,:,self%idx%e,self%it,2)
+  self%p    => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  self%dpdt => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,2)
   d=>self%d; dddt=>self%dddt
   e=>self%e; dedt=>self%dedt
   p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   if (self%mhd) then
-    self%B    => self%mem(:,:,:,self%i_bx:self%i_bz,self%it,1)
-    self%dBdt => self%mem(:,:,:,self%i_bx:self%i_bz,self%it,2)
+    self%B    => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
+    self%dBdt => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,2)
     B=>self%B; dBdt=>self%dBdt
     Bx   =>   B(:,:,:,1); By   =>   B(:,:,:,2); Bz   =>   B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
@@ -404,8 +396,8 @@ SUBROUTINE p2U(self, U, it)
   !.....................................................................
   real, dimension(:,:,:,:), pointer:: dd
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,           it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,           it,1), &
+            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   allocate(dd(size(d,1),size(d,2),size(d,3),3))
   dd=down(log(d))
   U = p/exp(dd)
@@ -423,8 +415,8 @@ SUBROUTINE U2p(self, U, it)
   !.....................................................................
   real, dimension(:,:,:,:), pointer:: dd
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d           ,it,1), &
-            p => self%mem(:,:,:,self%i_px:self%i_pz,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
+            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   allocate(dd(size(d,1),size(d,2),size(d,3),3))
   dd=down(log(d))
   p = U*exp(dd)
@@ -440,8 +432,8 @@ SUBROUTINE e2E_th(self, E_th, it)
   real, dimension(:,:,:), pointer:: E_th
   integer:: it
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_e,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%e,it,1))
   E_th = e/d
   end associate
 END SUBROUTINE e2E_th
@@ -454,8 +446,8 @@ SUBROUTINE E_th2e(self, E_th, it)
   real, dimension(:,:,:), pointer:: E_th
   integer:: it
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_e,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%e,it,1))
   e = E_th*d
   end associate
 END SUBROUTINE E_th2e
@@ -470,8 +462,8 @@ SUBROUTINE e2S(self, s, it)
   !.....................................................................
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_s,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
   s = log(e*g1/d**self%gamma)/g1
   end associate
@@ -487,8 +479,8 @@ SUBROUTINE S2e(self, s, it)
   !.....................................................................
   real:: g1
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%i_d,it,1), &
-            e => self%mem(:,:,:,self%i_s,it,1))
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
   e = d**self%gamma*exp(s*g1)/g1
   end associate
@@ -537,8 +529,8 @@ FUNCTION cell_gas_pressure(self, c) RESULT (pg)
   integer :: c(3)
   real :: pg
   !---------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3),self%i_d,self%it,1), &
-             e => self%mem(c(1),c(2),c(3),self%i_e,self%it,1))
+  associate (d => self%mem(c(1),c(2),c(3),self%idx%d,self%it,1), &
+             e => self%mem(c(1),c(2),c(3),self%idx%e,self%it,1))
   if (self%gamma==1.0) then
     pg = self%d(c(1),c(2),c(3))*self%csound**2
   else
@@ -555,7 +547,7 @@ FUNCTION gas_temperature (self) RESULT (tmp)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
   !-----------------------------------------------------------------------------
-  associate (d => self%mem(:,:,:,self%i_d,self%it,1))
+  associate (d => self%mem(:,:,:,self%idx%d,self%it,1))
   tmp = gas_pressure(self)/d
   end associate
 END FUNCTION gas_temperature
@@ -567,7 +559,7 @@ FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
   integer :: c(3)
   real :: tmp(c(1),c(2),c(3))
   !-----------------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3),self%i_d,self%it,1))
+  associate (d => self%mem(c(1),c(2),c(3),self%idx%d,self%it,1))
   tmp = cell_gas_pressure(self,c)/self%d(c(1),c(2),c(3))
   end associate
 END FUNCTION cell_gas_temperature

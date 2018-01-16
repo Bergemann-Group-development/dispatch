@@ -27,9 +27,9 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     gamma = 5./3.
-    datadir = './data/input_s_9p/'
+    datadir = './data/input_9p/'
     prefix = ''
-    ptimes = [0.005,0.010,0.020]
+    ptimes = [0.0,0.001,0.01,0.02]
     #ptimes = [0.0]
     #ptimes = 0.629*np.arange(0,2)
     t_eps = 1e-4
@@ -154,7 +154,7 @@ if __name__ == "__main__":
             x_i = dispatch_grid(p)
             gf = GeometricFactors()
             gf.init_grid(p, x_i)
-            xp, yp, cut_mask = plotting_grid(root, p, x_i, slicedir, sliceloc,
+            xp, yp, cut_mask = plotting_grid(p, x_i, slicedir, sliceloc,
                                              truecoords=truecoords,sliceeps=0.1)
             # ghost zones *can* now be included (or not)
             ione = (0,1)[p.n[0] > 1]
@@ -223,7 +223,7 @@ if __name__ == "__main__":
                 gn_xpos = xp[iindex,jindex,kindex][offset]
                 gn_ypos = yp[iindex,jindex,kindex][offset]
                 cax.annotate(str(p.id),(gn_xpos,gn_ypos),color='k',weight='extra bold',
-                            fontsize=13*min(root.dx)/min(p.dx),zorder=min(p.dx))
+                            fontsize=13/p.level,zorder=min(p.dx))
 
             m2 += 1
 

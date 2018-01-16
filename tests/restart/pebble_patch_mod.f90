@@ -94,7 +94,7 @@ SUBROUTINE init (self)
   call self%pebbles%init (self%id)
   call self%not_done%init (self%id)
   associate (mx=>self%mesh(1)%gn,my=>self%mesh(2)%gn,mz=>self%mesh(3)%gn,mt=>self%nt)
-    self%density => self%mem(:,:,:,self%i_d,:,1)
+    self%density => self%mem(:,:,:,self%idx%d,:,1)
     allocate (self%pressure(mx,my,mz,mt))
     allocate (self%vgas(mx,my,mz,3,mt))
   end associate

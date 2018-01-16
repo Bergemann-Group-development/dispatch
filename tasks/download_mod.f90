@@ -4,6 +4,7 @@
 !>         differ: called for patches on different levels
 !> =============================================================================
 MODULE download_mod
+  USE iso_fortran_env, only: int8
   USE io_mod
   USE omp_mod
   USE bits_mod
@@ -19,6 +20,7 @@ MODULE download_mod
   private
   type, public:: download_t
     integer(8):: n_same=0, n_differ=0
+    integer:: order_interpolator
     procedure(interpolator_interface), pointer, nopass:: interpolate => null()
   contains
     procedure, nopass:: download_link
@@ -46,6 +48,7 @@ SUBROUTINE init (self)
     read (io%input, download_params, iostat=iostat)
     if (io%master) write (*, download_params)
   end if
+  self%order_interpolator = order_interpolator
   self%interpolate => SelectInterpolator(order_interpolator)
   !$omp end critical (download_cr)
   call trace%end
@@ -64,14 +67,19 @@ SUBROUTINE test (self)
   real(4), dimension(3)  :: pp
   class(mesh_t), pointer :: mesh
   logical                :: ok, allok
+  integer(int8), dimension(:,:,:,:), allocatable:: filled
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%test')
+  self%interpolate => SelectInterpolator(-1)
   !-----------------------------------------------------------------------------
   ! Generate meshes with three resolutions, differing with a factor of three,
   ! with and w/o staggering
   !-----------------------------------------------------------------------------
   allocate (target)
   call target%setup (size=0.1_8*[1,1,1], n=[16,16,16], nv=2, nt=1, nw=1)
+  ! Array to track filling of cells; `-1` means unfilled.
+  allocate (filled(target%gn(1),target%gn(2),target%gn(3),target%nv))
+  filled = -1
   !-----------------------------------------------------------------------------
   ! Loop over the three resolutions for source patches
   !-----------------------------------------------------------------------------
@@ -143,9 +151,9 @@ SUBROUTINE test (self)
       call set_values (src)
       call set_values (target)
       if (src%level==target%level) then
-        call same (target, src, all_cells=.false.)
+        call same (target, src, filled, all_cells=.false.)
       else
-        call different (target, src, all_cells=.false.)
+        call different_prolong (target, src, filled, all_cells=.false.)
       end if
       call check_values (target, ok)
       allok = allok.and.ok
@@ -163,11 +171,13 @@ SUBROUTINE test (self)
   !-----------------------------------------------------------------------------
   ! Clean up
   !-----------------------------------------------------------------------------
+  deallocate (filled)
   call target%delete
   do i=1,3
     call source(i)%delete
   end do
   deallocate (target, source)
+  self%interpolate => SelectInterpolator(self%order_interpolator)
   call trace%end
 contains
 !> =============================================================================
@@ -280,55 +290,69 @@ SUBROUTINE download_link (link, all_cells, only)
   logical, optional:: all_cells
   integer, optional:: only
   !.............................................................................
-  class(link_t), pointer:: nbor
+  class(link_t), pointer:: nbor, sorted_head
   class(patch_t), pointer:: target, source
   integer:: edges
   integer, save:: itimer=0
+  integer(kind=int8), dimension(:,:,:,:), allocatable:: filled
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link', itimer=itimer)
   target => task2patch(link%task)
+  !-----------------------------------------------------------------------------
+  ! Allocate and initialise array to track filling of cells.
+  ! A value of `-1` defines unfilled; all other values denote the *level* of the
+  ! patch that filled that cell.
+  !-----------------------------------------------------------------------------
+  allocate (filled(target%gn(1),target%gn(2),target%gn(3),target%nv))
+  filled = -1
+
   if (trim(target%kind)/='rt_solver') then
     if (io%verbose>1) &
       call target%check_density ("before download")
   end if
-  if (target%is_set(bits%root_grid)) then
-    call target%periodic_grid
-  else
-    do edges=3,1,-1
-      nbor => link%nbor
-      do while (associated(nbor))
-        source => task2patch(nbor%task)
-        if (target%count_edges(source) == edges) then
-          if (target%id == io%id_debug) then
-            print *, source%id, ' EDGE COUNT:', edges
-          end if
-          if (trim(target%kind)/='rt_solver') then
-            if (source%is_clear(bits%no_download)) then
-              if (abs(source%level-target%level) < 2) then
-                if (source%level==target%level) then
-                  call same (target, source, all_cells, only=only)
-                else
-                  call different (target, source, all_cells, only=only)
-                end if
-              end if
-            end if
+  if (target%is_periodic()) call target%periodic_grid
+
+  ! Take the nbor list and produce a list sorted by decreasing distance from `target`.
+  !!!call sort_nbors_by_distance (link,sorted_head)
+
+  ! Walk through the sorted neighbour list
+  !!!nbor => sorted_head
+  nbor => link%nbor
+  do while (associated(nbor))
+    source => task2patch(nbor%task)
+    if (trim(target%kind)/='rt_solver') then
+      if (source%is_clear(bits%no_download)) then
+        if (source%level==target%level) then
+          call same (target, source, filled, all_cells, only=only)
+        else if ((source%level-target%level) == -1) then
+          call different_prolong (target, source, filled, all_cells, only=only)
+        else if ((source%level-target%level) == 1) then
+          call different_restrict (target, source, filled, only=only)
+        end if
+      end if
+    else
+      if (trim(source%kind)=='rt_solver') then
+        if (abs(source%level-target%level) < 2) then
+          if (source%level==target%level) then
+            call same_rt (target, source, filled)
           else
-            if (trim(source%kind)=='rt_solver') then
-              if (abs(source%level-target%level) < 2) then
-                if (source%level==target%level) then
-                  call same_rt (target, source)
-                else
-                  call different_rt (target, source)
-                end if
-              end if
-            end if
+            call different_rt (target, source, filled)
           end if
         end if
-        nbor => nbor%next
-      end do
-    end do
-  end if
+      end if
+    end if
+    nbor => nbor%next
+  end do
+
   call target%check_density (" after download")
+  deallocate (filled)
+  !!!nbor => sorted_head
+  !!!if (associated(nbor)) then
+  !!!  call clean_sorted_nbor_list (sorted_head)
+  !!!else
+  !!!  print *,' sorted_head not associated'
+  !!!end if
+
   call trace%end (itimer)
 END SUBROUTINE download_link
 
@@ -442,8 +466,9 @@ END SUBROUTINE dnload_range
 !>   dnload_range
 !>   time_interval
 !> =============================================================================
-SUBROUTINE same (target, source, all_cells, only)
+SUBROUTINE same (target, source, filled, all_cells, only)
   class(patch_t), pointer :: target, source
+  integer(int8), dimension(:,:,:,:):: filled
   logical, optional       :: all_cells
   integer, optional       :: only
   !.............................................................................
@@ -469,6 +494,14 @@ SUBROUTINE same (target, source, all_cells, only)
     all_cells_l = .false.
   end if
   do iv=iv1, iv2
+    if (iv == target%idx%phi) then
+      if (target%poisson_time > source%poisson_time + source%dtime*source%grace) then
+        if (io%verbose>1) print *, target%id, ' not using same level potential from', source%id
+        cycle
+      else
+        if (io%verbose>1) print *, target%id, '     using same level potential from', source%id
+      end if
+    end if
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
@@ -492,9 +525,11 @@ SUBROUTINE same (target, source, all_cells, only)
         do iz=l(3),u(3)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
+              !!!if (filled(ix,iy,iz,iv) > source%level) cycle
               target%mem(ix,iy,iz,iv,target%it,1) = exp( &
                 pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
                 pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
+              filled(ix,iy,iz,iv) = source%level
             end do
           end do
         end do
@@ -503,23 +538,27 @@ SUBROUTINE same (target, source, all_cells, only)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
               ii = [ix,iy,iz]
+              !!!if (filled(ix,iy,iz,iv) > source%level) cycle
               target%mem(ix,iy,iz,iv,target%it,1) = &
                 merge(target%mem(ix,iy,iz,iv,target%it,1), &
                   exp(pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
                       pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1))), &
                   all((ii>=li).and.(ii<=ui)))
+                filled(ix,iy,iz,iv) = source%level
             end do
           end do
         end do
       end if
     else
-      if (present(all_cells)) then
+      if (all_cells_l) then
         do iz=l(3),u(3)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
+              !!!if (filled(ix,iy,iz,iv) > source%level) cycle
               target%mem(ix,iy,iz,iv,target%it,1) =  &
                 pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
                 pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
+              filled(ix,iy,iz,iv) = source%level
             end do
           end do
         end do
@@ -528,11 +567,14 @@ SUBROUTINE same (target, source, all_cells, only)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
               ii = [ix,iy,iz]
+              ! prefer same level for filling guard zones
+              !!!if (filled(ix,iy,iz,iv) > source%level) cycle
               target%mem(ix,iy,iz,iv,target%it,1) = &
                 merge(target%mem(ix,iy,iz,iv,target%it,1), &
                   pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
                   pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
                   all((ii>=li).and.(ii<=ui)))
+              filled(ix,iy,iz,iv) = source%level
             end do
           end do
         end do
@@ -548,8 +590,9 @@ END SUBROUTINE same
 !> =============================================================================
 !> Same as above, but for RT_solver type patches
 !> =============================================================================
-SUBROUTINE same_rt (target, source)
+SUBROUTINE same_rt (target, source, filled)
   class(patch_t), pointer :: target, source
+  integer(int8), dimension(:,:,:,:):: filled
   !.............................................................................
   integer                 :: l(3), u(3), o(3), ii(3), jt(2), li(3), ui(3)
   real(8)                 :: position(3)
@@ -567,10 +610,12 @@ SUBROUTINE same_rt (target, source)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii = [ix,iy,iz]
+          if (filled(ix,iy,iz,iv) > source%level) cycle
           if (all((ii>=li).and.(ii<=ui))) cycle
           target%mem(ix,iy,iz,iv,target%it,1) = &
              pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
              pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
+          filled(ix,iy,iz,iv) = source%level
         end do
       end do
     end do
@@ -579,9 +624,11 @@ SUBROUTINE same_rt (target, source)
 END SUBROUTINE same_rt
 
 !> =============================================================================
-!> Interpolate guard zone info from source patch at a different level
-SUBROUTINE different (target, source, all_cells, only)
+!> Interpolate guard zone info from source patch at a lower level
+!> =============================================================================
+SUBROUTINE different_prolong (target, source, filled, all_cells, only)
   class(patch_t), pointer :: target, source
+  integer(int8), dimension(:,:,:,:):: filled
   logical, optional:: all_cells
   integer, optional:: only
   !.............................................................................
@@ -594,7 +641,10 @@ SUBROUTINE different (target, source, all_cells, only)
   real(kind=KindScalarVar):: qint
   logical                 :: all_cells_l
   !-----------------------------------------------------------------------------
-  call trace%begin('download_t%different', itimer=itimer)
+  call trace%begin('download_t%different_prolong', itimer=itimer)
+  if (io%verbose > 1) &
+    print *,'MK different_prolong; target:', target%id, target%level, &
+                                  'source:', source%id, source%level
   call source%time_interval (target%time, jt, pt)
   if (present(only)) then
     iv1 = only
@@ -608,41 +658,50 @@ SUBROUTINE different (target, source, all_cells, only)
   else
     all_cells_l = .false.
   end if
+  li = target%mesh%li
+  ui = target%mesh%ui
   do iv=iv1,iv2
-    call dnload_range (target, source, iv, l, u)
+    call dnload_range (target, source, target%idx%d, l, u)
     !---------------------------------------------------------------------------
     ! For no-no-mans-land meshes, use guard zone values for the li index, to
     ! make fluxes up/down symmetric
     !---------------------------------------------------------------------------
-    li = target%mesh%li
-    ui = target%mesh%ui
 !    do i=1,3
 !      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
 !    end do
     if (target%id==io%id_debug) &
       print 1, source%id, (source%position-target%position)/target%size, l, u
-      1 format("DBG download_t%different:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
+      1 format("DBG download_t%different_prolong:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
     associate (q1 => source%mem(:,:,:,:,jt(1),1), q2 => source%mem(:,:,:,:,jt(2),1))
     do iz=l(3),u(3)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
           if (all_cells_l .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
+            if (filled(ix,iy,iz,iv) > source%level) then
+              if (target%id==io%id_debug .and. io%verbose>1) &
+                print *, target%id, 'DBG different_prolong: skipping', iv,ii, filled(ix,iy,iz,iv)
+              cycle
+            end if
             if (target%id==io%id_debug .and. io%verbose>1) &
-              print *, target%id, 'DBG interpolate_t%different:    using', iv,ii, present(all_cells), (ii-li) < 0
+              print *, target%id, 'DBG different_prolong:    using', iv,ii, present(all_cells), (ii-li) < 0
             pos = target%myposition (ii, iv)
             call source%index_space (pos, iv, jj, pp)
             if (source%pervolume(iv)) then
-              call source%interpolate_specific (target, ii, iv, jt, pt)
+              qint = interpolator%interpolator_specific (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
+                   + interpolator%interpolator_specific (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
             else
-              call source%interpolate          (target, ii, iv, jt, pt)
+              qint = interpolator%interpolator (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
+                   + interpolator%interpolator (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
             end if
-            if (all((ii>=li.and.ii<=ui))) then
+            if (all((ii>li.and.ii<ui)) .and. .not. all_cells_l) then
               print *,'INTERNAL BREACH!', ii
             end if
+            target%mem(ix,iy,iz,iv,target%it,1) = qint
+            filled(ix,iy,iz,iv) = source%level
           else
             if (target%id==io%id_debug .and. io%verbose>1) &
-              print *, target%id, 'DBG interpolate_t%different: skipping', iv,ii, present(all_cells), (ii-li) < 0
+              print *, target%id, 'DBG different_prolong: skipping', iv,ii, present(all_cells), (ii-li) < 0
             cycle
           end if
         end do
@@ -651,18 +710,19 @@ SUBROUTINE different (target, source, all_cells, only)
     end associate
   end do
   if (io%verbose>2.or.target%id==io%id_debug) &
-    print 2, target%id, target%level, source%id, source%level, 'different picked up', &
+    print 2, target%id, target%level, source%id, source%level, 'different_prolong picked up', &
     product(u-l+1), ' values, mind =', &
     minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), l, u
   2 format(2(i6,i3),2x,a,i6,a,1p,e12.4,2(2x,3i4))
   call trace%end (itimer)
-END SUBROUTINE different
+END SUBROUTINE different_prolong
 
 !> =============================================================================
 !> Same as above, but for RT_solver type patches
 !> =============================================================================
-SUBROUTINE different_rt (target, source)
+SUBROUTINE different_rt (target, source, filled)
   class(patch_t), pointer :: target, source
+  integer(int8), dimension(:,:,:,:):: filled
   !.............................................................................
   integer                 :: ix, iy, iz, iv, jt(2)
   integer, dimension(3)   :: l, u, ii, lb, ub, li, ui
@@ -683,13 +743,203 @@ SUBROUTINE different_rt (target, source)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
+          if (filled(ix,iy,iz,iv) > source%level) cycle
           if (all((ii>=li).and.(ii<=ui))) cycle
           call source%interpolate (target, ii, iv, jt, pt)
+          filled(ix,iy,iz,iv) = source%level
         end do
       end do
     end do
   end do
   call trace%end (itimer)
 END SUBROUTINE different_rt
+
+!> =============================================================================
+!> Restrict guard zone info from source patch at a higher level
+!> =============================================================================
+SUBROUTINE different_restrict (target, source, filled, only)
+  class(patch_t), pointer :: target, source
+  integer(int8), dimension(:,:,:,:):: filled
+  integer, optional:: only
+  integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, jx, jy, jz
+  integer, dimension(3)   :: l, u, ii, li, ui, jj
+  real(8), dimension(3)   :: target_pos, source_pos, target_upper_edges, target_lower_edges, &
+                             source_upper_edges, source_lower_edges, le, ue
+  logical                 :: valid
+  integer, save           :: itimer=0
+  real                    :: pt(2), pp(3)
+  real(kind=KindScalarVar):: qint
+  logical                 :: qmask(3)
+  real(8):: rratio(3), dVsource, dVtarget, dWsource, dWtarget, filling_factor, accumulate, &
+            filling_total, dWtargeti
+  integer:: ilook(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin('download_t%different_restrict', itimer=itimer)
+
+  call source%time_interval (target%time, jt, pt)
+  rratio = target%ds / source%ds
+  ilook = merge(floor(rratio)/2 + 1, 0, source%n>1)
+  dVsource = product(source%ds) ! only valid for Cartesian
+  dVtarget = product(target%ds) ! onlt valid for Cartesian
+  if (present(only)) then
+    iv1 = only
+    iv2 = only
+  else
+    iv1 = 1
+    iv2 = target%nv
+  end if
+
+  li = target%mesh%li
+  ui = target%mesh%ui
+  do iv=iv1,iv2
+    if (iv == target%idx%phi) then
+      if (target%poisson_time > source%poisson_time + source%dtime*source%grace) then
+        cycle
+      end if
+    end if
+    qmask(:) = .true. ! logical mask to track if variable is averaged over a volume or an area
+    if (iv == target%idx%bx) then
+      dWsource = source%ds(2) * source%ds(3) ! only valid for Cartesian
+      dWtarget = target%ds(2) * target%ds(3) ! only valid for Cartesian
+      qmask(1) = .false.
+    else if (iv == target%idx%by) then
+      dWsource = source%ds(3) * source%ds(1) ! only valid for Cartesian
+      dWtarget = target%ds(3) * target%ds(1) ! only valid for Cartesian
+      qmask(2) = .false.
+    else if (iv == target%idx%bz) then
+      dWsource = source%ds(1) * source%ds(2) ! only valid for Cartesian
+      dWtarget = target%ds(1) * target%ds(2) ! only valid for Cartesian
+      qmask(3) = .false.
+    else
+      dWsource = dVsource
+      dWtarget = dVtarget
+    end if
+    dWtargeti = 1.0 / dWtarget
+    call dnload_range (target, source, iv, l, u)
+    associate (q1 => source%mem(:,:,:,iv,jt(1),1), q2 => source%mem(:,:,:,iv,jt(2),1))
+    do iz=l(3),u(3)
+      do iy=l(2),u(2)
+        do ix=l(1),u(1)
+          ii = [ix,iy,iz]
+          ! prefer same level for guard zone filling
+          if (filled(ix,iy,iz,iv) == target%level .and. &
+              (any(ii < target%li) .or. any(ii > target%ui))) cycle
+          target_pos = target%myposition (ii, iv)
+          target_lower_edges = target_pos - target%ds * 0.499999_8 ! to 1e-6 tolerance
+          target_upper_edges = target_pos + target%ds * 0.499999_8
+          ! skip cells that are not *entirely* covered by the finer patch
+          if (any(target_lower_edges < source%llc_nat)) cycle
+          if (any(target_upper_edges > (source%llc_nat+source%size))) cycle
+          call source%index_space (target_pos, iv, jj, pp)
+          accumulate = 0.0
+          filling_total = 0.0
+          do jz=jj(3)-ilook(3),jj(3)+ilook(3)
+            do jy=jj(2)-ilook(2),jj(2)+ilook(2)
+              do jx=jj(1)-ilook(1),jj(1)+ilook(1)
+                ! skip ghost cells of source
+                if (any([jx,jy,jz] < source%li .or. [jx,jy,jz] > source%ui)) cycle
+                ! find intersection between source and target cells
+                source_pos = source%myposition([jx,jy,jz],iv)
+                source_lower_edges = source_pos - source%ds * 0.499999_8 ! to 1e-6 tolerance
+                source_upper_edges = source_pos + source%ds * 0.499999_8
+                ue = min(source_upper_edges, target_upper_edges)
+                le = max(source_lower_edges, target_lower_edges)
+                ! filling factor; if zero, then no overlap.
+                ! the logical mask is used to produce an area filling factor for
+                ! mag. fields (but a volume filling factor otherwise)
+                filling_factor = product(max(ue - le, 0.0),mask=qmask) ! to ~1.2e-5 tolerance
+                filling_total = filling_total + filling_factor
+                ! one might note that `accumulate` should be multipled by `dWsource`.
+                ! but `filling_factor` should be divided by `dWsource`, so they cancel.
+                if (filling_factor > 0.0) then
+                  accumulate = accumulate &
+                             + (q1(jx,jy,jz) * pt(1) + q2(jx,jy,jz) * pt(2)) * filling_factor
+                end if
+              end do
+            end do
+          end do
+          ! replace a portion of the current cell with values from the finer patch
+          if (filling_total > 0.0) then
+            target%mem(ix,iy,iz,iv,target%it,1) = accumulate * dWtargeti &
+                                                + target%mem(ix,iy,iz,iv,target%it,1) &
+                                                  * (1.0 - filling_total * dWtargeti)
+            filled(ix,iy,iz,iv) = source%level
+          end if
+        end do
+      end do
+    end do
+    end associate
+  end do
+  call trace%end (itimer)
+END SUBROUTINE different_restrict
+
+!> =============================================================================
+!> Create a nbors list sorted by decreasing distance.
+!> =============================================================================
+SUBROUTINE sort_nbors_by_distance (this, head)
+  class(link_t), pointer:: this, head
+  class(link_t), pointer:: nbor, xx, pp, nn
+  real(8):: r2n, r2x
+  !.............................................................................
+  allocate (head)
+  if (.not. associated(this%nbor)) then
+    nullify(head)
+    return
+  end if
+  head%task => this%nbor%task
+  nbor => this%nbor%next
+
+  do while (associated(nbor))
+    allocate (nn)
+    nn%task => nbor%task
+    r2n = sum(this%task%distance(nbor%task)**2)
+    xx => head
+    nullify(pp)
+    do while (associated(xx))
+      if (.not.associated(xx%task,nbor%task)) then
+        r2x = sum(this%task%distance(xx%task)**2)
+        if (r2n > r2x) then
+          ! insert before
+          nn%next => xx
+          if (.not. associated(pp)) then
+            head => nn
+          else
+            pp%next => nn
+          end if
+          exit
+        end if
+        if (.not. associated(xx%next)) xx%next => nn
+      end if
+      pp => xx
+      xx => xx%next
+    end do
+    nbor => nbor%next
+  end do
+
+  if (io%verbose > 1) then
+    print*, "target: ",this%task%id
+    print*, "sorted nbors:"
+    xx => head
+    do while(associated(xx))
+      print*,xx%task%id,sum(this%task%distance(xx%task)**2)
+      xx => xx%next
+    end do
+    print*,'----'
+  end if
+END SUBROUTINE sort_nbors_by_distance
+
+!> =============================================================================
+SUBROUTINE clean_sorted_nbor_list (head)
+  class(link_t), pointer:: head
+  class(link_t), pointer:: next, prev
+  !.............................................................................
+  next => head%next
+  deallocate (head)
+  do while(associated(next))
+    prev => next
+    next => next%next
+    deallocate (prev)
+  end do
+END SUBROUTINE clean_sorted_nbor_list
 
 END MODULE

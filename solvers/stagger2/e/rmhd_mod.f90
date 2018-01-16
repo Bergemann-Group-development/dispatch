@@ -79,10 +79,10 @@ SUBROUTINE update (self)
     !-----------------------------------------------------------------------------
     ! Time step limitation for rate of change dS/dt = (ds/dt-(s/d)*dddt)/d
     !-----------------------------------------------------------------------------
-    d    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%it,1)
-    e    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_e,self%it,1)
-    dddt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%it,2)
-    dedt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_e,self%it,2)
+    d    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,1)
+    e    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e,self%it,1)
+    dddt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,2)
+    dedt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e,self%it,2)
     dedt = dedt + qrad
     if (io%verbose>2) then
       print *,'mk:    d', minval(d), maxval(d)

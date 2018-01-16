@@ -298,7 +298,7 @@ def plotting_grid(p, x_i, slicedir, sliceloc, sliceeps=1.0e-2, truecoords=False,
 
     return xpcut, ypcut, m.mask
 
-def patch_grid_edges(p, slicedir, truecoords=True):
+def patch_grid_edges(p, slicedir, scaling=1.0, truecoords=True):
     """
     Using the corners of the patch, create a matplotlib patch that draws
     the grid edges.
@@ -331,19 +331,31 @@ def patch_grid_edges(p, slicedir, truecoords=True):
             lly, ury = p.llc[1], p.llc[1] + p.size[1]
 
     if p.mesh_type == mesh_types[1] or truecoords: # Cartesian
+        llx *= scaling
+        lly *= scaling
+        urx *= scaling
+        ury *= scaling
         edges = Rectangle((llx,lly),width=(urx-llx),height=(ury-lly),fc='none',lw=1.0,
                           ec='k',linestyle='dashed',zorder=0.01/min(p.dx)+0.1)
     elif p.mesh_type == mesh_types[2]: # spherical
         thetamin = round(p.active_corners[0][2]*180.0/np.pi,3)
         thetamax = round(p.active_corners[1][2]*180.0/np.pi,3)
         llx, urx = p.active_corners[0][0], p.active_corners[1][0]
-        edges = Wedge((p.pos[0],p.pos[1]),urx,thetamin,thetamax,width=(urx-llx),fc='none',lw=1.0,
-                      ec='k',linestyle='dotted',zorder=0.01/min(p.dx)+0.1)
+        llx *= scaling
+        lly *= scaling
+        urx *= scaling
+        ury *= scaling
+        edges = Wedge((p.pos[0]*scaling,p.pos[1]*scaling),urx,thetamin,thetamax,width=(urx-llx),fc='none',
+                      lw=1.0,ec='k',linestyle='dotted',zorder=0.01/min(p.dx)+0.1)
     elif p.mesh_type == mesh_types[3]: # cylindrical
         phimin = round(p.active_corners[0][2]*180.0/np.pi,3)
         phimax = round(p.active_corners[1][2]*180.0/np.pi,3)
         llx, urx = p.active_corners[0][1], p.active_corners[1][1]
-        edges = Wedge((p.pos[0],p.pos[1]),urx,phimin,phimax,width=(urx-llx),fc='none',lw=1.0,
-                      ec='k',linestyle='dotted',zorder=0.01/min(p.dx)+0.1)
+        llx *= scaling
+        lly *= scaling
+        urx *= scaling
+        ury *= scaling
+        edges = Wedge((p.pos[0]*scaling,p.pos[1]*scaling),urx,phimin,phimax,width=(urx-llx),fc='none',
+                      lw=1.0,ec='k',linestyle='dotted',zorder=0.01/min(p.dx)+0.1)
 
     return edges

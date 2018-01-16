@@ -313,9 +313,9 @@ class Patch(Task):
         elif solver[0:4] == 'zeus':
             indices = {'d': 0,
                        'e1': 1, 'et': 2,
-                       'gp': 3,
-                       'p1': 4, 'p2': 5, 'p3': 6,
-                       'b1': 7, 'b2': 8, 'b3': 9}
+                       'p1': 3, 'p2': 4, 'p3': 5,
+                       'b1': 6, 'b2': 7, 'b3': 8,
+                       'gp': 9}
         elif solver_type.lower() == 'rt_solver':
             indices = {'Q':  0,
                        'S':  1,

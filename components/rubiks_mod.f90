@@ -23,7 +23,7 @@ MODULE rubiks_mod
     real(8):: size(3) = [1.0, 1.0, 1.0]
     real(8):: position(3) = [0.0, 0.0, 0.0]
     integer:: n_levels, n_repeat(3)
-    integer:: n_patch(3), m_zoom
+    integer:: n_patch(3), m_zoom(3)
     type(task_list_t), pointer:: task_list
   contains
     procedure init_hierarchy
@@ -42,7 +42,7 @@ SUBROUTINE init_hierarchy (self, label)
   type(task_list_t):: task_list
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
-  integer, save:: n_patch(3)=0, m_zoom=3, n_levels=5
+  integer, save:: n_patch(3)=0, m_zoom(3)=3, n_levels=5
   integer, save:: n_repeat(3)=0
   integer:: iostat
   real(8), save:: position(3), size(3), f_zoom=1d0
@@ -62,7 +62,7 @@ SUBROUTINE init_hierarchy (self, label)
   if (io%master) write (*, rubiks_params)
   !-----------------------------------------------------------------------------
   ! Avoid having to edit dozens of existing .nml files, by interpreting a single
-  ! n_repeat value as being intended for the y-direction
+  ! n_repeat value as being intended for the y-direction.
   !-----------------------------------------------------------------------------
   if (n_repeat(1)>0 .and. n_repeat(2)==0 .and. n_repeat(3)==0) then
     n_repeat(2) = n_repeat(1)
@@ -71,11 +71,19 @@ SUBROUTINE init_hierarchy (self, label)
   end if
   !-----------------------------------------------------------------------------
   ! Similarly for n_patch, but assume that a single value applies to all
-  ! directions
+  ! directions.
   !-----------------------------------------------------------------------------
   if (n_patch(1)>0 .and. n_patch(2)==0 .and. n_patch(3)==0) then
     n_patch(2) = n_patch(1)
     n_patch(3) = n_patch(1)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Similarly for m_zoom, assuming that a single value applies to all
+  ! directions.
+  !-----------------------------------------------------------------------------
+  if (m_zoom(1)>0 .and. m_zoom(2)==0 .and. m_zoom(3)==0) then
+    m_zoom(2) = m_zoom(1)
+    m_zoom(3) = m_zoom(1)
   end if
   scene%n_patch_total = product(n_patch)*(product(n_repeat)+n_levels-1)
   self%n_levels = n_levels
@@ -99,7 +107,8 @@ SUBROUTINE init_hierarchy (self, label)
   do krep=0,n_repeat(3)-1
     do jrep=0,n_repeat(2)-1
       do irep=0,n_repeat(1)-1
-        position = (([irep,jrep,krep] - n_repeat / 2) * self%task_list%size) / n_repeat
+        position = (([irep,jrep,krep] - n_repeat / 2) * self%task_list%size) / n_repeat &
+                 + self%position
         if (io%verbose>1) &
           print*,'generating a cube of ',n_patch,' patches',' centred at position', position
         call self%init_level (level, position)

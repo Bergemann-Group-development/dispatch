@@ -27,7 +27,6 @@ MODULE task_list_mod
   USE bits_mod
   USE trace_mod
   USE refine_mod
-  USE download_mod
   USE buffered_output_mod
   USE load_balance_mod
   USE direct_output_mod
@@ -39,7 +38,6 @@ MODULE task_list_mod
     real(8):: job_seconds=1d30
   contains
     procedure:: init
-    procedure:: init_bdries
     procedure:: startup
     procedure:: execute
     procedure:: update
@@ -94,92 +92,8 @@ SUBROUTINE init (self, name)
   self%job_seconds = job_seconds
   write (io_unit%mpi,*) 'task_list%init: next_sync =', self%sync_next, self%sync_time
   call load_balance%init
-  call download%init
   call trace_end
 END SUBROUTINE init
-
-!> =============================================================================
-!> Initialize boundary bits, which may (optionally) be used to apply boundary
-!> conditions in experiment_t%update() procedures.  This procedure must be called
-!> while each rank still has a list of all patches.
-!> =============================================================================
-SUBROUTINE init_bdries (self)
-  implicit none
-  class(task_list_t):: self
-  class(link_t), pointer:: link
-  class(task_t), pointer:: task
-  !-----------------------------------------------------------------------------
-  call trace%begin('task_list_t%init_bdries')
-  if (mpi%size > 1) error stop "task_list_t%init_bdries not MPI ready"
-  link => self%head
-  do while (associated(link))
-    self%lc = min(self%lc, link%task%position)
-    self%uc = max(self%uc, link%task%position)
-    self%llc = min(self%llc, link%task%position-0.5000000001_8*link%task%size)
-    self%urc = max(self%urc, link%task%position+0.5000000001_8*link%task%size)
-    link => link%next
-  end do
-  print *,'task_list%lc =', self%lc
-  print *,'task_list%uc =', self%uc
-  link => self%head
-  do while (associated(link))
-    task => link%task
-    select type (task)
-    class is (experiment_t)
-    !---------------------------------------------------------------------------
-    ! If at edge, set boundary bits
-    !---------------------------------------------------------------------------
-    if (.not.task%periodic(1)) then
-      if (task%position(1) <= self%lc(1)) then
-        call task%boundaries%set (bits%xl)
-        task%mesh(1)%lower_boundary = .true.
-      end if
-      if (task%position(1) >= self%uc(1)) then
-        call task%boundaries%set (bits%xu)
-        task%mesh(1)%upper_boundary = .true.
-      end if
-    end if
-    if (.not.task%periodic(2)) then
-      if (task%position(2) <= self%lc(2)) then
-        call task%boundaries%set (bits%yl)
-        task%mesh(2)%lower_boundary = .true.
-      end if
-      if (task%position(2) >= self%uc(2)) then
-        call task%boundaries%set (bits%yu)
-        task%mesh(2)%upper_boundary = .true.
-      end if
-    end if
-    if (.not.task%periodic(3)) then
-      if (task%position(3) <= self%lc(3)) then
-        call task%boundaries%set (bits%zl)
-        task%mesh(3)%lower_boundary = .true.
-      end if
-      if (task%position(3) >= self%uc(3)) then
-        call task%boundaries%set (bits%zu)
-        task%mesh(3)%upper_boundary = .true.
-      end if
-    end if
-    if (task%boundaries%bits /= 0) print '(2i6,2(2x,a6),o9,2(2x,3f10.0))', &
-      task%id, task%level, 'BCs: ', formatted(task), task%boundaries%bits, &
-      task%size, task%position
-    end select
-    link => link%next
-  end do
-  call trace_end
-contains
-  !-----------------------------------------------------------------------------
-  function formatted (task) result (out)
-  class(experiment_t):: task
-  character(len=6):: out
-  out = '......'
-  if (task%boundaries%is_set(bits%xl))  out(1:1) = 'T'
-  if (task%boundaries%is_set(bits%xu))  out(2:2) = 'T'
-  if (task%boundaries%is_set(bits%yl))  out(3:3) = 'T'
-  if (task%boundaries%is_set(bits%yu))  out(4:4) = 'T'
-  if (task%boundaries%is_set(bits%zl))  out(5:5) = 'T'
-  if (task%boundaries%is_set(bits%zu))  out(6:6) = 'T'
-  end function formatted
-END SUBROUTINE init_bdries
 
 !> =============================================================================
 !> Execute the task list, updating it until it is empty.  With !$omp parallel here,
@@ -198,7 +112,7 @@ SUBROUTINE startup (self)
   ! Initialize nbor lists, and set virtual and boundary bits
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%startup', itimer=itimer)
-  !call self%init_bdries
+  call self%init_bdries
   call self%init_all_nbors
   call self%reset_status
   !-----------------------------------------------------------------------------
@@ -275,9 +189,6 @@ SUBROUTINE execute (self)
   call toc ('wall time', n_update, time=sec)
   call mpi%barrier ('end')
   if (io%master) write (*,*) "task list finished, min_nq =", min_nq
-  !if (io%master) &
-  !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
-  !    max(1,(download%n_differ+download%n_same))
   call buffered_output%close
   call trace%end (itimer)
 END SUBROUTINE execute
@@ -336,11 +247,11 @@ SUBROUTINE update (self)
       !$omp atomic
       self%nq = self%nq-1                               ! decrement queue count
       task%nq = self%nq                                 ! for info print
-      if (io%verbose>=0) then
+      if (io%verbose >= 0) then
         otask => self%active%task
         time = otask%atime
         if (time < otime) &
-          write (*,'(a,2(f12.6,i6))') 'ERROR: otime, oid, time, id =', otime, oid, time, otask%id
+          write (*,'(a,2(f12.6,i6))') 'TIME ERROR: otime, oid, time, id =', otime, oid, time, otask%id
         !$omp atomic write
         otime = time
         !$omp atomic write
@@ -488,6 +399,7 @@ SUBROUTINE updater (self, head)
   if (mpi_mesg%delay_ms==0.0) then
     wc = wallclock()
   end if
+  task%rotated = .false.
   call task%update                                    ! update the task
   !----------------------------------------------------------------------------
   ! Default delay time = first update time
@@ -521,6 +433,7 @@ SUBROUTINE updater (self, head)
   ! other ranks).  They are, however, not added back onto the ready queue.
   !-----------------------------------------------------------------------------
   if (task%has_finished()) then  ! finished:
+    call task%set (bits%frozen)
     call load_balance%active (.false.)                ! turn off load balancing
     !$omp atomic
     self%na = self%na-1

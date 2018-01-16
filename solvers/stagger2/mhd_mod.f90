@@ -90,6 +90,9 @@ SUBROUTINE init (self)
     self%kind = 'stagger2_mhd_patch'
   else
     self%kind = 'stagger2_hd_patch'
+    self%idx%bx = -1
+    self%idx%by = -1
+    self%idx%bz = -1
   end if
   if (self%nv==0) then
     if (self%mhd) then
@@ -110,19 +113,10 @@ SUBROUTINE init (self)
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
   call self%gpatch_t%init
-  self%i_d  = idx%d
-  self%i_e  = idx%e
-  self%i_s  = idx%s
-  self%i_px = idx%px
-  self%i_py = idx%py
-  self%i_pz = idx%pz
-  self%i_bx = idx%bx
-  self%i_by = idx%by
-  self%i_bz = idx%bz
   self%type = 'mhd_t'
   do i=1,3
-    self%mesh(i)%h(self%i_px+i-1) = -0.5
-    if (self%mhd) self%mesh(i)%h(self%i_bx+i-1) = -0.5
+    self%mesh(i)%h(self%idx%px+i-1) = -0.5
+    if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
   if (io%verbose>1 .and. self%track) then
     do i=1,3
@@ -157,6 +151,7 @@ SUBROUTINE test (self)
     print *,io%hs
     print *, 'mhd_t%test not possible with n, no_mans_land =', self%n, self%no_mans_land
     print *,io%hs
+    call self%delete
     call trace%end
     return
   end if
@@ -477,7 +472,7 @@ SUBROUTINE pde (self)
   if (associated(self%force%selected) .and. self%do_force) &
    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)! ops: 1 0 0
   if (self%selfgravity) then
-    phi => self%mem(:,:,:,self%i_phi,self%it,1)
+    phi => self%mem(:,:,:,self%idx%phi,self%it,1)
     dpdtx = dpdtx - dd(:,:,:,1)*ddxdn(ds,phi)
     dpdty = dpdty - dd(:,:,:,2)*ddydn(ds,phi)
     dpdtz = dpdtz - dd(:,:,:,3)*ddzdn(ds,phi)
@@ -547,18 +542,10 @@ END SUBROUTINE pde
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
-  real:: error
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Prepare the external forces for the pde call, in particular selfgravity. At
-  ! this point the nbors are declared up-to-date with respect to everything,
-  ! including their potentials, which we need for guard zones.  They may in fact
-  ! be providing only their preliminary potentials in their (nt-1) time slots,
-  ! while their older time slots should by now contain the converged potential.
-  !-----------------------------------------------------------------------------
-  call self%gravity(error)
+  call self%gravity
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
@@ -571,17 +558,10 @@ SUBROUTINE update (self)
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
-  !---------------------------------------------------------------------------
-  ! Having now advanced the MHD state to the new time, and before allowing
-  ! task_list_t%update to rotate the time slots, we make a preliminary
-  ! call to the Poisson solver, based on extrapolation of the nbor potentials.
-  ! We then provide this preliminary potential to nbors, until we have a
-  ! better offer.
-  !---------------------------------------------------------------------------
-  if (self%selfgravity) then
-    call self%dnload (only=self%i_phi)
-    call self%gravity (error, only=self%i_phi)
-  end if
+  !-----------------------------------------------------------------------------
+  ! Make a preliminary update of the selfgravity
+  !-----------------------------------------------------------------------------
+  call self%gpatch_t%update
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -619,12 +599,12 @@ FUNCTION gas_pressure (self) RESULT (pg)
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   !-----------------------------------------------------------------------------
   if (trim(self%eos)=='ideal') then
-    d => self%mem(:,:,:,self%i_d,self%it,1)
-    s => self%mem(:,:,:,self%i_s,self%it,1)
+    d => self%mem(:,:,:,self%idx%d,self%it,1)
+    s => self%mem(:,:,:,self%idx%s,self%it,1)
     if (self%gamma==1.0) then
       pg = d*self%csound**2
     else
-      s => self%mem(:,:,:,self%i_s,self%it,1)
+      s => self%mem(:,:,:,self%idx%s,self%it,1)
       pg = d**self%gamma*exp(s/d*(self%gamma-1))
     end if
   else

@@ -96,14 +96,6 @@ SUBROUTINE init (self)
   ! Now we are ready to allocate memory in gpatch_t%init -> patch_t%init
   !-----------------------------------------------------------------------------
   call self%gpatch_t%init
-  self%i_d  = idx%d
-  self%i_e  = idx%e
-  self%i_px = idx%px
-  self%i_py = idx%py
-  self%i_pz = idx%pz
-  self%i_bx = idx%bx
-  self%i_by = idx%by
-  self%i_bz = idx%bz
   call trace_end
 END SUBROUTINE init
 
@@ -1069,8 +1061,8 @@ FUNCTION gas_velocity (self) RESULT (v)
   real, dimension(:,:,:,:), pointer:: p
   real, dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%i_d,self%it,1)
-  p => self%mem(:,:,:,self%i_px:self%i_pz,self%it,1)
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   v(:,:,:,1) = p(:,:,:,1) / d
   v(:,:,:,2) = p(:,:,:,2) / d
   v(:,:,:,3) = p(:,:,:,3) / d

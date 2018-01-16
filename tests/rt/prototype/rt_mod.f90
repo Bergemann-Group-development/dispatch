@@ -93,10 +93,10 @@ SUBROUTINE init (self)
   self%nw = 1                                                           ! no time deriv
   call self%patch_t%init                                                ! initialize patch
   call self%set (bits%static+bits%no_download)                          ! special bits
-  self%i_e = 1                                                          ! dedt slot
+  self%idx%e = 1                                                          ! dedt slot
   self%n_lambda = eos%n_lambda                                          ! number of wavelengths
   self%n_bundle = 1                          ! FIXME                    ! one direction
-  self%dedt => self%mem(:,:,:,self%i_e,self%it,1)                       ! map dedt to mem
+  self%dedt => self%mem(:,:,:,self%idx%e,self%it,1)                       ! map dedt to mem
   rt_bundle%dim = self%dim                                              ! pass on dims
   allocate (self%w_lambda(self%n_lambda))
   allocate (self%w_bundle(self%n_bundle))
@@ -157,8 +157,8 @@ SUBROUTINE update (self)
   allocate (lne (mhd%gn(1), mhd%gn(2), mhd%gn(3)))                      ! log internal energy scratch
   self%lnds => lnd
   self%lnes => lne
-  call mhd%log_interpolate (self%time, mhd%i_d, lnd)                    ! interpolate in time and space
-  call mhd%log_interpolate (self%time, mhd%i_e, lne)                    ! interpolate in time and space
+  call mhd%log_interpolate (self%time, mhd%idx%d, lnd)                    ! interpolate in time and space
+  call mhd%log_interpolate (self%time, mhd%idx%e, lne)                    ! interpolate in time and space
   if (io%verbose > 1) then
     print *, self%id, 'lnd', minval(lnd), maxval(lnd)
     print *, self%id, 'lne', minval(lne), maxval(lne)

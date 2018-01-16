@@ -20,5 +20,5 @@ initial_pic_mod.o : io_mod.o trace_mod.o mesh_mod.o random_mod.o \
            initial_mod.o pic_mod.o
 
 initial.o: io_mod.o trace_mod.o mesh_mod.o random_mod.o \
-           initial_mod.o pic_mod.o
+           initial_mod.o pic_mod.o index_mod.o
 solver_mod.o: mhd_mod.o

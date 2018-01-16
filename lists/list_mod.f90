@@ -31,10 +31,6 @@ MODULE list_mod
     integer:: ne=0                      ! external
     integer:: na=0                      ! active = internal+boundary
     integer:: nac=0                     ! active tasks
-    real(8):: lc(3) = +huge(0d0)        ! lower corner
-    real(8):: uc(3) = -huge(0d0)        ! upper corner
-    real(8):: llc(3) = +huge(0d0)       ! lower left corner
-    real(8):: urc(3) = -huge(0d0)       ! upper right corner
     real(8):: position(3) = 0.0_8       ! center offset
     real(8):: size(3) = 1.0_8           ! full extent = uc-lc
     integer:: n_behind=0, n_check=0, n_ready=0, n_nbor=0
@@ -46,6 +42,7 @@ MODULE list_mod
     logical:: face_nbors=.false.
   contains
     procedure:: init
+    procedure:: init_bdries
     procedure:: update
     procedure:: reset
     procedure:: append
@@ -992,7 +989,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
   !-----------------------------------------------------------------------------
   error=.false.
   task => this%task
-  if (task%is_set(bits%virtual) .or. task%has_finished()) return
+  if (task%is_set(bits%virtual) .or. task%is_set(bits%frozen)) return
   call trace_begin ('list_t%queue_by_time ', itimer=itimer)
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
@@ -1424,5 +1421,80 @@ SUBROUTINE print_tasks (self, label)
   end do
   write (io_unit%log,*) ''
 END SUBROUTINE print_tasks
+
+!> =============================================================================
+!> Initialize boundary bits, which may (optionally) be used to apply boundary
+!> conditions in experiment_t%update() procedures.  This procedure must be called
+!> while each rank still has a list of all patches.
+!> =============================================================================
+SUBROUTINE init_bdries (self)
+  implicit none
+  class(list_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  real(8):: position(3), limit(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin('task_list_t%init_bdries')
+  link => self%head
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (patch_t)
+    !---------------------------------------------------------------------------
+    ! If at edge, set boundary bits
+    !---------------------------------------------------------------------------
+    position = task%position - self%position
+    limit = (self%size - task%size - task%mesh%d)/2d0
+    if (.not.task%periodic(1)) then
+      if (position(1)  <= -limit(1)) then
+        call task%boundaries%set (bits%xl)
+        task%mesh(1)%lower_boundary = .true.
+      end if
+      if (position(1) >= +limit(1)) then
+        call task%boundaries%set (bits%xu)
+        task%mesh(1)%upper_boundary = .true.
+      end if
+    end if
+    if (.not.task%periodic(2)) then
+      if (position(2)  <= -limit(2)) then
+        call task%boundaries%set (bits%yl)
+        task%mesh(2)%lower_boundary = .true.
+      end if
+      if (position(2) >= +limit(2)) then
+        call task%boundaries%set (bits%yu)
+        task%mesh(2)%upper_boundary = .true.
+      end if
+    end if
+    if (.not.task%periodic(3)) then
+      if (position(3)  <= -limit(3)) then
+        call task%boundaries%set (bits%zl)
+        task%mesh(3)%lower_boundary = .true.
+      end if
+      if (position(3) >= +limit(3)) then
+        call task%boundaries%set (bits%zu)
+        task%mesh(3)%upper_boundary = .true.
+      end if
+    end if
+    if (task%boundaries%bits /= 0) print '(2i6,2(2x,a6),o9,2(2x,3f10.0))', &
+      task%id, task%level, 'BCs: ', formatted(task), task%boundaries%bits, &
+      task%size, task%position
+    end select
+    link => link%next
+  end do
+  call trace_end
+contains
+  !-----------------------------------------------------------------------------
+  function formatted (task) result (out)
+  class(patch_t):: task
+  character(len=6):: out
+  out = '......'
+  if (task%boundaries%is_set(bits%xl))  out(1:1) = 'T'
+  if (task%boundaries%is_set(bits%xu))  out(2:2) = 'T'
+  if (task%boundaries%is_set(bits%yl))  out(3:3) = 'T'
+  if (task%boundaries%is_set(bits%yu))  out(4:4) = 'T'
+  if (task%boundaries%is_set(bits%zl))  out(5:5) = 'T'
+  if (task%boundaries%is_set(bits%zu))  out(6:6) = 'T'
+  end function formatted
+END SUBROUTINE init_bdries
 
 END MODULE list_mod

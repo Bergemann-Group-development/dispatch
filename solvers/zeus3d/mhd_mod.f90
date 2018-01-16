@@ -19,8 +19,6 @@ MODULE mhd_mod
   implicit none
   private
 
-  integer, parameter:: nvar_zeus = 10
-  ! this variable is used to set the staggering of vector components
   integer, parameter:: KindReal = 8
 
   ! a derived-type to keep track of the ZEUS boundary types; ZEUS currently
@@ -35,12 +33,12 @@ MODULE mhd_mod
     type(vector_t):: s, B
     logical:: mhd = .true.
     type(zeus_boundaries_t):: btypes
-    integer:: i_et=0
     type(force_t):: force
     integer:: ix1x2x3
   contains
     procedure:: init => init_zeus
     procedure:: update => update_zeus
+    procedure:: gas_pressure
     procedure:: MapVectors
     procedure:: courant_condition => do_nothing ! this is handled internally by the ZEUS solver
   end type
@@ -308,7 +306,7 @@ SUBROUTINE init_zeus (self)
   endif
 
   self%ix1x2x3 = ix1x2x3
-  self%nv = nvar_zeus
+  self%nv = 10
   self%gamma = gamma
   gamma_z = gamma
   self%ng = nghst
@@ -322,16 +320,6 @@ SUBROUTINE init_zeus (self)
     self%mesh(i)%h(4+i) = -0.5 ! momentum/velocity components
     self%mesh(i)%h(7+i) = -0.5 ! mag. field components
   end do
-  self%i_d   = idx%d
-  self%i_e   = idx%e
-  self%i_et  = idx%et
-  self%i_phi = idx%phi
-  self%i_px  = idx%px
-  self%i_py  = idx%py
-  self%i_pz  = idx%pz
-  self%i_bx  = idx%bx
-  self%i_by  = idx%by
-  self%i_bz  = idx%bz
 
   self%dt(self%it) = dtinit
   self%t(self%it) = 0.0d0
@@ -344,6 +332,10 @@ END SUBROUTINE init_zeus
 SUBROUTINE update_zeus (self)
   class(mhd_t) :: self
   integer, save:: itimer=0
+  real:: error
+  !-----------------------------------------------------------------------------
+
+  call self%gravity
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
@@ -356,6 +348,11 @@ SUBROUTINE update_zeus (self)
   call zeus3d (self%istep)  ! run ZEUS
   call trace_end(itimer)
   call CopyFromZeus (self)
+
+  !-----------------------------------------------------------------------------
+  ! Make a preliminary update of the selfgravity
+  !-----------------------------------------------------------------------------
+  call self%gpatch_t%update
 
 END SUBROUTINE update_zeus
 
@@ -431,8 +428,8 @@ SUBROUTINE CopyToZeus (self)
   pvelocity(3) = self%velocity(3) + self%grid_vel(3)
   
   if (associated(self%force%selected)) then
-    d => qz(:,:,:,self%i_d)
-    p => qz(:,:,:,self%i_px:self%i_pz)
+    d => qz(:,:,:,self%idx%d)
+    p => qz(:,:,:,self%idx%px:self%idx%pz)
     allocate (force(self%gn(1),self%gn(2),self%gn(3),3))
     force = self%force%selected(self%time, d, p, Ux, Uy, Uz, self%mesh)
   else
@@ -500,6 +497,18 @@ SUBROUTINE CopyFromZeus (self)
 END SUBROUTINE CopyFromZeus
 
 !> =============================================================================
+FUNCTION gas_pressure (self) RESULT (pg)
+  class(mhd_t):: self
+  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  !-----------------------------------------------------------------------------
+  if (self%gamma==1.0) then
+    pg = self%mem(:,:,:,self%idx%d,self%it,1)
+  else
+    pg = self%mem(:,:,:,self%idx%e,self%it,1) * (self%gamma - 1.0)
+  end if
+END FUNCTION gas_pressure
+
+!> =============================================================================
 !> In `download_mod::interpolate_to` at least, this is invoked by the "source"
 !> patch (`self`) and applied to `target`.
 !> In the case of momentum components in spherical and cylindrical coords., it
@@ -522,8 +531,8 @@ SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   !.............................................................................
   call trace_begin('mhd_t%MapVectors')
 
-  sidxs = [self%i_px, self%i_py, self%i_pz]
-  Bidxs = [self%i_bx, self%i_by, self%i_bz]
+  sidxs = [self%idx%px, self%idx%py, self%idx%pz]
+  Bidxs = [self%idx%bx, self%idx%by, self%idx%bz]
   select case (self%mesh_type)
   case (1) ! source: Cartesian
     sx = self%mesh(1)%r(jj(1)) + self%mesh(1)%centre_nat

@@ -43,7 +43,7 @@ SUBROUTINE init (self)
   call self%set (bits%static)
   call self%initial%init (self%kind)
   ff => self%mem(:,:,:,:,self%it,1)
-  call self%initial%condition (self%mesh, ff)
+  call self%initial%condition (self%mesh, ff, self%idx)
   call force%init (self%kind)
   call trace_end
 END SUBROUTINE init

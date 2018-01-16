@@ -7,6 +7,7 @@ MODULE setup_mod
   USE opacity_mod
   USE scaling_mod
   USE refine_mod
+  USE download_mod
   implicit none
   private
 
@@ -31,6 +32,7 @@ SUBROUTINE init (self)
   call eos%init                         ! Equation-of-state
   call opacity%init                     ! Opacity
   call refine%init                      ! Refinement parameters
+  call download%init                    ! Downloading and interpolation parameters
 END SUBROUTINE init
  
 !> =============================================================================

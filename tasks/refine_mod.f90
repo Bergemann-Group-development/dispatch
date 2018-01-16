@@ -17,101 +17,83 @@ MODULE refine_mod
   USE eos_mod
   implicit none
   private
-
+  !
   type:: refine_t
-    integer:: check_interval                    ! How often do we check refinement criteria
-                                                ! (given in number of steps/updates between checks)
-    integer:: refinement_ratio                  ! How does a patch split when it is refined
-    real:: min_dx, max_dx
-    real:: refine_from_t, refine_until_t        ! Time limits for occurence of refinement
-    real:: min_jeans                            ! Jeans number below which a patch is flagged for refinement
-    real:: tol_shock, tol_contact               ! Tolerance values for shock/discontinuity detectors
-    integer:: ngradvar=10
-    real, dimension(:), pointer:: tol_grad      ! Tolerance values for gradient detector
-    character(len=32), dimension(:), pointer:: grad_var
-    real, dimension(3):: region_llc, region_urc ! Sometimes you want to refine a region (manually)
-    logical:: do_refine                         ! Flag to turn the entire process on or off
   contains
     procedure:: init
+    procedure:: refine_needed
     procedure:: check_current
     procedure:: check_jeans
     procedure:: shock_and_cd_detector
     procedure:: refine_region
     procedure:: split_patch
     procedure:: gradient_detector
+    procedure:: check_nbor_support
   end type
-
+  !
+  integer:: check_interval=50                 ! Number of steps betwen checks
+  integer:: levelmax=1                        ! Max level of refinment
+  integer:: refinement_ratio=2                ! How does a patch split when it is refined
+  real:: min_dx=0.0, max_dx=1e32              ! Min and max grid size
+  real:: refine_from_t=0.0                    ! Time limits for occurence of refinement
+  real:: refine_until_t=0.0                   ! Time limits for occurence of refinement
+  real:: min_jeans=0.0                        ! Jeans number below which a patch is flagged for refinement
+  real:: tol_shock=0.0, tol_contact=0.0       ! Tolerance values for shock/discontinuity detectors
+  integer, parameter:: ngradvar=10            ! Number of gradient variables
+  real, dimension(3):: region_llc=0.0         ! Sometimes you want to refine a region (manually)
+  real, dimension(3):: region_urc=0.0
+  real, dimension(ngradvar):: tol_grad=0.0    ! Tolerance values for gradient detector
+  character(len=32), dimension(ngradvar):: grad_var=""
+  logical:: do_refine=.false.                 ! Flag to turn the entire process on or off 
+  !
   type(refine_t), public:: refine
 
 CONTAINS
 !> =============================================================================
+!> Initialize refinement parameters
+!> =============================================================================
 SUBROUTINE init (self)
   class(refine_t):: self
   integer:: iostat
-  integer:: check_interval=50, refinement_ratio=2
-  real:: refine_from_t=0.0, refine_until_t=1.0e32, min_jeans=0.0, min_dx=0.0, max_dx=1.0e32, &
-         tol_shock=0.0, tol_contact=0.0
-  real, dimension(3):: region_llc=0.0, region_urc=0.0
-  real, dimension(self%ngradvar):: tol_grad
-  character(len=32), dimension(self%ngradvar):: grad_var
-  logical:: do_refine=.false.
   logical, save:: first_time = .true.
-  namelist /refine_params/ check_interval, refinement_ratio, refine_from_t, refine_until_t, &
-                           min_dx, max_dx, min_jeans, tol_shock, tol_contact, tol_grad, &
-                           grad_var, region_llc, region_urc, do_refine
+  namelist /refine_params/ do_refine, levelmax, check_interval, refinement_ratio, &
+    refine_from_t, refine_until_t, min_dx, max_dx, min_jeans, tol_shock, &
+    tol_contact, tol_grad, grad_var, region_llc, region_urc
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%init')
-
+  !$omp critical (refine_cr)
   if (first_time) then
     first_time=.false.
-    ! allocate and initialise gradient detector variables
-    allocate (self%tol_grad(self%ngradvar), self%grad_var(self%ngradvar))
-    tol_grad(:) = 0.0
-    grad_var(:) = ""
     rewind (io%input)
     read (io%input, refine_params, iostat=iostat)
-    if (io%master) write (*, refine_params)
+    if (io%master) then
+      if (iostat > 0) call io%namelist_warning ('refine_params')
+      write (*, refine_params)
+    end if
   end if
-  self%check_interval = check_interval
-  self%refinement_ratio = refinement_ratio
-  self%refine_from_t = refine_from_t
-  self%refine_until_t = refine_until_t
-  self%min_dx = min_dx
-  self%max_dx = max_dx
-  self%min_jeans = min_jeans
-  self%tol_shock = tol_shock
-  self%tol_contact = tol_contact
-  self%tol_grad = tol_grad
-  self%grad_var = grad_var
-  self%region_llc = region_llc
-  self%region_urc = region_urc
-  self%do_refine = do_refine
-
+  !$omp end critical (refine_cr)
   call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
-!> Check if refinement is desired and needed for the current task; if so, push
-!> new tasks onto the (ready) queue with the same time as the parent, i.e., to
-!> the head of the queue.
+!> Check if refinement is desired and needed for the current task
 !> =============================================================================
-SUBROUTINE check_current (self, tasklist, link, was_refined)
+FUNCTION refine_needed (self, tasklist, link)
   class(refine_t):: self
   class(list_t):: tasklist
   class(link_t), pointer:: link
+  logical:: refine_needed
+  !.............................................................................
   class(patch_t), pointer:: patch
-  logical:: needed
-  logical, intent(out):: was_refined
   real:: dxmin, dxmax
   integer, save:: itimer=0
-  !.............................................................................
-  was_refined = .false.
-  if (.not. self%do_refine) return
-  call trace%begin('refine_t%check_current', itimer=itimer)
-
+  !----------------------------------------------------------------------------
+  refine_needed = .false.
+  if (.not. do_refine) return
+  call trace%begin('refine_t%needed', itimer=itimer)
+  !
   patch => task2patch(link%task)
-  needed = .false.
-
+  !
   ! filter out patches which do not match the necessary criteria
   if (patch%is_set(bits%virtual)) then
     call trace%end (itimer)
@@ -121,50 +103,127 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
     call trace%end (itimer)
     return
   end if
-  if (patch%is_set(bits%not_leaf)) then
-    call trace%end (itimer)
-    return
-  end if
   dxmin = minval(patch%ds)
   dxmax = maxval(patch%ds)
-  if (dxmin < self%min_dx .or. dxmax >= self%max_dx) then
+  if (dxmin < min_dx .or. dxmax >= max_dx) then
     call trace%end (itimer)
     return
   end if
-  if (patch%time < self%refine_from_t .or. patch%time > self%refine_until_t) then
+  if (patch%time < refine_from_t .or. patch%time > refine_until_t) then
     call trace%end (itimer)
     return
   end if
-
+  !
   !------------------------------------------------------------------------
   ! Refinement Criteria
   !------------------------------------------------------------------------
   ! Jeans criterion
-  if (self%min_jeans > 0.0) needed = needed .or. self%check_Jeans(patch)
-
+  if (min_jeans > 0.0) refine_needed = refine_needed .or. self%check_Jeans(patch)
+  if (io%verbose>1) print *, patch%id, 'refine%needed (Jeans)   =', refine_needed
+  !
   ! shock and/or contact discontinuity detector
-  if (self%tol_shock > 0.0 .or. self%tol_contact > 0.0) &
-    needed = needed .or. self%shock_and_cd_detector(patch)
-
+  if (tol_shock > 0.0 .or. tol_contact > 0.0) &
+    refine_needed = refine_needed .or. self%shock_and_cd_detector(patch)
+  if (io%verbose>1) print *, patch%id, 'refine%needed (shock)   =', refine_needed
+  !
   ! gradient detector
-  if (any(self%tol_grad > 0.0) ) needed = needed .or. self%gradient_detector(patch)
-
+  if (any(tol_grad > 0.0) ) refine_needed = refine_needed .or. self%gradient_detector(patch)
+  if (io%verbose>1) print *, patch%id, 'refine%needed (grad)    =', refine_needed
+  !
   ! refine on (a) user-specified region(s)
-  if (any(self%region_llc /= 0.0) .and. any(self%region_urc /= 0.0)) &
-    needed = needed .or. self%refine_region(patch)
-
-  patch%check_refine_next = patch%istep + self%check_interval
-
-  !------------------------------------------------------------------------
-  ! If refinement has been deemed necessary, do it!
-  !------------------------------------------------------------------------
-  if (needed) then
-    if (io%verbose > 1) print*,'refine_t%needed!; patch:', patch%id
-    call self%split_patch (tasklist, link)
-    was_refined = .true.
-  end if
-
+  if (any(region_llc /= 0.0) .and. any(region_urc /= 0.0)) &
+    refine_needed = refine_needed .or. self%refine_region(patch)
+  if (io%verbose>1) print *, patch%id, 'refine%needed (region)  =', refine_needed
+  !
+  ! Check that neighbors of `self` are not more than one level different.
+  ! If they are, mark this patch for splitting so that support can be
+  ! provided to the neighbors of `patch`.
+  refine_needed = refine_needed .or. self%check_nbor_support (tasklist, link)
+  if (io%verbose>1) print *, patch%id, 'refine%needed (support) =', refine_needed
+  !
+  patch%check_refine_next = patch%istep + check_interval
   call trace%end (itimer)
+END FUNCTION refine_needed
+
+!> =============================================================================
+!> Check if refinement is desired and needed for the current task; if so, push
+!> new tasks onto the (ready) queue with the same time as the parent, i.e., to
+!> the head of the queue.  If the task is not a leaf task, and refinement does
+!> not appear to be needed, suggest derefinement.
+!> =============================================================================
+SUBROUTINE check_current (self, tasklist, link, was_refined)
+  class(refine_t):: self
+  class(list_t):: tasklist
+  class(link_t), pointer:: link
+  class(patch_t), pointer:: patch
+  logical, intent(out):: was_refined
+  real:: dxmin, dxmax
+  integer, save:: itimer=0
+  !.............................................................................
+  was_refined = .false.
+  if (.not. do_refine) return
+  if (io%verbose>1) &
+    print *, link%task%id, 'MK: refine_t%check_current, at t =', link%task%time, link%task%level, levelmax
+  if (link%task%level >= levelmax) return
+  call trace%begin('refine_t%check_current', itimer=itimer)
+  !
+  patch => task2patch(link%task)
+  if (patch%is_set(bits%not_leaf)) then
+    if (.not.self%refine_needed (tasklist, link)) then
+      !print *, patch%id, 'derefine suggested'
+      !$omp critical (queue_cr)
+      !call self%join_patch (tasklist, link)
+      call check_level_constraint
+      !$omp end critical  (queue_cr)
+    end if
+  else
+    if (self%refine_needed (tasklist, link)) then
+      !$omp critical (queue_cr)
+      call self%split_patch (tasklist, link)
+      call check_level_constraint
+      !$omp end critical  (queue_cr)
+      was_refined = .true.
+    end if
+  end if
+  !
+  call trace%end (itimer)
+contains
+  !> ===========================================================================
+  !> Iteratively check the nbor level constraint, splitting patches until the
+  !> there are no more violations.  Since this inserts new patches in the patch
+  !> list, and modifies the queue, it must be done in a critical region, blocking
+  !> other updates to the patch list.
+  !> ===========================================================================
+  subroutine check_level_constraint
+    class(link_t), pointer:: link
+    integer:: iteration
+    logical:: still_needed
+    !---------------------------------------------------------------------------
+    iteration = 0
+    still_needed = .true.
+    do while (still_needed)
+      still_needed = .false.
+      link => tasklist%head
+      do while (associated(link))
+        if (link%task%is_clear (bits%not_leaf)) then
+          if (self%check_nbor_support (tasklist, link)) then
+            if (io%verbose>2) &
+              print *, link%task%id, &
+              'check_level_constraint: patch needs splitting at level', &
+              link%task%level
+            call self%split_patch (tasklist, link)
+            still_needed = .true.
+            exit
+          end if
+        end if
+        link => link%next
+      end do
+      iteration = iteration+1
+      if (io%verbose>2) &
+        print *, 'check_level_constraint, iteration =', &
+        iteration, still_needed
+    end do
+  end subroutine check_level_constraint
 END SUBROUTINE check_current
 
 !> =============================================================================
@@ -173,9 +232,8 @@ END SUBROUTINE check_current
 !> =============================================================================
 SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   USE download_mod
-
   class(list_t) :: tlist
-  class(link_t), pointer :: parent_link, child_link
+  class(link_t), pointer :: parent_link, child_link, child_nbor
   class(patch_t), pointer :: parent, child
   real, dimension(3), intent(in) :: pos, child_size
   !------------------------------------------------------------------------
@@ -195,26 +253,43 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child%position = pos                               ! patch position
   child%llc_cart = child%position - merge(0.5,0.0,child%n>1) * child%size  ! lower left corner
   child%llc_nat = child%llc_cart                     ! FIXME!: this form only applies for Cartesian coords.
-  call child%init()                                  ! patch, for a new id
-  child%level = parent%level + 1                     ! override the calculation in `patch_t%init`.
-  child%dt(child%it) = parent%dt(parent%it)          ! reset the time-step
-  child%t(child%it) = child%time
-  child%out_next = child%time                        ! force output now
-  child%iout = 0                                     ! reset output counter
   !------------------------------------------------------------------------
   ! Reset flags (FIXME: Would it be better to just reset `status` to zero?)
   !------------------------------------------------------------------------
   call child%clear(bits%root_grid)
   call child%clear(bits%ready)
   call child%clear(bits%busy)
+  child%boundaries%bits = 0
+  !------------------------------------------------------------------------
+  ! Initialise the new patch
+  !------------------------------------------------------------------------
+  child%level = parent%level + 1                     ! must be set before init!
+  call child%init()                                  ! patch, for a new id
+  child%level = parent%level + 1                     ! override possible calculation in `patch_t%init`.
+  child%dt(child%it) = parent%dt(parent%it) / refinement_ratio ! reset the time-step
+  child%t(child%it) = child%time
+  child%out_next = child%time                        ! force output now
+  child%iout = max(0,child%iout - 1)                 ! correct output counter
+  child%parentid = parent%id                         ! for debugging
+  child%check_refine_next = 0                        ! allow recursive refine
   !------------------------------------------------------------------------
   ! Append links to the new patch in the patch list, sorted by quality
   ! Neighbour lists are constructed at the end of `split_patch`.
   !------------------------------------------------------------------------
   allocate (child_link)
   child_link%task => child
-  child_link%parent => parent_link                          ! link is the link to the new patch
-  call tlist%append_link (child_link)                       ! which is added to the patch list
+  child_link%parent => parent_link                   ! link is the link to the new patch
+  call tlist%append_link (child_link)                ! which is added to the patch list
+  io%ntask = tlist%n                                 ! update the task count
+  !------------------------------------------------------------------------
+  ! Make parent a neighbour of new child patch.
+  ! This will be overwritten in `init_all_nbors` but is necessary here to permit
+  ! interpolation of values from parent to child.
+  !------------------------------------------------------------------------
+  allocate (child_nbor)
+  child_nbor%link => parent_link
+  child_nbor%task => parent
+  child_link%nbor => child_nbor
   !------------------------------------------------------------------------
   ! Download values from parent and neighbors, except at time = 0, to allow
   ! recursive refinement there.
@@ -224,10 +299,10 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   if (parent%time > 0.0) call download%download_link (child_link, all_cells=.true.)
   if (io%verbose>0) then
     1 format(a,3i6,f10.6,2(2x,3f8.4))
-    print 1,'refine_mod::make_child_patch:  child, level, iout, time, size =', &
-      child%id, child%level, child%iout, child%time, child%size
-    print 1,'                              parent, level, iout, time, size =', &
-      parent%id, parent%level, parent%iout, parent%time, parent%size
+    print 1,'refine_t%make_child_patch:  child, level, iout, time, size(3), position(3) =', &
+      child%id, child%level, child%iout, child%time, child%size, child%position
+    print 1,'                           parent, level, iout, time, size(3), position(3) =', &
+      parent%id, parent%level, parent%iout, parent%time, parent%size, parent%position
   end if
 
   call tlist%check_ready(child_link)
@@ -251,7 +326,7 @@ SUBROUTINE split_patch (self, tlist, this)
   !.............................................................................
   if (this%task%is_set(bits%not_leaf)) return
   call trace%begin('refine_t%split_patch', 1)
-  nsplit = self%refinement_ratio
+  nsplit = refinement_ratio
 
   this_patch => task2patch(this%task)
 
@@ -273,7 +348,6 @@ SUBROUTINE split_patch (self, tlist, this)
   end do
   call this_patch%set(bits%not_leaf)
   
-  call tlist%remove_parents
   call tlist%init_all_nbors
   call tlist%reset_status
   link => tlist%head
@@ -282,6 +356,10 @@ SUBROUTINE split_patch (self, tlist, this)
     call tlist%check_ready (link)
     link => link%next
   end do
+  !-----------------------------------------------------------------------------
+  ! FIXME: special care may be needed in multi-rank context
+  !-----------------------------------------------------------------------------
+  call tlist%init_bdries
 
   if (io%verbose > 0) call tlist%print_tasks()
 
@@ -289,32 +367,85 @@ SUBROUTINE split_patch (self, tlist, this)
 END SUBROUTINE split_patch
 
 !> =============================================================================
+!> Check the neighbors of the task associated with `link` to see if they can
+!> provide support to newly refined patches made from `link`.
+!> The current definition of "support" is a difference in levels of one or less.
+!>
+!> In the absence of the optional argument, `check_only`, neighbour patches will
+!> be split as needed.
+!> =============================================================================
+FUNCTION check_nbor_support (self, tlist, link, check_only) RESULT (refine_it)
+  USE task_mod
+  class(refine_t):: self
+  class(list_t):: tlist
+  class(link_t), pointer:: link, nbor
+  class(task_t), pointer:: this, npatch
+  logical, optional:: check_only
+  logical:: split_if_necessary, refine_it
+  !.............................................................................
+  call trace%begin('refine_t%check_nbor_support')
+  if (present(check_only)) then
+    split_if_necessary = .not. check_only
+  else
+    split_if_necessary = .true.
+  end if
+
+  refine_it = .false.
+  this => link%task
+  nbor => link%nbor
+  do while (associated(nbor))
+    npatch => nbor%task
+    ! support is defined as having a level difference no greater than one
+    if ((npatch%level - this%level) > 1) then
+      if (io%verbose > 0) print "('Patch',i5.1,' at level ',i2.1,' cannot provide support to patches at level',i2.1)",this%id,this%level,npatch%level
+      if (split_if_necessary) then
+        ! mark this patch for splitting to ensure support for neighbor patches
+        if (io%verbose > 0) print "('Splitting',i5.1,' in order to provide support')",this%id
+        refine_it = .true.
+        exit
+      end if
+    end if
+    nbor => nbor%next
+  end do
+
+  call trace%end
+END FUNCTION check_nbor_support
+
+!> =============================================================================
 !> Calculate the Jeans length and compare it to the patch resolution.
 !> =============================================================================
-FUNCTION check_jeans (self, patch) RESULT(out)
+FUNCTION check_jeans (self, patch) RESULT(refine_it)
   USE scaling_mod
   class(refine_t):: self
   class(patch_t), pointer:: patch
-  logical:: out
-  real:: jeans_length, ratio
-  real, dimension(:,:,:), allocatable:: c_sound2
+  logical:: refine_it
+  real:: Jeans_length, Jeans_num
+  real, dimension(:,:,:), allocatable:: c_sound2, pg
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
   !.............................................................................
-  call trace%begin ('refine_t%check_check_jeans', 2)
+  call trace%begin ('refine_t%check_check_jeans')
+  associate(l => patch%li, u => patch%ui)
+  d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
+  e => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,patch%it,1)
+  allocate(c_sound2(size(d,1),size(d,2),size(d,3)), &
+           pg(patch%gn(1),patch%gn(2),patch%gn(3)))
 
-  allocate(c_sound2(patch%mesh(1)%gn,patch%mesh(2)%gn,patch%mesh(3)%gn))
+  select type (patch)
+  class is (solver_t)
+    pg = patch%gas_pressure()
+  class default
+    call mpi%abort("Unrecognised patch type. Abort!")
+  end select
+  c_sound2 = patch%gamma * pg(l(1):u(1),l(2):u(2),l(3):u(3)) / d
+  Jeans_length = minval(sqrt(scaling%pi * c_sound2 / (d*scaling%grav)))
+  Jeans_num = minval(patch%mesh%d) / Jeans_length
+  refine_it = Jeans_num > min_jeans
 
-  d => patch%mem(:,:,:,patch%i_d,patch%it,1)
-  e => patch%mem(:,:,:,patch%i_e,patch%it,1)
-  c_sound2 = patch%gamma * eos%pressure(d,e) / d
-  jeans_length = minval(sqrt(c_sound2 / (d*scaling%grav)))
-  ratio = jeans_length / minval(patch%mesh%d)
-  out = ratio < self%min_jeans
+  if (io%verbose > 0) print*,'Jeans criterion:', patch%id, Jeans_num, min_jeans, refine_it
 
-  if (io%verbose > 2) print*,'Jeans:', patch%id, ratio, self%min_jeans, out
-
-  deallocate (c_sound2)
+  deallocate (c_sound2, pg)
   nullify (d,e)
+  end associate
   call trace%end
 END FUNCTION check_jeans
 
@@ -350,10 +481,12 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine_it)
   ! we need the gas pressure, density and velocity
   select type (patch)
   class is (solver_t)
-    d => patch%mem(:,:,:,patch%i_d,patch%it,1)
-    e => patch%mem(:,:,:,patch%i_e,patch%it,1)
-    pg = eos%pressure(d, e)
+    d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
+    e => patch%mem(:,:,:,patch%idx%e,patch%it,1)
+    pg = patch%gas_pressure()
     v  = patch%gas_velocity()
+  class default
+    call mpi%abort("Unrecognised patch type. Abort!")
   end select
 
   refine_it = .false.
@@ -367,17 +500,17 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine_it)
         dp3 = abs(pg(ix,iy,iz+kone) - pg(ix,iy,iz-kone)) &
             / (min(pg(ix,iy,iz+kone), pg(ix,iy,iz-kone)) + small )
 
-        if (self%tol_shock > 0.0) then
+        if (tol_shock > 0.0) then
           dv1 = v(ix  ,iy,iz,1) - v(ix+ione,iy,iz,1)
           dv2 = v(ix,iy  ,iz,2) - v(ix,iy+jone,iz,2)
           dv3 = v(ix,iy,iz  ,3) - v(ix,iy,iz+kone,3)
 
-          if ( dp1 > self%tol_shock .and. dv1 > small ) refine_it = .true.
-          if ( dp2 > self%tol_shock .and. dv2 > small ) refine_it = .true.
-          if ( dp3 > self%tol_shock .and. dv3 > small ) refine_it = .true.
+          if ( dp1 > tol_shock .and. dv1 > small ) refine_it = .true.
+          if ( dp2 > tol_shock .and. dv2 > small ) refine_it = .true.
+          if ( dp3 > tol_shock .and. dv3 > small ) refine_it = .true.
         end if
 
-        if (self%tol_contact > 0.0) then
+        if (tol_contact > 0.0) then
           dd1 = abs(d(ix+ione,iy,iz) - d(ix-ione,iy,iz)) &
               / (min(d(ix+ione,iy,iz), d(ix-ione,iy,iz)) + small )
           dd2 = abs(d(ix,iy+jone,iz) - d(ix,iy-jone,iz)) &
@@ -385,9 +518,9 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine_it)
           dd3 = abs(d(ix,iy,iz+kone) - d(ix,iy,iz-kone)) &
               / (min(d(ix,iy,iz+kone), d(ix,iy,iz-kone)) + small )
 
-          if ( dd1 > self%tol_contact .and. dp1 < 0.01*self%tol_contact ) refine_it = .true.
-          if ( dd2 > self%tol_contact .and. dp2 < 0.01*self%tol_contact ) refine_it = .true.
-          if ( dd3 > self%tol_contact .and. dp3 < 0.01*self%tol_contact ) refine_it = .true.
+          if ( dd1 > tol_contact .and. dp1 < 0.01*tol_contact ) refine_it = .true.
+          if ( dd2 > tol_contact .and. dp2 < 0.01*tol_contact ) refine_it = .true.
+          if ( dd3 > tol_contact .and. dp3 < 0.01*tol_contact ) refine_it = .true.
         end if
       end do
     end do
@@ -432,22 +565,24 @@ FUNCTION gradient_detector (self, patch) RESULT (refine_it)
   if (mz%n > 1) kone = 1
 
   refine_it = .false.
-  do n=1,size(self%grad_var)
-    if (trim(self%grad_var(n)) == '') exit
-    if (trim(self%grad_var(n)) == 'd')  q = patch%mem(:,:,:,patch%i_d,patch%it,1)
-    if (trim(self%grad_var(n)) == 'e')  q = patch%mem(:,:,:,patch%i_e,patch%it,1)
-    if (trim(self%grad_var(n)) == 'p1') q = patch%mem(:,:,:,patch%i_px,patch%it,1)
-    if (trim(self%grad_var(n)) == 'p2') q = patch%mem(:,:,:,patch%i_py,patch%it,1)
-    if (trim(self%grad_var(n)) == 'p3') q = patch%mem(:,:,:,patch%i_pz,patch%it,1)
-    if (trim(self%grad_var(n)) == 'b1') q = patch%mem(:,:,:,patch%i_bx,patch%it,1)
-    if (trim(self%grad_var(n)) == 'b2') q = patch%mem(:,:,:,patch%i_by,patch%it,1)
-    if (trim(self%grad_var(n)) == 'b3') q = patch%mem(:,:,:,patch%i_bz,patch%it,1)
+  do n=1,size(grad_var)
+    if (trim(grad_var(n)) == '') exit
+    if (trim(grad_var(n)) == 'd')  q = patch%mem(:,:,:,patch%idx%d,patch%it,1)
+    if (trim(grad_var(n)) == 'e')  q = patch%mem(:,:,:,patch%idx%e,patch%it,1)
+    if (trim(grad_var(n)) == 'p1') q = patch%mem(:,:,:,patch%idx%px,patch%it,1)
+    if (trim(grad_var(n)) == 'p2') q = patch%mem(:,:,:,patch%idx%py,patch%it,1)
+    if (trim(grad_var(n)) == 'p3') q = patch%mem(:,:,:,patch%idx%pz,patch%it,1)
+    if (trim(grad_var(n)) == 'b1') q = patch%mem(:,:,:,patch%idx%bx,patch%it,1)
+    if (trim(grad_var(n)) == 'b2') q = patch%mem(:,:,:,patch%idx%by,patch%it,1)
+    if (trim(grad_var(n)) == 'b3') q = patch%mem(:,:,:,patch%idx%bz,patch%it,1)
     select type(patch)
     class is (solver_t)
-      if (trim(self%grad_var(n)) == 'p')  q = patch%gas_pressure()
-      if (trim(self%grad_var(n)) == 'v1') q = patch%gas_velocity(1)
-      if (trim(self%grad_var(n)) == 'v2') q = patch%gas_velocity(2)
-      if (trim(self%grad_var(n)) == 'v3') q = patch%gas_velocity(3)
+      if (trim(grad_var(n)) == 'p')  q = patch%gas_pressure()
+      if (trim(grad_var(n)) == 'v1') q = patch%gas_velocity(1)
+      if (trim(grad_var(n)) == 'v2') q = patch%gas_velocity(2)
+      if (trim(grad_var(n)) == 'v3') q = patch%gas_velocity(3)
+    class default
+      call mpi%abort("Unrecognised patch type. Abort!")
     end select
 
     ! calculate the gradient in each direction
@@ -487,7 +622,7 @@ FUNCTION gradient_detector (self, patch) RESULT (refine_it)
           dqmax = max ( dq1(i,j,k), dq1(ip1,j,k), dq1(im1,j,k) &
                       , dq2(i,j,k), dq2(i,jp1,k), dq2(i,jm1,k) &
                       , dq3(i,j,k), dq3(i,j,kp1), dq3(i,j,km1) )
-          if (dqmax > self%tol_grad(n)) refine_it = .true.
+          if (dqmax > tol_grad(n)) refine_it = .true.
         end do
       end do
     end do
@@ -508,7 +643,7 @@ FUNCTION refine_region (self, patch) RESULT (refine_it)
 
   class(refine_t) :: self
   class(patch_t), pointer :: patch
-  class(mesh_t), dimension(:), pointer:: m
+  class(mesh_t), pointer:: m1, m2, m3, m(:)
   logical :: intersect
   logical :: refine_it
   integer :: ix, iy, iz
@@ -518,31 +653,33 @@ FUNCTION refine_region (self, patch) RESULT (refine_it)
   call trace%begin('refine_t%refine_on_box')
 
   refine_it = .false.
-  m => patch%mesh
+  m1 => patch%mesh(1)
+  m2 => patch%mesh(2)
+  m3 => patch%mesh(3)
+  m => patch%mesh(:)
 
   ! check if the patch (as a whole) intersects the box-shaped region of interest
   do ix=1,3
-    associate (mr => m(ix)%r)
+    associate (mr => patch%mesh(ix)%r)
     p_llc(ix) = m(ix)%p + mr(m(ix)%li) - 0.5 * m(ix)%d
     p_urc(ix) = m(ix)%p + mr(m(ix)%ui) + 0.5 * m(ix)%d
     end associate
   end do
-  b_llc = self%region_llc
-  b_urc = self%region_urc
+  b_llc = region_llc
+  b_urc = region_urc
 
-  intersect = all(b_llc > p_llc .and. b_llc < p_urc) .or. &
-              all(b_urc > p_llc .and. b_urc < p_urc)
+  intersect = all((p_urc - b_llc) > 0) .and. all((b_urc - p_llc) > 0)
   if (.not. intersect) then
     call trace_end
     return
   endif
 
-  do iz=m(3)%li,m(3)%ui
-    z = m(3)%p + m(3)%r(iz)
-    do iy=m(2)%li,m(2)%ui
-      y = m(2)%p + m(2)%r(iy)
-      do ix=m(1)%li,m(1)%ui
-        x = m(1)%p + m(1)%r(ix)
+  do iz=m3%li,m3%ui
+    z = m3%p + m3%r(iz)
+    do iy=m2%li,m2%ui
+      y = m2%p + m2%r(iy)
+      do ix=m1%li,m1%ui
+        x = m1%p + m1%r(ix)
         refine_it = refine_it .or. (x >= b_llc(1) .and. x <= b_urc(1) .and. &
                                     y >= b_llc(2) .and. y <= b_urc(2) .and. &
                                     z >= b_llc(3) .and. z <= b_urc(3) )

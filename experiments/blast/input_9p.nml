@@ -11,10 +11,11 @@
 /
 
 &rubiks_params
-  size=0.33333,0.33333,0.01
-  position=0.0,0.0,0.0
+  size=0.33333,0.33333,1.0
+  !size=0.11111,0.11111,1.0
+  position=0.0,0.0,0.5
   n_levels=1
-  m_zoom=1
+  m_zoom=3,3,1
   n_repeat=1,1,1
   n_patch=3,3,1
 /
@@ -27,15 +28,17 @@
 
 &patch_params
   courant=0.5
-  n=60,60,1
+  n=32,32,1
 /
 
 &experiment_params
   r0=0.125
   d0=1.0,1.0
   p0=1.0,100.0
-  bx0=7.0711,7.0711
-  by0=7.0711,7.0711
+  !bx0=7.0711,7.0711
+  !by0=7.0711,7.0711
+  bx0=0.0,0.0
+  by0=0.0,0.0
 /
 
 &zeus_params
@@ -55,13 +58,15 @@
 /
 
 &refine_params
-  tol_shock=0.2
-  tol_contact=0.2
-  check_interval=1
-  msplit=2
-  levelmax=8
-  refine_from_time=0.0
-  do_refine=f
+  tol_shock=0.1
+  tol_contact=0.1
+  tol_grad=0.1
+  grad_var='p'
+  check_interval=10
+  refinement_ratio=3
+  min_dx=0.006
+  refine_from_t=0.0
+  do_refine=t
 /
 
 &ramses_params

@@ -112,15 +112,6 @@ SUBROUTINE init (self)
   self%min_iter  = min_iter
   self%max_iter  = max_iter
   self%nv        = 6
-  self%i_d  = idx%d
-  self%i_px = idx%px
-  self%i_py = idx%py
-  self%i_pz = idx%pz
-  self%i_e  = idx%e
-  self%i_bx = idx%bz
-  self%i_by = idx%by
-  self%i_bz = idx%bz
-  self%i_phi= idx%phi
   !-----------------------------------------------------------------------------
   ! Set up the right dimensions from current patch, etc for laplace iteration method
   !-----------------------------------------------------------------------------
@@ -128,8 +119,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Memory mapping of density and potentiall field
   !-----------------------------------------------------------------------------
-  self%d   => self%mem(:,:,:,self%i_d  ,self%it,1)
-  self%phi => self%mem(:,:,:,self%i_phi,self%it,1)
+  self%d   => self%mem(:,:,:,self%idx%d  ,self%it,1)
+  self%phi => self%mem(:,:,:,self%idx%phi,self%it,1)
   call trace_end
 END SUBROUTINE init
 
@@ -174,7 +165,7 @@ SUBROUTINE solve (self)
   ! Set up source of gravity
   !-----------------------------------------------------------------------------
   FourPiGrho = FourPi * self%G * self%d
-  self%phi => self%mem(:,:,:,self%i_phi,self%it,1)
+  self%phi => self%mem(:,:,:,self%idx%phi,self%it,1)
   phi_1 => self%phi
   !phi_1 = 0.0
   phi_old => phi_1                              ! initial pointer arrangement
@@ -227,8 +218,8 @@ SUBROUTINE update (self)
   else
     call self%mhd_t%update
     call self%solve
-    d   => self%mem(:,:,:,self%i_d  ,self%it,1)
-    phi => self%mem(:,:,:,self%i_phi,self%it,1)
+    d   => self%mem(:,:,:,self%idx%d  ,self%it,1)
+    phi => self%mem(:,:,:,self%idx%phi,self%it,1)
     associate (mx=>size(phi,1), my=>size(phi,2), mz=>size(phi,3))
     allocate (lnd(mx,my,mz), ddn(mx,my,mz,3))
     lnd = log(d)
@@ -253,7 +244,7 @@ SUBROUTINE grav_potential (self, out)
   out(1:self%n(1), &
       1:self%n(2), &
       1:self%n(3)) = log(self%mem(self%li(1):self%ui(1), &
-       self%li(2):self%ui(2), self%li(3):self%ui(3), self%i_phi, self%it, 1))
+       self%li(2):self%ui(2), self%li(3):self%ui(3), self%idx%phi, self%it, 1))
   call trace_end
 END SUBROUTINE grav_potential
 !> =============================================================================

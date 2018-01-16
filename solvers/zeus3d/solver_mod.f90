@@ -11,7 +11,6 @@ MODULE solver_mod
   private
   type, public, extends(mhd_t):: solver_t
   contains
-    procedure:: gas_pressure
     procedure:: log_density
     procedure:: log_pressure
     procedure:: velocity_magnitude
@@ -35,18 +34,6 @@ MODULE solver_mod
 CONTAINS
 
 !> =============================================================================
-FUNCTION gas_pressure (self) RESULT (pg)
-  class(solver_t):: self
-  real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  !-----------------------------------------------------------------------------
-  if (self%gamma==1.0) then
-    pg = self%d%q
-  else
-    pg = self%e%q * (self%gamma - 1.0)
-  end if
-END FUNCTION gas_pressure
-
-!> =============================================================================
 FUNCTION gas_velocity_vector (self) RESULT (v)
   class (solver_t):: self
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
@@ -60,14 +47,14 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
   integer:: idir
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: v
   !-----------------------------------------------------------------------------
-  associate (d => self%mem(:,:,:,self%i_d,self%it,1))
+  associate (d => self%mem(:,:,:,self%idx%d,self%it,1))
   select case (idir)
   case (1)
-    v(:,:,:) = self%mem(:,:,:,self%i_px,self%it,1) / xdn_scalar(d)
+    v(:,:,:) = self%mem(:,:,:,self%idx%px,self%it,1) / xdn_scalar(d)
   case (2)
-    v(:,:,:) = self%mem(:,:,:,self%i_py,self%it,1) / ydn_scalar(d)
+    v(:,:,:) = self%mem(:,:,:,self%idx%py,self%it,1) / ydn_scalar(d)
   case (3)
-    v(:,:,:) = self%mem(:,:,:,self%i_pz,self%it,1) / zdn_scalar(d)
+    v(:,:,:) = self%mem(:,:,:,self%idx%pz,self%it,1) / zdn_scalar(d)
   case default
     error stop "solver_mod::gas_velocity_scalar:: invalid value of idir"
   end select
@@ -79,7 +66,7 @@ SUBROUTINE log_density (self, v)
   class(solver_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   !-----------------------------------------------------------------------------
-  v = log(self%d%q)
+  v = log(self%mem(:,:,:,self%idx%d,self%it,1))
 END SUBROUTINE log_density
 
 !> =============================================================================
@@ -87,7 +74,7 @@ SUBROUTINE log_pressure (self, v)
   class(solver_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   !-----------------------------------------------------------------------------
-  v = log(gas_pressure(self))
+  v = log(self%gas_pressure())
 END SUBROUTINE log_pressure
 
 !> =============================================================================
@@ -103,7 +90,7 @@ SUBROUTINE magnetic_field_magnitude (self, v)
   class (solver_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   !-----------------------------------------------------------------------------
-  v = norm(self%B)
+  v = norm(self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1))
 END SUBROUTINE magnetic_field_magnitude
 
 !> =============================================================================
@@ -111,7 +98,7 @@ SUBROUTINE grav_potential (self, v)
   class (solver_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
   !-----------------------------------------------------------------------------
-  v = self%gp%q
+  v = self%mem(:,:,:,self%idx%phi,self%it,1)
 END SUBROUTINE grav_potential
 
 !> =============================================================================
@@ -135,10 +122,10 @@ FUNCTION MomToVel_VectorToArray (self) RESULT (out)
   class(solver_t):: self
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: out
   !-----------------------------------------------------------------------------
-  associate (d => self%mem(:,:,:,self%i_d,self%it,1))
-  out(:,:,:,1) = self%mem(:,:,:,self%i_px,self%it,1) / xdn_scalar(d)
-  out(:,:,:,2) = self%mem(:,:,:,self%i_py,self%it,1) / ydn_scalar(d)
-  out(:,:,:,3) = self%mem(:,:,:,self%i_pz,self%it,1) / zdn_scalar(d)
+  associate (d => self%mem(:,:,:,self%idx%d,self%it,1))
+  out(:,:,:,1) = self%mem(:,:,:,self%idx%px,self%it,1) / xdn_scalar(d)
+  out(:,:,:,2) = self%mem(:,:,:,self%idx%py,self%it,1) / ydn_scalar(d)
+  out(:,:,:,3) = self%mem(:,:,:,self%idx%pz,self%it,1) / zdn_scalar(d)
   end associate
 END FUNCTION MomToVel_VectorToArray
 

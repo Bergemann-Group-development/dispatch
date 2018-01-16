@@ -77,14 +77,14 @@ SUBROUTINE update (self)
     dedt=0.0
     call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
     pgas = self%gas_pressure()
-    d    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%it,1)
-    dsdt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%it,2)
+    d    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,1)
+    dsdt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s,self%it,2)
     dsdt = dsdt + dedt*d/pgas(l(1):u(1),l(2):u(2),l(3):u(3))
     !-----------------------------------------------------------------------------
     ! Time step limitation for rate of change dS/dt = (ds/dt-(s/d)*dddt)/d
     !-----------------------------------------------------------------------------
-    s    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%it,1)
-    dddt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%it,2)
+    s    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s,self%it,1)
+    dddt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,2)
     if (io%verbose>2) then
       print *,'mk:    d', minval(d), maxval(d)
       print *,'mk: dedt', minval(dedt), maxval(dedt)

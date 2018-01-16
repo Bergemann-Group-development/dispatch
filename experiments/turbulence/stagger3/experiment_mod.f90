@@ -55,7 +55,7 @@ SUBROUTINE init (self)
   ! Initial conditions
   !----------------------------------------------------------------------------
   mem => self%mem(:,:,:,:,1,1)
-  call self%initial%conditions (self%mesh, mem)
+  call self%initial%conditions (self%mesh, mem, self%idx)
   self%time       = self%initial%time
   self%t(self%it) = self%initial%time
   call self%periodic_grid

@@ -12,6 +12,7 @@ MODULE initial_mod
   USE units_mod
   USE scaling_mod
   USE mesh_mod
+  USE index_mod
   implicit none
   private
   type, public:: initial_t
@@ -89,8 +90,9 @@ END SUBROUTINE init
 !> =============================================================================
 !> Set the initial conditions
 !> =============================================================================
-SUBROUTINE initial_conditions (self, mesh, mem)
+SUBROUTINE initial_conditions (self, mesh, mem, idx)
   class(initial_t) :: self
+  type(index_t):: idx
   class(mesh_t), pointer :: mesh(:)
   real, dimension(:,:,:,:), pointer :: mem
   class(mesh_t), pointer :: m1 => null(), m2 => null(), m3 => null()

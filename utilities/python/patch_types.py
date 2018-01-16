@@ -5,7 +5,7 @@
 
 import numpy as np
 from abc import ABCMeta
-from dispatch_data import Patch, variable_indices
+from dispatch_data import Patch
 
 class MHDPatch(Patch):
     """An abstract derived class for MHD patches."""
@@ -25,7 +25,7 @@ class StaggerMHDPatch(MHDPatch):
         # not yet been used.
         if read_derivs: self.nvar = 2 * self.nvar
 
-        self.varidx = variable_indices('stagger', read_derivs)
+        self.varidx = self.variable_indices(read_derivs)
 
 class ZeusMHDPatch(MHDPatch):
     """A concrete derived class for Zeus-3D/AZEuS MHD patches."""
@@ -33,7 +33,7 @@ class ZeusMHDPatch(MHDPatch):
     def __init__ (self, filename, verbose=False):
         super(MHDPatch, self).__init__(filename, verbose)
 
-        self.varidx = variable_indices('zeus', read_derivs=False)
+        self.varidx = self.variable_indices(read_derivs=False)
 
 class ImmersedBoundaryPatch(Patch):
     """A concrete derived class for immersed boundary patches."""
@@ -52,7 +52,15 @@ class Stagger2eMHDPatch(MHDPatch):
         # not yet been used.
         if read_derivs: self.nvar = 2 * self.nvar
 
-        self.varidx = variable_indices('stagger2e', read_derivs)
+        self.varidx = self.variable_indices(read_derivs)
+
+class RamsesHDPatch(MHDPatch):
+    """A concrete derived class for RAMSES hydro patches."""
+
+    def __init__ (self, filename, verbose=False):
+        super(MHDPatch, self).__init__(filename, verbose)
+
+        self.varidx = self.variable_indices(read_derivs=False)
 
 class RTPatch(MHDPatch):
     """A concrete derived class for RT  patches."""
@@ -65,4 +73,4 @@ class RTPatch(MHDPatch):
         # not yet been used.
         if read_derivs: self.nvar = 2 * self.nvar
 
-        self.varidx = variable_indices('rt_solver', read_derivs)
+        self.varidx = elf.variable_indices(read_derivs)

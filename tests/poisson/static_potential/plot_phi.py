@@ -7,6 +7,7 @@ import dispatch_grid as dg
 from derived_variables import *
 import itertools
 import fnmatch
+import os
 
 def phi_exact(x,y,r0=1.0):
     """
@@ -18,8 +19,8 @@ def phi_exact(x,y,r0=1.0):
         xx, yy = np.meshgrid(x,y,indexing='ij')
     else:
         xx, yy = x, y
-    r = np.sqrt((xx-0.5)**2 + (yy-0.5)**2)
-    phi_e = np.log((r / r0)**2 + 1.0)
+    r = np.sqrt(xx**2 + yy**2)
+    phi_e = np.log((r / r0)**2 + 1.0) + 1.0
 
     return phi_e
 
@@ -33,7 +34,7 @@ def rho_exact(x,y,r0=1.0):
         xx, yy = np.meshgrid(x,y,indexing='ij')
     else:
         xx, yy = x, y
-    r = np.sqrt((xx-0.5)**2 + (yy-0.5)**2)
+    r = np.sqrt(xx**2 + yy**2)
     rho_e = 4.0 * r0**2 / (r**2 + r0**2)**2
 
     return rho_e
@@ -52,21 +53,30 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     data = './data'
-    iters = [0,10,50,90,150,190,250,290]
-    pxsize = [-0.02,1.02]
-    pysize = [-0.02,1.02]
-    pltvar = ['d','rdd','phi','rdphi']
-    cmin   = [1.0,  0.0,  0.0,   0.0]
-    cmax   = [16., 1e-4, 1.15,   1.0]
+    iters = [0,1,5]
+    #iters = [0]
+    pxsize = [-0.5, 0.5]
+    pysize = [-0.5, 0.5]
+    pltvar = ['rdphi','phie', 'phi', 'rdd']
+    cmin   = [   1e-4,   1.0,   0.0,  1e-6]
+    cmax   = [    1.0,    5.,    5.,   0.5]
+    clog   = [      1,     1,     1,     1]
     showgrids = True
     showgridno = True
     ColMap = cm.RdBu_r
-    r0 = 0.5
+    # for best results, skip patches which are entirely overlapped by finer patches
+    skipped = [1,10,19,28]
+    r0 = 0.1
 
     L2_min, L2_max, L2_mean = [], [], []
     Linf_min, Linf_max, Linf_mean = [], [], []
+    istep_min, istep_max = [], []
+    mi = 0
     for i in iters:
+        if not os.path.exists(data):
+            raise Exception("data dir not found!")
         patches = du.patches(data=data,iout=i)
+        if len(patches) == 0: raise Exception("no patches found!")
         for pp in patches:
             pp.cache()
             pp.stripit()
@@ -76,8 +86,12 @@ if __name__ == "__main__":
         gs = gridspec.GridSpec(1,len(pltvar))
         
         axs = []
+        istep_p_min, istep_p_max = 1000000, -1000000
         for j in xrange(len(pltvar)):
-            cax = plt.subplot(gs[0,j])
+            if j == 0:
+                cax = cfig.add_subplot(gs[0,j])
+            else:
+                cax = cfig.add_subplot(gs[0,j],sharex=axs[0],sharey=axs[0])
             axs.append(cax)
             cax.axis(xmin=pxsize[0],xmax=pxsize[1],ymin=pysize[0],ymax=pysize[1])
             cax.yaxis.set_minor_locator(ticker.AutoMinorLocator())
@@ -85,10 +99,21 @@ if __name__ == "__main__":
             # ensure the axes remain visible by putting them at the "top"
             cax.set_zorder(99.0)
 
-            levels = np.linspace(cmin[j],cmax[j],num=50)
             spltvar = pltvar[j]
+            if clog[j] == 1:
+                spltvar = r'log ' + spltvar
+                if cmin[j] != 0.0 and mi == 0: cmin[j] = np.log10(cmin[j])
+                if cmax[j] != 0.0 and mi == 0: cmax[j] = np.log10(cmax[j])
+            levels = np.linspace(cmin[j],cmax[j],num=50)
+            print cmin[j],cmax[j]
 
             for pp in patches:
+                try:
+                    skipped.index(pp.id)
+                    print "Skipping ",pp.id," (user)"
+                    continue
+                except:
+                    pass
                 x_i = dg.dispatch_grid(pp)
                 xp, yp, cut_mask = dg.plotting_grid(pp, x_i, 3, 0.0)
                 # ghost zones *can* now be included (or not)
@@ -104,7 +129,7 @@ if __name__ == "__main__":
                     jindex = slice(0,pp.n[1])
                     kindex = slice(0,pp.n[2])
 
-                print "Data:", pp.filename, pp.istep
+                print "Data:", pp.filename, "; step #: ",pp.istep
                 if pltvar[j] == 'rdd':
                     var = pp.data[iindex,jindex,kindex,pp.varidx['d']]
                     q0 = rho_exact(xp,yp,r0=r0)
@@ -113,18 +138,33 @@ if __name__ == "__main__":
                     var = pp.data[iindex,jindex,kindex,pp.varidx['phi']]
                     q0 = phi_exact(xp,yp,r0=r0)
                     var = relative_difference(q0[iindex,jindex,kindex].squeeze(),var.squeeze())
+                elif pltvar[j] == 'dphi':
+                    var = pp.data[iindex,jindex,kindex,pp.varidx['phi']]
+                    q0 = phi_exact(xp,yp,r0=r0)
+                    var = var.squeeze() - q0[iindex,jindex,kindex].squeeze()
                 elif pltvar[j] == 'de':
                     var = rho_exact(xp,yp,r0=r0)
                     var = var[iindex,jindex]
                 elif pltvar[j] == 'phie':
                     var = phi_exact(xp,yp,r0=r0)
                     var = var[iindex,jindex]
+                elif pltvar[j] == 'dd':
+                    var = pp.data[iindex,jindex,kindex,pp.varidx['d']]
+                    q0 = rho_exact(xp,yp,r0=r0)
+                    var = var.squeeze() - q0[iindex,jindex,kindex].squeeze()
                 else:
                     var = pp.data[iindex,jindex,kindex,pp.varidx[pltvar[j]]]
 
                 print spltvar, ": ", var.min(), var.max(), var.shape
+                if j == 0:
+                    istep_p_min = min(istep_p_min, pp.istep)
+                    istep_p_max = max(istep_p_max, pp.istep)
                 xpp = xp[iindex,jindex,kindex].squeeze()
                 ypp = yp[iindex,jindex,kindex].squeeze()
+
+                if clog[j] == 1:
+                    var = np.log10(var)
+
                 conf = cax.contourf(xpp,ypp,var.squeeze(),levels,cmap=ColMap,
                              extend='both',zorder=-min(pp.dx))
 
@@ -142,6 +182,9 @@ if __name__ == "__main__":
             cbar = plt.colorbar(conf, ax=cax, fraction=0.03, pad=0.03)
             cbar.ax.annotate(spltvar,xy=(-0.10,-0.06),fontsize=14,xycoords='axes fraction')
 
+        istep_min.append(istep_p_min)
+        istep_max.append(istep_p_max)
+
         cfig.tight_layout()
         plt.draw()
         print "="*20
@@ -149,6 +192,12 @@ if __name__ == "__main__":
         # print L2 and Linf norm of the result
         L2_iter, Linf_iter = [], []
         for pp in patches:
+            try:
+                skipped.index(pp.id)
+                print "Skipping ",pp.id," (user)"
+                continue
+            except:
+                pass
             x_i = dg.dispatch_grid(pp)
             xp, yp, cut_mask = dg.plotting_grid(pp, x_i, 3, 0.0)
             # ghost zones *can* now be included (or not)
@@ -156,9 +205,9 @@ if __name__ == "__main__":
             jone = (0,1)[pp.n[1] > 1]
             kone = (0,1)[pp.n[2] > 1]
             if np.any(pp.n != pp.nwrite):
-                iindex = slice(pp.nghost[0] - ione,pp.n[0] + pp.nghost[0] + ione)
-                jindex = slice(pp.nghost[1] - jone,pp.n[1] + pp.nghost[1] + jone)
-                kindex = slice(pp.nghost[2] - kone,pp.n[2] + pp.nghost[2] + kone)
+                iindex = slice(pp.li[0] - 1,pp.ui[0])
+                jindex = slice(pp.li[1] - 1,pp.ui[1])
+                kindex = slice(pp.li[2] - 1,pp.ui[2])
             else:
                 iindex = slice(0,pp.n[0])
                 jindex = slice(0,pp.n[1])
@@ -172,7 +221,7 @@ if __name__ == "__main__":
             Linfn = np.linalg.norm(dphi[iindex,jindex,kindex].flatten(),ord=np.inf)
             L2_iter.append(L2n/L2d)
             Linf_iter.append(Linfn/Linfd)
-            #print "i = {0}, p = {1}, n = {2}, L2-norm = {3:.3e}, Linf-norm = {4:.3e}".format(i,pp.id,pp.n,L2n/L2d,Linfn/Linfd)
+            print "i = {0}, p = {1}, n = {2}, L2-norm = {3:.3e}, Linf-norm = {4:.3e}".format(i,pp.id,pp.n,L2n/L2d,Linfn/Linfd)
 
         # accumulate L2, Linf results
         L2_min.append(np.min(L2_iter))
@@ -182,8 +231,11 @@ if __name__ == "__main__":
         Linf_max.append(np.max(Linf_iter))
         Linf_mean.append(np.mean(Linf_iter))
 
+        # increment counter (`iters` loop)
+        mi += 1
+
     for i in xrange(len(iters)):
-        print "i = {0}, iout = {1}".format(i,iters[i])
+        print "i = {0}, iout = {1}, min nsteps = {2}, max nsteps = {3}".format(i,iters[i],istep_min[i], istep_max[i])
         print "L2 min = {0:.3e}, L2 max = {1:.3e}, L2 mean = {2:.3e}".format(L2_min[i],L2_max[i],L2_mean[i])
         print "Linf min = {0:.3e}, Linf max = {1:.3e}, Linf mean = {2:.3e}".format(Linf_min[i],Linf_max[i],Linf_mean[i])
         print "-"*40

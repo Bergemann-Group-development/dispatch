@@ -7,12 +7,14 @@ PROGRAM dispatch
   USE mpi_mod
   USE scaling_mod
   USE eos_mod
+  USE download_mod
   USE setup_mod
   !.............................................................................
   call mpi%init
   call io%init ('pebble_atmosphere')
   call scaling%init
   call eos%init
+  call download%init
   call setup%init                       ! initialize the patch list and patches
   call setup%task_list%execute          ! execute the list = update member patches
   call setup%close                      ! close the experiment

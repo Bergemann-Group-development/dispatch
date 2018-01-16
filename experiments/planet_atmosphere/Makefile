@@ -21,7 +21,7 @@ setup_mod.o             : io_mod.o trace_mod.o units_mod.o scaling_mod.o atmosph
 atmosphere_mod.o        : io_mod.o trace_mod.o units_mod.o scaling_mod.o particle_mod.o planet_mod.o
 experiment_mod.o        : io_mod.o trace_mod.o units_mod.o scaling_mod.o mhd_mod.o scalar_mod.o vector_mod.o \
                           initial_mod.o atmosphere_mod.o boundary_mod.o
-initial_mod.o           : io_mod.o trace_mod.o units_mod.o scaling_mod.o lagrange_mod.o atmosphere_mod.o planet_mod.o
+initial_mod.o           : io_mod.o trace_mod.o units_mod.o scaling_mod.o lagrange_mod.o atmosphere_mod.o planet_mod.o index_mod.o
 scaling_mod.o           : io_mod.o trace_mod.o units_mod.o
 units_mod.o               : io_mod.o
 force_mod.o             : io_mod.o trace_mod.o units_mod.o scaling_mod.o planet_mod.o star_mod.o

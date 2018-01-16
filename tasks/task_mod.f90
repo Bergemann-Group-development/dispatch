@@ -23,7 +23,7 @@ MODULE task_mod
     integer:: n_nbors = 0
     integer:: istep = 0
     integer:: iout = 0
-    integer:: level
+    integer:: level = 0
     integer:: nt=3
     integer:: it=1
     integer:: new=2
@@ -33,6 +33,7 @@ MODULE task_mod
     integer:: restart=-9
     integer:: ioformat=1
     integer:: state=0
+    integer:: parentid=0
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
     real(8):: out_next = 0d0
@@ -62,6 +63,7 @@ MODULE task_mod
     logical:: syncing=.false.
     logical:: track=.false.
     logical:: periodic(3)=.true.
+    logical:: rotated=.false.
   contains
     procedure:: init
     procedure:: dnload
@@ -147,6 +149,7 @@ SUBROUTINE rotate (self)
   real(8), pointer:: rptr
   integer, pointer:: iptr
   !.............................................................................
+  if (self%rotated) return
   call trace_begin ('task_mod::rotate',itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Call timestep update procedure to fill the next time slot with values
@@ -210,6 +213,7 @@ SUBROUTINE rotate (self)
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
   !!omp end critical (time_cr)
   nullify (rptr, iptr)
+  self%rotated = .true.
   call trace_end (itimer)
 END SUBROUTINE rotate
 
@@ -328,7 +332,6 @@ LOGICAL FUNCTION has_finished (self)
     has_finished = (self%time + 1e-6*self%dtime > io%end_time) &
       .or. self%is_set(bits%virtual)
   end if
-  if (has_finished) call self%set (bits%frozen)
 END FUNCTION
 
 !> =============================================================================

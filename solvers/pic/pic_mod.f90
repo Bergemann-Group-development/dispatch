@@ -111,12 +111,12 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   m = self%mesh%gn
   print *,'nspecies',m,nspecies,self%nt
-  Bx => self%mem(:,:,:,self%i_bx,self%it,1)                             ! pic_mod.f90
-  By => self%mem(:,:,:,self%i_by,self%it,1)                             ! pic_mod.f90
-  Bz => self%mem(:,:,:,self%i_bz,self%it,1)                             ! pic_mod.f90
-  Ex => self%mem(:,:,:,self%i_ex,self%it,1)                             ! pic_mod.f90
-  Ey => self%mem(:,:,:,self%i_ey,self%it,1)                             ! pic_mod.f90
-  Ez => self%mem(:,:,:,self%i_ez,self%it,1)                             ! pic_mod.f90
+  Bx => self%mem(:,:,:,self%idx%bx,self%it,1)                             ! pic_mod.f90
+  By => self%mem(:,:,:,self%idx%by,self%it,1)                             ! pic_mod.f90
+  Bz => self%mem(:,:,:,self%idx%bz,self%it,1)                             ! pic_mod.f90
+  Ex => self%mem(:,:,:,self%idx%ex,self%it,1)                             ! pic_mod.f90
+  Ey => self%mem(:,:,:,self%idx%ey,self%it,1)                             ! pic_mod.f90
+  Ez => self%mem(:,:,:,self%idx%ez,self%it,1)                             ! pic_mod.f90
   !-----------------------------------------------------------------------------
   ! Additional initialization of the PIC code.  The grid data type 'g' is
   ! allocated in init_boundaries, and we pick up the location here.
@@ -149,8 +149,8 @@ SUBROUTINE pre_init (self)
      u = self%mesh%ui-1
 
      if (io%debug(2)) then
-       d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%it,1)
-       e => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_e,self%it,1)
+       d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,1)
+       e => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e,self%it,1)
        print*,'average and minimum mass density   before:', sum(d)/product(u-l+1), minval(d), self%it
        print*,'average and minimum thermal energy before:', sum(e)/product(u-l+1), minval(e), self%it
      end if
@@ -183,8 +183,8 @@ SUBROUTINE pre_init (self)
 
      call self%pic_to_mhd
      if (io%debug(2)) then
-       d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%new,1)
-       e => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_e,self%new,1)
+       d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%new,1)
+       e => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e,self%new,1)
        print*,'average and minimum mass density    after:', sum(d)/product(u-l+1), minval(d), self%it
        print*,'average and minimum thermal energy  after:', sum(e)/product(u-l+1), minval(e), self%it
      end if
@@ -223,12 +223,12 @@ SUBROUTINE post_init (self)
   !-----------------------------------------------------------------------------
   ! Save the location of dynamic PIC data for this patch
   !-----------------------------------------------------------------------------
-  Bx => self%mem(:,:,:,self%i_bx,self%it,1)           ! pic_mod.f90
-  By => self%mem(:,:,:,self%i_by,self%it,1)             ! pic_mod.f90
-  Bz => self%mem(:,:,:,self%i_bz,self%it,1)             ! pic_mod.f90
-  Ex => self%mem(:,:,:,self%i_ex,self%it,1)             ! pic_mod.f90
-  Ey => self%mem(:,:,:,self%i_ey,self%it,1)             ! pic_mod.f90
-  Ez => self%mem(:,:,:,self%i_ez,self%it,1)             ! pic_mod.f90
+  Bx => self%mem(:,:,:,self%idx%bx,self%it,1)           ! pic_mod.f90
+  By => self%mem(:,:,:,self%idx%by,self%it,1)             ! pic_mod.f90
+  Bz => self%mem(:,:,:,self%idx%bz,self%it,1)             ! pic_mod.f90
+  Ex => self%mem(:,:,:,self%idx%ex,self%it,1)             ! pic_mod.f90
+  Ey => self%mem(:,:,:,self%idx%ey,self%it,1)             ! pic_mod.f90
+  Ez => self%mem(:,:,:,self%idx%ez,self%it,1)             ! pic_mod.f90
   self%vthb      => vthb                                ! species.f90
   self%sp        => sp                                  ! species.f90
   self%g         => g                                   ! grid.f90
@@ -258,12 +258,12 @@ SUBROUTINE connect (self)
   sp     => self%sp                                     ! species.f90
   !n      => self%n                                     ! species.f90
   g    => self%g                                        ! grid.f90
-  Bx   => self%mem(:,:,:,self%i_bx,self%it,1)           ! pic_mod.f90
-  By   => self%mem(:,:,:,self%i_by,self%it,1)           ! pic_mod.f90
-  Bz   => self%mem(:,:,:,self%i_bz,self%it,1)           ! pic_mod.f90
-  Ex   => self%mem(:,:,:,self%i_ex,self%it,1)           ! pic_mod.f90
-  Ey   => self%mem(:,:,:,self%i_ey,self%it,1)           ! pic_mod.f90
-  Ez   => self%mem(:,:,:,self%i_ez,self%it,1)           ! pic_mod.f90
+  Bx   => self%mem(:,:,:,self%idx%bx,self%it,1)           ! pic_mod.f90
+  By   => self%mem(:,:,:,self%idx%by,self%it,1)           ! pic_mod.f90
+  Bz   => self%mem(:,:,:,self%idx%bz,self%it,1)           ! pic_mod.f90
+  Ex   => self%mem(:,:,:,self%idx%ex,self%it,1)           ! pic_mod.f90
+  Ey   => self%mem(:,:,:,self%idx%ey,self%it,1)           ! pic_mod.f90
+  Ez   => self%mem(:,:,:,self%idx%ez,self%it,1)           ! pic_mod.f90
   fmhd => self%fmhd                                     ! grid.f90
   mti  => self%mti
   mt   => self%mt
@@ -327,15 +327,15 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Copy mem arrays to new time slot and update pointers
   !-----------------------------------------------------------------------------
-  do iv=self%i_bx,self%i_ez
+  do iv=self%idx%bx,self%idx%ez
     self%mem(:,:,:,iv,self%new,1) = self%mem(:,:,:,iv,self%it,1)
   end do
-  Bx => self%mem(:,:,:,self%i_bx,self%new,1)            ! pic_mod.f90
-  By => self%mem(:,:,:,self%i_by,self%new,1)            ! pic_mod.f90
-  Bz => self%mem(:,:,:,self%i_bz,self%new,1)            ! pic_mod.f90
-  Ex => self%mem(:,:,:,self%i_ex,self%new,1)            ! pic_mod.f90
-  Ey => self%mem(:,:,:,self%i_ey,self%new,1)            ! pic_mod.f90
-  Ez => self%mem(:,:,:,self%i_ez,self%new,1)            ! pic_mod.f90
+  Bx => self%mem(:,:,:,self%idx%bx,self%new,1)            ! pic_mod.f90
+  By => self%mem(:,:,:,self%idx%by,self%new,1)            ! pic_mod.f90
+  Bz => self%mem(:,:,:,self%idx%bz,self%new,1)            ! pic_mod.f90
+  Ex => self%mem(:,:,:,self%idx%ex,self%new,1)            ! pic_mod.f90
+  Ey => self%mem(:,:,:,self%idx%ey,self%new,1)            ! pic_mod.f90
+  Ez => self%mem(:,:,:,self%idx%ez,self%new,1)            ! pic_mod.f90
   !-----------------------------------------------------------------------------
   ! Do the PIC update, using calls to the PPcode routines
   !-----------------------------------------------------------------------------
@@ -428,14 +428,14 @@ SUBROUTINE mhd_to_pic (self, lb, ub)
 
 
   self%do_pairs = do_pairs
-  d  => self%mem(:,:,:,self%i_d ,self%it,1)
-  e  => self%mem(:,:,:,self%i_e ,self%it,1)
-  px => self%mem(:,:,:,self%i_px,self%it,1)
-  py => self%mem(:,:,:,self%i_py,self%it,1)
-  pz => self%mem(:,:,:,self%i_pz,self%it,1)
-  bx => self%mem(:,:,:,self%i_bx,self%it,1)
-  by => self%mem(:,:,:,self%i_by,self%it,1)
-  bz => self%mem(:,:,:,self%i_bz,self%it,1)
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  px => self%mem(:,:,:,self%idx%px,self%it,1)
+  py => self%mem(:,:,:,self%idx%py,self%it,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
+  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
+  by => self%mem(:,:,:,self%idx%by,self%it,1)
+  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
 
   !print*, "sp(1)%particle%w =", sp(1)%particle(1)%w
   msum = sum(sp(1:nspecies)%mass)              ! sum of different particle masses
@@ -519,24 +519,24 @@ SUBROUTINE pic_to_mhd (self)
   !-----------------------------------------------------------------------------
   ! Copy over fields (B is omitted since is using pointers to self%mem)
   !-----------------------------------------------------------------------------
-  self%mem(:,:,:,self%i_d ,self%new,1) = 0.0
-  self%mem(:,:,:,self%i_e ,self%new,1) = 0.0
-  self%mem(:,:,:,self%i_px,self%new,1) = 0.0
-  self%mem(:,:,:,self%i_py,self%new,1) = 0.0
-  self%mem(:,:,:,self%i_pz,self%new,1) = 0.0
+  self%mem(:,:,:,self%idx%d ,self%new,1) = 0.0
+  self%mem(:,:,:,self%idx%e ,self%new,1) = 0.0
+  self%mem(:,:,:,self%idx%px,self%new,1) = 0.0
+  self%mem(:,:,:,self%idx%py,self%new,1) = 0.0
+  self%mem(:,:,:,self%idx%pz,self%new,1) = 0.0
 
   do isp=1,nspecies
-    self%mem(:,:,:,self%i_d ,self%new,1) = &
-    self%mem(:,:,:,self%i_d ,self%new,1) + sp(isp)%mass*fields(:,:,:,isp)%d
-    self%mem(:,:,:,self%i_e ,self%new,1) = &
-    self%mem(:,:,:,self%i_e ,self%new,1) + sp(isp)%mass*fields(:,:,:,isp)%d* &
+    self%mem(:,:,:,self%idx%d ,self%new,1) = &
+    self%mem(:,:,:,self%idx%d ,self%new,1) + sp(isp)%mass*fields(:,:,:,isp)%d
+    self%mem(:,:,:,self%idx%e ,self%new,1) = &
+    self%mem(:,:,:,self%idx%e ,self%new,1) + sp(isp)%mass*fields(:,:,:,isp)%d* &
                                            0.5*fields(:,:,:,isp)%vth**2
-    self%mem(:,:,:,self%i_px,self%new,1) = &
-    self%mem(:,:,:,self%i_px,self%new,1) + sp(isp)%mass*fields(:,:,:,isp)%v(1)
-    self%mem(:,:,:,self%i_py,self%new,1) = &
-    self%mem(:,:,:,self%i_py,self%new,1) + sp(isp)%mass*fields(:,:,:,isp)%v(2)
-    self%mem(:,:,:,self%i_pz,self%new,1) = &
-    self%mem(:,:,:,self%i_pz,self%new,1) + sp(isp)%mass*fields(:,:,:,isp)%v(3)
+    self%mem(:,:,:,self%idx%px,self%new,1) = &
+    self%mem(:,:,:,self%idx%px,self%new,1) + sp(isp)%mass*fields(:,:,:,isp)%v(1)
+    self%mem(:,:,:,self%idx%py,self%new,1) = &
+    self%mem(:,:,:,self%idx%py,self%new,1) + sp(isp)%mass*fields(:,:,:,isp)%v(2)
+    self%mem(:,:,:,self%idx%pz,self%new,1) = &
+    self%mem(:,:,:,self%idx%pz,self%new,1) + sp(isp)%mass*fields(:,:,:,isp)%v(3)
   end do
   !-----------------------------------------------------------------------------
   call trace_end (itimer)

@@ -21,6 +21,7 @@ MODULE patch_mod
   USE direct_output_mod
   USE buffered_output_mod
   USE boundaries_mod
+  USE index_mod
   implicit none
   private
   integer, parameter:: ndim = 3
@@ -51,10 +52,11 @@ MODULE patch_mod
     character(len=32):: eos='ideal'
     character(len=32):: opacity='none'
     integer:: file_offset(4)
+    type(index_t):: idx
+    real(8):: poisson_time=-1.0
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
-    integer:: i_d=1, i_s=2, i_e=2, i_px=3, i_py=4, i_pz=5, i_bx=6, i_by=7, i_bz=8, i_tt=9, i_phi=10
     real:: grav                         ! gravitational consant (code units)
     integer:: n(3)=0, ng(3)=2           ! convenient defaults
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
@@ -90,6 +92,10 @@ MODULE patch_mod
     procedure:: myposition_staggered
     procedure:: periodic_grid
     procedure:: extrapolate_guards
+    procedure:: is_periodic
+    procedure, private :: make_periodic4
+    procedure, private :: make_periodic8
+    generic, public :: make_periodic  => make_periodic4 , make_periodic8
     procedure, private :: fsum4
     procedure, private :: fsum8
     generic, public :: fsum    => fsum4, fsum8        ! interior sum
@@ -427,10 +433,6 @@ SUBROUTINE init (self)
         self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
   end do
   self%ds = self%mesh%d
-  where (self%n==1)
-    self%ds = minval(self%ds)
-    self%size = self%ds
-  end where
   self%ncell = self%mesh%nc
   self%mesh%id = self%id
   self%mesh%b = self%box
@@ -563,8 +565,9 @@ SUBROUTINE rotate (self)
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
+  if (self%rotated) return
   call trace%begin ('patch_t%rotate')
-  if (self%is_set(bits%root_grid)) then
+  if (self%is_periodic()) then
     call self%periodic_grid                     ! periodic root grid
   else if (extrapolate_gz) then
     call self%extrapolate_guards                ! time-extrapolate guard cells
@@ -682,8 +685,9 @@ END FUNCTION myfloatindex_scalar
 !> =============================================================================
 !> Periodic mapping of a grid -- typically the root grid
 !> =============================================================================
-SUBROUTINE periodic_grid (self)
+SUBROUTINE periodic_grid (self, only)
   class(patch_t):: self
+  integer, optional:: only
   integer:: ix, iy, iz, i(3), j(3), lb(3), ub(3), li(3), ui(3), n(3)
   !.............................................................................
   call trace_begin ('patch_t%periodic_grid')
@@ -720,8 +724,13 @@ SUBROUTINE periodic_grid (self)
     where (self%mesh%upper_boundary .and. i > self%mesh%ui-4)
       j = i
     end where
-    self%mem(ix,iy,iz,:,self%it ,1) = self%mem(j(1),j(2),j(3),:,self%it ,1)
-    self%mem(ix,iy,iz,:,self%new,1) = self%mem(j(1),j(2),j(3),:,self%new,1)
+    if (present(only)) then
+      self%mem(ix,iy,iz,only,self%it ,1) = self%mem(j(1),j(2),j(3),only,self%it ,1)
+      self%mem(ix,iy,iz,only,self%new,1) = self%mem(j(1),j(2),j(3),only,self%new,1)
+    else
+      self%mem(ix,iy,iz,:,self%it ,1) = self%mem(j(1),j(2),j(3),:,self%it ,1)
+      self%mem(ix,iy,iz,:,self%new,1) = self%mem(j(1),j(2),j(3),:,self%new,1)
+    end if
   end do
   end do
   end do
@@ -747,52 +756,59 @@ SUBROUTINE make_periodic4 (patch, f)
   real(4):: f(:,:,:)
   integer:: ix, iy, iz, n(3)
   !-----------------------------------------------------------------------------
-  ! x periodicity; make periodic inside the yz patch limits
-  !-----------------------------------------------------------------------------
   m => patch%mesh
   n = patch%ncell
-  do iz=m(3)%li,m(3)%ui
-  do ix=m(1)%lb,m(1)%lo
-    do iy=m(2)%li,m(2)%ui
-      f(ix,iy,iz) = f(ix+n(1),iy,iz)
+  !-----------------------------------------------------------------------------
+  ! x periodicity; make periodic inside the yz patch limits
+  !-----------------------------------------------------------------------------
+  if (n(1) > 1) then
+    do iz=m(3)%li,m(3)%ui
+      do ix=m(1)%lb,m(1)%lo
+        do iy=m(2)%li,m(2)%ui
+          f(ix,iy,iz) = f(ix+n(1),iy,iz)
+        end do
+      end do
+      do ix=m(1)%uo,m(1)%ub
+        do iy=m(2)%li,m(2)%ui
+          f(ix,iy,iz) = f(ix-n(1),iy,iz)
+        end do
+      end do
     end do
-  end do
-  do ix=m(1)%uo,m(1)%ub
-    do iy=m(2)%li,m(2)%ui
-      f(ix,iy,iz) = f(ix-n(1),iy,iz)
-    end do
-  end do
-  end do
+  end if
   !-----------------------------------------------------------------------------
   ! y periodicity, full range in x now
   !-----------------------------------------------------------------------------
-  do iz=m(3)%li,m(3)%ui
-  do iy=m(2)%lb,m(2)%lo
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy+n(2),iz)
+  if (n(2) > 1) then
+    do iz=m(3)%li,m(3)%ui
+      do iy=m(2)%lb,m(2)%lo
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy+n(2),iz)
+        end do
+      end do
+      do iy=m(2)%uo,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy-n(2),iz)
+        end do
+      end do
     end do
-  end do
-  do iy=m(2)%uo,m(2)%ub
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy-n(2),iz)
-    end do
-  end do
-  end do
+  end if
   !-----------------------------------------------------------------------------
   ! z periodicity, full range in xy
   !-----------------------------------------------------------------------------
-  do iy=m(2)%lb,m(2)%ub
-  do iz=m(3)%lb,m(3)%lo
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy,iz+n(3))
+  if (n(3) > 1) then
+    do iy=m(2)%lb,m(2)%ub
+      do iz=m(3)%lb,m(3)%lo
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy,iz+n(3))
+        end do
+      end do
+      do iz=m(3)%uo,m(3)%ub
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy,iz-n(3))
+        end do
+      end do
     end do
-  end do
-  do iz=m(3)%uo,m(3)%ub
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy,iz-n(3))
-    end do
-  end do
-  end do
+  end if
 END SUBROUTINE make_periodic4
 
 !> =====================================================================
@@ -804,52 +820,59 @@ SUBROUTINE make_periodic8 (patch, f)
   real(8):: f(:,:,:)
   integer:: ix, iy, iz, n(3)
   !-----------------------------------------------------------------------------
-  ! x periodicity; make periodic inside the yz patch limits
-  !-----------------------------------------------------------------------------
   m => patch%mesh
   n = patch%ncell
-  do iz=m(3)%li,m(3)%ui
-  do ix=m(1)%lb,m(1)%lo
-    do iy=m(2)%li,m(2)%ui
-      f(ix,iy,iz) = f(ix+n(1),iy,iz)
+  !-----------------------------------------------------------------------------
+  ! x periodicity; make periodic inside the yz patch limits
+  !-----------------------------------------------------------------------------
+  if (n(1) > 1) then
+    do iz=m(3)%li,m(3)%ui
+      do ix=m(1)%lb,m(1)%lo
+        do iy=m(2)%li,m(2)%ui
+          f(ix,iy,iz) = f(ix+n(1),iy,iz)
+        end do
+      end do
+      do ix=m(1)%uo,m(1)%ub
+        do iy=m(2)%li,m(2)%ui
+          f(ix,iy,iz) = f(ix-n(1),iy,iz)
+        end do
+      end do
     end do
-  end do
-  do ix=m(1)%uo,m(1)%ub
-    do iy=m(2)%li,m(2)%ui
-      f(ix,iy,iz) = f(ix-n(1),iy,iz)
-    end do
-  end do
-  end do
+  end if
   !-----------------------------------------------------------------------------
   ! y periodicity, full range in x now
   !-----------------------------------------------------------------------------
-  do iz=m(3)%li,m(3)%ui
-  do iy=m(2)%lb,m(2)%lo
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy+n(2),iz)
+  if (n(2) > 1) then
+    do iz=m(3)%li,m(3)%ui
+      do iy=m(2)%lb,m(2)%lo
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy+n(2),iz)
+        end do
+      end do
+      do iy=m(2)%uo,m(2)%ub
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy-n(2),iz)
+        end do
+      end do
     end do
-  end do
-  do iy=m(2)%uo,m(2)%ub
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy-n(2),iz)
-    end do
-  end do
-  end do
+  end if
   !-----------------------------------------------------------------------------
   ! z periodicity, full range in xy
   !-----------------------------------------------------------------------------
-  do iy=m(2)%lb,m(2)%ub
-  do iz=m(3)%lb,m(3)%lo
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy,iz+n(3))
+  if (n(3) > 1) then
+    do iy=m(2)%lb,m(2)%ub
+      do iz=m(3)%lb,m(3)%lo
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy,iz+n(3))
+        end do
+      end do
+      do iz=m(3)%uo,m(3)%ub
+        do ix=m(1)%lb,m(1)%ub
+          f(ix,iy,iz) = f(ix,iy,iz-n(3))
+        end do
+      end do
     end do
-  end do
-  do iz=m(3)%uo,m(3)%ub
-    do ix=m(1)%lb,m(1)%ub
-      f(ix,iy,iz) = f(ix,iy,iz-n(3))
-    end do
-  end do
-  end do
+  end if
 END SUBROUTINE make_periodic8
 
 !> =============================================================================
@@ -1398,7 +1421,7 @@ SUBROUTINE output_legacy (self, experiment_name)
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
           trim(filename),iv,it1,jo,minval(buf),maxval(buf),pt
       write (io%data_unit,rec=iv+(jo-1)*self%nv) buf
-      if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
+      if (io%verbose>1 .and. iv==self%idx%d) print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)
     end do
   end do
@@ -1811,10 +1834,16 @@ FUNCTION fsum4 (self, f) RESULT (out)
   real, dimension(:,:,:), intent(in):: f
   integer:: n(3)
   !-----------------------------------------------------------------------------
-  n = self%ncell-1
-  out = sum(real(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
-                   self%mesh(2)%li:self%mesh(2)%li+n(2), &
-                   self%mesh(3)%li:self%mesh(3)%li+n(3)),kind=8))
+  if (self%is_periodic()) then
+    n = self%ncell-1
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                     self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                     self%mesh(3)%li:self%mesh(3)%li+n(3)),kind=8))
+  else
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui),kind=8))
+  end if
 END FUNCTION fsum4
 !> =============================================================================
 FUNCTION fsum8 (self, f) RESULT (out)
@@ -1823,10 +1852,16 @@ FUNCTION fsum8 (self, f) RESULT (out)
   real(8), dimension(:,:,:), intent(in):: f
   integer:: n(3)
   !-----------------------------------------------------------------------------
-  n = self%ncell-1
-  out = sum(real(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
-                   self%mesh(2)%li:self%mesh(2)%li+n(2), &
-                   self%mesh(3)%li:self%mesh(3)%li+n(3)),kind=8))
+  if (self%is_periodic()) then
+    n = self%ncell-1
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                     self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                     self%mesh(3)%li:self%mesh(3)%li+n(3)),kind=8))
+  else
+    out = sum(real(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                     self%mesh(2)%li:self%mesh(2)%ui, &
+                     self%mesh(3)%li:self%mesh(3)%ui),kind=8))
+  end if
 END FUNCTION fsum8
 
 !> =============================================================================
@@ -1853,13 +1888,19 @@ FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
   real, dimension(:,:,:), intent(in):: f
   integer:: n(3)
   !-----------------------------------------------------------------------------
-  n = self%ncell-1
   if (self%boundaries%is_set (bits%spherical)) then
     fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
   else
-    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
-                       self%mesh(2)%li:self%mesh(2)%li+n(2), &
-                       self%mesh(3)%li:self%mesh(3)%li+n(3)))
+    if (self%is_periodic()) then
+      n = self%ncell-1
+      fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                         self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                         self%mesh(3)%li:self%mesh(3)%li+n(3)))
+    else
+      fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                         self%mesh(2)%li:self%mesh(2)%ui, &
+                         self%mesh(3)%li:self%mesh(3)%ui))
+    end if
   end if
 END FUNCTION fmaxval4
 !> =============================================================================
@@ -1869,13 +1910,19 @@ FUNCTION fminval4 (self, f) RESULT(fminval)
   real, dimension(:,:,:), intent(in):: f
   integer:: n(3)
   !-----------------------------------------------------------------------------
-  n = self%ncell-1
   if (self%boundaries%is_set (bits%spherical)) then
     fminval = minval(f, mask=self%boundaries%mask(self%mesh))
   else
-    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
-                       self%mesh(2)%li:self%mesh(2)%li+n(2), &
-                       self%mesh(3)%li:self%mesh(3)%li+n(3)))
+    if (self%is_periodic()) then
+      n = self%ncell-1
+      fminval = minval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                         self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                         self%mesh(3)%li:self%mesh(3)%li+n(3)))
+    else
+      fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                         self%mesh(2)%li:self%mesh(2)%ui, &
+                         self%mesh(3)%li:self%mesh(3)%ui))
+    end if
   end if
 END FUNCTION fminval4
 !> =============================================================================
@@ -1885,13 +1932,19 @@ FUNCTION fmaxval8 (self, f) RESULT (fmaxval)
   real(8), dimension(:,:,:), intent(in):: f
   integer:: n(3)
   !-----------------------------------------------------------------------------
-  n = self%ncell-1
   if (self%boundaries%is_set (bits%spherical)) then
     fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
   else
-    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
-                       self%mesh(2)%li:self%mesh(2)%li+n(2), &
-                       self%mesh(3)%li:self%mesh(3)%li+n(3)))
+    if (self%is_periodic()) then
+      n = self%ncell-1
+      fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                         self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                         self%mesh(3)%li:self%mesh(3)%li+n(3)))
+    else
+      fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                         self%mesh(2)%li:self%mesh(2)%ui, &
+                         self%mesh(3)%li:self%mesh(3)%ui))
+    end if
   end if
 END FUNCTION fmaxval8
 !> =============================================================================
@@ -1901,13 +1954,19 @@ FUNCTION fminval8 (self, f) RESULT(fminval)
   real(8), dimension(:,:,:), intent(in):: f
   integer:: n(3)
   !-----------------------------------------------------------------------------
-  n = self%ncell-1
   if (self%boundaries%is_set (bits%spherical)) then
     fminval = minval(f, mask=self%boundaries%mask(self%mesh))
   else
-    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
-                       self%mesh(2)%li:self%mesh(2)%li+n(2), &
-                       self%mesh(3)%li:self%mesh(3)%li+n(3)))
+    if (self%is_periodic()) then
+      n = self%ncell-1
+      fminval = minval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
+                         self%mesh(2)%li:self%mesh(2)%li+n(2), &
+                         self%mesh(3)%li:self%mesh(3)%li+n(3)))
+    else
+      fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                         self%mesh(2)%li:self%mesh(2)%ui, &
+                         self%mesh(3)%li:self%mesh(3)%ui))
+    end if
   end if
 END FUNCTION fminval8
 
@@ -1929,12 +1988,12 @@ SUBROUTINE check_nan (self, label, always)
   if (io%verbose>1) then
     if (present(label)) then
       print *, self%id, trim(label)//', min(d), max(d):', &
-        minval(self%mem(:,:,:,self%i_d,self%it,1)), &
-        maxval(self%mem(:,:,:,self%i_d,self%it,1))
+        minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
+        maxval(self%mem(:,:,:,self%idx%d,self%it,1))
     else
       print *, self%id, 'min(d), max(d):', &
-        minval(self%mem(:,:,:,self%i_d,self%it,1)), &
-        maxval(self%mem(:,:,:,self%i_d,self%it,1))
+        minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
+        maxval(self%mem(:,:,:,self%idx%d,self%it,1))
     end if
   end if
   nan = .false.
@@ -1961,12 +2020,12 @@ SUBROUTINE check_nan (self, label, always)
   if (nan) then
     if (present(label)) then
       print *, self%id, trim(label)//' ERROR NaN, min(d), max(d):', &
-        minval(self%mem(:,:,:,self%i_d,self%it,1)), &
-        maxval(self%mem(:,:,:,self%i_d,self%it,1)), ii
+        minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
+        maxval(self%mem(:,:,:,self%idx%d,self%it,1)), ii
     else
       print *, self%id, ' ERROR NaN, min(d), max(d):', &
-        minval(self%mem(:,:,:,self%i_d,self%it,1)), &
-        maxval(self%mem(:,:,:,self%i_d,self%it,1)), ii
+        minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
+        maxval(self%mem(:,:,:,self%idx%d,self%it,1)), ii
     end if
     print *, self%unsigned
     error stop 'NaN'
@@ -2007,9 +2066,9 @@ SUBROUTINE check_density (self, label)
     do ix=1,self%gn(1)
       ii = [ix,iy,iz]
       inside = all([ix,iy,iz]>self%mesh%lo.and.ii<self%mesh%uo)
-      posd = merge (posd, max(posd,self%mem(ix,iy,iz,self%i_d,self%it,1)), inside)
-      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,self%i_d,self%it,1)<=0.0)
-      nins = nins + merge(1,0,self%mem(ix,iy,iz,self%i_d,self%it,1)<=0.0 .and. inside)
+      posd = merge (posd, max(posd,self%mem(ix,iy,iz,self%idx%d,self%it,1)), inside)
+      ntot = ntot + merge(1,0,self%mem(ix,iy,iz,self%idx%d,self%it,1)<=0.0)
+      nins = nins + merge(1,0,self%mem(ix,iy,iz,self%idx%d,self%it,1)<=0.0 .and. inside)
       !-------------------------------------------------------------------------
       ! Pick the sampled positive value if a negative one is found in the
       ! guard zone
@@ -2391,7 +2450,7 @@ SUBROUTINE index_space (self, pos, iv, i, p)
   p = p + eps                                           ! ensure same points ok
   i = p                                                 ! integer part
   i = max(self%mesh%li, &
-      min(self%mesh%ui-1,i))                            ! valid range
+      min(self%mesh%ui,i))                            ! valid range
   p = p - eps - i                                       ! remaining fraction
   !-----------------------------------------------------------------------------
   ! The slight allowance for extrapolation below is to detect it in tests
@@ -2615,7 +2674,7 @@ SUBROUTINE interpolate_specific (self, target, ii, iv, jt, pt)
   !-----------------------------------------------------------------------------
   ! Pick up 16 values for tri-linear interpolation, divided by density
   !-----------------------------------------------------------------------------
-  associate (id=>self%i_d)
+  associate (id=>self%idx%d)
   tmp(:,:,:,:) = self%mem(j(1):j(1)+1,j(2):j(2)+1,j(3):j(3)+1,iv,jt(1:2),1) &
                / self%mem(j(1):j(1)+1,j(2):j(2)+1,j(3):j(3)+1,id,jt(1:2),1)
   target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &

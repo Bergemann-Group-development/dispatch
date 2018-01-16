@@ -30,7 +30,7 @@ $(EXEC): cartesian_mod.o eos_mod.o opacity_mod.o scaling_mod.o $(PICOBJ)
 
 # Dependencies
 experiment_mod.o        : io_mod.o trace_mod.o timestep_mod.o initial_mod.o rmhd_mod.o
-initial_mod.o           : io_mod.o trace_mod.o io_unit_mod.o mesh_mod.o
+initial_mod.o           : io_mod.o trace_mod.o io_unit_mod.o mesh_mod.o index_mod.o
 rt_solver_mod.o         : io_mod.o trace_mod.o
 rt_bundle_mod.o         : io_mod.o trace_mod.o rt_solver_mod.o
 rt_mod.o                : io_mod.o trace_mod.o patch_mod.o rt_bundle_mod.o eos_mod.o

@@ -354,7 +354,7 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
     self%nc = self%ui - self%li + 1
   else
     h = 1.0_8
-    self%nc = self%ui - self%li
+    self%nc = max(1, self%ui - self%li)
   end if
   self%d = self%s/max(1,self%nc)
   do i=1,self%gn

@@ -106,7 +106,7 @@ SUBROUTINE init (self)
   call self%pebbles%init (self%id)
   call self%not_done%init (self%id)
   associate (mx=>self%mesh(1)%gn,my=>self%mesh(2)%gn,mz=>self%mesh(3)%gn,mt=>self%nt)
-    self%density => self%mem(:,:,:,self%i_d,:,1)
+    self%density => self%mem(:,:,:,self%idx%d,:,1)
     allocate (self%pressure(mx,my,mz,mt))
     allocate (self%vgas(mx,my,mz,3,mt))
     U => self%vgas(:,:,:,:,self%it)
@@ -250,7 +250,7 @@ SUBROUTINE volume_add (self, n)
         pebble%p = pebble%p + self%position - planet%position
         call interpolate_vg (self, pebble, warn)
         pebble%v = pebble%vg
-        pebble%d = self%mem(ix,iy,iz,self%i_d,self%it,1)
+        pebble%d = self%mem(ix,iy,iz,self%idx%d,self%it,1)
         pebble%w = pebble%d*product(self%ds)
         if (pebble_trace%every > 0) then
           if (mod(pebble%id,pebble_trace%every)==0 .and. &
@@ -1014,7 +1014,7 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
     do j=1,3
       do k=1,3
         m => self%mesh(k)
-        h(k,j) = m%h(self%i_px+j-1)
+        h(k,j) = m%h(self%idx%px+j-1)
       end do
     end do
     if (io%master) &

@@ -53,7 +53,7 @@ SUBROUTINE init (self)
   call self%set(bits%static)
   !----------------------------------------------------------------------------
   ! Initial conditions, loading inially the internal energy per unit volume in
-  ! the self%i_e slot
+  ! the self%idx%e slot
   !----------------------------------------------------------------------------
   call self%mhd_t%init
   !----------------------------------------------------------------------------

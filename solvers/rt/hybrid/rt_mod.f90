@@ -410,8 +410,8 @@ SUBROUTINE update_rt (self)
   !> -------------------------------------------------------------------
   !> interpolate in time and space to get densoties and internal energies
   !> -------------------------------------------------------------------
-  call mhd%log_interpolate (self%time, mhd%i_d, self%d)               
-  call mhd%log_interpolate (self%time, mhd%i_e, self%e_th)
+  call mhd%log_interpolate (self%time, mhd%idx%d, self%d)               
+  call mhd%log_interpolate (self%time, mhd%idx%e, self%e_th)
   self%d = exp(self%d)
   self%e_th    = exp(self%e_th)               
   if (mhd%kind(1:9)=='stagger2e') then
@@ -1410,14 +1410,14 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
           trim(filename),1,it,jo,minval(buf),maxval(buf),pt
       write (io%data_unit,rec=iv+(jo-1)*2) buf
-      if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
+      if (io%verbose>1 .and. iv==self%idx%d) print *,'rho minmax',minval(buf), maxval(buf)
     iv = 2
       buf = buf + self%src(l(1):u(1),l(2):u(2),l(3):u(3),1)
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
           trim(filename),1,it,jo,minval(buf),maxval(buf),pt
       write (io%data_unit,rec=iv+(jo-1)*2) buf
-      if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
+      if (io%verbose>1 .and. iv==self%idx%d) print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)
   end do
   close (io%data_unit)

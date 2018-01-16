@@ -50,12 +50,12 @@ SUBROUTINE init (self)
   self%initial%id = self%id
   call self%rmhd_t%init
   if (self%mhd) then
-    self%i_bx=6
-    self%i_by=7
-    self%i_bz=8
-    self%i_tt=9
+    self%idx%bx=6
+    self%idx%by=7
+    self%idx%bz=8
+    self%idx%tt=9
   else
-    self%i_tt=6
+    self%idx%tt=6
   end if
   call self%set(bits%static)
   !----------------------------------------------------------------------------

@@ -17,6 +17,6 @@ $(EXEC): setup_mod.o
 
 # Dependencies
 experiment_mod.o        : mhd_mod.o trace_mod.o io_mod.o initial_mod.o bits_mod.o
-initial_mod.o           : io_mod.o trace_mod.o mesh_mod.o units_mod.o scaling_mod.o mpi_mod.o
+initial_mod.o           : io_mod.o trace_mod.o mesh_mod.o units_mod.o scaling_mod.o mpi_mod.o index_mod.o
 setup_mod.o             : io_mod.o trace_mod.o units_mod.o experiment_mod.o task_mod.o task_list_mod.o mesh_mod.o scaling_mod.o bits_mod.o
 scaling_mod.o           : io_mod.o trace_mod.o

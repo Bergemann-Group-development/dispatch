@@ -7,6 +7,7 @@ MODULE initial_mod
   USE trace_mod
   USE mesh_mod
   USE random_mod
+  USE index_mod
   implicit none
   private
   real(8), parameter:: pi2=8d0*atan(1d0)
@@ -79,8 +80,9 @@ END SUBROUTINE cleanup
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-FUNCTION single_solenoidal (self, m) RESULT (ff)
+FUNCTION single_solenoidal (self, m, idx) RESULT (ff)
   class(initial_t)      :: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
@@ -113,8 +115,9 @@ END FUNCTION single_solenoidal
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-FUNCTION single_compressive (self, m) RESULT (ff)
+FUNCTION single_compressive (self, m, idx) RESULT (ff)
   class(initial_t)        :: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
@@ -147,8 +150,9 @@ END FUNCTION single_compressive
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !> =============================================================================
-FUNCTION single_advection (self, m) RESULT (ff)
+FUNCTION single_advection (self, m, idx) RESULT (ff)
   class(initial_t)        :: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
@@ -181,9 +185,10 @@ END FUNCTION single_advection
 !> =============================================================================
 !> Initialize from a raw data file
 !> =============================================================================
-FUNCTION raw (self, m) RESULT (ff)
+FUNCTION raw (self, m, idx) RESULT (ff)
   USE io_unit_mod
   class(initial_t):: self
+  type(index_t):: idx
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8):: ff
   !.............................................................................

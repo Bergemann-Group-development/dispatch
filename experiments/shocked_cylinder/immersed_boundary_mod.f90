@@ -126,31 +126,31 @@ SUBROUTINE slip_boundary_conditions (self, patch, ii, it)
     y = my%centre_nat + patch%mesh(2)%r(iy) - self%position(2)
     x = mx%centre_nat + patch%mesh(1)%r(ix) - self%position(1)
     if (sqrt(x**2+y**2) < radius) then
-      patch%mem(ix,iy,iz,patch%i_d ,it,1) = 1.4 ! FIXME
-      patch%mem(ix,iy,iz,patch%i_e ,it,1) = 2.5
-      patch%mem(ix,iy,iz,patch%i_px,it,1) = 0.0
-      patch%mem(ix,iy,iz,patch%i_py,it,1) = 0.0
-      patch%mem(ix,iy,iz,patch%i_pz,it,1) = 0.0
+      patch%mem(ix,iy,iz,patch%idx%d ,it,1) = 1.4 ! FIXME
+      patch%mem(ix,iy,iz,patch%idx%e ,it,1) = 2.5
+      patch%mem(ix,iy,iz,patch%idx%px,it,1) = 0.0
+      patch%mem(ix,iy,iz,patch%idx%py,it,1) = 0.0
+      patch%mem(ix,iy,iz,patch%idx%pz,it,1) = 0.0
     end if
   type is (cylindrical_mesh)
     y = my%centre_nat + patch%mesh(2)%r(iy) - self%position(2)
     if (y <= radius) then
       offi = 2 * my%lo + 1
-      patch%mem(ix,iy,iz,patch%i_d ,it,1) =  patch%mem(ix,offi-iy,iz,patch%i_d ,it,1)
-      patch%mem(ix,iy,iz,patch%i_e ,it,1) =  patch%mem(ix,offi-iy,iz,patch%i_e ,it,1)
-      patch%mem(ix,iy,iz,patch%i_px,it,1) =  patch%mem(ix,offi-iy,iz,patch%i_px,it,1)
-      patch%mem(ix,iy,iz,patch%i_py,it,1) = -patch%mem(ix,offi-iy,iz,patch%i_py,it,1)
-      patch%mem(ix,iy,iz,patch%i_pz,it,1) =  patch%mem(ix,offi-iy,iz,patch%i_pz,it,1)
+      patch%mem(ix,iy,iz,patch%idx%d ,it,1) =  patch%mem(ix,offi-iy,iz,patch%idx%d ,it,1)
+      patch%mem(ix,iy,iz,patch%idx%e ,it,1) =  patch%mem(ix,offi-iy,iz,patch%idx%e ,it,1)
+      patch%mem(ix,iy,iz,patch%idx%px,it,1) =  patch%mem(ix,offi-iy,iz,patch%idx%px,it,1)
+      patch%mem(ix,iy,iz,patch%idx%py,it,1) = -patch%mem(ix,offi-iy,iz,patch%idx%py,it,1)
+      patch%mem(ix,iy,iz,patch%idx%pz,it,1) =  patch%mem(ix,offi-iy,iz,patch%idx%pz,it,1)
     end if
   type is (spherical_mesh)
     x = mx%centre_nat + patch%mesh(1)%r(ix) - self%position(1)
     if (x <= radius) then
       offi = 2 * mx%lo + 1
-      patch%mem(ix,iy,iz,patch%i_d ,it,1) =  patch%mem(offi-ix,iy,iz,patch%i_d ,it,1)
-      patch%mem(ix,iy,iz,patch%i_e ,it,1) =  patch%mem(offi-ix,iy,iz,patch%i_e ,it,1)
-      patch%mem(ix,iy,iz,patch%i_px,it,1) =  patch%mem(offi-ix,iy,iz,patch%i_px,it,1)
-      patch%mem(ix,iy,iz,patch%i_py,it,1) = -patch%mem(offi-ix,iy,iz,patch%i_py,it,1)
-      patch%mem(ix,iy,iz,patch%i_pz,it,1) =  patch%mem(offi-ix,iy,iz,patch%i_pz,it,1)
+      patch%mem(ix,iy,iz,patch%idx%d ,it,1) =  patch%mem(offi-ix,iy,iz,patch%idx%d ,it,1)
+      patch%mem(ix,iy,iz,patch%idx%e ,it,1) =  patch%mem(offi-ix,iy,iz,patch%idx%e ,it,1)
+      patch%mem(ix,iy,iz,patch%idx%px,it,1) =  patch%mem(offi-ix,iy,iz,patch%idx%px,it,1)
+      patch%mem(ix,iy,iz,patch%idx%py,it,1) = -patch%mem(offi-ix,iy,iz,patch%idx%py,it,1)
+      patch%mem(ix,iy,iz,patch%idx%pz,it,1) =  patch%mem(offi-ix,iy,iz,patch%idx%pz,it,1)
     end if
   class default
     print*,"WARNING!: No method to interface the current patch with the immersed boundary!"

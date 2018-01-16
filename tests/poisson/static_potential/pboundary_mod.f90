@@ -41,8 +41,8 @@ SUBROUTINE conditions (self, patch, it)
       y = m2%centre_nat + m2%r(iy)
       do ix=m1%lb,m1%lo
         x = m1%centre_nat + m1%r(ix)
-        patch%mem(ix,iy,m3%lb:m3%ub,patch%i_d,it,1)   = func_d0(x,y)
-        patch%mem(ix,iy,m3%lb:m3%ub,patch%i_phi,it,1) = func_phi0(x,y)
+        patch%mem(ix,iy,m3%lb:m3%ub,patch%idx%d,it,1)   = func_d0(x,y)
+        patch%mem(ix,iy,m3%lb:m3%ub,patch%idx%phi,it,1) = func_phi0(x,y)
       end do
     end do
   end if
@@ -52,8 +52,8 @@ SUBROUTINE conditions (self, patch, it)
       y = m2%centre_nat + m2%r(iy)
       do ix=m1%uo,m1%ub
         x = m1%centre_nat + m1%r(ix)
-        patch%mem(ix,iy,m3%lb:m3%ub,patch%i_d,it,1)   = func_d0(x,y)
-        patch%mem(ix,iy,m3%lb:m3%ub,patch%i_phi,it,1) = func_phi0(x,y)
+        patch%mem(ix,iy,m3%lb:m3%ub,patch%idx%d,it,1)   = func_d0(x,y)
+        patch%mem(ix,iy,m3%lb:m3%ub,patch%idx%phi,it,1) = func_phi0(x,y)
       end do
     end do
 
@@ -64,8 +64,8 @@ SUBROUTINE conditions (self, patch, it)
       y = m2%centre_nat + m2%r(iy)
       do ix=m1%lb,m1%ub
         x = m1%centre_nat + m1%r(ix)
-        patch%mem(ix,iy,m3%lb:m3%ub,patch%i_d,it,1)   = func_d0(x,y)
-        patch%mem(ix,iy,m3%lb:m3%ub,patch%i_phi,it,1) = func_phi0(x,y)
+        patch%mem(ix,iy,m3%lb:m3%ub,patch%idx%d,it,1)   = func_d0(x,y)
+        patch%mem(ix,iy,m3%lb:m3%ub,patch%idx%phi,it,1) = func_phi0(x,y)
       end do
     end do
   end if
@@ -75,8 +75,8 @@ SUBROUTINE conditions (self, patch, it)
       y = m2%centre_nat + m2%r(iy)
       do ix=m1%lb,m1%ub
         x = m1%centre_nat + m1%r(ix)
-        patch%mem(ix,iy,m3%lb:m3%ub,patch%i_d,it,1)   = func_d0(x,y)
-        patch%mem(ix,iy,m3%lb:m3%ub,patch%i_phi,it,1) = func_phi0(x,y)
+        patch%mem(ix,iy,m3%lb:m3%ub,patch%idx%d,it,1)   = func_d0(x,y)
+        patch%mem(ix,iy,m3%lb:m3%ub,patch%idx%phi,it,1) = func_phi0(x,y)
       end do
     end do
   end if
