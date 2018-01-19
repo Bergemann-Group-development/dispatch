@@ -11,7 +11,6 @@ import re
 from time import time
 
 import dispatch_data as dd
-from scaling import *
 reload(dd)
 
 def dispatch_utils():
