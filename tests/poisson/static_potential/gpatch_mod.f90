@@ -124,10 +124,10 @@ SUBROUTINE init (self)
         !$omp atomic
         total_volume = total_volume + product(self%size)
       end if
-      call self%dnload (only=self%idx%d)
-      call self%dnload (only=self%idx%phi)
-      call pboundaries%conditions(self, self%it)
-      call self%gravity
+      !call self%dnload (only=self%idx%d)
+      !call self%dnload (only=self%idx%phi)
+      !call pboundaries%conditions(self, self%it)
+      !call self%gravity
     end if
   end if
   !-----------------------------------------------------------------------------
