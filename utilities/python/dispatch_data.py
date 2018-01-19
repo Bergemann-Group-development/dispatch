@@ -316,11 +316,11 @@ class Patch(Task):
                        'p1': 3, 'p2': 4, 'p3': 5,
                        'b1': 6, 'b2': 7, 'b3': 8,
                        'gp': 9}
-        elif solver_type.lower() == 'rt_solver':
+        elif solver.lower() == 'rt_solver':
             indices = {'Q':  0,
                        'S':  1,
                       'rk':  2}
-        elif solver_type.lower() == 'poisson':
+        elif solver.lower() == 'poisson':
             indices = {'d': 0, 'phi': 1}
             if read_derivs:
                 indicesd = {'dd': 0, 'dphi': 1}
