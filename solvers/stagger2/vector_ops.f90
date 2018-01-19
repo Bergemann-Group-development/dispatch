@@ -48,7 +48,7 @@ FUNCTION vector_norm2_scalar (in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
   !-----------------------------------------------------------------------------
-  out = in(:,:,:,1)**2 + in(:,:,:,2)**2 + in(:,:,:,3)
+  out = in(:,:,:,1)**2 + in(:,:,:,2)**2 + in(:,:,:,3)**2
 END FUNCTION vector_norm2_scalar
 !> =============================================================================
 FUNCTION vector_norm_scalar (in) RESULT (out)
