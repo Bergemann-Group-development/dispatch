@@ -107,10 +107,10 @@ SUBROUTINE condition (self, m, f, idx)
           , pcloud  , vol     , mass    , momi    , omega   , gammad   &
           , egrav   , etherm  , erot    , pamb    , rhoamb  , rz       &
           , rzsq    , tff     , cjlen   , cjnum   , csqiso  , vff      &
-          , nrg     , rf1     , rf2
+          , nrg
   real(8), parameter:: gammaad = 5.0 / 3.0
   real(8), parameter:: r2 = 1.0
-  real(8):: x, y, z
+  real(8):: x, y, z, rf1, rf2, rzxy, rf1xy, rf2xy
   logical, save:: first_time=.true.
   namelist / experiment_params / rho0, r0, truealpha, truebeta, chipres &
                                , chirho, x0, y0, z0, perta, pertm
@@ -183,6 +183,7 @@ SUBROUTINE condition (self, m, f, idx)
         x = m1%centre_nat + m1%r(i)
         rzsq = (x - x0)**2 + (y - y0)**2 + (z - z0)**2 ! zone-centred
         rz = sqrt(rzsq)
+        rzxy = sqrt((x - x0)**2 + (y - y0)**2) ! zone-centred
 
         if (rz <= r0) then
           phi0             = datan2(y - y0, x - x0)
@@ -201,15 +202,17 @@ SUBROUTINE condition (self, m, f, idx)
         f(i,j,k,idx%pz)  = 0.0
         if (self%solver(1:7) == 'stagger' .or. trim(self%solver) == 'zeus_mhd_patch') then
           rf1 = sqrt((x - 0.5*m1%d - x0)**2 + (y - y0)**2 + (z - z0)**2)
+          rf1xy = sqrt((x - 0.5*m1%d - x0)**2 + (y - y0)**2)
           if (rf1 <= r0 .and. i > 1) &
-            f(i,j,k,idx%px)  =-omega * rf1 * sin(phi0) * 0.5 * (f(i,j,k,idx%d) + f(i-1,j,k,idx%d))
+            f(i,j,k,idx%px)  =-omega * rf1xy * sin(phi0) * 0.5 * (f(i,j,k,idx%d) + f(i-1,j,k,idx%d))
           rf2 = sqrt((x - x0)**2 + (y - 0.5*m2%d - y0)**2 + (z - z0)**2)
+          rf2xy = sqrt((x - x0)**2 + (y - 0.5*m2%d - y0)**2)
           if (rf2 <= r0 .and. j > 1) &
-            f(i,j,k,idx%py)  = omega * rf2 * cos(phi0) * 0.5 * (f(i,j,k,idx%d) + f(i,j-1,k,idx%d))
+            f(i,j,k,idx%py)  = omega * rf2xy * cos(phi0) * 0.5 * (f(i,j,k,idx%d) + f(i,j-1,k,idx%d))
         else
           if (rz < r0) then
-            f(i,j,k,idx%px)  =-omega * rz * sin(phi0) * f(i,j,k,idx%d)
-            f(i,j,k,idx%py)  = omega * rz * cos(phi0) * f(i,j,k,idx%d)
+            f(i,j,k,idx%px)  =-omega * rzxy * sin(phi0) * f(i,j,k,idx%d)
+            f(i,j,k,idx%py)  = omega * rzxy * cos(phi0) * f(i,j,k,idx%d)
           end if
         end if
 
