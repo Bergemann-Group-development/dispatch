@@ -176,7 +176,7 @@ SUBROUTINE test (self)
   do i=1,3
     call source(i)%delete
   end do
-  call target%init_reset
+  call target%init_id_reset
   deallocate (target, source)
   self%interpolate => SelectInterpolator(self%order_interpolator)
   call trace%end

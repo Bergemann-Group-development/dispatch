@@ -66,7 +66,7 @@ MODULE task_mod
     logical:: rotated=.false.
   contains
     procedure:: init
-    procedure:: init_reset
+    procedure:: init_id_reset
     procedure:: dnload
     procedure:: update => void
     procedure:: rotate
@@ -137,18 +137,21 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-!> Define unique patch ids.  A critical region is OK; this is only done once.
+!> Reset unique patch ids.  A critical region is OK; this is only done once.
+!> This is done after, for example, `download%test`, which creates test patches.
+!> It is set to one rather than zero because there must have already been a
+!> patch with ID = 1 when `download%test` was called.
 !> =============================================================================
-SUBROUTINE init_reset (self)
+SUBROUTINE init_id_reset (self)
   class (task_t):: self
   logical:: first_time=.true.
   !.............................................................................
   call trace_begin ('task_t%init_reset')
   !$omp critical (task_init_cr)
-  id = 0
+  id = 1
   !$omp end critical (task_init_cr)
   call trace_end
-END SUBROUTINE init_reset
+END SUBROUTINE init_id_reset
 
 !> =============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time
