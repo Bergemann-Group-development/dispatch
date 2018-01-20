@@ -336,7 +336,7 @@ SUBROUTINE debug_output (self)
   class(gpatch_t):: self
   integer, save:: n=0
   integer:: it, ii
-  real, pointer:: phi1(:,:,:), phi2(:,:,:)
+  real(kind=KindScalarvar), pointer:: phi1(:,:,:), phi2(:,:,:)
   !-----------------------------------------------------------------------------
   n = n+1
   print *,'debug_output: record', n
