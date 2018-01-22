@@ -503,6 +503,7 @@ SUBROUTINE same (target, source, filled, all_cells, only)
         if (io%verbose>1) print *, target%id, '     using same level potential from', source%id
       end if
     end if
+    if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
@@ -662,6 +663,7 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
   li = target%mesh%li
   ui = target%mesh%ui
   do iv=iv1,iv2
+    if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
     call dnload_range (target, source, target%idx%d, l, u)
     !---------------------------------------------------------------------------
     ! For no-no-mans-land meshes, use guard zone values for the li index, to
@@ -798,6 +800,7 @@ SUBROUTINE different_restrict (target, source, filled, only)
         cycle
       end if
     end if
+    if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
     qmask(:) = .true. ! logical mask to track if variable is averaged over a volume or an area
     if (iv == target%idx%bx) then
       dWsource = source%ds(2) * source%ds(3) ! only valid for Cartesian
