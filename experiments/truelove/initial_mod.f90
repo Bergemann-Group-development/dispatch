@@ -107,10 +107,10 @@ SUBROUTINE condition (self, m, f, idx)
           , pcloud  , vol     , mass    , momi    , omega   , gammad   &
           , egrav   , etherm  , erot    , pamb    , rhoamb  , rz       &
           , rzsq    , tff     , cjlen   , cjnum   , csqiso  , vff      &
-          , nrg
+          , nrg     , x       , y       , z       , rzxy    , rzxm1    &
+          , rzym1
   real(8), parameter:: gammaad = 5.0 / 3.0
   real(8), parameter:: r2 = 1.0
-  real(8):: x, y, z, rf1, rf2, rzxy, rf1xy, rf2xy
   logical, save:: first_time=.true.
   namelist / experiment_params / rho0, r0, truealpha, truebeta, chipres &
                                , chirho, x0, y0, z0, perta, pertm
@@ -201,14 +201,14 @@ SUBROUTINE condition (self, m, f, idx)
         f(i,j,k,idx%py)  = 0.0
         f(i,j,k,idx%pz)  = 0.0
         if (self%solver(1:7) == 'stagger' .or. trim(self%solver) == 'zeus_mhd_patch') then
-          rf1 = sqrt((x - 0.5*m1%d - x0)**2 + (y - y0)**2 + (z - z0)**2)
-          rf1xy = sqrt((x - 0.5*m1%d - x0)**2 + (y - y0)**2)
-          if (rf1 <= r0 .and. i > 1) &
-            f(i,j,k,idx%px)  =-omega * rf1xy * sin(phi0) * 0.5 * (f(i,j,k,idx%d) + f(i-1,j,k,idx%d))
-          rf2 = sqrt((x - x0)**2 + (y - 0.5*m2%d - y0)**2 + (z - z0)**2)
-          rf2xy = sqrt((x - x0)**2 + (y - 0.5*m2%d - y0)**2)
-          if (rf2 <= r0 .and. j > 1) &
-            f(i,j,k,idx%py)  = omega * rf2xy * cos(phi0) * 0.5 * (f(i,j,k,idx%d) + f(i,j-1,k,idx%d))
+          rzxm1 = sqrt((x - m1%d - x0)**2 + (y - y0)**2 + (z - z0)**2)
+          rzym1 = sqrt((x - x0)**2 + (y - m2%d - y0)**2 + (z - z0)**2)
+          if ((rz <= r0 .or. rzxm1 <= r0) .and. i > 1) then
+            f(i,j,k,idx%px)  =-omega * (y - y0) * 0.5 * (f(i,j,k,idx%d) + f(i-1,j,k,idx%d))
+          end if
+          if ((rz <= r0 .or. rzym1 <= r0) .and. j > 1) then
+            f(i,j,k,idx%py)  = omega * (x - x0) * 0.5 * (f(i,j,k,idx%d) + f(i,j-1,k,idx%d))
+          end if
         else
           if (rz < r0) then
             f(i,j,k,idx%px)  =-omega * rzxy * sin(phi0) * f(i,j,k,idx%d)
