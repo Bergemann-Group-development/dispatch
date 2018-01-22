@@ -68,10 +68,11 @@ if __name__ == "__main__":
     #vunits = None
     vecscaling = 7.123e7
     vecunits = r"cm s$^{-1}$"
+    vpscale = 30.0
     global_llc = [-1.0,-1.0,-1.0]
     slicedir = 3  # given with respect to the *root* grid (typically patch id = 1)
     sliceloc = 0.0 # coord. of slice to be taken
-    sliceeps = 1.0e-3
+    sliceeps = 5.0e-4
     showgrids = True
     showgridno = False
     output_png = False
@@ -325,6 +326,9 @@ if __name__ == "__main__":
                     if vecvar[0][0] == 'v':
                         vvar1 = p.data[viindex,vjindex,vkindex,p.varidx['p1']] / p.data[viindex,vjindex,vkindex,p.varidx['d']]
                         vvar2 = p.data[viindex,vjindex,vkindex,p.varidx['p2']] / p.data[viindex,vjindex,vkindex,p.varidx['d']]
+                    elif vecvar[0][0] == 'p':
+                        vvar1 = p.data[viindex,vjindex,vkindex,p.varidx[vecvar[0]]]
+                        vvar2 = p.data[viindex,vjindex,vkindex,p.varidx[vecvar[1]]]
                     elif vecvar[0][0] == 'b':
                         vvar1 = p.data[viindex,vjindex,vkindex,p.varidx[vecvar[0]]]
                         vvar2 = p.data[viindex,vjindex,vkindex,p.varidx[vecvar[1]]]
@@ -333,7 +337,7 @@ if __name__ == "__main__":
                     print "Max. vector magnitude: ",vmagmax
                     quiv = cax.quiver(xp[viindex,vjindex,vkindex].squeeze(),
                                     yp[viindex,vjindex,vkindex].squeeze(),
-                                    vvar1.squeeze(),vvar2.squeeze(),scale_units='width',scale=20.0,
+                                    vvar1.squeeze(),vvar2.squeeze(),scale_units='width',scale=vpscale,
                                     color='k',zorder=-min(p.dx)*0.25,units='dots',width=1.0)
 
             if (showgrids or pltvar[0] == 'gs'):
