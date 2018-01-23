@@ -288,7 +288,7 @@ SUBROUTINE check_error (self, a, label, error)
   character(len=*), optional:: label
   integer, optional:: error(3)
   integer:: loc(3), it, l(3), u(3), n(3), iy
-  real, dimension(:,:,:), pointer:: a, b
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: a, b
   integer, save:: nerror=4
   !-----------------------------------------------------------------------------
   if (.not.io%do_debug) return
@@ -1310,7 +1310,6 @@ END SUBROUTINE unpack
 !> many files in the same directory.
 !> =============================================================================
 SUBROUTINE output_legacy (self, experiment_name)
-  USE iso_fortran_env, only : real32
   class(patch_t):: self
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
@@ -1320,7 +1319,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   logical:: first_time=.true.
   integer:: it1, it2, n(3)
   real:: pt, qt
-  real, dimension(:,:,:), pointer:: buf
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: buf
   real(8):: time
  ! integer, save:: iodir=-1
   !-----------------------------------------------------------------------------
@@ -1392,7 +1391,7 @@ SUBROUTINE output_legacy (self, experiment_name)
   !-----------------------------------------------------------------------------
   n = u-l+1
   open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', access='direct', &
-    status='unknown', recl=real32*product(n))
+    status='unknown', recl=kind(buf)*product(n))
   do jo=1,no
     do iv=1,self%nv
       allocate (buf(n(1),n(2),n(3)))
@@ -1436,7 +1435,6 @@ END SUBROUTINE output_legacy
 !> Read snapshot from disk
 !> =============================================================================
 SUBROUTINE input_legacy (self, ok)
-  USE iso_fortran_env, only: real32
   class(patch_t):: self
   logical:: ok
   character(len=64) filename, line, fmt
@@ -1507,7 +1505,7 @@ SUBROUTINE input_legacy (self, ok)
     return
   end if
   open (io%data_unit, file=trim(filename)//'.dat', form='unformatted', &
-    access='direct', status='unknown', recl=real32*product(u-l+1))
+    access='direct', status='unknown', recl=kind(self%mem)*product(u-l+1))
   do iv=1,self%nv
     read (io%data_unit,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
   end do
