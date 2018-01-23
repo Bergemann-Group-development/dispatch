@@ -205,9 +205,9 @@ if __name__ == "__main__":
             jone = (0,1)[pp.n[1] > 1]
             kone = (0,1)[pp.n[2] > 1]
             if np.any(pp.n != pp.nwrite):
-                iindex = slice(pp.li[0] - ione,pp.ui[0] + (1 - ione))
-                jindex = slice(pp.li[1] - jone,pp.ui[1] + (1 - jone))
-                kindex = slice(pp.li[2] - kone,pp.ui[2] + (1 - kone))
+                iindex = slice(pp.li[0],pp.ui[0] + (1 - ione))
+                jindex = slice(pp.li[1],pp.ui[1] + (1 - jone))
+                kindex = slice(pp.li[2],pp.ui[2] + (1 - kone))
             else:
                 iindex = slice(0,pp.n[0])
                 jindex = slice(0,pp.n[1])
