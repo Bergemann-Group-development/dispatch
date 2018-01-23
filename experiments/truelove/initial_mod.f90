@@ -190,12 +190,13 @@ SUBROUTINE condition (self, m, f, idx)
           q1               = 1.0 + perta * cos(real(pertm,kind=8) * phi0)
           nrg              = pcloud / (self%gamma - 1.0)
           f(i,j,k,idx%d)   = q1 * rho0
-          f(i,j,k,idx%phi) = c1 + 2.0 * pi * scaling%grav * rho0 * rzsq / 3.0
+          !!!f(i,j,k,idx%phi) = c1 + 2.0 * pi * scaling%grav * rho0 * rzsq / 3.0
         else
           nrg              = pamb / (self%gamma - 1.0)
           f(i,j,k,idx%d)   = rhoamb
-          f(i,j,k,idx%phi) = c2 - c3 / rz + 2.0 * scaling%grav * pi * rhoamb * rzsq / 3.0
+          !!!f(i,j,k,idx%phi) = c2 - c3 / rz + 2.0 * scaling%grav * pi * rhoamb * rzsq / 3.0
         endif
+        f(i,j,k,idx%phi) = 0.0
         ! set momenta for staggered solvers appropriately
         f(i,j,k,idx%px)  = 0.0
         f(i,j,k,idx%py)  = 0.0
