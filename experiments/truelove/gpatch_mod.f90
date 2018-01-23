@@ -101,6 +101,19 @@ SUBROUTINE init (self)
   ! the patch from scratch, resetting other necessary counters only if positive
   ! restart_time indicates that restart files were read for previous patches.
   !-----------------------------------------------------------------------------
+    if (selfgravity) then
+      !-------------------------------------------------------------------------
+      ! Sum up the total mass and total volume, to get the average density d0.
+      ! FIXME: This needs to be modified for MPI
+      !-------------------------------------------------------------------------
+      if (self%id==1) then
+        d => self%mem(:,:,:,self%idx%d,self%it,1)
+        !$omp atomic
+        total_mass = total_mass + self%fsum(d)*product(self%ds)
+        !$omp atomic
+        total_volume = total_volume + product(self%size)
+      end if
+    end if
   else
     self%mem = 0.0
     ff => self%mem(:,:,:,:,1,1)
@@ -138,7 +151,7 @@ SUBROUTINE init (self)
   if (restart_time > 0d0) then
     self%time = restart_time
     self%t(self%it) = self%time
-    self%out_next = (int(self%time/io%out_time)+1)*io%out_time
+    self%out_next = (int(self%time/io%out_time+1.0e-4)+1)*io%out_time ! add an `eps` to avoid round-off errors
     self%iout = self%restart+1
     !$omp master
     write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout

@@ -268,8 +268,10 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child%level = parent%level + 1                     ! override possible calculation in `patch_t%init`.
   child%dt(child%it) = parent%dt(parent%it) / refinement_ratio ! reset the time-step
   child%t(child%it) = child%time
-  child%out_next = child%time                        ! force output now
-  child%iout = max(0,child%iout - 1)                 ! correct output counter
+  if (child%restart <= 0) then
+    child%out_next = child%time                        ! force output now
+    child%iout = max(0,child%iout - 1)                 ! correct output counter
+  end if
   child%parentid = parent%id                         ! for debugging
   child%check_refine_next = 0                        ! allow recursive refine
   !------------------------------------------------------------------------
@@ -296,7 +298,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   ! If time = 0, patch should have been filled with values during `child%init()`
   ! call.
   !------------------------------------------------------------------------
-  if (parent%time > 0.0) call download%download_link (child_link, all_cells=.true.)
+  if (parent%time > 0.0 .and. child%restart <= 0) call download%download_link (child_link, all_cells=.true.)
   if (io%verbose>0) then
     1 format(a,3i6,f10.6,2(2x,3f8.4))
     print 1,'refine_t%make_child_patch:  child, level, iout, time, size(3), position(3) =', &
