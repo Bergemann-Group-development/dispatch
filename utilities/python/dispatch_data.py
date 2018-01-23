@@ -65,13 +65,18 @@ class Patch(Task):
         an exception when it reaches its file handler limit.
         """
         if self.__data is None:
-            self.__data = self._read_legacy_data(self.filename+'.dat', self.nwrite, self.nvar)
+            self.__data = self._read_legacy_data(self.filename+'.dat', self.nwrite, self.nvar, self.nbytes)
         return self.__data
 
-    def _read_legacy_data(self, filename, dims, nvar):
+    def _read_legacy_data(self, filename, dims, nvar, nbytes):
         """Return a memory map pointing to MHD data."""
         myshape = dims + (nvar,)
-        return np.memmap(filename, dtype=np.float32, offset=self.offset, mode='r', order='F', shape=myshape)
+        if nbytes == 4:
+            thistype = np.float32
+        elif nbytes == 8:
+            thistype = np.float64
+
+        return np.memmap(filename, dtype=thistype, offset=self.offset, mode='r', order='F', shape=myshape)
 
     def _determine_corners(self, active_only=False):
         """

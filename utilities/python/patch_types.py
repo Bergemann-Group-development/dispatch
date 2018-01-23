@@ -25,6 +25,7 @@ class StaggerMHDPatch(MHDPatch):
         # not yet been used.
         if read_derivs: self.nvar = 2 * self.nvar
 
+        self.nbytes = 4
         self.varidx = self.variable_indices(read_derivs)
 
 class ZeusMHDPatch(MHDPatch):
@@ -33,6 +34,7 @@ class ZeusMHDPatch(MHDPatch):
     def __init__ (self, filename, verbose=False):
         super(MHDPatch, self).__init__(filename, verbose)
 
+        self.nbytes = 8
         self.varidx = self.variable_indices(read_derivs=False)
 
 class ImmersedBoundaryPatch(Patch):
@@ -52,6 +54,7 @@ class Stagger2eMHDPatch(MHDPatch):
         # not yet been used.
         if read_derivs: self.nvar = 2 * self.nvar
 
+        self.nbytes = 4
         self.varidx = self.variable_indices(read_derivs)
 
 class RamsesHDPatch(MHDPatch):
@@ -60,6 +63,7 @@ class RamsesHDPatch(MHDPatch):
     def __init__ (self, filename, verbose=False):
         super(MHDPatch, self).__init__(filename, verbose)
 
+        self.nbytes = 4
         self.varidx = self.variable_indices(read_derivs=False)
 
 class RTPatch(MHDPatch):
@@ -73,4 +77,5 @@ class RTPatch(MHDPatch):
         # not yet been used.
         if read_derivs: self.nvar = 2 * self.nvar
 
+        self.nbytes = 4
         self.varidx = elf.variable_indices(read_derivs)
