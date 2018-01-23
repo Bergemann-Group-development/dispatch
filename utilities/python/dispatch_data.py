@@ -41,6 +41,7 @@ class Patch(Task):
         else:
             fp = open(filename+'.txt','r')
         legacy_reader.single_patch (self, fp, verbose=False, fd=fd)
+        if self.kind == 'poisson': self.nbytes = 8
         if read_derivs: self.nvar = 2 * self.nvar
         if fd:
             self.offset=(self.id-1)*np.product(self.nwrite)*self.nvar*4
