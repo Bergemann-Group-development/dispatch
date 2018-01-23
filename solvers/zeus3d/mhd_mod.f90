@@ -317,8 +317,8 @@ SUBROUTINE init_zeus (self)
   self%nw = 1
   call self%gpatch_t%init()
   do i=1,3
-    self%mesh(i)%h(4+i) = -0.5 ! momentum/velocity components
-    self%mesh(i)%h(7+i) = -0.5 ! mag. field components
+    self%mesh(i)%h(self%idx%px+i-1) = -0.5 ! momentum/velocity components
+    self%mesh(i)%h(self%idx%bx+i-1) = -0.5 ! mag. field components
   end do
 
   self%dt(self%it) = dtinit
