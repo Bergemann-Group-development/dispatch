@@ -671,7 +671,7 @@ FUNCTION func_dcostheta_c (self, j) RESULT(dvol2c)
   integer, intent(in) :: j
   real(8) :: dvol2c
   !.............................................................................
-  dvol2c = -cos(func_position_c(self,j+1)) + cos(func_position_c(self,j))
+  dvol2c = -cos(func_position_f(self,j+1)) + cos(func_position_f(self,j))
 
 END FUNCTION func_dcostheta_c
 
@@ -680,8 +680,7 @@ FUNCTION func_dcostheta_f (self, j) RESULT(dvol2f)
   integer, intent(in) :: j
   real(8) :: dvol2f
   !.............................................................................
-  dvol2f = -cos(func_position_f(self,j)) + cos(func_position_f(self,j-1))
-
+  dvol2f = -cos(func_position_c(self,j)) + cos(func_position_c(self,j-1))
 END FUNCTION func_dcostheta_f
 
 !> =============================================================================
