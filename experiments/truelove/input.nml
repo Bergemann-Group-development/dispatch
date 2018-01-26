@@ -20,7 +20,8 @@
 
 &out_params
  end_time=0.511
- out_time=0.01
+ !end_time=0.611
+ out_time=0.005
  guard_zones=t
  print_time=0.001
 /
@@ -47,33 +48,33 @@
 !/
 
 ! uniform, rotating
-&experiment_params
- rho0=15.2783
- r0=0.25
- truealpha=0.0561
- truebeta=0.0875
- perta=0.0
- chipres=1.0
- chirho=100.0
-/
-&scaling_params
- l0=2.890e17
-/
-
-! rotating, perturbed, 10%
 !&experiment_params
-! rho0=16.0130
+! rho0=15.2783
 ! r0=0.25
-! truealpha=0.26
-! truebeta=0.16
-! perta=0.1
-! pertm=2
-! chipres=10.0
+! truealpha=0.54
+! truebeta=0.08
+! perta=0.0
+! chipres=1.0
 ! chirho=100.0
 !/
 !&scaling_params
-! l0=2.0e17
+! l0=2.890e17
 !/
+
+! rotating, perturbed, 10%
+&experiment_params
+ rho0=16.0130
+ r0=0.25
+ truealpha=0.26
+ truebeta=0.16
+ perta=0.1
+ pertm=2
+ chipres=10.0
+ chirho=100.0
+/
+&scaling_params
+ l0=2.0e17
+/
 
 &boundary_params
   fixedbcs=t
@@ -89,8 +90,8 @@
  refinement_ratio=3
  check_interval=8
  refine_from_t=0.0
- refine_until_t=1.0
- levelmax=3
+ refine_until_t=99.0
+ levelmax=6
 /
 
 &selfgravity_params
@@ -111,7 +112,7 @@
 &zeus_params
  gamma=1.0001
  trnvrsn=0
- dtinit=1.0e-5
+ dtinit=1.0e-3
  itote=0
  qlin=0.1
  qcon=1.0
@@ -133,8 +134,8 @@
 &mhd_params
  gamma=1.0
  !csound=0.077746 ! non-rotating case
- csound=0.08451 ! rotating case
- !csound=0.1829 ! rotating, perturbed case
+ !csound=0.08451 ! rotating case
+ csound=0.1829 ! rotating, perturbed case
  nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
 /
