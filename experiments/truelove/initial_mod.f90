@@ -205,10 +205,10 @@ SUBROUTINE condition (self, m, f, idx)
           rzxm1 = sqrt((x - m1%d - x0)**2 + (y - y0)**2 + (z - z0)**2)
           rzym1 = sqrt((x - x0)**2 + (y - m2%d - y0)**2 + (z - z0)**2)
           if ((rz <= r0 .or. rzxm1 <= r0) .and. i > 1) then
-            f(i,j,k,idx%px)  =-omega * (y - y0) * 0.5 * (f(i,j,k,idx%d) + f(i-1,j,k,idx%d))
+            f(i,j,k,idx%px)  =-omega * (y - y0) * exp(0.5 * (log(f(i,j,k,idx%d)) + log(f(i-1,j,k,idx%d))))
           end if
           if ((rz <= r0 .or. rzym1 <= r0) .and. j > 1) then
-            f(i,j,k,idx%py)  = omega * (x - x0) * 0.5 * (f(i,j,k,idx%d) + f(i,j-1,k,idx%d))
+            f(i,j,k,idx%py)  = omega * (x - x0) * exp(0.5 * (log(f(i,j,k,idx%d)) + log(f(i,j-1,k,idx%d))))
           end if
         else
           if (rz < r0) then
