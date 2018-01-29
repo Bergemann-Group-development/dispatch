@@ -153,12 +153,12 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
 
-  if (self%mesh(1)%p .lt. self%size(1)) then 
+  if (self%llc_nat(1)-self%ds(1) .lt. self%mesh(1)%origin) then 
     do iv=1,self%nv
       call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.)
     end do 
   endif
-  if (self%mesh(1)%p .gt. self%box(1) - self%size(1)) then 
+  if (self%llc_nat(1)+self%size(1)+self%ds(1) .gt. self%mesh(1)%origin + self%box(1)) then 
     do iv=1,self%nv
       call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.)
     end do 
