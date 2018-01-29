@@ -36,9 +36,10 @@ SUBROUTINE init (self)
   real, dimension(:,:,:,:), pointer:: b, p
   real, dimension(:,:,:), pointer:: d, vx, vy, vz, Bx, By, Bz, px, py, pz, s
   real,save:: P_l, P_r, rho_i, rho_l, vx_l, vy_l, vz_l=0., &
-              Bx_l, By_l, Bz_l=0., rho_r, vx_r, vy_r, vz_r=0., Bx_r, By_r, Bz_r=0. 
+              Bx_l, By_l, Bz_l=0., rho_r, vx_r, vy_r, vz_r=0., Bx_r, By_r, Bz_r=0., &
+              x0=0.0
   namelist /experiment_params/ P_l, P_r, rho_l, vx_l, vy_l, Bx_l, By_l, rho_r, &
-                               vx_r, vy_r, Bx_r, By_r
+                               vx_r, vy_r, Bx_r, By_r, x0
 
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
@@ -71,7 +72,7 @@ SUBROUTINE init (self)
     x = self%mesh(1)%p + self%mesh(1)%r(i)
     !y = self%mesh(2)%p + self%mesh(2)%r(i)
     !z = self%mesh(3)%p + self%mesh(3)%r(i)
-    if (x < self%box(1)/2.0) then
+    if (x < x0) then
       d (i,:,:)  = rho_l
       if (self%gamma .eq. 1.) then
         s (i,:,:) = -log(rho_l)*rho_l
