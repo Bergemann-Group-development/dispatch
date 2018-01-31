@@ -19,6 +19,7 @@
 &out_params
  end_time=0.451
  out_time=0.05
+ print_time=0.01
  guard_zones=t
 /
 
@@ -38,7 +39,7 @@
 /
 
 &refine_params
-  do_refine=t
+  do_refine=f
   tol_shock=0.1
   tol_contact=0.1
   min_dx=0.0025
