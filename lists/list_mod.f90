@@ -1443,8 +1443,8 @@ SUBROUTINE init_bdries (self)
     !---------------------------------------------------------------------------
     ! If at edge, set boundary bits
     !---------------------------------------------------------------------------
-    position = task%position - self%position
-    limit = (self%size - task%size - task%mesh%d)/2d0
+    position = task%position - task%mesh%origin - 0.5d0 * task%box
+    limit = 0.5d0 * (task%box - task%size - task%ds)
     if (.not.task%periodic(1)) then
       if (position(1)  <= -limit(1)) then
         call task%boundaries%set (bits%xl)
