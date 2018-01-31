@@ -504,8 +504,6 @@ SUBROUTINE pde (self)
     J = curl_dn(ds,B)
     emf = self%nu(6)*edge(du)*J                                                 ! mhd: 0 6 0
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))                     ! mhd: 2 3 0
-    if (self%gamma/=1.0) &
-      dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
     !---------------------------------------------------------------------------
@@ -513,6 +511,9 @@ SUBROUTINE pde (self)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
     call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
+    if (self%gamma/=1.0) then
+      dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
+    end if
     dBdt = -curl_up(ds,emf)
   end if
   !-----------------------------------------------------------------------------

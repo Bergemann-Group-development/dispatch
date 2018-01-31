@@ -91,6 +91,7 @@ SUBROUTINE update (self, gn, ds, d, Jx, Jy, Jz, Bx, By, Bz, Q, E, u_max)
     E(:,:,:,1) = E(:,:,:,1) + self%eta_Ohm*Jx
     E(:,:,:,2) = E(:,:,:,2) + self%eta_Ohm*Jy
     E(:,:,:,3) = E(:,:,:,3) + self%eta_Ohm*Jz
+    Q = Q + yup(zup(self%eta_Ohm*Jx**2)) + zup(xup(self%eta_Ohm*Jy**2)) + xup(yup(self%eta_Ohm*Jz**2))
     u_max = max(u_max,self%eta_Ohm/ds)
   end if
 END SUBROUTINE update
