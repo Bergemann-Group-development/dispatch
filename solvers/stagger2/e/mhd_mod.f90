@@ -204,7 +204,7 @@ SUBROUTINE pde (self)
   ! in (2,gn-1)
   !-----------------------------------------------------------------------------
   ds = self%ds
-  du = -maxval(ds)*div(ds,U)                            ! convergence rate      ! ops: 0 1 0
+  du = -maxval(ds,self%n > 1)*div(ds,U)                 ! convergence rate      ! ops: 0 1 0
   du = max(du,0.0)                                      ! positive part
   self%u_max = 0.0
   !-----------------------------------------------------------------------------
@@ -245,7 +245,7 @@ SUBROUTINE pde (self)
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
-    du = (maxval(ds)*self%nu(1))*cs
+    du = (maxval(ds,self%n > 1)*self%nu(1))*cs
     fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
     fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
     fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
@@ -272,7 +272,7 @@ SUBROUTINE pde (self)
     if (verbose>2) print 1, 'u_max(cs+u+du)', u_max, self%u_max
     pp = pg + pa                                                                ! ops: 1 0 0
     ! Total diagondal stress, with density factor
-    du = (maxval(ds)*self%nu(1))*cs                                             ! ops: 0 1 0
+    du = (maxval(ds,self%n > 1)*self%nu(1))*cs                                  ! ops: 0 1 0
     !---------------------------------------------------------------------------
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
@@ -292,7 +292,7 @@ SUBROUTINE pde (self)
   fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux   ! ops: 0 9 0
   fm = p+fd                                             ! mass flux             ! ops: 3 0 0
   dddt = -div(ds,fm)                                    ! density derivative
-  u_max = self%cdtd*maxval(ds)*self%fmaxval(abs(dddt/d))                        ! ops: 0 0 1
+  u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs(dddt/d))             ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
   if (verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
@@ -400,7 +400,7 @@ SUBROUTINE pde (self)
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
   !-----------------------------------------------------------------------------
   if (.not.self%isothermal) then
-    u_max = self%cdtd*maxval(ds)*self%fmaxval(abs((dedt-ee*dddt)/d))            ! ops: 1 1 1
+    u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs((dedt-ee*dddt)/d)) ! ops: 1 1 1
     self%u_max = max(self%u_max,u_max)
     if (verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
   end if

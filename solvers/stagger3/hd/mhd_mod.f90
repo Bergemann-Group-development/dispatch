@@ -189,7 +189,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Articifical pressure and diffusion added for stability
   !-----------------------------------------------------------------------------
-  ds             = maxval(self%mesh%d)
+  ds             = maxval(self%mesh%d,self%n > 1)
   p_artificial   = (nu(2)*ds)**2*d*min(0.0,scalar%div(velocity))**2
   c_sound        = sqrt(gamma*((p_gas+p_artificial)/d))
   diffusion      = (nu(1)*ds)*d*c_sound

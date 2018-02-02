@@ -146,7 +146,7 @@ associate (d=>self%d, dddt=>self%dddt, &
   ! Divergence of velocity, and artificial pressure
   !-----------------------------------------------------------------------------
   ds = self%mesh%d
-  dx = minval(ds)                                       ! smallest {dx,dy,dz}
+  dx = minval(ds,self%n > 1)                            ! smallest {dx,dy,dz}
   sxx = ddxup(ds,Ux)
   syy = ddyup(ds,Uy)
   szz = ddzup(ds,Uz)

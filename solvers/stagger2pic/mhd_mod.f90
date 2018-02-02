@@ -198,7 +198,7 @@ SUBROUTINE pde (self)
   ! in (2,gn-1)
   !-----------------------------------------------------------------------------
   ds = self%ds
-  dx = minval(ds)                                       ! smallest {dx,dy,dz}
+  dx = minval(ds,self%n > 1)                            ! smallest {dx,dy,dz}
   du = -dx*div(ds,U)                                    ! convergence rate
   du = max(du,0.0)                                      ! positive part
   !-----------------------------------------------------------------------------

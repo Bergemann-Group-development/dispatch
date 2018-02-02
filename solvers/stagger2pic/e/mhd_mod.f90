@@ -173,7 +173,7 @@ SUBROUTINE pde (self)
   ! Divergence of velocity, and artificial pressure
   !-----------------------------------------------------------------------------
   ds = self%mesh%d
-  dx = minval(ds)                                       ! smallest {dx,dy,dz}
+  dx = minval(ds,self%n > 1)                            ! smallest {dx,dy,dz}
   du = st%div_DN(U)                                     ! save div(U) for now
   if (self%gamma /= 1.0) then                           ! unless isothermal
     dedt = -pg*du                                       ! -Pg*div(U) term
