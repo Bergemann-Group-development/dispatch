@@ -709,7 +709,7 @@ FUNCTION func_dar2_c (self,i) RESULT(dar2c)
   integer, intent(in) :: i
   real(8) :: dar2c
   !.............................................................................
-  dar2c = self%h31c(i) * self%d * self%dvol1c(i)
+  dar2c = self%h31c(i) * self%d / self%dvol1c(i)
 
 END FUNCTION func_dar2_c
 
@@ -718,7 +718,7 @@ FUNCTION func_dar2_f (self,i) RESULT(dar2f)
   integer, intent(in) :: i
   real(8) :: dar2f
   !.............................................................................
-  dar2f = self%h31f(i) * self%d * self%dvol1f(i)
+  dar2f = self%h31f(i) * self%d / self%dvol1f(i)
 
 END FUNCTION func_dar2_f
 
@@ -727,7 +727,7 @@ FUNCTION func_dar31_c (self,i) RESULT(dar31c)
   integer, intent(in) :: i
   real(8) :: dar31c
   !.............................................................................
-  dar31c = self%h2c(i) * self%d * self%dvol1c(i)
+  dar31c = self%h2c(i) * self%d / self%dvol1c(i)
 
 END FUNCTION func_dar31_c
 
@@ -736,7 +736,7 @@ FUNCTION func_dar31_f (self,i) RESULT(dar31f)
   integer, intent(in) :: i
   real(8) :: dar31f
   !.............................................................................
-  dar31f = self%h2f(i) * self%d * self%dvol1f(i)
+  dar31f = self%h2f(i) * self%d / self%dvol1f(i)
 
 END FUNCTION func_dar31_f
 
