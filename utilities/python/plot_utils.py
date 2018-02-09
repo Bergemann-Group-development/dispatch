@@ -127,6 +127,9 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
         xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
         ylim=[min(ylim[0],e[2]),max(ylim[1],e[3])]
     if extent != None:
+        if np.size(extent)==1:
+            w=extent
+            extent=[-w,w,-w,w]
         xlim=extent[0:2]
         ylim=extent[2:4]
         def overlaps(p):
@@ -198,6 +201,9 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
         ylim=[min(ylim[0],e[0]),max(ylim[1],e[1])]
         zlim=[min(zlim[0],e[2]),max(zlim[1],e[3])]
     if extent:
+        if np.size(extent)==1:
+            w=extent
+            extent=[-w,w,-w,w]
         ylim=extent[0:2]
         zlim=extent[2:4]
         def overlaps(p):
@@ -268,6 +274,9 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
         xlim=[min(xlim[0],e[0]),max(xlim[1],e[1])]
         zlim=[min(zlim[0],e[2]),max(zlim[1],e[3])]
     if extent:
+        if np.size(extent)==1:
+            w=extent
+            extent=[-w,w,-w,w]
         xlim=extent[0:2]
         zlim=extent[2:4]
         def overlaps(p):
@@ -288,6 +297,7 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
     if not keep:
         pl.clf()
     for p in pp:
+        #print (np.size(p.x),p.x[0],p.x[-1],p.extent[1])
         image(p.f,extent=p.extent[1],vmin=vmin,vmax=vmax,cmap=cmap,keep=1)
         xz=[p.active_corners[0][0],p.active_corners[0][2]]
         if labels and in_extent(p.extent[0],xz):

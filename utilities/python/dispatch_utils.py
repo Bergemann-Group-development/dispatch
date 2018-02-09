@@ -279,6 +279,8 @@ def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
         else:
             m=p.nghost
             n=p.n
+            if p.ioformat==2 or p.ioformat==4:
+                n=n-1
         if var:
             p.vars()
             data=p.var[var]

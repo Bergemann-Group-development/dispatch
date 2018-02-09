@@ -147,10 +147,6 @@ def derived(self, verbose=False):
     self.active_corners = self._determine_corners(active_only=True)
     self.corners = np.array(self.corners)
     self.active_corners = np.array(self.active_corners)
-    a = self.active_corners
-    self.extent=np.array([[a[0,1],a[1,1],a[0,2],a[1,2]],\
-                          [a[0,0],a[1,0],a[0,2],a[1,2]],\
-                          [a[0,0],a[1,0],a[0,1],a[1,1]]])
     self.size = self.ds*self.n
     self.x=self.corners[0][0]+(0.5+np.arange(self.gn[0]))*self.ds[0]
     self.y=self.corners[0][1]+(0.5+np.arange(self.gn[1]))*self.ds[1]
@@ -165,5 +161,9 @@ def derived(self, verbose=False):
     self.xs = self.x - 0.5*self.ds[0]
     self.ys = self.y - 0.5*self.ds[1]
     self.zs = self.z - 0.5*self.ds[2]
+    a = self.active_corners
+    self.extent=np.array([[a[0,1],a[1,1],a[0,2],a[1,2]],\
+                          [a[0,0],a[1,0],a[0,2],a[1,2]],\
+                          [a[0,0],a[1,0],a[0,1],a[1,1]]])
     if (verbose):
         info (self)

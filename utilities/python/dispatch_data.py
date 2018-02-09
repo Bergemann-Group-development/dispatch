@@ -41,7 +41,10 @@ class Patch(Task):
         else:
             fp = open(filename+'.txt','r')
         legacy_reader.single_patch (self, fp, verbose=False, fd=fd)
-        if self.kind == 'poisson': self.nbytes = 8
+        if self.kind == 'poisson': 
+            self.nbytes = 8
+        else:
+            self.nbytes = 4
         if read_derivs: self.nvar = 2 * self.nvar
         if fd:
             self.offset=(self.id-1)*np.product(self.nwrite)*self.nvar*4
@@ -105,8 +108,8 @@ class Patch(Task):
     def stripv (self, v):
         l=np.array(self.nghost)
         u=l+np.array(self.n)
-        if self.ioformat==2:
-            u=u-1
+        #if self.ioformat==2:
+        #    u=u-1
         return v[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
     def trans(self,tr):
         if self.kind[0:9]=='rt_solver':
@@ -178,8 +181,8 @@ class Patch(Task):
                 self.b2 = self.stripv (self.b2)
                 self.b3 = self.stripv (self.b3)
         l=self.nghost; u=l+self.n
-        if self.ioformat==2:
-            u=u-1
+        #if self.ioformat==2:
+        #    u=u-1
         self.x = self.x[l[0]:u[0]]; self.xs = self.xs[l[0]:u[0]]
         self.y = self.y[l[1]:u[1]]; self.ys = self.ys[l[1]:u[1]]
         self.z = self.z[l[2]:u[2]]; self.zs = self.zs[l[2]:u[2]]
