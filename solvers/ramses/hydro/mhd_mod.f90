@@ -111,7 +111,7 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace%begin ('mhd_t%update', itimer=itimer)
 
-  call self%gravity(error)
+  call self%gravity
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
@@ -188,8 +188,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   if (self%selfgravity) then
     call gravitational_force(self)
-    call self%dnload (only=self%idx%phi)
-    call self%gravity (error, only=self%idx%phi)
+    call self%gpatch_t%update
   end if
   !-----------------------------------------------------------------------------
   ! Deallocate
