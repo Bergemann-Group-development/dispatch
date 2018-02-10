@@ -101,7 +101,7 @@ SUBROUTINE update (self)
   class(mhd_t):: self
   real, pointer, dimension(:,:,:,:):: em, p
   real, pointer, dimension(:,:,:,:,:):: fl
-  real, pointer, dimension(:,:,:):: d
+  real, pointer, dimension(:,:,:):: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real(dp):: dtdx, dtdy, dtdz
   integer:: n(3), nv3, i
   integer, parameter:: ndim=3
@@ -140,6 +140,19 @@ SUBROUTINE update (self)
   allocate (self%qLT(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%qRB(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%qRT(n(1),n(2),n(3),self%nv,ndim))
+  d => self%mem(:,:,:,          self%idx%d ,self%it,1)
+  e => self%mem(:,:,:,          self%idx%e ,self%it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  !-----------------------------------------------------------------------------
+  ! External force; note that Ux, Uy, Uz are empty pointers here, so they
+  ! should not and cannot be used in the solver
+  !-----------------------------------------------------------------------------
+  allocate (self%ff(size(d,1),size(d,2),size(d,3),3))
+  if (associated(self%force%selected)) then
+    self%ff = self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
+  else
+    self%ff = 0.0
+  end if
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
@@ -185,7 +198,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%idx%d ,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   do i=1,3
     p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%ff(:,:,:,i)*d
