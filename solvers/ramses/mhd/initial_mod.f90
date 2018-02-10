@@ -17,6 +17,7 @@ MODULE initial_mod
   type, public:: initial_t
     integer:: seed
     real:: gamma
+    real:: d0
     logical:: mhd
     real(8):: time=0d0
     character(len=64):: solver
@@ -26,6 +27,7 @@ MODULE initial_mod
     procedure, nopass:: cleanup
   end type
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
+  real, save:: csound=1.
   type(index_t):: idx
 CONTAINS
 
@@ -86,7 +88,6 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   real(8)        :: kx, ky, kz
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
-  real, save     :: csound=1.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
@@ -144,7 +145,6 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   real(8)        :: kx, ky, kz
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
-  real, save     :: csound=1.0
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
@@ -203,7 +203,6 @@ SUBROUTINE single_advection (self, m, ff, idx)
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
-  real, save     :: csound=1.0
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   namelist /initial_advection_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma
   integer, save  :: itimer=0

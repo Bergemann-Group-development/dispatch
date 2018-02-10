@@ -24,6 +24,7 @@ MODULE mhd_mod
   USE trace_mod
   USE mpi_mod
   USE omp_mod
+  USE force_mod
   USE index_mod
   implicit none
   PRIVATE
@@ -40,15 +41,12 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:):: unew      ! new conserved
     real, pointer, dimension(:,:,:):: Ex,Ey,Ez
     real, pointer, dimension(:,:,:):: c
+    real, pointer, dimension(:,:,:,:):: ff        ! external force
+    type(force_t):: force
   contains
     procedure:: init
     procedure:: update
-    procedure:: log_density
-    procedure:: log_pressure
-    procedure:: grav_potential
-    procedure:: velocity_magnitude
-    procedure:: magnetic_field_magnitude
-    procedure:: gas_velocity
+    procedure:: gas_pressure
   end type
   logical:: first_time=.true.
   character(len=16):: eqn='mhd'
@@ -61,10 +59,19 @@ SUBROUTINE init (self)
   character(len=10):: riemann='hlld'
   type(index_t):: idx
   real, save:: csound=1.
+  integer:: i
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
     smallc, do_isothermal, csound
 !...............................................................................
-  call trace_begin('mhd_mod::init')
+  call trace%begin('mhd_mod%init')
+
+  self%nw = 1
+  self%kind = 'ramses_mhd_patch'
+  if (self%nv == 0) then
+    self%nv = 5
+    if (self%mhd) self%nv = self%nv + 3
+  end if
+  call self%gpatch_t%init
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
   !-----------------------------------------------------------------------------
@@ -80,33 +87,23 @@ SUBROUTINE init (self)
   self%courant = courant_factor
   self%gamma = gamma
   self%staggered = .false.
-  !-----------------------------------------------------------------------------
-  ! Initialize the IC module, which determines if we need MHD variables,
-  ! passing on whatever info is of interest.  The template initial_mod.f90
-  ! should reside in the same directory as this file, and any experiment that
-  ! wants to generalize the IC module should use the same calling sequence.
-  !-----------------------------------------------------------------------------
-  call self%initial%init (self%id, self%kind, self%gamma)
-  self%mhd = self%initial%mhd
-  if (self%nv == 0) then
-    self%nv = 5
-    if (self%mhd) self%nv = self%nv + 3
-  end if
-  !-----------------------------------------------------------------------------
-  ! Now we are ready to allocate memory in gpatch_t%init -> patch_t%init
-  !-----------------------------------------------------------------------------
-  call self%gpatch_t%init
-  call trace_end
+  do i=1,3
+    self%mesh(i)%h = 0d0
+  end do
+  call self%force%init(self%kind)
+
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
-  real, pointer, dimension(:,:,:,:):: em
+  real, pointer, dimension(:,:,:,:):: em, p
   real, pointer, dimension(:,:,:,:,:):: fl
+  real, pointer, dimension(:,:,:):: d
   real(dp):: dtdx, dtdy, dtdz
-  integer:: n(3), nv3
+  integer:: n(3), nv3, i
   integer, parameter:: ndim=3
   integer, save:: itimer(4)
   !-----------------------------------------------------------------------------
@@ -115,8 +112,10 @@ SUBROUTINE update (self)
   dtdx = self%dtime/self%ds(1)
   dtdy = self%dtime/self%ds(2)
   dtdz = self%dtime/self%ds(3)
+  
+  call self%gravity
   !----------------------------------------------------------------------------
-  ! Fill guard zones and checks whether to do output
+  ! Checks whether to do output
   !----------------------------------------------------------------------------
   call self%output
   !-----------------------------------------------------------------------------
@@ -183,6 +182,24 @@ SUBROUTINE update (self)
     fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:nv3,3)
   unew = uin
   end associate
+  !-----------------------------------------------------------------------------
+  ! Add external force as source term
+  !-----------------------------------------------------------------------------
+  d => self%mem(:,:,:,self%idx%d ,self%it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+  do i=1,3
+    p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%ff(:,:,:,i)*d
+  end do
+  !-----------------------------------------------------------------------------
+  ! Add gradient of grav. potential as source term (simple, 1st-order approach)
+  !-----------------------------------------------------------------------------
+  if (self%selfgravity) then
+    call gravitational_force(self)
+    call self%gpatch_t%update
+  end if
+  !-----------------------------------------------------------------------------
+  ! Deallocate
+  !-----------------------------------------------------------------------------
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
               self%Ex,self%Ey,self%Ez)
@@ -1020,54 +1037,62 @@ subroutine solver (self,qleft,qright,fgdnv)
 end subroutine solver
 
 !> =============================================================================
-SUBROUTINE log_density (self, v)
+!> =============================================================================
+FUNCTION gas_pressure (self)
   class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: gas_pressure
+  gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(self%gamma-1.0)
+END FUNCTION gas_pressure
 
 !> =============================================================================
-SUBROUTINE log_pressure (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
 !> =============================================================================
-SUBROUTINE grav_potential (self, v)
+SUBROUTINE gravitational_force (self)
   class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE velocity_magnitude (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE magnetic_field_magnitude (self, v)
-  class(mhd_t):: self
-  real, dimension(:,:,:):: v
-  !-----------------------------------------------------------------------------
-END SUBROUTINE
-
-!> =============================================================================
-FUNCTION gas_velocity (self) RESULT (v)
-  class (mhd_t):: self
-  real, dimension(:,:,:), pointer:: d
+  real, dimension(:,:,:), pointer:: phi, d, et, gradphi1, gradphi2, gradphi3
   real, dimension(:,:,:,:), pointer:: p
-  real, dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
-  !-----------------------------------------------------------------------------
-  d => self%mem(:,:,:,self%idx%d,self%it,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
-  v(:,:,:,1) = p(:,:,:,1) / d
-  v(:,:,:,2) = p(:,:,:,2) / d
-  v(:,:,:,3) = p(:,:,:,3) / d
+  integer:: i,j,k
+  real, dimension(3):: wtp1, wtm1
+  real:: etemp
+  !.............................................................................
+  associate (l => self%li, u => self%ui)
+  wtp1 = 0.50 * 4.0 / 3.0 / self%ds
+  wtm1 = 0.25 * 1.0 / 3.0 / self%ds
+  phi => self%mem(:,:,:,self%idx%phi,self%it,1)
+  d   => self%mem(:,:,:,self%idx%d,self%it,1)
+  et  => self%mem(:,:,:,self%idx%e,self%new,1)
+  p   => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+  allocate (gradphi1(self%gn(1),self%gn(2),self%gn(3)), &
+            gradphi2(self%gn(1),self%gn(2),self%gn(3)), &
+            gradphi3(self%gn(1),self%gn(2),self%gn(3)))
 
-  nullify (d, p)
-END FUNCTION gas_velocity
+  do k=l(3),u(3)
+    do j=l(2),u(2)
+      do i=l(1),u(1)
+        ! calculate energy minus the kinetic energy
+        etemp = et(i,j,k) - 0.5 * p(i,j,k,1)**2 / d(i,j,k) &
+                          - 0.5 * p(i,j,k,2)**2 / d(i,j,k) &
+                          - 0.5 * p(i,j,k,3)**2 / d(i,j,k)
+        ! calculate gradient of phi
+        gradphi1(i,j,k) = wtp1(1) * (phi(i+1,j,k) - phi(i-1,j,k)) &
+                 - wtm1(1) * (phi(i+2,j,k) - phi(i-2,j,k))
+        gradphi2(i,j,k) = wtp1(2) * (phi(i,j+1,k) - phi(i,j-1,k)) &
+                 - wtm1(2) * (phi(i,j+2,k) - phi(i,j-2,k))
+        gradphi3(i,j,k) = wtp1(3) * (phi(i,j,k+1) - phi(i,j,k-1)) &
+                 - wtm1(3) * (phi(i,j,k+2) - phi(i,j,k-2))
+        ! update momentum
+        p(i,j,k,1) = p(i,j,k,1) - self%dtime * d(i,j,k) * gradphi1(i,j,k)
+        p(i,j,k,2) = p(i,j,k,2) - self%dtime * d(i,j,k) * gradphi2(i,j,k)
+        p(i,j,k,3) = p(i,j,k,3) - self%dtime * d(i,j,k) * gradphi3(i,j,k)
+        ! update total energy with new momentum
+        et(i,j,k) = etemp + 0.5 * p(i,j,k,1)**2 / d(i,j,k) &
+                          + 0.5 * p(i,j,k,2)**2 / d(i,j,k) &
+                          + 0.5 * p(i,j,k,3)**2 / d(i,j,k)
+      end do
+    end do
+  end do
+
+  deallocate (gradphi1, gradphi2, gradphi3)
+  end associate
+END SUBROUTINE gravitational_force
 
 END MODULE
