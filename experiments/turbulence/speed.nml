@@ -34,7 +34,7 @@
  size=1,1,1
 !dims=16,16,16          ! nearly full 20 core Ivy Bridge at steno
 !dims=32,64,64          ! 32 nodes (64 sockets)
- per_rank=3*8 mpi_dims=2,2,2
+ per_rank=3*1 mpi_dims=2,2,2
  origin=0,0,0
 /
 &experiment_params
@@ -67,13 +67,13 @@
 &force_solenoidal_params    k=1,1,2 a0=3.0,3.2,3.1 t_turn=0.30 /
 
 &ramses_params
- detailed_timer=f
+ !detailed_timer=f
  courant_factor=0.8
  gamma=1.00001
  slope_type=2
  !slope_type=-1
  smallr=1e-4
  smallc=5e-1
- riemann='hllc'
+ riemann='hlld'
  do_isothermal=t
 /

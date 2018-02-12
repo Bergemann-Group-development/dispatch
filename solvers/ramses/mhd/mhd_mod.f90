@@ -502,11 +502,9 @@ SUBROUTINE trace3d(self)
   call trace%begin ('mhd_mod::trace3d', itimer=itimer)
   su0=0.0_dp; sv0=0.0_dp; sw0=0.0_dp
   !
-  print*, self%ds, self%dtime
   dtdx = self%dtime/self%ds(1)
   dtdy = self%dtime/self%ds(2)
   dtdz = self%dtime/self%ds(3)
-  print*,smallr,smallc,self%gamma
   smallp = smallr*smallc**2/self%gamma
   !
   ! E = - UxB = BxU
@@ -1033,9 +1031,7 @@ subroutine cmp_mag_flx (self, lp1 ,lp2 ,lor ,bp1 , bp2, bor, dtds, emf, ngrid, n
       qRL (1:ngrid,8) = qLT(1:ngrid,j,k,bor,xdim)
       qLR (1:ngrid,8) = qRB(1:ngrid,j,k,bor,xdim)
       qRR (1:ngrid,8) = qLB(1:ngrid,j,k,bor,xdim)
-      DO l = 1, ngrid
-        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
-      END DO
+      call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
     END DO
   END DO
   call trace%end (itimer)
