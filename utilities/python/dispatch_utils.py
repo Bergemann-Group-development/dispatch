@@ -317,8 +317,9 @@ def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
                 f1=data[i,j  ,k]*(1-w[0])+data[i+1,j  ,k]*w[0]
                 f2=data[i,j+1,k]*(1-w[0])+data[i+1,j+1,k]*w[0]
                 f=f1*(1-w[1])+f2*w[1]
-                if iv==p.varidx['p3']:
-                    ss.append(p.zs[k])
+                if 'p3' in p.varidx:
+                    if iv==p.varidx['p3']:
+                        ss.append(p.zs[k])
                 else:
                     ss.append(p.z[k])
                 ff.append(f)
