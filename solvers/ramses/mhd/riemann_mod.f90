@@ -36,8 +36,9 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv)
   REAL(dp),DIMENSION(size(qleft,1))::ro,uo,vo,wo,bo,co,ptoto,etoto,vdotbo
   REAL(dp),DIMENSION(size(qleft,1))::lim,emago
   INTEGER ::ivar,i
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('riemann_mod::hlld_vec')
+  call trace%begin('riemann_mod::hlld_vec', itimer=itimer)
   !
   entho = one/max(gamma-one,1e-6)
   !
@@ -220,7 +221,7 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv)
      endwhere
   end do
   !
-  call trace_end
+  call trace%end (itimer)
 contains
 
 SUBROUTINE find_speed_fast_vec(qvar,vel_info)
@@ -261,6 +262,8 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
   REAL(dp)::Bstarl,Bstarr,Cstarl,Cstarr,calfvenl,calfvenr
   REAL(dp)::Bo,Co,Bstarstar,Cstarstar,vdotBstarstar,vdotBo,emago
   INTEGER ::ivar,i,icase
+  integer, save:: itimer=0
+  !.............................................................................
   !
   ! constants
   entho = one/max(gamma-one,1e-6)
@@ -446,6 +449,7 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
   end do
+  call trace%end (itimer)
 contains
 SUBROUTINE find_speed_fast(qvar,vel_info)
   !! calculate the fast magnetosonic velocity
@@ -489,7 +493,10 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
                        ALL,ALR,ARL,ARR,BLL,BLR,BRL,BRR,CLL,CLR,CRL,CRR
   REAL(dp),DIMENSION(1:nvar) :: qtmp
   REAL(dp) :: B2, c2, d2, d1
-  integer, save:: itimer(10)=0
+  !integer, save:: itimer(10)=0
+  integer, save:: itimer=0
+  !.............................................................................
+  call trace%begin ('riemann_mod::hlld_2d',itimer=itimer)
 
   do l=1,ngrid
     !call trace%begin ('hlld_2d find_fast_speed', itimer=itimer(1))
@@ -860,6 +867,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
     endif
     emf(l,j,k) = E
   end do
+  call trace%end (itimer)
 contains
 
 SUBROUTINE find_speed_fast(qvar,vel_info)

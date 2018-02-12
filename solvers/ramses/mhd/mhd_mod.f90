@@ -105,9 +105,9 @@ SUBROUTINE update (self)
   real(dp):: dtdx, dtdy, dtdz
   integer:: n(3), nv3, i
   integer, parameter:: ndim=3
-  integer, save:: itimer(4)
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('mhd_mod::update')
+  call trace%begin ('mhd_t%update', itimer=itimer)
   nv3 = self%nv-3
   dtdx = self%dtime/self%ds(1)
   dtdy = self%dtime/self%ds(2)
@@ -123,7 +123,6 @@ SUBROUTINE update (self)
   ! even if it would be possible to do some of them locally, in the procedures
   ! being called.
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_mod::update(allocate)', itimer=itimer(1))
   self%uin  => self%mem(:,:,:,:,self%it ,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
   n = self%mesh%gn
@@ -156,29 +155,26 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
-  call trace%end (itimer(1))
   call check_small (self)
   call ctoprim(self)                                    ! Primitive variables
   call self%courant_condition                           ! compute dt
   call uslope(self,self%q,self%dq,self%nv)              ! TVD slopes
   call uslope(self,self%bf,self%dbf,3)                  ! TVD slopes
   call trace3d(self)                                    ! predictor step
-  call trace%begin ('mhd_mod::update(cmpflxm)', itimer=itimer(2))
+
   allocate (fl(self%gn(1),self%gn(2),self%gn(3),self%nv,3))
   allocate (em(self%gn(1),self%gn(2),self%gn(3),3))
+
   call cmpflxm(self,self%gn(1),2,3,4,6,7,8,fl(:,:,:,:,1))
   call cmpflxm(self,self%gn(2),3,2,4,7,6,8,fl(:,:,:,:,2))
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
-  call trace%end (itimer(2))
-  !call trace%begin ('mhd_mod::update(cmp_mag_flx)', itimer=itimer(3))
+
   call cmp_mag_flx(self,2,3,4,6,7,8,dtdz,em(:,:,:,3),self%gn(3),self%nv)
   call cmp_mag_flx(self,4,2,3,8,6,7,dtdy,em(:,:,:,2),self%gn(2),self%nv)
   call cmp_mag_flx(self,3,4,2,7,8,6,dtdx,em(:,:,:,1),self%gn(1),self%nv)
   !-----------------------------------------------------------------------------
-  ! Flux divergence update
+  ! Update conservative variables
   !-----------------------------------------------------------------------------
-  !call trace%end (itimer(3))
-  call trace%begin ('mhd_mod::update(div)', itimer=itimer(4))
   associate (i0=>self%mesh(1)%li, j0=>self%mesh(2)%li, k0=>self%mesh(3)%li, &
              i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
              uin=>self%uin,unew=>self%unew)
@@ -215,7 +211,7 @@ SUBROUTINE update (self)
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
               self%Ex,self%Ey,self%Ez)
-  call trace%end (itimer(4))
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================
@@ -226,8 +222,10 @@ subroutine check_small (self)
   real(dp):: c,d,u,v,w,p,ekin
   integer, save:: nprint=10
   real, save:: csound=1.
+  integer, save:: itimer=0
   associate(uu=>self%uin)
   !-----------------------------------------------------------------------------
+  call trace%begin('mhd_mod::check_small',itimer=itimer)
   n_smalld = 0
   n_smallp = 0
   lo = self%mesh%lb
@@ -267,6 +265,7 @@ subroutine check_small (self)
     write (io_unit%log,*) 'small: id,nr,np', self%id,n_smalld,n_smallp
   end if
   end associate
+  call trace%end (itimer)
 end subroutine check_small
 
 !> =============================================================================
@@ -276,8 +275,10 @@ subroutine ctoprim(self)
   class(mhd_t):: self
   integer::n(4)
   real(dp):: smallp, c
+  integer, save:: itimer=0
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
+  call trace%begin('mhd_mod::ctoprim',itimer=itimer)
   smallp = smallr*smallc**2/self%gamma
   n = shape(uin)-1
 
@@ -302,6 +303,7 @@ subroutine ctoprim(self)
                           + c + abs(q(:,:,:,3)) &
                           + c + abs(q(:,:,:,4)))
   end associate
+  call trace%end (itimer)
 end subroutine ctoprim
 
 !> =============================================================================
@@ -321,7 +323,7 @@ subroutine uslope(self,q,dq,nv)
   real(dp)::vmin,vmax,dfx,dfy,dfz,dff
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('mhd_mod::uslope', itimer=itimer)
+  call trace%begin ('mhd_mod::uslope', itimer=itimer)
   !
   l = self%mesh%lo
   u = self%mesh%uo
@@ -461,7 +463,7 @@ subroutine uslope(self,q,dq,nv)
      write(*,*)'Unknown slope type'
      stop
   endif
-  call trace_end (itimer)
+  call trace%end (itimer)
 end subroutine uslope
 
 !> =============================================================================
@@ -490,13 +492,14 @@ SUBROUTINE trace3d(self)
   real(dp) :: sAL0, sAR0, sBL0, sBR0, sCL0, sCR0
   real(dp) :: eff_gamma
   integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
   associate(q=>self%q,bf=>self%bf,dq=>self%dq,qm=>self%qm,qp=>self%qp, &
     dbf=>self%dbf,qRT=>self%qRT,qRB=>self%qRB,qLT=>self%qLT,qLB=>self%qLB, &
     Bx=>self%bf(:,:,:,1),By=>self%bf(:,:,:,2),Bz=>self%bf(:,:,:,3), &
     Ux=>self%q(:,:,:,2),Uy=>self%q(:,:,:,3),Uz=>self%q(:,:,:,4), &
     Ex=>self%Ex,Ey=>self%Ey,Ez=>self%Ez)
   !
-  call trace_begin ('mhd_mod::trace3d', itimer=itimer)
+  call trace%begin ('mhd_mod::trace3d', itimer=itimer)
   su0=0.0_dp; sv0=0.0_dp; sw0=0.0_dp
   !
   print*, self%ds, self%dtime
@@ -873,8 +876,8 @@ SUBROUTINE trace3d(self)
   qp(:,:,n,:,:)=qp(:,:,n-1,:,:)
   qm(:,:,n,:,:)=qm(:,:,n-1,:,:)
   !
-  end associate
   call trace%end (itimer)
+  end associate
 contains
   FUNCTION xdn(a) RESULT (b)
     real, dimension(:,:,:):: a
@@ -926,8 +929,10 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   real(dp), dimension(nx,self%nv):: qleft, qright, fgdnv
   real(dp), dimension(nx):: bn_mean
   real(dp):: dtds(3)
+  integer, save:: itimer=0
   associate (qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
+  call trace%begin ('mhd_mod::cmpflxm',itimer=itimer)
   dtds = self%dtime/self%mesh%d
   lb = self%mesh%li
   ub = self%mesh%uo
@@ -968,6 +973,7 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   end do
   end do
   end associate
+  call trace%end (itimer)
 end subroutine cmpflxm
 
 !> =============================================================================
@@ -985,8 +991,11 @@ subroutine cmp_mag_flx (self, lp1 ,lp2 ,lor ,bp1 , bp2, bor, dtds, emf, ngrid, n
   integer:: j, k, n, xdim, l
   real(dp),DIMENSION(ngrid,nvar)::qLL,qRL,qLR,qRR
   real(dp):: smallp
+  integer, save:: itimer=0
+  call trace%begin ('mhd_mod::cmp_mag_flx',itimer=itimer)
   associate (qRT=>self%qRT,qLT=>self%qLT,qRB=>self%qRB,qLB=>self%qLB)
   !-----------------------------------------------------------------------------
+
   xdim = lor - 1
   smallp = smallr*smallc**2
   !
@@ -1029,6 +1038,7 @@ subroutine cmp_mag_flx (self, lp1 ,lp2 ,lor ,bp1 , bp2, bor, dtds, emf, ngrid, n
       END DO
     END DO
   END DO
+  call trace%end (itimer)
   end associate
 END SUBROUTINE cmp_mag_flx
 
@@ -1037,15 +1047,17 @@ END SUBROUTINE cmp_mag_flx
 !> =============================================================================
 subroutine solver (self,qleft,qright,fgdnv)
   class(mhd_t):: self
-  integer:: ngrid
   real(dp),dimension(:,:):: qleft,qright,fgdnv
+  integer, save:: itimer=0
   !.............................................................................
+  call trace%begin ('mhd_mod::solver', itimer=itimer)
   if (self%riemann.eq.'hlld')then
     call rieman%hlld_vec(qleft,qright,fgdnv)
   else
     write(*,*)'unknown Riemann solver'
     stop
   end if
+  call trace%end (itimer)
 end subroutine solver
 
 !> =============================================================================
