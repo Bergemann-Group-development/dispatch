@@ -107,9 +107,10 @@ SUBROUTINE init (self)
           d (i,j,k) = rho_l
           if (self%kind(1:14) == 'zeus_mhd_patch' .or. self%kind(1:10) == 'stagger2e_') then
             e1(i,j,k) = P_l / (self%gamma - 1.0)
-          end if
-          if (self%kind(1:9) == 'stagger2_') then
+          else if (self%kind(1:9) == 'stagger2_') then
             s (i,j,k) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
+          else if (self%kind(1:6) == 'ramses')  then
+            e1(i,j,k) = P_l / (self%gamma - 1.0)
           end if
           px(i,j,k) = vx_l * rho_l
           py(i,j,k) = vy_l * rho_l
@@ -121,9 +122,10 @@ SUBROUTINE init (self)
           d (i,j,k) = rho_r
           if (self%kind(1:14) == 'zeus_mhd_patch' .or. self%kind(1:10) == 'stagger2e_') then
             e1(i,j,k) = P_r / (self%gamma - 1.0)
-          end if
-          if (self%kind(1:9) == 'stagger2_') then
+          else if (self%kind(1:9) == 'stagger2_') then
             s (i,j,k) = (log(P_r) - log(rho_r) * self%gamma) * rho_r / (self%gamma - 1.0)
+          else if (self%kind(1:6) == 'ramses')  then
+            e1(i,j,k) = P_r / (self%gamma - 1.0)
           end if
           px(i,j,k) = vx_r * rho_r
           py(i,j,k) = vy_r * rho_r
@@ -133,16 +135,22 @@ SUBROUTINE init (self)
           Bz(i,j,k) = Bz_r
         end if
         ! correction for staggered momentum
-        if (x >= xdisc .and. (x - m1%d) < xdisc) then
-          px(i,j,k) = (rho_l + rho_r) * (vx_l + vx_r) * 0.25
+        if (self%kind(1:14) == 'zeus_mhd_patch' .or. self%kind(1:7) == 'stagger') then
+          if (x >= xdisc .and. (x - m1%d) < xdisc) then
+            px(i,j,k) = (rho_l + rho_r) * (vx_l + vx_r) * 0.25
+          end if
         end if
       end do
       ! set total energy; it needs to be done after because it uses the `i+1` values.
       ! only applies to ZEUS and RAMSES solvers.
       if (self%kind(1:7) /= 'stagger') then
-        do i=m1%lb,m1%ub
-          rhov2 = (0.25 * (px(i,j,k) + px(i+1,j,k))**2 + py(i,j,k)**2 + pz(i,j,k)**2) &
-                / d(i,j,k) 
+        do i=m1%lb,m1%uo
+          if (self%kind(1:14) == 'zeus_mhd_patch') then
+            rhov2 = (0.25 * (px(i,j,k) + px(i+1,j,k))**2 + py(i,j,k)**2 + pz(i,j,k)**2) &
+                  / d(i,j,k) 
+          else if (self%kind(1:6) == 'ramses') then
+            rhov2 = (px(i,j,k)**2 + py(i,j,k)**2 + pz(i,j,k)**2) / d(i,j,k) 
+          end if
           B2 = 0.25 * (Bx(i,j,k) + Bx(i+1,j,k))**2 + By(i,j,k)**2 + Bz(i,j,k)**2
           et(i,j,k) = e1(i,j,k) + 0.5 * rhov2 + 0.5 * B2
         end do
@@ -157,8 +165,12 @@ SUBROUTINE init (self)
   call pboundary%condition(self%mem(:,:,:,:,self%it,1), self%mesh, .true.)
   call pboundary%condition(self%mem(:,:,:,:,self%it,1), self%mesh, .false.)
 
-  if (self%kind(1:6) == 'ramses') deallocate (e1)
-  nullify (d, e1, et, px, py, pz, Bx, By, Bz)
+  if (self%kind(1:6) == 'ramses') then
+    deallocate (e1)
+  else
+    nullify (e1)
+  end if
+  nullify (d, et, px, py, pz, Bx, By, Bz)
   call trace_end
 END SUBROUTINE init
 
