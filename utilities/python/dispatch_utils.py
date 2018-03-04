@@ -293,8 +293,11 @@ def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
                 f1=data[i,j,k  ]*(1-w[1])+data[i,j+1,k  ]*w[1]
                 f2=data[i,j,k+1]*(1-w[1])+data[i,j+1,k+1]*w[1]
                 f=f1*(1-w[2])+f2*w[2]
-                if iv==p.varidx['p1']:
-                    ss.append(p.xs[i])
+                if 'p1' in p.varidx:
+                    if iv==p.varidx['p1']:
+                        ss.append(p.xs[i])
+                    else:
+                        ss.append(p.x[i])                        
                 else:
                     ss.append(p.x[i])
                 ff.append(f)
@@ -305,8 +308,11 @@ def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
                 f1=data[i,j,k  ]*(1-w[0])+data[i+1,j,k  ]*w[0]
                 f2=data[i,j,k+1]*(1-w[0])+data[i+1,j,k+1]*w[0]
                 f=f1*(1-w[2])+f2*w[2]
-                if iv==p.varidx['p2']:
-                    ss.append(p.ys[j])
+                if 'p2' in p.varidx:
+                    if iv==p.varidx['p2']:
+                        ss.append(p.ys[j])
+                    else:
+                        ss.append(p.y[j])                        
                 else:
                     ss.append(p.y[j])
                 ff.append(f)
@@ -320,6 +326,8 @@ def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
                 if 'p3' in p.varidx:
                     if iv==p.varidx['p3']:
                         ss.append(p.zs[k])
+                    else:
+                        ss.append(p.z[k])                        
                 else:
                     ss.append(p.z[k])
                 ff.append(f)
@@ -352,8 +360,11 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
             f1=p.data[i,j,k  ,iv]*(1-w[1])+p.data[i,j+1,k,  iv]*w[1]
             f2=p.data[i,j,k+1,iv]*(1-w[1])+p.data[i,j+1,k+1,iv]*w[1]
             f=f1*(1-w[2])+f2*w[2]
-            if iv==p.varidx['p1']:
-                ss.append(p.xs[i])
+            if 'p1' in p.varidx:
+                if iv==p.varidx['p1']:
+                    ss.append(p.xs[i])
+                else:
+                    ss.append(p.x[i])
             else:
                 ss.append(p.x[i])
             ff.append(f)
@@ -364,8 +375,11 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
             f1=p.data[i,j,k  ,iv]*(1-w[0])+p.data[i+1,j,k  ,iv]*w[0]
             f2=p.data[i,j,k+1,iv]*(1-w[0])+p.data[i+1,j,k+1,iv]*w[0]
             f=f1*(1-w[2])+f2*w[2]
-            if iv==p.varidx['p2']:
-                ss.append(p.ys[j])
+            if 'p2' in p.varidx:
+                if iv==p.varidx['p2']:
+                    ss.append(p.ys[j])
+                else:
+                    ss.append(p.y[j])
             else:
                 ss.append(p.y[j])
             ff.append(f)
@@ -376,8 +390,11 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
             f1=p.data[i,j  ,k,iv]*(1-w[0])+p.data[i+1,j  ,k,iv]*w[0]
             f2=p.data[i,j+1,k,iv]*(1-w[0])+p.data[i+1,j+1,k,iv]*w[0]
             f=f1*(1-w[1])+f2*w[1]
-            if iv==p.varidx['p3']:
-                ss.append(p.zs[k])
+            if 'p3' in p.varidx:
+                if iv==p.varidx['p3']:
+                    ss.append(p.zs[k])
+                else:
+                    ss.append(p.z[k])
             else:
                 ss.append(p.z[k])
             ff.append(f)
@@ -554,7 +571,7 @@ class shell_values2:
 
 def mass_fluxes(pp,radius=100,nds=2):
     ''' return the mass fluxes at given radius '''
-    s=shell_data(pp,radius=radius,nds=nds)
+    s=shell_values(pp,radius=radius,nds=nds)
     p=pp[0]
     ix=p.varidx['p1']
     iy=p.varidx['p2']

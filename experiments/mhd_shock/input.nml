@@ -24,9 +24,9 @@
 /
 
 &patch_params
-  courant=0.75
+  courant=0.2
   n=125,1,1
-  ng=3,1,1
+  ng=2,1,1
   nt=3
   no_mans_land=f
 /
@@ -35,7 +35,7 @@
 /
 
 &timestep_params
-  time_order=0
+  time_order=2
 /
 
 &refine_params
@@ -65,7 +65,7 @@
  slope_type=2
  smallr=1e-4
  smallc=5e-1
- riemann='hllc'
+ riemann='hlld'
  do_isothermal=f
 /
 

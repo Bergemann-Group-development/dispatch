@@ -67,14 +67,15 @@ SUBROUTINE initial_conditions (patch)
   class(mesh_t), pointer :: m1, m2, m3
   integer :: i1, i2, i3
   real(4) :: z, r, phi, zeta_offset
-  real(8) :: sigma0
+  real(8) :: sigma0, eint
   real(8), dimension(:), allocatable :: vkep
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_mod::initial_conditions')
+  call trace%begin('experiment_mod::initial_conditions')
   
   m1 => patch%mesh(1)
   m2 => patch%mesh(2)
   m3 => patch%mesh(3)
+  associate(q=>patch%mem(:,:,:,:,patch%it,1),idx=>patch%idx)
 
   ! calculate the Keplerian velocity
   allocate(vkep(m2%gn))
@@ -92,27 +93,36 @@ SUBROUTINE initial_conditions (patch)
       r = m2%centre_nat + patch%mesh(2)%r(i2)
       do i1=m1%lb,m1%ub
         z = m1%centre_nat + patch%mesh(1)%r(i1)
-        patch%d%q(i1,i2,i3) = sigma0
-        patch%e%q(i1,i2,i3) = (experiment_params%aspect_rat * vkep(i2))**2 &
-                             * sigma0 / (patch%gamma - 1.0)
-        patch%s%x%q(i1,i2,i3) = 0.0
-        patch%s%y%q(i1,i2,i3) = 0.0
-        patch%s%z%q(i1,i2,i3) = vkep(i2) * sigma0
-        patch%b%x%q(i1,i2,i3) = 0.0
-        patch%b%y%q(i1,i2,i3) = 0.0
-        patch%b%z%q(i1,i2,i3) = 0.0
+        q(i1,i2,i3,idx%d) = sigma0
+        eint = (experiment_params%aspect_rat * vkep(i2))**2 * sigma0 / (patch%gamma - 1.0)
+        if (patch%kind(1:14) == 'zeus_mhd_patch' .or. patch%kind(1:9) == 'stagger2e') then
+          q(i1,i2,i3,idx%e) = eint
+        end if
+        q(i1,i2,i3,idx%px) = 0.0
+        q(i1,i2,i3,idx%py) = 0.0
+        q(i1,i2,i3,idx%pz) = vkep(i2) * sigma0
+        if (size(patch%mem,4) > idx%bx) then
+          q(i1,i2,i3,idx%bx) = 0.0
+          q(i1,i2,i3,idx%by) = 0.0
+          q(i1,i2,i3,idx%bz) = 0.0
+        end if
         ! initialise total energy
-        patch%et%q(i1,i2,i3) = patch%e%q(i1,i2,i3) + 0.5 * 0.25 * (vkep(i2)+vkep(i2+1))**2 * sigma0
+        if (patch%kind(1:14) == 'zeus_mhd_patch' .or. patch%kind(1:6) == 'ramses') then
+          q(i1,i2,i3,idx%et) = eint + 0.5 * 0.25 * (vkep(i2)+vkep(i2+1))**2 * sigma0
+        end if
         ! the ZEUS module stores the angular momentum rather than the linear momentum
-        patch%s%y%q(i1,i2,i3) = patch%s%y%q(i1,i2,i3) * m1%h2c(i1)
-        patch%s%z%q(i1,i2,i3) = patch%s%z%q(i1,i2,i3) * m1%h31c(i1) * m2%h32c(i2)
+        if (patch%kind(1:14) == 'zeus_mhd_patch') then
+          q(i1,i2,i3,idx%py) = q(i1,i2,i3,idx%py) * m1%h2c(i1)
+          q(i1,i2,i3,idx%pz) = q(i1,i2,i3,idx%pz) * m1%h31c(i1) * m2%h32c(i2)
+        end if
       end do
     end do
   end do
 
   deallocate (vkep)
+  end associate
   nullify (m1, m2, m3)
-  call trace_end
+  call trace%end
 END SUBROUTINE initial_conditions
 
 END MODULE experiment_mod

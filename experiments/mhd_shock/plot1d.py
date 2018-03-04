@@ -70,12 +70,12 @@ if __name__ == "__main__":
     gamma = 5.0/3.0
     datadir = './data/'
     prefix = ''
-    ptimes = [0.0,0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45]
+    ptimes = [0.0,0.40]
     t_eps = 1e-3
     pxsize = [-0.5,2.5]
-    pltvar = [  'd', 'e1', 'v2', 'b2', 'et', 'v1']
-    pvmin  = [  0.0,  0.0, -1.0, -0.1,  0.0, -0.1]
-    pvmax  = [  1.1,  1.7,  0.1,  1.1,  2.6,  1.1]
+    pltvar = [  'd', 'e1', 'p2', 'b2', 'b1', 'p1']
+    pvmin  = [  0.0,  0.0, -0.5, -0.1,  0.0, -0.1]
+    pvmax  = [  1.1,  1.7,  0.1,  1.1,  2.0,  1.0]
     clog   = [    0,    0,    0,    0,    0,    0]
     #pltvar = [  'd', 'e1', 'v2', 'b2',  's', 'v1']
     #pvmin  = [  0.0,  0.0, -1.0, -0.1,  0.0, -0.1]
@@ -87,6 +87,7 @@ if __name__ == "__main__":
     nrows, ncols = 2,3
     showgrids = True
     output_png = False
+    #ThisPatch = StaggerMHDPatch
     ThisPatch = ZeusMHDPatch
     ColMap = cm.RdBu_r
     verbose = False
@@ -251,6 +252,8 @@ if __name__ == "__main__":
                                 * np.exp(p.data[iindex,jindex,kindex,p.varidx['s']]*(gamma-1.0)
                                        / p.data[iindex,jindex,kindex,p.varidx['d']])
                                 / (gamma-1.0) )
+                    elif p.varidx.has_key('e'):
+                        var = p.data[iindex,jindex,kindex,p.varidx['e']]
                     else:
                         var = p.data[iindex,jindex,kindex,p.varidx[pltvar[ii]]]
                 else:
