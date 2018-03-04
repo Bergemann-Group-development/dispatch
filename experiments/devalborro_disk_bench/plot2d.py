@@ -18,6 +18,20 @@ def dump_min_max(p):
     for q,v in zip(p.varidx.iterkeys(),p.varidx.itervalues()):
         print "{0}: min = {1}; max = {2}".format(q,p.data[:,:,:,v].min(),p.data[:,:,:,v].max())
 
+def set_variable_name(v, passthrough=False):
+    """
+    Given a variable name, convert it to its "pretty-print" form (e.g., Greek
+    letter) if `passthrough` is `False`.
+    Variables must be added by hand.
+
+    """
+
+    ppv = v
+    if v == 'd':
+        ppv = r"$\rho$"
+
+    return ppv
+
 if __name__ == "__main__":
 
     # set font style
@@ -27,31 +41,40 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     gamma = 1.0001
-    datadir = './data/input_1Mj_check/'
+    datadir = './data/'
     prefix = ''
-    ptimes = [62.83]
-    #ptimes = 0.629*np.arange(0,2)
+    ptimes = [0.0,6.28,62.8]
     t_eps = 1e-3
-    #pxsize = [-2.6, 2.6]
-    #pysize = [-2.6, 2.6]
-    pxsize = [0.39,2.6]
+    pxsize = [0.39,2.51]
     pysize = [-3.2,3.2]
-    #pxsize = [0.90,1.10]
-    #pysize = [-0.10,0.10]
-    pltvar = ['d ']
-    cmin   = [3e-5]
-    cmax   = [8e-3]
-    clog   = [  1]
-    slicedir = 1  # given with respect to the *root* grid (typically patch id = 1)
+    xscaling = None
+    xunits = None
+    yunits = None
+    pltvar = ['d']
+    cmin   = [5.5e-4]
+    cmax   = [7.5e-4]
+    clog   = [   0]
+    vecvar = None
+    ivfreq = 1. # at the level of the root patch
+    refine_ratio = 1
+    vscaling = [None]
+    vunits = None
+    vecscaling = 1.0
+    vecunits = None
+    vpscale = 1.0
+    global_llc = [-0.4,-np.pi, 0.0]
+    slicedir = 1 # given with respect to the *root* grid (typically patch id = 1)
     sliceloc = 0.0 # coord. of slice to be taken
+    sliceeps = 1.0e-4
     showgrids = True
-    showgridno = True
+    showgridno = False
     output_png = False
     truecoords = True
     ThisPatch = ZeusMHDPatch
     ColMap = cm.RdBu_r
     verbose = False
-    skipped = []
+    suppress_title = False
+    skipped = [] # skip patches entirely covered by others (manual for now)
 
     m1 = 0 # counter 1
     root = None
@@ -60,9 +83,27 @@ if __name__ == "__main__":
         print "Try setting `output_png` to True."
         from sys import exit
         exit(1)
+
+    dirs = os.listdir(datadir)
+    dirs = [ff for ff in dirs if not ff.endswith('.log')]
+    dirs = [ff for ff in dirs if not ff.endswith('.nq')]
+    files = [dd+'/'+ff for dd in dirs for ff in fnmatch.filter(os.listdir(datadir+'/'+dd),'*.txt')]
+
+    if xscaling is not None:
+        pxsize = [px * xscaling for px in pxsize]
+        pysize = [py * xscaling for py in pysize]
+    sxunits, syunits = "", ""
+    if xscaling is not None and xunits is not None:
+        sxunits = " [" + xunits + "]"
+    if xscaling is not None and yunits is not None:
+        syunits = " [" + yunits + "]"
+
+    if slicedir < 1 or slicedir > 3:
+        raise Exception("Invalid slice direction = {:d}".format(slicedir))
+
     for pt in ptimes:
 
-        cfig = plt.figure("t = {0:.3e}".format(pt),facecolor='w',figsize=(7.0,6.0))
+        cfig = plt.figure("t = {0:.3e}".format(pt),facecolor='w',figsize=(8.5,7.5))
         cfig.clf()
         cax = cfig.add_subplot(1,1,1)
         cax.axis(xmin=pxsize[0],xmax=pxsize[1],ymin=pysize[0],ymax=pysize[1])
@@ -72,7 +113,6 @@ if __name__ == "__main__":
         # ensure the axes remain visible by putting them at the "top"
         cax.set_zorder(99.0)
 
-        files = fnmatch.filter(os.listdir(datadir), prefix + "*.txt")
         patches = []
         times = []
         # in order to determine which patches have output at the desired time,
@@ -99,7 +139,9 @@ if __name__ == "__main__":
             continue
 
         qmin, qmax = 1.0e99, -1.0e99
+        vmagmax_global = 0.0
         m2 = 0 # counter 2
+        pused = []
         for p in patches:
             if p.kind == 'immersed_boundary_t':
                 circle = mplpatches.Circle((p.pos[0],p.pos[1]),radius=pradius,color='k')
@@ -114,92 +156,158 @@ if __name__ == "__main__":
                 pass
             if (root is None) or (root.id > p.id):
                 root = p
+            pused.append(p)
             if truecoords:
                 if root.mesh_type == 'cylindrical':
                     if slicedir == 1:
-                        cax.set_xlabel(r'$r$')
-                        cax.set_ylabel(r'$\phi$')
+                        cax.set_xlabel(r'$r$' + sxunits)
+                        cax.set_ylabel(r'$\phi$' + syunits)
                     elif slicedir == 2:
-                        cax.set_xlabel(r'$z$')
-                        cax.set_ylabel(r'$\phi$')
+                        cax.set_xlabel(r'$z$' + sxunits)
+                        cax.set_ylabel(r'$\phi$' + syunits)
                     elif slicedir == 3:
-                        cax.set_xlabel(r'$r$')
-                        cax.set_ylabel(r'$z$')
+                        cax.set_xlabel(r'$r$' + sxunits)
+                        cax.set_ylabel(r'$z$' + syunits)
                 elif root.mesh_type == 'spherical':
                     if slicedir == 1:
-                        cax.set_xlabel(r'$\theta$')
-                        cax.set_ylabel(r'$\phi$')
+                        cax.set_xlabel(r'$\theta$' + sxunits)
+                        cax.set_ylabel(r'$\phi$' + syunits)
                     elif slicedir == 2:
-                        cax.set_xlabel(r'$r$')
-                        cax.set_ylabel(r'$\phi$')
+                        cax.set_xlabel(r'$r$' + sxunits)
+                        cax.set_ylabel(r'$\phi$' + syunits)
                     elif slicedir == 3:
-                        cax.set_xlabel(r'$r$')
-                        cax.set_ylabel(r'$\theta$')
+                        cax.set_xlabel(r'$r$' + sxunits)
+                        cax.set_ylabel(r'$\theta$' + syunits)
+                elif root.mesh_type == 'Cartesian':
+                    if slicedir == 1:
+                        cax.set_xlabel(r'$y$' + sxunits)
+                        cax.set_ylabel(r'$z$' + syunits)
+                    elif slicedir == 2:
+                        cax.set_xlabel(r'$x$' + sxunits)
+                        cax.set_ylabel(r'$z$' + syunits)
+                    elif slicedir == 3:
+                        cax.set_xlabel(r'$x$' + sxunits)
+                        cax.set_ylabel(r'$y$' + syunits)
             else:
                 if slicedir == 1:
-                    cax.set_xlabel(r'$y$')
-                    cax.set_ylabel(r'$z$')
+                    cax.set_xlabel(r'$y$' + sxunits)
+                    cax.set_ylabel(r'$z$' + syunits)
                 elif slicedir == 2:
-                    cax.set_xlabel(r'$x$')
-                    cax.set_ylabel(r'$z$')
+                    cax.set_xlabel(r'$x$' + sxunits)
+                    cax.set_ylabel(r'$z$' + syunits)
                 elif slicedir == 3:
-                    cax.set_xlabel(r'$x$')
-                    cax.set_ylabel(r'$y$')
+                    cax.set_xlabel(r'$x$' + sxunits)
+                    cax.set_ylabel(r'$y$' + syunits)
 
             print "Data:", p.filename, p.time, pt
-            times.append(p.time)
 
             x_i = dispatch_grid(p)
             gf = GeometricFactors()
             gf.init_grid(p, x_i)
-            xp, yp, cut_mask = plotting_grid(root, p, x_i, slicedir, sliceloc,
-                                             truecoords=truecoords,sliceeps=0.1)
+            xp, yp, cut_mask = plotting_grid(p, x_i, slicedir, sliceloc,
+                                             truecoords=truecoords,sliceeps=sliceeps)
+            ivfreql = max(int(ivfreq * refine_ratio**p.level), 1)
+            if xscaling is not None:
+                xp *= xscaling
+                yp *= xscaling
             # ghost zones *can* now be included (or not)
             ione = (0,1)[p.n[0] > 1]
             jone = (0,1)[p.n[1] > 1]
             kone = (0,1)[p.n[2] > 1]
             if np.any(p.n != p.nwrite):
-                iindex = slice(p.nghost[0] - ione,p.n[0] + p.nghost[0] + ione)
-                jindex = slice(p.nghost[1] - jone,p.n[1] + p.nghost[1] + jone)
-                kindex = slice(p.nghost[2] - kone,p.n[2] + p.nghost[2] + kone)
+                iindex = slice(p.nghost[0],p.n[0] + p.nghost[0])
+                jindex = slice(p.nghost[1],p.n[1] + p.nghost[1])
+                kindex = slice(p.nghost[2],p.n[2] + p.nghost[2])
             else:
                 iindex = slice(0,p.n[0])
                 jindex = slice(0,p.n[1])
                 kindex = slice(0,p.n[2])
 
+            act_slice = 0.0
+            if slicedir == 1 and ione > 0:
+                diff = np.abs(x_i[0] - sliceloc)
+                iindex, = np.where(diff < sliceeps)
+                iindex = iindex[np.logical_and(iindex >= p.li[0], iindex < p.ui[0])]
+                if len(iindex) == 0: continue # skip patch
+                act_slice = x_i[0][iindex.min()]
+                iindex  = slice(iindex.min(),iindex.max()+1)
+            elif slicedir == 2 and jone > 0:
+                diff = np.abs(x_i[1] - sliceloc)
+                jindex, = np.where(diff < sliceeps)
+                jindex = jindex[np.logical_and(jindex >= p.li[1], jindex < p.ui[1])]
+                if len(jindex) == 0: continue # skip patch
+                act_slice = x_i[1][jindex.min()]
+                jindex  = slice(jindex.min(),jindex.max()+1)
+            elif slicedir == 3 and kone > 0:
+                diff = np.abs(x_i[2] - sliceloc)
+                kindex, = np.where(diff < sliceeps)
+                kindex = kindex[np.logical_and(kindex >= p.li[2], kindex < p.ui[2])]
+                if len(kindex) == 0: continue # skip patch
+                act_slice = x_i[2][kindex.min()]
+                kindex  = slice(kindex.min(),kindex.max()+1)
+
+            # establish integer offset for uniform plotting of vectors (across multiple patches)
+            fvoffset = np.ceil((p.llc - global_llc)/p.dx)
+            ivoffset = [(ivfreql - (int(o)) % ivfreql) % ivfreql for o in fvoffset]
+            print "id: ", p.id, "lvl: ", p.level," VEC FREQ: ", ivfreql, "; ivoffset: ", ivoffset
+            viindex = slice(iindex.start+ivoffset[0],min(iindex.stop,p.ui[0]),ivfreql)
+            vjindex = slice(iindex.start+ivoffset[1],min(jindex.stop,p.ui[1]),ivfreql)
+            vkindex = slice(kindex.start+ivoffset[2],min(kindex.stop,p.ui[2]),ivfreql)
+            if slicedir == 1 or ione == 0:
+                viindex = iindex
+            elif slicedir == 2 or jone == 0:
+                vjindex = jindex
+            elif slicedir == 3 or kone == 0:
+                vkindex = kindex
+
+            times.append(p.time)
+
             if pltvar[0] == 'v1':
-                var = p.data[iindex,jindex,kindex,p.varidx['s1']]
+                var = p.data[iindex,jindex,kindex,p.varidx['p1']]
                 var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
             elif pltvar[0] == 'v2':
-                var = p.data[iindex,jindex,kindex,p.varidx['s2']]
+                var = p.data[iindex,jindex,kindex,p.varidx['p2']]
                 var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
                 var = var / gf['h2c'][iindex,np.newaxis,np.newaxis]
                 if p.mesh_type == 'spherical':
                     var = var / x_i[0][iindex,np.newaxis,np.newaxis]
             elif pltvar[0] == 'v3':
-                var = p.data[iindex,jindex,kindex,p.varidx['s3']]
+                var = p.data[iindex,jindex,kindex,p.varidx['p3']]
                 var = var / p.data[iindex,jindex,kindex,p.varidx['d']]
                 var = ( var / gf['h31c'][iindex,np.newaxis,np.newaxis] / gf['h32c'][np.newaxis,jindex,np.newaxis] )
             elif pltvar[0] == 'divb':
                 var, sumd, normmax = divergence(p, (p.varidx['b1'],p.varidx['b2'],p.varidx['b3']), gf)
                 var = var[iindex,jindex,kindex]
-            elif pltvar[0] == 'dts':
-                var = (np.ones_like(p.data[:,:,:,0]) * p.dt)[iindex,jindex,kindex]
             else:
                 var = p.data[iindex,jindex,kindex,p.varidx[pltvar[0]]]
+            dmass = p.data[p.li[0]-1:p.ui[0],p.li[1]-1:p.ui[1],p.li[2]-1:p.ui[2],p.varidx['d']] * p.ds.prod()
+            mass = np.sum(dmass)
 
             # record global max. and min. of data
             qmin = min(qmin, np.nanmin(var))
             qmax = max(qmax, np.nanmax(var))
 
             # mask data for cutting
-            var = np.ma.array(var,mask=cut_mask)
-            cpltvar = pltvar[0]
-            print cpltvar, ": ", var.min(), var.max(), var.shape
+            if cut_mask.ndim == 0:
+                var = np.ma.array(var,mask=cut_mask)
+            else:
+                var = np.ma.array(var,mask=cut_mask[iindex,jindex,kindex])
+            cpltvar = set_variable_name(pltvar[0],passthrough=False)
+            if vunits is not None:
+                cpltvar = cpltvar + " [" + vunits[0] + "]"
+            print cpltvar, ": ", var.min(), var.max(), var.shape, "; M = ", mass
+            print iindex,jindex,kindex
+            print viindex,vjindex,vkindex
             # Note that these values, in general, will differ between patches.
             if cmin[0] == 0.0 and cmax[0] == 0.0:
-                cmin[0] = qmin - 0.001 * qmin
-                cmax[0] = qmax + 0.001 * qmax
+                cmin[0] = qmin
+                cmax[0] = qmax
+
+            if vscaling[0] is not None:
+                var = var * vscaling[0]
+                if m1 == 0 and m2 == 0:
+                    cmin[0] = cmin[0] * vscaling[0]
+                    cmax[0] = cmax[0] * vscaling[0]
             if clog[0] == 1:
                 var = np.log10(var)
                 cpltvar = r'log ' + cpltvar
@@ -211,29 +319,61 @@ if __name__ == "__main__":
             conf = cax.contourf(xp[iindex,jindex,kindex].squeeze(),yp[iindex,jindex,kindex].squeeze(),
                                 var.squeeze(),levels,cmap=ColMap,extend='both',zorder=-min(p.dx))
 
+            if vecvar is not None and vecvar != '':
+                if (viindex.step < viindex.stop) and (vjindex.step < vjindex.stop) and (vkindex.step < vkindex.stop):
+                    if vecvar[0][0] == 'v':
+                        vvar1 = p.data[viindex,vjindex,vkindex,p.varidx['p1']] / p.data[viindex,vjindex,vkindex,p.varidx['d']]
+                        vvar2 = p.data[viindex,vjindex,vkindex,p.varidx['p2']] / p.data[viindex,vjindex,vkindex,p.varidx['d']]
+                    elif vecvar[0][0] == 'p':
+                        vvar1 = p.data[viindex,vjindex,vkindex,p.varidx[vecvar[0]]]
+                        vvar2 = p.data[viindex,vjindex,vkindex,p.varidx[vecvar[1]]]
+                    elif vecvar[0][0] == 'b':
+                        vvar1 = p.data[viindex,vjindex,vkindex,p.varidx[vecvar[0]]]
+                        vvar2 = p.data[viindex,vjindex,vkindex,p.varidx[vecvar[1]]]
+                    vmagmax = (np.sqrt(vvar1**2 + vvar2**2)).max()
+                    vmagmax_global = max(vmagmax_global, vmagmax)
+                    print "Max. vector magnitude: ",vmagmax
+                    quiv = cax.quiver(xp[viindex,vjindex,vkindex].squeeze(),
+                                    yp[viindex,vjindex,vkindex].squeeze(),
+                                    vvar1.squeeze(),vvar2.squeeze(),scale_units='width',scale=vpscale,
+                                    color='k',zorder=-min(p.dx)*0.25,units='dots',width=1.0)
+
             if (showgrids or pltvar[0] == 'gs'):
-                edges = patch_grid_edges(p,slicedir,truecoords=truecoords)
+                if xscaling is not None:
+                    edges = patch_grid_edges(p,slicedir,scaling=xscaling,truecoords=truecoords)
+                else:
+                    edges = patch_grid_edges(p,slicedir,truecoords=truecoords)
                 cax.add_patch(edges)
                 #for c in conf.collections:
                 #    c.set_clip_path(edges)
 
             # annotate patches with their ID (if desired)
             if showgridno:
-                offset = tuple([3*x for x in p.nghost])
-                gn_xpos = xp[iindex,jindex,kindex][offset]
-                gn_ypos = yp[iindex,jindex,kindex][offset]
+                offset = [2*x for x in p.nghost]
+                offset[slicedir-1] = 0
+                gn_xpos = xp[iindex,jindex,kindex][tuple(offset)]
+                gn_ypos = yp[iindex,jindex,kindex][tuple(offset)]
                 cax.annotate(str(p.id),(gn_xpos,gn_ypos),color='k',weight='extra bold',
-                            fontsize=13*root.level/p.level,zorder=min(p.dx))
+                            fontsize=13,zorder=min(p.dx))
 
             m2 += 1
 
         cbar = plt.colorbar(conf, ax=cax, fraction=0.03, pad=0.03)
         cbar.ax.tick_params(axis='both',which='major',labelsize=16)
         cbar.ax.annotate(cpltvar,xy=(-0.10,-0.06),fontsize=14,xycoords='axes fraction')
+        if vecvar is not None and vecvar != '':
+            quivlength = 1.0
+            exponent = int(np.log10(quivlength*vecscaling))
+            prefactor = quivlength*vecscaling / 10**exponent
+            fmt_string = "{0:4.3g}".format(prefactor) + r"$\times 10^" + "{0:0d}$ ".format(exponent) + vecunits
+            quivkey = cax.quiverkey(quiv,1.11,0.02,quivlength,fmt_string,
+                                    coordinates='axes',labelpos='S',fontproperties={'size':12})
 
         avg_time = np.mean(times)
-        cfig.suptitle(r"$\langle t \rangle$ = {0:.3e}".format(avg_time),fontsize=16)
+        if not suppress_title:
+            cfig.suptitle(r"$\langle t \rangle$ = {0:.3e}; slice = {1:.3e}".format(avg_time,act_slice),fontsize=16)
         cfig.tight_layout()
+        cfig.subplots_adjust(top=0.95,bottom=0.095,left=0.10,right=0.89)
 
         if output_png:
             currfile = "p{0:04d}.png".format(m1)
@@ -245,4 +385,5 @@ if __name__ == "__main__":
 
         m1 += 1
         print "qmin, qmax: ", qmin, qmax
+        print "vmagmax: ", vmagmax_global
         print '================'
