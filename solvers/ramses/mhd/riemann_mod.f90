@@ -17,25 +17,25 @@ module riemann_mod
 contains
 
 !> =============================================================================
-SUBROUTINE hlld_vec(qleft,qright,fgdnv)
+SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub)
   ! HLLD Riemann solver (Miyoshi & Kusano, 2005, JCP, 208, 315)
   IMPLICIT NONE
   REAL(dp),DIMENSION(:,:), target ::qleft,qright
   REAL(dp),DIMENSION(:,:)         ::fgdnv
-  REAL(dp),DIMENSION(size(qleft,1))::SL,SR,SAL,SAR,A,sgnm
+  REAL(dp),DIMENSION(ub-lb+1)::SL,SR,SAL,SAR,A,sgnm
   REAL(dp)::entho
   REAL(dp),DIMENSION(:), pointer ::rl,pl,ul,vl,wl,cl,bl
   REAL(dp),DIMENSION(:), pointer ::rr,pr,ur,vr,wr,cr,br
-  REAL(dp),DIMENSION(size(qleft,1))::ecinl,emagl,etotl,ptotl,vdotbl,el
-  REAL(dp),DIMENSION(size(qleft,1))::ecinr,emagr,etotr,ptotr,vdotbr,er
-  REAL(dp),DIMENSION(size(qleft,1))::cfastl,calfvenl,rcl,rstarl,vstarl,wstarl,bstarl,cstarl,vdotbstarl
-  REAL(dp),DIMENSION(size(qleft,1))::cfastr,calfvenr,rcr,rstarr,vstarr,wstarr,bstarr,cstarr,vdotbstarr
-  REAL(dp),DIMENSION(size(qleft,1))::sqrrstarl,etotstarl,etotstarstarl
-  REAL(dp),DIMENSION(size(qleft,1))::sqrrstarr,etotstarr,etotstarstarr
-  REAL(dp),DIMENSION(size(qleft,1))::ustar,ptotstar,estar,vstarstar,wstarstar,bstarstar,cstarstar,vdotbstarstar
-  REAL(dp),DIMENSION(size(qleft,1))::ro,uo,vo,wo,bo,co,ptoto,etoto,vdotbo
-  REAL(dp),DIMENSION(size(qleft,1))::lim,emago
-  INTEGER ::ivar,i
+  REAL(dp),DIMENSION(ub-lb+1)::ecinl,emagl,etotl,ptotl,vdotbl,el
+  REAL(dp),DIMENSION(ub-lb+1)::ecinr,emagr,etotr,ptotr,vdotbr,er
+  REAL(dp),DIMENSION(ub-lb+1)::cfastl,calfvenl,rcl,rstarl,vstarl,wstarl,bstarl,cstarl,vdotbstarl
+  REAL(dp),DIMENSION(ub-lb+1)::cfastr,calfvenr,rcr,rstarr,vstarr,wstarr,bstarr,cstarr,vdotbstarr
+  REAL(dp),DIMENSION(ub-lb+1)::sqrrstarl,etotstarl,etotstarstarl
+  REAL(dp),DIMENSION(ub-lb+1)::sqrrstarr,etotstarr,etotstarstarr
+  REAL(dp),DIMENSION(ub-lb+1)::ustar,ptotstar,estar,vstarstar,wstarstar,bstarstar,cstarstar,vdotbstarstar
+  REAL(dp),DIMENSION(ub-lb+1)::ro,uo,vo,wo,bo,co,ptoto,etoto,vdotbo
+  REAL(dp),DIMENSION(ub-lb+1)::lim,emago
+  INTEGER ::ivar,i,lb,ub
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('riemann_mod::hlld_vec', itimer=itimer)
@@ -43,13 +43,13 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv)
   entho = one/max(gamma-one,1e-6)
   !
   ! Enforce continuity of normal component
-  A=half*(qleft(:,4)+qright(:,4))
+  A=half*(qleft(lb:ub,4)+qright(lb:ub,4))
   sgnm=sign(one,A)
-  qleft(:,4)=A; qright(:,4)=A
+  qleft(lb:ub,4)=A; qright(lb:ub,4)=A
   !
   ! Left variables
-  rl=>qleft(:,1); Pl=>qleft(:,2); ul=>qleft(:,3)
-  vl=>qleft(:,5); Bl=>qleft(:,6); wl=>qleft(:,7); Cl=>qleft(:,8)
+  rl=>qleft(lb:ub,1); Pl=>qleft(lb:ub,2); ul=>qleft(lb:ub,3)
+  vl=>qleft(lb:ub,5); Bl=>qleft(lb:ub,6); wl=>qleft(lb:ub,7); Cl=>qleft(lb:ub,8)
   ecinl = half*(ul*ul+vl*vl+wl*wl)*rl
   emagl = half*(A*A+Bl*Bl+Cl*Cl)
   etotl = Pl*entho+ecinl+emagl
@@ -57,8 +57,8 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv)
   vdotBl= ul*A+vl*Bl+wl*cl
   !
   ! Right variables
-  rr=>qright(:,1); Pr=>qright(:,2); ur=>qright(:,3)
-  vr=>qright(:,5); Br=>qright(:,6); wr=>qright(:,7); Cr=>qright(:,8)
+  rr=>qright(lb:ub,1); Pr=>qright(lb:ub,2); ur=>qright(lb:ub,3)
+  vr=>qright(lb:ub,5); Br=>qright(lb:ub,6); wr=>qright(lb:ub,7); Cr=>qright(lb:ub,8)
   ecinr = half*(ur*ur+vr*vr+wr*wr)*rr
   emagr = half*(A*A+Br*Br+Cr*Cr)
   etotr = Pr*entho+ecinr+emagr
@@ -66,8 +66,8 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv)
   vdotBr= ur*A+vr*Br+wr*Cr
   !
   ! Find the largest eigenvalues in the normal direction to the interface
-  CALL find_speed_fast_vec(qleft ,cfastl)
-  CALL find_speed_fast_vec(qright,cfastr)
+  CALL find_speed_fast_vec(qleft ,cfastl,lb,ub)
+  CALL find_speed_fast_vec(qright,cfastr,lb,ub)
   !
   ! Compute HLL wave speed
   SL=min(ul,ur)-max(cfastl,cfastr)
@@ -138,7 +138,8 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv)
   etotstarstarr=etotstarr+sgnm*sqrrstarr*(vdotBstarr-vdotBstarstar)
   !
   ! Sample the solution at x/t=0
-  do i=1,size(qleft,1)
+!  do i=1,size(qleft,1)
+  do i=1,ub-lb+1
     if(SL(i)>zero)then
        ro(i)=rl(i)
        uo(i)=ul(i)
@@ -205,14 +206,18 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv)
   emago=half*(A*A+Bo*Bo+Co*Co)
   !
   ! Compute the Godunov flux
-  fgdnv(:,1) = ro*uo
-  fgdnv(:,2) = (etoto+Ptoto)*uo-A*vdotBo
-  fgdnv(:,3) = ro*uo*uo+Ptoto+emago*(lim-1.0_dp)-A*A*lim
-  fgdnv(:,4) = zero
-  fgdnv(:,5) = ro*uo*vo-A*Bo*lim
-  fgdnv(:,6) = Bo*uo-A*vo
-  fgdnv(:,7) = ro*uo*wo-A*Co*lim
-  fgdnv(:,8) = Co*uo-A*wo
+  fgdnv(:,:)          = 0d0
+
+  fgdnv(lb:ub,1) = ro*uo
+  fgdnv(lb:ub,2) = (etoto+Ptoto)*uo-A*vdotBo
+  fgdnv(lb:ub,3) = ro*uo*uo+Ptoto+emago*(lim-1.0_dp)-A*A*lim
+  fgdnv(lb:ub,4) = zero
+  fgdnv(lb:ub,5) = ro*uo*vo-A*Bo*lim
+  fgdnv(lb:ub,6) = Bo*uo-A*vo
+  fgdnv(lb:ub,7) = ro*uo*wo-A*Co*lim
+  fgdnv(lb:ub,8) = Co*uo-A*wo
+!  print*,'minval(fgdnv),maxval(fgdnv)',minval(fgdnv),maxval(fgdnv)
+!  print*,'minloc(fgdnv),maxloc(fgdnv)',minloc(fgdnv),maxloc(fgdnv)
   do ivar = 9,nvar
      where(fgdnv(:,1)>0)
         fgdnv(:,ivar) = fgdnv(:,1)*qleft (:,ivar)
@@ -224,21 +229,23 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv)
   call trace%end (itimer)
 contains
 
-SUBROUTINE find_speed_fast_vec(qvar,vel_info)
+SUBROUTINE find_speed_fast_vec(qvar,vel_info,lb,ub)
   !! calculate the fast magnetosonic velocity
   !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal,
   !! Vtransverse1,Btransverse1,Vtransverse2,Btransverse2
   IMPLICIT NONE
+  integer :: lb, ub
   REAL(dp), DIMENSION(:,:), target:: qvar
   REAL(dp), DIMENSION(:)  :: vel_info
   REAL(dp), DIMENSION(:), pointer :: d,P,u,v,w,A,B,C
-  REAL(dp), DIMENSION(size(qleft,1))  :: B2,c2,d2,cf
+  REAL(dp), DIMENSION(ub-lb+1)  :: B2,c2,d2,cf
   !-----------------------------------------------------------------------------
-  d=>qvar(:,1); P=>qvar(:,2); u=>qvar(:,3); A=>qvar(:,4)
-  v=>qvar(:,5); B=>qvar(:,6); w=>qvar(:,7); C=>qvar(:,8)
+  d=>qvar(lb:ub,1); P=>qvar(lb:ub,2); u=>qvar(lb:ub,3); A=>qvar(lb:ub,4)
+  v=>qvar(lb:ub,5); B=>qvar(lb:ub,6); w=>qvar(lb:ub,7); C=>qvar(lb:ub,8)
   B2 = A*A+B*B+C*C
   c2 = gamma*P/d
   d2 = half*(B2/d+c2)
+  !print*, 'd,P,u,A'
   cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
   vel_info = cf
 END SUBROUTINE find_speed_fast_vec
@@ -264,11 +271,13 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
   INTEGER ::ivar,i,icase
   integer, save:: itimer=0
   !.............................................................................
+  call trace%begin('riemann_mod::hlld_vec', itimer=itimer)
   !
   ! constants
   entho = one/max(gamma-one,1e-6)
   !
-  do i=1,ngrid
+  fgdnv      = 0d0
+  do i=2,ngrid-1
     !
     ! Enforce continuity of normal component
     A=half*(qleft(i,4)+qright(i,4))
@@ -449,6 +458,8 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
   end do
+!  print*,'maxval(fgdnv(:,:))',maxval(fgdnv(:,:))
+!  print*,'maxloc(fgdnv(:,:)),ngrid',maxloc(fgdnv(:,:)),ngrid
   call trace%end (itimer)
 contains
 SUBROUTINE find_speed_fast(qvar,vel_info)
@@ -498,7 +509,10 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
   !.............................................................................
   call trace%begin ('riemann_mod::hlld_2d',itimer=itimer)
 
-  do l=1,ngrid
+!  print*,'qLL(1,:)',qLL(1,:)
+!  print*,'qLL(ngrid-2:ngrid,4)',qLL(ngrid-2:ngrid,4)
+  emf = 0d0
+  do l=2,ngrid
     !call trace%begin ('hlld_2d find_fast_speed', itimer=itimer(1))
     rLL=qLL(l,1); pLL=qLL(l,2); uLL=qLL(l,3); vLL=qLL(l,4); ALL=qLL(l,6); BLL=qLL(l,7) ; CLL=qLL(l,8)
     rLR=qLR(l,1); pLR=qLR(l,2); uLR=qLR(l,3); vLR=qLR(l,4); ALR=qLR(l,6); BLR=qLR(l,7) ; CLR=qLR(l,8)
@@ -514,6 +528,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
     d1 = 1./qtmp(1)
     c2 = gamma*qtmp(2)*d1
     d2 = half*(B2*d1+c2)
+    !print*,'d2,c2,qtmp(4),d1,B2',d2,c2,qtmp(4),d1,B2
     cfastLLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
 
     qtmp(1)=qLR(l,1); qtmp(2)=qLR(l,2); qtmp(7)=qLR(l,5); qtmp(8)=qLR(l,8)
@@ -534,6 +549,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
     d1 = 1./qtmp(1)
     c2 = gamma*qtmp(2)*d1
     d2 = half*(B2*d1+c2)
+!    print*,'qtmp(4),qtmp(6),qtmp(8)',qtmp(4),qtmp(6),qtmp(8)
     cfastRLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
 
     qtmp(1)=qRR(l,1); qtmp(2)=qRR(l,2); qtmp(7)=qRR(l,5); qtmp(8)=qRR(l,8)

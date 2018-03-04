@@ -101,6 +101,7 @@ SUBROUTINE update (self)
   class(mhd_t):: self
   real, pointer, dimension(:,:,:,:):: em, p
   real, pointer, dimension(:,:,:,:,:):: fl
+  real, dimension(self%mesh(1)%ui-self%mesh(1)%li+1,self%mesh(2)%ui-self%mesh(2)%li+1,self%mesh(3)%ui-self%mesh(3)%li+1):: dflux_x, dflux_y, dflux_z, Bleft, Bright
   real, pointer, dimension(:,:,:):: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real(dp):: dtdx, dtdy, dtdz
   integer:: n(3), nv3, i
@@ -109,9 +110,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%update', itimer=itimer)
   nv3 = self%nv-3
-  dtdx = self%dtime/self%ds(1)
-  dtdy = self%dtime/self%ds(2)
-  dtdz = self%dtime/self%ds(3)
   
   call self%gravity
   !----------------------------------------------------------------------------
@@ -125,6 +123,10 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   self%uin  => self%mem(:,:,:,:,self%it ,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
+
+  !print*,'self%uin(10,:,10,6)',self%uin(10,:,10,6)
+  !print*,'self%uin(10,:,10,7)',self%uin(10,:,10,7)
+  !print*,'self%uin(10,:,10,8)',self%uin(10,:,10,8)
   n = self%mesh%gn
   allocate (self%c  (n(1),n(2),n(3)))
   allocate (self%Ex (n(1),n(2),n(3)))
@@ -169,27 +171,141 @@ SUBROUTINE update (self)
   call cmpflxm(self,self%gn(2),3,2,4,7,6,8,fl(:,:,:,:,2))
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
 
-  call cmp_mag_flx(self,2,3,4,6,7,8,dtdz,em(:,:,:,3),self%gn(3),self%nv)
-  call cmp_mag_flx(self,4,2,3,8,6,7,dtdy,em(:,:,:,2),self%gn(2),self%nv)
-  call cmp_mag_flx(self,3,4,2,7,8,6,dtdx,em(:,:,:,1),self%gn(1),self%nv)
+  dtdx = self%dtime/self%ds(1)
+  dtdy = self%dtime/self%ds(2)
+  dtdz = self%dtime/self%ds(3)
+
+  ! Compute fluxes with appropriate time step
+  fl(:,:,:,:,1) = fl(:,:,:,:,1) * dtdx
+  fl(:,:,:,:,2) = fl(:,:,:,:,2) * dtdy
+  fl(:,:,:,:,3) = fl(:,:,:,:,3) * dtdz
+
+  call cmp_mag_flx(self,2,3,4,6,7,8,dtdz,em(:,:,:,3),self%gn(3)-1,self%nv)
+  call cmp_mag_flx(self,4,2,3,8,6,7,dtdy,em(:,:,:,2),self%gn(2)-1,self%nv)
+  call cmp_mag_flx(self,3,4,2,7,8,6,dtdx,em(:,:,:,1),self%gn(1)-1,self%nv)
   !-----------------------------------------------------------------------------
   ! Update conservative variables
   !-----------------------------------------------------------------------------
   associate (i0=>self%mesh(1)%li, j0=>self%mesh(2)%li, k0=>self%mesh(3)%li, &
              i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
              uin=>self%uin,unew=>self%unew)
+
+  unew = uin
   unew(1:i0-1,:,:,:) = uin(1:i0-1,:,:,:); unew(i1+1:,:,:,:) = uin(i1+1:,:,:,:)
   unew(:,1:j0-1,:,:) = uin(:,1:j0-1,:,:); unew(:,j1+1:,:,:) = uin(:,j1+1:,:,:)
   unew(:,:,1:k0-1,:) = uin(:,:,1:k0-1,:); unew(:,:,k1+1:,:) = uin(:,:,k1+1:,:)
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
    uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
-    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,1) - &
-    fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,1:nv3,1) + &
-    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,2) - &
-    fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1:nv3,2) + &
-    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,3) - &
-    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:nv3,3)
-  unew = uin
+    fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,1:nv3,1) - &
+    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,1) + &
+    fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1:nv3,2) - &
+    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,2) + &
+    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:nv3,3) - &
+    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,3)
+!  unew(:,:,:,4:5) = uin(:,:,:,4:5)
+  !!!! TO DO !!!! 
+  !!! Instead of applying the update in time explicitly in mhd_mod
+  !!! only compute the fluxes and provide them to call timestep%update
+  !!! analogous to what is done in stagger2/mhd_mod.f90  
+
+  ! Compute emf fluxes with appropriate time steps
+
+!  print*,'minval(em),maxval(em)',minval(em),maxval(em)
+!  print*,'minloc(em),maxloc(em)',minloc(em),maxloc(em)
+  em(:,:,:,3) = em(:,:,:,3)*dtdx
+  em(:,:,:,1) = em(:,:,:,1)*dtdy
+  em(:,:,:,2) = em(:,:,:,2)*dtdz
+
+  !-----------------------------------------------------------------------------
+  ! Update Bx 
+  !-----------------------------------------------------------------------------
+  
+  ! left 
+  dflux_x=( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
+            em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2) ) - &
+          ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
+            em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) )
+
+  Bleft =                                          &
+            0.5 *                                ( &
+            uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
+            uin(i0-1:i1-1,j0  :j1  ,k0  :k1  ,6) ) &
+            + dflux_x
+  ! right
+  dflux_x=( em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2)   - &
+            em(i0+1:i1+1,j0  :j1  ,k0+1:k1+1,2) ) - &
+          ( em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3)   - &
+            em(i0+1:i1+1,j0+1:j1+1,k0  :k1  ,3) )
+
+  Bright =                                         &
+            0.5 *                                ( &
+            uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
+            uin(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) ) &
+            + dflux_x
+
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) = 0.5 * (Bleft + Bright)
+
+  !-----------------------------------------------------------------------------
+  ! Update By 
+  !-----------------------------------------------------------------------------
+
+  ! left 
+  dflux_y=( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
+            em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3) ) - &
+          ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
+            em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) )
+
+  Bleft =                                          &
+            0.5 *                                ( &
+            uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
+            uin(i0  :i1  ,j0-1:j1-1,k0  :k1  ,7) ) &
+            + dflux_y
+
+  ! right
+  dflux_y=( em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3)   - &
+            em(i0+1:i1+1,j0+1:j1+1,k0  :k1  ,3) ) - &
+          ( em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1)   - &
+            em(i0  :i1  ,j0+1:j1+1,k0+1:k1+1,1) )
+
+  Bright =                                         &
+            0.5 *                                ( &
+            uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
+            uin(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) ) &
+            + dflux_y
+
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = 0.5 * (Bleft + Bright)
+
+  !-----------------------------------------------------------------------------
+  ! Update Bz 
+  !-----------------------------------------------------------------------------
+
+  ! left 
+  dflux_z=( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
+            em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
+          ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
+            em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) )
+
+  Bleft =                                          &
+            0.5 *                                ( &
+            uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
+            uin(i0  :i1  ,j0  :j1  ,k0-1:k1-1,8) ) &
+            + dflux_z
+
+  ! right
+  dflux_z=( em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1)   - &
+            em(i0  :i1  ,j0+1:j1+1,k0+1:k1+1,1) ) - &
+          ( em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2)   - &
+            em(i0+1:i1+1,j0  :j1  ,k0+1:k1+1,2) )
+
+  Bright =                                         &
+            0.5 *                                ( &
+            uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
+            uin(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) ) &
+            + dflux_z
+
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = 0.5 * (Bleft + Bright)
+
+
   end associate
   !-----------------------------------------------------------------------------
   ! Add external force as source term
@@ -219,7 +335,7 @@ END SUBROUTINE update
 subroutine check_small (self)
   class(mhd_t):: self
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
-  real(dp):: c,d,u,v,w,p,ekin
+  real(dp):: c,d,u,v,w,p,ekin,B1,B2,B3,emag
   integer, save:: nprint=10
   real, save:: csound=1.
   integer, save:: itimer=0
@@ -247,14 +363,19 @@ subroutine check_small (self)
     v =  uu(i,j,k,3)*c
     w =  uu(i,j,k,4)*c
     ekin = 0.5*d*(u**2+v**2+w**2)
+    B1=  uu(i,j,k,6)
+    B2=  uu(i,j,k,7)
+    B3=  uu(i,j,k,8)
+    emag = 0.5*(B1**2+B2**2+B3**2)
+
     if (do_isothermal) then
       p = d*csound**2
-      uu(i,j,k,5) = p/(gamma-one)+ekin
+      uu(i,j,k,5) = p/(gamma-one)+ekin+emag
     else
       p = (uu(i,j,k,5)-ekin)*(gamma-one)
       if (p < smallr*smallc**2) then
         p = smallr*smallc**2
-        uu(i,j,k,5) = p/(gamma-one)+ekin
+        uu(i,j,k,5) = p/(gamma-one)+ekin+emag
         n_smallp = n_smallp+1
       end if
     end if
@@ -327,6 +448,7 @@ subroutine uslope(self,q,dq,nv)
   !
   l = self%mesh%lo
   u = self%mesh%uo
+  !print*,'l,u',l,u
   if(slope_type==-1)then
     do n = 1, nv
       do k = l(3),u(3)
@@ -343,7 +465,7 @@ subroutine uslope(self,q,dq,nv)
      dq=0.0_dp
      return
   else if (slope_type==1) then  ! minmod
-    do n = 1, self%nv
+    do n = 1, nv
       do k = l(3),u(3)
         do j = l(2),u(2)
           do i = l(1),u(1)
@@ -508,14 +630,14 @@ SUBROUTINE trace3d(self)
   smallp = smallr*smallc**2/self%gamma
   !
   ! E = - UxB = BxU
-  Ex = zdn(xdn(Uz))*zdn(By) - ydn(zdn(Uy))*ydn(Bz)
-  Ey = xdn(ydn(Ux))*xdn(Bz) - zdn(xdn(Uz))*zdn(Bx)
-  Ez = ydn(zdn(Uy))*ydn(Bx) - xdn(ydn(Ux))*xdn(By)
+  Ex = zdn(ydn(Uz))*zdn(By) - ydn(zdn(Uy))*ydn(Bz)
+  Ey = xdn(zdn(Ux))*xdn(Bz) - zdn(xdn(Uz))*zdn(Bx)
+  Ez = ydn(xdn(Uy))*ydn(Bx) - xdn(ydn(Ux))*xdn(By)
   !
   eff_gamma = self%gamma
-  do k=1,self%gn(3)-1
-  do j=1,self%gn(2)-1
-  do i=1,self%gn(1)-1
+  do k=2,self%gn(3)-1
+  do j=2,self%gn(2)-1
+  do i=2,self%gn(1)-1
     associate ( &
     r=>q(i,j,k,ir),&
     u=>q(i,j,k,iu),&
@@ -587,22 +709,7 @@ SUBROUTINE trace3d(self)
     dCRx = half * dbf(i  ,j  ,k+1,3,1)
     dCLy = half * dbf(i  ,j  ,k  ,3,2)
     dCRy = half * dbf(i  ,j  ,k+1,3,2)
-    !
-    ! Face centered TVD slopes in transverse directions
-    dALy = half * dbf(i  ,j  ,k  ,1,1)
-    dARy = half * dbf(i+1,j  ,k  ,1,1)
-    dALz = half * dbf(i  ,j  ,k  ,1,2)
-    dARz = half * dbf(i+1,j  ,k  ,1,2)
-    !
-    dBLx = half * dbf(i  ,j  ,k  ,2,1)
-    dBRx = half * dbf(i  ,j+1,k  ,2,1)
-    dBLz = half * dbf(i  ,j  ,k  ,2,2)
-    dBRz = half * dbf(i  ,j+1,k  ,2,2)
-    !
-    dCLx = half * dbf(i  ,j  ,k  ,3,1)
-    dCRx = half * dbf(i  ,j  ,k+1,3,1)
-    dCLy = half * dbf(i  ,j  ,k  ,3,2)
-    dCRy = half * dbf(i  ,j  ,k+1,3,2)
+
     !
     ! Face-centered predicted states
     sAL0 = +(GLR-GLL)*dtdy*half -(FLR-FLL)*dtdz*half
@@ -923,7 +1030,7 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   real(dp), dimension(:,:,:,:):: fl
   integer:: nx, ln, lt1, lt2, bn, bt1, bt2
   ! local variables
-  integer:: i, j, k, lb(3), ub(3), xdim
+  integer:: i, j, k, lb(3), ub(3), xdim, l(3)
   real(dp), dimension(nx,self%nv):: qleft, qright, fgdnv
   real(dp), dimension(nx):: bn_mean
   real(dp):: dtds(3)
@@ -934,31 +1041,35 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   dtds = self%dtime/self%mesh%d
   lb = self%mesh%li
   ub = self%mesh%uo
+  l  = self%mesh%lo
+  !print*,'lb,ub,l',lb,ub,l
   xdim = ln-1
   !
+  ! Avoid using spurious values from allocated, but non-defined entries
   do k = lb(3),ub(3)
   do j = lb(2),ub(2)
     ! Enforce continuity for normal magnetic field
     bn_mean(1:nx) = half*(qm(1:nx,j,k,bn,xdim)+qp(1:nx,j,k,bn,xdim))
     ! Left state
-    qleft (1:nx,1) = qm(1:nx,j,k,1  ,xdim) ! Mass density
-    qleft (1:nx,2) = qm(1:nx,j,k,5  ,xdim) ! Pressure
-    qleft (1:nx,3) = qm(1:nx,j,k,ln ,xdim) ! Normal velocity
-    qleft (1:nx,4) = bn_mean(1:nx)         ! Normal magnetic field
-    qleft (1:nx,5) = qm(1:nx,j,k,lt1,xdim) ! Tangential velocity 1
-    qleft (1:nx,6) = qm(1:nx,j,k,bt1,xdim) ! Tangential magnetic field 1
-    qleft (1:nx,7) = qm(1:nx,j,k,lt2,xdim) ! Tangential velocity 2
-    qleft (1:nx,8) = qm(1:nx,j,k,bt2,xdim) ! Tangential magnetic field 2
+    qleft (l(1):ub(1),1) = qm(l(1):ub(1),j,k,1  ,xdim) ! Mass density
+    qleft (l(1):ub(1),2) = qm(l(1):ub(1),j,k,5  ,xdim) ! Pressure
+    qleft (l(1):ub(1),3) = qm(l(1):ub(1),j,k,ln ,xdim) ! Normal velocity
+    qleft (l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
+    qleft (l(1):ub(1),5) = qm(l(1):ub(1),j,k,lt1,xdim) ! Tangential velocity 1
+    qleft (l(1):ub(1),6) = qm(l(1):ub(1),j,k,bt1,xdim) ! Tangential magnetic field 1
+    qleft (l(1):ub(1),7) = qm(l(1):ub(1),j,k,lt2,xdim) ! Tangential velocity 2
+    qleft (l(1):ub(1),8) = qm(l(1):ub(1),j,k,bt2,xdim) ! Tangential magnetic field 2
     ! Right state
-    qright(1:nx,1) = qp(1:nx,j,k,1  ,xdim) ! Mass density
-    qright(1:nx,2) = qp(1:nx,j,k,5  ,xdim) ! Pressure
-    qright(1:nx,3) = qp(1:nx,j,k,ln ,xdim) ! Normal velocity
-    qright(1:nx,4) = bn_mean(1:nx)         ! Normal magnetic field
-    qright(1:nx,5) = qp(1:nx,j,k,lt1,xdim) ! Tangential velocity 1
-    qright(1:nx,6) = qp(1:nx,j,k,bt1,xdim) ! Tangential magnetic field 1
-    qright(1:nx,7) = qp(1:nx,j,k,lt2,xdim) ! Tangential velocity 2
-    qright(1:nx,8) = qp(1:nx,j,k,bt2,xdim) ! Tangential magnetic field 2
-    call solver (self,qleft,qright,fgdnv)
+    qright(l(1):ub(1),1) = qp(l(1):ub(1),j,k,1  ,xdim) ! Mass density
+    qright(l(1):ub(1),2) = qp(l(1):ub(1),j,k,5  ,xdim) ! Pressure
+    qright(l(1):ub(1),3) = qp(l(1):ub(1),j,k,ln ,xdim) ! Normal velocity
+    qright(l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
+    qright(l(1):ub(1),5) = qp(l(1):ub(1),j,k,lt1,xdim) ! Tangential velocity 1
+    qright(l(1):ub(1),6) = qp(l(1):ub(1),j,k,bt1,xdim) ! Tangential magnetic field 1
+    qright(l(1):ub(1),7) = qp(l(1):ub(1),j,k,lt2,xdim) ! Tangential velocity 2
+    qright(l(1):ub(1),8) = qp(l(1):ub(1),j,k,bt2,xdim) ! Tangential magnetic field 2
+    call solver (self,qleft,qright,fgdnv,nx,8)
+!    call solver (self,qleft,qright,fgdnv,l(1),ub(1))
     ! Output fluxes
     fl(1:nx,j,k,1  ) = fgdnv(1:nx,1)  ! Mass density
     fl(1:nx,j,k,5  ) = fgdnv(1:nx,2)  ! Total energy
@@ -997,40 +1108,44 @@ subroutine cmp_mag_flx (self, lp1 ,lp2 ,lor ,bp1 , bp2, bor, dtds, emf, ngrid, n
   xdim = lor - 1
   smallp = smallr*smallc**2
   !
-  DO k = 1,self%mesh(3)%ub
-     DO j = 1,self%mesh(2)%ub
-      qLL (1:ngrid,1) = max(qRT(1:ngrid,j,k,1,xdim),smallr)
-      qRL (1:ngrid,1) = max(qLT(1:ngrid,j,k,1,xdim),smallr)
-      qLR (1:ngrid,1) = max(qRB(1:ngrid,j,k,1,xdim),smallr)
-      qRR (1:ngrid,1) = max(qLB(1:ngrid,j,k,1,xdim),smallr)
-      qLL (1:ngrid,2) = max(qRT(1:ngrid,j,k,5,xdim),smallp)
-      qRL (1:ngrid,2) = max(qLT(1:ngrid,j,k,5,xdim),smallp)
-      qLR (1:ngrid,2) = max(qRB(1:ngrid,j,k,5,xdim),smallp)
-      qRR (1:ngrid,2) = max(qLB(1:ngrid,j,k,5,xdim),smallp)
-      qLL (1:ngrid,3) = qRT(1:ngrid,j,k,lp1,xdim)
-      qRL (1:ngrid,3) = qLT(1:ngrid,j,k,lp1,xdim)
-      qLR (1:ngrid,3) = qRB(1:ngrid,j,k,lp1,xdim)
-      qRR (1:ngrid,3) = qLB(1:ngrid,j,k,lp1,xdim)
-      qLL (1:ngrid,4) = qRT(1:ngrid,j,k,lp2,xdim)
-      qRL (1:ngrid,4) = qLT(1:ngrid,j,k,lp2,xdim)
-      qLR (1:ngrid,4) = qRB(1:ngrid,j,k,lp2,xdim)
-      qRR (1:ngrid,4) = qLB(1:ngrid,j,k,lp2,xdim)
-      qLL (1:ngrid,6) = half*(qRT(1:ngrid,j,k,bp1,xdim)+qLT(1:ngrid,j,k,bp1,xdim))
-      qRL (1:ngrid,6) = half*(qRT(1:ngrid,j,k,bp1,xdim)+qLT(1:ngrid,j,k,bp1,xdim))
-      qLR (1:ngrid,6) = half*(qRB(1:ngrid,j,k,bp1,xdim)+qLB(1:ngrid,j,k,bp1,xdim))
-      qRR (1:ngrid,6) = half*(qRB(1:ngrid,j,k,bp1,xdim)+qLB(1:ngrid,j,k,bp1,xdim))
-      qLL (1:ngrid,7) = half*(qRT(1:ngrid,j,k,bp2,xdim)+qRB(1:ngrid,j,k,bp2,xdim))
-      qRL (1:ngrid,7) = half*(qLT(1:ngrid,j,k,bp2,xdim)+qLB(1:ngrid,j,k,bp2,xdim))
-      qLR (1:ngrid,7) = half*(qRT(1:ngrid,j,k,bp2,xdim)+qRB(1:ngrid,j,k,bp2,xdim))
-      qRR (1:ngrid,7) = half*(qLT(1:ngrid,j,k,bp2,xdim)+qLB(1:ngrid,j,k,bp2,xdim))
-      qLL (1:ngrid,5) = qRT(1:ngrid,j,k,lor,xdim)
-      qRL (1:ngrid,5) = qLT(1:ngrid,j,k,lor,xdim)
-      qLR (1:ngrid,5) = qRB(1:ngrid,j,k,lor,xdim)
-      qRR (1:ngrid,5) = qLB(1:ngrid,j,k,lor,xdim)
-      qLL (1:ngrid,8) = qRT(1:ngrid,j,k,bor,xdim)
-      qRL (1:ngrid,8) = qLT(1:ngrid,j,k,bor,xdim)
-      qLR (1:ngrid,8) = qRB(1:ngrid,j,k,bor,xdim)
-      qRR (1:ngrid,8) = qLB(1:ngrid,j,k,bor,xdim)
+  qLL = 0d0
+  qRL = 0d0
+  qLR = 0d0
+  qRR = 0d0
+  DO k = 2,self%mesh(3)%uo
+    DO j = 2,self%mesh(2)%uo
+      qLL (2:ngrid,1) = max(qRT(2:ngrid,j,k,1,xdim),smallr)
+      qRL (2:ngrid,1) = max(qLT(2:ngrid,j,k,1,xdim),smallr)
+      qLR (2:ngrid,1) = max(qRB(2:ngrid,j,k,1,xdim),smallr)
+      qRR (2:ngrid,1) = max(qLB(2:ngrid,j,k,1,xdim),smallr)
+      qLL (2:ngrid,2) = max(qRT(2:ngrid,j,k,5,xdim),smallp)
+      qRL (2:ngrid,2) = max(qLT(2:ngrid,j,k,5,xdim),smallp)
+      qLR (2:ngrid,2) = max(qRB(2:ngrid,j,k,5,xdim),smallp)
+      qRR (2:ngrid,2) = max(qLB(2:ngrid,j,k,5,xdim),smallp)
+      qLL (2:ngrid,3) = qRT(2:ngrid,j,k,lp1,xdim)
+      qRL (2:ngrid,3) = qLT(2:ngrid,j,k,lp1,xdim)
+      qLR (2:ngrid,3) = qRB(2:ngrid,j,k,lp1,xdim)
+      qRR (2:ngrid,3) = qLB(2:ngrid,j,k,lp1,xdim)
+      qLL (2:ngrid,4) = qRT(2:ngrid,j,k,lp2,xdim)
+      qRL (2:ngrid,4) = qLT(2:ngrid,j,k,lp2,xdim)
+      qLR (2:ngrid,4) = qRB(2:ngrid,j,k,lp2,xdim)
+      qRR (2:ngrid,4) = qLB(2:ngrid,j,k,lp2,xdim)
+      qLL (2:ngrid,6) = half*(qRT(2:ngrid,j,k,bp1,xdim)+qLT(2:ngrid,j,k,bp1,xdim))
+      qRL (2:ngrid,6) = half*(qRT(2:ngrid,j,k,bp1,xdim)+qLT(2:ngrid,j,k,bp1,xdim))
+      qLR (2:ngrid,6) = half*(qRB(2:ngrid,j,k,bp1,xdim)+qLB(2:ngrid,j,k,bp1,xdim))
+      qRR (2:ngrid,6) = half*(qRB(2:ngrid,j,k,bp1,xdim)+qLB(2:ngrid,j,k,bp1,xdim))
+      qLL (2:ngrid,7) = half*(qRT(2:ngrid,j,k,bp2,xdim)+qRB(2:ngrid,j,k,bp2,xdim))
+      qRL (2:ngrid,7) = half*(qLT(2:ngrid,j,k,bp2,xdim)+qLB(2:ngrid,j,k,bp2,xdim))
+      qLR (2:ngrid,7) = half*(qRT(2:ngrid,j,k,bp2,xdim)+qRB(2:ngrid,j,k,bp2,xdim))
+      qRR (2:ngrid,7) = half*(qLT(2:ngrid,j,k,bp2,xdim)+qLB(2:ngrid,j,k,bp2,xdim))
+      qLL (2:ngrid,5) = qRT(2:ngrid,j,k,lor,xdim)
+      qRL (2:ngrid,5) = qLT(2:ngrid,j,k,lor,xdim)
+      qLR (2:ngrid,5) = qRB(2:ngrid,j,k,lor,xdim)
+      qRR (2:ngrid,5) = qLB(2:ngrid,j,k,lor,xdim)
+      qLL (2:ngrid,8) = qRT(2:ngrid,j,k,bor,xdim)
+      qRL (2:ngrid,8) = qLT(2:ngrid,j,k,bor,xdim)
+      qLR (2:ngrid,8) = qRB(2:ngrid,j,k,bor,xdim)
+      qRR (2:ngrid,8) = qLB(2:ngrid,j,k,bor,xdim)
       call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
     END DO
   END DO
@@ -1041,14 +1156,18 @@ END SUBROUTINE cmp_mag_flx
 !> =============================================================================
 !> Selection of 1-D solvers
 !> =============================================================================
-subroutine solver (self,qleft,qright,fgdnv)
+subroutine solver (self,qleft,qright,fgdnv,ub,nvar)
+!subroutine solver (self,qleft,qright,fgdnv,lb,ub)
   class(mhd_t):: self
   real(dp),dimension(:,:):: qleft,qright,fgdnv
   integer, save:: itimer=0
+  integer :: lb, ub, nvar
   !.............................................................................
   call trace%begin ('mhd_mod::solver', itimer=itimer)
   if (self%riemann.eq.'hlld')then
-    call rieman%hlld_vec(qleft,qright,fgdnv)
+    !print*,'ub,nvar',ub,nvar
+    call rieman%hlld(qleft,qright,fgdnv,ub,nvar)
+!    call rieman%hlld_vec(qleft,qright,fgdnv,lb,ub)
   else
     write(*,*)'unknown Riemann solver'
     stop
