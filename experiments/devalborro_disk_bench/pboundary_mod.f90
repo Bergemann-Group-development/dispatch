@@ -88,7 +88,7 @@ SUBROUTINE conditions (self, patch, cit)
           q(i1,i2,i3,patch%idx%pz) = q(i1,i2,i3,patch%idx%pz) &
                                  + dt * wave_killing(q(i1,i2,i3,patch%idx%pz), skep, tau, rkill, rbnd, r)
         end do
-        if (m2%llc_nat < experiment_params%roffset ) then 
+        if (m2%llc_nat <= experiment_params%roffset ) then
           ! reset ghost zones to initial values, except for s2, which is anti-symmetric.
           do i2=m2%lb,m2%lo
             r = m2%centre_nat + patch%mesh(2)%r(i2)
