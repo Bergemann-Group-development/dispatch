@@ -271,13 +271,13 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
   INTEGER ::ivar,i,icase
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin('riemann_mod::hlld_vec', itimer=itimer)
+  call trace%begin('riemann_mod::hlld', itimer=itimer)
   !
   ! constants
   entho = one/max(gamma-one,1e-6)
   !
   fgdnv      = 0d0
-  do i=2,ngrid-1
+  do i=3,ngrid-1
     !
     ! Enforce continuity of normal component
     A=half*(qleft(i,4)+qright(i,4))
@@ -511,7 +511,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
 
 !  print*,'qLL(1,:)',qLL(1,:)
 !  print*,'qLL(ngrid-2:ngrid,4)',qLL(ngrid-2:ngrid,4)
-  emf = 0d0
+  !emf = 0d0
   do l=2,ngrid
     !call trace%begin ('hlld_2d find_fast_speed', itimer=itimer(1))
     rLL=qLL(l,1); pLL=qLL(l,2); uLL=qLL(l,3); vLL=qLL(l,4); ALL=qLL(l,6); BLL=qLL(l,7) ; CLL=qLL(l,8)

@@ -116,6 +116,8 @@ SUBROUTINE update (self)
   ! Checks whether to do output
   !----------------------------------------------------------------------------
   call self%output
+  print*,'self%dtime',self%dtime
+!  if(self%time .gt. 1e-3) stop
   !-----------------------------------------------------------------------------
   ! Memory mapping and allocations.  All alloc and dealloc should be done here,
   ! even if it would be possible to do some of them locally, in the procedures
@@ -124,8 +126,8 @@ SUBROUTINE update (self)
   self%uin  => self%mem(:,:,:,:,self%it ,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
 
-  !print*,'self%uin(10,:,10,6)',self%uin(10,:,10,6)
-  !print*,'self%uin(10,:,10,7)',self%uin(10,:,10,7)
+  print*,'self%uin(10,10,10,6)',self%uin(10,10,10,6)
+  !print*,'self%unew(10,:,10,6)',self%unew(10,:,10,6)
   !print*,'self%uin(10,:,10,8)',self%uin(10,:,10,8)
   n = self%mesh%gn
   allocate (self%c  (n(1),n(2),n(3)))
@@ -163,6 +165,7 @@ SUBROUTINE update (self)
   call uslope(self,self%q,self%dq,self%nv)              ! TVD slopes
   call uslope(self,self%bf,self%dbf,3)                  ! TVD slopes
   call trace3d(self)                                    ! predictor step
+  print*,'After   trace3d: self%uin(10,10,10,6),self%bf(10,10,10,2)',self%uin(10,10,10,6),self%bf(10,10,10,2)
 
   allocate (fl(self%gn(1),self%gn(2),self%gn(3),self%nv,3))
   allocate (em(self%gn(1),self%gn(2),self%gn(3),3))
@@ -174,15 +177,14 @@ SUBROUTINE update (self)
   dtdx = self%dtime/self%ds(1)
   dtdy = self%dtime/self%ds(2)
   dtdz = self%dtime/self%ds(3)
-
   ! Compute fluxes with appropriate time step
   fl(:,:,:,:,1) = fl(:,:,:,:,1) * dtdx
   fl(:,:,:,:,2) = fl(:,:,:,:,2) * dtdy
   fl(:,:,:,:,3) = fl(:,:,:,:,3) * dtdz
 
-  call cmp_mag_flx(self,2,3,4,6,7,8,dtdz,em(:,:,:,3),self%gn(3)-1,self%nv)
-  call cmp_mag_flx(self,4,2,3,8,6,7,dtdy,em(:,:,:,2),self%gn(2)-1,self%nv)
-  call cmp_mag_flx(self,3,4,2,7,8,6,dtdx,em(:,:,:,1),self%gn(1)-1,self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,dtdz,em(:,:,:,3),self%gn(3)-1,self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,dtdy,em(:,:,:,2),self%gn(2)-1,self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,dtdx,em(:,:,:,1),self%gn(1)-1,self%nv)
   !-----------------------------------------------------------------------------
   ! Update conservative variables
   !-----------------------------------------------------------------------------
@@ -194,15 +196,15 @@ SUBROUTINE update (self)
   unew(1:i0-1,:,:,:) = uin(1:i0-1,:,:,:); unew(i1+1:,:,:,:) = uin(i1+1:,:,:,:)
   unew(:,1:j0-1,:,:) = uin(:,1:j0-1,:,:); unew(:,j1+1:,:,:) = uin(:,j1+1:,:,:)
   unew(:,:,1:k0-1,:) = uin(:,:,1:k0-1,:); unew(:,:,k1+1:,:) = uin(:,:,k1+1:,:)
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
-   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
-    fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,1:nv3,1) - &
-    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,1) + &
-    fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1:nv3,2) - &
-    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,2) + &
-    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:nv3,3) - &
-    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,3)
-!  unew(:,:,:,4:5) = uin(:,:,:,4:5)
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv  ) = &
+   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv  ) + &
+    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv,1) - &
+    fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,1:self%nv,1) + &
+    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv,2) - &
+    fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1:self%nv,2) + &
+    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv,3) - &
+    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:self%nv,3)   
+
   !!!! TO DO !!!! 
   !!! Instead of applying the update in time explicitly in mhd_mod
   !!! only compute the fluxes and provide them to call timestep%update
@@ -226,23 +228,31 @@ SUBROUTINE update (self)
           ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
             em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) )
 
+!  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) = unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + dflux_x
+
+print*,'maxval(dflux_x),minval(dflux_x)',maxval(dflux_x),minval(dflux_x)
+print*,'maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,1)),minval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,1))',maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,1)),minval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,1))
+print*,'maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,2)),minval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,2))',maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,2)),minval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,2))
+print*,'maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3)),minval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3))',maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3)),minval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3))
+  
   Bleft =                                          &
             0.5 *                                ( &
-            uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
-            uin(i0-1:i1-1,j0  :j1  ,k0  :k1  ,6) ) &
+            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
+            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) ) &
             + dflux_x
   ! right
   dflux_x=( em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2)   - &
             em(i0+1:i1+1,j0  :j1  ,k0+1:k1+1,2) ) - &
           ( em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3)   - &
             em(i0+1:i1+1,j0+1:j1+1,k0  :k1  ,3) )
+!  unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) = unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) + dflux_x
 
   Bright =                                         &
             0.5 *                                ( &
-            uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
-            uin(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) ) &
+            unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) + &
+            unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) ) &
             + dflux_x
-
+!
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) = 0.5 * (Bleft + Bright)
 
   !-----------------------------------------------------------------------------
@@ -255,10 +265,12 @@ SUBROUTINE update (self)
           ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
             em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) )
 
+!  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + dflux_y
+
   Bleft =                                          &
             0.5 *                                ( &
-            uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
-            uin(i0  :i1  ,j0-1:j1-1,k0  :k1  ,7) ) &
+            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
+            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) ) &
             + dflux_y
 
   ! right
@@ -267,10 +279,12 @@ SUBROUTINE update (self)
           ( em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1)   - &
             em(i0  :i1  ,j0+1:j1+1,k0+1:k1+1,1) )
 
+!  unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) = unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) + dflux_y
+
   Bright =                                         &
             0.5 *                                ( &
-            uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
-            uin(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) ) &
+            unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) + &
+            unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) ) &
             + dflux_y
 
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = 0.5 * (Bleft + Bright)
@@ -285,10 +299,12 @@ SUBROUTINE update (self)
           ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
             em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) )
 
+!  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + dflux_z
+
   Bleft =                                          &
             0.5 *                                ( &
-            uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
-            uin(i0  :i1  ,j0  :j1  ,k0-1:k1-1,8) ) &
+            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
+            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) ) &
             + dflux_z
 
   ! right
@@ -297,14 +313,15 @@ SUBROUTINE update (self)
           ( em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2)   - &
             em(i0+1:i1+1,j0  :j1  ,k0+1:k1+1,2) )
 
+!  unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) = unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) + dflux_z
+
   Bright =                                         &
             0.5 *                                ( &
-            uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
-            uin(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) ) &
+            unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) + &
+            unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) ) &
             + dflux_z
 
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = 0.5 * (Bleft + Bright)
-
 
   end associate
   !-----------------------------------------------------------------------------
@@ -599,15 +616,15 @@ SUBROUTINE trace3d(self)
   integer, parameter ::ir=1, iu=2, iv=3, iw=4, ip=5, ia=6, ib=7, ic=8
   real(dp)::dtdx, dtdy, dtdz, smallp
   real(dp) :: invr
-!  real(dp) :: r, u, v, w, p, A, B, C
-!  real(dp) :: ELL, ELR, ERL, ERR
-!  real(dp) :: FLL, FLR, FRL, FRR
-!  real(dp) :: GLL, GLR, GRL, GRR
+  real(dp) :: r, u, v, w, p, A, B, C
+  real(dp) :: ELL, ELR, ERL, ERR
+  real(dp) :: FLL, FLR, FRL, FRR
+  real(dp) :: GLL, GLR, GRL, GRR
   real(dp) :: drx, dux, dvx, dwx, dpx, dAx, dBx, dCx
   real(dp) :: dry, duy, dvy, dwy, dpy, dAy, dbY, dCy
   real(dp) :: drz, duz, dvz, dwz, dpz, dAz, dBz, dCz
   real(dp) :: sr0, su0, sv0, sw0, sp0, sA0, sB0, sC0
-!  real(dp) :: AL, AR, BL, BR, CL, CR
+  real(dp) :: AL, AR, BL, BR, CL, CR
   real(dp) :: dALy, dARy, dALz, dARz
   real(dp) :: dBLx, dBRx, dBLz, dBRz
   real(dp) :: dCLx, dCRx, dCLy, dCRy
@@ -635,38 +652,40 @@ SUBROUTINE trace3d(self)
   Ez = ydn(xdn(Uy))*ydn(Bx) - xdn(ydn(Ux))*xdn(By)
   !
   eff_gamma = self%gamma
+  print*,'Bx(10,10,10,6)',Bx(10,10,10)
+  print*,'In trace3d; before loop: self%uin(10,10,10,6)',self%uin(10,10,10,6)
   do k=2,self%gn(3)-1
   do j=2,self%gn(2)-1
   do i=2,self%gn(1)-1
-    associate ( &
-    r=>q(i,j,k,ir),&
-    u=>q(i,j,k,iu),&
-    v=>q(i,j,k,iv),&
-    w=>q(i,j,k,iw),&
-    p=>q(i,j,k,ip),&
-    A=>q(i,j,k,iA),&
-    B=>q(i,j,k,iB),&
-    C=>q(i,j,k,iC),&
+!    associate ( &
+    r=q(i,j,k,ir)
+    u=q(i,j,k,iu)
+    v=q(i,j,k,iv)
+    w=q(i,j,k,iw)
+    p=q(i,j,k,ip)
+    A=q(i,j,k,iA)
+    B=q(i,j,k,iB)
+    C=q(i,j,k,iC)
     ! Face centered variables
-    AL => bf(i,j,k,1),&
-    BL => bf(i,j,k,2),&
-    CL => bf(i,j,k,3),&
-    AR => bf(i+1,j  ,k  ,1),&
-    BR => bf(i  ,j+1,k  ,2),&
-    CR => bf(i  ,j  ,k+1,3),&
+    AL = bf(i,j,k,1)
+    BL = bf(i,j,k,2)
+    CL = bf(i,j,k,3)
+    AR = bf(i+1,j  ,k  ,1)
+    BR = bf(i  ,j+1,k  ,2)
+    CR = bf(i  ,j  ,k+1,3)
     ! Edge centered electric field in X, Y and Z directions
-    ELL => Ex(i,j  ,k  ),&
-    ELR => Ex(i,j  ,k+1),&
-    ERL => Ex(i,j+1,k  ),&
-    ERR => Ex(i,j+1,k+1),&
-    FLL => Ey(i  ,j,k  ),&
-    FLR => Ey(i  ,j,k+1),&
-    FRL => Ey(i+1,j,k  ),&
-    FRR => Ey(i+1,j,k+1),&
-    GLL => Ez(i  ,j  ,k),&
-    GLR => Ez(i  ,j+1,k),&
-    GRL => Ez(i+1,j  ,k),&
-    GRR => Ez(i+1,j+1,k))
+    ELL = Ex(i,j  ,k  )
+    ELR = Ex(i,j  ,k+1)
+    ERL = Ex(i,j+1,k  )
+    ERR = Ex(i,j+1,k+1)
+    FLL = Ey(i  ,j,k  )
+    FLR = Ey(i  ,j,k+1)
+    FRL = Ey(i+1,j,k  )
+    FRR = Ey(i+1,j,k+1)
+    GLL = Ez(i  ,j  ,k)
+    GLR = Ez(i  ,j+1,k)
+    GRL = Ez(i+1,j  ,k)
+    GRR = Ez(i+1,j+1,k)
     !
     ! Cell centered TVD slopes in X, Y and Z directions
     drx = half * dq(i,j,k,ir,1)
@@ -719,8 +738,12 @@ SUBROUTINE trace3d(self)
     sCL0 = +(FRL-FLL)*dtdx*half -(ERL-ELL)*dtdy*half
     sCR0 = +(FRR-FLR)*dtdx*half -(ERR-ELR)*dtdy*half
     !
+    if (i == 9 .and. j == 10 .and. k ==10) print*,'Before: AR',AR
+    if (i == 10 .and. j == 10 .and. k ==10) print*,'Before: AL',AL
     AL = AL + sAL0
+    if (i == 10 .and. j == 10 .and. k ==10) print*,'After : AL',AL
     AR = AR + sAR0
+    if (i == 9 .and. j == 10 .and. k ==10) print*,'After : AR',AR
     BL = BL + sBL0
     BR = BR + sBR0
     CL = CL + sCL0
@@ -967,19 +990,21 @@ SUBROUTINE trace3d(self)
     qRB(i,j,k,ir,3) = r + (+drx-dry)
     qLT(i,j,k,ir,3) = r + (-drx+dry)
     qLB(i,j,k,ir,3) = r + (-drx-dry)
-    end associate
+!    end associate
   end do
   end do
   end do
   n=size(q,1)
-  qp(n,:,:,:,:)=qp(n-1,:,:,:,:)
-  qm(n,:,:,:,:)=qm(n-1,:,:,:,:)
+  qp(n-1,:,:,:,:)=qp(self%mesh(1)%li+1,:,:,:,:)
+  qm(n-1,:,:,:,:)=qm(self%mesh(1)%li+1,:,:,:,:)
+  qp(n  ,:,:,:,:)=qp(self%mesh(1)%li+2,:,:,:,:)
+  qm(n  ,:,:,:,:)=qm(self%mesh(1)%li+2,:,:,:,:)
   n=size(q,2)
-  qp(:,n,:,:,:)=qp(:,n-1,:,:,:)
-  qm(:,n,:,:,:)=qm(:,n-1,:,:,:)
+  qp(:,n,:,:,:)=qp(:,5,:,:,:)
+  qm(:,n,:,:,:)=qm(:,5,:,:,:)
   n=size(q,3)
-  qp(:,:,n,:,:)=qp(:,:,n-1,:,:)
-  qm(:,:,n,:,:)=qm(:,:,n-1,:,:)
+  qp(:,:,n,:,:)=qp(:,:,5,:,:)
+  qm(:,:,n,:,:)=qm(:,:,5,:,:)
   !
   call trace%end (itimer)
   end associate
@@ -1030,7 +1055,7 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   real(dp), dimension(:,:,:,:):: fl
   integer:: nx, ln, lt1, lt2, bn, bt1, bt2
   ! local variables
-  integer:: i, j, k, lb(3), ub(3), xdim, l(3)
+  integer:: i, j, k, lb(3), ub(3), xdim, l(3), idim
   real(dp), dimension(nx,self%nv):: qleft, qright, fgdnv
   real(dp), dimension(nx):: bn_mean
   real(dp):: dtds(3)
@@ -1041,46 +1066,124 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   dtds = self%dtime/self%mesh%d
   lb = self%mesh%li
   ub = self%mesh%uo
-  l  = self%mesh%lo
+  l  = self%mesh%li
   !print*,'lb,ub,l',lb,ub,l
   xdim = ln-1
   !
   ! Avoid using spurious values from allocated, but non-defined entries
-  do k = lb(3),ub(3)
-  do j = lb(2),ub(2)
-    ! Enforce continuity for normal magnetic field
-    bn_mean(1:nx) = half*(qm(1:nx,j,k,bn,xdim)+qp(1:nx,j,k,bn,xdim))
-    ! Left state
-    qleft (l(1):ub(1),1) = qm(l(1):ub(1),j,k,1  ,xdim) ! Mass density
-    qleft (l(1):ub(1),2) = qm(l(1):ub(1),j,k,5  ,xdim) ! Pressure
-    qleft (l(1):ub(1),3) = qm(l(1):ub(1),j,k,ln ,xdim) ! Normal velocity
-    qleft (l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
-    qleft (l(1):ub(1),5) = qm(l(1):ub(1),j,k,lt1,xdim) ! Tangential velocity 1
-    qleft (l(1):ub(1),6) = qm(l(1):ub(1),j,k,bt1,xdim) ! Tangential magnetic field 1
-    qleft (l(1):ub(1),7) = qm(l(1):ub(1),j,k,lt2,xdim) ! Tangential velocity 2
-    qleft (l(1):ub(1),8) = qm(l(1):ub(1),j,k,bt2,xdim) ! Tangential magnetic field 2
-    ! Right state
-    qright(l(1):ub(1),1) = qp(l(1):ub(1),j,k,1  ,xdim) ! Mass density
-    qright(l(1):ub(1),2) = qp(l(1):ub(1),j,k,5  ,xdim) ! Pressure
-    qright(l(1):ub(1),3) = qp(l(1):ub(1),j,k,ln ,xdim) ! Normal velocity
-    qright(l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
-    qright(l(1):ub(1),5) = qp(l(1):ub(1),j,k,lt1,xdim) ! Tangential velocity 1
-    qright(l(1):ub(1),6) = qp(l(1):ub(1),j,k,bt1,xdim) ! Tangential magnetic field 1
-    qright(l(1):ub(1),7) = qp(l(1):ub(1),j,k,lt2,xdim) ! Tangential velocity 2
-    qright(l(1):ub(1),8) = qp(l(1):ub(1),j,k,bt2,xdim) ! Tangential magnetic field 2
-    call solver (self,qleft,qright,fgdnv,nx,8)
-!    call solver (self,qleft,qright,fgdnv,l(1),ub(1))
-    ! Output fluxes
-    fl(1:nx,j,k,1  ) = fgdnv(1:nx,1)  ! Mass density
-    fl(1:nx,j,k,5  ) = fgdnv(1:nx,2)  ! Total energy
-    fl(1:nx,j,k,ln ) = fgdnv(1:nx,3)  ! Normal momentum
-    fl(1:nx,j,k,bn ) = fgdnv(1:nx,4)  ! Normal magnetic field
-    fl(1:nx,j,k,lt1) = fgdnv(1:nx,5)  ! Transverse momentum 1
-    fl(1:nx,j,k,bt1) = fgdnv(1:nx,6)  ! Transverse magnetic field 1
-    fl(1:nx,j,k,lt2) = fgdnv(1:nx,7)  ! Transverse momentum 2
-    fl(1:nx,j,k,bt2) = fgdnv(1:nx,8)  ! Transverse magnetic field 2
-  end do
-  end do
+  bn_mean=0d0
+
+  if (xdim == 1) then
+    do k = lb(3),ub(3)
+      do j = lb(2),ub(2)
+        ! Enforce continuity for normal magnetic field
+        bn_mean(l(1):ub(1)) = half*(qm(l(1)-1:ub(1)-1,j,k,bn,xdim)+qp(l(1):ub(1),j,k,bn,xdim))
+        ! Left state
+        qleft (l(1):ub(1),1) = qm(l(1)-1:ub(1)-1,j,k,1  ,xdim) ! Mass density
+        qleft (l(1):ub(1),2) = qm(l(1)-1:ub(1)-1,j,k,5  ,xdim) ! Pressure
+        qleft (l(1):ub(1),3) = qm(l(1)-1:ub(1)-1,j,k,ln ,xdim) ! Normal velocity
+        qleft (l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
+        qleft (l(1):ub(1),5) = qm(l(1)-1:ub(1)-1,j,k,lt1,xdim) ! Tangential velocity 1
+        qleft (l(1):ub(1),6) = qm(l(1)-1:ub(1)-1,j,k,bt1,xdim) ! Tangential magnetic field 1
+        qleft (l(1):ub(1),7) = qm(l(1)-1:ub(1)-1,j,k,lt2,xdim) ! Tangential velocity 2
+        qleft (l(1):ub(1),8) = qm(l(1)-1:ub(1)-1,j,k,bt2,xdim) ! Tangential magnetic field 2
+        ! Right state
+        qright(l(1):ub(1),1) = qp(l(1):ub(1),j,k,1  ,xdim) ! Mass density
+        qright(l(1):ub(1),2) = qp(l(1):ub(1),j,k,5  ,xdim) ! Pressure
+        qright(l(1):ub(1),3) = qp(l(1):ub(1),j,k,ln ,xdim) ! Normal velocity
+        qright(l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
+        qright(l(1):ub(1),5) = qp(l(1):ub(1),j,k,lt1,xdim) ! Tangential velocity 1
+        qright(l(1):ub(1),6) = qp(l(1):ub(1),j,k,bt1,xdim) ! Tangential magnetic field 1
+        qright(l(1):ub(1),7) = qp(l(1):ub(1),j,k,lt2,xdim) ! Tangential velocity 2
+        qright(l(1):ub(1),8) = qp(l(1):ub(1),j,k,bt2,xdim) ! Tangential magnetic field 2
+        call solver (self,qleft,qright,fgdnv,nx,8)
+  !      call solver (self,qleft,qright,fgdnv,l(1),ub(1))
+        ! Output fluxes
+        fl(1:nx,j,k,1  ) = fgdnv(1:nx,1)  ! Mass density
+        fl(1:nx,j,k,5  ) = fgdnv(1:nx,2)  ! Total energy
+        fl(1:nx,j,k,ln ) = fgdnv(1:nx,3)  ! Normal momentum
+        fl(1:nx,j,k,bn ) = fgdnv(1:nx,4)  ! Normal magnetic field
+        fl(1:nx,j,k,lt1) = fgdnv(1:nx,5)  ! Transverse momentum 1
+        fl(1:nx,j,k,bt1) = fgdnv(1:nx,6)  ! Transverse magnetic field 1
+        fl(1:nx,j,k,lt2) = fgdnv(1:nx,7)  ! Transverse momentum 2
+        fl(1:nx,j,k,bt2) = fgdnv(1:nx,8)  ! Transverse magnetic field 2
+      end do
+    end do
+  else if (xdim == 2) then
+    do i = lb(1),ub(1)
+      do k = lb(3),ub(3)
+        ! Enforce continuity for normal magnetic field
+        bn_mean(l(1):ub(1)) = half*(qm(i,l(1)-1:ub(1)-1,k,bn,xdim)+qp(i,l(1):ub(1),k,bn,xdim))
+        ! Left state
+        qleft (l(1):ub(1),1) = qm(i,l(1)-1:ub(1)-1,k,1  ,xdim) ! Mass density
+        qleft (l(1):ub(1),2) = qm(i,l(1)-1:ub(1)-1,k,5  ,xdim) ! Pressure
+        qleft (l(1):ub(1),3) = qm(i,l(1)-1:ub(1)-1,k,ln ,xdim) ! Normal velocity
+        qleft (l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
+        qleft (l(1):ub(1),5) = qm(i,l(1)-1:ub(1)-1,k,lt1,xdim) ! Tangential velocity 1
+        qleft (l(1):ub(1),6) = qm(i,l(1)-1:ub(1)-1,k,bt1,xdim) ! Tangential magnetic field 1
+        qleft (l(1):ub(1),7) = qm(i,l(1)-1:ub(1)-1,k,lt2,xdim) ! Tangential velocity 2
+        qleft (l(1):ub(1),8) = qm(i,l(1)-1:ub(1)-1,k,bt2,xdim) ! Tangential magnetic field 2
+        ! Right state
+        qright(l(1):ub(1),1) = qp(i,l(1):ub(1),k,1  ,xdim) ! Mass density
+        qright(l(1):ub(1),2) = qp(i,l(1):ub(1),k,5  ,xdim) ! Pressure
+        qright(l(1):ub(1),3) = qp(i,l(1):ub(1),k,ln ,xdim) ! Normal velocity
+        qright(l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
+        qright(l(1):ub(1),5) = qp(i,l(1):ub(1),k,lt1,xdim) ! Tangential velocity 1
+        qright(l(1):ub(1),6) = qp(i,l(1):ub(1),k,bt1,xdim) ! Tangential magnetic field 1
+        qright(l(1):ub(1),7) = qp(i,l(1):ub(1),k,lt2,xdim) ! Tangential velocity 2
+        qright(l(1):ub(1),8) = qp(i,l(1):ub(1),k,bt2,xdim) ! Tangential magnetic field 2
+        call solver (self,qleft,qright,fgdnv,nx,8)
+    !    call solver (self,qleft,qright,fgdnv,l(1),ub(1))
+        ! Output fluxes
+        fl(i,1:nx,k,1  ) = fgdnv(1:nx,1)  ! Mass density
+        fl(i,1:nx,k,5  ) = fgdnv(1:nx,2)  ! Total energy
+        fl(i,1:nx,k,ln ) = fgdnv(1:nx,3)  ! Normal momentum
+        fl(i,1:nx,k,bn ) = fgdnv(1:nx,4)  ! Normal magnetic field
+        fl(i,1:nx,k,lt1) = fgdnv(1:nx,5)  ! Transverse momentum 1
+        fl(i,1:nx,k,bt1) = fgdnv(1:nx,6)  ! Transverse magnetic field 1
+        fl(i,1:nx,k,lt2) = fgdnv(1:nx,7)  ! Transverse momentum 2
+        fl(i,1:nx,k,bt2) = fgdnv(1:nx,8)  ! Transverse magnetic field 2
+      end do
+    end do
+  else if (xdim == 3) then
+    do j = lb(2),ub(2)
+      do i = lb(1),ub(1)
+        ! Enforce continuity for normal magnetic field
+        bn_mean(l(1):ub(1)) = half*(qm(i,j,l(1)-1:ub(1)-1,bn,xdim)+qp(i,j,l(1):ub(1),bn,xdim))
+        ! Left state
+        qleft (l(1):ub(1),1) = qm(i,j,l(1)-1:ub(1)-1,1  ,xdim) ! Mass density
+        qleft (l(1):ub(1),2) = qm(i,j,l(1)-1:ub(1)-1,5  ,xdim) ! Pressure
+        qleft (l(1):ub(1),3) = qm(i,j,l(1)-1:ub(1)-1,ln ,xdim) ! Normal velocity
+        qleft (l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
+        qleft (l(1):ub(1),5) = qm(i,j,l(1)-1:ub(1)-1,lt1,xdim) ! Tangential velocity 1
+        qleft (l(1):ub(1),6) = qm(i,j,l(1)-1:ub(1)-1,bt1,xdim) ! Tangential magnetic field 1
+        qleft (l(1):ub(1),7) = qm(i,j,l(1)-1:ub(1)-1,lt2,xdim) ! Tangential velocity 2
+        qleft (l(1):ub(1),8) = qm(i,j,l(1)-1:ub(1)-1,bt2,xdim) ! Tangential magnetic field 2
+        ! Right state
+        qright(l(1):ub(1),1) = qp(i,j,l(1):ub(1),1  ,xdim) ! Mass density
+        qright(l(1):ub(1),2) = qp(i,j,l(1):ub(1),5  ,xdim) ! Pressure
+        qright(l(1):ub(1),3) = qp(i,j,l(1):ub(1),ln ,xdim) ! Normal velocity
+        qright(l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
+        qright(l(1):ub(1),5) = qp(i,j,l(1):ub(1),lt1,xdim) ! Tangential velocity 1
+        qright(l(1):ub(1),6) = qp(i,j,l(1):ub(1),bt1,xdim) ! Tangential magnetic field 1
+        qright(l(1):ub(1),7) = qp(i,j,l(1):ub(1),lt2,xdim) ! Tangential velocity 2
+        qright(l(1):ub(1),8) = qp(i,j,l(1):ub(1),bt2,xdim) ! Tangential magnetic field 2
+        call solver (self,qleft,qright,fgdnv,nx,8)
+    !    call solver (self,qleft,qright,fgdnv,l(1),ub(1))
+        ! Output fluxes
+        fl(i,j,1:nx,1  ) = fgdnv(1:nx,1)  ! Mass density
+        fl(i,j,1:nx,5  ) = fgdnv(1:nx,2)  ! Total energy
+        fl(i,j,1:nx,ln ) = fgdnv(1:nx,3)  ! Normal momentum
+        fl(i,j,1:nx,bn ) = fgdnv(1:nx,4)  ! Normal magnetic field
+        fl(i,j,1:nx,lt1) = fgdnv(1:nx,5)  ! Transverse momentum 1
+        fl(i,j,1:nx,bt1) = fgdnv(1:nx,6)  ! Transverse magnetic field 1
+        fl(i,j,1:nx,lt2) = fgdnv(1:nx,7)  ! Transverse momentum 2
+        fl(i,j,1:nx,bt2) = fgdnv(1:nx,8)  ! Transverse magnetic field 2
+      end do 
+    end do
+      
+  endif
+
   end associate
   call trace%end (itimer)
 end subroutine cmpflxm
@@ -1088,69 +1191,95 @@ end subroutine cmpflxm
 !> =============================================================================
 !> 2D solver for EMF
 !> =============================================================================
-subroutine cmp_mag_flx (self, lp1 ,lp2 ,lor ,bp1 , bp2, bor, dtds, emf, ngrid, nvar)
+subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor, dtds, emf, ngrid, nvar)
   class(mhd_t):: self
   ! 2D Riemann solver to compute EMF at cell edges
   ! indices of the 2 planar velocity lp1 and lp2 and the orthogonal one,
   ! lor and idem for the magnetic field
   integer:: lp1, lp2, lor, bp1, bp2, bor, ngrid, nvar
+  integer:: iRT, jRT, kRT, iRB, jRB, kRB, iLT, jLT, kLT, iLB, jLB, kLB
   real(dp):: dtds
   real(dp),DIMENSION(:,:,:):: emf
+  real(dp),DIMENSION(:,:,:,:,:):: qRT, qLT, qRB, qLB
   ! local variables
-  integer:: j, k, n, xdim, l
-  real(dp),DIMENSION(ngrid,nvar)::qLL,qRL,qLR,qRR
+  integer:: i, j, k, n, xdim, l
+  real(dp),DIMENSION(1:ngrid,nvar)::qLL,qRL,qLR,qRR
   real(dp):: smallp
   integer, save:: itimer=0
+  !associate (qRT=>self%qRT,qLT=>self%qLT,qRB=>self%qRB,qLB=>self%qLB)
   call trace%begin ('mhd_mod::cmp_mag_flx',itimer=itimer)
-  associate (qRT=>self%qRT,qLT=>self%qLT,qRB=>self%qRB,qLB=>self%qLB)
   !-----------------------------------------------------------------------------
 
   xdim = lor - 1
+!  if (xdim == 3 .or. xdim == 1) then
+!    associate (qRT=>self%qRT,qLT=>self%qLT,qRB=>self%qRB,qLB=>self%qLB)
+!  else if (xdim == 2) then
+!    associate (qRT=>self%qRT,qLT=>self%qRB,qRB=>self%qLT,qLB=>self%qLB) 
+!  endif 
+
   smallp = smallr*smallc**2
   !
   qLL = 0d0
   qRL = 0d0
   qLR = 0d0
   qRR = 0d0
-  DO k = 2,self%mesh(3)%uo
-    DO j = 2,self%mesh(2)%uo
-      qLL (2:ngrid,1) = max(qRT(2:ngrid,j,k,1,xdim),smallr)
-      qRL (2:ngrid,1) = max(qLT(2:ngrid,j,k,1,xdim),smallr)
-      qLR (2:ngrid,1) = max(qRB(2:ngrid,j,k,1,xdim),smallr)
-      qRR (2:ngrid,1) = max(qLB(2:ngrid,j,k,1,xdim),smallr)
-      qLL (2:ngrid,2) = max(qRT(2:ngrid,j,k,5,xdim),smallp)
-      qRL (2:ngrid,2) = max(qLT(2:ngrid,j,k,5,xdim),smallp)
-      qLR (2:ngrid,2) = max(qRB(2:ngrid,j,k,5,xdim),smallp)
-      qRR (2:ngrid,2) = max(qLB(2:ngrid,j,k,5,xdim),smallp)
-      qLL (2:ngrid,3) = qRT(2:ngrid,j,k,lp1,xdim)
-      qRL (2:ngrid,3) = qLT(2:ngrid,j,k,lp1,xdim)
-      qLR (2:ngrid,3) = qRB(2:ngrid,j,k,lp1,xdim)
-      qRR (2:ngrid,3) = qLB(2:ngrid,j,k,lp1,xdim)
-      qLL (2:ngrid,4) = qRT(2:ngrid,j,k,lp2,xdim)
-      qRL (2:ngrid,4) = qLT(2:ngrid,j,k,lp2,xdim)
-      qLR (2:ngrid,4) = qRB(2:ngrid,j,k,lp2,xdim)
-      qRR (2:ngrid,4) = qLB(2:ngrid,j,k,lp2,xdim)
-      qLL (2:ngrid,6) = half*(qRT(2:ngrid,j,k,bp1,xdim)+qLT(2:ngrid,j,k,bp1,xdim))
-      qRL (2:ngrid,6) = half*(qRT(2:ngrid,j,k,bp1,xdim)+qLT(2:ngrid,j,k,bp1,xdim))
-      qLR (2:ngrid,6) = half*(qRB(2:ngrid,j,k,bp1,xdim)+qLB(2:ngrid,j,k,bp1,xdim))
-      qRR (2:ngrid,6) = half*(qRB(2:ngrid,j,k,bp1,xdim)+qLB(2:ngrid,j,k,bp1,xdim))
-      qLL (2:ngrid,7) = half*(qRT(2:ngrid,j,k,bp2,xdim)+qRB(2:ngrid,j,k,bp2,xdim))
-      qRL (2:ngrid,7) = half*(qLT(2:ngrid,j,k,bp2,xdim)+qLB(2:ngrid,j,k,bp2,xdim))
-      qLR (2:ngrid,7) = half*(qRT(2:ngrid,j,k,bp2,xdim)+qRB(2:ngrid,j,k,bp2,xdim))
-      qRR (2:ngrid,7) = half*(qLT(2:ngrid,j,k,bp2,xdim)+qLB(2:ngrid,j,k,bp2,xdim))
-      qLL (2:ngrid,5) = qRT(2:ngrid,j,k,lor,xdim)
-      qRL (2:ngrid,5) = qLT(2:ngrid,j,k,lor,xdim)
-      qLR (2:ngrid,5) = qRB(2:ngrid,j,k,lor,xdim)
-      qRR (2:ngrid,5) = qLB(2:ngrid,j,k,lor,xdim)
-      qLL (2:ngrid,8) = qRT(2:ngrid,j,k,bor,xdim)
-      qRL (2:ngrid,8) = qLT(2:ngrid,j,k,bor,xdim)
-      qLR (2:ngrid,8) = qRB(2:ngrid,j,k,bor,xdim)
-      qRR (2:ngrid,8) = qLB(2:ngrid,j,k,bor,xdim)
-      call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
-    END DO
-  END DO
+
+  if (xdim == 3) then
+    iRT = 1; jRT = 1; kRT = 0
+    iRB = 1; jRB = 0; kRB = 0
+    iLT = 0; jLT = 1; kLT = 0
+    iLB = 0; jLB = 0; kLB = 0
+  else if (xdim == 2) then
+    iRT = 1; jRT = 0; kRT = 1
+    iRB = 0; jRB = 0; kRB = 1
+    iLT = 1; jLT = 0; kLT = 0
+    iLB = 0; jLB = 0; kLB = 0
+  else if (xdim == 1) then
+    iRT = 0; jRT = 1; kRT = 1
+    iRB = 0; jRB = 1; kRB = 0
+    iLT = 0; jLT = 0; kLT = 1
+    iLB = 0; jLB = 0; kLB = 0
+  endif 
+
+    do k = 2,self%mesh(3)%uo
+      do j = 2,self%mesh(2)%uo
+        qLL (2:ngrid,1) = max(qRT(2-iRT:ngrid-iRT, j-jRT, k-kRT, 1, xdim), smallr)
+        qRL (2:ngrid,1) = max(qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, 1, xdim), smallr)
+        qLR (2:ngrid,1) = max(qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, 1, xdim), smallr)
+        qRR (2:ngrid,1) = max(qLB(2-iLB:ngrid-iLB, j-jLB, k-kLB, 1, xdim), smallr)
+        qLL (2:ngrid,2) = max(qRT(2-iRT:ngrid-iRT, j-jRT, k-kRT, 5, xdim), smallp)
+        qRL (2:ngrid,2) = max(qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, 5, xdim), smallp)
+        qLR (2:ngrid,2) = max(qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, 5, xdim), smallp)
+        qRR (2:ngrid,2) = max(qLB(2-iLB:ngrid-iLB, j-jLB, k-kLB, 5, xdim), smallp)
+        qLL (2:ngrid,3) = qRT(2-iRT:ngrid-iRT, j-jRT, k-kRT, lp1, xdim)
+        qRL (2:ngrid,3) = qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, lp1, xdim)
+        qLR (2:ngrid,3) = qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, lp1, xdim)
+        qRR (2:ngrid,3) = qLB(2-iLB:ngrid-iLB, j-jLB, k-kLB, lp1, xdim)
+        qLL (2:ngrid,4) = qRT(2-iRT:ngrid-iRT, j-jRT, k-kRT, lp2, xdim)
+        qRL (2:ngrid,4) = qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, lp2, xdim)
+        qLR (2:ngrid,4) = qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, lp2, xdim)
+        qRR (2:ngrid,4) = qLB(2-iLB:ngrid-iLB, j-jLB, k-kLB, lp2, xdim)
+        qLL (2:ngrid,6) = half*(qRT(2-iRT:ngrid-iRT, j-jRT, k-kRT, bp1, xdim) + qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, bp1, xdim))
+        qRL (2:ngrid,6) = half*(qRT(2-iRT:ngrid-iRT, j-jRT, k-kRT, bp1, xdim) + qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, bp1, xdim))
+        qLR (2:ngrid,6) = half*(qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, bp1, xdim) + qLB(2-iLB:ngrid-iLB, j-jLB, k-kLB, bp1, xdim))
+        qRR (2:ngrid,6) = half*(qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, bp1, xdim) + qLB(2-iLB:ngrid-iLB, j-jLB, k-kLB, bp1, xdim))
+        qLL (2:ngrid,7) = half*(qRT(2-iRT:ngrid-iRT, j-jRT, k-kRT, bp2, xdim) + qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, bp2, xdim))
+        qRL (2:ngrid,7) = half*(qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, bp2, xdim) + qLB(2-iLB:ngrid-iLB, j-jLB, k-kLB, bp2, xdim))
+        qLR (2:ngrid,7) = half*(qRT(2-iRT:ngrid-iRT, j-jRT, k-kRT, bp2, xdim) + qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, bp2, xdim))
+        qRR (2:ngrid,7) = half*(qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, bp2, xdim) + qLB(2-iLB:ngrid-iLB, j-jLB, k-kLB, bp2, xdim))
+        qLL (2:ngrid,5) = qRT(2-iRT:ngrid-iRT, j-jRT, k-kRT, lor, xdim)
+        qRL (2:ngrid,5) = qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, lor, xdim)
+        qLR (2:ngrid,5) = qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, lor, xdim)
+        qRR (2:ngrid,5) = qLB(2-iLB:ngrid-iLB, j-jLB, k-kLB, lor, xdim)
+        qLL (2:ngrid,8) = qRT(2-iRT:ngrid-iRT, j-jRT, k-kRT, bor, xdim)
+        qRL (2:ngrid,8) = qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, bor, xdim)
+        qLR (2:ngrid,8) = qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, bor, xdim)
+        qRR (2:ngrid,8) = qLB(2-iLB:ngrid-iLB, j-jLB, k-kLB, bor, xdim)
+        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
+      end do
+    end do
   call trace%end (itimer)
-  end associate
+!  end associate
 END SUBROUTINE cmp_mag_flx
 
 !> =============================================================================
