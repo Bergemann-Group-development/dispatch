@@ -35,7 +35,7 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:):: q         ! primitive
     real, pointer, dimension(:,:,:,:):: bf, em    ! face centered B, emf
     real, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
-    real, pointer, dimension(:,:,:,:,:):: dq, dbf ! slopes
+    real, pointer, dimension(:,:,:,:,:):: dq, dq2, dbf ! slopes
     real, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,QRT
     real, pointer, dimension(:,:,:,:):: uin       ! conserved
     real, pointer, dimension(:,:,:,:):: unew      ! new conserved
@@ -116,8 +116,6 @@ SUBROUTINE update (self)
   ! Checks whether to do output
   !----------------------------------------------------------------------------
   call self%output
-  print*,'self%dtime',self%dtime
-!  if(self%time .gt. 1e-3) stop
   !-----------------------------------------------------------------------------
   ! Memory mapping and allocations.  All alloc and dealloc should be done here,
   ! even if it would be possible to do some of them locally, in the procedures
@@ -126,9 +124,6 @@ SUBROUTINE update (self)
   self%uin  => self%mem(:,:,:,:,self%it ,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
 
-  print*,'self%uin(10,10,10,6)',self%uin(10,10,10,6)
-  !print*,'self%unew(10,:,10,6)',self%unew(10,:,10,6)
-  !print*,'self%uin(10,:,10,8)',self%uin(10,:,10,8)
   n = self%mesh%gn
   allocate (self%c  (n(1),n(2),n(3)))
   allocate (self%Ex (n(1),n(2),n(3)))
@@ -138,7 +133,9 @@ SUBROUTINE update (self)
   allocate (self%qp (n(1),n(2),n(3),self%nv,ndim))
   allocate (self%qm (n(1),n(2),n(3),self%nv,ndim))
   allocate (self%dq (n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%dbf(n(1),n(2),n(3),self%nv,ndim))
+  allocate (self%dq2(n(1),n(2),n(3),self%nv,ndim))
+  allocate (self%bf (n(1),n(2),n(3),3))
+  allocate (self%dbf(n(1),n(2),n(3),3,2))
   allocate (self%qLB(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%qLT(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%qRB(n(1),n(2),n(3),self%nv,ndim))
@@ -162,10 +159,13 @@ SUBROUTINE update (self)
   call check_small (self)
   call ctoprim(self)                                    ! Primitive variables
   call self%courant_condition                           ! compute dt
-  call uslope(self,self%q,self%dq,self%nv)              ! TVD slopes
-  call uslope(self,self%bf,self%dbf,3)                  ! TVD slopes
+  call uslope(self,self%bf,self%q,self%dq,self%dbf)              ! TVD slopes
+  if (slope_type==3.0) then
+    self%dq2=self%dq
+  else
+    call uslope(self,self%bf,self%q,self%dq2,self%dbf)              ! TVD slopes
+  endif
   call trace3d(self)                                    ! predictor step
-  print*,'After   trace3d: self%uin(10,10,10,6),self%bf(10,10,10,2)',self%uin(10,10,10,6),self%bf(10,10,10,2)
 
   allocate (fl(self%gn(1),self%gn(2),self%gn(3),self%nv,3))
   allocate (em(self%gn(1),self%gn(2),self%gn(3),3))
@@ -196,14 +196,14 @@ SUBROUTINE update (self)
   unew(1:i0-1,:,:,:) = uin(1:i0-1,:,:,:); unew(i1+1:,:,:,:) = uin(i1+1:,:,:,:)
   unew(:,1:j0-1,:,:) = uin(:,1:j0-1,:,:); unew(:,j1+1:,:,:) = uin(:,j1+1:,:,:)
   unew(:,:,1:k0-1,:) = uin(:,:,1:k0-1,:); unew(:,:,k1+1:,:) = uin(:,:,k1+1:,:)
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv  ) = &
-   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv  ) + &
-    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv,1) - &
-    fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,1:self%nv,1) + &
-    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv,2) - &
-    fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1:self%nv,2) + &
-    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv,3) - &
-    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:self%nv,3)   
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv-3  ) = &
+   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv-3  ) + &
+    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv-3,1) - &
+    fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,1:self%nv-3,1) + &
+    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv-3,2) - &
+    fl(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1:self%nv-3,2) + &
+    fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:self%nv-3,3) - &
+    fl(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1:self%nv-3,3)   
 
   !!!! TO DO !!!! 
   !!! Instead of applying the update in time explicitly in mhd_mod
@@ -212,8 +212,6 @@ SUBROUTINE update (self)
 
   ! Compute emf fluxes with appropriate time steps
 
-!  print*,'minval(em),maxval(em)',minval(em),maxval(em)
-!  print*,'minloc(em),maxloc(em)',minloc(em),maxloc(em)
   em(:,:,:,3) = em(:,:,:,3)*dtdx
   em(:,:,:,1) = em(:,:,:,1)*dtdy
   em(:,:,:,2) = em(:,:,:,2)*dtdz
@@ -228,16 +226,11 @@ SUBROUTINE update (self)
           ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
             em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) )
 
-!  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) = unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + dflux_x
+  !unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) = unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + dflux_x  
 
-print*,'maxval(dflux_x),minval(dflux_x)',maxval(dflux_x),minval(dflux_x)
-print*,'maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,1)),minval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,1))',maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,1)),minval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,1))
-print*,'maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,2)),minval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,2))',maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,2)),minval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,2))
-print*,'maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3)),minval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3))',maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3)),minval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3))
-  
   Bleft =                                          &
             0.5 *                                ( &
-            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
+            unew(i0-1:i1-1,j0  :j1  ,k0  :k1  ,6) + &
             unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) ) &
             + dflux_x
   ! right
@@ -245,14 +238,15 @@ print*,'maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3)),minval(em(i0  :i1  ,j0  :j1  
             em(i0+1:i1+1,j0  :j1  ,k0+1:k1+1,2) ) - &
           ( em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3)   - &
             em(i0+1:i1+1,j0+1:j1+1,k0  :k1  ,3) )
-!  unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) = unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) + dflux_x
+
+  !unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) = unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) + dflux_x  
 
   Bright =                                         &
             0.5 *                                ( &
-            unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) + &
+            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
             unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) ) &
             + dflux_x
-!
+
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) = 0.5 * (Bleft + Bright)
 
   !-----------------------------------------------------------------------------
@@ -265,11 +259,11 @@ print*,'maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3)),minval(em(i0  :i1  ,j0  :j1  
           ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
             em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) )
 
-!  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + dflux_y
+  !unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + dflux_y  
 
   Bleft =                                          &
             0.5 *                                ( &
-            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
+            unew(i0  :i1  ,j0-1:j1-1,k0  :k1  ,7) + &
             unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) ) &
             + dflux_y
 
@@ -279,11 +273,11 @@ print*,'maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3)),minval(em(i0  :i1  ,j0  :j1  
           ( em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1)   - &
             em(i0  :i1  ,j0+1:j1+1,k0+1:k1+1,1) )
 
-!  unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) = unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) + dflux_y
+!  unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) = unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) + dflux_y  
 
   Bright =                                         &
             0.5 *                                ( &
-            unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) + &
+            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
             unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) ) &
             + dflux_y
 
@@ -299,11 +293,11 @@ print*,'maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3)),minval(em(i0  :i1  ,j0  :j1  
           ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
             em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) )
 
-!  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + dflux_z
+  !unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + dflux_z  
 
   Bleft =                                          &
             0.5 *                                ( &
-            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
+            unew(i0  :i1  ,j0  :j1  ,k0-1:k1-1,8) + &
             unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) ) &
             + dflux_z
 
@@ -313,11 +307,11 @@ print*,'maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3)),minval(em(i0  :i1  ,j0  :j1  
           ( em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2)   - &
             em(i0+1:i1+1,j0  :j1  ,k0+1:k1+1,2) )
 
-!  unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) = unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) + dflux_z
+!  unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) = unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) + dflux_z  
 
   Bright =                                         &
             0.5 *                                ( &
-            unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) + &
+            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
             unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) ) &
             + dflux_z
 
@@ -341,7 +335,7 @@ print*,'maxval(em(i0  :i1  ,j0  :j1  ,k0  :k1 ,3)),minval(em(i0  :i1  ,j0  :j1  
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
-  deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dbf, &
+  deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dq2,self%bf,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
               self%Ex,self%Ey,self%Ez)
   call trace%end (itimer)
@@ -420,17 +414,20 @@ subroutine ctoprim(self)
   smallp = smallr*smallc**2/self%gamma
   n = shape(uin)-1
 
-  self%bf => uin(:,:,:,6:8)                                          ! Face centered B
+  !self%bf => uin(:,:,:,6:8)                                     ! Left  face centered B
   q(:,:,:,1) = max(uin(:,:,:,1),smallr)                         ! Density
   q(:,:,:,2) = uin(:,:,:,2)/q(:,:,:,1)                          ! vx
   q(:,:,:,3) = uin(:,:,:,3)/q(:,:,:,1)                          ! vy
   q(:,:,:,4) = uin(:,:,:,4)/q(:,:,:,1)                          ! vz
-  q(1:n(1),:,:,6) = (uin(1:n(1),:,:,6)+uin(2:,:,:,6))*half      ! Bx
-  q(:,1:n(2),:,7) = (uin(:,1:n(2),:,7)+uin(:,2:,:,7))*half      ! By
-  q(:,:,1:n(3),8) = (uin(:,:,1:n(3),8)+uin(:,:,2:,8))*half      ! Bz
-  q(n(1)+1,:,:,6) = 0.0
-  q(:,n(2)+1,:,7) = 0.0
-  q(:,:,n(3)+1,8) = 0.0
+  q(:,:,:,6) = uin(:,:,:,6)                                     ! Bx
+  q(:,:,:,7) = uin(:,:,:,7)                                     ! By
+  q(:,:,:,8) = uin(:,:,:,8)                                     ! Bz
+  bf(1:n(1),:,:,1) = (uin(1:n(1),:,:,6)+uin(2:,:,:,6))*half      
+  bf(:,1:n(2),:,2) = (uin(:,1:n(2),:,7)+uin(:,2:,:,7))*half      
+  bf(:,:,1:n(3),3) = (uin(:,:,1:n(3),8)+uin(:,:,2:,8))*half      
+  bf(n(1)+1,:,:,1) = bf(5,:,:,1)
+  bf(:,n(2)+1,:,2) = bf(:,5,:,2)
+  bf(:,:,n(3)+1,3) = bf(:,:,5,3)
   q(:,:,:,5) = MAX((self%gamma-one)*(uin(:,:,:,5) -&                 ! Gas pressure
     half*(q(:,:,:,6)**2+q(:,:,:,7)**2+q(:,:,:,8)**2)) - &       ! Magnetic pressure
     half*q(:,:,:,1)*(q(:,:,:,2)**2+q(:,:,:,3)**2+q(:,:,:,4)**2),smallp)
@@ -447,13 +444,15 @@ end subroutine ctoprim
 !> =============================================================================
 !> Slope limiters
 !> =============================================================================
-subroutine uslope(self,q,dq,nv)
+subroutine uslope(self,bf,q,dq,dbf)
   class(mhd_t):: self
   real, dimension(:,:,:,:):: q
+  real, dimension(size(q,1),size(q,2),size(q,3),size(q,4)):: bf
   real, dimension(size(q,1),size(q,2),size(q,3),size(q,4),3):: dq
+  real, dimension(size(q,1),size(q,2),size(q,3),3,3):: dbf
   integer::nv
   integer::i, j, k, n, l(3), u(3)
-  real(dp)::dsgn, dlim, dcen, dlft, drgt, slop, c1, c2
+  real(dp)::dsgn, dlim, dcen, dlft, drgt, slop, xslope_type
   real(dp)::dfll,dflm,dflr,dfml,dfmm,dfmr,dfrl,dfrm,dfrr
   real(dp)::dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml,dfrrl
   real(dp)::dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm,dfrrm
@@ -465,6 +464,7 @@ subroutine uslope(self,q,dq,nv)
   !
   l = self%mesh%lo
   u = self%mesh%uo
+  nv=self%nv
   !print*,'l,u',l,u
   if(slope_type==-1)then
     do n = 1, nv
@@ -503,45 +503,94 @@ subroutine uslope(self,q,dq,nv)
       end do
     end do
   else if (slope_type==2) then ! moncen
-    c1 = slope_type
-    c2 = 0.5_dp/c1
+    xslope_type= 2 !MIN(slope_type,2)
     do n = 1, nv
       do k = l(3),u(3)
         do j = l(2),u(2)
           do i = l(1),u(1)
+
             ! slopes in first coordinate direction
-            dlft = c1*(q(i  ,j,k,n) - q(i-1,j,k,n))
-            drgt = c1*(q(i+1,j,k,n) - q(i  ,j,k,n))
-            dcen = c2*(dlft+drgt)
-            dsgn = sign(one, dcen)
-            slop = min(abs(dlft),abs(drgt))
-            dlim = merge(zero,slop,(dlft*drgt)<=zero)
-            dq(i,j,k,n,1) = dsgn*min(dlim,abs(dcen))
-!          end do
-!          do i = l(1),u(1)
+            dlft = (q(i  ,j,k,n) - q(i-1,j,k,n))
+            drgt = (q(i+1,j,k,n) - q(i  ,j,k,n))
+            slop = (dlft**2+dlft*drgt)/(dlft**2+drgt**2+1e-30)
+            slop = dlft*(1.-slop)+drgt*slop
+            dq(i,j,k,n,1) = merge(slop,zero,(dlft*drgt)>zero)
             ! slopes in second coordinate direction
-            dlft = c1*(q(i,j  ,k,n) - q(i,j-1,k,n))
-            drgt = c1*(q(i,j+1,k,n) - q(i,j  ,k,n))
-            dcen = c2*(dlft+drgt)
-            dsgn = sign(one,dcen)
-            slop = min(abs(dlft),abs(drgt))
-            dlim = merge(zero,slop,(dlft*drgt)<=zero)
-            dq(i,j,k,n,2) = dsgn*min(dlim,abs(dcen))
-!          end do
-!          do i = l(1),u(1)
+            dlft = (q(i,j  ,k,n) - q(i,j-1,k,n))
+            drgt = (q(i,j+1,k,n) - q(i,j  ,k,n))
+            slop = (dlft**2+dlft*drgt)/(dlft**2+drgt**2+1e-30)
+            slop = dlft*(1.-slop)+drgt*slop
+            dq(i,j,k,n,2) = merge(slop,zero,(dlft*drgt)>zero)
             ! slopes in third coordinate direction
-            dlft = c1*(q(i,j,k  ,n) - q(i,j,k-1,n))
-            drgt = c1*(q(i,j,k+1,n) - q(i,j,k  ,n))
-            dcen = c2*(dlft+drgt)
-            dsgn = sign(one,dcen)
-            slop = min(abs(dlft),abs(drgt))
-            dlim = merge(zero,slop,(dlft*drgt)<=zero)
-            dq(i,j,k,n,3) = dsgn*min(dlim,abs(dcen))
+            dlft = (q(i,j,k  ,n) - q(i,j,k-1,n))
+            drgt = (q(i,j,k+1,n) - q(i,j,k  ,n))
+            slop = (dlft**2+dlft*drgt)/(dlft**2+drgt**2+1e-30)
+            slop = dlft*(1.-slop)+drgt*slop
+            dq(i,j,k,n,3) = merge(slop,zero,(dlft*drgt)>zero)
           end do
         end do
       end do
     end do
+
+    do k = l(3),u(3)
+      do j = l(2),u(2)
+        do i = l(1),u(1)
+          ! Bx
+          dlft = (bf(i,j  ,k,1) - bf(i,j-1,k,1))
+          drgt = (bf(i,j+1,k,1) - bf(i,j  ,k,1))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,1,1) = dsgn*min(slop,abs(dcen))
+          ! slopes in second coordinate direction
+          dlft = (bf(i,j,k  ,1) - bf(i,j,k-1,1))
+          drgt = (bf(i,j,k+1,1) - bf(i,j,k  ,1))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,1,2) = dsgn*min(slop,abs(dcen))
+          ! By
+          ! slopes in first coordinate direction
+          dlft = (bf(i  ,j,k,2) - bf(i-1,j,k,2))
+          drgt = (bf(i+1,j,k,2) - bf(i  ,j,k,2))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,2,1) = dsgn*min(slop,abs(dcen))
+          ! slopes in second coordinate direction
+          dlft = (bf(i,j,k  ,2) - bf(i,j,k-1,2))
+          drgt = (bf(i,j,k+1,2) - bf(i,j,k  ,2))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,2,2) = dsgn*min(slop,abs(dcen))
+          ! Bz
+          ! slopes in first coordinate direction
+          dlft = (bf(i  ,j,k,3) - bf(i-1,j,k,3))
+          drgt = (bf(i+1,j,k,3) - bf(i  ,j,k,3))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,3,1) = dsgn*min(slop,abs(dcen))
+          ! slopes in second coordinate direction
+          dlft = (bf(i,j  ,k,3) - bf(i,j-1,k,3))
+          drgt = (bf(i,j+1,k,3) - bf(i,j  ,k,3))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,3,2) = dsgn*min(slop,abs(dcen))
+        end do
+      end do
+    end do
+
   else if (slope_type==3) then ! positivity preserving 3d unsplit slope
+    xslope_type = real(slope_type - 2_dp,kind=dp)
     do n = 1, nv
       do k = l(3),u(3)
         do j = l(2),u(2)
@@ -588,7 +637,14 @@ subroutine uslope(self,q,dq,nv)
             dfz  = half*(q(i,j,k+1,n)-q(i,j,k-1,n))
             dff  = half*(abs(dfx)+abs(dfy)+abs(dfz))
             !
-            slop = merge(min(one,min(abs(vmin),abs(vmax))/dff),one,dff>zero)
+            !print*,'i,j,k',i,j,k  
+            !print*,'vmin,vmax',vmin,vmax
+
+            if (dff > 0) then
+              slop = merge(min(one,min(abs(vmin),abs(vmax))/dff),one,dff>0d0)
+            else 
+              slop = 1d0
+            endif
             dlim = slop
             !
             dq(i,j,k,n,1) = dlim*dfx
@@ -598,6 +654,63 @@ subroutine uslope(self,q,dq,nv)
         end do
       end do
     end do
+      do k = l(3),u(3)
+        do j = l(2),u(2)
+          do i = l(1),u(1)
+            ! Bx
+            dlft = (bf(i,j  ,k,1) - bf(i,j-1,k,1))
+            drgt = (bf(i,j+1,k,1) - bf(i,j  ,k,1))
+            dcen = half*(dlft+drgt)
+            dsgn = sign(one, dcen)
+            slop = xslope_type*min(abs(dlft),abs(drgt))
+            slop = merge(slop,zero,(dlft*drgt)>zero)
+            dbf(i,j,k,1,1) = dsgn*min(slop,abs(dcen))
+            ! slopes in second coordinate direction
+            dlft = (bf(i,j,k  ,1) - bf(i,j,k-1,1))
+            drgt = (bf(i,j,k+1,1) - bf(i,j,k  ,1))
+            dcen = half*(dlft+drgt)
+            dsgn = sign(one, dcen)
+            slop = xslope_type*min(abs(dlft),abs(drgt))
+            slop = merge(slop,zero,(dlft*drgt)>zero)
+            dbf(i,j,k,1,2) = dsgn*min(slop,abs(dcen))
+            !By
+            ! slopes in first coordinate direction
+            dlft = (bf(i  ,j,k,2) - bf(i-1,j,k,2))
+            drgt = (bf(i+1,j,k,2) - bf(i  ,j,k,2))
+            dcen = half*(dlft+drgt)
+            dsgn = sign(one, dcen)
+            slop = xslope_type*min(abs(dlft),abs(drgt))
+            slop = merge(slop,zero,(dlft*drgt)>zero)
+            dbf(i,j,k,2,1) = dsgn*min(slop,abs(dcen))
+            ! slopes in second coordinate direction
+            dlft = (bf(i,j,k  ,2) - bf(i,j,k-1,2))
+            drgt = (bf(i,j,k+1,2) - bf(i,j,k  ,2))
+            dcen = half*(dlft+drgt)
+            dsgn = sign(one, dcen)
+            slop = xslope_type*min(abs(dlft),abs(drgt))
+            slop = merge(slop,zero,(dlft*drgt)>zero)
+            dbf(i,j,k,2,2) = dsgn*min(slop,abs(dcen))
+            ! Bz
+            ! slopes in first coordinate direction
+            dlft = (bf(i  ,j,k,3) - bf(i-1,j,k,3))
+            drgt = (bf(i+1,j,k,3) - bf(i  ,j,k,3))
+            dcen = half*(dlft+drgt)
+            dsgn = sign(one, dcen)
+            slop = xslope_type*min(abs(dlft),abs(drgt))
+            slop = merge(slop,zero,(dlft*drgt)>zero)
+            dbf(i,j,k,3,1) = dsgn*min(slop,abs(dcen))
+            ! slopes in second coordinate direction
+            dlft = (bf(i,j  ,k,3) - bf(i,j-1,k,3))
+            drgt = (bf(i,j+1,k,3) - bf(i,j  ,k,3))
+            dcen = half*(dlft+drgt)
+            dsgn = sign(one, dcen)
+            slop = xslope_type*min(abs(dlft),abs(drgt))
+            slop = merge(slop,zero,(dlft*drgt)>zero)
+            dbf(i,j,k,3,2) = dsgn*min(slop,abs(dcen))
+          end do
+        end do
+     end do
+
   else
      write(*,*)'Unknown slope type'
      stop
@@ -623,16 +736,18 @@ SUBROUTINE trace3d(self)
   real(dp) :: drx, dux, dvx, dwx, dpx, dAx, dBx, dCx
   real(dp) :: dry, duy, dvy, dwy, dpy, dAy, dbY, dCy
   real(dp) :: drz, duz, dvz, dwz, dpz, dAz, dBz, dCz
+  real(dp) :: drx2,dpx2,dry2,dpy2,drz2,dpz2
   real(dp) :: sr0, su0, sv0, sw0, sp0, sA0, sB0, sC0
   real(dp) :: AL, AR, BL, BR, CL, CR
   real(dp) :: dALy, dARy, dALz, dARz
   real(dp) :: dBLx, dBRx, dBLz, dBRz
   real(dp) :: dCLx, dCRx, dCLy, dCRy
   real(dp) :: sAL0, sAR0, sBL0, sBR0, sCL0, sCR0
+  real(dp), dimension(1:self%gn(1),1:self%gn(2),1:self%gn(3)):: rho_t, p_t
   real(dp) :: eff_gamma
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  associate(q=>self%q,bf=>self%bf,dq=>self%dq,qm=>self%qm,qp=>self%qp, &
+  associate(q=>self%q,bf=>self%bf,dq=>self%dq,dq2=>self%dq2,qm=>self%qm,qp=>self%qp, &
     dbf=>self%dbf,qRT=>self%qRT,qRB=>self%qRB,qLT=>self%qLT,qLB=>self%qLB, &
     Bx=>self%bf(:,:,:,1),By=>self%bf(:,:,:,2),Bz=>self%bf(:,:,:,3), &
     Ux=>self%q(:,:,:,2),Uy=>self%q(:,:,:,3),Uz=>self%q(:,:,:,4), &
@@ -647,13 +762,16 @@ SUBROUTINE trace3d(self)
   smallp = smallr*smallc**2/self%gamma
   !
   ! E = - UxB = BxU
-  Ex = zdn(ydn(Uz))*zdn(By) - ydn(zdn(Uy))*ydn(Bz)
-  Ey = xdn(zdn(Ux))*xdn(Bz) - zdn(xdn(Uz))*zdn(Bx)
-  Ez = ydn(xdn(Uy))*ydn(Bx) - xdn(ydn(Ux))*xdn(By)
+  Ex = ydn(zdn(Uy))*ydn(Bz) - zdn(ydn(Uz))*zdn(By) 
+  Ey = zdn(xdn(Uz))*zdn(Bx) - xdn(zdn(Ux))*xdn(Bz) 
+  Ez = xdn(ydn(Ux))*xdn(By) - ydn(xdn(Uy))*ydn(Bx) 
+
+  ! fill positive definite variables with reasonable values in "ghost-zones"
+  rho_t(:,:,:) = q(:,:,:,ir)
+  p_t(:,:,:)   = q(:,:,:,ip)
+
   !
   eff_gamma = self%gamma
-  print*,'Bx(10,10,10,6)',Bx(10,10,10)
-  print*,'In trace3d; before loop: self%uin(10,10,10,6)',self%uin(10,10,10,6)
   do k=2,self%gn(3)-1
   do j=2,self%gn(2)-1
   do i=2,self%gn(1)-1
@@ -689,27 +807,33 @@ SUBROUTINE trace3d(self)
     !
     ! Cell centered TVD slopes in X, Y and Z directions
     drx = half * dq(i,j,k,ir,1)
+    drx2= half *dq2(i,j,k,ir,1)
     dux = half * dq(i,j,k,iu,1)
     dvx = half * dq(i,j,k,iv,1)
     dwx = half * dq(i,j,k,iw,1)
     dpx = half * dq(i,j,k,ip,1)
+    dpx2= half *dq2(i,j,k,ip,1)
     dBx = half * dq(i,j,k,iB,1)
     dCx = half * dq(i,j,k,iC,1)
     !
     dry = half * dq(i,j,k,ir,2)
+    dry2= half *dq2(i,j,k,ir,2)
     duy = half * dq(i,j,k,iu,2)
     dvy = half * dq(i,j,k,iv,2)
     dwy = half * dq(i,j,k,iw,2)
     dpy = half * dq(i,j,k,ip,2)
+    dpy2= half *dq2(i,j,k,ip,2)
     duy = half * dq(i,j,k,iu,2)
     dAy = half * dq(i,j,k,iA,2)
     dCy = half * dq(i,j,k,iC,2)
     !
     drz = half * dq(i,j,k,ir,3)
+    drz2= half *dq2(i,j,k,ir,3)
     duz = half * dq(i,j,k,iu,3)
     dvz = half * dq(i,j,k,iv,3)
     dwz = half * dq(i,j,k,iw,3)
     dpz = half * dq(i,j,k,ip,3)
+    dpz2= half *dq2(i,j,k,ip,3)
     dAz = half * dq(i,j,k,iA,3)
     dBz = half * dq(i,j,k,iB,3)
     !
@@ -738,12 +862,8 @@ SUBROUTINE trace3d(self)
     sCL0 = +(FRL-FLL)*dtdx*half -(ERL-ELL)*dtdy*half
     sCR0 = +(FRR-FLR)*dtdx*half -(ERR-ELR)*dtdy*half
     !
-    if (i == 9 .and. j == 10 .and. k ==10) print*,'Before: AR',AR
-    if (i == 10 .and. j == 10 .and. k ==10) print*,'Before: AL',AL
     AL = AL + sAL0
-    if (i == 10 .and. j == 10 .and. k ==10) print*,'After : AL',AL
     AR = AR + sAR0
-    if (i == 9 .and. j == 10 .and. k ==10) print*,'After : AR',AR
     BL = BL + sBL0
     BR = BR + sBR0
     CL = CL + sCL0
@@ -786,14 +906,17 @@ SUBROUTINE trace3d(self)
 !       end if
 !    end if
     !
+
     ! Cell-centered predicted states
     r = r + sr0
     r = max(r,smallr)
+    rho_t(i,j,k) = r
     u = u + su0
     v = v + sv0
     w = w + sw0
     p = p + sp0
     p = max(p,smallp)
+    p_t(i,j,k) = p
     A = half*(AL+AR)
     B = half*(BL+BR)
     C = half*(CL+CR)
@@ -859,137 +982,227 @@ SUBROUTINE trace3d(self)
     qm(i,j,k,iC,3) = CR
     !
     ! X-edge averaged right-top corner state (RT->LL)
-    qRT(i,j,k,ir,1) = r + (+dry+drz)
+    qRT(i,j,k,ir,1) = r + (+dry2+drz2)
     qRT(i,j,k,iu,1) = u + (+duy+duz)
     qRT(i,j,k,iv,1) = v + (+dvy+dvz)
     qRT(i,j,k,iw,1) = w + (+dwy+dwz)
-    qRT(i,j,k,ip,1) = p + (+dpy+dpz)
+    qRT(i,j,k,ip,1) = p + (+dpy2+dpz2)
     qRT(i,j,k,iA,1) = A + (+dAy+dAz)
     qRT(i,j,k,iB,1) = BR+ (   +dBRz)
     qRT(i,j,k,iC,1) = CR+ (+dCRy   )
     !
     ! X-edge averaged right-bottom corner state (RB->LR)
-    qRB(i,j,k,ir,1) = r + (+dry-drz)
+    qRB(i,j,k,ir,1) = r + (+dry2-drz2)
     qRB(i,j,k,iu,1) = u + (+duy-duz)
     qRB(i,j,k,iv,1) = v + (+dvy-dvz)
     qRB(i,j,k,iw,1) = w + (+dwy-dwz)
-    qRB(i,j,k,ip,1) = p + (+dpy-dpz)
+    qRB(i,j,k,ip,1) = p + (+dpy2-dpz2)
     qRB(i,j,k,iA,1) = A + (+dAy-dAz)
     qRB(i,j,k,iB,1) = BR+ (   -dBRz)
     qRB(i,j,k,iC,1) = CL+ (+dCLy   )
     !
     ! X-edge averaged left-top corner state (LT->RL)
-    qLT(i,j,k,ir,1) = r + (-dry+drz)
+    qLT(i,j,k,ir,1) = r + (-dry2+drz2)
     qLT(i,j,k,iu,1) = u + (-duy+duz)
     qLT(i,j,k,iv,1) = v + (-dvy+dvz)
     qLT(i,j,k,iw,1) = w + (-dwy+dwz)
-    qLT(i,j,k,ip,1) = p + (-dpy+dpz)
+    qLT(i,j,k,ip,1) = p + (-dpy2+dpz2)
     qLT(i,j,k,iA,1) = A + (-dAy+dAz)
     qLT(i,j,k,iB,1) = BL+ (   +dBLz)
     qLT(i,j,k,iC,1) = CR+ (-dCRy   )
     !
     ! X-edge averaged left-bottom corner state (LB->RR)
-    qLB(i,j,k,ir,1) = r + (-dry-drz)
+    qLB(i,j,k,ir,1) = r + (-dry2-drz2)
     qLB(i,j,k,iu,1) = u + (-duy-duz)
     qLB(i,j,k,iv,1) = v + (-dvy-dvz)
     qLB(i,j,k,iw,1) = w + (-dwy-dwz)
-    qLB(i,j,k,ip,1) = p + (-dpy-dpz)
+    qLB(i,j,k,ip,1) = p + (-dpy2-dpz2)
     qLB(i,j,k,iA,1) = A + (-dAy-dAz)
     qLB(i,j,k,iB,1) = BL+ (   -dBLz)
     qLB(i,j,k,iC,1) = CL+ (-dCLy   )
     !
     ! Y-edge averaged right-top corner state (RT->LL)
-    qRT(i,j,k,ir,2) = r + (+drx+drz)
+    qRT(i,j,k,ir,2) = r + (+drx2+drz2)
     qRT(i,j,k,iu,2) = u + (+dux+duz)
     qRT(i,j,k,iv,2) = v + (+dvx+dvz)
     qRT(i,j,k,iw,2) = w + (+dwx+dwz)
-    qRT(i,j,k,ip,2) = p + (+dpx+dpz)
+    qRT(i,j,k,ip,2) = p + (+dpx2+dpz2)
     qRT(i,j,k,iA,2) = AR+ (   +dARz)
     qRT(i,j,k,iB,2) = B + (+dBx+dBz)
     qRT(i,j,k,iC,2) = CR+ (+dCRx   )
     !
     ! Y-edge averaged right-bottom corner state (RB->LR)
-    qRB(i,j,k,ir,2) = r + (+drx-drz)
+    qRB(i,j,k,ir,2) = r + (+drx2-drz2)
     qRB(i,j,k,iu,2) = u + (+dux-duz)
     qRB(i,j,k,iv,2) = v + (+dvx-dvz)
     qRB(i,j,k,iw,2) = w + (+dwx-dwz)
-    qRB(i,j,k,ip,2) = p + (+dpx-dpz)
+    qRB(i,j,k,ip,2) = p + (+dpx2-dpz2)
     qRB(i,j,k,iA,2) = AR+ (   -dARz)
     qRB(i,j,k,iB,2) = B + (+dBx-dBz)
     qRB(i,j,k,iC,2) = CL+ (+dCLx   )
     !
     ! Y-edge averaged left-top corner state (LT->RL)
-    qLT(i,j,k,ir,2) = r + (-drx+drz)
+    qLT(i,j,k,ir,2) = r + (-drx2+drz2)
     qLT(i,j,k,iu,2) = u + (-dux+duz)
     qLT(i,j,k,iv,2) = v + (-dvx+dvz)
     qLT(i,j,k,iw,2) = w + (-dwx+dwz)
-    qLT(i,j,k,ip,2) = p + (-dpx+dpz)
+    qLT(i,j,k,ip,2) = p + (-dpx2+dpz2)
     qLT(i,j,k,iA,2) = AL+ (   +dALz)
     qLT(i,j,k,iB,2) = B + (-dBx+dBz)
     qLT(i,j,k,iC,2) = CR+ (-dCRx   )
     !
     ! Y-edge averaged left-bottom corner state (LB->RR)
-    qLB(i,j,k,ir,2) = r + (-drx-drz)
+    qLB(i,j,k,ir,2) = r + (-drx2-drz2)
     qLB(i,j,k,iu,2) = u + (-dux-duz)
     qLB(i,j,k,iv,2) = v + (-dvx-dvz)
     qLB(i,j,k,iw,2) = w + (-dwx-dwz)
-    qLB(i,j,k,ip,2) = p + (-dpx-dpz)
+    qLB(i,j,k,ip,2) = p + (-dpx2-dpz2)
     qLB(i,j,k,iA,2) = AL+ (   -dALz)
     qLB(i,j,k,iB,2) = B + (-dBx-dBz)
     qLB(i,j,k,iC,2) = CL+ (-dCLx   )
     !
     ! Z-edge averaged right-top corner state (RT->LL)
-    qRT(i,j,k,ir,3) = r + (+drx+dry)
+    qRT(i,j,k,ir,3) = r + (+drx2+dry2)
     qRT(i,j,k,iu,3) = u + (+dux+duy)
     qRT(i,j,k,iv,3) = v + (+dvx+dvy)
     qRT(i,j,k,iw,3) = w + (+dwx+dwy)
-    qRT(i,j,k,ip,3) = p + (+dpx+dpy)
+    qRT(i,j,k,ip,3) = p + (+dpx2+dpy2)
     qRT(i,j,k,iA,3) = AR+ (   +dARy)
     qRT(i,j,k,iB,3) = BR+ (+dBRx   )
     qRT(i,j,k,iC,3) = C + (+dCx+dCy)
     !
     ! Z-edge averaged right-bottom corner state (RB->LR)
-    qRB(i,j,k,ir,3) = r + (+drx-dry)
+    qRB(i,j,k,ir,3) = r + (+drx2-dry2)
     qRB(i,j,k,iu,3) = u + (+dux-duy)
     qRB(i,j,k,iv,3) = v + (+dvx-dvy)
     qRB(i,j,k,iw,3) = w + (+dwx-dwy)
-    qRB(i,j,k,ip,3) = p + (+dpx-dpy)
+    qRB(i,j,k,ip,3) = p + (+dpx2-dpy2)
     qRB(i,j,k,iA,3) = AR+ (   -dARy)
     qRB(i,j,k,iB,3) = BL+ (+dBLx   )
     qRB(i,j,k,iC,3) = C + (+dCx-dCy)
     !
     ! Z-edge averaged left-top corner state (LT->RL)
-    qLT(i,j,k,ir,3) = r + (-drx+dry)
+    qLT(i,j,k,ir,3) = r + (-drx2+dry2)
     qLT(i,j,k,iu,3) = u + (-dux+duy)
     qLT(i,j,k,iv,3) = v + (-dvx+dvy)
     qLT(i,j,k,iw,3) = w + (-dwx+dwy)
-    qLT(i,j,k,ip,3) = p + (-dpx+dpy)
+    qLT(i,j,k,ip,3) = p + (-dpx2+dpy2)
     qLT(i,j,k,iA,3) = AL+ (   +dALy)
     qLT(i,j,k,iB,3) = BR+ (-dBRx   )
     qLT(i,j,k,iC,3) = C + (-dCx+dCy)
     !
     ! Z-edge averaged left-bottom corner state (LB->RR)
-    qLB(i,j,k,ir,3) = r + (-drx-dry)
+    qLB(i,j,k,ir,3) = r + (-drx2-dry2)
     qLB(i,j,k,iu,3) = u + (-dux-duy)
     qLB(i,j,k,iv,3) = v + (-dvx-dvy)
     qLB(i,j,k,iw,3) = w + (-dwx-dwy)
-    qLB(i,j,k,ip,3) = p + (-dpx-dpy)
+    qLB(i,j,k,ip,3) = p + (-dpx2-dpy2)
     qLB(i,j,k,iA,3) = AL+ (   -dALy)
     qLB(i,j,k,iB,3) = BL+ (-dBLx   )
     qLB(i,j,k,iC,3) = C + (-dCx-dCy)
     !
-    qRT(i,j,k,ir,1) = r + (+dry+drz)
-    qRB(i,j,k,ir,1) = r + (+dry-drz)
-    qLT(i,j,k,ir,1) = r + (-dry+drz)
-    qLB(i,j,k,ir,1) = r + (-dry-drz)
-    qRT(i,j,k,ir,2) = r + (+drx+drz)
-    qRB(i,j,k,ir,2) = r + (+drx-drz)
-    qLT(i,j,k,ir,2) = r + (-drx+drz)
-    qLB(i,j,k,ir,2) = r + (-drx-drz)
-    qRT(i,j,k,ir,3) = r + (+drx+dry)
-    qRB(i,j,k,ir,3) = r + (+drx-dry)
-    qLT(i,j,k,ir,3) = r + (-drx+dry)
-    qLB(i,j,k,ir,3) = r + (-drx-dry)
+
+    r = rho_t(i,j,k)
+    p = p_t(i,j,k)
+
+    ! X-edge averaged right-top corner state (RT->LL)
+    !qRT(i,j,k,ir,1) = r + (+dry+drz)
+    drx = sqrt(sqrt(r*rho_t(i,j+1,k)*rho_t(i,j,k+1)*rho_t(i,j+1,k+1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i,j+1,k)*  p_t(i,j,k+1)*  p_t(i,j+1,k+1))) - p
+    dry = qRT(i,j,k,ir,1) - r
+    dpy = qRT(i,j,k,ip,1) - p
+    qRT(i,j,k,ir,1) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qRT(i,j,k,ip,1) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    ! X-edge averaged right-bottom corner state (RB->LR)
+    !qRB(i,j,k,ir,1) = r + (+dry-drz)
+    drx = sqrt(sqrt(r*rho_t(i,j+1,k)*rho_t(i,j,k-1)*rho_t(i,j+1,k-1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i,j+1,k)*  p_t(i,j,k-1)*  p_t(i,j+1,k-1))) - p
+    dry = qRB(i,j,k,ir,1) - r
+    dpy = qRB(i,j,k,ip,1) - p
+    qRB(i,j,k,ir,1) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qRB(i,j,k,ip,1) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    ! X-edge averaged left-top corner state (LT->RL)
+    !qLT(i,j,k,ir,1) = r + (-dry+drz)
+    drx = sqrt(sqrt(r*rho_t(i,j-1,k)*rho_t(i,j,k+1)*rho_t(i,j-1,k+1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i,j-1,k)*  p_t(i,j,k+1)*  p_t(i,j-1,k+1))) - p
+    dry = qLT(i,j,k,ir,1) - r
+    dpy = qLT(i,j,k,ip,1) - p
+    qLT(i,j,k,ir,1) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qLT(i,j,k,ip,1) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    ! X-edge averaged left-bottom corner state (LB->RR)
+    !qLB(i,j,k,ir,1) = r + (-dry-drz)
+    drx = sqrt(sqrt(r*rho_t(i,j-1,k)*rho_t(i,j,k-1)*rho_t(i,j-1,k-1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i,j-1,k)*  p_t(i,j,k-1)*  p_t(i,j-1,k-1))) - p
+    dry = qLB(i,j,k,ir,1) - r
+    dpy = qLB(i,j,k,ip,1) - p
+    qLB(i,j,k,ir,1) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qLB(i,j,k,ip,1) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    ! Y-edge averaged right-top corner state (RT->LL)
+    !qRT(i,j,k,ir,2) = r + (+drx+drz)
+    drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j,k+1)*rho_t(i+1,j,k+1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j,k+1)*  p_t(i+1,j,k+1))) - p
+    dry = qRT(i,j,k,ir,2) - r
+    dpy = qRT(i,j,k,ip,2) - p
+    qRT(i,j,k,ir,2) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qRT(i,j,k,ip,2) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    ! Y-edge averaged right-bottom corner state (RB->LR)
+    !qRB(i,j,k,ir,2) = r + (+drx-drz)
+    drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j,k-1)*rho_t(i+1,j,k-1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j,k-1)*  p_t(i+1,j,k-1))) - p
+    dry = qRB(i,j,k,ir,2) - r
+    dpy = qRB(i,j,k,ip,2) - p
+    qRB(i,j,k,ir,2) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qRB(i,j,k,ip,2) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+
+    ! Y-edge averaged left-top corner state (LT->RL)
+    !qLT(i,j,k,ir,2) = r + (-drx+drz)
+    drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j,k+1)*rho_t(i-1,j,k+1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j,k+1)*  p_t(i-1,j,k+1))) - p
+    dry = qLT(i,j,k,ir,2) - r
+    dpy = qLT(i,j,k,ip,2) - p
+    qLT(i,j,k,ir,2) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qLT(i,j,k,ip,2) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    ! Y-edge averaged left-bottom corner state (LB->RR)
+    !qLB(i,j,k,ir,2) = r + (-drx-drz)
+    drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j,k-1)*rho_t(i-1,j,k-1))) - r
+    dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j,k-1)*  p_t(i-1,j,k-1))) - p
+    dry = qLB(i,j,k,ir,2) - r
+    dpy = qLB(i,j,k,ip,2) - p
+    qLB(i,j,k,ir,2) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qLB(i,j,k,ip,2) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    ! Z-edge averaged right-top corner state (RT->LL)
+    !qRT(i,j,k,ir,3) = r + (+drx+dry)
+    drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j+1,k)*rho_t(i+1,j+1,k))) - r
+    dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j+1,k)*  p_t(i+1,j+1,k))) - p
+    dry = qRT(i,j,k,ir,3) - r
+    dpy = qRT(i,j,k,ip,3) - p
+    qRT(i,j,k,ir,3) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qRT(i,j,k,ip,3) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    ! Z-edge averaged right-bottom corner state (RB->LR)
+    !qRB(i,j,k,ir,3) = r + (+drx-dry)
+    drx = sqrt(sqrt(r*rho_t(i+1,j,k)*rho_t(i,j-1,k)*rho_t(i+1,j-1,k))) - r
+    dpx = sqrt(sqrt(p*  p_t(i+1,j,k)*  p_t(i,j-1,k)*  p_t(i+1,j-1,k))) - p
+    dry = qRB(i,j,k,ir,3) - r
+    dpy = qRB(i,j,k,ip,3) - p
+    qRB(i,j,k,ir,3) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qRB(i,j,k,ip,3) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    ! Z-edge averaged left-top corner state (LT->RL)
+    !qLT(i,j,k,ir,3) = r + (-drx+dry)
+    drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j+1,k)*rho_t(i-1,j+1,k))) - r
+    dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j+1,k)*  p_t(i-1,j+1,k))) - p
+    dry = qLT(i,j,k,ir,3) - r
+    dpy = qLT(i,j,k,ip,3) - p
+    qLT(i,j,k,ir,3) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qLT(i,j,k,ip,3) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+    ! Z-edge averaged left-bottom corner state (LB->RR)
+    !qLB(i,j,k,ir,3) = r + (-drx-dry)
+    drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j-1,k)*rho_t(i-1,j-1,k))) - r
+    dpx = sqrt(sqrt(p*  p_t(i-1,j,k)*  p_t(i,j-1,k)*  p_t(i-1,j-1,k))) - p
+    dry = qLB(i,j,k,ir,3) - r
+    dpy = qLB(i,j,k,ip,3) - p
+    qLB(i,j,k,ir,3) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
+    qLB(i,j,k,ip,3) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
+
 !    end associate
   end do
   end do
@@ -1067,7 +1280,6 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   lb = self%mesh%li
   ub = self%mesh%uo
   l  = self%mesh%li
-  !print*,'lb,ub,l',lb,ub,l
   xdim = ln-1
   !
   ! Avoid using spurious values from allocated, but non-defined entries
@@ -1113,25 +1325,25 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
     do i = lb(1),ub(1)
       do k = lb(3),ub(3)
         ! Enforce continuity for normal magnetic field
-        bn_mean(l(1):ub(1)) = half*(qm(i,l(1)-1:ub(1)-1,k,bn,xdim)+qp(i,l(1):ub(1),k,bn,xdim))
+        bn_mean(l(2):ub(2)) = half*(qm(i,l(2)-1:ub(2)-1,k,bn,xdim)+qp(i,l(2):ub(2),k,bn,xdim))
         ! Left state
-        qleft (l(1):ub(1),1) = qm(i,l(1)-1:ub(1)-1,k,1  ,xdim) ! Mass density
-        qleft (l(1):ub(1),2) = qm(i,l(1)-1:ub(1)-1,k,5  ,xdim) ! Pressure
-        qleft (l(1):ub(1),3) = qm(i,l(1)-1:ub(1)-1,k,ln ,xdim) ! Normal velocity
-        qleft (l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
-        qleft (l(1):ub(1),5) = qm(i,l(1)-1:ub(1)-1,k,lt1,xdim) ! Tangential velocity 1
-        qleft (l(1):ub(1),6) = qm(i,l(1)-1:ub(1)-1,k,bt1,xdim) ! Tangential magnetic field 1
-        qleft (l(1):ub(1),7) = qm(i,l(1)-1:ub(1)-1,k,lt2,xdim) ! Tangential velocity 2
-        qleft (l(1):ub(1),8) = qm(i,l(1)-1:ub(1)-1,k,bt2,xdim) ! Tangential magnetic field 2
+        qleft (l(2):ub(2),1) = qm(i,l(2)-1:ub(2)-1,k,1  ,xdim) ! Mass density
+        qleft (l(2):ub(2),2) = qm(i,l(2)-1:ub(2)-1,k,5  ,xdim) ! Pressure
+        qleft (l(2):ub(2),3) = qm(i,l(2)-1:ub(2)-1,k,ln ,xdim) ! Normal velocity
+        qleft (l(2):ub(2),4) = bn_mean(l(2):ub(2))         ! Normal magnetic field
+        qleft (l(2):ub(2),5) = qm(i,l(2)-1:ub(2)-1,k,lt1,xdim) ! Tangential velocity 1
+        qleft (l(2):ub(2),6) = qm(i,l(2)-1:ub(2)-1,k,bt1,xdim) ! Tangential magnetic field 1
+        qleft (l(2):ub(2),7) = qm(i,l(2)-1:ub(2)-1,k,lt2,xdim) ! Tangential velocity 2
+        qleft (l(2):ub(2),8) = qm(i,l(2)-1:ub(2)-1,k,bt2,xdim) ! Tangential magnetic field 2
         ! Right state
-        qright(l(1):ub(1),1) = qp(i,l(1):ub(1),k,1  ,xdim) ! Mass density
-        qright(l(1):ub(1),2) = qp(i,l(1):ub(1),k,5  ,xdim) ! Pressure
-        qright(l(1):ub(1),3) = qp(i,l(1):ub(1),k,ln ,xdim) ! Normal velocity
-        qright(l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
-        qright(l(1):ub(1),5) = qp(i,l(1):ub(1),k,lt1,xdim) ! Tangential velocity 1
-        qright(l(1):ub(1),6) = qp(i,l(1):ub(1),k,bt1,xdim) ! Tangential magnetic field 1
-        qright(l(1):ub(1),7) = qp(i,l(1):ub(1),k,lt2,xdim) ! Tangential velocity 2
-        qright(l(1):ub(1),8) = qp(i,l(1):ub(1),k,bt2,xdim) ! Tangential magnetic field 2
+        qright(l(2):ub(2),1) = qp(i,l(2):ub(2),k,1  ,xdim) ! Mass density
+        qright(l(2):ub(2),2) = qp(i,l(2):ub(2),k,5  ,xdim) ! Pressure
+        qright(l(2):ub(2),3) = qp(i,l(2):ub(2),k,ln ,xdim) ! Normal velocity
+        qright(l(2):ub(2),4) = bn_mean(l(2):ub(2))         ! Normal magnetic field
+        qright(l(2):ub(2),5) = qp(i,l(2):ub(2),k,lt1,xdim) ! Tangential velocity 1
+        qright(l(2):ub(2),6) = qp(i,l(2):ub(2),k,bt1,xdim) ! Tangential magnetic field 1
+        qright(l(2):ub(2),7) = qp(i,l(2):ub(2),k,lt2,xdim) ! Tangential velocity 2
+        qright(l(2):ub(2),8) = qp(i,l(2):ub(2),k,bt2,xdim) ! Tangential magnetic field 2
         call solver (self,qleft,qright,fgdnv,nx,8)
     !    call solver (self,qleft,qright,fgdnv,l(1),ub(1))
         ! Output fluxes
@@ -1149,25 +1361,25 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
     do j = lb(2),ub(2)
       do i = lb(1),ub(1)
         ! Enforce continuity for normal magnetic field
-        bn_mean(l(1):ub(1)) = half*(qm(i,j,l(1)-1:ub(1)-1,bn,xdim)+qp(i,j,l(1):ub(1),bn,xdim))
+        bn_mean(l(3):ub(3)) = half*(qm(i,j,l(3)-1:ub(3)-1,bn,xdim)+qp(i,j,l(3):ub(3),bn,xdim))
         ! Left state
-        qleft (l(1):ub(1),1) = qm(i,j,l(1)-1:ub(1)-1,1  ,xdim) ! Mass density
-        qleft (l(1):ub(1),2) = qm(i,j,l(1)-1:ub(1)-1,5  ,xdim) ! Pressure
-        qleft (l(1):ub(1),3) = qm(i,j,l(1)-1:ub(1)-1,ln ,xdim) ! Normal velocity
-        qleft (l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
-        qleft (l(1):ub(1),5) = qm(i,j,l(1)-1:ub(1)-1,lt1,xdim) ! Tangential velocity 1
-        qleft (l(1):ub(1),6) = qm(i,j,l(1)-1:ub(1)-1,bt1,xdim) ! Tangential magnetic field 1
-        qleft (l(1):ub(1),7) = qm(i,j,l(1)-1:ub(1)-1,lt2,xdim) ! Tangential velocity 2
-        qleft (l(1):ub(1),8) = qm(i,j,l(1)-1:ub(1)-1,bt2,xdim) ! Tangential magnetic field 2
+        qleft (l(3):ub(3),1) = qm(i,j,l(3)-1:ub(3)-1,1  ,xdim) ! Mass density
+        qleft (l(3):ub(3),2) = qm(i,j,l(3)-1:ub(3)-1,5  ,xdim) ! Pressure
+        qleft (l(3):ub(3),3) = qm(i,j,l(3)-1:ub(3)-1,ln ,xdim) ! Normal velocity
+        qleft (l(3):ub(3),4) = bn_mean(l(3):ub(3))         ! Normal magnetic field
+        qleft (l(3):ub(3),5) = qm(i,j,l(3)-1:ub(3)-1,lt1,xdim) ! Tangential velocity 1
+        qleft (l(3):ub(3),6) = qm(i,j,l(3)-1:ub(3)-1,bt1,xdim) ! Tangential magnetic field 1
+        qleft (l(3):ub(3),7) = qm(i,j,l(3)-1:ub(3)-1,lt2,xdim) ! Tangential velocity 2
+        qleft (l(3):ub(3),8) = qm(i,j,l(3)-1:ub(3)-1,bt2,xdim) ! Tangential magnetic field 2
         ! Right state
-        qright(l(1):ub(1),1) = qp(i,j,l(1):ub(1),1  ,xdim) ! Mass density
-        qright(l(1):ub(1),2) = qp(i,j,l(1):ub(1),5  ,xdim) ! Pressure
-        qright(l(1):ub(1),3) = qp(i,j,l(1):ub(1),ln ,xdim) ! Normal velocity
-        qright(l(1):ub(1),4) = bn_mean(l(1):ub(1))         ! Normal magnetic field
-        qright(l(1):ub(1),5) = qp(i,j,l(1):ub(1),lt1,xdim) ! Tangential velocity 1
-        qright(l(1):ub(1),6) = qp(i,j,l(1):ub(1),bt1,xdim) ! Tangential magnetic field 1
-        qright(l(1):ub(1),7) = qp(i,j,l(1):ub(1),lt2,xdim) ! Tangential velocity 2
-        qright(l(1):ub(1),8) = qp(i,j,l(1):ub(1),bt2,xdim) ! Tangential magnetic field 2
+        qright(l(3):ub(3),1) = qp(i,j,l(3):ub(3),1  ,xdim) ! Mass density
+        qright(l(3):ub(3),2) = qp(i,j,l(3):ub(3),5  ,xdim) ! Pressure
+        qright(l(3):ub(3),3) = qp(i,j,l(3):ub(3),ln ,xdim) ! Normal velocity
+        qright(l(3):ub(3),4) = bn_mean(l(3):ub(3))         ! Normal magnetic field
+        qright(l(3):ub(3),5) = qp(i,j,l(3):ub(3),lt1,xdim) ! Tangential velocity 1
+        qright(l(3):ub(3),6) = qp(i,j,l(3):ub(3),bt1,xdim) ! Tangential magnetic field 1
+        qright(l(3):ub(3),7) = qp(i,j,l(3):ub(3),lt2,xdim) ! Tangential velocity 2
+        qright(l(3):ub(3),8) = qp(i,j,l(3):ub(3),bt2,xdim) ! Tangential magnetic field 2
         call solver (self,qleft,qright,fgdnv,nx,8)
     !    call solver (self,qleft,qright,fgdnv,l(1),ub(1))
         ! Output fluxes
