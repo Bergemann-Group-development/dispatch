@@ -16,6 +16,6 @@ pipelines:
           - echo "Check compilation of experiments in experiment_list.txt"
           - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -l -x
           - echo "Validate turbulence experiment"
-          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate experiments/turbulence
-          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate experiments/turbulence/stagger2
+          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v experiments/turbulence
+          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v experiments/turbulence/stagger2
           - echo "Everything is awesome!"
