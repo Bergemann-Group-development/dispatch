@@ -18,6 +18,4 @@ pipelines:
           - echo "Validate turbulence experiment"
           - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate experiments/turbulence
           - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate experiments/turbulence/stagger2
-          - echo "Validate pebble atmosphere experiment"
-          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate experiments/pebble_atmosphere
           - echo "Everything is awesome!"
