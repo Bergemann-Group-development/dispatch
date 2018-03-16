@@ -100,7 +100,7 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
         return
     def inside(p, z):
         return z<=p.active_corners[1][2] and z>=p.active_corners[0][2]
-    select=[p for p in pp if inside(p,z) and p.level<8]
+    select=[p for p in pp if inside(p,z)]
     if verbose: print(np.size(pp),'patches in plane' )
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
@@ -175,7 +175,7 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
         return
     def inside(p,x):
         return x<=p.active_corners[1][0] and x>=p.active_corners[0][0]
-    pp=[p for p in pp if inside(p,x) and p.level<8]
+    pp=[p for p in pp if inside(p,x)]
     if verbose: print(np.size(pp),'patches in plane')
     vmin=1e9; vmax=-vmin
     ylim=[vmin,vmax]
@@ -248,7 +248,7 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
         return
     def inside(p,y):
         return y<=p.active_corners[1][1] and y>=p.active_corners[0][1]
-    pp=[p for p in pp if inside(p,y) and p.level<8]
+    pp=[p for p in pp if inside(p,y)]
     if verbose: print(np.size(pp),'patches in plane')
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
