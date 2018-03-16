@@ -112,7 +112,8 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
         i=max(0,min(n-2,int(s)))
         s=s-i
         if verbose>1:
-            print('id,iz,pz:',p.id,i,s)
+            fmt='id:{:6d} lev:{:2d} i:{:3d} p:{:6.2f}'
+            print (fmt.format(p.id,p.level,i,s))
         return (1.0-s)*f[l[0]:u[0],l[1]:u[1],i]+s*f[l[0]:u[0],l[1]:u[1],i+1]
     for p in select:
         p.cache()
@@ -187,7 +188,8 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
         i=max(0,min(n-2,int(s)))
         s=s-i
         if verbose>1:
-            print('id,ix,px:',p.id,i,s)
+            fmt='id:{:6d} lev:{:2d} i:{:3d} p:{:6.2f}'
+            print (fmt.format(p.id,p.level,i,s))
         return (1.0-s)*f[i,l[1]:u[1],l[2]:u[2]]+s*f[i+1,l[1]:u[1],l[2]:u[2]]
     for p in pp:
         p.cache()
@@ -241,7 +243,7 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
     Display xz-image for given y
     '''
     pl.show()
-    print('data:',data,' run:',run,' iout:',iout)
+    #print('data:',data,' run:',run,' iout:',iout)
     pp=du.patches(run=run,data=data,iout=iout)
     if np.size(pp)==0:
         print("no files found")
@@ -260,7 +262,8 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
         i=max(0,min(n-2,int(s)))
         s=s-i
         if verbose>1:
-            print('id,iy,py:',p.id,i,s)
+            fmt='id:{:6d} lev:{:2d} i:{:3d} p:{:6.2f}'
+            print (fmt.format(p.id,p.level,i,s))
         return (1.0-s)*f[l[0]:u[0],i,l[2]:u[2]]+s*f[l[0]:u[0],i+1,l[2]:u[2]]
     for p in pp:
         p.cache()
