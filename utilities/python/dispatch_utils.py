@@ -652,9 +652,37 @@ def minloc(a):
     i = a.argmin()
     return np.unravel_index(i,np.shape(a))
 
-
 def maxloc(a):
     ''' return the 3-D index of the maximum '''
     i = a.argmax()
     return np.unravel_index(i,np.shape(a))
 
+def first_and_last(run,data,verbose=0):
+    id=2
+    found=False
+    for it in range(100,9999):
+        file=data+'/'+run+'/{:05d}/00002.txt'.format(it)
+        try:
+            fd=open(file,'rb')
+            exists=True
+        except:
+            exists=False
+        if not found and exists:
+            p=patch(id,it,run,data)
+            if verbose:
+                print ('found first snapshot',it,'at t=',p.time)
+            found=True
+            it0=it
+            t0=p.time
+        elif found and not exists:
+            p=patch(id,it-1,run,data)
+            if verbose:
+                print ('found last  snapshot',it-1,'at t=',p.time)
+            it1=it
+            t1=p.time
+            break
+    class it:
+        first=it0
+        last=it1
+        time=(t1-t0)/max(it1-1-it0,1)
+    return it()
