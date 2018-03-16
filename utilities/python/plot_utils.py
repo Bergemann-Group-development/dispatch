@@ -167,12 +167,12 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
     pl.draw()
 
 def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
-      keep=0, extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
+      keep=0, extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,overlap=0.01,**kwargs):
     '''
     Display yz-image for given x
     '''
     pl.show()
-    pp=du.patches(run=run,data=data,iout=iout)
+    pp=du.patches(run=run,data=data,iout=iout,overlap=overlap)
     if np.size(pp)==0:
         print("no files found")
         return
