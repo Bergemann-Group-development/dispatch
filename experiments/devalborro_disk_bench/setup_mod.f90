@@ -68,6 +68,7 @@ SUBROUTINE init_setup (self)
     ramp_mass = experiment_params%ramp_mass
     phiplanet = experiment_params%phiplanet
     rewind (io%input); read (io%input, initial_params)
+    if (io%master) write (*, initial_params)
     experiment_params%mtotal = mtotal
     experiment_params%aplanet = aplanet
     experiment_params%mplanet = mplanet
