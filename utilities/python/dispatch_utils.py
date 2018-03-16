@@ -31,8 +31,8 @@ def dispatch_utils():
     print( "Type dispatch_utils?<RETURN> for help text, or dispach_utils(\
  for pop-up help in Canopy")
 
-def snapshot (iout=0, run='', data='../data', verbose=0):
-    snap=dd.Snapshot (iout, run, data, verbose)
+def snapshot (iout=0, run='', data='../data', overlap=0.01, verbose=0):
+    snap=dd.Snapshot (iout, run, data, overlap=overlap, verbose=verbose)
     snap.iout=iout
     snap.run=run
     snap.data=data
@@ -138,13 +138,13 @@ def patch_files(iout=-1, run='', data='../data', verbose=0):
             print(npatch,'patches found')
     return files
 
-def patch (id=2, iout=0, run='', data='../data', verbose=0, **kwargs):
+def patch (id=2, iout=0, run='', data='../data', overlap=0.01, verbose=0, **kwargs):
     '''
     Return patch structure for a single patch, identified by id and iout
     '''
     name=data+'/'+run+'/{:05d}/{:05d}'.format(iout,id)
     if os.path.isfile(name+'.txt'):
-        return dd.Patch(name,verbose=verbose)
+        return dd.Patch(name,overlap=overlap,verbose=verbose)
     else:
         files = patch_files(iout,run,data)
         p=None
@@ -152,7 +152,7 @@ def patch (id=2, iout=0, run='', data='../data', verbose=0, **kwargs):
             with open(file+'.txt','r') as fd:
                 success = dd.Search (fd, id, verbose)
                 if (success):
-                    p=dd.Patch(file,fd=fd,verbose=verbose)
+                    p=dd.Patch(file,fd=fd,overlap=overlap,verbose=verbose)
         if not p:
             print ('not found')
         return p
@@ -417,7 +417,7 @@ def values_along_z(point,p,iv=0,verbose=0):
     s,f=values_along(point,p,dir=2,iv=iv,verbose=verbose)
     return s,f
 
-def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None, same=True):
+def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None, same=True, overlap=0.01):
     '''
     Return a list of structures s={id,iout,time,data,...}, where id,iout
     are the integer patch and snapshot numbers, time is in code units,
@@ -430,7 +430,7 @@ def patches (iout=-1, run='', data='../data', verbose=0, x=None, y=None, z=None,
     '''
     if verbose: print('patches: run={} data={} iout={}'.format(run,data,iout))
     #files = patch_files (run=run, data=data, iout=iout, verbose=verbose)
-    snap = snapshot(iout,run,data,verbose=verbose)
+    snap = snapshot(iout,run,data,overlap=overlap,verbose=verbose)
     pp=[]
     nghost=-1
     #for f in files:

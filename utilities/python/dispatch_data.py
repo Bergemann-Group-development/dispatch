@@ -32,7 +32,7 @@ class Task(object):
 class Patch(Task):
     """A derived class for patches."""
     __metaclass__ = ABCMeta
-    def __init__(self, filename, read_derivs=False, verbose=False, fd=None):
+    def __init__(self, filename, read_derivs=False, overlap=0.01, verbose=False, fd=None):
         self.filename = filename
         self.__data = None
         self.offset=0
@@ -41,6 +41,8 @@ class Patch(Task):
         else:
             fp = open(filename+'.txt','r')
         legacy_reader.single_patch (self, fp, verbose=False, fd=fd)
+        self.active_corners[1] = self.active_corners[1] + self.ds*overlap
+        self.corners[1]        = self.corners[1]        + self.ds*overlap
         if self.kind == 'poisson': 
             self.nbytes = 8
         else:
@@ -362,7 +364,7 @@ def Search(fd, ip, verbose=False):
             break
     return status
 
-def Patches(file, verbose=False):
+def Patches(file, overlap=0.01, verbose=False):
     with open(file+'.txt','r') as fd:
         patches=[]
         line=fd.readline().split()
@@ -373,12 +375,12 @@ def Patches(file, verbose=False):
                 id,nskip=fd.readline().split()
             except:
                 break
-            patch=Patch(file,fd=fd,verbose=verbose)
+            patch=Patch(file,fd=fd,overlap=overlap,verbose=verbose)
             patches.append(patch)
     return patches
 
 class Snapshot:
-    def __init__(self, iout=0, run='', data='../data', verbose=0):
+    def __init__(self, iout=0, run='', data='../data', overlap=0.01, verbose=0):
         start=time()
         if run=='':
             dir=data+'/{:05d}/'.format(iout)
@@ -390,7 +392,7 @@ class Snapshot:
         if np.size(self.rankfiles)>0:
             self.patches=[]
             for file in self.rankfiles:
-                patches=Patches(file,verbose=verbose)
+                patches=Patches(file,overlap=overlap,verbose=verbose)
                 for patch in patches:
                     self.patches.append(patch)
             self.files=[]
@@ -402,7 +404,7 @@ class Snapshot:
             self.patches = []
             self.files=[dir+f.replace('.txt','') for f in os.listdir(dir) if f.endswith('.txt')]
             for file in self.files:
-                self.patches.append (Patch(file))
+                self.patches.append (Patch(file,overlap=overlap))
         if verbose:
             print('{} snapshot.patches ({:.2f} s)'.format(np.size(self.patches),time()-start))
 
