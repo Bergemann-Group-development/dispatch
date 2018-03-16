@@ -28,7 +28,7 @@
  verbose=2
  do_trace=f
  do_debug=f
- do_output=t
+ do_output=f
  omp_trace=t
 /
 &box_params
