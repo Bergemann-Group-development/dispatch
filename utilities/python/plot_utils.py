@@ -141,6 +141,8 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
             return does
         select=[p for p in select if overlaps(p)]
         if verbose: print(np.size(select),'patches remain')
+    else:
+        extent=[xlim[0],xlim[1],ylim[0],ylim[1]]
     if np.size(vlim)==2:
         vmin=vlim[0]
         vmax=vlim[1]
@@ -155,7 +157,7 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
     for p in select:
         image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap,keep=1)
         yx=[p.active_corners[0][1],p.active_corners[0][0]]
-        if labels and in_extent(p.extent[2],yx):
+        if labels and in_extent(extent,yx):
             pl.text(yx[0],yx[1],p.id)
     pl.title('var='+var+'   t={:3.2f}  z={:2.1f}'.format(p.time,z))
     if not keep:
@@ -216,6 +218,8 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
             return does
         pp=[p for p in pp if overlaps(p)]
         if verbose: print(np.size(pp),'patches remain')
+    else:
+        extent=[ylim[0],ylim[1],zlim[0],zlim[1]]
     if np.size(vlim)==2:
         vmin=vlim[0]
         vmax=vlim[1]
@@ -228,7 +232,7 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
     for p in pp:
         image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap,keep=1)
         yz=[p.active_corners[0][1],p.active_corners[0][2]]
-        if labels and in_extent(p.extent[0],yz):
+        if labels and in_extent(extent,yz):
             pl.text(yz[0],yz[1],p.id)
     pl.title('var='+var+'   t={:3.2f}  x={:2.1f}'.format(p.time,x))
     if not keep:
@@ -290,6 +294,8 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
             return does
         #pp=[p for p in pp if overlaps(p)]
         if verbose:(print(np.size(pp),'patches remain'))
+    else:
+        extent=[xlim[0],xlim[1],zlim[0],zlim[1]]
     if np.size(vlim)==2:
         vmin=vlim[0]
         vmax=vlim[1]
@@ -303,7 +309,7 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
         #print (np.size(p.x),p.x[0],p.x[-1],p.extent[1])
         image(p.f,extent=p.extent[1],vmin=vmin,vmax=vmax,cmap=cmap,keep=1)
         xz=[p.active_corners[0][0],p.active_corners[0][2]]
-        if labels and in_extent(p.extent[0],xz):
+        if labels and in_extent(extent,xz):
             pl.text(xz[0],xz[1],p.id)
     pl.title('var='+var+'   t={:3.2f}  y={:2.1f}'.format(p.time,y))
     if not keep:
