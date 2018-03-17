@@ -59,7 +59,7 @@ if ($st) then
     exit(0)
   else if ($?BITBUCKET_CLONE_DIR) then
     echo "listing the file validate/$label.diff"
-    echo cat validate/$label.diff
+    cat validate/$label.diff
   else if (! $?tee) then
     echo "To see the diffs, list the file validate/$label.diff"
   endif
