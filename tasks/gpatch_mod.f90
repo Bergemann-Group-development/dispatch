@@ -17,7 +17,7 @@ MODULE gpatch_mod
   USE poisson_mod
   USE omp_timer_mod
   USE bits_mod
-  USE timestep_mod
+  !USE timestep_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
@@ -30,7 +30,7 @@ MODULE gpatch_mod
     procedure:: init
     procedure:: dnload
     procedure:: gravity
-    procedure:: update
+    !procedure:: update
     procedure:: ahead_of
   end type
   real(8), save :: total_mass=0d0, total_volume=0d0
@@ -217,13 +217,13 @@ END SUBROUTINE gravity
 !> better offer.  The poisson_time controls if an update affects the self%time
 !> or the poisson_time; the two are updated alternatingly
 !> =============================================================================
-SUBROUTINE update (self)
+SUBROUTINE update_tmp (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
   call trace%begin ('gpatch_t%update')
   if (self%poisson_time == self%time) then
-    call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
+    !call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
     call self%rotate
     self%rotated = .true.
     if (verbose>0) &
@@ -238,7 +238,7 @@ SUBROUTINE update (self)
       print *, self%id, 'gpatch_t%update updated self%poisson_time to', self%poisson_time
   end if
   call trace%end
-END SUBROUTINE update
+END SUBROUTINE update_tmp
 
 !> =============================================================================
 !> Compute an approximate, conservative estimate of dphi/dt, which will cause

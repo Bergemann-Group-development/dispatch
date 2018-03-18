@@ -100,7 +100,7 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
         return
     def inside(p, z):
         return z<=p.active_corners[1][2] and z>=p.active_corners[0][2]
-    select=[p for p in pp if inside(p,z) and p.level<8]
+    select=[p for p in pp if inside(p,z)]
     if verbose: print(np.size(pp),'patches in plane' )
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
@@ -112,7 +112,8 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
         i=max(0,min(n-2,int(s)))
         s=s-i
         if verbose>1:
-            print('id,iz,pz:',p.id,i,s)
+            fmt='id:{:6d} lev:{:2d} i:{:3d} p:{:6.2f}'
+            print (fmt.format(p.id,p.level,i,s))
         return (1.0-s)*f[l[0]:u[0],l[1]:u[1],i]+s*f[l[0]:u[0],l[1]:u[1],i+1]
     for p in select:
         p.cache()
@@ -140,6 +141,8 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
             return does
         select=[p for p in select if overlaps(p)]
         if verbose: print(np.size(select),'patches remain')
+    else:
+        extent=[xlim[0],xlim[1],ylim[0],ylim[1]]
     if np.size(vlim)==2:
         vmin=vlim[0]
         vmax=vlim[1]
@@ -154,7 +157,7 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
     for p in select:
         image(p.f,extent=p.extent[2],vmin=vmin,vmax=vmax,cmap=cmap,keep=1)
         yx=[p.active_corners[0][1],p.active_corners[0][0]]
-        if labels and in_extent(p.extent[2],yx):
+        if labels and in_extent(extent,yx):
             pl.text(yx[0],yx[1],p.id)
     pl.title('var='+var+'   t={:3.2f}  z={:2.1f}'.format(p.time,z))
     if not keep:
@@ -164,18 +167,18 @@ def yx_plane(iout=-1,run='',data='../data',z=0.0,var='logd',cmap='coolwarm',\
     pl.draw()
 
 def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
-      keep=0, extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,**kwargs):
+      keep=0, extent=None,vlim=None,fraction=0.1,labels=None,verbose=0,overlap=0.01,**kwargs):
     '''
     Display yz-image for given x
     '''
     pl.show()
-    pp=du.patches(run=run,data=data,iout=iout)
+    pp=du.patches(run=run,data=data,iout=iout,overlap=overlap)
     if np.size(pp)==0:
         print("no files found")
         return
     def inside(p,x):
         return x<=p.active_corners[1][0] and x>=p.active_corners[0][0]
-    pp=[p for p in pp if inside(p,x) and p.level<8]
+    pp=[p for p in pp if inside(p,x)]
     if verbose: print(np.size(pp),'patches in plane')
     vmin=1e9; vmax=-vmin
     ylim=[vmin,vmax]
@@ -187,7 +190,8 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
         i=max(0,min(n-2,int(s)))
         s=s-i
         if verbose>1:
-            print('id,ix,px:',p.id,i,s)
+            fmt='id:{:6d} lev:{:2d} i:{:3d} p:{:6.2f}'
+            print (fmt.format(p.id,p.level,i,s))
         return (1.0-s)*f[i,l[1]:u[1],l[2]:u[2]]+s*f[i+1,l[1]:u[1],l[2]:u[2]]
     for p in pp:
         p.cache()
@@ -214,6 +218,8 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
             return does
         pp=[p for p in pp if overlaps(p)]
         if verbose: print(np.size(pp),'patches remain')
+    else:
+        extent=[ylim[0],ylim[1],zlim[0],zlim[1]]
     if np.size(vlim)==2:
         vmin=vlim[0]
         vmax=vlim[1]
@@ -226,7 +232,7 @@ def yz_plane(iout=-1,run='',data='../data',var='logd',x=0.0,cmap='coolwarm',\
     for p in pp:
         image(p.f,extent=p.extent[0],vmin=vmin,vmax=vmax,cmap=cmap,keep=1)
         yz=[p.active_corners[0][1],p.active_corners[0][2]]
-        if labels and in_extent(p.extent[0],yz):
+        if labels and in_extent(extent,yz):
             pl.text(yz[0],yz[1],p.id)
     pl.title('var='+var+'   t={:3.2f}  x={:2.1f}'.format(p.time,x))
     if not keep:
@@ -241,14 +247,14 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
     Display xz-image for given y
     '''
     pl.show()
-    print('data:',data,' run:',run,' iout:',iout)
+    #print('data:',data,' run:',run,' iout:',iout)
     pp=du.patches(run=run,data=data,iout=iout)
     if np.size(pp)==0:
         print("no files found")
         return
     def inside(p,y):
         return y<=p.active_corners[1][1] and y>=p.active_corners[0][1]
-    pp=[p for p in pp if inside(p,y) and p.level<8]
+    pp=[p for p in pp if inside(p,y)]
     if verbose: print(np.size(pp),'patches in plane')
     vmin=1e9; vmax=-vmin
     xlim=[vmin,vmax]
@@ -260,7 +266,8 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
         i=max(0,min(n-2,int(s)))
         s=s-i
         if verbose>1:
-            print('id,iy,py:',p.id,i,s)
+            fmt='id:{:6d} lev:{:2d} i:{:3d} p:{:6.2f}'
+            print (fmt.format(p.id,p.level,i,s))
         return (1.0-s)*f[l[0]:u[0],i,l[2]:u[2]]+s*f[l[0]:u[0],i+1,l[2]:u[2]]
     for p in pp:
         p.cache()
@@ -287,6 +294,8 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
             return does
         #pp=[p for p in pp if overlaps(p)]
         if verbose:(print(np.size(pp),'patches remain'))
+    else:
+        extent=[xlim[0],xlim[1],zlim[0],zlim[1]]
     if np.size(vlim)==2:
         vmin=vlim[0]
         vmax=vlim[1]
@@ -300,7 +309,7 @@ def xz_plane(iout=-1,run='',data='../data',var='logd',y=0.0,cmap='coolwarm',\
         #print (np.size(p.x),p.x[0],p.x[-1],p.extent[1])
         image(p.f,extent=p.extent[1],vmin=vmin,vmax=vmax,cmap=cmap,keep=1)
         xz=[p.active_corners[0][0],p.active_corners[0][2]]
-        if labels and in_extent(p.extent[0],xz):
+        if labels and in_extent(extent,xz):
             pl.text(xz[0],xz[1],p.id)
     pl.title('var='+var+'   t={:3.2f}  y={:2.1f}'.format(p.time,y))
     if not keep:
