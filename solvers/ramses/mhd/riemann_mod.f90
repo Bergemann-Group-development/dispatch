@@ -75,9 +75,6 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub)
   !
   lim = 1.0_dp
   !
-!  SL=ul-cfastl
-!  SR=ur+cfastr
-  !
   ! Compute lagrangian sound speed
   rcl=rl*(ul-SL)
   rcr=rr*(SR-ur)
@@ -138,7 +135,6 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub)
   etotstarstarr=etotstarr+sgnm*sqrrstarr*(vdotBstarr-vdotBstarstar)
   !
   ! Sample the solution at x/t=0
-!  do i=1,size(qleft,1)
   do i=1,ub-lb+1
     if(SL(i)>zero)then
        ro(i)=rl(i)
@@ -216,8 +212,6 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub)
   fgdnv(lb:ub,6) = Bo*uo-A*vo
   fgdnv(lb:ub,7) = ro*uo*wo-A*Co*lim
   fgdnv(lb:ub,8) = Co*uo-A*wo
-!  print*,'minval(fgdnv),maxval(fgdnv)',minval(fgdnv),maxval(fgdnv)
-!  print*,'minloc(fgdnv),maxloc(fgdnv)',minloc(fgdnv),maxloc(fgdnv)
   do ivar = 9,nvar
      where(fgdnv(:,1)>0)
         fgdnv(:,ivar) = fgdnv(:,1)*qleft (:,ivar)
@@ -458,8 +452,6 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
   end do
-!  print*,'maxval(fgdnv(:,:))',maxval(fgdnv(:,:))
-!  print*,'maxloc(fgdnv(:,:)),ngrid',maxloc(fgdnv(:,:)),ngrid
   call trace%end (itimer)
 contains
 SUBROUTINE find_speed_fast(qvar,vel_info)
@@ -509,9 +501,6 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
   !.............................................................................
   call trace%begin ('riemann_mod::hlld_2d',itimer=itimer)
 
-!  print*,'qLL(1,:)',qLL(1,:)
-!  print*,'qLL(ngrid-2:ngrid,4)',qLL(ngrid-2:ngrid,4)
-  !emf = 0d0
   do l=3,ngrid
     !call trace%begin ('hlld_2d find_fast_speed', itimer=itimer(1))
     rLL=qLL(l,1); pLL=qLL(l,2); uLL=qLL(l,3); vLL=qLL(l,4); ALL=qLL(l,6); BLL=qLL(l,7) ; CLL=qLL(l,8)
@@ -528,7 +517,6 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
     d1 = 1./qtmp(1)
     c2 = gamma*qtmp(2)*d1
     d2 = half*(B2*d1+c2)
-    !print*,'d2,c2,qtmp(4),d1,B2',d2,c2,qtmp(4),d1,B2
     cfastLLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
 
     qtmp(1)=qLR(l,1); qtmp(2)=qLR(l,2); qtmp(7)=qLR(l,5); qtmp(8)=qLR(l,8)
