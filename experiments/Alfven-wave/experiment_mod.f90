@@ -1,6 +1,6 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
-!> Solve the C-shock problem to test ambipolar diffusion
+!> Solve the Alfven wave problem to test the hlld solver implementation
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE experiment_mod
   USE io_mod
@@ -27,7 +27,7 @@ MODULE experiment_mod
 CONTAINS
 
 !> =============================================================================
-!> Setup a patch with a sharp shock front as present in a C-shock
+!> Setup a patch with an Alfven wave (see Masson et al. 2012)
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
@@ -82,8 +82,8 @@ SUBROUTINE init (self)
         y = self%mesh(2)%p + self%mesh(2)%r(j)
         z = self%mesh(3)%p + self%mesh(3)%r(k)
         d (i,j,k)= 1.
-        px(i,j,k)= d(i,j,k) * 1.*cos(k_w*z) !  0.9992286*cos(k*zz)
-        py(i,j,k)=-d(i,j,k) * 1.*sin(k_w*z) ! -0.9992286*sin(k*zz)
+        px(i,j,k)= d(i,j,k) * 1.*cos(k_w*z)
+        py(i,j,k)=-d(i,j,k) * 1.*sin(k_w*z)
         pz(i,j,k)= 0.
         Bx(i,j,k)= 1.*cos(k_w*z) 
         By(i,j,k)=-1.*sin(k_w*z)
@@ -96,7 +96,6 @@ SUBROUTINE init (self)
         end if
       end do
     end do
-    print*,'x',x
   end do
 
   call self%clear(bits%root_grid)
@@ -105,8 +104,6 @@ SUBROUTINE init (self)
   print*, 'done!'
 
   print*,'self%mem(1,1,1,:,self%it,1) in experiment setup',self%mem(1,1,1,:,self%it,1)
-!  if (self%kind(1:6) == 'ramses') deallocate (e1)
-!    nullify (d, e1, et, px, py, pz, Bx, By, Bz)
   if (self%initial%time > 0d0) then
     self%time = self%initial%time
     self%t(self%it) = self%initial%time
@@ -135,34 +132,22 @@ SUBROUTINE update (self)
   if (self%llc_nat(1)-self%ds(1) .lt. self%mesh(1)%origin) then 
     do iv=1,self%nv
       call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,1)
-!      do i1=self%mesh(1)%lb,self%mesh(1)%lo
-!        self%mem(i1,:,:,iv,self%it,1)=self%mem(self%mesh(1)%li,:,:,iv,self%it,1)
-!      end do
     end do 
   endif
   if (self%llc_nat(1)+self%size(1)+self%ds(1) .gt. self%mesh(1)%origin + self%box(1)) then 
     do iv=1,self%nv
       call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,1)
-!      do i1=self%mesh(1)%uo,self%mesh(1)%ub
-!        self%mem(i1,:,:,iv,self%it,1)=self%mem(self%mesh(1)%ui,:,:,iv,self%it,1)
-!      end do
     end do 
   endif
 
   if (self%llc_nat(2)-self%ds(2) .lt. self%mesh(2)%origin) then 
     do iv=1,self%nv
       call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,2)
-!      do i2=self%mesh(2)%lb,self%mesh(2)%lo
-!        self%mem(:,i2,:,iv,self%it,1)=self%mem(:,self%mesh(2)%li,:,iv,self%it,1)
-!      end do
     end do 
   endif
   if (self%llc_nat(2)+self%size(2)+self%ds(2) .gt. self%mesh(2)%origin + self%box(2)) then 
     do iv=1,self%nv
       call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,2)
-!      do i2=self%mesh(2)%uo,self%mesh(2)%ub
-!        self%mem(:,i2,:,iv,self%it,1)=self%mem(:,self%mesh(2)%ui,:,iv,self%it,1)
-!      end do
     end do 
   endif
 
@@ -180,11 +165,6 @@ SUBROUTINE update (self)
 
   call self%mhd_t%update
   
-  !call self%courant_condition
-!  call self%check_density('before timestep')
-
-!  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-!  call self%check_density('after timestep')
   call trace_end
 END SUBROUTINE update
 !> =============================================================================
