@@ -9,7 +9,7 @@ MODULE experiment_mod
   USE patch_mod
 !  USE scalar_mod
   USE boundary_mod
-  USE timestep_mod
+!  USE timestep_mod
   USE index_mod
 !  USE solver_mod
   USE mhd_mod
@@ -131,35 +131,35 @@ SUBROUTINE update (self)
 
   if (self%llc_nat(1)-self%ds(1) .lt. self%mesh(1)%origin) then 
     do iv=1,self%nv
-      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,1)
+      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,1,self%no_mans_land)
     end do 
   endif
   if (self%llc_nat(1)+self%size(1)+self%ds(1) .gt. self%mesh(1)%origin + self%box(1)) then 
     do iv=1,self%nv
-      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,1)
+      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,1,self%no_mans_land)
     end do 
   endif
 
   if (self%llc_nat(2)-self%ds(2) .lt. self%mesh(2)%origin) then 
     do iv=1,self%nv
-      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,2)
+      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,2,self%no_mans_land)
     end do 
   endif
   if (self%llc_nat(2)+self%size(2)+self%ds(2) .gt. self%mesh(2)%origin + self%box(2)) then 
     do iv=1,self%nv
-      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,2)
+      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,2,self%no_mans_land)
     end do 
   endif
 
 
   if (self%llc_nat(3)-self%ds(3) .lt. self%mesh(3)%origin) then 
     do iv=1,self%nv
-      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,3)
+      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,3,self%no_mans_land)
     end do 
   endif
   if (self%llc_nat(3)+self%size(3)+self%ds(3) .gt. self%mesh(3)%origin + self%box(3)) then
     do iv=1,self%nv
-      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,3)
+      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,3,self%no_mans_land)
     end do 
   endif
 

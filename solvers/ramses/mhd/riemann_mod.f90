@@ -239,7 +239,6 @@ SUBROUTINE find_speed_fast_vec(qvar,vel_info,lb,ub)
   B2 = A*A+B*B+C*C
   c2 = gamma*P/d
   d2 = half*(B2/d+c2)
-  !print*, 'd,P,u,A'
   cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
   vel_info = cf
 END SUBROUTINE find_speed_fast_vec
@@ -500,7 +499,6 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('riemann_mod::hlld_2d',itimer=itimer)
-
   do l=3,ngrid
     !call trace%begin ('hlld_2d find_fast_speed', itimer=itimer(1))
     rLL=qLL(l,1); pLL=qLL(l,2); uLL=qLL(l,3); vLL=qLL(l,4); ALL=qLL(l,6); BLL=qLL(l,7) ; CLL=qLL(l,8)

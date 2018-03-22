@@ -23,12 +23,12 @@ CONTAINS
 !> =============================================================================
 !> Impose boundary conditions, taking staggering into account
 !> =============================================================================
-SUBROUTINE condition (self, iv, mem, m, lower,idim)
+SUBROUTINE condition (self, iv, mem, m, lower,idim,no_mans_land)
   class(boundary_t)      :: self
   real, dimension(:,:,:) :: mem
   class(mesh_t), pointer, dimension(:) :: m
   integer:: iv,jay1,jay2,jay3,idim
-  logical:: lower
+  logical:: lower, no_mans_land
   !............................................................................
   integer      :: i1, i2, i3, lb, lo, ub, uo
   !-----------------------------------------------------------------------------
@@ -38,16 +38,26 @@ SUBROUTINE condition (self, iv, mem, m, lower,idim)
 
   if (idim==3) then
     if (lower) then
-      mem(:,:,m(3)%lb) = mem(:,:,m(3)%ui-2)
-      mem(:,:,m(3)%lo) = mem(:,:,m(3)%ui-1)
+      if (no_mans_land) then
+        mem(:,:,m(3)%lb) = mem(:,:,m(3)%ui-1)
+        mem(:,:,m(3)%lo) = mem(:,:,m(3)%ui  )
+      else
+        mem(:,:,m(3)%lb) = mem(:,:,m(3)%ui-2)
+        mem(:,:,m(3)%lo) = mem(:,:,m(3)%ui-1)
+      endif      
 !      mem(:,:,m(3)%li) = mem(:,:,m(3)%ui  )
 !      do i3=m(3)%lb,m(3)%li
 !        jay3 = modulo(i3 - m(3)%li, m(3)%n) + m(3)%li
 !        mem(:,:,i3) = mem(:,:,jay3)
 !      end do
     else
-      mem(:,:,m(3)%uo) = mem(:,:,m(3)%li+1)
-      mem(:,:,m(3)%ub) = mem(:,:,m(3)%li+2)
+      if (no_mans_land) then
+        mem(:,:,m(3)%uo) = mem(:,:,m(3)%li  )
+        mem(:,:,m(3)%ub) = mem(:,:,m(3)%li+1)
+      else
+        mem(:,:,m(3)%uo) = mem(:,:,m(3)%li+1)
+        mem(:,:,m(3)%ub) = mem(:,:,m(3)%li+2)
+      endif
 !      do i3=m(3)%uo,m(3)%ub
 !        jay3 = modulo(i3 - m(3)%li, m(3)%n) + m(3)%li
 !        mem(:,:,i3) = mem(:,:,jay3)
@@ -55,16 +65,26 @@ SUBROUTINE condition (self, iv, mem, m, lower,idim)
     endif
   else if (idim==2) then
     if (lower) then
-      mem(:,m(2)%lb,m(3)%li:m(3)%ui) = mem(:,m(2)%ui-2,m(3)%li:m(3)%ui)
-      mem(:,m(2)%lo,m(3)%li:m(3)%ui) = mem(:,m(2)%ui-1,m(3)%li:m(3)%ui)
+      if (no_mans_land) then
+        mem(:,m(2)%lb,m(3)%li:m(3)%ui) = mem(:,m(2)%ui-1,m(3)%li:m(3)%ui)
+        mem(:,m(2)%lo,m(3)%li:m(3)%ui) = mem(:,m(2)%ui  ,m(3)%li:m(3)%ui)
+      else
+        mem(:,m(2)%lb,m(3)%li:m(3)%ui) = mem(:,m(2)%ui-2,m(3)%li:m(3)%ui)
+        mem(:,m(2)%lo,m(3)%li:m(3)%ui) = mem(:,m(2)%ui-1,m(3)%li:m(3)%ui)
+      endif
 !      mem(:,m(2)%li,:) = mem(:,m(2)%ui  ,:)
 !      do i2=m(2)%lb,m(2)%lo
 !        jay2 = modulo(i2 - m(2)%li, m(2)%n) + m(2)%li
 !        mem(:,i2,:) = mem(:,jay2,:)
 !      end do
     else
-      mem(:,m(2)%uo,m(3)%li:m(3)%ui) = mem(:,m(2)%li+1,m(3)%li:m(3)%ui)
-      mem(:,m(2)%ub,m(3)%li:m(3)%ui) = mem(:,m(2)%li+2,m(3)%li:m(3)%ui)
+      if (no_mans_land) then
+        mem(:,m(2)%uo,m(3)%li:m(3)%ui) = mem(:,m(2)%li  ,m(3)%li:m(3)%ui)
+        mem(:,m(2)%ub,m(3)%li:m(3)%ui) = mem(:,m(2)%li+1,m(3)%li:m(3)%ui)
+      else
+        mem(:,m(2)%uo,m(3)%li:m(3)%ui) = mem(:,m(2)%li+1,m(3)%li:m(3)%ui)
+        mem(:,m(2)%ub,m(3)%li:m(3)%ui) = mem(:,m(2)%li+2,m(3)%li:m(3)%ui)
+      endif
 !      do i2=m(2)%uo,m(2)%ub
 !        jay2 = modulo(i2 - m(2)%li, m(2)%n) + m(2)%li
 !        mem(:,i2,:) = mem(:,jay2,:)
@@ -72,16 +92,26 @@ SUBROUTINE condition (self, iv, mem, m, lower,idim)
     endif
   else if (idim==1) then
     if (lower) then
-      mem(m(1)%lb,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = mem(m(1)%ui-2,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui)
-      mem(m(1)%lo,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = mem(m(1)%ui-1,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui)
+      if (no_mans_land) then
+        mem(m(1)%lb,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = mem(m(1)%ui-1,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui)
+        mem(m(1)%lo,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = mem(m(1)%ui  ,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui)
+      else
+        mem(m(1)%lb,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = mem(m(1)%ui-2,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui)
+        mem(m(1)%lo,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = mem(m(1)%ui-1,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui)
+      endif
 !      mem(m(1)%li,:,:) = mem(m(1)%ui  ,:,:)
 !      do i1=m(1)%lb,m(1)%lo
 !        jay1 = modulo(i1 - m(1)%li, m(1)%n) + m(1)%li
 !        mem(i1,:,:) = mem(jay1,:,:)
 !      end do
     else
-      mem(m(1)%uo,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = mem(m(1)%li+1,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui)
-      mem(m(1)%ub,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = mem(m(1)%li+2,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui)
+      if (no_mans_land) then
+        mem(m(1)%uo,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = mem(m(1)%li  ,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui)
+        mem(m(1)%ub,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = mem(m(1)%li+1,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui)
+      else
+        mem(m(1)%uo,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = mem(m(1)%li+1,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui)
+        mem(m(1)%ub,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui) = mem(m(1)%li+2,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui)
+      endif 
 !      do i1=m(1)%uo,m(1)%ub
 !        jay1 = modulo(i1 - m(1)%li, m(1)%n) + m(1)%li
 !        mem(i1,:,:) = mem(jay1,:,:)

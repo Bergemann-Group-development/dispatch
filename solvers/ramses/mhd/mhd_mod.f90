@@ -107,6 +107,7 @@ SUBROUTINE update (self)
   integer:: n(3), nv3, i
   integer, parameter:: ndim=3
   integer, save:: itimer=0
+  real(dp),dimension(self%mesh(1)%ui-self%mesh(1)%li+1,self%mesh(2)%ui-self%mesh(2)%li+1,self%mesh(3)%ui-self%mesh(3)%li+1,1:3)::flxAD,emfAD
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%update', itimer=itimer)
   nv3 = self%nv-3
@@ -156,35 +157,48 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
-  call check_small (self)
+  !call check_small (self)
   call ctoprim(self)                                    ! Primitive variables
   call self%courant_condition                           ! compute dt
-  call uslope(self,self%bf,self%q,self%dq,self%dbf)              ! TVD slopes
-  if (slope_type==3.0) then
-    self%dq2=self%dq
-  else
-    call uslope(self,self%bf,self%q,self%dq2,self%dbf)              ! TVD slopes
-  endif
+  self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
+  !call uslope(self,self%bf,self%q,self%dq,self%dbf)              ! TVD slopes
+  !if (slope_type==3.0) then
+  !  self%dq2=self%dq
+  !else
+  !  call uslope(self,self%bf,self%q,self%dq2,self%dbf)              ! TVD slopes
+  !endif
+  !call non_ideal_comp(uin,qin,ngrid,dx,dy,dz,dt,flxAD,emfAD,jcell)
   call trace3d(self)                                    ! predictor step
 
   allocate (fl(self%gn(1),self%gn(2),self%gn(3),self%nv,3))
   allocate (em(self%gn(1),self%gn(2),self%gn(3),3))
 
   call cmpflxm(self,self%gn(1),2,3,4,6,7,8,fl(:,:,:,:,1))
+  !call flux_upd(flux(1:nvector,:,:,:,2:5,:), &
+  !               if1,if2,jlo,jhi,klo,khi,ngrid,dt,dx,flxAD,fvisc,1)
   call cmpflxm(self,self%gn(2),3,2,4,7,6,8,fl(:,:,:,:,2))
+  !call flux_upd(flux(1:nvector,:,:,:,2:5,:), &
+  !               ilo,ihi,jf1,jf2,klo,khi,ngrid,dt,dy,flxAD,fvisc,2)
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
+  !call flux_upd(flux(1:nvector,:,:,:,2:5,:), &
+  !               ilo,ihi,jlo,jhi,kf1,kf2,ngrid,dt,dz,flxAD,fvisc,3)
 
-  dtdx = self%dtime/self%ds(1)
-  dtdy = self%dtime/self%ds(2)
-  dtdz = self%dtime/self%ds(3)
+  dtdx = self%dtime/self%ds(1) 
+  dtdy = self%dtime/self%ds(2) 
+  dtdz = self%dtime/self%ds(3) 
   ! Compute fluxes with appropriate time step
   fl(:,:,:,:,1) = fl(:,:,:,:,1) * dtdx
   fl(:,:,:,:,2) = fl(:,:,:,:,2) * dtdy
   fl(:,:,:,:,3) = fl(:,:,:,:,3) * dtdz
 
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,dtdz,em(:,:,:,3),self%gn(3)-1,self%nv)
-  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,dtdy,em(:,:,:,2),self%gn(2)-1,self%nv)
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,dtdx,em(:,:,:,1),self%gn(1)-1,self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(3)-1,self%nv)
+  !call non_ideal_emf_up(emfz,if1,if2,jf1,jf2,klo,khi,nvector,dt,dz,emfAD,3)
+
+  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(2)-1,self%nv)
+  !call non_ideal_emf_up(emfy,if1,if2,jlo,jhi,kf1,kf2,nvector,dt,dy,emfAD,2)
+
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1),self%gn(1)-1,self%nv)
+  !call non_ideal_emf_up(emfx,ilo,ihi,jf1,jf2,kf1,kf2,nvector,dt,dx,emfAD,1)
   !-----------------------------------------------------------------------------
   ! Update conservative variables
   !-----------------------------------------------------------------------------
@@ -226,8 +240,6 @@ SUBROUTINE update (self)
           ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
             em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) )
 
-  !unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) = unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + dflux_x  
-
   Bleft =                                          &
             0.5 *                                ( &
             unew(i0-1:i1-1,j0  :j1  ,k0  :k1  ,6) + &
@@ -238,8 +250,6 @@ SUBROUTINE update (self)
             em(i0+1:i1+1,j0  :j1  ,k0+1:k1+1,2) ) - &
           ( em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3)   - &
             em(i0+1:i1+1,j0+1:j1+1,k0  :k1  ,3) )
-
-  !unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) = unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) + dflux_x  
 
   Bright =                                         &
             0.5 *                                ( &
@@ -259,8 +269,6 @@ SUBROUTINE update (self)
           ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
             em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) )
 
-  !unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + dflux_y  
-
   Bleft =                                          &
             0.5 *                                ( &
             unew(i0  :i1  ,j0-1:j1-1,k0  :k1  ,7) + &
@@ -272,8 +280,6 @@ SUBROUTINE update (self)
             em(i0+1:i1+1,j0+1:j1+1,k0  :k1  ,3) ) - &
           ( em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1)   - &
             em(i0  :i1  ,j0+1:j1+1,k0+1:k1+1,1) )
-
-!  unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) = unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) + dflux_y  
 
   Bright =                                         &
             0.5 *                                ( &
@@ -293,8 +299,6 @@ SUBROUTINE update (self)
           ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
             em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) )
 
-  !unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + dflux_z  
-
   Bleft =                                          &
             0.5 *                                ( &
             unew(i0  :i1  ,j0  :j1  ,k0-1:k1-1,8) + &
@@ -306,8 +310,6 @@ SUBROUTINE update (self)
             em(i0  :i1  ,j0+1:j1+1,k0+1:k1+1,1) ) - &
           ( em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2)   - &
             em(i0+1:i1+1,j0  :j1  ,k0+1:k1+1,2) )
-
-!  unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) = unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) + dflux_z  
 
   Bright =                                         &
             0.5 *                                ( &
@@ -407,6 +409,7 @@ subroutine ctoprim(self)
   class(mhd_t):: self
   integer::n(4)
   real(dp):: smallp, c
+  real(dp), dimension(self%gn(1),self%gn(2),self%gn(3)) :: eken, emag, etot, eint
   integer, save:: itimer=0
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
@@ -428,9 +431,14 @@ subroutine ctoprim(self)
   bf(n(1)+1,:,:,1) = bf(5,:,:,1)
   bf(:,n(2)+1,:,2) = bf(:,5,:,2)
   bf(:,:,n(3)+1,3) = bf(:,:,5,3)
-  q(:,:,:,5) = MAX((self%gamma-one)*(uin(:,:,:,5) -&                 ! Gas pressure
-    half*(q(:,:,:,6)**2+q(:,:,:,7)**2+q(:,:,:,8)**2)) - &       ! Magnetic pressure
-    half*q(:,:,:,1)*(q(:,:,:,2)**2+q(:,:,:,3)**2+q(:,:,:,4)**2),smallp)
+
+  eken(:,:,:) = half*( q(:,:,:,2)**2 + q(:,:,:,3)**2 + q(:,:,:,4)**2)
+  emag(:,:,:) = half*( q(:,:,:,6)**2 + q(:,:,:,7)**2 + q(:,:,:,8)**2)
+
+  etot(:,:,:) = uin(:,:,:,5) - emag(:,:,:)
+  eint(:,:,:) = etot(:,:,:)/uin(:,:,:,1) - eken(:,:,:)
+
+  q(:,:,:,5)=MAX((self%gamma-one)*q(:,:,:,1)*eint(:,:,:),smallp)
   ! Gravity predictor step
   !q(:,:,:,2:4) = q(:,:,:,idim+1) + Grho*gravin(:,:,:,1:3)*dt*half
   c = sqrt((q(:,:,:,5)*self%gamma+q(:,:,:,6)**2+q(:,:,:,7)**2+q(:,:,:,8)**2)/q(:,:,:,1))
@@ -465,7 +473,6 @@ subroutine uslope(self,bf,q,dq,dbf)
   l = self%mesh%lo
   u = self%mesh%uo
   nv=self%nv
-  !print*,'l,u',l,u
   if(slope_type==-1)then
     do n = 1, nv
       do k = l(3),u(3)
@@ -742,7 +749,7 @@ SUBROUTINE trace3d(self)
   real(dp) :: dCLx, dCRx, dCLy, dCRy
   real(dp) :: sAL0, sAR0, sBL0, sBR0, sCL0, sCR0
   real(dp), dimension(1:self%gn(1),1:self%gn(2),1:self%gn(3)):: rho_t, p_t
-  real(dp) :: eff_gamma
+  real(dp) :: eff_gamma, off
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   associate(q=>self%q,bf=>self%bf,dq=>self%dq,dq2=>self%dq2,qm=>self%qm,qp=>self%qp, &
@@ -873,9 +880,9 @@ SUBROUTINE trace3d(self)
     su0 = (-u*dux-(dpx+B*dBx+C*dCx)*invr)*dtdx + (-v*duy+B*dAy*invr)*dtdy + (-w*duz+C*dAz*invr)*dtdz
     sv0 = (-u*dvx+A*dBx*invr)*dtdx + (-v*dvy-(dpy+A*dAy+C*dCy)*invr)*dtdy + (-w*dvz+C*dBz*invr)*dtdz
     sw0 = (-u*dwx+A*dCx*invr)*dtdx + (-v*dwy+B*dCy*invr)*dtdy + (-w*dwz-(dpz+A*dAz+B*dBz)*invr)*dtdz
+    sp0 = (-u*dpx-dux*eff_gamma*p)*dtdx + (-v*dpy-dvy*eff_gamma*p)*dtdy + (-w*dpz-dwz*eff_gamma*p)*dtdz
     !
     ! Evolve entropy instead of pressure
-    sp0 = (-u*dpx-dux*eff_gamma*p)*dtdx + (-v*dpy-dvy*eff_gamma*p)*dtdy + (-w*dpz-dwz*eff_gamma*p)*dtdz
     !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz
     !
 !    ! Save predicted cell-centered pseudo-entropy; we are borrowing space in q(:,:,:,:,ip),
@@ -1206,19 +1213,31 @@ SUBROUTINE trace3d(self)
   end do
   end do
   n=size(q,1)
-  off = self%mesh(1)%lb - self%mesh(1)%li
+  if (self%no_mans_land) then
+    off = self%mesh(1)%lb - self%mesh(1)%li -1
+  else
+    off = self%mesh(1)%lb - self%mesh(1)%li
+  endif
   qp(n  ,:,:,:,:)=qp(self%mesh(1)%li+off,:,:,:,:)
   qm(n  ,:,:,:,:)=qm(self%mesh(1)%li+off,:,:,:,:)
   qp(1  ,:,:,:,:)=qp(self%mesh(1)%ui-off,:,:,:,:)
   qm(1  ,:,:,:,:)=qm(self%mesh(1)%ui-off,:,:,:,:)
   n=size(q,2)
-  off = self%mesh(2)%lb - self%mesh(2)%li
+  if (self%no_mans_land) then
+    off = self%mesh(2)%lb - self%mesh(2)%li -1
+  else
+    off = self%mesh(2)%lb - self%mesh(2)%li
+  endif
   qp(:,n  ,:,:,:)=qp(:,self%mesh(2)%li+off,:,:,:)
   qm(:,n  ,:,:,:)=qm(:,self%mesh(2)%li+off,:,:,:)
   qp(:,1  ,:,:,:)=qp(:,self%mesh(2)%ui-off,:,:,:)
   qm(:,1  ,:,:,:)=qm(:,self%mesh(2)%ui-off,:,:,:)
   n=size(q,3)
-  off = self%mesh(3)%lb - self%mesh(3)%li
+  if (self%no_mans_land) then
+    off = self%mesh(3)%lb - self%mesh(3)%li -1
+  else
+    off = self%mesh(3)%lb - self%mesh(3)%li
+  endif
   qp(:,:,n  ,:,:)=qp(:,:,self%mesh(3)%li+off,:,:)
   qm(:,:,n  ,:,:)=qm(:,:,self%mesh(3)%li+off,:,:)
   qp(:,:,1  ,:,:)=qp(:,:,self%mesh(3)%ui-off,:,:)
@@ -1281,7 +1300,6 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   associate (qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_mod::cmpflxm',itimer=itimer)
-  dtds = self%dtime/self%mesh%d
   lb = self%mesh%li
   ub = self%mesh%uo
   xdim = ln-1
@@ -1407,14 +1425,13 @@ end subroutine cmpflxm
 !> =============================================================================
 !> 2D solver for EMF
 !> =============================================================================
-subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor, dtds, emf, ngrid, nvar)
+subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor, emf, ngrid, nvar)
   class(mhd_t):: self
   ! 2D Riemann solver to compute EMF at cell edges
   ! indices of the 2 planar velocity lp1 and lp2 and the orthogonal one,
   ! lor and idem for the magnetic field
   integer:: lp1, lp2, lor, bp1, bp2, bor, ngrid, nvar
   integer:: iRT, jRT, kRT, iRB, jRB, kRB, iLT, jLT, kLT, iLB, jLB, kLB
-  real(dp):: dtds
   real(dp),DIMENSION(:,:,:):: emf
   real(dp),DIMENSION(:,:,:,:,:):: qRT, qLT, qRB, qLB
   ! local variables
