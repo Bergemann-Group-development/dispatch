@@ -289,6 +289,8 @@ def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
         if dir==0:
             j=ii[1]
             k=ii[2]
+            if verbose>2:
+                print('id: {:3d}  iy: {:5.2f}  iz: {:5.2f}'.format(p.id,j+w[1],k+w[2]))
             for i in range(m[0],m[0]+n[0]):
                 f1=data[i,j,k  ]*(1-w[1])+data[i,j+1,k  ]*w[1]
                 f2=data[i,j,k+1]*(1-w[1])+data[i,j+1,k+1]*w[1]
