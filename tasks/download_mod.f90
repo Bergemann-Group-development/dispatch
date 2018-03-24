@@ -98,13 +98,15 @@ SUBROUTINE test (self)
     !---------------------------------------------------------------------------
     do iv=1,2
       do dir=1,3
-        associate (srcih => source(i)%mesh(dir)%h)
-        srcih(iv) = -0.5*(iv-1)
-        end associate
-        target%mesh(dir)%h(iv)    = -0.5*(iv-1)
+        mesh => source(i)%mesh(dir)
+        mesh%h(iv)    = -0.5*(iv-1)
+        mesh => target%mesh(dir)
+        mesh%h(iv)    = -0.5*(iv-1)
       end do
-      if (io%verbose>0 .or. io_unit%do_validate) &
-        print *, 'source size, stagger:', source(i)%size(1), source(i)%mesh(1)%h(iv)
+      if (io%verbose>0 .or. io_unit%do_validate) then
+        mesh => source(i)%mesh(1)
+        print *, 'source size, stagger:', source(i)%size(1), mesh%h(iv)
+      end if
       !-------------------------------------------------------------------------
       ! Loop over placement of the source mesh: ol, il, c, ir, or
       !-------------------------------------------------------------------------
@@ -119,7 +121,8 @@ SUBROUTINE test (self)
         end if
         do k=l(1),u(1)
           do dir=1,3
-            pos(dir) = target%position(dir) + target%mesh(dir)%r(k) + target%mesh(dir)%h(iv)*target%ds(dir)
+            mesh => target%mesh(dir)
+            pos(dir) = target%position(dir) + mesh%r(k) + mesh%h(iv)*target%ds(dir)
           end do
           call source(i)%index_space (pos, iv, ii, pp)
           if (io%verbose>0 .or. io_unit%do_validate) then
