@@ -10,10 +10,6 @@ setenv OMP_STACKSIZE 265m; setenv OMP_NUM_THREADS 1
 echo "Run simple tests"
 cd $wd; utilities/scripts/validate -x tests/meshes
 cd $wd; cd tests/meshes; make clean; make; ./test.x
-echo "Check compilation of experiments in experiment_list.txt"
-cd $wd; utilities/scripts/validate -l -x
-echo "Validate turbulence experiment"
-cd $wd; utilities/scripts/validate experiments/turbulence
-cd $wd; utilities/scripts/validate experiments/turbulence/stagger2
-cd $wd; utilities/scripts/validate experiments/pebble_atmosphere
+echo "Check compilation of experiments in validate_list.txt"
+cd $wd; utilities/scripts/validate -l -v
 echo "Everything is awesome!"

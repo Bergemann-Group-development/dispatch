@@ -32,9 +32,8 @@ time csh -c "$cmd"
 
 # check if a .val file exists, rerun if not
 if (! -e $label.val ) then
-  echo "   WARNING: creating new $label.val from $label.log"
-  cp -p $label.log $label.val
-  #csh -c "$cmd"
+  echo "   WARNING: skipping test since no $label.val exists"
+  exit (0)
 endif
 
 # Compare the new log file to the existing validation file.
