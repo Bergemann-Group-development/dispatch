@@ -8,7 +8,7 @@
 # -R       : reset, with -m and -x
 # -v       : verbose output
 # -x       : skip execution
-# -l       : read experiment_list.txt
+# -l       : read validate_list.txt
 # -h       : help
 # --help   : help
 # dir1 ..  : experiment directories
@@ -76,10 +76,10 @@ endif
 
 if ($#dirs == 0) then
   if ($?readlist) then
-    # if "-f" is specified, read experiments to validate from "experiment_list.txt"
+    # if "-f" is specified, read experiments to validate from "validate_list.txt"
     set scriptdir = `dirname $0`
     set absdir = `cd $scriptdir && pwd`
-    foreach line (`cat $absdir/experiment_list.txt`)
+    foreach line (`cat $absdir/validate_list.txt`)
       set dirs = ($dirs $line)
     end
   else
