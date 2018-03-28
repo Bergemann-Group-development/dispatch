@@ -26,6 +26,7 @@ MODULE mhd_mod
   USE omp_mod
   USE force_mod
   USE index_mod
+  USE non_ideal_mod
   implicit none
   PRIVATE
   type, public, extends(gpatch_t):: mhd_t
@@ -36,7 +37,7 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:):: bf, em    ! face centered B, emf
     real, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
     real, pointer, dimension(:,:,:,:,:):: dq, dq2, dbf ! slopes
-    real, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,QRT
+    real, pointer, dimension(:,:,:,:,:):: qLB,qRB,qLT,qRT
     real, pointer, dimension(:,:,:,:):: uin       ! conserved
     real, pointer, dimension(:,:,:,:):: unew      ! new conserved
     real, pointer, dimension(:,:,:):: Ex,Ey,Ez
@@ -91,6 +92,7 @@ SUBROUTINE init (self)
     self%mesh(i)%h = 0d0
   end do
   call self%force%init(self%kind)
+  call non_ideal%init  
 
   call trace%end
 END SUBROUTINE init
@@ -101,13 +103,13 @@ SUBROUTINE update (self)
   class(mhd_t):: self
   real, pointer, dimension(:,:,:,:):: em, p
   real, pointer, dimension(:,:,:,:,:):: fl
+  real, pointer, dimension(:,:,:,:)::fluxambdiff,emfambdiff
   real, dimension(self%mesh(1)%ui-self%mesh(1)%li+1,self%mesh(2)%ui-self%mesh(2)%li+1,self%mesh(3)%ui-self%mesh(3)%li+1):: dflux_x, dflux_y, dflux_z, Bleft, Bright
   real, pointer, dimension(:,:,:):: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real(dp):: dtdx, dtdy, dtdz
   integer:: n(3), nv3, i
   integer, parameter:: ndim=3
   integer, save:: itimer=0
-  real(dp),dimension(self%mesh(1)%ui-self%mesh(1)%li+1,self%mesh(2)%ui-self%mesh(2)%li+1,self%mesh(3)%ui-self%mesh(3)%li+1,1:3)::flxAD,emfAD
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%update', itimer=itimer)
   nv3 = self%nv-3
@@ -159,29 +161,30 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   !call check_small (self)
   call ctoprim(self)                                    ! Primitive variables
-  call self%courant_condition                           ! compute dt
   self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
-  !call uslope(self,self%bf,self%q,self%dq,self%dbf)              ! TVD slopes
-  !if (slope_type==3.0) then
-  !  self%dq2=self%dq
-  !else
-  !  call uslope(self,self%bf,self%q,self%dq2,self%dbf)              ! TVD slopes
-  !endif
-  !call non_ideal_comp(uin,qin,ngrid,dx,dy,dz,dt,flxAD,emfAD,jcell)
+  call uslope(self,self%bf,self%q,self%dq,self%dbf)              ! TVD slopes
+  if (slope_type==3.0) then
+    self%dq2=self%dq
+  else
+    call uslope(self,self%bf,self%q,self%dq2,self%dbf)              ! TVD slopes
+  endif
+  allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
+  allocate (emfambdiff(self%gn(1),self%gn(2),self%gn(3),3))
+
+  call non_ideal%non_ideal_comp(self%bf,self%uin,self%q,fluxambdiff,emfambdiff,self%u_max,self%ds(1),self%dtime,self%gn(1))
+  call self%courant_condition                           ! compute dt
+
   call trace3d(self)                                    ! predictor step
 
   allocate (fl(self%gn(1),self%gn(2),self%gn(3),self%nv,3))
   allocate (em(self%gn(1),self%gn(2),self%gn(3),3))
 
   call cmpflxm(self,self%gn(1),2,3,4,6,7,8,fl(:,:,:,:,1))
-  !call flux_upd(flux(1:nvector,:,:,:,2:5,:), &
-  !               if1,if2,jlo,jhi,klo,khi,ngrid,dt,dx,flxAD,fvisc,1)
+  call non_ideal%flux_upd(fl,fluxambdiff,self%ds(1),self%dtime,1,self%gn(1))
   call cmpflxm(self,self%gn(2),3,2,4,7,6,8,fl(:,:,:,:,2))
-  !call flux_upd(flux(1:nvector,:,:,:,2:5,:), &
-  !               ilo,ihi,jf1,jf2,klo,khi,ngrid,dt,dy,flxAD,fvisc,2)
+  call non_ideal%flux_upd(fl,fluxambdiff,self%ds(2),self%dtime,2,self%gn(2))
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
-  !call flux_upd(flux(1:nvector,:,:,:,2:5,:), &
-  !               ilo,ihi,jlo,jhi,kf1,kf2,ngrid,dt,dz,flxAD,fvisc,3)
+  call non_ideal%flux_upd(fl,fluxambdiff,self%ds(3),self%dtime,3,self%gn(3))
 
   dtdx = self%dtime/self%ds(1) 
   dtdy = self%dtime/self%ds(2) 
@@ -192,13 +195,13 @@ SUBROUTINE update (self)
   fl(:,:,:,:,3) = fl(:,:,:,:,3) * dtdz
 
   call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(3)-1,self%nv)
-  !call non_ideal_emf_up(emfz,if1,if2,jf1,jf2,klo,khi,nvector,dt,dz,emfAD,3)
+  call non_ideal%non_ideal_emf_up(em(:,:,:,3),emfambdiff,self%ds(3),self%dtime,3,self%gn(3))
 
   call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(2)-1,self%nv)
-  !call non_ideal_emf_up(emfy,if1,if2,jlo,jhi,kf1,kf2,nvector,dt,dy,emfAD,2)
+  call non_ideal%non_ideal_emf_up(em(:,:,:,2),emfambdiff,self%ds(2),self%dtime,2,self%gn(2))
 
   call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1),self%gn(1)-1,self%nv)
-  !call non_ideal_emf_up(emfx,ilo,ihi,jf1,jf2,kf1,kf2,nvector,dt,dx,emfAD,1)
+  call non_ideal%non_ideal_emf_up(em(:,:,:,1),emfambdiff,self%ds(1),self%dtime,1,self%gn(1))
   !-----------------------------------------------------------------------------
   ! Update conservative variables
   !-----------------------------------------------------------------------------
@@ -339,7 +342,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dq2,self%bf,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
-              self%Ex,self%Ey,self%Ez)
+              self%Ex,self%Ey,self%Ez,fluxambdiff,emfambdiff)
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -1214,9 +1217,9 @@ SUBROUTINE trace3d(self)
   end do
   n=size(q,1)
   if (self%no_mans_land) then
-    off = self%mesh(1)%lb - self%mesh(1)%li -1
+    off = self%mesh(1)%li - self%mesh(1)%lb -1
   else
-    off = self%mesh(1)%lb - self%mesh(1)%li
+    off = self%mesh(1)%li - self%mesh(1)%lb
   endif
   qp(n  ,:,:,:,:)=qp(self%mesh(1)%li+off,:,:,:,:)
   qm(n  ,:,:,:,:)=qm(self%mesh(1)%li+off,:,:,:,:)
@@ -1224,9 +1227,9 @@ SUBROUTINE trace3d(self)
   qm(1  ,:,:,:,:)=qm(self%mesh(1)%ui-off,:,:,:,:)
   n=size(q,2)
   if (self%no_mans_land) then
-    off = self%mesh(2)%lb - self%mesh(2)%li -1
+    off = self%mesh(2)%li - self%mesh(2)%lb -1
   else
-    off = self%mesh(2)%lb - self%mesh(2)%li
+    off = self%mesh(2)%li - self%mesh(2)%lb
   endif
   qp(:,n  ,:,:,:)=qp(:,self%mesh(2)%li+off,:,:,:)
   qm(:,n  ,:,:,:)=qm(:,self%mesh(2)%li+off,:,:,:)
@@ -1234,9 +1237,9 @@ SUBROUTINE trace3d(self)
   qm(:,1  ,:,:,:)=qm(:,self%mesh(2)%ui-off,:,:,:)
   n=size(q,3)
   if (self%no_mans_land) then
-    off = self%mesh(3)%lb - self%mesh(3)%li -1
+    off = self%mesh(3)%li - self%mesh(3)%lb -1
   else
-    off = self%mesh(3)%lb - self%mesh(3)%li
+    off = self%mesh(3)%li - self%mesh(3)%lb
   endif
   qp(:,:,n  ,:,:)=qp(:,:,self%mesh(3)%li+off,:,:)
   qm(:,:,n  ,:,:)=qm(:,:,self%mesh(3)%li+off,:,:)
