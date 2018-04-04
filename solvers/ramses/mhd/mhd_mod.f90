@@ -195,12 +195,15 @@ SUBROUTINE update (self)
   fl(:,:,:,:,3) = fl(:,:,:,:,3) * dtdz
 
   call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(3)-1,self%nv)
+  em(:,:,:,3) = em(:,:,:,3)*dtdx
   call non_ideal%non_ideal_emf_up(em(:,:,:,3),emfambdiff,self%ds(3),self%dtime,3,self%gn(3))
 
   call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(2)-1,self%nv)
+  em(:,:,:,2) = em(:,:,:,2)*dtdz
   call non_ideal%non_ideal_emf_up(em(:,:,:,2),emfambdiff,self%ds(2),self%dtime,2,self%gn(2))
 
   call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1),self%gn(1)-1,self%nv)
+  em(:,:,:,1) = em(:,:,:,1)*dtdy
   call non_ideal%non_ideal_emf_up(em(:,:,:,1),emfambdiff,self%ds(1),self%dtime,1,self%gn(1))
   !-----------------------------------------------------------------------------
   ! Update conservative variables
@@ -229,9 +232,6 @@ SUBROUTINE update (self)
 
   ! Compute emf fluxes with appropriate time steps
 
-  em(:,:,:,3) = em(:,:,:,3)*dtdx
-  em(:,:,:,1) = em(:,:,:,1)*dtdy
-  em(:,:,:,2) = em(:,:,:,2)*dtdz
 
   !-----------------------------------------------------------------------------
   ! Update Bx 
