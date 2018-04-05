@@ -435,7 +435,7 @@ SUBROUTINE check_ready (self, link)
   ! be checked, we first check if any bits are set indicating this to be the case
   !-----------------------------------------------------------------------------
   task => link%task
-  if (task%is_set (bits%ready+bits%virtual+bits%external)) return
+  if (task%is_set (bits%ready+bits%busy+bits%virtual+bits%external)) return
   nbor => link%nbor                                     ! start on nbor list
   do while (associated (nbor))                          ! keep going until end
     if (nbor%needed) then
@@ -999,7 +999,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
   ! Double check that no other thread has set the ready bit on this task.
   !-----------------------------------------------------------------------------
   !.... critical (queue_cr)
-  if (task%is_clear (bits%ready)) then
+  if (task%is_clear (bits%ready+bits%busy)) then
     call task%set(bits%ready)
     if (io%verbose>1) &
       write (io_unit%log,'(f12.6,i5,2x,a,i9,a,f12.6,2x,a,i5)') wallclock(), omp%thread, &

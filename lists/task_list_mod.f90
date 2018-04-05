@@ -195,7 +195,23 @@ END SUBROUTINE execute
 
 !> =============================================================================
 !> Update the state of the task list, taking the steps necessary to update the
-!> head task on the ready_queue, and check for consequences
+!> head task on the ready_queue, and check for consequences.  Two strategies:
+!>
+!> 1) The threads pick up tasks from the queue themselves, and put itself or
+!>    other tasks back onto the queue, based on the results of list_t%check_ready
+!>
+!> In this case the threads are prevented from messing up for each other by
+!> using critical regions when manipulating the queue, and by using status bits
+!> to indicate the state each task is in.  These can be 1) in the queue, and
+!> ready to be updated, 2) not in the queue, and busy, 3) not in the queue, and
+!> not busy. The 'ready' bit is set while the task is in the queue, and the
+!> 'busy' but is set while the task is busy being updated.  A task should be
+!> checked for being ready only when in state 3, meaning only when none of the
+!> two bits are set.
+!>
+!> 2) The master thread takes care of picking tasks from the queue, starting an
+!>    OMP thread to update it, and checking for nbors that are ready to be 
+!>    updated as a consquence
 !> =============================================================================
 SUBROUTINE update (self)
   class(task_list_t):: self
@@ -243,6 +259,7 @@ SUBROUTINE update (self)
     if (.not.already_busy) then
       call task%set (bits%busy)                         ! mark task busy
       self%queue => head%next_time                      ! chop head off
+      call task%clear (bits%ready)                      ! not in queue
       call self%queue_active (head)
       !$omp atomic
       self%nq = self%nq-1                               ! decrement queue count
@@ -323,7 +340,6 @@ SUBROUTINE update (self)
     ! bit will prevent it being checked, but its nbors still need to be checked
     !-----------------------------------------------------------------------------
     call task%clear (bits%busy)                         ! clear busy bit (FIXME: check this!)
-    call task%clear (bits%ready)                        ! needs new check (FIXME: check this!)
     if (.not. was_refined) then
       call self%check_nbors (head)                        ! any nbors ready?
       !$omp atomic write
