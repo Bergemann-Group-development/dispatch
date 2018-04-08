@@ -377,8 +377,7 @@ SUBROUTINE raw (self, m, ff, idx)
 END SUBROUTINE raw
 
 !> =============================================================================
-!> Initialize from a raw data file, assumed to contain isothermal data, in the
-!> order rho, Ux, Uy, Uz
+!> Initialize to zero, and let the forces drive from there
 !> =============================================================================
 SUBROUTINE turbulence (self, m, ff, idx)
   class(initial_t):: self
@@ -389,6 +388,7 @@ SUBROUTINE turbulence (self, m, ff, idx)
   integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t::raw', itimer=itimer)
+  ff(:,:,:,:) = 0.0
   call trace_end (itimer)
 END SUBROUTINE turbulence
 

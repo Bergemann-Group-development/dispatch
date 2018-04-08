@@ -12,17 +12,12 @@ MODULE force_mod
     integer :: id = 0
     integer :: seed
     real :: t_turb = 0.0
-    real, allocatable, dimension(:,:,:)   :: pranx, prany, pranz
-    real, allocatable, dimension(:,:,:)   :: franx, frany, franz
+    real, allocatable, dimension(:,:,:,:,:)   :: fran
     procedure(turbulence), pointer :: selected=>null()
     class(mesh_t), dimension(:), pointer  :: mesh
   contains
     procedure :: init
   end type
-  logical :: do_force = .true.
-  logical :: do_helmh = .true.
-  integer :: verbose = 0
-  integer :: seed = -3
   real :: ampl_turb = 0.1
   real :: a_helmh=1.
   real :: k1=1.
@@ -31,6 +26,11 @@ MODULE force_mod
   real :: t_turn = 0.1
   real :: t_turb = 0.0
   real :: pi=3.14159365
+  logical :: do_force = .true.
+  logical :: do_helmh = .true.
+  integer :: verbose = 0
+  integer :: seed = -3
+  type(random_t) :: random
 CONTAINS
 
 !> =============================================================================
@@ -64,11 +64,10 @@ SUBROUTINE init (self, solver, id, mesh)
   mx = self%mesh(1)%gn
   my = self%mesh(2)%gn
   mz = self%mesh(3)%gn
-  allocate (self%pranx(mx,my,mz), self%prany(mx,my,mz), self%pranz(mx,my,mz))
-  allocate (self%franx(mx,my,mz), self%frany(mx,my,mz), self%franz(mx,my,mz))
-  self%pranx(:,:,:)=0.; self%prany(:,:,:)=0.; self%pranz(:,:,:)=0.
-  self%franx(:,:,:)=0.; self%frany(:,:,:)=0.; self%franz(:,:,:)=0.
+  allocate (self%fran(mx,my,mz,3,2))
+  self%fran = 0.0
   self%selected => turbulence
+  call random%init (seed)
 END SUBROUTINE init
 
 !> =============================================================================
@@ -103,11 +102,7 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
   real                   :: x, y, z, w, fact, fpow, accel
   real                   :: dx, dy, dz, eps, fk
   class(mesh_t), pointer :: m
-  type(random_t)         :: random
   integer, save          :: itimer=0, nprint=5
-  !-----------------------------------------------------------------------------
-  associate (franx=>self%franx, frany=>self%frany, franz=>self%franz, &
-             pranx=>self%pranx, prany=>self%prany, pranz=>self%pranz)
   !-----------------------------------------------------------------------------
   if (.not.do_force) then
     ff(:,:,:,:) = 0.0
@@ -123,14 +118,11 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
   !-----------------------------------------------------------------------------
   do while (self%t_turb <= time)
     self%t_turb = self%t_turb + t_turn
-    do k=1,mz
-      pranx(:,:,k)=franx(:,:,k)
-      prany(:,:,k)=frany(:,:,k)
-      pranz(:,:,k)=franz(:,:,k)
-      franx(:,:,k) = 0.
-      frany(:,:,k) = 0.
-      franz(:,:,k) = 0.
-    end do
+    !---------------------------------------------------------------------------
+    ! Maintain two force snapshots
+    !---------------------------------------------------------------------------
+    self%fran(:,:,:,:,1) = self%fran(:,:,:,:,2)
+    self%fran(:,:,:,:,2) = 0.0
     !---------------------------------------------------------------------------
     ! Count the number of wavenumbers
     !---------------------------------------------------------------------------
@@ -196,9 +188,9 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
                   expikrx = accel*cexp(kx*(x-0.5*dx)+ky*y+kz*z)
                   expikry = accel*cexp(kx*x+ky*(y-0.5*dy)+kz*z)
                   expikrz = accel*cexp(kx*x+ky*y+kz*(z-0.5*dz))
-                  franx(i,j,k) = franx(i,j,k) + real(fxx*expikrx)
-                  frany(i,j,k) = frany(i,j,k) + real(fyy*expikry)
-                  franz(i,j,k) = franz(i,j,k) + real(fzz*expikrz)
+                  self%fran(i,j,k,1,2) = self%fran(i,j,k,1,2) + real(fxx*expikrx)
+                  self%fran(i,j,k,2,2) = self%fran(i,j,k,2,2) + real(fyy*expikry)
+                  self%fran(i,j,k,3,2) = self%fran(i,j,k,3,2) + real(fzz*expikrz)
                 end do
               end do
             end do
@@ -217,13 +209,8 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
   !-----------------------------------------------------------------------------
   w = (t_turn-(self%t_turb-time))/t_turn
   w = 0.5*(1.-cos(w*pi))
-  do k=1,mz
-    ff(:,:,k,1) = pranx(:,:,k) + (franx(:,:,k)-pranx(:,:,k))*w
-    ff(:,:,k,2) = prany(:,:,k) + (frany(:,:,k)-prany(:,:,k))*w
-    ff(:,:,k,3) = pranz(:,:,k) + (franz(:,:,k)-pranz(:,:,k))*w
-  end do
+  ff(:,:,:,:) = self%fran(:,:,:,:,1) + (self%fran(:,:,:,:,2)-self%fran(:,:,:,:,1))*w
   call trace_end (itimer)
-  end associate
 END FUNCTION turbulence
 
 END MODULE force_mod
