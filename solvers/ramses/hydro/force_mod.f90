@@ -12,6 +12,7 @@ MODULE force_mod
   private
   real(8), parameter:: pi2=8.0*atan(1.0)
   type, public:: force_t
+    integer:: id
     real:: omega(3)
     procedure(single_solenoidal), pointer:: selected=>null()
     character(len=64):: solver
@@ -24,14 +25,17 @@ CONTAINS
 !> =============================================================================
 !> Choose type of initial condition
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, id, mesh)
   class(force_t):: self
   character(len=64):: solver
+  integer:: id
+  class(mesh_t), dimension(:), pointer:: mesh
+  !.............................................................................
   integer:: iostat
   character(len=32), save:: type='none'
   logical, save:: first_time=.true.
   namelist /force_params/ type
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace_begin('force_t%init')
   !$omp critical (input_cr)
   if (first_time) then
@@ -48,6 +52,7 @@ SUBROUTINE init (self, solver)
     nullify(self%selected)
   end select
   self%solver = trim(solver)
+  self%id = id
   call trace_end
 END SUBROUTINE init
 
