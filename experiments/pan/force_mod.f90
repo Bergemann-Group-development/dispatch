@@ -201,7 +201,8 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
     if (nprint>0 .and. self%id==1) then
       !$omp atomic
       nprint = nprint-1
-      print *, 'turbulence: id, t_turb, nrand, fpow =', self%id, self%t_turb, nrand, fpow
+      print '(a,i6,f10.4,i4,f10.4)', 'turbulence: id, t_turb, nrand, fpow =', &
+        self%id, self%t_turb, nrand, fpow
     end if
   enddo
   !-----------------------------------------------------------------------------
