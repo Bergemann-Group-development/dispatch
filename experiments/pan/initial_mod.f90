@@ -388,7 +388,9 @@ SUBROUTINE turbulence (self, m, ff, idx)
   integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t::raw', itimer=itimer)
-  ff(:,:,:,:) = 0.0
+  ff(:,:,:,idx%d        ) = 1.0
+  ff(:,:,:,idx%e        ) = 1.0
+  ff(:,:,:,idx%px:idx%pz) = 0.0
   call trace_end (itimer)
 END SUBROUTINE turbulence
 
