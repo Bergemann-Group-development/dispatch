@@ -6,10 +6,10 @@
    away in a file, such as this one
 '''
 import matplotlib.pyplot as pl
-def image(f,title=''):
+def image(f,title='',vlim=[None,None]):
     pl.clf()
     pl.title(title)
     pl.imshow(f.squeeze().transpose(), 
-      origin='lower',interpolation='nearest')
+      origin='lower',interpolation='nearest',vmin=vlim[0],vmax=vlim[1])
     pl.colorbar()
     pl.show(block=False)
