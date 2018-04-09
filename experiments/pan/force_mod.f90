@@ -15,6 +15,7 @@ MODULE force_mod
     real, allocatable, dimension(:,:,:,:,:)   :: fran
     procedure(turbulence), pointer :: selected=>null()
     class(mesh_t), dimension(:), pointer  :: mesh
+    type(random_t):: random
   contains
     procedure :: init
   end type
@@ -30,7 +31,6 @@ MODULE force_mod
   logical :: do_helmh = .true.
   integer :: verbose = 0
   integer :: seed = -3
-  type(random_t) :: random
 CONTAINS
 
 !> =============================================================================
@@ -67,7 +67,7 @@ SUBROUTINE init (self, solver, id, mesh)
   allocate (self%fran(mx,my,mz,3,2))
   self%fran = 0.0
   self%selected => turbulence
-  call random%init (seed)
+  call self%random%init (seed)
 END SUBROUTINE init
 
 !> =============================================================================
@@ -155,9 +155,9 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
           kz = cmplx (0., jz*2.*pi/mesh(3)%b)
           fk = sqrt(float(jx**2+jy**2+jz**2))
           if (fk >= k1-eps .and. fk <= k2+eps) then
-            fxx = cexp(cmplx(0., 2.*pi*random%ran1()))/fk**pk
-            fyy = cexp(cmplx(0., 2.*pi*random%ran1()))/fk**pk
-            fzz = cexp(cmplx(0., 2.*pi*random%ran1()))/fk**pk
+            fxx = cexp(cmplx(0., 2.*pi*self%random%ran1()))/fk**pk
+            fyy = cexp(cmplx(0., 2.*pi*self%random%ran1()))/fk**pk
+            fzz = cexp(cmplx(0., 2.*pi*self%random%ran1()))/fk**pk
             !------------------
             ! solenoidal field:
             !------------------
