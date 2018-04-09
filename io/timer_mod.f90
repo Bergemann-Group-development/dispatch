@@ -252,7 +252,7 @@ SUBROUTINE print ()
   n_recv = max(timer%n_recv,1)
   if (io_unit%master) then
     print 2, "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
-      sec, 'wall sec'
+      wc, 'wall sec'
     2 format(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))
     if (mpi%size>1) then
       timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
@@ -268,7 +268,7 @@ SUBROUTINE print ()
   end if
   if (omp%master .and. io_unit%verbose>0) then
     write (io_unit%mpi,2) "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
-      sec, 'wall sec'
+      wc, 'wall sec'
     write (io_unit%mpi,3) timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
       timer%nq_send_max, timer%nq_recv_max
   end if
