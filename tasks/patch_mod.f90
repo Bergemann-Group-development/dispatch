@@ -1097,7 +1097,7 @@ SUBROUTINE output_direct (self)
   call self%time_interval (self%out_next, jt, pt)
   buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,jt(1),1)*pt(1) &
       + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,jt(2),1)*pt(2)
-  offset(1:3) = 1 + self%ipos*self%mesh%n
+  offset(1:3) = 1 + self%ipos*self%ncell
   call direct_output%patch (buf, offset)
   deallocate (buf)
   if (direct_output%count==0) then
@@ -1427,7 +1427,8 @@ SUBROUTINE output_legacy (self, experiment_name)
   close (io%data_unit)
   io%nwrite = io%nwrite-1
   if (io%debug(0) .and. io%nwrite==0) &
-    print '(a,i5.5)', 'snapshot: '//trim(io%outputname),self%iout
+    print '(a,i5.5,3f15.6)', 'snapshot: '//trim(io%outputname),self%iout, &
+      self%t(it1),time,self%t(it2)
   call trace_end
 END SUBROUTINE output_legacy
 
