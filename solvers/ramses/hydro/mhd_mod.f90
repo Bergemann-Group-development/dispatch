@@ -494,7 +494,7 @@ subroutine ctoprim (self)
   c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
   self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &
                           + c + abs(q(:,:,:,3)) &
-                          + c + abs(q(:,:,:,4)))
+                          + c + abs(q(:,:,:,4)))/3.
   if (detailed_timer) then
     call trace%end (itimer)
   else

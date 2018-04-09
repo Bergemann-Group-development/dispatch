@@ -447,7 +447,7 @@ subroutine ctoprim(self)
   c = sqrt((q(:,:,:,5)*self%gamma+q(:,:,:,6)**2+q(:,:,:,7)**2+q(:,:,:,8)**2)/q(:,:,:,1))
   self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &
                           + c + abs(q(:,:,:,3)) &
-                          + c + abs(q(:,:,:,4)))
+                          + c + abs(q(:,:,:,4)))/3.
   end associate
   call trace%end (itimer)
 end subroutine ctoprim
