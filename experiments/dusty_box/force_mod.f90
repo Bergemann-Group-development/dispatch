@@ -16,7 +16,7 @@ MODULE force_mod
     integer:: seed=-11
     integer:: i_gas, i_dust, nc, i=1
     real::    K, d_int, a, gamma, csound, b, sigma, tmin
-    real::    pi=4*atan(1.0)
+    real::    pi=4.0*atan(1.0)
     real, dimension(:,:,:,:), allocatable:: ff_drag
     character(len=32):: drag
     character(len=64):: solver
