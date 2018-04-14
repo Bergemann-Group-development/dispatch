@@ -1785,25 +1785,34 @@ END FUNCTION highest
 SUBROUTINE courant_condition (self, detailed_timer)
   class(patch_t):: self
   logical, optional:: detailed_timer
-  real(8):: dtime
+  real(8):: dtime, ds(3)
+  integer:: i2
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('patch_t%courant_condition', itimer=itimer)
   if (io%verbose>1) &
     write (io_unit%log,*) self%id, ' courant: u_max, ds', self%u_max, minval(self%ds)
+  ds(1) = self%ds(1)
+  ds(2) = self%ds(2)*self%mesh(1)%h2c(self%mesh(1)%lb)
+  ds(3) = self%ds(3)*self%mesh(1)%h31c(self%mesh(1)%lb)*abs(self%mesh(2)%h32c(self%mesh(2)%lb))
+  if (trim(self%mesh(3)%type) == 'spherical_mesh') then
+    do i2=self%mesh(2)%lb,self%mesh(2)%ub
+      ds(3) = min(ds(3),self%ds(3)*self%mesh(1)%h31c(self%mesh(1)%lb)*abs(self%mesh(2)%h32c(i2)))
+    end do
+  end if
   if (self%dt_fixed > 0.0) then
     dtime = self%dt_fixed
-    self%courant = dtime*self%u_max/minval(self%ds)
+    self%courant = dtime*self%u_max/minval(ds)
   else if (self%u_fixed > 0.0) then
-    dtime = self%courant*minval(self%ds)/self%u_fixed
+    dtime = self%courant*minval(ds)/self%u_fixed
   else
-    dtime = self%courant*minval(self%ds)/self%u_max
+    dtime = self%courant*minval(ds)/self%u_max
   endif
   !$omp atomic write
   self%dtime = dtime
   if (io%verbose>2) &
     print '(a,i6,1p,3g11.2,2x,3g11.2)', ' courant: id, dt, cdt, u_max, ds =', &
-      self%id, dtime, self%courant, self%u_max, self%ds
+      self%id, dtime, self%courant, self%u_max, ds
   !-----------------------------------------------------------------------------
   ! Force the time step to give exactly sync_time if within reach
   !-----------------------------------------------------------------------------
