@@ -12,7 +12,7 @@ datadir  = 'data'          # Data directory
 #datadir  = 'data/no_p_coro'
 run      = '.'
 #iout    = [0,5,10,15,20]           # Indices for output times
-iout     = [3]
+iout     = [50]
 #iout    = [0,12,13,14,15]                     # Indices for output times 
 colr     = ['b','c','g','y','r']    # Colorscheme for different output times
 #iout    = [0,1,2]                  # Indices for output times
@@ -28,7 +28,7 @@ patches  = [1,1,1]                  # Patch structure in output data
 npatches = np.prod(patches)         # Number of patches in output data
 nv       = 5                        # Number of variables per component in this particular case
 nvs      = 14                       # Number of variables per component in generic case
-plot_dim = '1D'                     # Dimension 
+plot_dim = '2D'                     # Dimension 
 
 
 

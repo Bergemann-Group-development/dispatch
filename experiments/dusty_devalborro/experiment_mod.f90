@@ -110,7 +110,7 @@ SUBROUTINE initial_conditions (patch)
         P0           = (experiment_params%aspect_rat * vkep(i2))**2 * sigma0
         px(i1,i2,i3) = 0.0
         py(i1,i2,i3) = 0.0
-        pz(i1,i2,i3) = vkep(i2) * sigma0!* (1.0 - experiment_params%aspect_rat**2)
+        pz(i1,i2,i3) = vkep(i2) * sigma0* (1.0 - experiment_params%aspect_rat**2)
         !Bx(i1,i2,i3) = 0.0
         !By(i1,i2,i3) = 0.0
         !Bz(i1,i2,i3) = 0.0
@@ -133,7 +133,7 @@ SUBROUTINE initial_conditions (patch)
           dd (i1,i2,i3) = sigma0 * experiment_params%dust2gas
           pxd(i1,i2,i3) = 0.0
           pyd(i1,i2,i3) = 0.0
-          pzd(i1,i2,i3) = vkep(i2) * sigma0 * experiment_params%dust2gas!* (1.0 - experiment_params%aspect_rat**2)
+          pzd(i1,i2,i3) = vkep(i2) * sigma0 * experiment_params%dust2gas* (1.0 - experiment_params%aspect_rat**2)
           pyd(i1,i2,i3) = pyd(i1,i2,i3) * m1%h2c(i1)
           pzd(i1,i2,i3) = pzd(i1,i2,i3) * m1%h31c(i1) * m2%h32c(i2)
         end if
