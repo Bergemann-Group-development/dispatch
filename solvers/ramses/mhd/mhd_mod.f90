@@ -91,7 +91,7 @@ SUBROUTINE init (self)
   do i=1,3
     self%mesh(i)%h = 0d0
   end do
-  call self%force%init(self%kind)
+  call self%force%init(self%kind,self%id,self%mesh)
   call non_ideal%init  
 
   call trace%end
@@ -461,7 +461,7 @@ subroutine uslope(self,bf,q,dq,dbf)
   real, dimension(size(q,1),size(q,2),size(q,3),size(q,4)):: bf
   real, dimension(size(q,1),size(q,2),size(q,3),size(q,4),3):: dq
   real, dimension(size(q,1),size(q,2),size(q,3),3,3):: dbf
-  integer::nv
+  integer::nv, islope_type
   integer::i, j, k, n, l(3), u(3)
   real(dp)::dsgn, dlim, dcen, dlft, drgt, slop, xslope_type
   real(dp)::dfll,dflm,dflr,dfml,dfmm,dfmr,dfrl,dfrm,dfrr
@@ -473,6 +473,7 @@ subroutine uslope(self,bf,q,dq,dbf)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_mod::uslope', itimer=itimer)
   !
+  islope_type = int(slope_type)
   l = self%mesh%lo
   u = self%mesh%uo
   nv=self%nv
@@ -488,10 +489,10 @@ subroutine uslope(self,bf,q,dq,dbf)
         end do
       end do
     end do
-  else if(slope_type==0)then
+  else if(islope_type==0)then
      dq=0.0_dp
      return
-  else if (slope_type==1) then  ! minmod
+  else if (islope_type==1) then  ! minmod
     do n = 1, nv
       do k = l(3),u(3)
         do j = l(2),u(2)
@@ -512,7 +513,7 @@ subroutine uslope(self,bf,q,dq,dbf)
         end do
       end do
     end do
-  else if (slope_type==2) then ! moncen
+  else if (islope_type==2) then ! moncen
     xslope_type= 2 !MIN(slope_type,2)
     do n = 1, nv
       do k = l(3),u(3)
@@ -599,7 +600,7 @@ subroutine uslope(self,bf,q,dq,dbf)
       end do
     end do
 
-  else if (slope_type==3) then ! positivity preserving 3d unsplit slope
+  else if (islope_type==3) then ! positivity preserving 3d unsplit slope
     xslope_type = real(slope_type - 2_dp,kind=dp)
     do n = 1, nv
       do k = l(3),u(3)
