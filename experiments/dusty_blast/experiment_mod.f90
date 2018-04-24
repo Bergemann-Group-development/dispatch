@@ -82,12 +82,6 @@ SUBROUTINE init (self)
 
   call allocate_scalars(self%gn, r2, lnPg)
 
-  !print*, 'gn is:', self%gn(1), self%gn(2), self%gn(3)
-  !print*, 'cell size is:', self%mesh(1)%d, self%mesh(2)%d, self%mesh(3)%d
-  print*, 'P and rho and gamma:'  , P , Pc , rho , rhoc , self%gamma
-  print*, 'P2 and rho2 and gamma:', P2, P2c, rho2, rho2c, self%gamma
-  print*, 'r0 and center:'        , r0, center
-
   do k = self%mesh(3)%lb , self%mesh(3)%ub
     z  = self%mesh(3)%p  + self%mesh(3)%r(k)
     do j = self%mesh(2)%lb , self%mesh(2)%ub
@@ -154,7 +148,14 @@ SUBROUTINE init (self)
     lnPg(:,:,:) = log(self%gamma-1.0) + lnPg(:,:,:) !Pg is now again the thermal pressure
     print*, 'Rescaling done!'
   end if
-  print*, 'Min and max d:', minval(d), maxval(d)
+  ! Reset ambient pressure values to the chosen minimum value
+  do k = self%mesh(3)%lb , self%mesh(3)%ub
+    do j = self%mesh(2)%lb , self%mesh(2)%ub
+      do i = self%mesh(1)%lb , self%mesh(1)%ub
+        lnPg(i,j,k) = max(lnPg(i,j,k),log(P))
+      end do
+    end do
+  end do
   print*, 'Min and max ln(Pg):', minval(lnPg), maxval(lnPg)
   ! Calculate entropy
   if (self%gamma .eq. 1.) then
