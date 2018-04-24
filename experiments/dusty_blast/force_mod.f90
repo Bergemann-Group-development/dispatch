@@ -198,6 +198,7 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     !--------------------------------------------------------------------------
     ! Save drag force for use on the second component, and update counter
     !--------------------------------------------------------------------------
+    allocate(self%ff_drag(m(1)%gn,m(2)%gn,m(3)%gn,3))
     self%ff_drag = ff
     lnd   =  log(d)
     ld    =  down(lnd)
@@ -244,6 +245,7 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   !----------------------------------------------------------------------------
   if (self%i > self%nc) then
     self%i=1
+    deallocate(self%ff_drag)
   end if
   call trace%end
 END FUNCTION dust_gas_interaction
