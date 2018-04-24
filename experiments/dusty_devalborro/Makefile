@@ -4,14 +4,9 @@
 #OPTS = full_debug
 OPTS = optimized
 
-# Path to ZEUScore shared library.
-# Don't forget to update the LD_LIBRARY_PATH environment variable.
-#LIBS+=-L/home/jramsey/repos/ZEUScore -lzeuscore
-
 # Targets and methods
 UPD = adams_bashforth
-#SOLVER = zeus3d
-SOLVER = stagger2_multifluid
+SOLVER = stagger2/multifluid
 EXEC = dispatch.x
 TOP = ../..
 sinclude $(TOP)/config/Makefile
@@ -26,4 +21,4 @@ scaling_mod.o:		io_mod.o trace_mod.o
 parameters_mod.o:	io_mod.o trace_mod.o scaling_mod.o
 components_mod.o:	io_mod.o trace_mod.o scaling_mod.o task_mod.o task_list_mod.o mhd_mod.o mesh_mod.o bits_mod.o experiment_mod.o parameters_mod.o
 initial_mod.o:		io_mod.o trace_mod.o mesh_mod.o kinds_mod.o
-force_mod.o:		io_mod.o trace_mod.o scaling_mod.o mesh_mod.o parameters_mod.o kinds_mod.o potential_mod.o stagger_mod.o
+force_mod.o:		io_mod.o trace_mod.o scaling_mod.o mesh_mod.o parameters_mod.o kinds_mod.o potential_mod.o stagger_mod.o vector_ops.o

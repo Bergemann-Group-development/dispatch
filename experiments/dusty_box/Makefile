@@ -6,9 +6,7 @@ OPTS = full_debug
 
 # Default target and methods
 UPD             = adams_bashforth
-#SOLVER         = stagger
-SOLVER          = stagger2_multifluid
-#SOLVER			= ramses/hydro
+SOLVER          = stagger2/multifluid
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile
@@ -17,6 +15,6 @@ sinclude $(TOP)/config/Makefile
 $(EXEC): cartesian_mod.o
 
 # Dependencies
-#experiment_mod.o        : mhd_mod.o scalar_mod.o trace_mod.o vector_mod.o force_mod.o io_mod.o initial_mod.o boundary_mod.o
 experiment_mod.o        : mhd_mod.o scalar_mod.o trace_mod.o force_mod.o io_mod.o initial_mod.o timestep_mod.o
+force_mod.o 		: io_mod.o trace_mod.o vector_mod.o mesh_mod.o index_mod.o vector_ops.o scalar_mod.o
 
