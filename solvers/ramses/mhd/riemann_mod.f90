@@ -22,6 +22,7 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub)
   IMPLICIT NONE
   REAL(dp),DIMENSION(:,:), target ::qleft,qright
   REAL(dp),DIMENSION(:,:)         ::fgdnv
+  INTEGER ::ivar,i,lb,ub
   REAL(dp),DIMENSION(ub-lb+1)::SL,SR,SAL,SAR,A,sgnm
   REAL(dp)::entho
   REAL(dp),DIMENSION(:), pointer ::rl,pl,ul,vl,wl,cl,bl
@@ -35,7 +36,6 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub)
   REAL(dp),DIMENSION(ub-lb+1)::ustar,ptotstar,estar,vstarstar,wstarstar,bstarstar,cstarstar,vdotbstarstar
   REAL(dp),DIMENSION(ub-lb+1)::ro,uo,vo,wo,bo,co,ptoto,etoto,vdotbo
   REAL(dp),DIMENSION(ub-lb+1)::lim,emago
-  INTEGER ::ivar,i,lb,ub
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('riemann_mod::hlld_vec', itimer=itimer)
