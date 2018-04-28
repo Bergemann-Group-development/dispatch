@@ -91,7 +91,7 @@ SUBROUTINE init (self)
   do i=1,3
     self%mesh(i)%h = 0d0
   end do
-  call self%force%init(self%kind,self%id,self%mesh)
+  call self%force%init (self%kind, self%id, self%mesh)
   call non_ideal%init  
 
   call trace%end
@@ -754,7 +754,7 @@ SUBROUTINE trace3d(self)
   real(dp) :: sAL0, sAR0, sBL0, sBR0, sCL0, sCR0
   real(dp), dimension(1:self%gn(1),1:self%gn(2),1:self%gn(3)):: rho_t, p_t
   real(dp) :: eff_gamma, off
-  integer, save:: itimer=0
+  integer, save:: itimer(4)=0
   !-----------------------------------------------------------------------------
   associate(q=>self%q,bf=>self%bf,dq=>self%dq,dq2=>self%dq2,qm=>self%qm,qp=>self%qp, &
     dbf=>self%dbf,qRT=>self%qRT,qRB=>self%qRB,qLT=>self%qLT,qLB=>self%qLB, &
@@ -762,7 +762,7 @@ SUBROUTINE trace3d(self)
     Ux=>self%q(:,:,:,2),Uy=>self%q(:,:,:,3),Uz=>self%q(:,:,:,4), &
     Ex=>self%Ex,Ey=>self%Ey,Ez=>self%Ez)
   !
-  call trace%begin ('mhd_mod::trace3d', itimer=itimer)
+  call trace%begin ('mhd_mod::trace3d(1)', itimer=itimer(1))
   su0=0.0_dp; sv0=0.0_dp; sw0=0.0_dp
   !
   dtdx = self%dtime/self%ds(1)
@@ -780,9 +780,12 @@ SUBROUTINE trace3d(self)
   p_t(:,:,:)   = q(:,:,:,ip)
 
   !
+  !call trace%end (itimer(1))
+  !call trace%begin ('mhd_mod::trace3d(2)', itimer=itimer(2))
   eff_gamma = self%gamma
   do k=2,self%gn(3)-1
   do j=2,self%gn(2)-1
+  !!dir! simd
   do i=2,self%gn(1)-1
 !    associate ( &
     r=q(i,j,k,ir)
@@ -1109,8 +1112,15 @@ SUBROUTINE trace3d(self)
     qLB(i,j,k,iA,3) = AL+ (   -dALy)
     qLB(i,j,k,iB,3) = BL+ (-dBLx   )
     qLB(i,j,k,iC,3) = C + (-dCx-dCy)
+  end do
+  end do
+  end do
     !
-
+  !call trace%end (itimer(2))
+  !call trace%begin ('mhd_mod::trace3d(3)', itimer=itimer(3))
+  do k=2,self%gn(3)-1
+  do j=2,self%gn(2)-1
+  do i=2,self%gn(1)-1
     r = rho_t(i,j,k)
     p = p_t(i,j,k)
 
@@ -1216,6 +1226,8 @@ SUBROUTINE trace3d(self)
   end do
   end do
   end do
+  !call trace%end (itimer(3))
+  !call trace%begin ('mhd_mod::trace3d(4)', itimer=itimer(4))
   n=size(q,1)
   if (self%no_mans_land) then
     off = self%mesh(1)%li - self%mesh(1)%lb -1
@@ -1247,7 +1259,8 @@ SUBROUTINE trace3d(self)
   qp(:,:,1  ,:,:)=qp(:,:,self%mesh(3)%ui-off,:,:)
   qm(:,:,1  ,:,:)=qm(:,:,self%mesh(3)%ui-off,:,:)
   !
-  call trace%end (itimer)
+  !call trace%end (itimer(4))
+  call trace%end (itimer(1))
   end associate
 contains
   FUNCTION xdn(a) RESULT (b)
