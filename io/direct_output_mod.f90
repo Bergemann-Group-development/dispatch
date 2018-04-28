@@ -114,7 +114,8 @@ END SUBROUTINE close
 SUBROUTINE write_out (self, rec)
   class (direct_output_t) :: self
   integer, optional       :: rec
-  integer                 :: l_rec, recl, i
+  integer                 :: l_rec, recl, i, j, i_rec
+  integer(8)              :: recl8
   real(8)                 :: wt
   !-----------------------------------------------------------------------------
   call trace_begin('direct_output_mod::write_out')
@@ -133,12 +134,26 @@ SUBROUTINE write_out (self, rec)
           status='unknown', recl=recl)
     write (io_unit%direct, rec=l_rec) self%buffer
   else
-    recl = 4*product(self%dims(1:3))
-    open (io_unit%direct, file=trim(self%filename), access='direct', &
-          status='unknown', recl=recl)
-    do i=1,self%dims(4)
-      write (io_unit%direct, rec=i+(l_rec-1)*self%dims(4)) self%buffer(:,:,:,i)
-    end do
+    recl8 = 4_8*product(self%dims(1:3))
+    if (recl8 < 2e9) then
+      recl = recl8
+      open (io_unit%direct, file=trim(self%filename), access='direct', &
+            status='unknown', recl=recl)
+      do i=1,self%dims(4)
+        write (io_unit%direct, rec=i+(l_rec-1)*self%dims(4)) self%buffer(:,:,:,i)
+      end do
+    else
+      print *, 'DOUBLE LOOP'
+      recl = 4*product(self%dims(1:2))
+      open (io_unit%direct, file=trim(self%filename), access='direct', &
+            status='unknown', recl=recl)
+      do j=1,self%dims(4)
+      do i=1,self%dims(3)
+        i_rec = i + (j-1)*self%dims(3) + (l_rec-1)*self%dims(4)
+        write (io_unit%direct, rec=i_rec) self%buffer(:,:,i,j)
+      end do
+      end do
+    end if
   end if
   wt = max(wallclock()-wt,1d-9)
   self%gb = 4.0*product(self%dims)/1024.**3
