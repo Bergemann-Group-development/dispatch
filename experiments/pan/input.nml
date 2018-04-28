@@ -23,6 +23,8 @@
 &turbulence_params ampl_turb=7 t_turn=0.1 k1=1 k2=1.5 seed=5 /
 
 &ramses_params     courant_factor=0.250 do_isothermal=t gamma=1.00001 slope_type=2 smallr=1e-4 smallc=5e-1 riemann='hllc' detailed_timer=f /
+&mhd_params        gamma=1.00001 gamma=1.00001  nu=0.10,1.0,1.0,0.1,1.0,1.0 /
+&timestep_params   /
 
 ! MPI and loadbalancing parameters
 ! --------------------------------
