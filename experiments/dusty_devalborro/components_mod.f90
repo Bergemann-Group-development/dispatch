@@ -50,7 +50,7 @@ SUBROUTINE init_annulus (self, params)
   if (first_time) then
     first_time = .false.
     ! default values
-    extent = [1.0, 2.1, 2.0]
+    extent = [1.0, 2.5, 1.0]
     roffset = 0.4
     ! axisymmetry in the z-direction is assumed
     ! (z, r , phi)
@@ -71,15 +71,16 @@ SUBROUTINE init_annulus (self, params)
   allocate(self%task_list)
   call self%task_list%init ('annulus task list')
 
-  zextent   = extent(1) / n_patch(1)
-  rextent   = extent(2) / n_patch(2)
-  phiextent = extent(3) / n_patch(3)
   phioffset = -pi
   if (n_per_patch(1) == 1) then
     zoffset = 0.0
   else
     zoffset = -0.5 * zextent
   end if
+
+  zextent   = (extent(1)-zoffset)   / n_patch(1)
+  rextent   = (extent(2)-roffset)   / n_patch(2)
+  phiextent = (extent(3)-phioffset) / n_patch(3)
 
   curr_phioff = phioffset
   do iz=1,self%n_patch(3)
@@ -91,7 +92,7 @@ SUBROUTINE init_annulus (self, params)
         select type (patch)
         class is (mhd_t)
           patch%size = [zextent, rextent, phiextent]
-          patch%position = 0.0 ! still in Cartesian coords.; absolute pos.
+          patch%position = ([ix,iy,iz]-0.5)*patch%size + [zoffset, roffset, phioffset]
           patch%name => self%task_list%name
           patch%n = n_per_patch
           ! because absolute positions are sometimes required in curvilinear
