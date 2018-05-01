@@ -65,8 +65,8 @@ END SUBROUTINE update_experiment
 SUBROUTINE initial_conditions (patch)
   class(mhd_t), target :: patch
   class(mesh_t), pointer :: m1, m2, m3
-  real, dimension(:,:,:,:), pointer:: p, pd !,B
-  real, dimension(:,:,:),   pointer:: d, px , py , pz, dd, pxd, pyd, pzd !, Bx, By, Bz
+  real, dimension(:,:,:,:), pointer:: p, pd
+  real, dimension(:,:,:),   pointer:: d, px , py , pz, dd, pxd, pyd, pzd
   integer :: i1, i2, i3
   real(4) :: z, r, phi, zeta_offset
   real(8) :: sigma0, P0
@@ -80,9 +80,7 @@ SUBROUTINE initial_conditions (patch)
 
   d  => patch%mem(:,:,:,idx%d        ,patch%it,1)
   p  => patch%mem(:,:,:,idx%px:idx%pz,patch%it,1)
-  !B  => patch%mem(:,:,:,idx%bx:idx%bz,patch%it,1)
   px => p(:,:,:,1); py => p(:,:,:,2); pz => p(:,:,:,3);
-  !Bx => B(:,:,:,1); By => B(:,:,:,2); Bz => B(:,:,:,3);
 
   if (patch%nc==2) then
     patch%no_pressure = 2
@@ -95,17 +93,16 @@ SUBROUTINE initial_conditions (patch)
   allocate(vkep(m2%gn))
   vkep(:) = sqrt(experiment_params%mstar * scaling%grav / (m2%centre_nat + patch%mesh(2)%r(:)))
   sigma0 = 2.0d-3 * experiment_params%mstar / pi / experiment_params%aplanet**2
-  print*, 'Sigma0 is::', sigma0
   select type (m3)
   type is (cylindrical_mesh)
     zeta_offset = m3%zeta
   end select
   do i3=m3%lb,m3%ub
-    phi = m3%centre_nat + patch%mesh(3)%r(i3)
+    phi = m3%centre_nat + m3%r(i3)
     do i2=m2%lb,m2%ub
-      r = m2%centre_nat + patch%mesh(2)%r(i2)
+      r = m2%centre_nat + m2%r(i2)
       do i1=m1%lb,m1%ub
-        z = m1%centre_nat + patch%mesh(1)%r(i1)
+        z = m1%centre_nat + m1%r(i1)
         d (i1,i2,i3) = sigma0
         P0           = (experiment_params%aspect_rat * vkep(i2))**2 * sigma0
         px(i1,i2,i3) = 0.0
