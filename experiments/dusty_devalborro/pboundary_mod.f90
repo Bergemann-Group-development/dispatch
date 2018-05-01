@@ -36,10 +36,8 @@ SUBROUTINE conditions (self, patch, cit)
   real(8) :: r
   real(8) :: rmin, rmax, tau_in, tau_out, rbnd, rkill, tau, &
              dt
-  !real(kind=KindScalarVar):: sigma0, p0, skep, vkep
+  real(kind=KindScalarVar):: sigma0, p0, skep, vkep
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: q
-  real(8):: sigma0, p0, skep, vkep
-  !real(8), dimension(:,:,:,:), pointer:: q
   !-----------------------------------------------------------------------------
   call trace_begin('boundary_t%conditions')
 
@@ -48,7 +46,6 @@ SUBROUTINE conditions (self, patch, cit)
   m3 => patch%mesh(3)
   q  => patch%mem(:,:,:,:,cit,1)
 
-  !sigma0 = 2.0e-3 * experiment_params%mstar / pi / experiment_params%aplanet**2
   rmin = m2%centre_nat + m2%r(m2%li)
   rmax = m2%centre_nat + m2%r(m2%ui)
   tau_in  = 2.0 * pi * sqrt(rmin**3/(scaling%grav * experiment_params%mtotal))
@@ -91,28 +88,28 @@ SUBROUTINE conditions (self, patch, cit)
             cycle
           end if
           q(i1,i2,i3,patch%idx%d+ic)  = q(i1,i2,i3,patch%idx%d+ic) &
-                                  + dt * wave_kill(q(i1,i2,i3,patch%idx%d+ic), sigma0, tau, rkill, rbnd, r)
+                                  + dt * wave_killing(q(i1,i2,i3,patch%idx%d+ic), sigma0, tau, rkill, rbnd, r)
           q(i1,i2,i3,patch%idx%px+ic) = q(i1,i2,i3,patch%idx%px+ic) &
-                                  + dt * wave_kill(q(i1,i2,i3,patch%idx%px+ic), 0d0, tau, rkill, rbnd, r)
+                                  + dt * wave_killing(q(i1,i2,i3,patch%idx%px+ic), 0.0, tau, rkill, rbnd, r)
           q(i1,i2,i3,patch%idx%py+ic) = q(i1,i2,i3,patch%idx%py+ic) &
-                                  + dt * wave_kill(q(i1,i2,i3,patch%idx%py+ic), 0d0, tau, rkill, rbnd, r)
+                                  + dt * wave_killing(q(i1,i2,i3,patch%idx%py+ic), 0.0, tau, rkill, rbnd, r)
           q(i1,i2,i3,patch%idx%pz+ic) = q(i1,i2,i3,patch%idx%pz+ic) &
-                                  + dt * wave_kill(q(i1,i2,i3,patch%idx%pz+ic), skep, tau, rkill, rbnd, r)
+                                  + dt * wave_killing(q(i1,i2,i3,patch%idx%pz+ic), skep, tau, rkill, rbnd, r)
           if      (trim(patch%kind) == 'stagger2_hd_patch' ) then
             if (any(patch%no_pressure.EQ.k)) then
               q(i1,i2,i3,patch%idx%s+ic) = 0d0
             else
-              q(i1,i2,i3,patch%idx%s+ic) = q(i1,i2,i3,patch%idx%s+ic) + dt * wave_kill(q(i1,i2,i3,patch%idx%s+ic) &
+              q(i1,i2,i3,patch%idx%s+ic) = q(i1,i2,i3,patch%idx%s+ic) + dt * wave_killing(q(i1,i2,i3,patch%idx%s+ic) &
                                   , (log(p0)-log(sigma0)*patch%gamma)*sigma0/(patch%gamma - 1.0), tau, rkill, rbnd, r)
             end if
           else if (trim(patch%kind) == 'stagger2e_hd_patch') then
-            q(i1,i2,i3,patch%idx%e+ic) = q(i1,i2,i3,patch%idx%e+ic) + dt * wave_kill(q(i1,i2,i3,patch%idx%e+ic) &
+            q(i1,i2,i3,patch%idx%e+ic) = q(i1,i2,i3,patch%idx%e+ic) + dt * wave_killing(q(i1,i2,i3,patch%idx%e+ic) &
                                   , p0 / (patch%gamma - 1.0), tau, rkill, rbnd, r)
           else if (trim(patch%kind) == 'ramses_hd_patch'   ) then
-            q(i1,i2,i3,patch%idx%e+ic) = q(i1,i2,i3,patch%idx%e+ic) + dt * wave_kill(q(i1,i2,i3,patch%idx%e+ic) &
+            q(i1,i2,i3,patch%idx%e+ic) = q(i1,i2,i3,patch%idx%e+ic) + dt * wave_killing(q(i1,i2,i3,patch%idx%e+ic) &
                                   , p0 / (patch%gamma - 1.0) + 0.5*sigma0*vkep**2, tau, rkill, rbnd, r)
           else if (trim(patch%kind) == 'zeus_hd_patch'     ) then
-            q(i1,i2,i3,patch%idx%e+ic) = q(i1,i2,i3,patch%idx%e+ic) + dt * wave_kill(q(i1,i2,i3,patch%idx%e+ic) &
+            q(i1,i2,i3,patch%idx%e+ic) = q(i1,i2,i3,patch%idx%e+ic) + dt * wave_killing(q(i1,i2,i3,patch%idx%e+ic) &
                                   , p0 / (patch%gamma - 1.0), tau, rkill, rbnd, r)
           end if
         end do
