@@ -12,7 +12,7 @@ datadir  = 'data'          # Data directory
 #datadir  = 'data/no_p_coro'
 run      = '.'
 #iout    = [0,5,10,15,20]           # Indices for output times
-iout     = [50]
+iout     = [63]
 #iout    = [0,12,13,14,15]                     # Indices for output times 
 colr     = ['b','c','g','y','r']    # Colorscheme for different output times
 #iout    = [0,1,2]                  # Indices for output times
@@ -24,7 +24,7 @@ gamma    = 1.0001 #5.0/3.0
 Mstar    = 1.0
 aplanet  = 1.0
 sigma0   = 0.002 * Mstar/(np.pi*aplanet**2)
-patches  = [1,1,1]                  # Patch structure in output data
+patches  = [1,5,1]                  # Patch structure in output data
 npatches = np.prod(patches)         # Number of patches in output data
 nv       = 5                        # Number of variables per component in this particular case
 nvs      = 14                       # Number of variables per component in generic case
@@ -51,7 +51,7 @@ plot_dim = '2D'                     # Dimension
 # 9  10   11   12   13
 
 
-plparams = np.array([0,9,3,4])
+plparams = np.array([0,1,3,4])
 nplots   = len(plparams)
 
 
@@ -78,11 +78,11 @@ for j in range(nplots):
     pl.xlabel(r'$r$ in code units')
     for i in iout:
         k   =  0
-        for ix in range(patches[0]):
-            for iz in range(patches[2]):
-                for iy in range(patches[1]):                   
+        for iz in range(patches[2]):
+            for iy in range(patches[1]):
+                for ix in range(patches[0]):                   
                     p  = du.patch(id=k+1,iout=i,run=run,data=datadir)
-                    li = p.li[:] - 2
+                    li = p.li[:] #- 2
                     ui = p.ui[:] #+ 2
                     
                     R,Z,PHI = np.meshgrid(p.y,p.x,p.z)
@@ -158,12 +158,11 @@ for j in range(nplots):
                     ymax  = max([ymax,p.y[ui[1]-1]])
                     Vminp = float(np.min(pldata)); Vmin = min(Vmin,Vminp)
                     Vmaxp = float(np.max(pldata)); Vmax = max(Vmax,Vmaxp)
-                    print p.id, p.time, p.dt
                     if plot_dim=='2D' and first_time==False:
                         if ix+1 == (patches[0]+1)/2:
                             V    = np.linspace(Vmin,Vmax,100)
-                            Y,Z = np.meshgrid(p.y[li[1]:ui[1]],p.z[li[2]:ui[2]])
-                            pl.contourf(Y,Z,pldata[(ui[0]-li[0])/2+li[0],li[1]:ui[1],li[2]:ui[2]].transpose(),V)
+                            Y,Z = np.meshgrid(p.y[li[1]:ui[1]+1],p.z[li[2]:ui[2]+1])
+                            pl.contourf(Y,Z,pldata[(ui[0]-li[0])/2+li[0],li[1]:ui[1]+1,li[2]:ui[2]+1].transpose(),V)
                             if (iy+1 > 1) and show_patches:
                                 pl.plot( [p.y[li[1]] , p.y[li[1]]] , [p.z[li[2]],p.z[ui[2]-1]] , 'k:' , lw=0.7)
                             if (iz+1 > 1) and show_patches:
@@ -172,16 +171,14 @@ for j in range(nplots):
                             pl.ylabel(r'$\phi$ in code units')
                             zmin = min([zmin,p.z[li[2]]])
                             zmax = max([zmax,p.z[ui[2]-1]])
-                            #pl.title(unit)
-			    cbar = pl.colorbar()
-			    cbar.ax.set_ylabel(unit)
                     elif plot_dim=='1D':
                         if ix+1 == (patches[0]+1)/2 and iz+1 == (patches[2]+1)/2:
-                            pl.plot( p.y[li[1]:ui[1]] , pldata[(ui[0]-li[0])/2+li[0] , li[1]:ui[1],(ui[2]-li[2])/2+li[2]].transpose() , colr[colridx] )
-                            pl.plot( p.y[li[1]:ui[1]] , pldata[(ui[0]-li[0])/2+li[0] , li[1]:ui[1],(ui[2]-li[2])/2+li[2]].transpose() , 'o'+colr[colridx], label = r'$t$ = '+np.str(round(p.time,4)))
+                            pl.plot( p.y[li[1]:ui[1]+1] , pldata[(ui[0]-li[0])/2+li[0] , li[1]:ui[1]+1, (ui[2]-li[2])/2+li[2]].transpose() , colr[colridx] )
+                            pl.plot( p.y[li[1]:ui[1]+1] , pldata[(ui[0]-li[0])/2+li[0] , li[1]:ui[1]+1, (ui[2]-li[2])/2+li[2]].transpose() , 'o'+colr[colridx])
                             if (k+1 > 1) and show_patches:
-                                pl.plot( [p.y[li[1]] , p.y[li[1]]] , [-100.0,1000.0] , 'k:' , lw=0.7)
-                            
+                                pl.plot( [p.y[li[1]+2] , p.y[li[1]+2]] , [-100.0,1000.0] , 'k:' , lw=0.7)
+                            else:
+                                pl.plot( p.y[li[1]:ui[1]+1] , pldata[(ui[0]-li[0])/2+li[0] , li[1]:ui[1]+1, (ui[2]-li[2])/2+li[2]].transpose() , 'o'+colr[colridx], label = r'$t$ = '+np.str(round(p.time,4)))
                             zmin = min([zmin,pldata.min()])
                             zmax = max([zmax,pldata.max()])
                             pl.ylabel(unit)
@@ -192,9 +189,10 @@ for j in range(nplots):
     
     if plot_dim == '2D':
         pl.axis( xmin=ymin , xmax=ymax , ymin=float(zmin), ymax=float(zmax) )
-        #pl.colorbar()
+        cbar = pl.colorbar()
+	cbar.ax.set_ylabel(unit)
     elif plot_dim == '1D':
-        pl.axis( xmin = ymin , xmax = ymax , ymin = float(zmin-(zmax*1.1-zmax)) , ymax = float(0+zmax*1.1))
+        pl.axis( xmin = ymin , xmax = ymax , ymin = Vmin , ymax = Vmax)
         pl.legend()
     
 
