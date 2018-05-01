@@ -7,8 +7,8 @@
 /
 
 &out_params
- end_time=1.260 !1.89  !62.832 !630.0
- out_time=0.012566 !0.06283 !6.283  !0.628319
+ end_time=12.6 !1.89  !62.832 !630.0
+ out_time=0.12566 !0.06283 !6.283  !0.628319
  print_time=6.0
  guard_zones=t
 /
@@ -26,8 +26,8 @@
 
 &annulus_params
   rotating=t
-  n_patch=1,1,1 !1,4,9
-  n_per_patch=1,160,495 !1,32,55 !1,160,495
+  n_patch=1,5,1 !1,4,9
+  n_per_patch=1,32,495 !1,32,55 !1,160,495
 /
 
 &zeus_params
