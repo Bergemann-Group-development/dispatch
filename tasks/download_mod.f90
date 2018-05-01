@@ -149,7 +149,7 @@ SUBROUTINE test (self)
     do j=1,5
       call set_position (src, target, j)
       if (i==2.and.(j==2.or.j==4)) cycle
-      if (io%verbose>1) & 
+      if (io%verbose>1) &
         print "('source size:',i2,3x,'position:',i2,2x,'levels:',2i2)", i, j, src%level, target%level
       call set_values (src)
       call set_values (target)
@@ -273,7 +273,7 @@ subroutine check_values (patch, ok)
       end do
     end do
   end do
-  if (io%verbose>0) & 
+  if (io%verbose>0) &
     print *,'check_values: n_zero, n_ok, n_nok =', n
   if (n(3) == 0) then
     ok = .true.
@@ -394,8 +394,10 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   do i=1,3
     sm => source%mesh(i)
     tm => target%mesh(i)
-    la(i) = dist(i) + sm%r(sm%li) + sm%h(iv)*sm%d - tm%h(iv)*tm%d
-    ua(i) = dist(i) + sm%r(sm%ui) + sm%h(iv)*sm%d - tm%h(iv)*tm%d
+    !la(i) = dist(i) + sm%r(sm%li) + sm%h(iv)*sm%d - tm%h(iv)*tm%d
+    !ua(i) = dist(i) + sm%r(sm%ui) + sm%h(iv)*sm%d - tm%h(iv)*tm%d
+    la(i) = dist(i) - 0.5*source%size(i) + sm%h(iv)*sm%d - tm%h(iv)*tm%d
+    ua(i) = dist(i) + 0.5*source%size(i) + sm%h(iv)*sm%d - tm%h(iv)*tm%d
   end do
 !  print *,'di:',dist/target%size
 !  print *,'la:',(sm%r(sm%li) + sm%h(iv)*sm%d - tm%h(iv)*tm%d)/target%size
