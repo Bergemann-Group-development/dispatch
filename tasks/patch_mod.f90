@@ -1540,7 +1540,6 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   real, dimension(:,:,:), pointer:: df
   integer, save:: itimer=0
   integer, parameter:: max_lines=50
-  integer, save:: n_lines=0
   integer, save:: counts(7)=0
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%info')
@@ -1574,7 +1573,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     call trace_end
     return
   end if
-  1 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,5i5,6i4,l3,l1,o12)
+  1 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,9i5,2i4,l3,l1,o12)
   if (io%verbose>=0) then
     if (self%time>=self%print_next) then
       if (io%print_time > 0) &
@@ -1626,27 +1625,37 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
              mpi_mesg%n_delay]
         if (io%master .or. self%track) then
           !$omp atomic
-          n_lines = n_lines-1
-          if (n_lines==0) then
+          timer%n_lines = timer%n_lines-1
+          if (timer%n_lines==0) then
             !$omp critical (info_cr2)
             !$omp atomic write
-            n_lines = max_lines
+            timer%n_lines = max_lines
             print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
                        //'6....+....7....+....8....+....9....+....0....+....1 ntsk   nq ' &
-                       //' chk  rdy  upd snt prb unp dly snq rcq  BV'
+                       //' chk  rdy  upd  snt  prb  unp  dly snq rcq  BV'
             !$omp end critical (info_cr2)
           end if
           do iv=1,nv
             print 1, &
-            'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
-            self%dtime, log10(max(self%u_max,1e-30)), &
-            self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-            self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-            self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-            self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-            real(n_update), ntask, nq, counts, &
-            mpi_mesg%nq_send, mpi_mesg%nq_recv, &
-            self%is_set(bits%boundary), self%is_set(bits%virtual)
+              'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
+              self%dtime, log10(max(self%u_max,1e-30)), &
+              self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+              self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+              self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+              self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+              real(n_update), ntask, nq, counts, &
+              mpi_mesg%nq_send, mpi_mesg%nq_recv, &
+              self%is_set(bits%boundary), self%is_set(bits%virtual)
+            write (io_unit%log,1) &
+              'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
+              self%dtime, log10(max(self%u_max,1e-30)), &
+              self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+              self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+              self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+              self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+              real(n_update), ntask, nq, counts, &
+              mpi_mesg%nq_send, mpi_mesg%nq_recv, &
+              self%is_set(bits%boundary), self%is_set(bits%virtual)
           end do
           counts(:) = 0
         end if

@@ -7,8 +7,8 @@ OPTS = optimized
 # Default target and methods
 EXEC            = dispatch.x
 UPD             = adams_bashforth
-SOLVER          = stagger2
-#SOLVER          = ramses/hydro
+#SOLVER          = stagger2
+SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
 TOP             = ../..
 

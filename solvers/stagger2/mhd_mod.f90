@@ -306,7 +306,7 @@ SUBROUTINE pde (self)
   if (do_isothermal) then
     s = 0.0
     self%s = s
-    pg = d
+    pg = d*self%csound**2
   else
     pg = self%gas_pressure()
   end if
@@ -346,15 +346,15 @@ SUBROUTINE pde (self)
     if (io%verbose>2) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(ca)  ', u_max, self%u_max
-    1 format(1x,a,1p,2g12.3)
+      if (io%verbose>2) print 1, self%id, 'u_max(ca)  ', u_max, self%u_max
+    1 format(i6,2x,a,1p,2g12.3)
       u_max = self%fmaxval(cs + sqrt(pp))
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
+      if (io%verbose>2) print 1, self%id, 'u_max(ca+u)', u_max, self%u_max
     end if
     u_max = self%fmaxval(cs + sqrt(pp) + du)
     self%u_max = max(self%u_max,u_max)
-    if (io%verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
+    if (io%verbose>2) print 1, self%id, 'u_max(ca+u)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
@@ -375,14 +375,14 @@ SUBROUTINE pde (self)
     if (io%verbose>2) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(cs)  ', u_max, self%u_max
+      if (io%verbose>2) print 1, self%id, 'u_max(cs)  ', u_max, self%u_max
       u_max = self%fmaxval(cs + sqrt(pp))
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
+      if (io%verbose>2) print 1, self%id, 'u_max(cs+u)', u_max, self%u_max
     end if
     u_max = self%fmaxval(cs + sqrt(pp) + du)
     self%u_max = max(self%u_max,u_max)
-    if (io%verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
+    if (io%verbose>2) print 1, self%id, 'u_max(cs+u)', u_max, self%u_max
     pp = pg + pa                                                                ! ops: 1 0 0
     ! Total diagonal stress, with density factor
     du = (maxval(ds,self%n > 1)*self%nu(1))*cs                                  ! ops: 0 1 0
@@ -407,7 +407,7 @@ SUBROUTINE pde (self)
   dddt = -div(ds,fm)                                    ! density derivative
   u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs(dddt/d))             ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
-  if (io%verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
+  if (io%verbose>2) print 1, self%id, 'u_max(dddt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -531,7 +531,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs((dsdt-s*dddt/d)/d))  ! ops: 1 1 2
   self%u_max = max(self%u_max,u_max)
-  if (io%verbose>2) print 1, 'u_max(dsdt)', u_max, self%u_max
+  if (io%verbose>2) print 1, self%id, 'u_max(dsdt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
   call deallocate_scalars (lnd, pa, du, ss, cs, pp, pb, Q)
