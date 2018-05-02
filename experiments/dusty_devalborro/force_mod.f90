@@ -194,7 +194,7 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     else
       K = self%K
     end if
-    self%tmin = minval((d_gas*d_dust)/(K*(d_gas+d_dust)))
+    self%tmin = minval((d_gas*d_dust)/(K*(d_gas+d_dust)),K>0.0)
     KK = down(K)
     !--------------------------------------------------------------------------
     ! Compute drag force on the first relevant fluid component
