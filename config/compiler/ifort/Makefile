@@ -1,17 +1,16 @@
 # Default for ifort. Beware that versions prior to version 12.3 may crash
 OPT = -O1
 DEBUG = -g -traceback -fpe:0
-HW = -axAVX -xSSE4.1
+#HW = -axAVX -xSSE4.1
+HW =
 
 # Depending on MPI use mpif90 or not
 ifeq ($(strip $(MPI)),mpi)
-  FC ?= mpiifort
-  F90 = $(FC) -cpp -assume byterecl -diag-disable remark -DPREC=4
-  LD  = $(FC)
+  F90 = mpiifort -cpp -assume byterecl -diag-disable remark
+  LD  = mpiifort
 else
-  FC ?= ifort
-  F90 = $(FC) -cpp -assume byterecl -diag-disable remark -DPREC=4
-  LD  = $(FC)
+  F90 = ifort -cpp -assume byterecl -diag-disable remark
+  LD  = ifort
 endif
 
 # Set openmp compiler flags if needed
