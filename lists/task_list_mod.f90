@@ -275,7 +275,7 @@ SUBROUTINE update (self)
         oid = otask%id
         if (omp%master) then
           write (io_unit%queue,'(f12.6,i6,2f12.6,2i5)') &
-            wallclock()-wc_start, task%istep, task%time, &
+            wallclock(), task%istep, task%time, &
             otask%atime, self%nq, self%nac
           flush (io_unit%queue)
         end if
