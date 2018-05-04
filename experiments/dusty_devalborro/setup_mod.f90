@@ -46,8 +46,10 @@ SUBROUTINE init_setup (self)
   logical :: ramp_mass
   real(8) :: mtotal, aplanet, mplanet, gpp_soften, aspect_rat, phiplanet, dust2gas
   real(4) :: kill_rmin, kill_rmax
+  integer :: nv, nc
   namelist / initial_params / mtotal, aplanet, mplanet, gpp_soften, kill_rmin, &
-                              kill_rmax, aspect_rat, ramp_mass, phiplanet, dust2gas
+                              kill_rmax, aspect_rat, ramp_mass, phiplanet, &
+                              dust2gas, nv, nc
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
 
@@ -68,6 +70,8 @@ SUBROUTINE init_setup (self)
     ramp_mass = experiment_params%ramp_mass
     phiplanet = experiment_params%phiplanet
     dust2gas  = experiment_params%dust2gas
+    nv = experiment_params%nv
+    nc = experiment_params%nc
     rewind (io%input); read (io%input, initial_params)
     if (io%master) write (*, initial_params)
     experiment_params%mtotal = mtotal
@@ -81,6 +85,8 @@ SUBROUTINE init_setup (self)
     experiment_params%ramp_mass = ramp_mass
     experiment_params%phiplanet = phiplanet
     experiment_params%dust2gas  = dust2gas
+    experiment_params%nv = nv
+    experiment_params%nc = nc
   end if
 
   ! Create an empty task list.

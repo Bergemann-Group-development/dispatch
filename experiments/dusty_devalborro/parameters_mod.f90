@@ -19,6 +19,8 @@ MODULE parameters_mod
     real(8) :: phiplanet = 0.0   ! initial phi position of the planet
     real(8) :: roffset = 0.4     ! offset of the inner edge of the domain from the (cylindrical) origin
     real(8) :: dust2gas = 0.01   ! dust-to-gas mass ratio if including pressureless dust in the experiment
+    integer :: nv = 10           ! number of variables.
+    integer :: nc = 2            ! number of fluid components
   end type
   type(experiment_parameters_t),  public :: experiment_params
 

@@ -41,15 +41,16 @@ CONTAINS
 SUBROUTINE init (self, solver)
    class(force_t):: self
    character(len=64):: solver
-   integer, save:: i_gas=1, i_dust=2, nc=2
+   integer, save:: i_gas=1, i_dust=2
    real, save:: K=0.5, d_int=3.0, sigma=1.589e-8, a=0.3, csound=1.0, gamma=1.0, &
                 b=0.5
    logical, save:: first_time = .true.
    character(len=32), save:: type='zero', drag='linear'
-   namelist /force_params/ type, i_gas, i_dust, K, d_int, a, nc, gamma, &
+   namelist /force_params/ type, i_gas, i_dust, K, d_int, a, gamma, &
                            drag, csound, b, sigma
    !----------------------------------------------------------------------------
    call trace%begin('force_t%init')
+   self%nc = experiment_params%nc
    !$omp critical (input_cr)
    if (first_time) then
      first_time = .false.
@@ -68,7 +69,6 @@ SUBROUTINE init (self, solver)
    self%a       = a
    self%b       = b
    self%csound  = csound
-   self%nc      = nc
    self%gamma   = gamma
    select case (type)
    case ('star_and_planet')

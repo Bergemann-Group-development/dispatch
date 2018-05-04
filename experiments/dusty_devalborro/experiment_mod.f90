@@ -34,7 +34,8 @@ SUBROUTINE init_experiment (self)
   !----------------------------------------------------------------------------
   if (self%mem_allocated) return
   call trace_begin('experiment_t%init')
-  self%nv = 5; self%nc = 1;                    ! Number of total variables and fluid components
+  self%nv = experiment_params%nv                        ! Number of total variables 
+  self%nc = experiment_params%nc                        ! Number of fluid components
   call self%mhd_t%init()
   call initial_conditions(self)
   call potential%init()
@@ -108,10 +109,7 @@ SUBROUTINE initial_conditions (patch)
         px(i1,i2,i3) = 0.0
         py(i1,i2,i3) = 0.0
         pz(i1,i2,i3) = vkep(i2) * sigma0* (1.0 - experiment_params%aspect_rat**2)
-        !Bx(i1,i2,i3) = 0.0
-        !By(i1,i2,i3) = 0.0
-        !Bz(i1,i2,i3) = 0.0
-        ! the ZEUS module stores the angular momentum rather than the linear momentum
+        ! the stagger2/multifluid module stores the angular momentum rather than the linear momentum
         py(i1,i2,i3) = py(i1,i2,i3) * m1%h2c(i1)
         pz(i1,i2,i3) = pz(i1,i2,i3) * m1%h31c(i1) * m2%h32c(i2)
 

@@ -9,10 +9,10 @@ pl.clf()
 pl.close('all')
 
 datadir  = 'data'          # Data directory
-#datadir  = 'data/no_p_coro'
+#datadir  = 'data/input_gas_only'
 run      = '.'
 #iout    = [0,5,10,15,20]           # Indices for output times
-iout     = [63]
+iout     = [24]
 #iout    = [0,12,13,14,15]                     # Indices for output times 
 colr     = ['b','c','g','y','r']    # Colorscheme for different output times
 #iout    = [0,1,2]                  # Indices for output times
@@ -51,7 +51,7 @@ plot_dim = '2D'                     # Dimension
 # 9  10   11   12   13
 
 
-plparams = np.array([0,1,3,4])
+plparams = np.array([0,4,0+nvs,4+nvs])
 nplots   = len(plparams)
 
 
@@ -176,7 +176,7 @@ for j in range(nplots):
                             pl.plot( p.y[li[1]:ui[1]+1] , pldata[(ui[0]-li[0])/2+li[0] , li[1]:ui[1]+1, (ui[2]-li[2])/2+li[2]].transpose() , colr[colridx] )
                             pl.plot( p.y[li[1]:ui[1]+1] , pldata[(ui[0]-li[0])/2+li[0] , li[1]:ui[1]+1, (ui[2]-li[2])/2+li[2]].transpose() , 'o'+colr[colridx])
                             if (k+1 > 1) and show_patches:
-                                pl.plot( [p.y[li[1]+2] , p.y[li[1]+2]] , [-100.0,1000.0] , 'k:' , lw=0.7)
+                                pl.plot( [p.y[li[1]] , p.y[li[1]]] , [-100.0,1000.0] , 'k:' , lw=0.7)
                             else:
                                 pl.plot( p.y[li[1]:ui[1]+1] , pldata[(ui[0]-li[0])/2+li[0] , li[1]:ui[1]+1, (ui[2]-li[2])/2+li[2]].transpose() , 'o'+colr[colridx], label = r'$t$ = '+np.str(round(p.time,4)))
                             zmin = min([zmin,pldata.min()])
