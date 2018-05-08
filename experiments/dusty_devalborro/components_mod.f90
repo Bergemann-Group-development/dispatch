@@ -50,7 +50,7 @@ SUBROUTINE init_annulus (self, params)
   if (first_time) then
     first_time = .false.
     ! default values
-    extent = [1.0, 2.5, 1.0]
+    extent = [1.0, 2.1, 2.0]
     roffset = 0.4
     ! axisymmetry in the z-direction is assumed
     ! (z, r , phi)
@@ -78,9 +78,9 @@ SUBROUTINE init_annulus (self, params)
     zoffset = -0.5 * zextent
   end if
 
-  zextent   = (extent(1)-zoffset)   / n_patch(1)
-  rextent   = (extent(2)-roffset)   / n_patch(2)
-  phiextent = (extent(3)-phioffset) / n_patch(3)
+  zextent   = extent(1)/n_patch(1)
+  rextent   = extent(2)/n_patch(2)
+  phiextent = extent(3)/n_patch(3)
 
   curr_phioff = phioffset
   do iz=1,self%n_patch(3)
