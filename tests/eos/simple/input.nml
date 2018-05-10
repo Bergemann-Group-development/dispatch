@@ -1,0 +1,7 @@
+&io_params
+ top='../../..'
+ omp_trace=t
+/
+&eos_params
+ file='EOS.cgs'
+/
