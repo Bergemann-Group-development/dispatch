@@ -1,21 +1,22 @@
 # Default for PGI
 OPT = -O2
 HW =
-W =
+W = -Mpreprocess
 DEBUG =
 
 # Magic strings for dependencies
 DEPFLAGS =
 POSTCOMPILE =
 
-# Depending on MPI use mpif90 or not
+# Depending on MPI use MPI-option or not
+FC  = pgfortran
 ifeq ($(strip $(MPI)),mpi)
-FC  = pgfortran -Mpreprocess -Mmpi=msmpi $(W)
+  MPIOPT = -Mmpi=msmpi
 else
-FC  = pgfortran -Mpreprocess $(W)
+  MPIOPT =
 endif
-F90 = $(FC) $(W)
-LD  = $(FC)
+F90 = $(FC) $(MPIOPT) $(W)
+LD  = $(FC) $(MPIOPT)
 
 # Set openmp compiler flags if needed
 ifdef OMP
