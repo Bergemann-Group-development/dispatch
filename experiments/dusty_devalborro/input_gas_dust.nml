@@ -46,8 +46,16 @@
 /
 
 &mhd_params
- nu=    0.8, 2.0, 2.0, 0.1, 0.6, 0.0, 0.5, 2.0, 2.0, 0.1, 0.3, 0.0 ! Attempt at stabalizing dusty de Val-Borro
- !nu=    0.8, 2.0, 2.0, 0.1, 0.6, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 ! Attempt at stabalizing dusty de Val-Borro
+ !nu=    0.8, 2.0, 2.0, 0.1, 0.6, 0.0, 0.5, 2.5, 2.5, 0.1, 0.3, 0.0 ! Attempt at stabalizing dusty de Val-Borro, 42 * 0.12566
+ !nu=    0.5, 1.0, 1.0, 0.0, 0.6, 0.0, 0.5, 3.5, 3.5, 0.0, 0.6, 0.0 ! quickly became unstable in p_r in dust at inner edge
+ !nu=    1.5, 1.0, 1.0, 0.0, 0.6, 0.0, 1.5, 3.5, 3.5, 0.0, 0.6, 0.0 ! quickly became unstable in p_r in dust at inner edge
+ !nu=    0.8, 2.0, 2.0, 0.0, 0.6, 0.0, 0.5, 2.5, 2.5, 0.0, 0.3, 0.0 ! quickly became unstable in p_r in dust at inner edge
+ !nu=    1.5, 2.0, 2.0, 0.0, 0.6, 0.0, 2.5, 2.5, 2.5, 0.0, 0.3, 0.0 ! quickly became unstable in p_r in dust at inner edge
+ !nu=    1.5, 2.0, 2.0, 0.0, 0.6, 0.0, 1.5, 2.5, 2.5, 0.3, 0.6, 0.0 ! quickly became unstable in p_r in dust at inner edge
+ !nu=    1.5, 2.0, 2.0, 0.0, 0.6, 0.0, 1.5, 6.5, 6.5, 0.3, 0.6, 0.0 ! went very bad very fast! Faster than any of the others
+ !nu=    1.5, 2.0, 2.0, 0.0, 0.6, 0.0, 1.5, 2.5, 2.5, 2.0, 0.6, 0.0 ! also went very bad very fast! Faster than any of the others
+ !nu=    1.5, 2.0, 2.0, 0.0, 0.6, 0.0, 2.5, 2.5, 2.5, 0.3, 0.6, 0.0 ! quickly became unstable in p_r in dust at inner edge
+ nu=    1.5, 2.0, 2.0, 0.0, 0.6, 0.0, 2.0, 2.5, 2.5, 0.3, 0.6, 0.0 ! quickly became unstable in p_r in dust at inner edge
 
  !     cs    du   pa   ofd   mas   eta
  gamma=1.0001
@@ -64,7 +72,7 @@
 /
 
 &patch_params
-  courant=0.1
+  courant=0.2
 /
 
 &rubiks_params
@@ -85,7 +93,7 @@
  type = 'star_and_planet'
  i_gas = 1
  i_dust = 2
- K = 1.0e-7
+ K = 1.0e-9
  !d_int = 0.0252825      ! Internal density of dust grains in g/cm^3
  d_int = 1.0             ! Internal density of dust grains in g/cm^3
  !a = 1.0e-5             ! Size (radius) of dust grains in cm

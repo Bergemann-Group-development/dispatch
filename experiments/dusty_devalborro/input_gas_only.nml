@@ -7,9 +7,9 @@
 /
 
 &out_params
- end_time=630.0 !1.89  !62.832 !630.0
- out_time=6.283 !0.06283 !6.283  !0.628319
- print_time=6.0
+ end_time=20.00 !1.89  !62.832 !630.0
+ out_time=0.06283 !0.06283 !6.283  !0.628319
+ print_time=0.1
  guard_zones=t
 /
 
@@ -46,13 +46,26 @@
 /
 
 &mhd_params
- !nu=    0.6, 0.6, 0.6, 0.6, 0.6, 0.0 !<-- made it till 9.4 in inert
- !nu=    0.6, 1.0, 1.0, 0.6, 0.2, 0.0 !<-- made it till 12.5 in inert
- !nu=    0.6, 1.0, 1.0, 0.0, 0.2, 0.0 !<-- made it till 7.53 in rot
- !nu=    0.8, 1.0, 1.0, 0.1, 0.2, 0.0 !<-- made it till 8.16 in rot
- !nu=    0.8, 1.0, 1.0, 0.1, 0.6, 0.0 !<-- made it till 8.16 in rot
- nu=    0.8, 2.0, 2.0, 0.1, 0.6, 0.0 !<-- made it till 8.54 in rot
- !nu=    0.8, 2.0, 2.0, 0.1, 0.6, 0.0, 0.5, 1.0, 1.0, 0.1, 0.3, 0.0 ! Attempt at stabalizing dusty de Val-Borro
+ ! TRIALS FOR COURANT=0.4, 5*9 PATCHES, all_cell = True
+ !nu=    0.8, 2.0, 2.0, 0.1, 0.6, 0.0 !<-- made it till 8.54 in rot
+ !nu=    1.0, 2.0, 2.0, 0.1, 0.4, 0.0 !<-- made it till 15.7 before things went weird, ran all the way till 20.0
+ !nu=    1.5, 2.0, 2.0, 0.3, 0.6, 0.0 !<-- very unstable!
+ !nu=    1.5, 2.0, 2.0, 0.0, 0.6, 0.0 !<-- worked very well untill 14.5, then p_r became unstable
+ !nu=    0.5, 2.0, 2.0, 0.0, 0.6, 0.0 !<-- quickly became unstable at the patch edges
+ !nu=    1.5, 1.0, 1.0, 0.0, 0.6, 0.0 !<-- worked very well untill 13.3, then p_r became unstable
+ !nu=    1.5, 1.0, 1.0, 0.0, 0.0, 0.0 !<-- worked very well untill 13.3, then p_r became unstable 
+ !nu=    1.5, 1.0, 1.0, 0.0, 2.0, 0.0 !<-- worked very well untill 13.5, then p_r became unstable
+ !nu=    2.5, 2.0, 2.0, 0.0, 2.0, 0.0 !<-- worked very well untill 18.8, then p_r became unstable
+ !nu=    1.5, 3.0, 3.0, 0.0, 2.0, 0.0 !<-- very bad, don't go there 
+ !nu=    2.5, 1.0, 1.0, 0.0, 0.0, 0.0 !<-- worked very well untill 15.7, then p_r became unstable
+ !nu=    2.5, 3.0, 3.0, 0.0, 0.0, 0.0 !<-- very bad, don't go there
+ ! TRIALS FOR COURANT=0.4, 5*1 PATCHES, all_cell = False
+ !nu=    2.5, 2.0, 2.0, 0.0, 2.0, 0.0 !<-- worked very well untill 18.8, then p_r became unstable
+ ! TRIALS FOR COURANT=0.8, 5*1 PATCHES, all_cell = False
+ !nu=    2.5, 2.0, 2.0, 0.0, 2.0, 0.0 !<-- worked very bad
+ ! TRIALS FOR COURANT=0.2, 5*1 PATCHES, all_cell = False
+ nu=    2.5, 2.0, 2.0, 0.0, 2.0, 0.0 !<-- worked very bad
+ 
 
  !     cs    du   pa   ofd   mas   eta
  gamma=1.0001
@@ -69,7 +82,7 @@
 /
 
 &patch_params
-  courant=0.1
+  courant=0.2
 /
 
 &rubiks_params

@@ -8,11 +8,11 @@ pl.cla()
 pl.clf()
 pl.close('all')
 
-datadir  = 'data'          # Data directory
-#datadir  = 'data/input_gas_only'
+#datadir  = 'data/input_gas_dust'          # Data directory
+datadir  = 'data/input_gas_only'
 run      = '.'
 #iout    = [0,5,10,15,20]           # Indices for output times
-iout     = [24]
+iout     = [300]
 #iout    = [0,12,13,14,15]                     # Indices for output times 
 colr     = ['b','c','g','y','r']    # Colorscheme for different output times
 #iout    = [0,1,2]                  # Indices for output times
@@ -51,7 +51,7 @@ plot_dim = '2D'                     # Dimension
 # 9  10   11   12   13
 
 
-plparams = np.array([0,4,0+nvs,4+nvs])
+plparams = np.array([0,3,1,4])
 nplots   = len(plparams)
 
 
@@ -184,6 +184,8 @@ for j in range(nplots):
                             pl.ylabel(unit)
                     
                     k = k+1
+	            if j==1 and first_time==True:
+	    		print 'patch%id is::', p.id, ', time is::', p.time, ', dt is::', p.dt
         first_time = False
         colridx = colridx + 1
     
