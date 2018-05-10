@@ -29,6 +29,8 @@ def set_variable_name(v, passthrough=False):
     ppv = v
     if v == 'd':
         ppv = r"$\rho$"
+    elif v == 'sigma':
+        ppv = r"$\Sigma / \Sigma_0$"
 
     return ppv
 
@@ -41,7 +43,7 @@ if __name__ == "__main__":
     plt.interactive(True)
 
     gamma = 1.0001
-    datadir = './data/'
+    datadir = './data/input_1Mj_45p/'
     prefix = ''
     ptimes = [0.0,6.28,62.8]
     t_eps = 1e-3
@@ -50,10 +52,10 @@ if __name__ == "__main__":
     xscaling = None
     xunits = None
     yunits = None
-    pltvar = ['d']
-    cmin   = [5.5e-4]
-    cmax   = [7.5e-4]
-    clog   = [   0]
+    pltvar = ['sigma']
+    cmin   = [1.5e-2]
+    cmax   = [8.9]
+    clog   = [   1]
     vecvar = None
     ivfreq = 1. # at the level of the root patch
     refine_ratio = 1
@@ -75,6 +77,7 @@ if __name__ == "__main__":
     verbose = False
     suppress_title = False
     skipped = [] # skip patches entirely covered by others (manual for now)
+    sigma0 = 6.36619772368e-4
 
     m1 = 0 # counter 1
     root = None
@@ -278,6 +281,8 @@ if __name__ == "__main__":
             elif pltvar[0] == 'divb':
                 var, sumd, normmax = divergence(p, (p.varidx['b1'],p.varidx['b2'],p.varidx['b3']), gf)
                 var = var[iindex,jindex,kindex]
+            elif pltvar[0] == 'sigma':
+                var = p.data[iindex,jindex,kindex,p.varidx['d']] / sigma0
             else:
                 var = p.data[iindex,jindex,kindex,p.varidx[pltvar[0]]]
             dmass = p.data[p.li[0]-1:p.ui[0],p.li[1]-1:p.ui[1],p.li[2]-1:p.ui[2],p.varidx['d']] * p.ds.prod()

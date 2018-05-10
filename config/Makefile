@@ -70,21 +70,12 @@ E = @
 # Infrastructure to automatically determine dependencies
 DEPDIR := .d
 $(shell mkdir -p $(DEPDIR) >/dev/null)
-ifeq ($(COMPILER),gfortran)
-  DEPFLAGS = -MT $@ -MMD -MP -MF $(DEPDIR)/$*.Td
-endif
-ifeq ($(COMPILER),ifort)
-  DEPFLAGS = -gen-depformat=make -gen-dep=$(DEPDIR)/$*.Td
-endif
-POSTCOMPILE= mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
-FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
-SRC = $(subst .d,.w,$(notdir $(wildcard $(DEPDIR)/*.d)))
 
 # Remove default rule for .f files.
 %.o: %.f
 %.o: %.mod
 #############################################################################
-# Pattern rules to get .o files from .f90 files
+# Pattern rules
 %.o: %.f90 $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
 	$(E)$(F90) $(FFLAGS) $(DEFS) $(DEPFLAGS) -c $< -o $@
@@ -134,7 +125,9 @@ cleaner: clean cleandata
 cleanest: cleaner cleandata cleanlog clean-deps cleandirs
 
 #############################################################################
-# Generate list of source files
+# Generate list of source files (requires successful build)
+FILES = $(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d)))
+SRC   = $(subst .d,.w,$(notdir $(wildcard $(DEPDIR)/*.d)))
 files: $(FILES)
 	@echo $(FILES)
 src: $(SRC)

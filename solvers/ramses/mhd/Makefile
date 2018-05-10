@@ -20,4 +20,4 @@ initial_mod.o           : io_unit_mod.o trace_mod.o random_mod.o io_mod.o mesh_m
 index_mod.o             :
 rmhd_mod.o              : io_mod.o trace_mod.o mhd_mod.o rt_mod.o
 force_mod.o             : io_mod.o trace_mod.o mesh_mod.o random_mod.o scaling_mod.o
-non_ideal_mod.o         : io_mod.o trace_mod.o $(RAMSES)
+non_ideal_mod.o         : io_mod.o trace_mod.o $(RAMSES) gpatch_mod.o link_mod.o force_mod.o

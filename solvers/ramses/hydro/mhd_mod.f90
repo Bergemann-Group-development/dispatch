@@ -419,7 +419,7 @@ subroutine check_small (self, uu)
     ekin = 0.5*d*(u**2+v**2+w**2)
     if (do_isothermal) then
       p = d*csound**2
-      uu(i,j,k,self%idx%e) = p/(gamma-one)+ekin
+      uu(i,j,k,self%idx%e) = p+ekin
     else
       p = (uu(i,j,k,self%idx%e)-ekin)*(gamma-one)
       if (p < smallr*smallc**2) then
@@ -484,7 +484,11 @@ subroutine ctoprim (self)
   d => q(:,:,:,1)
   e => s
   pg => q(:,:,:,5)
-  pg = e*(self%gamma-1.0)
+  if (do_isothermal) then
+    pg = d*csound**2
+  else
+    pg = e*(self%gamma-1.0)
+  end if
   !call eos%lookup (shape(e), ee=e, d=d, pg=pg, gamma=self%gamma)
   !
   if (self%do_pebbles) then

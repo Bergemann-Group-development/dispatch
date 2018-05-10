@@ -90,8 +90,10 @@ SUBROUTINE init_annulus (self, params)
         allocate(experiment_t :: patch)
         select type (patch)
         class is (mhd_t)
+          ! in this experiment, the root grid is in cylindrical coords., so we can
+          ! set the position (which is usually in Cartesian coords.) directly.
           patch%size = [zextent, rextent, phiextent]
-          patch%position = 0.0 ! still in Cartesian coords.; absolute pos.
+          patch%position = ([ix,iy,iz]-0.5)*patch%size + [zoffset, roffset, phioffset]
           patch%name => self%task_list%name
           patch%n = n_per_patch
           ! because absolute positions are sometimes required in curvilinear
@@ -111,6 +113,7 @@ SUBROUTINE init_annulus (self, params)
           end if
 
           call patch%init()
+          patch%mesh(:)%origin = [0.0d0, roffset, phioffset]
           if (patch%kind == 'zeus_mhd_patch') then
             patch%staggered = .true.
             if (phiextent .ge. 2.0*pi) then

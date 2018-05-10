@@ -1,3 +1,4 @@
 OPT = -Ofast
+#HW = -align array64byte -qopt-assume-safe-padding
 HW =
 DEBUG = -traceback

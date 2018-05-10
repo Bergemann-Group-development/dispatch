@@ -51,6 +51,7 @@ MODULE mhd_mod
   type(index_t):: idx
   logical, save:: flop_count=.false.
   logical, save:: do_2nd_div=.true.
+  logical, save:: do_isothermal=.false.
 CONTAINS
 
 !> =============================================================================
@@ -60,10 +61,11 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer:: i, iv
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.4, csound=1.0, cdtd=0.5
   logical, save:: first_time=.true.
   character(len=16), save:: eos
-  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire, eos, flop_count, do_2nd_div
+  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire, eos, flop_count, &
+                        do_2nd_div, do_isothermal
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -84,7 +86,7 @@ SUBROUTINE init (self)
   self%csound = csound
   self%cdtd = cdtd
   self%initial%mhd = self%mhd
-  call self%initial%init (self%kind, self%gamma)
+  call self%initial%init (self%kind)
   self%mhd = self%initial%mhd
   if (self%mhd) then
     self%kind = 'stagger2_mhd_patch'
@@ -125,7 +127,7 @@ SUBROUTINE init (self)
   end if
   self%unsigned(idx%d)  = .true.
   self%pervolume(idx%s) = .true.
-  call self%force%init (self%kind)
+  call self%force%init (self%kind, self%id, self%mesh)
   !$omp critical (input_cr)
   if (first_time) then
     call stagger_test
@@ -301,8 +303,14 @@ SUBROUTINE pde (self)
   ! Gas pressure. The 2nd table variable is entropy per unit mass, effectively
   ! a log variable, from the table point of view.
   !-----------------------------------------------------------------------------
+  if (do_isothermal) then
+    s = 0.0
+    self%s = s
+    pg = d*self%csound**2
+  else
+    pg = self%gas_pressure()
+  end if
   ss = s/d                                                                      ! ops: 0 0 1
-  pg = self%gas_pressure()
   self%pg => pg
   !-----------------------------------------------------------------------------
   ! Divergence of velocity, and artificial pressure.  The divergence is valid
@@ -338,15 +346,15 @@ SUBROUTINE pde (self)
     if (io%verbose>2) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(ca)  ', u_max, self%u_max
-    1 format(1x,a,1p,2g12.3)
+      if (io%verbose>2) print 1, self%id, 'u_max(ca)  ', u_max, self%u_max
+    1 format(i6,2x,a,1p,2g12.3)
       u_max = self%fmaxval(cs + sqrt(pp))
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
+      if (io%verbose>2) print 1, self%id, 'u_max(ca+u)', u_max, self%u_max
     end if
     u_max = self%fmaxval(cs + sqrt(pp) + du)
     self%u_max = max(self%u_max,u_max)
-    if (io%verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
+    if (io%verbose>2) print 1, self%id, 'u_max(ca+u)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
@@ -367,14 +375,14 @@ SUBROUTINE pde (self)
     if (io%verbose>2) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(cs)  ', u_max, self%u_max
+      if (io%verbose>2) print 1, self%id, 'u_max(cs)  ', u_max, self%u_max
       u_max = self%fmaxval(cs + sqrt(pp))
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
+      if (io%verbose>2) print 1, self%id, 'u_max(cs+u)', u_max, self%u_max
     end if
     u_max = self%fmaxval(cs + sqrt(pp) + du)
     self%u_max = max(self%u_max,u_max)
-    if (io%verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
+    if (io%verbose>2) print 1, self%id, 'u_max(cs+u)', u_max, self%u_max
     pp = pg + pa                                                                ! ops: 1 0 0
     ! Total diagonal stress, with density factor
     du = (maxval(ds,self%n > 1)*self%nu(1))*cs                                  ! ops: 0 1 0
@@ -399,7 +407,7 @@ SUBROUTINE pde (self)
   dddt = -div(ds,fm)                                    ! density derivative
   u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs(dddt/d))             ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
-  if (io%verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
+  if (io%verbose>2) print 1, self%id, 'u_max(dddt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -482,7 +490,7 @@ SUBROUTINE pde (self)
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
   ! plus a contribution proportional to the gradient of specific entropy ss.
   !-----------------------------------------------------------------------------
-  if (self%gamma==1.0) then
+  if (do_isothermal.or.self%gamma==1.0) then
     dsdt = 0.0
   else
     fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)                    ! ops: 1 4 0
@@ -511,7 +519,9 @@ SUBROUTINE pde (self)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
     call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
-    if (self%gamma/=1.0) then
+    if (do_isothermal.or.self%gamma==1.0) then
+      dsdt = 0.0
+    else
       dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
     end if
     dBdt = -curl_up(ds,emf)
@@ -521,7 +531,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs((dsdt-s*dddt/d)/d))  ! ops: 1 1 2
   self%u_max = max(self%u_max,u_max)
-  if (io%verbose>2) print 1, 'u_max(dsdt)', u_max, self%u_max
+  if (io%verbose>2) print 1, self%id, 'u_max(dsdt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
   call deallocate_scalars (lnd, pa, du, ss, cs, pp, pb, Q)
@@ -562,7 +572,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Make a preliminary update of the selfgravity
   !-----------------------------------------------------------------------------
-  call self%gpatch_t%update
+  !call self%gpatch_t%update
   call trace%end (itimer)
 END SUBROUTINE update
 

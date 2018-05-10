@@ -5,7 +5,7 @@ MODULE experiment_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
-  USE mhd_mod
+  USE solver_mod
   USE pboundary_mod
   USE potential_mod
   USE parameters_mod
@@ -13,7 +13,7 @@ MODULE experiment_mod
   implicit none
   private
 
-  type, public, extends(mhd_t):: experiment_t
+  type, public, extends(solver_t):: experiment_t
   contains
     procedure :: init => init_experiment
     procedure :: update => update_experiment
@@ -63,7 +63,7 @@ END SUBROUTINE update_experiment
 !> Initialise the MHD variables
 !> =============================================================================
 SUBROUTINE initial_conditions (patch)
-  class(mhd_t), target :: patch
+  class(solver_t), target :: patch
   class(mesh_t), pointer :: m1, m2, m3
   integer :: i1, i2, i3
   real(4) :: z, r, phi, zeta_offset

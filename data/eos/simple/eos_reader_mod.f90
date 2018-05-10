@@ -6,9 +6,9 @@ MODULE eos_reader_mod
   implicit none
   private
   type, public:: eos_reader_t
-    integer:: skip=1
     integer:: nT, nd
-    real(8), dimension(:), pointer:: T, d
+    integer:: nv=5
+    real(8), dimension(:)    , pointer:: log_T, log_d
     real(8), dimension(:,:,:), pointer:: table
     character(len=64):: dir='data/eos'
   contains
@@ -24,44 +24,51 @@ CONTAINS
 SUBROUTINE init (self)
   class (eos_reader_t):: self
   integer:: u, nv, nT, nd, iT, id, i
-  integer:: skip=1
   character(len=16):: file='EOS.cgs'
-  namelist /eos_params/ file, skip
+  real(8):: d, T
+  namelist /eos_params/ file
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_reader_t%init')
-  open (io_unit%data, form='formatted', status='old', &
-    file=trim(io%top)//'/data/eos/simple/'//trim(file))
   rewind (io_unit%input)
   read (io_unit%input, eos_params)
   write (io_unit%output, eos_params)
   !-----------------------------------------------------------------------------
   u = io_unit%data
-  do i=1,self%skip
-    read (u,'(a)')
-  end do
+  open (u, file=trim(io%top)//'/data/eos/simple/'//trim(file), &
+    form='formatted', status='old')
   !-----------------------------------------------------------------------------
+  read (u,'(a)')
   read (u,*) nT
   self%nT = nT
-  allocate (self%T(nT))
+  allocate (self%log_T(nT))
   do iT=1,nT
-    read (u,*) self%T(iT)
+    read (u,*) T
+    self%log_T(iT) = log(T)
   end do
+  print 1, 'min(T), max(T) =', exp(minval(self%log_T)), exp(maxval(self%log_T))
+  1 format(1x,a,1p,2e15.3)
   !-----------------------------------------------------------------------------
   read (u,*) nd
   self%nd = nd
-  allocate (self%d(nd))
+  allocate (self%log_d(nd))
   do id=1,nd
-    read (u,*) self%d(id)
+    read (u,*) d
+    self%log_d(id) = log(d)
   end do
+  print 1, 'min(d), max(d) =', exp(minval(self%log_d)), exp(maxval(self%log_d))
   !-----------------------------------------------------------------------------
   read (u,*) nv
+  self%nv = nv
   allocate (self%table(nT,nd,nv))
   do id=1,nd
     do iT=1,nT
       read (u,*) self%table(iT,id,:)
+      self%table(iT,id,:) = log(self%table(iT,id,:))
     end do
   end do
   close (u)
+  print 1, 'min(P), max(P) =', exp(minval(self%table(:,:,1))), exp(maxval(self%table(:,:,1)))
+  print 1, 'min(E), max(E) =', exp(minval(self%table(:,:,2))), exp(maxval(self%table(:,:,2)))
   call trace%end
 END SUBROUTINE init
 

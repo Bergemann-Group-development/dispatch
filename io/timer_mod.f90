@@ -33,6 +33,7 @@ MODULE timer_mod
     integer(8):: n_recv=0_8, n_test=0_8
     integer:: nq_send_max=0
     integer:: nq_recv_max=0
+    integer:: n_lines=0
     real:: gb=0.0
     type(latency_t):: latency
   contains
@@ -254,6 +255,8 @@ SUBROUTINE print ()
     print 2, "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
       wc, 'wall sec'
     2 format(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))
+    !$omp atomic write
+    timer%n_lines = 1
     if (mpi%size>1) then
       timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
       print 3, timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
@@ -271,6 +274,8 @@ SUBROUTINE print ()
       wc, 'wall sec'
     write (io_unit%mpi,3) timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
       timer%nq_send_max, timer%nq_recv_max
+    !$omp atomic write
+    timer%n_lines = 1
   end if
   timer%bytes_recv = 0.0_8
   timer%n_recv = 0_8

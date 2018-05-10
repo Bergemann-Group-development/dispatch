@@ -75,8 +75,6 @@ SUBROUTINE init (self)
   else
     call self%patch_t%init
   end if
-  if (io%verbose>0) & 
-    print *, self%id, 'gpatch_t%init: ', trim(self%kind), self%nv, self%idx%d, self%idx%phi, real(self%size)
   self%d0 = d0
   call self%initial%init (self%kind)
   !$omp critical (poisson_cr)
