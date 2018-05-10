@@ -9,13 +9,13 @@ MODULE experiment_mod
   USE patch_mod
   USE timestep_mod
   USE index_mod
-  USE mhd_mod
+  USE solver_mod
   USE pboundary_mod
   USE scalar_mod
   implicit none
   private
 
-  type, public, extends(mhd_t):: experiment_t
+  type, public, extends(solver_t):: experiment_t
     real:: pi2 = 8.0*atan(1.0)
   contains
     procedure:: init

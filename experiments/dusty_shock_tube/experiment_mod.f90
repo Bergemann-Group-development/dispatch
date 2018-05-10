@@ -7,15 +7,14 @@ MODULE experiment_mod
   USE bits_mod
   USE trace_mod
   USE patch_mod
-  !USE scalar_mod
   USE boundary_mod
   USE timestep_mod
   USE index_mod
-  USE mhd_mod
+  USE solver_mod
   implicit none
   private
 
-  type, public, extends(mhd_t):: experiment_t
+  type, public, extends(solver_t):: experiment_t
   contains
     procedure:: init
     procedure:: update
@@ -82,8 +81,6 @@ SUBROUTINE init (self)
 
   do i=self%mesh(1)%lb,self%mesh(1)%ub
     x = self%mesh(1)%p + self%mesh(1)%r(i)
-    !y = self%mesh(2)%p + self%mesh(2)%r(i)
-    !z = self%mesh(3)%p + self%mesh(3)%r(i)
     if (x < self%box(1)/2.0) then
       d   (i,:,:) = rho_l
       dtr (i,:,:) = rhotr_l                                              ! ADDED TRACER DENSITY
@@ -92,11 +89,9 @@ SUBROUTINE init (self)
       dtr2(i,:,:) = rhotr_l2
       if (self%gamma .eq. 1.) then
         s (i,:,:) = -log(rho_l)*rho_l
-        !s2(i,:,:) = -log(rho_l2)*rho_l2                                  ! DEFINES SECOND COMPONENT ENTROPY
         s2(i,:,:) = 0d0
       else
         s (i,:,:) = (log(P_l)-log(rho_l)*self%gamma)/(self%gamma-1.0) * rho_l
-        !s2(i,:,:) = (log(P_l2)-log(rho_l2)*self%gamma)/(self%gamma-1.0) * rho_l2
         s2(i,:,:) = 0d0
       end if
       px(i,:,:) = vx_l*rho_l
@@ -114,11 +109,9 @@ SUBROUTINE init (self)
       dtr2(i,:,:) = rhotr_r2                                             ! ADDED TRACER DENSITY
       if (self%gamma .eq. 1.) then
         s (i,:,:) = -log(rho_r)*rho_r
-        !s2(i,:,:) = -log(rho_r2)*rho_r2                                  ! DEFINES SECOND COMPONENT ENTROPY
         s2(i,:,:) = 0d0
       else
         s (i,:,:) = (log(P_r)-log(rho_r)*self%gamma)/(self%gamma-1.0) * rho_r
-        !s2(i,:,:) = (log(P_r2)-log(rho_r2)*self%gamma)/(self%gamma-1.0) * (rho_r2)
         s2(i,:,:) = 0d0
       end if
       px(i,:,:) = vx_r*rho_r
@@ -143,11 +136,9 @@ SUBROUTINE init (self)
   boundary%rho_l2   = rho_l2
   if (self%gamma .eq. 1.) then
     boundary%s_l    = -log(rho_l)*rho_l
-    !boundary%s_l2   = -log(rho_l2)*rho_l2
     boundary%s_l2   = 0d0
   else
     boundary%s_l    = (log(P_l)-log(rho_l)*self%gamma)/(self%gamma-1.0) * rho_l
-    !boundary%s_l2   = (log(P_l2)-log(rho_l2)*self%gamma)/(self%gamma-1.0) * rho_l2
     boundary%s_l2   = 0d0
   end if
   boundary%vx_l     = vx_l
@@ -165,11 +156,9 @@ SUBROUTINE init (self)
   boundary%rho_r2   = rho_r2
   if (self%gamma .eq. 1.) then
     boundary%s_r    = -log(rho_r)*rho_r
-    !boundary%s_r2   = -log(rho_r2)*rho_r2
     boundary%s_r2   = 0d0
   else
     boundary%s_r    = (log(P_r)-log(rho_r)*self%gamma)/(self%gamma-1.0) * rho_r
-    !boundary%s_r2   = (log(P_r2)-log(rho_r2)*self%gamma)/(self%gamma-1.0) * rho_r2
     boundary%s_r2   = 0d0
   end if
   boundary%vx_r     = vx_r

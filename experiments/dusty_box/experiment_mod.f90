@@ -10,11 +10,11 @@ MODULE experiment_mod
   USE scalar_mod
   USE timestep_mod
   USE index_mod
-  USE mhd_mod
+  USE solver_mod
   implicit none
   private
 
-  type, public, extends(mhd_t):: experiment_t
+  type, public, extends(solver_t):: experiment_t
   contains
     procedure:: init
     procedure:: update
