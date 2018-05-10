@@ -113,7 +113,7 @@ SUBROUTINE init_annulus (self, params)
           end if
 
           call patch%init()
-          patch%mesh(:)origin = [zoffset,roffset,zoffset]
+          patch%mesh(:)%origin = [zoffset,roffset,zoffset]
           !if (patch%kind == 'zeus_mhd_patch') then
           !  patch%staggered = .true.
           !  if (phiextent .ge. 2.0*pi) then
