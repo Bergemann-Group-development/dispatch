@@ -11,6 +11,7 @@ MODULE experiment_mod
   USE parameters_mod
   USE scaling_mod
   USE index_mod
+  USE download_mod
   implicit none
   private
 
@@ -18,6 +19,7 @@ MODULE experiment_mod
   contains
     procedure :: init => init_experiment
     procedure :: update => update_experiment
+    procedure :: dnload
   end type
 
   type(index_t):: idx
@@ -139,5 +141,17 @@ SUBROUTINE initial_conditions (patch)
   nullify (m1, m2, m3)
   call trace_end
 END SUBROUTINE initial_conditions
+
+!> =============================================================================
+!> Download guard zone values
+!> =============================================================================
+SUBROUTINE dnload (self, only)
+  class(experiment_t):: self
+  integer, optional:: only
+  !-----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%dnload')
+  call download%download_link (self%link, .false., only=only)
+  call trace%end
+END SUBROUTINE dnload
 
 END MODULE experiment_mod
