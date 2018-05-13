@@ -32,7 +32,7 @@ def data():
     d.gi = np.array(d.gi)
     d.X  = d.X*d.e                                                  # electronvolt -> joule
     d.f  = 10.0**d.f                                                # log10 -> absolute
-    d.f[0] = 0.0
+    d.f[0] = 0.0                                                    # H2 is not an element
     d.f  = d.f/sum(d.f*d.M)                                         # electrons per baryon
     return (d)
 
@@ -75,50 +75,69 @@ def eint(rho,T):
     e_th=d.k_B*T*(2.5*f_H2+1.5*f_H*(1.0+f_e))
     return (e_H2+e_H+e_th)/(m*d.m_u)
 
-rho=1e-9
-n=100
-TT=np.zeros(n+1)
-EE=np.zeros(n+1)
-mu=np.zeros(n+1)
-for i in range(n+1):
-    t=2.0+i*3.0/n
-    T=10.**t
-    TT[i]=T
-    EE[i]=eint(rho,T)
-    mu[i]=fmu(rho,T)
+figures=False
+if figures:
+    rho=1e-9
+    n=100
+    TT=np.zeros(n+1)
+    EE=np.zeros(n+1)
+    mu=np.zeros(n+1)
+    for i in range(n+1):
+        t=2.0+i*3.0/n
+        T=10.**t
+        TT[i]=T
+        EE[i]=eint(rho,T)
+        mu[i]=fmu(rho,T)
 
-pl.figure(1)
-pl.semilogx(TT,mu)
-pl.title('rho = {} SI'.format(rho))
-pl.xlabel('T')
-pl.ylabel('mu')
-pl.figure(2)
+    pl.figure(1)
+    pl.semilogx(TT,mu)
+    pl.title('rho = {} SI'.format(rho))
+    pl.xlabel('T')
+    pl.ylabel('mu')
+    pl.figure(2)
 
-pl.loglog(TT,EE)
-pl.title('rho = {} SI'.format(rho))
-pl.xlabel('T')
-pl.ylabel('Eint')
+    pl.loglog(TT,EE)
+    pl.title('rho = {} SI'.format(rho))
+    pl.xlabel('T')
+    pl.ylabel('Eint')
 
-# Write out an ascoii-format EOS table
-nT=101
-nrho=81
-T=np.logspace(2.2,4.95,nT)
-rho=np.logspace(-15.+3.,-7+3.,nrho)
+# SI to CGS conversions
+E_SI2cgs=1e4                        # 1e4 erg/g per Joule/kg
+rho_SI2cgs=1e-3                     # 1e-3 g/cm^3 per 1 kg/m^3
+P_SI2cgs=rho_SI2cgs*E_SI2cgs
+
+# table extents in SI
+nT=91
+nrho=121
+T=np.logspace(0.5,5.0,nT)
+rho=np.logspace(-15.,-3.,nrho)      # rho in cgs 
+rho=rho/rho_SI2cgs                  # rho in SI
 
 def make_table():
-    E_SI2cgs=1e7
-    rho_SI2cgs=1e-3
-    P_SI2cgs=rho_SI2cgs*E_SI2cgs
     table=np.zeros([nT,nrho,2],dtype=np.float32)
     for j in range(nrho):
         for i in range(nT):
-            E=eint(rho[j],T[i])*E_SI2cgs
-            P=d.k_B*T[i]*rho[j]/(d.m_u*fmu(rho[j],T[i]))*P_SI2cgs
-            table[i,j,0]=P/P_SI2cgs
-            table[i,j,1]=E/E_SI2cgs
+            E=eint(rho[j],T[i])
+            P=d.k_B*T[i]*rho[j]/(d.m_u*fmu(rho[j],T[i]))
+            table[i,j,0]=P
+            table[i,j,1]=E
+    ir=60
+    for iT in (30,60,nT-1):
+        print 'SI units:'
+        print ' P = {:11.3e} at rho = {:11.3e}, T = {:11.3e}' \
+          .format(table[iT,ir,0],rho[ir],T[iT])
+        print ' E = {:11.3e} at rho = {:11.3e}, T = {:11.3e}' \
+          .format(table[iT,ir,1],rho[ir],T[iT])
+        print 'mu = {:11.3e} at rho = {:11.3e}, T = {:11.3e}' \
+          .format(fmu(rho[ir],T[iT]),rho[ir],T[iT])
+        print 'CGS units:'
+        print ' P = {:11.3e} at rho = {:11.3e}, T = {:11.3e}' \
+          .format(table[iT,ir,0]*P_SI2cgs,rho[ir]*rho_SI2cgs,T[iT])
+        print ' E = {:11.3e} at rho = {:11.3e}, T = {:11.3e}' \
+          .format(table[iT,ir,1]*E_SI2cgs,rho[ir]*rho_SI2cgs,T[iT])
     return table
 
-def write_cgs():
+def write_cgs(table):
     f=open('EOS.cgs','w')
     f.write('# nT,nrho followed by (in CGS) T[0:nT-1], rho[0:nrho-1] and [P[i,j],E[i,j]] on each line\n')
     f.write('{}\n'.format(nT))
@@ -126,25 +145,21 @@ def write_cgs():
         f.write('{:12.6e}\n'.format(T[i]))
     f.write('{}\n'.format(nrho))
     for j in range(nrho):
-        f.write('{:12.6e}\n'.format(rho[j]))
+        f.write('{:12.6e}\n'.format(rho[j]*rho_SI2cgs))
     f.write('{} {} {}\n'.format(2,nT,nrho))
-    E_SI2cgs=1e7
-    rho_SI2cgs=1e-3
-    P_SI2cgs=rho_SI2cgs*E_SI2cgs
-    table=np.zeros([nT,nrho,2],dtype=np.float32)
     for j in range(nrho):
         for i in range(nT):
-            E=eint(rho[j],T[i])*E_SI2cgs
-            P=d.k_B*T[i]*rho[j]/(d.m_u*fmu(rho[j],T[i]))*P_SI2cgs
-            table[i,j,0]=P/P_SI2cgs
-            table[i,j,1]=E/E_SI2cgs
+            P=table[i,j,0]*P_SI2cgs
+            E=table[i,j,1]*E_SI2cgs
             f.write('{:12.6e} {:12.6e}\n'.format(P,E))
     f.close()
 
 table=make_table()
-pl.clf()
-pl.loglog(T,table[:,0,1])
-pl.loglog(T,table[:,nrho-1,1])
-pl.xlabel('T')
-pl.ylabel('U')
-pl.show()
+write_cgs(table)
+if figures:
+    pl.clf()
+    pl.loglog(T,table[:,0,1])
+    pl.loglog(T,table[:,nrho-1,1])
+    pl.xlabel('T')
+    pl.ylabel('U')
+    pl.show()
