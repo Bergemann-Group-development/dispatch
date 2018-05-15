@@ -24,8 +24,9 @@ MODULE mhd_mod
     real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt, pg, dtr, ddtrdt           ! ADDED TRACER DENSITY AND TIME DERIVATIVE
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real, allocatable:: nu(:)
+    real, dimension(:,:,:), allocatable:: wkep
     real:: csound
-    real:: cdtd
+    real:: cdtd, alpha
     integer:: nc, i_dtr                                                             ! ADD NUMBER OF COMPONENTS nc AND TRACER INDEX i_dtr
     integer, dimension(:), allocatable:: no_pressure                                ! ADDED VECTOR TO SPECIFY WHICH COMPONENTS ARE PRESSURELESS DUST
     logical:: mhd=.false., do_force=.true., force_coupled=.false.                   ! ADDED force_coupled LOGICAL TO ENABLE A DIFFERENT INPUT TO FORCE MOD.
@@ -50,11 +51,13 @@ SUBROUTINE init (self)
   type(index_t):: idx
   integer:: i, k, ic                                                                    ! ADDED INTEGER FOR LOOPS OVER ALL COMPONENTS
   real, allocatable, save:: nu(:)
-  real, save:: nud(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5        ! RENAME THE CURRENT nu TO nud (d FOR dEFAULT)
+  real, save:: nud(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, & 
+               cdtd=0.5, alpha=0.0                                                      ! RENAME THE CURRENT nu TO nud (d FOR dEFAULT)
   integer, save:: nc=1                                                                  ! ADDED NUMBER OF COMPONENTS
   logical, save:: first_time=.true., tracer=.false., force_coupled=.false.              ! ADDED tracer = false AS DEFAULT
   character(len=16), save:: eos
-  namelist /mhd_params/ nu, gamma, csound, cdtd, eos, tracer, nc, force_coupled         ! ADDED tracer AND nc TO THE NAMELIST
+  namelist /mhd_params/ nu, gamma, csound, cdtd, eos, tracer, nc, & 
+                        force_coupled, alpha                                            ! ADDED tracer, alpha, AND nc TO THE NAMELIST
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -76,6 +79,7 @@ SUBROUTINE init (self)
   self%csound        = csound
   self%cdtd          = cdtd
   self%force_coupled = force_coupled
+  self%alpha         = alpha
   allocate(self%nu(6*nc))
   if (size(nu)>=6*nc) then
     self%nu(1:6*nc) = nu(1:6*nc)
@@ -126,7 +130,7 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:,:), pointer:: Ud, E_AD                                                  ! ADDED POINTER TO ALL DENSITIES AND ALL MOMENTA
   real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm, fdtr, ldtr, ddtr, fmtr        ! ADDED TEMPORARY TRACER POINTERS
   real, dimension(:,:,:),   pointer:: d, s, dddt, dsdt, dtr, ddtrdt                             ! ADDED NEW POINTERS FOR TRACER dt AND ddtdt
-  real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb, Q, lndtr                 ! ADDED TEMPORARY TRACER POINTER
+  real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb, Q, lndtr, dnu            ! ADDED TEMPORARY TRACER POINTER
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez, Jx, Jy, Jz
@@ -178,7 +182,7 @@ SUBROUTINE pde (self)
   call allocate_vectors (self%gn, ld, dd, E, J, fd, fx, fy, fz, fm)
   call allocate_vectors (self%gn, Urot, plin)
   call allocate_scalars (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
-  call allocate_scalars (self%gn, fyyx, fzzx, fzzy)
+  call allocate_scalars (self%gn, fyyx, fzzx, fzzy, dnu)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
@@ -293,15 +297,21 @@ SUBROUTINE pde (self)
     if (io%verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb
+    ! Physical turbulent viscosity
+    if (self%alpha==0.0 .or. any(self%no_pressure.EQ.k)) then
+      dnu = 0.0
+    else
+      dnu = self%alpha * cs**2 / self%wkep
+    end if
     ! Total diagonal stress
     du = dx*self%nu(1+6*(k-1))*cs
-    fxx = d*(fxx - du*Txx) - Ex
-    fyy = d*(fyy - du*Tyy) - Ey
-    fzz = d*(fzz - du*Tzz) - Ez
+    fxx = d*(fxx - (du+2.0*dnu)*Txx + 2.0*dnu*(Txx+Tyy+Tzz)/3.0 ) - Ex
+    fyy = d*(fyy - (du+2.0*dnu)*Tyy + 2.0*dnu*(Txx+Tyy+Tzz)/3.0 ) - Ey
+    fzz = d*(fzz - (du+2.0*dnu)*Tzz + 2.0*dnu*(Txx+Tyy+Tzz)/3.0 ) - Ez
     ! Addition of stress tensor terms to the centrifugal terms
-    fyyx = fyyx - ddx*du*xdn(Tyy)
-    fzzx = fzzx - ddx*du*xdn(Tzz)
-    fzzy = fzzy - ddy*du*ydn(Tzz)
+    fyyx = fyyx - ddx*xdn(du+2.0*dnu)*xdn(Tyy) + 2.0*xdn(dnu)*xdn(Txx+Tyy+Tzz)/3.0 - xdn(Ey)
+    fzzx = fzzx - ddx*xdn(du+2.0*dnu)*xdn(Tzz) + 2.0*xdn(dnu)*xdn(Txx+Tyy+Tzz)/3.0 - xdn(Ez)
+    fzzy = fzzy - ddy*ydn(du+2.0*dnu)*ydn(Tzz) + 2.0*ydn(dnu)*ydn(Txx+Tyy+Tzz)/3.0 - ydn(Ez)
   else
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2
@@ -330,22 +340,28 @@ SUBROUTINE pde (self)
     ! Total diagonal stress, with density factor
     du = dx*self%nu(1+6*(k-1))*cs
     pp = pg + pa
+    ! Physical turbulent viscosity
+    if (self%alpha==0.0 .or. any(self%no_pressure.EQ.k)) then
+      dnu = 0.0
+    else
+      dnu = self%alpha * cs**2 / self%wkep
+    end if
     !---------------------------------------------------------------------------
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
-    fxx = d*(fxx - du*Txx)
-    fyy = d*(fyy - du*Tyy)
-    fzz = d*(fzz - du*Tzz)
+    fxx = d*(fxx - (du+2.0*dnu)*Txx + 2.0*dnu*(Txx+Tyy+Tzz)/3.0 )
+    fyy = d*(fyy - (du+2.0*dnu)*Tyy + 2.0*dnu*(Txx+Tyy+Tzz)/3.0 )
+    fzz = d*(fzz - (du+2.0*dnu)*Tzz + 2.0*dnu*(Txx+Tyy+Tzz)/3.0 )
     ! Addition of stress tensor terms to the centrifugal terms
-    fyyx = fyyx - ddx*du*xdn(Tyy)
-    fzzx = fzzx - ddx*du*xdn(Tzz)
-    fzzy = fzzy - ddy*du*ydn(Tzz)
+    fyyx = fyyx - ddx*xdn(du+2.0*dnu)*xdn(Tyy) + 2.0*xdn(dnu)*xdn(Txx+Tyy+Tzz)/3.0
+    fzzx = fzzx - ddx*xdn(du+2.0*dnu)*xdn(Tzz) + 2.0*xdn(dnu)*xdn(Txx+Tyy+Tzz)/3.0
+    fzzy = fzzy - ddy*ydn(du+2.0*dnu)*ydn(Tzz) + 2.0*ydn(dnu)*ydn(Txx+Tyy+Tzz)/3.0
   end if
   !-----------------------------------------------------------------------------
     ! du has units area per unit time, which gives velocity squared times mass
     ! density per unit time = energy per unit volume and time
   !-----------------------------------------------------------------------------
-  Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)
+  Q = d*(du+2.0*dnu)*(Txx**2 + Tyy**2 + Tzz**2) - d*dnu*(4.0*(Txx+Tyy+Tzz)**2/3.0)
   call deallocate_scalars (Txx, Tyy, Tzz)
   !-----------------------------------------------------------------------------
   ! Conservation of mass
@@ -380,12 +396,12 @@ SUBROUTINE pde (self)
   Tyz = T(:,:,:,2,3) + T(:,:,:,3,2)
   Tzx = T(:,:,:,3,1) + T(:,:,:,1,3)
   deallocate(T)
-  fxy = fxy - self%nu(3+6*(k-1))*0.5*xdn1(ydn1(du))*Txy
-  fyz = fyz - self%nu(3+6*(k-1))*0.5*ydn1(zdn1(du))*Tyz
-  fzx = fzx - self%nu(3+6*(k-1))*0.5*zdn1(xdn1(du))*Tzx
-  Q   = Q + self%nu(3+6*(k-1))*0.5*d*du*(xup(yup(Txy))**2 + &
-                                 yup(zup(Tyz))**2 + &
-                                 zup(xup(Tzx))**2)
+  fxy = fxy - self%nu(3+6*(k-1))*0.5*xdn1(ydn1(du+2.0*dnu))*Txy
+  fyz = fyz - self%nu(3+6*(k-1))*0.5*ydn1(zdn1(du+2.0*dnu))*Tyz
+  fzx = fzx - self%nu(3+6*(k-1))*0.5*zdn1(xdn1(du+2.0*dnu))*Tzx
+  Q   = Q   + self%nu(3+6*(k-1))*0.5*d*(du+2.0*dnu)*(xup(yup(Txy))**2 + &
+                                                     yup(zup(Tyz))**2 + &
+                                                     zup(xup(Tzx))**2)
   call deallocate_scalars (Txy, Tyz, Tzx)
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density

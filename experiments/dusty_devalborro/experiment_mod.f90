@@ -93,7 +93,7 @@ SUBROUTINE initial_conditions (patch)
   end if
 
   ! calculate the Keplerian velocity
-  allocate(vkep(m2%gn))
+  allocate(vkep(m2%gn)); allocate(patch%wkep(m1%gn,m2%gn,m3%gn))
   vkep(:) = sqrt(experiment_params%mstar * scaling%grav / (m2%centre_nat + patch%mesh(2)%r(:)))
   sigma0 = 2.0d-3 * experiment_params%mstar / pi / experiment_params%aplanet**2
   select type (m3)
@@ -134,6 +134,7 @@ SUBROUTINE initial_conditions (patch)
           pyd(i1,i2,i3) = pyd(i1,i2,i3) * m1%h2c(i1)
           pzd(i1,i2,i3) = pzd(i1,i2,i3) * m1%h31c(i1) * m2%h32c(i2)
         end if
+        patch%wkep(i1,i2,i3)  = vkep(i2)/r
       end do
     end do
   end do
@@ -150,7 +151,7 @@ SUBROUTINE dnload (self, only)
   integer, optional:: only
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%dnload')
-  call download%download_link (self%link, .false., only=only)
+  call download%download_link (self%link, .true., only=only)
   call trace%end
 END SUBROUTINE dnload
 

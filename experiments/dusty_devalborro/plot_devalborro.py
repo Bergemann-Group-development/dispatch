@@ -12,7 +12,7 @@ pl.close('all')
 datadir  = 'data/input_gas_only'
 run      = '.'
 #iout    = [0,5,10,15,20]           # Indices for output times
-iout     = [300]
+iout     = [111]
 #iout    = [0,12,13,14,15]                     # Indices for output times 
 colr     = ['b','c','g','y','r']    # Colorscheme for different output times
 #iout    = [0,1,2]                  # Indices for output times
@@ -24,7 +24,7 @@ gamma    = 1.0001 #5.0/3.0
 Mstar    = 1.0
 aplanet  = 1.0
 sigma0   = 0.002 * Mstar/(np.pi*aplanet**2)
-patches  = [1,5,1]                  # Patch structure in output data
+patches  = [1,5,9]                  # Patch structure in output data
 npatches = np.prod(patches)         # Number of patches in output data
 nv       = 5                        # Number of variables per component in this particular case
 nvs      = 14                       # Number of variables per component in generic case
