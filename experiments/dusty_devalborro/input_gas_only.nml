@@ -29,7 +29,7 @@
 &annulus_params
   rotating=t
   n_patch=1,5,9 !1,4,9
-  n_per_patch=1,80,100 !1,32,55 !1,160,495
+  n_per_patch=1,32,55 !1,80,100 !1,32,55 !1,160,495
 /
 
 &zeus_params
@@ -74,7 +74,6 @@
  !     cs    du   pa   ofd   mas   eta
  gamma=1.0001
  !gamma=1.0
- alpha=1.0e-4
  csound=1.0
  !gamma=1.66666
  tracer=.false. 			!Enable passive tracer for every fluid component
@@ -87,7 +86,7 @@
 /
 
 &patch_params
-  courant=0.1
+  courant=0.2
 /
 
 &rubiks_params
@@ -126,6 +125,11 @@
  !drag = 'power'        ! F = K*|v-vd|^b*(v-vd)
  !drag = 'third_order'  ! F = K*(1+|v-vd|^2)*(v-vd)
  !drag = 'mixed'        ! F = K*sqrt(1+|v-vd|^2)*(v-vd)
+/
+
+&viscosity_params
+ type = 'constant_viscosity'
+ nu = 0.2
 /
 
 &download_params

@@ -13,6 +13,7 @@ MODULE mhd_mod
   USE vector_ops
   USE gpatch_mod
   USE force_mod
+  USE viscosity_mod
   USE index_mod
   USE timestep_mod
   USE planet_mod
@@ -24,15 +25,16 @@ MODULE mhd_mod
     real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt, pg, dtr, ddtrdt           ! ADDED TRACER DENSITY AND TIME DERIVATIVE
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real, allocatable:: nu(:)
-    real, dimension(:,:,:), allocatable:: wkep
     real:: csound
-    real:: cdtd, alpha
+    real:: cdtd
     integer:: nc, i_dtr                                                             ! ADD NUMBER OF COMPONENTS nc AND TRACER INDEX i_dtr
     integer, dimension(:), allocatable:: no_pressure                                ! ADDED VECTOR TO SPECIFY WHICH COMPONENTS ARE PRESSURELESS DUST
-    logical:: mhd=.false., do_force=.true., force_coupled=.false.                   ! ADDED force_coupled LOGICAL TO ENABLE A DIFFERENT INPUT TO FORCE MOD.
+    logical:: mhd=.false., do_force=.true., &
+              force_coupled=.false., do_viscosity=.true.                            ! ADDED force_coupled LOGICAL TO ENABLE A DIFFERENT INPUT TO FORCE MOD.
                                                                                     ! THE INPUT IS THEN, self%time, ALL OF self%mem, AND THE COMPONTENT CURRENTLY UNDER CONSIDERATION
     logical:: first_time=.true., tracer=.false.                                     ! ADDED TRACER
     type(force_t):: force
+    type(viscosity_t):: viscosity
   contains
     procedure:: init
     procedure:: pde
@@ -52,12 +54,12 @@ SUBROUTINE init (self)
   integer:: i, k, ic                                                                    ! ADDED INTEGER FOR LOOPS OVER ALL COMPONENTS
   real, allocatable, save:: nu(:)
   real, save:: nud(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, & 
-               cdtd=0.5, alpha=0.0                                                      ! RENAME THE CURRENT nu TO nud (d FOR dEFAULT)
+               cdtd=0.5                                                                 ! RENAME THE CURRENT nu TO nud (d FOR dEFAULT)
   integer, save:: nc=1                                                                  ! ADDED NUMBER OF COMPONENTS
   logical, save:: first_time=.true., tracer=.false., force_coupled=.false.              ! ADDED tracer = false AS DEFAULT
   character(len=16), save:: eos
   namelist /mhd_params/ nu, gamma, csound, cdtd, eos, tracer, nc, & 
-                        force_coupled, alpha                                            ! ADDED tracer, alpha, AND nc TO THE NAMELIST
+                        force_coupled                                                   ! ADDED tracer, alpha, AND nc TO THE NAMELIST
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -79,7 +81,6 @@ SUBROUTINE init (self)
   self%csound        = csound
   self%cdtd          = cdtd
   self%force_coupled = force_coupled
-  self%alpha         = alpha
   allocate(self%nu(6*nc))
   if (size(nu)>=6*nc) then
     self%nu(1:6*nc) = nu(1:6*nc)
@@ -118,6 +119,7 @@ SUBROUTINE init (self)
   self%unsigned(idx%d)  = .true.
   self%pervolume(idx%s) = .true.
   call self%force%init(self%kind)
+  call self%viscosity%init(self%kind)
 END SUBROUTINE init
 
 !> =============================================================================
@@ -130,7 +132,7 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:,:), pointer:: Ud, E_AD                                                  ! ADDED POINTER TO ALL DENSITIES AND ALL MOMENTA
   real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm, fdtr, ldtr, ddtr, fmtr        ! ADDED TEMPORARY TRACER POINTERS
   real, dimension(:,:,:),   pointer:: d, s, dddt, dsdt, dtr, ddtrdt                             ! ADDED NEW POINTERS FOR TRACER dt AND ddtdt
-  real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb, Q, lndtr, dnu            ! ADDED TEMPORARY TRACER POINTER
+  real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb, Q, lndtr, dnu            ! ADDED TEMPORARY TRACER POINTER AND VISCOSITY PARAMETER
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez, Jx, Jy, Jz
@@ -297,11 +299,11 @@ SUBROUTINE pde (self)
     if (io%verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb
-    ! Physical turbulent viscosity
-    if (self%alpha==0.0 .or. any(self%no_pressure.EQ.k)) then
-      dnu = 0.0
+    ! Physical viscosity
+    if (associated(self%viscosity%selected) .and. self%do_viscosity==.true.) then
+      dnu = self%viscosity%selected(self%time, self%mem(:,:,:,:,self%it,1), U, cs, self%mesh)
     else
-      dnu = self%alpha * cs**2 / self%wkep
+      dnu = 0.0
     end if
     ! Total diagonal stress
     du = dx*self%nu(1+6*(k-1))*cs
@@ -340,11 +342,11 @@ SUBROUTINE pde (self)
     ! Total diagonal stress, with density factor
     du = dx*self%nu(1+6*(k-1))*cs
     pp = pg + pa
-    ! Physical turbulent viscosity
-    if (self%alpha==0.0 .or. any(self%no_pressure.EQ.k)) then
-      dnu = 0.0
+    ! Physical viscosity
+    if (associated(self%viscosity%selected) .and. self%do_viscosity==.true.) then
+      dnu = self%viscosity%selected(self%time, self%mem(:,:,:,:,self%it,1), U, cs, self%mesh)
     else
-      dnu = self%alpha * cs**2 / self%wkep
+      dnu = 0.0
     end if
     !---------------------------------------------------------------------------
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
