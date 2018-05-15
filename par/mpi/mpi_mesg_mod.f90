@@ -881,19 +881,24 @@ END SUBROUTINE wait_for_completion
 !> =============================================================================
 !> Delay for about 1 ms, to encourage incoming messages to complete
 !> =============================================================================
-SUBROUTINE delay (self, n)
+SUBROUTINE delay (self, n, ms)
   class(mpi_mesg_t):: self
-  integer:: n
+  integer, optional:: n
+  real, optional:: ms
+  real:: ms_l
   real(8):: wc
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (mpi_mesg%delay_ms==0.0) return
+  if (present(ms)) then
+    ms_l = ms
+  else
+    ms_l = mpi_mesg%delay_ms
+  end if
+  if (ms_l==0.0) return
   call trace%begin ('mpi_mesg_t%delay', itimer=itimer)
-  wc = wallclock()
-  write (io_unit%log,*) wc,'delay:',n
+  call mpi%delay (ms_l)
+  write (io_unit%log,*) wc, 'delay:', n, ms
   flush (io_unit%log)
-  do while ((wallclock()-wc) < 1e-3*mpi_mesg%delay_ms)
-  end do
   !$omp atomic
   self%n_delay = self%n_delay + 1
   call trace%end (itimer)
