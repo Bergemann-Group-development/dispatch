@@ -1364,9 +1364,9 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   if (self%no_mans_land) then
-    self%ioformat = 1
+    io%format = 1
   else
-    self%ioformat = 2
+    io%format = 2
   end if
   write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout
   call system ('mkdir -p '//trim(filename))
@@ -1376,7 +1376,7 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
       print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
   end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  write (io%data_unit,'(i2.2)') self%ioformat
+  write (io%data_unit,'(i2.2)') io%format
   write (io%data_unit,'(a)') trim(self%kind)
   write (io%data_unit,'(a)') trim(self%eos)
   write (io%data_unit,'(a)') trim(self%opacity)

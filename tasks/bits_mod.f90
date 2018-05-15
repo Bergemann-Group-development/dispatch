@@ -47,6 +47,7 @@ MODULE bits_mod
     integer:: busy         = busy_bit
     integer:: no_download  = no_download_bit
     integer:: has_counter  = counter_bit
+    integer:: hands_off    = ready_bit+busy_bit+virtual_bit+frozen_bit+external_bit
     !-------- BOUNDARY CONDITION BITS ------------------------------------------
     integer:: xl           = 2**1
     integer:: xu           = 2**2

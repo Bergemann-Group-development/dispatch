@@ -435,7 +435,7 @@ SUBROUTINE check_ready (self, link)
   ! be checked, we first check if any bits are set indicating this to be the case
   !-----------------------------------------------------------------------------
   task => link%task
-  if (task%is_set (bits%ready+bits%busy+bits%virtual+bits%external)) return
+  if (task%is_set (bits%hands_off)) return              ! ready+busy+frozen+..
   nbor => link%nbor                                     ! start on nbor list
   do while (associated (nbor))                          ! keep going until end
     if (nbor%needed) then
@@ -989,7 +989,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
   !-----------------------------------------------------------------------------
   error=.false.
   task => this%task
-  if (task%is_set(bits%virtual) .or. task%is_set(bits%frozen)) return
+  if (task%is_set (bits%hands_off)) return
   call trace_begin ('list_t%queue_by_time ', itimer=itimer)
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1

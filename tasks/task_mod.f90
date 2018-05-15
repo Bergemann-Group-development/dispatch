@@ -31,7 +31,6 @@ MODULE task_mod
     integer:: nq=999
     integer:: n_behind=0
     integer:: restart=-9
-    integer:: ioformat=1
     integer:: state=0
     integer:: parentid=0
     real(8):: time = 0d0
@@ -70,7 +69,7 @@ MODULE task_mod
     procedure:: dnload
     procedure:: update => void
     procedure:: rotate
-    procedure:: output
+    !procedure:: output
     procedure:: info
     procedure:: is_ahead_of
     procedure:: set

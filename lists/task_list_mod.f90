@@ -27,9 +27,8 @@ MODULE task_list_mod
   USE bits_mod
   USE trace_mod
   USE refine_mod
-  USE buffered_output_mod
   USE load_balance_mod
-  USE direct_output_mod
+  USE data_io_mod
   implicit none
   private
   type, public, extends(list_t):: task_list_t
@@ -103,7 +102,7 @@ SUBROUTINE startup (self)
   USE omp_timer_mod
   class(task_list_t):: self
   class(link_t), pointer:: link, rem
-  class(patch_t), pointer:: patch
+  class(task_t), pointer:: task
   real(8):: sec
   integer:: dims(4)
   integer, save:: itimer=0
@@ -130,27 +129,19 @@ SUBROUTINE startup (self)
   if (recv_active .and. mpi_mesg%recv_priv) &
     call self%init_virtual
   !-----------------------------------------------------------------------------
-  ! Start timer, and run until the task count is zero
+  ! Initialize the data I/O, and start timer
   !-----------------------------------------------------------------------------
   if (mpi%master) &
     print '(a,f8.3,a)', ' Memory per process:', timer%gb, ' GB'
   call mpi%barrier ('task_list%execute')
+  task => self%head%task
+  select type (task)
+  class is (patch_t)
+    call data_io%init (task)
+  end select
   call tic (time=sec)
   call timer%print
   self%n_tasks = self%na
-  !-----------------------------------------------------------------------------
-  ! Register parameters for direct access output (allocation is postponed)
-  !-----------------------------------------------------------------------------
-  if (io%do_direct) then
-    patch => task2patch(self%head%task)
-    if (patch%no_mans_land) then
-      dims(1:3) = self%dims*patch%mesh%n
-    else
-      dims(1:3) = self%dims*(patch%mesh%n-1)
-    end if
-    dims(4) = patch%nv
-    call direct_output%init (dims=dims, nbuf=self%n_tasks)
-  end if
   call trace%end (itimer)
 END SUBROUTINE startup
 
@@ -172,7 +163,7 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   ! Loop over tasks
   !-----------------------------------------------------------------------------
-  io%ntask = self%n
+  io%ntask = self%na
   !$omp parallel
   do while (self%na > 0 .and. .not.io%do_stop .and. wallclock() < self%job_seconds)
     call self%update
@@ -189,7 +180,7 @@ SUBROUTINE execute (self)
   call toc ('wall time', n_update, time=sec)
   call mpi%barrier ('end')
   if (io%master) write (*,*) "task list finished, min_nq =", min_nq
-  call buffered_output%close
+  call data_io%close
   call trace%end (itimer)
 END SUBROUTINE execute
 
@@ -398,7 +389,7 @@ SUBROUTINE updater (self, head)
   ! If the task is frozen (e.g. because it has finished), return
   !---------------------------------------------------------------------------
   if (task%is_set (bits%frozen+bits%virtual)) then
-    if (task%iout == 0) call task%output(self%name)
+    !if (task%iout == 0) call task%output(self%name)
     ! if a frozen task is set to ready, make it not ready
     if (task%is_set(bits%ready)) then
       !$omp atomic
@@ -1051,7 +1042,7 @@ SUBROUTINE output (self)
   call trace%begin('task_list%output')
   link => self%head
   do while (associated(link))
-    call link%task%output(self%name)
+    !call link%task%output(self%name)
     link => link%next
   end do
   call trace%end

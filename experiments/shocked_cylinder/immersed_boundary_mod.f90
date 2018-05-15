@@ -200,12 +200,12 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
-  self%ioformat = 1
+  io%format = 1
   write (filename,'(a,i4.4,"_",i4.4)') trim(io%outputname), self%id, self%iout
   if (io%verbose>=0) &
     print'(a,3x,"time:",2f13.6)', 'immersed_boundary_t%output: file= '//trim(filename), time, self%time
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  write (io%data_unit,'(i2.2)') self%ioformat
+  write (io%data_unit,'(i2.2)') io%format
   write (io%data_unit,'(a)') trim(self%kind)
   write (io%data_unit,'(a)') trim(self%eos)
   write (io%data_unit,'(a)') trim(self%opacity)

@@ -14,9 +14,11 @@ MODULE io_mod
     integer:: verbose=0, input, output, data_unit, log_unit
     logical:: master=.true.
     logical:: do_legacy, do_direct, omp_trace
+    character(len=16):: method='legacy'
     integer:: levelmax
     integer:: word_size=4
     integer:: iodir = -1
+    integer:: format=0
     integer:: nwrite=0, ntask=0
     character(len=64):: inputname, outputname, datadir='data', top, inputdir
     character(len=1):: sep = '/'
@@ -44,6 +46,7 @@ MODULE io_mod
     procedure:: check_flags
     procedure:: print_id => print_id_
     procedure, nopass:: mkdir
+    procedure, nopass:: mkdir_no
     procedure, nopass:: print_hl
     procedure, nopass:: namelist_warning
   end type
@@ -100,6 +103,20 @@ SUBROUTINE mkdir (dir)
 END SUBROUTINE mkdir
 
 !> =============================================================================
+!> Make sure the next directory is created ahead of time
+!> =============================================================================
+SUBROUTINE mkdir_no (iout)
+  integer:: iout
+  character(len=120):: filename
+  !-----------------------------------------------------------------------------
+  !$omp master
+  write (filename,'(a,i5.5,"/")') trim(io%outputname), iout
+  if (io%iodir/=iout) call io%mkdir (trim(filename))
+  io%iodir = iout
+  !$omp end master
+END SUBROUTINE mkdir_no 
+
+!> =============================================================================
 !> Initialize I/O related parameters.  The first thread that enters here blocks
 !> access in a critical region, reads namelist parameters, and stores them in a
 !> global, public instance, which we normally refer to.  Other calls pick up the
@@ -113,13 +130,14 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   character(len=64):: filename, datadir='data'
   character(len=64), save:: top='../../'
+  character(len=8), save:: method='legacy'
   integer, save:: id_debug=-1
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
-    do_legacy=.true., do_flags=.false., do_direct=.false.
+    do_legacy=.false., do_flags=.false., do_direct=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
     do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, top, &
-    datadir
+    datadir, method
   real:: test
   integer:: iostat
   !.............................................................................
@@ -219,6 +237,9 @@ SUBROUTINE init (self, name)
   self%levelmax  = levelmax
   self%inputname = inputname
   self%top       = top
+  self%method    = method
+  if (do_legacy) self%method = 'legacy'
+  if (do_direct) self%method = 'direct'
   io_unit%top    = top
   io_unit%do_validate = do_validate
   call print_id (id)
