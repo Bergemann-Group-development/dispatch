@@ -1,9 +1,8 @@
 !> =============================================================================
 !> Test program for MPI parallel I/O.  gsize3 is the global size of the array,
-!> lsize3 is the rank-thread-local size of the array, and start3 is the offset
-!> into the global array.  Each thread handles a separate array f, with an 
-!> offset (in this test) that increases with MPI rank in the y-direction and 
-!> with OMP thread in the z-direction
+!> lsize3 is the rank-thread-local size of the array. Each thread handles a
+!> separate array f, with an offset (in this test) that increases with MPI rank
+!> in the y-direction and with OMP thread in the z-direction
 !> =============================================================================
 PROGRAM test_mpi_io
   USE io_mod
@@ -12,136 +11,87 @@ PROGRAM test_mpi_io
   USE mpi_io_mod
   USE omp_mod
   USE omp_timer_mod
+  USE timer_mod
   implicit none
   include 'mpif.h'
-  type(mpi_io_t), save:: io_f, io_h
-  integer, dimension(3):: gsize3, lsize3, start3
-  integer, dimension(1):: gsize1, lsize1, start1
-  integer:: rec, nrec=10
+  type(mpi_io_file_t):: file1, file2
+  type(mpi_io_t), save:: io_f, io_h, io_1
+  integer:: nrec=10
   integer, parameter:: n_patch=16
   integer, parameter:: n=32, nh=20
   real, dimension(n,n,n), save:: f
   real, dimension(nh), save:: h
-  !$omp threadprivate (f,h)
+  integer, save:: verbose=1
+  !$omp threadprivate (f,h,io_f,io_h)
   !-----------------------------------------------------------------------------
   call mpi%init
   call io%init ('test')
   io%verbose = 0
-  !$omp parallel default(shared) private(gsize3,lsize3,start3,gsize1,lsize1,start1)
-  if (mpi%mode == MPI_THREAD_MULTIPLE+9999) then
-    if (io_unit%master) print*,'test multiple_thread mode'
-    call test_multiple_thread
-  else
-    if (io_unit%master) print*,'test single_thread mode'
-    call test_single_thread
-  end if
+  !$omp parallel default(shared)
+  if (io_unit%master) print*,'test single_thread mode'
+  call test_single_thread
   !$omp end parallel
   call mpi%end
+  call check_files
 contains
 
 !> =============================================================================
-!> Multiple thread parallel I/O, seems to not be a working option (even with
-!> thread-private io_f and io_h).
-!> =============================================================================
-subroutine test_multiple_thread
-  type(mpi_io_t), save:: io_f, io_h
-  !$omp threadprivate (io_f,io_h)
-  gsize3 = [n, mpi%size*n, omp%nthreads*n]
-  lsize3 = shape(f)
-  start3 = [0, mpi%rank*n, omp%thread*n]
-  write (io_unit%log,*) 'gsize3:',gsize3
-  write (io_unit%log,*) 'lsize3:',lsize3
-  write (io_unit%log,*) 'start3:',start3
-  !$omp critical (open_cr)
-  call io_f%init (gsize3, lsize3, start3)
-  call io_f%openw ('data/f.dat')
-  !$omp end critical (open_cr)
-  !$omp barrier
-  !
-  lsize1 = shape(h)
-  gsize1 = lsize1*mpi%size*omp%nthreads
-  start1 = lsize1*(omp%thread+omp%nthreads*mpi%rank)
-  write (io_unit%log,*) 'gsize1:',gsize1
-  write (io_unit%log,*) 'lsize1:',lsize1
-  write (io_unit%log,*) 'start1:',start1
-  call io_h%init (gsize1, lsize1, start1)
-  call io_h%openw ('data/h.dat')
-  !$omp barrier
-  do rec=1,nrec
-    f=rec
-    h=rec
-    call tic
-    call io_f%write (f, rec)
-    call io_h%write (h, rec)
-    call toc('write',n**3)
-  end do
-  do rec=1,nrec
-    call tic
-    if (.not.io_f%test()) call io_f%wait
-    if (.not.io_h%test()) call io_h%wait
-    call toc('wait',n**3)
-  end do
-  !$omp barrier
-  call io_f%close
-  call io_h%close
-  !
-  !$omp critical (open_cr)
-  call io_f%openr ('data/f.dat')
-  call io_h%openr ('data/h.dat')
-  !$omp end critical (open_cr)
-  !$omp barrier
-  do rec=1,nrec
-    call io_f%read (f, rec)
-    call io_h%read (h, rec)
-    if (.not.io_f%test()) call io_f%wait
-    if (.not.io_h%test()) call io_h%wait
-  end do
-  !$omp barrier
-  !$omp critical (close_cr)
-  call io_f%close
-  call io_h%close
-  !$omp end critical (close_cr)
-end subroutine
-
-!> =============================================================================
-!> Single thread parallel I/O, seems to be the only working option
+!> This subroutine is called by each thread, so variable declared here become
+!> private
 !> =============================================================================
 subroutine test_single_thread
+  integer:: rec
+  integer, dimension(1):: gsize1, lsize1
+  integer, dimension(3):: gsize3, lsize3
   !-----------------------------------------------------------------------------
   ! Set thread local windows to the file
   !-----------------------------------------------------------------------------
   gsize3 = [n, mpi%size*n, omp%nthreads*n]
-  lsize3 = shape(f)
-  start3 = [0, mpi%rank*n, omp%thread*n]
+  lsize3 = [n, n, n]
   lsize1 = shape(h)
   gsize1 = lsize1*mpi%size*omp%nthreads
-  start1 = lsize1*(omp%thread+omp%nthreads*mpi%rank)
   !-----------------------------------------------------------------------------
   ! Open the two files -- note that omp single implies barrier at end
   !-----------------------------------------------------------------------------
-  !$omp single
-  write (io_unit%log,*) 'gsize3:',gsize3
-  write (io_unit%log,*) 'lsize3:',lsize3
-  write (io_unit%log,*) 'start3:',start3
-  call io_f%init (gsize3, lsize3, start3)
-  call io_f%openw ('data/f.dat')
-  write (io_unit%log,*) 'gsize1:',gsize1
-  write (io_unit%log,*) 'lsize1:',lsize1
-  write (io_unit%log,*) 'start1:',start1
-  call io_h%init (gsize1, lsize1, start1)
-  call io_h%openw ('data/h.dat')
-  !$omp end single
+  call file1%openw ('data/f.dat')
+  call file2%openw ('data/h.dat')
+  call io_f%use (file1)
+  call io_h%use (file2)
+  !-----------------------------------------------------------------------------
+  ! Do blocking write
+  !-----------------------------------------------------------------------------
+  call io_h%init (product(gsize1), product(lsize1))
+  call io_f%init (product(gsize3), product(lsize3))
+  call io_f%check_init
+  do rec=1,nrec
+    f=rec*100+mpi%rank*10+omp%thread
+    h=rec*100+mpi%rank*10+omp%thread
+    call tic
+    !if (mpi%rank /= 1) then
+      call io_f%write (f, rec, omp%thread+1)
+      if (verbose>1) &
+        print '(a,3i5,2f12.0)', ' write: rank, thread, rec, min, max', &
+        mpi%rank, omp%thread, rec, minval(f), maxval(f)
+    !end if
+    call io_h%write (h, rec, omp%thread+1)
+    call toc('write',n**3)
+  end do
   !-----------------------------------------------------------------------------
   ! Do non-blocking write
   !-----------------------------------------------------------------------------
-  !$omp critical (write_cr)
+  !$omp barrier
   do rec=1,nrec
-    f=rec
-    h=rec
+    f=rec*100+mpi%rank*10+omp%thread
+    h=rec*100+mpi%rank*10+omp%thread
     call tic
-    call io_f%write (f, rec)
-    call io_h%write (h, rec)
-    call toc('write',n**3)
+    if (mpi%rank /= 1) then
+      call io_f%iwrite (f, rec, omp%thread+1)
+      if (verbose>1) &
+        print '(a,3i5,2f12.0)', ' write: rank, thread, rec, min, max', &
+        mpi%rank, omp%thread, rec, minval(f), maxval(f)
+    end if
+    call io_h%iwrite (h, rec, omp%thread+1)
+    call toc('iwrite',n**3)
   end do
   !-----------------------------------------------------------------------------
   ! Test and wait
@@ -152,43 +102,55 @@ subroutine test_single_thread
     if (.not.io_h%test()) call io_h%wait
     call toc('wait',n**3)
   end do
-  !$omp end critical (write_cr)
-  !$omp barrier
-  !$omp single
   !-----------------------------------------------------------------------------
   ! Close and re-open -- with implied MPI barriers.  Note omp barrier before
   !-----------------------------------------------------------------------------
-  call io_f%close
-  call io_h%close
-  !!call mpi%barrier
-  call io_f%openr ('data/f.dat')
-  call io_h%openr ('data/h.dat')
-  !$omp end single
-  !$omp critical (read_cr)
+  !$omp barrier
+  call file1%close
+  call file2%close
+  call file1%openr ('data/f.dat')
+  call file2%openr ('data/h.dat')
+  call io_f%use (file1)
+  call io_h%use (file2)
   !-----------------------------------------------------------------------------
-  ! Do non-blocking read (should really be to separate buffers), then wait
+  ! Do blocking read (should really be to separate buffers)
   !-----------------------------------------------------------------------------
+  call io_h%init (product(gsize1), product(lsize1))
+  call io_f%init (product(gsize3), product(lsize3))
+  call io_f%check_init
   do rec=1,nrec
     call tic
-    call io_f%read (f, rec)
-    call io_h%read (h, rec)
+    if (mpi%rank /= 1) then
+      call io_f%read (f, rec, omp%thread+1)
+      if (verbose>1) &
+        print '(a,3i5,2f12.0)', ' read: rank, thread, rec, min, max', &
+        mpi%rank, omp%thread, rec, minval(f), maxval(f)
+      call io_h%read (h, rec, omp%thread+1)
+    end if
     call toc('read',n**3)
   end do
-  do rec=1,nrec
-    call tic
-    if (.not.io_f%test()) call io_f%wait
-    if (.not.io_h%test()) call io_h%wait
-    call toc('wait',n**3)
-  end do
-  !$omp end critical (read_cr)
-  !$omp barrier
   !-----------------------------------------------------------------------------
   ! Wait for all threads, then close
   !-----------------------------------------------------------------------------
-  !$omp single
-  call io_f%close
-  call io_h%close
-  !$omp end single
+  !$omp barrier
+  call file1%close
+  call file2%close
 end subroutine
+
+!> =============================================================================
+!> =============================================================================
+subroutine check_files
+  real, dimension(:,:,:), allocatable:: tmp
+  integer:: rec, recl
+  !-----------------------------------------------------------------------------
+  recl = 4*n**3
+  open (1, file='data/f.dat', access='direct', status='old', recl=recl)
+  allocate (tmp(n,n,n))
+  do rec=1,nrec
+    read (1, rec=rec) tmp
+    print *, rec, minval(tmp), maxval(tmp)
+  end do
+  close (1)
+end subroutine check_files
 
 END PROGRAM

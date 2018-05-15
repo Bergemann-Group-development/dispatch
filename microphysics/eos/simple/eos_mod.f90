@@ -11,16 +11,18 @@ MODULE eos_mod
   USE timer_mod
   implicit none
   private
+  integer, parameter:: kind1=4, kind2=8, kind3=4, nf=10
   type, public:: eos_t
     integer:: nd, ne
     integer:: nv      = 2
     integer:: i_pg    = 1
     integer:: i_tt    = 2
-    real:: lnd_min, lnd_max, lnd_stp
-    real:: lne_min, lne_max, lne_stp
-    real, dimension(:), pointer:: lnd, lne
-    real, dimension(:,:,:), allocatable:: table
-    real, dimension(:,:,:,:), allocatable:: table2
+    integer:: i_ee    = 2
+    real(kind=kind2):: lnd_min, lnd_max, lnd_stp
+    real(kind=kind2):: lne_min, lne_max, lne_stp
+    real(kind=kind2), dimension(:), pointer:: lne
+    real(kind=kind2), dimension(:), pointer:: lnd
+    real(kind=kind1), dimension(:,:,:), allocatable:: table
     logical :: do_rt
   contains
     procedure:: init
@@ -40,11 +42,15 @@ SUBROUTINE init (self,nv)
   integer,optional :: nv
   !.............................................................................
   real(8), dimension(:), pointer:: x, y
-  real(8):: log_Emin, log_Emax, Pmin, Pmax, E, T, P, log_T, log_P, log_E
-  integer:: i, j, nd, ne
+  real(kind=kind1), dimension(:), pointer:: x1, y1
+  real(kind=kind2), dimension(:), pointer:: lnd
+  real(kind=kind2), dimension(:,:,:), allocatable, target:: table
+  real(8):: Pmin, Pmax, E, T, P, log_T, log_P, log_E
+  integer:: i, j, iv, nd, ne
   associate (reader=>eos_reader)
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
+  call scaling%init
   call reader%init
   call timer%tic
   if (io%master) print *, &
@@ -55,25 +61,27 @@ SUBROUTINE init (self,nv)
     self%nv = reader%nv
   end if
   nd = reader%nd
-  ne = reader%nT
+  ne = reader%nT*nf
   self%nd = nd
   self%ne = ne
-  allocate (self%lnd(nd), self%lne(ne), self%table(ne,nd,self%nv))
-  allocate (self%table2(ne,nd,4,self%nv))
+  allocate (self%lne(ne))
+  allocate (lnd(nd))
+  allocate (table(ne,nd,self%nv))
+  print *, 'table size:', storage_size(table)*(product(shape(table))/(8*1024.**2)),' MB'
   !-----------------------------------------------------------------------------
   ! Construct table x- and y-values
   !-----------------------------------------------------------------------------
-  self%lne_min = maxval(reader%table( 1,:,2))
-  self%lne_max = minval(reader%table(ne,:,2))
+  self%lne_min = maxval(reader%table(        1,:,2))
+  self%lne_max = minval(reader%table(reader%nT,:,2))
   self%lne_stp = (self%lne_max-self%lne_min)/(ne-1.0)
   do i=1,ne
     self%lne(i) = self%lne_min + (i-1)*self%lne_stp
   end do
-  self%lnd_min = minval(reader%log_d)
-  self%lnd_max = maxval(reader%log_d)
+  self%lnd_min = reader%log_d(1)
+  self%lnd_max = reader%log_d(reader%nd)
   self%lnd_stp = (self%lnd_max-self%lnd_min)/(nd-1.0)
-  do j=1,nd
-    self%lnd(j) = self%lnd_min + (j-1)*self%lnd_stp
+  do i=1,nd
+    lnd(i) = self%lnd_min + (i-1)*self%lnd_stp
   end do
   !-----------------------------------------------------------------------------
   ! For each density, interpolate in the table to find the T corrsponding to
@@ -81,16 +89,16 @@ SUBROUTINE init (self,nv)
   !-----------------------------------------------------------------------------
   do i=1,ne
     do j=1,nd
-      log_E = self%lne(i)               ! new table lnE-value
-      x => reader%table(:,j,2)          ! x-values = known log_E-values
-      y => reader%log_T                 ! y-values = known T-values
-      log_T = interpolate (x, y, log_E) ! find the corresponding log_T
-      x => reader%log_T                 ! x-values = table log_T-values
-      y => reader%table(:,j,1)          ! y-values = table log_P-values
-      log_P = interpolate (x, y, log_T) ! find the log pressure at log_T
-      self%table(i,j,1) = exp(log_P)    ! store the linear pressure
-      self%table(i,j,2) = exp(log_T)    ! store the linear temperature
-      if (io%verbose > 0 .and. io%master) then
+      log_E = self%lne_min + (i-1)*self%lne_stp ! table lnE value
+      x => reader%table(:,j,2)                  ! x-values = known log_E-values
+      y => reader%log_T                         ! y-values = known T-values
+      log_T = interpolate (x, y, log_E)         ! find the corresponding log_T
+      x => reader%log_T                         ! x-values = table log_T-values
+      y => reader%table(:,j,1)                  ! y-values = table log_P-values
+      log_P = interpolate (x, y, log_T)         ! find the log pressure at log_T
+      table(i,j,1) = log_P                      ! store the log pressure
+      table(i,j,2) = log_T                      ! store the log temperature
+      if (io%verbose > 1 .and. io%master) then
         if ((i==1.or.i==ne).and.(j==1.or.j==nd))then
           print '(2i5,3(2x,a,1p,2e12.4))', i, j, &
             ' log_E, E:', log_E, 10.**log_E, &
@@ -102,41 +110,86 @@ SUBROUTINE init (self,nv)
     end do
   end do
   !-----------------------------------------------------------------------------
+  ! Interpolate in reader%table, to recover known values
+  !-----------------------------------------------------------------------------
+  print *, 'Interpolation in reader%table:'
+  j = 61
+  x => reader%log_T
+  y => reader%table(:,j,self%i_ee)
+  log_T = log(1e3)
+  log_E = interpolate (x, y, log_T)
+  y => reader%table(:,j,self%i_pg)
+  log_P = interpolate (x, y, log_T)
+  print *, 'rho:', exp(self%lnd_min+(j-1)*self%lnd_stp)/scaling%d, exp(reader%log_d(j))/scaling%d
+  print *, '  T:', exp(log_T)
+  print *, ' ee:', exp(log_E)/scaling%u**2
+  print *, ' Pg:', exp(log_P)/scaling%p
+  !-----------------------------------------------------------------------------
+  ! Interpolate in table, to recover the values above
+  !-----------------------------------------------------------------------------
+  print *, 'Interpolation in table:'
+  x => self%lne
+  y => table(:,j,self%i_tt)
+  !print *, 'x1'
+  !print '(1p,10e12.3)', x1
+  !print *, 'y1'
+  !print '(1p,10e12.3)', y1
+  T = exp(interpolate (x, y, log_E))
+  y => table(:,j,self%i_pg)
+  P = exp(interpolate (x, y, log_E))
+  print *, 'lnE:', log_E
+  print *, '  T:', T
+  print *, ' ee:', exp(log_E)/scaling%u**2
+  print *, ' Pg:', P/scaling%p
+  !-----------------------------------------------------------------------------
+  ! Make the table 10 times better resolved in log(d)
+  !-----------------------------------------------------------------------------
+  self%nd = (nd-1)*nf+1
+  self%lnd_stp = self%lnd_stp/real(nf,kind=8)
+  allocate (self%table(self%ne,self%nd,self%nv))
+  allocate (self%lnd(self%nd))
+  do j=1,self%nd
+    self%lnd(j) = self%lnd_min + (j-1)*self%lnd_stp
+  end do
+  do iv=1,self%nv
+  do i=1,self%ne
+    x => lnd
+    y => table(i,:,iv)
+    do j=1,self%nd
+      self%table(i,j,iv) = interpolate (x, y, self%lnd(j))
+      self%table(i,j,iv) = exp(self%table(i,j,iv))
+    end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
   ! Rescaling table to code units
   !-----------------------------------------------------------------------------
   if (io%verbose > 0 .and. io%master) then
-    print 1, 'Emin, Emax [cgs]  =', 10.**log_Emin, 10.**log_Emax
+    print 1, 'Tmin, Tmax [K]    =', minval(self%table(:,:,self%i_tt)), &
+                                    maxval(self%table(:,:,self%i_tt))
     1 format(1x,a,1p,2e15.6)
-    log_Emin = log_Emin - log10(scaling%u**2)
-    log_Emax = log_Emax - log10(scaling%u**2)
-    print 1, 'Emin, Emax [code] =', 10.**log_Emin, 10.**log_Emax
-    Pmin = minval(self%table(:,:,1))
-    Pmax = maxval(self%table(:,:,1))
+    Pmin = minval(self%table(:,:,self%i_pg))
+    Pmax = maxval(self%table(:,:,self%i_pg))
     print 1, 'Pmin, Pmax [cgs]  =', Pmin, Pmax
-    Pmin = Pmin/(scaling%d*scaling%u**2)
-    Pmax = Pmax/(scaling%d*scaling%u**2)
-    print 1, 'Pmin, Pmax [code] =', Pmin, Pmax
-    print 1, 'Tmin, Tmax [K]    =', minval(self%table(:,:,2)), &
-                                    maxval(self%table(:,:,2))
+    print 1, 'Emin, Emax [cgs]  =', exp(self%lne_min), exp(self%lne_max)
   end if
-  self%lnd = self%lnd - log(scaling%d)
-  self%lne = self%lne - log(scaling%u**2)
-  self%table(:,:,1) = self%table(:,:,1)/(scaling%d*scaling%u**2)
-  !-----------------------------------------------------------------------------
-  ! Cache the 4 corner values for each cell
-  !-----------------------------------------------------------------------------
-  do i=1,ne-1
-  do j=1,nd-1
-    self%table2(i,j,1,:) = self%table(i  ,j  ,:)
-    self%table2(i,j,2,:) = self%table(i+1,j  ,:)
-    self%table2(i,j,3,:) = self%table(i  ,j+1,:)
-    self%table2(i,j,4,:) = self%table(i+1,j+1,:)
-  end do
-  end do
+  self%lnd_min = self%lnd_min - log(scaling%d)
+  self%lnd_max = self%lnd_max - log(scaling%d)
+  self%lnd     = self%lnd     - log(scaling%d)
+  self%lne_min = self%lne_min - log(scaling%u**2)
+  self%lne_max = self%lne_max - log(scaling%u**2)
+  self%lne     = self%lne     - log(scaling%u**2)
+  self%table(:,:,self%i_pg) = self%table(:,:,self%i_pg)/scaling%p
+  if (io%verbose > 0 .and. io%master) then
+    Pmin = Pmin/scaling%p
+    Pmax = Pmax/scaling%p
+    print 1, 'Pmin, Pmax [code] =', Pmin, Pmax
+    print 1, 'Emin, Emax [code] =', exp(self%lne_min), exp(self%lne_max)
+  end if
   !-----------------------------------------------------------------------------
   ! Deallocate the reader table, which we don't need anymore
   !-----------------------------------------------------------------------------
-  deallocate (eos_reader%table)
+  deallocate (eos_reader%table, table)
   call timer%toc ('eos_t%init')
   call trace%end
   end associate
@@ -146,13 +199,23 @@ END SUBROUTINE init
 !> Accurate interpolation, used only to generate the working table
 !> =============================================================================
 FUNCTION interpolate (x, y, x0) RESULT (out)
-  !USE lagrange_mod
   real(8), dimension(:):: x, y
   real(8):: x0, out, p
   integer:: i
   !-----------------------------------------------------------------------------
   out = lagrange%sequence (x0, x, y)
 END FUNCTION interpolate
+
+!> =============================================================================
+!> Accurate interpolation, used only to generate the working table
+!> =============================================================================
+FUNCTION interpolate4 (x, y, x0) RESULT (out)
+  real, dimension(:):: x, y
+  real:: x0, out, p
+  integer:: i
+  !-----------------------------------------------------------------------------
+  out = lagrange%sequence (x0, x, y)
+END FUNCTION interpolate4
 
 !> =============================================================================
 !> By convention, there should be a pressure (lnd, lne) function
@@ -176,22 +239,20 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, ee, pg, tt, iskip)
   real, dimension(:,:,:), optional :: pg, tt
   integer, optional:: iskip
   !.............................................................................
-  real, dimension(dim(1)):: pr, pe, qr, qe
-  real, dimension(dim(1),dim(2)):: lnd1, lne1
-  real, dimension(dim(1),4,size(self%table,3)):: f
-  real, dimension(dim(1),4):: g
+  real(kind=kind1), dimension(dim(1)):: pr, pe, qr, qe
+  real(kind=kind2), dimension(dim(1)):: lnd1, lne1
+  real(kind=kind1), dimension(dim(1),4,size(self%table,3)):: f
+  real(kind=kind1), dimension(dim(1),4):: g
   integer, dimension(dim(1)):: ir, ie
   integer:: ix, iy, iz, iv
   integer:: md, me, mv, lskip
-  real:: clnd, clne
-  logical:: skip
+  real(kind=kind2):: clnd, clne
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays
   !-----------------------------------------------------------------------------
-  mv=  self%nv
+  mv = self%nv
   md = self%nd
   me = self%ne
-  skip = .not.(present(pg).or.present(tt))
   if (present(iskip)) then
     lskip = iskip
   else
@@ -203,31 +264,31 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, ee, pg, tt, iskip)
   clnd = 1./self%lnd_stp
   clne = 1./self%lne_stp
   do iz=1,dim(3)
+  do iy=1,dim(2)
     !-------------------------------------------------------------------------
-    ! Pick up one-dimensional values, assigments vectorize
+    ! Pick up one-dimensional values via vectorized assigments
     !-------------------------------------------------------------------------
     if (present(lne)) then
-      lne1 = lne(:,:,iz)
+      lne1 = lne(:,iy,iz)
     else if (present(ee)) then
-      lne1 = log(ee(:,:,iz))
+      lne1 = log(real(ee(:,iy,iz),kind=kind3))
     else
       call mpi%abort ('eos_t: missing internal energy')
     end if
     if (lskip==1) cycle
     if (present(lnd)) then
-      lnd1 = lnd(:,:,iz)
+      lnd1 = lnd(:,iy,iz)
     else if (present(d)) then
-      lnd1 = log(d(:,:,iz))
+      lnd1 = log(real(d(:,iy,iz),kind=kind3))
     else
       call mpi%abort ('eos_t: missing density')
     end if
     if (lskip==2) cycle
-  do iy=1,dim(2)
     !-------------------------------------------------------------------------
     ! Addresses and weights, vectorized
     !-------------------------------------------------------------------------
-    pr = 1.+(lnd1(:,iy)-self%lnd_min)*clnd
-    pe = 1.+(lne1(:,iy)-self%lne_min)*clne
+    pr = 1.+(lnd1(:)-self%lnd_min)*clnd
+    pe = 1.+(lne1(:)-self%lne_min)*clne
     ir = pr
     ie = pe
     ir = max(1,min(ir,md))
@@ -236,29 +297,23 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, ee, pg, tt, iskip)
     pe = pe-ie
     qr = 1.0-pr
     qe = 1.0-pe
-    g(:,1) = qr*qe
-    g(:,2) = pr*qe
-    g(:,3) = qr*pe
-    g(:,4) = pr*pe
+    g(:,1) = qe*qr
+    g(:,2) = pe*qr
+    g(:,3) = qe*pr
+    g(:,4) = pe*pr
     if (lskip==3) cycle
     !---------------------------------------------------------------------------
     !  Table values, indirect addressing
     !---------------------------------------------------------------------------
-    if (lskip==5) then
-      do ix=1,dim(1)
-        f(ix,:,:) = self%table2(ir(ix),ie(ix),:,:)
-      end do
-    else
-      do ix=1,dim(1)
-      do iv=1,mv
-        f(ix,1,iv) = self%table(ie(ix)  ,ir(ix)  ,iv)
-        f(ix,2,iv) = self%table(ie(ix)+1,ir(ix)  ,iv)
-        f(ix,3,iv) = self%table(ie(ix)  ,ir(ix)+1,iv)
-        f(ix,4,iv) = self%table(ie(ix)+1,ir(ix)+1,iv)
-      end do
-      end do
-    end if
-    if (lskip==4.or.lskip==5) cycle
+    do ix=1,dim(1)
+    do iv=1,mv
+      f(ix,1,iv) = self%table(ie(ix)  ,ir(ix)  ,iv)
+      f(ix,2,iv) = self%table(ie(ix)+1,ir(ix)  ,iv)
+      f(ix,3,iv) = self%table(ie(ix)  ,ir(ix)+1,iv)
+      f(ix,4,iv) = self%table(ie(ix)+1,ir(ix)+1,iv)
+    end do
+    end do
+    if (lskip==4) cycle
     !---------------------------------------------------------------------------
     !  Loop over table entries
     !---------------------------------------------------------------------------
@@ -269,7 +324,7 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, ee, pg, tt, iskip)
        + f(:,3,self%i_pg)*g(:,3) &
        + f(:,4,self%i_pg)*g(:,4)
     end if
-    if (lskip==6) cycle
+    if (lskip==5) cycle
     if (present(tt)) then
       tt(:,iy,iz) = &
          f(:,1,self%i_tt)*g(:,1) &

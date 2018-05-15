@@ -8,14 +8,14 @@ PROGRAM test_eos
   USE eos_mod
   implicit none
   real, save, allocatable, target, dimension(:,:,:):: d, ee, lne, pg, tt, lnd
-  integer:: n=200, i, dim(3)
+  integer:: n=200, i, dim(3), ni
   !$omp threadprivate(pg,tt)
   !-----------------------------------------------------------------------------
   call io%init ('lookup')
   call eos%init
   allocate (d(n,n,n), lnd(n,n,n), ee(n,n,n), lne(n,n,n))
   d=1.0
-  ee=5.5
+  ee=7.423690
   !$omp parallel default(shared)
   allocate (pg(n,n,n), tt(n,n,n))
   dim = [n,n,n]
@@ -28,7 +28,8 @@ PROGRAM test_eos
   call toc ('    pg',n**3)
   !$omp barrier
   print *,'using d and ee'
-  do i=1,7
+  ni=6
+  do i=1,ni
     call tic
     call eos%lookup (dim, d=d, ee=ee, tt=tt, pg=pg, iskip=i)
     call toc (' tt,pg',n**3)
@@ -36,14 +37,14 @@ PROGRAM test_eos
   end do
   lne = log(ee)
   print *,'using d and lne'
-  do i=1,7
+  do i=1,ni
     call tic
     call eos%lookup (dim, d=d, lne=lne, tt=tt, pg=pg, iskip=i)
     call toc (' tt,pg',n**3)
     !$omp barrier
   end do
   print *,'using lnd and ee'
-  do i=1,7
+  do i=1,ni
     call tic
     call eos%lookup (dim, lnd=lnd, ee=ee, tt=tt, pg=pg, iskip=i)
     call toc (' tt,pg',n**3)
@@ -51,7 +52,14 @@ PROGRAM test_eos
   end do
   lnd = log(d)
   print *,'using lnd and lne'
-  do i=1,7
+  do i=1,ni
+    call tic
+    call eos%lookup (dim, lnd=lnd, lne=lne, tt=tt, pg=pg, iskip=i)
+    call toc (' tt,pg',n**3)
+    !$omp barrier
+  end do
+  print *,'using lnd and lne'
+  do i=1,ni
     call tic
     call eos%lookup (dim, lnd=lnd, lne=lne, tt=tt, pg=pg, iskip=i)
     call toc (' tt,pg',n**3)

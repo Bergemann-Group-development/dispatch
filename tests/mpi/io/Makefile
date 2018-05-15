@@ -12,4 +12,4 @@ ifneq ($(MPI),mpi)
   $(error "This test *requires* MPI!")
 endif
 
-test.x: mpi_mod.o mpi_io_mod.o io_mod.o omp_mod.o omp_timer_mod.o
+test.x: trace_mod.o mpi_mod.o mpi_io_mod.o io_mod.o omp_mod.o omp_timer_mod.o timer_mod.o

@@ -1,5 +1,6 @@
 &io_params
  top='../../..'
+ verbose=1
  omp_trace=t
 /
 &eos_params

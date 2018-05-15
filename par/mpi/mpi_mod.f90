@@ -202,7 +202,7 @@ SUBROUTINE end_mpi (self, label)
 #ifdef MPI
   call MPI_Finalize (mpi_err)
 #endif
-  call exit        ! avoid "stop" which may produce one output line per process
+  !call exit        ! avoid "stop" which may produce one output line per process
 END SUBROUTINE
 
 !> =============================================================================
@@ -211,10 +211,10 @@ SUBROUTINE abort_mpi (self, reason)
   character(len=*), optional:: reason
 !...............................................................................
   if (present(reason)) then
-    print*, mpi_rank, 'mpi_abort: '//trim(reason)
+    print*, mpi_rank, omp%thread, 'mpi_abort: '//trim(reason)
     write(io_unit%log,'(3(a,i6,2x))') 'mpi_abort: thread =',omp%thread,trim(reason)
   else
-    print*, mpi_rank, 'mpi_abort: generic'
+    print*, mpi_rank, omp%thread, 'mpi_abort: generic'
     write(io_unit%log,'(3(a,i6,2x))') 'mpi_abort: thread =',omp%thread
   end if
   flush (io_unit%log)
