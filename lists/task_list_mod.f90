@@ -589,7 +589,7 @@ SUBROUTINE unpack (self, mesg, link)
   if (mpi_mesg%debug) then
     !$omp critical (debug_cr)
     write (io_unit%mpi,'(f12.6,2x,a,i9,1p,e18.6,2x,a,i5,2x,5l1)') &
-      wallclock(), 'recv', mesg%id, task%time, 'fr', task%rank, &
+      wallclock(), 'recv: id, time =', mesg%id, task%time, 'fr', task%rank, &
       task%is_set (bits%internal), &
       task%is_set (bits%boundary), &
       task%is_set (bits%virtual), &
@@ -597,7 +597,8 @@ SUBROUTINE unpack (self, mesg, link)
       task%is_set (bits%swap_request)
     !$omp end critical (debug_cr)
   end if
-  write (io_unit%log,*) wallclock(), 'unpack: id, time =', task%id, task%time
+  if (mpi_mesg%debug) &
+    write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6)') wallclock(), 'unpk: id, time =', task%id, task%time
   if (id /= mesg%id) print *,'unpack ERROR: wrong mesg%id', id, task%id, mesg%id
   if (.not. failed) then
     !$omp atomic
@@ -800,7 +801,8 @@ SUBROUTINE check_mpi (self)
     mesg => next
   end do
   i=i+1; wc(i) = wallclock()-wc(0)
-9 write (io_unit%log, '(a,6f10.4)') 'check_mpi times:', wc(1:i)-wc(0:i-1)
+9 continue
+  !write (io_unit%log, '(a,6f10.4)') 'check_mpi times:', wc(1:i)-wc(0:i-1)
   call trace%end (itimer)
 END SUBROUTINE check_mpi
 
@@ -998,6 +1000,8 @@ SUBROUTINE check_active (self)
       end if
       if (task%mesg%req == 0) then
         call task%mesg%irecv  (task%rank, task%id)
+        if (mpi_mesg%debug) &
+          write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'recv: id, sender, req =', task%id, task%rank, task%mesg%req
       end if
       !-------------------------------------------------------------------------
       ! If a mesg was recvd, then either unpack directly and issue a new request,
@@ -1009,9 +1013,13 @@ SUBROUTINE check_active (self)
           call unpk_tmp%add (task%mesg)
         else
           call self%unpack (task%mesg)
+          if (mpi_mesg%debug) &
+            write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'unpk: id, sender, req =', task%mesg%id, task%mesg%sender, task%mesg%req
           call task%mesg%irecv (task%rank, task%id)
-          if (task%rank /= mesg%sender) error stop 'rank ne sender'
-          if (task%id   /= mesg%id)     error stop 'task%id ne mesg%id'
+          if (mpi_mesg%debug) &
+            write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'recv: id, sender, req =', task%id, task%rank, task%mesg%req
+          if (task%rank /= task%mesg%sender) error stop 'rank ne sender'
+          if (task%id   /= task%mesg%id)     error stop 'task%id ne mesg%id'
         end if
       end if
       end select
@@ -1023,8 +1031,10 @@ SUBROUTINE check_active (self)
     mesg => unpk_tmp%head
     do while (associated(mesg))
       call self%unpack (mesg)
+      write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'unpk: id, time =', task%mesg%id, task%mesg%sender, task%mesg%req
       call unpk_tmp%remove (mesg)
       call mesg%irecv (mesg%sender, mesg%id)
+      write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'recv: id, time =', task%id, task%rank, task%mesg%req
       nunpk = nunpk+1
       mesg => mesg%next
     end do

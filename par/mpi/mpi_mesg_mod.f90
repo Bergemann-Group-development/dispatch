@@ -819,6 +819,7 @@ FUNCTION test_recv (self) RESULT (flag)
   real(8):: now
   !.............................................................................
   now = wallclock()
+  flag = .false.
   if (now < self%test_next) return
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
