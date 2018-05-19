@@ -1143,6 +1143,7 @@ SUBROUTINE remove_active (self, this)
   class(link_t), pointer:: this
   class(link_t), pointer:: next, prev
   !-----------------------------------------------------------------------------
+  if (.not.associated(self%active)) return
   call trace%begin ('list_t%remove_active')
   !$omp critical (active_cr)
   nullify (prev)

@@ -56,6 +56,7 @@ MODULE task_list_mod
   logical, save:: do_delay=.false.
   logical, save:: recv_active=.true.
   logical, save:: queue_unpack=.true.
+  logical, save:: track_active=.false.
   real(8), save:: sync_time=0.0
   type(task_list_t), save:: virtual_list
   !$omp threadprivate (virtual_list)
@@ -73,7 +74,7 @@ SUBROUTINE init (self, name)
   integer:: debug=0
   real(8):: job_seconds=1d30
   namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms, &
-    do_delay, recv_active, queue_unpack, sync_time, job_seconds
+    do_delay, recv_active, queue_unpack, sync_time, job_seconds, track_active
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -251,24 +252,34 @@ SUBROUTINE update (self)
       call task%set (bits%busy)                         ! mark task busy
       self%queue => head%next_time                      ! chop head off
       call task%clear (bits%ready)                      ! not in queue
-      call self%queue_active (head)
+      if (track_active) &
+        call self%queue_active (head)
       !$omp atomic
       self%nq = self%nq-1                               ! decrement queue count
       task%nq = self%nq                                 ! for info print
       if (io%verbose >= 0) then
-        otask => self%active%task
-        time = otask%atime
-        if (time < otime) &
-          write (*,'(a,2(f12.6,i6))') 'TIME ERROR: otime, oid, time, id =', otime, oid, time, otask%id
-        !$omp atomic write
-        otime = time
-        !$omp atomic write
-        oid = otask%id
-        if (omp%master) then
-          write (io_unit%queue,'(f12.6,i6,2f12.6,2i5)') &
-            wallclock(), task%istep, task%time, &
-            otask%atime, self%nq, self%nac
-          flush (io_unit%queue)
+        if (track_active) then
+          otask => self%active%task
+          time = otask%atime
+          if (time < otime) &
+            write (*,'(a,2(f12.6,i6))') 'TIME ERROR: otime, oid, time, id =', otime, oid, time, otask%id
+          !$omp atomic write
+          otime = time
+          !$omp atomic write
+          oid = otask%id
+          if (omp%master) then
+            write (io_unit%queue,'(f12.6,i6,2f12.6,2i5)') &
+              wallclock(), task%istep, task%time, &
+              otask%atime, self%nq, self%nac
+            flush (io_unit%queue)
+            end if
+        else
+            if (omp%master) then
+            write (io_unit%queue,'(f12.6,i6,f12.6,2i5)') &
+              wallclock(), task%istep, task%time, &
+              self%nq, self%nac
+            flush (io_unit%queue)
+          end if
         end if
       end if
     end if
