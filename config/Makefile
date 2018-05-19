@@ -1,6 +1,5 @@
 #############################################################################
 # Default target and shell
-target: default
 SHELL = /bin/bash
 
 #############################################################################
@@ -17,6 +16,17 @@ RT_PREC ?= RT_SINGLE
 #############################################################################
 # Check for options
 CONFIG = $(TOP)/config
+ifeq ($(OPTS),)
+  target: default
+else
+  OPTS_COMP = $(shell ls $(CONFIG)/compiler/$(COMPILER)/$(OPTS).mkf) 
+  OPTS_FILE = $(CONFIG)/compiler/$(COMPILER)/$(OPTS).mkf
+  ifeq ("$(OPTS_COMP)","$(CONFIG)/compiler/$(COMPILER)/$(OPTS).mkf ")
+    target: default
+  else
+    target: error
+  endif
+endif
 sinclude options.mkf
 sinclude $(CONFIG)/host/$(HOST)/Makefile
 sinclude $(CONFIG)/compiler/$(COMPILER)/Makefile
@@ -170,6 +180,9 @@ info:
 	@echo "$B  EXEC        $N= $(EXEC)"
 compiler:
 	@echo "$(COMPILER)"
+
+error:
+	@echo "$B  OPTS_FILE   $N= :$(OPTS_FILE): DOES NOT EXIST!"
 
 #############################################################################
 # Check where options are set
