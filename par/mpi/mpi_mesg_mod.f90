@@ -123,6 +123,8 @@ SUBROUTINE send (self, rank, tag)
     !$omp critical (mpi_cr)
     call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, ltag, &
       mpi%comm, req, ierr)
+    if (mpi_mesg%debug) &
+      write (io_unit%mpi,*) wallclock(), omp%thread, 'ISEND', rank, req
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
     !$omp end critical (mpi_cr)
@@ -462,6 +464,7 @@ SUBROUTINE reset (self)
   !.............................................................................
   nullify (self%head)
   nullify (self%tail)
+  self%n = 0
 END SUBROUTINE reset
 
 !> =============================================================================
@@ -803,7 +806,15 @@ SUBROUTINE irecv (self, rank, tag)
   !.............................................................................
   self%sender = rank
 #ifdef MPI
-  call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, rank, tag, mpi%comm, self%req, ierr)
+  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+    !$omp critical (mpi_cr)
+    call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, rank, tag, mpi%comm, self%req, ierr)
+    !$omp end critical (mpi_cr)
+  else
+    call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, rank, tag, mpi%comm, self%req, ierr)
+  end if
+  if (mpi_mesg%debug) &
+    write (io_unit%mpi,*) wallclock(), omp%thread, 'IRECV', rank, self%req
 #endif
 END SUBROUTINE irecv
 
@@ -823,13 +834,20 @@ FUNCTION test_recv (self) RESULT (flag)
   if (now < self%test_next) return
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
-    call MPI_TEST (self%req, flag, stat, ierr)
+    if (wait) then
+      call MPI_WAIT (self%req, stat, ierr)
+      flag = .true.
+    else
+      call MPI_TEST (self%req, flag, stat, ierr)
+    end if
     !$omp end critical (mpi_cr)
-  else if (wait) then
-    call MPI_WAIT (self%req, stat, ierr)
-    flag = .true.
   else
-    call MPI_TEST (self%req, flag, stat, ierr)
+    if (wait) then
+      call MPI_WAIT (self%req, stat, ierr)
+      flag = .true.
+    else
+      call MPI_TEST (self%req, flag, stat, ierr)
+    end if
   end if
   if (flag) then
     self%id = stat(MPI_TAG)

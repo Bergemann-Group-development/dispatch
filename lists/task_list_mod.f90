@@ -1042,10 +1042,12 @@ SUBROUTINE check_active (self)
     mesg => unpk_tmp%head
     do while (associated(mesg))
       call self%unpack (mesg)
-      write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'unpk: id, time =', task%mesg%id, task%mesg%sender, task%mesg%req
+      if (mpi_mesg%debug) &
+        write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'unpk: id, time =', mesg%id, mesg%sender, mesg%req
       call unpk_tmp%remove (mesg)
       call mesg%irecv (mesg%sender, mesg%id)
-      write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'recv: id, time =', task%id, task%rank, task%mesg%req
+      if (mpi_mesg%debug) &
+        write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'recv: id, time =', mesg%id, mesg%sender, mesg%req
       nunpk = nunpk+1
       mesg => mesg%next
     end do
