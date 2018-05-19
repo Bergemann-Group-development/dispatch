@@ -69,7 +69,6 @@ MODULE task_mod
     procedure:: dnload
     procedure:: update => void
     procedure:: rotate
-    !procedure:: output
     procedure:: info
     procedure:: is_ahead_of
     procedure:: set
@@ -233,16 +232,6 @@ SUBROUTINE rotate (self)
   self%rotated = .true.
   call trace_end (itimer)
 END SUBROUTINE rotate
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE output (self, experiment_name)
-  class (task_t):: self
-  character(len=64), optional:: experiment_name
-  !.............................................................................
-  call trace_begin ('task_t%output')
-  call trace_end
-END SUBROUTINE
 
 !> =============================================================================
 !> Print info to stdout
