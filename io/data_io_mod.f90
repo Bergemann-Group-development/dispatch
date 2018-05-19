@@ -39,7 +39,7 @@ SUBROUTINE init (patch)
   class(patch_t):: patch
   !.............................................................................
   if (.not.io%do_output) return
-  call trace%begin('patch_t%init')
+  call trace%begin('data_io_t%init')
   if      (io%method=='direct') then
     call direct_io%init (patch)
   else if (io%method=='parallel') then
@@ -60,7 +60,7 @@ SUBROUTINE output (patch, experiment_name)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
-  call trace%begin('patch_t%output', itimer=itimer)
+  call trace%begin('data_io_t%output', itimer=itimer)
   do while (patch%time >= patch%out_next)
     call io%mkdir (trim(io%outputname))
     call io%mkdir_no (patch%iout)
@@ -159,7 +159,7 @@ SUBROUTINE input (patch, ok)
   class(patch_t):: patch
   logical:: ok
   !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%input')
+  call trace%begin ('data_io_t%input')
   ok = .false.
   if (patch%restart > 0) then
     if      (io%method=='direct') then
