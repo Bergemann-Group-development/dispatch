@@ -18,7 +18,8 @@ MODULE parallel_io_mod
     procedure, nopass:: output
     procedure, nopass:: close
   end type
-  integer, save:: verbose=0
+  integer, parameter:: order=1
+  integer, parameter:: verbose=0
   type(mpi_io_file_t), save:: file_in, file_out
   type(parallel_io_t), public:: parallel_io
 CONTAINS
@@ -59,7 +60,8 @@ END SUBROUTINE close
 SUBROUTINE output (patch)
   class(patch_t):: patch
   !.............................................................................
-  integer:: snapshot_words, buffer_words, iv, n(3), jt(2)
+  integer(8):: snapshot_words, buffer_words
+  integer:: iv, n(3), jt(2)
   real, dimension(:,:,:), allocatable:: buffer
   type(mpi_io_t):: thread_io
   real:: pt(2)
@@ -74,7 +76,7 @@ SUBROUTINE output (patch)
     n = patch%n
   end if
   buffer_words = product(n)
-  snapshot_words = buffer_words*patch%nv*io%ntask
+  snapshot_words = buffer_words*patch%nv*io%ntotal
   if (io%verbose==1) print '(a,2i6)', ' parallel_io_t%output: iout, id =', &
     patch%iout, patch%id
   if (io%verbose>1) print '(a,4i6,2i7)', &
@@ -97,7 +99,11 @@ SUBROUTINE output (patch)
     end if
     if (io%verbose>2) print *, 'parallel_io_t%output: iv =', &
       patch%id, iv, minval(buffer), maxval(buffer)
-    call thread_io%write (buffer, patch%iout+1, (patch%id-1)*patch%nv + iv)
+    if (order==0) then
+      call thread_io%write (buffer, patch%iout+1, (patch%id-1)*patch%nv + iv)
+    else
+      call thread_io%write (buffer, patch%iout+1, patch%id + (iv-1)*io%ntotal)
+    end if
   end do
   deallocate (buffer)
   call trace%end
@@ -110,7 +116,8 @@ SUBROUTINE input (patch, ok)
   class(patch_t):: patch
   logical:: ok
   !.............................................................................
-  integer:: snapshot_words, buffer_words, iv, n(3)
+  integer(8):: snapshot_words, buffer_words
+  integer:: iv, n(3)
   real, dimension(:,:,:), allocatable:: buffer
   type(mpi_io_t):: thread_io
   !-----------------------------------------------------------------------------
@@ -122,11 +129,15 @@ SUBROUTINE input (patch, ok)
     n = patch%n
   end if
   buffer_words = product(n)
-  snapshot_words = buffer_words*patch%nv
+  snapshot_words = buffer_words*patch%nv*io%ntotal
   call thread_io%init (snapshot_words, buffer_words)
   allocate (buffer(n(1),n(2),n(3)))
   do iv=1,patch%nv
-    call thread_io%read (buffer, patch%restart+1, (patch%id-1)*patch%nv + iv)
+    if (order==0) then
+      call thread_io%read (buffer, patch%restart+1, (patch%id-1)*patch%nv + iv)
+    else
+      call thread_io%read (buffer, patch%restart+1, patch%id + (iv-1)*io%ntotal)
+    end if
     if (thread_io%err /= 0) then
       ok = .false.
       call trace%end

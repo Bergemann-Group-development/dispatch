@@ -98,6 +98,7 @@ SUBROUTINE init (self, label)
   ! external patches and add the rest to the task_list.
   !-----------------------------------------------------------------------------
   allocate (links(0:self%dims(1)-1,0:self%dims(2)-1,0:self%dims(3)-1))
+  io%ntotal = product(self%dims)
   do k=0,self%dims(3)-1
   do j=0,self%dims(2)-1
   do i=0,self%dims(1)-1
