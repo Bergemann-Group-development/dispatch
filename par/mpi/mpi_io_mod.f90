@@ -117,7 +117,7 @@ SUBROUTINE write (self, f, rec, id)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%write')
   call self%check_init
-  pos = 4*((rec-1)*self%rec_words + (id-1)*self%chunk_words)
+  pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose>1) &
     print '(a,3i7,i10,2f12.0)', ' mpi_io_t%write: rec, id, words, pos =', &
     rec, id, self%chunk_words, pos, minval(f), maxval(f)
@@ -142,7 +142,7 @@ SUBROUTINE iwrite (self, f, rec, id)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%iwrite')
   call self%check_init
-  pos = 4*((rec-1)*self%rec_words + (id-1)*self%chunk_words)
+  pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose>1) &
     print '(a,3i7,i10,2f12.0)', ' mpi_io_t%iwrite: rec, id, words, pos =', &
     rec, id, self%chunk_words, pos, minval(f), maxval(f)
