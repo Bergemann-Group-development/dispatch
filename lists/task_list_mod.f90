@@ -166,8 +166,9 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   io%ntask = self%na
   !$omp parallel
-  do while (self%na > 0 .and. .not.io%do_stop .and. wallclock() < self%job_seconds)
+  do while (self%na > 0 .and. wallclock() < self%job_seconds)
     call self%update
+    if (io%do_stop) call mpi%abort ('stop flag')
     if (self%na == self%n_tasks) then
       !$omp atomic
       min_nq = min(min_nq,self%nq)
