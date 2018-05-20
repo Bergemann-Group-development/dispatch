@@ -40,8 +40,8 @@ MODULE mpi_io_mod
   type, public:: mpi_io_t
     type(mpi_io_file_t):: file
     integer:: req
-    integer:: rec_words
-    integer:: chunk_words
+    integer(8):: rec_words
+    integer(8):: chunk_words
     integer:: err
     real, dimension(:,:,:), allocatable:: buf
 #ifdef MPI
@@ -81,7 +81,7 @@ END SUBROUTINE use
 !> =============================================================================
 SUBROUTINE init (self, rec_words, chunk_words)
   class(mpi_io_t):: self
-  integer, optional:: rec_words, chunk_words
+  integer(8), optional:: rec_words, chunk_words
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%init')
   if (present(rec_words)) then
@@ -119,7 +119,7 @@ SUBROUTINE write (self, f, rec, id)
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose>1) &
-    print '(a,3i7,i10,2f12.0)', ' mpi_io_t%write: rec, id, words, pos =', &
+    print '(a,3i8,i15,2f12.0)', ' mpi_io_t%write: rec, id, words, pos =', &
     rec, id, self%chunk_words, pos, minval(f), maxval(f)
   !$omp critical (mpi_io_cr)
   call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
@@ -144,7 +144,7 @@ SUBROUTINE iwrite (self, f, rec, id)
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose>1) &
-    print '(a,3i7,i10,2f12.0)', ' mpi_io_t%iwrite: rec, id, words, pos =', &
+    print '(a,3i8,i15,2f12.0)', ' mpi_io_t%iwrite: rec, id, words, pos =', &
     rec, id, self%chunk_words, pos, minval(f), maxval(f)
   !$omp critical (mpi_io_cr)
   if (allocated(self%buf)) deallocate (self%buf)
@@ -171,12 +171,12 @@ SUBROUTINE read (self, f, rec, id)
   if (rec < 1) return
   call trace%begin ('mpi_io_t%read')
   call self%check_init
-  pos = 4*((rec-1)*self%rec_words + (id-1)*self%chunk_words)
+  pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   !$omp critical (mpi_io_cr)
   call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                          self%status, self%err)
   if (verbose>1) &
-    print '(a,3i7,i10,2f12.0)', ' mpi_io_t%read: rec, id, words, pos =', &
+    print '(a,3i8,i15,2f12.0)', ' mpi_io_t%read: rec, id, words, pos =', &
     rec, id, self%chunk_words, pos, minval(f), maxval(f)
   !$omp end critical (mpi_io_cr)
   call trace%end
