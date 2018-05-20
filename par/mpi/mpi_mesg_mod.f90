@@ -692,6 +692,7 @@ FUNCTION completed (self) RESULT(flag)
   else
     !$omp critical (mpi_cr)
     call MPI_TEST (self%req, flag, stat, ierr)
+    timer%n_test = timer%n_test + 1
     !$omp end critical (mpi_cr)
   end if
 #endif
@@ -794,6 +795,8 @@ contains
       end if
 #endif
     end if
+    !$omp atomic
+    timer%n_test = timer%n_test + 1
   end subroutine check_recv
 END FUNCTION is_complete
 
