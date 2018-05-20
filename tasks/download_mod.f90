@@ -7,6 +7,7 @@ MODULE download_mod
   USE iso_fortran_env, only: int8
   USE io_mod
   USE omp_mod
+  USE mpi_mod
   USE bits_mod
   USE kinds_mod
   USE mesh_mod
@@ -164,12 +165,14 @@ SUBROUTINE test (self)
   end do
   print *,io%hl
   if (allok) then
-    print *,'download_t%test passed'
-    print *,io%hl
+    if (mpi%master) then
+      print *,'download_t%test passed'
+      print *,io%hl
+    end if
   else
-    print *,'download_t%test failed'
+    print *,mpi%rank,'download_t%test failed'
     print *,io%hl
-    error stop 'download_t%test::check_values'
+    call mpi%abort('download_t%test::check_values')
   end if
   !-----------------------------------------------------------------------------
   ! Clean up
@@ -433,7 +436,7 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
     else
       print *, 'ERROR: fixed offset not valid for different levels', &
         target%id, target%level, source%id, source%level
-      error stop "dnload_range"
+      call mpi%abort('dnload_range')
     end if
     if (io%verbose>3.or.io_unit%do_validate.or.target%id==io%id_debug) &
       print 1, target%id, target%level, iv, source%id, source%level, l, u, offset
