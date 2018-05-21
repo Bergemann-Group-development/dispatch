@@ -369,3 +369,12 @@ SUBROUTINE delay (ms)
 END SUBROUTINE delay
 
 END MODULE mpi_mod
+
+!> =============================================================================
+!> Enable copying between any 4-byte arrays, without type checking restrictions
+!> =============================================================================
+SUBROUTINE anonymous_copy (n, a, b)
+  integer:: n
+  real(4):: a(n), b(n)
+  b = a
+END SUBROUTINE anonymous_copy
