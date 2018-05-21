@@ -17,19 +17,26 @@ FUNCTION rd,run,iv=iv,iout=iout,n=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=verbos
   file='data/'+run+'/00000/snapshot.dat'
   openr,u,/get,file
   a=assoc(u,fltarr(n,n,n))
-  np=(long(gn)/n)^3
+  m=long(gn)/n
+  np=m^3
   f=fltarr(n*(ix[1]-ix[0]+1),n*(iy[1]-iy[0]+1),n*(iz[1]-iz[0]+1),/nozer)
   help,f
+  if verbose gt 0 then begin
+    print,np
+    print,ix
+    print,iy
+    print,iz
+  end 
   for i=0L,np-1 do begin
     ii=i
-    jz=i/n^2
+    jz=i/m^2
     if jz lt iz[0] then continue
     if jz gt iz[1] then continue
-    ii=i-jz*n^2
-    jy=ii/n
+    ii=i-jz*m^2
+    jy=ii/m
     if jy lt iy[0] then continue
     if jy gt iy[1] then continue
-    jx=ii-jy*n
+    jx=ii-jy*m
     if jx lt ix[0] then continue
     if jx gt ix[1] then continue
     kx=n*(jx-ix[0])
@@ -38,8 +45,8 @@ FUNCTION rd,run,iv=iv,iout=iout,n=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=verbos
     nx=n
     ny=n
     nz=n
-    if verbose eq 1 then print,i,kx,ky,kz,nx,ny,nz
-    if verbose gt 1 then begin
+    if verbose eq 2 then print,i,kx,ky,kz,jx,jy,jz
+    if verbose gt 2 then begin
       if order eq 0 then ii=iv+i*nv+iout*nv*np else ii=i+(iv+iout*nv)*np
       ff=a[ii]
       print,i,kx,ky,kz,nx,ny,nz,min(ff,max=max),max
