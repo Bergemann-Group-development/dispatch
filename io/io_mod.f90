@@ -49,6 +49,7 @@ MODULE io_mod
     procedure, nopass:: mkdir_no
     procedure, nopass:: print_hl
     procedure, nopass:: namelist_warning
+    procedure, nopass:: abort
   end type
   character(len=64), save:: inputname, outputname
   type(io_t), public:: io
@@ -384,8 +385,12 @@ contains
   end subroutine
 END SUBROUTINE check_flags
 
+!> =============================================================================
+!> Issue message for missing namelist in input file
+!> =============================================================================
 SUBROUTINE namelist_warning (namelist)
   character(len=*):: namelist
+  !.............................................................................
   if (io%master) then
     print *, '*************************************************************************************'
     print *, '*************************************************************************************'
@@ -394,5 +399,14 @@ SUBROUTINE namelist_warning (namelist)
     print *, '*************************************************************************************'
   end if
 END SUBROUTINE namelist_warning
+
+!> =============================================================================
+!> Interface to mpi%abort, for modules that do not otherwise USE mpi_mod
+!> =============================================================================
+SUBROUTINE abort (error)
+  character(len=*), optional:: error
+  !.............................................................................
+  call mpi%abort (error)
+END SUBROUTINE abort
 
 END MODULE io_mod
