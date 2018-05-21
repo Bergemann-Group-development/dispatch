@@ -6,7 +6,9 @@ MODULE mpi_io_file_mod
   USE omp_mod
   USE io_mod
   USE trace_mod
+#ifdef MPI
   USE mpi
+#endif
   implicit none
   private
   type, public:: mpi_io_file_t
@@ -33,7 +35,9 @@ SUBROUTINE open (self, filename, mode)
   character(len=*) filename
   integer:: mode
   integer:: n
+#ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
+#endif
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%open')
 #ifdef MPI

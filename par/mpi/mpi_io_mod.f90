@@ -34,7 +34,9 @@ MODULE mpi_io_mod
   USE trace_mod
   USE mpi_mod, only: mp=>mpi
   USE mpi_io_file_mod
+#ifdef MPI
   USE mpi
+#endif MPI
   implicit none
   private
   type, public:: mpi_io_t
