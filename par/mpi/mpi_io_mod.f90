@@ -41,7 +41,7 @@ MODULE mpi_io_mod
     type(mpi_io_file_t):: file
     integer:: req
     integer(8):: rec_words
-    integer(8):: chunk_words
+    integer:: chunk_words
     integer:: err
     real, dimension(:,:,:), allocatable:: buf
 #ifdef MPI
