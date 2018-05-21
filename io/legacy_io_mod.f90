@@ -80,7 +80,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a binary file with the data cube.
   !-----------------------------------------------------------------------------
-  write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout+1
+  write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, self%id
   n = u-l+1
   open (io_unit%data, file=trim(filename)//'.dat', form='unformatted', access='direct', &
     status='unknown', recl=kind(buf)*product(n))
