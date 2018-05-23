@@ -34,7 +34,6 @@ MODULE timer_mod
     integer:: nq_send_max=0
     integer:: nq_recv_max=0
     integer:: n_lines=0
-    real:: gb=0.0
     type(latency_t):: latency
   contains
     procedure:: init

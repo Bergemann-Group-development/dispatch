@@ -440,7 +440,8 @@ SUBROUTINE delete (self, mesg, send)
   logical, optional:: send
   !.............................................................................
   if (associated(mesg%buffer)) deallocate (mesg%buffer)
-  timer%gb = timer%gb - storage_size(mesg%buffer)*mesg%nbuf/(8.*1024**3)
+  !$omp atomic
+  io%gb = io%gb - storage_size(mesg%buffer)*mesg%nbuf/(8.*1024**3)
   if (associated(mesg%reqs)) deallocate (mesg%reqs)
   deallocate (mesg)
   if (present(send)) then

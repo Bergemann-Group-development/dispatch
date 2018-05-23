@@ -289,7 +289,7 @@ SUBROUTINE init (self)
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
   real, save:: end_time=1.0, out_time=0.1, print_time=0.1
   real(8):: position(3), size(3)
-  integer:: iostat, i
+  integer:: iostat, i, n_alloc=0, n_ext=0
   namelist /patch_params/ size, n, nv, ng, nt, courant, u_fixed, dt_fixed, &
     grace, periodic, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
     zero_order_extrap
@@ -422,15 +422,28 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   if (.not.self%mem_allocated) then
     allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
-!    if (associated(self%mem)) deallocate (self%mem)
-!    if (self%rank == mpi%rank .or. self%is_set (bits%virtual)) then
-      allocate (self%mem(self%mesh(1)%gn, &
-                         self%mesh(2)%gn, &
-                         self%mesh(3)%gn, &
-                         self%nv,self%nt,self%nw))
-      self%mem_allocated = .true.               ! mark
-      timer%gb = timer%gb + storage_size(self%mem)*(product(shape(self%mem))/(8*1024.**3))
-!    end if
+    allocate (self%mem(self%mesh(1)%gn, &
+                       self%mesh(2)%gn, &
+                       self%mesh(3)%gn, &
+                       self%nv,self%nt,self%nw))
+    self%mem_allocated = .true.               ! mark
+    !$omp atomic
+    io%gb = io%gb + storage_size(self%mem)*(product(shape(self%mem))/(8.*1024.**3))
+    if (self%rank == mpi%rank .or. self%is_set (bits%virtual)) then
+      !$omp atomic
+      n_alloc = n_alloc+1
+    else
+      !$omp atomic
+      n_ext = n_ext+1
+      print '(a,i8,3i5,2x,3i5,4x,4l1)', &
+        'WARNING: non-local patch, id, ranks, thread, pos, bits =', &
+        self%id, mpi%rank, self%rank, omp%thread, &
+        nint(self%mesh%p/self%mesh%s), &
+        self%is_set (bits%internal), &
+        self%is_set (bits%boundary), &
+        self%is_set (bits%virtual), &
+        self%is_set (bits%external)
+    end if
     allocate (self%unsigned (self%nv))
     allocate (self%pervolume(self%nv))
     self%unsigned (:) = .false.
@@ -944,7 +957,7 @@ SUBROUTINE allocate_mesg (self)
     self%mesg%nbuf = self%mesg%nbuf * 2  ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
   self%mesg%nbuf = n_header + self%nv*self%mesg%nbuf
   allocate (self%mesg%buffer(self%mesg%nbuf))
-  timer%gb = timer%gb + storage_size(self%mesg%buffer)*self%mesg%nbuf/(8*1024.**3)
+  io%gb = io%gb + storage_size(self%mesg%buffer)*self%mesg%nbuf/(8*1024.**3)
   !print *, 'allocate_mesg', self%mesg%nbuf
 END SUBROUTINE allocate_mesg
 
@@ -972,7 +985,7 @@ SUBROUTINE pack (self, mesg)
     mesg%nbuf = mesg%nbuf+ self%nv*n_buf
   end if
   allocate (mesg%buffer(mesg%nbuf))
-  timer%gb = timer%gb + storage_size(mesg%buffer)*mesg%nbuf/(8*1024.**3)
+  io%gb = io%gb + storage_size(mesg%buffer)*mesg%nbuf/(8*1024.**3)
   allocate (mesg%reqs(self%n_nbors))
   mesg%id = self%id                                             ! MPI message tag
   mesg%nreq = 0                                                 ! reset counter

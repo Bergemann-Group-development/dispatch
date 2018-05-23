@@ -133,7 +133,7 @@ SUBROUTINE startup (self)
   ! Initialize the data I/O, and start timer
   !-----------------------------------------------------------------------------
   if (mpi%master) &
-    print '(a,f8.3,a)', ' Memory per process:', timer%gb, ' GB'
+    print '(a,f8.3,a)', ' Memory per process:', io%gb, ' GB'
   call mpi%barrier ('task_list%execute')
   task => self%head%task
   select type (task)

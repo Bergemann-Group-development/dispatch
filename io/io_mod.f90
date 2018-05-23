@@ -40,6 +40,7 @@ MODULE io_mod
     real:: flag_time=1.
     real:: flag_max=10.
     real:: ampl=0.0
+    real(8):: gb=0.0
   contains
     procedure:: init
     procedure:: debug
