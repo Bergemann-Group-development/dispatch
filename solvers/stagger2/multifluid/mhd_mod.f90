@@ -300,7 +300,7 @@ SUBROUTINE pde (self)
     ! Isotropic pressure part
     pp = pg + pa + pb
     ! Physical viscosity
-    if (associated(self%viscosity%selected) .and. self%do_viscosity==.true.) then
+    if (associated(self%viscosity%selected) .and. self%do_viscosity) then
       dnu = self%viscosity%selected(self%time, self%mem(:,:,:,:,self%it,1), U, cs, self%mesh)
     else
       dnu = 0.0
@@ -343,7 +343,7 @@ SUBROUTINE pde (self)
     du = dx*self%nu(1+6*(k-1))*cs
     pp = pg + pa
     ! Physical viscosity
-    if (associated(self%viscosity%selected) .and. self%do_viscosity==.true.) then
+    if (associated(self%viscosity%selected) .and. self%do_viscosity) then
       dnu = self%viscosity%selected(self%time, self%mem(:,:,:,:,self%it,1), U, cs, self%mesh)
     else
       dnu = 0.0
