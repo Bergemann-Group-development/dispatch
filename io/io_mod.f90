@@ -228,15 +228,17 @@ SUBROUTINE init (self, name)
     call self%mkdir (trim(filename))
     if (omp_trace .and. omp%nthreads>1) then
       io_unit%log = 110+omp%mythread()
-      write (filename,'(a,i4.4,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%thread
+      write (filename,'(a,"thread_",i5.5,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%thread
       open (io_unit%log, file=filename, form='formatted', status='unknown')
     else
       io_unit%log = io_unit%mpi
     end if
-    write (filename,'(a,i4.4,".nq")') trim(self%outputname), mpi%rank
+    write (filename,'(a,"rank_",i5.5,".nq")') trim(self%outputname), mpi%rank
     open (io_unit%queue, file=filename, form='formatted', status='unknown')
-    write (filename,'(a,i4.4,".log")') trim(self%outputname), mpi%rank
+    write (filename,'(a,"rank_",i5.5,".log")') trim(self%outputname), mpi%rank
     open (io_unit%mpi, file=filename, form='formatted', status='unknown')
+    write (filename,'(a,"rank_",i5.5,".disp")') trim(self%outputname), mpi%rank
+    open (io_unit%dispatcher, file=filename, form='formatted', status='unknown')
     log_unit = io_unit%log
     write (io_unit%log,'(a,i4,2l4)') &
       'io_mod::init io_unit%log, io_unit%master, io_unit%verbose:', &

@@ -23,6 +23,6 @@ sinclude $(SOLVER)/Makefile
 #VPATH := $(VPATH):$(TOP)/microphysics/opacities/stub
 
 # List the .o files the main program depends on after the colon:
-$(EXEC)                 : setup_mod.o cartesian_mod.o
+$(EXEC)                 : setup_mod.o cartesian_mod.o dispatcher_mod.o
 experiment_mod.o        : io_mod.o io_unit_mod.o trace_mod.o omp_mod.o bits_mod.o solver_mod.o initial_mod.o \
                           timer_mod.o link_mod.o particle_patch_mod.o

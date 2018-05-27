@@ -1,10 +1,26 @@
 !> =============================================================================
-!> A simple task dispatcher, which handles a list (self) of tasks that have been
-!> started as background OpenMP tasks. It maintains the list by checking for
-!> tasks that are no longer busy, searching the nbors of these tasks for task
-!> that have become executable.
+!> A simple task dispatcher, which handles a list of tasks that may be started
+!> as background OpenMP tasks.  A task can be in any of 4 states:
+!>
+!> 1: ready for updating
+!> 2: undergoing updating by some thread
+!> 3: has been updated, but nbors not yet checked
+!> 4: finished
+!>
+!> When starting, all tasks are normally in state 1, and the dispatcher starts
+!> a number (omp%nthreads) of background tasks that update them, first changing
+!> the state to 2.  When finished, the updating thread changes the state from 2
+!> to 3. When the dispatcher finds a task in state 3, it runs a check on the 
+!> nbor tasks
+!>
+!> dispatcher%execute
+!>   dispatcher%update
+!>     link%check_task
+!>       dispatcher%activate
+!>         link%check_mpi
+!>         link%updater
 !> =============================================================================
-MODULE dispatcher_mod
+MODULE dispatcher_method2_mod
   USE mpi_mesg_mod
   USE omp_mod
   USE omp_timer_mod
@@ -21,7 +37,7 @@ MODULE dispatcher_mod
   USE experiment_mod
   implicit none
   private
-  type, public :: dispatcher_t
+  type, public :: dispatcher_method2_t
     integer   :: running
     type(task_list_t), pointer:: task_list => null()
   contains
@@ -30,18 +46,18 @@ MODULE dispatcher_mod
     procedure :: update
   end type
   type(task_list_t), save, pointer:: task_list => null()
-  type(dispatcher_t), save, public:: dispatcher
+  type(dispatcher_method2_t), save, public:: dispatcher_method2
 CONTAINS
 
 !> =============================================================================
 !> Initialize the list, by populating it from a task_list
 !> =============================================================================
 SUBROUTINE execute (self, list)
-  class(dispatcher_t)    :: self
-  class(task_list_t), pointer :: list
+  class(dispatcher_method2_t)    :: self
+  type(task_list_t), pointer :: list
   class(link_t), pointer :: link
   !-----------------------------------------------------------------------------
-  call trace_begin ('dispatcher_t%execute')
+  call trace_begin ('dispatcher_method2_t%execute')
   call list%startup
   self%running = 0
   task_list => list
@@ -65,12 +81,12 @@ SUBROUTINE execute (self, list)
 END SUBROUTINE execute
 
 !> =============================================================================
-!> Activate a task pointed to by a link, by starting a task%update ias a
-!> background OpenMP task.  Set the busy bit when starting the task and clear
-!> it when it finishes.
+!> Activate a task pointed to by a link, by starting a task%update as a
+!> background OpenMP task.  Set the state of task to 1 when dormant, 2 when
+!> ready, and 3 when active.
 !> =============================================================================
 SUBROUTINE activate (self, link)
-  class(dispatcher_t)    :: self
+  class(dispatcher_method2_t)    :: self
   class(link_t), pointer :: link
   !-----------------------------------------------------------------------------
   if (omp%nthreads==1) then
@@ -97,12 +113,13 @@ END SUBROUTINE activate
 !> Finally, check the task itself.
 !> =============================================================================
 SUBROUTINE update (self)
-  class(dispatcher_t)     :: self
+  class(dispatcher_method2_t)     :: self
   class(link_t), pointer  :: link, nbor
   integer                 :: state
   logical                 :: ok
+  integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('dispatcher_t%update')
+  call trace_begin ('dispatcher_method2_t%update', itimer=itimer)
   link => task_list%head
   do while (associated(link))
     if (io%debug(2)) then
@@ -110,7 +127,10 @@ SUBROUTINE update (self)
     end if
     !$omp atomic read
     state = link%task%state
-    if (state==4) cycle
+    if (state==4) then
+      link => link%next
+      cycle
+    end if
     if (link%task%time > io%end_time) then
       !$omp atomic
       task_list%na = task_list%na - 1
@@ -135,7 +155,7 @@ SUBROUTINE update (self)
     end if
     link => link%next
   end do
-  call trace_end
+  call trace_end (itimer)
 contains
   !-----------------------------------------------------------------------------
   ! If all nbors of a task are ahead in time activate the task.  Only the master
@@ -179,4 +199,4 @@ contains
   end subroutine check_task
 END SUBROUTINE update
 
-END MODULE dispatcher_mod
+END MODULE dispatcher_method2_mod

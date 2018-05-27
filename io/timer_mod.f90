@@ -194,15 +194,19 @@ SUBROUTINE end (self, itimer)
   !-----------------------------------------------------------------------------
   ! Check if it is time to do a printout
   !-----------------------------------------------------------------------------
-  if (io_unit%master) then
+  if (wc > next_report_sec) then
+    !$omp critical (timer_print_cr)
     if (wc > next_report_sec) then
       call print()
       next_report_sec = wc + self%sec_per_report
     end if
+    !$omp end critical (timer_print_cr)
   end if
 END SUBROUTINE end
 
 !> =============================================================================
+!> Printout times used in routines using more than 0.05% of the time, and reset
+!> counters.
 !> =============================================================================
 SUBROUTINE print ()
   real(8):: total, proc(maxproc), ncalls(maxproc)
@@ -226,20 +230,18 @@ SUBROUTINE print ()
     total = total + proc(i)
     calls = calls + ncalls(i)
   end do
-  if (io_unit%master) then
-    print 4, 'procedure', 'calls', 'time', 'percent', 'time/call'
-    if (omp%master .and. io_unit%verbose > 0) &
-    write (io_unit%mpi,4) 'procedure', 'calls', 'time', 'percent', 'time/call'
-    4 format(23x,a,7x,a,10x,a,7x,a,5x,a)
-    do i=1,ntimer
-      if (proc(i)/total > 5e-4) then
-        print 1, trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
-        if (omp%master .and. io_unit%verbose > 0) &
-        write (io_unit%mpi,1) trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
-        1 format(a32,1p,2g15.3,0p,f10.1,f14.6)
-      end if
-    end do
-  end if
+  print 4, 'procedure', 'calls', 'time', 'percent', 'time/call'
+  if (omp%master .and. io_unit%verbose > 0) &
+  write (io_unit%mpi,4) 'procedure', 'calls', 'time', 'percent', 'time/call'
+  4 format(23x,a,7x,a,10x,a,7x,a,5x,a)
+  do i=1,ntimer
+    if (proc(i)/total > 5e-4) then
+      print 1, trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
+      if (omp%master .and. io_unit%verbose > 0) &
+      write (io_unit%mpi,1) trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
+      1 format(a32,1p,2g15.3,0p,f10.1,f14.6)
+    end if
+  end do
   updates = max(1.0,real(n_update-n_previous))
   !-----------------------------------------------------------------------------
   ! 'sec' measure wall clock time on a single thread, while 'total' is a sum over
@@ -250,41 +252,35 @@ SUBROUTINE print ()
   !-----------------------------------------------------------------------------
   musppt = sec*1d6*min(omp%nthreads,omp%ncores)/updates
   n_recv = max(timer%n_recv,1)
-  if (io_unit%master) then
-    print 2, "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
-      wc, 'wall sec'
-    2 format(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))
-    !$omp atomic write
-    timer%n_lines = 1
-    if (mpi%size>1) then
-      timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
-      print 3, timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
-        timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, timer%n_test
-      3 format(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
-        " nq_recv_max",2f8.3," max, aver latency",i8, " n_test")
-      timer%latency%max  = 0.0
-      timer%latency%aver = 0d0
-      timer%latency%n    = 0
-      timer%n_test = 0_8
-    end if
+  print 2, "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
+    wc, 'wall sec'
+  2 format(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))
+  !$omp atomic write
+  timer%n_lines = 1
+  if (mpi%size>1) then
+    timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
+    print 3, timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
+      timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, timer%n_test
+    3 format(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
+      " nq_recv_max",2f8.3," max, aver latency",i8, " n_test")
+    timer%latency%max  = 0.0
+    timer%latency%aver = 0d0
+    timer%latency%n    = 0
+    timer%n_test = 0_8
   end if
-  if (omp%master .and. io_unit%verbose>0) then
-    write (io_unit%mpi,2) "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
-      wc, 'wall sec'
-    write (io_unit%mpi,3) timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
-      timer%nq_send_max, timer%nq_recv_max
-    !$omp atomic write
-    timer%n_lines = 1
-  end if
+  write (io_unit%mpi,2) "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', &
+    wc, 'wall sec'
+  write (io_unit%mpi,3) timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
+    timer%nq_send_max, timer%nq_recv_max
+  !$omp atomic write
+  timer%n_lines = 1
   timer%bytes_recv = 0.0_8
   timer%n_recv = 0_8
   timer%nq_send_max = 0
   timer%nq_recv_max = 0
-  if (omp%master .and. io_unit%verbose>0) then
-    write (io_unit%mpi,'(a,1p,e9.2,3x,a,g10.3)') 'timer_mod::print, updates =', &
-      updates,'mus/p =', musppt
-    flush (io_unit%mpi)
-  end if
+  write (io_unit%mpi,'(a,1p,e9.2,3x,a,g10.3)') 'timer_mod::print, updates =', &
+    updates,'mus/p =', musppt
+  flush (io_unit%mpi)
   n_previous = n_update
   prev2 = wc
   do i=1,ntimer

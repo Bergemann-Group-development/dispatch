@@ -95,7 +95,6 @@ MODULE mpi_mesg_mod
   logical, save:: wait=.false.                  ! if true, always use MPI_Wait
   logical, save:: send_wait=.false.             ! if true, wait in OMP task
   logical, save:: send_priv=.true.              ! if true, sent_list is private
-  logical, save:: recv_priv=.false.             ! if true, recv_list is private
   integer, save:: id=0
 CONTAINS
 
@@ -513,6 +512,7 @@ END SUBROUTINE count
 SUBROUTINE init (self)
   class(mpi_mesg_t):: self
   logical, save:: debug=.false.
+  logical, save:: recv_priv=.true.
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, wait, send_wait, send_priv, &
                              recv_priv, test_time, debug

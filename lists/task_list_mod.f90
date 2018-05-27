@@ -33,6 +33,7 @@ MODULE task_list_mod
   private
   type, public, extends(list_t):: task_list_t
     logical:: syncing=.false.
+    logical:: recv_active=.false.
     real(8):: sync_time=-1.0, sync_next=-1.0
     real(8):: job_seconds=1d30
   contains
@@ -54,7 +55,6 @@ MODULE task_list_mod
   integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
   integer, save:: min_nq=2**30
   logical, save:: do_delay=.false.
-  logical, save:: recv_active=.true.
   logical, save:: queue_unpack=.true.
   logical, save:: track_active=.false.
   real(8), save:: sync_time=0.0
@@ -73,6 +73,7 @@ SUBROUTINE init (self, name)
   integer:: iostat
   integer:: debug=0
   real(8):: job_seconds=1d30
+  logical, save:: recv_active=.true.
   namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms, &
     do_delay, recv_active, queue_unpack, sync_time, job_seconds, track_active
   !-----------------------------------------------------------------------------
@@ -90,6 +91,7 @@ SUBROUTINE init (self, name)
     self%sync_next = sync_time
   self%sync_time = sync_time
   self%job_seconds = job_seconds
+  self%recv_active = recv_active
   write (io_unit%mpi,*) 'task_list%init: next_sync =', self%sync_next, self%sync_time
   call load_balance%init
   call trace_end
@@ -127,7 +129,7 @@ SUBROUTINE startup (self)
       link%task%sync_time = link%task%time + self%sync_time
     link => link%next
   end do
-  if (recv_active .and. mpi_mesg%recv_priv) &
+  if (self%recv_active .and. mpi_mesg%recv_priv) &
     call self%init_virtual
   !-----------------------------------------------------------------------------
   ! Initialize the data I/O, and start timer
@@ -682,7 +684,7 @@ SUBROUTINE check_mpi (self)
   !$omp atomic read
   nq = self%nq
   call mpi_mesg%sent_list%check_sent (nq)
-  if (recv_active) then
+  if (self%recv_active) then
     if (mpi_mesg%recv_priv) then
       call self%check_virtual
     else
