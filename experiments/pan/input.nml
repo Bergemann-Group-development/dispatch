@@ -18,7 +18,7 @@
 &io_params         verbose=0 do_trace=f omp_trace=f do_output=f do_direct=t id_debug=0 /
 &timer_params      sec_per_report=5 /
 &validate_params   state='write' /
-&dispatcher_params method=2 /
+&dispatcher_params method=1 /
 
 !---------------------------------
 ! Initial condition and forces

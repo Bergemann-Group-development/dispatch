@@ -11,7 +11,7 @@ MODULE dispatcher_method1_mod
   contains
     procedure, nopass:: execute
   end type
-  integer, save:: verbose=2
+  integer, save:: verbose=1
   type(dispatcher_method1_t), public:: dispatcher_method1
 CONTAINS
 
@@ -26,10 +26,12 @@ SUBROUTINE execute (task_list)
   logical:: ready, mytask
   real(8):: start
   integer, save:: itimer=0
+  integer:: n
   !-----------------------------------------------------------------------------
+  call task_list%init_all_nbors
   start = wallclock()
   write (io_unit%dispatcher,*) wallclock(), 'dispatcher_t%execute'
-  !$omp parallel
+  !$omp parallel private(link,nbor,ready,mytask) default(shared)
   !$omp master
   mytask = .false.
   do while (task_list%na>0 .and. wallclock()-start < task_list%job_seconds)
@@ -66,7 +68,7 @@ SUBROUTINE execute (task_list)
             if (verbose>1) &
               write (io_unit%dispatcher,*) wallclock(), link%task%id, 'spawning'
             link%task%state = 2
-            !$omp task firstprivate(link)
+            !$omp task default(shared) firstprivate(link)
             call task_list%updater (link)
             link%task%state = 1
             !$omp end task
@@ -83,10 +85,6 @@ SUBROUTINE execute (task_list)
     mytask = .true.
     call trace%end (itimer)
   end do
-  if (verbose>0) then
-    write (io_unit%dispatcher,*) wallclock(), 'end do while', task_list%na, wallclock()-start
-    call flush(io_unit%dispatcher)
-  end if
   !$omp end master
   !$omp end parallel
 END SUBROUTINE execute
