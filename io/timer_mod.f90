@@ -295,11 +295,10 @@ SUBROUTINE tic (time)
   implicit none
   real(8), optional:: time
   !.............................................................................
-  real(8):: omp_get_wtime
   if (present(time)) then
-    time = omp_get_wtime()
+    time = wallclock()
   else
-    wt = omp_get_wtime()
+    wt = wallclock()
   end if
 END SUBROUTINE tic
 
@@ -386,14 +385,14 @@ SUBROUTINE toc_r (label, n, time)
   character(len=*):: label
   real:: n
   real(8), optional:: time
-  real(8):: omp_get_wtime, dtime
+  real(8):: dtime
   integer:: n_cores, n_threads
   !.............................................................................
   if (io_unit%do_validate) return
   if (present(time)) then
-    dtime = (omp_get_wtime() - time)
+    dtime = (wallclock() - time)
   else
-    dtime = (omp_get_wtime() - wt)
+    dtime = (wallclock() - wt)
   end if
   n_cores = max(omp%ncores,1)
   n_threads = max(omp%nthreads,1)
@@ -434,9 +433,9 @@ SUBROUTINE toc_r (label, n, time)
     flush (6)
   end if
   if (present(time)) then
-    time = omp_get_wtime()
+    time = wallclock()
   else
-    wt = omp_get_wtime()
+    wt = wallclock()
   end if
 END SUBROUTINE toc_r
 

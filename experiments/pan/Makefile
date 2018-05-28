@@ -5,7 +5,7 @@
 OPTS = optimized
 
 # Default target and methods
-PATCH           = dispatchers
+#PATCH           = dispatchers
 EXEC            = dispatch.x
 UPD             = adams_bashforth
 #SOLVER          = stagger2

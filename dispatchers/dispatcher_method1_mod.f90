@@ -3,8 +3,10 @@ MODULE dispatcher_method1_mod
   USE trace_mod
   USE omp_mod
   USE link_mod
+  USE timer_mod
   USE omp_timer_mod
   USE task_list_mod
+  USE mpi_mesg_mod
   implicit none
   private
   type, public:: dispatcher_method1_t
@@ -31,8 +33,8 @@ SUBROUTINE execute (self, task_list)
   integer:: n
   !-----------------------------------------------------------------------------
   call task_list%init_all_nbors
-  start = wallclock()
-  write (io_unit%dispatcher,*) wallclock(), 'dispatcher_t%execute'
+  call tic (time=start)
+  call timer%print
   !$omp parallel private(link,nbor,ready,mytask) default(shared)
   !$omp master
   mytask = .false.
@@ -107,6 +109,9 @@ SUBROUTINE execute (self, task_list)
   end do
   !$omp end master
   !$omp end parallel
+  call timer%print
+  call mpi_mesg%diagnostics(1)
+  call toc ('wall time', n_update, time=start)
 END SUBROUTINE execute
 
 END MODULE dispatcher_method1_mod
