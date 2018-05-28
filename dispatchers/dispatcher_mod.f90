@@ -28,7 +28,8 @@ CONTAINS
 SUBROUTINE init (self)
   class(dispatcher_t):: self
   integer:: iostat
-  namelist /dispatcher_params/ method
+  integer, save:: verbose=0
+  namelist /dispatcher_params/ method, verbose
   !-----------------------------------------------------------------------------
   rewind (io%input)
   read (io%input, dispatcher_params, iostat=iostat)
@@ -38,6 +39,7 @@ SUBROUTINE init (self)
     self%method => none
   case (1)
     self%method => method1
+    dispatcher_method1%verbose = verbose
   case (2)
     self%method => method2
   case default

@@ -15,10 +15,10 @@
 &patch_params      nt=5 grace=0.3 n=3*32 no_mans_land=t /
 !patch_params      nt=5 grace=0.3 n=3*33 no_mans_land=f /
 &out_params        end_time=0.4001 out_time=0.04 print_time=0.0 guard_zones=t time_derivs=f /
-&io_params         verbose=0 do_trace=f omp_trace=f do_output=f do_direct=t id_debug=0 /
-&timer_params      sec_per_report=5 /
+&io_params         verbose=0 do_trace=f omp_trace=t do_output=f do_direct=t id_debug=0 /
+&timer_params      sec_per_report=10 /
 &validate_params   state='write' /
-&dispatcher_params method=1 /
+&dispatcher_params method=1 verbose=1 /
 
 !---------------------------------
 ! Initial condition and forces
