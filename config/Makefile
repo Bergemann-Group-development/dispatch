@@ -67,8 +67,8 @@ sinclude $(TOP)/boundaries/Makefile
 #############################################################################
 # Optional patches and extra dependencies
 ifdef PATCH
-  VPATH := $(PATCH):$(VPATH)
-  sinclude $(PATCH)/Makefile
+  VPATH := $(TOP)/patch/$(PATCH):$(VPATH)
+  sinclude $(TOP)/patch/$(PATCH)/Makefile
 endif
 VPATH := ./:$(VPATH)
 sinclude $(CONFIG)/Makefile.dep
