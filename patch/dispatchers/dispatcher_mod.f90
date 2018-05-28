@@ -11,10 +11,9 @@ MODULE dispatcher_mod
   implicit none
   private
   type, public:: dispatcher_t
-    procedure(none), nopass, pointer:: method => null()
+    procedure(method1), nopass, pointer:: method => null()
   contains
     procedure:: init
-    procedure, nopass:: none
     procedure, nopass:: method1
     procedure, nopass:: method2
   end type
@@ -35,8 +34,6 @@ SUBROUTINE init (self)
   read (io%input, dispatcher_params, iostat=iostat)
   write (io%output, dispatcher_params)
   select case (method)
-  case (0)
-    self%method => none
   case (1)
     self%method => method1
     dispatcher_method1%verbose = verbose
@@ -46,15 +43,6 @@ SUBROUTINE init (self)
     call io%abort ('unknown method in dispatcher_mod')
   end select
 END SUBROUTINE init
-
-!> =============================================================================
-!> Execute a task list
-!> =============================================================================
-SUBROUTINE none (task_list)
-  type(task_list_t), pointer:: task_list
-  !-----------------------------------------------------------------------------
-  call task_list%execute
-END SUBROUTINE none
 
 !> =============================================================================
 !> Execute a task list

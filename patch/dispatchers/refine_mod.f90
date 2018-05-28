@@ -307,7 +307,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
       parent%id, parent%level, parent%iout, parent%time, parent%size, parent%position
   end if
 
-  call tlist%check_ready(child_link)
+  !call tlist%check_ready(child_link)
 
   call trace%end
 END SUBROUTINE make_child_patch
@@ -355,7 +355,7 @@ SUBROUTINE split_patch (self, tlist, this)
   link => tlist%head
   do while (associated(link))
     call link%task%clear(bits%ready)
-    call tlist%check_ready (link)
+    !call tlist%check_ready (link)
     link => link%next
   end do
   !-----------------------------------------------------------------------------

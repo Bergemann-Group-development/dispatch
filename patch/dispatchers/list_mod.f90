@@ -49,31 +49,22 @@ MODULE list_mod
     procedure:: append_link
     procedure:: remove_link
     procedure:: remove_head
-    procedure:: check_nbors
-    procedure:: check_ready
-    procedure:: check_all
     procedure:: resend_bdry
     procedure:: check_oldest
-    procedure:: check_queue
     procedure:: init_nbors
     procedure:: init_all_nbors
     procedure:: remove_parents
     procedure:: intpos
     procedure:: consistency
-    procedure:: qconsistency
     procedure:: aconsistency
     procedure:: statistics
     procedure:: append_list
     procedure:: remove_task
     procedure:: reset_status
     procedure:: add_by_quality
-    procedure:: queue_by_time
     procedure:: queue_active
     procedure:: remove_active
     procedure:: count_status
-    procedure:: print_queue
-    procedure:: print_queue_until
-    procedure:: print_queue_times
     procedure:: print => print_list
     procedure:: print_tasks
   end type
@@ -252,95 +243,6 @@ SUBROUTINE remove_head (self)
 END SUBROUTINE remove_head
 
 !> =============================================================================
-!> Among a task and its neighbor tasks, move local tasks to ready_queue if they
-!> are ready.  If the ready bit is already set it means the patch has already
-!> been put in the ready queue, and should not be checked again.
-!>
-!> The link pointer and everything it points to are private to this task, and
-!> are not at this point in time accessible from the ready queue.
-!> =============================================================================
-SUBROUTINE check_nbors (self, link)
-  class(list_t):: self
-  class(link_t), pointer:: link
-  class(link_t), pointer:: nbor
-  class(task_t), pointer:: task
-  integer, save:: itimer=0
-  !.............................................................................
-  call trace_begin('list_t%check_nbors', itimer=itimer)
-  if (io%verbose > 1) &
-    write (io_unit%log,*) 'checking nbors of',link%task%id,associated(link%nbor)
-  !$omp critical (queue_cr)
-  task => link%task                                   ! main task
-  nbor => link%nbor                                   ! first nbor
-  do while (associated (nbor))                        ! keep going until end
-    if (nbor%task%id==io%id_debug) print *, &
-      'task', task%id,' needs task ', nbor%task%id, nbor%needs_me
-    if (nbor%needs_me) then                           ! needs checking?
-      if (io%verbose > 1) &
-        write (io_unit%log,*) 'check nbor', nbor%task%id
-      call self%check_ready (nbor%link)               ! pointer back
-    else
-      if (io%verbose > 1) &
-        write (io_unit%log,*) 'no need to', nbor%task%id
-    end if
-    nbor => nbor%next                                 ! next nbor
-  end do
-  !-----------------------------------------------------------------------------
-  ! Since we may be called upon to check nbors of a patch that should not itself
-  ! be checked, we check if any bits are set indicating this to be the case
-  !-----------------------------------------------------------------------------
-  if (task%is_clear (bits%virtual+bits%external)) then
-    call self%check_ready (link)                      ! finally check link task
-  end if
-  !$omp end critical (queue_cr)
-  call trace_end (itimer)
-END SUBROUTINE check_nbors
-
-!> =============================================================================
-!> Among a task and its neighbor tasks, move local tasks to ready_queue if they
-!> are ready, and send task data to non-locals.
-!> =============================================================================
-SUBROUTINE check_all (self, repair)
-  class(list_t):: self
-  logical, optional:: repair
-  class(link_t), pointer:: link
-  integer, save:: itimer=0
-  !.............................................................................
-  call trace_begin('list_t%check_all', itimer=itimer)
-  write (io_unit%log,*) 'check_all: phase 1', self%nq, associated(self%queue)
-  !$omp critical (list_cr)
-  if (present(repair)) then
-    nullify (self%queue)
-  end if
-  link => self%head
-  do while (associated (link))                          ! keep going until end
-    call link%task%clear (bits%ready)
-    call self%check_ready (link)                        ! link ready?
-    link => link%next
-  end do
-  write (io_unit%log,*) 'check_all: don    ', self%nq, associated(self%queue)
-  !if (.not.associated(self%queue)) then
-  !  write (io_unit%log,*) 'check_all: phase 2'
-  !  link => self%head
-  !  do while (associated (link))                        ! keep going until end
-  !    if (link%task%is_clear (bits%virtual+bits%external)) then
-  !      !if (link%task%is_set (bits%ready)) then
-  !      !  write (io_unit%log,*) 'clearing ready bit on', link%task%id
-  !      !  call link%task%clear (bits%ready)
-  !      !end if
-  !      call self%check_ready (link)                  ! link ready?
-  !    end if
-  !    link => link%next
-  !  end do
-  !end if
-  !$omp end critical (list_cr)
-  if (.not.associated(self%queue)) then
-    call self%check_oldest
-  end if
-  call trace_end (itimer)
-END SUBROUTINE check_all
-
-!> =============================================================================
 !> Resend all boundary patches
 !> =============================================================================
 SUBROUTINE resend_bdry (self)
@@ -423,39 +325,6 @@ SUBROUTINE check_oldest (self)
 END SUBROUTINE check_oldest
 
 !> =============================================================================
-!> Check if the link task is ready, and if so, add it to self (the ready_queue)
-!> =============================================================================
-SUBROUTINE check_ready (self, link)
-  class(list_t):: self
-  class(link_t), pointer:: link
-  class(task_t), pointer:: task
-  class(link_t), pointer:: nbor
-  !-----------------------------------------------------------------------------
-  ! Since we may be called upon to check nbors of a patch that should not itself
-  ! be checked, we first check if any bits are set indicating this to be the case
-  !-----------------------------------------------------------------------------
-  task => link%task
-  if (task%is_set (bits%hands_off)) return              ! ready+busy+frozen+..
-  nbor => link%nbor                                     ! start on nbor list
-  do while (associated (nbor))                          ! keep going until end
-    if (nbor%needed) then
-      if (nbor%task%is_ahead_of(task)) then             ! and is ahead in time
-        nbor => nbor%next                               ! next nbor
-      else                                              ! not ahead in time
-        if (io%verbose > 1) &
-          write (io_unit%log,'(i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
-            task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, nbor%task%dtime, &
-            nbor%task%grace, nbor%task%is_set(bits%virtual)
-        return
-      end if
-    else                                                ! nbor not needed
-      nbor => nbor%next                                 ! skip to the next
-    end if
-  end do
-  call self%queue_by_time (link)                        ! add task to queue
-END SUBROUTINE check_ready
-
-!> =============================================================================
 !> Check if the number of nbor tasks is consistent
 !> =============================================================================
 SUBROUTINE consistency (self, link, i)
@@ -486,63 +355,6 @@ SUBROUTINE consistency (self, link, i)
   !$omp end critical (list_cr)
   call trace_end
 END SUBROUTINE consistency
-
-!> =============================================================================
-!> Check if the number of queued tasks is consistent; i.e., of the number of
-!> tasks linked at self%queue is the same as nq
-!> =============================================================================
-SUBROUTINE qconsistency (self, ident)
-  class(list_t):: self
-  class(link_t), pointer:: link
-  class(task_t), pointer:: task, prev
-  class(link_t), pointer:: nbor
-  integer:: n, id1=0, id2=0, ident
-  real(8):: time
-  !.............................................................................
-  !if (self%debug < 1) return
-  call trace_begin ('list_t%qconsistency',4)
-  n = 0
-  if (io%verbose>2) then
-    link => self%head
-    do while (associated(link))
-      print *,'task list: id, time =', link%task%id, link%task%time
-      link => link%next
-    end do
-    print *,'nq:', self%nq
-  end if
-  link => self%queue
-  prev => link%task
-  do while (associated(link))
-    n = n+1
-    if (n > self%nq) exit
-    task => link%task
-    time = task%time
-    if (io%verbose>2) then
-      print *,'queue: n, id, time =', n, link%task%id, link%task%time, &
-        link%task%is_set (bits%ready), link%task%is_set (bits%busy)
-    end if
-    if (task%time < time) then
-      write (io_unit%log,'(a,i4,2(i9,1p,g15.6,3x))') &
-        'ERROR: queue out of order ident, prev%id, time, task%id', ident, prev%id, time, task%id, task%time
-    end if
-    prev => task
-    link => link%next_time
-  end do
-  if (n /= self%nq) then
-    write (io_unit%log,*) &
-      'ERROR: qconsistency ident, n, nq, ident =', ident, n, self%nq
-    n = 0
-    link => self%queue
-    do while (associated(link))
-      n = n+1
-      write (io_unit%log,*) n, link%task%id, link%task%time
-      link => link%next_time
-      if (n > self%nq+1) exit
-    end do
-    !call mpi%abort ('ERROR: qconsistency size')
-  end if
-  call trace_end
-END SUBROUTINE qconsistency
 
 !> =============================================================================
 !> Check if the number of queued tasks is consistent; i.e., of the number of
@@ -936,144 +748,6 @@ SUBROUTINE remove_task (self, task)
 END SUBROUTINE remove_task
 
 !> =============================================================================
-!> Add a link node into the queue chain, in ascending time order.  When a link
-!> to a task with time larger than this%task%time is found, or the end of the
-!> list is fount, this link is inserted before.
-!>
-!> -> link0 -next_time-> link1 -next_time-> link2
-!>     |                  |                  |
-!>     t0                 t1                 t2
-!>        tnew0   tnew1         tnew2
-!>
-!> In the sketch above the worst case is when two tasks are being queued at
-!> nearly the same time, into the same interval.  This may be handled by having
-!> a lock on each link, so when the two tasks have identified the interval
-!> they should be in, which means they want to modify the next_time of the
-!> previous link (link0), they need to compete about who gets the lock. The one
-!> that succeeds modifies the next_time of link0 and its own next_time and then
-!> unlocks the link.
-!> =============================================================================
-SUBROUTINE queue_by_time (self, this)
-  class(list_t):: self
-  class(link_t), pointer:: this
-  logical:: error
-  integer:: verbose
-  !-----------------------------------------------------------------------------
-  call real_queue_by_time (self, this, error)
-  if (error) then
-    io%do_trace = .true.
-    verbose = io%verbose
-    io%verbose = 4
-    call self%qconsistency (999)
-    call self%check_all (repair=.true.)
-    call real_queue_by_time (self, this, error)
-    if (error) then
-      print *,'ERROR: queue repair failed'
-      error stop
-    end if
-    io%verbose = verbose
-    io%do_trace = .false.
-  end if
-END SUBROUTINE queue_by_time
-
-SUBROUTINE real_queue_by_time (self, this, error)
-  class(list_t):: self
-  class(link_t), pointer:: this
-  logical:: error
-  class(link_t), pointer:: next, prev
-  class(task_t), pointer:: task
-  integer, save:: itimer=0
-  integer:: nit
-  !-----------------------------------------------------------------------------
-  ! Refuse to queue virtual tasks and finished tasks
-  !-----------------------------------------------------------------------------
-  error=.false.
-  task => this%task
-  if (task%is_set (bits%hands_off)) return
-  call trace_begin ('list_t%queue_by_time ', itimer=itimer)
-  !$omp atomic
-  mpi_mesg%n_ready = mpi_mesg%n_ready+1
-  !-----------------------------------------------------------------------------
-  ! Lock the queue while inserting the task, and mark the task as being in the
-  ! ready queue (or executing -- the bit is cleared only after updating).
-  ! Double check that no other thread has set the ready bit on this task.
-  !-----------------------------------------------------------------------------
-  !.... critical (queue_cr)
-  if (task%is_clear (bits%ready+bits%busy)) then
-    call task%set(bits%ready)
-    if (io%verbose>1) &
-      write (io_unit%log,'(f12.6,i5,2x,a,i9,a,f12.6,2x,a,i5)') wallclock(), omp%thread, &
-        'list_t%queue_by_time: adding task', task%id, ' at time', task%time, &
-        'nq', self%nq
-    nullify (prev)
-    next => self%queue
-    nit = 0
-    do while (associated(next))
-      nit = nit+1
-      if (nit > self%nq) then
-        print *,'ERROR: hang in queue_by_time, nit =', nit
-        error = .true.
-        call trace_end (itimer)
-        return
-      end if
-      if (associated(next%task, task)) then
-        write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, ' is already in ready queue'
-        go to 9
-      else if (next%task%time > task%time) then
-        this%next_time => next
-        if (associated(prev)) then
-          if (io%verbose > 1) then
-            write (io_unit%log,'(i4,2x,a,i6,a,i6,i5,1p,3g16.6)') &
-              omp%thread, 'task',task%id,' in ready queue between',prev%task%id,next%task%id, &
-              prev%task%time, this%task%time, next%task%time
-          end if
-          prev%next_time => this
-        else
-          self%queue => this
-          if (io%verbose > 1) then
-            write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
-          end if
-        end if
-        !$omp atomic
-        self%nq = self%nq+1
-        go to 9
-      end if
-      prev => next
-      next => next%next_time
-    end do
-    self%nq = self%nq+1
-    if (associated(prev)) then
-      if (io%verbose > 1) then
-        write (io_unit%log,*) 'task',task%id,' in ready queue after',prev%task%id,self%nq
-      end if
-      prev%next_time => this
-    else
-      if (io%verbose > 1) then
-        write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
-      end if
-      self%queue => this
-    end if
-    nullify (this%next_time)
-  9 continue
-    call self%remove_active (this)                      ! remove from active_queue
-  !-----------------------------------------------------------------------------
-  ! Since we clear the ready bit in task_list%update, outside of any critical
-  ! region, it is perfectly normal that several threads compete about putting
-  ! a given task onto the queue, so there is no reason to print a warning here
-  !-----------------------------------------------------------------------------
-  else if (io%verbose > 1) then
-    if (io%verbose > 2) &
-      print '(i6,a,i5,a,i6,1p,e15.6)', mpi%rank,' INFO: thread',omp%thread, &
-      ' found ready bit in queue_by_time for task', task%id, task%time
-    write (io_unit%log,*) wallclock(),' INFO: thread',omp%thread, &
-      ' found ready bit in queue_by_time for task', task%id, task%time
-    flush (io_unit%log)
-  end if
-  !.... end critical (queue_cr)
-  call trace_end (itimer)
-END SUBROUTINE real_queue_by_time
-
-!> =============================================================================
 !> =============================================================================
 SUBROUTINE queue_active (self, this)
   class(list_t):: self
@@ -1219,31 +893,6 @@ SUBROUTINE add_by_quality (self, this)
 END SUBROUTINE add_by_quality
 
 !> =============================================================================
-!> Print a table with patch id, positions, and all neighbors
-!> =============================================================================
-SUBROUTINE check_queue (self)
-  class(list_t):: self
-  class(link_t), pointer:: link
-  real:: previous
-  integer:: nq
-  !.............................................................................
-  !$omp critical (list_cr)
-  link => self%queue
-  previous = -1.0
-  nq = 0
-  do while (associated(link))
-    if (link%task%time < previous) &
-      write (io_unit%log,*)'ERROR: queue out of order at', link%task%id, link%task%time, &
-      previous
-    previous = link%task%time
-    link => link%next_time
-    nq = nq+1
-  end do
-  if (nq /= self%nq) write (io_unit%log,*)'ERROR: inconsistent number of tasks in queue', nq, self%nq
-  !$omp end critical (list_cr)
-END SUBROUTINE check_queue
-
-!> =============================================================================
 !> Insert 'new' task before 'old' task
 !> =============================================================================
 SUBROUTINE insert (self, old, new)
@@ -1292,69 +941,6 @@ SUBROUTINE count_status (self)
   if (io%verbose>1) write (io_unit%log,'(a,5i6)') &
     'count_status: n[ibvea] = ', self%ni, self%nb, self%nv, self%ne, self%na
 END SUBROUTINE count_status
-
-!> =============================================================================
-!> Print a table with task id, positions, and all neighbors
-!> =============================================================================
-SUBROUTINE print_queue (self)
-  class (list_t):: self
-  class(link_t) , pointer:: link, nbor
-  !.............................................................................
-  if (io%verbose < 1) return
-  !$omp critical (list_cr)
-  link => self%queue
-  write (io_unit%log,'(a,2i4,":",$)') 'ready_queue', self%nq, self%n
-  do while (associated(link))
-    write (io_unit%log,'(i4,$)') link%task%id
-    link => link%next_time
-  end do
-  !$omp end critical (list_cr)
-  if (io%master) write (io_unit%log,*)''
-END SUBROUTINE print_queue
-
-!> =============================================================================
-!> Print the queue until and including a given task
-!> =============================================================================
-SUBROUTINE print_queue_until (self, task)
-  class(list_t):: self
-  class(task_t):: task
-  class(link_t) , pointer:: link, nbor
-  !.............................................................................
-  !$omp critical (list_cr)
-  link => self%queue
-  if (io%master) write (io_unit%log,*)'print_queue_until:'
-  do while (associated(link))
-    write (io_unit%log,'("queue: id, t0, t, t0-t =",i7,1p,3e12.3)') &
-      link%task%id, task%time, link%task%time, task%time-link%task%time
-    if (link%task%id==task%id) exit
-    link => link%next_time
-  end do
-  !$omp end critical (list_cr)
-END SUBROUTINE print_queue_until
-
-!> =============================================================================
-!> Print the queue
-!> =============================================================================
-SUBROUTINE print_queue_times (self, label)
-  class(list_t):: self
-  character(len=*), optional:: label
-  class(link_t) , pointer:: link, nbor
-  !.............................................................................
-  !$omp critical (list_cr)
-  link => self%queue
-  if (present(label)) then
-     write (io_unit%log,*)'print_queue_times: '//trim(label)
-  else
-     write (io_unit%log,*)'print_queue_times:'
-  end if
-  do while (associated(link))
-    write (io_unit%log,'("queue: id, time =",i7,1p,g14.5,l5)') link%task%id, link%task%time, &
-      link%task%is_set(bits%ready)
-    link => link%next_time
-  end do
-  !$omp end critical (list_cr)
-  write (io_unit%log,*)'done'
-END SUBROUTINE print_queue_times
 
 !> =============================================================================
 !> =============================================================================
