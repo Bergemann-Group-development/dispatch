@@ -250,7 +250,7 @@ SUBROUTINE check_sent (self, nq)
       call mesg%wait_all
       call timer%begin (itimer=itimer)
       call sent_tmp%remove (mesg)
-      call sent_tmp%delete (mesg, .true.)
+      call sent_tmp%delete (mesg, send=.true.)
       mesg => next
     end do
   end if
@@ -281,7 +281,7 @@ SUBROUTINE check_sent (self, nq)
       call timer%begin (itimer=itimer)
       if (flag) then
         call self%remove (mesg)                                 ! yes, remove
-        call self%delete (mesg, .true.)                         ! deallocate
+        call self%delete (mesg, send=.true.)                    ! deallocate
       end if
       mesg => next                                              ! true next
     end do
@@ -309,7 +309,7 @@ SUBROUTINE check_priv
     call mesg%test_all (flag)
     if (flag) then
       call sent_list%remove (mesg)                            ! yes, remove
-      call sent_list%delete (mesg, .true.)                    ! deallocate
+      call sent_list%delete (mesg, send=.true.)               ! deallocate
     end if
     mesg => next                                              ! true next
   end do
