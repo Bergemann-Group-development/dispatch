@@ -38,7 +38,7 @@ SUBROUTINE init (patch)
   call file_out%openw (trim(io%outputname)//filename//'/snapshot.dat')
   if (patch%restart > 0) then
     write (filename,'(i5.5)') patch%restart
-    call file_in%openr (trim(io%outputname)//filename//'/snapshot.dat')
+    call file_in%openr (trim(io%inputname)//filename//'/snapshot.dat')
   end if
   call trace%end
 END SUBROUTINE init
