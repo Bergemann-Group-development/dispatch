@@ -360,14 +360,16 @@ END SUBROUTINE resend_bdry
 !> =============================================================================
 SUBROUTINE check_oldest (self)
   class(list_t):: self
-  class(link_t), pointer:: link, oldest, oldestv
+  class(link_t), pointer:: link, oldest, oldestv, oldestnb
   real(8):: told, toldv
   !.............................................................................
   call trace_begin('list_t%check_oldest '//self%name)
   write (io_unit%log,*) 'check_oldest: phase 1'
   told = 1d30
   toldv = told
+  nullify (oldest)
   nullify (oldestv)
+  nullify (oldestnb)
   !$omp critical (list_cr)
   link => self%head
   do while (associated (link))                        ! keep going until end
@@ -394,8 +396,13 @@ SUBROUTINE check_oldest (self)
     write (io_unit%log,1) 'the oldest local task is', oldest%task%id, &
       'rank', oldest%task%rank, oldest%task%time, &
       oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
+    told = 1d30
     link => oldest%nbor
     do while (associated(link))
+      if (link%task%time < told) then
+        told =link%task%time
+        oldestnb => link
+      end if
       write (io_unit%log,1) &
         'nbor', link%task%id, 'rank', link%task%rank, link%task%time, &
         link%task%is_set(bits%boundary), link%task%is_set (bits%virtual)
@@ -403,6 +410,14 @@ SUBROUTINE check_oldest (self)
       link => link%next
     end do
   end if
+  write (io_unit%log,'(f12.6,2(3x,a,i8,i6,f12.6,3x,4l1),3i5)') wallclock(), &
+   'oldest:', oldest%task%id, oldest%task%rank, oldest%task%time, &
+   oldest%task%is_set(bits%internal), oldest%task%is_set(bits%boundary), &
+   oldest%task%is_set(bits%virtual), oldest%task%is_set(bits%external), &
+   'nbor:', oldestnb%task%id, oldestnb%task%rank, oldestnb%task%time, &
+   oldestnb%task%is_set(bits%internal), oldestnb%task%is_set(bits%boundary), &
+   oldestnb%task%is_set(bits%virtual), oldestnb%task%is_set(bits%external), &
+   self%nq, sent_list%n, recv_list%n, unpk_list%n
   flush (io_unit%log)
   if (associated(oldestv)) then
     write (io_unit%log,*) 'the oldest virtual task is ', oldestv%task%id, oldestv%task%time
@@ -1407,14 +1422,14 @@ SUBROUTINE print_tasks (self, label)
   !.............................................................................
   !if (io%verbose < 2) return
   if (present(label)) then
-    write (io_unit%log,'(a,i4,":")') 'task_list: '//trim(label), self%n
+    write (io_unit%log,'(a,i8,":")') 'task_list: '//trim(label), self%n
   else
-    write (io_unit%log,'(a,i4,":")') 'task_list', self%n
+    write (io_unit%log,'(a,i8,":")') 'task_list', self%n
   end if
   link => self%head
   do while (associated(link))
     if (io%verbose < 3) then
-      write (io_unit%log,'(i4,g15.6,l5)') link%task%id, link%task%time, link%task%is_set(bits%ready)
+      write (io_unit%log,'(i8,g15.6,l5)') link%task%id, link%task%time, link%task%is_set(bits%ready)
     else
       call link%print_nbors
     end if

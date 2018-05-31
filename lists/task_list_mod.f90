@@ -358,14 +358,14 @@ SUBROUTINE update (self)
   else if (do_delay) then
     !$omp critical (delay_cr)
     stalled = stalled+1
-    call self%check_all
     if (stalled == retry_stalled) then
-       print *, mpi%rank, 'STALLED check_oldest + check_all'
-       !call self%check_all
+       print *, mpi%rank, 'STALLED check_oldest + check_all + resend_bdry'
        call self%check_oldest
-       !call self%resend_bdry
+       call self%check_all
+       call self%resend_bdry
     else
       call mpi_mesg%delay (stalled)
+      call self%check_all
     end if
     if (stalled == max_stalled/2) then
       print *, mpi%rank, 'STALLED diagnostics'
