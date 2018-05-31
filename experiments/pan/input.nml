@@ -12,20 +12,22 @@
  origin=0,0,0
 /
 
+!---------------------------------------------
+! For unigrid run, use the no_mans_land=t line
+!---------------------------------------------
 &patch_params      nt=5 grace=0.1 n=3*32 no_mans_land=t /
 !patch_params      nt=5 grace=0.3 n=3*33 no_mans_land=f /
 &out_params        end_time=0.4001 out_time=0.04 print_time=0.0 guard_zones=t time_derivs=f /
-&io_params         verbose=0 do_trace=f omp_trace=t do_output=f do_direct=t id_debug=0 /
-&timer_params      sec_per_report=10 /
+&io_params         verbose=0 do_trace=f omp_trace=f do_output=t method='parallel' /
+&timer_params      sec_per_report=20 /
 &validate_params   state='write' /
-&dispatcher_params method=1 verbose=0 /
 
 !---------------------------------
 ! Initial condition and forces
 !---------------------------------
 &initial_params    type='turbulence' /
 &force_params      type='turbulence' /
-&turbulence_params ampl_turb=7 t_turn=0.1 k1=1 k2=1.5 seed=5 /
+&turbulence_params ampl_turb=5 t_turn=0.1 k1=1 k2=2 pk=0.0 seed=5 /
 
 !---------------------------------
 ! Solver specific parameters
@@ -34,9 +36,21 @@
 &mhd_params        do_isothermal=t gamma=1.00001  nu=0.10,1.0,1.0,0.1,1.0,1.0 /
 &timestep_params   /
 
-!---------------------------------
+!----------------------------------------------------------------------------------
 ! MPI and loadbalancing parameters
-!---------------------------------
+!----------------------------------------------------------------------------------
 &load_balance_params /
-&task_list_params  sync_time=0.000 job_seconds=60 /
+
+!----------------------------------------------------------------------------------
+! Method=0 uses a ready queue, which may or may not work for more than 1e12 updates
+!----------------------------------------------------------------------------------
+&dispatcher_params method=0 /
+&task_list_params  recv_active=t queue_unpack=f /
 &mpi_mesg_params   recv_priv=t /
+
+!----------------------------------------------------------------------------------
+! Method=1 uses a simple dispatcher (dispatcher_method1_mod.f90) -- not fully tested
+!----------------------------------------------------------------------------------
+!dispatcher_params method=1 /
+!task_list_params  /
+!mpi_mesg_params   /
