@@ -264,7 +264,7 @@ SUBROUTINE exa256 (self, m, ff, idx)
   logical, save:: first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t::exa256', itimer=itimer)
+  call trace_begin('initial_t%exa256', itimer=itimer)
   self%mhd = .false.
   ff(:,:,:,:) = 0.0
   allocate (u(m(1)%n))
@@ -332,7 +332,7 @@ SUBROUTINE raw (self, m, ff, idx)
   logical, save:: first_time=.true.
   integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t::raw', itimer=itimer)
+  call trace_begin('initial_t%raw', itimer=itimer)
   !$omp critical (raw_cr)
   self%mhd = .false.
   self%time = 0.02
@@ -387,7 +387,7 @@ SUBROUTINE turbulence (self, m, ff, idx)
   !.............................................................................
   integer, save         :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t::raw', itimer=itimer)
+  call trace_begin('initial_t%turbulence', itimer=itimer)
   ff(:,:,:,idx%d        ) = 1.0
   ff(:,:,:,idx%e        ) = 1.0
   ff(:,:,:,idx%px:idx%pz) = 0.0

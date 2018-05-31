@@ -77,14 +77,14 @@ SUBROUTINE init (self)
   if (self%nv == 0) self%nv = 5
 
   call self%gpatch_t%init
-  !$omp critical (pde)
+  !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, ramses_params)
     if (io_unit%master) write (*, ramses_params)
   end if
-  !$omp end critical (pde)
+  !$omp end critical (input_cr)
   self%riemann = riemann
   self%courant = courant_factor
   self%gamma = gamma

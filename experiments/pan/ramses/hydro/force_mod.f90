@@ -48,14 +48,13 @@ SUBROUTINE init (self, solver, id, mesh)
                                ampl_turb, t_turn, t_turb, seed
   logical, save:: first_time = .true.
   !---------------------------------------------------------------------------
-  !$omp critical (init_cr)
+  !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input,turbulence_params)
     if (io%master) write (*,turbulence_params)
   end if
-  !$omp end critical (init_cr)
   if (t_turb == 0.) t_turb = -1.5*t_turn
   self%id     = id
   self%seed   = seed
@@ -64,12 +63,15 @@ SUBROUTINE init (self, solver, id, mesh)
   mx = self%mesh(1)%gn
   my = self%mesh(2)%gn
   mz = self%mesh(3)%gn
-  allocate (self%fran(mx,my,mz,3,2))
-  !$omp atomic
-  io%gb = io%gb + storage_size(self%fran)*(product(shape(self%fran))/(8.*1024.**3))
-  self%fran = 0.0
+  if (.not.allocated(self%fran)) then
+    allocate (self%fran(mx,my,mz,3,2))
+    !$omp atomic
+    io%gb = io%gb + storage_size(self%fran)*(product(shape(self%fran))/(8.*1024.**3))
+    self%fran = 0.0
+  end if
   self%selected => turbulence
   call self%random%init (seed)
+  !$omp end critical (input_cr)
 END SUBROUTINE init
 
 !> =============================================================================
