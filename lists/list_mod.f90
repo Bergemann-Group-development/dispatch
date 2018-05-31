@@ -269,7 +269,7 @@ SUBROUTINE check_nbors (self, link)
   call trace_begin('list_t%check_nbors', itimer=itimer)
   if (io%verbose > 1) &
     write (io_unit%log,*) 'checking nbors of',link%task%id,associated(link%nbor)
-  !$omp critical (queue_cr)
+  !.... critical (queue_cr)
   task => link%task                                   ! main task
   nbor => link%nbor                                   ! first nbor
   do while (associated (nbor))                        ! keep going until end
@@ -292,7 +292,7 @@ SUBROUTINE check_nbors (self, link)
   if (task%is_clear (bits%virtual+bits%external)) then
     call self%check_ready (link)                      ! finally check link task
   end if
-  !$omp end critical (queue_cr)
+  !.... end critical (queue_cr)
   call trace_end (itimer)
 END SUBROUTINE check_nbors
 
@@ -974,6 +974,7 @@ SUBROUTINE queue_by_time (self, this)
   logical:: error
   integer:: verbose
   !-----------------------------------------------------------------------------
+  !$omp critical (queue_cr)
   call real_queue_by_time (self, this, error)
   if (error) then
     io%do_trace = .true.
@@ -989,6 +990,7 @@ SUBROUTINE queue_by_time (self, this)
     io%verbose = verbose
     io%do_trace = .false.
   end if
+  !$omp end critical (queue_cr)
 END SUBROUTINE queue_by_time
 
 SUBROUTINE real_queue_by_time (self, this, error)
@@ -1013,7 +1015,6 @@ SUBROUTINE real_queue_by_time (self, this, error)
   ! ready queue (or executing -- the bit is cleared only after updating).
   ! Double check that no other thread has set the ready bit on this task.
   !-----------------------------------------------------------------------------
-  !.... critical (queue_cr)
   if (task%is_clear (bits%ready+bits%busy)) then
     call task%set(bits%ready)
     if (io%verbose>1) &
@@ -1084,7 +1085,6 @@ SUBROUTINE real_queue_by_time (self, this, error)
       ' found ready bit in queue_by_time for task', task%id, task%time
     flush (io_unit%log)
   end if
-  !.... end critical (queue_cr)
   call trace_end (itimer)
 END SUBROUTINE real_queue_by_time
 

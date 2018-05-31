@@ -179,11 +179,12 @@ SUBROUTINE execute (self)
       min_nq = min(min_nq,self%nq)
     end if
   end do
-  call timer%print
-  call mpi_mesg%diagnostics(1)
   write (io_unit%log,*) 'thread',omp%thread,' arrived'
   flush (io_unit%log)
+  !$omp barrier
   !$omp end parallel
+  call timer%print
+  call mpi_mesg%diagnostics(1)
   call toc ('wall time', n_update, time=sec)
   call mpi%barrier ('end')
   if (io%master) write (*,*) "task list finished, min_nq =", min_nq
@@ -208,7 +209,7 @@ END SUBROUTINE execute
 !> two bits are set.
 !>
 !> 2) The master thread takes care of picking tasks from the queue, starting an
-!>    OMP thread to update it, and checking for nbors that are ready to be 
+!>    OMP thread to update it, and checking for nbors that are ready to be
 !>    updated as a consquence
 !> =============================================================================
 SUBROUTINE update (self)
@@ -251,6 +252,25 @@ SUBROUTINE update (self)
     ! well as by the current thread.  Locking should be used to allow only a
     ! single thread and task to check and change the ready bit status, at any
     ! one time.
+    !
+    ! The busy bit is set on tasks that a thread is updating, to check that a
+    ! a task that has already been taken off the queue by another thread is not
+    ! taken again.  This should in principle not be possible, since removing
+    ! the task from the queue is done in a critical region, and removing a
+    ! task can only be done once.
+    !
+    ! A task generats a critical region three times: 1) when taken off the queue,
+    ! 2) when its time info is updated, 3) when it is added back to the queue.
+    !
+    ! To ensure 100% consistency, the task time information should not be
+    ! allowed to change during the testing going on in list_t%check_ready().
+    ! This could possibly be critical, if the fact that a task is / becomes
+    ! ready is missed, because of sychronization issue.  Several of the tasks
+    ! that form the nbor list of a task are typically undergoing updates at the
+    ! same time.  In rare cases, but only if the update time of task time info
+    ! is not uniquely defined, a task could thus be deemed not ready by the
+    ! last of its nbors that has just been updated, because another task in the
+    ! nbor list had not yet propagated its updated time info.
     !---------------------------------------------------------------------------
     already_busy = task%is_set (bits%busy)
     id = task%id
