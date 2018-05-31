@@ -436,9 +436,10 @@ subroutine ctoprim(self)
   bf(1:n(1),:,:,1) = (uin(1:n(1),:,:,6)+uin(2:,:,:,6))*half      
   bf(:,1:n(2),:,2) = (uin(:,1:n(2),:,7)+uin(:,2:,:,7))*half      
   bf(:,:,1:n(3),3) = (uin(:,:,1:n(3),8)+uin(:,:,2:,8))*half      
-  bf(n(1)+1,:,:,1) = bf(5,:,:,1)
-  bf(:,n(2)+1,:,2) = bf(:,5,:,2)
-  bf(:,:,n(3)+1,3) = bf(:,:,5,3)
+  ! FIXME: this assumes local periodic conditions!
+  !bf(n(1)+1,:,:,1) = bf(5,:,:,1)
+  !bf(:,n(2)+1,:,2) = bf(:,5,:,2)
+  !bf(:,:,n(3)+1,3) = bf(:,:,5,3)
 
   eken(:,:,:) = half*( q(:,:,:,2)**2 + q(:,:,:,3)**2 + q(:,:,:,4)**2)
   emag(:,:,:) = half*( q(:,:,:,6)**2 + q(:,:,:,7)**2 + q(:,:,:,8)**2)
@@ -477,7 +478,7 @@ subroutine uslope(self,bf,q,dq,dbf)
   real(dp)::dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml,dfrrl
   real(dp)::dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm,dfrrm
   real(dp)::dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr,dfrrr
-  real(dp)::vmin,vmax,dfx,dfy,dfz,dff
+  real(dp)::vmin,vmax,dfx,dfy,dfz,dff,idff
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_mod::uslope', itimer=itimer)
@@ -655,15 +656,18 @@ subroutine uslope(self,bf,q,dq,dbf)
             dfx  = half*(q(i+1,j,k,n)-q(i-1,j,k,n))
             dfy  = half*(q(i,j+1,k,n)-q(i,j-1,k,n))
             dfz  = half*(q(i,j,k+1,n)-q(i,j,k-1,n))
-            dff  = half*(abs(dfx)+abs(dfy)+abs(dfz))
+            idff  = xslope_type / sqrt(dfx**2+dfy**2+dfz**2+tiny(1.0_dp)) ! xslope_type = 1 or 2 dep. on slope_type
             !
-
-            if (dff > 0) then
-              slop = merge(min(one,min(abs(vmin),abs(vmax))/dff),one,dff>0d0)
-            else 
-              slop = 1d0
-            endif
-            dlim = slop
+            ! vmin and vmax are the lower and upper limit of one-cell differences
+            ! so a constant slope with step dq will give vmin=-dq and vmax=+dq,
+            ! while dfx (dff for any direction) will also be = dq, unless we keep
+            ! the 'half' in front of the sqrt.  With that kept, the dlim factor
+            ! will remain unity until the slopes differ with a factor of 2. Then,
+            ! if any of the 26 slopes is steeper than twice the gradient slope,
+            ! the gradient will be diminished.
+            !
+            ! idff > 0, so 1/dff = idff < 0.001 * huge is equivalent to dff > 0
+            dlim = merge(min(one,min(abs(vmin),abs(vmax))*idff), one, idff<0.001_dp * huge(1.0_dp))
             !
             dq(i,j,k,n,1) = dlim*dfx
             dq(i,j,k,n,2) = dlim*dfy
