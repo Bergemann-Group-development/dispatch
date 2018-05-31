@@ -1,8 +1,9 @@
-FUNCTION rd,run,iv=iv,iout=iout,n=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=verbose,order=order,time=time
+FUNCTION rd,run,iv=iv,iout=iout,id=id,n=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=verbose,order=order,time=time
   default,iout,0L
   default,n,32L
   default,gn,1024L
   default,iv,0
+  default,id,0
   default,nv,5L
   default,ix,[0,gn/n-1]
   default,iy,[0,gn/n-1]
@@ -19,15 +20,24 @@ FUNCTION rd,run,iv=iv,iout=iout,n=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=verbos
   a=assoc(u,fltarr(n,n,n))
   m=long(gn)/n
   np=m^3
-  f=fltarr(n*(ix[1]-ix[0]+1),n*(iy[1]-iy[0]+1),n*(iz[1]-iz[0]+1),/nozer)
-  help,f
+  if id gt 0 then begin
+    i0=id
+    i1=id
+    f=fltarr(n,n,n,/nozer)
+  end else begin
+    i0=0L
+    i1=np-1
+    f=fltarr(n*(ix[1]-ix[0]+1),n*(iy[1]-iy[0]+1),n*(iz[1]-iz[0]+1),/nozer)
+  end
   if verbose gt 0 then begin
+    help,f
     print,np
     print,ix
     print,iy
     print,iz
   end 
-  for i=0L,np-1 do begin
+  print,i0,i1
+  for i=i0,i1 do begin
     ii=i
     jz=i/m^2
     if jz lt iz[0] then continue
@@ -53,7 +63,12 @@ FUNCTION rd,run,iv=iv,iout=iout,n=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=verbos
       f[kx:kx+nx-1,ky:ky+ny-1,kz:kz+nx-1]=ff
     end else begin
       if order eq 0 then ii=iv+i*nv+iout*nv*np else ii=i+(iv+iout*nv)*np
-      f[kx:kx+nx-1,ky:ky+ny-1,kz:kz+nx-1]=a[ii]
+      if id gt 0 then begin
+        print,'jx,jy,jz=',jx,jy,jz
+        f=a[ii]
+      end else begin
+        f[kx:kx+nx-1,ky:ky+ny-1,kz:kz+nx-1]=a[ii]
+      end
     end
   end
   close,u
