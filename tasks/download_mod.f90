@@ -163,15 +163,15 @@ SUBROUTINE test (self)
       allok = allok.and.ok
     end do
   end do
-  print *,io%hl
+  if (io%master) print *,io%hl
   if (allok) then
-    if (mpi%master) then
+    if (io%master) then
       print *,'download_t%test passed'
       print *,io%hl
     end if
   else
     print *,mpi%rank,'download_t%test failed'
-    print *,io%hl
+    if (io%master) print *,io%hl
     call mpi%abort('download_t%test::check_values')
   end if
   !-----------------------------------------------------------------------------
