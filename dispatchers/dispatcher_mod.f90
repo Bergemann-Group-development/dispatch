@@ -53,17 +53,26 @@ END SUBROUTINE init
 SUBROUTINE none (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
+  task_list%method = method
   call task_list%execute
 END SUBROUTINE none
 
 !> =============================================================================
-!> Execute a task list
+!> Execute a task list.  Since only the master thread is call check_mpi(), we
+!> need to make sure that it handles all send/recv, hence send_priv=.false. and
+!> recv_priv=.false., and we can use the simplest receive mechanism (recv_active
+!> =.true.), with no buffering needed (queue_unpack=.false.).  These values are
+!> imposed after the input namelists are read, to make sure the choices are
+!> correct.
 !> =============================================================================
 SUBROUTINE method1 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
+  task_list%method = method
   task_list%recv_active = .true.
+  task_list%queue_unpack = .false.
   mpi_mesg%recv_priv = .false.
+  mpi_mesg%send_priv = .false.
   call dispatcher_method1%execute (task_list)
 END SUBROUTINE method1
 
@@ -73,8 +82,11 @@ END SUBROUTINE method1
 SUBROUTINE method2 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
+  task_list%method = method
   task_list%recv_active = .true.
+  task_list%queue_unpack = .false.
   mpi_mesg%recv_priv = .false.
+  mpi_mesg%send_priv = .false.
   call dispatcher_method2%execute (task_list)
 END SUBROUTINE method2
 

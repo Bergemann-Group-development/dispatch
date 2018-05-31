@@ -34,8 +34,10 @@ MODULE task_list_mod
   type, public, extends(list_t):: task_list_t
     logical:: syncing=.false.
     logical:: recv_active=.false.
+    logical:: queue_unpack=.true.
     real(8):: sync_time=-1.0, sync_next=-1.0
     real(8):: job_seconds=1d30
+    integer:: method=0
   contains
     procedure:: init
     procedure:: startup
@@ -55,7 +57,6 @@ MODULE task_list_mod
   integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
   integer, save:: min_nq=2**30
   logical, save:: do_delay=.false.
-  logical, save:: queue_unpack=.true.
   logical, save:: track_active=.false.
   real(8), save:: sync_time=0.0
   type(task_list_t), save:: virtual_list
@@ -74,6 +75,7 @@ SUBROUTINE init (self, name)
   integer:: debug=0
   real(8):: job_seconds=1d30
   logical, save:: recv_active=.true.
+  logical, save:: queue_unpack=.true.
   namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms, &
     do_delay, recv_active, queue_unpack, sync_time, job_seconds, track_active
   !-----------------------------------------------------------------------------
@@ -92,6 +94,7 @@ SUBROUTINE init (self, name)
   self%sync_time = sync_time
   self%job_seconds = job_seconds
   self%recv_active = recv_active
+  self%queue_unpack = queue_unpack
   write (io_unit%mpi,*) 'task_list%init: next_sync =', self%sync_next, self%sync_time
   call load_balance%init
   call trace_end
@@ -660,7 +663,8 @@ SUBROUTINE unpack (self, mesg, link)
   !-----------------------------------------------------------------------------
   !if (io%verbose>1) &
   !  call link1%test_nbor_status
-  call self%check_nbors (link1)
+  if (self%method==0) &
+    call self%check_nbors (link1)
 END SUBROUTINE unpack
 
 !> =============================================================================
@@ -1001,7 +1005,7 @@ SUBROUTINE check_active (self)
   nvirt = 0
   nunpk = 0
   link => self%head
-  if (queue_unpack) call unpk_tmp%reset
+  if (self%queue_unpack) call unpk_tmp%reset
   do while (associated(link))
     task => link%task
     if (task%is_set (bits%virtual)) then
@@ -1023,7 +1027,7 @@ SUBROUTINE check_active (self)
       ! critical region
       !-------------------------------------------------------------------------
       if (task%mesg%test_recv()) then
-        if (queue_unpack) then
+        if (self%queue_unpack) then
           call unpk_tmp%add (task%mesg)
         else
           call self%unpack (task%mesg)
@@ -1041,7 +1045,7 @@ SUBROUTINE check_active (self)
     link => link%next
   end do
   !$omp end critical (active_cr)
-  if (queue_unpack) then
+  if (self%queue_unpack) then
     mesg => unpk_tmp%head
     do while (associated(mesg))
       call self%unpack (mesg)

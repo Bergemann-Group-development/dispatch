@@ -2,11 +2,13 @@ MODULE dispatcher_method1_mod
   USE io_unit_mod
   USE trace_mod
   USE omp_mod
+  USE mpi_mod
   USE link_mod
   USE timer_mod
   USE omp_timer_mod
   USE task_list_mod
   USE mpi_mesg_mod
+  USE bits_mod
   implicit none
   private
   type, public:: dispatcher_method1_t
@@ -30,7 +32,6 @@ SUBROUTINE execute (self, task_list)
   logical:: ready, mytask
   real(8):: start
   integer, save:: itimer=0
-  integer:: n
   !-----------------------------------------------------------------------------
   call task_list%init_all_nbors
   call tic (time=start)
@@ -38,6 +39,7 @@ SUBROUTINE execute (self, task_list)
   !$omp parallel private(link,nbor,ready,mytask) default(shared)
   !$omp master
   mytask = .false.
+  task_list%nq = 0
   do while (task_list%na>0 .and. wallclock()-start < task_list%job_seconds)
     call trace%begin ('dispatcher_t%execute', itimer=itimer)
                                         if (self%verbose>2) write (io_unit%dispatcher,*) wallclock(), 'check_mpi'
@@ -48,7 +50,7 @@ SUBROUTINE execute (self, task_list)
       ready = .false.
       if (link%task%state>2) then
                                         if (self%verbose>3) write (io_unit%dispatcher,*) wallclock(), link%task%id, 'busy'
-      else
+      else if (link%task%is_set (bits%internal) .or. link%task%is_set (bits%boundary)) then
         ready = .true.
         nbor => link%nbor
         do while (associated(nbor))
@@ -59,44 +61,66 @@ SUBROUTINE execute (self, task_list)
           end if
           nbor => nbor%next
         end do
+        !-----------------------------------------------------------------------
+        ! If a task is ready, change its state to 2, so we can keep track of nq
+        !-----------------------------------------------------------------------
         if (ready) then
+          mpi_mesg%n_ready = mpi_mesg%n_ready+1
           if (link%task%state<2) then
+            !$omp atomic write
+            link%task%state = 2
             !$omp atomic
             task_list%nq = task_list%nq+1
-            link%task%state = 2
           end if
+          !---------------------------------------------------------------------
+          ! The master thread takes on at least one task update per loop
+          !---------------------------------------------------------------------
           if (mytask) then
                                         if (self%verbose>2)  write (io_unit%dispatcher,*) wallclock(), link%task%id, 'my task'
                                         if (self%verbose>1)  write (io_unit%log,*) wallclock(), link%task%id, 'update start'
             call task_list%updater (link)
+            !$omp atomic
+            task_list%nq = task_list%nq-1
+            !$omp atomic write
+            link%task%state = 1
                                         if (self%verbose>1)  write (io_unit%log,*) wallclock(), link%task%id, 'update end'
             mytask = .false.
+          !---------------------------------------------------------------------
+          ! If multi-threaded, spawn background tasks up to OMP_NUM_THREADS + 1
+          !---------------------------------------------------------------------
           else if (omp%nthreads>1) then
-            if (self%n_spawn < omp%nthreads+3) then
+            if (self%n_spawn <= omp%nthreads+1) then
                                         if (self%verbose>1)  write (io_unit%dispatcher,*) wallclock(), link%task%id, 'spawning'
                                         if (self%verbose>2) write (io_unit%log,*) wallclock(), link%task%id, 'spawn begin'
+              !$omp atomic write
+              link%task%state = 3
               !$omp atomic
               self%n_spawn = self%n_spawn + 1
-              link%task%state = 3
               !$omp task default(shared) firstprivate(link)
                                         if (self%verbose>1) write (io_unit%log,*) wallclock(), link%task%id, 'update start', self%n_spawn
               call task_list%updater (link)
+              !$omp atomic write
+              link%task%state = 1
               !$omp atomic
               self%n_spawn = self%n_spawn - 1
                                         if (self%verbose>1) write (io_unit%log,*) wallclock(), link%task%id, 'update end', self%n_spawn
-              link%task%state = 1
+              !$omp end task
               !$omp atomic
               task_list%nq = task_list%nq-1
-              !$omp end task
                                         if (self%verbose>2) write (io_unit%log,*) wallclock(), link%task%id, 'spawn end', self%n_spawn
             else
                                         if (self%verbose>2) write (io_unit%log,*) wallclock(), link%task%id, 'taskyield'
               !$omp taskyield
             end if
+          !---------------------------------------------------------------------
+          ! Single-threaded: just update
+          !---------------------------------------------------------------------
           else
                                         if (self%verbose>2) write (io_unit%dispatcher,*) wallclock(), link%task%id, 'updating'
                                         if (self%verbose>2) write (io_unit%log,*) wallclock(), link%task%id, 'update start'
             call task_list%updater (link)
+            link%task%state = 1
+            task_list%nq = task_list%nq-1
                                         if (self%verbose>2) write (io_unit%log,*) wallclock(), link%task%id, 'update end'
           end if
         end if

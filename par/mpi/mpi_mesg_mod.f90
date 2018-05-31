@@ -73,6 +73,7 @@ MODULE mpi_mesg_mod
     integer:: min_nq
     logical:: wait=.false.
     logical:: recv_priv=.true.
+    logical:: send_priv=.true.
     logical:: debug=.false.
   contains
     procedure:: init
@@ -94,7 +95,6 @@ MODULE mpi_mesg_mod
   integer, save:: every_recv=1                  ! how often to check recv_list
   logical, save:: wait=.false.                  ! if true, always use MPI_Wait
   logical, save:: send_wait=.false.             ! if true, wait in OMP task
-  logical, save:: send_priv=.true.              ! if true, sent_list is private
   integer, save:: id=0
 CONTAINS
 
@@ -213,7 +213,7 @@ SUBROUTINE check_sent (self, nq)
   integer:: n, m
   !$omp threadprivate (every)
   !-----------------------------------------------------------------------------
-  if (send_priv) then
+  if (mpi_mesg%send_priv) then
     call check_priv
     return
   end if
@@ -513,6 +513,7 @@ SUBROUTINE init (self)
   class(mpi_mesg_t):: self
   logical, save:: debug=.false.
   logical, save:: recv_priv=.true.
+  logical, save:: send_priv=.true.
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, wait, send_wait, send_priv, &
                              recv_priv, test_time, debug
@@ -582,7 +583,7 @@ SUBROUTINE sent (self, mesg)
   !-----------------------------------------------------------------------------
   !$omp atomic
   mpi_mesg%nq_send = mpi_mesg%nq_send+1
-  if (send_priv) then
+  if (mpi_mesg%send_priv) then
     call sent_list%add (mesg)
     if (io%verbose>0) then
       write (io_unit%log,*) 'sent:', omp_get_thread_num(), mesg%id, sent_list%n
