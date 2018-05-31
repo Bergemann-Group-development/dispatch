@@ -313,55 +313,91 @@ SUBROUTINE print_id (id)
 END SUBROUTINE print_id
 
 !> =============================================================================
-!> Check debug flag files
+!> Check debug flag files.  To avoid having to synchronize when using MPI, we
+!> give the ranks 5 seconds to detect and read flag files, and then we let one
+!> rank remove them.
 !> =============================================================================
 SUBROUTINE check_flags (self)
   class (io_t)      :: self
   real(8), save     :: last_checked=0d0
-  real(8)           :: flag_time, checked
+  real(8)           :: flag_time, processing=0d0
   logical           :: exists
   character(len=80) :: file
   integer, save     :: itimer=0
   !.............................................................................
+  !$omp master
   call timer%begin ('io_t%check_flags', itimer)
   flag_time = merge(self%flag_time, self%flag_max, self%do_flags)
-  !$omp atomic read
-  checked = last_checked
-  if (wallclock() > checked+flag_time) then
-    !$omp critical (flag_cr)
-    last_checked = wallclock()
-    file = trim(io%outputname)//'flag'
-    inquire (file=trim(file), exist=exists)
-    if (exists) then
-      open (io_unit%flag, file=trim(file), form='formatted', status='old')
-      close (io_unit%flag, status='delete')
-      ! logical
-      call check ('do_trace.flag'       , lvalue=self%do_trace)
-      call check ('do_flags.flag'       , lvalue=self%do_flags)
-      call check ('do_debug.flag'       , lvalue=self%do_debug)
-      call check ('do_output.flag'      , lvalue=self%do_output)
-      call check ('stop.flag'           , lvalue=self%do_stop)
-      ! integer
-      call check ('id_debug.flag'       , ivalue=self%id_debug)
-      call check ('id_track.flag'       , ivalue=self%id_track)
-      call check ('verbose.flag'        , ivalue=self%verbose)
-      ! single prec
-      call check ('flag_time.flag'      , rvalue=self%flag_time)
-      call check ('flag_max.flag'       , rvalue=self%flag_max)
-      call check ('ampl.flag'           , rvalue=self%ampl)
-      ! double prec
-      call check ('out_time.flag'       , dvalue=self%out_time)
-      call check ('print_time.flag'     , dvalue=self%print_time)
-      call check ('end_time.flag'       , dvalue=self%end_time)
-      call check ('sec_per_report.flag' , dvalue=timer%sec_per_report)
+  !------------------------------------------------------------------------------
+  ! If ready to detect flag files, try.
+  !------------------------------------------------------------------------------
+  if (processing==0d0) then
+    if (wallclock() > last_checked+flag_time) then
+      last_checked = wallclock()
+      call check_all (.false.)
     end if
-    !$omp end critical (flag_cr)
+  !-----------------------------------------------------------------------------
+  ! After processing for 10 sec, all ranks turn off processing
+  !-----------------------------------------------------------------------------
+  else if (wallclock() > processing+10d0) then
+    processing = 0d0
+  !-----------------------------------------------------------------------------
+  ! After 5 sec, the master thread on the master rank removes the flag files
+  !-----------------------------------------------------------------------------
+  else if (wallclock() > processing+5d0) then
+    if (io%master) call check_all (.true.)
   end if
   call timer%end (itimer)
+  !$omp end master
 contains
+
+  !-----------------------------------------------------------------------------
+  ! Thee OMP master checks for all valid types of flag files
+  !-----------------------------------------------------------------------------
+  subroutine check_all (remove)
+  logical:: remove
+  !.............................................................................
+  !$omp critical (flag_cr)
+  file = trim(io%outputname)//'flag'
+  inquire (file=trim(file), exist=exists)
+  if (exists) then
+    !---------------------------------------------------------------------------
+    ! If a flag file is detected, start the processing
+    !---------------------------------------------------------------------------
+    processing = last_checked + flag_time
+    open (io_unit%flag, file=trim(file), form='formatted', status='old')
+    if (remove) then
+      close (io_unit%flag, status='delete')
+    else
+      close (io_unit%flag)
+    end if
+    ! logical
+    call check ('do_trace.flag'       , remove, lvalue=self%do_trace)
+    call check ('do_flags.flag'       , remove, lvalue=self%do_flags)
+    call check ('do_debug.flag'       , remove, lvalue=self%do_debug)
+    call check ('do_output.flag'      , remove, lvalue=self%do_output)
+    call check ('stop.flag'           , remove, lvalue=self%do_stop)
+    ! integer
+    call check ('id_debug.flag'       , remove, ivalue=self%id_debug)
+    call check ('id_track.flag'       , remove, ivalue=self%id_track)
+    call check ('verbose.flag'        , remove, ivalue=self%verbose)
+    ! single prec
+    call check ('flag_time.flag'      , remove, rvalue=self%flag_time)
+    call check ('flag_max.flag'       , remove, rvalue=self%flag_max)
+    call check ('ampl.flag'           , remove, rvalue=self%ampl)
+    ! double prec
+    call check ('out_time.flag'       , remove, dvalue=self%out_time)
+    call check ('print_time.flag'     , remove, dvalue=self%print_time)
+    call check ('end_time.flag'       , remove, dvalue=self%end_time)
+    call check ('sec_per_report.flag' , remove, dvalue=timer%sec_per_report)
+  end if
+  !$omp end critical (flag_cr)
+  end subroutine
+
   !=============================================================================
-  subroutine check (file, lvalue, ivalue, rvalue, dvalue)
+  subroutine check (file, remove, lvalue, ivalue, rvalue, dvalue)
   character(len=*)  :: file
+  logical           :: remove
   logical, optional :: lvalue
   integer, optional :: ivalue
   real   , optional :: rvalue
@@ -371,19 +407,27 @@ contains
   character(len=80) :: f
   !.............................................................................
   f = trim(io%outputname)//trim(file)
-  inquire (file=trim(f), exist=exists)
-  if (exists) then
-    open (io_unit%flag, file=trim(f), form='formatted', status='old', iostat=iostat)
-    if (present(ivalue)) read (io_unit%flag,*) ivalue
-    if (present(rvalue)) read (io_unit%flag,*) rvalue
-    if (present(dvalue)) read (io_unit%flag,*) dvalue
-    if (present(lvalue).and.iostat==0) read (io_unit%flag,*,iostat=iostat) lvalue
-    if (iostat/=0) lvalue = .not.lvalue
-    close (io_unit%flag, status='delete')
-    if (present(lvalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', lvalue
-    if (present(ivalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', ivalue
-    if (present(rvalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', rvalue
-    if (present(dvalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', dvalue
+  if (remove) then
+    inquire (file=trim(f), exist=exists)
+    if (exists) then
+      open (io_unit%flag, file=trim(f), form='formatted', status='old', iostat=iostat)
+      close (io_unit%flag, status='delete')
+    end if
+  else
+    inquire (file=trim(f), exist=exists)
+    if (exists) then
+      open (io_unit%flag, file=trim(f), form='formatted', status='old', iostat=iostat)
+      if (present(ivalue)) read (io_unit%flag,*) ivalue
+      if (present(rvalue)) read (io_unit%flag,*) rvalue
+      if (present(dvalue)) read (io_unit%flag,*) dvalue
+      if (present(lvalue).and.iostat==0) read (io_unit%flag,*,iostat=iostat) lvalue
+      if (iostat/=0) lvalue = .not.lvalue
+      close (io_unit%flag)
+      if (present(lvalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', lvalue
+      if (present(ivalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', ivalue
+      if (present(rvalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', rvalue
+      if (present(dvalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', dvalue
+    end if
   end if
   end subroutine
 END SUBROUTINE check_flags
