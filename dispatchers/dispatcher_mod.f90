@@ -18,7 +18,8 @@ MODULE dispatcher_mod
     procedure, nopass:: method1
     procedure, nopass:: method2
   end type
-  integer:: method=0
+  integer, save:: verbose=0
+  integer, save:: method=0
   type(dispatcher_t), public:: dispatcher
 CONTAINS
 
@@ -28,18 +29,16 @@ CONTAINS
 SUBROUTINE init (self)
   class(dispatcher_t):: self
   integer:: iostat
-  integer, save:: verbose=0
   namelist /dispatcher_params/ method, verbose
   !-----------------------------------------------------------------------------
   rewind (io%input)
   read (io%input, dispatcher_params, iostat=iostat)
-  write (io%output, dispatcher_params)
+  if (io%master) write (io%output, dispatcher_params)
   select case (method)
   case (0)
     self%method => none
   case (1)
     self%method => method1
-    dispatcher_method1%verbose = verbose
   case (2)
     self%method => method2
   case default
@@ -73,6 +72,7 @@ SUBROUTINE method1 (task_list)
   task_list%queue_unpack = .false.
   mpi_mesg%recv_priv = .false.
   mpi_mesg%send_priv = .false.
+  dispatcher_method1%verbose = verbose
   call dispatcher_method1%execute (task_list)
 END SUBROUTINE method1
 

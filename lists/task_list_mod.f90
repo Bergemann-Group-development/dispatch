@@ -61,6 +61,7 @@ MODULE task_list_mod
   real(8), save:: sync_time=0.0
   type(task_list_t), save:: virtual_list
   !$omp threadprivate (virtual_list)
+  public:: task2patch
 CONTAINS
 
 !> =============================================================================

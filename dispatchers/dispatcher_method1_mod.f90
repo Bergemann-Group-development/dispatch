@@ -9,6 +9,7 @@ MODULE dispatcher_method1_mod
   USE task_list_mod
   USE mpi_mesg_mod
   USE bits_mod
+  USE data_io_mod
   implicit none
   private
   type, public:: dispatcher_method1_t
@@ -34,6 +35,7 @@ SUBROUTINE execute (self, task_list)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call task_list%init_all_nbors
+  call data_io%init (task2patch(task_list%head%task))
   call tic (time=start)
   call timer%print
   !$omp parallel private(link,nbor,ready,mytask) default(shared)
