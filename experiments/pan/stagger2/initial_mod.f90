@@ -17,7 +17,7 @@ MODULE initial_mod
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     integer:: seed
-    real:: gamma
+    real:: gamma=5./3.
     real:: d0
     logical:: mhd
     real(8):: time=0d0
@@ -29,16 +29,16 @@ MODULE initial_mod
   end type
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
   real, save:: csound=1.
-  real(8), save:: gamma=1.0001
   type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
+  real, optional:: gamma
   character(len=32), save:: type='turbulence'
   logical, save:: first_time=.true.
   namelist /initial_params/ type
@@ -53,6 +53,9 @@ SUBROUTINE init (self, solver)
   end if
   !$omp end critical (input_cr)
   self%solver = trim(solver)
+  if (present(gamma)) then
+    self%gamma = gamma
+  end if
   select case (type)
   case ('single_solenoidal')
     self%condition => single_solenoidal
@@ -89,7 +92,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
-  real(8)        :: kx, ky, kz
+  real(8)        :: kx, ky, kz, gamma
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
@@ -100,6 +103,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   real           :: d, p
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
+  gamma = self%gamma
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
@@ -111,6 +115,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     end if
     !$omp end critical (input_cr)
   end if
+  self%gamma = gamma
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
@@ -146,7 +151,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
-  real(8)        :: kx, ky, kz
+  real(8)        :: kx, ky, kz, gamma
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
@@ -156,6 +161,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
+  gamma = self%gamma
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
@@ -167,6 +173,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
     end if
     !$omp end critical (input_cr)
   end if
+  self%gamma = gamma
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
@@ -203,7 +210,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
-  real(8)        :: kx, ky, kz
+  real(8)        :: kx, ky, kz, gamma
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
@@ -212,6 +219,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_advection', itimer=itimer)
+  gamma = self%gamma
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
@@ -223,6 +231,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
     end if
     !$omp end critical (input_cr)
   end if
+  self%gamma = gamma
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
@@ -305,12 +314,12 @@ SUBROUTINE exa256 (self, m, ff, idx)
   ff(:,:,:,5) = 0.5*ff(:,:,:,idx%d)*(ff(:,:,:,idx%px)**2+ &
                                      ff(:,:,:,idx%py)**2+ &
                                      ff(:,:,:,idx%pz)**2) &
-              + ff(:,:,:,idx%d)/(gamma-1d0)
+              + ff(:,:,:,idx%d)/(self%gamma-1d0)
   do iv=idx%px,idx%pz
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
   dt = courant_factor*m(1)%d/umax
-  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,courant_factor,gamma,umax
+  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,courant_factor,self%gamma,umax
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
@@ -392,7 +401,7 @@ SUBROUTINE turbulence (self, m, ff, idx)
   call trace_begin('initial_t::raw', itimer=itimer)
   d = 1.0
   ff(:,:,:,idx%d        ) = d
-  ff(:,:,:,idx%e        ) = d*csound**2*gamma
+  ff(:,:,:,idx%e        ) = d*csound**2*self%gamma
   ff(:,:,:,idx%px:idx%pz) = 0.0
   call trace_end (itimer)
 END SUBROUTINE turbulence
