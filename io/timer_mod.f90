@@ -197,8 +197,8 @@ SUBROUTINE end (self, itimer)
   if (wc > next_report_sec) then
     !$omp critical (timer_print_cr)
     if (wc > next_report_sec) then
-      call print()
-      next_report_sec = wc + self%sec_per_report
+      call real_print()
+      next_report_sec = (nint(wc/self%sec_per_report)+1)*self%sec_per_report
     end if
     !$omp end critical (timer_print_cr)
   end if
@@ -209,13 +209,16 @@ END SUBROUTINE end
 !> counters.
 !> =============================================================================
 SUBROUTINE print ()
+  if (omp%master) call real_print ()
+END SUBROUTINE print
+SUBROUTINE real_print ()
   real(8):: total, proc(maxproc), ncalls(maxproc)
   real(8):: updates, musppt, calls
   real(8), save:: n_previous=0
   real(8):: wc, sec
   integer:: i, n_recv
   !.............................................................................
-  if (.not.omp%master .or. io_unit%do_validate) return
+  if (io_unit%do_validate) return
   !-----------------------------------------------------------------------------
   ! Prevent several treads from printing at the same time
   !-----------------------------------------------------------------------------
@@ -268,12 +271,14 @@ contains
       !$omp atomic write
       timer%n_lines = 1
     end if
-    do i=1,ntimer
-      if (proc(i)/total > 5e-4) then
-        write (unit,'(a32,1p,2g15.3,0p,f10.1,f14.6)') &
-          trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
-      end if
-    end do
+    if (total > 0.0) then
+      do i=1,ntimer
+        if (proc(i)/total > 5e-4) then
+          write (unit,'(a32,1p,2g15.3,0p,f10.1,f14.6)') &
+            trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
+        end if
+      end do
+    end if
     write (unit,'(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))') &
       "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', wc, 'wall sec'
     if (mpi%size>1) then
@@ -283,11 +288,9 @@ contains
         timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
         timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, timer%n_test
     end if
-    write (unit,'(a,1p,e9.2,3x,a,g10.3)') &
-      'timer_mod::print, updates =', updates,'mus/p =', musppt
     flush (unit)
   end subroutine write_to
-END SUBROUTINE print
+END SUBROUTINE real_print
 
 !> =============================================================================
 !> =============================================================================
