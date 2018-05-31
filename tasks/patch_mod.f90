@@ -429,21 +429,6 @@ SUBROUTINE init (self)
     self%mem_allocated = .true.               ! mark
     !$omp atomic
     io%gb = io%gb + storage_size(self%mem)*(product(shape(self%mem))/(8.*1024.**3))
-    if (self%rank == mpi%rank .or. self%is_set (bits%virtual)) then
-      !$omp atomic
-      n_alloc = n_alloc+1
-    else
-      !$omp atomic
-      n_ext = n_ext+1
-      print '(a,i8,3i5,2x,3i5,4x,4l1)', &
-        'WARNING: non-local patch, id, ranks, thread, pos, bits =', &
-        self%id, mpi%rank, self%rank, omp%thread, &
-        nint(self%mesh%p/self%mesh%s), &
-        self%is_set (bits%internal), &
-        self%is_set (bits%boundary), &
-        self%is_set (bits%virtual), &
-        self%is_set (bits%external)
-    end if
     allocate (self%unsigned (self%nv))
     allocate (self%pervolume(self%nv))
     self%unsigned (:) = .false.
