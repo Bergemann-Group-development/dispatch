@@ -657,11 +657,93 @@ subroutine uslope(self)
             ! idff > 0, so 1/dff = idff < 0.001 * huge is equivalent to dff > 0
             slop = merge(min(one,min(abs(vmin),abs(vmax))*idff), one, idff<0.001_dp * huge(1.0_dp))
             dlim = slop
-            !
             dq(i,j,k,n,1) = dlim*dfx
             dq(i,j,k,n,2) = dlim*dfy
             dq(i,j,k,n,3) = dlim*dfz
           end do
+        end do
+      end do
+    end do
+  else if (islope_type==4) then ! positivity preserving 3d unsplit slope
+    xslope_type = real(slope_type - 3_dp,kind=dp)
+    do k = l(3),u(3)
+      do j = l(2),u(2)
+        do i = l(1),u(1)
+          block
+          real(dp):: adfx(self%nv), adfy(self%nv), adfz(self%nv)
+          dlim = 1.0
+          do n = 1, self%nv
+            dflll = q(i-1,j-1,k-1,n)-q(i,j,k,n)
+            dflml = q(i-1,j  ,k-1,n)-q(i,j,k,n)
+            dflrl = q(i-1,j+1,k-1,n)-q(i,j,k,n)
+            dfmll = q(i  ,j-1,k-1,n)-q(i,j,k,n)
+            dfmml = q(i  ,j  ,k-1,n)-q(i,j,k,n)
+            dfmrl = q(i  ,j+1,k-1,n)-q(i,j,k,n)
+            dfrll = q(i+1,j-1,k-1,n)-q(i,j,k,n)
+            dfrml = q(i+1,j  ,k-1,n)-q(i,j,k,n)
+            dfrrl = q(i+1,j+1,k-1,n)-q(i,j,k,n)
+            !
+            dfllm = q(i-1,j-1,k  ,n)-q(i,j,k,n)
+            dflmm = q(i-1,j  ,k  ,n)-q(i,j,k,n)
+            dflrm = q(i-1,j+1,k  ,n)-q(i,j,k,n)
+            dfmlm = q(i  ,j-1,k  ,n)-q(i,j,k,n)
+            dfmmm = q(i  ,j  ,k  ,n)-q(i,j,k,n)
+            dfmrm = q(i  ,j+1,k  ,n)-q(i,j,k,n)
+            dfrlm = q(i+1,j-1,k  ,n)-q(i,j,k,n)
+            dfrmm = q(i+1,j  ,k  ,n)-q(i,j,k,n)
+            dfrrm = q(i+1,j+1,k  ,n)-q(i,j,k,n)
+            !
+            dfllr = q(i-1,j-1,k+1,n)-q(i,j,k,n)
+            dflmr = q(i-1,j  ,k+1,n)-q(i,j,k,n)
+            dflrr = q(i-1,j+1,k+1,n)-q(i,j,k,n)
+            dfmlr = q(i  ,j-1,k+1,n)-q(i,j,k,n)
+            dfmmr = q(i  ,j  ,k+1,n)-q(i,j,k,n)
+            dfmrr = q(i  ,j+1,k+1,n)-q(i,j,k,n)
+            dfrlr = q(i+1,j-1,k+1,n)-q(i,j,k,n)
+            dfrmr = q(i+1,j  ,k+1,n)-q(i,j,k,n)
+            dfrrr = q(i+1,j+1,k+1,n)-q(i,j,k,n)
+            !
+            vmin = min(dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml,dfrrl, &
+                 &     dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm,dfrrm, &
+                 &     dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr,dfrrr)
+            vmax = max(dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml,dfrrl, &
+                 &     dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm,dfrrm, &
+                 &     dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr,dfrrr)
+            !
+            dfx  = half*(q(i+1,j,k,n)-q(i-1,j,k,n))
+            dfy  = half*(q(i,j+1,k,n)-q(i,j-1,k,n))
+            dfz  = half*(q(i,j,k+1,n)-q(i,j,k-1,n))
+            idff  = xslope_type / sqrt(dfx**2+dfy**2+dfz**2+tiny(1.0_dp)) ! xslope_type = 1 or 2 dep. on slope_type
+            !-------------------------------------------------------------------
+            ! vmin and vmax are the lower and upper limit of one-cell differences
+            ! so a constant slope with step dq will give vmin=-dq and vmax=+dq,
+            ! while dfx (dff for any direction) will also be = dq, unless we keep
+            ! the 'half' in front of the sqrt.  With that kept, the dlim factor
+            ! will remain unity until the slopes differ with a factor of 2. Then,
+            ! if any of the 26 slopes is steeper than twice the gradient slope, 
+            ! the gradient will be diminished.
+            !
+            ! idff > 0, so 1/dff = idff < 0.001 * huge is equivalent to dff > 0
+            !-------------------------------------------------------------------
+            slop = merge(min(one,min(abs(vmin),abs(vmax))*idff), one, idff<0.001_dp * huge(1.0_dp))
+            !-------------------------------------------------------------------
+            ! Combine the dlim for different variables into one (experimental)
+            !-------------------------------------------------------------------
+            !dlim = slop
+            !if (n>=2.and.n<=5) dlim = min(dlim,slop)
+            dlim = min(dlim,slop)
+            ! save fluxes for each variable
+            adfx(n) = dfx
+            adfy(n) = dfy
+            adfz(n) = dfz
+          end do
+          do n = 1, self%nv
+            ! use saved fluxes, with common dlim
+            dq(i,j,k,n,1) = dlim*adfx(n)
+            dq(i,j,k,n,2) = dlim*adfy(n)
+            dq(i,j,k,n,3) = dlim*adfz(n)
+          end do
+          end block
         end do
       end do
     end do
