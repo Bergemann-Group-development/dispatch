@@ -29,9 +29,11 @@ CONTAINS
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, id, mesh)
    class(force_t):: self
    character(len=64):: solver
+   integer:: id
+   class(mesh_t), pointer:: mesh(:)
    integer,save:: seed=-11, iostat
    character(len=32), save:: type='zero'
    real, save:: t_turn=0.3, a0(3)=0.1, k(3)=1.0
@@ -46,6 +48,7 @@ SUBROUTINE init (self, solver)
      if (io%master) write (*, force_params)
    end if
    !$omp end critical (input_cr)
+   self%id     = id
    self%solver = trim(solver)
    self%seed   = seed
    self%t_turn = t_turn

@@ -51,7 +51,7 @@ MODULE mhd_mod
   type(index_t):: idx
   logical, save:: flop_count=.false.
   logical, save:: do_2nd_div=.true.
-  logical, save:: do_isothermal=.false.
+  logical, save:: isothermal=.false.
 CONTAINS
 
 !> =============================================================================
@@ -65,7 +65,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   character(len=16), save:: eos
   namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire, eos, flop_count, &
-                        do_2nd_div, do_isothermal
+                        do_2nd_div, isothermal
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -300,16 +300,9 @@ SUBROUTINE pde (self)
   dd = exp(ld)                                                                  ! ops: 0 0 0 0 3
   U = p/dd                                                                      ! ops: 0 0 3
   !-----------------------------------------------------------------------------
-  ! Gas pressure. The 2nd table variable is entropy per unit mass, effectively
-  ! a log variable, from the table point of view.
+  ! Gas pressure.
   !-----------------------------------------------------------------------------
-  if (do_isothermal) then
-    s = 0.0
-    self%s = s
-    pg = d*self%csound**2
-  else
-    pg = self%gas_pressure()
-  end if
+  pg = self%gas_pressure()
   ss = s/d                                                                      ! ops: 0 0 1
   self%pg => pg
   !-----------------------------------------------------------------------------
@@ -490,7 +483,7 @@ SUBROUTINE pde (self)
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
   ! plus a contribution proportional to the gradient of specific entropy ss.
   !-----------------------------------------------------------------------------
-  if (do_isothermal.or.self%gamma==1.0) then
+  if (isothermal.or.self%gamma==1.0) then
     dsdt = 0.0
   else
     fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)                    ! ops: 1 4 0
@@ -519,7 +512,7 @@ SUBROUTINE pde (self)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
     call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
-    if (do_isothermal.or.self%gamma==1.0) then
+    if (isothermal.or.self%gamma==1.0) then
       dsdt = 0.0
     else
       dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
@@ -579,28 +572,29 @@ END SUBROUTINE update
 !> =============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
 !> =============================================================================
-SUBROUTINE output (self, experiment_name)
+SUBROUTINE output (self)
   class(mhd_t):: self
-  character(len=64):: experiment_name, filename
-  optional:: experiment_name
+  character(len=64):: filename
   logical:: exists
-  integer, save:: itimer=0
+  real(8):: out_next
   !-----------------------------------------------------------------------------
-  if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
-  call trace%begin('mhd_t%output',itimer=itimer)
-  call self%gpatch_t%output (experiment_name)
-  !$omp critical (out_cr)
-  write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
-    self%id, self%iout
-  inquire(file=filename, exist=exists)
-  if (exists) then
-    open (io%data_unit, file=trim(filename), form='formatted', status='old', &
-      position='append')
-    write (io%data_unit,'(8f10.4)') self%nu
-    close (io%data_unit)
+  out_next = self%out_next
+  call trace%begin('mhd_t%output')
+  call self%gpatch_t%output
+  if (self%time >= self%out_next .and. io%do_output .and. io%do_legacy) then
+    !$omp critical (out_cr)
+    write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
+      self%id, self%iout
+    inquire(file=filename, exist=exists)
+    if (exists) then
+      open (io%data_unit, file=trim(filename), form='formatted', status='old', &
+        position='append')
+      write (io%data_unit,'(8f10.4)') self%nu
+      close (io%data_unit)
+    end if
+    !$omp end critical (out_cr)
   end if
-  !$omp end critical (out_cr)
-  call trace%end (itimer)
+  call trace%end
 END SUBROUTINE output
 
 !> =============================================================================
@@ -608,11 +602,13 @@ FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: d, s
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  integer, save:: nprint=3
   !-----------------------------------------------------------------------------
   if (trim(self%eos)=='ideal') then
     d => self%mem(:,:,:,self%idx%d,self%it,1)
     s => self%mem(:,:,:,self%idx%s,self%it,1)
-    if (self%gamma==1.0) then
+    if (isothermal .or. self%gamma==1.0) then
+      s = 0.0
       pg = d*self%csound**2
     else
       s => self%mem(:,:,:,self%idx%s,self%it,1)
@@ -620,6 +616,10 @@ FUNCTION gas_pressure (self) RESULT (pg)
     end if
   else
     call eos%lookup (shape(d), x=s, y=d, pg=pg)
+  end if
+  if (io%master .and. nprint>0) then
+    nprint = nprint - 1
+    print *, 'mhd_t%gas_pressure: min, max =', self%fminval(pg), self%fmaxval(pg)
   end if
 END FUNCTION gas_pressure
 

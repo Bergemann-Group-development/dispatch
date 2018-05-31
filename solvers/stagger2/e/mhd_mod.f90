@@ -39,7 +39,6 @@ MODULE mhd_mod
     real:: cdtd
     logical:: mhd=.false.
     logical:: first_time=.true.
-    logical:: isothermal=.false.
     type(force_t):: force
   contains
     procedure:: init
@@ -49,6 +48,7 @@ MODULE mhd_mod
     procedure:: gas_pressure
   end type
   integer, save:: verbose=0
+  logical, save:: isothermal=.false.
 CONTAINS
 
 !> =============================================================================
@@ -60,7 +60,7 @@ SUBROUTINE init (self)
   type(index_t):: idx
   integer:: i, iv
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
-  logical, save:: first_time=.true., isothermal=.false.
+  logical, save:: first_time=.true.
   character(len=16), save:: eos
   namelist /mhd_params/ nu, gamma, csound, isothermal, cdtd, hardwire, eos, verbose
   !----------------------------------------------------------------------------
@@ -78,7 +78,6 @@ SUBROUTINE init (self)
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
   !$omp end critical (input_cr)
-  self%isothermal = isothermal
   self%eos = eos
   self%nu = nu
   self%gamma = gamma
@@ -118,7 +117,7 @@ SUBROUTINE init (self)
   end if
   self%unsigned(idx%d)  = .true.
   self%pervolume(idx%s) = .true.
-  call self%force%init (self%kind)
+  call self%force%init (self%kind, self%id, self%mesh)
  call trace%end
 END SUBROUTINE init
 
@@ -369,11 +368,11 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Conservation of energy; reuse the mass flux for the energy flux
   !-----------------------------------------------------------------------------
-  if (self%gamma /= 1.0) then                           ! unless isothermal
+  if (isothermal .or. self%gamma == 1.0) then                                   ! unless isothermal
+    dedt = dddt*ee                                                              ! ops: 0 1 0
+  else
     fm = fm*down(ee) - (self%nu(5)*dd*down(du))*ddown(ds,ee)                    ! ops: 1 4 0
     dedt = -div(ds,fm) - pg*du + Q
-  else
-    dedt = dddt*ee                                                              ! ops: 0 1 0
   end if
   !-----------------------------------------------------------------------------
   ! Induction equation
@@ -399,7 +398,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
   !-----------------------------------------------------------------------------
-  if (.not.self%isothermal) then
+  if (.not.isothermal) then
     u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs((dedt-ee*dddt)/d)) ! ops: 1 1 1
     self%u_max = max(self%u_max,u_max)
     if (verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
@@ -424,14 +423,14 @@ SUBROUTINE update (self)
   type(index_t):: idx
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  call self%gravity
+  !call self%gravity
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
   ! the call here will have no effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
   call self%output
-  if (self%isothermal) then
+  if (isothermal) then
     self%mem(:,:,:,idx%e,self%it,1) = &
     self%mem(:,:,:,idx%d,self%it,1)*self%csound**2
   end if
@@ -441,32 +440,36 @@ SUBROUTINE update (self)
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
-  call self%gpatch_t%update
+  !call self%gpatch_t%update
   call trace%end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
 !> =============================================================================
-SUBROUTINE output (self, experiment_name)
+SUBROUTINE output (self)
   class(mhd_t):: self
-  character(len=64):: experiment_name, filename
-  optional:: experiment_name
+  character(len=64):: filename
+  real(8):: out_next
   logical:: exists
   !-----------------------------------------------------------------------------
-  if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
-  call self%gpatch_t%output (experiment_name)
-  !$omp critical (out_cr)
-  write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
-    self%id, self%iout
-  inquire(file=filename, exist=exists)
-  if (exists) then
-    open (io%data_unit, file=trim(filename), form='formatted', status='old', &
-      position='append')
-    write (io%data_unit,'(8f10.4)') self%nu
-    close (io%data_unit)
-  end if
+  call trace%begin ('mhd_t%output')
+  out_next = self%out_next
+  call self%gpatch_t%output
+  if (self%time >= out_next .and. io%do_output .and. io%do_legacy) then
+    !$omp critical (out_cr)
+    write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
+      self%id, self%iout
+    inquire(file=filename, exist=exists)
+    if (exists) then
+      open (io%data_unit, file=trim(filename), form='formatted', status='old', &
+        position='append')
+      write (io%data_unit,'(8f10.4)') self%nu
+      close (io%data_unit)
+    end if
   !$omp end critical (out_cr)
+  end if
+  call trace%end
 END SUBROUTINE output
 
 !> =============================================================================
@@ -474,11 +477,12 @@ FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
   real, dimension(:,:,:), pointer:: d, e
+  integer, save:: nprint=3
   !-----------------------------------------------------------------------------
   if (trim(self%eos)=='ideal') then
     d => self%mem(:,:,:,self%idx%d,self%it,1)
     e => self%mem(:,:,:,self%idx%e,self%it,1)
-    if (self%gamma==1.0) then
+    if (isothermal .or. self%gamma==1.0) then
       pg = d*self%csound**2
     else
       pg = e*(self%gamma-1)
@@ -490,6 +494,10 @@ FUNCTION gas_pressure (self) RESULT (pg)
       print *, self%id, 'lookup_table:  ee =', minval(self%ee ), maxval(self%ee )
       print *, self%id, 'lookup_table:  pg =', minval(pg),       maxval(pg)
     end if
+  end if
+  if (io%master .and. nprint > 0) then
+    nprint = nprint-1
+    print *, 'mhd_t%gas_pressure: min, max =', self%fminval(pg), self%fmaxval(pg)
   end if
 END FUNCTION gas_pressure
 
