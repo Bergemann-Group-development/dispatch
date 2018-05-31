@@ -693,9 +693,10 @@ FUNCTION completed (self) RESULT(flag)
   else
     !$omp critical (mpi_cr)
     call MPI_TEST (self%req, flag, stat, ierr)
-    timer%n_test = timer%n_test + 1
     !$omp end critical (mpi_cr)
   end if
+  !$omp atomic
+  timer%n_test = timer%n_test + 1
 #endif
   call trace%end (itimer)
 END FUNCTION completed
@@ -823,7 +824,8 @@ SUBROUTINE irecv (self, rank, tag)
 END SUBROUTINE irecv
 
 !> =============================================================================
-!> Issue a message recieve request from a specific rank
+!> Test if a message is fully received, taking care not to test too often - at
+!> least "test_time" must have passed since the previous test.
 !> =============================================================================
 FUNCTION test_recv (self) RESULT (flag)
   class(mesg_t):: self
@@ -841,6 +843,7 @@ FUNCTION test_recv (self) RESULT (flag)
     if (wait) then
       call MPI_WAIT (self%req, stat, ierr)
       flag = .true.
+      now = wallclock()
     else
       call MPI_TEST (self%req, flag, stat, ierr)
     end if
@@ -849,6 +852,7 @@ FUNCTION test_recv (self) RESULT (flag)
     if (wait) then
       call MPI_WAIT (self%req, stat, ierr)
       flag = .true.
+      now = wallclock()
     else
       call MPI_TEST (self%req, flag, stat, ierr)
     end if
@@ -856,6 +860,7 @@ FUNCTION test_recv (self) RESULT (flag)
   if (flag) then
     self%id = stat(MPI_TAG)
   end if
+  !$omp atomic write
   self%test_next = now + test_time
   !$omp atomic
   timer%n_test = timer%n_test + 1
@@ -909,7 +914,6 @@ SUBROUTINE delay (self, n, ms)
   integer, optional:: n
   real, optional:: ms
   real:: ms_l
-  real(8):: wc
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (present(ms)) then
@@ -920,8 +924,10 @@ SUBROUTINE delay (self, n, ms)
   if (ms_l==0.0) return
   call trace%begin ('mpi_mesg_t%delay', itimer=itimer)
   call mpi%delay (ms_l)
-  write (io_unit%log,*) wc, 'delay:', n, ms
-  flush (io_unit%log)
+  if (present(n)) then
+    write (io_unit%log,*) wallclock(), omp%thread, 'delay:', n
+    flush (io_unit%log)
+  end if
   !$omp atomic
   self%n_delay = self%n_delay + 1
   call trace%end (itimer)
