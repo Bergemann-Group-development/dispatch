@@ -301,10 +301,10 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; these may have been set by the calling code
   !-----------------------------------------------------------------------------
+  !$omp critical (input_cr)
   nv   = self%nv
   ng   = self%ng
   periodic = self%periodic
-  !$omp critical (patch_input_cr)
   if (first_time) then
     size = self%size
     n    = self%n
@@ -322,10 +322,18 @@ SUBROUTINE init (self)
     if (io%master) write (*, out_params)
   end if
   !print *, 'MK', omp_mythread, self%id, self%nt, nt
-  !$omp end critical (patch_input_cr)
   ! reasonable values of self%n should take precedence over a saved value of `n`.
   if (any(self%n == 0)) self%n = n              ! patch dimensions
+  !-----------------------------------------------------------------------------
+  ! Output related parameters
+  !-----------------------------------------------------------------------------
   io%inputdir      = inputdir
+  io%guard_zones   = guard_zones
+  io%time_derivs   = time_derivs
+  io%end_time      = end_time
+  io%out_time      = out_time
+  io%print_time    = print_time
+  !$omp end critical (input_cr)
   self%restart     = restart                    ! restart snapshot
   self%ng          = ng                         ! number of guard zones
   self%nv          = nv                         ! number of variables
@@ -338,18 +346,12 @@ SUBROUTINE init (self)
   self%periodic    = periodic                   ! periodic box or not
   self%use_data_hub = use_data_hub              ! guard zone handling
   self%no_mans_land = no_mans_land              ! mesh centering
-  !-----------------------------------------------------------------------------
-  ! Output related parameters
-  !-----------------------------------------------------------------------------
-  io%guard_zones   = guard_zones
-  io%time_derivs   = time_derivs
-  io%end_time      = end_time
-  io%out_time      = out_time
-  io%print_time    = print_time
   self%print_next  = print_time
   if (all(self%size==self%box)) then
+    !$omp critical (log_cr)
     write (io_unit%log,*) mpi%rank, 'task', self%id, ' is root grid'
     call self%set(bits%root_grid)
+    !$omp end critical (log_cr)
   end if
   !-----------------------------------------------------------------------------
   ! Special handling of collapsed dimensions
@@ -412,11 +414,14 @@ SUBROUTINE init (self)
   ! in conflict with levels set by e.g. rubiks_mod
   !-----------------------------------------------------------------------------
   ! FIXME: self%level = log(maxval(self%box)/minval(self%ds))/log(real(self%msplit)) + 0.1
-  if (io%verbose>2) &
+  if (io%verbose>2) then
+    !$omp critical (log_cr)
     write (io_unit%log,'(1x,a,i7,2(1p,3e12.4,2x))') 'patch_mod::init: id, size, pos =', &
       self%id, self%size, self%position
-  if (io%verbose>3) &
-    write (io_unit%log,*) 'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
+    if (io%verbose>3) &
+      write (io_unit%log,*) 'id, LEVEL: ', self%id, self%level, maxval(self%box), minval(self%ds)
+    !$omp end critical (log_cr)
+  end if
   !-----------------------------------------------------------------------------
   ! Allocate memory, if not already allocated
   !-----------------------------------------------------------------------------
