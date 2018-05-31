@@ -150,11 +150,9 @@ module amr_parameters
   logical ::self_shielding=.false.
   logical ::pressure_fix=.false.
   logical ::entropy_fix=.false.
-  logical ::do_isothermal=.false. ! force mhd solver to be isothermal
   real(dp)::temp_iso = 1.0_dp ! Temperature in case of isothermal
   logical ::nordlund_fix=.true.
   logical ::cooling=.false.
-  logical ::isothermal=.false.
   logical ::metal=.false.
   logical ::bondi=.true.      ! Activate Bondi accretion onto sink particle 
   logical ::haardt_madau=.false.

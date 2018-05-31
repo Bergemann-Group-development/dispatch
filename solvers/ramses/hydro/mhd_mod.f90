@@ -52,7 +52,7 @@ MODULE mhd_mod
   logical:: debug=.false.
   logical:: first_time=.true.
   logical:: detailed_timer=.false.
-  logical:: do_isothermal=.false.
+  logical:: isothermal=.false.
   character(len=16):: eqn='mhd'
 CONTAINS
 
@@ -62,7 +62,7 @@ SUBROUTINE init (self)
   character(len=10):: riemann='hllc'
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, do_isothermal, csound, detailed_timer, debug
+    smallc, isothermal, csound, detailed_timer, debug
   type(index_t):: idx
 !...............................................................................
   call trace%begin('mhd_mod%init')
@@ -163,19 +163,10 @@ SUBROUTINE update (self)
   ! Godunov solver
   !-----------------------------------------------------------------------------
   call godunov (self)
+  if (isothermal) &
+    self%mem(:,:,:,self%idx%e,self%new,1) = &
+    self%mem(:,:,:,self%idx%d,self%new,1)
   if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
-  if (debug) then
-    if (self%id==229.or.self%id==231) then
-      print *,self%id, 'mk2:px', self%mem(19-2:19+2,19,19,self%idx%px,self%new,1), self%idx%px
-      print *,self%id, 'mk2: d', self%mem(19-2:19+2,19,19,self%idx%d ,self%new,1)
-      print *,self%id, 'mk2: e', self%mem(19-2:19+2,19,19,self%idx%e ,self%new,1), self%idx%e
-    end if
-    if (self%id==230) then
-      print *,self%id, 'mk2:px', self%mem( m-7:m-3 ,19,19,self%idx%px,self%new,1), self%idx%px
-      print *,self%id, 'mk2: d', self%mem( m-7:m-3 ,19,19,self%idx%d ,self%new,1)
-      print *,self%id, 'mk2: e', self%mem( m-7:m-3 ,19,19,self%idx%e ,self%new,1), self%idx%e
-    end if
-  end if
   !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
@@ -417,7 +408,7 @@ subroutine check_small (self, uu)
     v =  uu(i,j,k,self%idx%py)*c
     w =  uu(i,j,k,self%idx%pz)*c
     ekin = 0.5*d*(u**2+v**2+w**2)
-    if (do_isothermal) then
+    if (isothermal) then
       p = d*csound**2
       uu(i,j,k,self%idx%e) = p+ekin
     else
@@ -484,7 +475,7 @@ subroutine ctoprim (self)
   d => q(:,:,:,1)
   e => s
   pg => q(:,:,:,5)
-  if (do_isothermal) then
+  if (isothermal) then
     pg = d*csound**2
   else
     pg = e*(self%gamma-1.0)

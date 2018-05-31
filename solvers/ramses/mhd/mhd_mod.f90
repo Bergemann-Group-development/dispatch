@@ -49,9 +49,11 @@ MODULE mhd_mod
     procedure:: update
     procedure:: gas_pressure
   end type
+  logical:: isothermal=.false.
   logical:: first_time=.true.
   character(len=16):: eqn='mhd'
   real(kind=8):: courant_number=0.2
+  real:: csound=1.
 CONTAINS
 
 !> =============================================================================
@@ -59,10 +61,9 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hlld'
   type(index_t):: idx
-  real, save:: csound=1.
   integer:: i
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, do_isothermal, csound
+    smallc, isothermal, csound
 !...............................................................................
   call trace%begin('mhd_mod%init')
 
@@ -324,6 +325,12 @@ SUBROUTINE update (self)
 
   end associate
   !-----------------------------------------------------------------------------
+  ! Reset the energy variable in isothermal cases
+  !-----------------------------------------------------------------------------
+  if (isothermal) &
+    self%mem(:,:,:,self%idx%e,self%new,1) = &
+    self%mem(:,:,:,self%idx%d,self%new,1)
+  !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
@@ -353,7 +360,6 @@ subroutine check_small (self)
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
   real(dp):: c,d,u,v,w,p,ekin,B1,B2,B3,emag
   integer, save:: nprint=10
-  real, save:: csound=1.
   integer, save:: itimer=0
   associate(uu=>self%uin)
   !-----------------------------------------------------------------------------
@@ -383,8 +389,7 @@ subroutine check_small (self)
     B2=  uu(i,j,k,7)
     B3=  uu(i,j,k,8)
     emag = 0.5*(B1**2+B2**2+B3**2)
-
-    if (do_isothermal) then
+    if (isothermal) then
       p = d*csound**2
       uu(i,j,k,5) = p/(gamma-one)+ekin+emag
     else
@@ -440,8 +445,12 @@ subroutine ctoprim(self)
 
   etot(:,:,:) = uin(:,:,:,5) - emag(:,:,:)
   eint(:,:,:) = etot(:,:,:)/uin(:,:,:,1) - eken(:,:,:)
-
-  q(:,:,:,5)=MAX((self%gamma-one)*q(:,:,:,1)*eint(:,:,:),smallp)
+  !
+  if (isothermal) then
+    q(:,:,:,5) = q(:,:,:,1)*csound**2
+  else
+    q(:,:,:,5) = MAX((self%gamma-one)*q(:,:,:,1)*eint(:,:,:),smallp)
+  end if
   ! Gravity predictor step
   !q(:,:,:,2:4) = q(:,:,:,idim+1) + Grho*gravin(:,:,:,1:3)*dt*half
   c = sqrt((q(:,:,:,5)*self%gamma+q(:,:,:,6)**2+q(:,:,:,7)**2+q(:,:,:,8)**2)/q(:,:,:,1))
@@ -1557,7 +1566,11 @@ end subroutine solver
 FUNCTION gas_pressure (self)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: gas_pressure
-  gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(self%gamma-1.0)
+  if (isothermal) then
+    gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*csound**2
+  else
+    gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(self%gamma-1.0)
+  end if
 END FUNCTION gas_pressure
 
 !> =============================================================================
