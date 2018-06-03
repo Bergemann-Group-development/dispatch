@@ -4,10 +4,14 @@
 !> =============================================================================
 MODULE dispatcher_mod
   USE io_mod
+  USE trace_mod
   USE task_list_mod
   USE dispatcher_method1_mod
   USE dispatcher_method2_mod
   USE mpi_mesg_mod
+  USE data_io_mod
+  !USE task_mod
+  !USE patch_mod
   implicit none
   private
   type, public:: dispatcher_t
@@ -31,6 +35,7 @@ SUBROUTINE init (self)
   integer:: iostat
   namelist /dispatcher_params/ method, verbose
   !-----------------------------------------------------------------------------
+  call trace%begin ('dispatcher_t%init')
   rewind (io%input)
   read (io%input, dispatcher_params, iostat=iostat)
   if (io%master) write (io%output, dispatcher_params)
@@ -44,6 +49,7 @@ SUBROUTINE init (self)
   case default
     call io%abort ('unknown method in dispatcher_mod')
   end select
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================

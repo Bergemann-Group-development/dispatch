@@ -35,10 +35,11 @@ CONTAINS
 !> =============================================================================
 !> Find the relevant snapshot instance and decrement counter
 !> =============================================================================
-SUBROUTINE count (self, patch, snapshot)
+SUBROUTINE count (self, patch, snapshot, input)
   class(snapshot_list_t):: self
   class(patch_t):: patch
   type(snapshot_t), pointer:: snapshot
+  logical, optional:: input
   !-----------------------------------------------------------------------------
   ! Search for the snapshot instance
   !-----------------------------------------------------------------------------
@@ -64,7 +65,7 @@ SUBROUTINE count (self, patch, snapshot)
   if (snapshot%ibuf==0) then
     call self%remove (snapshot)
     if (verbose>0 .and. mpi%master) print '(a,2x,a,i5.5,5x,"time:",1p,2g14.5,2x,9g14.5)', &
-      trim(io%method)//'_io:', &
+      trim(io%method)//'_io:'//merge('input ','output',present(input)), &
       'snapshot '//trim(io%outputname), patch%iout, patch%out_next, patch%time
       !!, patch%t(patch%iit)
   end if

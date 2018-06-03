@@ -6,6 +6,8 @@
 MODULE parallel_io_mod
   USE patch_mod
   USE io_mod
+  USE omp_mod
+  USE mpi_mod
   USE mpi_io_mod
   USE mpi_io_file_mod
   USE trace_mod
@@ -34,11 +36,14 @@ SUBROUTINE init (patch)
   character(len=5):: filename
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%init')
-  write (filename,'(i5.5)') patch%iout
-  call file_out%openw (trim(io%outputname)//filename//'/snapshot.dat')
   if (patch%restart > 0) then
-    write (filename,'(i5.5)') patch%restart
-    call file_in%openr (trim(io%inputname)//filename//'/snapshot.dat')
+    write (filename,'(i5.5)') 0
+    call file_in%openr  (trim(io%outputname)//filename//'/snapshot.dat')
+    write (filename,'(i5.5)') patch%iout
+    call file_out%openw (trim(io%outputname)//filename//'/snapshot.dat')
+  else
+    write (filename,'(i5.5)') patch%iout
+    call file_out%openw (trim(io%outputname)//filename//'/snapshot.dat')
   end if
   call trace%end
 END SUBROUTINE init
@@ -122,6 +127,9 @@ SUBROUTINE input (patch, ok)
   type(mpi_io_t):: thread_io
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%input')
+  if (file_in%handle==0) then
+    call init (patch)
+  end if
   call thread_io%use (file_in)
   if (io%guard_zones) then
     n = patch%gn
@@ -153,6 +161,7 @@ SUBROUTINE input (patch, ok)
   end do
   deallocate (buffer)
   ok = .true.
+  patch%time = patch%restart*io%out_time
   call trace%end
 END SUBROUTINE input
 

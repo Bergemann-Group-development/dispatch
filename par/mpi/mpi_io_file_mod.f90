@@ -39,7 +39,6 @@ SUBROUTINE open (self, filename, mode)
   integer(kind=MPI_OFFSET_KIND):: pos
 #endif
   !-----------------------------------------------------------------------------
-  call trace%begin ('mpi_io_t%open')
 #ifdef MPI
   !$omp critical (mpi_io_cr)
   if (self%handle == 0) then
@@ -60,7 +59,6 @@ SUBROUTINE open (self, filename, mode)
   end if
   !$omp end critical (mpi_io_cr)
 #endif
-  call trace%end
 END SUBROUTINE open
 
 !> =============================================================================
@@ -72,9 +70,11 @@ SUBROUTINE openw (self, filename)
   character(len=*) filename
   integer mode
   !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_t%openw')
 #ifdef MPI
   call self%open (filename, MPI_MODE_CREATE + MPI_MODE_RDWR)
 #endif
+  call trace%end
 END SUBROUTINE openw
 
 !> =============================================================================
@@ -86,9 +86,11 @@ SUBROUTINE openr (self, filename)
   character(len=*) filename
   integer mode
   !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_t%openr')
 #ifdef MPI
   call self%open (filename, MPI_MODE_RDONLY)
 #endif
+  call trace%end
 END SUBROUTINE openr
 
 !> =============================================================================
