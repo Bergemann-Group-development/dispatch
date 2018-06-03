@@ -68,13 +68,16 @@ MODULE mpi_mesg_mod
     integer:: nq_send=0
     integer:: nq_recv=0
     real:: delay_ms=0.0
+    real:: check_ms=10.
     integer:: max_recv
     integer:: max_probe
     integer:: min_nq
     logical:: wait=.false.
     logical:: recv_priv=.true.
+    logical:: recv_active=.true.
     logical:: send_priv=.true.
     logical:: debug=.false.
+    logical:: queue_unpack=.true.
   contains
     procedure:: init
     procedure:: get
@@ -513,10 +516,14 @@ SUBROUTINE init (self)
   class(mpi_mesg_t):: self
   logical, save:: debug=.false.
   logical, save:: recv_priv=.true.
+  logical, save:: recv_active=.true.
   logical, save:: send_priv=.true.
+  logical, save:: queue_unpack=.true.
+  real, save:: check_ms=10.
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, wait, send_wait, send_priv, &
-                             recv_priv, test_time, debug
+                             recv_active, recv_priv, queue_unpack, test_time, debug, &
+                             check_ms
   integer:: iostat
   !.............................................................................
   if (self%initialized) return
@@ -537,6 +544,9 @@ SUBROUTINE init (self)
   self%max_recv = max_recv
   self%max_probe = max_probe
   self%recv_priv = recv_priv
+  self%recv_active = recv_active
+  self%queue_unpack = queue_unpack
+  self%check_ms = check_ms
   self%wait = wait
   !call self%test
 END SUBROUTINE init

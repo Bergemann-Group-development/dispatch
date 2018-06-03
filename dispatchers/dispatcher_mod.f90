@@ -6,8 +6,9 @@ MODULE dispatcher_mod
   USE io_mod
   USE trace_mod
   USE task_list_mod
-  USE dispatcher_method1_mod
-  USE dispatcher_method2_mod
+  USE dispatcher0_mod
+  USE dispatcher1_mod
+  USE dispatcher2_mod
   USE mpi_mesg_mod
   USE data_io_mod
   !USE task_mod
@@ -15,10 +16,10 @@ MODULE dispatcher_mod
   implicit none
   private
   type, public:: dispatcher_t
-    procedure(none), nopass, pointer:: method => null()
+    procedure(method0), nopass, pointer:: method => null()
   contains
     procedure:: init
-    procedure, nopass:: none
+    procedure, nopass:: method0
     procedure, nopass:: method1
     procedure, nopass:: method2
   end type
@@ -41,9 +42,11 @@ SUBROUTINE init (self)
   if (io%master) write (io%output, dispatcher_params)
   select case (method)
   case (0)
-    self%method => none
+    self%method => method0
+    call dispatcher0%init
   case (1)
     self%method => method1
+    dispatcher1%verbose = verbose
   case (2)
     self%method => method2
   case default
@@ -55,12 +58,12 @@ END SUBROUTINE init
 !> =============================================================================
 !> Execute a task list
 !> =============================================================================
-SUBROUTINE none (task_list)
+SUBROUTINE method0 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   task_list%method = method
-  call task_list%execute
-END SUBROUTINE none
+  call dispatcher0%execute (task_list)
+END SUBROUTINE method0
 
 !> =============================================================================
 !> Execute a task list.  Since only the master thread is call check_mpi(), we
@@ -74,12 +77,12 @@ SUBROUTINE method1 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   task_list%method = method
-  task_list%recv_active = .true.
-  task_list%queue_unpack = .false.
+  mpi_mesg%recv_active = .true.
+  mpi_mesg%queue_unpack = .false.
   mpi_mesg%recv_priv = .false.
   mpi_mesg%send_priv = .false.
-  dispatcher_method1%verbose = verbose
-  call dispatcher_method1%execute (task_list)
+  dispatcher1%verbose = verbose
+  call dispatcher1%execute (task_list)
 END SUBROUTINE method1
 
 !> =============================================================================
@@ -89,11 +92,11 @@ SUBROUTINE method2 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   task_list%method = method
-  task_list%recv_active = .true.
-  task_list%queue_unpack = .false.
+  mpi_mesg%recv_active = .true.
+  mpi_mesg%queue_unpack = .false.
   mpi_mesg%recv_priv = .false.
   mpi_mesg%send_priv = .false.
-  call dispatcher_method2%execute (task_list)
+  call dispatcher2%execute (task_list)
 END SUBROUTINE method2
 
 END MODULE dispatcher_mod

@@ -1,66 +1,36 @@
-!> ==================-===========================================================
-!> $Id$
-!> A task_list_t has the distinction that it must be able to call an initial
-!> condition routine, which only exists in experiment_t tasks.  Procedures in
-!> the module use these foreign procedures:
-!>
-!>    task_t%init         : to initialize a task
-!>    task_t%update       : to update a task
-!>    task_t%send_to      : send data to foreign task
-!>    list_t%remove_task  : remove task from list
-!>    list_t%remove_head  : remove head from list
-!>
+!> =============================================================================
+!> Task list data type, with methods for startup and udpates.  Message handling
+!> is inherited from the task_mesg_t data type.
 !> =============================================================================
 MODULE task_list_mod
   USE io_mod
+  USE trace_mod
   USE omp_mod
-  USE omp_lock_mod
   USE omp_timer_mod
   USE timer_mod
   USE mpi_mod
   USE mpi_mesg_mod
-  USE link_mod
   USE list_mod
   USE task_mod
   USE patch_mod
   USE experiment_mod
   USE bits_mod
-  USE trace_mod
   USE refine_mod
   USE load_balance_mod
   USE data_io_mod
+  USE task_mesg_mod
   implicit none
   private
-  type, public, extends(list_t):: task_list_t
+  type, public, extends(task_mesg_t):: task_list_t
     logical:: syncing=.false.
-    logical:: recv_active=.false.
-    logical:: queue_unpack=.true.
     real(8):: sync_time=-1.0, sync_next=-1.0
     real(8):: job_seconds=1d30
-    integer:: method=0
   contains
     procedure:: init
     procedure:: startup
-    procedure:: execute
     procedure:: update
-    procedure:: updater
-    procedure:: find_task
-    procedure:: unpack
-    procedure:: check_mpi
-    procedure:: init_virtual
-    procedure:: check_virtual
-    procedure:: check_active
-    procedure:: output
-    procedure:: print => print_table
+    procedure:: print
   end type
-  real, save:: check_ms=10.
-  integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
-  integer, save:: min_nq=2**30
-  logical, save:: do_delay=.false.
-  logical, save:: track_active=.false.
-  real(8), save:: sync_time=0.0
-  type(task_list_t), save:: virtual_list
-  !$omp threadprivate (virtual_list)
   public:: task2patch
 CONTAINS
 
@@ -73,12 +43,9 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   class(link_t), pointer:: link
   integer:: iostat
-  integer:: debug=0
-  real(8):: job_seconds=1d30
-  logical, save:: recv_active=.true.
-  logical, save:: queue_unpack=.true.
-  namelist /task_list_params/ debug, max_stalled, retry_stalled, check_ms, &
-    do_delay, recv_active, queue_unpack, sync_time, job_seconds, track_active
+  real(8), save:: job_seconds=1d30
+  real(8), save:: sync_time=0.0
+  namelist /task_list_params/ sync_time, job_seconds
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -86,16 +53,11 @@ SUBROUTINE init (self, name)
   call self%list_t%init (name)
   call mpi_mesg%init
   rewind (io%input); read(io%input, task_list_params, iostat=iostat)
-  if (io%master) then
-    self%debug = debug
-    if (io%master) write (*,task_list_params)
-  end if
+  if (io%master) write (*,task_list_params)
   if (sync_time > 0.0) &
     self%sync_next = sync_time
   self%sync_time = sync_time
   self%job_seconds = job_seconds
-  self%recv_active = recv_active
-  self%queue_unpack = queue_unpack
   write (io_unit%mpi,*) 'task_list%init: next_sync =', self%sync_next, self%sync_time
   call load_balance%init
   call trace_end
@@ -106,8 +68,8 @@ END SUBROUTINE init
 !> everything local to self%update is thread private.
 !> =============================================================================
 SUBROUTINE startup (self)
-  USE omp_timer_mod
   class(task_list_t):: self
+  !.............................................................................
   class(link_t), pointer:: link, rem
   class(task_t), pointer:: task
   real(8):: sec
@@ -117,7 +79,7 @@ SUBROUTINE startup (self)
   !-----------------------------------------------------------------------------
   ! Initialize nbor lists, and set virtual and boundary bits
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_list_t%startup', itimer=itimer)
+  call trace%begin ('dispatcher0_t%startup', itimer=itimer)
   call self%init_bdries
   call self%init_all_nbors
   call self%reset_status
@@ -133,14 +95,14 @@ SUBROUTINE startup (self)
       link%task%sync_time = link%task%time + self%sync_time
     link => link%next
   end do
-  if (self%recv_active .and. mpi_mesg%recv_priv) &
+  if (mpi_mesg%recv_active .and. mpi_mesg%recv_priv) &
     call self%init_virtual
   !-----------------------------------------------------------------------------
   ! Initialize the data I/O, and start timer
   !-----------------------------------------------------------------------------
   if (mpi%master) &
     print '(a,f8.3,a)', ' Memory per process:', io%gb, ' GB'
-  call mpi%barrier ('task_list%execute')
+  call mpi%barrier ('self%execute')
   task => self%head%task
   select type (task)
   class is (patch_t)
@@ -153,275 +115,36 @@ SUBROUTINE startup (self)
 END SUBROUTINE startup
 
 !> =============================================================================
-!> Execute the task list, updating it until it is empty.  With !$omp parallel here,
-!> everything local to self%update is thread private.
+!> Common part of task list update, used by dispatchers
 !> =============================================================================
-SUBROUTINE execute (self)
-  USE omp_timer_mod
-  class(task_list_t):: self
-  real(8):: sec
-  integer:: dims(4)
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('task_list_t%execute', itimer=itimer)
-  call self%startup
-  call tic (time=sec)
-  call timer%print
-  !-----------------------------------------------------------------------------
-  ! Loop over tasks
-  !-----------------------------------------------------------------------------
-  io%ntask = self%na
-  !$omp parallel
-  do while (self%na > 0 .and. wallclock() < self%job_seconds)
-    call self%update
-    if (io%do_stop) call mpi%abort ('stop flag')
-    if (self%na == self%n_tasks) then
-      !$omp atomic
-      min_nq = min(min_nq,self%nq)
-    end if
-  end do
-  write (io_unit%log,*) 'thread',omp%thread,' arrived'
-  flush (io_unit%log)
-  !$omp barrier
-  !$omp end parallel
-  call timer%print
-  call mpi_mesg%diagnostics(1)
-  call toc ('wall time', n_update, time=sec)
-  call mpi%barrier ('end')
-  if (io%master) write (*,*) "task list finished, min_nq =", min_nq
-  call data_io%close
-  call trace%end (itimer)
-END SUBROUTINE execute
-
-!> =============================================================================
-!> Update the state of the task list, taking the steps necessary to update the
-!> head task on the ready_queue, and check for consequences.  Two strategies:
-!>
-!> 1) The threads pick up tasks from the queue themselves, and put itself or
-!>    other tasks back onto the queue, based on the results of list_t%check_ready
-!>
-!> In this case the threads are prevented from messing up for each other by
-!> using critical regions when manipulating the queue, and by using status bits
-!> to indicate the state each task is in.  These can be 1) in the queue, and
-!> ready to be updated, 2) not in the queue, and busy, 3) not in the queue, and
-!> not busy. The 'ready' bit is set while the task is in the queue, and the
-!> 'busy' but is set while the task is busy being updated.  A task should be
-!> checked for being ready only when in state 3, meaning only when none of the
-!> two bits are set.
-!>
-!> 2) The master thread takes care of picking tasks from the queue, starting an
-!>    OMP thread to update it, and checking for nbors that are ready to be
-!>    updated as a consquence
-!> =============================================================================
-SUBROUTINE update (self)
-  class(task_list_t):: self
-  !.............................................................................
-  class(link_t), pointer:: head
-  class(task_t), pointer:: task, otask
-  class(mesg_t), pointer:: mesg
-  logical:: already_busy, was_refined
-  real(8):: wc
-  real(8), save:: time, otime=0d0
-  integer, save:: oid=0
-  integer:: id
-  integer, save:: itimer=0
-  !.............................................................................
-  call trace%begin('task_list_t%update', itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Check incoming MPI, which may free up tasks for execution
-  !-----------------------------------------------------------------------------
-  call self%check_mpi                                   ! check incoming MPI
-  !-----------------------------------------------------------------------------
-  ! Pick a task off the queue, in a very brief critical region
-  !-----------------------------------------------------------------------------
-  !$omp critical (queue_cr)
-  head => self%queue                                    ! queue start
-  if (associated(head) .and. .not.self%syncing) then
-    task => head%task                                   ! head task
-    task%atime = task%time
-    if (io%verbose > 1) then
-      write (io_unit%log,'(f12.6,2x,a,i4,2x,a,i6,2x,a,1p,g16.6,2x,a,i5)') &
-        wallclock(), 'thread', omp%thread,'takes', task%id, &
-        'time', task%time, 'nq', task%nq
-      flush (io_unit%log)
-    end if
-    !---------------------------------------------------------------------------
-    ! Set the head of the queue to the next task in time.  The ready bit needs
-    ! to remain on for now, to prevent other threads from checking this task
-    ! before it is updated.  After the update, the clearing of the ready bit
-    ! allows the state of the current task to be evaluated by other threads, as
-    ! well as by the current thread.  Locking should be used to allow only a
-    ! single thread and task to check and change the ready bit status, at any
-    ! one time.
-    !
-    ! The busy bit is set on tasks that a thread is updating, to check that a
-    ! a task that has already been taken off the queue by another thread is not
-    ! taken again.  This should in principle not be possible, since removing
-    ! the task from the queue is done in a critical region, and removing a
-    ! task can only be done once.
-    !
-    ! A task generats a critical region three times: 1) when taken off the queue,
-    ! 2) when its time info is updated, 3) when it is added back to the queue.
-    !
-    ! To ensure 100% consistency, the task time information should not be
-    ! allowed to change during the testing going on in list_t%check_ready().
-    ! This could possibly be critical, if the fact that a task is / becomes
-    ! ready is missed, because of sychronization issue.  Several of the tasks
-    ! that form the nbor list of a task are typically undergoing updates at the
-    ! same time.  In rare cases, but only if the update time of task time info
-    ! is not uniquely defined, a task could thus be deemed not ready by the
-    ! last of its nbors that has just been updated, because another task in the
-    ! nbor list had not yet propagated its updated time info.
-    !---------------------------------------------------------------------------
-    already_busy = task%is_set (bits%busy)
-    id = task%id
-    if (.not.already_busy) then
-      call task%set (bits%busy)                         ! mark task busy
-      self%queue => head%next_time                      ! chop head off
-      call task%clear (bits%ready)                      ! not in queue
-      if (track_active) &
-        call self%queue_active (head)
-      !$omp atomic
-      self%nq = self%nq-1                               ! decrement queue count
-      task%nq = self%nq                                 ! for info print
-      if (io%verbose >= 0) then
-        if (track_active) then
-          otask => self%active%task
-          time = otask%atime
-          if (time < otime) &
-            write (*,'(a,2(f12.6,i6))') 'TIME ERROR: otime, oid, time, id =', otime, oid, time, otask%id
-          !$omp atomic write
-          otime = time
-          !$omp atomic write
-          oid = otask%id
-          if (omp%master) then
-            write (io_unit%queue,'(f12.6,i6,2f12.6,2i5)') &
-              wallclock(), task%istep, task%time, &
-              otask%atime, self%nq, self%nac
-            flush (io_unit%queue)
-            end if
-        else
-            if (omp%master) then
-            write (io_unit%queue,'(f12.6,i6,f12.6,2i5)') &
-              wallclock(), task%istep, task%time, &
-              self%nq, self%nac
-            flush (io_unit%queue)
-          end if
-        end if
-      end if
-    end if
-    !---------------------------------------------------------------------------
-    ! The first time a task is at the head of the ready queue with time =
-    ! sync_time we can be sure that all other tasks are also being upated
-    ! (by other threads) to arrive at this time.  We can then temporarily
-    ! halt updating, and wait for this task to finish its update, at a barrier
-    ! where all other ranks are doing the same.
-    !---------------------------------------------------------------------------
-    if (task%time == self%sync_next) then
-      self%syncing = .true.
-      write (io_unit%mpi,*) task%id,omp%thread, &
-        ' is triggering a sync at t =', self%sync_next
-    end if
-  end if
-  !$omp end critical (queue_cr)
-  !-----------------------------------------------------------------------------
-  ! As long as we are syncing, skip the update and come back.  The on thread
-  ! that hit the sync time last of all threads has set this flag, and will clear
-  ! it as soon as all other ranks have arrived at the same time.
-  !-----------------------------------------------------------------------------
-  if (associated(head)) then
-    if (already_busy) then
-      !!$omp critical (io_cr)
-      !write (io_unit%log,*) mpi%rank,' WARNING: thread',omp%thread, &
-      !  ' tried to update busy task', task%id
-      print *, mpi%rank,' WARNING: thread',omp%thread, &
-        ' tried to update busy task', task%id
-      !!$omp end critical (io_cr)
-      call trace_end (itimer)
-      return
-    end if
-    !-----------------------------------------------------------------------------
-    ! Check if refinement is needed on the task; if so this will push new tasks
-    ! onto the queue, with the same task time; i.e., to the head of the queue.
-    ! If the task is virtual, it will not be checked by this rank.
-    !-----------------------------------------------------------------------------
-    call refine%check_current(self, head, was_refined)
-    !
-    call self%updater (head)
-    !----------------------------------------------------------------------------
-    ! Periodic task syncronization:  The first time a task%time is exactly equal
-    ! to load_balance%sync_next, we wait for all ranks to arrive at the same
-    ! time. All tasks within a rank are then also at this time, since as long as
-    ! one has not arrived there yet, the head%ask%time is smaller.
-    !----------------------------------------------------------------------------
-    if (self%syncing) then
-      write (io_unit%mpi,*) task%id,omp%thread, &
-        ' is waiting on a sync at t =', self%sync_next
-      !call trace%end; call trace%begin ('mpi%barrier', itimer=itimer)
-      call mpi%barrier ('sync')
-      !call trace%end (itimer); call trace%begin('task_list_t%update')
-      write (io_unit%mpi,*) task%id,omp%thread, &
-        ' finished wating on a sync at t =', self%sync_next
-      self%sync_next = self%sync_next + self%sync_time
-      self%syncing = .false.
-    end if
-    task%sync_time = self%sync_next
-    !-----------------------------------------------------------------------------
-    ! The task should now again be checked, before it can be returned to the
-    ! queue, and its neighbors should also be checked for return to the queue.
-    ! If the task was turned into a virtual task by the load balance, its virtual
-    ! bit will prevent it being checked, but its nbors still need to be checked
-    !-----------------------------------------------------------------------------
-    call task%clear (bits%busy)                         ! clear busy bit (FIXME: check this!)
-    if (.not. was_refined) then
-      call self%check_nbors (head)                        ! any nbors ready?
-      !$omp atomic write
-      stalled = 0
-      !call mpi_mesg%diagnostics (0)
-    end if
-  else if (do_delay) then
-    !$omp critical (delay_cr)
-    stalled = stalled+1
-    if (stalled == retry_stalled) then
-       print *, mpi%rank, 'STALLED check_oldest + check_all + resend_bdry'
-       call self%check_oldest
-       call self%check_all
-       call self%resend_bdry
-    else
-      call mpi_mesg%delay (stalled)
-      call self%check_all
-    end if
-    if (stalled == max_stalled/2) then
-      print *, mpi%rank, 'STALLED diagnostics'
-      call mpi_mesg%diagnostics (1)
-    end if
-    if (stalled > max_stalled) then
-      print *, mpi%rank, 'STALLED bailing out'
-      call mpi%abort ('exceeded max_stalled')
-    end if
-    !$omp end critical (delay_cr)
-  end if
-  call trace_end (itimer)
-END SUBROUTINE update
-
-SUBROUTINE updater (self, head)
-  implicit none
+SUBROUTINE update (self, head, was_refined)
+  logical, optional:: was_refined
   class(task_list_t):: self
   class(link_t), pointer:: head
   class(task_t), pointer:: task
   real(8):: wc
+  logical:: refined
   integer, save:: itimer=0
   !---------------------------------------------------------------------------
   ! Check for flag files.  If io%out_time is set, set a new out_next.
   ! If task%time is slightly smaller than a multiple of out_time, then
   ! out_next will becoe that multiple.
   !---------------------------------------------------------------------------
-  call trace%begin('task_list_t%updater', itimer=itimer)
+  call trace%begin('task_list_t%update', itimer=itimer)
   task => head%task
   call io%check_flags
   if (task%id==io%id_track) then
     task%track =  .not.task%track
     io%id_track = 0
+  end if
+  !-----------------------------------------------------------------------------
+  ! Check if refinement is needed on the task; if so this will push new tasks
+  ! onto the queue, with the same task time; i.e., to the head of the queue.
+  ! If the task is virtual, it will not be checked by this rank.
+  !-----------------------------------------------------------------------------
+  call refine%check_current(self, head, refined)
+  if (present(was_refined)) then
+    was_refined = refined
   end if
   !---------------------------------------------------------------------------
   ! If the task is frozen (e.g. because it has finished), return
@@ -481,7 +204,7 @@ SUBROUTINE updater (self, head)
   ! not removed, since their data may be needed by other tasks (including on
   ! other ranks).  They are, however, not added back onto the ready queue.
   !-----------------------------------------------------------------------------
-  if (task%has_finished()) then  ! finished:
+  if (task%has_finished()) then                       ! finished:
     call task%set (bits%frozen)
     call load_balance%active (.false.)                ! turn off load balancing
     !$omp atomic
@@ -507,602 +230,31 @@ SUBROUTINE updater (self, head)
     end if
     call head%send_to_vnbors                          ! send to virtual nbors
   end if
+  !----------------------------------------------------------------------------
+  ! Periodic task syncronization:  The first time a task%time is exactly equal
+  ! to load_balance%sync_next, we wait for all ranks to arrive at the same
+  ! time. All tasks within a rank are then also at this time, since as long as
+  ! one has not arrived there yet, the head%ask%time is smaller.
+  !----------------------------------------------------------------------------
+  if (self%syncing) then
+    write (io_unit%mpi,*) task%id,omp%thread, &
+      ' is waiting on a sync at t =', self%sync_next
+    !call trace%end; call trace%begin ('mpi%barrier', itimer=itimer)
+    call mpi%barrier ('sync')
+    !call trace%end (itimer); call trace%begin('dispatcher0_t%update')
+    write (io_unit%mpi,*) task%id,omp%thread, &
+      ' finished wating on a sync at t =', self%sync_next
+    self%sync_next = self%sync_next + self%sync_time
+    self%syncing = .false.
+  end if
+  task%sync_time = self%sync_next
   call trace%end (itimer)
-END SUBROUTINE updater
-
-!> =============================================================================
-!> Find the link with a specified task id.  If there isn't any, create one!
-!> If the patch already existed, it's nbor list should be OK, but the status
-!> bit of it, and all its nbors, need to updated.
-!> =============================================================================
-FUNCTION find_task (self, id) RESULT (link)
-  class(task_list_t):: self
-  integer:: id
-  class(link_t), pointer:: link
-  class(patch_t), pointer:: patch
-  class(experiment_t), pointer:: task
-  !.............................................................................
-  call trace%begin ('task_list_t%find_task')
-  link => self%head
-  do while (associated(link))
-!write (io_unit%log,*) mpi%rank,' find task: id, link%id, virtual =', id, link%task%id, link%task%is_set(bits%virtual)
-    patch => task2patch(link%task)
-    if (patch%id == id) then
-      if (io%verbose>1) &
-        write (io_unit%log,*) mpi%rank,' find task: match', id, associated(patch%mem)
-      flush(io_unit%log)
-      call trace%end
-      return
-    end if
-    link => link%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! No task found, which means it's a new virtual task that needs to be created
-  !-----------------------------------------------------------------------------
-  allocate (link)
-  allocate (task)
-  link%task => task
-  task%id = id
-  task%box = self%size
-  call task%patch_t%init
-  if (io%verbose>1) &
-    write (io_unit%log,*) mpi%rank,' find task: new task', id, associated(task%mem)
-  flush(io_unit%log)
-  !-----------------------------------------------------------------------------
-  ! Append to the task_list.  The calling procedure must create an nbor list,
-  ! and must also update the nbor list of the nbors
-  !-----------------------------------------------------------------------------
-  call task%set (bits%virtual)
-  call self%append_link (link)
-  call trace%end
-END FUNCTION find_task
-
-!> =============================================================================
-!> Unpack a message, where the MPI tag is the task id.  Use that to search
-!> for the task, apply its unpack method, and check if any nbors become ready.
-!> This entire operation should be threadsafe, since no other thread should be
-!> working on the same message and the same patch.
-!> =============================================================================
-SUBROUTINE unpack (self, mesg, link)
-  class(task_list_t):: self
-  class(mesg_t), pointer:: mesg
-  class(link_t), pointer, optional:: link
-  class(link_t), pointer:: link1, link2
-  class(task_t), pointer:: task
-  logical:: found, failed
-  integer:: id
-  !-----------------------------------------------------------------------------
-  if (mesg%nbuf < 40) then
-    call load_balance%unpack (mesg%buffer)
-    return
-  end if
-  !$omp critical (unpack_cr)
-  if (present(link)) then
-    link1 => link
-  else
-    link1 => self%find_task (mesg%id)
-  end if
-  task => link1%task
-  failed = .false.
-  !-----------------------------------------------------------------------------
-  ! Guard against lingering extra messages to a swapped patch
-  !-----------------------------------------------------------------------------
-  if (task%is_set (bits%boundary)) then
-    write (io_unit%log,'(f12.6,2x,a,i9,3x,5l1)') wallclock(), &
-      'task_list_mod::unpack ERROR, received mpi_mesg for boundary task:', task%id, &
-      task%is_set(bits%internal), &
-      task%is_set(bits%boundary), &
-      task%is_set(bits%virtual), &
-      task%is_set(bits%external), &
-      task%is_set(bits%swap_request)
-    failed = .true.
-  end if
-  if (task%is_set (bits%ready)) then
-    found = .false.
-    link2 => self%queue
-    do while (associated(link2))
-      if (link2%task%id == task%id) then
-        found = .true.
-        exit
-      end if
-      link2 => link2%next_time
-    end do
-    write (io_unit%log,'(f12.6,2x,a,i9,l3,3x,5l1)') wallclock(), &
-      'task_list_mod::unpack ERROR, received mpi_mesg for task with ready bit:', task%id, found, &
-      task%is_set(bits%internal), &
-      task%is_set(bits%boundary), &
-      task%is_set(bits%virtual), &
-      task%is_set(bits%external), &
-      task%is_set(bits%swap_request)
-    failed = .true.
-  end if
-  !---------------------------------------------------------------------------
-  ! Unpack a patch message (which includes swapping the roles of boundary bits).
-  ! Since an already existing patch may, at any one time, be under investigation
-  ! by check_nbors, it must be protected by a critical region (or an OMP
-  ! lock) while it is being updated here
-  !---------------------------------------------------------------------------
-  id = task%id
-  call task%unpack (mesg)
-  if (mpi_mesg%debug) then
-    !$omp critical (debug_cr)
-    write (io_unit%mpi,'(f12.6,2x,a,i9,1p,e18.6,2x,a,i5,2x,5l1)') &
-      wallclock(), 'recv: id, time =', mesg%id, task%time, 'fr', task%rank, &
-      task%is_set (bits%internal), &
-      task%is_set (bits%boundary), &
-      task%is_set (bits%virtual), &
-      task%is_set (bits%external), &
-      task%is_set (bits%swap_request)
-    !$omp end critical (debug_cr)
-  end if
-  if (mpi_mesg%debug) &
-    write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6)') wallclock(), 'unpk: id, time =', task%id, task%time
-  if (id /= mesg%id) print *,'unpack ERROR: wrong mesg%id', id, task%id, mesg%id
-  if (.not. failed) then
-    !$omp atomic
-    mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
-    !---------------------------------------------------------------------------
-    ! If the boundary+swap bits are set, this is a task that has just changed
-    ! rank, and it needs to have its nbor relations re-initialized. This includes
-    ! resorting (removing + re-adding) the nbor's nbor lists in rank order.
-    ! FIXME: The load balancing steps should be checked for threadsafe operation
-    !---------------------------------------------------------------------------
-    if (task%is_set(bits%swap_request) .and. task%is_set(bits%boundary)) then
-      self%na = self%na+1; self%nb = self%nb+1; self%nv = self%nv-1
-      call self%init_nbors (link1)
-      call task%clear (bits%swap_request+bits%ready)
-      call link1%update_nbor_status (link1)
-      call self%count_status
-      if (io%verbose>1) &
-        print '(f12.6,2x,a,i6,a,i9,a,i6)', &
-        wallclock(),'LB: rank',mpi%rank,' given patch',task%id,' by',mesg%sender
-      if (io%verbose>0) &
-        write (io_unit%log,*) 'swapped virtual to boundary:', task%id
-    !---------------------------------------------------------------------------
-    ! If the link has no nbors it is a newly created virtual task. Does it need
-    ! an nbor list?  At least we can use the nbor list to check that the link is
-    ! in its nbors nbor lists.  A new virtual task (where no task existed) means
-    ! that some nbor of it has changed from internal to boundary, which will be
-    ! checked by the test_nbor_status call below, but only if an nbor list exists.
-    !---------------------------------------------------------------------------
-    !else if (.not.associated(link%nbor)) then
-    else if (task%is_set(bits%swap_request) .and. task%is_set(bits%virtual)) then
-      if (io%verbose>0) &
-        write (io_unit%log,*) 'new virtal patch:', task%id
-      self%nv = self%nv+1
-      call self%init_nbors (link1)
-      call task%clear (bits%swap_request+bits%ready)
-      call link1%update_nbor_status (link1)
-      call self%count_status
-    end if
-  end if
-  !$omp end critical (unpack_cr)
-  !-----------------------------------------------------------------------------
-  ! As the task has now been updated, we need to check if any of the neighbors
-  ! have become ready to update. If the task has just been swapped into being
-  ! a boundary patch, it could possibly also be ready to update.
-  !-----------------------------------------------------------------------------
-  !if (io%verbose>1) &
-  !  call link1%test_nbor_status
-  if (self%method==0) &
-    call self%check_nbors (link1)
-END SUBROUTINE unpack
-
-!> =============================================================================
-!> Check for and unpack MPI messages.
-!> =============================================================================
-SUBROUTINE check_mpi (self)
-  class(task_list_t):: self
-  class(mesg_t), pointer:: mesg, next
-  type(mesg_list_t):: unpk_tmp, recv_tmp
-  integer, save:: itimer=0
-  integer:: i, n, max_recv, nq
-  real(8):: wc(0:10)=0.0
-  !.............................................................................
-  if (mpi%size <= 1) return
-  unpk_tmp%name = 'unpk_tmp'
-  recv_tmp%name = 'recv_tmp'
-  wc(0) = wallclock()
-  !-----------------------------------------------------------------------------
-  ! Step 1: Prune the send list -- critical regions are handled inside
-  !-----------------------------------------------------------------------------
-  !$omp atomic read
-  nq = self%nq
-  call mpi_mesg%sent_list%check_sent (nq)
-  if (self%recv_active) then
-    if (mpi_mesg%recv_priv) then
-      call self%check_virtual
-    else
-      call self%check_active
-    end if
-    return
-  end if
-  if (mpi_mesg%recv_priv) then
-    call check_priv (self)
-    return
-  end if
-  call trace%begin ('task_list_t%check_mpi', 1, itimer=itimer)
-  i=1; wc(i) = wallclock()-wc(0)
-  if (wc(i) > check_ms*1e-3)  go to 9
-  !-----------------------------------------------------------------------------
-  ! Step 2: probe for new messages and check for completeness. Put messages on
-  ! one of two thread-local lists, depending on if complete or not.  The probing
-  ! can be done outside (recv_cr), but it may be necessary to serialize on systems
-  ! that do not support fully multi-threaded MPI
-  !-----------------------------------------------------------------------------
-  call unpk_tmp%reset
-  call recv_tmp%reset
-  call timer%end (itimer=itimer)
-  call mpi_mesg%get (mesg)
-  call timer%begin (itimer=itimer)
-  n = 0
-  do while (associated(mesg))
-    if (mesg%is_complete()) then
-      call unpk_tmp%add (mesg)
-    else
-      call recv_tmp%add (mesg)
-    end if
-    n = n+1
-    if (n > mpi_mesg%max_probe) exit
-    call timer%end (itimer=itimer)
-    call mpi_mesg%get (mesg)
-    call timer%begin (itimer=itimer)
-  end do
-  !-----------------------------------------------------------------------------
-  ! Move pending receive messages to the recv_list.  This part must be in a
-  ! (recv_cr) critical region, but is very fast
-  !-----------------------------------------------------------------------------
-  !$omp critical (recv_cr)
-  mesg => recv_tmp%head
-  do while (associated(mesg))
-    next => mesg%next
-    call recv_tmp%remove (mesg)
-    call mpi_mesg%recv_list%add (mesg)
-    mesg => next
-  end do
-  !$omp end critical (recv_cr)
-  !-----------------------------------------------------------------------------
-  ! Now we can unpack messages from the thread-local list, outside of (recv_cr)
-  !-----------------------------------------------------------------------------
-  mesg => unpk_tmp%head
-  do while (associated(mesg))
-    next => mesg%next
-    call timer%end (itimer=itimer)
-    call self%unpack (mesg)
-    call timer%begin (itimer=itimer)
-    call unpk_tmp%remove (mesg)
-    call unpk_tmp%delete (mesg, .false.)
-    mesg => next
-  end do
-  i=i+1; wc(i) = wallclock()-wc(0)
-  if (wc(i) > check_ms*1e-3)  go to 9
-  !-----------------------------------------------------------------------------
-  ! Step 3: if there are more than max_recv messages in recv_list, then wait
-  ! for and unpack enough messages to reach the limit.  If task_list%nq is less
-  ! then min_nq, reduce the max_recv to zero, forcing a wait on all receives.
-  ! By splitting the operation into one part that moves the messages to a
-  ! thead-local list, and a second part that does the wait and unpack, we
-  ! minimize the blocking of other threads.
-  !-----------------------------------------------------------------------------
-  max_recv = merge(mpi_mesg%max_recv,0,self%nq >= mpi_mesg%min_nq)
-  call unpk_tmp%reset
-  !$omp atomic read
-  n = mpi_mesg%recv_list%n
-  if (n > max_recv) then
-    !$omp critical (recv_cr)
-    mesg => mpi_mesg%recv_list%head
-    do while (mpi_mesg%recv_list%n > max_recv)
-      next => mesg%next
-      call mpi_mesg%recv_list%remove (mesg)
-      call unpk_tmp%add (mesg)
-      mesg => next
-    end do
-    !$omp end critical (recv_cr)
-  end if
-  mesg => unpk_tmp%head
-  do while (associated(mesg))
-    next => mesg%next
-    call timer%end (itimer=itimer)
-    call mesg%wait_for_completion ()
-    call self%unpack (mesg)
-    call timer%begin (itimer=itimer)
-    call unpk_tmp%remove (mesg)
-    call unpk_tmp%delete (mesg, .false.)
-    mesg => next
-  end do
-  i=i+1; wc(i) = wallclock()-wc(0)
-  if (wc(i) > check_ms*1e-3) go to 9
-  !-----------------------------------------------------------------------------
-  ! Step 4: check the rest of the recv_list for completed messages.  The (fast)
-  ! traversal is protected inside (recv_cr), but unpacking from the local list
-  ! can be done outside.
-  !-----------------------------------------------------------------------------
-  call unpk_tmp%reset
-  !$omp critical (recv_cr)
-  mesg => mpi_mesg%recv_list%head
-  do while (associated(mesg))
-    next => mesg%next
-    if (mesg%is_complete()) then
-      call mpi_mesg%recv_list%remove (mesg)
-      call unpk_tmp%add (mesg)
-    end if
-    mesg => next
-  end do
-  !$omp end critical (recv_cr)
-  mesg => unpk_tmp%head
-  do while (associated(mesg))
-    next => mesg%next
-    call timer%end (itimer=itimer)
-    call self%unpack (mesg)
-    call timer%begin (itimer=itimer)
-    call unpk_tmp%remove (mesg)
-    call unpk_tmp%delete (mesg, .false.)
-    mesg => next
-  end do
-  i=i+1; wc(i) = wallclock()-wc(0)
-9 continue
-  !write (io_unit%log, '(a,6f10.4)') 'check_mpi times:', wc(1:i)-wc(0:i-1)
-  call trace%end (itimer)
-END SUBROUTINE check_mpi
-
-!> =============================================================================
-!> Check for and unpack MPI messages, using threadprivate recv_list and
-!> unpk_list
-!> =============================================================================
-SUBROUTINE check_priv (self)
-  class(task_list_t):: self
-  class(mesg_t), pointer:: mesg, next
-  integer, save:: itimer=0
-  integer:: n
-  !.............................................................................
-  if (mpi%size <= 1) return
-  call trace%begin ('task_list_t%check_priv', 1, itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Step 1: Add incoming messages to either recv_list or unpk_list
-  !-----------------------------------------------------------------------------
-  call mpi_mesg%get (mesg)
-  n = 0
-  do while (associated(mesg))
-    if (mesg%is_complete()) then
-      call unpk_list%add (mesg)
-    else
-      call recv_list%add (mesg)
-    end if
-    n = n+1
-    if (n > mpi_mesg%max_probe) exit
-    call mpi_mesg%get (mesg)
-  end do
-  !-----------------------------------------------------------------------------
-  ! Step 2: check the recv_list for completed messages
-  !-----------------------------------------------------------------------------
-  mesg => recv_list%head
-  do while (associated(mesg))
-    next => mesg%next
-    if (mesg%is_complete()) then
-      call recv_list%remove (mesg)
-      call unpk_list%add (mesg)
-    end if
-    mesg => next
-  end do
-  !-----------------------------------------------------------------------------
-  ! Step 3: unpack messags in unpk_list
-  !-----------------------------------------------------------------------------
-  mesg => unpk_list%head
-  do while (associated(mesg))
-    next => mesg%next
-    call self%unpack (mesg)
-    call unpk_list%remove (mesg)
-    call unpk_list%delete (mesg, .false.)
-    mesg => next
-  end do
-  call trace%end (itimer)
-END SUBROUTINE check_priv
-
-!> =============================================================================
-!> Run through all virtual patches, count them, and create separate threadprivate
-!> lists that together include all of them.
-!> =============================================================================
-SUBROUTINE init_virtual (self)
-  class(task_list_t):: self
-  class(link_t), pointer:: link
-  class(task_t), pointer:: task
-  integer:: nvirt, i, i1, i2
-  integer, save:: itimer=0
-  !.............................................................................
-  if (mpi%size==1) return
-  call trace%begin ('task_list_t%init_virtual', itimer=itimer)
-  !---------------------------------------------------------------------------
-  ! Count the number of virtual tasks, and assign a number per thread
-  !---------------------------------------------------------------------------
-  nvirt = 0
-  link => self%head
-  do while (associated(link))
-    task => link%task
-    if (task%is_set (bits%virtual)) then
-      nvirt = nvirt+1
-    end if
-    link => link%next
-  end do
-  nvirt = nvirt/omp%nthreads + 1
-  !---------------------------------------------------------------------------
-  ! Each thread copies its share of virtual patches to its private list, and
-  ! initializes its private virtual task list.  Using this with succesive
-  ! passage of each thread through a critical region worked OK with gfortran,
-  ! but gives serious compiler related problems with ifort (17.0.1).  Below
-  ! it has been rewriten to work with computed intervals for each thread.
-  !---------------------------------------------------------------------------
-  !$omp parallel shared(nvirt,mpi,bits,self,io) private(link,i,i1,i2,task) default(none)
-  i1 = omp_get_thread_num()*nvirt
-  i2 = i1 + nvirt
-  i = 1
-  link => self%head
-  do while (associated(link))
-    task => link%task
-    if (task%is_set (bits%virtual)) then
-      if (i >= i1 .and. i < i2) then
-        call virtual_list%append (task, nbor=link%nbor, needed=link%needed, needs_me=link%needs_me)
-        call task%allocate_mesg
-        task%wc_last = wallclock()
-        call task%mesg%irecv  (task%rank, task%id)
-        if (io%verbose>0) &
-          write (io_unit%log,*) 'init_virtual:', omp_get_thread_num(), task%id
-        !if (mpi%rank==0) print *,mpi%rank,'MK',omp_get_thread_num(),i,task%id,'irec'
-      end if
-      i = i+1
-    end if
-    link => link%next
-  end do
-  !$omp end parallel
-  call trace%end (itimer)
-END SUBROUTINE init_virtual
-
-!> =============================================================================
-!> Run through all virtual patches, unpack completed receives, and issue new
-!> receive requests.  The virtual_list is threadprivate, so no critical region
-!> is needed.
-!> =============================================================================
-SUBROUTINE check_virtual (self)
-  class(task_list_t):: self
-  class(link_t), pointer:: link
-  class(task_t), pointer:: task
-  integer:: nunpk
-  real(8):: wc
-  integer, save:: itimer=0
-  !.............................................................................
-  call trace%begin ('task_list_t%check_virtual', itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Each thread runs through its list of virtual tasks, unpacks completed
-  ! messages, and issues a new request
-  !-----------------------------------------------------------------------------
-  nunpk = 0
-  link => virtual_list%head
-  do while (associated(link))
-    task => link%task
-    select type (task)
-    class is (patch_t)
-    if (task%mesg%test_recv()) then
-      if (io%verbose > 0) &
-        write (io_unit%log,*) wallclock(),' check_virtual hit ', task%id
-      call self%unpack (task%mesg, link=link)
-      !$omp atomic
-      mpi_mesg%n_recv = mpi_mesg%n_recv+1
-      !$omp atomic
-      timer%bytes_recv = timer%bytes_recv + 4.0_8*task%mesg%nbuf
-      !$omp atomic
-      timer%n_recv = timer%n_recv + 1_8
-      wc = wallclock()
-      if (wc-task%wc_last > 10.) print &
-        '("WARNING: virtual patch not updated in",f5.1," sec")', wc
-      task%wc_last = wc
-      call task%mesg%irecv (task%rank, task%id)
-      nunpk = nunpk+1
-    else if (io%verbose > 2) then
-      write (io_unit%log,*) wallclock(),' check_virtual miss', task%id
-    end if
-    end select
-    link => link%next
-  end do
-  if (io%verbose>1) write (io_unit%log,*) 'check_virtual', nunpk
-  call trace%end (itimer)
-END SUBROUTINE check_virtual
-
-!> =============================================================================
-!> Run through all virtual patches, and allocate message data types if not
-!> allocated.  If an old request exists, test if it has completed.  If yes,
-!> unpack and issue a new request.  If no request exists, issue a request.
-!> =============================================================================
-SUBROUTINE check_active (self)
-  class(task_list_t):: self
-  class(link_t), pointer:: link
-  class(task_t), pointer:: task
-  integer:: nvirt, nunpk
-  real(8):: wc
-  integer, save:: itimer=0
-  type(mesg_list_t):: unpk_tmp
-  class(mesg_t), pointer:: mesg
-  !.............................................................................
-  call trace%begin ('task_list_t%check_active', itimer=itimer)
-  !$omp critical (active_cr)
-  nvirt = 0
-  nunpk = 0
-  link => self%head
-  if (self%queue_unpack) call unpk_tmp%reset
-  do while (associated(link))
-    task => link%task
-    if (task%is_set (bits%virtual)) then
-      nvirt = nvirt+1
-      select type (task)
-      class is (patch_t)
-      if (.not.associated(task%mesg)) then
-        call task%allocate_mesg
-        task%wc_last = wallclock()
-      end if
-      if (task%mesg%req == 0) then
-        call task%mesg%irecv  (task%rank, task%id)
-        if (mpi_mesg%debug) &
-          write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'recv: id, sender, req =', task%id, task%rank, task%mesg%req
-      end if
-      !-------------------------------------------------------------------------
-      ! If a mesg was recvd, then either unpack directly and issue a new request,
-      ! or put the mesg on a thread private unpack list, to unpack outside the
-      ! critical region
-      !-------------------------------------------------------------------------
-      if (task%mesg%test_recv()) then
-        if (self%queue_unpack) then
-          call unpk_tmp%add (task%mesg)
-        else
-          call self%unpack (task%mesg)
-          if (mpi_mesg%debug) &
-            write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'unpk: id, sender, req =', task%mesg%id, task%mesg%sender, task%mesg%req
-          call task%mesg%irecv (task%rank, task%id)
-          if (mpi_mesg%debug) &
-            write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'recv: id, sender, req =', task%id, task%rank, task%mesg%req
-          if (task%rank /= task%mesg%sender) error stop 'rank ne sender'
-          if (task%id   /= task%mesg%id)     error stop 'task%id ne mesg%id'
-        end if
-      end if
-      end select
-    end if
-    link => link%next
-  end do
-  !$omp end critical (active_cr)
-  if (self%queue_unpack) then
-    mesg => unpk_tmp%head
-    do while (associated(mesg))
-      call self%unpack (mesg)
-      if (mpi_mesg%debug) &
-        write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'unpk: id, time =', mesg%id, mesg%sender, mesg%req
-      call unpk_tmp%remove (mesg)
-      call mesg%irecv (mesg%sender, mesg%id)
-      if (mpi_mesg%debug) &
-        write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'recv: id, time =', mesg%id, mesg%sender, mesg%req
-      nunpk = nunpk+1
-      mesg => mesg%next
-    end do
-  end if
-  call trace%end (itimer)
-END SUBROUTINE check_active
-
-!> =============================================================================
-!> Print a table with patch id, positions, and all neighbors
-!> =============================================================================
-SUBROUTINE output (self)
-  class (task_list_t):: self
-  class(link_t) , pointer:: link, nbor
-  !.............................................................................
-  call trace%begin('task_list%output')
-  link => self%head
-  do while (associated(link))
-    !call link%task%output(self%name)
-    link => link%next
-  end do
-  call trace%end
-END SUBROUTINE output
+END SUBROUTINE update
 
 !> =============================================================================
 !> Print a table with task id and all neighbors
 !> =============================================================================
-SUBROUTINE print_table (self, label)
+SUBROUTINE print (self, label)
   class (task_list_t):: self
   character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
@@ -1116,6 +268,6 @@ SUBROUTINE print_table (self, label)
   end do
   call self%print_queue
   call trace%end
-END SUBROUTINE print_table
+END SUBROUTINE print
 
-END MODULE
+END MODULE task_list_mod

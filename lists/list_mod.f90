@@ -43,7 +43,6 @@ MODULE list_mod
   contains
     procedure:: init
     procedure:: init_bdries
-    procedure:: update
     procedure:: reset
     procedure:: append
     procedure:: append_link
@@ -96,13 +95,6 @@ SUBROUTINE init (self, name)
   call self%lock%init (self%kind)
   call trace_end
 END SUBROUTINE init
-
-!> =============================================================================
-!> Update simple list
-!> =============================================================================
-SUBROUTINE update (self)
-  class(list_t):: self
-END
 
 !> =============================================================================
 !> Reset list, by deallocating memory used by tasks, and deallocating tasks and
