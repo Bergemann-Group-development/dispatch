@@ -18,7 +18,7 @@
 &patch_params      nt=5 grace=0.1 n=3*32 no_mans_land=t /
 !patch_params      nt=5 grace=0.3 n=3*33 no_mans_land=f /
 &out_params        end_time=0.4001 out_time=0.04 print_time=0.0 guard_zones=t time_derivs=f /
-&io_params         verbose=0 do_trace=f omp_trace=f do_output=t method='parallel' /
+&io_params         verbose=0 do_trace=f omp_trace=f do_output=f method='parallel' /
 &timer_params      sec_per_report=20 /
 &validate_params   state='write' /
 
@@ -32,8 +32,8 @@
 !---------------------------------
 ! Solver specific parameters
 !---------------------------------
-&ramses_params     courant_factor=0.250 do_isothermal=t gamma=1.00001 slope_type=2 smallr=1e-4 smallc=5e-1 riemann='hllc' detailed_timer=f /
-&mhd_params        do_isothermal=t gamma=1.00001  nu=0.10,1.0,1.0,0.1,1.0,1.0 /
+&ramses_params     courant_factor=0.250 isothermal=t gamma=1.00001 slope_type=2 smallr=1e-4 smallc=5e-1 riemann='hllc' detailed_timer=f /
+&mhd_params        isothermal=t gamma=1.00001  nu=0.10,1.0,1.0,0.1,1.0,1.0 /
 &timestep_params   /
 
 !----------------------------------------------------------------------------------
@@ -43,14 +43,10 @@
 
 !----------------------------------------------------------------------------------
 ! Method=0 uses a ready queue, which may or may not work for more than 1e12 updates
+! Method=1 uses a simple master thread dispatcher
+! Method=2 uses a more complex master thread dispatcher
 !----------------------------------------------------------------------------------
-&dispatcher_params method=0 /
-&task_list_params  recv_active=t queue_unpack=f /
-&mpi_mesg_params   recv_priv=t /
+&dispatcher_params method=0 test=t /
+&task_list_params  /
+&mpi_mesg_params   /
 
-!----------------------------------------------------------------------------------
-! Method=1 uses a simple dispatcher (dispatcher_method1_mod.f90) -- not fully tested
-!----------------------------------------------------------------------------------
-!dispatcher_params method=1 /
-!task_list_params  /
-!mpi_mesg_params   /
