@@ -17,14 +17,12 @@ MODULE task_list_mod
   USE bits_mod
   USE refine_mod
   USE load_balance_mod
-  USE data_io_mod
   USE task_mesg_mod
   implicit none
   private
   type, public, extends(task_mesg_t):: task_list_t
     logical:: syncing=.false.
     real(8):: sync_time=-1.0, sync_next=-1.0
-    real(8):: job_seconds=1d30
   contains
     procedure:: init
     procedure:: startup
@@ -57,7 +55,7 @@ SUBROUTINE init (self, name)
   if (sync_time > 0.0) &
     self%sync_next = sync_time
   self%sync_time = sync_time
-  self%job_seconds = job_seconds
+  io%job_seconds = job_seconds
   write (io_unit%mpi,*) 'task_list%init: next_sync =', self%sync_next, self%sync_time
   call load_balance%init
   call trace_end
@@ -79,7 +77,7 @@ SUBROUTINE startup (self)
   !-----------------------------------------------------------------------------
   ! Initialize nbor lists, and set virtual and boundary bits
   !-----------------------------------------------------------------------------
-  call trace%begin ('dispatcher0_t%startup', itimer=itimer)
+  call trace%begin ('task_list_t%startup', itimer=itimer)
   call self%init_bdries
   call self%init_all_nbors
   call self%reset_status
@@ -103,11 +101,6 @@ SUBROUTINE startup (self)
   if (mpi%master) &
     print '(a,f8.3,a)', ' Memory per process:', io%gb, ' GB'
   call mpi%barrier ('self%execute')
-  task => self%head%task
-  select type (task)
-  class is (patch_t)
-    call data_io%init (task)
-  end select
   call tic (time=sec)
   call timer%print
   self%n_tasks = self%na
@@ -117,19 +110,21 @@ END SUBROUTINE startup
 !> =============================================================================
 !> Common part of task list update, used by dispatchers
 !> =============================================================================
-SUBROUTINE update (self, head, was_refined)
-  logical, optional:: was_refined
+SUBROUTINE update (self, head, test, was_refined)
   class(task_list_t):: self
   class(link_t), pointer:: head
+  logical:: test
+  logical, optional:: was_refined
+  !.............................................................................
   class(task_t), pointer:: task
   real(8):: wc
   logical:: refined
   integer, save:: itimer=0
-  !---------------------------------------------------------------------------
+  !----------------------------------------------------------------------------
   ! Check for flag files.  If io%out_time is set, set a new out_next.
   ! If task%time is slightly smaller than a multiple of out_time, then
   ! out_next will becoe that multiple.
-  !---------------------------------------------------------------------------
+  !----------------------------------------------------------------------------
   call trace%begin('task_list_t%update', itimer=itimer)
   task => head%task
   call io%check_flags
@@ -164,7 +159,8 @@ SUBROUTINE update (self, head, was_refined)
   ! the call should be answered by a solver-specific procedure (which may or
   ! may not choose to call the generic patch guard zone handler in tasks/)
   !----------------------------------------------------------------------------
-  call task%dnload                                    ! download nbor info
+  if (.not.test) &
+    call task%dnload                                  ! download nbor info
   !----------------------------------------------------------------------------
   ! Update the task, whatever that means (may include call to task%output)
   !----------------------------------------------------------------------------
@@ -172,7 +168,11 @@ SUBROUTINE update (self, head, was_refined)
     wc = wallclock()
   end if
   task%rotated = .false.
-  call task%update                                    ! update the task
+  if (test) then
+    call task%test_update
+  else
+    call task%update                                  ! update the task
+  end if
   !----------------------------------------------------------------------------
   ! Default delay time = first update time
   !----------------------------------------------------------------------------

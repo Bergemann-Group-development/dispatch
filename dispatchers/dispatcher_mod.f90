@@ -11,8 +11,6 @@ MODULE dispatcher_mod
   USE dispatcher2_mod
   USE mpi_mesg_mod
   USE data_io_mod
-  !USE task_mod
-  !USE patch_mod
   implicit none
   private
   type, public:: dispatcher_t
@@ -25,16 +23,20 @@ MODULE dispatcher_mod
   end type
   integer, save:: verbose=0
   integer, save:: method=0
+  logical, save:: test=.false.
+  real(8):: test_seconds=30.
   type(dispatcher_t), public:: dispatcher
 CONTAINS
 
 !> =============================================================================
-!> Execute a task list
+!> Choose and initialize the dispatcher method.  For full flexibility, default
+!> parameters for mpi_mesg_mod are first set, and may then be overwritten in the
+!> mpi_mesg%init call.
 !> =============================================================================
 SUBROUTINE init (self)
   class(dispatcher_t):: self
   integer:: iostat
-  namelist /dispatcher_params/ method, verbose
+  namelist /dispatcher_params/ method, verbose, test, test_seconds
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher_t%init')
   rewind (io%input)
@@ -44,16 +46,56 @@ SUBROUTINE init (self)
   case (0)
     self%method => method0
     call dispatcher0%init
+    !---------------------------------------------------------------------------
+    ! By default this method uses the most optimal send and receive procedures,
+    ! which means each thread takes care of its own sent_list, and each thread
+    ! checks a dedicated set of tasks for incoming messages.
+    !---------------------------------------------------------------------------
+    mpi_mesg%recv_active  = .true.
+    mpi_mesg%queue_unpack = .true.
+    mpi_mesg%recv_priv    = .true.
+    mpi_mesg%send_priv    = .true.
   case (1)
     self%method => method1
     dispatcher1%verbose = verbose
+    !---------------------------------------------------------------------------
+    ! This method uses send_priv=.true. to make each thread takes care sending.
+    ! It uses the check_active() procedure in task_mesg_mod to actively check
+    ! for incoming messages.  Since this is done by only the master thread,
+    ! there is no point in making an unpack queue.
+    !---------------------------------------------------------------------------
+    mpi_mesg%send_priv    = .true.
+    mpi_mesg%recv_active  = .true.
+    mpi_mesg%recv_priv    = .false.
+    mpi_mesg%queue_unpack = .false.
   case (2)
     self%method => method2
+    !---------------------------------------------------------------------------
+    ! This method uses send_priv=.true. to make each thread takes care sending.
+    ! It uses the check_active() procedure in task_mesg_mod to actively check
+    ! for incoming messages.  Since this is done by only the master thread,
+    ! there is no point in making an unpack queue.
+    !---------------------------------------------------------------------------
+    mpi_mesg%send_priv    = .true.
+    mpi_mesg%recv_active  = .true.
+    mpi_mesg%recv_priv    = .false.
+    mpi_mesg%queue_unpack = .false.
   case default
     call io%abort ('unknown method in dispatcher_mod')
   end select
+  call mpi_mesg%init
   call trace%end
 END SUBROUTINE init
+
+!> =============================================================================
+!> I/O params for tests
+!> =============================================================================
+SUBROUTINE set_io
+  io%do_output = .false.
+  io%print_time = 50.
+  io%end_time = 1e10
+  io%job_seconds = test_seconds
+END SUBROUTINE set_io
 
 !> =============================================================================
 !> Execute a task list
@@ -62,7 +104,8 @@ SUBROUTINE method0 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   task_list%method = method
-  call dispatcher0%execute (task_list)
+  if (test) call set_io
+  call dispatcher0%execute (task_list, test)
 END SUBROUTINE method0
 
 !> =============================================================================
@@ -77,12 +120,9 @@ SUBROUTINE method1 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   task_list%method = method
-  mpi_mesg%recv_active = .true.
-  mpi_mesg%queue_unpack = .false.
-  mpi_mesg%recv_priv = .false.
-  mpi_mesg%send_priv = .false.
   dispatcher1%verbose = verbose
-  call dispatcher1%execute (task_list)
+  if (test) call set_io
+  call dispatcher1%execute (task_list, test)
 END SUBROUTINE method1
 
 !> =============================================================================
@@ -92,11 +132,8 @@ SUBROUTINE method2 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   task_list%method = method
-  mpi_mesg%recv_active = .true.
-  mpi_mesg%queue_unpack = .false.
-  mpi_mesg%recv_priv = .false.
-  mpi_mesg%send_priv = .false.
-  call dispatcher2%execute (task_list)
+  if (test) call set_io
+  call dispatcher2%execute (task_list, test)
 END SUBROUTINE method2
 
 END MODULE dispatcher_mod

@@ -1,15 +1,7 @@
 !> =============================================================================
-!> $Id$
-!> A dispatcher0_t has the distinction that it must be able to call an initial
-!> condition routine, which only exists in experiment_t tasks.  Procedures in
-!> the module use these foreign procedures:
-!>
-!>    task_t%init         : to initialize a task
-!>    task_t%update       : to update a task
-!>    task_t%send_to      : send data to foreign task
-!>    list_t%remove_task  : remove task from list
-!>    list_t%remove_head  : remove head from list
-!>
+!> Dispatcher method that relies on all threads maintaining a "ready queue", with
+!> tasks ready for updating.  Each thread picks the task at the head of the queue,
+!> and checks all nbors for tasks that are ready, putting them back in the queue.
 !> =============================================================================
 MODULE dispatcher0_mod
   USE io_mod
@@ -72,9 +64,10 @@ END SUBROUTINE init
 !> Execute the task list, updating it until it is empty.  With !$omp parallel here,
 !> everything local to self%update is thread private.
 !> =============================================================================
-SUBROUTINE execute (self, task_list)
+SUBROUTINE execute (self, task_list, test)
   class(dispatcher0_t):: self
   type(task_list_t), pointer:: task_list
+  logical:: test
   !.............................................................................
   real(8):: sec
   integer:: dims(4)
@@ -89,8 +82,8 @@ SUBROUTINE execute (self, task_list)
   !-----------------------------------------------------------------------------
   io%ntask = task_list%na
   !$omp parallel
-  do while (task_list%na > 0 .and. wallclock() < task_list%job_seconds)
-    call self%update (task_list)
+  do while (task_list%na > 0 .and. wallclock() < io%job_seconds)
+    call self%update (task_list, test)
     if (io%do_stop) call mpi%abort ('stop flag')
     if (task_list%na == task_list%n_tasks) then
       !$omp atomic
@@ -129,9 +122,10 @@ END SUBROUTINE execute
 !>    OMP thread to update it, and checking for nbors that are ready to be
 !>    updated as a consquence
 !> =============================================================================
-SUBROUTINE update (self, task_list)
+SUBROUTINE update (self, task_list, test)
   class(dispatcher0_t):: self
   type(task_list_t), pointer:: task_list
+  logical:: test
   !.............................................................................
   class(link_t), pointer:: head
   class(task_t), pointer:: task, otask
@@ -257,7 +251,7 @@ SUBROUTINE update (self, task_list)
       call trace_end (itimer)
       return
     end if
-    call task_list%update (head, was_refined)
+    call task_list%update (head, test, was_refined)
     !-----------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the
     ! queue, and its neighbors should also be checked for return to the queue.

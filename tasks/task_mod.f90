@@ -10,6 +10,7 @@ MODULE task_mod
   USE trace_mod
   USE scene_mod
   USE mpi_mesg_mod
+  USE random_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -52,7 +53,6 @@ MODULE task_mod
     real(8), dimension(:), pointer:: dt
     character(len=64), pointer:: name
     class(task_t), pointer:: parent
-    type(lock_t):: lock                 ! OMP lock
     character(len=64):: kind='task'
     character(len=12):: type='task_t'
     real:: latency=0.0                  ! MPI message latency
@@ -63,6 +63,8 @@ MODULE task_mod
     logical:: track=.false.
     logical:: periodic(3)=.true.
     logical:: rotated=.false.
+    type(lock_t):: lock                 ! OMP lock
+    type(random_t):: random             ! pseudo-random number generator
   contains
     procedure:: init
     procedure:: init_id_reset
@@ -87,6 +89,7 @@ MODULE task_mod
     procedure:: pack
     procedure:: unpack
     procedure:: is_relevant
+    procedure:: test_update
   end type
 
   integer, save:: id=0
@@ -131,6 +134,7 @@ SUBROUTINE init (self)
   if (io%verbose>2) &
     write (io%log_unit,*) 'obtained patch id', self%id
   call self%lock%init (self%kind)
+  call self%random%init
   call trace_end
 END SUBROUTINE init
 
@@ -455,5 +459,14 @@ FUNCTION is_relevant (self)
   !-----------------------------------------------------------------------------
   is_relevant = .true.
 END FUNCTION is_relevant
+
+!> =============================================================================
+!> Test update procedure for dispatcher tests
+!> =============================================================================
+SUBROUTINE test_update (self)
+  class(task_t):: self
+  self%dtime = self%random%ran1()
+  self%dt(self%it) = self%dtime
+END SUBROUTINE test_update
 
 END MODULE task_mod

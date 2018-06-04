@@ -4,10 +4,13 @@
 !> =============================================================================
 MODULE dispatcher_mod
   USE io_mod
+  USE trace_mod
   USE task_list_mod
-  USE dispatcher_method1_mod
-  USE dispatcher_method2_mod
+  USE dispatcher1_mod
   USE mpi_mesg_mod
+  USE data_io_mod
+  !USE task_mod
+  !USE patch_mod
   implicit none
   private
   type, public:: dispatcher_t
@@ -15,9 +18,9 @@ MODULE dispatcher_mod
   contains
     procedure:: init
     procedure, nopass:: method1
-    procedure, nopass:: method2
   end type
-  integer:: method=0
+  integer, save:: verbose=0
+  integer, save:: method=0
   type(dispatcher_t), public:: dispatcher
 CONTAINS
 
@@ -27,43 +30,40 @@ CONTAINS
 SUBROUTINE init (self)
   class(dispatcher_t):: self
   integer:: iostat
-  integer, save:: verbose=0
   namelist /dispatcher_params/ method, verbose
   !-----------------------------------------------------------------------------
+  call trace%begin ('dispatcher_t%init')
   rewind (io%input)
   read (io%input, dispatcher_params, iostat=iostat)
-  write (io%output, dispatcher_params)
+  if (io%master) write (io%output, dispatcher_params)
   select case (method)
   case (1)
     self%method => method1
-    dispatcher_method1%verbose = verbose
-  case (2)
-    self%method => method2
+    dispatcher1%verbose = verbose
   case default
     call io%abort ('unknown method in dispatcher_mod')
   end select
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
-!> Execute a task list
+!> Execute a task list.  Since only the master thread is call check_mpi(), we
+!> need to make sure that it handles all send/recv, hence send_priv=.false. and
+!> recv_priv=.false., and we can use the simplest receive mechanism (recv_active
+!> =.true.), with no buffering needed (queue_unpack=.false.).  These values are
+!> imposed after the input namelists are read, to make sure the choices are
+!> correct.
 !> =============================================================================
 SUBROUTINE method1 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
-  task_list%recv_active = .true.
+  task_list%method = method
+  mpi_mesg%recv_active = .true.
+  mpi_mesg%queue_unpack = .false.
   mpi_mesg%recv_priv = .false.
-  call dispatcher_method1%execute (task_list)
+  mpi_mesg%send_priv = .false.
+  dispatcher1%verbose = verbose
+  call dispatcher1%execute (task_list)
 END SUBROUTINE method1
-
-!> =============================================================================
-!> Execute a task list
-!> =============================================================================
-SUBROUTINE method2 (task_list)
-  type(task_list_t), pointer:: task_list
-  !-----------------------------------------------------------------------------
-  task_list%recv_active = .true.
-  mpi_mesg%recv_priv = .false.
-  call dispatcher_method2%execute (task_list)
-END SUBROUTINE method2
 
 END MODULE dispatcher_mod
