@@ -34,8 +34,8 @@ MODULE gpatch_mod
     procedure:: update
     procedure:: output
     procedure:: dnload
-    procedure:: gravity
-    !procedure:: update
+    procedure:: gravity_solve
+    procedure:: gravity_update
     procedure:: ahead_of
   end type
   real(8), save :: total_mass=0d0, total_volume=0d0
@@ -223,7 +223,7 @@ END SUBROUTINE dnload
 !> be providing only their preliminary potentials in their (nt-1) time slots,
 !> while their older time slots should by now contain the converged potential.
 !> =============================================================================
-SUBROUTINE gravity (self)
+SUBROUTINE gravity_solve (self)
   class(gpatch_t):: self
   !.............................................................................
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi
@@ -249,7 +249,7 @@ SUBROUTINE gravity (self)
   !-----------------------------------------------------------------------------
   call time_derivs (self)
   call trace%end (itimer)
-END SUBROUTINE gravity
+END SUBROUTINE gravity_solve
 
 !> =============================================================================
 !> Having advanced the MHD state to the new time, we make a preliminary
@@ -258,9 +258,10 @@ END SUBROUTINE gravity
 !> better offer.  The poisson_time controls if an update affects the self%time
 !> or the poisson_time; the two are updated alternatingly
 !> =============================================================================
-SUBROUTINE update_tmp (self)
+SUBROUTINE gravity_update (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
+  if (.not. selfgravity) return
   call trace%begin ('gpatch_t%update')
   !$omp atomic
   timer%n_update = timer%n_update + product(self%n)
@@ -274,7 +275,7 @@ SUBROUTINE update_tmp (self)
     else
       call self%dnload (only=self%idx%d)
       call self%dnload (only=self%idx%phi)
-      call self%gravity
+      call self%gravity_solve
       self%poisson_time = self%time
       self%rotated = .true.
       if (verbose>0) &
@@ -282,7 +283,7 @@ SUBROUTINE update_tmp (self)
     end if
   end if
   call trace%end
-END SUBROUTINE update_tmp
+END SUBROUTINE gravity_update
 
 !> =============================================================================
 !> =============================================================================
