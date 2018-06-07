@@ -25,19 +25,17 @@
 !>   mpi%end                    ! close down MPI
 !>
 !> =============================================================================
-PROGRAM dispatch
-  USE io_mod
-  USE mpi_mod
-  USE experiment_mod
+PROGRAM dispatch_prog
+  USE dispatch_mod
+  USE extern_mod
   USE cartesian_mod
   type (cartesian_t):: cartesian
   !.............................................................................
-  call mpi%init
-  call io%init
-  call experiment%begin
+  call dispatch%init
+  call extern%init
   call cartesian%init
   call cartesian%task_list%execute
-  call experiment%end
-  call mpi%end
+  call extern%end
+  call dispatch%end
 !> =============================================================================
-END PROGRAM dispatch
+END PROGRAM dispatch_prog

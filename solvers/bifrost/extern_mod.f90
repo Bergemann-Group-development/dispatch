@@ -1,0 +1,85 @@
+!> =============================================================================
+!> Interface module to the Bifrost code, with global initialization and
+!> finalization (if needed) of the code.
+!> =============================================================================
+MODULE extern_mod
+  USE params_mod
+  USE parallel_mod
+  !USE units_mod
+  USE stagger_mod
+  USE bifrost_timestep_mod
+  USE mhd_mod
+  USE bifrost_io_mod
+  USE math_mod
+  USE extras_mod
+  USE radiation_mod
+  USE eos_mod
+  USE quench_mod
+  USE timing_mod
+  USE adaption_mod
+  implicit none
+  private
+  type, public:: extern_t
+  contains
+    procedure:: init
+    procedure:: end
+  end type
+  character(len=80), save:: id = &
+  '$Id$'
+  type(extern_t), public:: extern
+CONTAINS
+
+!> =============================================================================
+!> This procedure is called once, at the start of the run
+!> =============================================================================
+SUBROUTINE init (self)
+  class(extern_t):: self
+  integer :: tl_tp, tl_cr, tl_cm
+  !-----------------------------------------------------------------------------
+  reread = 0
+  call init_params
+  call init_parallel
+  dispatch = .true.
+!
+  if (myid.eq.R_MASTER) then
+    write (*,*)
+    write (*,FMT=ilo) 'main    '
+    write (*,*) id
+    if (time_lim > 0.0) then
+      call system_clock(tl_tp,COUNT_RATE=tl_cr,COUNT_MAX=tl_cm)
+    endif
+  endif
+!
+  call init_units
+  call init_stagger
+  call init_io
+  call init_timestep
+  call init_mhd
+  call init_math
+  call init_quench
+  call init_eos
+  call init_radiation
+  call init_timing
+  call init_adaption
+!
+  call init_snap
+  call init_extras
+  call init_standard_boundaries
+  call init_boundaries
+  call update_mhd
+
+  clean=nstepstart 
+END SUBROUTINE init
+
+!> =============================================================================
+!> End of run
+!> =============================================================================
+SUBROUTINE end (self)
+  class(extern_t):: self
+  !-----------------------------------------------------------------------------
+  call finalize_timing
+  !***call finalize_io
+  call finalize_parallel
+END SUBROUTINE end
+
+END MODULE extern_mod
