@@ -41,6 +41,7 @@ MODULE io_mod
     real:: flag_max=10.
     real:: ampl=0.0
     real(8):: gb=0.0
+    real(8):: job_seconds=1d30
   contains
     procedure:: init
     procedure:: debug
@@ -144,7 +145,7 @@ SUBROUTINE mkdir_no (iout)
   if (io%iodir/=iout) call io%mkdir (trim(filename))
   io%iodir = iout
   !$omp end master
-END SUBROUTINE mkdir_no 
+END SUBROUTINE mkdir_no
 
 !> =============================================================================
 !> Initialize I/O related parameters.  The first thread that enters here blocks

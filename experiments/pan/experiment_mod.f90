@@ -26,11 +26,10 @@ MODULE experiment_mod
   private
   type, public, extends(solver_t):: experiment_t
   contains
-    procedure init
-    procedure update
+    procedure:: init
+    procedure:: update
   end type
   !type (particle_patch_t):: particle_patch
-  logical, save:: first_time=.true.
 CONTAINS
 
 !> =============================================================================
@@ -38,9 +37,8 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
-  integer, save:: itimer=0
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_mod::init', itimer=itimer)
+  call trace_begin('experiment_t%init')
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
@@ -58,7 +56,7 @@ SUBROUTINE init (self)
   !call particle_patch%init
   !call particle_patch%test
   self%unsigned(self%idx%d) = .true.
-  call trace_end (itimer=itimer)
+  call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -71,11 +69,16 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(experiment_t):: self
   class(link_t), pointer:: link
+  logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   if (first_time) then
-    first_time = .false.
-    call self%initial%cleanup
+    !$omp critical (cleanup_cr)
+    if (first_time) then
+      first_time = .false.
+      call self%initial%cleanup
+    end if
+    !$omp end critical (cleanup_cr)
   end if
   call self%mhd_t%update
   call trace_end

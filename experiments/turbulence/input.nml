@@ -1,41 +1,24 @@
 ! $Id$
 !
-! This default input file runs turbulence at 50x50x50 resolution in 2x2x2 patches.
-! It should take only a few minutes on a laptop, and produces 10 snapshots in time.
+! This default input file defines a run that should take only a few minutes
+! on a laptop, producing 10 snapshots in time.
 !
-! Do not modify the input.nml file to make experiments with other parameters.
-! Instead, copy input.nml to othername.nml, and run ./dispatch.x other.nml, which
-! produces data files named data/other_ppp_tttt.dat, where ppp is the patch number
-! and tttt is the snapshot number.
+! Do not modify this default input.nml file to make experiments -- instead,
+! copy input.nml to other.nml, and run ./dispatch.x other.nml, which produces
+! data files named data/other/ttttt/, where ttttt is the snapshot number.
 
-&load_balance_params
-/
-&task_list_params
- do_delay=t
- recv_active=t          ! IMPORTANT
- queue_unpack=t         ! CHECK
- retry_stalled=10
- sync_time=0.003
-/
-&mpi_mesg_params
- delay_ms=300
- send_priv=t            ! IMPORTANT
- recv_priv=f            ! CHECK
-/
-&timer_params
- sec_per_report=10
-/
-&io_params
- verbose=0
- do_validate=f
- do_trace=f
- omp_trace=f
- do_debug=f
- do_output=t
- method='parallel'
- !method='legacy'
- !method='direct'
- !method='buffered'
+&dispatcher_params      method=0 /
+&load_balance_params    /
+&task_list_params       /
+&mpi_mesg_params        delay_ms=300 /
+&timer_params           sec_per_report=10 /
+&experiment_params      test=t /
+&io_params              verbose=0 do_trace=f omp_trace=f do_validate=f do_debug=f
+                        do_output=t
+                        method='parallel'
+                        !method='legacy'
+                        !method='direct'
+                        !method='buffered'
 /
 &box_params
  size=1,1,1 dims=08,08,08 mpi_dims=1,1,1                !  1-4 processes
@@ -47,30 +30,9 @@
 !size=2,4,4 dims=20,40,40                               ! 32 processes = 16 nodes, 1280x1280x1280 cells
  origin=0,0,0
 /
-&experiment_params
-/
-&patch_params
- nt=5
- courant=0.2
- grace=0.5
- !n=3*64
- !n=3*32
- !n=3*28
- !n=3*24
- n=3*21
- !n=3*16
-!dt_fixed=0.001
-/
-&out_params
- end_time=0.500
- out_time=0.3
- print_time=0.0
- guard_zones=f
- time_derivs=f
-/
-&timestep_params
- time_order=0
-/
+&patch_params           nt=5 courant=0.2 grace=0.5 n=3*21 /
+&out_params             end_time=0.500 out_time=0.3 print_time=0.0 guard_zones=f time_derivs=f /
+&timestep_params        /
 
 &initial_params
  type='single_solenoidal'
@@ -83,20 +45,9 @@
 &initial_compressive_params k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
 &initial_advection_params   k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
 
-&force_params
- type='single_solenoidal'
-/
-&force_solenoidal_params  k=1,1,2 a0=0.0,0.2,0.1 t_turn=0.30 /
+&force_params               type='single_solenoidal' /
+&force_solenoidal_params    k=1,1,2 a0=0.0,0.2,0.1 t_turn=0.30 /
 
-&ramses_params
- detailed_timer=f
- courant_factor=0.8
- !courant_factor=0.266667
- gamma=1.00001
- slope_type=2
- !slope_type=-1
- smallr=1e-4
- smallc=5e-1
- riemann='hllc'
- do_isothermal=t
+&ramses_params          detailed_timer=f courant_factor=0.266667 slope_type=2 smallr=1e-4 smallc=5e-1
+                        isothermal=t  gamma=1.00001
 /

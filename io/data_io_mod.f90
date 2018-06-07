@@ -13,6 +13,7 @@ MODULE data_io_mod
   USE mpi_mod
   USE omp_mod
   USE trace_mod
+  USE task_mod
   USE patch_mod
   USE direct_io_mod
   USE legacy_io_mod
@@ -22,12 +23,13 @@ MODULE data_io_mod
   implicit none
   private
   type, public:: data_io_t
+    logical:: initialized=.false.
   contains
-    procedure, nopass:: init
-    procedure, nopass:: output
+    procedure:: init
+    procedure:: output
     procedure, nopass:: output_txt
-    procedure, nopass:: input
-    procedure, nopass:: close 
+    procedure:: input
+    procedure, nopass:: close
   end type
   type(data_io_t), public:: data_io
 CONTAINS
@@ -35,25 +37,32 @@ CONTAINS
 !> =============================================================================
 !> Initialize the I/O method
 !> =============================================================================
-SUBROUTINE init (patch)
-  class(patch_t):: patch
+SUBROUTINE init (self, task)
+  class(data_io_t):: self
+  class(patch_t):: task
   !.............................................................................
   call trace%begin('data_io_t%init')
   if (io%do_output) then
-    if      (io%method=='direct') then
-      call direct_io%init (patch)
-    else if (io%method=='parallel') then
-      call parallel_io%init (patch)
-    end if
+    select type (task)
+    class is (patch_t)
+      if      (io%method=='direct') then
+        call direct_io%init (task)
+      else if (io%method=='parallel') then
+        call parallel_io%init (task)
+      end if
+    end select
   end if
+  self%initialized = .true.
   call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
 !> Write results to disk
 !> =============================================================================
-SUBROUTINE output (patch, experiment_name)
+SUBROUTINE output (self, patch, experiment_name)
+  class(data_io_t):: self
   class(patch_t):: patch
+  !.............................................................................
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
   !.............................................................................
@@ -91,12 +100,19 @@ END SUBROUTINE output
 !> =============================================================================
 !> Read snapshot from disk
 !> =============================================================================
-SUBROUTINE input (patch, ok)
+SUBROUTINE input (self, patch, ok)
+  class(data_io_t):: self
   class(patch_t):: patch
   logical:: ok
-  type(snapshot_t), pointer:: snapshot
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%input')
+  if (.not.self%initialized) then
+    !$omp critical (data_io_cr)
+    if (.not.self%initialized) then
+      call self%init (patch)
+    end if
+    !$omp end critical (data_io_cr)
+  end if
   ok = .false.
   if (patch%restart > 0) then
     if      (io%method=='direct') then
@@ -108,8 +124,8 @@ SUBROUTINE input (patch, ok)
     else
       call mpi%abort ('unknown io%method = '//io%method)
     end if
-    call snapshot_list%count (patch, snapshot, input=.true.)
   end if
+  if (ok .and. io%verbose>2) print *, patch%id, ' LEGACY INPUT'
   call trace%end
 END SUBROUTINE input
 
@@ -176,64 +192,7 @@ SUBROUTINE output_txt (patch, snapshot)
   close (io_unit%data)
   !$omp end critical (output_cr)
   call trace%end
-END SUBROUTINE output_txt 
-
-!> =============================================================================
-!> Output text with patch info, either to individual files (io%format=1,2) or
-!> to one file per rank (io%format>2).  This is not threadsafe, both because of
-!> the text file I/O, and because snapshot%ibuf is consantly being modified by
-!> other threads (must be protected by the same critical region!).
-!> =============================================================================
-SUBROUTINE input_txt (patch_in, snapshot)
-  class(patch_t):: patch_in
-  real(8):: time
-  integer:: l(3), u(3), i0
-  type(snapshot_t), pointer:: snapshot
-  type(patch_t):: patch
-  !.............................................................................
-  character(len=128) filename
-  integer:: nlines=6
-  !-----------------------------------------------------------------------------
-  ! Read a small text file with info
-  !-----------------------------------------------------------------------------
-  call trace%begin ('data_io_t%input_txt')
-  !$omp critical (input_cr)
-  l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
-  u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
-  if (io%format > 2) then
-     write (filename,'(a,i5.5,"/",i5.5,".rank")') trim(io%inputname), patch%iout, mpi%rank
-  else
-     write (filename,'(a,i5.5,"/",i5.5)') trim(io%inputname), patch%iout, patch%id
-  end if
-  if (io%debug(2)) &
-    print'(a,3x,"time:",2f13.6)', ' data_io_t%input_txt: '//trim(filename), &
-    patch%out_next, patch%time
-  !-----------------------------------------------------------------------------
-  ! Open the file for reading
-  !-----------------------------------------------------------------------------
-  open  (io_unit%data, file=trim(filename)//'.txt', form='formatted', &
-         status='old')
-  read (io_unit%data,'(i2.2)') io%format
-  !-----------------------------------------------------------------------------
-  ! Read the text info
-  !-----------------------------------------------------------------------------
-  do while (patch%id /= patch_in%id)
-    if (io%format==3 .or. io%format==4) read (io_unit%data,*) patch%id, nlines
-    read (io_unit%data,'(a)')
-    read (io_unit%data,'(a)')
-    read (io_unit%data,'(a)')
-    read (io_unit%data,'(1p,2e18.10,6(2x,3e18.10)1x,1x,2e10.3)') patch%out_next, &
-          patch%dtime, patch%position, patch%ds, patch%velocity, patch%llc_nat, &
-          patch%llc_cart, patch%mesh%centre_nat, patch%quality, patch%gamma
-    read (io_unit%data,'(6(3i10.1,2x),3i2.1,1x,1i2.1,i3)') i0, &
-          i0, patch%li, patch%ui, patch%n, patch%gn, patch%ng, patch%nv, patch%level
-    read (io_unit%data,'(3(1i8.1,1x),i2.1)') patch%id, patch%iout, patch%istep, patch%mesh_type
-  end do
-  close (io_unit%data)
-  patch_in%time = patch%time
-  !$omp end critical (input_cr)
-  call trace%end
-END SUBROUTINE input_txt 
+END SUBROUTINE output_txt
 
 !> =============================================================================
 !> Close the data I/O

@@ -25,24 +25,19 @@ MODULE experiment_mod
   private
   type, public, extends(solver_t):: experiment_t
   contains
-    procedure init
-    procedure update
+    procedure:: init
+    procedure:: update
   end type
   type (particle_patch_t):: particle_patch
-  logical, save:: first_time=.true.
 CONTAINS
 
 !> =============================================================================
-!> Setup a uniform initial state, with density=d0 and B=B0
+!> Setup an initial state.
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
-  integer, save:: itimer=0
-  !----------------------------------------------------------------------------
-  call trace_begin('experiment_mod::init', itimer=itimer)
-  !----------------------------------------------------------------------------
-  ! Initial conditions
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  call trace%begin('experiment_t%init')
   call self%solver_t%init
   self%d0 = self%initial%d0
   if (self%kind(1:9) == 'stagger2_') then
@@ -56,7 +51,7 @@ SUBROUTINE init (self)
   !call self%periodic_grid
   call particle_patch%init
   call particle_patch%test
-  call trace_end (itimer=itimer)
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -69,14 +64,19 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(experiment_t):: self
   class(link_t), pointer:: link
+  logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_t%update')
+  call trace%begin('experiment_t%update')
   if (first_time) then
-    first_time = .false.
-    call self%initial%cleanup
+    !$omp critical (cleanup_cr)
+    if (first_time) then
+      first_time = .false.
+      call self%initial%cleanup
+    end if
+    !$omp end critical (cleanup_cr)
   end if
   call self%mhd_t%update
-  call trace_end
+  call trace%end
 END SUBROUTINE update
 
 END MODULE

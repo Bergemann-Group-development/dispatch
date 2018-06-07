@@ -1108,6 +1108,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer, save:: itimer=0
   integer, parameter:: max_lines=50
   integer, save:: counts(7)=0
+  character(len=120):: fmt
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%info')
   if (io_unit%do_validate) then
@@ -1148,8 +1149,13 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       nv = 1
       if (io%verbose>2) nv = self%nv
       if (io%verbose>1) then
+        if (self%time < 1d4) then
+          fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,9i5,2i4,l3,l1,o12)'
+        else
+          fmt = '(a,i8,2i4,i3,1p,2e12.5,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,9i5,2i4,l3,l1,o12)'
+        end if
         do iv=1,nv
-          write (io_unit%log,1) &
+          write (io_unit%log,fmt) &
             'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
             self%dtime, log10(max(self%u_max,1e-30)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
@@ -1163,7 +1169,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             self%is_set(bits%boundary), self%is_set(bits%virtual)
           if (io_unit%mpi/=io_unit%log) then
             !$omp critical (info_cr)
-            write (io_unit%mpi,1) &
+            write (io_unit%mpi,fmt) &
               'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
               self%dtime, self%u_max, &
               self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
@@ -1202,8 +1208,13 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
                        //' chk  rdy  upd  snt  prb  unp  dly snq rcq  BV'
             !$omp end critical (info_cr2)
           end if
+          if (self%time < 1d4) then
+            fmt = '(a,i8,2i4,i3,f12.6,1p,e12.5,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,9i5,2i4,l3,l1,o12)'
+          else
+            fmt = '(a,i8,2i4,i3,1p,2e12.5,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,9i5,2i4,l3,l1,o12)'
+          end if
           do iv=1,nv
-            print 1, &
+            print fmt, &
               'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
               self%dtime, log10(max(self%u_max,1e-30)), &
               self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
@@ -1213,7 +1224,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
               real(n_update), ntask, nq, counts, &
               mpi_mesg%nq_send, mpi_mesg%nq_recv, &
               self%is_set(bits%boundary), self%is_set(bits%virtual)
-            write (io_unit%log,1) &
+            write (io_unit%log,fmt) &
               'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
               self%dtime, log10(max(self%u_max,1e-30)), &
               self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
