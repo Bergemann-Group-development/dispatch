@@ -10,6 +10,9 @@
 
 &load_balance_params
 /
+
+&dispatcher_params      method=0 /
+
 &mpi_mesg_params
  max_sent=500
  max_recv=100
