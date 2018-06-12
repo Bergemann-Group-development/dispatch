@@ -27,7 +27,8 @@ MODULE task_list_mod
     procedure:: init
     procedure:: startup
     procedure:: update
-    procedure:: print
+    procedure:: average
+    procedure:: print => print1
   end type
   public:: task2patch
 CONTAINS
@@ -252,9 +253,60 @@ SUBROUTINE update (self, head, test, was_refined)
 END SUBROUTINE update
 
 !> =============================================================================
+!> Average over a variable with index idx
+!> =============================================================================
+FUNCTION average (self, idx, time)
+  class (task_list_t):: self
+  integer:: idx
+  real(8):: average, time
+  !.............................................................................
+  class(link_t) , pointer:: link
+  class(task_t) , pointer:: task
+  real(8), dimension(:,:,:), allocatable:: buffer
+  integer:: n, m(3), jt(2), l(3), u(3)
+  real:: pt(2)
+  !-----------------------------------------------------------------------------
+  ! Compute smallest time on the list
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%average')
+  link => self%head
+  time = link%task%time
+  do while (associated(link))
+    time = min(time, link%task%time)
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Interpolate to that time and sum up averages
+  !-----------------------------------------------------------------------------
+  link => self%head
+  n = 0
+  average = 0d0
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (patch_t)
+      m = task%ncell
+      l = task%li
+      u = l + m - 1
+      call task%time_interval (time, jt, pt)
+      if (.not.allocated(buffer)) &
+        allocate (buffer(m(1),m(2),m(3)))
+      buffer = task%mem(l(1):u(1),l(2):u(2),l(3):u(3),idx,jt(1),1)*pt(1) &
+             + task%mem(l(1):u(1),l(2):u(2),l(3):u(3),idx,jt(2),1)*pt(2)
+      average = average + sum(buffer)
+      n = n+1
+      !print '(5i5,2f8.5,3f12.6,1p,e12.4)', idx, n, task%id, jt, pt, task%t(jt(1)), time, task%t(jt(2)), average
+    end select
+    link => link%next
+  end do
+  average = average/n/product(shape(buffer))
+  call trace%end
+END FUNCTION average
+
+!> =============================================================================
 !> Print a table with task id and all neighbors
 !> =============================================================================
-SUBROUTINE print (self, label)
+SUBROUTINE print1 (self, label)
   class (task_list_t):: self
   character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
@@ -268,6 +320,6 @@ SUBROUTINE print (self, label)
   end do
   call self%print_queue
   call trace%end
-END SUBROUTINE print
+END SUBROUTINE print1
 
 END MODULE task_list_mod

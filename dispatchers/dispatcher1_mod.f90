@@ -10,17 +10,30 @@ MODULE dispatcher1_mod
   USE mpi_mesg_mod
   USE task_list_mod
   USE bits_mod
+  USE process_mod
+  USE global_mod
+  USE index_mod
   implicit none
   private
   type, public:: dispatcher1_t
     integer:: verbose=0
     integer:: n_spawn=0
     type(task_list_t), pointer:: task_list => null()
+    type(process_t):: process
   contains
     procedure:: execute
   end type
   type(dispatcher1_t), public:: dispatcher1
+  type(global_t):: average_density
 CONTAINS
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE init (self, task_list)
+  class(dispatcher1_t):: self
+  type(task_list_t), pointer:: task_list
+  !.............................................................................
+END SUBROUTINE init
 
 !> =============================================================================
 !> Simple dispatcher, which in each loop through the task list takes on the
@@ -34,22 +47,29 @@ SUBROUTINE execute (self, task_list, test)
   !.............................................................................
   class(link_t), pointer:: link, nbor
   logical:: ready, mytask
-  real(8):: start
+  real(8):: start, v, t
   integer, save:: itimer=0
+  type(index_t):: idx
   !-----------------------------------------------------------------------------
   self%task_list => task_list
   call task_list%init_all_nbors
   call tic (time=start)
+  !call self%process%update (task_list)
+  !call average_density%init ('density', mpi%size, 5, cadence=0.01)
   call timer%print
   !$omp parallel private(link,nbor,ready,mytask) default(shared)
   !$omp master
   mytask = .false.
   task_list%nq = 0
-  print *,'XX', io%job_seconds
   do while (task_list%na>0 .and. wallclock()-start < io%job_seconds)
     call trace%begin ('dispatcher1_t%execute', itimer=itimer)
                                         if (self%verbose>2) write (io_unit%dispatcher,*) wallclock(), 'check_mpi'
     call task_list%check_mpi()
+    !call self%process%update (task_list)
+    !v = task_list%average (idx%d, t)
+    !print *, 'AVER', mpi%rank, v, t
+    !average_density%order = min (3, task_list%head%task%istep)
+    !call average_density%update (v, 1d0, t)
     link => task_list%head
     do while (associated(link))
       ready = .false.
@@ -59,6 +79,8 @@ SUBROUTINE execute (self, task_list, test)
         ready = .true.
         nbor => link%nbor
         do while (associated(nbor))
+          if (io%verbose > 2) &
+            print *, 'dispatcher1: task, nbor, is_ahead =', link%task%id, nbor%task%id, nbor%task%is_ahead_of (link%task)
           ready = ready .and. nbor%task%is_ahead_of (link%task)
           if (.not.ready) then
                                         if (self%verbose>2) write (io_unit%dispatcher,*) wallclock(), link%task%id, 'failed', nbor%task%id, nbor%task%time, link%task%time
@@ -66,6 +88,8 @@ SUBROUTINE execute (self, task_list, test)
           end if
           nbor => nbor%next
         end do
+        if (io%verbose > 2) &
+          print *, 'dispatcher1: task, ready =', link%task%id, ready
         !-----------------------------------------------------------------------
         ! If a task is ready, change its state to 2, so we can keep track of nq
         !-----------------------------------------------------------------------
@@ -85,7 +109,9 @@ SUBROUTINE execute (self, task_list, test)
             call task_list%check_mpi()
                                         if (self%verbose>2) write (io_unit%dispatcher,*) wallclock(), link%task%id, 'check task_list'
                                         if (self%verbose>1) write (io_unit%log,*) wallclock(), link%task%id, 'update start'
-            call task_list%update (link, test)
+            if (io%verbose > 1) &
+              print *, omp%thread, 'dispatche1: updating  task', link%task%id
+            !call task_list%update (link, test)
             !$omp atomic
             task_list%nq = task_list%nq-1
             !$omp atomic write
@@ -103,11 +129,15 @@ SUBROUTINE execute (self, task_list, test)
               link%task%state = 3
               !$omp atomic
               self%n_spawn = self%n_spawn + 1
+              if (io%verbose > 2) &
+                print *, omp%thread, 'dispatche1: spawning task', link%task%id
               !$omp task default(shared) firstprivate(link)
               call self%task_list%check_mpi ()
                                         if (self%verbose>2) write (io_unit%log,*) wallclock(), link%task%id, 'check task_list'
                                         if (self%verbose>1) write (io_unit%log,*) wallclock(), link%task%id, 'update start', self%n_spawn
-              call task_list%update (link, test)
+              if (io%verbose > 1) &
+                print *, omp%thread, 'dispatche1: updating  task', link%task%id
+              !call task_list%update (link, test)
               !$omp atomic write
               link%task%state = 1
               !$omp atomic
@@ -127,7 +157,7 @@ SUBROUTINE execute (self, task_list, test)
           else
                                         if (self%verbose>2) write (io_unit%dispatcher,*) wallclock(), link%task%id, 'updating'
                                         if (self%verbose>2) write (io_unit%log,*) wallclock(), link%task%id, 'update start'
-            call task_list%update (link, test)
+            !call task_list%update (link, test)
             link%task%state = 1
             task_list%nq = task_list%nq-1
                                         if (self%verbose>2) write (io_unit%log,*) wallclock(), link%task%id, 'update end'

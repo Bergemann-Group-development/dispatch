@@ -3,6 +3,7 @@
 !> communication
 !> =============================================================================
 MODULE global_mod
+  USE io_mod
   USE trace_mod
   USE lagrange_mod
   USE mpi_mod
@@ -10,8 +11,11 @@ MODULE global_mod
   private
   type, public:: global_t
     integer:: nMPI, nt
+    integer:: order=2
+    integer:: istep=0
     real(8):: cadence
     real(8), dimension(:,:), allocatable:: v, w, t
+    character(len=80):: label
   contains
     procedure:: init
     procedure:: update
@@ -23,12 +27,14 @@ CONTAINS
 !> =============================================================================
 !> Initialize -- one instance is needed for each global average
 !> =============================================================================
-SUBROUTINE init (self, nMPI, nt, cadence)
+SUBROUTINE init (self, label, nMPI, nt, cadence)
   class(global_t):: self
+  character(len=*):: label
   integer:: nMPI, nt
-  real(8):: cadence
+  real:: cadence
   !.............................................................................
   call trace%begin ('global_t%init')
+  self%label = label
   self%cadence = cadence
   self%nMPI = nMPI
   self%nt = nt
@@ -47,17 +53,27 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self, v, w, t)
   class(global_t):: self
-  real(8):: v, w, t
+  real(8):: v, w, t, t1
   !.............................................................................
   call trace%begin ('global_t%update')
-  if (t > self%t(2,mpi%rank)+self%cadence) then
-    self%v(2:self%nt,mpi%rank) = self%v(1:self%nt-1,mpi%rank)
-    self%w(2:self%nt,mpi%rank) = self%w(1:self%nt-1,mpi%rank)
-    self%t(2:self%nt,mpi%rank) = self%t(1:self%nt-1,mpi%rank)
+  if (t > self%t(self%nt-1,mpi%rank)+self%cadence) then
+    self%v(1:self%nt-1,mpi%rank) = self%v(2:self%nt,mpi%rank)
+    self%w(1:self%nt-1,mpi%rank) = self%w(2:self%nt,mpi%rank)
+    self%t(1:self%nt-1,mpi%rank) = self%t(2:self%nt,mpi%rank)
+    self%v(self%nt,mpi%rank) = v
+    self%w(self%nt,mpi%rank) = w
+    self%t(self%nt,mpi%rank) = t
+    t1 = (t+self%t(self%nt-1,mpi%rank))/2d0
+    self%istep = self%istep + 1
+    if (io%master) then
+      print '(a,9f12.6)', 'new times:', self%t(:,mpi%rank), t1
+      print '(a,9f12.6)', ' averages:', self%v(:,mpi%rank), self%average (t1)
+    end if
+  else
+    self%v(self%nt,mpi%rank) = v
+    self%w(self%nt,mpi%rank) = w
+    self%t(self%nt,mpi%rank) = t
   end if
-  self%v(self%nt,mpi%rank) = v
-  self%w(self%nt,mpi%rank) = w
-  self%t(self%nt,mpi%rank) = t
   call trace%end
 END SUBROUTINE update
 
@@ -96,8 +112,8 @@ FUNCTION average (self, t)
   weight = 0d0
   average = 0d0
   do j=1,self%nMPI
-    v = lagrange%interpolation(t, self%t(:,i), self%v(:,i))
-    w = lagrange%interpolation(t, self%t(:,i), self%w(:,i))
+    v = lagrange%sequence(t, self%t(:,i), self%v(:,i), min(self%order,self%istep))
+    w = lagrange%sequence(t, self%t(:,i), self%w(:,i), min(self%order,self%istep))
     weight = weight + w
     average = average + v*w
   end do
