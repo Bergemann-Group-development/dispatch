@@ -54,7 +54,7 @@ SUBROUTINE execute (self, task_list, test)
   self%task_list => task_list
   call task_list%init_all_nbors
   call tic (time=start)
-  !call self%process%update (task_list)
+  call self%process%update (task_list)
   !call average_density%init ('density', mpi%size, 5, cadence=0.01)
   call timer%print
   !$omp parallel private(link,nbor,ready,mytask) default(shared)
@@ -65,7 +65,7 @@ SUBROUTINE execute (self, task_list, test)
     call trace%begin ('dispatcher1_t%execute', itimer=itimer)
                                         if (self%verbose>2) write (io_unit%dispatcher,*) wallclock(), 'check_mpi'
     call task_list%check_mpi()
-    !call self%process%update (task_list)
+    call self%process%update (task_list)
     !v = task_list%average (idx%d, t)
     !print *, 'AVER', mpi%rank, v, t
     !average_density%order = min (3, task_list%head%task%istep)
@@ -111,7 +111,7 @@ SUBROUTINE execute (self, task_list, test)
                                         if (self%verbose>1) write (io_unit%log,*) wallclock(), link%task%id, 'update start'
             if (io%verbose > 1) &
               print *, omp%thread, 'dispatche1: updating  task', link%task%id
-            !call task_list%update (link, test)
+            call task_list%update (link, test)
             !$omp atomic
             task_list%nq = task_list%nq-1
             !$omp atomic write
@@ -137,7 +137,7 @@ SUBROUTINE execute (self, task_list, test)
                                         if (self%verbose>1) write (io_unit%log,*) wallclock(), link%task%id, 'update start', self%n_spawn
               if (io%verbose > 1) &
                 print *, omp%thread, 'dispatche1: updating  task', link%task%id
-              !call task_list%update (link, test)
+              call task_list%update (link, test)
               !$omp atomic write
               link%task%state = 1
               !$omp atomic
@@ -157,7 +157,7 @@ SUBROUTINE execute (self, task_list, test)
           else
                                         if (self%verbose>2) write (io_unit%dispatcher,*) wallclock(), link%task%id, 'updating'
                                         if (self%verbose>2) write (io_unit%log,*) wallclock(), link%task%id, 'update start'
-            !call task_list%update (link, test)
+            call task_list%update (link, test)
             link%task%state = 1
             task_list%nq = task_list%nq-1
                                         if (self%verbose>2) write (io_unit%log,*) wallclock(), link%task%id, 'update end'

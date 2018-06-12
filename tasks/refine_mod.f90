@@ -3,6 +3,13 @@
 !> instance of it needs an index to the variable, whether to take the log, and
 !> a value for the max allowed change.  It might be applied to log density, log
 !> pressure, log opacity, velocity amplitude, magnetic field amplitude, etc.
+!>
+!> task_list_t%update
+!>   refine_t%check_current
+!>     refine_t%refine_needed
+!>       refine_t%check_sinkparticles
+!>       refine_t%check_Jeans
+!>       ...
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE refine_mod
   USE io_mod
@@ -12,9 +19,11 @@ MODULE refine_mod
   USE kinds_mod
   USE link_mod
   USE list_mod
+  USE task_mod
   USE patch_mod
   USE solver_mod
   USE eos_mod
+  USE sinkparticles_mod
   implicit none
   private
   !
@@ -29,14 +38,15 @@ MODULE refine_mod
     procedure:: split_patch
     procedure:: gradient_detector
     procedure:: check_nbor_support
+    procedure:: check_sinkparticle
   end type
   !
-  integer:: check_interval=50                 ! Number of steps betwen checks
+  integer:: check_interval=10                 ! Number of steps betwen checks
   integer:: levelmax=1                        ! Max level of refinment
   integer:: refinement_ratio=2                ! How does a patch split when it is refined
   real:: min_dx=0.0, max_dx=1e32              ! Min and max grid size
   real:: refine_from_t=0.0                    ! Time limits for occurence of refinement
-  real:: refine_until_t=0.0                   ! Time limits for occurence of refinement
+  real:: refine_until_t=1e30                  ! Time limits for occurence of refinement
   real:: min_jeans=0.0                        ! Jeans number below which a patch is flagged for refinement
   real:: tol_shock=0.0, tol_contact=0.0       ! Tolerance values for shock/discontinuity detectors
   integer, parameter:: ngradvar=10            ! Number of gradient variables
@@ -72,6 +82,7 @@ SUBROUTINE init (self)
     end if
   end if
   !$omp end critical (refine_cr)
+  call sinkparticles%init
   call trace%end
 END SUBROUTINE init
 
@@ -87,6 +98,7 @@ FUNCTION refine_needed (self, tasklist, link)
   class(patch_t), pointer:: patch
   real:: dxmin, dxmax
   integer, save:: itimer=0
+  logical:: new_sink
   !----------------------------------------------------------------------------
   refine_needed = .false.
   if (.not. do_refine) return
@@ -117,6 +129,9 @@ FUNCTION refine_needed (self, tasklist, link)
   !------------------------------------------------------------------------
   ! Refinement Criteria
   !------------------------------------------------------------------------
+  ! sink particle creation
+  new_sink = self%check_sinkparticle (tasklist, link)
+  !
   ! Jeans criterion
   if (min_jeans > 0.0) refine_needed = refine_needed .or. self%check_Jeans(patch)
   if (io%verbose>1) print *, patch%id, 'refine%needed (Jeans)   =', refine_needed
@@ -642,7 +657,6 @@ END FUNCTION gradient_detector
 !> =============================================================================
 FUNCTION refine_region (self, patch) RESULT (refine_it)
   USE mesh_mod
-
   class(refine_t) :: self
   class(patch_t), pointer :: patch
   class(mesh_t), pointer:: m1, m2, m3, m(:)
@@ -688,8 +702,94 @@ FUNCTION refine_region (self, patch) RESULT (refine_it)
       end do
     end do
   end do
-
   call trace%end
 END FUNCTION refine_region
+
+!> =============================================================================
+!> Test for the need to create a new sink particle, and handle the task list
+!> aspect of that; creating an nbor list, and adding the link to the task list.
+!> =============================================================================
+FUNCTION check_sinkparticle (self, task_list, link)
+  class(refine_t):: self
+  type(list_t):: task_list
+  class(link_t), pointer:: link
+  logical:: check_sinkparticle
+  !.............................................................................
+  class(task_t), pointer:: patch, task
+  class(link_t), pointer:: new_link, nbor
+  class(sinkparticles_t), pointer:: new_sink
+  real, dimension(:,:,:), pointer:: d
+  integer:: m(3)
+  logical:: do_trace
+  !-----------------------------------------------------------------------------
+  if (.not.sinkparticles%do_sink) return
+  check_sinkparticle = .false.
+  patch => link%task
+  select type (patch)
+  class is (sinkparticles_t)
+    !---------------------------------------------------------------------------
+    ! Refresh nbor list
+    !---------------------------------------------------------------------------
+    call task_list%refresh_nbors(link)
+  class is (patch_t)
+    check_sinkparticle = sinkparticles%check (patch)
+    if (check_sinkparticle) then
+      do_trace = io%do_trace
+      !io%do_trace = .true.
+      !-------------------------------------------------------------------------
+      ! Allocate a new sinkparticle_t instance, as the task of a new link
+      !-------------------------------------------------------------------------
+      allocate (new_link)
+      allocate (sinkparticles_t:: new_link%task)
+      new_link%parent => link
+      task => new_link%task
+      !-------------------------------------------------------------------------
+      ! Create the new sinkparticle, using data from the MHD patch
+      !-------------------------------------------------------------------------
+      select type (task)
+      class is (sinkparticles_t)
+        task%link => new_link
+        call task%create (patch)
+        !-------------------------------------------------------------------------
+        ! Initialize its neighbor list, and add it to the task list
+        !-------------------------------------------------------------------------
+        call task_list%init_nbors (new_link)
+        call task_list%append_link (new_link)
+        nbor => new_link%nbor
+        do while (associated(nbor))
+          print *, 'nbor:', nbor%task%id, real((nbor%task%position-task%position)/task%ds)
+          nbor => nbor%next
+        end do
+        !------------------------------------------------------------------------
+        ! Download variables and accrete
+        !------------------------------------------------------------------------
+        call task%dnload
+        d => task%mem(:,:,:,task%idx%d,task%it,1)
+        d = max(d,task%fminval(d))
+        if (task%id==io%id_debug) then
+          m = nint(task%offset)
+          print *, 'sinkparticles_t%create:  task%pos, d',  task%myposition(m), &
+            task%mem(m(1),m(2),m(3),task%idx%d,task%it,1)
+          print *,'MM', minval(d), task%fminval(task%idx%d), &
+                        maxval(d), task%fmaxval(task%idx%d)
+        end if
+        call task%accrete
+      end select
+      !-------------------------------------------------------------------------
+      ! Refresh the nbor lists of the parent and its nbors; the parent should
+      ! be done after the nbors, to avoid putting the child link on its nbor
+      ! list until the other ones are updated.  All nbors that happen to have
+      ! overlap with the sink particle patch will have it as an nbor
+      !-------------------------------------------------------------------------
+      nbor => link%nbor
+      do while (associated(nbor))
+        call task_list%init_nbors (nbor%link)
+        nbor => nbor%next
+      end do
+      call task_list%init_nbors (link)
+      io%do_trace = do_trace
+    end if
+  end select
+END FUNCTION check_sinkparticle
 
 END MODULE refine_mod

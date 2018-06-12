@@ -401,7 +401,11 @@ SUBROUTINE turbulence (self, m, ff, idx)
   call trace_begin('initial_t::raw', itimer=itimer)
   d = 1.0
   ff(:,:,:,idx%d        ) = d
-  ff(:,:,:,idx%e        ) = d*csound**2*self%gamma
+  if (self%gamma==1.0) then
+    ff(:,:,:,idx%e        ) = d*csound**2
+  else
+    ff(:,:,:,idx%e        ) = d*csound**2/(self%gamma-1.)
+  end if
   ff(:,:,:,idx%px:idx%pz) = 0.0
   call trace_end (itimer)
 END SUBROUTINE turbulence

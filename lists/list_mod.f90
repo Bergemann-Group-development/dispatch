@@ -55,6 +55,7 @@ MODULE list_mod
     procedure:: check_oldest
     procedure:: check_queue
     procedure:: init_nbors
+    procedure:: refresh_nbors
     procedure:: init_all_nbors
     procedure:: remove_parents
     procedure:: intpos
@@ -660,8 +661,9 @@ SUBROUTINE init_nbors (self, link)
   class(link_t), pointer:: nbor
   integer:: n_add
   logical:: overlaps
+  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('list_t%init_nbors ')
+  call trace_begin('list_t%init_nbors ', itimer=itimer)
   nullify (link%nbor)                                 ! initially no nbor
   n_add = 0
   scan => self%head                                   ! scan all links (FIXME)
@@ -707,8 +709,40 @@ SUBROUTINE init_nbors (self, link)
   if (io%verbose>1) write (io_unit%log,*) &
     'added ', n_add, ' neighbors to', link%task%id, &
     link%task%is_set(bits%boundary), link%task%is_set(bits%virtual)
-  call trace_end
+  call trace_end (itimer)
 END SUBROUTINE init_nbors
+
+!> =============================================================================
+!> Check if the nbor list is still OK.  A first test is to check if any of the
+!> nbors no longer overlaps.  One could / should also check if any nbor nbor
+!> now overlaps.
+!> =============================================================================
+SUBROUTINE refresh_nbors (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(link_t), pointer:: nbor1, nbor2
+  logical:: ok
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace_begin('list_t%refresh_nbors ', itimer=itimer)
+  ok = .true.
+  nbor1 => link%nbor
+  do while (ok .and. associated(nbor1))
+    ok = ok .and. nbor1%task%overlaps(link%task)
+    !nbor2 => nbor1%link%nbor
+    !do while (ok .and. associated(nbor2))
+    !  ok = ok .and. .not. nbor2%task%overlaps(link%task)
+    !  nbor2 => nbor2%next
+    !end do
+    nbor1 => nbor1%next
+  end do
+  if (.not.ok) then
+    print *, link%task%id, 'list_t%refresh_nbors: init_nbprs'
+    call self%init_nbors (link)
+  end if
+  call trace_end (itimer)
+END SUBROUTINE refresh_nbors
 
 !> =============================================================================
 !> The very first initialization of the neighbor lists.  After this, it can be
