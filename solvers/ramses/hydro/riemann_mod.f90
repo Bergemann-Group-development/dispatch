@@ -458,7 +458,7 @@ end subroutine llf
 
 !> =============================================================================
 !> =============================================================================
-subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
+subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
   REAL(dp)::SL,SR
@@ -472,13 +472,17 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
   REAL(dp)::ro,uo,ptoto,etoto
   REAL(dp)::smallp
   INTEGER ::ivar, i
-  LOGICAL :: error,detailed_timer
+  LOGICAL :: isothermal,error,detailed_timer
   INTEGER, SAVE:: itimer=0
   !
   if (detailed_timer) call trace_begin ('riemann::hllc', itimer=itimer)
   ! constants
   smallp = smallc**2/gamma
-  entho = one/(gamma-one)
+  if (isothermal) then
+    entho=one
+  else
+    entho=one/(gamma-one)
+  end if
   error = .false.
   !
   if (io%verbose>1) then
