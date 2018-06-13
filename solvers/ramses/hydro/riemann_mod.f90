@@ -619,6 +619,25 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
       etotstarr=((SR-ur)*etotr-Ptotr*ur+Ptotstar*ustar)/(SR-ustar)
       !
       ! Sample the solution at x/t=0
+!define MERGE
+#ifdef MERGE
+      ro=rr
+      uo=ur
+      Ptoto=Ptotr
+      etoto=etotr
+      ro   =merge(rstarr   ,ro     ,SR>0d0)
+      uo   =merge(ustar    ,uo     ,SR>0d0)
+      Ptoto=merge(Ptotstar ,Ptoto  ,SR>0d0)
+      etoto=merge(etotstarr,etoto  ,SR>0d0)
+      ro   =merge(rstarr   ,ro     ,ustar>0d0)
+      uo   =merge(ustar    ,uo     ,ustar>0d0)
+      Ptoto=merge(Ptotstar ,Ptoto  ,ustar>0d0)
+      etoto=merge(etotstarl,etoto  ,ustar>0d0)
+      ro   =merge(rl       ,ro     ,SL>0d0)
+      uo   =merge(ul       ,uo     ,SL>0d0)
+      Ptoto=merge(Ptotl    ,Ptoto  ,SL>0d0)
+      etoto=merge(etotl    ,etoto  ,SL>0d0)
+#else
       if(SL>0d0)then
          ro=rl
          uo=ul
@@ -640,6 +659,7 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
          Ptoto=Ptotr
          etoto=etotr
       end if
+#endif
       !
       ! Compute the Godunov flux
       fgdnv(i,1) = ro*uo
