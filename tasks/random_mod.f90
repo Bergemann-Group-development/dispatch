@@ -12,6 +12,7 @@ MODULE random_mod
   end interface
   type, public:: random_t
     integer:: seed=11
+    integer:: id
   contains
     procedure:: init
     procedure:: ran1
@@ -19,10 +20,18 @@ MODULE random_mod
     procedure:: uniform_1
     procedure:: uniform_n
   end type
+  integer, save:: id=0
 CONTAINS
 
 !> =============================================================================
 !> Initialize both random number generators
+!>
+!> Note that, if the random number is use to create a coherent pattern as a 
+!> function of code time, then -- since the differen tasks are in general not at
+!> the same code time, each task needs to use the task%random instance, with
+!> the same seed, but updated independently, as a function of their local code
+!> time.  For this reason, there is no generic, shared instance of the random_t
+!> data type.
 !> =============================================================================
 SUBROUTINE init (self, seed)
   class(random_t):: self
@@ -30,6 +39,10 @@ SUBROUTINE init (self, seed)
   real:: a, b(3)
   !.............................................................................
   call trace_begin ('random_t%init')
+  !$omp critical (random_cr)
+  id = id+1
+  self%id = id
+  !$omp end critical (random_cr)
   if (present(seed)) then
     self%seed = abs(seed)
   else
@@ -56,6 +69,8 @@ FUNCTION ran1(self)
     NTAB=32,NDIV=1+(IM-1)/NTAB,EPS=1.2e-7,RNMX=1.-EPS)
   integer:: k,iy
   !.............................................................................
+  if (self%id==0) &
+    print *,'WARNING: ran1 has not been initialized'
   idum = self%seed
   k =idum/IQ
   idum = IA*(idum-k*IQ)-IR*k
