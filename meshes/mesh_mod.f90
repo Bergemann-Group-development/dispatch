@@ -368,6 +368,7 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   ! in Cartesian coords., self%centre_nat = self%p
   if (self%no_mans_land) then
     h = 0.5_8
+    if (self%n == 1) h = 1.0_8 ! account for collapsed dimensions (otherwise `r` ends up non-zero).
     self%nc = self%ui - self%li + 1
   else
     h = 1.0_8
