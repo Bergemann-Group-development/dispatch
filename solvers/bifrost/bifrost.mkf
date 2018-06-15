@@ -1,0 +1,50 @@
+SOLVER_DIR = $(TOP)/solvers/bifrost
+
+VPATH := $(VPATH):$(SOLVER_DIR):$(BIFROST):$(BIFROST)/UNITS:$(BIFROST)/RADIATION:$(BIFROST)/BOUNDARIES:$(BIFROST)/EXTRAS
+
+# filling in blanks
+
+MAIN		 ?=
+PARAMS		 ?= params
+PARAMS_IO	 ?= params_split
+MP		 ?= mpi
+UNITS		 ?= solar
+TIMESTEP	 ?=
+BIFROST_TIMESTEP ?= 
+MHD		 ?= mhd_$(MP)
+MHD_VAR		 ?= mhd_var_$(MP)
+PDE		 ?= pde_$(MP)
+STAGGER		 ?= stagger_mesh_$(MP)
+QUENCH		 ?= quench3_$(MP)
+BOUNDARY	 ?= $(EXPERIMENT)_boundaries
+BOUNDARY_SUB 	 ?= standard_boundaries
+IO		 ?= bifrost_io
+BIFROST_IO ?= bifrost_io
+IOC		 ?=
+CIO		 ?=
+RADIATION	 ?= radiation_GS_$(MP)
+EOS		 ?= square_gas_$(MP)
+DRIVING		 ?= driving_none_$(MP)
+TIMING		 ?= timing_$(MP)
+MATH		 ?= math_$(MP)
+EXTRAS		 ?= $(EXPERIMENT)_extras_$(MP)
+EXTRAS_SUB	 ?=
+ADAPTION	 ?= adaption_empty
+WORK		 ?= work_$(MP)
+FFT		 ?= fftpack 
+INFNAN		 ?= infnan
+
+BASE 		?= $(MAIN) $(PARAMS_IO) $(PARAMS) $(IO) $(MP) $(UNITS) $(STAGGER) $(BIFROST_TIMESTEP) $(PDE) $(MHD) $(MHD_VAR) $(WORK) $(EOS) $(QUENCH) $(MATH) $(IOC) $(CIO) $(BOUNDARY) $(BOUNDARY_SUB) $(RADIATION) $(EXTRAS) $(EXTRAS_SUB) $(TIMING) $(ADAPTION) $(COLMASS) $(FFT) $(INFNAN)
+
+OBJ		 ?= $(addsuffix .o,$(strip $(BASE)))
+
+$(SOLVER_DIR)/main.f90: $(BIFROST)/main.f90
+	sed -e '/^PROG/,/^END PROG/d' $(BIFROST)/main.f90 > $(SOLVER_DIR)/main.f90
+dep:: 
+	cd $(BIFROST); make clean; make Makefile.dep
+clean:: $(SOLVER_DIR)/main.f90 test
+	cd $(BIFROST); make clean; make Makefile.dep
+test:
+	ln -sf $(BIFROST)/TESTS/TEST/* ./
+
+sinclude $(BIFROST)/Makefile.dep

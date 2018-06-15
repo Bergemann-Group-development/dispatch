@@ -1,13 +1,16 @@
 
 # Option groups
-OPTS = debug
+#OPTS = quick
+#OPTS = debug
 #OPTS = full_debug
-#OPTS = optimized
+OPTS = optimized
 
 # Default target and methods
+SOLVER          = bifrost
 UPD             = adams_bashforth
 EXEC            = dispatch.x
 TOP             = ../..
+MESH            = bifrost_mesh
 
 # Tomida & Hori, with opacity
 #EOS             = tabular_e
@@ -16,16 +19,9 @@ TOP             = ../..
 
 include $(TOP)/config/Makefile
 
-# Connect to the make system of the code
-BIFROST = ../../../bifrost
-sinclude code/Makefile
-
 # List the .o files the main program depends on after the colon:
-$(EXEC)                 : io_mod.o mpi_mod.o experiment_mod.o cartesian_mod.o $(OBJ)
-interface_mod.o         :
-experiment_mod.o        : io_mod.o trace_mod.o interface_mod.o gpatch_mod.o mpi_mesg_mod.o \
-                          dispatch_mod.o io_unit_mod.o timestep_mod.o interface_mod.o
-
-
-objs:
-	echo $(OBJ)
+$(EXEC)                 : dispatch_mod.o extern_mod.o cartesian_mod.o $(OBJ) dispatcher_mod.o
+dispatch_mod.o		: io_mod.o mpi_mod.o
+experiment_mod.o        : trace_mod.o timestep_mod.o solver_mod.o
+refine_mod.o:           io_mod.o trace_mod.o bits_mod.o list_mod.o link_mod.o kinds_mod.o \
+                        download_mod.o mesh_mod.o solver_mod.o patch_mod.o
