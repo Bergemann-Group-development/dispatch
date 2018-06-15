@@ -96,7 +96,7 @@ END SUBROUTINE init
 !> =============================================================================
 FUNCTION check (self, patch)
   class(sinkparticles_t):: self
-  class(patch_t), pointer:: patch
+  class(patch_t), target:: patch
   logical:: check
   !-----------------------------------------------------------------------------
   check = .false.
@@ -119,7 +119,7 @@ END FUNCTION check
 !> =============================================================================
 SUBROUTINE create (self, patch)
   class(sinkparticles_t):: self
-  class(patch_t), pointer:: patch
+  class(patch_t), target:: patch
   !.............................................................................
   class(link_t), pointer:: nbor, prev
   real, dimension(:,:,:), pointer:: d
