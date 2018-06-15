@@ -71,6 +71,7 @@ MODULE patch_mod
                                         ! Cartesian coords., equal to `velocity`.
   contains
     procedure:: init
+    procedure:: init_default
     procedure:: setup
     procedure:: delete
     procedure:: rotate
@@ -99,10 +100,12 @@ MODULE patch_mod
     generic, public :: faver    => faver4, faver8     ! interior average
     procedure, private :: fminval4
     procedure, private :: fminval8
-    generic, public :: fminval => fminval4, fminval8  ! interior min value
+    procedure, private :: fminvali
+    generic, public :: fminval => fminval4, fminval8, fminvali
     procedure, private :: fmaxval4
     procedure, private :: fmaxval8
-    generic, public :: fmaxval => fmaxval4, fmaxval8  ! interior max value
+    procedure, private :: fmaxvali
+    generic, public :: fmaxval => fmaxval4, fmaxval8, fmaxvali
     procedure:: courant_condition
     procedure:: check_density
     procedure:: check_nan
@@ -282,6 +285,19 @@ END SUBROUTINE header_to_patch
 !> =============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self
+  !.............................................................................
+  call trace%begin ('patch_t%init')
+  call self%setup
+  call trace%end
+END SUBROUTINE init
+
+!> =============================================================================
+!> Initialize the patch memory and patch dimensions.  For this we need to be told the
+!> patch dimensions (which include the number of variable and the number of time
+!> slices), the patch position, and the patch size
+!> =============================================================================
+SUBROUTINE init_default (self)
+  class(patch_t):: self
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, restart=-9
   logical, save:: first_time = .true.
   logical, save:: guard_zones=.false., time_derivs=.false., periodic(3)
@@ -296,7 +312,7 @@ SUBROUTINE init (self)
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     restart, inputdir, guard_zones, time_derivs
   !.............................................................................
-  call trace%begin ('patch_t%init')
+  call trace%begin ('patch_t%init_default')
   call self%task_t%init                         ! sets unique id
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; these may have been set by the calling code
@@ -347,6 +363,38 @@ SUBROUTINE init (self)
   self%use_data_hub = use_data_hub              ! guard zone handling
   self%no_mans_land = no_mans_land              ! mesh centering
   self%print_next  = print_time
+  call trace%end
+END SUBROUTINE init_default
+
+!> =============================================================================
+!> Setup a patch, possibly with non-standard parameters. First setup with
+!> defaults, then possibly override, then do the actual setup
+!> =============================================================================
+SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
+  class(patch_t)    :: self
+  real(8), optional :: position(3), size(3)
+  integer, optional :: n(3), ng(3)
+  integer, optional :: nt, nv, nw
+  !.............................................................................
+  integer:: i
+  !-----------------------------------------------------------------------------
+  call trace%begin ('patch_t%setup')
+  call self%init_default                        ! read default params
+  if (present(position)) self%position = position
+  if (present(size    )) self%size     = size
+  if (present(n       )) self%n        = n
+  if (present(ng      )) self%ng       = ng
+  if (present(nt      )) self%nt       = nt
+  if (present(nv      )) self%nv       = nv
+  if (present(nw      )) self%nw       = nw
+  !-----------------------------------------------------------------------------
+  if (io%verbose>1) &
+    print *,'patch_t%setup', self%id, self%position
+  self%llc_cart = self%position - 0.5 * self%size
+  self%llc_nat = self%llc_cart
+  !-----------------------------------------------------------------------------
+  ! Detect root grid
+  !-----------------------------------------------------------------------------
   if (all(self%size==self%box)) then
     !$omp critical (log_cr)
     write (io_unit%log,*) mpi%rank, 'task', self%id, ' is root grid'
@@ -442,9 +490,9 @@ SUBROUTINE init (self)
   self%dt = 0.0
   self%t =  0.0
   self%iit = 1                                  ! initial memory slots
-  self%iit(nt) = 2                              ! first output slot
-  self%it = self%iit(nt-1)                      ! short-hand (=1 initially)
-  self%new = self%iit(nt)                       ! short-hand
+  self%iit(self%nt) = 2                         ! first output slot
+  self%it = self%iit(self%nt-1)                 ! short-hand (=1 initially)
+  self%new = self%iit(self%nt)                  ! short-hand
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
   block
@@ -459,30 +507,6 @@ SUBROUTINE init (self)
 !    call self%set (bits%root_grid)
 !    if (io%verbose > 1) print *, 'set bits%root_grid id =', self%id
 !  end if
-  call trace%end
-END SUBROUTINE init
-
-!> =============================================================================
-!> Deallocate a patch and its allocated parts
-!> =============================================================================
-SUBROUTINE setup (self, position, size, n, nt, nv, nw)
-  class(patch_t)    :: self
-  real(8), optional :: position(3), size(3)
-  integer, optional :: n(3)
-  integer, optional :: nt, nv, nw
-  !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%setup')
-  if (present(position)) self%position = position
-  if (present(size    )) self%size     = size
-  if (present(n       )) self%n        = n
-  if (present(nt      )) self%nt       = nt
-  if (present(nv      )) self%nv       = nv
-  if (present(nw      )) self%nw       = nw
-  call self%init
-  if (io%verbose>1) &
-    print *,'patch_t%setup', self%id, self%position
-  self%llc_cart = self%position - 0.5 * self%size
-  self%llc_nat = self%llc_cart
   call trace%end
 END SUBROUTINE setup
 
@@ -1476,6 +1500,22 @@ FUNCTION faver8 (self, f) RESULT (out)
   out = self%fsum8(f)/product(self%ncell)
 END FUNCTION faver8
 
+!> =============================================================================
+FUNCTION fminvali (self, iv) RESULT (fminval)
+  class(patch_t):: self
+  integer:: iv
+  real:: fminval
+  !-----------------------------------------------------------------------------
+  fminval = self%fminval4 (self%mem(:,:,:,iv,self%it,1))
+END FUNCTION fminvali
+!> =============================================================================
+FUNCTION fmaxvali (self, iv) RESULT (fmaxval)
+  class(patch_t):: self
+  integer:: iv
+  real:: fmaxval
+  !-----------------------------------------------------------------------------
+  fmaxval = self%fmaxval4 (self%mem(:,:,:,iv,self%it,1))
+END FUNCTION fmaxvali
 !> =============================================================================
 FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
   real:: fmaxval

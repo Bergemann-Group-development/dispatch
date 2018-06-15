@@ -174,9 +174,9 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
             endif
             !------------------
             fact=1.
-            if (jx > 0) fact=fact*0.5
-            if (jy > 0) fact=fact*0.5
-            if (jz > 0) fact=fact*0.5
+            if (jx /= 0) fact=fact*0.5
+            if (jy /= 0) fact=fact*0.5
+            if (jz /= 0) fact=fact*0.5
             fpow = fpow+fact*(cabs(fxx)**2+cabs(fyy)**2+cabs(fzz)**2)
             dx = mesh(1)%d
             dy = mesh(2)%d

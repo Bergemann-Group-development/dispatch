@@ -52,6 +52,7 @@ module hydro_parameters
 
   ! Hydro solver parameters
   integer ::niter_riemann=10
+  logical:: isothermal=.false.
   real(dp)::slope_type=1
   real(dp)::gamma=1.4d0
   real(dp)::courant_factor=0.5d0
