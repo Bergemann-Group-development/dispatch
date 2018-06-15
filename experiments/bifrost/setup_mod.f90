@@ -19,7 +19,7 @@ CONTAINS
 !> Initialize DISPATCH program
 !> =============================================================================
 SUBROUTINE init (self)
-  class(dispatch_t):: self
+  class(setup_t):: self
   !-----------------------------------------------------------------------------
   call io%init
   call extern%init
@@ -31,7 +31,7 @@ END SUBROUTINE init
 !> Finalize DISPATCH program
 !> =============================================================================
 SUBROUTINE end (self)
-  class(dispatch_t):: self
+  class(setup_t):: self
   !-----------------------------------------------------------------------------
   !call mpi%end
   call extern%end
