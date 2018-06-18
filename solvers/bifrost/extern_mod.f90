@@ -37,7 +37,7 @@ SUBROUTINE init (self)
   integer :: tl_tp, tl_cr, tl_cm
   !-----------------------------------------------------------------------------
   reread = 0
-  call init_params
+  call init_params                                                      ! reads in the basic simulation parameters. Could and should be replaced with a simple subroutine inside DISPATCH
   call init_parallel
   dispatch = .true.
 !
@@ -51,20 +51,21 @@ SUBROUTINE init (self)
   endif
 !
   call init_units
-  call init_stagger
   call init_io
   call init_timestep
-  call init_mhd
   call init_math
   call init_quench
-  call init_eos
-  call init_radiation
   call init_timing
   call init_adaption
-!
+  call init_standard_boundaries
+!> The latter should be initialized per patch basis until they will be reworked
+!> into globally accessible ones or fully incorporated into other modules.
+  call init_stagger
+  call init_mhd
+  call init_eos
+  call init_radiation
   call init_snap
   call init_extras
-  call init_standard_boundaries
   call init_boundaries
   call update_mhd
 

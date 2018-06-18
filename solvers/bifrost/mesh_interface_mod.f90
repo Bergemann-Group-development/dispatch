@@ -25,6 +25,7 @@ MODULE mesh_interface_mod
     integer(4):: ys,ye,ysb,yeb
     integer(4):: zs,ze,zsb,zeb
     character(len=132) :: meshfile
+    integer(4)::myid
   contains
     procedure:: init
     procedure:: put

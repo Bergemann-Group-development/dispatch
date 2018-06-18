@@ -72,6 +72,7 @@ SUBROUTINE put (self, mem, m, time)
   real(8):: time
   !-----------------------------------------------------------------------------
   call trace%begin ('bifrost_t%put')
+  myid = m%myid
   r(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)  = mem(:,:,:,idx%d)
   e(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)  = mem(:,:,:,idx%e)
   px(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb) = mem(:,:,:,idx%px)
@@ -94,6 +95,7 @@ SUBROUTINE get (self, mem, m, time, dtime)
   real(8):: time, dtime
   !-----------------------------------------------------------------------------
   call trace%begin ('bifrost_t%get')
+  m%myid = myid
   mem(:,:,:,idx%d)  = r(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)
   mem(:,:,:,idx%e)  = e(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)
   mem(:,:,:,idx%px) = px(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)

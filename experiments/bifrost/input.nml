@@ -22,7 +22,7 @@
  sec_per_report=2
 /
 &io_params
- verbose=0
+ verbose=2
  do_validate=f
  do_trace=f
  do_debug=f
@@ -30,29 +30,38 @@
  omp_trace=t
 /
 &box_params
-size=1,1,1 dims=10,10,10 mpi_dims=1,1,1                !  1 proces
-! size=1,1,3 dims=10,10,30 mpi_dims=1,1,3                !  3 proces
-!size=2,2,2 dims=64,64,64 mpi_dims=2,2,2                !  8 processes =  4 nodes
-!size=4,4,4 dims=40,40,40 mpi_dims=4,4,4                ! 64 processes = 32 nodes, 1280x1280x1280 cells
-!size=2,4,4 dims=20,40,40                               ! 32 processes = 16 nodes, 1280x1280x1280 cells
+size=1,1,1 dims=1,1,1 mpi_dims=1,1,1                                    !  1 proces
  origin=0,0,0
 /
 &experiment_params
 /
+
+&solver_params
+ mesh_file = 'qt_128x128x128.mesh'
+/
+
+&initial_params
+ k=3,3,3
+ a0=0.0,0.0,0.0
+ u0=0,0,0
+ b0=0,0,0.0
+ !type='single_compressive'
+ !type='single_solenoidal'
+ type='single_advection'
+ !type='raw'
+/
+
 &patch_params
+ n=3*128
  nt=5
+ ng=5
  courant=0.2
+ periodic = t,t,f
  grace=0.3
- !n=3*64
- !n=3*32
- !n=3*28
- n=3*24
- !n=3*21
- !n=3*16
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.050
+ end_time=1e-3
  out_time=0.05
  print_time=0.0
  guard_zones=f
@@ -71,25 +80,4 @@ size=1,1,1 dims=10,10,10 mpi_dims=1,1,1                !  1 proces
  t_turn=0.30
  type='single_solenoidal'
 /
-&initial_params
- k=3,3,3
- a0=0.0,0.0,0.0
- u0=0,0,0
- b0=0,0,0.0
- !type='single_compressive'
- !type='single_solenoidal'
- type='single_advection'
- !type='raw'
-/
-&ramses_params
- detailed_timer=f
- courant_factor=0.8
- !courant_factor=0.266667
- gamma=1.00001
- slope_type=2
- !slope_type=-1
- smallr=1e-4
- smallc=5e-1
- riemann='hllc'
- do_isothermal=t
-/
+

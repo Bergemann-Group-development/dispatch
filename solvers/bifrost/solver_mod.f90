@@ -15,13 +15,15 @@ MODULE solver_mod
     type(bifrost_rt_t):: bifrost_rt
     type(bifrost_mesh_t):: bifrost_mesh
   contains
-    procedure:: init
-    procedure:: get
-    procedure:: put
     procedure:: dnload
-    procedure:: update
+    procedure:: get
+    procedure:: init
     procedure:: pack
+    procedure:: put
+    procedure:: read_mesh
     procedure:: unpack
+    procedure:: update
+    ! ----------------------------
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: velocity_magnitude => void
@@ -45,7 +47,8 @@ SUBROUTINE init (self)
   ! --------------------------------------------------------------------
   integer :: n(3)
   call trace%begin ('solver_t%init')
-  call bifrost%init (n,self%bifrost_mesh)                                                 ! initialize the Bifrost state
+  call bifrost%init (n,self%bifrost_mesh)                               ! initialize the Bifrost state
+  self%bifrost_mesh%myid = self%id
   self%nv = 8                                   ! set number of variables
   self%nt = 7                                   ! set number of time slots
   self%ng = 10                                  ! set number of guard zones
@@ -87,6 +90,14 @@ SUBROUTINE put (self)
   end associate
   call trace%end
 END SUBROUTINE put
+
+!> =====================================================================
+!> Read external mesh file
+!> =====================================================================
+SUBROUTINE read_mesh (self)
+  class(solver_t):: self
+  
+END SUBROUTINE read_mesh
 
 !> =============================================================================
 !> Download guard zone values
