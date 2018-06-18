@@ -7,6 +7,7 @@ MODULE io_mod
   USE mpi_mod
   USE io_unit_mod
   USE timer_mod
+  USE os_mod
   implicit none
   private
   logical:: mpi_trace=.false.
@@ -46,16 +47,12 @@ MODULE io_mod
     procedure:: init
     procedure:: debug
     procedure:: check_flags
-    procedure:: print_id => print_id_
-    procedure, nopass:: mkdir
-    procedure, nopass:: mkdir_no
-    procedure, nopass:: print_hl
     procedure, nopass:: namelist_warning
     procedure, nopass:: abort
   end type
   character(len=64), save:: inputname, outputname
   type(io_t), public:: io
-  public print_id, mch, io_unit, log_unit
+  public mch, io_unit, log_unit
 CONTAINS
 
 !> =============================================================================
@@ -66,86 +63,6 @@ LOGICAL FUNCTION debug (self, verbose)
   integer:: verbose
   debug = self%master .and. (self%verbose >= verbose)
 END FUNCTION debug
-
-!> =============================================================================
-!> Utility to create a new directory
-!> =============================================================================
-SUBROUTINE mkdir (dir)
-#ifdef __INTEL_COMPILER
-  USE ifport
-#else
-  use iso_c_binding
-  interface
-    function fmkdir(path,mode) bind(c,name="mkdir")
-      use iso_c_binding
-      integer(c_int) :: fmkdir
-      character(kind=c_char,len=1) :: path(*)
-      integer(c_int16_t), value :: mode
-    end function fmkdir
-  end interface
-  integer :: i, iter
-#endif
-  character(len=*):: dir
-  logical:: exists
-  real, parameter:: ms=100.
-  !.............................................................................
-#ifdef __INTEL_COMPILER
-  inquire (directory=dir, exist=exists)
-  if (exists) return
-  if (.not.io_unit%do_validate) then
-    exists = MakeDirQQ (dir)
-    if (exists) then
-      print *,omp%thread,' Intel created directory '//dir
-    else
-      print *,omp%thread,' WARNING: Intel failed to create directory '//dir
-    end if
-  end if
-#else
-  !$omp critical (system_cr)
-  inquire (file=dir, exist=exists)
-  if (.not.exists) then
-    do iter=1,10
-      i = fmkdir(dir, int(o'772',c_int16_t))
-      call mpi%delay (ms=ms)
-      inquire (file=dir, exist=exists)
-      if (exists) then
-        if (.not.io_unit%do_validate) &
-          print *, mpi%rank, omp%thread,' C-binding call created directory '//dir
-        exit
-      else
-        if (.not.io_unit%do_validate) &
-          print *, mpi%rank, omp%thread,' WARNING: C-binding call failed to create directory '//dir
-      end if
-      call system ('mkdir -p '//dir)
-      call mpi%delay (ms=ms)
-      inquire (file=dir, exist=exists)
-      if (exists) then
-        if (.not.io_unit%do_validate) &
-          print *, mpi%rank, omp%thread,' system call created directory '//dir
-        exit
-      else
-        if (.not.io_unit%do_validate) &
-          print *, mpi%rank, omp%thread,' WARNING: system call failed to create directory '//dir
-      end if
-    end do
-  end if
-  !$omp end critical (system_cr)
-#endif
-END SUBROUTINE mkdir
-
-!> =============================================================================
-!> Make sure the next directory is created ahead of time
-!> =============================================================================
-SUBROUTINE mkdir_no (iout)
-  integer:: iout
-  character(len=120):: filename
-  !-----------------------------------------------------------------------------
-  !$omp master
-  write (filename,'(a,i5.5,"/")') trim(io%outputname), iout
-  if (io%iodir/=iout) call io%mkdir (trim(filename))
-  io%iodir = iout
-  !$omp end master
-END SUBROUTINE mkdir_no
 
 !> =============================================================================
 !> Initialize I/O related parameters.  The first thread that enters here blocks
@@ -224,9 +141,9 @@ SUBROUTINE init (self, name)
     ! Open MPI rank and OMP thread-specific log files
     !---------------------------------------------------------------------------
     io_unit%do_validate = do_validate
-    call self%mkdir (trim(self%outputname))
+    call os%mkdir (trim(self%outputname))
     write (filename,'(a,i5.5,"/")') trim(io%outputname), 0
-    call self%mkdir (trim(filename))
+    call os%mkdir (trim(filename))
     if (omp_trace .and. omp%nthreads>1) then
       io_unit%log = 110+omp%mythread()
       write (filename,'(a,"thread_",i5.5,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%thread
@@ -275,43 +192,8 @@ SUBROUTINE init (self, name)
   if (do_direct) self%method = 'direct'
   io_unit%top    = top
   io_unit%do_validate = do_validate
-  call print_id (id)
   call timer%init
 END SUBROUTINE init
-
-!> =============================================================================
-SUBROUTINE print_id_ (self, id)
-  class(io_t):: self
-  character(len=120) id
-  !..............................................................................
-  call print_id (id)
-END SUBROUTINE print_id_
-
-!> =============================================================================
-SUBROUTINE print_hl
-  character(len=120), save:: hl= &
-    '--------------------------------------------------------------------------------'
-  !..............................................................................
-  if (io%master) then
-    print'(a)',trim(hl)
-  end if
-END SUBROUTINE print_hl
-
-!> =============================================================================
-SUBROUTINE print_id (id)
-  character(len=120) id
-  character(len=120), save:: hl= &
-    '--------------------------------------------------------------------------------'
-  !..............................................................................
-  if (io_unit%do_validate) return
-  if (id .ne. ' ' .or. mpi_trace) then
-    if (io%master) then
-      call print_hl
-      print'(1x,a,f12.2)', trim(id) !, wallclock()
-    end if
-    if (.not.mpi_trace) id = ' '
-  end if
-END SUBROUTINE print_id
 
 !> =============================================================================
 !> Check debug flag files.  To avoid having to synchronize when using MPI, we

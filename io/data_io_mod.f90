@@ -10,6 +10,7 @@
 !> =============================================================================
 MODULE data_io_mod
   USE io_mod
+  USE os_mod
   USE mpi_mod
   USE omp_mod
   USE trace_mod
@@ -72,8 +73,8 @@ SUBROUTINE output (self, patch, experiment_name)
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
   do while (patch%time >= patch%out_next)
-    call io%mkdir (trim(io%outputname))
-    call io%mkdir_no (patch%iout)
+    call os%mkdir (trim(io%outputname))
+    call os%mkdir_no (patch%iout)
     call snapshot_list%count (patch, snapshot)
     if      (io%method=='direct') then
       call direct_io%output (patch)
@@ -92,7 +93,7 @@ SUBROUTINE output (self, patch, experiment_name)
     if (io%out_time==0.0) exit
     patch%iout = patch%iout+1
     patch%out_next = (nint(patch%out_next/io%out_time)+1)*io%out_time
-    call io%mkdir_no (patch%iout)
+    call os%mkdir_no (patch%iout)
   end do
   call trace%end (itimer)
 END SUBROUTINE output

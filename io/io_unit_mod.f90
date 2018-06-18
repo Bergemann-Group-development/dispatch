@@ -10,7 +10,8 @@ MODULE io_unit_mod
     integer:: verbose=0, input=1, output=6, data=3, log=4, debug=7, &
       flag=8, index=9, dump=10, trace=11, os=12, mpi=13, queue=14, direct=15, &
       validate=16, dispatcher=17, tmp=50
-    character(len=64):: top
+    integer:: iodir = -1
+    character(len=64):: inputname, outputname, datadir='data', top, inputdir
   end type
   integer, parameter, public:: mch=120
   type(io_unit_t), public:: io_unit
