@@ -40,11 +40,17 @@ SUBROUTINE init (self)
   integer:: iostat
   real:: gamma_AD=75., rho_ions=1.0, eta_Ohm=0.0, etaMD=0.0
   logical:: mhd_AD=.false., mhd_Ohm=.false., ntestDADM=.true.
+  logical, save:: first_time=.true.
   namelist /non_ideal_params/ gamma_AD, eta_Ohm, etaMD, rho_ions, mhd_AD, mhd_Ohm, ntestDADM
   !---------------------------------------------------------------------------
-  rewind (io_unit%input)
-  read (io_unit%input, non_ideal_params,iostat=iostat)
-  if (io%master) write (*, non_ideal_params)
+  !$omp critical (init_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io_unit%input)
+    read (io_unit%input, non_ideal_params,iostat=iostat)
+    if (io%master) write (*, non_ideal_params)
+  end if
+  !$omp end critical (init_cr)
   self%mhd_Ohm  = mhd_Ohm
   self%eta_Ohm  = eta_Ohm
   self%mhd_AD   = mhd_AD

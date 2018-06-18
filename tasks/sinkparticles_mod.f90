@@ -260,7 +260,8 @@ SUBROUTINE accrete (self)
       p = 1d0-q
       if (self%mask(ix,iy,iz)) then
         dm          = dm          + d (ix,iy,iz)*dv*p
-        print '(3i4,3f12.6,l4)', ix, iy, iz, d(ix,iy,iz), self%r(ix,iy,iz), p, self%mask(ix,iy,iz)
+        if (verbose>1) &
+          print '(3i4,3f12.6,l4)', ix, iy, iz, d(ix,iy,iz), self%r(ix,iy,iz), p, self%mask(ix,iy,iz)
         self%mom(1) = self%mom(1) + px(ix,iy,iz)*dv*p
         self%mom(2) = self%mom(2) + py(ix,iy,iz)*dv*p
         self%mom(3) = self%mom(3) + pz(ix,iy,iz)*dv*p
