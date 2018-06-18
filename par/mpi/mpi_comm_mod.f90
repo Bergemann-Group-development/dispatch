@@ -43,6 +43,8 @@ FUNCTION sent (self)
   integer:: stat(MPI_STATUS_SIZE)
   !-----------------------------------------------------------------------------
   call MPI_TEST (self%req, sent, stat, self%ierr)
+#else
+  sent = .false.
 #endif
   if (sent) self%req = 0
 END FUNCTION sent
@@ -67,6 +69,8 @@ FUNCTION recv (self, rank, tag)
                     mp%comm, self%req, self%ierr)
   end if
   call MPI_TEST (self%req, recv, stat, self%ierr)
+#else
+  recv = .false.
 #endif
   if (recv) self%req = 0
 END FUNCTION recv 
