@@ -67,8 +67,8 @@ SUBROUTINE output (self, patch, experiment_name)
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
   !.............................................................................
-  type(snapshot_t), pointer:: snapshot
   logical, save:: checked=.false.
+  type(snapshot_t), pointer:: snapshot
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
@@ -111,6 +111,7 @@ SUBROUTINE input (self, patch, ok)
   class(data_io_t):: self
   class(patch_t):: patch
   logical:: ok
+  type(snapshot_t), pointer:: snapshot
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%input')
   if (.not.self%initialized) then
@@ -121,6 +122,7 @@ SUBROUTINE input (self, patch, ok)
     !$omp end critical (data_io_cr)
   end if
   ok = .false.
+  call snapshot_list%count (patch, snapshot, input=.true.)
   if (patch%restart > 0) then
     if      (io%method=='direct') then
       call direct_io%input (patch, ok)
@@ -132,6 +134,7 @@ SUBROUTINE input (self, patch, ok)
       call mpi%abort ('unknown io%method = '//io%method)
     end if
   end if
+  patch%t(patch%it) = patch%time
   if (ok .and. io%verbose>2) print *, patch%id, ' LEGACY INPUT'
   call trace%end
 END SUBROUTINE input
@@ -211,7 +214,7 @@ SUBROUTINE close
   if      (io%method=='legacy') then
     !call legacy_io%close
   else if (io%method=='direct') then
-    !call direct_io%close
+    call direct_io%close
   else if (io%method=='buffered') then
     call buffered_io%close
   else if (io%method=='parallel') then

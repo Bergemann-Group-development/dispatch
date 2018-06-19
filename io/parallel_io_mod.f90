@@ -162,6 +162,11 @@ SUBROUTINE input (patch, ok)
   deallocate (buffer)
   ok = .true.
   patch%time = patch%restart*io%out_time
+  if (io%verbose==1) print '(a,2i6,1p,e16.6)', ' parallel_io_t%input: iout, id, time =', &
+    patch%iout, patch%id, patch%time
+  if (io%verbose>1) print '(a,4i6,2i7)', &
+    ' parallel_io_t%input: iout, n, snapshot_words, buffer_words =', &
+    patch%iout, n, snapshot_words, buffer_words
   call trace%end
 END SUBROUTINE input
 

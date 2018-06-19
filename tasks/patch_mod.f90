@@ -1519,21 +1519,13 @@ FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
   real:: fmaxval
   class(patch_t):: self
   real, dimension(:,:,:), intent(in):: f
-  integer:: n(3)
   !-----------------------------------------------------------------------------
   if (self%boundaries%is_set (bits%spherical)) then
     fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
   else
-    if (self%is_periodic()) then
-      n = self%ncell-1
-      fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
-                         self%mesh(2)%li:self%mesh(2)%li+n(2), &
-                         self%mesh(3)%li:self%mesh(3)%li+n(3)))
-    else
-      fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                         self%mesh(2)%li:self%mesh(2)%ui, &
-                         self%mesh(3)%li:self%mesh(3)%ui))
-    end if
+    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                       self%mesh(2)%li:self%mesh(2)%ui, &
+                       self%mesh(3)%li:self%mesh(3)%ui))
   end if
 END FUNCTION fmaxval4
 !> =============================================================================
@@ -1541,21 +1533,13 @@ FUNCTION fminval4 (self, f) RESULT(fminval)
   real:: fminval
   class(patch_t):: self
   real, dimension(:,:,:), intent(in):: f
-  integer:: n(3)
   !-----------------------------------------------------------------------------
   if (self%boundaries%is_set (bits%spherical)) then
     fminval = minval(f, mask=self%boundaries%mask(self%mesh))
   else
-    if (self%is_periodic()) then
-      n = self%ncell-1
-      fminval = minval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
-                         self%mesh(2)%li:self%mesh(2)%li+n(2), &
-                         self%mesh(3)%li:self%mesh(3)%li+n(3)))
-    else
-      fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                         self%mesh(2)%li:self%mesh(2)%ui, &
-                         self%mesh(3)%li:self%mesh(3)%ui))
-    end if
+    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                       self%mesh(2)%li:self%mesh(2)%ui, &
+                       self%mesh(3)%li:self%mesh(3)%ui))
   end if
 END FUNCTION fminval4
 !> =============================================================================
@@ -1563,21 +1547,13 @@ FUNCTION fmaxval8 (self, f) RESULT (fmaxval)
   real(8):: fmaxval
   class(patch_t):: self
   real(8), dimension(:,:,:), intent(in):: f
-  integer:: n(3)
   !-----------------------------------------------------------------------------
   if (self%boundaries%is_set (bits%spherical)) then
     fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
   else
-    if (self%is_periodic()) then
-      n = self%ncell-1
-      fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
-                         self%mesh(2)%li:self%mesh(2)%li+n(2), &
-                         self%mesh(3)%li:self%mesh(3)%li+n(3)))
-    else
-      fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                         self%mesh(2)%li:self%mesh(2)%ui, &
-                         self%mesh(3)%li:self%mesh(3)%ui))
-    end if
+    fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                       self%mesh(2)%li:self%mesh(2)%ui, &
+                       self%mesh(3)%li:self%mesh(3)%ui))
   end if
 END FUNCTION fmaxval8
 !> =============================================================================
@@ -1585,21 +1561,13 @@ FUNCTION fminval8 (self, f) RESULT(fminval)
   real(8):: fminval
   class(patch_t):: self
   real(8), dimension(:,:,:), intent(in):: f
-  integer:: n(3)
   !-----------------------------------------------------------------------------
   if (self%boundaries%is_set (bits%spherical)) then
     fminval = minval(f, mask=self%boundaries%mask(self%mesh))
   else
-    if (self%is_periodic()) then
-      n = self%ncell-1
-      fminval = minval(f(self%mesh(1)%li:self%mesh(1)%li+n(1), &
-                         self%mesh(2)%li:self%mesh(2)%li+n(2), &
-                         self%mesh(3)%li:self%mesh(3)%li+n(3)))
-    else
-      fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
-                         self%mesh(2)%li:self%mesh(2)%ui, &
-                         self%mesh(3)%li:self%mesh(3)%ui))
-    end if
+    fminval = minval(f(self%mesh(1)%li:self%mesh(1)%ui, &
+                       self%mesh(2)%li:self%mesh(2)%ui, &
+                       self%mesh(3)%li:self%mesh(3)%ui))
   end if
 END FUNCTION fminval8
 
