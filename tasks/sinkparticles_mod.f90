@@ -1,12 +1,15 @@
 !> =============================================================================
 !> A sink particle is represented as primarily a particle task, whose position
-!> is updated with a particle solver.  In addition, it carries along a patch,
-!> which is usually much smaller than an MHD patch, and whose values are
-!> downloaded from contribution MHD patches.
+!> is updated with a particle solver. The patch is usually much smaller than an
+!> MHD patch, and its values are downloaded from contribution MHD patches. 
 !>
-!> The test procedure is called from refine_t%check_sinkparticle, which
-!> handles creating a task list link, adding an nbor list, and adding the
-!> task to task list.
+!> A particular quality level indicates to the download_mod that all cells from
+!> the sink particle patch should be downloaded to overlapping patches, thus
+!> communicating back the removal of accreted mass and momentum.
+!>
+!> The procedure is called from refine_t%check_sinkparticle, which handles
+!> creating a task list link, adding an nbor list, and adding the task to task
+!> list.
 !> =============================================================================
 MODULE sinkparticles_mod
   USE io_mod
