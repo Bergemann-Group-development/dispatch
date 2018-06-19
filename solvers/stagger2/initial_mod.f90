@@ -67,7 +67,7 @@ SUBROUTINE init (self, solver, gamma)
    self%d0     = d0
    self%p0     = p0
    self%gamma  = max(self%gamma,1d0+1d-5)
-   self%e0     = p0/(self%gamma-1.0)
+   self%e0     = p0/(self%gamma-1d0)
    self%mhd    = mhd
    self%time   = 0d0
    select case (type)
