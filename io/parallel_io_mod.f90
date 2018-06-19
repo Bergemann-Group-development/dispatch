@@ -81,7 +81,7 @@ SUBROUTINE output (patch)
     n = patch%n
   end if
   buffer_words = product(n)
-  snapshot_words = buffer_words*patch%nv*io%ntotal
+  snapshot_words = buffer_words*patch%nv*io%ntask
   if (io%verbose==1) print '(a,2i6)', ' parallel_io_t%output: iout, id =', &
     patch%iout, patch%id
   if (io%verbose>1) print '(a,4i6,2i7)', &
@@ -107,7 +107,7 @@ SUBROUTINE output (patch)
     if (order==0) then
       call thread_io%write (buffer, patch%iout+1, (patch%id-1)*patch%nv + iv)
     else
-      call thread_io%write (buffer, patch%iout+1, patch%id + (iv-1)*io%ntotal)
+      call thread_io%write (buffer, patch%iout+1, patch%id + (iv-1)*io%ntask)
     end if
   end do
   deallocate (buffer)
@@ -137,14 +137,14 @@ SUBROUTINE input (patch, ok)
     n = patch%n
   end if
   buffer_words = product(n)
-  snapshot_words = buffer_words*patch%nv*io%ntotal
+  snapshot_words = buffer_words*patch%nv*io%ntask
   call thread_io%init (snapshot_words, buffer_words)
   allocate (buffer(n(1),n(2),n(3)))
   do iv=1,patch%nv
     if (order==0) then
       call thread_io%read (buffer, patch%restart+1, (patch%id-1)*patch%nv + iv)
     else
-      call thread_io%read (buffer, patch%restart+1, patch%id + (iv-1)*io%ntotal)
+      call thread_io%read (buffer, patch%restart+1, patch%id + (iv-1)*io%ntask)
     end if
     if (thread_io%err /= 0) then
       ok = .false.
