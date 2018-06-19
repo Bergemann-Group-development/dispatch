@@ -458,7 +458,7 @@ end subroutine llf
 
 !> =============================================================================
 !> =============================================================================
-subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
+subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
   REAL(dp)::SL,SR
@@ -472,13 +472,17 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
   REAL(dp)::ro,uo,ptoto,etoto
   REAL(dp)::smallp
   INTEGER ::ivar, i
-  LOGICAL :: error,detailed_timer
+  LOGICAL :: isothermal,error,detailed_timer
   INTEGER, SAVE:: itimer=0
   !
   if (detailed_timer) call trace_begin ('riemann::hllc', itimer=itimer)
   ! constants
   smallp = smallc**2/gamma
-  entho = one/(gamma-one)
+  if (isothermal) then
+    entho=one
+  else
+    entho=one/(gamma-one)
+  end if
   error = .false.
   !
   if (io%verbose>1) then
@@ -619,6 +623,25 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
       etotstarr=((SR-ur)*etotr-Ptotr*ur+Ptotstar*ustar)/(SR-ustar)
       !
       ! Sample the solution at x/t=0
+!define MERGE
+#ifdef MERGE
+      ro=rr
+      uo=ur
+      Ptoto=Ptotr
+      etoto=etotr
+      ro   =merge(rstarr   ,ro     ,SR>0d0)
+      uo   =merge(ustar    ,uo     ,SR>0d0)
+      Ptoto=merge(Ptotstar ,Ptoto  ,SR>0d0)
+      etoto=merge(etotstarr,etoto  ,SR>0d0)
+      ro   =merge(rstarr   ,ro     ,ustar>0d0)
+      uo   =merge(ustar    ,uo     ,ustar>0d0)
+      Ptoto=merge(Ptotstar ,Ptoto  ,ustar>0d0)
+      etoto=merge(etotstarl,etoto  ,ustar>0d0)
+      ro   =merge(rl       ,ro     ,SL>0d0)
+      uo   =merge(ul       ,uo     ,SL>0d0)
+      Ptoto=merge(Ptotl    ,Ptoto  ,SL>0d0)
+      etoto=merge(etotl    ,etoto  ,SL>0d0)
+#else
       if(SL>0d0)then
          ro=rl
          uo=ul
@@ -640,6 +663,7 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,error,detailed_timer)
          Ptoto=Ptotr
          etoto=etotr
       end if
+#endif
       !
       ! Compute the Godunov flux
       fgdnv(i,1) = ro*uo

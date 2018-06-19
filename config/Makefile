@@ -121,7 +121,7 @@ showopt:
 
 #############################################################################
 ## Clean up
-clean: clean-deps
+clean:: clean-deps
 	rm -f *.o *.$(MOD) *.stackdump
 cleanlog:
 	rm -f *.log log*

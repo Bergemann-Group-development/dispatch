@@ -102,10 +102,11 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
-  real, pointer, dimension(:,:,:,:):: em, p
-  real, pointer, dimension(:,:,:,:,:):: fl
-  real, pointer, dimension(:,:,:,:)::fluxambdiff,emfambdiff
-  real, dimension(self%mesh(1)%ui-self%mesh(1)%li+1,self%mesh(2)%ui-self%mesh(2)%li+1,self%mesh(3)%ui-self%mesh(3)%li+1):: dflux_x, dflux_y, dflux_z, Bleft, Bright
+  real, pointer, dimension(:,:,:,:):: p
+  real, allocatable, dimension(:,:,:,:):: em
+  real, allocatable, dimension(:,:,:,:,:):: fl
+  real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff
+  real, allocatable, dimension(:,:,:):: dflux_x, dflux_y, dflux_z, Bleft, Bright
   real, pointer, dimension(:,:,:):: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real(dp):: dtdx, dtdy, dtdz
   integer:: n(3), nv3, i
@@ -114,6 +115,12 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%update', itimer=itimer)
   nv3 = self%nv-3
+  n = self%mesh%ui-self%mesh%li+1
+  allocate (dflux_x(n(1),n(2),n(3)))
+  allocate (dflux_y(n(1),n(2),n(3)))
+  allocate (dflux_z(n(1),n(2),n(3)))
+  allocate (Bleft  (n(1),n(2),n(3)))
+  allocate (Bright (n(1),n(2),n(3)))
   
   call self%gravity
   !----------------------------------------------------------------------------
@@ -350,6 +357,7 @@ SUBROUTINE update (self)
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dq2,self%bf,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
               self%Ex,self%Ey,self%Ez,fluxambdiff,emfambdiff)
+  deallocate (dflux_x, dflux_y, dflux_z, Bleft, Bright)
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -363,7 +371,7 @@ subroutine check_small (self)
   integer, save:: itimer=0
   associate(uu=>self%uin)
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_mod::check_small',itimer=itimer)
+  call trace%begin('mhd_f%check_small',itimer=itimer)
   n_smalld = 0
   n_smallp = 0
   lo = self%mesh%lb
@@ -421,7 +429,7 @@ subroutine ctoprim(self)
   integer, save:: itimer=0
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_mod::ctoprim',itimer=itimer)
+  call trace%begin('mhd_f%ctoprim',itimer=itimer)
   smallp = smallr*smallc**2/self%gamma
   n = shape(uin)-1
 
@@ -481,7 +489,7 @@ subroutine uslope(self,bf,q,dq,dbf)
   real(dp)::vmin,vmax,dfx,dfy,dfz,dff,idff
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_mod::uslope', itimer=itimer)
+  call trace%begin ('mhd_f%uslope', itimer=itimer)
   !
   islope_type = int(slope_type)
   l = self%mesh%lo
@@ -775,7 +783,7 @@ SUBROUTINE trace3d(self)
     Ux=>self%q(:,:,:,2),Uy=>self%q(:,:,:,3),Uz=>self%q(:,:,:,4), &
     Ex=>self%Ex,Ey=>self%Ey,Ez=>self%Ez)
   !
-  call trace%begin ('mhd_mod::trace3d(1)', itimer=itimer(1))
+  call trace%begin ('mhd_f%trace3d(1)', itimer=itimer(1))
   su0=0.0_dp; sv0=0.0_dp; sw0=0.0_dp
   !
   dtdx = self%dtime/self%ds(1)
@@ -794,7 +802,7 @@ SUBROUTINE trace3d(self)
 
   !
   !call trace%end (itimer(1))
-  !call trace%begin ('mhd_mod::trace3d(2)', itimer=itimer(2))
+  !call trace%begin ('mhd_f%trace3d(2)', itimer=itimer(2))
   eff_gamma = self%gamma
   do k=2,self%gn(3)-1
   do j=2,self%gn(2)-1
@@ -1130,7 +1138,7 @@ SUBROUTINE trace3d(self)
   end do
     !
   !call trace%end (itimer(2))
-  !call trace%begin ('mhd_mod::trace3d(3)', itimer=itimer(3))
+  !call trace%begin ('mhd_f%trace3d(3)', itimer=itimer(3))
   do k=2,self%gn(3)-1
   do j=2,self%gn(2)-1
   do i=2,self%gn(1)-1
@@ -1240,7 +1248,7 @@ SUBROUTINE trace3d(self)
   end do
   end do
   !call trace%end (itimer(3))
-  !call trace%begin ('mhd_mod::trace3d(4)', itimer=itimer(4))
+  !call trace%begin ('mhd_f%trace3d(4)', itimer=itimer(4))
   n=size(q,1)
   if (self%no_mans_land) then
     off = self%mesh(1)%li - self%mesh(1)%lb -1
@@ -1329,7 +1337,7 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   integer, save:: itimer=0
   associate (qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_mod::cmpflxm',itimer=itimer)
+  call trace%begin ('mhd_f%cmpflxm',itimer=itimer)
   lb = self%mesh%li
   ub = self%mesh%uo
   xdim = ln-1
@@ -1470,7 +1478,7 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
   real(dp):: smallp
   integer, save:: itimer=0
   !associate (qRT=>self%qRT,qLT=>self%qLT,qRB=>self%qRB,qLB=>self%qLB)
-  call trace%begin ('mhd_mod::cmp_mag_flx',itimer=itimer)
+  call trace%begin ('mhd_f%cmp_mag_flx',itimer=itimer)
   !-----------------------------------------------------------------------------
 
   xdim = lor - 1
@@ -1552,17 +1560,14 @@ subroutine solver (self,qleft,qright,fgdnv,ub,nvar)
 !subroutine solver (self,qleft,qright,fgdnv,lb,ub)
   class(mhd_t):: self
   real(dp),dimension(:,:):: qleft,qright,fgdnv
-  integer, save:: itimer=0
   integer :: lb, ub, nvar
   !.............................................................................
-  call trace%begin ('mhd_mod::solver', itimer=itimer)
   if (self%riemann.eq.'hlld')then
     call rieman%hlld(qleft,qright,fgdnv,ub,nvar)
   else
     write(*,*)'unknown Riemann solver'
     stop
   end if
-  call trace%end (itimer)
 end subroutine solver
 
 !> =============================================================================

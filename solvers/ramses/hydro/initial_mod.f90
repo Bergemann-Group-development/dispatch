@@ -1,13 +1,15 @@
 !> =============================================================================
 !> This is a start on a module that could become a general turbulence forcing
-!> module, where the standard forcing we have been using in RAMSES is implemented
+!> module, where the standard forcing we have been using in RAMSES is implemented.
+!>
+!> Note that the isothermal and gamma parameters are communicated from the solver
+!> via the hydro_parameters module.
 !> =============================================================================
 MODULE initial_mod
   USE const
   USE io_mod
   USE trace_mod
   USE mesh_mod
-  USE random_mod
   USE hydro_parameters
   USE omp_mod
   USE index_mod
@@ -16,7 +18,7 @@ MODULE initial_mod
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     integer:: seed
-    real:: gamma
+    real(8):: fgamma
     real:: d0
     logical:: mhd
     real(8):: time=0d0
@@ -34,10 +36,12 @@ CONTAINS
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, gamma1)
   class(initial_t):: self
   character(len=64):: solver
   character(len=32), save:: type='single_solenoidal'
+  real, optional:: gamma1
+  real(8), save:: fgamma
   logical, save:: first_time=.true.
   namelist /initial_params/ type
   !----------------------------------------------------------------------------
@@ -48,9 +52,15 @@ SUBROUTINE init (self, solver)
     rewind (io%input)
     read (io%input, initial_params)
     if (io%master) write (*, initial_params)
+    if (isothermal .or. gamma==1d0) then
+      fgamma = 1d0
+    else
+      fgamma = gamma*(1d0-gamma)
+    end if
   end if
   !$omp end critical (input_cr)
   self%solver = trim(solver)
+  self%fgamma = fgamma
   select case (type)
   case ('single_solenoidal')
     self%condition => single_solenoidal
@@ -75,7 +85,7 @@ SUBROUTINE cleanup
 END SUBROUTINE cleanup
 
 !> =============================================================================
-!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> Initialize a single 3-D wavenumber
 !> =============================================================================
 SUBROUTINE single_solenoidal (self, m, ff, idx)
   class(initial_t) :: self
@@ -83,15 +93,13 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
-  type(random_t) :: random
   integer        :: ix, iy, iz
   real(8)        :: kx, ky, kz
-  integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /initial_solenoidal_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /initial_solenoidal_params/ k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
@@ -117,8 +125,13 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,idx%py) = a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,idx%pz) = a0(3)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
-          half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
+        if (isothermal) then
+          ff(ix,iy,iz,idx%e ) = d0*csound**2 + &
+            half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
+        else
+          ff(ix,iy,iz,idx%e ) = d0*csound**2/self%fgamma + &
+            half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
+        end if
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(1)*(sin(kx)+sin(ky))
           ff(ix,iy,iz,idx%by) = b0(2)*(sin(kx)+sin(ky))
@@ -140,15 +153,13 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
-  type(random_t) :: random
   integer        :: ix, iy, iz
   real(8)        :: kx, ky, kz
-  integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /initial_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /initial_compressive_params/ k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
@@ -174,7 +185,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = u0(1)*sin(kx)
         ff(ix,iy,iz,idx%py) = u0(2)*sin(ky)
         ff(ix,iy,iz,idx%pz) = u0(3)*sin(kz)
-        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
+        ff(ix,iy,iz,idx%e ) = d0*csound**2/self%fgamma + &
           half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(1)
@@ -189,7 +200,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
 END SUBROUTINE single_compressive
 
 !> =============================================================================
-!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> Initialize a single 3-D wavenumber, with non-random amplitude and phase
 !> =============================================================================
 SUBROUTINE single_advection (self, m, ff, idx)
   class(initial_t) :: self
@@ -197,14 +208,12 @@ SUBROUTINE single_advection (self, m, ff, idx)
   class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
-  type(random_t) :: random
   integer        :: ix, iy, iz
   real(8)        :: kx, ky, kz
-  integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
-  namelist /initial_advection_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma
+  namelist /initial_advection_params/ k, a0, u0, b0, d0, s0, mhd, gamma
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_advection', itimer=itimer)
@@ -230,7 +239,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = d0*u0(1)
         ff(ix,iy,iz,idx%py) = d0*u0(2)
         ff(ix,iy,iz,idx%pz) = d0*u0(3)
-        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
+        ff(ix,iy,iz,idx%e ) = d0*csound**2/self%fgamma + &
           half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(3)*sin(kz)
@@ -301,7 +310,7 @@ SUBROUTINE exa256 (self, m, ff, idx)
   ff(:,:,:,5) = 0.5*ff(:,:,:,idx%d)*(ff(:,:,:,idx%px)**2+ &
                                      ff(:,:,:,idx%py)**2+ &
                                      ff(:,:,:,idx%pz)**2) &
-              + ff(:,:,:,idx%d)/(gamma-one)
+              + ff(:,:,:,idx%d)/self%fgamma
   do iv=idx%px,idx%pz
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do

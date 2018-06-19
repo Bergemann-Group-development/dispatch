@@ -22,7 +22,6 @@ MODULE refine_mod
   USE task_mod
   USE patch_mod
   USE solver_mod
-  USE eos_mod
   USE sinkparticles_mod
   implicit none
   private
@@ -715,7 +714,8 @@ FUNCTION check_sinkparticle (self, task_list, link)
   class(link_t), pointer:: link
   logical:: check_sinkparticle
   !.............................................................................
-  class(task_t), pointer:: patch, task
+  class(task_t), pointer:: task, patch
+  class(patch_t), pointer:: p
   class(link_t), pointer:: new_link, nbor
   class(sinkparticles_t), pointer:: new_sink
   real, dimension(:,:,:), pointer:: d
@@ -732,7 +732,8 @@ FUNCTION check_sinkparticle (self, task_list, link)
     !---------------------------------------------------------------------------
     call task_list%refresh_nbors(link)
   class is (patch_t)
-    check_sinkparticle = sinkparticles%check (patch)
+    p => patch
+    check_sinkparticle = sinkparticles%check (p)
     if (check_sinkparticle) then
       do_trace = io%do_trace
       !io%do_trace = .true.
@@ -749,7 +750,7 @@ FUNCTION check_sinkparticle (self, task_list, link)
       select type (task)
       class is (sinkparticles_t)
         task%link => new_link
-        call task%create (patch)
+        call task%create (p)
         !-------------------------------------------------------------------------
         ! Initialize its neighbor list, and add it to the task list
         !-------------------------------------------------------------------------

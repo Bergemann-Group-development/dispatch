@@ -2,7 +2,9 @@
 !> Simple module for sending / receiving packages to / from other ranks
 !> =============================================================================
 MODULE mpi_comm_mod
+#ifdef MPI
   USE mpi
+#endif MPI
   USE mpi_mod, mp => mpi
   implicit none
   private
@@ -24,8 +26,10 @@ SUBROUTINE send (self, rank, tag)
   class(mpi_comm_t):: self
   integer:: rank, tag
   !-----------------------------------------------------------------------------
+#ifdef MPI
   call MPI_Isend (self%buffer, size(self%buffer), MPI_INTEGER, rank, tag, &
                   mp%comm, self%req, self%ierr)
+#endif MPI
 END SUBROUTINE send
 
 !> =============================================================================
@@ -34,10 +38,14 @@ END SUBROUTINE send
 FUNCTION sent (self)
   logical:: sent
   class(mpi_comm_t):: self
+#ifdef MPI
   !............................................................................
   integer:: stat(MPI_STATUS_SIZE)
   !-----------------------------------------------------------------------------
   call MPI_TEST (self%req, sent, stat, self%ierr)
+#else
+  sent = .false.
+#endif
   if (sent) self%req = 0
 END FUNCTION sent
 
@@ -52,6 +60,7 @@ FUNCTION recv (self, rank, tag)
   logical:: recv
   class(mpi_comm_t):: self
   integer:: rank, tag
+#ifdef MPI
   !............................................................................
   integer:: stat(MPI_STATUS_SIZE)
   !-----------------------------------------------------------------------------
@@ -60,6 +69,9 @@ FUNCTION recv (self, rank, tag)
                     mp%comm, self%req, self%ierr)
   end if
   call MPI_TEST (self%req, recv, stat, self%ierr)
+#else
+  recv = .false.
+#endif
   if (recv) self%req = 0
 END FUNCTION recv 
 

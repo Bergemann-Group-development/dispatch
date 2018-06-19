@@ -52,7 +52,6 @@ MODULE mhd_mod
   logical:: debug=.false.
   logical:: first_time=.true.
   logical:: detailed_timer=.false.
-  logical:: isothermal=.false.
   character(len=16):: eqn='mhd'
 CONTAINS
 
@@ -269,7 +268,7 @@ SUBROUTINE e2S(self, s, it)
     k = k+p(:,:,:,i)**2
   end do
   k = 0.5*k/d
-  s = log((e-k)*(self%gamma-1.0)/d**self%gamma)/(self%gamma-1.0)
+  s = log((e-k)*(gamma-1.0)/d**gamma)/(gamma-1.0)
   deallocate(k)
   end associate
 END SUBROUTINE e2S
@@ -294,7 +293,7 @@ SUBROUTINE S2e (self, s, it)
     k = k+p(:,:,:,i)**2
   end do
   k = 0.5*k/d
-  e = d**self%gamma*exp(s*(self%gamma-1.0)) + k
+  e = d**gamma*exp(s*(gamma-1.0)) + k
   deallocate(k)
   end associate
 END SUBROUTINE S2e
@@ -380,7 +379,7 @@ end subroutine godunov
 !> =============================================================================
 subroutine check_small (self, uu)
   class(mhd_t):: self
-  real(dp), dimension(:,:,:,:):: uu
+  real, dimension(:,:,:,:):: uu
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
   real(dp):: c,d,u,v,w,p,ekin
   integer, save:: nprint=10
@@ -478,9 +477,9 @@ subroutine ctoprim (self)
   if (isothermal) then
     pg = d*csound**2
   else
-    pg = e*(self%gamma-1.0)
+    pg = e*(gamma-1.0)
   end if
-  !call eos%lookup (shape(e), ee=e, d=d, pg=pg, gamma=self%gamma)
+  !call eos%lookup (shape(e), ee=e, d=d, pg=pg, gamma=gamma)
   !
   if (self%do_pebbles) then
     self%vgas(:,:,:,1:3,self%it) = q(:,:,:,2:4)
@@ -1091,7 +1090,7 @@ subroutine solver (self,ngrid,qleft,qright,fgdnv,error,detailed_timer)
   else if (self%riemann.eq.'llf')then
     call rieman%llf     (qleft,qright,fgdnv,ngrid,self%idx%e)
   else if (self%riemann.eq.'hllc')then
-    call rieman%hllc    (qleft,qright,fgdnv,ngrid,self%idx%e,error,detailed_timer)
+    call rieman%hllc    (qleft,qright,fgdnv,ngrid,self%idx%e,isothermal,error,detailed_timer)
   else if (self%riemann.eq.'hllc_a')then
     call rieman%hllc_a  (qleft,qright,fgdnv,ngrid,self%idx%e)
   else if (self%riemann.eq.'hllc_v')then
@@ -1109,7 +1108,7 @@ end subroutine solver
 FUNCTION gas_pressure (self)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: gas_pressure
-  gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(self%gamma-1.0)
+  gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(gamma-1.0)
 END FUNCTION gas_pressure
 
 !> =============================================================================

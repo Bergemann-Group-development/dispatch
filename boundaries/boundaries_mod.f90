@@ -11,7 +11,6 @@ MODULE boundaries_mod
   USE mesh_mod
   USE index_mod
   USE boundary_wavekill_mod
-  USE planet_mod
   implicit none
   private
   type, public:: boundaries_t
@@ -112,13 +111,13 @@ FUNCTION mask (self, m) RESULT (out)
   if (self%is_set (bits%spherical)) then
     associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
     do iz=m(3)%li,m(3)%ui
-      z = m(3)%p + r3(iz) - planet%position(3)
+      z = m(3)%p + r3(iz) - self%position(3)
       do iy=m(2)%li,m(2)%ui
-        y = m(2)%p + r2(iy) - planet%position(2)
+        y = m(2)%p + r2(iy) - self%position(2)
         do ix=m(1)%li,m(1)%ui
-          x = m(1)%p + r1(ix) - planet%position(1)
+          x = m(1)%p + r1(ix) - self%position(1)
           r = sqrt(x**2+y**2+z**2)
-          out(ix,iy,iz) = merge (out(ix,iy,iz), .false., r>planet%radius)
+          out(ix,iy,iz) = merge (out(ix,iy,iz), .false., r>self%radius)
         end do
       end do
     end do
@@ -833,12 +832,12 @@ SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
     do iz = m3%lb, m3%ub
       do iy = m2%lb, m2%ub
         do ix = m1%lb, m1%ub
-          x1 = m1%p - planet%position(1) + m1%r(ix) + 0.5*m1%d
-          x2 = m1%p - planet%position(1) + m1%r(ix) - 0.5*m1%d
-          y1 = m2%p - planet%position(2) + m2%r(iy) + 0.5*m2%d
-          y2 = m2%p - planet%position(2) + m2%r(iy) - 0.5*m2%d
-          z1 = m3%p - planet%position(3) + m3%r(iz) + 0.5*m3%d
-          z2 = m3%p - planet%position(3) + m3%r(iz) - 0.5*m3%d
+          x1 = m1%p - self%position(1) + m1%r(ix) + 0.5*m1%d
+          x2 = m1%p - self%position(1) + m1%r(ix) - 0.5*m1%d
+          y1 = m2%p - self%position(2) + m2%r(iy) + 0.5*m2%d
+          y2 = m2%p - self%position(2) + m2%r(iy) - 0.5*m2%d
+          z1 = m3%p - self%position(3) + m3%r(iz) + 0.5*m3%d
+          z2 = m3%p - self%position(3) + m3%r(iz) - 0.5*m3%d
           inside(1) = x1**2+y1**2+z1**2 < r2
           inside(2) = x2**2+y1**2+z1**2 < r2
           inside(3) = x1**2+y2**2+z1**2 < r2
@@ -885,12 +884,12 @@ SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
     do iz = m3%lb, m3%ub
       do iy = m2%lb, m2%ub
         do ix = m1%lb, m1%ub
-          x1 = m1%p - planet%position(1) + m1%r(ix) + 0.5*m1%d
-          x2 = m1%p - planet%position(1) + m1%r(ix) - 0.5*m1%d
-          y1 = m2%p - planet%position(2) + m2%r(iy) + 0.5*m2%d
-          y2 = m2%p - planet%position(2) + m2%r(iy) - 0.5*m2%d
-          z1 = m3%p - planet%position(3) + m3%r(iz) + 0.5*m3%d
-          z2 = m3%p - planet%position(3) + m3%r(iz) - 0.5*m3%d
+          x1 = m1%p - self%position(1) + m1%r(ix) + 0.5*m1%d
+          x2 = m1%p - self%position(1) + m1%r(ix) - 0.5*m1%d
+          y1 = m2%p - self%position(2) + m2%r(iy) + 0.5*m2%d
+          y2 = m2%p - self%position(2) + m2%r(iy) - 0.5*m2%d
+          z1 = m3%p - self%position(3) + m3%r(iz) + 0.5*m3%d
+          z2 = m3%p - self%position(3) + m3%r(iz) - 0.5*m3%d
           inside(1) = x1**2+y1**2+z1**2 < r2
           inside(2) = x2**2+y1**2+z1**2 < r2
           inside(3) = x1**2+y2**2+z1**2 < r2
@@ -936,11 +935,11 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
     do iz = m3%lb, m3%ub
       do iy = m2%lb, m2%ub
         do ix = m1%lb, m1%ub
-          y1 = m2%p - planet%position(2) + m2%r(iy) + 0.5*m2%d
-          y2 = m2%p - planet%position(2) + m2%r(iy) - 0.5*m2%d
-          z1 = m3%p - planet%position(3) + m3%r(iz) + 0.5*m3%d
-          z2 = m3%p - planet%position(3) + m3%r(iz) - 0.5*m3%d
-          x1 = m1%p - planet%position(1) + m1%r(ix) + h(1)*m1%d
+          y1 = m2%p - self%position(2) + m2%r(iy) + 0.5*m2%d
+          y2 = m2%p - self%position(2) + m2%r(iy) - 0.5*m2%d
+          z1 = m3%p - self%position(3) + m3%r(iz) + 0.5*m3%d
+          z2 = m3%p - self%position(3) + m3%r(iz) - 0.5*m3%d
+          x1 = m1%p - self%position(1) + m1%r(ix) + h(1)*m1%d
           inside(1) = y1**2+z1**2 + x1**2 < r2
           inside(2) = y2**2+z1**2 + x1**2 < r2
           inside(3) = y1**2+z2**2 + x1**2 < r2
@@ -953,11 +952,11 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
     do iz = m3%lb, m3%ub
       do iy = m2%lb, m2%ub
         do ix = m1%lb, m1%ub
-          x1 = m1%p - planet%position(1) + m1%r(ix) + 0.5*m1%d
-          x2 = m1%p - planet%position(1) + m1%r(ix) - 0.5*m1%d
-          z1 = m3%p - planet%position(3) + m3%r(iz) + 0.5*m3%d
-          z2 = m3%p - planet%position(3) + m3%r(iz) - 0.5*m3%d
-          y1 = m2%p - planet%position(2) + m2%r(iy) + h(2)*m2%d
+          x1 = m1%p - self%position(1) + m1%r(ix) + 0.5*m1%d
+          x2 = m1%p - self%position(1) + m1%r(ix) - 0.5*m1%d
+          z1 = m3%p - self%position(3) + m3%r(iz) + 0.5*m3%d
+          z2 = m3%p - self%position(3) + m3%r(iz) - 0.5*m3%d
+          y1 = m2%p - self%position(2) + m2%r(iy) + h(2)*m2%d
           inside(1) = x1**2+z1**2 + y1**2 < r2
           inside(2) = x2**2+z1**2 + y1**2 < r2
           inside(3) = x1**2+z2**2 + y1**2 < r2
@@ -970,11 +969,11 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
     do iz = m3%lb, m3%ub
       do iy = m2%lb, m2%ub
         do ix = m1%lb, m1%ub
-          x1 = m1%p - planet%position(1) + m1%r(ix) + 0.5*m1%d
-          x2 = m1%p - planet%position(1) + m1%r(ix) - 0.5*m1%d
-          y1 = m2%p - planet%position(2) + m2%r(iy) + 0.5*m2%d
-          y2 = m2%p - planet%position(2) + m2%r(iy) - 0.5*m2%d
-          z1 = m3%p - planet%position(3) + m3%r(iz) + h(3)*m3%d
+          x1 = m1%p - self%position(1) + m1%r(ix) + 0.5*m1%d
+          x2 = m1%p - self%position(1) + m1%r(ix) - 0.5*m1%d
+          y1 = m2%p - self%position(2) + m2%r(iy) + 0.5*m2%d
+          y2 = m2%p - self%position(2) + m2%r(iy) - 0.5*m2%d
+          z1 = m3%p - self%position(3) + m3%r(iz) + h(3)*m3%d
           inside(1) = x1**2+y1**2 + z1**2 < r2
           inside(2) = x2**2+y1**2 + z1**2 < r2
           inside(3) = x1**2+y2**2 + z1**2 < r2

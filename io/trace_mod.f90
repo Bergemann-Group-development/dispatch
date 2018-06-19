@@ -19,6 +19,8 @@ MODULE trace_mod
     procedure, nopass:: begin => trace_begin
     procedure, nopass:: tag   => trace_tag
     procedure, nopass:: end   => trace_end
+    procedure, nopass:: print_id
+    procedure, nopass:: print_hl
   end type
   type(trace_t), public:: trace
   !-----------------------------------------------------------------------------
@@ -136,5 +138,35 @@ SUBROUTINE trace_end (itimer)
   end if
   indent = max(indent-3,4)
 END SUBROUTINE trace_end
+
+!> =============================================================================
+SUBROUTINE print_hl
+  character(len=120), save:: hl= &
+    '--------------------------------------------------------------------------------'
+  !..............................................................................
+  if (io%master) then
+    print'(a)',trim(hl)
+  end if
+END SUBROUTINE print_hl
+
+!> =============================================================================
+SUBROUTINE print_id (id)
+  character(len=120) id
+  character(len=120), save:: hl= &
+    '--------------------------------------------------------------------------------'
+  !..............................................................................
+  if (io_unit%do_validate) return
+  if (id .ne. '') then
+    !$omp critical (print_id_cr)
+    if (id .ne. '') then
+      if (io%master) then
+        call print_hl
+        print'(1x,a,f12.2)', trim(id), wallclock()
+      end if
+      id = ''
+    end if
+    !$omp end critical (print_id_cr)
+  end if
+END SUBROUTINE print_id
 
 END MODULE trace_mod
