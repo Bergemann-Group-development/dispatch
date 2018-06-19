@@ -36,9 +36,10 @@ CONTAINS
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
+  real, optional:: gamma
   character(len=32), save:: type='turbulence'
   logical, save:: first_time=.true.
   namelist /initial_params/ type

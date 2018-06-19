@@ -388,8 +388,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   if (present(nv      )) self%nv       = nv
   if (present(nw      )) self%nw       = nw
   !-----------------------------------------------------------------------------
-  if (io%verbose>1) &
-    print *,'patch_t%setup', self%id, self%position
   self%llc_cart = self%position - 0.5 * self%size
   self%llc_nat = self%llc_cart
   !-----------------------------------------------------------------------------
