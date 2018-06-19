@@ -68,12 +68,18 @@ SUBROUTINE output (self, patch, experiment_name)
   optional:: experiment_name
   !.............................................................................
   type(snapshot_t), pointer:: snapshot
+  logical, save:: checked=.false.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
   do while (patch%time >= patch%out_next)
-    call os%mkdir (trim(io%outputname))
+    !$omp critical (outputname_cr)
+    if (.not.checked) then
+      checked = .true.
+      call os%mkdir (trim(io%outputname))
+    end if
+    !$omp end critical (outputname_cr)
     call os%mkdir_no (patch%iout)
     call snapshot_list%count (patch, snapshot)
     if      (io%method=='direct') then

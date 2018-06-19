@@ -87,11 +87,15 @@ END SUBROUTINE mkdir
 SUBROUTINE mkdir_no (iout)
   integer:: iout
   character(len=120):: filename
+  integer, save:: checked=-1
   !-----------------------------------------------------------------------------
-  !$omp master
-  write (filename,'(a,i5.5,"/")') trim(io_unit%outputname), iout
-  if (io_unit%iodir/=iout) call os%mkdir (trim(filename))
-  io_unit%iodir = iout
-  !$omp end master
+  !$omp critical (mkdir_no_cr)
+  if (iout > checked) then
+    write (filename,'(a,i5.5,"/")') trim(io_unit%outputname), iout
+    if (io_unit%iodir/=iout) call os%mkdir (trim(filename))
+    io_unit%iodir = iout
+    checked = iout
+  end if
+  !$omp end critical (mkdir_no_cr)
 END SUBROUTINE mkdir_no
 END MODULE os_mod

@@ -132,6 +132,7 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     !$omp parallel
     !$omp critical (open_cr)
+    io_unit%outputname = self%outputname
     if (omp%master) then
       io_unit%verbose = verbose
     else
