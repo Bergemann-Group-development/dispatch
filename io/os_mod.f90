@@ -2,6 +2,7 @@
 !> =============================================================================
 MODULE os_mod
   USE omp_mod
+  USE mpi_mod
   USE io_unit_mod
   implicit none
   private
