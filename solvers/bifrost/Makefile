@@ -1,6 +1,6 @@
 
 # Append to VPATH
-VPATH := $(VPATH):$(TOP)/solvers/bifrost:$(TOP)/solvers/bifrost/dispatch
+VPATH := $(VPATH):$(TOP)/solvers/bifrost:$(TOP)/solvers/bifrost/shadow
 
 # Connect to the make system of the code
 BIFROST = ../../../Bifrost
