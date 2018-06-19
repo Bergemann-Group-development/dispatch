@@ -22,7 +22,6 @@ MODULE refine_mod
   USE task_mod
   USE patch_mod
   USE solver_mod
-  USE eos_mod
   USE sinkparticles_mod
   implicit none
   private

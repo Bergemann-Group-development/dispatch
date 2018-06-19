@@ -12,5 +12,5 @@ task_mesg_mod.o   : omp_timer_mod.o mpi_mod.o list_mod.o task_mod.o bits_mod.o t
                     direct_io_mod.o
 task_list_mod.o   : omp_timer_mod.o mpi_mod.o list_mod.o task_mod.o bits_mod.o trace_mod.o io_mod.o load_balance_mod.o \
                     experiment_mod.o refine_mod.o omp_lock_mod.o mpi_mesg_mod.o timer_mod.o \
-                    direct_io_mod.o task_mesg_mod.o
+                    direct_io_mod.o data_io_mod.o task_mesg_mod.o
 mesg_list_mod.o   : task_list_mod.o
