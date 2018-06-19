@@ -20,7 +20,7 @@ MODULE io_mod
     integer:: word_size=4
     integer:: iodir = -1
     integer:: format=0
-    integer:: nwrite=0, ntask=0
+    integer:: nwrite=0, ntask=0, ntotal=0
     character(len=64):: inputname, outputname, datadir='data', top, inputdir
     character(len=1):: sep = '/'
     character(len=72):: hl='-------------------------------------------------------------------------'

@@ -6,6 +6,7 @@
 MODULE parallel_io_mod
   USE patch_mod
   USE io_mod
+  USE io_unit_mod
   USE omp_mod
   USE mpi_mod
   USE mpi_io_mod
@@ -81,7 +82,7 @@ SUBROUTINE output (patch)
     n = patch%n
   end if
   buffer_words = product(n)
-  snapshot_words = buffer_words*patch%nv*io%ntask
+  snapshot_words = buffer_words*patch%nv*io%ntotal
   if (io%verbose==1) print '(a,2i6)', ' parallel_io_t%output: iout, id =', &
     patch%iout, patch%id
   if (io%verbose>1) print '(a,4i6,2i7)', &
@@ -107,8 +108,10 @@ SUBROUTINE output (patch)
     if (order==0) then
       call thread_io%write (buffer, patch%iout+1, (patch%id-1)*patch%nv + iv)
     else
-      call thread_io%write (buffer, patch%iout+1, patch%id + (iv-1)*io%ntask)
+      call thread_io%write (buffer, patch%iout+1, patch%id + (iv-1)*io%ntotal)
     end if
+    if (verbose>0) &
+      write (io_unit%mpi,*) 'WR', patch%id, patch%iout, iv, minval(buffer), maxval(buffer)
   end do
   deallocate (buffer)
   call trace%end
@@ -137,14 +140,14 @@ SUBROUTINE input (patch, ok)
     n = patch%n
   end if
   buffer_words = product(n)
-  snapshot_words = buffer_words*patch%nv*io%ntask
+  snapshot_words = buffer_words*patch%nv*io%ntotal
   call thread_io%init (snapshot_words, buffer_words)
   allocate (buffer(n(1),n(2),n(3)))
   do iv=1,patch%nv
     if (order==0) then
       call thread_io%read (buffer, patch%restart+1, (patch%id-1)*patch%nv + iv)
     else
-      call thread_io%read (buffer, patch%restart+1, patch%id + (iv-1)*io%ntask)
+      call thread_io%read (buffer, patch%restart+1, patch%id + (iv-1)*io%ntotal)
     end if
     if (thread_io%err /= 0) then
       ok = .false.
@@ -158,6 +161,8 @@ SUBROUTINE input (patch, ok)
                 patch%li(2):patch%ui(2), &
                 patch%li(3):patch%ui(3),iv,patch%it,1) = buffer
     end if
+    if (verbose>0) &
+      write (io_unit%mpi,*) 'RD', patch%id, patch%iout, iv, minval(buffer), maxval(buffer)
   end do
   deallocate (buffer)
   ok = .true.
