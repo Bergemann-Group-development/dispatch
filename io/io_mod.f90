@@ -48,6 +48,7 @@ MODULE io_mod
     procedure:: init
     procedure:: debug
     procedure:: check_flags
+    procedure:: gb_mem
     procedure, nopass:: namelist_warning
     procedure, nopass:: abort
     procedure, nopass:: assert
@@ -198,6 +199,29 @@ SUBROUTINE init (self, name)
   io_unit%do_validate = do_validate
   call timer%init
 END SUBROUTINE init
+
+!> =============================================================================
+!> Check debug flag files.  To avoid having to synchronize when using MPI, we
+!> give the ranks 5 seconds to detect and read flag files, and then we let one
+!> rank remove them.
+!> =============================================================================
+SUBROUTINE gb_mem (self, gb)
+  class (io_t)      :: self
+  real:: gb
+  real, save:: gb_next=1.0
+  !-----------------------------------------------------------------------------
+  if (mpi%master) then
+    self%gb = self%gb + gb
+    if (self%gb > gb_next) then
+      !$omp critical (gb_cr)
+      if (self%gb > gb_next) then
+        print '(1x,a,f8.3,a)', 'process memory allocated:', self%gb,' GB'
+        gb_next = gb_next+1.0
+      end if
+      !$omp end critical (gb_cr)
+    end if
+  end if
+END SUBROUTINE gb_mem
 
 !> =============================================================================
 !> Check debug flag files.  To avoid having to synchronize when using MPI, we

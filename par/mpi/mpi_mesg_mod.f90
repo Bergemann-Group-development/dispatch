@@ -442,8 +442,7 @@ SUBROUTINE delete (self, mesg, send)
   logical, optional:: send
   !.............................................................................
   if (associated(mesg%buffer)) deallocate (mesg%buffer)
-  !$omp atomic
-  io%gb = io%gb - storage_size(mesg%buffer)*mesg%nbuf/(8.*1024**3)
+  call io%gb_mem (-storage_size(mesg%buffer)*mesg%nbuf/(8.*1024**3))
   if (associated(mesg%reqs)) deallocate (mesg%reqs)
   deallocate (mesg)
   if (present(send)) then
@@ -688,6 +687,7 @@ contains
       allocate (mesg)
       call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
       allocate (mesg%buffer(nbuf))
+      call io%gb_mem (storage_size(mesg%buffer)*mesg%nbuf/(8.*1024**3))
       !$omp atomic
       mpi_mesg%nq_recv = mpi_mesg%nq_recv+1
       call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)

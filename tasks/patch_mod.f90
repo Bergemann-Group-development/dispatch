@@ -496,8 +496,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
                        self%mesh(3)%gn, &
                        self%nv,self%nt,self%nw))
     self%mem_allocated = .true.               ! mark
-    !$omp atomic
-    io%gb = io%gb + storage_size(self%mem)*(product(shape(self%mem))/(8.*1024.**3))
+    call io%gb_mem (storage_size(self%mem)*(product(shape(self%mem))/(8.*1024.**3)))
     allocate (self%unsigned (self%nv))
     allocate (self%pervolume(self%nv))
     self%unsigned (:) = .false.
@@ -1002,8 +1001,7 @@ SUBROUTINE allocate_mesg (self)
     self%mesg%nbuf = self%mesg%nbuf * 2  ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
   self%mesg%nbuf = n_header + self%nv*self%mesg%nbuf
   allocate (self%mesg%buffer(self%mesg%nbuf))
-  io%gb = io%gb + storage_size(self%mesg%buffer)*self%mesg%nbuf/(8*1024.**3)
-  !print *, 'allocate_mesg', self%mesg%nbuf
+  call io%gb_mem (storage_size(self%mesg%buffer)*self%mesg%nbuf/(8*1024.**3))
 END SUBROUTINE allocate_mesg
 
 !> =============================================================================
@@ -1030,7 +1028,7 @@ SUBROUTINE pack (self, mesg)
     mesg%nbuf = mesg%nbuf+ self%nv*n_buf
   end if
   allocate (mesg%buffer(mesg%nbuf))
-  io%gb = io%gb + storage_size(mesg%buffer)*mesg%nbuf/(8*1024.**3)
+  call io%gb_mem (storage_size(mesg%buffer)*mesg%nbuf/(8*1024.**3))
   allocate (mesg%reqs(self%n_nbors))
   mesg%id = self%id                                             ! MPI message tag
   mesg%nreq = 0                                                 ! reset counter
