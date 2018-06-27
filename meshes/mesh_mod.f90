@@ -61,10 +61,27 @@ MODULE mesh_mod
     real(8), dimension(:), pointer :: r => null()    ! coordinate relative to patch centre
     real(8), dimension(:), pointer :: h => null()    ! offset for staggered variables;
                                                      ! should be initialised in `mhd_t%init`
-    real(8), dimension(:), pointer :: ddn => null()  ! borrow for now (FIXME)
-    real(8), dimension(:), pointer :: dup => null()  ! borrow for now (FIXME)
-    real(4), dimension(:), pointer :: dsup=> null()  ! borrow for now (FIXME)
-    real(4), dimension(:), pointer :: dsdn=> null()  ! borrow for now (FIXME)
+    real, dimension(:), pointer :: ddn   => null()     ! borrow for now (FIXME) 
+    real, dimension(:), pointer :: dup   => null()     ! borrow for now (FIXME)
+    real, dimension(:), pointer :: dsup  => null()     ! borrow for now (FIXME)
+    real, dimension(:), pointer :: dsdn  => null()     ! borrow for now (FIXME)  
+    real, dimension(:), pointer :: b_m   => null()     ! borrow for now (FIXME) -- bifrost xm/ym/zm
+    real, dimension(:), pointer :: b_mdn => null()     ! borrow for now (FIXME) -- bifrost xmdn/ymdn/zmdn
+    real, dimension(:), pointer :: b_1d  => null()     ! borrow for now (FIXME) -- bifrost dx1d/dy1d/dz1d
+    real, dimension(:), pointer :: b_didup => null()   ! borrow for now (FIXME) -- bifrost dxidxup/...
+    real, dimension(:), pointer :: b_diddn => null()   ! borrow for now (FIXME) -- bifrost dxidxdn/...
+    real, dimension(:,:), pointer::  zlincoeff => null()! borrow for now (FIXME) -- bifrost zlincoeff
+    real, dimension(:,:), pointer:: dzlincoeff => null()! borrow for now (FIXME) -- bifrost zlincoeff
+    real, dimension(:,:), pointer::  zuincoeff => null()! borrow for now (FIXME) -- bifrost zlincoeff
+    real, dimension(:,:), pointer:: dzuincoeff => null()! borrow for now (FIXME) -- bifrost zlincoeff
+    real(8)   :: b_d  ! borrow for now (FIXME)  -- grid spacing in bifrost
+    real      :: b_ad, b_bd, b_cd                      !borrow for now (FIXME)  -- bifrost cdx/bdx/adx...
+    integer(4):: b_s  ! borrow for now (FIXME)  -- same as li, but in bifrost
+    integer(4):: b_sb ! borrow for now (FIXME)  -- same as lb, but in bifrost
+    integer(4):: b_e  ! borrow for now (FIXME)  -- same as ui, but in bifrost
+    integer(4):: b_eb ! borrow for now (FIXME)  -- sane as ub, but in bifrost
+    integer(kind=4) :: b_r, b_rb
+    
     character(len=16):: type = ''
     real(8), allocatable :: zeta  ! position angle of the phi = 0 axis relative to the x-axis (cyl. and sph. coords.).
     real(8), allocatable :: xi    ! position angle of the theta = 0 relative to the neg. z-axis (sph. coords.).

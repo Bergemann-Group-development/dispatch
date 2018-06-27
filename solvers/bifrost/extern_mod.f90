@@ -5,15 +5,11 @@
 MODULE extern_mod
   USE params_mod
   USE parallel_mod
-  !USE units_mod
+  USE units_mod
   USE stagger_mod
   USE bifrost_timestep_mod
-  USE mhd_mod
   USE bifrost_io_mod
   USE math_mod
-  USE extras_mod
-  USE radiation_mod
-  USE eos_mod
   USE quench_mod
   USE timing_mod
   USE adaption_mod
@@ -37,7 +33,7 @@ SUBROUTINE init (self)
   integer :: tl_tp, tl_cr, tl_cm
   !-----------------------------------------------------------------------------
   reread = 0
-  call init_params
+  call init_params                                                      ! reads in the basic simulation parameters. Could and should be replaced with a simple subroutine inside DISPATCH
   call init_parallel
   dispatch = .true.
 !
@@ -51,25 +47,22 @@ SUBROUTINE init (self)
   endif
 !
   call init_units
-  call init_stagger
   call init_io
   call init_timestep
-  call init_mhd
   call init_math
   call init_quench
-  call init_eos
-  call init_radiation
   call init_timing
   call init_adaption
-!
-  call init_snap
-  call init_extras
   call init_standard_boundaries
-  call init_boundaries
-  call update_mhd
+!> The latter should be initialized per patch basis until they will be reworked
+!> into globally accessible ones or fully incorporated into other modules.
+  ! working on this one:           
+  !call init_stagger
 
   clean=nstepstart 
 END SUBROUTINE init
+
+
 
 !> =============================================================================
 !> End of run

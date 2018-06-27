@@ -25,19 +25,16 @@
 !>   mpi%end                    ! close down MPI
 !>
 !> =============================================================================
-PROGRAM dispatch_prog
-  USE dispatch_mod
+PROGRAM dispatch
+  USE setup_mod
   USE dispatcher_mod
-  USE extern_mod
   USE cartesian_mod
   type (cartesian_t):: cartesian
   !.............................................................................
-  call dispatch%init
-  call extern%init
+  call setup%init                               ! Standard setup
   call dispatcher%init                          ! Initialize the dispatcher
-  call cartesian%init
+  call cartesian%init                           ! Initialize the patch list
   call dispatcher%method (cartesian%task_list)  ! Run the dispatcher
-  call extern%end
-  call dispatch%end
+  call setup%end
 !> =============================================================================
-END PROGRAM dispatch_prog
+END PROGRAM dispatch

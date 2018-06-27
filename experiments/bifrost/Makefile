@@ -10,8 +10,6 @@ SOLVER          = bifrost
 UPD             = adams_bashforth
 EXEC            = dispatch.x
 TOP             = ../..
-MESH            = bifrost_mesh
-
 # Tomida & Hori, with opacity
 #EOS             = tabular_e
 #OPACITY         = Tomida+Hori_2016
@@ -20,6 +18,6 @@ MESH            = bifrost_mesh
 include $(TOP)/config/Makefile
 
 # List the .o files the main program depends on after the colon:
-$(EXEC)                 : dispatch_mod.o extern_mod.o cartesian_mod.o $(OBJ) dispatcher_mod.o
-dispatch_mod.o		: io_mod.o mpi_mod.o
+$(EXEC)                 : setup_mod.o cartesian_mod.o $(OBJ) dispatcher_mod.o
+setup_mod.o		        : io_mod.o mpi_mod.o extern_mod.o 
 experiment_mod.o        : trace_mod.o timestep_mod.o solver_mod.o
