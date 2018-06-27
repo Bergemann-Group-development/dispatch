@@ -6,11 +6,13 @@ MODULE bifrost_mod
   ! Dispatch modules
   USE trace_mod
   USE mesh_interface_mod
+  USE mesh_mod
   ! Bifrost modules
   USE params_mod
   USE parallel_mod
   USE stagger_mod
   USE bifrost_timestep_mod
+  USE bifrost_io_mod
   USE mhd_mod
   USE math_mod
   USE adaption_mod
@@ -21,10 +23,12 @@ MODULE bifrost_mod
   type, public:: bifrost_t
     integer :: it
     integer :: rereadpars
+    integer :: l(3),u(3)
     logical, dimension(:), allocatable:: scratches
   contains
     procedure:: alloc_scratches
     procedure:: check_scratches
+    procedure:: dealloc_scratches
     procedure:: init
     procedure:: put
     procedure:: get
@@ -46,19 +50,16 @@ CONTAINS
 !> =============================================================================
 !> Initialize mem storage that fits the Bifrost MHD array sizes.
 !> =============================================================================
-SUBROUTINE init (self, n, mesh)
+SUBROUTINE init (self)
   class(bifrost_t):: self
-  class(bifrost_mesh_t):: mesh
   integer:: n(3)
   ! ............................................................................
   call trace%begin ('bifrost_t%init')
-  n = shape(e)
+  !
   self%rereadpars=rereadpars
   self%it = nstepstart+1
   !allocate(self%scratches(12))
   !self%scratches = .false.
-  call mesh%init
-  call mesh%get
   call trace%end
 END SUBROUTINE init
 
@@ -68,19 +69,28 @@ END SUBROUTINE init
 SUBROUTINE put (self, mem, m, time)
   class(bifrost_t):: self
   real, dimension(:,:,:,:):: mem
-  type(bifrost_mesh_t):: m
+  class(mesh_t), dimension(:), pointer:: m
   real(8):: time
-  !-----------------------------------------------------------------------------
+  !---------------------------------------------------------------------
+  integer :: l(3), u(3), i, dl(3), du(3)
+  !.....................................................................
   call trace%begin ('bifrost_t%put')
-  myid = m%myid
-  r(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)  = mem(:,:,:,idx%d)
-  e(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)  = mem(:,:,:,idx%e)
-  px(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb) = mem(:,:,:,idx%px)
-  py(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb) = mem(:,:,:,idx%py)
-  pz(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb) = mem(:,:,:,idx%pz)
-  bx(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb) = mem(:,:,:,idx%bx)
-  by(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb) = mem(:,:,:,idx%by)
-  bz(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb) = mem(:,:,:,idx%bz)
+  do i=1,3
+    l(i)=m(i)%b_sb
+    u(i)=m(i)%b_eb
+    dl(i) = m(i)%lb
+    du(i) = m(i)%ub
+    if (m(i)%b_sb == m(i)%b_s) dl(i)=m(i)%li
+    if (m(i)%b_eb == m(i)%b_e) du(i)=m(i)%ui
+  end do
+  r(l(1):u(1),l(2):u(2),l(3):u(3))  = mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%d)
+  e(l(1):u(1),l(2):u(2),l(3):u(3))  = mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%e)
+  px(l(1):u(1),l(2):u(2),l(3):u(3)) = mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%px)
+  py(l(1):u(1),l(2):u(2),l(3):u(3)) = mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%py)
+  pz(l(1):u(1),l(2):u(2),l(3):u(3)) = mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%pz)
+  bx(l(1):u(1),l(2):u(2),l(3):u(3)) = mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%bx)
+  by(l(1):u(1),l(2):u(2),l(3):u(3)) = mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%by)
+  bz(l(1):u(1),l(2):u(2),l(3):u(3)) = mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%bz)
   !call self%alloc_scratches
   call trace%end
 END SUBROUTINE put
@@ -90,20 +100,31 @@ END SUBROUTINE put
 !> =============================================================================
 SUBROUTINE get (self, mem, m, time, dtime)
   class(bifrost_t):: self
-  type(bifrost_mesh_t):: m
+  class(mesh_t), dimension(:), pointer:: m
   real, dimension(:,:,:,:):: mem
   real(8):: time, dtime
-  !-----------------------------------------------------------------------------
+  !---------------------------------------------------------------------
+  integer :: l(3), u(3), i, dl(3),du(3)
+  !.....................................................................
   call trace%begin ('bifrost_t%get')
-  m%myid = myid
-  mem(:,:,:,idx%d)  = r(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)
-  mem(:,:,:,idx%e)  = e(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)
-  mem(:,:,:,idx%px) = px(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)
-  mem(:,:,:,idx%py) = py(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)
-  mem(:,:,:,idx%pz) = pz(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)
-  mem(:,:,:,idx%bx) = bx(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)
-  mem(:,:,:,idx%by) = by(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)
-  mem(:,:,:,idx%bz) = bz(m%xsb:m%xeb,m%ysb:m%yeb,m%zsb:m%zeb)
+  do i=1,3
+    l(i)=m(i)%b_sb
+    u(i)=m(i)%b_eb
+    dl(i) = m(i)%lb
+    du(i) = m(i)%ub
+    if (m(i)%b_sb == m(i)%b_s) dl(i)=m(i)%li
+    if (m(i)%b_eb == m(i)%b_e) du(i)=m(i)%ui
+  end do
+  print *, 'get grid shapes',shape (mem(:,:,:,idx%d)), shape(r(l(1):u(1),l(2):u(2),l(3):u(3)))
+  print *, 'full r shape',shape(r)
+  mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%d)  = r(l(1):u(1),l(2):u(2),l(3):u(3))
+  mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%e)  = e(l(1):u(1),l(2):u(2),l(3):u(3))
+  mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%px) = px(l(1):u(1),l(2):u(2),l(3):u(3))
+  mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%py) = py(l(1):u(1),l(2):u(2),l(3):u(3))
+  mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%pz) = pz(l(1):u(1),l(2):u(2),l(3):u(3))
+  mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%bx) = bx(l(1):u(1),l(2):u(2),l(3):u(3))
+  mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%by) = by(l(1):u(1),l(2):u(2),l(3):u(3))
+  mem(dl(1):du(1),dl(2):du(2),dl(3):du(3),idx%bz) = bz(l(1):u(1),l(2):u(2),l(3):u(3))
   !call self%check_scratches
   call trace%end
 END SUBROUTINE get
@@ -273,20 +294,39 @@ SUBROUTINE alloc_scratches(self)
   class(bifrost_t):: self
   ! ----------------------------------------------------------------------------
   call trace%begin('bifrost_t%alloc_scratches')
-    if (self%scratches( 1).and..not.(allocated( scr1))) allocate( scr1(xsb:xeb,ysb:yeb,zsb:zeb))
-    if (self%scratches( 2).and..not.(allocated( scr2))) allocate( scr2(xsb:xeb,ysb:yeb,zsb:zeb))
-    if (self%scratches( 3).and..not.(allocated( scr3))) allocate( scr3(xsb:xeb,ysb:yeb,zsb:zeb))
-    if (self%scratches( 4).and..not.(allocated( scr4))) allocate( scr4(xsb:xeb,ysb:yeb,zsb:zeb))
-    if (self%scratches( 5).and..not.(allocated( scr5))) allocate( scr5(xsb:xeb,ysb:yeb,zsb:zeb))
-    if (self%scratches( 6).and..not.(allocated( scr6))) allocate( scr6(xsb:xeb,ysb:yeb,zsb:zeb))
-    if (self%scratches( 7).and..not.(allocated( scr7))) allocate( scr7(xsb:xeb,ysb:yeb,zsb:zeb))
-    if (self%scratches( 8).and..not.(allocated( scr8))) allocate( scr8(xsb:xeb,ysb:yeb,zsb:zeb))
-    if (self%scratches( 9).and..not.(allocated( scr9))) allocate( scr9(xsb:xeb,ysb:yeb,zsb:zeb))
-    if (self%scratches(10).and..not.(allocated(scr10))) allocate(scr10(xsb:xeb,ysb:yeb,zsb:zeb))
-    if (self%scratches(11).and..not.(allocated(scr11))) allocate(scr11(xsb:xeb,ysb:yeb,zsb:zeb))
-    if (self%scratches(12).and..not.(allocated(scr12))) allocate(scr12(xsb:xeb,ysb:yeb,zsb:zeb))
+    if (.not.(allocated( scr1))) allocate( scr1(xsb:xeb,ysb:yeb,zsb:zeb))
+    if (.not.(allocated( scr2))) allocate( scr2(xsb:xeb,ysb:yeb,zsb:zeb))
+    if (.not.(allocated( scr3))) allocate( scr3(xsb:xeb,ysb:yeb,zsb:zeb))
+    if (.not.(allocated( scr4))) allocate( scr4(xsb:xeb,ysb:yeb,zsb:zeb))
+    if (.not.(allocated( scr5))) allocate( scr5(xsb:xeb,ysb:yeb,zsb:zeb))
+    if (.not.(allocated( scr6))) allocate( scr6(xsb:xeb,ysb:yeb,zsb:zeb))
+    if (.not.(allocated( scr7))) allocate( scr7(xsb:xeb,ysb:yeb,zsb:zeb))
+    if (.not.(allocated( scr8))) allocate( scr8(xsb:xeb,ysb:yeb,zsb:zeb))
+    if (.not.(allocated( scr9))) allocate( scr9(xsb:xeb,ysb:yeb,zsb:zeb))
+    if (.not.(allocated(scr10))) allocate(scr10(xsb:xeb,ysb:yeb,zsb:zeb))
+    if (.not.(allocated(scr11))) allocate(scr11(xsb:xeb,ysb:yeb,zsb:zeb))
+    if (.not.(allocated(scr12))) allocate(scr12(xsb:xeb,ysb:yeb,zsb:zeb))
   call trace%end
 END SUBROUTINE alloc_scratches
+
+SUBROUTINE dealloc_scratches(self)
+  class(bifrost_t):: self
+  ! ----------------------------------------------------------------------------
+  call trace%begin('bifrost_t%alloc_scratches')
+    if (allocated( scr1)) deallocate( scr1)
+    if (allocated( scr2)) deallocate( scr2)
+    if (allocated( scr3)) deallocate( scr3)
+    if (allocated( scr4)) deallocate( scr4)
+    if (allocated( scr5)) deallocate( scr5)
+    if (allocated( scr6)) deallocate( scr6)
+    if (allocated( scr7)) deallocate( scr7)
+    if (allocated( scr8)) deallocate( scr8)
+    if (allocated( scr9)) deallocate( scr9)
+    if (allocated(scr10)) deallocate(scr10)
+    if (allocated(scr11)) deallocate(scr11)
+    if (allocated(scr12)) deallocate(scr12)
+  call trace%end
+END SUBROUTINE dealloc_scratches
 
 !> =============================================================================
 SUBROUTINE void (self, out)

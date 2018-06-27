@@ -1,6 +1,7 @@
 !> =============================================================================
 !> =============================================================================
 MODULE solver_mod
+  !Dispatch modules
   USE io_mod
   USE trace_mod
   USE patch_mod
@@ -9,6 +10,12 @@ MODULE solver_mod
   USE bifrost_mod
   USE mesh_interface_mod
   USE bifrost_rt_mod
+  !Bifrost modules
+  USE mhd_mod
+  USE extras_mod
+  USE radiation_mod
+  USE eos_mod
+  USE index_mod
   implicit none
   private
   type, extends(patch_t), public:: solver_t
@@ -20,9 +27,8 @@ MODULE solver_mod
     procedure:: init
     procedure:: pack
     procedure:: put
-    procedure:: read_mesh
     procedure:: unpack
-    procedure:: update
+    procedure:: update => update_solver
     ! ----------------------------
     procedure:: log_density => void
     procedure:: log_pressure => void
@@ -34,6 +40,7 @@ MODULE solver_mod
     generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
   end type
   type(solver_t), public:: solver
+  type(index_t):: idx
   character(len=80), save:: id = &
   '$Id$'
 CONTAINS
@@ -45,21 +52,35 @@ CONTAINS
 SUBROUTINE init (self)
   class(solver_t):: self
   ! --------------------------------------------------------------------
-  integer :: n(3)
+  integer:: nv, nt, ng(3), nw, n(3), l(3), u(3),i
   call trace%begin ('solver_t%init')
-  call bifrost%init (n,self%bifrost_mesh)                               ! initialize the Bifrost state
+  self%nv = 8                                                           ! set number of variables
+  self%nt = 5                                                           ! set number of time slots
+  self%ng = 5                                                           ! set number of guard zones
+  self%nw = 1                                                           ! time derivatives allocated
+  ng=5
+  call self%patch_t%setup(nv=8, nt=5, ng=ng,nw=1)                        ! allocate memory and set size            !FIXME: hardcoded defaults for now
+  call bifrost%init                                                     ! initialize the Bifrost state
+  call self%bifrost_mesh%init(self%mesh)                                ! initialize the Bifrost mesh
+  call self%bifrost_mesh%put
+  !call self%bifrost_mesh%check
+  ! Initialize Bifrost-local modules
+  call init_mhd
+  call init_eos
+  call init_radiation
+  call init_snap
+  call init_extras
+  call init_boundaries
+  ! the next one might not be needed in DISPATCH
+  call update_mhd
   self%bifrost_mesh%myid = self%id
-  self%nv = 8                                   ! set number of variables
-  self%nt = 7                                   ! set number of time slots
-  self%ng = 10                                  ! set number of guard zones
-  self%nw = 1                                   ! time derivatives allocated
-  self%n = n
-  call self%patch_t%init                        ! allocate memory and set size
-  associate (l => self%li, u => self%ui)
-  call bifrost%get (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,self%it,1), self%bifrost_mesh, self%time, self%dtime)
+  do i=1,3
+    l(i)=self%mesh(i)%lb
+    u(i)=self%mesh(i)%ub
+  end do
+  call bifrost%get (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,self%it,1), self%mesh, self%time, self%dtime)
   call self%bifrost_rt%init
   call self%bifrost_rt%get
-  end associate
   call trace%end
 END SUBROUTINE init
 
@@ -68,12 +89,10 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE get (self)
   class(solver_t):: self
-  !-----------------------------------------------------------------------------
+  !---------------------------------------------------------------------
   call trace%begin ('solver_t%get')
-  associate (l=>self%li, u=> self%ui)
-  call bifrost%get (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,self%new,1), self%bifrost_mesh, self%time, self%dtime)
+  call bifrost%get (self%mem(:,:,:,:,self%new,1), self%mesh, self%time, self%dtime)
   call self%bifrost_rt%get
-  end associate
   call trace%end
 END SUBROUTINE get
 
@@ -82,22 +101,13 @@ END SUBROUTINE get
 !> =============================================================================
 SUBROUTINE put (self)
   class(solver_t):: self
-  !-----------------------------------------------------------------------------
-  call trace%begin ('solver_t%get')
-  associate (l=>self%li, u=> self%ui)
-  call bifrost%put (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,self%it,1), self%bifrost_mesh, self%time)
+  !---------------------------------------------------------------------
+  call trace%begin ('solver_t%put')
+  call self%bifrost_mesh%put
+  call bifrost%put (self%mem(:,:,:,:,self%it,1), self%mesh, self%time)
   call self%bifrost_rt%put
-  end associate
   call trace%end
 END SUBROUTINE put
-
-!> =====================================================================
-!> Read external mesh file
-!> =====================================================================
-SUBROUTINE read_mesh (self)
-  class(solver_t):: self
-  
-END SUBROUTINE read_mesh
 
 !> =============================================================================
 !> Download guard zone values
@@ -115,15 +125,17 @@ END SUBROUTINE dnload
 !> Take one time step, by copying relevant data to BIFROST, calling its update
 !> procedure, and then copying the patch data back from Bifrost.
 !> =============================================================================
-SUBROUTINE update (self)
+SUBROUTINE update_solver (self)
   class(solver_t):: self
   !.............................................................................
   call trace%begin ('solver_t%update')
   call self%put
+  call bifrost%alloc_scratches
   call bifrost%update (self%time, self%dtime)
   call self%get
+  call bifrost%dealloc_scratches
   call trace%end
-END SUBROUTINE update
+END SUBROUTINE update_solver
 
 !> =============================================================================
 !> Pack information about a patch into a buffer.  Let the patch_t%pack take

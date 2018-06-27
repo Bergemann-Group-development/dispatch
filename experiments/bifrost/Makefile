@@ -10,8 +10,6 @@ SOLVER          = bifrost
 UPD             = adams_bashforth
 EXEC            = dispatch.x
 TOP             = ../..
-MESH            = bifrost_mesh
-
 # Tomida & Hori, with opacity
 #EOS             = tabular_e
 #OPACITY         = Tomida+Hori_2016

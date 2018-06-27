@@ -1,12 +1,5 @@
-! $Id$
-!
-! This default input file runs turbulence at 50x50x50 resolution in 2x2x2 patches.
-! It should take only a few minutes on a laptop, and produces 10 snapshots in time.
-!
-! Do not modify the input.nml file to make experiments with other parameters.
-! Instead, copy input.nml to othername.nml, and run ./dispatch.x other.nml, which
-! produces data files named data/other_ppp_tttt.dat, where ppp is the patch number
-! and tttt is the snapshot number.
+! This default input file is used for development and testing purposes.
+! It also shows an example of all the necessary namelist entries.
 
 &load_balance_params
 /
@@ -37,6 +30,15 @@
 /
 &experiment_params
 /
+
+&bifrost_mesh_params
+ meshfile = 'qt_128x128x128.mesh'
+ dims = 3*128
+ dx =  1.875E-01
+ dy =  1.875E-01
+ dz =  1.969E-01
+/
+
 &patch_params
  nt=5
  ng=10
@@ -52,19 +54,11 @@
  guard_zones=f
  time_derivs=f
 /
-&mhd_params
- nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0
- !     cs    pa  ofd  mas  kap  eta
-/
+
 &timestep_params
  time_order=2
 /
-&force_params
- k=1,1,2
- a0=3,3.2,3.1
- t_turn=0.30
- type='single_solenoidal'
-/
+
 &initial_params
  k=3,3,3
  a0=0.0,0.0,0.0
@@ -74,16 +68,4 @@
  !type='single_solenoidal'
  type='single_advection'
  !type='raw'
-/
-&ramses_params
- detailed_timer=f
- courant_factor=0.8
- !courant_factor=0.266667
- gamma=1.00001
- slope_type=2
- !slope_type=-1
- smallr=1e-4
- smallc=5e-1
- riemann='hllc'
- do_isothermal=t
 /

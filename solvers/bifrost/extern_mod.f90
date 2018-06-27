@@ -5,15 +5,11 @@
 MODULE extern_mod
   USE params_mod
   USE parallel_mod
-  !USE units_mod
+  USE units_mod
   USE stagger_mod
   USE bifrost_timestep_mod
-  USE mhd_mod
   USE bifrost_io_mod
   USE math_mod
-  USE extras_mod
-  USE radiation_mod
-  USE eos_mod
   USE quench_mod
   USE timing_mod
   USE adaption_mod
@@ -60,17 +56,13 @@ SUBROUTINE init (self)
   call init_standard_boundaries
 !> The latter should be initialized per patch basis until they will be reworked
 !> into globally accessible ones or fully incorporated into other modules.
-  call init_stagger
-  call init_mhd
-  call init_eos
-  call init_radiation
-  call init_snap
-  call init_extras
-  call init_boundaries
-  call update_mhd
+  ! working on this one:           
+  !call init_stagger
 
   clean=nstepstart 
 END SUBROUTINE init
+
+
 
 !> =============================================================================
 !> End of run
