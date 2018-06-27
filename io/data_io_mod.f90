@@ -10,6 +10,7 @@
 !> =============================================================================
 MODULE data_io_mod
   USE io_mod
+  USE os_mod
   USE mpi_mod
   USE omp_mod
   USE trace_mod
@@ -66,14 +67,20 @@ SUBROUTINE output (self, patch, experiment_name)
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
   !.............................................................................
+  logical, save:: checked=.false.
   type(snapshot_t), pointer:: snapshot
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
   do while (patch%time >= patch%out_next)
-    call io%mkdir (trim(io%outputname))
-    call io%mkdir_no (patch%iout)
+    !$omp critical (outputname_cr)
+    if (.not.checked) then
+      checked = .true.
+      call os%mkdir (trim(io%outputname))
+    end if
+    !$omp end critical (outputname_cr)
+    call os%mkdir_no (patch%iout)
     call snapshot_list%count (patch, snapshot)
     if      (io%method=='direct') then
       call direct_io%output (patch)
@@ -92,7 +99,7 @@ SUBROUTINE output (self, patch, experiment_name)
     if (io%out_time==0.0) exit
     patch%iout = patch%iout+1
     patch%out_next = (nint(patch%out_next/io%out_time)+1)*io%out_time
-    call io%mkdir_no (patch%iout)
+    call os%mkdir_no (patch%iout)
   end do
   call trace%end (itimer)
 END SUBROUTINE output
@@ -104,6 +111,7 @@ SUBROUTINE input (self, patch, ok)
   class(data_io_t):: self
   class(patch_t):: patch
   logical:: ok
+  type(snapshot_t), pointer:: snapshot
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%input')
   if (.not.self%initialized) then
@@ -114,6 +122,7 @@ SUBROUTINE input (self, patch, ok)
     !$omp end critical (data_io_cr)
   end if
   ok = .false.
+  call snapshot_list%count (patch, snapshot, input=.true.)
   if (patch%restart > 0) then
     if      (io%method=='direct') then
       call direct_io%input (patch, ok)
@@ -125,6 +134,7 @@ SUBROUTINE input (self, patch, ok)
       call mpi%abort ('unknown io%method = '//io%method)
     end if
   end if
+  patch%t(patch%it) = patch%time
   if (ok .and. io%verbose>2) print *, patch%id, ' LEGACY INPUT'
   call trace%end
 END SUBROUTINE input
@@ -204,7 +214,7 @@ SUBROUTINE close
   if      (io%method=='legacy') then
     !call legacy_io%close
   else if (io%method=='direct') then
-    !call direct_io%close
+    call direct_io%close
   else if (io%method=='buffered') then
     call buffered_io%close
   else if (io%method=='parallel') then

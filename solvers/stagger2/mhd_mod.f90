@@ -85,6 +85,10 @@ SUBROUTINE init (self)
   self%gamma = gamma
   self%csound = csound
   self%cdtd = cdtd
+  !-----------------------------------------------------------------------------
+  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
+  ! called again, from gpatch_t%init, when gamma is known and can be passed on.
+  !-----------------------------------------------------------------------------
   self%initial%mhd = self%mhd
   call self%initial%init (self%kind)
   self%mhd = self%initial%mhd
@@ -104,14 +108,6 @@ SUBROUTINE init (self)
     end if
   end if
   !-----------------------------------------------------------------------------
-  ! Self test
-  !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
-  if (first_time) then
-    call self%test
-  end if
-  !$omp end critical (input_cr)
-  !-----------------------------------------------------------------------------
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
   call self%gpatch_t%init
@@ -127,54 +123,64 @@ SUBROUTINE init (self)
   end if
   self%unsigned(idx%d)  = .true.
   self%pervolume(idx%s) = .true.
+  !-----------------------------------------------------------------------------
+  ! Initialize force
+  !-----------------------------------------------------------------------------
   call self%force%init (self%kind, self%id, self%mesh)
-  !$omp critical (input_cr)
+  !-----------------------------------------------------------------------------
+  ! Self tests, only on one thread
+  !-----------------------------------------------------------------------------
+  !$omp critical (test_cr)
   if (first_time) then
-    call stagger_test
     first_time = .false.
+    call stagger_test
+    call self%test
   end if
-  !$omp end critical (input_cr)
+  !$omp end critical (test_cr)
   call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
 SUBROUTINE test (self)
-  class(mhd_t) :: self
+  class(mhd_t):: self
   integer      :: ix, iy, iz, m(3), n(3), n0(3), i1
   real         :: fx, fy, fz, eps
   logical      :: ok, allok
+  class(mhd_t), pointer:: tmp
   !-----------------------------------------------------------------------------
   ! Allocate mem to a temporary patch
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%test')
-  call self%patch_t%init
-  n0 = 2*(self%ncell/2)
-  if (any(self%n /= n0)) then
+  allocate (tmp)
+  tmp%nv = self%nv
+  call tmp%patch_t%init
+  n0 = 2*(tmp%ncell/2)
+  if (any(tmp%n /= n0)) then
     print *,io%hs
-    print *, 'mhd_t%test not possible with n, no_mans_land =', self%n, self%no_mans_land
+    print *, 'mhd_t%test not possible with n, no_mans_land =', tmp%n, tmp%no_mans_land
     print *,io%hs
-    call self%delete
+    call tmp%delete
     call trace%end
     return
   end if
   !-----------------------------------------------------------------------------
   ! Give it initial values (linear compression), also in the guard zones
   !-----------------------------------------------------------------------------
-  do iz=self%mesh(3)%lb,self%mesh(3)%ub
-    fz = sin(4.*cgs%pi*self%mesh(3)%r(iz)/self%size(3))
-    do iy=self%mesh(2)%lb,self%mesh(2)%ub
-      fy = sin(4.*cgs%pi*self%mesh(2)%r(iy)/self%size(2))
-      do ix=self%mesh(1)%lb,self%mesh(1)%ub
-        fx = sin(4.*cgs%pi*self%mesh(1)%r(ix)/self%size(1))
-        self%mem(ix,iy,iz,idx%d,self%it,1) = 1.0+0.1*(fx+fy+fz)
-        self%mem(ix,iy,iz,idx%s,self%it,1) = 0.1*(fx+fy+fz)
-        self%mem(ix,iy,iz,idx%px,self%it,1) = fx
-        self%mem(ix,iy,iz,idx%py,self%it,1) = fy
-        self%mem(ix,iy,iz,idx%pz,self%it,1) = fz
-        if (self%nv >= 8) then
-          self%mem(ix,iy,iz,idx%bx,self%it,1) = fy
-          self%mem(ix,iy,iz,idx%by,self%it,1) = fz
-          self%mem(ix,iy,iz,idx%bz,self%it,1) = fx
+  do iz=tmp%mesh(3)%lb,tmp%mesh(3)%ub
+    fz = sin(4.*cgs%pi*tmp%mesh(3)%r(iz)/tmp%size(3))
+    do iy=tmp%mesh(2)%lb,tmp%mesh(2)%ub
+      fy = sin(4.*cgs%pi*tmp%mesh(2)%r(iy)/tmp%size(2))
+      do ix=tmp%mesh(1)%lb,tmp%mesh(1)%ub
+        fx = sin(4.*cgs%pi*tmp%mesh(1)%r(ix)/tmp%size(1))
+        tmp%mem(ix,iy,iz,idx%d,tmp%it,1) = 1.0+0.1*(fx+fy+fz)
+        tmp%mem(ix,iy,iz,idx%s,tmp%it,1) = 0.1*(fx+fy+fz)
+        tmp%mem(ix,iy,iz,idx%px,tmp%it,1) = fx
+        tmp%mem(ix,iy,iz,idx%py,tmp%it,1) = fy
+        tmp%mem(ix,iy,iz,idx%pz,tmp%it,1) = fz
+        if (tmp%nv >= 8) then
+          tmp%mem(ix,iy,iz,idx%bx,tmp%it,1) = fy
+          tmp%mem(ix,iy,iz,idx%by,tmp%it,1) = fz
+          tmp%mem(ix,iy,iz,idx%bz,tmp%it,1) = fx
         end if
       end do
     end do
@@ -183,42 +189,42 @@ SUBROUTINE test (self)
   ! Evaluate the PDE and print the time derivatives (which are placed in the 2nd
   ! time slot and the 2nd variable slot)
   !-----------------------------------------------------------------------------
-  self%do_force = .false.
-  call self%pde
-  self%do_force = .true.
-  m = (1+self%gn)/2
+  tmp%do_force = .false.
+  call tmp%pde
+  tmp%do_force = .true.
+  m = (1+tmp%gn)/2
   allok = .true.
-  eps = 3e-6/minval(self%ds)
+  eps = 3e-6/minval(tmp%ds)
   print *,io%hl
-  print *,'minval(ds), eps =', minval(self%ds), eps
-  n = nint(self%size*0.5_8/self%ds)
-  do ix=self%mesh(1)%li,self%mesh(1)%ui
-    i1 = mod(ix-self%mesh(1)%li+n(1),2*n(1)) + self%mesh(1)%li
-    ok = all(abs(self%mem(ix,m(2),m(3),1:5,self%it,2)- &
-                 self%mem(i1,m(2),m(3),1:5,self%it,2)) < eps)
+  print *,'minval(ds), eps =', minval(tmp%ds), eps
+  n = nint(tmp%size*0.5_8/tmp%ds)
+  do ix=tmp%mesh(1)%li,tmp%mesh(1)%ui
+    i1 = mod(ix-tmp%mesh(1)%li+n(1),2*n(1)) + tmp%mesh(1)%li
+    ok = all(abs(tmp%mem(ix,m(2),m(3),1:5,tmp%it,2)- &
+                 tmp%mem(i1,m(2),m(3),1:5,tmp%it,2)) < eps)
     allok = allok .and. ok
     if (io%verbose>0 .or. io_unit%do_validate .or. .not.ok) &
-      print 1,ix,self%mem(ix,m(2),m(3),1:5,self%it,2), &
-                 self%mem(i1,m(2),m(3),1:5,self%it,2)
+      print 1,ix,tmp%mem(ix,m(2),m(3),1:5,tmp%it,2), &
+                 tmp%mem(i1,m(2),m(3),1:5,tmp%it,2)
     1 format("mhd_t%test:",i4,1p,2(2x,5e14.5))
   end do
-  do iy=self%mesh(2)%li,self%mesh(2)%ui
-    i1 = mod(iy-self%mesh(2)%li+n(2),2*n(2)) + self%mesh(2)%li
-    ok = all(abs(self%mem(m(1),iy,m(3),1:5,self%it,2)- &
-                 self%mem(m(1),i1,m(3),1:5,self%it,2)) < eps)
+  do iy=tmp%mesh(2)%li,tmp%mesh(2)%ui
+    i1 = mod(iy-tmp%mesh(2)%li+n(2),2*n(2)) + tmp%mesh(2)%li
+    ok = all(abs(tmp%mem(m(1),iy,m(3),1:5,tmp%it,2)- &
+                 tmp%mem(m(1),i1,m(3),1:5,tmp%it,2)) < eps)
     allok = allok .and. ok
     if (io%verbose>0 .or. io_unit%do_validate .or. .not.ok) &
-      print 1,iy,self%mem(m(1),iy,m(3),1:5,self%it,2), &
-                 self%mem(m(1),i1,m(3),1:5,self%it,2)
+      print 1,iy,tmp%mem(m(1),iy,m(3),1:5,tmp%it,2), &
+                 tmp%mem(m(1),i1,m(3),1:5,tmp%it,2)
   end do
-  do iz=self%mesh(3)%li,self%mesh(3)%ui
-    i1 = mod(iz-self%mesh(3)%li+n(3),2*n(3)) + self%mesh(3)%li
-    ok = all(abs(self%mem(m(1),m(2),iz,1:5,self%it,2)- &
-                 self%mem(m(1),m(2),i1,1:5,self%it,2)) < eps)
+  do iz=tmp%mesh(3)%li,tmp%mesh(3)%ui
+    i1 = mod(iz-tmp%mesh(3)%li+n(3),2*n(3)) + tmp%mesh(3)%li
+    ok = all(abs(tmp%mem(m(1),m(2),iz,1:5,tmp%it,2)- &
+                 tmp%mem(m(1),m(2),i1,1:5,tmp%it,2)) < eps)
     allok = allok .and. ok
     if (io%verbose>0 .or. io_unit%do_validate .or. .not.ok) &
-      print 1,iz,self%mem(m(1),m(2),iz,1:5,self%it,2), &
-                 self%mem(m(1),m(2),i1,1:5,self%it,2)
+      print 1,iz,tmp%mem(m(1),m(2),iz,1:5,tmp%it,2), &
+                 tmp%mem(m(1),m(2),i1,1:5,tmp%it,2)
   end do
   if (allok) then
     print *,'mhd_t%test passed'
@@ -228,7 +234,8 @@ SUBROUTINE test (self)
     print *,io%hl
     error stop 'mhd_t%test'
   end if
-  call self%delete
+  call tmp%delete
+  deallocate (tmp)
   call trace%end
 END SUBROUTINE test
 
@@ -321,33 +328,34 @@ SUBROUTINE pde (self)
   Txx = ddxup(ds,Ux)
   Tyy = ddyup(ds,Uy)
   Tzz = ddzup(ds,Uz)
+  ! Diagonal Reynolds stress
+  fxx = xup(Ux)**2
+  fyy = yup(Uy)**2
+  fzz = zup(Uz)**2
+  pp = (fxx+fyy+fzz)
+  ! Artificial pressure
+  pa = self%nu(2)*d*du**2                                                       ! ops: 0 3 0
   if (self%mhd) then
-    ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2
-    fyy = yup(Uy)**2
-    fzz = zup(Uz)**2
-    pp = (fxx+fyy+fzz)
     ! Diagonal (negative) Maxwell stress (borrowing emf for scratch)
     Ex = xup(Bx)**2                                                             ! mhd: 0 1 0
     Ey = yup(By)**2                                                             ! mhd: 0 1 0
     Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
-    ! Magnetic pressure
+    ! Magnetic pressure and fast mode speed
     pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
-    ! Fast mode speed + velocity
-    pa = self%nu(2)*d*du**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
     if (io%verbose>2) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, self%id, 'u_max(ca)  ', u_max, self%u_max
+      print 1, self%id, 'u_max(ca)     ', u_max, self%u_max
     1 format(i6,2x,a,1p,2g12.3)
       u_max = self%fmaxval(cs + sqrt(pp))
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, self%id, 'u_max(ca+u)', u_max, self%u_max
+      print 1, self%id, 'u_max(ca+u)   ', u_max, self%u_max
     end if
-    u_max = self%fmaxval(cs + sqrt(pp) + du)
+    cs = cs + sqrt(pp) + du
+    u_max = self%fmaxval(cs)
     self%u_max = max(self%u_max,u_max)
-    if (io%verbose>2) print 1, self%id, 'u_max(ca+u)', u_max, self%u_max
+    if (io%verbose>2) print 1, self%id, 'u_max(ca+u+du)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
@@ -356,26 +364,21 @@ SUBROUTINE pde (self)
     fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
     fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
   else
-    ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2                                                            ! ops: 0 1 0
-    fyy = yup(Uy)**2                                                            ! ops: 0 1 0
-    fzz = zup(Uz)**2                                                            ! ops: 0 1 0
-    pp = (fxx+fyy+fzz)                                                          ! ops: 2 0 0
-    ! Isotropic pressure part
-    pa = self%nu(2)*d*du**2                          ! dimension: pressure      ! ops: 0 3 0
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
-    if (io%verbose>2) then
+    if (self%id==1 .or. io%verbose>2) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, self%id, 'u_max(cs)  ', u_max, self%u_max
+      print 1, self%id, 'u_max(cs)     ', u_max, self%u_max
       u_max = self%fmaxval(cs + sqrt(pp))
       self%u_max = max(self%u_max,u_max)
-      if (io%verbose>2) print 1, self%id, 'u_max(cs+u)', u_max, self%u_max
+      print 1, self%id, 'u_max(cs+u)   ', u_max, self%u_max
     end if
-    u_max = self%fmaxval(cs + sqrt(pp) + du)
+    cs = cs + sqrt(pp) + du
+    u_max = self%fmaxval(cs)
     self%u_max = max(self%u_max,u_max)
-    if (io%verbose>2) print 1, self%id, 'u_max(cs+u)', u_max, self%u_max
+    if (self%id==1 .or. io%verbose>2) print 1, self%id, 'u_max(cs+u+du)', u_max, self%u_max
+    ! Isotropic pressure part
     pp = pg + pa                                                                ! ops: 1 0 0
     ! Total diagonal stress, with density factor
     du = (maxval(ds,self%n > 1)*self%nu(1))*cs                                  ! ops: 0 1 0
@@ -400,7 +403,7 @@ SUBROUTINE pde (self)
   dddt = -div(ds,fm)                                    ! density derivative
   u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs(dddt/d))             ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
-  if (io%verbose>2) print 1, self%id, 'u_max(dddt)', u_max, self%u_max
+  if (self%id==1 .or. io%verbose>2) print 1, self%id, 'u_max(dddt)   ', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components

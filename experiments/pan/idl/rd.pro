@@ -36,7 +36,6 @@ FUNCTION rd,run,iv=iv,iout=iout,id=id,n=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=
     print,iy
     print,iz
   end 
-  print,i0,i1
   for i=i0,i1 do begin
     ii=i
     jz=i/m^2

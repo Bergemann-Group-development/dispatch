@@ -2,7 +2,6 @@
 !> Define code units, in terms of (here) CGS units
 !> =============================================================================
 MODULE scaling_mod
-  USE units_mod
   USE io_mod
   implicit none
   private
@@ -32,17 +31,6 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   if (.not.first_time) return
   first_time = .false.
-  call cgs%init
-  self%l = 1e4*cgs%au                                   ! length
-  self%m = cgs%m_sun                                    ! mass
-  self%d = self%m/self%l**3                             ! mass density
-  self%u = cgs%kms                                      ! speed
-  self%t = self%l/self%u                                ! time
-  self%p = self%d*self%u**2                             ! pressure = energy density
-  self%e = self%m*self%u**2                             ! energy
-  self%f = self%p*self%u                                ! energy flux = P u
-  self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
-  self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature for give mu
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
     print 1,'     length: ',self%l

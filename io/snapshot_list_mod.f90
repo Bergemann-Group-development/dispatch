@@ -61,10 +61,11 @@ SUBROUTINE count (self, patch, snapshot, input)
   ! If output is finished, remove from list
   !-----------------------------------------------------------------------------
   snapshot%ibuf = snapshot%ibuf-1
-  if (verbose>1) print *, 'snapshot_list_t%count:', patch%iout, patch%id, snapshot%ibuf
+  if (verbose>1) print *, 'snapshot_list_t%count:', patch%iout, patch%id, snapshot%ibuf, io%ntask
   if (snapshot%ibuf==0) then
     call self%remove (snapshot)
-    if (verbose>0 .and. mpi%master) print '(a,2x,a,i5.5,5x,"time:",1p,2g14.5,2x,9g14.5)', &
+    if (verbose>1) print *, 'count:', omp%thread, mpi%rank, mpi%master, io%master
+    if (verbose>0 .and. mpi%master) print '(1x,a,2x,a,i5.5,5x,"time:",1p,2g14.5,2x,9g14.5)', &
       trim(io%method)//'_io:'//merge('input ','output',present(input)), &
       'snapshot '//trim(io%outputname), patch%iout, patch%out_next, patch%time
       !!, patch%t(patch%iit)
