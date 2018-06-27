@@ -227,7 +227,6 @@ SUBROUTINE input (self, ok)
     do_print = .false.
     close (io_unit%data)
     self%time = time
-    self%t(self%it) = time
     !---------------------------------------------------------------------------
     ! If guard_zones is true, include the guard zones.
     !---------------------------------------------------------------------------

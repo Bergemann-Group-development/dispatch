@@ -1,12 +1,15 @@
 !> =============================================================================
 !> A sink particle is represented as primarily a particle task, whose position
-!> is updated with a particle solver.  In addition, it carries along a patch,
-!> which is usually much smaller than an MHD patch, and whose values are
-!> downloaded from contribution MHD patches.
+!> is updated with a particle solver. The patch is usually much smaller than an
+!> MHD patch, and its values are downloaded from contribution MHD patches. 
 !>
-!> The test procedure is called from refine_t%check_sinkparticle, which
-!> handles creating a task list link, adding an nbor list, and adding the
-!> task to task list.
+!> A particular quality level indicates to the download_mod that all cells from
+!> the sink particle patch should be downloaded to overlapping patches, thus
+!> communicating back the removal of accreted mass and momentum.
+!>
+!> The procedure is called from refine_t%check_sinkparticle, which handles
+!> creating a task list link, adding an nbor list, and adding the task to task
+!> list.
 !> =============================================================================
 MODULE sinkparticles_mod
   USE io_mod
@@ -96,7 +99,7 @@ END SUBROUTINE init
 !> =============================================================================
 FUNCTION check (self, patch)
   class(sinkparticles_t):: self
-  class(patch_t), pointer:: patch
+  class(patch_t), target:: patch
   logical:: check
   !-----------------------------------------------------------------------------
   check = .false.
@@ -119,7 +122,7 @@ END FUNCTION check
 !> =============================================================================
 SUBROUTINE create (self, patch)
   class(sinkparticles_t):: self
-  class(patch_t), pointer:: patch
+  class(patch_t), target:: patch
   !.............................................................................
   class(link_t), pointer:: nbor, prev
   real, dimension(:,:,:), pointer:: d
@@ -260,7 +263,8 @@ SUBROUTINE accrete (self)
       p = 1d0-q
       if (self%mask(ix,iy,iz)) then
         dm          = dm          + d (ix,iy,iz)*dv*p
-        print '(3i4,3f12.6,l4)', ix, iy, iz, d(ix,iy,iz), self%r(ix,iy,iz), p, self%mask(ix,iy,iz)
+        if (verbose>1) &
+          print '(3i4,3f12.6,l4)', ix, iy, iz, d(ix,iy,iz), self%r(ix,iy,iz), p, self%mask(ix,iy,iz)
         self%mom(1) = self%mom(1) + px(ix,iy,iz)*dv*p
         self%mom(2) = self%mom(2) + py(ix,iy,iz)*dv*p
         self%mom(3) = self%mom(3) + pz(ix,iy,iz)*dv*p

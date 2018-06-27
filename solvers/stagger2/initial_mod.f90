@@ -66,9 +66,8 @@ SUBROUTINE init (self, solver, gamma)
    self%u0     = u0
    self%d0     = d0
    self%p0     = p0
-   if (self%gamma==0d0) print *,'initial_t%init WARNING: The solver has not set gamma !'
    self%gamma  = max(self%gamma,1d0+1d-5)
-   self%e0     = p0/(self%gamma-1.0)
+   self%e0     = p0/(self%gamma-1d0)
    self%mhd    = mhd
    self%time   = 0d0
    select case (type)
@@ -118,9 +117,9 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
         kx   =  pi2*self%k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + self%phi(1)
         ff(ix,iy,iz,idx%d ) = self%d0*(1.0 + self%a0(1)*sin(kx) + self%a0(2)*sin(ky) + self%a0(3)*sin(kz))
         ff(ix,iy,iz,idx%e ) = self%e0*(1.0 + self%a0(1)*sin(kx) + self%a0(2)*sin(ky) + self%a0(3)*sin(kz))
-        ff(ix,iy,iz,idx%px) = self%a0(1)*(sin(ky)+sin(kz))
-        ff(ix,iy,iz,idx%py) = self%a0(2)*(sin(kz)+sin(kx))
-        ff(ix,iy,iz,idx%pz) = self%a0(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,idx%px) = self%u0(1)*(sin(ky)+sin(kz))
+        ff(ix,iy,iz,idx%py) = self%u0(2)*(sin(kz)+sin(kx))
+        ff(ix,iy,iz,idx%pz) = self%u0(3)*(sin(kx)+sin(ky))
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = self%b0(1)*(sin(ky)+sin(kz))
           ff(ix,iy,iz,idx%by) = self%b0(2)*(sin(kz)+sin(kx))

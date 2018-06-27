@@ -440,11 +440,7 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   !-----------------------------------------------------------------------------
   if (present(offset)) then
     if (source%level==target%level) then
-      dist = target%position-source%position
-      where (source%periodic)
-        dist = modulo(dist+0.5d0*source%mesh%b, source%mesh%b) - 0.5d0*source%mesh%b
-      end where
-      offset = nint(dist/source%ds+source%mesh%o-target%mesh%o)
+      offset = nint(-dist/target%ds + source%offset - target%offset)
     else
       print *, 'ERROR: fixed offset not valid for different levels', &
         target%id, target%level, source%id, source%level

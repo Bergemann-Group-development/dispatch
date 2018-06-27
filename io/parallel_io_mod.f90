@@ -6,6 +6,7 @@
 MODULE parallel_io_mod
   USE patch_mod
   USE io_mod
+  USE io_unit_mod
   USE omp_mod
   USE mpi_mod
   USE mpi_io_mod
@@ -109,6 +110,8 @@ SUBROUTINE output (patch)
     else
       call thread_io%write (buffer, patch%iout+1, patch%id + (iv-1)*io%ntotal)
     end if
+    if (verbose>0) &
+      write (io_unit%mpi,*) 'WR', patch%id, patch%iout, iv, minval(buffer), maxval(buffer)
   end do
   deallocate (buffer)
   call trace%end
@@ -158,10 +161,17 @@ SUBROUTINE input (patch, ok)
                 patch%li(2):patch%ui(2), &
                 patch%li(3):patch%ui(3),iv,patch%it,1) = buffer
     end if
+    if (verbose>0) &
+      write (io_unit%mpi,*) 'RD', patch%id, patch%iout, iv, minval(buffer), maxval(buffer)
   end do
   deallocate (buffer)
   ok = .true.
   patch%time = patch%restart*io%out_time
+  if (io%verbose==1) print '(a,2i6,1p,e16.6)', ' parallel_io_t%input: iout, id, time =', &
+    patch%iout, patch%id, patch%time
+  if (io%verbose>1) print '(a,4i6,2i7)', &
+    ' parallel_io_t%input: iout, n, snapshot_words, buffer_words =', &
+    patch%iout, n, snapshot_words, buffer_words
   call trace%end
 END SUBROUTINE input
 

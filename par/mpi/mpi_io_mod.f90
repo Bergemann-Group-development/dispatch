@@ -30,6 +30,7 @@
 !> *****************************************************************************
 MODULE mpi_io_mod
   USE io_mod
+  USE io_unit_mod
   USE omp_mod
   USE trace_mod
   USE mpi_mod, only: mp=>mpi
@@ -121,8 +122,8 @@ SUBROUTINE write (self, f, rec, id)
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose>1) &
-    print '(a,3i8,i15,2f12.0)', ' mpi_io_t%write: rec, id, words, pos =', &
-    rec, id, self%chunk_words, pos, minval(f), maxval(f)
+    write (io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write: rec, id, words, pos =', &
+      rec, id, self%chunk_words, pos, minval(f), maxval(f)
   !$omp critical (mpi_io_cr)
   call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                           self%status, self%err)
@@ -178,8 +179,8 @@ SUBROUTINE read (self, f, rec, id)
   call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                          self%status, self%err)
   if (verbose>1) &
-    print '(a,3i8,i15,2f12.0)', ' mpi_io_t%read: rec, id, words, pos =', &
-    rec, id, self%chunk_words, pos, minval(f), maxval(f)
+    write(io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%read: rec, id, words, pos =', &
+      rec, id, self%chunk_words, pos, minval(f), maxval(f)
   !$omp end critical (mpi_io_cr)
   call trace%end
 #endif

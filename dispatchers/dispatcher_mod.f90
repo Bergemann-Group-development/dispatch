@@ -104,6 +104,7 @@ SUBROUTINE method0 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   task_list%method = method
+  io%ntask = task_list%na
   if (test) call set_io
   call dispatcher0%execute (task_list, test)
 END SUBROUTINE method0
@@ -120,6 +121,7 @@ SUBROUTINE method1 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   task_list%method = method
+  io%ntask = task_list%na
   dispatcher1%verbose = verbose
   if (test) call set_io
   call dispatcher1%execute (task_list, test)
@@ -132,6 +134,7 @@ SUBROUTINE method2 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   task_list%method = method
+  io%ntask = task_list%na
   if (test) call set_io
   call dispatcher2%execute (task_list, test)
 END SUBROUTINE method2

@@ -6,6 +6,7 @@
 !> =============================================================================
 MODULE gpatch_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE patch_mod
   USE download_mod
@@ -98,7 +99,7 @@ SUBROUTINE init (self)
     call self%patch_t%init
   end if
   self%d0 = d0
-  call self%initial%init (self%kind)
+  call self%initial%init (self%kind, self%gamma)
   !$omp critical (poisson_cr)
   if (first_time) then
     first_time = .false.
@@ -173,7 +174,7 @@ SUBROUTINE init (self)
     self%iout = self%restart+1
     !$omp master
     write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout
-    if (io%iodir/=self%iout) call io%mkdir (trim(filename))
+    if (io%iodir/=self%iout) call os%mkdir (trim(filename))
     io%iodir = self%iout
     !$omp end master
   end if
