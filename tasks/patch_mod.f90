@@ -109,6 +109,8 @@ MODULE patch_mod
     procedure, private :: fmaxval8
     procedure, private :: fmaxvali
     generic, public :: fmaxval => fmaxval4, fmaxval8, fmaxvali
+    generic, public :: fminvalvar => fminval4, fminval8  ! these two overloaded functions are
+    generic, public :: fmaxvalvar => fmaxval4, fmaxval8  ! used by `fminvali`/`fmaxvali` only.
     procedure:: courant_condition
     procedure:: check_density
     procedure:: check_nan
@@ -1582,7 +1584,7 @@ FUNCTION fminvali (self, iv) RESULT (fminval)
   integer:: iv
   real:: fminval
   !-----------------------------------------------------------------------------
-  fminval = self%fminval4 (self%mem(:,:,:,iv,self%it,1))
+  fminval = self%fminvalvar (self%mem(:,:,:,iv,self%it,1))
 END FUNCTION fminvali
 !> =============================================================================
 FUNCTION fmaxvali (self, iv) RESULT (fmaxval)
@@ -1590,7 +1592,7 @@ FUNCTION fmaxvali (self, iv) RESULT (fmaxval)
   integer:: iv
   real:: fmaxval
   !-----------------------------------------------------------------------------
-  fmaxval = self%fmaxval4 (self%mem(:,:,:,iv,self%it,1))
+  fmaxval = self%fmaxvalvar (self%mem(:,:,:,iv,self%it,1))
 END FUNCTION fmaxvali
 !> =============================================================================
 FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
