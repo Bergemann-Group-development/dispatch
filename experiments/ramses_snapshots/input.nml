@@ -6,14 +6,20 @@
 /
 
 &init_params
- nout=540
+ nout=150
  minlvl=13
  maxlvl=14
- path='find190/f'
+ path='data'
  rank_load=5e-3
  size=0.001
- centre_on_sink=t
+ centre_on_sink=f
  merge_octs=t
+/
+
+&initial_params
+/
+
+&initial_solenoidal_params
 /
 
 &patch_params
@@ -29,7 +35,7 @@
 /
 
 &ramses_params
- detailed_timer=f
+! detailed_timer=f
  courant_factor=0.8
  !courant_factor=0.266667
  gamma=1.6666667
@@ -38,7 +44,7 @@
  smallr=1e-4
  smallc=5e-1
  riemann='hllc'
- do_isothermal=f
+! do_isothermal=f
 /
 
 &timestep_params
