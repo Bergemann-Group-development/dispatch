@@ -92,6 +92,14 @@ SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
   integer                :: iter, m(3), ione, jone, kone
   integer, save          :: itimer=0
   real(8), dimension(:,:,:), allocatable:: source, phi, r, p, s, u
+  interface
+    subroutine laplace_interface(ds, phi, out)
+      real(8), intent(in)                   :: ds(3)
+      real(8), dimension(:,:,:), intent(in) :: phi
+      real(8), dimension(:,:,:), intent(out):: out
+    end subroutine laplace_interface
+  end interface
+  procedure(laplace_interface), pointer:: laplace
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin('poisson_mod%cg', itimer=itimer)
   ione = 1
@@ -100,6 +108,12 @@ SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
   if (size(phi1,1) <= 1) ione = 0
   if (size(phi1,2) <= 1) jone = 0
   if (size(phi1,3) <= 1) kone = 0
+  !
+  if (patch%mesh_type == mesh_types%Cartesian) then
+    laplace => laplace_Cartesian
+  else
+    laplace => laplace_curvilinear
+  end if
   !-----------------------------------------------------------------------------
   ! Allocate double precision scratch arrays
   !-----------------------------------------------------------------------------
@@ -185,9 +199,10 @@ contains
   !> =============================================================================
   !> 2nd order Laplace operator
   !> =============================================================================
-  subroutine laplace (ds, phi, out)
-    real(8)                   :: ds(3)
-    real(8), dimension(:,:,:) :: phi, out
+  subroutine laplace_Cartesian (ds, phi, out)
+    real(8), intent(in)                   :: ds(3)
+    real(8), dimension(:,:,:), intent(in) :: phi
+    real(8), dimension(:,:,:), intent(out):: out
     !.............................................................................
     integer                   :: i, j, k, im1, jm1, km1, ip1, jp1, kp1, li(3), n(3)
     real(8)                   :: c(3)
@@ -244,7 +259,56 @@ contains
         end do
       end do
     end if
-  end subroutine laplace
+  end subroutine laplace_Cartesian
+  !> =============================================================================
+  !> 2nd order Laplace operator for curvilinear coords.
+  !> =============================================================================
+  subroutine laplace_curvilinear (ds, phi, out)
+    real(8), intent(in)                   :: ds(3)
+    real(8), dimension(:,:,:), intent(in) :: phi
+    real(8), dimension(:,:,:), intent(out):: out
+    !.............................................................................
+    class(mesh_t), pointer:: m1, m2
+    integer                   :: i, j, k
+    real(8)                   :: c(3), h2ci, h31ci, h32ci
+    !-----------------------------------------------------------------------------
+    c  = 1d0/ds**2
+    where (patch%mesh%nc == 1)
+      c = 0.0
+    end where
+    m1 => patch%mesh(1)
+    m2 => patch%mesh(2)
+    !-----------------------------------------------------------------------------
+    ! For periodic patches, wrap around
+    ! NOTE FROM JPR: I'm not sure a curvilinear patch will ever be periodic in all
+    ! three directions, thus the abort.
+    !-----------------------------------------------------------------------------
+    if (patch%is_periodic()) then
+      call mpi%abort('NOT IMPLEMENTED ERROR: This curvilinear patch is periodic in all three directions. Really??')
+    else
+    !-----------------------------------------------------------------------------
+    ! For non-periodic patches, loop from li to ui
+    !-----------------------------------------------------------------------------
+      call zero_boundaries (out)
+      do k=patch%mesh(3)%li,patch%mesh(3)%ui
+        do j=patch%mesh(2)%li,patch%mesh(2)%ui
+          h32ci = 1.0d0 / m2%h32c(j)
+          do i=patch%mesh(1)%li,patch%mesh(1)%ui
+            h2ci = 1.0d0 / m1%h2c(i)
+            h31ci = 1.0d0 / m1%h31c(i)
+            out(i,j,k) = c(1) * h2ci * h31ci &
+                       * (m1%h2f(i+ione) * m1%h31f(i+ione) * (phi(i+ione,j,k) - phi(i,j,k)) &
+                        - m1%h2f(i     ) * m1%h31f(i     ) * (phi(i,j,k) - phi(i-ione,j,k))) &
+                       + c(2) * h2ci**2 * h32ci &
+                       * (m2%h32f(j+jone) * (phi(i,j+jone,k) - phi(i,j,k)) &
+                        - m2%h32f(j     ) * (phi(i,j,k) - phi(i,j-jone,k))) &
+                       + c(3) * h31ci**2 * h32ci**2 &
+                       * (phi(i,j,k+kone) + phi(i,j,k-kone) - 2.0d0 * phi(i,j,k))
+          end do
+        end do
+      end do
+    end if
+  end subroutine laplace_curvilinear
   !> =============================================================================
   !> Preconditioner for conjugate gradient method
   !> =============================================================================
