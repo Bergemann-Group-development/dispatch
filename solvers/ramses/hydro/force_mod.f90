@@ -95,7 +95,7 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     self%phase = pi2*0.5*self%random%ran3()
     if (self%id==1) print *,'new force at', real(time), self%a, real(self%phase/pi2)
   end if
-  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r, l=>m%li, u=>m%ui)
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     kz = pi2*k(3)*(r3(iz)+m(3)%p)/m(3)%b + self%phase(3)
     do iy=m(2)%lb,m(2)%ub
