@@ -208,7 +208,7 @@ SUBROUTINE read_snapshot (self)
   real(kind=8), allocatable, dimension(:,:):: xc, xg, x
   real(kind=8), allocatable, dimension(:,:):: bound_key_dpx2
   real(kind=8), allocatable, dimension(:,:,:):: var
-  real(kind=8), dimension(3):: pmin=1d30, pmax=-1d30, xg_plus
+  real(kind=8), dimension(3):: pmin=1d30, pmax=-1d30
 
   character(len=80):: ordering
   character(len=128):: filebase, filename, conv
@@ -801,7 +801,6 @@ SUBROUTINE read_snapshot (self)
               call patch%init()
               n_grid = n_grid + 1
               ! if the patch is at the very boundary, freeze it!
-              xg_plus = xg(l,:) + 2d0 * dx
               if (self%size > 0d0 .and. self%centre_on_sink) then
                 if (r + 2d0 * dx > self%size) then
                   patch%status = ior(patch%status,bits%frozen)
@@ -811,9 +810,9 @@ SUBROUTINE read_snapshot (self)
                     print '(a,i7.1,a,1e16.9,1x,i3.1)', 'patch', patch%id, ' frozen', r, ilevel
                   end if
                 end if
-              else if (xg_plus(1) < self%xmin .or. xg_plus(1) > self%xmax .or. &
-                       xg_plus(2) < self%ymin .or. xg_plus(2) > self%ymax .or. &
-                       xg_plus(3) < self%zmin .or. xg_plus(3) > self%zmax) then
+              else if (xg(l,1) < self%xmin+2.*dx .or. xg(l,1) > self%xmax-2.*dx .or. &
+                       xg(l,2) < self%ymin+2.*dx .or. xg(l,2) > self%ymax-2.*dx .or. &
+                       xg(l,3) < self%zmin+2.*dx .or. xg(l,3) > self%zmax-2.*dx) then
                 patch%status = ior(patch%status,bits%frozen)
                 n_frozen = n_frozen + 1
                 if (io%verbose>0 .and. nprint_f>0) then
