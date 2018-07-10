@@ -12,10 +12,13 @@
  maxlvl=14
  path='data'
  rank_load=5e-3
- size=0.001
+ !size=1
  centre_on_sink=f
- merge_octs=t
+ merge_octs=f
+ make_cartesian=t
 /
+
+&download_params order_interpolator=1 /
 
 &initial_params
 /
@@ -25,8 +28,9 @@
 
 &patch_params
  size=1.0,1.0,1.0
- n=128,128,128
+ n=3*16
  ng=2
+ no_mans_land=t
 /
 
 &out_params
