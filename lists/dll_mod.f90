@@ -1,5 +1,5 @@
 !> =============================================================================
-!> Doubly linked list, carrying anything, as simply as possible
+!> Doubly linked list (DLL), carrying anything, as simply as possible
 !> =============================================================================
 MODULE dll_mod
   implicit none
@@ -22,11 +22,14 @@ MODULE dll_mod
     procedure:: insert_before
     procedure:: insert_after
     procedure:: remove
-    procedure:: test
     procedure:: delete
+    procedure:: pop
+    procedure:: test
   end type
 CONTAINS
 
+!> =============================================================================
+!> Initialize a doubly-linked-list (DLL), with anonymous carry
 !> =============================================================================
 SUBROUTINE init (self, name)
   class(dll_t):: self
@@ -43,6 +46,8 @@ SUBROUTINE init (self, name)
 END SUBROUTINE init
 
 !> =============================================================================
+!> Add an item at the tail
+!> =============================================================================
 SUBROUTINE append (self, new)
   class(dll_t):: self
   class(dll_node_t), pointer:: new
@@ -56,6 +61,8 @@ SUBROUTINE append (self, new)
 END SUBROUTINE append
 
 !> =============================================================================
+!> Add an item at the head
+!> =============================================================================
 SUBROUTINE prepend (self, new)
   class(dll_t):: self
   class(dll_node_t), pointer:: new
@@ -67,6 +74,8 @@ SUBROUTINE prepend (self, new)
   self%n = self%n+1
 END SUBROUTINE prepend
 
+!> =============================================================================
+!> Find an item, by matching with a known member
 !> =============================================================================
 SUBROUTINE find (self, old, prev, next)
   class(dll_t):: self
@@ -86,6 +95,8 @@ SUBROUTINE find (self, old, prev, next)
 END SUBROUTINE find
 
 !> =============================================================================
+!> Insert a new item before an old one
+!> =============================================================================
 SUBROUTINE insert_before (self, old, new)
   class(dll_t):: self
   class(dll_node_t), pointer:: old, new
@@ -98,6 +109,8 @@ SUBROUTINE insert_before (self, old, new)
   self%n = self%n+1
 END SUBROUTINE insert_before
 
+!> =============================================================================
+!> Insert a new item after an old one
 !> =============================================================================
 SUBROUTINE insert_after (self, old, new)
   class(dll_t):: self
@@ -112,16 +125,43 @@ SUBROUTINE insert_after (self, old, new)
 END SUBROUTINE insert_after
 
 !> =============================================================================
+!> Remove an item from the DLL
+!> =============================================================================
 SUBROUTINE remove (self, old)
   class(dll_t):: self
-  class(dll_node_t), pointer:: old
+  type(dll_node_t), pointer:: old
   !.............................................................................
   if (associated(old%prev)) old%prev%next => old%next
   if (associated(old%next)) old%next%prev => old%prev
+  if (associated(old, self%head)) then
+    self%head => old%next
+  end if
+  if (associated(old, self%tail)) then
+    self%tail => old%prev
+  end if
   !$omp atomic
   self%n = self%n-1
 END SUBROUTINE remove
 
+!> =============================================================================
+!> Pop the last appended item off the list.  The list node and its carry should
+!> be deallocated after use.
+!> =============================================================================
+FUNCTION pop (self)
+  class(dll_t):: self
+  type(dll_node_t), pointer:: pop
+  !.............................................................................
+  pop => self%tail
+  if (associated(pop%prev)) then
+    self%tail => pop%prev
+    nullify(self%tail%next)
+  end if
+  !$omp atomic
+  self%n = self%n-1
+END FUNCTION pop
+
+!> =============================================================================
+!> Run a self test
 !> =============================================================================
 SUBROUTINE test (self)
   class(dll_t):: self
@@ -180,16 +220,23 @@ contains
 END SUBROUTINE test
 
 !> =============================================================================
+!> Delete a double-linked list, including carried content
+!> =============================================================================
 SUBROUTINE delete (self)
   class(dll_t):: self
   !.............................................................................
-  type (dll_node_t), pointer:: item
+  type (dll_node_t), pointer:: item, next
   !-----------------------------------------------------------------------------
   item => self%head
   do while (associated(item))
+    next => item%next
     if (associated(item%car)) deallocate (item%car)
-    item => item%next
+    deallocate (item)
+    item => next
   end do
+  nullify (self%head)
+  nullify (self%tail)
+  self%n = 0
   call self%init
 END SUBROUTINE delete
 

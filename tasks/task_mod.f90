@@ -11,6 +11,7 @@ MODULE task_mod
   USE scene_mod
   USE mpi_mesg_mod
   USE random_mod
+  USE dll_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -68,6 +69,7 @@ MODULE task_mod
   contains
     procedure:: init
     procedure:: init_id_reset
+    procedure:: delete
     procedure:: dnload
     procedure:: update => void
     procedure:: rotate
@@ -91,8 +93,8 @@ MODULE task_mod
     procedure:: is_relevant
     procedure:: test_update
   end type
-
   integer, save:: id=0
+  type(dll_t), pointer:: deleted_list
 CONTAINS
 
 !> =============================================================================
@@ -115,6 +117,8 @@ SUBROUTINE init (self)
   class (task_t):: self
   logical:: first_time=.true.
   !.............................................................................
+  class(*), pointer:: idp
+  !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init')
   !$omp critical (task_init_cr)
   if (first_time) then
@@ -123,6 +127,14 @@ SUBROUTINE init (self)
       id = mpi%rank+1
       self%id = id
     end if
+  !else if (deleted_list%n > 0) then
+  !  idp => deleted_list%pop()
+  !  select type (idp)
+  !  type is (integer)
+  !  id = idp
+  !  end select
+  !  dellocate (idp%car)
+  !  dellocate (idp)
   else if (self%id==0) then
     id = id+mpi%size
     self%id = id
@@ -137,6 +149,25 @@ SUBROUTINE init (self)
   call self%random%init
   call trace_end
 END SUBROUTINE init
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE delete (self)
+  class (task_t):: self
+  !.............................................................................
+  class(dll_node_t), pointer:: node
+  integer, pointer:: id
+  !-----------------------------------------------------------------------------
+  call trace_begin ('task_t%delete')
+  if (.not.associated(deleted_list%head)) then
+    call deleted_list%init
+  end if
+  allocate (node, id)
+  id = self%id
+  node%car => id
+  call deleted_list%append (node)
+  call trace_end
+END SUBROUTINE delete
 
 !> =============================================================================
 !> Reset unique patch ids.  A critical region is OK; this is only done once.
