@@ -421,8 +421,8 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   do i=1,3
     sm => source%mesh(i)
     tm => target%mesh(i)
-    la(i) = dist(i) + sm%r(sm%li) !+ sm%h(iv)*sm%d - tm%h(iv)*tm%d
-    ua(i) = dist(i) + sm%r(sm%ui) !+ sm%h(iv)*sm%d - tm%h(iv)*tm%d
+    la(i) = dist(i) + sm%lf + 0.01*sm%d !+ sm%h(iv)*sm%d - tm%h(iv)*tm%d
+    ua(i) = dist(i) + sm%uf - 0.01*sm%d !+ sm%h(iv)*sm%d - tm%h(iv)*tm%d
   end do
   if (source%level==target%level) then
     l = target_index (la, nearest=.true.)
