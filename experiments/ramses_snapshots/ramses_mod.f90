@@ -20,6 +20,7 @@ MODULE ramses_mod
   USE list_mod
   USE task_list_mod
   USE experiment_mod
+  USE scene_mod
   implicit none
   private
 
@@ -40,7 +41,8 @@ MODULE ramses_mod
     real(kind=8):: size, d_min, tt_min
     logical :: centre_on_sink, merge_octs
     character(len=128):: path
-    type(task_list_t):: task_list
+    type(task_list_t), pointer:: task_list
+    type(task_list_t), pointer:: ramses_task_list
   contains
     procedure :: init
     procedure :: read_snapshot
@@ -48,6 +50,10 @@ MODULE ramses_mod
     procedure :: read_sink
     procedure :: merge_ramses_octs
     procedure :: evaluate
+    procedure :: create_cartesian
+    procedure :: create_level
+    procedure :: cartesian_init
+    procedure :: remove_ramses_patches
   end type
 
   type :: sink_t                        ! star data type
@@ -73,9 +79,12 @@ MODULE ramses_mod
     integer has_moved
     real(dp) dtold
   end type
+  logical, save:: make_cartesian        ! replace RAMSES patches
+  logical, save:: centre_on_sink        ! centre on the last sink
+  logical, save:: merge_octs            ! merge octs into larger patches
   type(sink_t):: sink
-
 CONTAINS
+
 !> =============================================================================
 !> Facilitate call to `ramses%read`.  All heavy lifting is done there
 !> =============================================================================
@@ -86,17 +95,16 @@ SUBROUTINE init (self, name)
   integer, save:: nout, minlvl, maxlvl, nmerged_max
   real, save:: xmin, xmax, ymin, ymax, zmin, zmax, rank_load
   real, save:: d_min, tt_min, size, size_au
-  logical, save :: centre_on_sink, merge_octs
   character(len=64), save:: path='.'
   namelist / init_params / nout, xmin, xmax, ymin, ymax, zmin, zmax, size, &
                            nmerged_max, minlvl, maxlvl, rank_load, path, &
-                           centre_on_sink, merge_octs
+                           centre_on_sink, merge_octs, make_cartesian
   !.............................................................................
   call trace_begin('ramses_t%init')
   call io%init ('ramses snapshot reader')
 
   !-----------------------------------------------------------------------------
-  ! The first thread reads the namelist parameters and save them
+  ! The first thread reads the namelist parameters and saves them
   !-----------------------------------------------------------------------------
   !$omp critical (init_cr)
   if (first_time) then
@@ -112,10 +120,11 @@ SUBROUTINE init (self, name)
     d_min = 1d-30 ! cgs
     tt_min = 5.   ! K
     path = './'
-    size = -1d0
+    size = 1d0
+    nmerged_max = 16
+    make_cartesian = .false.
     centre_on_sink = .false.
     merge_octs = .true.
-    nmerged_max = 16
     ! read namelist
     rewind (io%input); read (io%input,init_params)
     if (io%master) write(*, init_params)
@@ -144,16 +153,18 @@ SUBROUTINE init (self, name)
   self%size      = size
   self%centre_on_sink = centre_on_sink
   self%nmerged_max = nmerged_max
-  self%merge_octs = merge_octs
-
   !-----------------------------------------------------------------------------
   ! Each rank reads the RAMSES grids belonging to it, filling in the data,
   ! and initializing the patch structure of every grid.
   !-----------------------------------------------------------------------------
+  allocate (self%task_list)
   call self%read_snapshot()
 
   ! attempt to merge RAMSES 2**3 octs into larger patches
-  if (self%merge_octs) call self%merge_ramses_octs(nmerged_max)
+  if (merge_octs) call self%merge_ramses_octs(nmerged_max)
+
+  ! reorganize into refined, Cartesian patches
+  if (make_cartesian) call self%create_cartesian
 
   call trace_end
 END SUBROUTINE init
@@ -1429,5 +1440,141 @@ SUBROUTINE evaluate (self)
 
   call trace_end
 END SUBROUTINE evaluate
+
+!> =============================================================================
+!> Create a set of DISPATCH patches that cover the initial RAMSES patches
+!> =============================================================================
+SUBROUTINE create_cartesian (self)
+  class (ramses_t):: self
+  !.............................................................................
+  integer:: level
+  !-----------------------------------------------------------------------------
+  call trace%begin ('ramses_t%create_cartesian')
+  self%ramses_task_list => self%task_list       ! save old task list
+  allocate (self%task_list)                     ! allocate a new task list
+  call self%task_list%init                      ! initialize new task list
+  call set_levels                               ! respect initial RAMSES levels
+  do level=self%minlvl,self%maxlvl              ! for all levels
+    call self%create_level (level)              ! create level patches
+  end do
+  call self%remove_ramses_patches               ! remove initial RAMSES patches
+  call self%task_list%init_all_nbors            ! initialize nbor lists
+  call trace%end
+contains
+  subroutine set_levels
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  self%minlvl=100
+  link => self%ramses_task_list%head
+  do while (associated(link))
+    self%minlvl = min (self%minlvl, link%task%level)
+    link => link%next
+  end do
+  self%maxlvl = max (self%maxlvl, self%minlvl)
+  end subroutine
+END SUBROUTINE create_cartesian
+
+!> =============================================================================
+!> Create patches on the given level, at all Cartesian locations where there is
+!> overlap with a RAMSES patch with at least that level
+!> =============================================================================
+SUBROUTINE create_level (self, level)
+  class (ramses_t):: self
+  integer:: level
+  !.............................................................................
+  integer:: patches_per_direction(3), ix, iy, iz
+  logical:: keep_this_patch
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  class(patch_t), pointer:: patch, ramses_patch
+  !-----------------------------------------------------------------------------
+  call trace%begin ('ramses_t%create_level')
+  patches_per_direction = 2**level/scene%patch_n
+  do iz=1,patches_per_direction(3)
+    do iy=1,patches_per_direction(2)
+      do ix=1,patches_per_direction(1)
+        allocate (patch_t:: task)
+        patch => task2patch (task)
+        call self%cartesian_init (patch, level, ix, iy, iz)
+        if (level == self%minlvl) then
+          keep_this_patch = .true.
+        else
+          keep_this_patch = .false.
+          link => self%ramses_task_list%head
+          do while (associated(link))
+            ramses_patch => task2patch (link%task)
+            if (overlaps (ramses_patch, patch)) then
+              if (ramses_patch%level >= level) then
+                 keep_this_patch = .true.
+              end if
+            end if
+            link => link%next
+          end do
+        end if
+        if (keep_this_patch) then
+          call patch%init
+          call self%task_list%append (task)
+        else
+          deallocate (patch)
+        end if
+      end do
+    end do
+  end do
+  call trace%end
+  return
+contains
+  !-----------------------------------------------------------------------------
+  ! Determine if two simple Cartesian patches overlap, using a minimum of info
+  !-----------------------------------------------------------------------------
+  logical function overlaps (patch1, patch2)
+  class(patch_t), pointer:: patch1, patch2
+  real(8):: distance(3)
+  !-----------------------------------------------------------------------------
+  distance = patch1%position - patch2%position
+  distance = mod (distance + 1.5_8*self%size, self%size) - 0.5_8*self%size
+  overlaps = all(abs(distance) < 0.5_8*(patch1%size + patch2%size + patch1%ds))
+  end function overlaps
+END SUBROUTINE create_level
+
+!> =============================================================================
+!> Initialize a minimum amount of patch information in a Cartesian arrangement
+!> This assumes that positions lie btw 0.0 and self%size
+!> =============================================================================
+SUBROUTINE cartesian_init (self, patch, level, ix, iy, iz)
+  class (ramses_t):: self
+  class (patch_t), pointer:: patch
+  integer:: level, ix, iy, iz
+  !.............................................................................
+  call trace%begin ('ramses_t%cartesian_init')
+  patch%n = scene%patch_n
+  patch%ds = self%size/2**level
+  patch%size = patch%ds*patch%n
+  patch%position = (ix-0.5d0)*patch%size(1) &
+                 + (iy-0.5d0)*patch%size(2) &
+                 + (iz-0.5d0)*patch%size(3)
+  call trace%end
+END SUBROUTINE cartesian_init
+
+!> =============================================================================
+!> Remove the initial RAMSES patches, and their links in the task list
+!> =============================================================================
+SUBROUTINE remove_ramses_patches (self)
+  class (ramses_t):: self
+  !.............................................................................
+  class(link_t), pointer:: link, next
+  class(patch_t), pointer:: patch
+  !-----------------------------------------------------------------------------
+  call trace%begin ('ramses_t%remove_ramses_patches')
+  link => self%ramses_task_list%head
+  do while (associated(link))
+    next => link%next
+    patch => task2patch (link%task)
+    call patch%delete
+    deallocate (link%task)
+    deallocate (link)
+    link => next
+  end do
+  call trace%end
+END SUBROUTINE remove_ramses_patches
 
 END MODULE ramses_mod
