@@ -1496,44 +1496,46 @@ SUBROUTINE create_level (self, level)
   class (ramses_t):: self
   integer:: level
   !.............................................................................
-  integer:: patches_per_direction(3), ix, iy, iz
+  integer:: m(3), ix, iy, iz, n, i(3)
   logical:: keep_this_patch
   class(link_t), pointer:: link
   class(task_t), pointer:: task
-  class(patch_t), pointer:: patch, ramses_patch
+  class(patch_t), pointer:: ramses_patch
+  integer(2), allocatable:: flag(:,:,:)
+  real(8):: size(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('ramses_t%create_level')
-  patches_per_direction = 2**level/scene%patch_n
-  do iz=1,patches_per_direction(3)
-    do iy=1,patches_per_direction(2)
-      do ix=1,patches_per_direction(1)
-        allocate (patch_t:: task)
-        patch => task2patch (task)
-        call self%cartesian_init (patch, level, ix, iy, iz)
-        if (level == self%minlvl) then
-          keep_this_patch = .true.
-        else
-          keep_this_patch = .false.
-          link => self%ramses_task_list%head
-          do while (associated(link))
-            ramses_patch => task2patch (link%task)
-            if (overlaps (ramses_patch, patch)) then
-              if (ramses_patch%level >= level) then
-                 keep_this_patch = .true.
-              end if
-            end if
-            link => link%next
-          end do
-        end if
-        if (keep_this_patch) then
-          call patch%init
-          call self%task_list%append (task)
-        else
-          deallocate (patch)
+  !-----------------------------------------------------------------------------
+  ! Create a flag-map, indicating where there should be patches
+  !-----------------------------------------------------------------------------
+  m = 2**level/scene%patch_n
+  allocate (flag(m(1),m(2),m(3)))
+  flag = 0
+  size = self%size/2**level*scene%patch_n
+  link => self%ramses_task_list%head
+  do while (associated(link))
+    ramses_patch => task2patch (link%task)
+    if (ramses_patch%level == level) then
+      i = 1 + floor(ramses_patch%position/size)
+      flag(i(1),i(2),i(3)) = 1
+    end if
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Create patches where the flag is set
+  !-----------------------------------------------------------------------------
+  n = 0
+  do iz=1,m(3)
+    do iy=1,m(2)
+      do ix=1,m(1)
+        if (flag(ix,iy,iz)>0) then
+          call self%cartesian_init (level, ix, iy, iz)
+          n = n+1
         end if
       end do
     end do
   end do
+  deallocate (flag)
   call trace%end
   print *, 'create_level: level, patches =', level, n
   return
@@ -1555,18 +1557,25 @@ END SUBROUTINE create_level
 !> Initialize a minimum amount of patch information in a Cartesian arrangement
 !> This assumes that positions lie btw 0.0 and self%size
 !> =============================================================================
-SUBROUTINE cartesian_init (self, patch, level, ix, iy, iz)
+SUBROUTINE cartesian_init (self, level, ix, iy, iz)
   class (ramses_t):: self
-  class (patch_t), pointer:: patch
   integer:: level, ix, iy, iz
   !.............................................................................
+  class (task_t), pointer:: task
+  class (patch_t), pointer:: patch
+  !-----------------------------------------------------------------------------
   call trace%begin ('ramses_t%cartesian_init')
+  allocate (patch_t:: task)
+  patch => task2patch (task)
+  patch%level = level
   patch%n = scene%patch_n
   patch%ds = self%size/2**level
   patch%size = patch%ds*patch%n
   patch%position = (ix-0.5d0)*patch%size(1) &
                  + (iy-0.5d0)*patch%size(2) &
                  + (iz-0.5d0)*patch%size(3)
+  call patch%init
+  call self%task_list%append (task)
   call trace%end
 END SUBROUTINE cartesian_init
 
