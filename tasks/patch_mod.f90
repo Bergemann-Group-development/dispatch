@@ -20,6 +20,7 @@ MODULE patch_mod
   USE mesh_mod
   USE boundaries_mod
   USE index_mod
+  USE scene_mod
   implicit none
   private
   integer, parameter:: ndim = 3
@@ -35,7 +36,7 @@ MODULE patch_mod
     integer:: ndim = ndim               ! number of dimensions
     integer:: nv=0                      ! number of variables
     integer:: nw=2                      ! number of work indices
-    integer:: msplit=2                  ! how to split a patch when refining
+    integer:: msplit=0                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
     integer:: check_refine_next=0
     logical:: mem_allocated=.false.
@@ -387,6 +388,10 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   if (present(nt      )) self%nt       = nt
   if (present(nv      )) self%nv       = nv
   if (present(nw      )) self%nw       = nw
+  !-----------------------------------------------------------------------------
+  ! Pass the desired patch dimension via the scene_mod to refine_mod
+  !-----------------------------------------------------------------------------
+  scene%patch_n = n
   !-----------------------------------------------------------------------------
   self%llc_cart = self%position - 0.5 * self%size
   self%llc_nat = self%llc_cart

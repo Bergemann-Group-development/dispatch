@@ -13,6 +13,7 @@ MODULE scene_mod
     integer:: n_initial = 0
     integer:: n_add = 0
     integer:: n_patch_total = 0
+    integer:: patch_n(3) = 0
     real:: f_zoom(3)=1.0
   end type
   type(scene_t):: scene

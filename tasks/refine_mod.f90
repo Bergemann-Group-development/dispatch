@@ -23,6 +23,7 @@ MODULE refine_mod
   USE patch_mod
   USE solver_mod
   USE sinkparticles_mod
+  USE scene_mod
   implicit none
   private
   !
@@ -130,6 +131,13 @@ FUNCTION refine_needed (self, tasklist, link)
   !------------------------------------------------------------------------
   ! sink particle creation
   new_sink = self%check_sinkparticle (tasklist, link)
+  !
+  ! Ensure consistent patch size (e.g. after RAMSES startup)
+  if (.not.all(patch%n==scene%patch_n)) then
+    refine_needed = .true.
+    patch%msplit = 1
+  end if
+  if (io%verbose>1) print *, patch%id, 'refine%needed (patch_n)   =', refine_needed
   !
   ! Jeans criterion
   if (min_jeans > 0.0) refine_needed = refine_needed .or. self%check_Jeans(patch)
@@ -268,6 +276,11 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child%llc_cart = child%position - merge(0.5,0.0,child%n>1) * child%size  ! lower left corner
   child%llc_nat = child%llc_cart                     ! FIXME!: this form only applies for Cartesian coords.
   !------------------------------------------------------------------------
+  ! Force consistent resolution in new patches, overriding the resolution
+  ! inherited from the parent patch.
+  !------------------------------------------------------------------------
+  child%n = scene%patch_n
+  !------------------------------------------------------------------------
   ! Reset flags (FIXME: Would it be better to just reset `status` to zero?)
   !------------------------------------------------------------------------
   call child%clear(bits%root_grid)
@@ -342,9 +355,13 @@ SUBROUTINE split_patch (self, tlist, this)
   !.............................................................................
   if (this%task%is_set(bits%not_leaf)) return
   call trace%begin('refine_t%split_patch', 1)
-  nsplit = refinement_ratio
 
   this_patch => task2patch(this%task)
+  if (this_patch%msplit>0) then
+    nsplit = this_patch%msplit
+  else
+    nsplit = refinement_ratio
+  end if
 
   where (this_patch%size==0 .or. this_patch%n==1)
     nsplit = 1
