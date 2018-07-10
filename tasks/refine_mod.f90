@@ -32,6 +32,7 @@ MODULE refine_mod
     procedure:: init
     procedure:: refine_needed
     procedure:: check_current
+    procedure:: check_cubical
     procedure:: check_jeans
     procedure:: shock_and_cd_detector
     procedure:: refine_region
@@ -55,6 +56,7 @@ MODULE refine_mod
   real, dimension(ngradvar):: tol_grad=0.0    ! Tolerance values for gradient detector
   character(len=32), dimension(ngradvar):: grad_var=""
   logical:: do_refine=.false.                 ! Flag to turn the entire process on or off 
+  logical:: force_cubical=.false.             ! Force cubical patches
   !
   type(refine_t), public:: refine
 
@@ -68,7 +70,7 @@ SUBROUTINE init (self)
   logical, save:: first_time = .true.
   namelist /refine_params/ do_refine, levelmax, check_interval, refinement_ratio, &
     refine_from_t, refine_until_t, min_dx, max_dx, min_jeans, tol_shock, &
-    tol_contact, tol_grad, grad_var, region_llc, region_urc
+    tol_contact, tol_grad, grad_var, region_llc, region_urc, force_cubical
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%init')
   !$omp critical (refine_cr)
@@ -132,11 +134,8 @@ FUNCTION refine_needed (self, tasklist, link)
   ! sink particle creation
   new_sink = self%check_sinkparticle (tasklist, link)
   !
-  ! Ensure consistent patch size (e.g. after RAMSES startup)
-  if (.not.all(patch%n==scene%patch_n)) then
-    refine_needed = .true.
-    patch%msplit = 1
-  end if
+  ! Ensure consistent, cubical patch size (e.g. after RAMSES startup)
+  if (force_cubical) refine_needed = refine_needed .or. self%check_cubical(patch)
   if (io%verbose>1) print *, patch%id, 'refine%needed (patch_n)   =', refine_needed
   !
   ! Jeans criterion
@@ -443,6 +442,22 @@ FUNCTION check_nbor_support (self, tlist, link, check_only) RESULT (refine_it)
 
   call trace%end
 END FUNCTION check_nbor_support
+
+!> =============================================================================
+!> Check that the patch dimensions are the desired cubical ones
+!> =============================================================================
+FUNCTION check_cubical (self, patch) RESULT (refine_it)
+  class(refine_t):: self
+  class(patch_t), pointer:: patch
+  logical:: refine_it
+  !.............................................................................
+  if (all(patch%n==scene%patch_n)) then
+    refine_it = .false.
+  else
+    refine_it = .true.
+    patch%msplit = 1
+  end if
+END FUNCTION check_cubical
 
 !> =============================================================================
 !> Calculate the Jeans length and compare it to the patch resolution.
