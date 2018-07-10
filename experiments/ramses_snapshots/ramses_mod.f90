@@ -161,6 +161,7 @@ SUBROUTINE init (self, name)
   ! and initializing the patch structure of every grid.
   !-----------------------------------------------------------------------------
   allocate (self%task_list)
+  call self%task_list%init ('ramses_snapshot')
   call self%read_snapshot()
 
   ! attempt to merge RAMSES 2**3 octs into larger patches
@@ -945,12 +946,6 @@ SUBROUTINE read_snapshot (self)
   deallocate(ngrid_file, ngrid_level, cpu_list, cpu_read, xc, father, &
              neighbour, levels, ncellsum)
 
-  ! finish task list initialisation
-  print*,'Finishing task list initialisation (including neighbour determination).'
-  print*,'This could take a while...'
-  call self%task_list%init ('ramses_snapshot')
-  call self%task_list%init_all_nbors
-
   call trace_end
 END SUBROUTINE read_snapshot
 
@@ -1118,6 +1113,11 @@ SUBROUTINE merge_ramses_octs (self, n_max)
   logical :: merged
   !.............................................................................
   call trace_begin('ramses_mod::merge_ramses_octs')
+
+  ! finish task list initialisation
+  print*,'Finishing oct list initialisation (including neighbour determination).'
+  print*,'This could take a while...'
+  call self%task_list%init_all_nbors()
 
   patch_count = 0
   merge_count = 0
@@ -1378,18 +1378,17 @@ SUBROUTINE evaluate (self)
   real(8):: cost1, cost2, cost3
   !.............................................................................
   call trace_begin('ramses_t%evaluate')
-
-  link => self%task_list%head
   cost1 = 0d0
   cost2 = 0d0
   cost3 = 0d0
   ctmax = 0d0
   level = 0
   dsmin = 0.5d0**self%maxlvl
+  link => self%task_list%head
   do while (associated(link))
     task => link%task
     select type (task)
-    class is (experiment_t)
+    class is (patch_t)
       if (io%verbose>1) &
         print *,'PATCH:', task%id, task%level, task%mesh%n, task%mem(3,3,3,1,task%it,1), task%it
       mem => task%mem(:,:,:,:,task%it,1)
@@ -1447,10 +1446,9 @@ SUBROUTINE evaluate (self)
     link => link%next
   end do
   cost3 = cost3*umax
-  print '(a,i4,1p,3e12.4)', 'level, umax:', level, umax
-  print '(a,1p,3e12.4)', 'costs:', cost1, cost2, cost3
-  print '(a,1p,3e12.4)', 'costs:', cost3/cost1, cost3/cost2
-
+  print '(a,i4,1p,e12.4,i8)', ' level, umax:', level, umax
+  print '(a,1p,3e12.4)', ' costs:', cost1, cost2, cost3
+  print '(a,1p,3e12.4)', ' costs ratios:     ', cost3/max(tiny(1e0),cost1), cost3/max(tiny(1e0),cost2)
   call trace_end
 END SUBROUTINE evaluate
 
