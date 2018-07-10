@@ -335,6 +335,8 @@ SUBROUTINE download_link (self, link, all_cells, only)
           call same (target, source, filled, all_cells, only=only)
         else if ((source%level-target%level) == -1) then
           call different_prolong (target, source, filled, all_cells, only=only)
+        else if (source%level < target%level .and. present(all_cells)) then
+          call different_prolong (target, source, filled, all_cells, only=only)
         else if ((source%level-target%level) == 1) then
           call different_restrict (target, source, filled, only=only)
         end if

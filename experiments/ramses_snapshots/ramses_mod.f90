@@ -1580,20 +1580,22 @@ SUBROUTINE cartesian_init (self, level, ix, iy, iz)
 END SUBROUTINE cartesian_init
 
 !> =============================================================================
-!> Remove the initial RAMSES patches, and their links in the task list
+!> Download values from the RAMSES octs to the DISPATCH patches
 !> =============================================================================
 SUBROUTINE download_values (self)
   class (ramses_t):: self
   !.............................................................................
   class(link_t), pointer:: link
+  class(patch_t), pointer:: patch
   real:: d_min, d_min1, d_min2
   !-----------------------------------------------------------------------------
   call trace%begin ('ramses_t%download_values')
+  call download%init
   d_min = 1e30
   link => self%task_list%head
   do while (associated(link))
     call self%ramses_task_list%init_nbors (link)
-    call download%download_link (link)
+    call download%download_link (link, all_cells=.true.)
     patch => task2patch (link%task)
     d_min1 =        minval(patch%mem(:,:,:,patch%idx%d,patch%it,1))
     d_min2 = patch%fminval(patch%mem(:,:,:,patch%idx%d,patch%it,1))
