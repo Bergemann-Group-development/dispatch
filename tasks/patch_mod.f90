@@ -391,7 +391,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   !-----------------------------------------------------------------------------
   ! Pass the desired patch dimension via the scene_mod to refine_mod
   !-----------------------------------------------------------------------------
-  scene%patch_n = n
+  scene%patch_n = self%n
   !-----------------------------------------------------------------------------
   self%llc_cart = self%position - 0.5 * self%size
   self%llc_nat = self%llc_cart
