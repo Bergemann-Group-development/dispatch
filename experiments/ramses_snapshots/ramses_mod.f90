@@ -94,13 +94,13 @@ SUBROUTINE init (self, name)
   class(ramses_t):: self
   character(len=*), optional:: name
   logical, save:: first_time=.true.
-  integer, save:: nout, minlvl, maxlvl, nmerged_max
+  integer, save:: nout, minlvl, maxlvl, nmerged_max, patch_n
   real, save:: xmin, xmax, ymin, ymax, zmin, zmax, rank_load
   real, save:: d_min, tt_min, size, size_au
   character(len=64), save:: path='.'
   namelist / init_params / nout, xmin, xmax, ymin, ymax, zmin, zmax, size, &
                            nmerged_max, minlvl, maxlvl, rank_load, path, &
-                           centre_on_sink, merge_octs, make_cartesian
+                           centre_on_sink, merge_octs, make_cartesian, patch_n
   !.............................................................................
   call trace_begin('ramses_t%init')
   call io%init ('ramses snapshot reader')
@@ -127,6 +127,7 @@ SUBROUTINE init (self, name)
     make_cartesian = .false.
     centre_on_sink = .false.
     merge_octs = .true.
+    patch_n = 16
     ! read namelist
     rewind (io%input); read (io%input,init_params)
     if (io%master) write(*, init_params)
@@ -166,6 +167,7 @@ SUBROUTINE init (self, name)
   if (merge_octs) call self%merge_ramses_octs(nmerged_max)
 
   ! reorganize into refined, Cartesian patches
+  scene%patch_n = patch_n
   if (make_cartesian) call self%create_cartesian
 
   call trace_end
