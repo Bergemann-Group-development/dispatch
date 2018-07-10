@@ -1,8 +1,9 @@
 &io_params
- verbose=2
+ verbose=0
  do_trace=f
  do_debug=f
  do_output=t
+ !id_debug=32770
 /
 
 &init_params

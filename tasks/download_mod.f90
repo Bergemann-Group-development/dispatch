@@ -339,12 +339,20 @@ SUBROUTINE download_link (self, link, all_cells, only)
           call different_restrict (target, source, filled, only=only)
         end if
       end if
-      if (target%id==io%id_debug) &
-        print '(a,1p,4e12.5)', 'min,max,fmin,fmaxval:', &
+      if (target%id==io%id_debug) then
+        print '(a,i6,1p,4e12.5)', 'source: id,min,max,fmin,fmaxval:', &
+                 source%id, &
+                 minval(source%mem(:,:,:,source%idx%d,source%it,1)), &
+                 maxval(source%mem(:,:,:,source%idx%d,source%it,1)), &
+                 source%fminval(source%idx%d), &
+                 source%fmaxval(source%idx%d)
+        print '(a,i6,1p,4e12.5)', 'target: id,min,max,fmin,fmaxval:', &
+                 target%id, &
                  minval(target%mem(:,:,:,target%idx%d,target%it,1)), &
                  maxval(target%mem(:,:,:,target%idx%d,target%it,1)), &
                  target%fminval(target%idx%d), &
                  target%fmaxval(target%idx%d)
+      end if
     else
       if (trim(source%kind)=='rt_solver') then
         if (abs(source%level-target%level) < 2) then
@@ -530,10 +538,10 @@ SUBROUTINE same (target, source, filled, all_cells, only)
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
-    !if (target%id==io%id_debug) print'("l:",3i3,3x,"u:",3i3,3x,"o:",3i3)',l,u,o
+    if (target%id==io%id_debug) print'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)',target%id,source%id,l,u,o
     l = max(l,source%mesh%lb-o)
     u = min(u,source%mesh%ub-o)
-    !if (target%id==io%id_debug) print'("l:",3i3,3x,"u:",3i3,3x,"o:",3i3)',l,u,o
+    if (target%id==io%id_debug) print'(2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)',target%id,source%id,l,u,o
     if (product(max(0,u-l+1))>0) then
       !---------------------------------------------------------------------------
       ! Extend the pick-up region to fill the guard zones also in the BC regions
@@ -685,8 +693,9 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_prolong', itimer=itimer)
   if (io%verbose > 1) &
-    print *,'MK different_prolong; target:', target%id, target%level, &
-                                  'source:', source%id, source%level
+    print '(2(a,i7,i4,1p,3e11.3,4x))', &
+      'MK different_prolong; target:', target%id, target%level, target%ds, &
+                            'source:', source%id, source%level, source%ds
   call source%time_interval (target%time, jt, pt)
   if (present(only)) then
     iv1 = only
