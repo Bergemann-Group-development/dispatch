@@ -20,6 +20,7 @@ MODULE ramses_mod
   USE list_mod
   USE task_list_mod
   USE experiment_mod
+  USE download_mod
   USE scene_mod
   implicit none
   private
@@ -53,6 +54,7 @@ MODULE ramses_mod
     procedure :: create_cartesian
     procedure :: create_level
     procedure :: cartesian_init
+    procedure :: download_values
     procedure :: remove_ramses_patches
   end type
 
@@ -1457,6 +1459,7 @@ SUBROUTINE create_cartesian (self)
   do level=self%minlvl,self%maxlvl              ! for all levels
     call self%create_level (level)              ! create level patches
   end do
+  call self%download_values                     ! fill values into new patches
   call self%remove_ramses_patches               ! remove initial RAMSES patches
   call self%task_list%init_all_nbors            ! initialize nbor lists
   call trace%end
@@ -1554,6 +1557,24 @@ SUBROUTINE cartesian_init (self, patch, level, ix, iy, iz)
                  + (iz-0.5d0)*patch%size(3)
   call trace%end
 END SUBROUTINE cartesian_init
+
+!> =============================================================================
+!> Remove the initial RAMSES patches, and their links in the task list
+!> =============================================================================
+SUBROUTINE download_values (self)
+  class (ramses_t):: self
+  !.............................................................................
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  call trace%begin ('ramses_t%download_values')
+  link => self%task_list%head
+  do while (associated(link))
+    call self%ramses_task_list%init_nbors (link)
+    call download%download_link (link)
+    link => link%next
+  end do
+  call trace%end
+END SUBROUTINE download_values
 
 !> =============================================================================
 !> Remove the initial RAMSES patches, and their links in the task list
