@@ -319,9 +319,9 @@ SUBROUTINE init_default (self)
   ! Read and set patch parameters; these may have been set by the calling code
   !-----------------------------------------------------------------------------
   !$omp critical (input_cr)
-  nv   = self%nv
-  ng   = self%ng
-  periodic = self%periodic
+  !nv   = self%nv
+  !ng   = self%ng
+  !periodic = self%periodic
   if (first_time) then
     size = self%size
     n    = self%n
