@@ -164,7 +164,7 @@ SUBROUTINE update (self)
   call godunov (self)
   if (isothermal) &
     self%mem(:,:,:,self%idx%e,self%new,1) = &
-    self%mem(:,:,:,self%idx%d,self%new,1)
+    self%mem(:,:,:,self%idx%d,self%new,1)*csound**2
   if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Add external force as source term
@@ -408,8 +408,7 @@ subroutine check_small (self, uu)
     w =  uu(i,j,k,self%idx%pz)*c
     ekin = 0.5*d*(u**2+v**2+w**2)
     if (isothermal) then
-      p = d*csound**2
-      uu(i,j,k,self%idx%e) = p+ekin
+      uu(i,j,k,self%idx%e) = max(uu(i,j,k,self%idx%e), smallr*smallc**2)
     else
       p = (uu(i,j,k,self%idx%e)-ekin)*(gamma-one)
       if (p < smallr*smallc**2) then
