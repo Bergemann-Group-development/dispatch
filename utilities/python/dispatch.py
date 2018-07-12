@@ -1,20 +1,54 @@
+# -*- coding: utf-8 -*-
+
+"""
+   Class definitions for accessing DISPATCH meta and binary data.
+
+   Syntax:
+       s=dispatch.snapshot(3)               # read data/00003/
+       s=dispatch.snapshot(3,verbose=1)     # print id and position
+       s=dispatch.snapshot(3,verbose=2)     # print id and all attribues
+       s=dispatch.snapshot(3,'run')         # read data/run/00003/
+       s=dispatch.snapshot(3,'run','tmp')   # read tmp/run/00003/
+       ss=dispatch.snapshots()              # read all data/?????/
+       ss=dispatch.snapshots('run')         # read all data/run/?????/
+       ss=dispatch.snapshots('run','tmp')   # read all tmp/run/?????/
+       p=s.patches[10]                      # patch with ID=11
+       dispatch.attributes(p)               # prettyprint patch attributes
+"""
+
+# Pythn 2/3 compatibility
+from __future__ import print_function
 
 import os
 import f90nml
-import numpy
-from obj import obj
+import numpy as np
 
-def rundata(run,data):
-    """ Construct the data/run/ directory name """
-    if run=='':
-        rundir=data
-    else:
-        rundir=data+'/'+run
-    return rundir
+def _file(d,f):
+    """ Join a dir and a filename, and check that the file exists
+    """
+    p=os.path.join(d,f)
+    assert (os.path.isfile(p)), 'the file {} does not exist'.format(p)
+    return p
 
-def map_data(patch):
-    """ Map patch data to patch.data, returning an array of variables """
-    bytes=long(4*numpy.product(patch.ncell))
+def _dir(d,subd):
+    """ Join a dir and subdir, and check that the dir exists
+    """
+    p=os.path.join(d,subd)
+    assert (os.path.isdir(p)), 'the directory {} does not exist'.format(p)
+    return p
+
+class _obj(object):
+    """ Transform a namelist dict to an object, turning lists into numpy arrays
+    """
+    def __init__(self, d):
+        for a, b in d.items():
+            ba = np.array(b) if isinstance(b, list) else b
+            setattr(self, a, _obj(b) if isinstance(b, dict) else ba)
+
+def _data(patch):
+    """ Map patch data to patch.data, returning an array of variables
+    """
+    bytes=long(4*np.product(patch.ncell))
     shape=tuple(patch.n)
     data=[]
     for iv in range(patch.nv):
@@ -22,15 +56,23 @@ def map_data(patch):
             offset=bytes*((patch.id-1) + patch.iout*patch.ntotal + iv*patch.ntotal*patch.nv)
         elif patch.ioformat==6:
             offset=bytes*(iv + (patch.id-1)*patch.nv + patch.iout*patch.ntotal*patch.nv)
-        var=numpy.memmap(patch.file, dtype=numpy.float32, offset=offset, 
+        var=np.memmap(patch.datafile, dtype=np.float32, offset=offset,
                          mode='r', order='F', shape=shape)
         data.append(var)
     return data
 
-def patches(datadir,data):
-    """ Read all patch meta data in a directory """
+def attributes(patch):
+    print ('id: {:}'.format(patch.id))
+    dict=vars(patch)
+    for k,v in dict.items():
+        if k != 'data':
+            print ('{:>12}:  {}'.format(k,v))
+
+def _patches(datadir,data,verbose=0):
+    """ Read all patch meta data in a directory
+    """
     try:
-        files=[datadir+f for f in os.listdir(datadir) if f.endswith('patches.nml')]
+        files=[_file(datadir,f) for f in os.listdir(datadir) if f.endswith('patches.nml')]
     except:
         return None
     # Convert list of patch dicts to list of patch objects
@@ -38,42 +80,63 @@ def patches(datadir,data):
     for f in files:
         dlist=f90nml.read(f)
         for dict in dlist['patch_nml']:
-            patch=obj(dict)
-            patch.file=data+'/00000/snapshot.dat'
-            patch.data=map_data(patch)
+            patch=_obj(dict)
+            patch.file=f
+            patch.datafile=_file(data,'snapshots.dat')
+            if not os.path.isfile(patch.datafile):
+                patch.datafile=_file(_dir(data,'00000'),'snapshot.dat')
+            assert os.path.isfile(patch.datafile), '{} does not exist'.format(patch.datafile)
+            patch.data=_data(patch)
             patches.append(patch)
     # Sort list of patch objects by patch id
     ids=[p.id for p in patches]
-    ii=numpy.argsort(ids)
+    ii=np.argsort(ids)
     sorted=[]
     for i in ii:
-        sorted.append(patches[i])
+        patch=patches[i]
+        if verbose==1:
+            print ('id:{:4d}  pos: {}'.format(patch.id,patch.position))
+        elif verbose>1:
+            attributes(patch)
+        sorted.append(patch)
     return sorted
 
 class snapshot():
-    """ Return a snapshot worth of metadata """
-    def __init__(self, iout=0, run='', data='data', datadir=''):
-        rundir=rundata(run,data)
+    """ Return a snapshot worth of metadata, including memory mapped variables
+    """
+    def __init__(self, iout=0, run='', data='data', datadir='', verbose=0):
+        rundir=_dir(data,run)
         if datadir=='':
-            datadir=rundir+'/{:05d}/'.format(iout)
+            datadir=_dir(rundir,'{:05d}'.format(iout))
         try:
-            files=[datadir+f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
-            dlist=f90nml.read(files[0])['snapshot_nml']
-            for a, b in dlist.items():
-                setattr(self, a, b)
-            self.patches=patches(datadir,data)
+            files=[f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
+            for f in files:
+                file=_file(datadir,f)
+                if verbose>0:
+                    print (file)
+                dlist=f90nml.read(file)['snapshot_nml']
+                # Add snapshot parameters as attributes to the snapshot
+                for a, b in dlist.items():
+                    setattr(self, a, b)
+                # Add array of patch instances
+                self.patches=_patches(datadir,data,verbose=verbose)
+            if not hasattr(self,'patches'):
+                self.patches=[]
         except:
             self.patches=[]
 
-def snapshots(run='',data='data'):
-    """ Return an array of all snapshots in the data/run/ directory """
-    run=rundata(run,data)
+def snapshots(run='',data='data', verbose=0):
+    """ Return an array of all snapshots in the data/run/ directory
+    """
+    rund=_dir(data,run)
     snaps=[]
-    for dirname, subdirs, files in os.walk(run):
-        if dirname==run:
+    for dirname, subdirs, files in os.walk(rund):
+        if dirname==rund:
             for subdir in subdirs:
-                snap=snapshot(datadir=run+'/'+subdir+'/')
+                snap=snapshot(datadir=_dir(rund,subdir))
                 if len(snap.patches)>0:
                     snaps.append(snap)
+                    if verbose>0:
+                        print (_dir(rund,subdir))
             break
     return snaps
