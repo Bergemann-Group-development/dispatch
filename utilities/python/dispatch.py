@@ -53,12 +53,18 @@ def _data(patch):
     data=[]
     for iv in range(patch.nv):
         if patch.ioformat==5:
-            offset=bytes*((patch.id-1) + patch.iout*patch.ntotal + iv*patch.ntotal*patch.nv)
+            offset = (patch.id-1) + iv*patch.ntotal
         elif patch.ioformat==6:
-            offset=bytes*(iv + (patch.id-1)*patch.nv + patch.iout*patch.ntotal*patch.nv)
-        var=np.memmap(patch.datafile, dtype=np.float32, offset=offset,
-                         mode='r', order='F', shape=shape)
-        data.append(var)
+            offset = iv + (patch.id-1)*patch.nv
+        offset += patch.iout*patch.ntotal*patch.nv
+        offset *= bytes
+        try:
+            var=np.memmap(patch.datafile, dtype=np.float32, offset=offset,
+                          mode='r', order='F', shape=shape)
+            data.append(var)
+        except:
+            print ('Error in memmap:')
+            print ('file:{} offset:{} shape:{}'.format(patch.datafile,offset,shape))
     return data
 
 def attributes(patch):
@@ -82,9 +88,10 @@ def _patches(datadir,data,verbose=0):
         for dict in dlist['patch_nml']:
             patch=_obj(dict)
             patch.file=f
-            patch.datafile=_file(data,'snapshots.dat')
-            if not os.path.isfile(patch.datafile):
+            if patch.ioformat==5:
                 patch.datafile=_file(_dir(data,'00000'),'snapshot.dat')
+            else:
+                patch.datafile=_file(data,'snapshots.dat')
             assert os.path.isfile(patch.datafile), '{} does not exist'.format(patch.datafile)
             patch.data=_data(patch)
             patches.append(patch)
@@ -108,21 +115,18 @@ class snapshot():
         rundir=_dir(data,run)
         if datadir=='':
             datadir=_dir(rundir,'{:05d}'.format(iout))
-        try:
-            files=[f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
-            for f in files:
-                file=_file(datadir,f)
-                if verbose>0:
-                    print (file)
-                dlist=f90nml.read(file)['snapshot_nml']
-                # Add snapshot parameters as attributes to the snapshot
-                for a, b in dlist.items():
-                    setattr(self, a, b)
-                # Add array of patch instances
-                self.patches=_patches(datadir,data,verbose=verbose)
-            if not hasattr(self,'patches'):
-                self.patches=[]
-        except:
+        files=[f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
+        for f in files:
+            file=_file(datadir,f)
+            if verbose>0:
+                print (file)
+            dlist=f90nml.read(file)['snapshot_nml']
+            # Add snapshot parameters as attributes to the snapshot
+            for a, b in dlist.items():
+                setattr(self, a, b)
+            # Add array of patch instances
+            self.patches=_patches(datadir,data,verbose=verbose)
+        if not hasattr(self,'patches'):
             self.patches=[]
 
 def snapshots(run='',data='data', verbose=0):
