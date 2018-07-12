@@ -29,6 +29,7 @@ MODULE data_io_mod
     procedure:: init
     procedure:: output
     procedure, nopass:: output_txt
+    procedure, nopass:: output_nml
     procedure:: input
     procedure, nopass:: close
   end type
@@ -50,6 +51,9 @@ SUBROUTINE init (self, task)
         call direct_io%init (task)
       else if (io%method=='parallel') then
         call parallel_io%init (task)
+      else if (io%method=='paralle5') then
+        io%format = 5
+        call parallel_io%init (task)
       end if
     end select
   end if
@@ -70,6 +74,7 @@ SUBROUTINE output (self, patch, experiment_name)
   logical, save:: checked=.false.
   type(snapshot_t), pointer:: snapshot
   integer, save:: itimer=0
+  logical:: append
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
@@ -81,21 +86,27 @@ SUBROUTINE output (self, patch, experiment_name)
     end if
     !$omp end critical (outputname_cr)
     call os%mkdir_no (patch%iout)
-    call snapshot_list%count (patch, snapshot)
+    call snapshot_list%count (patch, snapshot, .false.)
+    append = (snapshot%ibuf < snapshot%nbuf-1)
     if      (io%method=='direct') then
       call direct_io%output (patch)
     else if (io%method=='legacy') then
       call legacy_io%output (patch)
-      call output_txt (patch, snapshot)
+      call output_txt (patch, append)
     else if (io%method=='buffered') then
       call buffered_io%output (patch)
-    else if (io%method=='parallel') then
+    else if (io%method=='paralle5') then
       io%format = 5
       call parallel_io%output (patch)
-      call output_txt (patch, snapshot)
+    else if (io%method=='parallel') then
+      io%format = 6
+      call parallel_io%output (patch)
     else
       call mpi%abort ('unknown io%method = '//io%method)
     end if
+    call output_nml (patch, append)
+    if (snapshot%ibuf==0) &
+      call snapshot_list%remove (snapshot)
     if (io%out_time==0.0) exit
     patch%iout = patch%iout+1
     patch%out_next = (nint(patch%out_next/io%out_time)+1)*io%out_time
@@ -122,7 +133,6 @@ SUBROUTINE input (self, patch, ok)
     !$omp end critical (data_io_cr)
   end if
   ok = .false.
-  call snapshot_list%count (patch, snapshot, input=.true.)
   if (patch%restart > 0) then
     if      (io%method=='direct') then
       call direct_io%input (patch, ok)
@@ -134,6 +144,8 @@ SUBROUTINE input (self, patch, ok)
       call mpi%abort ('unknown io%method = '//io%method)
     end if
   end if
+  if (ok) &
+    call snapshot_list%count (patch, snapshot, .true.)
   patch%t(patch%it) = patch%time
   if (ok .and. io%verbose>2) print *, patch%id, ' LEGACY INPUT'
   call trace%end
@@ -145,15 +157,14 @@ END SUBROUTINE input
 !> the text file I/O, and because snapshot%ibuf is consantly being modified by
 !> other threads (must be protected by the same critical region!).
 !> =============================================================================
-SUBROUTINE output_txt (patch, snapshot)
+SUBROUTINE output_txt (patch, append)
   class(patch_t):: patch
+  logical:: append
+  !.............................................................................
   real(8):: time
   integer:: l(3), u(3)
-  type(snapshot_t), pointer:: snapshot
-  !.............................................................................
   character(len=128) filename
   integer:: nlines=6
-  logical:: append
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
@@ -161,14 +172,8 @@ SUBROUTINE output_txt (patch, snapshot)
   !$omp critical (output_cr)
   l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
   u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
-  append = .false.
   if (io%format > 2) then
-     write (filename,'(a,i5.5,"/",i5.5,".rank")') trim(io%outputname), patch%iout, mpi%rank
-     if (associated(snapshot)) then
-       if (snapshot%ibuf < snapshot%nbuf-1) append=.true.
-     else
-       append = .true.
-     end if
+     write (filename,'(a,i5.5,"/rank_",i5.5,".txt")') trim(io%outputname), patch%iout, mpi%rank
   else
      write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), patch%iout, patch%id
   end if
@@ -178,14 +183,9 @@ SUBROUTINE output_txt (patch, snapshot)
   !-----------------------------------------------------------------------------
   ! Open the file, appending or not
   !-----------------------------------------------------------------------------
-  if (append) then
-    open  (io_unit%data, file=trim(filename)//'.txt', form='formatted', &
-           status='unknown', access='append')
-  else
-    open  (io_unit%data, file=trim(filename)//'.txt', form='formatted', &
-           status='unknown')
-    write (io_unit%data,'(i2.2)') io%format
-  end if
+  open  (io_unit%data, file=trim(filename), form='formatted', status='unknown', &
+         access=trim(merge('append    ','sequential',append)))
+  write (io_unit%data,'(i2.2)') io%format
   if (io%format==3 .or. io%format==4) write (io_unit%data,*) patch%id, nlines
   !-----------------------------------------------------------------------------
   ! Write the text info
@@ -203,6 +203,95 @@ SUBROUTINE output_txt (patch, snapshot)
   !$omp end critical (output_cr)
   call trace%end
 END SUBROUTINE output_txt
+
+!> =============================================================================
+!> Output text with patch info, either to individual files (io%format=1,2) or
+!> to one file per rank (io%format>2).  This is not threadsafe, both because of
+!> the text file I/O, and because snapshot%ibuf is consantly being modified by
+!> other threads (must be protected by the same critical region!).
+!> =============================================================================
+SUBROUTINE output_nml (patch, append)
+  class(patch_t):: patch
+  logical :: append
+  !.............................................................................
+  character(len=128)   :: filename
+  integer              :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
+                          nw, ntotal
+  integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
+  real                 :: gamma, quality
+  real(8)              :: time, dtime, out_next
+  real(8), dimension(3):: size, position, ds, box, velocity, &
+                          llc_nat, llc_cart, centre_nat
+  character(len=16)    :: kind, eos, opacity
+  namelist /snapshot_nml/ ioformat, iout, time, dtime, ntotal
+  namelist /patch_nml/ ioformat, iout, time, dtime, id, istep, mesh_type, &
+    position, size, ds, box, velocity, level, quality, gamma, &
+    ncell, li, ui, n, ng, gn, nv, nt, nw, ntotal, &
+    llc_nat, llc_cart, centre_nat, kind, eos, opacity
+  !-----------------------------------------------------------------------------
+  ! Write a small text file with info
+  !-----------------------------------------------------------------------------
+  call trace%begin ('data_io_t%output_nml')
+  !$omp critical (output_cr)
+  !-----------------------------------------------------------------------------
+  ! Write snapshot_nml to the file "data/run/rank_rrrrr_snapshot.nml"
+  !-----------------------------------------------------------------------------
+  ioformat = io%format
+  iout     = patch%iout
+  time     = patch%time
+  dtime    = patch%dtime
+  ntotal   = io%ntotal
+  if (mpi%master .and. .not.append) then
+    write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
+    open  (io_unit%data, file=trim(filename), form='formatted', status='unknown')
+    write (io_unit%data, snapshot_nml)
+    close (io_unit%data)
+    if (io%debug(2)) print'(a,3x,"time:",2f13.6)', &
+      ' data_io_t%output_nml: '//trim(filename), patch%out_next, patch%time
+  end if
+  !-----------------------------------------------------------------------------
+  ! Open the file "data/run/rank_rrrrr_patches.nml", appending or not
+  !-----------------------------------------------------------------------------
+  write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
+         trim(io%outputname), patch%iout, mpi%rank
+  open  (io_unit%data, file=trim(filename), form='formatted', status='unknown', &
+         access=trim(merge('append    ','sequential',append)))
+  !-----------------------------------------------------------------------------
+  ! Write the namelist info
+  !-----------------------------------------------------------------------------
+  l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
+  u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
+  ncell      = u-l+1
+  id         = patch%id
+  istep      = patch%istep
+  mesh_type  = patch%mesh_type
+  position   = patch%position
+  size       = patch%size
+  ds         = patch%ds
+  box        = patch%box
+  velocity   = patch%velocity
+  level      = patch%level
+  quality    = patch%quality
+  gamma      = patch%gamma
+  llc_nat    = patch%llc_nat
+  llc_cart   = patch%llc_cart
+  centre_nat = patch%centre_nat
+  li         = patch%li
+  ui         = patch%ui
+  n          = patch%n
+  gn         = patch%gn
+  ng         = patch%ng
+  nv         = patch%nv
+  nt         = patch%nt
+  nw         = patch%nw
+  kind       = patch%kind
+  eos        = patch%eos
+  opacity    = patch%opacity
+  write (io_unit%data, patch_nml)
+  close (io_unit%data)
+  !$omp end critical (output_cr)
+  call trace%end
+END SUBROUTINE output_nml
 
 !> =============================================================================
 !> Close the data I/O

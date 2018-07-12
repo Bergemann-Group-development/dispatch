@@ -31,6 +31,7 @@ CONTAINS
 SUBROUTINE init (self, label)
   class(cartesian_t):: self
   character(len=*), optional:: label
+  !.............................................................................
   type(task_list_t):: task_list
   type(task_list_t), pointer:: patch_list
   class(link_t), pointer:: link, next, nbor
@@ -54,7 +55,7 @@ SUBROUTINE init (self, label)
   integer:: thread, icoords(3),ipos(3)
   integer, save:: itimer=0
   namelist /box_params/ size, dims, mpi_dims, per_rank, origin, face_nbors
-  !.............................................................................
+  !-----------------------------------------------------------------------------
   call trace_begin ('cartesian_mod::init',itimer=itimer)
   rewind (io%input); read (io%input, box_params)
   if (any(per_rank/=0)) then
@@ -156,6 +157,7 @@ SUBROUTINE init (self, label)
   end do
   end do
   end do
+  io%ntask = self%task_list%na
   !-----------------------------------------------------------------------------
   ! Add an nbor list to each patch.  The modulo below assumes a period mesh in
   ! all directions.  If this is not the case on one or more directions, the

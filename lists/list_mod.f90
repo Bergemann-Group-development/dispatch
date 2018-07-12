@@ -792,6 +792,7 @@ SUBROUTINE reset_status (self)
   !-----------------------------------------------------------------------------
   ! Clear virtual and boundary bits
   !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%reset_status')
   write (io_unit%log,*) 'reset_status'
   n_internal = 0
   n_boundary = 0
@@ -850,6 +851,7 @@ SUBROUTINE reset_status (self)
     flush (io_unit%log)
   end if
   !$omp end critical (list_cr)
+  call trace%end
 END SUBROUTINE reset_status
 
 !> =============================================================================
@@ -1315,6 +1317,7 @@ SUBROUTINE count_status (self)
   integer:: nf
   !.............................................................................
   if (io%verbose < 2) return
+  call trace%begin ('list_t%count_status')
   !$omp critical (list_cr)
   self%nb=0; self%nv=0; self%ni=0; self%ne=0; self%n = 0
   nf = 0
@@ -1332,6 +1335,7 @@ SUBROUTINE count_status (self)
   !$omp end critical (list_cr)
   if (io%verbose>1) write (io_unit%log,'(a,5i6)') &
     'count_status: n[ibvea] = ', self%ni, self%nb, self%nv, self%ne, self%na
+  call trace%end
 END SUBROUTINE count_status
 
 !> =============================================================================

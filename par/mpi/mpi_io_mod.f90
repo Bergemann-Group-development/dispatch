@@ -56,7 +56,9 @@ MODULE mpi_io_mod
     procedure:: use
     procedure:: init
     procedure:: check_init
-    procedure:: write
+    procedure, private:: write3
+    procedure, private:: write4
+    generic, public :: write => write3, write4
     procedure:: iwrite
     procedure:: read
     procedure:: test
@@ -89,11 +91,11 @@ SUBROUTINE init (self, rec_words, chunk_words)
   call trace%begin ('mpi_io_t%init')
   if (present(rec_words)) then
     self%rec_words = rec_words
-    if (verbose > 0) print *, 'mpi_io_t%init: setting rec_words =', rec_words
+    if (verbose > 2) print *, 'mpi_io_t%init: setting rec_words =', rec_words
   end if
   if (present(chunk_words)) then
     self%chunk_words = chunk_words
-    if (verbose > 0) print *, 'mpi_io_t%init: setting chunk_words =', chunk_words
+    if (verbose > 2) print *, 'mpi_io_t%init: setting chunk_words =', chunk_words
   end if
   call trace%end
 END SUBROUTINE init
@@ -111,7 +113,7 @@ END SUBROUTINE check_init
 !> =============================================================================
 !> Write a chunk (self%lsize) out to the open file
 !> =============================================================================
-SUBROUTINE write (self, f, rec, id)
+SUBROUTINE write3 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:):: f
   integer:: rec, id
@@ -122,7 +124,7 @@ SUBROUTINE write (self, f, rec, id)
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose>1) &
-    write (io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write: rec, id, words, pos =', &
+    write (io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write3: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
   !$omp critical (mpi_io_cr)
   call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
@@ -131,7 +133,32 @@ SUBROUTINE write (self, f, rec, id)
   call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
   call trace%end
 #endif
-END SUBROUTINE write
+END SUBROUTINE write3
+
+!> =============================================================================
+!> Write a chunk (self%lsize) out to the open file
+!> =============================================================================
+SUBROUTINE write4 (self, f, rec, id)
+  class(mpi_io_t):: self
+  real(kind=4), dimension(:,:,:,:):: f
+  integer:: rec, id
+#ifdef MPI
+  integer(kind=MPI_OFFSET_KIND):: pos
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_t%write')
+  call self%check_init
+  pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
+  if (verbose>1) &
+    write (io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write4: rec, id, words, pos =', &
+      rec, id, self%chunk_words, pos, minval(f), maxval(f)
+  !$omp critical (mpi_io_cr)
+  call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
+                          self%status, self%err)
+  !$omp end critical (mpi_io_cr)
+  call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
+  call trace%end
+#endif
+END SUBROUTINE write4
 
 !> =============================================================================
 !> Write a chunk (self%lsize) out to the open file

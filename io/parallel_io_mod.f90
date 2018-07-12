@@ -34,18 +34,31 @@ CONTAINS
 SUBROUTINE init (patch)
   class(patch_t):: patch
   !.............................................................................
-  character(len=5):: filename
+  character(len=5):: snapname
+  character(len=120):: filename
+  logical:: exists
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%init')
   if (patch%restart > 0) then
-    write (filename,'(i5.5)') 0
-    call file_in%openr  (trim(io%outputname)//filename//'/snapshot.dat')
-    write (filename,'(i5.5)') patch%iout
-    call file_out%openw (trim(io%outputname)//filename//'/snapshot.dat')
-  else
-    write (filename,'(i5.5)') patch%iout
-    call file_out%openw (trim(io%outputname)//filename//'/snapshot.dat')
+    filename=trim(io%inputname)//'snapshots.dat'
+    inquire (file=filename, exist=exists)
+    if (.not.exists) then
+      filename=trim(io%inputname)//'00000/snapshot.dat'
+      inquire (file=filename, exist=exists)
+      if (.not.exists) then
+        call mpi%abort('input file '//trim(filename)//' not found')
+      end if
+    end if
+    if (mpi%master) print *,' input file: ',filename
+    call file_in%openr (filename)
   end if
+  if (io%format==5) then
+    filename=trim(io%outputname)//'00000/snapshot.dat'
+  else
+    filename=trim(io%outputname)//'snapshots.dat'
+  end if
+  if (mpi%master) print *,'output file: ',filename
+  call file_out%openw (filename)
   call trace%end
 END SUBROUTINE init
 
@@ -64,6 +77,18 @@ END SUBROUTINE close
 !> Write output in increments of one variable data cube
 !> =============================================================================
 SUBROUTINE output (patch)
+  class(patch_t):: patch
+  if (io%format==5) then
+    call output5 (patch)
+  else if (io%format==6) then
+    call output6 (patch)
+  end if
+END SUBROUTINE output
+
+!> =============================================================================
+!> Write output in increments of one variable data cube
+!> =============================================================================
+SUBROUTINE output5 (patch)
   class(patch_t):: patch
   !.............................................................................
   integer(8):: snapshot_words, buffer_words
@@ -111,11 +136,73 @@ SUBROUTINE output (patch)
       call thread_io%write (buffer, patch%iout+1, patch%id + (iv-1)*io%ntotal)
     end if
     if (verbose>0) &
-      write (io_unit%mpi,*) 'WR', patch%id, patch%iout, iv, minval(buffer), maxval(buffer)
+      write (io_unit%mpi,*) 'WR5', patch%id, patch%iout, iv, minval(buffer), maxval(buffer)
   end do
   deallocate (buffer)
   call trace%end
-END SUBROUTINE output
+END SUBROUTINE output5
+
+!> =============================================================================
+!> Write output in increments of one variable data cube
+!> =============================================================================
+SUBROUTINE output6 (patch)
+  class(patch_t):: patch
+  !.............................................................................
+  integer(8):: snapshot_words, buffer_words, pos
+  integer:: iv, n(3), jt(2)
+  real, dimension(:,:,:,:), allocatable:: buffer
+  type(mpi_io_t):: thread_io
+  real:: pt(2)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('parallel_io_t%output')
+  !-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  call thread_io%use (file_out)
+  if (io%guard_zones) then
+    n = patch%gn
+  else
+    n = patch%n
+  end if
+  buffer_words = product(n)*patch%nv
+  snapshot_words = buffer_words*io%ntotal
+  if (io%verbose==1) print '(a,2i6)', ' parallel_io_t%output: iout, id =', &
+    patch%iout, patch%id
+  if (io%verbose>1) print '(a,4i6,2i7)', &
+    ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
+    patch%iout, n, snapshot_words, buffer_words
+  call thread_io%init (snapshot_words, buffer_words)
+  allocate (buffer(n(1),n(2),n(3),patch%nv))
+  call patch%time_interval (patch%out_next, jt, pt)
+  do iv=1,patch%nv
+    if (io%guard_zones) then
+      buffer(:,:,:,iv) = patch%mem(:,:,:,iv,jt(1),1)*pt(1) &
+                       + patch%mem(:,:,:,iv,jt(2),1)*pt(2)
+    else
+      buffer(:,:,:,iv) = patch%mem(patch%li(1):patch%ui(1), &
+                                   patch%li(2):patch%ui(2), &
+                                   patch%li(3):patch%ui(3),iv,jt(1),1)*pt(1) &
+                       + patch%mem(patch%li(1):patch%ui(1), &
+                                   patch%li(2):patch%ui(2), &
+                                   patch%li(3):patch%ui(3),iv,jt(2),1)*pt(2)
+    end if
+    if (verbose>0) &
+      write (io_unit%mpi,'(a,i6,i4,i3,1p,6e12.4,2i3,0p,2f7.3)') &
+       'id,iout,iv,vmin,vmax:', patch%id, patch%iout, iv, &
+        minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv)), &
+        patch%fminval(patch%mem(:,:,:,iv,jt(1),1)), &
+        patch%fmaxval(patch%mem(:,:,:,iv,jt(1),1)), &
+        patch%fminval(patch%mem(:,:,:,iv,jt(2),1)), &
+        patch%fmaxval(patch%mem(:,:,:,iv,jt(2),1)), &
+        jt, pt
+  end do
+  if (verbose > 0) then
+    pos = 4_8*(patch%iout*snapshot_words + (patch%id-1_8)*buffer_words)
+    write (io_unit%mpi,*) 'WR6', patch%id, patch%iout, pos
+  end if
+  call thread_io%write (buffer, patch%iout+1, patch%id)
+  deallocate (buffer)
+  call trace%end
+END SUBROUTINE output6
 
 !> =============================================================================
 !> Read input in increments of one variable data cube

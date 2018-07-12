@@ -27,7 +27,6 @@
 /
 
 &patch_params
- size=1.0,1.0,1.0
  n=3*16
  ng=2
  no_mans_land=t

@@ -19,6 +19,7 @@ MODULE snapshot_list_mod
   type, public:: snapshot_t
     type(snapshot_t), pointer:: prev=>null(), next=>null()
     integer:: iout=-1, ibuf=0, nbuf=0
+    logical:: input=.false.
   end type
   type, public:: snapshot_list_t
     type(snapshot_t), pointer:: head=>null(), tail=>null()
@@ -39,14 +40,14 @@ SUBROUTINE count (self, patch, snapshot, input)
   class(snapshot_list_t):: self
   class(patch_t):: patch
   type(snapshot_t), pointer:: snapshot
-  logical, optional:: input
+  logical:: input
   !-----------------------------------------------------------------------------
   ! Search for the snapshot instance
   !-----------------------------------------------------------------------------
   !$omp critical (output_cr)
   snapshot => self%head
   do while (associated(snapshot))
-    if (snapshot%iout == patch%iout) then
+    if (snapshot%iout==patch%iout .and. snapshot%input.eqv.input) then
       exit
     end if
     snapshot => snapshot%next
@@ -55,7 +56,7 @@ SUBROUTINE count (self, patch, snapshot, input)
   ! If a snapshot instance does not exist, append one to the list
   !-----------------------------------------------------------------------------
   if (.not.associated(snapshot)) then
-    call self%append (snapshot, patch)
+    call self%append (snapshot, patch, input)
   end if
   !-----------------------------------------------------------------------------
   ! If output is finished, remove from list
@@ -63,24 +64,24 @@ SUBROUTINE count (self, patch, snapshot, input)
   snapshot%ibuf = snapshot%ibuf-1
   if (verbose>1) print *, 'snapshot_list_t%count:', patch%iout, patch%id, snapshot%ibuf, io%ntask
   if (snapshot%ibuf==0) then
-    call self%remove (snapshot)
     if (verbose>1) print *, 'count:', omp%thread, mpi%rank, mpi%master, io%master
     if (verbose>0 .and. mpi%master) print '(1x,a,2x,a,i5.5,5x,"time:",1p,2g14.5,2x,9g14.5)', &
-      trim(io%method)//'_io:'//merge('input ','output',present(input)), &
+      trim(io%method)//'_io:'//merge('input ','output',input), &
       'snapshot '//trim(io%outputname), patch%iout, patch%out_next, patch%time
-      !!, patch%t(patch%iit)
   end if
   !$omp end critical (output_cr)
 END SUBROUTINE count
 
 !> =============================================================================
-!> Find the relevant snapshot instance and decrement counter
+!> Append a new snapshot record counter to the list, and initialize it 
 !> =============================================================================
-SUBROUTINE append (self, snapshot, patch)
+SUBROUTINE append (self, snapshot, patch, input)
   class(snapshot_list_t):: self
   type(snapshot_t), pointer:: snapshot
   class(patch_t):: patch
+  logical:: input
   !-----------------------------------------------------------------------------
+  call trace%begin ('snapshot_list_t%append')
   allocate (snapshot)
   !-----------------------------------------------------------------------------
   ! initialize the new snapshot instance counters
@@ -88,6 +89,7 @@ SUBROUTINE append (self, snapshot, patch)
   snapshot%iout = patch%iout
   snapshot%nbuf = io%ntask
   snapshot%ibuf = io%ntask
+  snapshot%input = input
   !-----------------------------------------------------------------------------
   ! append to the list
   !-----------------------------------------------------------------------------
@@ -98,6 +100,7 @@ SUBROUTINE append (self, snapshot, patch)
   self%tail => snapshot
   self%n = self%n+1
   if (.not.associated(self%head)) self%head => snapshot
+  call trace%end
 END SUBROUTINE append
 
 !> =============================================================================
