@@ -26,7 +26,7 @@ MODULE task_mod
     integer:: istep = 0
     integer:: iout = 0
     integer:: level = 0
-    integer:: nt=3
+    integer:: nt=0
     integer:: it=1
     integer:: new=2
     integer:: verbose=1

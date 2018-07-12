@@ -57,7 +57,7 @@ MODULE patch_mod
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
     real:: grav                         ! gravitational consant (code units)
-    integer:: n(3)=0, ng(3)=2           ! convenient defaults
+    integer:: n(3)=0, ng(3)=0           ! defaults, to detect unchanged values
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
     integer:: ncell(3)                  ! number of cells per patch
     integer:: ipos(3)                   ! integer position
@@ -293,42 +293,54 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
-!> Initialize the patch memory and patch dimensions.  For this we need to be told the
-!> patch dimensions (which include the number of variable and the number of time
-!> slices), the patch position, and the patch size
+!> Initialize default values for the patch memory and patch dimensions. The 
+!> order of setting values is that the calling code, typically experiment_mod,
+!> may set preferred defaults that differ from the ones set here.  The input
+!> namelist then allows these to be changed.  This is done (only) once, on first
+!> call, after which the savde propertis are reused on subsequent calls.
+!>
+!> However, in cases where not all patches should have identical properties it
+!> is necessary be able to override the saved default.  In the case of n and ng
+!> -- the most likely proerties to vary -- this can be done by changing the patch
+!> values !> before the call, since only properties with default (zero) values
+!> are set to the saved values.  It is possible to change other parameters, by
+!> instead of calling patch_t%init, first call patch_t%init_default, and then
+!> call patch_t%setup (nt=..., nv=..., ...).
+!>
+!> Values that are expected to vary from patch to patch, such as size and
+!> position, must be set before calling patch_t%init, or else must be set by
+!> instead calling patch_t%init_defult + patch_t%setup.
+!>
+!> Any experiment that should start up with non-default values of parameters
+!> given default values here (such as 'periodic'), should use the method:
+!> call init_default + set values + call setup, since otherwise it would have
+!> to rely on the values being set correctly in the input namelist.
 !> =============================================================================
 SUBROUTINE init_default (self)
   class(patch_t):: self
+  !.............................................................................
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, restart=-9
-  logical, save:: first_time = .true.
-  logical, save:: guard_zones=.false., time_derivs=.false., periodic(3)
+  logical, save:: guard_zones=.false., time_derivs=.false., periodic(3)=.true.
   logical, save:: no_mans_land=.false., use_data_hub=.false.
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
   real, save:: end_time=1.0, out_time=0.1, print_time=0.1
   real(8):: position(3), size(3)
   integer:: iostat, i, n_alloc=0, n_ext=0
-  namelist /patch_params/ size, n, nv, ng, nt, courant, u_fixed, dt_fixed, &
+  namelist /patch_params/ n, nv, ng, nt, courant, u_fixed, dt_fixed, &
     grace, periodic, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
     zero_order_extrap
   namelist /out_params/ out_time, end_time, print_time, max_files, &
     restart, inputdir, guard_zones, time_derivs
-  !.............................................................................
+  logical, save:: first_time = .true.
+  !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init_default')
   call self%task_t%init                         ! sets unique id
   !-----------------------------------------------------------------------------
-  ! Read and set patch parameters; these may have been set by the calling code
+  ! Read and set patch parameters; the preferred defalts may have been set by
+  ! the calling code -- typically in experiment_mod.f90
   !-----------------------------------------------------------------------------
   !$omp critical (input_cr)
-  !nv   = self%nv
-  !ng   = self%ng
-  !periodic = self%periodic
   if (first_time) then
-    size = self%size
-    n    = self%n
-    ng   = self%ng
-    nv   = self%nv
-    nt   = self%nt
-    periodic = self%periodic
     first_time = .false.
     rewind (io%input)
     read (io%input, patch_params)
@@ -338,9 +350,14 @@ SUBROUTINE init_default (self)
     read (io%input, out_params)
     if (io%master) write (*, out_params)
   end if
-  !print *, 'MK', omp_mythread, self%id, self%nt, nt
-  ! reasonable values of self%n should take precedence over a saved value of `n`.
-  if (any(self%n == 0)) self%n = n              ! patch dimensions
+  !-----------------------------------------------------------------------------
+  ! To allow patches to have n, ng, nv, and nt values that differ, values that
+  ! differ from the data type zero defaults take precedence over saved values
+  !-----------------------------------------------------------------------------
+  if (any(self%n  == 0)) self%n  = n            ! patch dimensions
+  if (any(self%ng == 0)) self%ng = ng           ! patch guard zones
+  if (    self%nv == 0 ) self%nv = nv           ! number of variables
+  if (    self%nt == 0 ) self%nt = nt           ! number of time slices
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
@@ -352,9 +369,6 @@ SUBROUTINE init_default (self)
   io%print_time    = print_time
   !$omp end critical (input_cr)
   self%restart     = restart                    ! restart snapshot
-  self%ng          = ng                         ! number of guard zones
-  self%nv          = nv                         ! number of variables
-  self%nt          = nt                         ! number of time slices
   self%courant     = courant                    ! courant number
   self%grace       = grace                      ! grace fraction of dtime
   self%dt_fixed    = dt_fixed
