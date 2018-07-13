@@ -5,21 +5,26 @@
 MODULE dispatcher_mod
   USE io_mod
   USE trace_mod
+  USE mpi_mod
   USE task_list_mod
   USE dispatcher0_mod
   USE dispatcher1_mod
   USE dispatcher2_mod
+  USE dispatcher3_mod
   USE mpi_mesg_mod
   USE data_io_mod
   implicit none
   private
   type, public:: dispatcher_t
-    procedure(method0), nopass, pointer:: method => null()
+    procedure(method0), nopass, pointer:: method => method0
+    logical:: use_locks=.false.
   contains
     procedure:: init
+    procedure:: execute
     procedure, nopass:: method0
     procedure, nopass:: method1
     procedure, nopass:: method2
+    procedure, nopass:: method3
   end type
   integer, save:: verbose=0
   integer, save:: method=0
@@ -36,7 +41,8 @@ CONTAINS
 SUBROUTINE init (self)
   class(dispatcher_t):: self
   integer:: iostat
-  namelist /dispatcher_params/ method, verbose, test, test_seconds
+  logical:: use_locks=.false.
+  namelist /dispatcher_params/ method, verbose, test, test_seconds, use_locks
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher_t%init')
   rewind (io%input)
@@ -59,7 +65,7 @@ SUBROUTINE init (self)
     self%method => method1
     dispatcher1%verbose = verbose
     !---------------------------------------------------------------------------
-    ! This method uses send_priv=.true. to make each thread takes care sending.
+    ! This method uses send_priv=.true. to make each thread takes care of sending.
     ! It uses the check_active() procedure in task_mesg_mod to actively check
     ! for incoming messages.  Since this is done by only the master thread,
     ! there is no point in making an unpack queue.
@@ -80,12 +86,46 @@ SUBROUTINE init (self)
     mpi_mesg%recv_active  = .true.
     mpi_mesg%recv_priv    = .false.
     mpi_mesg%queue_unpack = .false.
+  case (3)
+    self%method => method3
+    !---------------------------------------------------------------------------
+    ! This method uses send_priv=.true. to make each thread takes care sending.
+    ! It uses the check_active() procedure in task_mesg_mod to actively check
+    ! for incoming messages.  Since this is done by only the master thread,
+    ! there is no point in making an unpack queue.
+    !---------------------------------------------------------------------------
+    mpi_mesg%send_priv    = .true.
+    mpi_mesg%recv_active  = .true.
+    mpi_mesg%recv_priv    = .false.
+    mpi_mesg%queue_unpack = .false.
   case default
     call io%abort ('unknown method in dispatcher_mod')
   end select
   call mpi_mesg%init
   call trace%end
 END SUBROUTINE init
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE execute (self, task_list)
+  class(dispatcher_t):: self
+  type(task_list_t), pointer:: task_list
+  !-----------------------------------------------------------------------------
+  task_list%method = method
+  io%ntask = task_list%na
+  if (io%ntask==0) then
+    call mpi%abort &
+      ('ERROR: io%ntask, which should be the number of active tasks, is zero')
+  end if
+  if (io%ntotal==0) then
+    call mpi%abort &
+      ('ERROR: io%ntotal, which should be the total number of tasks, is zero')
+  end if
+  if (verbose>0 .and. mpi%master) &
+    print *, 'dispatcher_t%execute: setting io%ntask =', io%ntask
+  if (test) call set_io
+  call self%method (task_list)
+END SUBROUTINE execute
 
 !> =============================================================================
 !> I/O params for tests
@@ -98,7 +138,7 @@ SUBROUTINE set_io
 END SUBROUTINE set_io
 
 !> =============================================================================
-!> Execute a task list
+!> Execute a task list, using the selected dispatcher method
 !> =============================================================================
 SUBROUTINE method0 (task_list)
   type(task_list_t), pointer:: task_list
@@ -110,33 +150,24 @@ SUBROUTINE method0 (task_list)
 END SUBROUTINE method0
 
 !> =============================================================================
-!> Execute a task list.  Since only the master thread is call check_mpi(), we
-!> need to make sure that it handles all send/recv, hence send_priv=.false. and
-!> recv_priv=.false., and we can use the simplest receive mechanism (recv_active
-!> =.true.), with no buffering needed (queue_unpack=.false.).  These values are
-!> imposed after the input namelists are read, to make sure the choices are
-!> correct.
-!> =============================================================================
 SUBROUTINE method1 (task_list)
   type(task_list_t), pointer:: task_list
-  !-----------------------------------------------------------------------------
-  task_list%method = method
-  io%ntask = task_list%na
-  dispatcher1%verbose = verbose
   if (test) call set_io
   call dispatcher1%execute (task_list, test)
 END SUBROUTINE method1
 
 !> =============================================================================
-!> Execute a task list
-!> =============================================================================
 SUBROUTINE method2 (task_list)
   type(task_list_t), pointer:: task_list
-  !-----------------------------------------------------------------------------
-  task_list%method = method
-  io%ntask = task_list%na
   if (test) call set_io
   call dispatcher2%execute (task_list, test)
 END SUBROUTINE method2
+
+!> =============================================================================
+SUBROUTINE method3 (task_list)
+  type(task_list_t), pointer:: task_list
+  if (test) call set_io
+  call dispatcher3%execute (task_list, test)
+END SUBROUTINE method3
 
 END MODULE dispatcher_mod

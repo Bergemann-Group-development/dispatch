@@ -35,6 +35,7 @@ MODULE task_mod
     integer:: restart=-9
     integer:: state=0
     integer:: parentid=0
+    integer:: thread=-1
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
     real(8):: out_next = 0d0

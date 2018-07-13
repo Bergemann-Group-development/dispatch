@@ -106,8 +106,8 @@ END SUBROUTINE init
 SUBROUTINE check_init (self)
   class(mpi_io_t):: self
   !-----------------------------------------------------------------------------
-  call self%assert ('rec_words is not positive', err=self%rec_words <= 0)
-  call self%assert ('chunk_words is not positive', err=self%chunk_words <= 0)
+  call self%assert ('mpi_io_t:rec_words is not positive', err=self%rec_words <= 0)
+  call self%assert ('mpi_io_t:chunk_words is not positive', err=self%chunk_words <= 0)
 END SUBROUTINE check_init
 
 !> =============================================================================

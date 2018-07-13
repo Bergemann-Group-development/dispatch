@@ -80,6 +80,7 @@ SUBROUTINE init (self, label)
   end if
   mpi_dims = mpi_coords%dims
   patches_per_mpi = self%dims/mpi_dims
+  io%ntask = product(patches_per_mpi)
   !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------
@@ -157,7 +158,6 @@ SUBROUTINE init (self, label)
   end do
   end do
   end do
-  io%ntask = self%task_list%na
   !-----------------------------------------------------------------------------
   ! Add an nbor list to each patch.  The modulo below assumes a period mesh in
   ! all directions.  If this is not the case on one or more directions, the

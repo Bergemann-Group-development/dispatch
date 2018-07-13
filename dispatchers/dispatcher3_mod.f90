@@ -1,0 +1,327 @@
+!> =============================================================================
+!> Execute a task list.  Since only the master thread is calling check_mpi(), we
+!> need to make sure that it handles all send/recv, hence send_priv=.false. and
+!> recv_priv=.false., and we can use the simplest receive mechanism (recv_active
+!> =.true.), with no buffering needed (queue_unpack=.false.).  These values are
+!> imposed after the input namelists are read, to make sure the choices are
+!> correct.
+!>
+!> Strategy: Keep track of, separately, the number of ready tasks, the number
+!> of currently spawned tasks, and the number of currently busy tasks.  To this
+!> end, define the following states:
+!>
+!> state=0: task is inactive or new
+!> state=1: the task is ready to update, but not yet spawned
+!> state=2: the task has been spawned
+!> state=3: the task is busy updating
+!> state=4: the task has finished updating
+!>
+!> The simplest strategy for counting is to keep track of the number of tasks
+!> in each state, by incrementing the count for the new state and decrementing
+!> the count for the old state, whenever the state changes. These counts should
+!> be part of the dispatcher data type.
+!>
+!> On the balance between spawning tasks for other treads and actually working
+!> on an updete:  If a process has N threads, and has N tasks active, evenly
+!> spread in their progress, then essentially all of these tasks will have
+!> finished updating while the master thread works on its update.  Hence there
+!> must be approximately N additional tasks spawned, but not yet busy updating.
+!> Hence, the criterion for the master thread to take on work itself is that
+!> there are at least N tasks in state 2 (not counting those in state 3 or 4).
+!>
+!> If the master thread is unable to find enough tasks in state 1 for it to be
+!> able to reach N in state 2, then it is certainly not a good idea to take on
+!> one of the tasks, since there is alreadt a surplus of threads available.
+!> =============================================================================
+MODULE dispatcher3_mod
+  USE io_mod
+  USE io_unit_mod
+  USE trace_mod
+  USE omp_mod
+  USE omp_timer_mod
+  USE mpi_mod
+  USE timer_mod
+  USE link_mod
+  USE mpi_mesg_mod
+  USE task_list_mod
+  USE bits_mod
+  USE global_mod
+  USE task_mod
+  implicit none
+  private
+  type, public:: dispatcher3_t
+    integer:: verbose=0
+    integer:: n_spawn=0
+    integer:: n_state(0:4)=0
+    type(task_list_t), pointer:: task_list => null()
+    logical:: use_locks=.false.
+  contains
+    procedure:: execute
+  end type
+  type(global_t):: average_density
+  integer:: n_fail=0
+  real(8):: wc_failed=0d0
+  logical:: use_critical=.false.
+  character(len=32):: fmt0='(    f12.6,i4,2x,a,2x,i7,2i4)'
+  character(len=32):: fmt1='(40x,f12.6,i4,2x,a,2x,i7,2i4)'
+  type(dispatcher3_t), public:: dispatcher3
+CONTAINS
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE init (self, task_list)
+  class(dispatcher3_t):: self
+  type(task_list_t), pointer:: task_list
+  !.............................................................................
+END SUBROUTINE init
+
+!> =============================================================================
+!> Simple dispatcher, which in each loop through the task list takes on the
+!> first task that is ready, and then spawns other threads that handle the
+!> remaining tasks that are ready.
+!> =============================================================================
+SUBROUTINE execute (self, task_list, test)
+  class(dispatcher3_t):: self
+  type(task_list_t), pointer:: task_list
+  logical:: test, fell_through
+  !.............................................................................
+  class(link_t), pointer:: link, nbor
+  logical:: mytask
+  real(8):: start, start_fail=0d0
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  self%task_list => task_list
+  call task_list%init_all_nbors
+  call tic (time=start)
+  call timer%print
+  self%n_state(0) = io%ntask
+  !$omp parallel private(link,nbor,mytask) default(shared)
+  !$omp master
+  call find_ready (task_list)
+  call trace%begin ('dispatcher3_t%execute', itimer=itimer)
+  do while (task_list%na>0 .and. wallclock()-start < io%job_seconds)
+    !---------------------------------------------------------------------------
+    ! Check if there is MPI work
+    !---------------------------------------------------------------------------
+    call task_list%check_mpi()
+    !call find_ready (task_list)
+    !---------------------------------------------------------------------------
+    ! Run through the task list, looking for and counting tasks that are ready
+    !---------------------------------------------------------------------------
+    link => task_list%head
+    do while (associated(link))
+      if (.not.link%task%is_set (bits%virtual)) then
+        !-----------------------------------------------------------------------
+        ! If task is updated, set it to idle; this should ONLY be done by the
+        ! master thread
+        !-----------------------------------------------------------------------
+        if (link%task%state==4) then
+          call set_state (link%task, 0)
+        end if
+        !-----------------------------------------------------------------------
+        ! If task is idle, check if it is ready to update
+        !-----------------------------------------------------------------------
+        if (link%task%state==0) then
+          if (is_ready (link)) then
+              call set_state (link%task, 1)
+          end if
+        end if
+      end if
+      link => link%next
+    end do
+    if (self%verbose>1) call print_n_state ('1')
+    !---------------------------------------------------------------------------
+    ! Run through the task list and start updates of tasks that are ready
+    !---------------------------------------------------------------------------
+    fell_through = .true.
+    link => task_list%head
+    do while (associated(link))
+      if (.not.link%task%is_set (bits%virtual)) then
+        !-----------------------------------------------------------------------
+        ! Spawn a background task, unless enough has been spawned, or there is
+        ! only one left
+        !-----------------------------------------------------------------------
+        if (link%task%state==1) then
+          if (omp%nthreads==1    .or. &
+              self%n_state(1)==1 .or. &
+              self%n_state(2)>omp%nthreads) then
+            call update (task_list, link, test)
+          else
+            call spawn_update (task_list, link, test)
+          end if
+          fell_through = .false.
+        end if
+      end if
+      link => link%next
+    end do
+    if (fell_through) then
+      if (self%verbose>3) print *,'task yield'
+      n_fail = n_fail+1
+      if (n_fail==1) start_fail=wallclock()
+      !!omp taskyield
+    else
+      if (n_fail>0) then
+        wc_failed = wc_failed + (wallclock()-start_fail)
+        if (self%verbose>0) call print_n_state ('2')
+      end if
+      n_fail = 0
+    end if
+  end do
+  call trace%end (itimer)
+  !$omp end master
+  !$omp end parallel
+  call timer%print
+  call mpi_mesg%diagnostics(1)
+  call toc ('wall time', n_update, time=start)
+  return
+contains
+
+  !-----------------------------------------------------------------------------
+  ! Count the number of tasks in state 1 (ready to update)
+  !-----------------------------------------------------------------------------
+  subroutine find_ready (task_list)
+    type(task_list_t), pointer:: task_list
+    class(link_t), pointer:: link
+    !...........................................................................
+    link => task_list%head
+    do while (associated(link))
+      if (link%task%state==0 .and. .not.link%task%is_set(bits%virtual)) then
+        if (is_ready(link)) then
+          call set_state (link%task, 1)
+          if (self%verbose>3) print fmt0,omp%thread,'found(1) task',link%task%id
+        end if
+      end if
+      link => link%next
+    end do
+  end subroutine
+
+  !-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  subroutine print_n_state (label)
+    character(len=*):: label
+    print '("DISPATCHER4: ",a,f12.6,f9.3,4x,a,i8,6(4x,a,i4))', &
+      label, wallclock(), &
+      wc_failed/max(1d-10,wallclock()-start), &
+      'failed:'  , n_fail, &
+      'idle:'    , self%n_state(0), &
+      'ready:'   , self%n_state(1), &
+      'spawned:' , self%n_state(2), &
+      'updating:', self%n_state(3), &
+      'updated:' , self%n_state(4)
+  end subroutine
+
+  !-----------------------------------------------------------------------------
+  ! A task that is being acticely updated is set in state 3, and when finished
+  ! it switched to state 4.   We then use the same OMP task to check if any if
+  ! the nbors have beome ready to update, switching the state if it has, and
+  ! leaving it to the master thread to actually activate the task.
+  !-----------------------------------------------------------------------------
+  subroutine update (task_list, link, test)
+    type(task_list_t), pointer:: task_list
+    class(link_t), pointer:: link, nbor
+    logical:: test
+    !...........................................................................
+    call set_state (link%task, 3)
+    link%task%thread = omp%thread
+    if (self%verbose>3) print fmt1,wallclock(),omp%thread,'updating task',link%task%id
+    call task_list%update (link, test)
+    if (self%verbose>3) print fmt1,wallclock(),omp%thread,'updated  task',link%task%id
+    nbor => link%nbor
+    do while (associated(nbor))
+      if (is_ready(nbor%link)) then
+        call set_state (nbor%link%task, 1)
+        if (self%verbose>3) print fmt1,wallclock(),omp%thread,'found(2) task',nbor%task%id
+      end if
+      nbor => nbor%next
+    end do
+    call set_state (link%task, 4)
+    link%task%thread = -1
+  end subroutine
+
+  !-----------------------------------------------------------------------------
+  ! Spawn an OpenMP task, for updating a DISPATCH task
+  !-----------------------------------------------------------------------------
+  subroutine spawn_update (task_list, link, test)
+    type(task_list_t), pointer:: task_list
+    class(link_t), pointer:: link
+    logical:: test
+    !...........................................................................
+    call set_state (link%task, 2)
+    if (self%verbose>2) print fmt0,wallclock(),omp%thread,'spawning task',link%task%id, link%task%state, link%task%thread
+    !$omp task default(shared) firstprivate(link)
+      if (self%use_locks) then
+        if (link%task%lock%test()) then
+          call update (task_list, link, test)
+          call link%task%lock%unset
+        else
+          print *,'WARNING, lock conflict, thread, id =', omp%thread, link%task%id, link%task%thread
+        end if
+      else
+        call update (task_list, link, test)
+      end if
+    !$omp end task
+  end subroutine
+
+  !-----------------------------------------------------------------------------
+  ! Set a new task state, while keeping track of the number of tasks in each state
+  !-----------------------------------------------------------------------------
+  subroutine set_state (task, in)
+    class(task_t), pointer:: task
+    integer:: in, io
+    !...........................................................................
+    if (use_critical) then
+      !$omp critical (set_state_cr)
+      io = task%state
+      self%n_state(io) = self%n_state(io) - 1
+      self%n_state(in) = self%n_state(in) + 1
+      task%state = in
+      !print *,'dispatcher3:',omp%thread,wallclock(),self%n_state
+      !$omp end critical (set_state_cr)
+    else
+     !$omp atomic read
+     io = task%state
+     !$omp atomic
+     self%n_state(io) = self%n_state(io) - 1
+     !$omp atomic
+     self%n_state(in) = self%n_state(in) + 1
+     !$omp atomic write
+     task%state = in
+     !print *,'dispatcher3:',omp%thread,wallclock(),self%n_state
+    end if
+  end subroutine
+
+  !-----------------------------------------------------------------------------
+  ! Check if a task is ready to update, by changing if all nbor task are "ahead
+  ! of" the task in question
+  !-----------------------------------------------------------------------------
+  logical function is_ready (link)
+    class(link_t), pointer:: link, nbor
+    integer:: state
+    !...........................................................................
+    !$omp atomic read
+    state = link%task%state
+    if (link%task%is_set (bits%virtual)) then
+      is_ready = .false.
+    else if (state>=1) then
+      is_ready = .false.
+    else
+      is_ready = .true.
+      nbor => link%nbor
+      do while (associated(nbor))
+        !$omp atomic read
+        state = nbor%task%state
+        if (state==3) then
+          is_ready = .false.
+        else
+          is_ready = is_ready .and. nbor%task%is_ahead_of (link%task)
+        end if
+        if (.not.is_ready) then
+          exit
+        end if
+        nbor => nbor%next
+      end do
+    end if
+  end function
+END SUBROUTINE execute
+
+END MODULE dispatcher3_mod
