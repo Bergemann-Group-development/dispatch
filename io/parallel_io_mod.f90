@@ -167,13 +167,13 @@ SUBROUTINE output6 (patch)
   buffer_words = product(n)*patch%nv
   snapshot_words = buffer_words*io%ntotal
   if (io%verbose==1) print '(a,2i6)', ' parallel_io_t%output: iout, id =', &
+    patch%iout, patch%id
   if (first_time) then
     first_time = .false.
     if (io%master) print '(a,f8.3,a,i10,a)', &
       ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
       io%ntotal, ' patches'
   end if
-    patch%iout, patch%id
   if (io%verbose>1) print '(a,4i6,2i7)', &
     ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words

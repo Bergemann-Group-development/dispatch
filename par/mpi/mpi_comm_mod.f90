@@ -15,7 +15,8 @@ MODULE mpi_comm_mod
     integer, dimension(:), allocatable:: buffer
   contains
     procedure:: send
-    procedure:: sent, recv
+    procedure:: sent
+    procedure:: recv
   end type
 CONTAINS
 

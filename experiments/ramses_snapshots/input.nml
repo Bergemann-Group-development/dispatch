@@ -24,7 +24,7 @@
 !---------------------------------
 ! Initial condition and forces
 !---------------------------------
-&ramses_reader_params   nout=5 minlvl=6 maxlvl=8 path='gmc2' centre_on_sink=f merge_octs=f make_cartesian=t /
+&ramses_reader_params   nout=2 minlvl=6 maxlvl=8 path='gmc2' centre_on_sink=f merge_octs=f make_cartesian=t /
 &initial_params         /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 /

@@ -16,7 +16,7 @@ MODULE dispatcher_mod
   implicit none
   private
   type, public:: dispatcher_t
-    procedure(method0), nopass, pointer:: method => method0
+    procedure(method0), nopass, pointer:: method => null()
     logical:: use_locks=.false.
   contains
     procedure:: init
