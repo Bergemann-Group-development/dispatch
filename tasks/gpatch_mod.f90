@@ -189,11 +189,13 @@ SUBROUTINE dnload (self, only)
   class(gpatch_t):: self
   integer, optional:: only
   !-----------------------------------------------------------------------------
+  call trace%begin ('gpatch_t%dnload')
   if (self%use_data_hub) then
     call self%data_hub%update (self%link, only=only)
   else
     call download%download_link (self%link, only=only)
   end if
+  call trace%end
 END SUBROUTINE dnload
 
 !> =============================================================================

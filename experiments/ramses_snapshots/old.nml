@@ -1,12 +1,12 @@
 &io_params
  verbose=0
- do_trace=f
+ do_trace=t
  do_debug=f
  do_output=t
  !id_debug=32770
 /
 
-&init_params
+&ramses_reader_params
  nout=5
  minlvl=6
  maxlvl=8
@@ -28,6 +28,7 @@
 
 &patch_params
  n=3*16
+ nv=8
  ng=2
  no_mans_land=t
 /
@@ -57,3 +58,7 @@
 
 &force_params
 /
+
+&dispatcher_params      method=4 test=f /
+&task_list_params       /
+&mpi_mesg_params        /

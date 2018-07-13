@@ -21,7 +21,7 @@ MODULE initial_mod
     logical:: mhd
     real(8):: time=0d0
     character(len=64):: solver
-    procedure(single_solenoidal), pointer:: condition=>null()
+    procedure(void), pointer:: condition=>null()
   contains
     procedure:: init
     procedure, nopass:: cleanup
@@ -38,7 +38,7 @@ SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
   real, optional:: gamma
-  character(len=32), save:: type='single_solenoidal'
+  character(len=32), save:: type='void'
   logical, save:: first_time=.true.
   namelist /initial_params/ type
   !----------------------------------------------------------------------------
@@ -63,6 +63,8 @@ SUBROUTINE init (self, solver, gamma)
     self%condition => exa256
   case ('raw')
     self%condition => raw
+  case ('void')
+    self%condition => void
   case default
     print*,'UNKNOWN INITIAL CONDITION TYPE :'//trim(type)//':'
     stop
@@ -74,6 +76,17 @@ END SUBROUTINE init
 SUBROUTINE cleanup
   if (associated(buffer)) deallocate(buffer)
 END SUBROUTINE cleanup
+
+!> =============================================================================
+!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> =============================================================================
+SUBROUTINE void (self, m, ff, idx)
+  class(initial_t) :: self
+  type(index_t):: idx
+  class(mesh_t)    :: m(3)
+  real, dimension(:,:,:,:) :: ff
+  !.............................................................................
+END SUBROUTINE void
 
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase

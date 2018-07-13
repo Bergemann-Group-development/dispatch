@@ -49,7 +49,7 @@
 ! Method=1 uses a simple master thread dispatcher
 ! Method=2 uses a more complex master thread dispatcher
 !----------------------------------------------------------------------------------
-&dispatcher_params      method=1 test=f /
+&dispatcher_params      method=3 test=f /
 &task_list_params       /
 &mpi_mesg_params        /
 

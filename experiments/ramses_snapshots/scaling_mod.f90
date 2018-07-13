@@ -15,6 +15,7 @@ MODULE scaling_mod
   type(scaling_t), public :: scaling
   type(const_t), public:: code
 CONTAINS
+
 !> =============================================================================
 !> Initialize code units:
 !> =============================================================================
@@ -22,8 +23,8 @@ SUBROUTINE init (self)
   class(scaling_t):: self
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
-  call trace_begin('scaling_t%init')
   if (.not.first_time) return
+  call trace_begin('scaling_t%init')
   first_time = .false.
   call cgs%init
   self%l = cgs%au                                       ! length = 1 AU
@@ -50,7 +51,6 @@ SUBROUTINE init (self)
     print 1,'temperature: ',self%temp
   1 format(1x,a,1p,e11.3)
   end if
-
   call trace_end
 END SUBROUTINE init
 

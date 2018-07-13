@@ -84,7 +84,9 @@ MODULE ramses_mod
   logical, save:: make_cartesian        ! replace RAMSES patches
   logical, save:: centre_on_sink        ! centre on the last sink
   logical, save:: merge_octs            ! merge octs into larger patches
+  logical, save:: do_evaluate           ! evaluate costs
   type(sink_t):: sink
+  type(ramses_t), public:: ramses
 CONTAINS
 
 !> =============================================================================
@@ -98,7 +100,7 @@ SUBROUTINE init (self, name)
   real, save:: xmin, xmax, ymin, ymax, zmin, zmax, rank_load
   real, save:: d_min, tt_min, size, size_au
   character(len=64), save:: path='.'
-  namelist / init_params / nout, xmin, xmax, ymin, ymax, zmin, zmax, size, &
+  namelist /ramses_reader_params/ nout, xmin, xmax, ymin, ymax, zmin, zmax, size, &
                            nmerged_max, minlvl, maxlvl, rank_load, path, &
                            centre_on_sink, merge_octs, make_cartesian, patch_n
   !.............................................................................
@@ -124,13 +126,14 @@ SUBROUTINE init (self, name)
     path = './'
     size = 1d0
     nmerged_max = 16
-    make_cartesian = .false.
+    make_cartesian = .true.
     centre_on_sink = .false.
     merge_octs = .true.
+    do_evaluate = .true.
     patch_n = 16
     ! read namelist
-    rewind (io%input); read (io%input,init_params)
-    if (io%master) write(*, init_params)
+    rewind (io%input); read (io%input,ramses_reader_params)
+    if (io%master) write(*, ramses_reader_params)
   end if
   !$omp end critical (init_cr)
   !-----------------------------------------------------------------------------
@@ -170,6 +173,9 @@ SUBROUTINE init (self, name)
   ! reorganize into refined, Cartesian patches
   scene%patch_n = patch_n
   if (make_cartesian) call self%create_cartesian
+
+  ! evaluate time step savings
+  if (do_evaluate) call ramses%evaluate
 
   call trace_end
 END SUBROUTINE init
@@ -1471,17 +1477,21 @@ SUBROUTINE create_cartesian (self)
   call self%download_values                     ! fill values into new patches
   call self%remove_ramses_patches               ! remove initial RAMSES patches
   call self%task_list%init_all_nbors            ! initialize nbor lists
+  call self%task_list%reset_status              ! set status bits and count tasks
   call trace%end
 contains
   subroutine set_levels
   class(link_t), pointer:: link
   !-----------------------------------------------------------------------------
-  self%minlvl=100
-  self%maxlvl=0
+  self%minlvl = 100
+  self%maxlvl = 0
+  io%ntotal = 0
   link => self%ramses_task_list%head
+  link%task%track = .true.
   do while (associated(link))
     self%minlvl = min (self%minlvl, link%task%level)
     self%maxlvl = max (self%maxlvl, link%task%level)
+    io%ntotal = io%ntotal+1
     link => link%next
   end do
   print *, 'minlvl, maxlvl found in RAMSES octs =',self%minlvl,self%maxlvl
@@ -1565,7 +1575,7 @@ SUBROUTINE cartesian_init (self, level, ix, iy, iz)
   class (patch_t), pointer:: patch
   !-----------------------------------------------------------------------------
   call trace%begin ('ramses_t%cartesian_init')
-  allocate (patch_t:: task)
+  allocate (experiment_t:: task)
   patch => task2patch (task)
   patch%level = level
   patch%n = scene%patch_n
