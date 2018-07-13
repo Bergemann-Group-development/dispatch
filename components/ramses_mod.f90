@@ -1485,13 +1485,11 @@ contains
   !-----------------------------------------------------------------------------
   self%minlvl = 100
   self%maxlvl = 0
-  io%ntotal = 0
   link => self%ramses_task_list%head
   link%task%track = .true.
   do while (associated(link))
     self%minlvl = min (self%minlvl, link%task%level)
     self%maxlvl = max (self%maxlvl, link%task%level)
-    io%ntotal = io%ntotal+1
     link => link%next
   end do
   print *, 'minlvl, maxlvl found in RAMSES octs =',self%minlvl,self%maxlvl
@@ -1546,8 +1544,9 @@ SUBROUTINE create_level (self, level)
     end do
   end do
   deallocate (flag)
-  call trace%end
+  io%ntotal = n
   print *, 'create_level: level, patches =', level, n
+  call trace%end
   return
 contains
   !-----------------------------------------------------------------------------
@@ -1624,13 +1623,16 @@ SUBROUTINE download_values (self)
 END SUBROUTINE download_values
 
 !> =============================================================================
-!> Remove the initial RAMSES patches, and their links in the task list
+!> Remove the initial RAMSES patches, and their links in the task list, and
+!> then renumber the remaining tasks, consistent with the general numbering 
+!> scheme.
 !> =============================================================================
 SUBROUTINE remove_ramses_patches (self)
   class (ramses_t):: self
   !.............................................................................
   class(link_t), pointer:: link, next
   class(patch_t), pointer:: patch
+  integer:: id
   !-----------------------------------------------------------------------------
   call trace%begin ('ramses_t%remove_ramses_patches')
   link => self%ramses_task_list%head
@@ -1641,6 +1643,14 @@ SUBROUTINE remove_ramses_patches (self)
     deallocate (link%task)
     deallocate (link)
     link => next
+  end do
+  id = mpi%rank
+  link => self%task_list%head
+  link%task%track = .true.
+  do while (associated(link))
+    id = id + mpi%size
+    link%task%id = id
+    link => link%next
   end do
   call trace%end
 END SUBROUTINE remove_ramses_patches
