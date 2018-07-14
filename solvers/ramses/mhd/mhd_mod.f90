@@ -131,27 +131,28 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Memory mapping and allocations.  All alloc and dealloc should be done here,
   ! even if it would be possible to do some of them locally, in the procedures
-  ! being called.
+  ! being called.  Set all values to zero initially, in case some loop extends
+  ! beyond defined values.
   !-----------------------------------------------------------------------------
   self%uin  => self%mem(:,:,:,:,self%it ,1)
   self%unew => self%mem(:,:,:,:,self%new,1)
 
   n = self%mesh%gn
-  allocate (self%c  (n(1),n(2),n(3)))
-  allocate (self%Ex (n(1),n(2),n(3)))
-  allocate (self%Ey (n(1),n(2),n(3)))
-  allocate (self%Ez (n(1),n(2),n(3)))
-  allocate (self%q  (n(1),n(2),n(3),self%nv))
-  allocate (self%qp (n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%qm (n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%dq (n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%dq2(n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%bf (n(1),n(2),n(3),3))
-  allocate (self%dbf(n(1),n(2),n(3),3,2))
-  allocate (self%qLB(n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%qLT(n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%qRB(n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%qRT(n(1),n(2),n(3),self%nv,ndim))
+  allocate (self%c  (n(1),n(2),n(3)))                           ; self%c   = 0_dp
+  allocate (self%Ex (n(1),n(2),n(3)))                           ; self%Ex  = 0_dp
+  allocate (self%Ey (n(1),n(2),n(3)))                           ; self%Ey  = 0_dp
+  allocate (self%Ez (n(1),n(2),n(3)))                           ; self%Ez  = 0_dp
+  allocate (self%q  (n(1),n(2),n(3),self%nv))                   ; self%q   = 0_dp
+  allocate (self%qp (n(1),n(2),n(3),self%nv,ndim))              ; self%qp  = 0_dp
+  allocate (self%qm (n(1),n(2),n(3),self%nv,ndim))              ; self%qm  = 0_dp
+  allocate (self%dq (n(1),n(2),n(3),self%nv,ndim))              ; self%dq  = 0_dp
+  allocate (self%dq2(n(1),n(2),n(3),self%nv,ndim))              ; self%dq2 = 0_dp
+  allocate (self%bf (n(1),n(2),n(3),3))                         ; self%bf  = 0_dp
+  allocate (self%dbf(n(1),n(2),n(3),3,2))                       ; self%dbf = 0_dp
+  allocate (self%qLB(n(1),n(2),n(3),self%nv,ndim))              ; self%qLB = 0_dp
+  allocate (self%qLT(n(1),n(2),n(3),self%nv,ndim))              ; self%qLT = 0_dp
+  allocate (self%qRB(n(1),n(2),n(3),self%nv,ndim))              ; self%qRB = 0_dp
+  allocate (self%qRT(n(1),n(2),n(3),self%nv,ndim))              ; self%qRT = 0_dp
   d => self%mem(:,:,:,          self%idx%d ,self%it,1)
   e => self%mem(:,:,:,          self%idx%e ,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
@@ -424,20 +425,22 @@ subroutine check_small (self)
 end subroutine check_small
 
 !> =============================================================================
-!> Conservative to primitive variables
+!> Conservative to primitive variables.  Using scalar scratch variables reduces
+!> teh need for a large (non-default) OMP_STACKSIZE
 !> =============================================================================
 subroutine ctoprim(self)
   class(mhd_t):: self
   integer::n(4)
   real(dp):: smallp, c
-  real(dp), dimension(self%gn(1),self%gn(2),self%gn(3)) :: eken, emag, etot, eint
+  real(dp):: eken, emag, etot, eint
   integer, save:: itimer=0
+  integer:: i,j,k
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_f%ctoprim',itimer=itimer)
+  call trace%begin('mhd_t%ctoprim',itimer=itimer)
   smallp = smallr*smallc**2/self%gamma
   n = shape(uin)-1
-
+  !
   !self%bf => uin(:,:,:,6:8)                                     ! Left  face centered B
   q(:,:,:,1) = max(uin(:,:,:,1),smallr)                         ! Density
   q(:,:,:,2) = uin(:,:,:,2)/q(:,:,:,1)                          ! vx
@@ -449,21 +452,26 @@ subroutine ctoprim(self)
   bf(1:n(1),:,:,1) = (uin(1:n(1),:,:,6)+uin(2:,:,:,6))*half      
   bf(:,1:n(2),:,2) = (uin(:,1:n(2),:,7)+uin(:,2:,:,7))*half      
   bf(:,:,1:n(3),3) = (uin(:,:,1:n(3),8)+uin(:,:,2:,8))*half      
-  ! FIXME: this assumes local periodic conditions!
-  !bf(n(1)+1,:,:,1) = bf(5,:,:,1)
-  !bf(:,n(2)+1,:,2) = bf(:,5,:,2)
-  !bf(:,:,n(3)+1,3) = bf(:,:,5,3)
+  bf(n(1)+1,:,:,1) = 0.0
+  bf(:,n(2)+1,:,2) = 0.0
+  bf(:,:,n(3)+1,3) = 0.0
+  if (local_debug) print *,  'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
+  if (local_debug) print *,  'ctoprim:bf', self%id, minval(bf), maxval(bf)
 
-  eken(:,:,:) = half*( q(:,:,:,2)**2 + q(:,:,:,3)**2 + q(:,:,:,4)**2)
-  emag(:,:,:) = half*( q(:,:,:,6)**2 + q(:,:,:,7)**2 + q(:,:,:,8)**2)
-
-  etot(:,:,:) = uin(:,:,:,5) - emag(:,:,:)
-  eint(:,:,:) = etot(:,:,:)/uin(:,:,:,1) - eken(:,:,:)
-  !
+  do k=1,self%gn(3)
+  do j=1,self%gn(2)
+  do i=1,self%gn(1)
+    eken = half*( q(i,j,k,2)**2 + q(i,j,k,3)**2 + q(i,j,k,4)**2)
+    emag = half*( q(i,j,k,6)**2 + q(i,j,k,7)**2 + q(i,j,k,8)**2)
+    etot = uin(i,j,k,5) - emag
+    eint = etot/uin(i,j,k,1) - eken
+    q(i,j,k,5) = MAX((self%gamma-one)*q(i,j,k,1)*eint,smallp)
+    !
+  end do
+  end do
+  end do
   if (isothermal) then
     q(:,:,:,5) = q(:,:,:,1)*csound**2
-  else
-    q(:,:,:,5) = MAX((self%gamma-one)*q(:,:,:,1)*eint(:,:,:),smallp)
   end if
   ! Gravity predictor step
   !q(:,:,:,2:4) = q(:,:,:,idim+1) + Grho*gravin(:,:,:,1:3)*dt*half
