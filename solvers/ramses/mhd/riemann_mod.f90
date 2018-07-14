@@ -249,7 +249,7 @@ END SUBROUTINE hlld_vec
 !> =============================================================================
 subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
-  real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
+  real(dp),dimension(:,:)::qleft,qright,fgdnv
   REAL(dp)::SL,SR
   REAL(dp)::entho,lim
   REAL(dp)::rl,pl,ul,ecinl,etotl,ptotl,Bl,Cl,wstarl,vtotBl,emagl,SAL,sqrrstarl,vl,wl
@@ -270,7 +270,8 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
   entho = one/max(gamma-one,1e-6)
   !
   fgdnv      = 0d0
-  do i=3,ngrid-1
+  do i=1,ngrid
+    !print '(i3,1p,8e10.2,2x,8e10.2)',i,qleft(i,:),qright(i,:)
     !
     ! Enforce continuity of normal component
     A=half*(qleft(i,4)+qright(i,4))
@@ -477,7 +478,7 @@ end subroutine hlld
 !> =============================================================================
 SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
   INTEGER, INTENT(IN) :: j,k,ngrid,nvar
-  REAL(dp),DIMENSION(1:ngrid,1:nvar),INTENT(IN)::qLL,qRL,qLR,qRR
+  REAL(dp),DIMENSION(:,:),INTENT(IN)::qLL,qRL,qLR,qRR
   REAL(dp),DIMENSION(:,:,:):: emf
   ! local variables
   INTEGER:: l
@@ -499,7 +500,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('riemann_mod::hlld_2d',itimer=itimer)
-  do l=3,ngrid
+  do l=2,ngrid
     !call trace%begin ('hlld_2d find_fast_speed', itimer=itimer(1))
     rLL=qLL(l,1); pLL=qLL(l,2); uLL=qLL(l,3); vLL=qLL(l,4); ALL=qLL(l,6); BLL=qLL(l,7) ; CLL=qLL(l,8)
     rLR=qLR(l,1); pLR=qLR(l,2); uLR=qLR(l,3); vLR=qLR(l,4); ALR=qLR(l,6); BLR=qLR(l,7) ; CLR=qLR(l,8)
