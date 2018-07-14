@@ -261,7 +261,12 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
   REAL(dp)::A,sgnm
   REAL(dp)::Bstarl,Bstarr,Cstarl,Cstarr,calfvenl,calfvenr
   REAL(dp)::Bo,Co,Bstarstar,Cstarstar,vdotBstarstar,vdotBo,emago
+#define INLINE
+#ifdef INLINE
+  REAL(dp)::d,P,u,v,w,B,C,B2,c2,d2,cf
+#endif
   INTEGER ::ivar,i,icase
+  logical:: flag
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin('riemann_mod::hlld', itimer=itimer)
@@ -297,8 +302,25 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
     vdotBr= ur*A+vr*Br+wr*Cr
     !
     ! Find the largest eigenvalues in the normal direction to the interface
+#ifdef INLINE
+    d=qleft(i,1); P=qleft(i,2); u=qleft(i,3); A=qleft(i,4)
+    v=qleft(i,5); B=qleft(i,6); w=qleft(i,7); C=qleft(i,8)
+    B2 = A*A+B*B+C*C
+    c2 = gamma*P/d
+    d2 = half*(B2/d+c2)
+    cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
+    cfastl=cf
+    d=qright(i,1); P=qright(i,2); u=qright(i,3); A=qright(i,4)
+    v=qright(i,5); B=qright(i,6); w=qright(i,7); C=qright(i,8)
+    B2 = A*A+B*B+C*C
+    c2 = gamma*P/d
+    d2 = half*(B2/d+c2)
+    cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
+    cfastr=cf
+#else
     CALL find_speed_fast(qleft (i,:),cfastl)
     CALL find_speed_fast(qright(i,:),cfastr)
+#endif
     !
     ! Compute HLL wave speed
     SL=min(ul,ur)-max(cfastl,cfastr)

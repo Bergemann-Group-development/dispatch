@@ -227,7 +227,6 @@ SUBROUTINE update (self)
              i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
              uin=>self%uin,unew=>self%unew)
 
-  unew = uin
   unew(1:i0-1,:,:,:) = uin(1:i0-1,:,:,:); unew(i1+1:,:,:,:) = uin(i1+1:,:,:,:)
   unew(:,1:j0-1,:,:) = uin(:,1:j0-1,:,:); unew(:,j1+1:,:,:) = uin(:,j1+1:,:,:)
   unew(:,:,1:k0-1,:) = uin(:,:,1:k0-1,:); unew(:,:,k1+1:,:) = uin(:,:,k1+1:,:)
