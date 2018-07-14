@@ -20,6 +20,7 @@ MODULE non_ideal_mod
     !real,pointer,dimension(:,:,:,:) :: uin, qin, fluxambdiff, emfambdiff
     real,pointer,dimension(:,:,:,:,:) :: flux
     logical:: mhd_AD, mhd_Ohm, ntestDADM
+    logical:: is_used
   contains
     procedure:: init
     procedure:: non_ideal_comp
@@ -57,6 +58,7 @@ SUBROUTINE init (self)
   self%gamma_AD = gamma_AD
   self%rho_ions = rho_ions
   self%etaMD    = etaMD
+  self%is_used  = mhd_Ohm .or. mhd_AD
 END SUBROUTINE init
 
 subroutine non_ideal_comp(self,bf,uin,qin,fluxambdiff,emfambdiff,u_max,dx,dt,ng)
