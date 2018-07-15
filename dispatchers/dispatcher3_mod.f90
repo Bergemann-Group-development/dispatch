@@ -31,7 +31,13 @@
 !>
 !> If the master thread is unable to find enough tasks in state 1 for it to be
 !> able to reach N in state 2, then it is certainly not a good idea to take on
-!> one of the tasks, since there is alreadt a surplus of threads available.
+!> one of the tasks, since there is already a surplus of threads available.
+!>
+!> If, on the other hand, there is only single task available in state 2, then
+!> it IS a good idea to let the master thread update it, since it then has some
+!> useful work to do, while other tasks are finishing, so when the master thread
+!> looks at the situation again, there are likely to be a number of new tasks
+!> ready to be updated.
 !> =============================================================================
 MODULE dispatcher3_mod
   USE io_mod
@@ -52,8 +58,6 @@ MODULE dispatcher3_mod
   type, public:: dispatcher3_t
     integer:: verbose=0
     integer:: n_spawn=0
-    logical:: use_locks=.false.
-    logical:: use_critical=.true.
     type(task_list_t), pointer:: task_list => null()
   contains
     procedure:: execute
@@ -66,8 +70,13 @@ MODULE dispatcher3_mod
   type(global_t):: average_density
   integer:: n_fail=0
   integer:: n_state(0:4)=0
+  integer:: verbose=0
+  integer(8):: n_check=0, n_ready=0
   real(8):: wc_failed=0d0
   real(8):: start
+  logical:: use_locks=.false.
+  logical:: use_critical=.true.
+  logical:: use_taskyield=.false.
   character(len=32):: fmt0='(    f12.6,i4,2x,a,2x,i7,2i4)'
   character(len=32):: fmt1='(40x,f12.6,i4,2x,a,2x,i7,2i4)'
   type(dispatcher3_t), public:: dispatcher3
@@ -78,7 +87,11 @@ CONTAINS
 SUBROUTINE init (self, task_list)
   class(dispatcher3_t):: self
   type(task_list_t), pointer:: task_list
+  integer:: iostat
+  namelist /dispatcher3_params/ use_locks, use_critical, use_taskyield, verbose
   !.............................................................................
+  rewind (io%input); read (io%input, dispatcher3_params, iostat=iostat)
+  if (io%master) write (io%output, dispatcher3_params)
 END SUBROUTINE init
 
 !> =============================================================================
@@ -86,31 +99,28 @@ END SUBROUTINE init
 !> first task that is ready, and then spawns other threads that handle the
 !> remaining tasks that are ready.
 !> =============================================================================
-SUBROUTINE execute (self, task_list, use_locks, use_critical, test, verbose)
+SUBROUTINE execute (self, task_list, test)
   class(dispatcher3_t):: self
   type(task_list_t), pointer:: task_list
-  integer:: verbose
-  logical:: use_locks, use_critical, test, fell_through
+  logical:: test, fell_through
   !.............................................................................
   class(link_t), pointer:: link, nbor
   class(task_t), pointer:: task
   logical:: mytask
-  real(8):: start_fail=0d0
+  integer:: n1, n2
+  real(8):: start_fail, start_iter
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   self%task_list    => task_list
-  self%use_locks    = use_locks
-  self%use_critical = use_critical
-  self%verbose      = verbose
   call task_list%init_all_nbors
   n_state = 0; n_state(0) = io%ntask
   call tic (time=start)
   call timer%print
   !$omp parallel private(link,nbor,task,mytask) shared(n_state) default(shared)
   !$omp master
-  print *, 'DISPATCHER3', n_state
   call trace%begin ('dispatcher3_t%execute', itimer=itimer)
   do while (task_list%na>0 .and. wallclock()-start < io%job_seconds)
+    start_iter = wallclock()
     !---------------------------------------------------------------------------
     ! Check if there is MPI work
     !---------------------------------------------------------------------------
@@ -153,9 +163,18 @@ SUBROUTINE execute (self, task_list, use_locks, use_critical, test, verbose)
         ! only one left
         !-----------------------------------------------------------------------
         if (task%state==1) then
-          !$omp critical (set_state_cr)
-          mytask = omp%nthreads==1 .or. n_state(1)==1 .or. n_state(2)>omp%nthreads
-          !$omp end critical (set_state_cr)
+          task_list%nq = n_state(2)
+          if (use_critical) then
+            !$omp critical (set_state_cr)
+            mytask = omp%nthreads==1 .or. n_state(1)==1 .or. n_state(2)>omp%nthreads
+            !$omp end critical (set_state_cr)
+          else
+            !$omp atomic read
+            n1 = n_state(1)
+            !$omp atomic read
+            n2 = n_state(2)
+            mytask = omp%nthreads==1 .or. n1==1 .or. n2>omp%nthreads
+          end if
           if (mytask) then
             call self%set_state (task, 2)
             call self%update (task_list, link, test)
@@ -168,15 +187,17 @@ SUBROUTINE execute (self, task_list, use_locks, use_critical, test, verbose)
       link => link%next
     end do
     if (fell_through) then
-      if (self%verbose>3) print *,'task yield'
-      n_fail = n_fail+1
-      if (n_fail==1) start_fail=wallclock()
-      !!omp taskyield
-    else
-      if (n_fail>0) then
-        wc_failed = wc_failed + (wallclock()-start_fail)
-        if (self%verbose>0) call self%print_state ('2')
+      if (self%verbose>3) print *,'dispatcher3: fell through'
+      wc_failed = wc_failed + (wallclock()-start_fail - start_iter)
+      if (use_taskyield) then
+        n_fail = n_fail+1
+        !$omp taskyield
+      else
+        n_fail = n_fail+1
       end if
+    else
+      if (n_fail>0 .and. self%verbose>0) &
+        call self%print_state ('2')
       n_fail = 0
     end if
   end do
@@ -184,6 +205,7 @@ SUBROUTINE execute (self, task_list, use_locks, use_critical, test, verbose)
   !$omp end master
   !$omp end parallel
   call timer%print
+  call finalize
   call mpi_mesg%diagnostics(1)
   call toc ('wall time', n_update, time=start)
 END SUBROUTINE execute
@@ -246,8 +268,8 @@ SUBROUTINE spawn_update (self, task_list, link, test)
   !...........................................................................
   call self%set_state (link%task, 2)
   if (self%verbose>2) print fmt0,wallclock(),omp%thread,'spawning task',link%task%id, link%task%state, link%task%thread
-  !$omp task default(none) firstprivate(self,link,test,task_list)
-    if (self%use_locks) then
+  !$omp task default(none) firstprivate(self,link,test,task_list) shared(use_locks)
+    if (use_locks) then
       if (link%task%lock%test()) then
         call self%update (task_list, link, test)
         call link%task%lock%unset
@@ -268,14 +290,14 @@ SUBROUTINE set_state (self, task, in)
   class(task_t), pointer:: task
   integer:: in, io
   !...........................................................................
-  if (self%use_critical) then
+  if (use_critical) then
     !$omp critical (set_state_cr)
     io = task%state
-    if (self%verbose>1) &
-      print '(a,i4,f12.6,2x,5i4,2x,2i3)', ' dispatcher3:', omp%thread, wallclock(), n_state, io, in
+    task%state = in
     n_state(io) = n_state(io) - 1
     n_state(in) = n_state(in) + 1
-    task%state = in
+    if (self%verbose>1) &
+      print '(a,i4,f12.6,2x,5i4,2x,2i3)', ' dispatcher3:', omp%thread, wallclock(), n_state, io, in
     !$omp end critical (set_state_cr)
   else
    !$omp atomic read
@@ -286,7 +308,8 @@ SUBROUTINE set_state (self, task, in)
    n_state(in) = n_state(in) + 1
    !$omp atomic write
    task%state = in
-   !print *,'dispatcher3:',omp%thread,wallclock(),n_state
+    if (self%verbose>1) &
+      print '(a,i4,f12.6,2x,5i4,2x,2i3)', ' dispatcher3:', omp%thread, wallclock(), n_state, io, in
   end if
 END SUBROUTINE
 
@@ -299,6 +322,8 @@ LOGICAL FUNCTION is_ready (self, link)
   class(link_t), pointer:: link, nbor
   integer:: state
   !...........................................................................
+  !$omp atomic
+  n_check = n_check+1
   !$omp atomic read
   state = link%task%state
   if (link%task%is_set (bits%virtual)) then
@@ -322,6 +347,21 @@ LOGICAL FUNCTION is_ready (self, link)
       nbor => nbor%next
     end do
   end if
+  if (is_ready) then
+    !$omp atomic
+    n_ready = n_ready+1
+  end if
 END FUNCTION
+
+!> =============================================================================
+!> Print statistics
+!> =============================================================================
+SUBROUTINE finalize
+  if (omp%master) &
+    print '(a,i6,4(a,f7.4))', ' dispatcher3_t%finalize: rank =',mpi%rank, &
+      ', fraction of ready tasks =', real(n_ready)/real(n_check), &
+      ', fraction of dispatcher idle time =', wc_failed/max(1d-10,wallclock()-start)
+END SUBROUTINE finalize
+
 
 END MODULE dispatcher3_mod
