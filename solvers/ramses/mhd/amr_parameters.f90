@@ -40,7 +40,6 @@ module amr_parameters
   integer, parameter :: nstride = 65536
 
   ! Run control
-  logical::verbose =.false.   ! Write everything
   logical::hydro   =.false.   ! Hydro activated
   logical::pic     =.false.   ! Particle In Cell activated
   logical::poisson =.false.   ! Poisson solver activated

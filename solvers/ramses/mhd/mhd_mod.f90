@@ -51,7 +51,7 @@ MODULE mhd_mod
   end type
   logical:: isothermal=.false.
   logical:: first_time=.true.
-  logical:: local_debug=.false.
+  integer:: verbose=0
   character(len=16):: eqn='mhd'
   real(kind=8):: courant_number=0.2
   real:: csound=1.
@@ -64,7 +64,7 @@ SUBROUTINE init (self)
   type(index_t):: idx
   integer:: i
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, isothermal, csound
+    smallc, isothermal, csound, verbose
 !...............................................................................
   call trace%begin('mhd_mod%init')
 
@@ -173,14 +173,14 @@ SUBROUTINE update (self)
   call ctoprim(self)                                    ! Primitive variables
   self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
   call uslope(self,self%bf,self%q,self%dq,self%dbf)              ! TVD slopes
-  if (local_debug) print *, 'uslope', self%id, minval(self%dbf), maxval(self%dbf)
+  if (verbose>0) print *, 'uslope', self%id, minval(self%dbf), maxval(self%dbf)
   if (slope_type==3.0) then
     self%dq2=self%dq
   else
     call uslope(self,self%bf,self%q,self%dq2,self%dbf)              ! TVD slopes
   endif
-  if (local_debug) print *, 'uslope', self%id, minval(self%dq), maxval(self%dq)
-  if (local_debug) print *, 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
+  if (verbose>0) print *, 'uslope', self%id, minval(self%dq), maxval(self%dq)
+  if (verbose>0) print *, 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
   allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
   allocate (emfambdiff(self%gn(1),self%gn(2),self%gn(3),3))
 
@@ -336,7 +336,7 @@ SUBROUTINE update (self)
 
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = 0.5 * (Bleft + Bright)
 
-  if (local_debug) print *, 'unew', self%id, minval(unew), maxval(unew)
+  if (verbose>0) print *, 'unew', self%id, minval(unew), maxval(unew)
   end associate
   !-----------------------------------------------------------------------------
   ! Reset the energy variable in isothermal cases
@@ -456,8 +456,8 @@ subroutine ctoprim(self)
   bf(n(1)+1,:,:,1) = 0.0
   bf(:,n(2)+1,:,2) = 0.0
   bf(:,:,n(3)+1,3) = 0.0
-  if (local_debug) print *,  'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
-  if (local_debug) print *,  'ctoprim:bf', self%id, minval(bf), maxval(bf)
+  if (verbose>0) print *,  'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
+  if (verbose>0) print *,  'ctoprim:bf', self%id, minval(bf), maxval(bf)
 
   do k=1,self%gn(3)
   do j=1,self%gn(2)
@@ -934,7 +934,7 @@ SUBROUTINE trace3d(self)
 !    if (entropy_fix) then
 !       if ((i==1.or.i==2).and.(j==1.or.j==2).and.(k==1.or.k==2)) then
 !          q(:,i,j,k,ip) = S + 2.0*sS0
-!          if (local_debug) then
+!          if (verbose>0) then
 !             do ig=1,ngrid
 !                if (in_debug_region(ind_grid(ig))) then
 !                   print'(3hMKE,i8,i3,3f10.6,1p,12e11.3)', &
@@ -1324,6 +1324,7 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   lb = self%mesh%li
   ub = self%mesh%uo
   xdim = ln-1
+  if (verbose>0) print '(a,2(2x,3i4))', 'mhd_t%cmpflxm: lb, ub=', lb, ub
   !
   ! Avoid using spurious values from allocated, but non-defined entries
   bn_mean=0d0
