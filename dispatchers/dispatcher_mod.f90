@@ -17,7 +17,6 @@ MODULE dispatcher_mod
   private
   type, public:: dispatcher_t
     procedure(method0), nopass, pointer:: method => null()
-    logical:: use_locks=.false.
   contains
     procedure:: init
     procedure:: execute
@@ -28,6 +27,8 @@ MODULE dispatcher_mod
   end type
   integer, save:: verbose=0
   integer, save:: method=0
+  logical:: use_locks=.false.
+  logical:: use_critical=.true.
   logical, save:: test=.false.
   real(8):: test_seconds=30.
   type(dispatcher_t), public:: dispatcher
@@ -41,8 +42,8 @@ CONTAINS
 SUBROUTINE init (self)
   class(dispatcher_t):: self
   integer:: iostat
-  logical:: use_locks=.false.
-  namelist /dispatcher_params/ method, verbose, test, test_seconds, use_locks
+  namelist /dispatcher_params/ method, verbose, test, test_seconds, use_locks, &
+    use_critical
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher_t%init')
   rewind (io%input)
@@ -167,7 +168,7 @@ END SUBROUTINE method2
 SUBROUTINE method3 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io
-  call dispatcher3%execute (task_list, test)
+  call dispatcher3%execute (task_list, use_locks, use_critical, test, verbose)
 END SUBROUTINE method3
 
 END MODULE dispatcher_mod
