@@ -38,7 +38,7 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub)
   REAL(dp),DIMENSION(ub-lb+1)::lim,emago
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('riemann_mod::hlld_vec', itimer=itimer)
+  call trace%begin('riemann_mod::hlld_vec', 2, itimer=itimer)
   !
   entho = one/max(gamma-one,1e-6)
   !
@@ -269,7 +269,7 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
   logical:: flag
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin('riemann_mod::hlld', itimer=itimer)
+  call trace%begin('riemann_mod::hlld', 2, itimer=itimer)
   !
   ! constants
   entho = one/max(gamma-one,1e-6)
@@ -521,7 +521,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
   !integer, save:: itimer(10)=0
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('riemann_mod::hlld_2d',itimer=itimer)
+  call trace%begin ('riemann_mod::hlld_2d', 2, itimer=itimer)
   do l=2,ngrid
     !call trace%begin ('hlld_2d find_fast_speed', itimer=itimer(1))
     rLL=qLL(l,1); pLL=qLL(l,2); uLL=qLL(l,3); vLL=qLL(l,4); ALL=qLL(l,6); BLL=qLL(l,7) ; CLL=qLL(l,8)
