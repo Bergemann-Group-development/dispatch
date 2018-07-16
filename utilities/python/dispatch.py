@@ -20,6 +20,7 @@
 from __future__ import print_function
 
 import os
+import sys
 import f90nml
 import numpy as np
 
@@ -45,10 +46,16 @@ class _obj(object):
             ba = np.array(b) if isinstance(b, list) else b
             setattr(self, a, _obj(b) if isinstance(b, dict) else ba)
 
-def _data(patch):
+def p2():
+    return sys.version_info.major==2
+
+def _data(patch,verbose=0):
     """ Map patch data to patch.data, returning an array of variables
     """
-    bytes=long(4*np.product(patch.ncell))
+    if p2():
+        bytes=long(4*np.product(patch.ncell))
+    else:
+        bytes=4*np.product(patch.ncell)
     shape=tuple(patch.n)
     data=[]
     for iv in range(patch.nv):
@@ -59,6 +66,8 @@ def _data(patch):
         offset += patch.iout*patch.ntotal*patch.nv
         offset *= bytes
         try:
+            if verbose>0:
+                print (patch.iout,offset)
             var=np.memmap(patch.datafile, dtype=np.float32, offset=offset,
                           mode='r', order='F', shape=shape)
             data.append(var)
@@ -74,7 +83,7 @@ def attributes(patch):
         if k != 'data':
             print ('{:>12}:  {}'.format(k,v))
 
-def _patches(datadir,data,verbose=0):
+def _patches(datadir,rundir,verbose=0):
     """ Read all patch meta data in a directory
     """
     try:
@@ -84,14 +93,17 @@ def _patches(datadir,data,verbose=0):
     # Convert list of patch dicts to list of patch objects
     patches=[]
     for f in files:
-        dlist=f90nml.read(f)
-        for dict in dlist['patch_nml']:
-            patch=_obj(dict)
+        dict=f90nml.read(f)                 # get top dict
+        dlist=dict['patch_nml']             # should be list of dicts
+        if type(dlist) != type(list):       # if not  ...
+            dlist=[dlist]                   # make it a list of one
+        for dict in dlist:                  # for each dict
+            patch=_obj(dict)                # make patch class instance
             patch.file=f
             if patch.ioformat==5:
-                patch.datafile=_file(_dir(data,'00000'),'snapshot.dat')
+                patch.datafile=_file(_dir(rundir,'00000'),'snapshot.dat')
             else:
-                patch.datafile=_file(data,'snapshots.dat')
+                patch.datafile=_file(rundir,'snapshots.dat')
             assert os.path.isfile(patch.datafile), '{} does not exist'.format(patch.datafile)
             patch.data=_data(patch)
             patches.append(patch)
@@ -125,7 +137,7 @@ class snapshot():
             for a, b in dlist.items():
                 setattr(self, a, b)
             # Add array of patch instances
-            self.patches=_patches(datadir,data,verbose=verbose)
+            self.patches=_patches(datadir,rundir,verbose=verbose)
         if not hasattr(self,'patches'):
             self.patches=[]
 
