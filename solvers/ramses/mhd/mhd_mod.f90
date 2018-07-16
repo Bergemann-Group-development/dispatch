@@ -181,10 +181,12 @@ SUBROUTINE update (self)
   endif
   if (verbose>0) print *, 'uslope', self%id, minval(self%dq), maxval(self%dq)
   if (verbose>0) print *, 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
-  allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
-  allocate (emfambdiff(self%gn(1),self%gn(2),self%gn(3),3))
 
-  call non_ideal%non_ideal_comp(self%bf,self%uin,self%q,fluxambdiff,emfambdiff,self%u_max,self%ds(1),self%dtime,self%gn(1))
+  if (non_ideal%is_used) then
+    allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
+    allocate (emfambdiff(self%gn(1),self%gn(2),self%gn(3),3))
+    call non_ideal%non_ideal_comp(self%bf,self%uin,self%q,fluxambdiff,emfambdiff,self%u_max,self%ds(1),self%dtime,self%gn(1))
+  end if
   call self%courant_condition                           ! compute dt
 
   call trace3d(self)                                    ! predictor step
@@ -361,9 +363,11 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
+  if (non_ideal%is_used) &
+    deallocate (fluxambdiff,emfambdiff)
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dq2,self%bf,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
-              self%Ex,self%Ey,self%Ez,fluxambdiff,emfambdiff)
+              self%Ex,self%Ey,self%Ez)
   deallocate (dflux_x, dflux_y, dflux_z, Bleft, Bright)
   call trace%end (itimer)
 END SUBROUTINE update
