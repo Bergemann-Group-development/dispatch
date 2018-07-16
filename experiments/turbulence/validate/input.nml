@@ -69,7 +69,7 @@
 !type='exa256'
 !type='raw'
 /
-&initial_solenoidal_params  k=1,1,2 a0=0.3,0.2,0.1 gamma=1.01                /
+&initial_solenoidal_params  k=1,1,2 a0=0.3,0.2,0.1 gamma=1.4                 /
 &initial_compressive_params k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
 &initial_advection_params   k=3,3,3 a0=0.0,0.0,0.0 u0=0.1,0.2,0.3 b0=0,0,0.0 /
 
@@ -81,11 +81,10 @@
 &ramses_params
  courant_factor=0.8
  !courant_factor=0.266667
- gamma=1.0
+ gamma=1.4
  slope_type=2
  !slope_type=-1
  smallr=1e-4
  smallc=5e-1
  riemann='hllc'
- isothermal=t
 /
