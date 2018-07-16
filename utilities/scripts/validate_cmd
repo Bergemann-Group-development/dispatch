@@ -18,9 +18,9 @@ if ($?RESET) then
 endif
 
 if ($?tee) then
-  set cmd = "$cmd |& tee $label.log"
+  set cmd = "$cmd | tee $label.log"
 else
-  set cmd = "$cmd >& $label.log"
+  set cmd = "$cmd > $label.log"
 endif
 
 # echo the command
