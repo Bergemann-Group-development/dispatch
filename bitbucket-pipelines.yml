@@ -9,10 +9,12 @@ pipelines:
   default:
     - step:
         script:
-          - ulimit -s 32768
           - export OMP_STACKSIZE=256m; export OMP_NUM_THREADS=1
           - echo "Run simple tests"
+          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -x tests/meshes
           - cd $BITBUCKET_CLONE_DIR; cd tests/meshes; make clean; make; ./test.x
-          - echo "Validate experiments in utilities/scripts/validate_list.txt"
-          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -l
+          - echo "Check compilation of experiments in validation-x_list.txt"
+          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -x -l validate-x_list.txt
+          - echo "Check compilation and running experiments in validation_list.txt"
+          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -l validate_list.txt
           - echo "Everything is awesome!"

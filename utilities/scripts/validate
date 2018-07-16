@@ -60,7 +60,8 @@ while ($#argv > 0)
       echo "The -q option is now obsolete; use -v for verbose output"
       exit 1
     case -l:
-      set readlist
+      shift
+      set readlist = $1
       breaksw
     # list of directories
     default:
@@ -79,7 +80,7 @@ if ($#dirs == 0) then
     # if "-f" is specified, read experiments to validate from "validate_list.txt"
     set scriptdir = `dirname $0`
     set absdir = `cd $scriptdir && pwd`
-    foreach line (`cat $absdir/validate_list.txt`)
+    foreach line (`cat $absdir/$readlist`)
       set dirs = ($dirs $line)
     end
   else
