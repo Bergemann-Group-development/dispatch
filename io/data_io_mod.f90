@@ -238,7 +238,7 @@ SUBROUTINE output_nml (patch, append)
   !-----------------------------------------------------------------------------
   ioformat = io%format
   iout     = patch%iout
-  time     = patch%time
+  time     = patch%out_next
   dtime    = patch%dtime
   ntotal   = io%ntotal
   if (mpi%master .and. .not.append) then
