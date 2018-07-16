@@ -79,7 +79,11 @@ if ($#dirs == 0) then
   if ($?readlist) then
     # if "-f" is specified, read experiments to validate from "validate_list.txt"
     set scriptdir = `dirname $0`
-    set absdir = `cd $scriptdir && pwd`
+    if ("$HOST" == "Aake-T430s") then
+      set absdir = $scriptdir
+    else
+      set absdir = `cd $scriptdir && pwd`
+    endif
     foreach line (`cat $absdir/$readlist`)
       set dirs = ($dirs $line)
     end
