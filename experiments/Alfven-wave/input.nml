@@ -89,5 +89,4 @@
  !smallr=1e-4
  !smallc=5e-1
  riemann='hlld'
- do_isothermal=t
 /
