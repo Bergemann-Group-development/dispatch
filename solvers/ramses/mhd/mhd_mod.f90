@@ -115,7 +115,6 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%update', itimer=itimer)
-  nv3 = self%nv-3
   n = self%mesh%ui-self%mesh%li+1
   allocate (dflux_x(n(1),n(2),n(3)))
   allocate (dflux_y(n(1),n(2),n(3)))
@@ -198,8 +197,8 @@ SUBROUTINE update (self)
   call cmpflxm(self,self%gn(2),3,2,4,7,6,8,fl(:,:,:,:,2))
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
 
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(3)-1,self%nv)
-  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(2)-1,self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(1)-1,self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(1)-1,self%nv)
   call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1),self%gn(1)-1,self%nv)
 
   dtdx = self%dtime/self%ds(1) 
@@ -229,9 +228,8 @@ SUBROUTINE update (self)
              i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
              uin=>self%uin,unew=>self%unew)
 
-  unew(1:i0-1,:,:,:) = uin(1:i0-1,:,:,:); unew(i1+1:,:,:,:) = uin(i1+1:,:,:,:)
-  unew(:,1:j0-1,:,:) = uin(:,1:j0-1,:,:); unew(:,j1+1:,:,:) = uin(:,j1+1:,:,:)
-  unew(:,:,1:k0-1,:) = uin(:,:,1:k0-1,:); unew(:,:,k1+1:,:) = uin(:,:,k1+1:,:)
+  unew = uin
+  nv3 = 5
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
    uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,1) - &
@@ -494,9 +492,9 @@ end subroutine ctoprim
 subroutine uslope(self,bf,q,dq,dbf)
   class(mhd_t):: self
   real, dimension(:,:,:,:):: q
-  real, dimension(size(q,1),size(q,2),size(q,3),size(q,4)):: bf
-  real, dimension(size(q,1),size(q,2),size(q,3),size(q,4),3):: dq
-  real, dimension(size(q,1),size(q,2),size(q,3),3,3):: dbf
+  real, dimension(:,:,:,:):: bf
+  real, dimension(:,:,:,:,:):: dq
+  real, dimension(:,:,:,:,:):: dbf
   integer::nv, islope_type
   integer::i, j, k, n, l(3), u(3)
   real(dp)::dsgn, dlim, dcen, dlft, drgt, slop, xslope_type
@@ -510,8 +508,8 @@ subroutine uslope(self,bf,q,dq,dbf)
   call trace%begin ('mhd_t%uslope', itimer=itimer)
   !
   islope_type = int(slope_type)
-  l = self%mesh%lo
-  u = self%mesh%uo
+  l = self%mesh%lb+1
+  u = self%mesh%ub-1
   nv=self%nv
   if(slope_type==-1)then
     do n = 1, nv
@@ -1325,8 +1323,8 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   associate (qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%cmpflxm',itimer=itimer)
-  lb = self%mesh%li
-  ub = self%mesh%uo
+  lb = self%mesh%lb+2
+  ub = self%mesh%ub-1
   xdim = ln-1
   if (verbose>0) print '(a,2(2x,3i4))', 'mhd_t%cmpflxm: lb, ub=', lb, ub
   !
