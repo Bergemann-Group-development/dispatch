@@ -52,10 +52,10 @@ SUBROUTINE init (self)
                                xdisc
   !----------------------------------------------------------------------------
   call trace_begin ('experiment_t%init')
-  self%nv = 10
   ! intialise solver
   self%mhd = .true.
   call self%mhd_t%init
+  self%periodic = [.false., .true., .true.]
 
   !$omp critical (input_cr)
   if (first_time) then
@@ -158,9 +158,6 @@ SUBROUTINE init (self)
     end do
   end do
 
-  call self%clear(bits%root_grid)
-  self%periodic = .false.
-
   ! assign boundary conditions.
   call pboundary%condition(self%mem(:,:,:,:,self%it,1), self%mesh, .true.)
   call pboundary%condition(self%mem(:,:,:,:,self%it,1), self%mesh, .false.)
@@ -182,17 +179,15 @@ SUBROUTINE update (self)
   integer :: iv
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-
   if ((self%llc_nat(1)-self%ds(1)) .lt. self%mesh(1)%origin) then
     call pboundary%condition (self%mem(:,:,:,:,self%it,1), self%mesh, .true.)
   endif
   if ((self%llc_nat(1)+self%size(1)+self%ds(1)) .gt. (self%mesh(1)%origin + self%box(1))) then
     call pboundary%condition (self%mem(:,:,:,:,self%it,1), self%mesh, .false.)
   endif
-
   call self%mhd_t%update
-  
   call trace_end
 END SUBROUTINE update
+
 !> =============================================================================
 END MODULE experiment_mod
