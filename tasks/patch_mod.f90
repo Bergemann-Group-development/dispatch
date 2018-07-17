@@ -673,14 +673,19 @@ FUNCTION myfloatindex_scalar (self, cpos, idir, h) RESULT(out)
 END FUNCTION myfloatindex_scalar
 
 !> =============================================================================
-!> Periodic mapping of a grid -- typically the root grid
+!> Periodic mapping of a grid -- typically the root grid. This is typically 
+!> only used in tests, so does not need to be efficient.
 !> =============================================================================
 SUBROUTINE periodic_grid (self, only)
   class(patch_t):: self
   integer, optional:: only
-  integer:: ix, iy, iz, i(3), j(3), lb(3), ub(3), li(3), ui(3), n(3)
   !.............................................................................
+  integer:: ix, iy, iz, i(3), j(3), lb(3), ub(3), li(3), ui(3), n(3)
+  logical:: periodic(3)
+  !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%periodic_grid')
+  periodic = self%periodic .and. self%size+self%ds > self%box
+  if (.not.any(periodic)) call mpi%abort ('patch_t%periodic_grid')
   lb = self%mesh%lb
   ub = self%mesh%ub
   li = self%mesh%li
@@ -701,6 +706,12 @@ SUBROUTINE periodic_grid (self, only)
       j = modulo(i-li,n)+li
     else where
       j = 1
+    end where
+    !---------------------------------------------------------------------------
+    ! Prevent wrapping in non-periodic directions
+    !---------------------------------------------------------------------------
+    where (.not.periodic)
+      j = i
     end where
     !---------------------------------------------------------------------------
     ! Make sure horizontal periodic wrapping continues over the whole vertical
@@ -734,24 +745,26 @@ FUNCTION is_periodic(self) RESULT(out)
   class(patch_t):: self
   logical:: out
   !.............................................................................
-  out = self%is_set (bits%root_grid) .and. all(self%periodic)
+  out = any(self%periodic .and. self%size+self%ds > self%box)
 END FUNCTION is_periodic
 
-!> =============================================================================
+!> =====================================================================
 !> Optimized periodic boundary enforcer
-!> =============================================================================
+!> =====================================================================
 SUBROUTINE make_periodic4 (patch, f)
   class(patch_t):: patch
   class(mesh_t), pointer:: m(:)
   real(4):: f(:,:,:)
   integer:: ix, iy, iz, n(3)
+  logical:: periodic(3)
   !-----------------------------------------------------------------------------
+  periodic = patch%periodic .and. patch%size+patch%ds > patch%box
   m => patch%mesh
   n = patch%ncell
   !-----------------------------------------------------------------------------
   ! x periodicity; make periodic inside the yz patch limits
   !-----------------------------------------------------------------------------
-  if (n(1) > 1) then
+  if (n(1) > 1 .and. periodic(1)) then
     do iz=m(3)%li,m(3)%ui
       do ix=m(1)%lb,m(1)%lo
         do iy=m(2)%li,m(2)%ui
@@ -768,7 +781,7 @@ SUBROUTINE make_periodic4 (patch, f)
   !-----------------------------------------------------------------------------
   ! y periodicity, full range in x now
   !-----------------------------------------------------------------------------
-  if (n(2) > 1) then
+  if (n(2) > 1 .and. periodic(2)) then
     do iz=m(3)%li,m(3)%ui
       do iy=m(2)%lb,m(2)%lo
         do ix=m(1)%lb,m(1)%ub
@@ -785,7 +798,7 @@ SUBROUTINE make_periodic4 (patch, f)
   !-----------------------------------------------------------------------------
   ! z periodicity, full range in xy
   !-----------------------------------------------------------------------------
-  if (n(3) > 1) then
+  if (n(3) > 1 .and. periodic(3)) then
     do iy=m(2)%lb,m(2)%ub
       do iz=m(3)%lb,m(3)%lo
         do ix=m(1)%lb,m(1)%ub
@@ -809,13 +822,15 @@ SUBROUTINE make_periodic8 (patch, f)
   class(mesh_t), pointer:: m(:)
   real(8):: f(:,:,:)
   integer:: ix, iy, iz, n(3)
+  logical:: periodic(3)
   !-----------------------------------------------------------------------------
+  periodic = patch%periodic .and. patch%size+patch%ds > patch%box
   m => patch%mesh
   n = patch%ncell
   !-----------------------------------------------------------------------------
   ! x periodicity; make periodic inside the yz patch limits
   !-----------------------------------------------------------------------------
-  if (n(1) > 1) then
+  if (n(1) > 1 .and. periodic(1)) then
     do iz=m(3)%li,m(3)%ui
       do ix=m(1)%lb,m(1)%lo
         do iy=m(2)%li,m(2)%ui
@@ -832,7 +847,7 @@ SUBROUTINE make_periodic8 (patch, f)
   !-----------------------------------------------------------------------------
   ! y periodicity, full range in x now
   !-----------------------------------------------------------------------------
-  if (n(2) > 1) then
+  if (n(2) > 1 .and. periodic(2)) then
     do iz=m(3)%li,m(3)%ui
       do iy=m(2)%lb,m(2)%lo
         do ix=m(1)%lb,m(1)%ub
@@ -849,7 +864,7 @@ SUBROUTINE make_periodic8 (patch, f)
   !-----------------------------------------------------------------------------
   ! z periodicity, full range in xy
   !-----------------------------------------------------------------------------
-  if (n(3) > 1) then
+  if (n(3) > 1 .and. periodic(3)) then
     do iy=m(2)%lb,m(2)%ub
       do iz=m(3)%lb,m(3)%lo
         do ix=m(1)%lb,m(1)%ub
