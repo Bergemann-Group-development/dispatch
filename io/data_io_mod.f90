@@ -21,6 +21,7 @@ MODULE data_io_mod
   USE parallel_io_mod
   USE buffered_io_mod
   USE snapshot_list_mod
+  USE index_mod
   implicit none
   private
   type, public:: data_io_t
@@ -205,6 +206,25 @@ SUBROUTINE output_txt (patch, append)
 END SUBROUTINE output_txt
 
 !> =============================================================================
+!> =============================================================================
+SUBROUTINE index_write
+  type(index_t):: idx
+  integer:: d, e, s, px, py, pz, bx, by, bz, phi
+  namelist /index_nml/ d, e, s, px, py, pz, bx, by, bz, phi
+  d   = idx%d   - 1
+  e   = idx%e   - 1
+  s   = idx%s   - 1
+  px  = idx%px  - 1
+  py  = idx%py  - 1
+  pz  = idx%pz  - 1
+  bx  = idx%bx  - 1
+  by  = idx%by  - 1
+  bz  = idx%bz  - 1
+  phi = idx%phi - 1
+  write (io_unit%data, index_nml)
+END SUBROUTINE index_write
+
+!> =============================================================================
 !> Output text with patch info, either to individual files (io%format=1,2) or
 !> to one file per rank (io%format>2).  This is not threadsafe, both because of
 !> the text file I/O, and because snapshot%ibuf is consantly being modified by
@@ -245,6 +265,7 @@ SUBROUTINE output_nml (patch, append)
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
     open  (io_unit%data, file=trim(filename), form='formatted', status='unknown')
     write (io_unit%data, snapshot_nml)
+    call index_write
     close (io_unit%data)
     if (io%debug(2)) print'(a,3x,"time:",2f13.6)', &
       ' data_io_t%output_nml: '//trim(filename), patch%out_next, patch%time
@@ -257,8 +278,11 @@ SUBROUTINE output_nml (patch, append)
   open  (io_unit%data, file=trim(filename), form='formatted', status='unknown', &
          access=trim(merge('append    ','sequential',append)))
   !-----------------------------------------------------------------------------
-  ! Write the namelist info
+  ! Write the namelist info, including a leading index_nml
   !-----------------------------------------------------------------------------
+  if (mpi%master .and. .not.append) then
+    call index_write
+  end if
   l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
   u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
   ncell      = u-l+1

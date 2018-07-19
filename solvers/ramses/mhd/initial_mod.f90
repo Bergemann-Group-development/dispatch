@@ -36,6 +36,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
+  integer:: iostat
   character(len=64):: solver
   real, optional:: gamma
   character(len=32), save:: type='void'
@@ -47,7 +48,8 @@ SUBROUTINE init (self, solver, gamma)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_params)
+    read (io%input, initial_params, iostat=iostat)
+    if (iostat/=0) call io%namelist_warning ('initial_params')
     if (io%master) write (*, initial_params)
   end if
   !$omp end critical (input_cr)

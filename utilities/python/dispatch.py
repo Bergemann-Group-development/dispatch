@@ -9,11 +9,18 @@
        s=dispatch.snapshot(3,verbose=2)     # print id and all attribues
        s=dispatch.snapshot(3,'run')         # read data/run/00003/
        s=dispatch.snapshot(3,'run','tmp')   # read tmp/run/00003/
+       s.<TAB>                              # tab-expand snapshot properties
+       s.time                               # e.g., snapshot time
        ss=dispatch.snapshots()              # read all data/?????/
        ss=dispatch.snapshots('run')         # read all data/run/?????/
        ss=dispatch.snapshots('run','tmp')   # read all tmp/run/?????/
        p=s.patches[10]                      # patch with ID=11
+       p.<TAB>                              # tab-expand patch properties
        dispatch.attributes(p)               # prettyprint patch attributes
+       i=p.idx                              # variable index object
+       d=p.data[0]                          # density, by integer index
+       d=p.data[i.d]                        # density, by variable index
+       d=p.data[i.dict['d']]                # density, by variable name
 """
 
 # Pythn 2/3 compatibility
@@ -83,6 +90,11 @@ def attributes(patch):
         if k != 'data':
             print ('{:>12}:  {}'.format(k,v))
 
+def _add_axes(patch):
+    patch.x=patch.llc_cart[0]+patch.ds[0]*np.arange(patch.n[0])
+    patch.y=patch.llc_cart[1]+patch.ds[1]*np.arange(patch.n[1])
+    patch.z=patch.llc_cart[2]+patch.ds[2]*np.arange(patch.n[2])
+
 def _patches(datadir,rundir,verbose=0):
     """ Read all patch meta data in a directory
     """
@@ -93,9 +105,9 @@ def _patches(datadir,rundir,verbose=0):
     # Convert list of patch dicts to list of patch objects
     patches=[]
     for f in files:
-        dict=f90nml.read(f)                 # get top dict
-        dlist=dict['patch_nml']             # should be list of dicts
-        if type(dlist) != type(list):       # if not  ...
+        top=f90nml.read(f)                  # get top dict
+        dlist=top['patch_nml']              # should be list of dicts
+        if hasattr(dlist,'keys'):           # if not it is a dict ...
             dlist=[dlist]                   # make it a list of one
         for dict in dlist:                  # for each dict
             patch=_obj(dict)                # make patch class instance
@@ -106,7 +118,15 @@ def _patches(datadir,rundir,verbose=0):
                 patch.datafile=_file(rundir,'snapshots.dat')
             assert os.path.isfile(patch.datafile), '{} does not exist'.format(patch.datafile)
             patch.data=_data(patch)
+            _add_axes(patch)
             patches.append(patch)
+        # Add indices
+        if 'index_nml' in top.keys():
+            dict=top['index_nml']
+            idx=_obj(dict)
+            idx.dict=dict
+            for patch in patches:
+                patch.idx=idx
     # Sort list of patch objects by patch id
     ids=[p.id for p in patches]
     ii=np.argsort(ids)
@@ -132,10 +152,16 @@ class snapshot():
             file=_file(datadir,f)
             if verbose>0:
                 print (file)
-            dlist=f90nml.read(file)['snapshot_nml']
+            dlist=f90nml.read(file)
+            dict=dlist['snapshot_nml']
             # Add snapshot parameters as attributes to the snapshot
-            for a, b in dlist.items():
+            for a, b in dict.items():
                 setattr(self, a, b)
+            # Add indices
+            if 'index_nml' in dlist.keys():
+                dict=dlist['index_nml']
+                self.idx=_obj(dict)
+                self.idx.dict=dict
             # Add array of patch instances
             self.patches=_patches(datadir,rundir,verbose=verbose)
         if not hasattr(self,'patches'):
@@ -149,7 +175,8 @@ def snapshots(run='',data='data', verbose=0):
     for dirname, subdirs, files in os.walk(rund):
         if dirname==rund:
             for subdir in subdirs:
-                snap=snapshot(datadir=_dir(rund,subdir))
+                datadir=_dir(rund,subdir)
+                snap=snapshot(data=data,run=run,datadir=datadir,verbose=verbose)
                 if len(snap.patches)>0:
                     snaps.append(snap)
                     if verbose>0:
