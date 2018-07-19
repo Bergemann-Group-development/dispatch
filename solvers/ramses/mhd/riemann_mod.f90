@@ -498,8 +498,8 @@ end subroutine hlld
 !> =============================================================================
 !> HLLD 2D fluxes
 !> =============================================================================
-SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
-  INTEGER, INTENT(IN) :: j,k,ngrid,nvar
+SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar,xdim)
+  INTEGER, INTENT(IN) :: j,k,ngrid,nvar,xdim
   REAL(dp),DIMENSION(:,:),INTENT(IN)::qLL,qRL,qLR,qRR
   REAL(dp),DIMENSION(:,:,:):: emf
   ! local variables
@@ -890,7 +890,14 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
             & -SAT*SAB/(SAT-SAB)*(AstarT-AstarB)+SAR*SAL/(SAR-SAL)*(BstarR-BstarL)
        !call trace%end (itimer(10))
     endif
-    emf(l,j,k) = E
+    if (xdim == 1) then
+       emf(l,j,k) = E
+    else if (xdim == 2) then
+       emf(k,l,j) = E
+    else if (xdim == 3) then
+       emf(j,k,l) = E
+    endif
+
   end do
   call trace%end (itimer)
 contains
