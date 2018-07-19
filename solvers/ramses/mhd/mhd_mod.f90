@@ -553,25 +553,30 @@ subroutine uslope(self,bf,q,dq,dbf)
       do k = l(3),u(3)
         do j = l(2),u(2)
           do i = l(1),u(1)
-
             ! slopes in first coordinate direction
-            dlft = (q(i  ,j,k,n) - q(i-1,j,k,n))
-            drgt = (q(i+1,j,k,n) - q(i  ,j,k,n))
-            slop = (dlft**2+dlft*drgt)/(dlft**2+drgt**2+1e-30)
-            slop = dlft*(1.-slop)+drgt*slop
-            dq(i,j,k,n,1) = merge(slop,zero,(dlft*drgt)>zero)
+            dlft = (q(i  ,j,k,n) - q(i-1,j,k,n))          ! = dq
+            drgt = (q(i+1,j,k,n) - q(i  ,j,k,n))          ! = dq
+            dcen = half*(dlft+drgt)                       ! = dq
+            dsgn = sign(one, dcen)                        ! sign(slope)
+            slop = xslope_type*min(abs(dlft),abs(drgt))   ! slope_type=1: slope=dq, slope_type=2: slope=2*dq 
+            slop = merge(slop,zero,(dlft*drgt)>zero)      ! if both are non-zero, use the smaller one, or times 2
+            dq(i,j,k,n,1) = dsgn*min(slop,abs(dcen))      ! the smaller of the twice the smaller slope, and the central one
             ! slopes in second coordinate direction
             dlft = (q(i,j  ,k,n) - q(i,j-1,k,n))
             drgt = (q(i,j+1,k,n) - q(i,j  ,k,n))
-            slop = (dlft**2+dlft*drgt)/(dlft**2+drgt**2+1e-30)
-            slop = dlft*(1.-slop)+drgt*slop
-            dq(i,j,k,n,2) = merge(slop,zero,(dlft*drgt)>zero)
+            dcen = half*(dlft+drgt)
+            dsgn = sign(one, dcen)
+            slop = xslope_type*min(abs(dlft),abs(drgt))
+            slop = merge(slop,zero,(dlft*drgt)>zero)
+            dq(i,j,k,n,2) = dsgn*min(slop,abs(dcen))
             ! slopes in third coordinate direction
             dlft = (q(i,j,k  ,n) - q(i,j,k-1,n))
             drgt = (q(i,j,k+1,n) - q(i,j,k  ,n))
-            slop = (dlft**2+dlft*drgt)/(dlft**2+drgt**2+1e-30)
-            slop = dlft*(1.-slop)+drgt*slop
-            dq(i,j,k,n,3) = merge(slop,zero,(dlft*drgt)>zero)
+            dcen = half*(dlft+drgt)
+            dsgn = sign(one, dcen)
+            slop = xslope_type*min(abs(dlft),abs(drgt))
+            slop = merge(slop,zero,(dlft*drgt)>zero)
+            dq(i,j,k,n,3) = dsgn*min(slop,abs(dcen))
           end do
         end do
       end do
