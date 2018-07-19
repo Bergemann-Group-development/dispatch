@@ -98,9 +98,8 @@ SUBROUTINE init (self)
     end do
   end do
 
-  call self%clear(bits%root_grid)
-  self%periodic = .true.
   self%mhd = .true.
+  self%periodic=.true.
   print*, 'done!'
 
   print*,'self%mem(1,1,1,:,self%it,1) in experiment setup',self%mem(1,1,1,:,self%it,1)
