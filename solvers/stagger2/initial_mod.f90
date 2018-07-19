@@ -40,11 +40,12 @@ SUBROUTINE init (self, solver, gamma)
    character(len=64):: solver
    real, optional:: gamma
    !............................................................................
+   integer:: iostat
    integer, save:: seed=-33
    logical, save:: mhd=.true.
    real, save:: a0(3)=0.1, k(3)=1.0, d0=1.0, p0=1.0, b0(3)=0.0, u0(3)=0.0
-   character(len=32), save:: type='single_solenoidal'
-   namelist /initial_params/ seed, k, a0, u0, b0, d0, p0, mhd, type
+   character(len=32), save:: type='void'
+   namelist /initial_params/ type, seed, k, a0, u0, b0, d0, p0, mhd
    !----------------------------------------------------------------------------
    call trace_begin('initial_t%init')
    if (present(gamma)) self%gamma = gamma
@@ -53,7 +54,7 @@ SUBROUTINE init (self, solver, gamma)
      first_time = .false.
      mhd = self%mhd
      rewind (io%input)
-     read (io%input, initial_params)
+     read (io%input, initial_params, iostat=iostat)
      mhd = mhd .or. any(b0 /= 0.0)
      if (io%master) write (*, initial_params)
    end if
@@ -71,6 +72,8 @@ SUBROUTINE init (self, solver, gamma)
    self%mhd    = mhd
    self%time   = 0d0
    select case (type)
+   case ('void')
+     self%condition => void
    case ('single_solenoidal')
      self%condition => single_solenoidal
    case ('single_compressive')
@@ -83,15 +86,19 @@ SUBROUTINE init (self, solver, gamma)
      self%condition => raw
    case default
      print*,'UNKNOWN INITIAL CONDITION TYPE'
-     stop
    end select
    call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
-SUBROUTINE cleanup
-  if (associated(buffer)) deallocate(buffer)
-END SUBROUTINE cleanup
+!> Do-nothing IC; when initializing in experiment_t%init()
+!> =============================================================================
+SUBROUTINE void (self, m, ff, idx)
+  class(initial_t)      :: self
+  type(index_t):: idx
+  class(mesh_t), pointer, dimension(:):: m
+  real, dimension(:,:,:,:) :: ff
+END SUBROUTINE void
 
 !> =============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
@@ -317,5 +324,10 @@ SUBROUTINE raw (self, m, ff, idx)
   !$omp end critical (raw_cr)
   call trace_end
 END SUBROUTINE raw
+
+!> =============================================================================
+SUBROUTINE cleanup
+  if (associated(buffer)) deallocate(buffer)
+END SUBROUTINE cleanup
 
 END MODULE

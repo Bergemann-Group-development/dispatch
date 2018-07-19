@@ -41,7 +41,8 @@ SUBROUTINE init (self, solver, id, mesh)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, force_params)
+    read (io%input, force_params, iostat=iostat)
+    if (iostat/=0) call io%namelist_warning ('force_params')
     if (io%master) write (*, force_params)
   end if
   !$omp end critical (input_cr)

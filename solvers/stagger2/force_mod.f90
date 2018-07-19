@@ -30,10 +30,10 @@ CONTAINS
 SUBROUTINE init (self, solver, id, mesh)
    class(force_t):: self
    character(len=64):: solver
-   integer:: id
+   integer:: id, iostat
    class(mesh_t), pointer:: mesh(:)
-   character(len=32), save:: type='zero'
-  integer, save  :: seed=22
+   character(len=32), save:: type='void'
+   integer, save  :: seed=22
    namelist /force_params/ type, seed
    !----------------------------------------------------------------------------
    call trace_begin('force_t%init')
@@ -41,7 +41,7 @@ SUBROUTINE init (self, solver, id, mesh)
    if (first_time) then
      first_time = .false.
      rewind (io%input)
-     read (io%input, force_params)
+     read (io%input, force_params, iostat=iostat)
      if (io%master) write (*, force_params)
    end if
    !$omp end critical (input_cr)
@@ -51,7 +51,7 @@ SUBROUTINE init (self, solver, id, mesh)
    select case (type)
    case ('single_solenoidal')
      self%selected => single_solenoidal
-   case ('zero')
+   case ('void')
      nullify(self%selected)
    case default
      print*,'UNKNOWN FORCING TYPE'
