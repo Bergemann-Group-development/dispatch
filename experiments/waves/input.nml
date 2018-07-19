@@ -4,7 +4,7 @@
 !type='fast'  ampl=0.1
 !type='sound' ampl=0.1
 /
-&mhd_params              ! defaults are visible in the log file
+&stagger_params          ! defaults are visible in the log file
 !nu=    0.5, 1., 1.0, 0.1, 0.1, 0.1
 !nu=    0.5, 1., 0.0, 1.0, 0.1, 0.1
 !nu=    0.1, 1., 1.0, 1.0, 0.1, 0.1
