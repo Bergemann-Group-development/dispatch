@@ -49,6 +49,7 @@ MODULE io_mod
     procedure:: check_flags
     procedure, nopass:: namelist_warning
     procedure, nopass:: abort
+    procedure, nopass:: assert
   end type
   character(len=64), save:: inputname, outputname
   type(io_t), public:: io
@@ -340,5 +341,16 @@ SUBROUTINE abort (error)
   !.............................................................................
   call mpi%abort (error)
 END SUBROUTINE abort
+
+!> =============================================================================
+!> Interface to mpi%abort, for modules that do not otherwise USE mpi_mod
+!> =============================================================================
+SUBROUTINE assert (ok, message)
+  logical:: ok
+  character(len=*):: message
+  !.............................................................................
+  if (.not.ok) &
+    call mpi%abort (message)
+END SUBROUTINE assert
 
 END MODULE io_mod
