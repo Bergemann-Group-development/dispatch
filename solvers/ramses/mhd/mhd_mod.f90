@@ -184,7 +184,7 @@ SUBROUTINE update (self)
   if (non_ideal%is_used) then
     allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
     allocate (emfambdiff(self%gn(1),self%gn(2),self%gn(3),3))
-    call non_ideal%non_ideal_comp(self%bf,self%uin,self%q,fluxambdiff,emfambdiff,self%u_max,self%ds(1),self%dtime,self%gn(1))
+    call non_ideal%non_ideal_comp(self%bf,self%uin,self%q,fluxambdiff,emfambdiff,self%u_max,self%ds,self%dtime)
   end if
   call self%courant_condition                           ! compute dt
 
@@ -192,13 +192,14 @@ SUBROUTINE update (self)
 
   allocate (fl(self%gn(1),self%gn(2),self%gn(3),self%nv,3))
   allocate (em(self%gn(1),self%gn(2),self%gn(3),3))
-
+  fl = 0.0d0
+  em = 0.0d0
   call cmpflxm(self,self%gn(1),2,3,4,6,7,8,fl(:,:,:,:,1))
   call cmpflxm(self,self%gn(2),3,2,4,7,6,8,fl(:,:,:,:,2))
   call cmpflxm(self,self%gn(3),4,2,3,8,6,7,fl(:,:,:,:,3))
 
-  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(1)-1,self%nv)
-  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(1)-1,self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,2,3,4,6,7,8,em(:,:,:,3),self%gn(3)-1,self%nv)
+  call cmp_mag_flx(self, self%qRT, self%qLT, self%qRB, self%qLB,4,2,3,8,6,7,em(:,:,:,2),self%gn(2)-1,self%nv)
   call cmp_mag_flx(self, self%qRT, self%qRB, self%qLT, self%qLB,3,4,2,7,8,6,em(:,:,:,1),self%gn(1)-1,self%nv)
 
   dtdx = self%dtime/self%ds(1) 
@@ -209,12 +210,12 @@ SUBROUTINE update (self)
   em(:,:,:,3) = em(:,:,:,3)*dtdx
 
   if (non_ideal%is_used) then
-    call non_ideal%flux_upd(fl,fluxambdiff,self%ds(1),self%dtime,1,self%gn(1))
-    call non_ideal%flux_upd(fl,fluxambdiff,self%ds(2),self%dtime,2,self%gn(2))
-    call non_ideal%flux_upd(fl,fluxambdiff,self%ds(3),self%dtime,3,self%gn(3))
-    call non_ideal%non_ideal_emf_up(em(:,:,:,3),emfambdiff,self%ds(3),self%dtime,3,self%gn(3))
-    call non_ideal%non_ideal_emf_up(em(:,:,:,2),emfambdiff,self%ds(2),self%dtime,2,self%gn(2))
-    call non_ideal%non_ideal_emf_up(em(:,:,:,1),emfambdiff,self%ds(1),self%dtime,1,self%gn(1))
+    call non_ideal%flux_upd(fl,fluxambdiff,self%ds(1),self%dtime,1)
+    call non_ideal%flux_upd(fl,fluxambdiff,self%ds(2),self%dtime,2)
+    call non_ideal%flux_upd(fl,fluxambdiff,self%ds(3),self%dtime,3)
+    call non_ideal%non_ideal_emf_up(em(:,:,:,3),emfambdiff,self%ds(3),self%dtime,3)
+    call non_ideal%non_ideal_emf_up(em(:,:,:,2),emfambdiff,self%ds(2),self%dtime,2)
+    call non_ideal%non_ideal_emf_up(em(:,:,:,1),emfambdiff,self%ds(1),self%dtime,1)
   end if
   ! Compute fluxes with appropriate time step
   fl(:,:,:,:,1) = fl(:,:,:,:,1) * dtdx
@@ -560,8 +561,7 @@ subroutine uslope(self,bf,q,dq,dbf)
             dsgn = sign(one, dcen)                        ! sign(slope)
             slop = xslope_type*min(abs(dlft),abs(drgt))   ! slope_type=1: slope=dq, slope_type=2: slope=2*dq 
             slop = merge(slop,zero,(dlft*drgt)>zero)      ! if both are non-zero, use the smaller one, or times 2
-            dq(i,j,k,n,1) = dsgn*min(slop,abs(dcen))      ! the smaller of the twice the smaller slope, and the central one
-            ! slopes in second coordinate direction
+            dq(i,j,k,n,1) = dsgn*min(slop,abs(dcen))      ! the smaller of the twice the smaller slope, and the central one            ! slopes in second coordinate direction
             dlft = (q(i,j  ,k,n) - q(i,j-1,k,n))
             drgt = (q(i,j+1,k,n) - q(i,j  ,k,n))
             dcen = half*(dlft+drgt)
@@ -1507,6 +1507,7 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
     iLB = 0; jLB = 0; kLB = 0
   endif 
 
+  if (xdim == 1) then
     do k = 2,self%mesh(3)%uo
       do j = 2,self%mesh(2)%uo
         qLL (2:ngrid,1) = max(qRT(2-iRT:ngrid-iRT, j-jRT, k-kRT, 1, xdim), smallr)
@@ -1541,9 +1542,87 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
         qRL (2:ngrid,8) = qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, bor, xdim)
         qLR (2:ngrid,8) = qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, bor, xdim)
         qRR (2:ngrid,8) = qLB(2-iLB:ngrid-iLB, j-jLB, k-kLB, bor, xdim)
-        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar)
+        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar,xdim)
       end do
     end do
+  
+  else if (xdim == 2) then
+    do i = 2,self%mesh(1)%uo
+      do k = 2,self%mesh(3)%uo
+        qLL (2:ngrid,1) = max(qRT(i-iRT, 2-jRT:ngrid-jRT, k-kRT, 1, xdim), smallr)
+        qRL (2:ngrid,1) = max(qLT(i-iLT, 2-jLT:ngrid-jLT, k-kLT, 1, xdim), smallr)
+        qLR (2:ngrid,1) = max(qRB(i-iRB, 2-jRB:ngrid-jRB, k-kRB, 1, xdim), smallr)
+        qRR (2:ngrid,1) = max(qLB(i-iLB, 2-jLB:ngrid-jLB, k-kLB, 1, xdim), smallr)
+        qLL (2:ngrid,2) = max(qRT(i-iRT, 2-jRT:ngrid-jRT, k-kRT, 5, xdim), smallp)
+        qRL (2:ngrid,2) = max(qLT(i-iLT, 2-jLT:ngrid-jLT, k-kLT, 5, xdim), smallp)
+        qLR (2:ngrid,2) = max(qRB(i-iRB, 2-jRB:ngrid-jRB, k-kRB, 5, xdim), smallp)
+        qRR (2:ngrid,2) = max(qLB(i-iLB, 2-jLB:ngrid-jLB, k-kLB, 5, xdim), smallp)
+        qLL (2:ngrid,3) = qRT(i-iRT, 2-jRT:ngrid-jRT, k-kRT, lp1, xdim)
+        qRL (2:ngrid,3) = qLT(i-iLT, 2-jLT:ngrid-jLT, k-kLT, lp1, xdim)
+        qLR (2:ngrid,3) = qRB(i-iRB, 2-jRB:ngrid-jRB, k-kRB, lp1, xdim)
+        qRR (2:ngrid,3) = qLB(i-iLB, 2-jLB:ngrid-jLB, k-kLB, lp1, xdim)
+        qLL (2:ngrid,4) = qRT(i-iRT, 2-jRT:ngrid-jRT, k-kRT, lp2, xdim)
+        qRL (2:ngrid,4) = qLT(i-iLT, 2-jLT:ngrid-jLT, k-kLT, lp2, xdim)
+        qLR (2:ngrid,4) = qRB(i-iRB, 2-jRB:ngrid-jRB, k-kRB, lp2, xdim)
+        qRR (2:ngrid,4) = qLB(i-iLB, 2-jLB:ngrid-jLB, k-kLB, lp2, xdim)
+        qLL (2:ngrid,6) = half*(qRT(i-iRT, 2-jRT:ngrid-jRT, k-kRT, bp1, xdim) + qLT(i-iLT, 2-jLT:ngrid-jLT, k-kLT, bp1, xdim))
+        qRL (2:ngrid,6) = half*(qRT(i-iRT, 2-jRT:ngrid-jRT, k-kRT, bp1, xdim) + qLT(i-iLT, 2-jLT:ngrid-jLT, k-kLT, bp1, xdim))
+        qLR (2:ngrid,6) = half*(qRB(i-iRB, 2-jRB:ngrid-jRB, k-kRB, bp1, xdim) + qLB(i-iLB, 2-jLB:ngrid-jLB, k-kLB, bp1, xdim))
+        qRR (2:ngrid,6) = half*(qRB(i-iRB, 2-jRB:ngrid-jRB, k-kRB, bp1, xdim) + qLB(i-iLB, 2-jLB:ngrid-jLB, k-kLB, bp1, xdim))
+        qLL (2:ngrid,7) = half*(qRT(i-iRT, 2-jRT:ngrid-jRT, k-kRT, bp2, xdim) + qRB(i-iRB, 2-jRB:ngrid-jRB, k-kRB, bp2, xdim))
+        qRL (2:ngrid,7) = half*(qLT(i-iLT, 2-jLT:ngrid-jLT, k-kLT, bp2, xdim) + qLB(i-iLB, 2-jLB:ngrid-jLB, k-kLB, bp2, xdim))
+        qLR (2:ngrid,7) = half*(qRT(i-iRT, 2-jRT:ngrid-jRT, k-kRT, bp2, xdim) + qRB(i-iRB, 2-jRB:ngrid-jRB, k-kRB, bp2, xdim))
+        qRR (2:ngrid,7) = half*(qLT(i-iLT, 2-jLT:ngrid-jLT, k-kLT, bp2, xdim) + qLB(i-iLB, 2-jLB:ngrid-jLB, k-kLB, bp2, xdim))
+        qLL (2:ngrid,5) = qRT(i-iRT, 2-jRT:ngrid-jRT, k-kRT, lor, xdim)
+        qRL (2:ngrid,5) = qLT(i-iLT, 2-jLT:ngrid-jLT, k-kLT, lor, xdim)
+        qLR (2:ngrid,5) = qRB(i-iRB, 2-jRB:ngrid-jRB, k-kRB, lor, xdim)
+        qRR (2:ngrid,5) = qLB(i-iLB, 2-jLB:ngrid-jLB, k-kLB, lor, xdim)
+        qLL (2:ngrid,8) = qRT(i-iRT, 2-jRT:ngrid-jRT, k-kRT, bor, xdim)
+        qRL (2:ngrid,8) = qLT(i-iLT, 2-jLT:ngrid-jLT, k-kLT, bor, xdim)
+        qLR (2:ngrid,8) = qRB(i-iRB, 2-jRB:ngrid-jRB, k-kRB, bor, xdim)
+        qRR (2:ngrid,8) = qLB(i-iLB, 2-jLB:ngrid-jLB, k-kLB, bor, xdim)
+        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,k,i,ngrid,nvar,xdim)
+      end do
+    end do
+  else if (xdim == 3) then    
+    do j = 2,self%mesh(2)%uo
+      do i = 2,self%mesh(1)%uo
+        qLL (2:ngrid,1) = max(qRT(i-iRT, j-jRT, 2-kRT:ngrid-kRT, 1, xdim), smallr)
+        qRL (2:ngrid,1) = max(qLT(i-iLT, j-jLT, 2-kLT:ngrid-kLT, 1, xdim), smallr)
+        qLR (2:ngrid,1) = max(qRB(i-iRB, j-jRB, 2-kRB:ngrid-kRB, 1, xdim), smallr)
+        qRR (2:ngrid,1) = max(qLB(i-iLB, j-jLB, 2-kLB:ngrid-kLB, 1, xdim), smallr)
+        qLL (2:ngrid,2) = max(qRT(i-iRT, j-jRT, 2-kRT:ngrid-kRT, 5, xdim), smallp)
+        qRL (2:ngrid,2) = max(qLT(i-iLT, j-jLT, 2-kLT:ngrid-kLT, 5, xdim), smallp)
+        qLR (2:ngrid,2) = max(qRB(i-iRB, j-jRB, 2-kRB:ngrid-kRB, 5, xdim), smallp)
+        qRR (2:ngrid,2) = max(qLB(i-iLB, j-jLB, 2-kLB:ngrid-kLB, 5, xdim), smallp)
+        qLL (2:ngrid,3) = qRT(i-iRT, j-jRT, 2-kRT:ngrid-kRT, lp1, xdim)
+        qRL (2:ngrid,3) = qLT(i-iLT, j-jLT, 2-kLT:ngrid-kLT, lp1, xdim)
+        qLR (2:ngrid,3) = qRB(i-iRB, j-jRB, 2-kRB:ngrid-kRB, lp1, xdim)
+        qRR (2:ngrid,3) = qLB(i-iLB, j-jLB, 2-kLB:ngrid-kLB, lp1, xdim)
+        qLL (2:ngrid,4) = qRT(i-iRT, j-jRT, 2-kRT:ngrid-kRT, lp2, xdim)
+        qRL (2:ngrid,4) = qLT(i-iLT, j-jLT, 2-kLT:ngrid-kLT, lp2, xdim)
+        qLR (2:ngrid,4) = qRB(i-iRB, j-jRB, 2-kRB:ngrid-kRB, lp2, xdim)
+        qRR (2:ngrid,4) = qLB(i-iLB, j-jLB, 2-kLB:ngrid-kLB, lp2, xdim)
+        qLL (2:ngrid,6) = half*(qRT(i-iRT, j-jRT, 2-kRT:ngrid-kRT, bp1, xdim) + qLT(i-iLT, j-jLT, 2-kLT:ngrid-kLT, bp1, xdim))
+        qRL (2:ngrid,6) = half*(qRT(i-iRT, j-jRT, 2-kRT:ngrid-kRT, bp1, xdim) + qLT(i-iLT, j-jLT, 2-kLT:ngrid-kLT, bp1, xdim))
+        qLR (2:ngrid,6) = half*(qRB(i-iRB, j-jRB, 2-kRB:ngrid-kRB, bp1, xdim) + qLB(i-iLB, j-jLB, 2-kLB:ngrid-kLB, bp1, xdim))
+        qRR (2:ngrid,6) = half*(qRB(i-iRB, j-jRB, 2-kRB:ngrid-kRB, bp1, xdim) + qLB(i-iLB, j-jLB, 2-kLB:ngrid-kLB, bp1, xdim))
+        qLL (2:ngrid,7) = half*(qRT(i-iRT, j-jRT, 2-kRT:ngrid-kRT, bp2, xdim) + qRB(i-iRB, j-jRB, 2-kRB:ngrid-kRB, bp2, xdim))
+        qRL (2:ngrid,7) = half*(qLT(i-iLT, j-jLT, 2-kLT:ngrid-kLT, bp2, xdim) + qLB(i-iLB, j-jLB, 2-kLB:ngrid-kLB, bp2, xdim))
+        qLR (2:ngrid,7) = half*(qRT(i-iRT, j-jRT, 2-kRT:ngrid-kRT, bp2, xdim) + qRB(i-iRB, j-jRB, 2-kRB:ngrid-kRB, bp2, xdim))
+        qRR (2:ngrid,7) = half*(qLT(i-iLT, j-jLT, 2-kLT:ngrid-kLT, bp2, xdim) + qLB(i-iLB, j-jLB, 2-kLB:ngrid-kLB, bp2, xdim))
+        qLL (2:ngrid,5) = qRT(i-iRT, j-jRT, 2-kRT:ngrid-kRT, lor, xdim)
+        qRL (2:ngrid,5) = qLT(i-iLT, j-jLT, 2-kLT:ngrid-kLT, lor, xdim)
+        qLR (2:ngrid,5) = qRB(i-iRB, j-jRB, 2-kRB:ngrid-kRB, lor, xdim)
+        qRR (2:ngrid,5) = qLB(i-iLB, j-jLB, 2-kLB:ngrid-kLB, lor, xdim)
+        qLL (2:ngrid,8) = qRT(i-iRT, j-jRT, 2-kRT:ngrid-kRT, bor, xdim)
+        qRL (2:ngrid,8) = qLT(i-iLT, j-jLT, 2-kLT:ngrid-kLT, bor, xdim)
+        qLR (2:ngrid,8) = qRB(i-iRB, j-jRB, 2-kRB:ngrid-kRB, bor, xdim)
+        qRR (2:ngrid,8) = qLB(i-iLB, j-jLB, 2-kLB:ngrid-kLB, bor, xdim)
+        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,i,j,ngrid,nvar,xdim)
+      end do
+    end do
+  endif
   call trace%end (itimer)
 !  end associate
 END SUBROUTINE cmp_mag_flx
