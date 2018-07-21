@@ -133,13 +133,14 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Stagger variables
   !-----------------------------------------------------------------------------
+  call self%periodic_grid
   do iv=1,self%nv
     v => self%mem(:,:,:,iv,self%it,1)
     m => self%mesh(1)
     if (m%h(iv) /= 0.0) then
       v= xdn(v)
       if (iv == idx%px) then
-        px = px*exp(xdn(log(d)))
+        px = xdn(px)*exp(xdn(log(d)))
       end if
     end if
     m => self%mesh(2)
