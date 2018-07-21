@@ -32,7 +32,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE allocate_vectors (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
-  real, dimension(:,:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
+  real, dimension(:,:,:,:), allocatable, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
   !.............................................................................
   call trace_begin('allocate_vectors')
   if (present(v1)) allocate(v1(n(1),n(2),n(3),3))
@@ -49,7 +49,45 @@ SUBROUTINE allocate_vectors (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
 END SUBROUTINE allocate_vectors
 
 !> =============================================================================
+SUBROUTINE allocate_vectors_p (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
+  integer:: n(3)
+  real, dimension(:,:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
+  !.............................................................................
+  call trace_begin('allocate_vectors')
+  if (present(v1)) allocate(v1(n(1),n(2),n(3),3))
+  if (present(v2)) allocate(v2(n(1),n(2),n(3),3))
+  if (present(v3)) allocate(v3(n(1),n(2),n(3),3))
+  if (present(v4)) allocate(v4(n(1),n(2),n(3),3))
+  if (present(v5)) allocate(v5(n(1),n(2),n(3),3))
+  if (present(v6)) allocate(v6(n(1),n(2),n(3),3))
+  if (present(v7)) allocate(v7(n(1),n(2),n(3),3))
+  if (present(v8)) allocate(v8(n(1),n(2),n(3),3))
+  if (present(v9)) allocate(v9(n(1),n(2),n(3),3))
+  if (present(v10)) allocate(v10(n(1),n(2),n(3),3))
+  call trace_end
+END SUBROUTINE allocate_vectors_p
+
+!> =============================================================================
 SUBROUTINE deallocate_vectors (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
+  integer:: n(3)
+  real, dimension(:,:,:,:), allocatable, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
+  !.............................................................................
+  call trace_begin('deallocate_vectors')
+  if (present(v1)) deallocate(v1)
+  if (present(v2)) deallocate(v2)
+  if (present(v3)) deallocate(v3)
+  if (present(v4)) deallocate(v4)
+  if (present(v5)) deallocate(v5)
+  if (present(v6)) deallocate(v6)
+  if (present(v7)) deallocate(v7)
+  if (present(v8)) deallocate(v8)
+  if (present(v9)) deallocate(v9)
+  if (present(v10)) deallocate(v10)
+  call trace_end
+END SUBROUTINE
+
+!> =============================================================================
+SUBROUTINE deallocate_vectors_p (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
   !.............................................................................

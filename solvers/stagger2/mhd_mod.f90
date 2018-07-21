@@ -246,20 +246,22 @@ END SUBROUTINE test
 SUBROUTINE pde (self)
   class(mhd_t):: self
   !.............................................................................
-  real, dimension(:,:,:,:), pointer:: U, emf, J, p, B, dpdt, dBdt
-  real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm
   real, dimension(:,:,:),   pointer:: d, s, dddt, dsdt
-  real, dimension(:,:,:),   pointer:: du, lnd, ss, cs, pg, pa, pp, pb, Q
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi
-  real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez, Jx, Jy, Jz
+  real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, pg
+  real, dimension(:,:,:,:), pointer:: U, p, B, dpdt, dBdt
+  real, dimension(:,:,:),   pointer:: Ex, Ey, Ez, Jx, Jy, Jz
   real, dimension(:,:,:),   pointer:: fdx, fdy, fdz, ldx, ldy, ldz, ddx, ddy, ddz
   real, dimension(:,:,:),   pointer:: fxx, fxy
   real, dimension(:,:,:),   pointer::      fyy, fyz
   real, dimension(:,:,:),   pointer:: fzx,      fzz
-  real, dimension(:,:,:),   pointer:: Txx, Txy
-  real, dimension(:,:,:),   pointer::      Tyy, Tyz
-  real, dimension(:,:,:),   pointer:: Tzx,      Tzz
+  real, dimension(:,:,:),   allocatable:: du, lnd, ss, cs, pa, pp, pb, Q, uu
+  real, dimension(:,:,:),   allocatable:: Txx, Txy
+  real, dimension(:,:,:),   allocatable::      Tyy, Tyz
+  real, dimension(:,:,:),   allocatable:: Tzx,      Tzz
+  real, dimension(:,:,:,:), allocatable, target:: emf, J
+  real, dimension(:,:,:,:), allocatable, target:: fx, fy, fz, fd, ld, dd, fm
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
   logical, save:: first_time=.true.
   !.............................................................................
@@ -289,8 +291,8 @@ SUBROUTINE pde (self)
     pg => self%pressure(:,:,:,self%it)
     self%density => self%mem(:,:,:,1,:,1)
   else
-    call allocate_scalars (self%gn, pg)
-    call allocate_vectors (self%gn, U)
+    call allocate_scalars_p (self%gn, pg)
+    call allocate_vectors_p (self%gn, U)
   end if
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
   Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
@@ -539,8 +541,8 @@ SUBROUTINE pde (self)
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
   call deallocate_scalars (lnd, pa, du, ss, cs, pp, pb, Q)
   if (.not.self%do_pebbles) then
-    call deallocate_vectors (U)
-    call deallocate_scalars (pg)
+    call deallocate_vectors_p (U)
+    call deallocate_scalars_p (pg)
   end if
   call trace%end (itimer)
   if (flop_count) then

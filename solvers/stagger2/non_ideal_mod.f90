@@ -49,9 +49,10 @@ SUBROUTINE update (self, gn, ds, d, Jx, Jy, Jz, Bx, By, Bz, Q, E, u_max)
   real(8):: ds
   real:: u_max, gamma_AD
   logical::mhd_AD, mhd_Ohm
-  real, dimension(:,:,:,:), pointer:: E
+  real, dimension(:,:,:,:):: E
   real, dimension(:,:,:):: d, Jx, Jy, Jz, Bx, By, Bz, Q
-  real, dimension(:,:,:), pointer:: ambi, Ud_x, Ud_y, Ud_z
+  real, dimension(:,:,:), allocatable:: Ud_x, Ud_y, Ud_z
+  real, dimension(:,:,:), allocatable:: ambi
   integer, save:: itimer=0
   !---------------------------------------------------------------------------
   ! Below is the actual ambipolar drift parameter as given in equation 20 in

@@ -50,7 +50,7 @@ SUBROUTINE p2U(self, U, it)
   real, dimension(:,:,:,:), pointer:: U
   integer:: it
   !.....................................................................
-  real, dimension(:,:,:,:), pointer:: dd
+  real, dimension(:,:,:,:), allocatable:: dd
   !---------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,           it,1), &
             p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
@@ -69,7 +69,7 @@ SUBROUTINE U2p(self, U, it)
   real, dimension(:,:,:,:), pointer:: U
   integer:: it
   !.....................................................................
-  real, dimension(:,:,:,:), pointer:: dd
+  real, dimension(:,:,:,:), allocatable:: dd
   !---------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
             p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
@@ -316,8 +316,10 @@ END SUBROUTINE
 FUNCTION gas_velocity_vector (self) RESULT (v)
   USE scalar_mod
   class (solver_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d, lnd
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: p, ld, dd
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable :: lnd
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: p
+  real(kind=KindScalarVar), dimension(:,:,:,:), allocatable:: ld, dd
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
   !-----------------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d,self%it,1)
@@ -339,7 +341,8 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
   USE scalar_mod
   class (solver_t):: self
   integer:: idir
-  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d, lnd, ld, dd
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: lnd, ld, dd
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: v
   !-----------------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d,self%it,1)

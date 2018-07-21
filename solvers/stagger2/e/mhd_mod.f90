@@ -129,24 +129,27 @@ SUBROUTINE pde (self)
   USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
-  real, dimension(:,:,:,:), pointer:: U, emf, J, p, B, dpdt, dBdt
-  real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm
   real, dimension(:,:,:),   pointer:: d, e, dddt, dedt
-  real, dimension(:,:,:),   pointer:: du, lnd, ee, cs, pg, pa, pp, pb, Q
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi
-  real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez, Jx, Jy, Jz
+  real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, pg
+  real, dimension(:,:,:,:), pointer:: U, p, B, dpdt, dBdt
+  real, dimension(:,:,:),   pointer:: Ex, Ey, Ez, Jx, Jy, Jz
   real, dimension(:,:,:),   pointer:: fdx, fdy, fdz, ldx, ldy, ldz, ddx, ddy, ddz
   real, dimension(:,:,:),   pointer:: fxx, fxy
   real, dimension(:,:,:),   pointer::      fyy, fyz
   real, dimension(:,:,:),   pointer:: fzx,      fzz
-  real, dimension(:,:,:),   pointer:: Txx, Txy
-  real, dimension(:,:,:),   pointer::      Tyy, Tyz
-  real, dimension(:,:,:),   pointer:: Tzx,      Tzz
+  real, dimension(:,:,:),   allocatable:: du, ss, cs, pa, pp, pb, Q, uu
+  real, dimension(:,:,:),   allocatable, target:: ee, lnd
+  real, dimension(:,:,:),   allocatable:: Txx, Txy
+  real, dimension(:,:,:),   allocatable::      Tyy, Tyz
+  real, dimension(:,:,:),   allocatable:: Tzx,      Tzz
+  real, dimension(:,:,:,:), allocatable, target:: emf, J
+  real, dimension(:,:,:,:), allocatable, target:: fx, fy, fz, fd, ld, dd, fm
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
   logical, save:: first_time=.true.
   !.............................................................................
-  real(8):: ds(3)
+  real(8):: ds(3), dsmax
   integer, save:: itimer=0
   type(index_t):: i
   real:: u_max
@@ -166,14 +169,14 @@ SUBROUTINE pde (self)
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
   call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
-  call allocate_scalars (self%gn, lnd, pa, du, ee, cs, pp, pb, Q)
+  call allocate_scalars (self%gn, lnd, pa, du, ee, cs, pp, pb, Q, uu)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
     self%density => self%mem(:,:,:,1,:,1)
   else
-    call allocate_scalars (self%gn, pg)
-    call allocate_vectors (self%gn, U)
+    call allocate_scalars_p (self%gn, pg)
+    call allocate_vectors_p (self%gn, U)
   end if
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
   Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
@@ -206,7 +209,8 @@ SUBROUTINE pde (self)
   ! in (2,gn-1)
   !-----------------------------------------------------------------------------
   ds = self%ds
-  du = -maxval(ds,self%n > 1)*div(ds,U)                 ! convergence rate      ! ops: 0 1 0
+  dsmax = maxval(ds,self%n > 1)
+  du = -dsmax*div(ds,U)                 ! convergence rate      ! ops: 0 1 0
   du = max(du,0.0)                                      ! positive part
   self%u_max = 0.0
   !-----------------------------------------------------------------------------
@@ -223,12 +227,13 @@ SUBROUTINE pde (self)
   else
     pa = self%nu(2)*d*du**2                                                     ! ops: 0 3 0
   end if
+  ! Diagonal Reynolds stress
+  fxx = xup(Ux)**2
+  fyy = yup(Uy)**2
+  fzz = zup(Uz)**2
+  uu = sqrt(fxx+fyy+fzz)
   if (self%mhd) then
     ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2
-    fyy = yup(Uy)**2
-    fzz = zup(Uz)**2
-    pp = (fxx+fyy+fzz)
     ! Diagonal (negative) Maxwell stress (borrowing emf for scratch)
     Ex = xup(Bx)**2                                                             ! mhd: 0 1 0
     Ey = yup(By)**2                                                             ! mhd: 0 1 0
@@ -241,42 +246,33 @@ SUBROUTINE pde (self)
       self%u_max = max(self%u_max,u_max)
       print 1, 'u_max(ca)', u_max, self%u_max
     1 format(1x,a,1p,2g12.3)
-      u_max = self%fmaxval(cs + sqrt(pp))
-      self%u_max = max(self%u_max,u_max)
-      print 1, 'u_max(ca+u)', u_max, self%u_max
     end if
-    u_max = self%fmaxval(cs + sqrt(pp) + du)
+    cs = cs + uu
+    u_max = self%fmaxval(cs)
     self%u_max = max(self%u_max,u_max)
-    if (verbose>2) print 1, 'u_max(ca+u+du)', u_max, self%u_max
+    if (verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
-    du = (maxval(ds,self%n > 1)*self%nu(1))*cs
+    du = (dsmax*self%nu(1))*cs
     fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
     fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
     fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
   else
-    ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2                                                            ! ops: 0 1 0
-    fyy = yup(Uy)**2                                                            ! ops: 0 1 0
-    fzz = zup(Uz)**2                                                            ! ops: 0 1 0
-    pp = (fxx+fyy+fzz)                                                          ! ops: 2 0 0
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
     if (verbose>3) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
       print 1, 'u_max(cs)', u_max, self%u_max
-      u_max = self%fmaxval(cs + sqrt(pp))
-      self%u_max = max(self%u_max,u_max)
-      print 1, 'u_max(cs+u)', u_max, self%u_max
     end if
-    u_max = self%fmaxval(cs + sqrt(pp) + du)
+    cs = cs + uu
+    u_max = self%fmaxval(cs)
     self%u_max = max(self%u_max,u_max)
-    if (verbose>2) print 1, 'u_max(cs+u+du)', u_max, self%u_max
+    if (verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
     pp = pg + pa                                                                ! ops: 1 0 0
     ! Total diagondal stress, with density factor
-    du = (maxval(ds,self%n > 1)*self%nu(1))*cs                                  ! ops: 0 1 0
+    du = (dsmax*self%nu(1))*cs                                                  ! ops: 0 1 0
     !---------------------------------------------------------------------------
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
@@ -289,14 +285,15 @@ SUBROUTINE pde (self)
   ! density per unit time = energy per unit volume and time
   !-----------------------------------------------------------------------------
   Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)                                           ! ops: 2 5 0
-  call deallocate_scalars (Txx, Tyy, Tzz)
+  !if (verbose==1) print *, 'average(Q):', self%faver(Q), &
+    !self%faver(e-d**self%gamma/(self%gamma-1.0)), self%faver(fm(:,:,:,1))
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
   fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux   ! ops: 0 9 0
   fm = p+fd                                             ! mass flux             ! ops: 3 0 0
   dddt = -div(ds,fm)                                    ! density derivative
-  u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs(dddt/d))             ! ops: 0 0 1
+  u_max = self%cdtd*dsmax*self%fmaxval(abs(dddt/d))                             ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
   if (verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
@@ -316,9 +313,9 @@ SUBROUTINE pde (self)
   fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*Txy                                 ! ops: 1 3 0
   fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*Tyz                                 ! ops: 1 3 0
   fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*Tzx                                 ! ops: 1 3 0
-  Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
-                               yup(zup(Tyz))**2 + &                             ! ops: 1 1 0
-                               zup(xup(Tzx))**2)                                ! ops: 1 0 0
+  !Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
+                               !yup(zup(Tyz))**2 + &                             ! ops: 1 1 0
+                               !zup(xup(Tzx))**2)                                ! ops: 1 0 0
   call deallocate_scalars (Txy, Tyz, Tzx)
   !-----------------------------------------------------------------------------
   ! Multiply with edge-centered density
@@ -376,9 +373,20 @@ SUBROUTINE pde (self)
   if (self%gamma == 1d0) then                                                   ! unless isothermal
     dedt = dddt*ee                                                              ! ops: 0 1 0
   else
+    block
+    real:: afm
+    afm = self%faver(fm(:,:,:,1))
     fm = fm*down(ee) - (self%nu(5)*dd*down(du))*ddown(ds,ee)                    ! ops: 1 4 0
-    dedt = -div(ds,fm) - pg*du + Q
+    Q = uu
+    dedt = -div(ds,fm) - pg*(Txx+Tyy+Tzz) + Q
+    if (verbose==1) print '(a,10f12.6)', 'average(Q):', &
+      self%time, self%time*self%faver(Q), &
+      self%faver(e-d**self%gamma/(self%gamma-1.0)), &
+      self%faver(- pg*(Txx+Tyy+Tzz)), &
+      afm, self%faver(fm(:,:,:,1))
+    end block
   end if
+  call deallocate_scalars (Txx, Tyy, Tzz)
   !-----------------------------------------------------------------------------
   ! Induction equation
   !-----------------------------------------------------------------------------
@@ -404,16 +412,16 @@ SUBROUTINE pde (self)
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
   !-----------------------------------------------------------------------------
   if (self%gamma /= 1d0) then
-    u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs((dedt-ee*dddt)/d)) ! ops: 1 1 1
+    u_max = self%cdtd*dsmax*self%fmaxval(abs((dedt-ee*dddt)/d)) ! ops: 1 1 1
     self%u_max = max(self%u_max,u_max)
     if (verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
-  call deallocate_scalars (lnd, pa, du, ee, cs, pp, pb, Q)
+  call deallocate_scalars (lnd, pa, du, ee, cs, pp, pb, Q, uu)
   if (.not.self%do_pebbles) then
-    call deallocate_vectors (U)
-    call deallocate_scalars (pg)
+    call deallocate_vectors_p (U)
+    call deallocate_scalars_p (pg)
   end if
   call trace%end (itimer)
 END SUBROUTINE pde
