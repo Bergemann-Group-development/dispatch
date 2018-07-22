@@ -9,6 +9,7 @@ MODULE force_mod
   USE mesh_mod
   USE index_mod
   USE vector_ops
+  USE stagger_mod
   USE scalar_mod
   implicit none
   private
@@ -115,7 +116,7 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     ! Compute velocity=momentum/density for the gas fluid component, leaving
     ! gas density for reuse
     !--------------------------------------------------------------------------
-    ic    =  (nv/self%nc)*(self%i_gas-1)
+    ic    =  5*(self%i_gas-1)
     d_gas =  mem(:,:,:,i%d +ic        )
     p     =  mem(:,:,:,i%px+ic:i%pz+ic)
     s     =  mem(:,:,:,i%s +ic        )
@@ -127,7 +128,7 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     ! Compute velocity=momentum/density for the dust fluid component, leaving
     ! dust density for reuse
     !--------------------------------------------------------------------------
-    ic     =  (nv/self%nc)*(self%i_dust-1)
+    ic     =  5*(self%i_dust-1)
     d_dust =  mem(:,:,:,i%d +ic        )
     p      =  mem(:,:,:,i%px+ic:i%pz+ic)
     lnd    =  log(d_dust)
@@ -199,7 +200,9 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     ! Save drag force for use on the second component, and update counter
     !--------------------------------------------------------------------------
     allocate(self%ff_drag(m(1)%gn,m(2)%gn,m(3)%gn,3))
-    self%ff_drag = ff
+    self%ff_drag(:,:,:,1) =       ff(:,:,:,1)
+    self%ff_drag(:,:,:,2) = h2c(m,ff(:,:,:,2))
+    self%ff_drag(:,:,:,3) = h3c(m,ff(:,:,:,3))
     lnd   =  log(d)
     ld    =  down(lnd)
     dd    =  exp(ld)
@@ -216,9 +219,9 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   ! of the coupled pair of fluids. Then update counter
   !----------------------------------------------------------------------------
   else if (self%i==max(self%i_gas,self%i_dust)) then
-    !----------------------------------------------------------------------------
+    !--------------------------------------------------------------------------
     ! Allocate vector and scalar pointers
-    !----------------------------------------------------------------------------
+    !--------------------------------------------------------------------------
     call allocate_scalars (gn, lnd)
     call allocate_vectors (gn, ld, dd)
     lnd   =  log(d)

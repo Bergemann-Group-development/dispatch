@@ -36,17 +36,17 @@ SUBROUTINE init (self)
   logical:: first_time = .true.
   real, dimension(:,:,:,:), pointer:: pp , pp2
   real, dimension(:,:,:), pointer::   d  , px , py , pz , s , dtr , &
-                                      d2 , px2, py2, pz2, s2, dtr2, &
+                                      d2 , px2, py2, pz2, s2, &!dtr2, &
                                       r2 , lnPg
   real,save:: P  =0.1, rho  =0.1 , vx  =0d0, vy  =0d0, vz  =0d0, rhotr  =0d0, &
               Pc =1.0, rhoc =1.0 , vxc =0d0, vyc =0d0, vzc =0d0, rhotrc =0d0, &
-              P2 =0d0, rho2 =0.01, vx2 =0d0, vy2 =0d0, vz2 =0d0, rhotr2 =0d0, &
-              P2c=0d0, rho2c=0.01, vx2c=0d0, vy2c=0d0, vz2c=0d0, rhotr2c=0d0, &
+              P2 =0d0, rho2 =0.01, vx2 =0d0, vy2 =0d0, vz2 =0d0, &!rhotr2 =0d0, &
+              P2c=0d0, rho2c=0.01, vx2c=0d0, vy2c=0d0, vz2c=0d0, &!rhotr2c=0d0, &
               r0 =0.125, center(3)=0.0, Etherm=0.0, wgauss=0.0, Pgsum, pgauss=2.0
   namelist /experiment_params/ P  , rho  , vx  , vy  , vz  , rhotr  , &
                                Pc , rhoc , vxc , vyc , vzc , rhotrc , &
-                               P2 , rho2 , vx2 , vy2 , vz2 , rhotr2 , &
-                               P2c, rho2c, vx2c, vy2c, vz2c, rhotr2c, &
+                               P2 , rho2 , vx2 , vy2 , vz2 , &!rhotr2 , &
+                               P2c, rho2c, vx2c, vy2c, vz2c, &!rhotr2c, &
                                r0 , center, Etherm, wgauss, pgauss
 
   !----------------------------------------------------------------------------
@@ -54,11 +54,10 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   print*, 'start init'
   call trace_begin ('experiment_t%init')
-  nvc = 6; nc = 2;
-  self%nv  = nvc*nc                        ! MUST BE NÙMBER OF VARIABLES PER COMPONENT TIMES NUMBER OF COMPONENTS
-  self%nc  = nc
+  self%nv  = 10                        ! MUST BE NUMBER OF VARIABLES PER COMPONENT TIMES NUMBER OF COMPONENTS
+  self%nc  = 2
   self%mhd = .false.
-  call self%mhd_t%init
+  call self%solver_t%init
 
   if (first_time) then
     rewind (io%input)
@@ -67,17 +66,17 @@ SUBROUTINE init (self)
     first_time=.false.
   end if
 
-  d   => self%mem(:,:,:,idx%d        ,self%it,1)
-  s   => self%mem(:,:,:,idx%s        ,self%it,1)
-  pp  => self%mem(:,:,:,idx%px:idx%pz,self%it,1)
-  dtr => self%mem(:,:,:,idx%dtr      ,self%it,1)
+  d   => self%mem(:,:,:,self%idx%d             ,self%it,1)
+  s   => self%mem(:,:,:,self%idx%s             ,self%it,1)
+  pp  => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  dtr => self%mem(:,:,:,self%idx%dtr           ,self%it,1)
   px  => pp(:,:,:,1); py => pp(:,:,:,2); pz => pp(:,:,:,3);
 
   self%no_pressure = 2
-  d2   => self%mem(:,:,:,idx%d+nvc            ,self%it,1)
-  s2   => self%mem(:,:,:,idx%s+nvc            ,self%it,1)
-  pp2  => self%mem(:,:,:,idx%px+nvc:idx%pz+nvc,self%it,1)
-  dtr2 => self%mem(:,:,:,idx%dtr+nvc          ,self%it,1)
+  d2   => self%mem(:,:,:,self%idx%d+5               ,self%it,1)
+  s2   => self%mem(:,:,:,self%idx%s+5               ,self%it,1)
+  pp2  => self%mem(:,:,:,self%idx%px+5:self%idx%pz+5,self%it,1)
+  !dtr2 => self%mem(:,:,:,idx%dtr+5        ,self%it,1)
   px2  => pp2(:,:,:,1); py2 => pp2(:,:,:,2); pz2 => pp2(:,:,:,3);
 
   call allocate_scalars(self%gn, r2, lnPg)
@@ -100,7 +99,7 @@ SUBROUTINE init (self)
           px2 (i,j,k) = rho2c * vx2c
           py2 (i,j,k) = rho2c * vy2c
           pz2 (i,j,k) = rho2c * vz2c
-          dtr2(i,j,k) = rhotr2
+          !dtr2(i,j,k) = rhotr2
           lnPg(i,j,k) = log(Pc) + (-0.5*(r2(i,j,k)/wgauss**2)**(pgauss/2.0))
         ! set up central region.
         else if (r2(i,j,k) .le. real(r0,kind=8)**2) then
@@ -113,7 +112,7 @@ SUBROUTINE init (self)
           px2 (i,j,k) = rho2c * vx2c
           py2 (i,j,k) = rho2c * vy2c
           pz2 (i,j,k) = rho2c * vz2c
-          dtr2(i,j,k) = rhotr2c
+          !dtr2(i,j,k) = rhotr2c
           lnPg(i,j,k) = log(Pc)
         ! set up central region.
         else
@@ -126,7 +125,7 @@ SUBROUTINE init (self)
           px2 (i,j,k) = rho2 * vx2
           py2 (i,j,k) = rho2 * vy2
           pz2 (i,j,k) = rho2 * vz2
-          dtr2(i,j,k) = rhotr2
+          !dtr2(i,j,k) = rhotr2
           lnPg(i,j,k) = log(P)
         end if
       end do
@@ -191,7 +190,7 @@ SUBROUTINE update (self)
   call trace_begin('experiment_t%update')
 
   call pboundaries%conditions(self, self%it)
-  call self%mhd_t%update()
+  call self%solver_t%update()
   call pboundaries%conditions(self, self%new)
 
   call trace_end

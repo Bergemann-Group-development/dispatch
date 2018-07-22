@@ -37,8 +37,8 @@
  r0     = 0.125
  center = 0.0,0.0,0.0
  Etherm = 1.0
- wgauss = 0.05
- pgauss = 4.0
+ wgauss = 0.06
+ pgauss = 2.0
 
 /
 &mhd_params              ! defaults are visible in the log file
