@@ -572,14 +572,13 @@ END SUBROUTINE update
 !> =============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
 !> =============================================================================
-SUBROUTINE output (self, experiment_name)
+SUBROUTINE output (self)
   class(mhd_t):: self
-  character(len=64):: experiment_name, filename
-  optional:: experiment_name
+  character(len=64):: filename
   logical:: exists
   !-----------------------------------------------------------------------------
   if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
-  call self%gpatch_t%output (experiment_name)
+  call self%gpatch_t%output
   !$omp critical (out_cr)
   write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
     self%id, self%iout
