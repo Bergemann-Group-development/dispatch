@@ -4,7 +4,7 @@
  !-----------------------------------------------------------------------------
  rho    =  1.0
  rho2   =  0.01
- P      =  2.1e-10
+ P      =  1.0
  P2     =  0d0
  vx     =  0d0
  vx2    =  0d0
@@ -13,7 +13,7 @@
  vz     =  0d0
  vz2    =  0d0
  rhotr  =  0.5
- rhotr2 =  0.5
+ !rhotr2 =  0.5
 
  !-----------------------------------------------------------------------------
  ! Physical initial conditions: central region
@@ -29,7 +29,7 @@
  vzc     =  0d0
  vz2c    =  0d0
  rhotrc  =  0.5
- rhotr2c =  0.5
+ !rhotr2c =  0.5
 
  !-----------------------------------------------------------------------------
  ! Extend and placement of central region
@@ -37,8 +37,8 @@
  r0     = 0.125
  center = 0.0,0.0,0.0
  Etherm = 1.0
- wgauss = 0.06
- pgauss = 2.0
+ wgauss = 0.05
+ pgauss = 4.0
 
 /
 &mhd_params              ! defaults are visible in the log file
@@ -50,21 +50,20 @@
  !nu=    0.5, 1.0, 1.0, 1.5, 0.2, 0., 1.0, 6.0, 0.0, 5.0, 0.0, 0.0
  !nu=    0.5, 1.0, 1.0, 1.5, 0.2, 0., 1.0, 0.0, 0.0, 5.0, 0.0, 0.0
  !nu=    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
- nu=    0.5, 1.0, 0.5, 1.0, 0.2, 0., 0.5, 1.0, 0.5, 1.0, 0.2, 0.0
- !     cs    du   pa   ofd   mas   eta
+ nu=   0.10, 2.0, 1.0, 0.2, 1.0, 1.0,  0.1, 2.0, 1.0, 0.2, 1.0, 0.0
+ !     cs    pa   ofd  mas  kap  eta   cs   pa   ofd  mas  kap  eta
  !gamma=1.0000001
  !gamma=1.0
  csound=1.0
  gamma=1.66666
  tracer=.true.
  force_coupled=.true.
- nc=2                                   !Number of components
  !ksi = 1d-17
 /
 &patch_params
- n=15,15,15          ! patch dimensions
+ n=3*64              ! patch dimensions
  !dt_fixed=1d-2        ! fixed time step
- ng =2,2,2
+ ng=3*2
  nt=8                   ! time slots
 /
 &timer_params
@@ -73,12 +72,12 @@
 &out_params
  out_time = 0.005
  end_time = 0.101
- print_time = 0.005
- guard_zones=t
+ print_time = 0.0
+ guard_zones=f
 /
 &box_params
  size=1,1,1
- dims=3,3,3				! number of patches
+ dims=3*1    		! number of patches
  origin=-0.5,-0.5,-0.5
 /
 &timestep_params
@@ -89,10 +88,11 @@
  refine_until=-0.01     ! disables refinment
 /
 &io_params
- !do_trace=f             ! =t to trace execution
+ do_trace=f             ! =t to trace execution
  verbose=1              ! =1 for output file messages
  do_output=t
  do_debug=f
+ method='parallel'
 /
 &initial_params
 /
@@ -117,6 +117,8 @@
  !drag = 'power'        ! F = K*|v-vd|^b*(v-vd)
  !drag = 'third_order'  ! F = K*(1+|v-vd|^2)*(v-vd)
  !drag = 'mixed'        ! F = K*sqrt(1+|v-vd|^2)*(v-vd)
+/
+&viscosity_params
 /
 &initial_solenoidal_params
 /
