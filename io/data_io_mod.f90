@@ -265,7 +265,7 @@ SUBROUTINE output_nml (patch, append)
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
     open  (io_unit%data, file=trim(filename), form='formatted', status='unknown')
     write (io_unit%data, snapshot_nml)
-    call index_write
+    call patch%idx%write
     close (io_unit%data)
     if (io%debug(2)) print'(a,3x,"time:",2f13.6)', &
       ' data_io_t%output_nml: '//trim(filename), patch%out_next, patch%time
@@ -281,7 +281,7 @@ SUBROUTINE output_nml (patch, append)
   ! Write the namelist info, including a leading index_nml
   !-----------------------------------------------------------------------------
   if (mpi%master .and. .not.append) then
-    call index_write
+    call patch%idx%write
   end if
   l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
   u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
@@ -306,6 +306,7 @@ SUBROUTINE output_nml (patch, append)
   gn         = patch%gn
   ng         = patch%ng
   nv         = patch%nv
+  nv         = merge (io%nv, patch%nv, io%nv>0)
   nt         = patch%nt
   nw         = patch%nw
   kind       = patch%kind
