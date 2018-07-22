@@ -92,7 +92,7 @@ SUBROUTINE output5 (patch)
   class(patch_t):: patch
   !.............................................................................
   integer(8):: snapshot_words, buffer_words
-  integer:: iv, n(3), jt(2)
+  integer:: iv, n(3), jt(2), nv
   real, dimension(:,:,:), allocatable:: buffer
   type(mpi_io_t):: thread_io
   real:: pt(2)
@@ -116,7 +116,8 @@ SUBROUTINE output5 (patch)
   call thread_io%init (snapshot_words, buffer_words)
   allocate (buffer(n(1),n(2),n(3)))
   call patch%time_interval (patch%out_next, jt, pt)
-  do iv=1,patch%nv
+  nv = merge (io%nv, patch%nv, io%nv>0)
+  do iv=1,nv
     if (io%guard_zones) then
       buffer = patch%mem(:,:,:,iv,jt(1),1)*pt(1) &
              + patch%mem(:,:,:,iv,jt(2),1)*pt(2)
@@ -149,7 +150,7 @@ SUBROUTINE output6 (patch)
   class(patch_t):: patch
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
-  integer:: iv, n(3), jt(2)
+  integer:: iv, n(3), jt(2), nv
   real, dimension(:,:,:,:), allocatable:: buffer
   type(mpi_io_t):: thread_io
   real:: pt(2)
@@ -180,7 +181,8 @@ SUBROUTINE output6 (patch)
   call thread_io%init (snapshot_words, buffer_words)
   allocate (buffer(n(1),n(2),n(3),patch%nv))
   call patch%time_interval (patch%out_next, jt, pt)
-  do iv=1,patch%nv
+  nv = merge (io%nv, patch%nv, io%nv>0)
+  do iv=1,nv
     if (io%guard_zones) then
       buffer(:,:,:,iv) = patch%mem(:,:,:,iv,jt(1),1)*pt(1) &
                        + patch%mem(:,:,:,iv,jt(2),1)*pt(2)
@@ -219,7 +221,7 @@ SUBROUTINE input (patch, ok)
   logical:: ok
   !.............................................................................
   integer(8):: snapshot_words, buffer_words
-  integer:: iv, n(3)
+  integer:: iv, n(3), nv
   real, dimension(:,:,:), allocatable:: buffer
   type(mpi_io_t):: thread_io
   !-----------------------------------------------------------------------------
@@ -237,7 +239,8 @@ SUBROUTINE input (patch, ok)
   snapshot_words = buffer_words*patch%nv*io%ntotal
   call thread_io%init (snapshot_words, buffer_words)
   allocate (buffer(n(1),n(2),n(3)))
-  do iv=1,patch%nv
+  nv = merge (io%nv, patch%nv, io%nv>0)
+  do iv=1,nv
     if (order==0) then
       call thread_io%read (buffer, patch%restart+1, (patch%id-1)*patch%nv + iv)
     else

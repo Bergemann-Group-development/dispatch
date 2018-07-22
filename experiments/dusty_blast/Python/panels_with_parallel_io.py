@@ -21,13 +21,14 @@ pl.clf()
 pl.xlim(0,1)
 #pl.ylim(0.0,1.2)
 
+data='../data'
 run=''
 v='d'
 no=1
-p=dispatch.snapshot(0,run).patches[0]
+p=dispatch.snapshot(0,run,data).patches[0]
 nr=p.n[0]
 for io in (0,no):
-    p=dispatch.snapshot(io,run).patches[0]
+    p=dispatch.snapshot(io,run,data).patches[0]
     f=p.data[p.idx.dict[v]][:,nr/2,nr/2]
     #pl.plot(p.x,f)
     print io,p.time,f
@@ -62,7 +63,7 @@ def etot(p):
         ux=px/np.exp(xdn(np.log(d)))
         return e+0.5*d*xup(ux**2)
 def energies(io,run=''):
-    p=dispatch.snapshot(io,run).patches[0]
+    p=dispatch.snapshot(io,run,data).patches[0]
     d=p.data[p.idx.d][:,:,nr/2]
     if p.kind[0:6]=='ramses':
         etot=p.data[p.idx.e][:,:,nr/2]
@@ -87,7 +88,7 @@ io=0
 ip=0
 pl.clf()
 for v in vv:
-    p=dispatch.snapshot(io,run).patches[0]
+    p=dispatch.snapshot(io,run,data).patches[0]
     iv=p.idx.dict[v]
     ip=ip+1; pl.subplot(2,2,ip)
     f=p.data[iv][:,:,nr/2]

@@ -49,12 +49,14 @@ SUBROUTINE init (self)
                                P2c, rho2c, vx2c, vy2c, vz2c, &!rhotr2c, &
                                r0 , center, Etherm, wgauss, pgauss
 
-  !----------------------------------------------------------------------------
-  ! Allocate memory and set default values
-  !----------------------------------------------------------------------------
-  print*, 'start init'
   call trace_begin ('experiment_t%init')
-  self%nv  = 10                        ! MUST BE NUMBER OF VARIABLES PER COMPONENT TIMES NUMBER OF COMPONENTS
+  !----------------------------------------------------------------------------
+  ! Allocate memory and set default values.  self%nv must be the number of
+  ! variables per component, times the number of components.  io%nv is the
+  ! number of variables to write to the output file(s).
+  !----------------------------------------------------------------------------
+  self%nv  = 10
+  io%nv = 9
   self%nc  = 2
   self%mhd = .false.
   call self%solver_t%init
