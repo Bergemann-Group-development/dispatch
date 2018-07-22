@@ -10,9 +10,10 @@ pl.close('all')
 
 #datadir  = 'data/input_gas_dust'          # Data directory
 datadir  = 'data/input_gas_only'
+#datadir  = 'data/input_test'
 run      = '.'
 #iout    = [0,5,10,15,20]           # Indices for output times
-iout     = [111]
+iout     = [0]
 #iout    = [0,12,13,14,15]                     # Indices for output times 
 colr     = ['b','c','g','y','r']    # Colorscheme for different output times
 #iout    = [0,1,2]                  # Indices for output times
@@ -28,7 +29,8 @@ patches  = [1,5,9]                  # Patch structure in output data
 npatches = np.prod(patches)         # Number of patches in output data
 nv       = 5                        # Number of variables per component in this particular case
 nvs      = 14                       # Number of variables per component in generic case
-plot_dim = '2D'                     # Dimension 
+plot_dim = '1D'                     # Dimension
+logrho   = False 
 
 
 
@@ -37,8 +39,8 @@ plot_dim = '2D'                     # Dimension
 #  0   1   2    3    4     5      6      7    5 / 8
 
 # additional data: cycles for second parameters
-# P  v_x  v_y  v_z  p_z
-# 9  10   11   12   13
+# P  v_x  v_y  v_z  p_z dt
+# 9  10   11   12   13  -1
 
 #===============================================================================
 
@@ -47,11 +49,12 @@ plot_dim = '2D'                     # Dimension
 #  0   1   2    3    4    5
 
 # additional data: cycles for second parameters
-# P  v_x  v_y  v_z  p_z
-# 9  10   11   12   13
+# P  v_x  v_y  v_z  p_z dt
+# 9  10   11   12   13  -1
 
 
 plparams = np.array([0,3,1,4])
+#plparams = np.array([0,3,0+nvs,3+nvs])
 nplots   = len(plparams)
 
 
@@ -75,24 +78,30 @@ for j in range(nplots):
     Vmin    =  100
     Vmax    = -100
     first_time = True
-    pl.xlabel(r'$r$ in code units')
+    pl.xlabel(r'$r$ in code units',fontsize=16)
     for i in iout:
-        k   =  0
+        k    =  0
+	mtot =  0.0
         for iz in range(patches[2]):
             for iy in range(patches[1]):
                 for ix in range(patches[0]):                   
                     p  = du.patch(id=k+1,iout=i,run=run,data=datadir)
-                    li = p.li[:] #- 2
-                    ui = p.ui[:] #+ 2
+                    li = p.li[:]#; li[1:3] = li[1:3] - 2
+                    ui = p.ui[:]#; ui[1:3] = ui[1:3] + 2
                     
                     R,Z,PHI = np.meshgrid(p.y,p.x,p.z)
-                    
+                    dz = 1.0; dr = p.y[1]-p.y[0]; dphi = p.z[1]-p.z[0]
+		    
                     if plparams[j]==0 or plparams[j]==0+nvs:
                         c2     = ( plparams[j] >= nvs )
-                        #pldata = p.data[:,:,:,0+nv*c2]
-                        #unit   = r'$\rho$ in code units'
-                        pldata = np.log10(p.data[:,:,:,0+nv*c2]/sigma0)
-                        unit   = r'log($\rho / \rho _0$) in code units'
+			mtot = mtot + np.sum( p.data[:,:,:,0+nv*c2] * \
+			       dz * 0.5*abs( (R+0.5*dr)**2 - (R-0.5*dr)**2 ) * dphi )
+			if logrho:
+                            pldata = np.log10(p.data[:,:,:,0+nv*c2]/sigma0)
+                            unit   = r'log($\rho / \rho _0$) in code units'
+			else:
+                            pldata = p.data[:,:,:,0+nv*c2]/sigma0
+                            unit   = r'$\rho / \rho _0$ in code units'
                     elif plparams[j]==1 or plparams[j]==1+nvs:
                         c2     = ( plparams[j] >= nvs )
                         pldata = p.data[:,:,:,1+nv*c2]
@@ -111,7 +120,7 @@ for j in range(nplots):
                         unit   = r'$L_{\phi}$ in code units'
                     elif plparams[j]==5 or plparams[j]==5+nvs:
                         c2     = ( plparams[j] >= nvs )
-                        pldata = p.data[:,:,:,5+nv*c2]
+                        pldata = p.data[:,:,:,10+nv*c2]
                         if advect:
                             unit = r'$\rho_{tracer}$ in code units'
                         else:
@@ -149,6 +158,9 @@ for j in range(nplots):
 			c2     = ( plparams[j] >= nvs )
 			pldata = p.data[:,:,:,4+nv*c2]/R
 			unit   = r'$p_{\phi}$ in code units'
+		    elif plparams[j]==-1:
+			pldata = np.ones([p.ui[0]-p.li[0]+4,p.ui[1]-p.li[1]+4,p.ui[2]-p.li[2]+4])*p.dt
+			unit   = r'$dt$ in code units'
                     else:
                         pldata = p.data[:,:,:,0]
                         unit   = r'$\rho$ in code units'
@@ -168,7 +180,7 @@ for j in range(nplots):
                             if (iz+1 > 1) and show_patches:
                                 pl.plot( [p.y[li[1]] , p.y[ui[1]-1]] , [p.z[li[2]],p.z[li[2]]] , 'k:' , lw=0.7)
                                 
-                            pl.ylabel(r'$\phi$ in code units')
+                            pl.ylabel(r'$\phi$ in code units',fontsize=16)
                             zmin = min([zmin,p.z[li[2]]])
                             zmax = max([zmax,p.z[ui[2]-1]])
                     elif plot_dim=='1D':
@@ -181,18 +193,20 @@ for j in range(nplots):
                                 pl.plot( p.y[li[1]:ui[1]+1] , pldata[(ui[0]-li[0])/2+li[0] , li[1]:ui[1]+1, (ui[2]-li[2])/2+li[2]].transpose() , 'o'+colr[colridx], label = r'$t$ = '+np.str(round(p.time,4)))
                             zmin = min([zmin,pldata.min()])
                             zmax = max([zmax,pldata.max()])
-                            pl.ylabel(unit)
+                            pl.ylabel(unit,fontsize=16)
                     
                     k = k+1
 	            if j==1 and first_time==True:
 	    		print 'patch%id is::', p.id, ', time is::', p.time, ', dt is::', p.dt
         first_time = False
+        if plparams[j]==0 or plparams[j]==0+nvs:
+	    print 'Total mass is::', mtot
         colridx = colridx + 1
     
     if plot_dim == '2D':
         pl.axis( xmin=ymin , xmax=ymax , ymin=float(zmin), ymax=float(zmax) )
         cbar = pl.colorbar()
-	cbar.ax.set_ylabel(unit)
+	cbar.ax.set_ylabel(unit,fontsize=16)
     elif plot_dim == '1D':
         pl.axis( xmin = ymin , xmax = ymax , ymin = Vmin , ymax = Vmax)
         pl.legend()

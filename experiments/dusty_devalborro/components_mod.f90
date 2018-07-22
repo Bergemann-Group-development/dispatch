@@ -107,11 +107,16 @@ SUBROUTINE init_annulus (self, params)
           ! set angular (phi) velocity of the annulus (in rad/s), if desired.
           if (rotating) then
             patch%grid_vel = [0.0d0, 0.0d0, &
-                              sqrt(scaling%grav * params%mstar / params%aplanet**3)]
+                              sqrt(scaling%grav * params%mstar / patch%position(2)**3)]
+            if (params%aplanet > curr_roff .and. params%aplanet < curr_roff + rextent) then
+              patch%grid_vel = [0.0d0, 0.0d0, &
+                                sqrt(scaling%grav * params%mstar / params%aplanet**3)]
+              planet%omega_planet = patch%grid_vel(3)
+            end if
+            !print*, patch%mesh(:)%id, 'grid vel and r::', patch%grid_vel(3), curr_roff + 0.5*rextent
           else
             patch%grid_vel = [0.0d0, 0.0d0, 0.0d0]
           end if
-
           call patch%init()
           patch%mesh(:)%origin = [zoffset,roffset,zoffset]
           !if (patch%kind == 'zeus_mhd_patch') then

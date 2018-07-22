@@ -58,7 +58,7 @@ SUBROUTINE conditions (self, patch, cit)
   ! in the regions determined by `kill_rmin` and `kill_rmax`, plus reset to initial
   ! values in the ghost zones.
   do k = 1 , patch%nc
-  ic = patch%nv*(k-1)/patch%nc!; print*, 'ic is::', ic
+  ic = 5*(k-1)
   sigma0 = 2.0e-3 * experiment_params%mstar / pi / experiment_params%aplanet**2
   if (any(patch%no_pressure.EQ.k)) then                   ! ADDED no_pressure CONDITION
     sigma0 = sigma0*experiment_params%dust2gas
@@ -75,6 +75,7 @@ SUBROUTINE conditions (self, patch, cit)
             p0 = 0d0
           else
             p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0
+            !skep = skep * (1.0 - experiment_params%aspect_rat**2)
           end if
           if ( r <= experiment_params%kill_rmin ) then
             rkill = experiment_params%kill_rmin
@@ -119,7 +120,12 @@ SUBROUTINE conditions (self, patch, cit)
             r = m2%centre_nat + patch%mesh(2)%r(i2)
             vkep = sqrt(experiment_params%mstar * scaling%grav / r)
             skep = sigma0 * vkep * m1%h31c(i1) * m2%h32c(i2)
-            p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0
+            if (any(patch%no_pressure.EQ.k)) then
+              p0 = 0.0
+            else
+              p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0
+              !skep = skep * (1.0 - experiment_params%aspect_rat**2)
+            end if
             q(i1,i2,i3,patch%idx%d+ic)  = sigma0
             q(i1,i2,i3,patch%idx%px+ic) = 0.0d0
             jay2 = 2*m2%lo + 1 - i2
@@ -142,12 +148,17 @@ SUBROUTINE conditions (self, patch, cit)
             end if
           end do
         end if
-        if ((m2%llc_nat + m2%s) >= (experiment_params%roffset + patch%box(2))) then
+        if ((m2%llc_nat + m2%s + m2%d) >= (experiment_params%roffset + patch%box(2))) then
           do i2=m2%uo,m2%ub
             r = m2%centre_nat + patch%mesh(2)%r(i2)
             vkep = sqrt(experiment_params%mstar * scaling%grav / r)
             skep = sigma0 * vkep * m1%h31c(i1) * m2%h32c(i2)
-            p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0
+            if (any(patch%no_pressure.EQ.k)) then
+              p0 = 0.0
+            else
+              p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0
+              !skep = skep * (1.0 - experiment_params%aspect_rat**2)
+            end if
             q(i1,i2,i3,patch%idx%d+ic)  = sigma0
             q(i1,i2,i3,patch%idx%px+ic) = 0.0d0
             jay2 = 2*m2%uo - 1 - i2

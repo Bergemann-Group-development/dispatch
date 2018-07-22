@@ -7,9 +7,9 @@
 /
 
 &out_params
- end_time=12.6 !1.89  !62.832 !630.0
- out_time=0.12566 !0.06283 !6.283  !0.628319
- print_time=6.0
+ end_time=62.832 !1.89  !62.832 !630.0
+ out_time=1.0 !0.06283 !6.283  !0.628319
+ print_time=0.3
  guard_zones=t
 /
 
@@ -19,8 +19,8 @@
 
 &initial_params
   ramp_mass=t
-  mtotal=1.001
-  mplanet=1.0e-3
+  mtotal=1.0!1.001
+  mplanet=1.0e-3!1.0e-3
   dust2gas=0.01
   nv=10
   nc=2
@@ -28,8 +28,8 @@
 
 &annulus_params
   rotating=t
-  n_patch=1,5,1 !1,5,9
-  n_per_patch=1,32,495 !1,32,55 !1,160,495
+  n_patch=1,5,9 !1,5,9
+  n_per_patch=1,32,55 !1,32,55 !1,160,495
 /
 
 &zeus_params
@@ -55,8 +55,10 @@
  !nu=    1.5, 2.0, 2.0, 0.0, 0.6, 0.0, 1.5, 6.5, 6.5, 0.3, 0.6, 0.0 ! went very bad very fast! Faster than any of the others
  !nu=    1.5, 2.0, 2.0, 0.0, 0.6, 0.0, 1.5, 2.5, 2.5, 2.0, 0.6, 0.0 ! also went very bad very fast! Faster than any of the others
  !nu=    1.5, 2.0, 2.0, 0.0, 0.6, 0.0, 2.5, 2.5, 2.5, 0.3, 0.6, 0.0 ! quickly became unstable in p_r in dust at inner edge
- nu=    1.5, 2.0, 2.0, 0.0, 0.6, 0.0, 2.0, 2.5, 2.5, 0.3, 0.6, 0.0 ! quickly became unstable in p_r in dust at inner edge
-
+ !nu=    1.5, 2.0, 2.0, 0.0, 0.6, 0.0, 2.0, 2.5, 2.5, 0.3, 0.6, 0.0 ! quickly became unstable in p_r in dust at inner edge
+ !nu=    2.5, 2.0, 1.0, 0.0, 2.0, 0.0, 0.5, 6.0, 1.0, 0.0, 0.0, 0.0
+ !nu=    2.5, 2.0, 1.0, 0.0, 2.0, 0.0, 0.8, 12.0, 1.0, 0.0, 0.0, 0.0
+ nu=    2.5, 2.0, 1.0, 0.0, 2.0, 0.0, 1.0, 12.0, 1.0, 0.0, 0.1, 0.0
  !     cs    du   pa   ofd   mas   eta
  gamma=1.0001
  !gamma=1.0
@@ -91,26 +93,34 @@
 
 &force_params
  type = 'star_and_planet'
+ do_pressure = f
+ use_viscosity = f
  i_gas = 1
  i_dust = 2
  K = 1.0e-9
- !d_int = 0.0252825      ! Internal density of dust grains in g/cm^3
- d_int = 1.0             ! Internal density of dust grains in g/cm^3
- !a = 1.0e-5             ! Size (radius) of dust grains in cm
- a = 0.1                 ! Size (radius) of dust grains in cm
+ !d_int = 0.0252825      ! Internal density of dust grains in numerical units
+ d_int = 1.0             ! Internal density of dust grains in numerical units
+ !a = 1.0e-5             ! Size (radius) of dust grains in numerical units
+ a = 1.0e-5                 ! Size (radius) of dust grains in numerical units
  b = 0.4                 ! Exponent for power law drag,
  sigma = 1.589e-8
  !gamma = 1.66666
  gamma = 1.0001
  !gamma = 1.0
  csound = 1.0
- drag = 'linear'       ! F = K*(v-vd)
- !drag = 'epstein'
+ cd = 0.00016
+ !drag = 'linear'       ! F = K*(v-vd)
+ drag = 'epstein'
  !drag = 'stokes'
  !drag = 'quadratic'    ! F = K*|v-vd|*(v-vd)
  !drag = 'power'        ! F = K*|v-vd|^b*(v-vd)
  !drag = 'third_order'  ! F = K*(1+|v-vd|^2)*(v-vd)
  !drag = 'mixed'        ! F = K*sqrt(1+|v-vd|^2)*(v-vd)
+/
+&viscosity_params
+ type = 'constant_viscosity'
+ nu = 1.0e-5
+ nc = 2
 /
 
 &download_params

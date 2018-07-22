@@ -1,18 +1,16 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!> Setup a cylindrical annulus in cylindrical coords. and add a gravitating point
-!> mass that represents a massive planet (but has no real surface). A rotating
-!> coord. system, centred at the planet's orbital radius, is possible.
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!> =============================================================================
+!> Generic DISPATCH main program for Cartesian meshes
+!> =============================================================================
 PROGRAM dispatch
   USE setup_mod
-  USE mpi_mod
-  USE io_mod
-  implicit none
+  USE cartesian_mod
+  USE dispatcher_mod
+  type (cartesian_t):: cartesian
   !.............................................................................
-  call mpi%init
-  call setup%init
-  call setup%task_list%execute
-  call mpi%end
-  print*,'All tasks finished. Goodbye.'
+  call setup%init                               ! Standard setup (MPI, I/O, scaling, ...)
+  call dispatcher%init                          ! Set dispatcher method
+  call cartesian%init                           ! Initialize the patch list and patches
+  call dispatcher%execute (cartesian%task_list) ! Cáll dispatcher
+  call setup%end
 !> =============================================================================
 END PROGRAM dispatch

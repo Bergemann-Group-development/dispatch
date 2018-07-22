@@ -11,6 +11,8 @@ MODULE force_mod
   USE mesh_mod
   USE index_mod
   USE vector_ops
+  USE stagger_mod
+  USE viscosity_mod
   USE scalar_mod
   USE scaling_mod
   USE star_mod
@@ -19,16 +21,19 @@ MODULE force_mod
   implicit none
   private
   type, public:: force_t
+    logical:: do_pressure, use_viscosity
     integer:: i_gas, i_dust, nc, i=1
-    real::    K, d_int, a, gamma, csound, b, sigma, tmin
+    real::    K, d_int, a, gamma, csound, b, sigma, tmin, cd
     real::    pi=4.0*atan(1.0), time = 0.0
     real, dimension(:,:,:,:), allocatable:: ff_drag, ff_grav
+    real, dimension(:,:,:),   allocatable:: t_stop
     character(len=32):: drag
     character(len=64):: solver
     procedure(star_and_planet),     pointer:: selected=>null()
   contains
     procedure init
     procedure dust_gas_interaction
+    procedure turbulent_pressure
   end type
  logical, save:: first_time=.true.
 CONTAINS
@@ -43,11 +48,11 @@ SUBROUTINE init (self, solver)
    character(len=64):: solver
    integer, save:: i_gas=1, i_dust=2
    real, save:: K=0.5, d_int=3.0, sigma=1.589e-8, a=0.3, csound=1.0, gamma=1.0, &
-                b=0.5
-   logical, save:: first_time = .true.
+                b=0.5, cd=1.0e-3
+   logical, save:: first_time = .true., do_pressure=.false., use_viscosity=.false.
    character(len=32), save:: type='zero', drag='linear'
-   namelist /force_params/ type, i_gas, i_dust, K, d_int, a, gamma, &
-                           drag, csound, b, sigma
+   namelist /force_params/ type, i_gas, i_dust, K, d_int, a, gamma, cd, &
+                           drag, csound, b, sigma, do_pressure, use_viscosity
    !----------------------------------------------------------------------------
    call trace%begin('force_t%init')
    self%nc = experiment_params%nc
@@ -69,7 +74,10 @@ SUBROUTINE init (self, solver)
    self%a       = a
    self%b       = b
    self%csound  = csound
+   self%cd      = cd
    self%gamma   = gamma
+   self%do_pressure   = do_pressure
+   self%use_viscosity = use_viscosity
    select case (type)
    case ('star_and_planet')
      self%selected => star_and_planet
@@ -121,7 +129,7 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     ! Compute velocity=momentum/density for the gas fluid component, leaving
     ! gas density for reuse
     !--------------------------------------------------------------------------
-    ic     =  (nv/self%nc)*(self%i_gas-1)
+    ic     =  5*(self%i_gas-1)
     d_gas  =  mem(:,:,:,i%d +ic        )
     p      =  hinv_vector(m,mem(:,:,:,i%px+ic:i%pz+ic))
     s      =  mem(:,:,:,i%s +ic        )
@@ -133,7 +141,7 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     ! Compute velocity=momentum/density for the dust fluid component, leaving
     ! dust density for reuse
     !--------------------------------------------------------------------------
-    ic     =  (nv/self%nc)*(self%i_dust-1)
+    ic     =  5*(self%i_dust-1)
     d_dust =  mem(:,:,:,i%d +ic        )
     p      =  hinv_vector(m,mem(:,:,:,i%px+ic:i%pz+ic))
     lnd    =  log(d_dust)
@@ -194,6 +202,8 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     else
       K = self%K
     end if
+    allocate(self%t_stop(m(1)%gn,m(2)%gn,m(3)%gn))
+    self%t_stop = (d_gas*d_dust)/(K*(d_gas+d_dust))
     self%tmin = minval((d_gas*d_dust)/(K*(d_gas+d_dust)),K>0.0)
     KK = down(K)
     !--------------------------------------------------------------------------
@@ -205,7 +215,9 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     ! Save drag force for use on the second component
     !--------------------------------------------------------------------------
     allocate(self%ff_drag(m(1)%gn,m(2)%gn,m(3)%gn,3))
-    self%ff_drag = ff
+    self%ff_drag(:,:,:,1) =       ff(:,:,:,1)
+    self%ff_drag(:,:,:,2) = h2c(m,ff(:,:,:,2))
+    self%ff_drag(:,:,:,3) = h3c(m,ff(:,:,:,3))
     lnd   =  log(d)
     ld    =  down(lnd)
     dd    =  exp(ld)
@@ -244,6 +256,67 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   end if
   call trace_end
 END FUNCTION dust_gas_interaction
+
+!> =============================================================================
+!> Calculate turbulent pressure for dust
+!>  ============================================================================
+FUNCTION turbulent_pressure(self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
+  USE scalar_mod
+  class(force_t):: self
+  type(viscosity_t):: viscosity
+  real(8):: time, r, Omega
+  class(mesh_t), pointer, dimension(:):: m
+  real, dimension(:,:,:,:):: mem
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
+  real, dimension(:,:,:,:), pointer:: dd, ld
+  real, dimension(:,:,:), pointer:: lnd, d_gas, s, tO, pg, cs, cd2
+  real, dimension(:,:,:):: Ux, Uy, Uz, d
+  integer:: i1, i2, i3, ic, gn(3)
+  type(index_t):: i
+  !-----------------------------------------------------------------------------
+  call trace_begin('force_mod::turbulent_pressure')
+  !-----------------------------------------------------------------------------
+  if (self%i == self%i_dust) then
+    gn(1)=size(mem,1); gn(2)=size(mem,2); gn(3)=size(mem,3)
+    call allocate_scalars(gn, lnd, cd2)
+    call allocate_vectors(gn, ld, dd)
+    lnd = log(d)
+    ld  = down(lnd)
+    dd  = exp(ld)
+    if (self%use_viscosity) then
+      call allocate_scalars(gn, d_gas, s, tO, pg, cs)
+      do i2 = m(2)%lb, m(2)%ub
+        r = m(2)%r(i2) + m(2)%centre_nat
+        Omega = sqrt( experiment_params%mstar * scaling%grav / r**3 )
+        do i1 = m(1)%lb, m(1)%ub
+          do i3 = m(3)%lb, m(3)%ub
+            tO(i1, i2, i3) = self%t_stop(i1, i2, i3) * Omega
+          end do
+        end do
+      end do
+      ic = 5*(self%i_gas-1)
+      d_gas = mem(:,:,:,i%d+ic)
+      s     = mem(:,:,:,i%s+ic)
+      if (self%gamma==1.0) then
+        pg    = d_gas*self%csound**2
+      else
+        pg    = d_gas**self%gamma*exp(s/d_gas*(self%gamma-1.0))
+      end if
+      cs    = sqrt((self%gamma*pg)/d_gas)
+      cd2   = (1.0 + 2.0*tO**2 + (5.0/4.0)*tO**3)/(1.0+tO**2)**2 * viscosity%nu * cs**2
+      call deallocate_scalars(tO, pg, cs)
+    else
+      cd2   = self%cd**2
+    end if
+    ff = - vector_scalar_grad(m,cd2*d)/dd
+    call deallocate_scalars(lnd, cd2)
+    call deallocate_vectors(ld, dd)
+  else
+    ff = 0.0
+  end if
+  call trace_end
+END FUNCTION turbulent_pressure
+
 !> =============================================================================
 !> Implement both gravity from central star and planet, and dust-gas interaction
 !> =============================================================================
@@ -254,7 +327,7 @@ FUNCTION star_and_planet (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: mem
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,3):: ff
-  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn):: pot
+  real, dimension(m(1)%gn,m(2)%gn,m(3)%gn):: pot, alpha
   real, dimension(:,:,:):: Ux, Uy, Uz, d
   !-----------------------------------------------------------------------------
   call trace_begin('force_mod::star_and_planet')
@@ -264,8 +337,7 @@ FUNCTION star_and_planet (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     dt           =   time - self%time
     pot          =   potential%selected(m,time,dt)
     allocate(self%ff_grav(m(1)%gn,m(2)%gn,m(3)%gn,3))
-    ff = - vector_scalar_grad(m,pot)
-    self%ff_grav = ff
+    self%ff_grav = - vector_scalar_grad(m,pot)
     self%time    = time
   end if
   ff = self%ff_grav
@@ -273,7 +345,10 @@ FUNCTION star_and_planet (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     ! Calculate drag force if more than 1 fluid is included
     ff = ff + dust_gas_interaction(self, time, d, mem, Ux, Uy, Uz, m)
   end if
-  !ff =      dust_gas_interaction(self, time, d, mem, Ux, Uy, Uz, m)
+  ! Calculate turbulent pressure in dust
+  if (self%do_pressure) then
+    ff = ff + turbulent_pressure(self, time, d, mem, Ux, Uy, Uz, m)
+  end if
   !-----------------------------------------------------------------------------
   ! Update internal fluid counter
   !-----------------------------------------------------------------------------
@@ -285,7 +360,10 @@ FUNCTION star_and_planet (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   if (self%i > self%nc) then
     self%i=1
     deallocate(self%ff_grav)
-    if (self%nc > 1) deallocate(self%ff_drag)
+    if (self%nc > 1) then
+      deallocate(self%ff_drag)
+      deallocate(self%t_stop)
+    end if
   end if
   call trace_end
 END FUNCTION star_and_planet
