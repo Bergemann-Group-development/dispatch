@@ -12,7 +12,6 @@ MODULE force_mod
   USE index_mod
   USE vector_ops
   USE stagger_mod
-  USE viscosity_mod
   USE scalar_mod
   USE scaling_mod
   USE star_mod
@@ -23,7 +22,7 @@ MODULE force_mod
   type, public:: force_t
     logical:: do_pressure, use_viscosity
     integer:: i_gas, i_dust, nc, i=1
-    real::    K, d_int, a, gamma, csound, b, sigma, tmin, cd
+    real::    K, d_int, a, gamma, csound, b, sigma, tmin, cd, nu
     real::    pi=4.0*atan(1.0), time = 0.0
     real, dimension(:,:,:,:), allocatable:: ff_drag, ff_grav
     real, dimension(:,:,:),   allocatable:: t_stop
@@ -48,10 +47,10 @@ SUBROUTINE init (self, solver)
    character(len=64):: solver
    integer, save:: i_gas=1, i_dust=2
    real, save:: K=0.5, d_int=3.0, sigma=1.589e-8, a=0.3, csound=1.0, gamma=1.0, &
-                b=0.5, cd=1.0e-3
+                b=0.5, cd=1.0e-3, nu=1.0e-5
    logical, save:: first_time = .true., do_pressure=.false., use_viscosity=.false.
    character(len=32), save:: type='zero', drag='linear'
-   namelist /force_params/ type, i_gas, i_dust, K, d_int, a, gamma, cd, &
+   namelist /force_params/ type, i_gas, i_dust, K, d_int, a, gamma, cd, nu, &
                            drag, csound, b, sigma, do_pressure, use_viscosity
    !----------------------------------------------------------------------------
    call trace%begin('force_t%init')
@@ -75,6 +74,7 @@ SUBROUTINE init (self, solver)
    self%b       = b
    self%csound  = csound
    self%cd      = cd
+   self%nu      = nu
    self%gamma   = gamma
    self%do_pressure   = do_pressure
    self%use_viscosity = use_viscosity
@@ -263,7 +263,6 @@ END FUNCTION dust_gas_interaction
 FUNCTION turbulent_pressure(self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   USE scalar_mod
   class(force_t):: self
-  type(viscosity_t):: viscosity
   real(8):: time, r, Omega
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(:,:,:,:):: mem
@@ -303,7 +302,7 @@ FUNCTION turbulent_pressure(self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
         pg    = d_gas**self%gamma*exp(s/d_gas*(self%gamma-1.0))
       end if
       cs    = sqrt((self%gamma*pg)/d_gas)
-      cd2   = (1.0 + 2.0*tO**2 + (5.0/4.0)*tO**3)/(1.0+tO**2)**2 * viscosity%nu * cs**2
+      cd2   = (1.0 + 2.0*tO**2 + (5.0/4.0)*tO**3)/(1.0+tO**2)**2 * self%nu * cs**2
       call deallocate_scalars(tO, pg, cs)
     else
       cd2   = self%cd**2
