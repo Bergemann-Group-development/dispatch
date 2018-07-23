@@ -131,6 +131,7 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer:: Urotx, Uroty, Urotz                                       ! ADDED POINTERS TO DIFFERENT CENTERINGS OF Urot
   real, dimension(:,:,:),   pointer:: cx1, cx2, cy1, cy2, cy3, cy4, cz1, cz2, cz3               ! ADDED ADDITIONAL POINTERS FOR USE IN COROTATIONAL FRAME
   real, dimension(:,:,:),   pointer:: fdx, fdy, fdz, ldx, ldy, ldz, ddx, ddy, ddz
+  real, dimension(:,:,:),   pointer:: divU
   real, dimension(:,:,:),   pointer:: fxx, fxy
   real, dimension(:,:,:),   pointer::      fyy, fyz
   real, dimension(:,:,:),   pointer:: fzx,      fzz
@@ -177,7 +178,7 @@ SUBROUTINE pde (self)
   call allocate_vectors (self%gn, ld, dd, E, J, fd, fx, fy, fz, fm)
   call allocate_vectors (self%gn, Urot, plin)
   call allocate_scalars (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
-  call allocate_scalars (self%gn, fyyx, fzzx, fzzy, dnu)
+  call allocate_scalars (self%gn, fyyx, fzzx, fzzy, dnu, divU)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
@@ -250,6 +251,8 @@ SUBROUTINE pde (self)
   end if
   dx = maxval(ds,self%n > 1)                            ! smallest {dx,dy,dz}
   du = -dx*div(self%mesh,U)                             ! convergence rate
+  divU = div(self%mesh,U)
+  du = -dx*divU                                         ! convergence rate
   du = max(du,0.0)                                      ! positive part
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
@@ -300,13 +303,13 @@ SUBROUTINE pde (self)
     end if
     ! Total diagonal stress
     du = dx*self%nu(1+6*(k-1))*cs
-    fxx = d*(fxx - (du+2.0*dnu)*Txx + 2.0*dnu*div(self%mesh,U)/3.0 ) - Ex
-    fyy = d*(fyy - (du+2.0*dnu)*Tyy + 2.0*dnu*div(self%mesh,U)/3.0 ) - Ey
-    fzz = d*(fzz - (du+2.0*dnu)*Tzz + 2.0*dnu*div(self%mesh,U)/3.0 ) - Ez
+    fxx = d*(fxx - (du+2.0*dnu)*Txx + (2./3.)*dnu*divU) - Ex
+    fyy = d*(fyy - (du+2.0*dnu)*Tyy + (2./3.)*dnu*divU) - Ey
+    fzz = d*(fzz - (du+2.0*dnu)*Tzz + (2./3.)*dnu*divU) - Ez
     ! Addition of stress tensor terms to the centrifugal terms
-    fyyx = fyyx - ddx*xdn(du+2.0*dnu)*xdn(Tyy) + 2.0*ddx*xdn(dnu)*xdn(div(self%mesh,U))/3.0 - xdn(Ey)
-    fzzx = fzzx - ddx*xdn(du+2.0*dnu)*xdn(Tzz) + 2.0*ddx*xdn(dnu)*xdn(div(self%mesh,U))/3.0 - xdn(Ez)
-    fzzy = fzzy - ddy*ydn(du+2.0*dnu)*ydn(Tzz) + 2.0*ddy*ydn(dnu)*ydn(div(self%mesh,U))/3.0 - ydn(Ez)
+    fyyx = fyyx - ddx*xdn(du+2.0*dnu)*xdn(Tyy) + (2./3.)*ddx*xdn(dnu)*xdn(divU) - xdn(Ey)
+    fzzx = fzzx - ddx*xdn(du+2.0*dnu)*xdn(Tzz) + (2./3.)*ddx*xdn(dnu)*xdn(divU) - xdn(Ez)
+    fzzy = fzzy - ddy*ydn(du+2.0*dnu)*ydn(Tzz) + (2./3.)*ddy*ydn(dnu)*ydn(divU) - ydn(Ez)
   else
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2
@@ -344,20 +347,20 @@ SUBROUTINE pde (self)
     !---------------------------------------------------------------------------
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
-    fxx = d*(fxx - (du+2.0*dnu)*Txx + 2.0*dnu*div(self%mesh,U)/3.0 )
-    fyy = d*(fyy - (du+2.0*dnu)*Tyy + 2.0*dnu*div(self%mesh,U)/3.0 )
-    fzz = d*(fzz - (du+2.0*dnu)*Tzz + 2.0*dnu*div(self%mesh,U)/3.0 )
+    fxx = d*(fxx - (du+2.0*dnu)*Txx + (2./3.)*dnu*divU)
+    fyy = d*(fyy - (du+2.0*dnu)*Tyy + (2./3.)*dnu*divU)
+    fzz = d*(fzz - (du+2.0*dnu)*Tzz + (2./3.)*dnu*divU)
     ! Addition of stress tensor terms to the centrifugal terms
-    fyyx = fyyx - ddx*xdn(du+2.0*dnu)*xdn(Tyy) + 2.0*ddx*xdn(dnu)*xdn(div(self%mesh,U))/3.0
-    fzzx = fzzx - ddx*xdn(du+2.0*dnu)*xdn(Tzz) + 2.0*ddx*xdn(dnu)*xdn(div(self%mesh,U))/3.0
-    fzzy = fzzy - ddy*ydn(du+2.0*dnu)*ydn(Tzz) + 2.0*ddy*ydn(dnu)*ydn(div(self%mesh,U))/3.0
+    fyyx = fyyx - ddx*xdn(du+2.0*dnu)*xdn(Tyy) + (2./3.)*ddx*xdn(dnu)*xdn(divU)
+    fzzx = fzzx - ddx*xdn(du+2.0*dnu)*xdn(Tzz) + (2./3.)*ddx*xdn(dnu)*xdn(divU)
+    fzzy = fzzy - ddy*ydn(du+2.0*dnu)*ydn(Tzz) + (2./3.)*ddy*ydn(dnu)*ydn(divU)
   end if
   !-----------------------------------------------------------------------------
   ! du has units area per unit time, which gives velocity squared times mass
   ! density per unit time = energy per unit volume and time
   !-----------------------------------------------------------------------------
   Q = d*du*(Txx**2 + Tyy**2 + Tzz**2) + &
-      2.0*d*dnu*( (Txx-div(self%mesh,U)/3.0)**2 + (Tyy-div(self%mesh,U)/3.0)**2 + (Tzz-div(self%mesh,U)/3.0)**2 )
+      2.0*d*dnu*( (Txx-divU/3.0)**2 + (Tyy-divU/3.0)**2 + (Tzz-divU/3.0)**2 )
   call deallocate_scalars (Txx, Tyy, Tzz)
   !-----------------------------------------------------------------------------
   ! Conservation of mass
@@ -379,8 +382,9 @@ SUBROUTINE pde (self)
     ddtr   = exp(ldtr)
     fdtr   = -(self%nu(4+6*(k-1))*ddtr*down(du))*grad(self%mesh,lndtr) ! diffusive mass flux of tracer
     fmtr   = (U*ddtr)+fdtr                                             ! mass flux of tracer
-    ddtrdt = -div(self%mesh,fmtr) + dtr*div(self%mesh,U)               ! density derivative of tracer
+    ddtrdt = -div(self%mesh,fmtr) + dtr*divU                           ! density derivative of tracer
   end if
+  call deallocate_scalars (divU)
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmetry, we define only three components
