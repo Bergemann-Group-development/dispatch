@@ -1453,7 +1453,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   endif
   !$omp atomic write
   self%dtime = dtime
-  if (io%verbose>2) &
+  if (io%verbose>2 .or. dtime<0.5*self%dt(self%iit(self%nt-2))) &
     print '(a,i6,1p,3g11.2,2x,3g11.2)', ' courant: id, dt, cdt, u_max, ds =', &
       self%id, dtime, self%courant, self%u_max, ds
   !-----------------------------------------------------------------------------
