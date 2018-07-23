@@ -142,7 +142,7 @@ SUBROUTINE pde (self)
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
   logical, save:: first_time=.true., first_AD=.true.
   !.............................................................................
-  real(8):: ds(3), ds_min(3), dx
+  real(8):: ds(3), ds_min(3), dsmax, dsmin
   integer, save:: itimer=0
   type(index_t):: i
   real:: u_max
@@ -249,10 +249,10 @@ SUBROUTINE pde (self)
       ds_min(3) = min(ds_min(3),self%ds(3)*self%mesh(1)%h31c(self%mesh(1)%lb)*abs(self%mesh(2)%h32c(i2)))
     end do
   end if
-  dx = maxval(ds,self%n > 1)                            ! smallest {dx,dy,dz}
-  du = -dx*div(self%mesh,U)                             ! convergence rate
+  dsmin = minval(ds,self%n > 1)                         ! smallest {dx,dy,dz}
+  dsmax = maxval(ds,self%n > 1)                         ! largest {dx,dy,dz}
   divU = div(self%mesh,U)
-  du = -dx*divU                                         ! convergence rate
+  du = -dsmax*divU                                      ! convergence rate
   du = max(du,0.0)                                      ! positive part
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
@@ -286,11 +286,8 @@ SUBROUTINE pde (self)
       self%u_max = max(self%u_max,u_max)
       print 1, 'u_max(ca)  ', u_max, self%u_max
     1 format(1x,a,1p,2g12.3)
-      u_max = self%fmaxval(cs + sqrt(pp))
-      self%u_max = max(self%u_max,u_max)
-      print 1, 'u_max(ca+u)', u_max, self%u_max
     end if
-    u_max = self%fmaxval(cs + sqrt(pp) + du)
+    u_max = self%fmaxval(cs + sqrt(pp))
     self%u_max = max(self%u_max,u_max)
     if (io%verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
     ! Isotropic pressure part
@@ -302,7 +299,7 @@ SUBROUTINE pde (self)
       dnu = 0.0
     end if
     ! Total diagonal stress
-    du = dx*self%nu(1+6*(k-1))*cs
+    du = dsmax*self%nu(1+6*(k-1))*cs
     fxx = d*(fxx - (du+2.0*dnu)*Txx + (2./3.)*dnu*divU) - Ex
     fyy = d*(fyy - (du+2.0*dnu)*Tyy + (2./3.)*dnu*divU) - Ey
     fzz = d*(fzz - (du+2.0*dnu)*Tzz + (2./3.)*dnu*divU) - Ez
@@ -328,15 +325,12 @@ SUBROUTINE pde (self)
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
       print 1, 'u_max(cs)  ', u_max, self%u_max
-      u_max = self%fmaxval(cs + sqrt(pp))
-      self%u_max = max(self%u_max,u_max)
-      print 1, 'u_max(cs+u)', u_max, self%u_max
     end if
-    u_max = self%fmaxval(cs + sqrt(pp) + du)
+    u_max = self%fmaxval(cs + sqrt(pp))
     self%u_max = max(self%u_max,u_max)
     if (io%verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
     ! Total diagonal stress, with density factor
-    du = dx*self%nu(1+6*(k-1))*cs
+    du = dsmax*self%nu(1+6*(k-1))*cs
     pp = pg + pa
     ! Physical viscosity
     if (associated(self%viscosity%selected) .and. self%do_viscosity) then
@@ -356,6 +350,17 @@ SUBROUTINE pde (self)
     fzzy = fzzy - ddy*ydn(du+2.0*dnu)*ydn(Tzz) + (2./3.)*ddy*ydn(dnu)*ydn(divU)
   end if
   !-----------------------------------------------------------------------------
+  ! Viscous time scale evaluations.  Viscous terms are ~ 1/ds^2, and while the
+  ! value of the viscosity scales with dsmax, the diffusion speed scales with
+  ! 1/dsmin.
+  !-----------------------------------------------------------------------------
+  u_max = self%fmaxval(du)*dsmax/dsmin**2
+  self%u_max = max(self%u_max,u_max)
+  if (io%verbose>1) print 1, 'u_max(du)', u_max, self%u_max
+  u_max = self%fmaxval(dnu)*dsmax/dsmin**2
+  self%u_max = max(self%u_max,u_max)
+  if (io%verbose>1) print 1, 'u_max(dnu)', u_max, self%u_max
+  !-----------------------------------------------------------------------------
   ! du has units area per unit time, which gives velocity squared times mass
   ! density per unit time = energy per unit volume and time
   !-----------------------------------------------------------------------------
@@ -373,7 +378,7 @@ SUBROUTINE pde (self)
   if (associated(self%viscosity%selected2) .and. self%do_viscosity) then
     dddt = dddt + self%viscosity%selected2(self%time, self%mem(:,:,:,:,self%it,1), U, self%mesh, self%force)
   end if
-  u_max = self%cdtd*dx*self%fmaxval(abs(dddt/d))             ! ops: 0 0 1
+  u_max = self%cdtd*dsmax*self%fmaxval(abs(dddt/d))             ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
   if (io%verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
   if (self%tracer .and. k==1) then                                     ! ADDED COLOR EQUATION FOR TRACER DENSITY
@@ -461,7 +466,7 @@ SUBROUTINE pde (self)
   if (associated(self%force%selected) .and. self%do_force) then
     if (self%force_coupled) then
       dpdt = dpdt + dd*self%force%selected (self%time, d, self%mem(:,:,:,:,self%it,1), Ux, Uy, Uz, self%mesh)
-      u_max = dx/self%force%tmin
+      u_max = dsmax/self%force%tmin
       self%u_max = max(self%u_max,u_max)
       if (io%verbose>2) print 1, 'u_max(drag)', u_max, self%u_max
     else
@@ -522,7 +527,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dS/dt = (ds/dt-(s/d)*dddt)/d
   !-----------------------------------------------------------------------------
-  u_max = self%cdtd*dx*self%fmaxval(abs((dsdt-s*dddt/d)/d))  ! ops: 1 1 2
+  u_max = self%cdtd*dsmax*self%fmaxval(abs((dsdt-s*dddt/d)/d))  ! ops: 1 1 2
   self%u_max = max(self%u_max,u_max)
   if (io%verbose>2) print 1, 'u_max(dsdt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
