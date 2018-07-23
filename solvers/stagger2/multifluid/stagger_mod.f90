@@ -2,6 +2,7 @@
 !> $Id$
 !> =============================================================================
 MODULE stagger_mod
+  USE trace_mod
   USE omp_timer_mod
   USE stagger_16
   USE stagger_20
@@ -207,12 +208,12 @@ END FUNCTION zup1
 
 !*******************************************************************************
 FUNCTION ddxdn (s1, a) RESULT (b)
-  real, dimension(:,:,:):: a, s1
-  real, dimension(size(a,1),size(a,2),size(a,3)):: b, c
+  real, dimension(:,:,:), intent(in):: a, s1
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
-!  call trace%begin ('stagger_mod::ddxdn', itimer=itimer)
+  call trace%begin ('stagger_mod::ddxdn', itimer=itimer)
   n = shape(a)
   if (hardwire) then
     if (all(n==[16,16,16])) then
@@ -228,28 +229,27 @@ FUNCTION ddxdn (s1, a) RESULT (b)
     end if
   else if (n(1) > 1) then
     b(1,:,:) = 0.0
-    c = 1./s1
     do iz=1,n(3)
     do iy=1,n(2)
     do ix=2,n(1)
-      b(ix,iy,iz) = c(ix,iy,iz)*(a(ix  ,iy,iz) - a(ix-1,iy,iz))
+      b(ix,iy,iz) = (a(ix  ,iy,iz) - a(ix-1,iy,iz))/s1(ix,iy,iz)
     end do
     end do
     end do
   else
     b = 0.0
   endif
-!  call trace%end (itimer)
+  call trace%end (itimer)
 END FUNCTION ddxdn
 
 !*******************************************************************************
 FUNCTION ddydn (s2, a) RESULT (b)
-  real, dimension(:,:,:):: a, s2
-  real, dimension(size(a,1),size(a,2),size(a,3)):: b, c
+  real, dimension(:,:,:), intent(in):: a, s2
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
-!  call trace%begin ('stagger_mod::ddydn', itimer=itimer)
+  call trace%begin ('stagger_mod::ddydn', itimer=itimer)
   n = shape(a)
   if (hardwire) then
     if (all(n==[16,16,16])) then
@@ -265,28 +265,27 @@ FUNCTION ddydn (s2, a) RESULT (b)
     end if
   else if (n(2) > 1) then
     b(:,1,:) = 0.0
-    c = 1./s2
     do iz=1,n(3)
     do iy=2,n(2)
     do ix=1,n(1)
-      b(ix,iy,iz) = c(ix,iy,iz)*(a(ix,iy  ,iz) - a(ix,iy-1,iz))
+      b(ix,iy,iz) = (a(ix,iy  ,iz) - a(ix,iy-1,iz))/s2(ix,iy,iz)
     end do
     end do
     end do
   else
     b = 0.0
   endif
-!  call trace%end (itimer)
+  call trace%end (itimer)
 END FUNCTION ddydn
 
 !*******************************************************************************
 FUNCTION ddzdn (s3, a) RESULT (b)
-  real, dimension(:,:,:):: a, s3
-  real, dimension(size(a,1),size(a,2),size(a,3)):: b, c
+  real, dimension(:,:,:), intent(in):: a, s3
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
-!  call trace%begin ('stagger_mod::ddzdn', itimer=itimer)
+  call trace%begin ('stagger_mod::ddzdn', itimer=itimer)
   n = shape(a)
   if (hardwire) then
     if (all(n==[16,16,16])) then
@@ -302,29 +301,29 @@ FUNCTION ddzdn (s3, a) RESULT (b)
     end if
   else if (n(3) > 1) then
     b(:,:,1) = 0.0
-    c = 1./s3
     do iz=2,n(3)
     do iy=1,n(2)
     do ix=1,n(1)
-      b(ix,iy,iz) = c(ix,iy,iz)*(a(ix,iy,iz  ) - a(ix,iy,iz-1))
+      b(ix,iy,iz) = (a(ix,iy,iz  ) - a(ix,iy,iz-1))/s3(ix,iy,iz)
     end do
     end do
     end do
   else
     b = 0.0
   endif
-!  call trace%end (itimer)
+  call trace%end (itimer)
 END FUNCTION ddzdn
 
 !*******************************************************************************
 FUNCTION ddxup (s1, a) RESULT (b)
-  real, dimension(:,:,:):: a, s1
-  real, dimension(size(a,1),size(a,2),size(a,3)):: b, c
+  real, dimension(:,:,:), intent(in):: a, s1
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
-!  call trace%begin ('stagger_mod::ddxup', itimer=itimer)
   n = shape(a)
+  if (itimer==0) print *,'stagger: n =', n
+  call trace%begin ('stagger_mod::ddxup', itimer=itimer)
   if (hardwire) then
     if (all(n==[16,16,16])) then
       !call dxup_16 (ds,a,b)
@@ -339,28 +338,28 @@ FUNCTION ddxup (s1, a) RESULT (b)
     end if
   else if (n(1) > 1) then
     b(n(1),:,:) = 0.0
-    c = 1.0/s1
     do iz=1,n(3)
     do iy=1,n(2)
     do ix=1,n(1)-1
-      b(ix,iy,iz) = c(ix,iy,iz)*(a(ix+1,iy,iz) - a(ix  ,iy,iz))
+      b(ix,iy,iz) = (a(ix+1,iy,iz) - a(ix  ,iy,iz))/s1(ix,iy,iz)
     end do
     end do
     end do
   else
     b = 0.0
   endif
-!  call trace%end (itimer)
+  call trace%end (itimer)
 END FUNCTION ddxup
 
 !*******************************************************************************
 FUNCTION ddyup (s2, a) RESULT (b)
-  real, dimension(:,:,:):: a, s2
-  real, dimension(size(a,1),size(a,2),size(a,3)):: b, c
+  real, dimension(:,:,:), intent(in):: a, s2
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  real, dimension(size(a,1)):: a1
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
-!  call trace%begin ('stagger_mod::ddyup', itimer=itimer)
+  call trace%begin ('stagger_mod::ddyup', itimer=itimer)
   n = shape(a)
   if (hardwire) then
     if (all(n==[16,16,16])) then
@@ -376,28 +375,27 @@ FUNCTION ddyup (s2, a) RESULT (b)
     end if
   else if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,n(2),:) = 0.0
-    c = 1./s2
     do iz=1,n(3)
     do iy=1,n(2)-1
     do ix=1,n(1)
-      b(ix,iy,iz) = c(ix,iy,iz)*(a(ix,iy+1,iz) - a(ix,iy  ,iz))
+      b(ix,iy,iz) = (a(ix,iy+1,iz) - a(ix,iy,iz))/s2(ix,iy,iz)
     end do
     end do
     end do
   else
     b = 0.0
   endif
-!  call trace%end (itimer)
+  call trace%end (itimer)
 END FUNCTION ddyup
 
 !*******************************************************************************
 FUNCTION ddzup (s3, a) RESULT (b)
-  real, dimension(:,:,:):: a, s3
-  real, dimension(size(a,1),size(a,2),size(a,3)):: b, c
+  real, dimension(:,:,:), intent(in):: a, s3
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
-!  call trace%begin ('stagger_mod::ddzup', itimer=itimer)
+  call trace%begin ('stagger_mod::ddzup', itimer=itimer)
   n = shape(a)
   if (hardwire) then
     if (all(n==[16,16,16])) then
@@ -413,23 +411,22 @@ FUNCTION ddzup (s3, a) RESULT (b)
     end if
   else if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,:,n(3)) = 0.0
-    c = 1./s3
     do iz=1,n(3)-1
     do iy=1,n(2)
     do ix=1,n(1)
-      b(ix,iy,iz) = c(ix,iy,iz)*(a(ix,iy,iz+1) - a(ix,iy,iz  ))
+      b(ix,iy,iz) = (a(ix,iy,iz+1) - a(ix,iy,iz  ))/s3(ix,iy,iz)
     end do
     end do
     end do
   else
     b = 0.0
   endif
-!  call trace%end (itimer)
+  call trace%end (itimer)
 END FUNCTION ddzup
 
 !*******************************************************************************
 FUNCTION xdn (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
   integer :: ix, iy, iz, n(3)
@@ -467,7 +464,7 @@ END FUNCTION xdn
 
 !*******************************************************************************
 FUNCTION ydn (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
   integer :: ix, iy, iz, n(3)
@@ -505,7 +502,7 @@ END FUNCTION ydn
 
 !*******************************************************************************
 FUNCTION zdn (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
   integer :: ix, iy, iz, n(3)
@@ -543,7 +540,7 @@ END FUNCTION zdn
 
 !*******************************************************************************
 FUNCTION xup (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
   integer :: ix, iy, iz, n(3)
@@ -581,7 +578,7 @@ END FUNCTION xup
 
 !*******************************************************************************
 FUNCTION yup (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
   integer :: ix, iy, iz, n(3)
