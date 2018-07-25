@@ -17,7 +17,16 @@ MODULE non_ideal_mod
   private
   type, public :: non_ideal_t
     real:: eta_Ohm, etaMD, gamma_AD, rho_ions
-    !real,pointer,dimension(:,:,:,:) :: uin, qin, fluxambdiff, emfambdiff
+    real:: rho0 
+    real:: crho 
+    real:: T0   
+    real:: cT   
+    real:: B0   
+    real:: cB   
+    real,dimension(200) :: rhoarr
+    real,dimension(60)  :: Tarr
+    real,dimension(150) :: Barr
+    real,dimension(200,60,150) :: eta_Ohm_tbl, eta_AD_tbl
     real,pointer,dimension(:,:,:,:,:) :: flux
     logical:: mhd_AD, mhd_Ohm, ntestDADM
     logical:: is_used
@@ -29,6 +38,10 @@ MODULE non_ideal_mod
     procedure:: computejb2
     procedure:: computambip
     procedure:: computdifmag            
+    procedure:: eta_table
+    procedure:: eta_table_init
+!    procedure:: comp_weight
+!    procedure:: read_table
   end type
   type(non_ideal_t), public:: non_ideal
 CONTAINS
@@ -59,6 +72,13 @@ SUBROUTINE init (self)
   self%rho_ions = rho_ions
   self%etaMD    = etaMD
   self%is_used  = mhd_Ohm .or. mhd_AD
+  self%ntestDADM=ntestDADM
+  if ( (self%is_used .eqv. .true.) .and. (self%ntestDADM .eqv. .false.) ) then
+    self%eta_Ohm_tbl = 0.d0
+    self%eta_AD_tbl = 0.d0
+    call eta_table_init(self,self%eta_Ohm_tbl,self%eta_AD_tbl)
+  endif
+
 END SUBROUTINE init
 
 subroutine non_ideal_comp(self,bf,uin,qin,fluxambdiff,emfambdiff,u_max,ds,dt)
@@ -545,7 +565,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
   real(8), allocatable, dimension(:,:,:)::rhofx,rhofy,rhofz
   real(8), allocatable, dimension(:,:,:)::bsquarex,bsquarey,bsquarez,bsquare
   real(8), allocatable, dimension(:,:,:)::bsquarexx,bsquareyy,bsquarezz
-  real(8), allocatable, dimension(:,:,:)::betaad2,betaad
+  real(8), allocatable, dimension(:,:,:)::betaad2,betaad,eta_AD,eta_Ohm
   real(8), allocatable, dimension(:,:,:)::rhox,rhoy,rhoz,rhocell,bcell,bcellold,tcell,ionisrate
   real(8)::dtlim,Cv
 
@@ -555,8 +575,11 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
   real(8), allocatable, dimension(:,:,:,:)::jcenter
   real(8), allocatable, dimension(:,:,:,:)::jxb
 
+  real(8), allocatable, dimension(:,:,:)::uxfx,uxfy,uxfz,uyfx,uyfy,uyfz,uzfx,uzfy,uzfz,uxx,uxy,uxz,uyx,uyy,uyz,uzx,uzy,uzz,Brms2,Eth,T,Brms,rho,B
+  real(8), allocatable, dimension(:,:,:)::etfx,etfy,etfz,etx,ety,etz
+
   real(8) :: ds(3)
-  real(8) :: dx, dy, dz, dt
+  real(8) :: dx, dy, dz, dt, c2_4pi, muh
 
   n = shape(u)
 
@@ -572,6 +595,8 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
   allocate (bsquarezz (n(1)-2,n(2)-2,n(3)-2))
   allocate (betaad    (n(1)-2,n(2)-2,n(3)-2))
   allocate (betaad2   (n(1)-2,n(2)-2,n(3)-2))
+  allocate (eta_AD    (n(1)-2,n(2)-2,n(3)-2))
+  allocate (eta_Ohm   (n(1)-2,n(2)-2,n(3)-2))
   allocate (rhox      (n(1)-2,n(2)-2,n(3)-2))
   allocate (rhoy      (n(1)-2,n(2)-2,n(3)-2))
   allocate (rhoz      (n(1)-2,n(2)-2,n(3)-2))
@@ -584,6 +609,36 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
   allocate (bsquaremax(n(1),n(2),n(3)))
   allocate (jcenter   (n(1),n(2),n(3),3))
   allocate (jxb       (n(1),n(2),n(3),3))
+  allocate (uxfx      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uxfy      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uxfz      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uyfx      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uyfy      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uyfz      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uzfx      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uzfy      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uzfz      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uxx       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uxy       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uxz       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uyx       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uyy       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uyz       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uzx       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uzy       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (uzz       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (etfx      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (etfy      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (etfz      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (etx       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (ety       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (etz       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (Brms2     (n(1)-2,n(2)-2,n(3)-2))
+  allocate (Eth       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (T         (n(1)-2,n(2)-2,n(3)-2))
+  allocate (Brms      (n(1)-2,n(2)-2,n(3)-2))
+  allocate (rho       (n(1)-2,n(2)-2,n(3)-2))
+  allocate (B         (n(1)-2,n(2)-2,n(3)-2))
 
   rhocellmin = 0.d0
   rhofx      = 0.d0
@@ -597,6 +652,8 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
   bsquarezz  = 0.d0
   betaad     = 0.d0
   betaad2    = 0.d0
+  eta_AD     = 0.d0
+  eta_Ohm    = 0.d0
   rhox       = 0.d0
   rhoy       = 0.d0
   rhoz       = 0.d0
@@ -612,6 +669,8 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
 
   dx = ds(1) ; dy = ds(2) ; dz = ds(3)
 
+  muh = 3.012048192771085e+23
+  c2_4pi = 7.152426325648638e+19
   dtlim=dt!*coefalfven
   !dt est deja dtnew, qui a été choisi comme le dt normal (avec la condition de courant) ou le dt normal seuillé si le dtAD est trop faible(bricolo)
 
@@ -651,21 +710,28 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
   rhocell = rhocellmin(2:n(1)-1,2:n(2)-1,2:n(3)-1)
   ionisrate=1!default_ionisrate
 
-  if (ntestDADM) then
+  if (self%ntestDADM) then
     betaad2=1.d0/(self%gamma_AD*self%rho_ions*rhox) 
   else
-  !  ! Call resistivity table dependent on density, thermal energy and magnetic field strength
-  !  ! Eth = Etot - kinetic energy - magnetic energy
-  !  uxx=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,2)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,2)+u(2:n(1)-1,1:n(2)-2,1:n(3)-2,2))
-  !  uyx=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,3)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,3)+u(2:n(1)-1,1:n(2)-2,1:n(3)-2,3))
-  !  uzx=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,4)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,4)+u(2:n(1)-1,1:n(2)-2,1:n(3)-2,4))
-  !  etx=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,5)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,5)+u(2:n(1)-1,1:n(2)-2,1:n(3)-2,5))
-  !  Brms2 = bemfx(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)**2 + bemfx(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)**2 + bemfx(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)**2 
-  !  Eth = etx - 0.5 * rhox * ( uxx**2 + uyx**2 + uzx**2 ) - &
-  !        0.5 * Brms2
-  !  Brms = Brms2**0.5      
-  !  call eta_table(self,eta_AD,eta_Ohm,rhox,Eth,Brms)
-  !  betaad2 = eta_AD / Brms2
+    ! Call resistivity table dependent on density, thermal energy and magnetic field strength
+    ! Eth = Etot - kinetic energy - magnetic energy
+    uxx=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,2)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,2)+u(2:n(1)-1,1:n(2)-2,1:n(3)-2,2))
+    uyx=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,3)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,3)+u(2:n(1)-1,1:n(2)-2,1:n(3)-2,3))
+    uzx=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,4)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,4)+u(2:n(1)-1,1:n(2)-2,1:n(3)-2,4))
+    etx=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,5)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,5)+u(2:n(1)-1,1:n(2)-2,1:n(3)-2,5))
+    Brms2 = bemfx(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)**2 + bemfx(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)**2 + bemfx(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)**2 
+    Eth = etx - 0.5 * rhox * ( uxx**2 + uyx**2 + uzx**2 ) - &
+          0.5 * Brms2
+    T   = 10. !Eth * (gamma - 1.d0)
+    Brms = Brms2**0.5      
+    rho = rhox*muh !* rhocode_to_nd
+    T   = T       !* Tcode_to_K
+    B   = Brms    !* Bcode_to_Gauss
+    call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
+    ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
+    ! from seconds to code time
+    eta_AD = eta_AD !* etacgs_to_etacode
+    betaad2 = eta_AD / Brms2 * c2_4pi 
   endif
 
   emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)=emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)*betaad2 
@@ -678,21 +744,28 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
   rhocell = rhocellmin(2:n(1)-1,2:n(2)-1,2:n(3)-1)
   ! comparison with hydro+idealMHD 
 
-  if (ntestDADM) then
+  if (self%ntestDADM) then
     betaad2=1.d0/(self%gamma_AD*self%rho_ions*rhoy) 
   else
-  !  ! Call resistivity table dependent on density, thermal energy and magnetic field strength
-  !  ! Eth = Etot - kinetic energy - magnetic energy
-  !  uxy=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,2)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,2)+u(1:n(1)-2,2:n(2)-1,1:n(3)-2,2))
-  !  uyy=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,3)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,3)+u(1:n(1)-2,2:n(2)-1,1:n(3)-2,3))
-  !  uzy=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,4)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,4)+u(1:n(1)-2,2:n(2)-1,1:n(3)-2,4))
-  !  ety=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,5)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,5)+u(1:n(1)-2,2:n(2)-1,1:n(3)-2,5))
-  !  Brms2 = bemfy(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)**2 + bemfy(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)**2 + bemfy(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)**2
-  !  Eth = ety - 0.5 * rhoy * ( uxy**2 + uyy**2 + uzy**2 ) - &
-  !        0.5 * Brms2
-  !  Brms = Brms2**0.5
-  !  call eta_table(self,eta_AD,eta_Ohm,rhoy,Eth,Brms)
-  !  betaad2 = eta_AD / Brms2
+    ! Call resistivity table dependent on density, thermal energy and magnetic field strength
+    ! Eth = Etot - kinetic energy - magnetic energy
+    uxy=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,2)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,2)+u(1:n(1)-2,2:n(2)-1,1:n(3)-2,2))
+    uyy=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,3)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,3)+u(1:n(1)-2,2:n(2)-1,1:n(3)-2,3))
+    uzy=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,4)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,4)+u(1:n(1)-2,2:n(2)-1,1:n(3)-2,4))
+    ety=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,5)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,5)+u(1:n(1)-2,2:n(2)-1,1:n(3)-2,5))
+    Brms2 = bemfy(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)**2 + bemfy(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)**2 + bemfy(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)**2
+    Eth = ety - 0.5 * rhoy * ( uxy**2 + uyy**2 + uzy**2 ) - &
+          0.5 * Brms2
+    T   = 10. !Eth * (gamma - 1.d0)
+    Brms = Brms2**0.5
+    rho = rhoy*muh !* scale_nd
+    T   = T       !* scale_T
+    B   = Brms    !* scale_B
+    call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
+    ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
+    ! from seconds to code time
+    eta_AD = eta_AD !* etacgs_to_etacode
+    betaad2 = eta_AD / Brms2 * c2_4pi 
   endif
   emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)=emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)*betaad2            
                     
@@ -703,21 +776,28 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
   bcellold=bcell
   rhocell = rhocellmin(2:n(1)-1,2:n(2)-1,2:n(3)-1)     
 
-  if (ntestDADM) then
+  if (self%ntestDADM) then
     betaad2=1.d0/(self%gamma_AD*self%rho_ions*rhoz) 
   else
-  !  ! Call resistivity table dependent on density, thermal energy and magnetic field strength
-  !  ! Eth = Etot - kinetic energy - magnetic energy
-  !  uxz=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,2)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,2)+u(1:n(1)-2,1:n(2)-2,2:n(3)-1,2))
-  !  uyz=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,3)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,3)+u(1:n(1)-2,1:n(2)-2,2:n(3)-1,3))
-  !  uzz=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,4)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,4)+u(1:n(1)-2,1:n(2)-2,2:n(3)-1,4))
-  !  etz=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,5)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,5)+u(1:n(1)-2,1:n(2)-2,2:n(3)-1,5))
-  !  Brms2 = bemfz(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)**2 + bemfz(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)**2 + bemfz(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)**2 
-  !  Eth = etz - 0.5 * rhoz * ( uxz**2 + uyz**2 + uzz**2 ) - &
-  !        0.5 * Brms2
-  !  Brms = Brms2**0.5
-  !  call eta_table(self,eta_AD,eta_Ohm,rhoz,Eth,Brms)
-  !  betaad2 = eta_AD / Brms2
+    ! Call resistivity table dependent on density, thermal energy and magnetic field strength
+    ! Eth = Etot - kinetic energy - magnetic energy
+    uxz=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,2)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,2)+u(1:n(1)-2,1:n(2)-2,2:n(3)-1,2))
+    uyz=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,3)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,3)+u(1:n(1)-2,1:n(2)-2,2:n(3)-1,3))
+    uzz=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,4)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,4)+u(1:n(1)-2,1:n(2)-2,2:n(3)-1,4))
+    etz=0.25d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,5)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,5)+u(1:n(1)-2,1:n(2)-2,2:n(3)-1,5))
+    Brms2 = bemfz(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)**2 + bemfz(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)**2 + bemfz(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)**2 
+    Eth = etz - 0.5 * rhoz * ( uxz**2 + uyz**2 + uzz**2 ) - &
+          0.5 * Brms2
+    T   = 10. !Eth * (gamma - 1.d0)
+    Brms = Brms2**0.5
+    rho = rhoz*muh !* scale_nd
+    T   = T       !* scale_T
+    B   = Brms    !* scale_B
+    call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
+    ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
+    ! from seconds to code time
+    eta_AD = eta_AD !* etacgs_to_etacode
+    betaad2 = eta_AD / Brms2* c2_4pi 
   endif
 
   emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)=emfambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)*betaad2
@@ -726,53 +806,78 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
   bcell = bsquaremax(2:n(1)-1,2:n(2)-1,2:n(3)-1) 
   rhocell = rhocellmin(2:n(1)-1,2:n(2)-1,2:n(3)-1)
   rhofx=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,1))
-  if (ntestDADM) then
+  if (self%ntestDADM) then
     betaad2=1.d0/(self%gamma_AD*self%rho_ions*rhofx) 
   else
-  !  uxfx=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,2))
-  !  uyfx=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,3))
-  !  uzfx=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,4))
-  !  etfx=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,5))
-  !  Brms2 = bsquarex
-  !  Eth = etfx - 0.5 * rhofx * ( uxfx**2 + uyfx**2 + uzfx**2 ) - &
-  !        0.5 * Brms2
-  !  Brms = Brms2**0.5
-  !  call eta_table(self,eta_AD,eta_Ohm,rhofx,Eth,Brms)
-  !  betaad2 = eta_AD / Brms2
+    uxfx=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,2))
+    uyfx=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,3))
+    uzfx=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,4))
+    etfx=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(1:n(1)-2,2:n(2)-1,2:n(3)-1,5))
+    Brms2 = bsquarex
+    Eth = etfx - 0.5 * rhofx * ( uxfx**2 + uyfx**2 + uzfx**2 ) - &
+          0.5 * Brms2
+    T   = 10. !Eth * (gamma - 1.d0)
+    Brms = Brms2**0.5
+    rho = rhofx*muh !* scale_nd
+    T   = T       !* scale_T
+    B   = Brms    !* scale_B
+    call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
+    ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
+    ! from seconds to code time
+    eta_AD = eta_AD !* etacgs_to_etacode
+    betaad2 = eta_AD / Brms2 * c2_4pi
   endif
   fluxambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)=-betaad2*fluxad(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)
  
   rhofy=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,1))
-  if (ntestDADM) then
+  if (self%ntestDADM) then
     betaad2=1.d0/(self%gamma_AD*self%rho_ions*rhofy) 
   else
-  !  uxfy=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,2))
-  !  uyfy=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,3))
-  !  uzfy=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,4))
-  !  etfy=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,5))
-  !  Brms2 = bsquarey
-  !  Eth = etfy - 0.5 * rhofy * ( uxfy**2 + uyfy**2 + uzfy**2 ) - &
-  !        0.5 * Brms2
-  !  Brms = Brms2**0.5
-  !  call eta_table(self,eta_AD,eta_Ohm,rhofy,Eth,Brms)
-  !  betaad2 = eta_AD / Brms2
+    uxfy=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,2))
+    uyfy=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,3))
+    uzfy=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,4))
+    etfy=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(2:n(1)-1,1:n(2)-2,2:n(3)-1,5))
+    Brms2 = bsquarey
+    Eth = etfy - 0.5 * rhofy * ( uxfy**2 + uyfy**2 + uzfy**2 ) - &
+          0.5 * Brms2
+    T   = 10. !Eth * (gamma - 1.d0)
+    Brms = Brms2**0.5
+    rho = rhofy*muh !* scale_nd
+    T   = T       !* scale_T
+    B   = Brms    !* scale_B
+    call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
+    ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
+    ! from seconds to code time
+    eta_AD = eta_AD  !* etacgs_to_etacode
+    betaad2 = eta_AD / Brms2 * c2_4pi
   endif
   fluxambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)=-betaad2*fluxad(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)
  
   rhofz=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,1))
-  if (ntestDADM) then
+  if (self%ntestDADM) then
     betaad2=1.d0/(self%gamma_AD*self%rho_ions*rhofz) 
   else
-  !  uxfz=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,2))
-  !  uyfz=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,3))
-  !  uzfz=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,4))
-  !  etfz=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,5))
-  !  Brms2 = bsquarez
-  !  Eth = etfz - 0.5 * rhofz * ( uxfz**2 + uyfz**2 + uzfz**2 ) - &
-  !        0.5 * Brms2
-  !  Brms = Brms2**0.5
-  !  call eta_table(self,eta_AD,eta_Ohm,rhofz,Eth,Brms)
-  !  betaad2 = eta_AD / Brms2
+    uxfz=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,2))
+    uyfz=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,3))
+    uzfz=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,4))
+    etfz=0.5d0*(u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5)+u(2:n(1)-1,2:n(2)-1,1:n(3)-2,5))
+    Brms2 = bsquarez
+    Eth = etfz - 0.5 * rhofz * ( uxfz**2 + uyfz**2 + uzfz**2 ) - &
+          0.5 * Brms2
+    T   = 10. !Eth * (gamma - 1.d0)
+    Brms = Brms2**0.5
+    rho = rhofz*muh !* scale_nd
+    T   = T       !* scale_T
+    B   = Brms    !* scale_B
+    call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
+    ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
+    ! from seconds to code time
+!    if (any(eta_AD < 0.) ) then 
+!      print*,'eta_AD is negative! rho, T, B and eta_AD are: ', rho, T, B, eta_AD
+!      stop
+!    end if
+    eta_AD = eta_AD !* etacgs_to_etacode
+    betaad2 = eta_AD / Brms2 * c2_4pi
   endif
   fluxambdiff(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)=-betaad2*fluxad(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)
  
@@ -787,15 +892,26 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
   jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,2) = jcenter(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)*u(2:n(1)-1,2:n(2)-1,2:n(3)-1,6) - jcenter(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)*u(2:n(1)-1,2:n(2)-1,2:n(3)-1,8)
   jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,3) = jcenter(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)*u(2:n(1)-1,2:n(2)-1,2:n(3)-1,7) - jcenter(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)*u(2:n(1)-1,2:n(2)-1,2:n(3)-1,6)
  
-  if (ntestDADM) then
+  if (self%ntestDADM) then
     betaad=1.d0/(self%gamma_AD*self%rho_ions*u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)) 
   else
-  !  Brms2 = u(2:n(1)-1,2:n(2)-1,2:n(3)-1,6)**2 + u(2:n(1)-1,2:n(2)-1,2:n(3)-1,7)**2 + u(2:n(1)-1,2:n(2)-1,2:n(3)-1,8)**2 
-  !  Eth = u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5) - 0.5 * u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1) * ( u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)**2 + u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)**2 + u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)**2 ) - &
-  !        0.5 * Brms2
-  !  Brms = Brms2**0.5
-  !  call eta_table(self,eta_AD,eta_Ohm,u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1),Eth,Brms)
-  !  betaad2 = eta_AD / Brms2
+    Brms2 = u(2:n(1)-1,2:n(2)-1,2:n(3)-1,6)**2 + u(2:n(1)-1,2:n(2)-1,2:n(3)-1,7)**2 + u(2:n(1)-1,2:n(2)-1,2:n(3)-1,8)**2 
+    Eth = u(2:n(1)-1,2:n(2)-1,2:n(3)-1,5) - 0.5 * u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1) * ( u(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)**2 + u(2:n(1)-1,2:n(2)-1,2:n(3)-1,3)**2 + u(2:n(1)-1,2:n(2)-1,2:n(3)-1,4)**2 ) - &
+          0.5 * Brms2
+    T   = 10. !Eth * (gamma - 1.d0)
+    Brms = Brms2**0.5
+    rhocell = u(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)
+    ! Convert variables to units used in the table
+    ! rho in cm^(-3) ; T in K ; B in Gauss
+    rho = rhocell*muh !* scale_nd
+    T   = T       !* scale_T
+    B   = Brms    !* scale_B
+    call eta_table(self,eta_AD,eta_Ohm,rho,T,B)
+    ! Convert back to code units. Reminder: eta_Masson = c^2/(4*pi) * eta_Marchand
+    ! from seconds to code time
+    eta_AD = eta_AD !* etacgs_to_etacode
+    ! Convert to code units
+    betaad = eta_AD / Brms2 * c2_4pi
   endif
   jxbsquare(2:n(1)-1,2:n(2)-1,2:n(3)-1)=(jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,1)*jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,1) +&
                                  & jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,2)*jxb(2:n(1)-1,2:n(2)-1,2:n(3)-1,2) +&
@@ -803,26 +919,54 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
                                  & betaad*dtlim
 
   deallocate (rhocellmin, rhofx, rhofy, rhofz, bsquarex, bsquarey, bsquarez, bsquarexx, bsquareyy, bsquarezz,  &
-              betaad, betaad2, rhox, rhoy, rhoz, rhocell, bcell, bcellold, tcell, ionisrate, jcenter, jxb )
+              betaad, betaad2, eta_AD, eta_Ohm, rhox, rhoy, rhoz, rhocell, bcell, bcellold, tcell, ionisrate, jcenter, jxb,  &
+              uxfx, uxfy, uxfz, uyfx, uyfy, uyfz, uzfx, uzfy, uzfz, uxx, uxy, uxz, uyx, uyy, uyz, uzx, uzy, uzz, &
+              etfx, etfy, etfz, etx, ety, etz, Brms2, Eth, T, Brms, rho, B   )
 
 
 end SUBROUTINE computambip
 ! fin modif nimhd
 
 
-subroutine eta_table(self,eta_AD,eta_Ohm,rho,Eth,Brms)
-    implicit none
+subroutine eta_table(self,eta_AD,eta_Ohm,rho,T,B)
     class (non_ideal_t):: self
-    real :: rho, Eth, B
-    real, dimension(:,:,:) :: eta_AD, eta_Ohm
-    real :: w1(2), w2(2),w3(2)
-    integer :: n(3)
+    real(8), dimension(:,:,:) :: rho, T, B
+    real(8), dimension(:,:,:) :: eta_AD, eta_Ohm
+    real(8) :: rho0, T0, B0
+    real(8) :: crho, cT, cB
+    integer(8), allocatable, dimension(:,:,:):: rhoidx, Tidx, Bidx
+    real, allocatable, dimension(:,:,:,:) :: w1, w2,w3
+    integer :: n(3),i,j,k,iw,jw,kw,irho,iT,iB
+
     n=shape(rho)
+    
+    allocate ( w1(n(1),n(2),n(3),2))
+    allocate ( w2(n(1),n(2),n(3),2))
+    allocate ( w3(n(1),n(2),n(3),2))
+    allocate ( rhoidx(n(1),n(2),n(3)))
+    allocate ( Tidx  (n(1),n(2),n(3)))
+    allocate ( Bidx  (n(1),n(2),n(3)))
 
-    call comp_weight(rho,rho0,self%rhoarr,crho,rhoidx,w1)
-    call comp_weight(T  ,T0  ,self%Tarr  ,cT  ,Tidx  ,w2)
-    call comp_weight(B  ,B0  ,self%Barr  ,cB  ,Bidx  ,w3)
+    print*,'variables allocated in eta_table'
+    rho0 = self%rho0 ; T0 = self%T0 ; B0 = self%B0
+    crho = self%crho ; cT = self%cT ; cB = self%cB
+!    rhoarr = self%rhoarr ; Tarr = self%Tarr ; Barr = self%Barr
+    !print*,'rho0 =', rho0
+    !print*,'B0 =', B0
+    !print*,'T0 =', T0
+    call comp_weight(rho,self%rhoarr,crho,rhoidx,w1)
+    !print*,'rhoidx =', rhoidx
+    call comp_weight(T  ,self%Tarr  ,cT  ,Tidx  ,w2)
+    !print*,'Tidx =', Tidx
+    call comp_weight(B  ,self%Barr  ,cB  ,Bidx  ,w3)
+    !print*,'comp_weight was called'
+    !print*,'crho =', crho
+    !print*,'cT =', cT
+    !print*,'cB =', cB
+    !print*,'Bidx =', Bidx
+    
 
+    eta_Ohm = 0.d0 ; eta_AD = 0.d0
     do i=1,n(1)
       do j=1,n(2)
         do k=1,n(3)
@@ -832,11 +976,11 @@ subroutine eta_table(self,eta_AD,eta_Ohm,rho,Eth,Brms)
                 irho = rhoidx(i,j,k)
                 iT   = Tidx(i,j,k)
                 iB   = Bidx(i,j,k)
-                if (mhd_Ohm) then
-                  eta_Ohm(i,j,k) += w1(i,j,k,iw)*w2(i,j,k,jw)*w3(i,j,k,kw) * eta_ohm_tbl(irho+iw-1, iT+jw-1, iB+kw-1)
+                if (self%mhd_Ohm) then
+                  eta_Ohm(i,j,k) = eta_Ohm(i,j,k) + w1(i,j,k,iw)*w2(i,j,k,jw)*w3(i,j,k,kw) * self%eta_Ohm_tbl(irho+iw, iT+jw, iB+kw)
                 end if
-                if (mhd_AD) then
-                  eta_AD(i,j,k)  += w1(i,j,k,iw)*w2(i,j,k,jw)*w3(i,j,k,kw) * eta_AD_tbl (irho+iw-1, iT+jw-1, iB+kw-1)
+                if (self%mhd_AD) then
+                  eta_AD(i,j,k)  = eta_AD(i,j,k) + w1(i,j,k,iw)*w2(i,j,k,jw)*w3(i,j,k,kw) * self%eta_AD_tbl (irho+iw, iT+jw, iB+kw)
                 end if
               end do
             end do
@@ -844,28 +988,40 @@ subroutine eta_table(self,eta_AD,eta_Ohm,rho,Eth,Brms)
         end do
       end do
     end do
-
+    deallocate(w1,w2,w3,rhoidx,Tidx,Bidx)
 end subroutine eta_table
 
-subroutine comp_weight(x,x0,xarr,cx,w)
+subroutine comp_weight(x,xarr,cx,idx,w)
     implicit none
-    real, dimension(:,:,:)   :: x
-    real, dimension(:,:,:,2) :: w
-    real :: x0,mult,cx,idx_r
+    real(8), dimension(:,:,:)   :: x
+    real, dimension(:,:,:,:) :: w
+    real(8) :: x0,cx
     real, dimension(:) :: xarr
-    real, allocatable, dimension(:) :: arr
-    integer, allocatable, dimension(:,:,:) :: idx
-    integer :: n, nxarr
+    real, allocatable, dimension(:,:,:) :: arr, xd, xu, idx_r
+    real(8), allocatable, dimension(:,:,:) :: mult
+    integer(8), dimension(:,:,:) :: idx
+    integer :: n(3) 
+    integer :: nxarr
 
-    n = shape(x) ; nxarr = shape(xarr)
+    n = shape(x) 
+    nxarr = size(xarr)
+    allocate ( mult    (n(1), n(2), n(3) ) )
     allocate ( arr     (n(1), n(2), n(3) ) )
-    allocate ( idx     (n(1), n(2), n(3) ) )
-    allocate ( xallarr (n(1), n(2), n(3), nxarr ) )
+    allocate ( xd      (n(1), n(2), n(3) ) )
+    allocate ( xu      (n(1), n(2), n(3) ) )
+    allocate ( idx_r   (n(1), n(2), n(3) ) )
     arr = 1.d0
     idx = 0
-
-    x0 = xarr(0)
+    mult = 0.d0
+    xd = 0.d0
+    xu = 0.d0
+    !print*,'xarr in comp_weight', xarr
+    !print*,'x in comp_weight', x
+    x0 = xarr(1)
+    !print*,'x0 = ',x0
     mult = x / (x0 * arr)
+    !print*,'mult = ', mult
+    !print*,'cx = ', cx
     ! log rule: log_b(x) = log_d(x)/log_d(b)
     idx  = int( log10(mult) / log10(cx*arr) )
     idx_r = real(idx)
@@ -890,31 +1046,48 @@ subroutine comp_weight(x,x0,xarr,cx,w)
 !    w(:,:,:,1)  = xdiff / (xarr(idx+1) - xarr(idx))
 !    w(:,:,:,2)  =   1. - w(1)
      
-    deallocate(arr,idx,xallarr)
+    deallocate(mult,arr,xd,xu,idx_r)
 
 end subroutine comp_weight
 
 subroutine eta_table_init(self,eta_ohm_tbl,eta_ad_tbl)
-    implicit none
-    real    :: eta_tbl
+    class (non_ideal_t):: self
+    real, dimension(:,:,:)    :: eta_Ohm_tbl, eta_AD_tbl
     real    :: rho0,rhoend,crho,T0,Tend,cT,B0,Bend,cB
-    real    :: idxarr(200),rhoarr(200),Tarr(60),Barr(150)
-    integer :: i, nrho, nT, nB
+    real, dimension(200) :: idxarr,rhoarr
+    real, dimension(60)  :: Tarr
+    real, dimension(150) :: Barr
+    integer :: i 
+    real    :: nrho, nT, nB
 
-    nrho = shape(rhoarr) ; nT = shape(Tarr) ; nB = shape(Barr)
+    nrho = 200. ; nT = 60. ; nB = 150.
     rho0 = 300. ; rhoend = 1.7688710202180409e25
-    crho = rho0/rhoend**(1. / (nrho - 1) ) 
+    crho= (rhoend/rho0)**(1. / (nrho - 1.) ) 
     T0 = 10.    ; Tend   = 1.2449399509181750e5
-    cT = T0/Tend**(1. / (nT - 1) ) 
+    cT = (Tend/T0)**(1. / (nT - 1.) ) 
     B0 = 1e-10  ; Bend   = 1e10
-    cB = B0/Bend**(1. / (nB - 1) ) 
-    do i=1,maxval(nrho,nT,nB)
+    cB = (Bend/B0)**(1. / (nB - 1.) ) 
+    do i=1,max(int(nrho),int(nT),int(nB))
       idxarr(i) = real(i-1)
     end do
-    self%rhoarr = rho0 * crho**idxarr(1:nrho)
-    self%Tarr   = T0   * cT**idxarr(1:nT)
-    self%Barr   = B0   * vB**idxarr(1:nB)
-    call read_table(eta_ohm_tbl,eta_ad_tbl)
+    self%rhoarr = rho0 * crho**idxarr(1:int(nrho))
+    self%Tarr   = T0   * cT**idxarr(1:int(nT))
+    self%Barr   = B0   * cB**idxarr(1:int(nB))
+
+    self%rho0 = rho0 
+    self%crho = crho 
+    self%T0   = T0   
+    self%cT   = cT   
+    self%B0   = B0   
+    self%cB   = cB   
+
+    print*,'in eta_table_init: rho0,T0,B0,crho,cT,cB =', rho0,T0,B0,crho,cT,cB
+    print*,'in eta_table_init: idxarr =', idxarr
+    print*,'call read table'    
+    call read_table(eta_Ohm_tbl,eta_AD_tbl)
+    print*,'read table was called!'    
+!    print*,'eta_Ohm_tbl = ', eta_Ohm_tbl    
+!    print*,'eta_AD_tbl = ', eta_AD_tbl    
 
 end subroutine eta_table_init
 
@@ -922,7 +1095,7 @@ end subroutine eta_table_init
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! Subroutine to read in resistivites from Marchand et al. 2016
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-subroutine read_table(eta_ohm, eta_ad) 
+subroutine read_table(eta_ohm_tbl, eta_ad_tbl) 
 implicit none
 integer   :: alpha           ! Number of bins
 integer   :: Nvarchimie      ! Number of species
@@ -990,6 +1163,7 @@ integer :: i,j,k,ij
 
 real(dp) :: sig_p, sig_perp, sig_h, eta_ohm, eta_hall, eta_ad
 
+real, dimension(:,:,:) :: eta_Ohm_tbl, eta_AD_tbl
 
    open(42,file='/home/michael/tmp/non-ideal_tbl/Table_abundances.dat', status='old')
    read(42,*) nchimie, tchimie, xichimie, nvar       ! Number of  steps in density, temperature and ionisation rate
@@ -1169,8 +1343,8 @@ do  iH=1,nchimie
 
     conductivities(1,iH,iT,iX,iB)=log10(sigP)
     conductivities(2,iH,iT,iX,iB)=log10(sigO)
-    conductivities(3,iH,iT,iX,iB)=log10(abs(sigH))
-    conductivities(0,iH,iT,iX,iB)=sign(1.0_dp,sigH)
+    !conductivities(3,iH,iT,iX,iB)=log10(abs(sigH))
+    !conductivities(0,iH,iT,iX,iB)=sign(1.0_dp,sigH)
 
     !conductivities(:,:,:,:) contains the log10(conductivities)
 
@@ -1179,8 +1353,10 @@ do  iH=1,nchimie
     eta_hall = sigH/(sigO**2 + sigH**2)
     eta_ad   = sigO/(sigO**2 + sigH**2)-1d0/sigP
 
-    eta_ohm_tbl(iH,iT,iB) = eta_ohm 
-    eta_ad_tbl (iH,iT,iB) = eta_ad 
+    eta_Ohm_tbl(iH,iT,iB) = eta_ohm 
+    eta_AD_tbl (iH,iT,iB) = eta_ad 
+    if (eta_Ohm .lt. 0) eta_Ohm_tbl (iH,iT,iB) = 0d0 
+    if (eta_ad .lt. 0)  eta_AD_tbl (iH,iT,iB) = 0d0 
 !    print*,'nH,B,T,xi,eta_ad',nH,B,T,xi,eta_ohm, eta_hall, eta_ad
 !    open(unit=3,file='res_full.dat',ACCESS='APPEND')
 !    write(3,*) nH, B, T, xi, eta_ohm, eta_hall, eta_ad
@@ -1190,8 +1366,6 @@ end do
 end do
 end do
 end do
-
-
 
 end subroutine
 
