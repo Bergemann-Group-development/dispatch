@@ -87,8 +87,8 @@ SUBROUTINE initial_conditions (patch)
 
   if (patch%nc==2) then
     patch%no_pressure = 2
-    dd  => patch%mem(:,:,:,idx%d+patch%nv/patch%nc,patch%it,1)
-    pd  => patch%mem(:,:,:,idx%px+patch%nv/patch%nc:idx%pz+patch%nv/patch%nc,patch%it,1)
+    dd  => patch%mem(:,:,:,idx%d+5,patch%it,1)
+    pd  => patch%mem(:,:,:,idx%px+5:idx%pz+5,patch%it,1)
     pxd => pd(:,:,:,1); pyd => pd(:,:,:,2); pzd => pd(:,:,:,3);
   end if
 
@@ -110,7 +110,7 @@ SUBROUTINE initial_conditions (patch)
         P0           = (experiment_params%aspect_rat * vkep(i2))**2 * sigma0
         px(i1,i2,i3) = 0.0
         py(i1,i2,i3) = 0.0
-        pz(i1,i2,i3) = vkep(i2) * sigma0* (1.0 - experiment_params%aspect_rat**2)
+        pz(i1,i2,i3) = vkep(i2) * sigma0!* (1.0 - experiment_params%aspect_rat**2)
         ! the stagger2/multifluid module stores the angular momentum rather than the linear momentum
         py(i1,i2,i3) = py(i1,i2,i3) * m1%h2c(i1)
         pz(i1,i2,i3) = pz(i1,i2,i3) * m1%h31c(i1) * m2%h32c(i2)
@@ -128,9 +128,10 @@ SUBROUTINE initial_conditions (patch)
         end if
         if (patch%nc == 2) then
           dd (i1,i2,i3) = sigma0 * experiment_params%dust2gas
+          patch%mem(i1,i2,i3,idx%s+5,patch%it,1) = 0.0
           pxd(i1,i2,i3) = 0.0
           pyd(i1,i2,i3) = 0.0
-          pzd(i1,i2,i3) = vkep(i2) * sigma0 * experiment_params%dust2gas* (1.0 - experiment_params%aspect_rat**2)
+          pzd(i1,i2,i3) = vkep(i2) * sigma0 * experiment_params%dust2gas!* (1.0 - experiment_params%aspect_rat**2)
           pyd(i1,i2,i3) = pyd(i1,i2,i3) * m1%h2c(i1)
           pzd(i1,i2,i3) = pzd(i1,i2,i3) * m1%h31c(i1) * m2%h32c(i2)
         end if

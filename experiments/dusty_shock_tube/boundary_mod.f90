@@ -10,11 +10,10 @@ MODULE boundary_mod
   private
   type, public:: boundary_t
     integer:: status = 0
-    integer:: nvc                                            ! ADDED NUMBER OF VARIABLES PER COMPONENT
     real:: P_l, rho_l, s_l, vx_l, vy_l, vz_l, rhotr_l, &     ! ADDED TRACER DENSITY
            P_r, rho_r, s_r, vx_r, vy_r, vz_r, rhotr_r, &     ! ADDED TRACER DENSITY
-           P_l2, rho_l2, s_l2, vx_l2, vy_l2, vz_l2, rhotr_l2, &     ! ADDED SECOND COMPONENT
-           P_r2, rho_r2, s_r2, vx_r2, vy_r2, vz_r2, rhotr_r2
+           P_l2, rho_l2, s_l2, vx_l2, vy_l2, vz_l2, &!rhotr_l2, &     ! ADDED SECOND COMPONENT
+           P_r2, rho_r2, s_r2, vx_r2, vy_r2, vz_r2!, rhotr_r2
   contains
     procedure:: condition
   end type
@@ -51,12 +50,12 @@ SUBROUTINE condition (self, iv, mem, m, lower)
         if (iv .eq. idx%pz ) mem(lb:lo,iy,iz) = self%rho_l*self%vz_l
         if (iv .eq. idx%dtr) mem(lb:lo,iy,iz) = self%rhotr_l          ! ADDED TRACER DENSITY
 
-        if (iv .eq. idx%d+self%nvc  ) mem(lb:lo,iy,iz) = self%rho_l2  ! SECOND COMPONENT
-        if (iv .eq. idx%s+self%nvc  ) mem(lb:lo,iy,iz) = self%s_l2
-        if (iv .eq. idx%px+self%nvc ) mem(lb:lo,iy,iz) = self%rho_l2*self%vx_l2
-        if (iv .eq. idx%py+self%nvc ) mem(lb:lo,iy,iz) = self%rho_l2*self%vy_l2
-        if (iv .eq. idx%pz+self%nvc ) mem(lb:lo,iy,iz) = self%rho_l2*self%vz_l2
-        if (iv .eq. idx%dtr+self%nvc) mem(lb:lo,iy,iz) = self%rhotr_l2
+        if (iv .eq. idx%d +5 ) mem(lb:lo,iy,iz) = self%rho_l2  ! SECOND COMPONENT
+        if (iv .eq. idx%s +5 ) mem(lb:lo,iy,iz) = self%s_l2
+        if (iv .eq. idx%px+5 ) mem(lb:lo,iy,iz) = self%rho_l2*self%vx_l2
+        if (iv .eq. idx%py+5 ) mem(lb:lo,iy,iz) = self%rho_l2*self%vy_l2
+        if (iv .eq. idx%pz+5 ) mem(lb:lo,iy,iz) = self%rho_l2*self%vz_l2
+        !if (iv .eq. idx%dtr+self%nvc) mem(lb:lo,iy,iz) = self%rhotr_l2
       else
         ! outflow conditions
         mem(uo:ub,iy,iz) = mem(m(1)%ui,iy,iz)

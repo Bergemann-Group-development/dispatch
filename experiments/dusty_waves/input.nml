@@ -11,7 +11,7 @@
  vy     =  0d0
  vy2    =  0d0
  rhotr  =  0.5
- rhotr2 =  0.5
+ !rhotr2 =  0.5
 
  !-----------------------------------------------------------------------------
  ! Physical initial conditions: wave amplitude
@@ -25,7 +25,7 @@
  dvy     =  0d0
  dvy2    =  0d0
  drhotr  =  0.5
- drhotr2 =  0.5
+ !drhotr2 =  0.5
 
 /
 &ramses_params
@@ -49,15 +49,14 @@
  !nu=     0.0, 0.0, 0.0, 0.0, 0.0, 0.
  !nu=    0.0, 0.0, 0.0, 0.0, 0.0, 0., 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 !pa, mas, and eta are irrelevant for pressureless dust
  !nu=    1.0, 0.5, 0.5, 1.0, 1.0, 0., 0.3, 12.0, 0.0, 1.0, 0.0, 0.0
- nu=    0.1, 0.0, 0.0, 0.0, 0.0, 0., 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
- !     cs    du   pa   ofd   mas   eta
+ nu=   0.10, 2.0, 1.0, 0.2, 1.0, 1.0,  0.1, 2.0, 1.0, 0.2, 1.0, 0.0
+ !     cs    pa   ofd  mas  kap  eta   cs   pa   ofd  mas  kap  eta
  !gamma=1.0000001
  gamma=1.0
  csound=1.0
  !gamma=1.66666
  tracer=.true.
  force_coupled=.true.
- nc=2                                   !Number of components
  !ksi = 1d-17
 /
 &patch_params
@@ -92,6 +91,7 @@
  verbose=1              ! =1 for output file messages
  do_output=t
  do_debug=f
+ do_legacy=t
 /
 &initial_params
 /
@@ -114,6 +114,8 @@
  !drag = 'power'        ! F = K*|v-vd|^b*(v-vd)
  !drag = 'third_order'  ! F = K*(1+|v-vd|^2)*(v-vd)
  !drag = 'mixed'        ! F = K*sqrt(1+|v-vd|^2)*(v-vd)
+/
+&viscosity_params
 /
 &initial_solenoidal_params
 /

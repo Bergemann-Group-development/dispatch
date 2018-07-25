@@ -11,7 +11,6 @@
  vy     =  0d0
  vy2    =  0d0
  rhotr  =  0.5
- rhotr2 =  0.5
 /
 &ramses_params
  detailed_timer=f
@@ -45,7 +44,6 @@
  !mhd_Ohm=.false.
  tracer=.true.
  force_coupled=.true.
- nc=2                                   !Number of components
  !gamma_AD=75.
  !ksi = 1d-17
 /
@@ -94,7 +92,6 @@
  !gamma = 1.66666
  !gamma = 1.0000001
  gamma = 1.0
- nc = 2
  !drag = 'linear'
  !drag = 'epstein'
  !drag = 'stokes'
@@ -102,6 +99,8 @@
  !drag = 'power'
  !drag = 'third_order'
  !drag = 'mixed'
+/
+&viscosity_params
 /
 &initial_solenoidal_params
 /

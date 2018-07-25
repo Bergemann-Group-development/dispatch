@@ -108,7 +108,7 @@ for ii in range(0,2): # The first cycle determines min and max values, the secon
                             unit   = r'$L_{\phi}$ in code units'
                         elif plparams[j]==5 or plparams[j]==5+nvs:
                             c2     = ( plparams[j] >= nvs )
-                            pldata = p.data[:,:,:,5+nv*c2]
+                            pldata = p.data[:,:,:,10+nv*c2]
                             if advect:
                                 unit = r'$\rho_{tracer}$ in code units'
                             else:

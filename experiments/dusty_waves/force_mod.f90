@@ -100,22 +100,22 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
 
   gn(1)=size(mem(:,1,1,1)); gn(2)=size(mem(1,:,1,1)); gn(3)=size(mem(1,1,:,1))
   nv = size(mem(1,1,1,:))
-  !--------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Start calculation of drag force if the current fluid component is the
   ! first of the coupled pair of fluids
-  !--------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (self%i==min(self%i_gas,self%i_dust)) then
-    !----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Allocate vector and scalar pointers
-    !----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     call allocate_scalars(gn, d_gas, d_dust, lnd, pg, s, cs, t_stop, v_therm, K)
     call allocate_scalars(gn, dU2, mu, nu, R, cd)
     call allocate_vectors(gn, p, ld, dd, U_gas, U_dust, KK)
-    !--------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Compute velocity=momentum/density for the gas fluid component, leaving
     ! gas density for reuse
-    !--------------------------------------------------------------------------
-    ic    =  (nv/self%nc)*(self%i_gas-1)
+    !---------------------------------------------------------------------------
+    ic    =  5*(self%i_gas-1)
     d_gas =  mem(:,:,:,i%d +ic        )
     p     =  mem(:,:,:,i%px+ic:i%pz+ic)
     s     =  mem(:,:,:,i%s +ic        )
@@ -127,7 +127,7 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     ! Compute velocity=momentum/density for the dust fluid component, leaving
     ! dust density for reuse
     !--------------------------------------------------------------------------
-    ic     =  (nv/self%nc)*(self%i_dust-1)
+    ic     =  5*(self%i_dust-1)
     d_dust =  mem(:,:,:,i%d +ic        )
     p      =  mem(:,:,:,i%px+ic:i%pz+ic)
     lnd    =  log(d_dust)
@@ -216,9 +216,9 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   ! of the coupled pair of fluids. Then update counter
   !----------------------------------------------------------------------------
   else if (self%i==max(self%i_gas,self%i_dust)) then
-    !----------------------------------------------------------------------------
+    !--------------------------------------------------------------------------
     ! Allocate vector and scalar pointers
-    !----------------------------------------------------------------------------
+    !--------------------------------------------------------------------------
     call allocate_scalars (gn, lnd)
     call allocate_vectors (gn, ld, dd)
     lnd   =  log(d)

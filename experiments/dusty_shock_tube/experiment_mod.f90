@@ -34,24 +34,23 @@ SUBROUTINE init (self)
   logical:: first_time = .true.
   real, dimension(:,:,:,:), pointer:: p, p2                               !
   real, dimension(:,:,:), pointer:: d, vx, vy, vz, px, py, pz, s, dtr, &  ! ADDED TRACER DENSITY
-                                    d2, vx2, vy2, vz2, px2, py2, pz2, s2, dtr2 ! ADDED SECOND COMPONENT
+                                    d2, vx2, vy2, vz2, px2, py2, pz2, s2!, dtr2 ! ADDED SECOND COMPONENT
   real,save:: P_l, P_r, rho_i, rho_l, vx_l, vy_l, vz_l=0., &
               rho_r, vx_r, vy_r, vz_r=0., rhotr_l, rhotr_r, &             ! ADDED TRACER DENSITY
               P_l2, P_r2, rho_i2, rho_l2, vx_l2, vy_l2, vz_l2=0., &       ! ADDED SECOND COMPONENT
-              rho_r2, vx_r2, vy_r2, vz_r2=0., rhotr_l2, rhotr_r2
+              rho_r2, vx_r2, vy_r2, vz_r2=0.!, rhotr_l2, rhotr_r2
   namelist /experiment_params/ P_l, P_r, rho_l, vx_l, vy_l, rho_r, &
                                vx_r, vy_r, rhotr_l, rhotr_r, &            ! ADDED TRACER DENSITY TO NAMELIST
                                P_l2, P_r2, rho_l2, vx_l2, vy_l2, rho_r2, &! ADDED SECOND COMPONENTS TO NAMELIST
-                               vx_r2, vy_r2, rhotr_l2, rhotr_r2
+                               vx_r2, vy_r2!, rhotr_l2, rhotr_r2
 
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
   print*, 'start init'
   call trace_begin ('experiment_t%init')
-  nvc = 6; nc = 2                                                       ! ADDED NUMBER OF VARIABLES PER COMPONENT
-  self%nv  = nvc*nc                                                     ! MUST BE NÙMBER OF VARIABLES PER COMPONENT TIMES NUMBER OF COMPONENTS
-  self%nc  = nc                                                         ! ADDED NUMBER OF COMPONENTS
+  self%nv  = 10                                                        ! MUST BE NÙMBER OF VARIABLES PER COMPONENT TIMES NUMBER OF COMPONENTS
+  self%nc  = 2                                                         ! ADDED NUMBER OF COMPONENTS
   self%mhd = .false.
   call self%mhd_t%init
 
@@ -62,17 +61,17 @@ SUBROUTINE init (self)
     first_time = .false.
   end if
 
-  d   => self%mem(:,:,:,idx%d        ,self%it,1)
-  s   => self%mem(:,:,:,idx%s        ,self%it,1)
-  p   => self%mem(:,:,:,idx%px:idx%pz,self%it,1)
-  dtr => self%mem(:,:,:,idx%dtr      ,self%it,1)
+  d   => self%mem(:,:,:,self%idx%d        ,self%it,1)
+  s   => self%mem(:,:,:,self%idx%s        ,self%it,1)
+  p   => self%mem(:,:,:,self%idx%px:idx%pz,self%it,1)
+  dtr => self%mem(:,:,:,self%idx%dtr      ,self%it,1)
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);                       ! ADDED TRACER DENSITY
 
   self%no_pressure = 2
-  d2   => self%mem(:,:,:,idx%d+nvc           ,self%it,1)                 ! ADDED SECOND COMPONENT VARIABLES
-  s2   => self%mem(:,:,:,idx%s+nvc           ,self%it,1)
-  p2   => self%mem(:,:,:,idx%px+nvc:idx%pz+nvc,self%it,1)
-  dtr2 => self%mem(:,:,:,idx%dtr+nvc         ,self%it,1)
+  d2   => self%mem(:,:,:,self%idx%d +5         ,self%it,1)                 ! ADDED SECOND COMPONENT VARIABLES
+  s2   => self%mem(:,:,:,self%idx%s +5         ,self%it,1)
+  p2   => self%mem(:,:,:,self%idx%px+5:idx%pz+5,self%it,1)
+  !dtr2 => self%mem(:,:,:,idx%dtr+nvc         ,self%it,1)
   px2=>p2(:,:,:,1); py2=>p2(:,:,:,2); pz2=>p2(:,:,:,3);
 
   print*, 'gn is:', self%gn(1)
@@ -86,7 +85,7 @@ SUBROUTINE init (self)
       dtr (i,:,:) = rhotr_l                                              ! ADDED TRACER DENSITY
 
       d2  (i,:,:) = rho_l2                                               ! DEFINES SECOND COMPONENT DENSITY AND TRACER DENSITY
-      dtr2(i,:,:) = rhotr_l2
+      !dtr2(i,:,:) = rhotr_l2
       if (self%gamma .eq. 1.) then
         s (i,:,:) = -log(rho_l)*rho_l
         s2(i,:,:) = 0d0
@@ -106,7 +105,7 @@ SUBROUTINE init (self)
       dtr(i,:,:) = rhotr_r
 
       d2  (i,:,:) = rho_r2                                               ! DEFINES SECOND COMPONENT DENSITY AND TRACER DENSITY
-      dtr2(i,:,:) = rhotr_r2                                             ! ADDED TRACER DENSITY
+      !dtr2(i,:,:) = rhotr_r2                                             ! ADDED TRACER DENSITY
       if (self%gamma .eq. 1.) then
         s (i,:,:) = -log(rho_r)*rho_r
         s2(i,:,:) = 0d0
@@ -129,7 +128,6 @@ SUBROUTINE init (self)
   print*, 'done!'
 
   ! assign constant boundary conditions.
-  boundary%nvc      = nvc
   boundary%P_l      = P_l
   boundary%rho_l    = rho_l
   boundary%P_l2     = P_l2
@@ -148,7 +146,7 @@ SUBROUTINE init (self)
   boundary%vy_l2    = vy_l2
   boundary%vz_l2    = vz_l2
   boundary%rhotr_l  = rhotr_l                                              ! ADDED TRACER DENSITY
-  boundary%rhotr_l2 = rhotr_l2
+  !boundary%rhotr_l2 = rhotr_l2
 
   boundary%P_r      = P_r
   boundary%rho_r    = rho_r
@@ -168,7 +166,7 @@ SUBROUTINE init (self)
   boundary%vy_r2    = vy_r2
   boundary%vz_r2    = vz_r2
   boundary%rhotr_r  = rhotr_r                                              ! ADDED TRACER DENSITY
-  boundary%rhotr_r2 = rhotr_r2
+  !boundary%rhotr_r2 = rhotr_r2
 
   call trace_end
 END SUBROUTINE init
@@ -202,11 +200,22 @@ SUBROUTINE update (self)
 
   call self%mhd_t%update
 
-  !call self%mhd_t%nonideal_MHD_courant_condition(self%dt_Ohm,self%dt_AD)
-  call self%check_density('before timestep')
+  if (self%mesh(1)%p .lt. self%size(1)) then
+    do iv=1,self%nv
+      call boundary%condition (iv, self%mem(:,:,:,iv,self%new,1), self%mesh, .true.)
+    end do
+  endif
+  if (self%mesh(1)%p .gt. self%box(1) - self%size(1)) then
+    do iv=1,self%nv
+      call boundary%condition (iv, self%mem(:,:,:,iv,self%new,1), self%mesh, .false.)
+    end do
+  endif
 
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  call self%check_density('after timestep')
+  !call self%mhd_t%nonideal_MHD_courant_condition(self%dt_Ohm,self%dt_AD)
+  !call self%check_density('before timestep')
+
+  !call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  !call self%check_density('after timestep')
   call trace_end
 END SUBROUTINE update
 !> =============================================================================

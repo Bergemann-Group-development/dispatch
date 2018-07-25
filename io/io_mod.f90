@@ -35,6 +35,7 @@ MODULE io_mod
     logical:: time_derivs=.false.
     integer:: id_debug=0
     integer:: id_track=0
+    integer:: nv=0
     real(8):: end_time=1d30
     real(8):: out_time=1d0
     real(8):: print_time=0d0

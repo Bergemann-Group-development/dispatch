@@ -11,7 +11,7 @@
  vy_l     =  0d0
  vy_l2    =  0d0
  rhotr_l  =  0.5
- rhotr_l2 =  0.5
+ !rhotr_l2 =  0.5
 
  !-----------------------------------------------------------------------------
  ! Physical initial conditions: right hand side
@@ -25,7 +25,7 @@
  vy_r     =  0d0
  vy_r2    =  0d0
  rhotr_r  =  0.5
- rhotr_r2 =  0.5
+ !rhotr_r2 =  0.5
 
 /
 &ramses_params
@@ -52,13 +52,12 @@
  !                                                                 do not raise du above 10.0
  !nu=    0.5, 0.0, 0.5, 1.0, 1.0, 0., 4.0, 25.0, 0.0, 10.0, 0.0, 0.0 ! <- Best one so far for Sod Epstein regime
  !nu=    1.0, 0.5, 0.5, 1.0, 1.0, 0., 0.3, 12.0, 0.0, 1.0, 0.0, 0.0 ! <- Best one so far for ordinary shock and Sod linear regime
- nu=    0.4, 2.0, 2.0, 0.5, 0.6, 0.0, 0.8, 6.0, 6.0, 0.5, 0.6, 0.0
- !     cs    du   pa   ofd   mas   eta
+ nu=   0.10, 2.0, 1.0, 0.2, 1.0, 1.0,  0.1, 2.0, 1.0, 0.2, 1.0, 0.0
+ !     cs    pa   ofd  mas  kap  eta   cs   pa   ofd  mas  kap  eta
  !gamma=1.0000001
  gamma=1.66666
  tracer=.true.
  force_coupled=.true.
- nc=2                                   !Number of components
  !ksi = 1d-17
 /
 &patch_params
@@ -105,7 +104,6 @@
  sigma = 1.589e-8
  gamma = 1.66666
  !gamma = 1.0000001
- nc = 2
  !drag = 'linear'
  drag = 'epstein'
  !drag = 'stokes'
@@ -113,6 +111,8 @@
  !drag = 'power'
  !drag = 'third_order'
  !drag = 'mixed'
+/
+&viscosity_params
 /
 &initial_solenoidal_params
 /

@@ -28,6 +28,7 @@ MODULE parameters_mod
   ! (not that it has no physical size, thus the need for softening)
   type, public :: planet_t
     real(8) :: massratio, mass, period, mplanet, softening
+    real(8) :: omega_planet = 0.0  ! grid velocity at planet position
     real(8), dimension(3) :: position, velocity
   contains
     procedure :: init => init_planet

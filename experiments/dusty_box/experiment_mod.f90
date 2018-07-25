@@ -29,26 +29,26 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
-  integer:: i, j, k, nvc, nc
+  integer:: i, j, k, nc!, nvc
   real::    x, y, z
   logical:: first_time = .true.
   real, dimension(:,:,:,:), pointer:: pp, pp2
   real, dimension(:,:,:), pointer::   d  , pg , ux , uy , uz  , &
                                       px , py , pz , s  , dtr , &
                                       d2 , pg2, ux2, uy2, uz2 , &
-                                      px2, py2, pz2, s2 , dtr2
+                                      px2, py2, pz2, s2! , dtr2
   real,save:: P =1.0, rho =1.0, vx = 0.5, vy =0d0, vz =0d0, rhotr =0d0, &
-              P2=0d0, rho2=1.0, vx2=-0.5, vy2=0d0, vz2=0d0, rhotr2=0d0
+              P2=0d0, rho2=1.0, vx2=-0.5, vy2=0d0, vz2=0d0!, rhotr2=0d0
   namelist /experiment_params/ P , rho , vx , vy , vz , rhotr , &
-                               P2, rho2, vx2, vy2, vz2, rhotr2
+                               P2, rho2, vx2, vy2, vz2!, rhotr2
 
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
   print*, 'start init'
   call trace_begin ('experiment_t%init')
-  nvc = 6; nc = 2;
-  self%nv  = nvc*nc                        ! MUST BE NÙMBER OF VARIABLES PER COMPONENT TIMES NUMBER OF COMPONENTS
+  nc = 2!; nvc = 6;
+  self%nv  = 10!nvc*nc                        ! MUST BE NÙMBER OF VARIABLES PER COMPONENT TIMES NUMBER OF COMPONENTS
   self%nc  = nc
   self%mhd = .false.
   call self%mhd_t%init
@@ -62,17 +62,17 @@ SUBROUTINE init (self)
 
   call allocate_scalars(self%gn, pg, pg2, ux, uy, uz, ux2, uy2, uz2)
 
-  d   => self%mem(:,:,:,idx%d        ,self%it,1)
-  s   => self%mem(:,:,:,idx%s        ,self%it,1)
-  pp  => self%mem(:,:,:,idx%px:idx%pz,self%it,1)
-  dtr => self%mem(:,:,:,idx%dtr      ,self%it,1)
+  d   => self%mem(:,:,:,self%idx%d             ,self%it,1)
+  s   => self%mem(:,:,:,self%idx%s             ,self%it,1)
+  pp  => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  dtr => self%mem(:,:,:,self%idx%dtr           ,self%it,1)
   px  => pp(:,:,:,1); py => pp(:,:,:,2); pz => pp(:,:,:,3);
 
   self%no_pressure = 2
-  d2   => self%mem(:,:,:,idx%d+nvc            ,self%it,1)
-  s2   => self%mem(:,:,:,idx%s+nvc            ,self%it,1)
-  pp2  => self%mem(:,:,:,idx%px+nvc:idx%pz+nvc,self%it,1)
-  dtr2 => self%mem(:,:,:,idx%dtr+nvc          ,self%it,1)
+  d2   => self%mem(:,:,:,self%idx%d +5              ,self%it,1)
+  s2   => self%mem(:,:,:,self%idx%s +5              ,self%it,1)
+  pp2  => self%mem(:,:,:,self%idx%px+5:self%idx%pz+5,self%it,1)
+  !dtr2 => self%mem(:,:,:,idx%dtr+self%nv-5          ,self%it,1)
   px2  => pp2(:,:,:,1); py2 => pp2(:,:,:,2); pz2 => pp2(:,:,:,3);
 
   print*, 'P and rho and gamma:'  , P , rho , self%gamma
@@ -85,7 +85,7 @@ SUBROUTINE init (self)
         d   (i,j,k) = rho
         dtr (i,j,k) = rhotr
         d2  (i,j,k) = rho2
-        dtr2(i,j,k) = rhotr2
+        !dtr2(i,j,k) = rhotr2
 
         pg  (i,j,k) = P
         pg2 (i,j,k) = P2
@@ -139,8 +139,8 @@ SUBROUTINE update (self)
   call self%mhd_t%update
   !call self%mhd_t%nonideal_MHD_courant_condition(self%dt_Ohm,self%dt_AD)
 
-  call self%check_density('before timestep')
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  !call self%check_density('before timestep')
+  !call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density('after timestep')
 
   call trace_end

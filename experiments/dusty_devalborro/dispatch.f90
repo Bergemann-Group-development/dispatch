@@ -6,12 +6,13 @@
 PROGRAM dispatch
   USE setup_mod
   USE mpi_mod
-  USE io_mod
+  USE dispatcher_mod
   implicit none
   !.............................................................................
   call mpi%init
   call setup%init
-  call setup%task_list%execute
+  call dispatcher%init
+  call dispatcher%method(setup%task_list)
   call mpi%end
   print*,'All tasks finished. Goodbye.'
 !> =============================================================================

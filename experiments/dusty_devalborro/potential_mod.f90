@@ -46,7 +46,7 @@ FUNCTION star_and_planet (self, m, time, dt) RESULT (gp)
   real(kind=KindScalarVar), dimension(m(1)%gn,m(2)%gn,m(3)%gn):: gp
   !.............................................................................
   integer:: i1, i2, i3
-  real(8):: z, r, phi, z_s, r_s, gm_s, gm_p, rvec_s, rvec_p, soft, radius_p_i, r_dot_rp
+  real(8):: omega, z, r, phi, z_s, r_s, gm_s, gm_p, rvec_s, rvec_p, soft, radius_p_i, r_dot_rp
   !-----------------------------------------------------------------------------
   call trace_begin('potential_mod::star_and_planet')
 
@@ -57,7 +57,15 @@ FUNCTION star_and_planet (self, m, time, dt) RESULT (gp)
   ! update the planet mass
   call planet%grow(time)
   ! udpate the planet position
-  call planet%move(dt, self%omega)
+  !print*, m2%id, 'omega is::', self%omega
+  if (experiment_params%aplanet > m2%llc_nat .and. experiment_params%aplanet < m2%llc_nat + m2%s) then
+    omega = sqrt(scaling%grav*experiment_params%mstar/experiment_params%aplanet**3)
+  else
+    omega = sqrt(scaling%grav*experiment_params%mstar/(m2%llc_nat + 0.5*m2%s)**3)
+  end if
+  !print*, m2%id, 'omega is::', omega
+  !call planet%move(dt, self%omega)
+  call planet%move(dt, omega)
 
   gm_s = scaling%grav * experiment_params%mstar
   gm_p = scaling%grav * planet%mass

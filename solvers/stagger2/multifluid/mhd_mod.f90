@@ -27,7 +27,7 @@ MODULE mhd_mod
     real, allocatable:: nu(:)
     real:: csound
     real:: cdtd
-    integer:: nc, i_dtr                                                             ! ADD NUMBER OF COMPONENTS nc AND TRACER INDEX i_dtr
+    integer:: nc=1                                                                  ! ADD NUMBER OF COMPONENTS nc
     integer, dimension(:), allocatable:: no_pressure                                ! ADDED VECTOR TO SPECIFY WHICH COMPONENTS ARE PRESSURELESS DUST
     logical:: mhd=.false., do_force=.true., &
               force_coupled=.false., do_viscosity=.true.                            ! ADDED force_coupled LOGICAL TO ENABLE A DIFFERENT INPUT TO FORCE MOD.
@@ -42,6 +42,7 @@ MODULE mhd_mod
     procedure:: output
     procedure:: gas_pressure
   end type
+  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
@@ -50,22 +51,18 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  type(index_t):: idx
   integer:: i, k, ic                                                                    ! ADDED INTEGER FOR LOOPS OVER ALL COMPONENTS
   real, allocatable, save:: nu(:)
-  real, save:: nud(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, & 
-               cdtd=0.5                                                                 ! RENAME THE CURRENT nu TO nud (d FOR dEFAULT)
-  integer, save:: nc=1                                                                  ! ADDED NUMBER OF COMPONENTS
+  real, save:: gamma=1.0, csound=1.0, cdtd=0.5
   logical, save:: first_time=.true., tracer=.false., force_coupled=.false.              ! ADDED tracer = false AS DEFAULT
   character(len=16), save:: eos
-  namelist /mhd_params/ nu, gamma, csound, cdtd, eos, tracer, nc, & 
-                        force_coupled                                                   ! ADDED tracer, alpha, AND nc TO THE NAMELIST
+  namelist /mhd_params/ nu, gamma, csound, cdtd, eos, tracer, & 
+                        force_coupled                                                   ! ADDED tracer AND alpha TO THE NAMELIST
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
   if (first_time) then
-    if (self%nc>0) nc = self%nc
-    allocate(nu(6*nc))
+    allocate(nu(6*self%nc))
     first_time = .false.
     eos = self%eos
     rewind (io%input)
@@ -75,51 +72,46 @@ SUBROUTINE init (self)
     call timestep%init
   end if
   !$omp end critical (input_cr)
-  self%nc            = nc
   self%eos           = eos
   self%gamma         = gamma
   self%csound        = csound
   self%cdtd          = cdtd
   self%force_coupled = force_coupled
-  allocate(self%nu(6*nc))
-  if (size(nu)>=6*nc) then
-    self%nu(1:6*nc) = nu(1:6*nc)
-  else
-    self%nu(1:6*floor(size(nu)/6.0)) = nu(1:6*floor(size(nu)/6.0))
-    do k=1+floor(size(nu)/6.0),nc                  ! If the set of nu values is not fully specified for a component,
-      self%nu(1+6*(k-1):6+6*(k-1))   = nud(1:6)    ! use the first set of nu values for this component
-    end do
-  end if
-  print*, 'nc', self%nc, 'nu',self%nu
+  allocate(self%nu(6*self%nc))
+  self%nu = nu
   allocate(self%no_pressure(1))
   self%no_pressure = 0
   if (self%mhd) then
     self%kind = 'stagger2_mhd_patch'
+    self%idx%bx = self%nv - 2                               ! MAKE THE LAST VARIABLES CONTAIN THE MAGNETIC FIELD
+    self%idx%by = self%nv - 1
+    self%idx%bz = self%nv
   else
     self%kind = 'stagger2_hd_patch'
     self%idx%bx = -1
     self%idx%by = -1
     self%idx%bz = -1
   end if
+  if (tracer) then
+    self%tracer  = tracer                                    ! ADDED TRACER TRUTH STATEMENT TO self
+    self%nv      = self%nv+1                                 ! INCREASE NUMBER OF VARIABLES TO MAKE ROOM FOR PASSIVE TRACER
+    self%idx%dtr = self%nv                                   ! ADDED INDEX FOR TRACER DENSITY. CURRENTLY, ONLY THE FIRST FLUID MAY BE ASSIGNED A TRACER,
+  end if                                                    ! SO THAT ADDITIONAL FLUIDS ALWAYS HAVE 5 COMPONENTS ONLY
   if (force_coupled) self%force_coupled = force_coupled
   call self%gpatch_t%init
-  if (tracer) then
-    self%tracer = tracer                                    ! ADDED TRACER TRUTH STATEMENT TO self
-    idx%dtr     = self%nv/self%nc                           ! ADDED INDEX FOR TRACER DENSITY
-    self%i_dtr  = idx%dtr
-  end if
   self%type = 'mhd_t'
-  do k=1,nc                                                 ! LOOP OVER ALL COMPONENTS
-    ic = (self%nv/self%nc)*(k-1)                            ! ADDED INDEX TO CYCLE TO NEXT COMPONENT
+  do k=1,self%nc                                            ! LOOP OVER ALL COMPONENTS
+    ic = 5*(k-1)                                            ! ADDED INDEX TO CYCLE TO NEXT FLUID
     do i=1,3
-        self%mesh(i)%h(2+i+ic) = -0.5
-        if (self%mhd) self%mesh(i)%h(5+i+ic) = -0.5
+        self%mesh(i)%h(self%idx%px-1+i+ic) = -0.5
+        if (self%mhd) self%mesh(i)%h(self%idx%bx-1+i) = -0.5
     end do
+    self%unsigned(idx%d+ic)  = .true.
+    self%pervolume(idx%s+ic) = .true.
   end do
-  self%unsigned(idx%d)  = .true.
-  self%pervolume(idx%s) = .true.
   call self%force%init(self%kind)
   call self%viscosity%init(self%kind)
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
@@ -139,6 +131,7 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer:: Urotx, Uroty, Urotz                                       ! ADDED POINTERS TO DIFFERENT CENTERINGS OF Urot
   real, dimension(:,:,:),   pointer:: cx1, cx2, cy1, cy2, cy3, cy4, cz1, cz2, cz3               ! ADDED ADDITIONAL POINTERS FOR USE IN COROTATIONAL FRAME
   real, dimension(:,:,:),   pointer:: fdx, fdy, fdz, ldx, ldy, ldz, ddx, ddy, ddz
+  real, dimension(:,:,:),   pointer:: divU
   real, dimension(:,:,:),   pointer:: fxx, fxy
   real, dimension(:,:,:),   pointer::      fyy, fyz
   real, dimension(:,:,:),   pointer:: fzx,      fzz
@@ -149,34 +142,35 @@ SUBROUTINE pde (self)
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
   logical, save:: first_time=.true., first_AD=.true.
   !.............................................................................
-  real(8):: ds(3), ds_min(3), dx
+  real(8):: ds(3), ds_min(3), dsmax, dsmin
   integer, save:: itimer=0
   type(index_t):: i
   real:: u_max
-  integer:: k, ic, nvc, i2                                                                      ! ADDED INTEGER FOR LOOPS OVER ALL COMPONENTS
+  integer:: k, ic, i2                                                                           ! ADDED INTEGER FOR LOOPS OVER ALL COMPONENTS
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%update',itimer=itimer)
+  call trace%begin('mhd_t%pde',itimer=itimer)
   self%u_max = 0.0                                                                              ! INITIALIZE u_max
-  nvc = self%nv/self%nc                                                                         ! ADDED NUMBER OF VARIABLES PER COMPONENT
-
+  if (self%mhd) then
+    self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,2) = 0.0                                                   ! INITIALIZE dBdt
+  end if 
   do k=1,self%nc                                                                                ! ADDED LOOP OVER ALL COMPONENTS
-  ic = nvc*(k-1)                                                                                ! ADDED INDEX TO CYCLE TO NEXT COMPONENT
+  ic = 5*(k-1)                                                                                  ! ADDED INDEX TO CYCLE TO NEXT FLUID
 
-  self%d => self%mem(:,:,:,i%d+ic         ,self%it,1); self%dddt => self%mem(:,:,:,i%d+ic         ,self%it,2)
-  self%s => self%mem(:,:,:,i%s+ic         ,self%it,1); self%dsdt => self%mem(:,:,:,i%s+ic         ,self%it,2)
-  self%p => self%mem(:,:,:,i%px+ic:i%pz+ic,self%it,1); self%dpdt => self%mem(:,:,:,i%px+ic:i%pz+ic,self%it,2)
+  self%d => self%mem(:,:,:,self%idx%d+ic         ,self%it,1); self%dddt => self%mem(:,:,:,self%idx%d+ic         ,self%it,2)
+  self%s => self%mem(:,:,:,self%idx%s+ic         ,self%it,1); self%dsdt => self%mem(:,:,:,self%idx%s+ic         ,self%it,2)
+  self%p => self%mem(:,:,:,self%idx%px+ic:self%idx%pz+ic,self%it,1); self%dpdt => self%mem(:,:,:,self%idx%px+ic:self%idx%pz+ic,self%it,2)
   d=>self%d; dddt=>self%dddt; s=>self%s; dsdt=>self%dsdt;
   p=>self%p; dpdt=>self%dpdt
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   dpdtx=>dpdt(:,:,:,1); dpdty=>dpdt(:,:,:,2); dpdtz=>dpdt(:,:,:,3);
   if (self%mhd) then
-    self%B => self%mem(:,:,:,i%bx+ic:i%bz+ic,self%it,1); self%dBdt => self%mem(:,:,:,i%bx+ic:i%bz+ic,self%it,2)
+    self%B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1); self%dBdt => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,2)
     B=>self%B; dBdt=>self%dBdt
     Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
-  if (self%tracer) then                                                                         ! ADDED POINTER TO TRACER IF tracer IS TRUE
-    self%dtr => self%mem(:,:,:,i%dtr+ic,self%it,1); self%ddtrdt => self%mem(:,:,:,i%dtr+ic,self%it,2)
+  if (self%tracer .and. k==1) then                                                              ! ADDED POINTER TO TRACER IF tracer IS TRUE
+    self%dtr => self%mem(:,:,:,self%idx%dtr,self%it,1); self%ddtrdt => self%mem(:,:,:,self%idx%dtr,self%it,2)
     dtr => self%dtr; ddtrdt => self%ddtrdt
     call allocate_vectors (self%gn, ldtr, ddtr, fdtr, fmtr)
     call allocate_scalars (self%gn, lndtr)
@@ -184,7 +178,7 @@ SUBROUTINE pde (self)
   call allocate_vectors (self%gn, ld, dd, E, J, fd, fx, fy, fz, fm)
   call allocate_vectors (self%gn, Urot, plin)
   call allocate_scalars (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
-  call allocate_scalars (self%gn, fyyx, fzzx, fzzy, dnu)
+  call allocate_scalars (self%gn, fyyx, fzzx, fzzy, dnu, divU)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
@@ -255,8 +249,10 @@ SUBROUTINE pde (self)
       ds_min(3) = min(ds_min(3),self%ds(3)*self%mesh(1)%h31c(self%mesh(1)%lb)*abs(self%mesh(2)%h32c(i2)))
     end do
   end if
-  dx = maxval(ds,self%n > 1)                            ! smallest {dx,dy,dz}
-  du = -dx*div(self%mesh,U)                             ! convergence rate
+  dsmin = minval(ds,self%n > 1)                         ! smallest {dx,dy,dz}
+  dsmax = maxval(ds,self%n > 1)                         ! largest {dx,dy,dz}
+  divU = div(self%mesh,U)
+  du = -dsmax*divU                                      ! convergence rate
   du = max(du,0.0)                                      ! positive part
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
@@ -272,7 +268,7 @@ SUBROUTINE pde (self)
     fyy = yup(Uy)**2
     fzz = zup(Uz)**2
     ! Face centered centrifugal terms
-    fyyx = ddx* xdn(yup(Uy))**2      - xdn(yup(By))**2
+    fyyx = ddx*xdn(yup(Uy      ))**2 - xdn(yup(By))**2
     fzzx = ddx*xdn(zup(Uz+Urotz))**2 - xdn(zup(Bz))**2
     fzzy = ddy*ydn(zup(Uz+Urotz))**2 - ydn(zup(Bz))**2
     pp  = (fxx+fyy+fzz)
@@ -290,11 +286,8 @@ SUBROUTINE pde (self)
       self%u_max = max(self%u_max,u_max)
       print 1, 'u_max(ca)  ', u_max, self%u_max
     1 format(1x,a,1p,2g12.3)
-      u_max = self%fmaxval(cs + sqrt(pp))
-      self%u_max = max(self%u_max,u_max)
-      print 1, 'u_max(ca+u)', u_max, self%u_max
     end if
-    u_max = self%fmaxval(cs + sqrt(pp) + du)
+    u_max = self%fmaxval(cs + sqrt(pp))
     self%u_max = max(self%u_max,u_max)
     if (io%verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
     ! Isotropic pressure part
@@ -306,14 +299,14 @@ SUBROUTINE pde (self)
       dnu = 0.0
     end if
     ! Total diagonal stress
-    du = dx*self%nu(1+6*(k-1))*cs
-    fxx = d*(fxx - (du+2.0*dnu)*Txx + 2.0*dnu*(Txx+Tyy+Tzz)/3.0 ) - Ex
-    fyy = d*(fyy - (du+2.0*dnu)*Tyy + 2.0*dnu*(Txx+Tyy+Tzz)/3.0 ) - Ey
-    fzz = d*(fzz - (du+2.0*dnu)*Tzz + 2.0*dnu*(Txx+Tyy+Tzz)/3.0 ) - Ez
+    du = dsmax*self%nu(1+6*(k-1))*cs
+    fxx = d*(fxx - (du+2.0*dnu)*Txx + (2./3.)*dnu*divU) - Ex
+    fyy = d*(fyy - (du+2.0*dnu)*Tyy + (2./3.)*dnu*divU) - Ey
+    fzz = d*(fzz - (du+2.0*dnu)*Tzz + (2./3.)*dnu*divU) - Ez
     ! Addition of stress tensor terms to the centrifugal terms
-    fyyx = fyyx - ddx*xdn(du+2.0*dnu)*xdn(Tyy) + 2.0*xdn(dnu)*xdn(Txx+Tyy+Tzz)/3.0 - xdn(Ey)
-    fzzx = fzzx - ddx*xdn(du+2.0*dnu)*xdn(Tzz) + 2.0*xdn(dnu)*xdn(Txx+Tyy+Tzz)/3.0 - xdn(Ez)
-    fzzy = fzzy - ddy*ydn(du+2.0*dnu)*ydn(Tzz) + 2.0*ydn(dnu)*ydn(Txx+Tyy+Tzz)/3.0 - ydn(Ez)
+    fyyx = fyyx - ddx*xdn(du+2.0*dnu)*xdn(Tyy) + (2./3.)*ddx*xdn(dnu)*xdn(divU) - xdn(Ey)
+    fzzx = fzzx - ddx*xdn(du+2.0*dnu)*xdn(Tzz) + (2./3.)*ddx*xdn(dnu)*xdn(divU) - xdn(Ez)
+    fzzy = fzzy - ddy*ydn(du+2.0*dnu)*ydn(Tzz) + (2./3.)*ddy*ydn(dnu)*ydn(divU) - ydn(Ez)
   else
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2
@@ -332,15 +325,12 @@ SUBROUTINE pde (self)
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
       print 1, 'u_max(cs)  ', u_max, self%u_max
-      u_max = self%fmaxval(cs + sqrt(pp))
-      self%u_max = max(self%u_max,u_max)
-      print 1, 'u_max(cs+u)', u_max, self%u_max
     end if
-    u_max = self%fmaxval(cs + sqrt(pp) + du)
+    u_max = self%fmaxval(cs + sqrt(pp))
     self%u_max = max(self%u_max,u_max)
     if (io%verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
     ! Total diagonal stress, with density factor
-    du = dx*self%nu(1+6*(k-1))*cs
+    du = dsmax*self%nu(1+6*(k-1))*cs
     pp = pg + pa
     ! Physical viscosity
     if (associated(self%viscosity%selected) .and. self%do_viscosity) then
@@ -351,38 +341,55 @@ SUBROUTINE pde (self)
     !---------------------------------------------------------------------------
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
-    fxx = d*(fxx - (du+2.0*dnu)*Txx + 2.0*dnu*(Txx+Tyy+Tzz)/3.0 )
-    fyy = d*(fyy - (du+2.0*dnu)*Tyy + 2.0*dnu*(Txx+Tyy+Tzz)/3.0 )
-    fzz = d*(fzz - (du+2.0*dnu)*Tzz + 2.0*dnu*(Txx+Tyy+Tzz)/3.0 )
+    fxx = d*(fxx - (du+2.0*dnu)*Txx + (2./3.)*dnu*divU)
+    fyy = d*(fyy - (du+2.0*dnu)*Tyy + (2./3.)*dnu*divU)
+    fzz = d*(fzz - (du+2.0*dnu)*Tzz + (2./3.)*dnu*divU)
     ! Addition of stress tensor terms to the centrifugal terms
-    fyyx = fyyx - ddx*xdn(du+2.0*dnu)*xdn(Tyy) + 2.0*xdn(dnu)*xdn(Txx+Tyy+Tzz)/3.0
-    fzzx = fzzx - ddx*xdn(du+2.0*dnu)*xdn(Tzz) + 2.0*xdn(dnu)*xdn(Txx+Tyy+Tzz)/3.0
-    fzzy = fzzy - ddy*ydn(du+2.0*dnu)*ydn(Tzz) + 2.0*ydn(dnu)*ydn(Txx+Tyy+Tzz)/3.0
+    fyyx = fyyx - ddx*xdn(du+2.0*dnu)*xdn(Tyy) + (2./3.)*ddx*xdn(dnu)*xdn(divU)
+    fzzx = fzzx - ddx*xdn(du+2.0*dnu)*xdn(Tzz) + (2./3.)*ddx*xdn(dnu)*xdn(divU)
+    fzzy = fzzy - ddy*ydn(du+2.0*dnu)*ydn(Tzz) + (2./3.)*ddy*ydn(dnu)*ydn(divU)
   end if
   !-----------------------------------------------------------------------------
-    ! du has units area per unit time, which gives velocity squared times mass
-    ! density per unit time = energy per unit volume and time
+  ! Viscous time scale evaluations.  Viscous terms are ~ 1/ds^2, and while the
+  ! value of the viscosity scales with dsmax, the diffusion speed scales with
+  ! 1/dsmin.
   !-----------------------------------------------------------------------------
-  Q = d*(du+2.0*dnu)*(Txx**2 + Tyy**2 + Tzz**2) - d*dnu*(4.0*(Txx+Tyy+Tzz)**2/3.0)
+  u_max = self%fmaxval(du)*dsmax/dsmin**2
+  self%u_max = max(self%u_max,u_max)
+  if (io%verbose>1) print 1, 'u_max(du)', u_max, self%u_max
+  u_max = self%fmaxval(dnu)*dsmax/dsmin**2
+  self%u_max = max(self%u_max,u_max)
+  if (io%verbose>1) print 1, 'u_max(dnu)', u_max, self%u_max
+  !-----------------------------------------------------------------------------
+  ! du has units area per unit time, which gives velocity squared times mass
+  ! density per unit time = energy per unit volume and time
+  !-----------------------------------------------------------------------------
+  Q = d*du*(Txx**2 + Tyy**2 + Tzz**2) + &
+      2.0*d*dnu*( (Txx-divU/3.0)**2 + (Tyy-divU/3.0)**2 + (Tzz-divU/3.0)**2 )
   call deallocate_scalars (Txx, Tyy, Tzz)
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
-  fd = -(self%nu(4+6*(k-1))*dd*down(du))*grad(self%mesh,lnd)   ! diffusive mass flux                                           ! mass flux
+  fd = -(self%nu(4+6*(k-1))*dd*down(du))*grad(self%mesh,lnd)   ! diffusive mass flux
   fm = plin + fd
   fm(:,:,:,3) = fm(:,:,:,3) - ddz*Urotz
   dddt = -div(self%mesh,fm)                                    ! density derivative
-  u_max = self%cdtd*dx*self%fmaxval(abs(dddt/d))             ! ops: 0 0 1
+  ! viscosity related diffusivity
+  if (associated(self%viscosity%selected2) .and. self%do_viscosity) then
+    dddt = dddt + self%viscosity%selected2(self%time, self%mem(:,:,:,:,self%it,1), U, self%mesh, self%force)
+  end if
+  u_max = self%cdtd*dsmax*self%fmaxval(abs(dddt/d))             ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
   if (io%verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
-  if (self%tracer) then                                 ! ADDED COLOR EQUATION FOR TRACER DENSITY
+  if (self%tracer .and. k==1) then                                     ! ADDED COLOR EQUATION FOR TRACER DENSITY
     lndtr  = log(dtr)
     ldtr   = down(lndtr)
     ddtr   = exp(ldtr)
     fdtr   = -(self%nu(4+6*(k-1))*ddtr*down(du))*grad(self%mesh,lndtr) ! diffusive mass flux of tracer
     fmtr   = (U*ddtr)+fdtr                                             ! mass flux of tracer
-    ddtrdt = -div(self%mesh,fmtr) + dtr*div(self%mesh,U)               ! density derivative of tracer
+    ddtrdt = -div(self%mesh,fmtr) + dtr*divU                           ! density derivative of tracer
   end if
+  call deallocate_scalars (divU)
   !---------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmetry, we define only three components
@@ -398,12 +405,12 @@ SUBROUTINE pde (self)
   Tyz = T(:,:,:,2,3) + T(:,:,:,3,2)
   Tzx = T(:,:,:,3,1) + T(:,:,:,1,3)
   deallocate(T)
-  fxy = fxy - self%nu(3+6*(k-1))*0.5*xdn1(ydn1(du+2.0*dnu))*Txy
-  fyz = fyz - self%nu(3+6*(k-1))*0.5*ydn1(zdn1(du+2.0*dnu))*Tyz
-  fzx = fzx - self%nu(3+6*(k-1))*0.5*zdn1(xdn1(du+2.0*dnu))*Tzx
-  Q   = Q   + self%nu(3+6*(k-1))*0.5*d*(du+2.0*dnu)*(xup(yup(Txy))**2 + &
-                                                     yup(zup(Tyz))**2 + &
-                                                     zup(xup(Tzx))**2)
+  fxy = fxy - xdn1(ydn1(self%nu(3+6*(k-1))*0.5*du+dnu))*Txy
+  fyz = fyz - ydn1(zdn1(self%nu(3+6*(k-1))*0.5*du+dnu))*Tyz
+  fzx = fzx - zdn1(xdn1(self%nu(3+6*(k-1))*0.5*du+dnu))*Tzx
+  Q   = Q   + d*(self%nu(3+6*(k-1))*0.5*du+dnu)*(xup(yup(Txy))**2 + &
+                                                 yup(zup(Tyz))**2 + &
+                                                 zup(xup(Tzx))**2)
   call deallocate_scalars (Txy, Tyz, Tzx)
   !---------------------------------------------------------------------------
   ! Multiply with edge-centered density
@@ -431,9 +438,9 @@ SUBROUTINE pde (self)
     !---------------------------------------------------------------------------
     fxx = fxx - pa*ddxup1(self%mesh,ldx)*xup(Ux)
     fyy = fyy - pa*ddyup1(self%mesh,ldy)*yup(Uy)
-    fzz = fzz - pa*ddzup1(self%mesh,ldz)*zup(Uz)
+    fzz = fzz - pa*ddzup1(self%mesh,ldz)*zup(Uz+Urotz)
     fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))
-    fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))
+    fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz+Urotz))
     fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))
     ! Addition of mass flux related momentum flux to the centrifugal terms
     pa   = ddx*xdn(du)*self%nu(4+6*(k-1))
@@ -459,8 +466,9 @@ SUBROUTINE pde (self)
   if (associated(self%force%selected) .and. self%do_force) then
     if (self%force_coupled) then
       dpdt = dpdt + dd*self%force%selected (self%time, d, self%mem(:,:,:,:,self%it,1), Ux, Uy, Uz, self%mesh)
-      u_max = dx/self%force%tmin
+      u_max = dsmax/self%force%tmin
       self%u_max = max(self%u_max,u_max)
+      if (io%verbose>2) print 1, 'u_max(drag)', u_max, self%u_max
     else
       dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
     end if
@@ -468,6 +476,10 @@ SUBROUTINE pde (self)
   if (self%selfgravity) then
     phi => self%mem(:,:,:,self%idx%phi,self%it,1)
     dpdt = dpdt - dd*vector_scalar_grad(self%mesh,phi)
+  end if
+  ! viscosity related dispersion
+  if (associated(self%viscosity%selected3) .and. self%do_viscosity) then
+    dpdt = dpdt + self%viscosity%selected3(self%time, self%mem(:,:,:,:,self%it,1), U, self%mesh, self%force)
   end if
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
@@ -490,7 +502,7 @@ SUBROUTINE pde (self)
         dsdt = -div(self%mesh,fm) + Q*d/pg
     end if
   end if
-    !-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Induction equation
   !-----------------------------------------------------------------------------
   if (self%mhd) then
@@ -498,7 +510,7 @@ SUBROUTINE pde (self)
     ! Electric current, resistive electric field and magnetic dissipation
     !---------------------------------------------------------------------------
     J = curl_dn(self%mesh,B)
-    E = self%nu(6)*edge(du)*J                                                 ! mhd: 0 6 0
+    E = self%nu(6+6*(k-1))*edge(du)*J                                           ! mhd: 0 6 0
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))                     ! mhd: 2 3 0
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
@@ -510,20 +522,20 @@ SUBROUTINE pde (self)
     if (self%gamma/=1.0) then
       dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
     end if
-    dBdt = -curl_up(self%mesh,E)
+    dBdt = dBdt - curl_up(self%mesh,E)
   end if
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dS/dt = (ds/dt-(s/d)*dddt)/d
   !-----------------------------------------------------------------------------
-  u_max = self%cdtd*dx*self%fmaxval(abs((dsdt-s*dddt/d)/d))  ! ops: 1 1 2
+  u_max = self%cdtd*dsmax*self%fmaxval(abs((dsdt-s*dddt/d)/d))  ! ops: 1 1 2
   self%u_max = max(self%u_max,u_max)
   if (io%verbose>2) print 1, 'u_max(dsdt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, E, J, fd, fx, fy, fz, fm)
   call deallocate_vectors (Urot, plin)
   call deallocate_scalars (lnd, pa, du, ss, cs, pp, pb, Q)
-  call deallocate_scalars (fyyx, fzzx, fzzy)
-  if (self%tracer) then                             ! ADDED DEALLOCATION OF PARAMETERS IF tracer IS TRUE
+  call deallocate_scalars (fyyx, fzzx, fzzy, dnu)
+  if (self%tracer .and. k==1) then                             ! ADDED DEALLOCATION OF PARAMETERS IF tracer IS TRUE
     call deallocate_vectors (ldtr, ddtr, fdtr, fmtr)
     call deallocate_scalars (lndtr)
   end if
@@ -532,19 +544,6 @@ SUBROUTINE pde (self)
     call deallocate_scalars (pg)
   end if
   end do
-  !-----------------------------------------------------------------------------
-  ! NEEDS FIX SO THAT EVERY COMPONENT DOES NOT HAVE ITS OWN MAGNETIC FIELD
-  ! Since the magnetic field is common for all of the components, dBdt must be
-  ! summed for all components
-  !-----------------------------------------------------------------------------
-  if (self%mhd .and. self%nc > 1) then
-    do k=1,self%nc
-      ic = nvc*(k-1)
-      self%mem(:,:,:,i%bx+ic,self%it,2) = sum(self%mem(:,:,:,i%bx:i%bx+nvc*(self%nc-1):nvc,self%it,2),dim=4)
-      self%mem(:,:,:,i%by+ic,self%it,2) = sum(self%mem(:,:,:,i%by:i%by+nvc*(self%nc-1):nvc,self%it,2),dim=4)
-      self%mem(:,:,:,i%bz+ic,self%it,2) = sum(self%mem(:,:,:,i%bz:i%bz+nvc*(self%nc-1):nvc,self%it,2),dim=4)
-    end do
-  end if
   call trace%end (itimer)
 END SUBROUTINE pde
 
@@ -554,6 +553,10 @@ END SUBROUTINE pde
 !> =============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%update',itimer=itimer)
+  !call self%gravity_solve
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
@@ -567,30 +570,36 @@ SUBROUTINE update (self)
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
+  !call self%gravity_update
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
 !> =============================================================================
-SUBROUTINE output (self, experiment_name)
+SUBROUTINE output (self)
   class(mhd_t):: self
-  character(len=64):: experiment_name, filename
-  optional:: experiment_name
+  character(len=64):: filename
   logical:: exists
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
-  call self%gpatch_t%output (experiment_name)
-  !$omp critical (out_cr)
-  write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
-    self%id, self%iout
-  inquire(file=filename, exist=exists)
-  if (exists) then
-    open (io%data_unit, file=trim(filename), form='formatted', status='old', &
-      position='append')
-    write (io%data_unit,'(8f10.4)') self%nu
-    close (io%data_unit)
+  if (self%time < self%out_next .or. .not.io%do_output) return
+  call trace%begin('mhd_t%output',itimer=itimer)
+  call self%gpatch_t%output
+  if (io%do_legacy) then
+    !$omp critical (out_cr)
+    write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
+      self%id, self%iout
+    inquire(file=filename, exist=exists)
+    if (exists) then
+      open (io%data_unit, file=trim(filename), form='formatted', status='old', &
+        position='append')
+      write (io%data_unit,'(8f10.4)') self%nu
+      close (io%data_unit)
+    end if
+    !$omp end critical (out_cr)
   end if
-  !$omp end critical (out_cr)
+  call trace%end (itimer)
 END SUBROUTINE output
 
 !> =============================================================================
