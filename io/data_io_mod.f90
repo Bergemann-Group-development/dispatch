@@ -38,28 +38,33 @@ MODULE data_io_mod
 CONTAINS
 
 !> =============================================================================
-!> Initialize the I/O method
+!> Initialize the I/O method, if not already done
 !> =============================================================================
 SUBROUTINE init (self, task)
   class(data_io_t):: self
   class(patch_t):: task
   !.............................................................................
-  call trace%begin('data_io_t%init')
-  if (io%do_output) then
-    select type (task)
-    class is (patch_t)
-      if      (io%method=='direct') then
-        call direct_io%init (task)
-      else if (io%method=='parallel') then
-        call parallel_io%init (task)
-      else if (io%method=='paralle5') then
-        io%format = 5
-        call parallel_io%init (task)
-      end if
-    end select
+  if (self%initialized) return
+  !$omp critical (data_io_cr)
+  if (.not.self%initialized) then
+    call trace%begin('data_io_t%init')
+    if (io%do_output) then
+      select type (task)
+      class is (patch_t)
+        if      (io%method=='direct') then
+          call direct_io%init (task)
+        else if (io%method=='parallel') then
+          call parallel_io%init (task)
+        else if (io%method=='paralle5') then
+          io%format = 5
+          call parallel_io%init (task)
+        end if
+      end select
+    end if
+    self%initialized = .true.
+    call trace%end
   end if
-  self%initialized = .true.
-  call trace%end
+  !$omp end critical (data_io_cr)
 END SUBROUTINE init
 
 !> =============================================================================
@@ -79,6 +84,7 @@ SUBROUTINE output (self, patch, experiment_name)
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
+  call self%init (patch)
   do while (patch%time >= patch%out_next)
     !$omp critical (outputname_cr)
     if (.not.checked) then
@@ -126,13 +132,7 @@ SUBROUTINE input (self, patch, ok)
   type(snapshot_t), pointer:: snapshot
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%input')
-  if (.not.self%initialized) then
-    !$omp critical (data_io_cr)
-    if (.not.self%initialized) then
-      call self%init (patch)
-    end if
-    !$omp end critical (data_io_cr)
-  end if
+  call self%init (patch)
   ok = .false.
   if (patch%restart > 0) then
     if      (io%method=='direct') then
