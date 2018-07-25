@@ -323,7 +323,7 @@ SUBROUTINE init_default (self)
   logical, save:: guard_zones=.false., time_derivs=.false., periodic(3)=.true.
   logical, save:: no_mans_land=.false., use_data_hub=.false.
   real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
-  real, save:: end_time=1.0, out_time=0.1, print_time=0.1
+  real(8), save:: end_time=1.0, out_time=0.1, print_time=0.1
   real(8):: position(3), size(3)
   integer:: iostat, i, n_alloc=0, n_ext=0
   namelist /patch_params/ n, nv, ng, nt, courant, u_fixed, dt_fixed, &
