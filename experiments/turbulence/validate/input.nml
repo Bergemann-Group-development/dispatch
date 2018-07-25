@@ -52,8 +52,8 @@
 !dt_fixed=0.001
 /
 &out_params
- end_time=0.003
- out_time=0.001
+ end_time=0.07
+ out_time=0.05
  print_time=0.0
  guard_zones=f
  time_derivs=f

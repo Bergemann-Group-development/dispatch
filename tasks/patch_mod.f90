@@ -1469,7 +1469,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
   !-----------------------------------------------------------------------------
-  if (io%out_time > 0.0) &
+  if (io%do_output .and. io%out_time > 0.0) &
     self%dtime = min (self%dtime, io%out_time)
   self%dt(self%it) = self%dtime
   if (io%verbose>3) &
