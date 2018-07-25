@@ -1,13 +1,13 @@
 PROGRAM dispatch
-  USE mpi_mod
+  USE setup_mod
   USE cartesian_mod
-  USE io_mod
+  USE dispatcher_mod
   type (cartesian_t):: cartesian
   !.............................................................................
-  call mpi%init
-  call io%init
-  call cartesian%init ('C-shock')
-  call cartesian%task_list%execute     ! update the list = update member patches
-  call mpi%end
+  call setup%init                               ! Standard setup (MPI, I/O, scaling, ...)
+  call dispatcher%init                          ! Set dispatcher method
+  call cartesian%init                           ! Initialize the patch list and patches
+  call dispatcher%execute (cartesian%task_list) ! Cáll dispatcher
+  call setup%end
 !> =============================================================================
 END PROGRAM dispatch

@@ -7,9 +7,9 @@ MODULE experiment_mod
   USE bits_mod
   USE trace_mod
   USE patch_mod
-  USE scalar_mod
+!  USE scalar_mod
   USE boundary_mod
-  USE timestep_mod
+!  USE timestep_mod
   USE index_mod
   USE mhd_mod
   implicit none
@@ -34,7 +34,7 @@ SUBROUTINE init (self)
   real:: x, y, z
   logical:: first_time = .true.
   real, dimension(:,:,:,:), pointer:: b, p
-  real, dimension(:,:,:), pointer:: d, vx, vy, vz, Bx, By, Bz, px, py, pz, s
+  real, dimension(:,:,:), pointer:: d, vx, vy, vz, Bx, By, Bz, px, py, pz, s, e1, et
   real,save:: P_l, P_r, rho_i, rho_l, vx_l, vy_l, vz_l=0., &
               Bx_l, By_l, Bz_l=0., rho_r, vx_r, vy_r, vz_r=0., Bx_r, By_r, Bz_r=0., &
               x0=0.0
@@ -57,12 +57,18 @@ SUBROUTINE init (self)
     first_time = .false.
   end if
 
-  self%d => self%mem(:,:,:,idx%d,self%it,1)
-  self%s => self%mem(:,:,:,idx%s,self%it,1)
-  self%p => self%mem(:,:,:,idx%px:idx%pz,self%it,1)
-  self%B => self%mem(:,:,:,idx%bx:idx%bz,self%it,1)
-  d=>self%d; s=>self%s
-  p=>self%p; B=>self%B
+  if (self%kind(1:6) == 'ramses') then 
+    et => self%mem(:,:,:,idx%e,self%it,1)
+    allocate (e1(self%gn(1),self%gn(2),self%gn(3)))
+  endif
+
+  d => self%mem(:,:,:,idx%d,self%it,1)
+  if (self%kind(1:7) == 'stagger') s => self%mem(:,:,:,idx%s,self%it,1)
+  p => self%mem(:,:,:,idx%px:idx%pz,self%it,1)
+  B => self%mem(:,:,:,idx%bx:idx%bz,self%it,1)
+  px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
+  Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
+
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
   print*, 'gn is:', self%gn(1)
@@ -74,45 +80,67 @@ SUBROUTINE init (self)
     !z = self%mesh(3)%p + self%mesh(3)%r(i)
     if (x < x0) then
       d (i,:,:)  = rho_l
-      if (self%gamma .eq. 1.) then
-        s (i,:,:) = -log(rho_l)*rho_l
-      else
-        s (i,:,:) = (log(P_l)-log(rho_l)*self%gamma)/(self%gamma-1.0) * rho_l
-      end if
       px(i,:,:) = vx_l*rho_l
       py(i,:,:) = vy_l*rho_l
       pz(i,:,:) = 0d0*rho_l
       Bx(i,:,:) = Bx_l
       By(i,:,:) = By_l
       Bz(i,:,:) = Bz_l
+      if (self%kind(1:6) == 'ramses') then
+          et(i,:,:)= P_l/(self%gamma-1d0) + 0.5*rho_l * (vx_l**2+vy_l**2+vz_l**2) + 0.5 * (Bx(i,:,:)**2 + By(i,:,:)**2 + Bz(i,:,:)**2)  
+      end if
+      if (self%kind(1:7) == 'stagger') then
+        if (self%gamma .eq. 1.) then
+          s (i,:,:) = -log(rho_l)*rho_l
+        else
+          s (i,:,:) = (log(P_l)-log(rho_l)*self%gamma)/(self%gamma-1.0) * rho_l
+        end if
+      end if
     else
       d (i,:,:) = rho_r
-      if (self%gamma .eq. 1.) then
-        s (i,:,:) = -log(rho_r)*rho_r
-      else
-        s (i,:,:) = (log(P_r)-log(rho_r)*self%gamma)/(self%gamma-1.0) * rho_r
-      end if
       px(i,:,:) = vx_r*rho_r
       py(i,:,:) = vy_r*rho_r
       pz(i,:,:) = 0d0*rho_r
       Bx(i,:,:) = Bx_r 
       By(i,:,:) = By_r
       Bz(i,:,:) = Bz_r 
+      if (self%kind(1:6) == 'ramses') then
+        if (self%gamma .eq. 1.) then
+          et(i,:,:)= P_r
+        else
+          et(i,:,:)= P_r/(self%gamma-1d0) + 0.5*rho_r * (vx_r**2+vy_r**2+vz_r**2) + 0.5 * (Bx(i,:,:)**2 + By(i,:,:)**2 + Bz(i,:,:)**2)            
+        end if
+      end if
+      if (self%kind(1:7) == 'stagger') then
+        if (self%gamma .eq. 1.) then
+          s (i,:,:) = -log(rho_r)*rho_r
+        else
+          s (i,:,:) = (log(P_r)-log(rho_r)*self%gamma)/(self%gamma-1.0) * rho_r
+        end if
+      end if
     endif
   end do
 
-  call self%clear(bits%root_grid)
-  self%periodic = .false.
+  self%periodic = .true.
   self%mhd = .true.
   print*, 'done!'
 
   ! assign constant boundary conditions.
   boundary%P_l   = P_l
   boundary%rho_l = rho_l
-  if (self%gamma .eq. 1.) then
-    boundary%s_l = -log(rho_l)*rho_l
-  else
-    boundary%s_l = (log(P_l)-log(rho_l)*self%gamma)/(self%gamma-1.0) * rho_l
+  if (self%kind(1:7) == 'stagger') then
+    if (self%gamma .eq. 1.) then
+      boundary%s_l = -log(rho_l)*rho_l
+    else
+      boundary%s_l = (log(P_l)-log(rho_l)*self%gamma)/(self%gamma-1.0) * rho_l
+    end if
+  end if
+  if (self%kind(1:6) == 'ramses') then
+    if (self%gamma .eq. 1.) then
+      boundary%e_l = P_l
+    else
+      boundary%e_l = P_l/(self%gamma-1d0) + 0.5*rho_l * (vx_l**2+vy_l**2+vz_l**2) + 0.5 * (Bx_l**2 + By_l**2 + Bz_l**2)
+    end if
   end if
   boundary%vx_l  = vx_l
   boundary%vy_l  = vy_l
@@ -122,10 +150,19 @@ SUBROUTINE init (self)
   boundary%Bz_l  = Bz_l
   boundary%P_r   = P_r
   boundary%rho_r = rho_r
-  if (self%gamma .eq. 1.) then
-    boundary%s_r = -log(rho_r)*rho_r
-  else
-    boundary%s_r = (log(P_r)-log(rho_r)*self%gamma)/(self%gamma-1.0) * rho_r
+  if (self%kind(1:7) == 'stagger') then
+    if (self%gamma .eq. 1.) then
+      boundary%s_r = -log(rho_r)*rho_r
+    else
+      boundary%s_r = (log(P_r)-log(rho_r)*self%gamma)/(self%gamma-1.0) * rho_r
+    end if
+  end if
+  if (self%kind(1:6) == 'ramses') then
+    if (self%gamma .eq. 1.) then
+      boundary%e_r = P_r
+    else
+      boundary%e_r = P_r/(self%gamma-1d0) + 0.5*rho_r * (vx_r**2+vy_r**2+vz_r**2) + 0.5 * (Bx_r**2 + By_r**2 + Bz_r**2)
+    end if
   end if
   boundary%vx_r  = vx_r
   boundary%vy_r  = vy_r
@@ -155,21 +192,43 @@ SUBROUTINE update (self)
 
   if (self%llc_nat(1)-self%ds(1) .lt. self%mesh(1)%origin) then 
     do iv=1,self%nv
-      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.)
+      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,1,self%no_mans_land)
     end do 
   endif
   if (self%llc_nat(1)+self%size(1)+self%ds(1) .gt. self%mesh(1)%origin + self%box(1)) then 
     do iv=1,self%nv
-      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.)
+      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,1,self%no_mans_land)
     end do 
   endif
+
+!  if (self%llc_nat(2)-self%ds(2) .lt. self%mesh(2)%origin) then 
+!    do iv=1,self%nv
+!      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,2,self%no_mans_land)
+!    end do 
+!  endif
+!  if (self%llc_nat(2)+self%size(2)+self%ds(2) .gt. self%mesh(2)%origin + self%box(2)) then 
+!    do iv=1,self%nv
+!      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,2,self%no_mans_land)
+!    end do 
+!  endif
+!
+!  if (self%llc_nat(3)-self%ds(3) .lt. self%mesh(3)%origin) then 
+!    do iv=1,self%nv
+!      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .true.,3,self%no_mans_land)
+!    end do 
+!  endif
+!  if (self%llc_nat(3)+self%size(3)+self%ds(3) .gt. self%mesh(3)%origin + self%box(3)) then
+!    do iv=1,self%nv
+!      call boundary%condition (iv, self%mem(:,:,:,iv,self%it,1), self%mesh, .false.,3,self%no_mans_land)
+!    end do 
+!  endif
 
   call self%mhd_t%update
   
   !call self%courant_condition
   call self%check_density('before timestep')
 
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+!  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density('after timestep')
   call trace_end
 END SUBROUTINE update
