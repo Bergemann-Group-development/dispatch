@@ -12,6 +12,7 @@ MODULE parallel_io_mod
   USE mpi_io_mod
   USE mpi_io_file_mod
   USE trace_mod
+  USE central_mod
   implicit none
   private
   type, public:: parallel_io_t
@@ -23,6 +24,7 @@ MODULE parallel_io_mod
   end type
   integer, parameter:: order=1
   integer, parameter:: verbose=0
+  type(central_t):: central
   type(mpi_io_file_t), save:: file_in, file_out
   type(parallel_io_t), public:: parallel_io
 CONTAINS
@@ -107,7 +109,11 @@ SUBROUTINE output5 (patch)
     n = patch%n
   end if
   buffer_words = product(n)
-  snapshot_words = buffer_words*patch%nv*io%ntotal
+  if (io%time_derivs) then
+    snapshot_words = buffer_words*patch%nv*io%ntotal*2
+  else
+    snapshot_words = buffer_words*patch%nv*io%ntotal
+  end if
   if (io%verbose==1) print '(a,2i6)', ' parallel_io_t%output: iout, id =', &
     patch%iout, patch%id
   if (io%verbose>1) print '(a,4i6,2i7)', &
@@ -115,6 +121,9 @@ SUBROUTINE output5 (patch)
     patch%iout, n, snapshot_words, buffer_words
   call thread_io%init (snapshot_words, buffer_words)
   allocate (buffer(n(1),n(2),n(3)))
+  !-----------------------------------------------------------------------------
+  ! Linear interpolation in time
+  !-----------------------------------------------------------------------------
   call patch%time_interval (patch%out_next, jt, pt)
   nv = merge (io%nv, patch%nv, io%nv>0)
   do iv=1,nv
@@ -131,16 +140,29 @@ SUBROUTINE output5 (patch)
     end if
     if (io%verbose>2) print *, 'parallel_io_t%output: iv =', &
       patch%id, iv, minval(buffer), maxval(buffer)
+    call thread_io_write
+    if (verbose>0) &
+      write (io_unit%mpi,*) 'WR5', patch%id, patch%iout, iv, minval(buffer), maxval(buffer)
+  end do
+  !-----------------------------------------------------------------------------
+  ! Optional time derivative output
+  !-----------------------------------------------------------------------------
+  if (io%time_derivs) then
+    do iv=1,nv
+      call central%time_derivative (patch, iv, buffer)
+      call thread_io_write
+    end do
+  end if
+  deallocate (buffer)
+  call trace%end
+contains
+  subroutine thread_io_write
     if (order==0) then
       call thread_io%write (buffer, patch%iout+1, (patch%id-1)*patch%nv + iv)
     else
       call thread_io%write (buffer, patch%iout+1, patch%id + (iv-1)*io%ntotal)
     end if
-    if (verbose>0) &
-      write (io_unit%mpi,*) 'WR5', patch%id, patch%iout, iv, minval(buffer), maxval(buffer)
-  end do
-  deallocate (buffer)
-  call trace%end
+  end subroutine thread_io_write
 END SUBROUTINE output5
 
 !> =============================================================================
@@ -150,7 +172,7 @@ SUBROUTINE output6 (patch)
   class(patch_t):: patch
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
-  integer:: iv, n(3), jt(2), nv
+  integer:: iv, n(3), jt(2), nv, iw
   real, dimension(:,:,:,:), allocatable:: buffer
   type(mpi_io_t):: thread_io
   real:: pt(2)
@@ -166,7 +188,7 @@ SUBROUTINE output6 (patch)
     n = patch%n
   end if
   buffer_words = product(n)*patch%nv
-  snapshot_words = buffer_words*io%ntotal
+  snapshot_words = buffer_words*patch%nv*io%ntotal
   if (io%verbose==1) print '(a,2i6)', ' parallel_io_t%output: iout, id =', &
     patch%iout, patch%id
   if (first_time) then
@@ -182,35 +204,65 @@ SUBROUTINE output6 (patch)
   allocate (buffer(n(1),n(2),n(3),patch%nv))
   call patch%time_interval (patch%out_next, jt, pt)
   nv = merge (io%nv, patch%nv, io%nv>0)
-  do iv=1,nv
-    if (io%guard_zones) then
-      buffer(:,:,:,iv) = patch%mem(:,:,:,iv,jt(1),1)*pt(1) &
-                       + patch%mem(:,:,:,iv,jt(2),1)*pt(2)
-    else
-      buffer(:,:,:,iv) = patch%mem(patch%li(1):patch%ui(1), &
-                                   patch%li(2):patch%ui(2), &
-                                   patch%li(3):patch%ui(3),iv,jt(1),1)*pt(1) &
-                       + patch%mem(patch%li(1):patch%ui(1), &
-                                   patch%li(2):patch%ui(2), &
-                                   patch%li(3):patch%ui(3),iv,jt(2),1)*pt(2)
+  do iw=1,patch%nw
+    do iv=1,nv
+      if (io%guard_zones) then
+        buffer(:,:,:,iv) = patch%mem(:,:,:,iv,jt(1),1)*pt(1) &
+                         + patch%mem(:,:,:,iv,jt(2),1)*pt(2)
+      else
+        buffer(:,:,:,iv) = patch%mem(patch%li(1):patch%ui(1), &
+                                     patch%li(2):patch%ui(2), &
+                                     patch%li(3):patch%ui(3),iv,jt(1),iw)*pt(1) &
+                         + patch%mem(patch%li(1):patch%ui(1), &
+                                     patch%li(2):patch%ui(2), &
+                                     patch%li(3):patch%ui(3),iv,jt(2),iw)*pt(2)
+      end if
+      if (verbose>0) &
+        write (io_unit%mpi,'(a,i6,i4,i3,1p,6e12.4,2i3,0p,2f7.3)') &
+         'id,iout,iv,vmin,vmax:', patch%id, patch%iout, iv, &
+          minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv)), &
+          patch%fminval(patch%mem(:,:,:,iv,jt(1),1)), &
+          patch%fmaxval(patch%mem(:,:,:,iv,jt(1),1)), &
+          patch%fminval(patch%mem(:,:,:,iv,jt(2),1)), &
+          patch%fmaxval(patch%mem(:,:,:,iv,jt(2),1)), &
+          jt, pt
+    end do
+    if (verbose > 0) then
+      pos = 4_8*(patch%iout*snapshot_words + (patch%id-1_8)*buffer_words)
+      write (io_unit%mpi,*) 'WR6', patch%id, patch%iout, pos
     end if
-    if (verbose>0) &
-      write (io_unit%mpi,'(a,i6,i4,i3,1p,6e12.4,2i3,0p,2f7.3)') &
-       'id,iout,iv,vmin,vmax:', patch%id, patch%iout, iv, &
-        minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv)), &
-        patch%fminval(patch%mem(:,:,:,iv,jt(1),1)), &
-        patch%fmaxval(patch%mem(:,:,:,iv,jt(1),1)), &
-        patch%fminval(patch%mem(:,:,:,iv,jt(2),1)), &
-        patch%fmaxval(patch%mem(:,:,:,iv,jt(2),1)), &
-        jt, pt
+    !---------------------------------------------------------------------------
+    ! If native time derivatives (nw=2), output the time deriv buffer
+    !---------------------------------------------------------------------------
+    if (io%time_derivs) then
+      if (patch%nw==1) then
+        call thread_io_write (1+2*patch%iout)
+      else
+        call thread_io_write (iw+2*patch%iout)
+      end if
+    !---------------------------------------------------------------------------
+    ! If no time derivs, increment with one per snapshot
+    !---------------------------------------------------------------------------
+    else
+      call thread_io_write (1+patch%iout)
+    end if
   end do
-  if (verbose > 0) then
-    pos = 4_8*(patch%iout*snapshot_words + (patch%id-1_8)*buffer_words)
-    write (io_unit%mpi,*) 'WR6', patch%id, patch%iout, pos
+  !-----------------------------------------------------------------------------
+  ! On-the-fly time derivative output
+  !-----------------------------------------------------------------------------
+  if (io%time_derivs .and. patch%nw==1) then
+    do iv=1,nv
+      call central%time_derivative (patch, iv, buffer(:,:,:,iv))
+    end do
+    call thread_io_write (2+2*patch%iout)
   end if
-  call thread_io%write (buffer, patch%iout+1, patch%id)
   deallocate (buffer)
   call trace%end
+contains
+  subroutine thread_io_write (slot)
+    integer:: slot
+    call thread_io%write (buffer, slot, patch%id)
+  end subroutine thread_io_write
 END SUBROUTINE output6
 
 !> =============================================================================

@@ -81,11 +81,17 @@ SUBROUTINE output (self, patch, experiment_name)
   type(snapshot_t), pointer:: snapshot
   integer, save:: itimer=0
   logical:: append
+  integer:: it
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
   call self%init (patch)
-  do while (patch%time >= patch%out_next)
+  if (io%time_derivs) then
+    it = patch%iit(patch%nt-2)
+  else
+    it = patch%iit(patch%nt-1)
+  end if
+  do while (patch%t(it) >= patch%out_next)
     !$omp critical (outputname_cr)
     if (.not.checked) then
       checked = .true.
@@ -307,6 +313,7 @@ SUBROUTINE output_nml (patch, append)
   ng         = patch%ng
   nv         = patch%nv
   nv         = merge (io%nv, patch%nv, io%nv>0)
+  nv         = merge (2*nv, nv, io%time_derivs)
   nt         = patch%nt
   nw         = patch%nw
   kind       = patch%kind
