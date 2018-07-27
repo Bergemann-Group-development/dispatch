@@ -38,6 +38,8 @@ rm -f *.o *.mod *.stackdump
  [ FC ] direct_io_mod.o
  [ FC ] mpi_io_file_mod.o
  [ FC ] mpi_io_mod.o
+ [ FC ] lagrange_mod.o
+ [ FC ] central_mod.o
  [ FC ] parallel_io_mod.o
  [ FC ] buffered_io_mod.o
  [ FC ] legacy_io_mod.o
@@ -63,7 +65,6 @@ rm -f *.o *.mod *.stackdump
  [ FC ] dispatcher0_mod.o
  [ FC ] mpi_comm_mod.o
  [ FC ] process_mod.o
- [ FC ] lagrange_mod.o
  [ FC ] global_mod.o
  [ FC ] dispatcher1_mod.o
  [ FC ] dispatcher2_mod.o
