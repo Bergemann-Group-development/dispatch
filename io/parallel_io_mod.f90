@@ -192,7 +192,7 @@ SUBROUTINE output6 (patch)
     n = patch%n
   end if
   buffer_words = product(n)*patch%nv
-  snapshot_words = buffer_words*patch%nv*io%ntotal
+  snapshot_words = buffer_words*io%ntotal
   if (io%verbose==1) print '(a,2i6)', ' parallel_io_t%output: iout, id =', &
     patch%iout, patch%id
   if (first_time) then
