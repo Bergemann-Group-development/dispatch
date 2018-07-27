@@ -1,0 +1,43 @@
+!> =============================================================================
+!> Compute time derivative from a sequence of time slices, using Lagrange
+!> interpolation
+!> =============================================================================
+MODULE central_mod
+  USE io_mod
+  USE trace_mod
+  USE patch_mod
+  USE kinds_mod
+  USE lagrange_mod
+  implicit none
+  private
+  type, public:: central_t
+  contains
+    procedure, nopass:: time_derivative
+  end type
+CONTAINS
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE time_derivative (patch, iv, buffer)
+  class(patch_t):: patch
+  integer:: iv
+  real(kind=KindScalarVar), dimension(:,:,:):: buffer
+  !.............................................................................
+  real(8):: times(patch%nt-1)
+  integer, parameter:: order=2
+  real(8), dimension(order+1):: w
+  integer:: i, i1, i2
+  !-----------------------------------------------------------------------------
+  times = patch%t(patch%iit(1:patch%nt-1))
+  call lagrange%deriv_sequence_weights (patch%out_next, times, i1, i2, w, order)
+  if (io%verbose>2) then
+    print '(a,10f12.6)', '  times:', times, patch%out_next
+    print '(a,10f12.6)', 'weights:', w, sum(w)
+  end if
+  buffer = 0.0
+  do i=i1,i2
+    buffer = buffer + w(1+i-i1)*patch%mem(:,:,:,iv,patch%iit(i),1)
+  end do
+END SUBROUTINE time_derivative
+
+END MODULE central_mod
