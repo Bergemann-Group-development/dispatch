@@ -116,7 +116,7 @@ SUBROUTINE output5 (patch)
   end if
   if (io%verbose==1) print '(a,2i6)', ' parallel_io_t%output: iout, id =', &
     patch%iout, patch%id
-  if (io%verbose>1) print '(a,4i6,2i7)', &
+  if (io%verbose>1) print '(a,4i6,2i12)', &
     ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words
   call thread_io%init (snapshot_words, buffer_words)
@@ -138,6 +138,10 @@ SUBROUTINE output5 (patch)
                          patch%li(2):patch%ui(2), &
                          patch%li(3):patch%ui(3),iv,jt(2),1)*pt(2)
     end if
+      if (io%verbose>2 .or. (io%verbose>1 .and. iv==patch%idx%d)) &
+        write (io_unit%output,'(a,i6,i4,i3,1p,2e12.4)') &
+         'id,iout,iv,vmin,vmax:', patch%id, patch%iout, iv, &
+          minval(buffer), maxval(buffer)
     if (io%verbose>2) print *, 'parallel_io_t%output: iv =', &
       patch%id, iv, minval(buffer), maxval(buffer)
     call thread_io_write
@@ -197,7 +201,7 @@ SUBROUTINE output6 (patch)
       ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
       io%ntotal, ' patches'
   end if
-  if (io%verbose>1) print '(a,4i6,2i7)', &
+  if (io%verbose>1) print '(a,4i6,2i12)', &
     ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words
   call thread_io%init (snapshot_words, buffer_words)
@@ -217,6 +221,10 @@ SUBROUTINE output6 (patch)
                                      patch%li(2):patch%ui(2), &
                                      patch%li(3):patch%ui(3),iv,jt(2),iw)*pt(2)
       end if
+      if (io%verbose>2 .or. (io%verbose>1 .and. iv==patch%idx%d)) &
+        write (io_unit%output,'(a,i6,i4,i3,1p,2e12.4)') &
+         'id,iout,iv,vmin,vmax:', patch%id, patch%iout, iv, &
+          minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv))
       if (verbose>0) &
         write (io_unit%mpi,'(a,i6,i4,i3,1p,6e12.4,2i3,0p,2f7.3)') &
          'id,iout,iv,vmin,vmax:', patch%id, patch%iout, iv, &

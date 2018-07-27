@@ -15,9 +15,9 @@
 &experiment_params      test=t /
 &io_params              verbose=0 do_trace=f omp_trace=f do_validate=f do_debug=f
                         do_output=t
-                        !method='parallel'
+                        method='parallel'
                         !method='legacy'
-                        method='direct'
+                        !method='direct'
                         !method='buffered'
 /
 &box_params
