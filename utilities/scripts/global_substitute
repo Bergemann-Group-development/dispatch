@@ -1,0 +1,30 @@
+#!/bin/csh
+
+if ($#argv < 3) then
+  echo " "
+  echo "Syntax: global_substitute .ext old new"
+  echo " "
+endif
+
+if ($1 == "-n") then
+  set run = 0
+  set act = "(not edited)"
+  shift
+else
+  set run = 1
+  set act = "(edited)"
+endif
+
+set ext = $1
+set old = $2
+set new = $3
+
+set files = `find . -name '*'$ext | xargs grep "$old" | sed -e 's/:.*//' | sort -u`
+if ($#files > 0) then
+  foreach f ( $files )
+    echo $f $act
+    if ( $run == 1 ) perl -i -p -e "s{$old}{$new}" $f
+  end
+else
+  echo ' No files with pattern "'"$old"'" found!'
+endif

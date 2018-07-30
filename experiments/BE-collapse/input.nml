@@ -16,7 +16,7 @@
  do_output=t
  !output_legacy = t
 /
-&box_params
+&cartesian_params
  size=1,1,1
  dims=1,1,1
  origin=0,0,0

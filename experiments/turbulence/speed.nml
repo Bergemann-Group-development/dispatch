@@ -30,7 +30,7 @@
  do_output=f
  omp_trace=f
 /
-&box_params
+&cartesian_params
  size=1,1,1
 !dims=16,16,16          ! nearly full 20 core Ivy Bridge at steno
 !dims=32,64,64          ! 32 nodes (64 sockets)

@@ -62,7 +62,7 @@
  print_time = 0.01
  guard_zones=f
 /
-&box_params
+&cartesian_params
  size=1,1,1
  dims=5,1,1				! number of patches
  origin=0,0,0

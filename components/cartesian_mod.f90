@@ -54,16 +54,16 @@ SUBROUTINE init (self, label)
   logical:: face_nbors=.false.
   integer:: thread, icoords(3),ipos(3)
   integer, save:: itimer=0
-  namelist /box_params/ size, dims, mpi_dims, per_rank, origin, face_nbors
+  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors
   !-----------------------------------------------------------------------------
   call trace_begin ('cartesian_mod::init',itimer=itimer)
-  rewind (io%input); read (io%input, box_params)
+  rewind (io%input); read (io%input, cartesian_params)
   if (any(per_rank/=0)) then
     where (per_rank/=0) dims=per_rank*mpi_dims
   end if
   per_rank = dims/mpi_dims
-  if (io%master) write (*, box_params)
-  if (io%master) write (io_unit%nml, box_params)
+  if (io%master) write (*, cartesian_params)
+  if (io%master) write (io_unit%nml, cartesian_params)
   self%dims = dims
   self%size = size
   !-----------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 &experiment_params      d_l=1 d_r=1 vx_l=5 vxr=-5 bx_l=0 bx_r=0 by_l=0 by_r=0 bz_l=0 bz_r=0 /
 
-&box_params             size=1,1,1 dims=1,1,1 origin=0,0,0 /
+&cartesian_params             size=1,1,1 dims=1,1,1 origin=0,0,0 /
 &patch_params           n=501,1,1 ng=3*2 nt=5 no_mans_land=f /                          ! for stagger2 ..
 !patch_params           n=501,4,4 ng=3*3 nt=5 no_mans_land=f /                          ! for HLLD
 

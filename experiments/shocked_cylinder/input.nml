@@ -10,7 +10,7 @@
  out_time=0.01
 /
 
-&box_params
+&cartesian_params
  n_per_patch=64,64,1
 /
 
