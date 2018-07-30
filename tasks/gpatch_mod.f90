@@ -96,6 +96,7 @@ SUBROUTINE init (self)
     call self%patch_t%init
     call self%poisson%init
   else
+    self%idx%phi = -1
     call self%patch_t%init
   end if
   self%d0 = d0
