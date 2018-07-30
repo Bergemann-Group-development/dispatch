@@ -18,7 +18,7 @@ CONTAINS
 SUBROUTINE write (self)
   class(index_t):: self
   integer:: d, e, s, px, py, pz, bx, by, bz, phi
-  namelist /index_nml/ d, e, s, px, py, pz, bx, by, bz, phi
+  namelist /idx_nml/ d, e, s, px, py, pz, bx, by, bz, phi
   d   = self%d   - 1
   e   = self%e   - 1
   s   = self%s   - 1
@@ -29,7 +29,7 @@ SUBROUTINE write (self)
   by  = self%by  - 1
   bz  = self%bz  - 1
   phi = self%phi - 1
-  write (io_unit%data, index_nml)
+    write (io_unit%data, idx_nml)
 END SUBROUTINE write
 
 END MODULE index_mod

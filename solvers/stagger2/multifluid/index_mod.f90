@@ -18,7 +18,7 @@ SUBROUTINE write (self)
   class(index_t):: self
   integer:: d, e, s, px, py, pz, bx, by, bz, phi
   integer:: dust_d, dust_px, dust_py, dust_pz
-  namelist /index_nml/ d, e, s, px, py, pz, bx, by, bz, phi, dust_d, dust_px, dust_py, dust_pz
+  namelist /idx_nml/ d, e, s, px, py, pz, bx, by, bz, phi, dust_d, dust_px, dust_py, dust_pz
   d   = self%d   - 1
   e   = self%e   - 1
   s   = self%s   - 1
@@ -33,7 +33,7 @@ SUBROUTINE write (self)
   dust_px = px + 5
   dust_py = py + 5
   dust_pz = pz + 5
-  write (io_unit%data, index_nml)
+  write (io_unit%data, idx_nml)
 END SUBROUTINE write
 
 END MODULE index_mod

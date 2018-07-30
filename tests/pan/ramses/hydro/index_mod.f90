@@ -18,9 +18,9 @@ CONTAINS
 SUBROUTINE write (self)
   class(index_t):: self
   integer:: fx=1, fy=2, fz=3
-  namelist /index_nml/ fx, fy, fz
+  namelist /idx_nml/ fx, fy, fz
   !-----------------------------------------------------------------------------
-  write (io_unit%data, index_nml)
+  write (io_unit%data, idx_nml)
 END SUBROUTINE write
 
 END MODULE index_mod

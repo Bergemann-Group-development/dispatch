@@ -212,25 +212,6 @@ SUBROUTINE output_txt (patch, append)
 END SUBROUTINE output_txt
 
 !> =============================================================================
-!> =============================================================================
-SUBROUTINE index_write
-  type(index_t):: idx
-  integer:: d, e, s, px, py, pz, bx, by, bz, phi
-  namelist /index_nml/ d, e, s, px, py, pz, bx, by, bz, phi
-  d   = idx%d   - 1
-  e   = idx%e   - 1
-  s   = idx%s   - 1
-  px  = idx%px  - 1
-  py  = idx%py  - 1
-  pz  = idx%pz  - 1
-  bx  = idx%bx  - 1
-  by  = idx%by  - 1
-  bz  = idx%bz  - 1
-  phi = idx%phi - 1
-  write (io_unit%data, index_nml)
-END SUBROUTINE index_write
-
-!> =============================================================================
 !> Output text with patch info, either to individual files (io%format=1,2) or
 !> to one file per rank (io%format>2).  This is not threadsafe, both because of
 !> the text file I/O, and because snapshot%ibuf is consantly being modified by
