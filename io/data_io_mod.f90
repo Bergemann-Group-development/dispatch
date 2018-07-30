@@ -274,7 +274,7 @@ SUBROUTINE output_nml (patch, append)
   open  (io_unit%data, file=trim(filename), form='formatted', status='unknown', &
          access=trim(merge('append    ','sequential',append)))
   !-----------------------------------------------------------------------------
-  ! Write the namelist info, including a leading index_nml
+  ! Write the namelist info, including a leading idx_nml
   !-----------------------------------------------------------------------------
   if (mpi%master .and. .not.append) then
     call patch%idx%write

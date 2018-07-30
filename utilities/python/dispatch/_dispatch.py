@@ -8,6 +8,7 @@ import f90nml
 import numpy as np
 
 import select
+import yt
 
 def _p2():
     """ convenience function to check Python version """
@@ -74,6 +75,29 @@ def attributes(patch):
         if k != 'data':
             print ('{:>12}:  {}'.format(k,v))
 
+def _add_nml_to(obj,dict,verbose=0):
+    for key,value in dict.items():
+        setattr(obj,key,value)
+        if verbose>1:
+            print('      adding property '+key+', with value',value)
+
+class _param():
+    pass
+
+def _add_nml_list_to(obj,nml_list,verbose=0):
+    for key,nml_dict in nml_list.items():
+        if (verbose):
+            print('  parsing',key)
+        if key=='snapshot_nml':
+            _add_nml_to(obj,nml_dict)
+        else:
+            name=key.replace('_nml','').replace('_params','')
+            if (verbose>0):
+                print('    adding property',name)
+            setattr(obj,name,_param())
+            subobj=getattr(obj,name)
+            _add_nml_to(subobj,nml_dict,verbose=verbose)
+
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
     """
@@ -83,29 +107,15 @@ class snapshot():
             datadir=_dir(rundir,'{:05d}'.format(iout))
         files=[f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
         for f in files:
+            # add parameter groups from data/run/NNNNN/*snapshot.nml
             file=_file(datadir,f)
             if verbose>0:
-                print (file)
-            dlist=f90nml.read(file)
-            dict=dlist['snapshot_nml']
-            # Add snapshot parameters as attributes to the snapshot
-            for a, b in dict.items():
-                setattr(self, a, b)
-            # Add io_nml, if present
-            if 'io_nml' in dlist.keys():
-                self.io=_obj(dlist['io_nml'])
-            # Add indices
-            if 'index_nml' in dlist.keys():
-                dict=dlist['index_nml']
-                self.idx=_obj(dict)
-                self.idx.dict=dict
+                print ('parsing',file)
+            nml_list=f90nml.read(file)
+            self.nml_list=nml_list
+            _add_nml_list_to(self,nml_list,verbose=verbose)
             # Add array of patch instances
             self.patches=self._patches(datadir,rundir,verbose=verbose)
-        if hasattr(self,'patches'):
-            self.box=self.patches[0].box
-        else:
-            self.patches=[]
-        self.llc_cart=np.array([0.0,0.0,0.0])
 
     def _patches(self,datadir,rundir,verbose=0):
         """ Read all patch meta data in a directory
@@ -117,6 +127,8 @@ class snapshot():
         # Convert list of patch dicts to list of patch objects
         patches=[]
         for f in files:
+            if verbose>0:
+                print('scanning',f,'for patches')
             top=f90nml.read(f)                  # get top dict
             dlist=top['patch_nml']              # should be list of dicts
             if hasattr(dlist,'keys'):           # if not it is a dict ...
@@ -145,12 +157,12 @@ class snapshot():
         sorted=[]
         for i in ii:
             patch=patches[i]
-            if verbose==1:
+            if verbose==2:
                 dmax=patch.data[0].max()
-                print ('id:{:4d}  pos: {} {}'.format(patch.id,patch.position,dmax))
-            elif verbose==2:
+                print ('    id:{:4d}  pos: {} {}'.format(patch.id,patch.position,dmax))
+            elif verbose==3:
                 attributes(patch)
-            elif verbose>2:
+            elif verbose>3:
                 attributes(patch)
                 for iv in range(patch.nv):
                     vmin=float(patch.data[iv].min())
@@ -158,6 +170,8 @@ class snapshot():
                     print ('{:>5}:  min = {:10.3e}   max = {:10.3e}'.format(
                         patch.idx.dict.keys()[iv], vmin, vmax))
             sorted.append(patch)
+        if verbose>0:
+            print('  added',len(sorted),'patches')
         return sorted
 
     def _add_axes(self,patch):
@@ -184,6 +198,11 @@ class snapshot():
     def unigrid_plane(self,**kw):
         return select.unigrid_plane(self,**kw)
 
+    def yt_patches(self):
+        return yt.patches(self)
+    def yt_domain_dimensions(self):
+        return yt.domain_dimension(self)
+
 def snapshots(run='',data='data', verbose=0):
     """ Return an array of all snapshots in the data/run/ directory
     """
@@ -200,3 +219,12 @@ def snapshots(run='',data='data', verbose=0):
                         print (_dir(rund,subdir))
             break
     return snaps
+
+if __name__ == "__main__":
+    s=snapshot(2,verbose=1)
+    print(s.time)
+    for key in s.nml_list:
+        print(key)
+    obj=_param()
+    _add_nml_to(obj,s.nml_list['io_nml'])
+    _add_nml_list_to(obj,s.nml_list)
