@@ -229,7 +229,7 @@ SUBROUTINE output_nml (patch, append)
   real(8)              :: time, dtime, out_next, out_time
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
-  logical              :: guard_zones, time_derivs, no_mans_land
+  logical              :: guard_zones, time_derivs, no_mans_land, periodic(3)
   character(len=16)    :: kind, eos, opacity
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs
   namelist /snapshot_nml/ iout, time, dtime, ntotal
@@ -237,7 +237,7 @@ SUBROUTINE output_nml (patch, append)
     position, size, ds, box, velocity, level, quality, gamma, &
     ncell, li, ui, n, ng, gn, nv, nt, nw, ntotal, &
     llc_nat, llc_cart, centre_nat, kind, eos, opacity, &
-    guard_zones, time_derivs, no_mans_land
+    periodic, guard_zones, time_derivs, no_mans_land
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
@@ -310,6 +310,7 @@ SUBROUTINE output_nml (patch, append)
   eos          = patch%eos
   opacity      = patch%opacity
   no_mans_land = patch%no_mans_land
+  periodic     = patch%periodic
   write (io_unit%data, patch_nml)
   close (io_unit%data)
   !$omp end critical (output_cr)
