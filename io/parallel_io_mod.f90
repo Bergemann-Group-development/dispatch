@@ -22,8 +22,7 @@ MODULE parallel_io_mod
     procedure, nopass:: output
     procedure, nopass:: close
   end type
-  integer, parameter:: order=1
-  integer, parameter:: verbose=0
+  integer, parameter:: verbose=1
   type(central_t):: central
   type(mpi_io_file_t), save:: file_in, file_out
   type(parallel_io_t), public:: parallel_io
@@ -76,103 +75,9 @@ SUBROUTINE close
 END SUBROUTINE close
 
 !> =============================================================================
-!> Write output in increments of one variable data cube
+!> Write output in increments of one patch data cube
 !> =============================================================================
 SUBROUTINE output (patch)
-  class(patch_t):: patch
-  if (io%format==5) then
-    call output5 (patch)
-  else if (io%format==6) then
-    call output6 (patch)
-  end if
-END SUBROUTINE output
-
-!> =============================================================================
-!> Write output in increments of one variable data cube
-!> =============================================================================
-SUBROUTINE output5 (patch)
-  class(patch_t):: patch
-  !.............................................................................
-  integer(8):: snapshot_words, buffer_words
-  integer:: iv, n(3), jt(2), nv
-  real, dimension(:,:,:), allocatable:: buffer
-  type(mpi_io_t):: thread_io
-  real:: pt(2)
-  !-----------------------------------------------------------------------------
-  call trace%begin ('parallel_io_t%output')
-  !-----------------------------------------------------------------------------
-  !-----------------------------------------------------------------------------
-  call thread_io%use (file_out)
-  if (io%guard_zones) then
-    n = patch%gn
-  else
-    n = patch%n
-  end if
-  buffer_words = product(n)
-  if (io%time_derivs) then
-    snapshot_words = buffer_words*patch%nv*io%ntotal*2
-  else
-    snapshot_words = buffer_words*patch%nv*io%ntotal
-  end if
-  if (io%verbose==1) print '(a,2i6)', ' parallel_io_t%output: iout, id =', &
-    patch%iout, patch%id
-  if (io%verbose>1) print '(a,4i6,2i12)', &
-    ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
-    patch%iout, n, snapshot_words, buffer_words
-  call thread_io%init (snapshot_words, buffer_words)
-  allocate (buffer(n(1),n(2),n(3)))
-  !-----------------------------------------------------------------------------
-  ! Linear interpolation in time
-  !-----------------------------------------------------------------------------
-  call patch%time_interval (patch%out_next, jt, pt)
-  nv = merge (io%nv, patch%nv, io%nv>0)
-  do iv=1,nv
-    if (io%guard_zones) then
-      buffer = patch%mem(:,:,:,iv,jt(1),1)*pt(1) &
-             + patch%mem(:,:,:,iv,jt(2),1)*pt(2)
-    else
-      buffer = patch%mem(patch%li(1):patch%ui(1), &
-                         patch%li(2):patch%ui(2), &
-                         patch%li(3):patch%ui(3),iv,jt(1),1)*pt(1) &
-             + patch%mem(patch%li(1):patch%ui(1), &
-                         patch%li(2):patch%ui(2), &
-                         patch%li(3):patch%ui(3),iv,jt(2),1)*pt(2)
-    end if
-      if (io%verbose>2 .or. (io%verbose>1 .and. iv==patch%idx%d)) &
-        write (io_unit%output,'(a,i6,i4,i3,1p,2e12.4)') &
-         'id,iout,iv,vmin,vmax:', patch%id, patch%iout, iv, &
-          minval(buffer), maxval(buffer)
-    if (io%verbose>2) print *, 'parallel_io_t%output: iv =', &
-      patch%id, iv, minval(buffer), maxval(buffer)
-    call thread_io_write
-    if (verbose>0) &
-      write (io_unit%mpi,*) 'WR5', patch%id, patch%iout, iv, minval(buffer), maxval(buffer)
-  end do
-  !-----------------------------------------------------------------------------
-  ! Optional time derivative output
-  !-----------------------------------------------------------------------------
-  if (io%time_derivs) then
-    do iv=1,nv
-      call central%time_derivative (patch, iv, buffer)
-      call thread_io_write
-    end do
-  end if
-  deallocate (buffer)
-  call trace%end
-contains
-  subroutine thread_io_write
-    if (order==0) then
-      call thread_io%write (buffer, patch%iout+1, (patch%id-1)*patch%nv + iv)
-    else
-      call thread_io%write (buffer, patch%iout+1, patch%id + (iv-1)*io%ntotal)
-    end if
-  end subroutine thread_io_write
-END SUBROUTINE output5
-
-!> =============================================================================
-!> Write output in increments of one variable data cube
-!> =============================================================================
-SUBROUTINE output6 (patch)
   class(patch_t):: patch
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
@@ -184,6 +89,7 @@ SUBROUTINE output6 (patch)
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%output')
   !-----------------------------------------------------------------------------
+  ! Set size parameters
   !-----------------------------------------------------------------------------
   call thread_io%use (file_out)
   if (io%guard_zones) then
@@ -193,6 +99,10 @@ SUBROUTINE output6 (patch)
   end if
   buffer_words = product(n)*patch%nv
   snapshot_words = buffer_words*io%ntotal
+  call thread_io%init (snapshot_words, buffer_words)
+  !-----------------------------------------------------------------------------
+  ! Info
+  !-----------------------------------------------------------------------------
   if (io%verbose==1) print '(a,2i6)', ' parallel_io_t%output: iout, id =', &
     patch%iout, patch%id
   if (first_time) then
@@ -204,9 +114,16 @@ SUBROUTINE output6 (patch)
   if (io%verbose>1) print '(a,4i6,2i12)', &
     ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words
-  call thread_io%init (snapshot_words, buffer_words)
+  !-----------------------------------------------------------------------------
+  ! Interpolate to the given output time
+  !-----------------------------------------------------------------------------
   allocate (buffer(n(1),n(2),n(3),patch%nv))
-  call patch%time_interval (patch%out_next, jt, pt)
+  if (io%out_time==0d0) then
+    jt = patch%iit(patch%nt-1)
+    pt = 0.5_8
+  else
+    call patch%time_interval (patch%out_next, jt, pt)
+  end if
   nv = merge (io%nv, patch%nv, io%nv>0)
   do iw=1,patch%nw
     do iv=1,nv
@@ -222,12 +139,12 @@ SUBROUTINE output6 (patch)
                                      patch%li(3):patch%ui(3),iv,jt(2),iw)*pt(2)
       end if
       if (io%verbose>2 .or. (io%verbose>1 .and. iv==patch%idx%d)) &
-        write (io_unit%output,'(a,i6,i4,i3,1p,2e12.4)') &
-         'id,iout,iv,vmin,vmax:', patch%id, patch%iout, iv, &
+        write (io_unit%output,'(a,i7,i4,1p,e14.6,i4,2e12.4)') &
+         ' id,iout,time,iv,vmin,vmax:', patch%id, patch%iout, patch%time, iv, &
           minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv))
       if (verbose>0) &
-        write (io_unit%mpi,'(a,i6,i4,i3,1p,6e12.4,2i3,0p,2f7.3)') &
-         'id,iout,iv,vmin,vmax:', patch%id, patch%iout, iv, &
+        write (io_unit%mpi,'(a,i7,i4,1p,e14.6,i3,6e12.4,2i3,0p,2f7.3)') &
+         'id,iout,time,iv,vmin,vmax:', patch%id, patch%iout, patch%time, iv, &
           minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv)), &
           patch%fminval(patch%mem(:,:,:,iv,jt(1),1)), &
           patch%fmaxval(patch%mem(:,:,:,iv,jt(1),1)), &
@@ -271,7 +188,7 @@ contains
     integer:: slot
     call thread_io%write (buffer, slot, patch%id)
   end subroutine thread_io_write
-END SUBROUTINE output6
+END SUBROUTINE output
 
 !> =============================================================================
 !> Read input in increments of one variable data cube
@@ -286,6 +203,9 @@ SUBROUTINE input (patch, ok)
   type(mpi_io_t):: thread_io
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%input')
+  !-----------------------------------------------------------------------------
+  ! Set size parameters
+  !-----------------------------------------------------------------------------
   if (file_in%handle==0) then
     call init (patch)
   end if
@@ -298,14 +218,14 @@ SUBROUTINE input (patch, ok)
   buffer_words = product(n)
   snapshot_words = buffer_words*patch%nv*io%ntotal
   call thread_io%init (snapshot_words, buffer_words)
+  !-----------------------------------------------------------------------------
+  ! Read via buffer, in case guard zones not included. FIXME: read snapshot
+  ! guard zone parameter, to allow it to differ
+  !-----------------------------------------------------------------------------
   allocate (buffer(n(1),n(2),n(3)))
   nv = merge (io%nv, patch%nv, io%nv>0)
   do iv=1,nv
-    if (order==0) then
-      call thread_io%read (buffer, patch%restart+1, (patch%id-1)*patch%nv + iv)
-    else
-      call thread_io%read (buffer, patch%restart+1, patch%id + (iv-1)*io%ntotal)
-    end if
+    call thread_io%read (buffer, patch%restart+1, patch%id + (iv-1)*io%ntotal)
     if (thread_io%err /= 0) then
       ok = .false.
       call trace%end

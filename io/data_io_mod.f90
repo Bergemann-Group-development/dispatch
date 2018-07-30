@@ -120,8 +120,8 @@ SUBROUTINE output (self, patch, experiment_name)
     call output_nml (patch, append)
     if (snapshot%ibuf==0) &
       call snapshot_list%remove (snapshot)
-    if (io%out_time==0.0) exit
     patch%iout = patch%iout+1
+    if (io%out_time==0.0) exit
     patch%out_next = (nint(patch%out_next/io%out_time)+1)*io%out_time
     call os%mkdir_no (patch%iout)
   end do
@@ -245,7 +245,7 @@ SUBROUTINE output_nml (patch, append)
   !-----------------------------------------------------------------------------
   ioformat = io%format
   iout     = patch%iout
-  time     = patch%out_next
+  time        = merge (patch%time, patch%out_next, io%out_time==0)
   dtime    = patch%dtime
   ntotal   = io%ntotal
   if (mpi%master .and. .not.append) then
