@@ -63,6 +63,7 @@ SUBROUTINE init (self, label)
   end if
   per_rank = dims/mpi_dims
   if (io%master) write (*, box_params)
+  if (io%master) write (io_unit%nml, box_params)
   self%dims = dims
   self%size = size
   !-----------------------------------------------------------------------------

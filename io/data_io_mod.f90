@@ -223,36 +223,45 @@ SUBROUTINE output_nml (patch, append)
   !.............................................................................
   character(len=128)   :: filename
   integer              :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
-                          nw, ntotal
+                          nw, ntotal, format
   integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
   real                 :: gamma, quality
-  real(8)              :: time, dtime, out_next
+  real(8)              :: time, dtime, out_next, out_time
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
+  logical              :: guard_zones, time_derivs, no_mans_land
   character(len=16)    :: kind, eos, opacity
-  namelist /snapshot_nml/ ioformat, iout, time, dtime, ntotal
+  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs
+  namelist /snapshot_nml/ iout, time, dtime, ntotal
   namelist /patch_nml/ ioformat, iout, time, dtime, id, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, &
     ncell, li, ui, n, ng, gn, nv, nt, nw, ntotal, &
-    llc_nat, llc_cart, centre_nat, kind, eos, opacity
+    llc_nat, llc_cart, centre_nat, kind, eos, opacity, &
+    guard_zones, time_derivs, no_mans_land
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%output_nml')
   !$omp critical (output_cr)
   !-----------------------------------------------------------------------------
-  ! Write snapshot_nml to the file "data/run/rank_rrrrr_snapshot.nml"
+  ! Write snapshot_nml to the file "data/run/NNNNN/snapshot.nml"
   !-----------------------------------------------------------------------------
-  ioformat = io%format
-  iout     = patch%iout
+  format      = io%format
+  ioformat    = io%format
+  ntotal      = io%ntotal
+  out_time    = io%out_time
+  guard_zones = io%guard_zones
+  time_derivs = io%time_derivs
+  iout        = patch%iout
   time        = merge (patch%time, patch%out_next, io%out_time==0)
-  dtime    = patch%dtime
-  ntotal   = io%ntotal
+  dtime       = patch%dtime
   if (mpi%master .and. .not.append) then
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
     open  (io_unit%data, file=trim(filename), form='formatted', status='unknown')
+    write (io_unit%data, io_nml)
     write (io_unit%data, snapshot_nml)
     call patch%idx%write
+    call file_append (io_unit%nml, io_unit%data)
     close (io_unit%data)
     if (io%debug(2)) print'(a,3x,"time:",2f13.6)', &
       ' data_io_t%output_nml: '//trim(filename), patch%out_next, patch%time
@@ -272,39 +281,56 @@ SUBROUTINE output_nml (patch, append)
   end if
   l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
   u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
-  ncell      = u-l+1
-  id         = patch%id
-  istep      = patch%istep
-  mesh_type  = patch%mesh_type
-  position   = patch%position
-  size       = patch%size
-  ds         = patch%ds
-  box        = patch%box
-  velocity   = patch%velocity
-  level      = patch%level
-  quality    = patch%quality
-  gamma      = patch%gamma
-  llc_nat    = patch%llc_nat
-  llc_cart   = patch%llc_cart
-  centre_nat = patch%centre_nat
-  li         = patch%li
-  ui         = patch%ui
-  n          = patch%n
-  gn         = patch%gn
-  ng         = patch%ng
-  nv         = patch%nv
-  nv         = merge (io%nv, patch%nv, io%nv>0)
-  nv         = merge (2*nv, nv, io%time_derivs)
-  nt         = patch%nt
-  nw         = patch%nw
-  kind       = patch%kind
-  eos        = patch%eos
-  opacity    = patch%opacity
+  ncell        = u-l+1
+  id           = patch%id
+  istep        = patch%istep
+  mesh_type    = patch%mesh_type
+  position     = patch%position
+  size         = patch%size
+  ds           = patch%ds
+  box          = patch%box
+  velocity     = patch%velocity
+  level        = patch%level
+  quality      = patch%quality
+  gamma        = patch%gamma
+  llc_nat      = patch%llc_nat
+  llc_cart     = patch%llc_cart
+  centre_nat   = patch%centre_nat
+  li           = patch%li
+  ui           = patch%ui
+  n            = patch%n
+  gn           = patch%gn
+  ng           = patch%ng
+  nv           = patch%nv
+  nv           = merge (io%nv, patch%nv, io%nv>0)
+  nv           = merge (2*nv, nv, io%time_derivs)
+  nt           = patch%nt
+  nw           = patch%nw
+  kind         = patch%kind
+  eos          = patch%eos
+  opacity      = patch%opacity
+  no_mans_land = patch%no_mans_land
   write (io_unit%data, patch_nml)
   close (io_unit%data)
   !$omp end critical (output_cr)
   call trace%end
 END SUBROUTINE output_nml
+
+!> =============================================================================
+!> Copy one text file to another
+!> =============================================================================
+SUBROUTINE file_append (unit1, unit2)
+  integer:: unit1, unit2
+  character(len=128):: line
+  integer:: iostat
+  !-----------------------------------------------------------------------------
+  rewind (unit1)
+  do while (.true.)
+    read (unit1,'(a)',iostat=iostat) line
+    if (iostat /= 0) exit
+    write (unit2,'(a)') trim(line)
+  end do
+END SUBROUTINE file_append
 
 !> =============================================================================
 !> Close the data I/O

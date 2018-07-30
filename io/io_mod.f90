@@ -120,6 +120,7 @@ SUBROUTINE init (self, name)
       self%inputname = 'input.nml'
       self%outputname = trim(datadir)//self%sep                 ! data/
     end if
+    open (io_unit%nml, file=trim(self%outputname)//'params.nml', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
     rewind (io_unit%input)
     read (io_unit%input, io_params, iostat=iostat)
