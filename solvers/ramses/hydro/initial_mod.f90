@@ -125,7 +125,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,idx%py) = a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,idx%pz) = a0(3)*(sin(kx)+sin(ky))
-        if (isothermal) then
+        if (isothermal .or. gamma==1d0) then
           ff(ix,iy,iz,idx%e ) = d0*csound**2 + &
             half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         else

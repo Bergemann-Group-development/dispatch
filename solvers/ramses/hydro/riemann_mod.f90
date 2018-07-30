@@ -478,7 +478,7 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
   if (detailed_timer) call trace_begin ('riemann::hllc', itimer=itimer)
   ! constants
   smallp = smallc**2/gamma
-  if (isothermal) then
+  if (isothermal .or. gamma==1d0) then
     entho=one
   else
     entho=one/(gamma-one)

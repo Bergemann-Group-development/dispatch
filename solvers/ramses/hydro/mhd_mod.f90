@@ -162,7 +162,7 @@ SUBROUTINE update (self)
   ! Godunov solver
   !-----------------------------------------------------------------------------
   call godunov (self)
-  if (isothermal) &
+  if (isothermal .or. gamma==1d0) &
     self%mem(:,:,:,self%idx%e,self%new,1) = &
     self%mem(:,:,:,self%idx%d,self%new,1)*csound**2
   if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
@@ -407,7 +407,7 @@ subroutine check_small (self, uu)
     v =  uu(i,j,k,self%idx%py)*c
     w =  uu(i,j,k,self%idx%pz)*c
     ekin = 0.5*d*(u**2+v**2+w**2)
-    if (isothermal) then
+    if (isothermal .or. gamma==1d0) then
       uu(i,j,k,self%idx%e) = max(uu(i,j,k,self%idx%e), smallr*smallc**2)
     else
       p = (uu(i,j,k,self%idx%e)-ekin)*(gamma-one)
@@ -473,7 +473,7 @@ subroutine ctoprim (self)
   d => q(:,:,:,1)
   e => s
   pg => q(:,:,:,5)
-  if (isothermal) then
+  if (isothermal .or. gamma==1d0) then
     pg = d*csound**2
   else
     pg = e*(gamma-1.0)
