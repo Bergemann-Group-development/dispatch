@@ -2,9 +2,9 @@
 
 """
     Self test and tutorial:
-        Run dispatch.select.self_test() from a directory where
+        Run dispatch.select.demo() from a directory where
         data/snapshots.dat exists, and browse the source code
-        in $PYTHONPATH/dispatch/select/self_test.py
+        in $PYTHONPATH/dispatch/select/demo.py
 
     List of procedures:
         minloc(a)
@@ -28,8 +28,7 @@
 
 from _select import *
 from _planes import *
-from self_test import self_test
 
 __all__ = "minloc,maxloc,patch_at,is_inside,count_inside,patches_along" \
-        + ",indices_and_weights,values_in,values_along,corners,shell_values"
+        + ",indices_and_weights,values_in,values_along,corners,shell_values,demo"
 

@@ -4,9 +4,9 @@
 .
 
     Self test and tutorial:
-        Run dispatch.graphics.self_test() from a directory where
+        Run dispatch.graphics.demo() from a directory where
         data/snapshots.dat exists, and browse the source code
-        in $PYTHONPATH/dispatch/graphics/self_test.py
+        in $PYTHONPATH/dispatch/graphics/demo.py
 
     List of procedures:
         minloc(a)
@@ -29,4 +29,4 @@
 """
 
 from _graphics import *
-from self_test import self_test
+from demo import demo
