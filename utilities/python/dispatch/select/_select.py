@@ -51,15 +51,13 @@ def patches_along(point,pp,dir=0,verbose=0):
     '''
     pt=np.copy(point)
     if verbose>0:
-        rfmt = lambda x: "%8.2f" % x
-        dict = {'float':rfmt}
-        np.set_printoptions(formatter=dict)
+        np.set_printoptions(formatter={'float_kind': '{:6.3f}'.format})
     p=patch_at(pt,pp)
     if p:
         p1=p
         while p:
             if verbose>1:
-                print('fwd {:4d} {}{}'.format(p.id,p.position,p.size))
+                print('fwd {:4d} {} {}'.format(p.id,p.position,p.size))
             pt[dir]=p.position[dir]-p.size[dir]*0.6
             p=patch_at(pt,pp)
             if p:
@@ -69,7 +67,7 @@ def patches_along(point,pp,dir=0,verbose=0):
         while p:
             out.append(p)
             if verbose>1:
-                print('rev {:4d} {}{}'.format(p.id,p.position,p.size))
+                print('rev {:4d} {} {}'.format(p.id,p.position,p.size))
             pt[dir]=p.position[dir]+p.size[dir]*0.6
             p=patch_at(pt,pp)
         if verbose>0:
@@ -113,112 +111,7 @@ def indices_and_weights(point,p,iv=0):
     weights=p-indices
     return indices, weights
 
-def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
-    '''
-        Return s,f(s) with s the coordinates and f the values in the iv
-        slot of data, taken along the direction v -- so far restricted
-        to axis values
-    '''
-    patches=patches_along(point,pp,dir=dir,verbose=verbose)
-    ss=[]
-    ff=[]
-    for p in patches:
-        ii,w=indices_and_weights(point,p,iv)
-        if all:
-            m=np.zeros(3,dtype=np.int32)
-            n=p.gn
-        else:
-            m=p.ng
-            n=p.n
-            if p.ioformat==2 or p.ioformat==4:
-                n=n-1
-        if type(var)==str:
-            data=p.data[p.idx.dict[var]]
-        else:
-            data=p.data[iv][:,:,:]
-        if dir==0:
-            j=ii[1]
-            k=ii[2]
-            if verbose>2:
-                print('id: {:3d}  iy: {:5.2f}  iz: {:5.2f}'.format(p.id,j+w[1],k+w[2]))
-            for i in range(m[0],m[0]+n[0]):
-                f1=data[i,j,k  ]*(1-w[1])+data[i,j+1,k  ]*w[1]
-                f2=data[i,j,k+1]*(1-w[1])+data[i,j+1,k+1]*w[1]
-                f=f1*(1-w[2])+f2*w[2]
-                if hasattr(p.idx,'p1'):
-                    if iv==p.idx.p1:
-                        ss.append(p.xs[i])
-                    else:
-                        ss.append(p.x[i])
-                else:
-                    ss.append(p.x[i])
-                ff.append(f)
-        elif dir==1:
-            i=ii[0]
-            k=ii[2]
-            for j in range(m[1],m[1]+n[1]):
-                f1=data[i,j,k  ]*(1-w[0])+data[i+1,j,k  ]*w[0]
-                f2=data[i,j,k+1]*(1-w[0])+data[i+1,j,k+1]*w[0]
-                f=f1*(1-w[2])+f2*w[2]
-                if hasattr(p.idx,'p2'):
-                    if iv==p.idx.p1:
-                        ss.append(p.ys[j])
-                    else:
-                        ss.append(p.y[j])
-                else:
-                    ss.append(p.y[j])
-                ff.append(f)
-        else:
-            i=ii[0]
-            j=ii[1]
-            for k in range(m[2],m[2]+n[2]):
-                f1=data[i,j  ,k]*(1-w[0])+data[i+1,j  ,k]*w[0]
-                f2=data[i,j+1,k]*(1-w[0])+data[i+1,j+1,k]*w[0]
-                f=f1*(1-w[1])+f2*w[1]
-                if hasattr(p.idx,'p3'):
-                    if iv==p.idx.p3:
-                        ss.append(p.zs[k])
-                    else:
-                        ss.append(p.z[k])
-                else:
-                    ss.append(p.z[k])
-                ff.append(f)
-    ss=np.array(ss)
-    ff=np.array(ff)
-    return ss,ff
-
-def minmax_patch(p,dir=0):
-    smin = p.llc_cart[dir] - p.ng[dir]*p.ds[dir]
-    smax = smin + p.size[dir] + p.ng[dir]*p.ds[dir]
-    return (smin,smax)
-
-def minmax_patches(pp,dir=0):
-    smin,smax=minmax_patch(pp[0],dir=dir)
-    for p in pp:
-        s=minmax_patch(p,dir=dir)
-        smin=min(smin,s[0])
-        smax=max(smax,s[1])
-    return (smin,smax)
-
-def _corners(p,active=1):
-    c=np.array([p.llc_cart,p.llc_cart+p.size])
-    if not active:
-        c=c+np.array([-p.ng*p.ds,+p.ng*p.ds])
-    return c
-
-def corners(pp,active=1):
-    '''Corners of patch collection'''
-    if type(pp)==list:
-        c=_corners(pp[0],active=active)
-        for p in pp[1:]:
-            cp=_corners(p,active=active)
-            for i in range(3): c[0,i]=min(c[0,i],cp[0,i])
-            for i in range(3): c[1,i]=max(c[1,i],cp[1,i])
-    else:
-        c=_corners(pp,active=active)
-    return c
-
-def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
+def values_in(point,p,dir=0,iv=0,var=None,verbose=0,all=0):
     '''
         Return s,f(s) with s the coordinates and f the values in the iv
         slot of data, taken along the direction v -- so far restricted
@@ -236,6 +129,8 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
     else:
         m=p.ng
         n=p.n
+    if type(var)==str:
+        iv=p.idx.dict[var]
     if dir==0:
         j=ii[1]
         k=ii[2]
@@ -284,6 +179,55 @@ def values_in(point,p,dir=0,iv=0,verbose=0,all=0):
     ss=np.array(ss)
     ff=np.array(ff)
     return ss,ff
+
+def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
+    '''
+        Return s,f(s) with s the coordinates and f the values in the iv
+        slot of data, taken along the direction v -- so far restricted
+        to axis values
+    '''
+    patches=patches_along(point,pp,dir=dir,verbose=verbose)
+    ss=[]
+    ff=[]
+    for p in patches:
+        ss1,ff1=values_in(point,p,dir=dir,iv=iv,var=var,all=all,verbose=verbose)
+        for s,f in zip(ss1,ff1):
+            ss.append(s)
+            ff.append(f)
+    ss=np.array(ss)
+    ff=np.array(ff)
+    return ss,ff
+
+def minmax_patch(p,dir=0):
+    smin = p.llc_cart[dir] - p.ng[dir]*p.ds[dir]
+    smax = smin + p.size[dir] + p.ng[dir]*p.ds[dir]
+    return (smin,smax)
+
+def minmax_patches(pp,dir=0):
+    smin,smax=minmax_patch(pp[0],dir=dir)
+    for p in pp:
+        s=minmax_patch(p,dir=dir)
+        smin=min(smin,s[0])
+        smax=max(smax,s[1])
+    return (smin,smax)
+
+def _corners(p,active=1):
+    c=np.array([p.llc_cart,p.llc_cart+p.size])
+    if not active:
+        c=c+np.array([-p.ng*p.ds,+p.ng*p.ds])
+    return c
+
+def corners(pp,active=1):
+    '''Corners of patch collection'''
+    if type(pp)==list:
+        c=_corners(pp[0],active=active)
+        for p in pp[1:]:
+            cp=_corners(p,active=active)
+            for i in range(3): c[0,i]=min(c[0,i],cp[0,i])
+            for i in range(3): c[1,i]=max(c[1,i],cp[1,i])
+    else:
+        c=_corners(pp,active=active)
+    return c
 
 def values_along_x(point,p,iv=0,verbose=0):
     ''' Get the iv values along the x direction through a point '''

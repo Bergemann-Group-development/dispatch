@@ -28,6 +28,5 @@
         shell_values()
 """
 
-"""
-
 from _graphics import *
+from self_test import self_test
