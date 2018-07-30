@@ -1,8 +1,6 @@
 # -*- coding utf-8 -*-
 
 """
-    .
-
     Self test and tutorial:
         Run dispatch.select.self_test() from a directory where
         data/snapshots.dat exists, and browse the source code
@@ -30,4 +28,8 @@
 
 from _select import *
 from _planes import *
-from _select_test import self_test
+from self_test import self_test
+
+__all__ = "minloc,maxloc,patch_at,is_inside,count_inside,patches_along" \
+        + ",indices_and_weights,values_in,values_along,corners,shell_values"
+

@@ -8,7 +8,6 @@ import f90nml
 import numpy as np
 
 import select
-import yt
 
 def _p2():
     """ convenience function to check Python version """
@@ -67,13 +66,6 @@ def _data(patch,verbose=0):
             print ('Error in memmap:')
             print ('file:{} offset:{} shape:{}'.format(patch.datafile,offset,shape))
     return data
-
-def attributes(patch):
-    print ('id: {:}'.format(patch.id))
-    dict=vars(patch)
-    for k,v in dict.items():
-        if k != 'data':
-            print ('{:>12}:  {}'.format(k,v))
 
 def _add_nml_to(obj,dict,verbose=0):
     for key,value in dict.items():
@@ -145,8 +137,8 @@ class snapshot():
                 self._add_axes(patch)
                 patches.append(patch)
             # Add indices
-            if 'index_nml' in top.keys():
-                dict=top['index_nml']
+            if 'idx_nml' in top.keys():
+                dict=top['idx_nml']
                 idx=_obj(dict)
                 idx.dict=dict
                 for patch in patches:
@@ -195,16 +187,9 @@ class snapshot():
         patch.ys=patch.y-0.5*patch.ds[1]
         patch.zs=patch.z-0.5*patch.ds[2]
 
-    def unigrid_plane(self,**kw):
-        return select.unigrid_plane(self,**kw)
-
-    def yt_patches(self):
-        return yt.patches(self)
-    def yt_domain_dimensions(self):
-        return yt.domain_dimension(self)
 
 def snapshots(run='',data='data', verbose=0):
-    """ Return an array of all snapshots in the data/run/ directory
+    """ Return a list of all snapshots in the data/run/ directory
     """
     rund=_dir(data,run)
     snaps=[]
@@ -219,6 +204,14 @@ def snapshots(run='',data='data', verbose=0):
                         print (_dir(rund,subdir))
             break
     return snaps
+
+def attributes(patch):
+    """ Pretty-print patch attributes """
+    print ('id: {:}'.format(patch.id))
+    dict=vars(patch)
+    for k,v in dict.items():
+        if k != 'data':
+            print ('{:>12}:  {}'.format(k,v))
 
 if __name__ == "__main__":
     s=snapshot(2,verbose=1)

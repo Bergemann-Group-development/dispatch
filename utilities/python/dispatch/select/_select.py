@@ -7,17 +7,17 @@ import numpy as np
 from time import time
 
 def minloc(a):
-    ''' return the 3-D index of the maximum '''
+    ''' Return the 3-D index with the minimum of array a'''
     i = a.argmin()
     return np.unravel_index(i,np.shape(a))
 
 def maxloc(a):
-    ''' return the 3-D index of the maximum '''
+    ''' Return the 3-D index with the maximum of array a'''
     i = a.argmax()
     return np.unravel_index(i,np.shape(a))
 
 def patch_at(point,pp,verbose=0):
-    ''' Find the patch at a given point
+    ''' Find the patch that contains a given point
     '''
     level=-1
     p1=None
@@ -91,8 +91,7 @@ def patches_along_z(point,pp,verbose=0):
     patches_along(point,pp,dir=2,verbose=verbose)
 
 def indices_and_weights(point,p,iv=0):
-    '''
-        Return indices and interpolation weights for a point in a patch p
+    ''' Return indices and interpolation weights for a point in a patch p
     '''
     x0=p.x[0]
     y0=p.y[0]
@@ -112,8 +111,7 @@ def indices_and_weights(point,p,iv=0):
     return indices, weights
 
 def values_in(point,p,dir=0,iv=0,var=None,verbose=0,all=0):
-    '''
-        Return s,f(s) with s the coordinates and f the values in the iv
+    ''' Return s,f(s) with s the coordinates and f the values in the iv
         slot of data, taken along the direction v -- so far restricted
         to axis values
     '''
@@ -181,8 +179,7 @@ def values_in(point,p,dir=0,iv=0,var=None,verbose=0,all=0):
     return ss,ff
 
 def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
-    '''
-        Return s,f(s) with s the coordinates and f the values in the iv
+    ''' Return s,f(s) with s the coordinates and f the values in the iv
         slot of data, taken along the direction v -- so far restricted
         to axis values
     '''
@@ -198,15 +195,15 @@ def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
     ff=np.array(ff)
     return ss,ff
 
-def minmax_patch(p,dir=0):
+def _minmax_patch(p,dir=0):
     smin = p.llc_cart[dir] - p.ng[dir]*p.ds[dir]
     smax = smin + p.size[dir] + p.ng[dir]*p.ds[dir]
     return (smin,smax)
 
-def minmax_patches(pp,dir=0):
-    smin,smax=minmax_patch(pp[0],dir=dir)
+def _minmax_patches(pp,dir=0):
+    smin,smax=_minmax_patch(pp[0],dir=dir)
     for p in pp:
-        s=minmax_patch(p,dir=dir)
+        s=_minmax_patch(p,dir=dir)
         smin=min(smin,s[0])
         smax=max(smax,s[1])
     return (smin,smax)
@@ -332,6 +329,6 @@ class shell_values:
         self.var['lon']=np.arctan2(self.var['x'],self.var['y'])
 
     def mass_flux(self):
-        ''' return the net average mass flux, weighting each cell by surface '''
-        ds=(self.var['dv'])**(2./3.)
-        return np.sum(self.var['pr'])/np.sum(ds)
+        ''' return the net average mass flux, weighting each cell by volume '''
+        dv=self.var['dv']
+        return np.sum(self.var['pr']*dv)/np.sum(dv)

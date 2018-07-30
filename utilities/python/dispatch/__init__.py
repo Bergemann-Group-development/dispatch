@@ -4,6 +4,7 @@
     Class definitions for accessing DISPATCH meta and binary data.
 
     Syntax:
+        help(dispatch)                       # overview
         s=dispatch.snapshot(3)               # read data/00003/
         s=dispatch.snapshot(3,verbose=1)     # print id and position
         s=dispatch.snapshot(3,verbose=2)     # print id and all attribues
@@ -22,8 +23,8 @@
         d=p.data[i.d]                        # density, by variable index
         d=p.data[i.dict['d']]                # density, by variable name
 
-    Additional sub-packages:
-        dispatch.select                     # selection utilies
 """
 
 from _dispatch import *
+
+__all__ = "snapshot,snapshots,attributes"
