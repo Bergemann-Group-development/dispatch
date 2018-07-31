@@ -31,6 +31,7 @@ rm -f *.o *.mod *.stackdump
  [ FC ] hydro_commons.o
  [ FC ] riemann_mod.o
  [ FC ] interpolate_mod.o
+ [ FC ] lagrange_mod.o
  [ FC ] download_mod.o
  [ FC ] initial_mod.o
  [ FC ] data_hub_mod.o
@@ -38,7 +39,6 @@ rm -f *.o *.mod *.stackdump
  [ FC ] direct_io_mod.o
  [ FC ] mpi_io_file_mod.o
  [ FC ] mpi_io_mod.o
- [ FC ] lagrange_mod.o
  [ FC ] central_mod.o
  [ FC ] parallel_io_mod.o
  [ FC ] buffered_io_mod.o
