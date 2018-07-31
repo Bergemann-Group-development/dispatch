@@ -31,6 +31,7 @@ MODULE lagrange_mod
     generic:: deriv_sequence_weights => deriv_sequence_weights4, deriv_sequence_weights8
     procedure interpolate3d
     procedure trilinear3d
+    procedure test
   end type
   type(lagrange_t), public:: lagrange
 CONTAINS
@@ -186,8 +187,25 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
   o = 3
   if (present(order)) o = order
   o = min(o,n-1)
-  ! Search for first point beyond x0
+  ! Search for identical initial points
   i1 = 1
+  do while (x(i1)==x(1) .and. i1<=n)
+    i1 = i1+1
+  end do
+  ! All points are equal to x(1)
+  if (i1==n+1) then
+    i0 = n
+    i2 = n
+    o = 0
+    return
+  ! Only the last point is not equal to x(1)
+  else if (i1==n) then
+    i0 = n-1
+    i2 = n
+    o = 1
+    return
+  end if
+  ! Normal search
   do while (x(i1)<x0 .and. i1<n)
     i1 = i1+1
   end do
@@ -239,8 +257,25 @@ SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
   o = 3
   if (present(order)) o = order
   o = min(o,n-1)
-  ! Search for first point beyond x0
+  ! Search for identical initial points
   i1 = 1
+  do while (x(i1)==x(1) .and. i1<=n)
+    i1 = i1+1
+  end do
+  ! All points are equal to x(1)
+  if (i1==n+1) then
+    i0 = n
+    i2 = n
+    o = 0
+    return
+  ! Only the last point is not equal to x(1)
+  else if (i1==n) then
+    i0 = n-1
+    i2 = n
+    o = 1
+    return
+  end if
+  ! Normal search
   do while (x(i1)<x0 .and. i1<n)
     i1 = i1+1
   end do
@@ -349,7 +384,11 @@ SUBROUTINE sequence_weights4 (self, x0, x, i0, i2, w, order)
   n = size(x)
   call self%interval (x0, x, i0, i2, o, order)
   w = 0d0
-  w(1:i2-i0+1) = self%weights (x0, x(i0:i2))
+  if (o==0) then
+    w(1) = 1.0
+  else
+    w(1:i2-i0+1) = self%weights (x0, x(i0:i2))
+  end if
 END SUBROUTINE sequence_weights4
 SUBROUTINE sequence_weights8 (self, x0, x, i0, i2, w, order)
   class(lagrange_t):: self
@@ -361,7 +400,11 @@ SUBROUTINE sequence_weights8 (self, x0, x, i0, i2, w, order)
   n = size(x)
   call self%interval (x0, x, i0, i2, o, order)
   w = 0d0
-  w(1:i2-i0+1) = self%weights (x0, x(i0:i2))
+  if (o==0) then
+    w(1) = 1.0
+  else
+    w(1:i2-i0+1) = self%weights (x0, x(i0:i2))
+  end if
 END SUBROUTINE sequence_weights8
 
 !> -----------------------------------------------------------------------------
@@ -487,5 +530,50 @@ SUBROUTINE trilinear3d (self, xi, yi, zi, fi, xo, yo, zo, fo, order)
     end do
   end do
 END SUBROUTINE trilinear3d
+
+!> -----------------------------------------------------------------------------
+!> Test for a polynomial of order 2
+!> -----------------------------------------------------------------------------
+SUBROUTINE test (self)
+  class(lagrange_t):: self
+  integer, parameter:: n=5
+  integer:: order, i, i0, i1
+  real(8), dimension(n):: x, y, w
+  real(8):: x0, y0
+  print *,'--------------- lagrange_t%test ------------------'
+  x = 0.0
+  y = 1.0
+  order = 1
+  print '(5x,a,11x,a,11x,a,4x,a)', 'x', 'y', 'y==1', 'order'
+  do i=1,n+1
+    x0 = i-0.5
+    call self%sequence_weights (x0, x, i0, i1, w, order)
+    y0 = sum(y(i0:i1)*w(1:1+i1-i0))
+    print '(3g12.4,i6)', x0, y0, x0**order, i1-i0
+  end do
+  y = 0.0
+  x(n) = 1.0
+  y(n) = 1.0
+  print '(5x,a,11x,a,11x,a,4x,a)', 'x', 'y', 'x-4', 'order'
+  do i=1,n+1
+    x0 = i-0.5
+    call self%sequence_weights (x0, x, i0, i1, w, order)
+    y0 = sum(y(i0:i1)*w(1:1+i1-i0))
+    print '(3g12.4,i6)', x0, y0, x0**order, i1-i0
+  end do
+  order = 2
+  do i=1,n
+    x(i) = i
+    y(i) = x(i)**order
+  end do
+  print '(5x,a,11x,a,11x,a,4x,a)', 'x', 'y', 'x**2', 'order'
+  do i=1,n+1
+    x0 = i-0.5
+    call self%sequence_weights (x0, x, i0, i1, w, order)
+    y0 = sum(y(i0:i1)*w(1:1+i1-i0))
+    print '(3g12.4,i6)', x0, y0, x0**order, i1-i0
+  end do
+  print *,'--------------------------------------------------'
+END SUBROUTINE test
 
 END MODULE
