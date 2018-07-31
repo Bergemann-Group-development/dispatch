@@ -13,6 +13,7 @@ MODULE central_mod
   type, public:: central_t
   contains
     procedure, nopass:: time_derivative
+    procedure, nopass:: time_interpolate
   end type
 CONTAINS
 
@@ -39,5 +40,36 @@ SUBROUTINE time_derivative (patch, iv, buffer)
     buffer = buffer + w(1+i-i1)*patch%mem(:,:,:,iv,patch%iit(i),1)
   end do
 END SUBROUTINE time_derivative
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE time_interpolate (patch, iv, buffer, order)
+  class(patch_t):: patch
+  integer:: iv
+  real(kind=KindScalarVar), dimension(:,:,:):: buffer
+  integer, optional:: order
+  !.............................................................................
+  real(8):: times(patch%nt-1)
+  integer:: order_l=2
+  real(8), dimension(:), allocatable:: w
+  integer:: i, i1, i2
+  !-----------------------------------------------------------------------------
+  if (present(order)) order_l = order
+  times = patch%t(patch%iit(1:patch%nt-1))
+  allocate (w(order_l+1))
+  call lagrange%sequence_weights (patch%out_next, times, i1, i2, w, order)
+  if (io%verbose>2) then
+    print '(a,10f12.6)', '  times:', times, patch%out_next
+    print '(a,10f12.6)', 'weights:', w, sum(w)
+  end if
+  do i=i1,i2
+    if (i==i1) then
+      buffer =          w(1+i-i1)*patch%mem(:,:,:,iv,patch%iit(i),1)
+    else
+      buffer = buffer + w(1+i-i1)*patch%mem(:,:,:,iv,patch%iit(i),1)
+    end if
+  end do
+  deallocate (w)
+END SUBROUTINE time_interpolate
 
 END MODULE central_mod

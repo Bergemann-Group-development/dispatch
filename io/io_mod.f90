@@ -120,6 +120,7 @@ SUBROUTINE init (self, name)
       self%inputname = 'input.nml'
       self%outputname = trim(datadir)//self%sep                 ! data/
     end if
+    call os%mkdir (trim(self%outputname))
     open (io_unit%nml, file=trim(self%outputname)//'params.nml', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
     rewind (io_unit%input)
@@ -145,7 +146,6 @@ SUBROUTINE init (self, name)
     ! Open MPI rank and OMP thread-specific log files
     !---------------------------------------------------------------------------
     io_unit%do_validate = do_validate
-    call os%mkdir (trim(self%outputname))
     write (filename,'(a,i5.5,"/")') trim(io%outputname), 0
     call os%mkdir (trim(filename))
     if (omp_trace .and. omp%nthreads>1) then
