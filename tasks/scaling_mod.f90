@@ -3,9 +3,10 @@
 !> =============================================================================
 MODULE scaling_mod
   USE io_mod
+  USE units_mod
   implicit none
   private
-  type, public:: units_t
+  type, public:: scaling_t
     real(kind=8):: l = 1.0
     real(kind=8):: t = 1.0
     real(kind=8):: m = 1.0
@@ -21,14 +22,15 @@ MODULE scaling_mod
   contains
     procedure:: init
   end type
-  type(units_t), public:: scaling
+  type(scaling_t), public:: scaling
 CONTAINS
 !> =============================================================================
 !> Initialize code units:
 !> =============================================================================
 SUBROUTINE init (self)
-  class(units_t):: self
+  class(scaling_t):: self
   logical, save:: first_time=.true.
+  !-----------------------------------------------------------------------------
   if (.not.first_time) return
   first_time = .false.
   if (io%master) then
@@ -44,6 +46,7 @@ SUBROUTINE init (self)
     print 1,'    gravity: ',self%grav
     print 1,'temperature: ',self%temp
   1 format(1x,a,1p,e11.3)
+    call units%output
   end if
 END SUBROUTINE init
 END MODULE scaling_mod

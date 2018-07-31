@@ -135,6 +135,8 @@ class snapshot():
                 assert os.path.isfile(patch.datafile), '{} does not exist'.format(patch.datafile)
                 patch.data=_data(patch)
                 self._add_axes(patch)
+                if not hasattr(patch,'units'):
+                    patch.units=self.units
                 patches.append(patch)
             # Add indices
             if 'idx_nml' in top.keys():
