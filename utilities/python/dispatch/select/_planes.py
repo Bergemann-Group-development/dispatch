@@ -19,7 +19,7 @@ def unigrid_plane(snap,dir=0,iv=0,position=[0.5,0.5,0.5],verbose=0):
     def contains(s):
         return np.abs(p.position[dir]-s) <= 0.5*p.size[dir]
     pp=[p for p in snap.patches if contains(position[dir])]
-    n=map(int,0.5+snap.box/snap.patches[0].ds)
+    n=map(int,0.5+snap.cartesian.size/snap.patches[0].ds)
     if verbose:
         print (len(pp),'patches, dimensions',n)
         if verbose>1:
@@ -35,7 +35,7 @@ def unigrid_plane(snap,dir=0,iv=0,position=[0.5,0.5,0.5],verbose=0):
     for p in pp:
         i0 = int(0.5+(position[dirs[0]]-p.llc_cart[dirs[0]])/p.ds[dirs[0]])
         i0 = min(p.n[dir]-1,max(0,i0))
-        o = map(int,0.5+(p.llc_cart-snap.llc_cart)/p.ds)
+        o = map(int,0.5+(p.llc_cart-snap.cartesian.origin)/p.ds)
         for i2 in range(0,p.n[dirs[2]]):
             i1 = range(0,p.n[dirs[1]])
             if dir==0:

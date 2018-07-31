@@ -195,15 +195,15 @@ def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
     ff=np.array(ff)
     return ss,ff
 
-def _minmax_patch(p,dir=0):
+def minmax_patch(p,dir=0):
     smin = p.llc_cart[dir] - p.ng[dir]*p.ds[dir]
     smax = smin + p.size[dir] + p.ng[dir]*p.ds[dir]
     return (smin,smax)
 
-def _minmax_patches(pp,dir=0):
-    smin,smax=_minmax_patch(pp[0],dir=dir)
+def minmax_patches(pp,dir=0):
+    smin,smax=minmax_patch(pp[0],dir=dir)
     for p in pp:
-        s=_minmax_patch(p,dir=dir)
+        s=minmax_patch(p,dir=dir)
         smin=min(smin,s[0])
         smax=max(smax,s[1])
     return (smin,smax)
