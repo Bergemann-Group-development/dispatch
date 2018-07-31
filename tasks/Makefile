@@ -10,7 +10,7 @@ gpatch_mod.o:           io_mod.o trace_mod.o patch_mod.o download_mod.o initial_
 refine_mod.o:           io_mod.o trace_mod.o bits_mod.o list_mod.o link_mod.o kinds_mod.o scaling_mod.o \
                         download_mod.o mesh_mod.o solver_mod.o patch_mod.o sinkparticles_mod.o
 scaling_mod.o:          io_mod.o
-download_mod.o:         io_mod.o trace_mod.o task_mod.o patch_mod.o link_mod.o interpolate_mod.o kinds_mod.o
+download_mod.o:         io_mod.o trace_mod.o task_mod.o patch_mod.o link_mod.o interpolate_mod.o kinds_mod.o lagrange_mod.o
 random_mod.o:           io_mod.o trace_mod.o
 lagrange_mod.o:         io_mod.o
 radiation_mod.o:        io_mod.o trace_mod.o mesh_mod.o link_mod.o

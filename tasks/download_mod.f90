@@ -30,6 +30,7 @@ MODULE download_mod
     procedure:: init
     procedure:: test
   end type
+  logical:: check_filled=.false.
   type(download_t), public:: download
 CONTAINS
 
@@ -41,7 +42,7 @@ SUBROUTINE init (self)
   integer:: iostat
   integer, save:: order_interpolator=-1, order_time=1
   logical, save:: first_time=.true.
-  namelist /download_params/ order_interpolator, order_time
+  namelist /download_params/ order_interpolator, order_time, check_filled
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%init')
   !$omp critical (download_cr)
@@ -86,8 +87,6 @@ SUBROUTINE test (self)
   !-----------------------------------------------------------------------------
   allocate (target)
   call target%setup (size=0.1_8*[1,1,1], n=[16,16,16], nv=2, nt=2, nw=1)
-  ! Array to track filling of cells; `-1` means unfilled.
-  allocate (filled(target%gn(1),target%gn(2),target%gn(3),target%nv))
   filled = -1
   !-----------------------------------------------------------------------------
   ! Loop over the three resolutions for source patches
@@ -164,6 +163,11 @@ SUBROUTINE test (self)
       call set_values (target)
       if (src%level==target%level) then
         call self%same (target, src, filled, all_cells=.false.)
+        if (check_filled) then
+          if (any(.not.(filled>=0))) then
+            print *, target%id, 'WARNING: some cells not filled by download_t%same'
+          end if
+        end if
       else
         call different_prolong (target, src, filled, all_cells=.false.)
       end if
@@ -308,7 +312,7 @@ SUBROUTINE download_link (self, link, all_cells, only)
   !.............................................................................
   class(link_t), pointer:: nbor, sorted_head
   class(patch_t), pointer:: target, source
-  integer:: edges
+  integer:: edges, l(3), u(3)
   integer, save:: itimer=0
   integer(kind=int8), dimension(:,:,:,:), allocatable:: filled
   !-----------------------------------------------------------------------------
@@ -319,8 +323,13 @@ SUBROUTINE download_link (self, link, all_cells, only)
   ! A value of `-1` defines unfilled; all other values denote the *level* of the
   ! patch that filled that cell.
   !-----------------------------------------------------------------------------
-  allocate (filled(target%gn(1),target%gn(2),target%gn(3),target%nv))
-  filled = -1
+  if (check_filled) then
+    allocate (filled(target%gn(1),target%gn(2),target%gn(3),target%nv))
+    l = target%li
+    u = target%ui
+    filled = -1
+    filled(l(1):u(1),l(2):u(2),l(3):u(3),:) = target%level
+  end if
 
   if (trim(target%kind)/='rt_solver') then
     if (io%verbose>1) &
@@ -383,7 +392,8 @@ SUBROUTINE download_link (self, link, all_cells, only)
   else
     call target%check_density (" after download")
   end if
-  deallocate (filled)
+  if (check_filled) &
+    deallocate (filled)
   !!!nbor => sorted_head
   !!!if (associated(nbor)) then
   !!!  call clean_sorted_nbor_list (sorted_head)
@@ -576,9 +586,13 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only)
                 target%mem(ix,iy,iz,iv,target%it,1) = exp( &
                   pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
                   pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
-                filled(ix,iy,iz,iv) = source%level
               end do
             end do
+            if (check_filled) then
+              do ix=l(1),u(1)
+                filled(ix,iy,iz,iv) = source%level
+              end do
+            end if
           end do
         else
           do iz=l(3),u(3)
@@ -597,8 +611,12 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only)
                     exp(pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
                         pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1))), &
                     all((ii>=li).and.(ii<=ui)))
-                  filled(ix,iy,iz,iv) = source%level
               end do
+              if (check_filled) then
+                do ix=l(1),u(1)
+                  filled(ix,iy,iz,iv) = source%level
+                end do
+              end if
             end do
           end do
         end if
@@ -611,8 +629,12 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only)
                 target%mem(ix,iy,iz,iv,target%it,1) =  &
                   pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
                   pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
-                filled(ix,iy,iz,iv) = source%level
               end do
+              if (check_filled) then
+                do ix=l(1),u(1)
+                  filled(ix,iy,iz,iv) = source%level
+                end do
+              end if
             end do
           end do
         else
@@ -627,8 +649,12 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only)
                     pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
                     pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
                     all((ii>=li).and.(ii<=ui)))
-                filled(ix,iy,iz,iv) = source%level
               end do
+              if (check_filled) then
+                do ix=l(1),u(1)
+                  filled(ix,iy,iz,iv) = source%level
+                end do
+              end if
             end do
           end do
         end if
@@ -663,7 +689,7 @@ SUBROUTINE same_lagrange (target, source, filled, all_cells, only)
   real(8)                 :: position(3), xx, dist(3)
   integer                 :: ix, iy, iz, iv, iv1, iv2, li(3), ui(3)
   integer, save           :: itimer=0
-  logical                 :: all_cells_l
+  logical                 :: all_cells_l, filter
   integer, parameter      :: order=2
   real(8)                 :: w(order+1)
   integer                 :: j0, j1, iit(source%nt-1)
@@ -723,11 +749,38 @@ SUBROUTINE same_lagrange (target, source, filled, all_cells, only)
         if (source%mesh(i)%lower_boundary) l(i) = target%mesh(i)%lb
         if (source%mesh(i)%upper_boundary) u(i) = target%mesh(i)%ub
       end do
-      if (source%unsigned(iv)) then
+      !---------------------------------------------------------------------------
+      ! Check if we need to filter away internal points
+      !---------------------------------------------------------------------------
+      filter = .false.
+      if (.not. all_cells_l) then
         do iz=l(3),u(3)
           do iy=l(2),u(2)
             do ix=l(1),u(1)
-              if (all_cells_l .or. .not.all((ii>=li).and.(ii<=ui))) then
+              ii = [ix,iy,iz]
+              if (all((ii>=li).and.(ii<=ui))) then
+                filter = .true.
+                exit
+              end if
+            end do
+            if (filter) exit
+          end do
+          if (filter) exit
+        end do
+      end if
+      if (filter) then
+        print *,'WARNING: attempt to set internal cells in download_t%same_lagrange!'
+      end if
+      !---------------------------------------------------------------------------
+      ! Unsigned => use interpolation in the log
+      !---------------------------------------------------------------------------
+      if (source%unsigned(iv)) then
+        do iz=l(3),u(3)
+        do iy=l(2),u(2)
+          if (filter) then
+            do ix=l(1),u(1)
+              ii = [ix,iy,iz]
+              if (all_cells_l .or. any((ii<li).or.(ii>ui))) then
                 do jt=j0,j1
                   if (jt==j0) then
                     target%mem(ix,iy,iz,iv,target%it,1) = &
@@ -739,31 +792,84 @@ SUBROUTINE same_lagrange (target, source, filled, all_cells, only)
                   end if
                 end do
                 target%mem(ix,iy,iz,iv,target%it,1) = exp(target%mem(ix,iy,iz,iv,target%it,1))
-                filled(ix,iy,iz,iv) = source%level
+                if (check_filled) &
+                  filled(ix,iy,iz,iv) = source%level
               end if
             end do
-          end do
+          else
+            do jt=j0,j1
+              if (jt==j0) then
+                do ix=l(1),u(1)
+                  target%mem(ix,iy,iz,iv,target%it,1) = &
+                    w(1+jt-j0)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1))
+                end do
+              else
+                do ix=l(1),u(1)
+                  target%mem(ix,iy,iz,iv,target%it,1) = &
+                  target%mem(ix,iy,iz,iv,target%it,1) + &
+                    w(1+jt-j0)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1))
+                end do
+              end if
+              if (check_filled) then
+                do ix=l(1),u(1)
+                  target%mem(ix,iy,iz,iv,target%it,1) = exp(target%mem(ix,iy,iz,iv,target%it,1))
+                  filled(ix,iy,iz,iv) = source%level
+                end do
+              else
+                do ix=l(1),u(1)
+                  target%mem(ix,iy,iz,iv,target%it,1) = exp(target%mem(ix,iy,iz,iv,target%it,1))
+                end do
+              end if
+            end do
+          end if
         end do
+        end do
+      !---------------------------------------------------------------------------
+      ! Use linear interpolation
+      !---------------------------------------------------------------------------
       else
         do iz=l(3),u(3)
-          do iy=l(2),u(2)
+        do iy=l(2),u(2)
+          if (filter) then
             do ix=l(1),u(1)
               ii = [ix,iy,iz]
-              if (all_cells_l .or. .not.all((ii>=li).and.(ii<=ui))) then
+              if (all_cells_l .or. any((ii<li).or.(ii>ui))) then
                 do jt=j0,j1
                   if (jt==j0) then
                     target%mem(ix,iy,iz,iv,target%it,1) = &
-                      w(1+jt-j0)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1)
+                      w(1+jt-j0)*(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1))
                   else
                     target%mem(ix,iy,iz,iv,target%it,1) = &
                     target%mem(ix,iy,iz,iv,target%it,1) + &
-                      w(1+jt-j0)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1)
+                      w(1+jt-j0)*(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1))
                   end if
                 end do
-                filled(ix,iy,iz,iv) = source%level
+                if (check_filled) &
+                  filled(ix,iy,iz,iv) = source%level
               end if
             end do
-          end do
+          else
+            do jt=j0,j1
+              if (jt==j0) then
+                do ix=l(1),u(1)
+                  target%mem(ix,iy,iz,iv,target%it,1) = &
+                    w(1+jt-j0)*(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1))
+                end do
+              else
+                do ix=l(1),u(1)
+                  target%mem(ix,iy,iz,iv,target%it,1) = &
+                  target%mem(ix,iy,iz,iv,target%it,1) + &
+                    w(1+jt-j0)*(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1))
+                end do
+              end if
+              if (check_filled) then
+                do ix=l(1),u(1)
+                  filled(ix,iy,iz,iv) = source%level
+                end do
+              end if
+            end do
+          end if
+        end do
         end do
       end if
       if ((io%verbose>2.or.target%id==io%id_debug).and.product(max(0,u-l+1))>0) &
