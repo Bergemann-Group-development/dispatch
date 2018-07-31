@@ -293,7 +293,7 @@ LOGICAL FUNCTION is_ahead_of (self, task)
   nbtime = self%time
   !$omp atomic read
   nbdtime = self%dtime
-  if (self%level==task%level) then
+  if (self%level==task%level .and. self%istep>2) then
     is_ahead_of = nbtime + nbdtime*task%grace >= task%time
   else
     is_ahead_of = nbtime >= task%time
