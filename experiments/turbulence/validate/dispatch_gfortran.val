@@ -117,7 +117,7 @@ reading /proc/cpuinfo:   0.0 sec
  RETRY_STALLED=        100,
  DO_DELAY=F,
  /
-&BOX_PARAMS
+&CARTESIAN_PARAMS
  SIZE= 3*1.0000000000000000       ,
  DIMS= 3*4          ,
  MPI_DIMS= 3*1          ,
