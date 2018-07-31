@@ -17,12 +17,14 @@ MODULE download_mod
   USE link_mod
   USE scene_mod
   USE interpolate_mod
+  USE lagrange_mod
   implicit none
   private
   type, public:: download_t
     integer(8):: n_same=0, n_differ=0
     integer:: order_interpolator
     procedure(interpolator_interface), pointer, nopass:: interpolate => null()
+    procedure(same_linear)           , pointer, nopass:: same        => null()
   contains
     procedure:: download_link
     procedure:: init
@@ -37,9 +39,9 @@ CONTAINS
 SUBROUTINE init (self)
   class(download_t):: self
   integer:: iostat
-  integer, save:: order_interpolator=-1
+  integer, save:: order_interpolator=-1, order_time=1
   logical, save:: first_time=.true.
-  namelist /download_params/ order_interpolator
+  namelist /download_params/ order_interpolator, order_time
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%init')
   !$omp critical (download_cr)
@@ -48,6 +50,11 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, download_params, iostat=iostat)
     if (io%master) write (*, download_params)
+  end if
+  if (order_time==1) then
+    self%same => same_linear
+  else
+    self%same => same_lagrange
   end if
   self%order_interpolator = order_interpolator
   self%interpolate => SelectInterpolator(order_interpolator)
@@ -156,7 +163,7 @@ SUBROUTINE test (self)
       call set_values (src)
       call set_values (target)
       if (src%level==target%level) then
-        call same (target, src, filled, all_cells=.false.)
+        call self%same (target, src, filled, all_cells=.false.)
       else
         call different_prolong (target, src, filled, all_cells=.false.)
       end if
@@ -332,7 +339,7 @@ SUBROUTINE download_link (self, link, all_cells, only)
     if (trim(target%kind)/='rt_solver') then
       if (source%is_clear(bits%no_download)) then
         if (source%level==target%level) then
-          call same (target, source, filled, all_cells, only=only)
+          call self%same (target, source, filled, all_cells, only=only)
         else if ((source%level-target%level) == -1) then
           call different_prolong (target, source, filled, all_cells, only=only)
         else if (source%level < target%level .and. present(all_cells)) then
@@ -493,7 +500,7 @@ END SUBROUTINE dnload_range
 !>   dnload_range
 !>   time_interval
 !> =============================================================================
-SUBROUTINE same (target, source, filled, all_cells, only)
+SUBROUTINE same_linear (target, source, filled, all_cells, only)
   class(patch_t), pointer :: target, source
   integer(int8), dimension(:,:,:,:):: filled
   logical, optional       :: all_cells
@@ -506,7 +513,7 @@ SUBROUTINE same (target, source, filled, all_cells, only)
   integer, save           :: itimer=0
   logical                 :: all_cells_l
   !-----------------------------------------------------------------------------
-  call trace%begin('download_t%same', itimer=itimer)
+  call trace%begin('download_t%same_linear', itimer=itimer)
   call source%time_interval (target%time, jt, pt)
   if (present(only)) then
     iv1 = only
@@ -637,7 +644,140 @@ SUBROUTINE same (target, source, filled, all_cells, only)
     end if
   end do
   call trace%end (itimer)
-END SUBROUTINE same
+END SUBROUTINE same_linear
+
+!> =============================================================================
+!> Copy guard zone info from source patch at the same level
+!>
+!> same
+!>   dnload_range
+!>   time_interval
+!> =============================================================================
+SUBROUTINE same_lagrange (target, source, filled, all_cells, only)
+  class(patch_t), pointer :: target, source
+  integer(int8), dimension(:,:,:,:):: filled
+  logical, optional       :: all_cells
+  integer, optional       :: only
+  !.............................................................................
+  integer                 :: l(3), u(3), o(3), ii(3), jt, i
+  real(8)                 :: position(3), xx, dist(3)
+  integer                 :: ix, iy, iz, iv, iv1, iv2, li(3), ui(3)
+  integer, save           :: itimer=0
+  logical                 :: all_cells_l
+  integer, parameter      :: order=2
+  real(8)                 :: w(order+1)
+  integer                 :: j0, j1, iit(source%nt-1)
+  real(8)                 :: times(source%nt-1)
+  !-----------------------------------------------------------------------------
+  call trace%begin('download_t%same_lagrange', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Compute weights for Lagrange interpolation
+  !-----------------------------------------------------------------------------
+  iit = source%iit(1:source%nt-1)
+  times = source%t(iit)
+  call lagrange%sequence_weights (target%time, times, j0, j1, w, order)
+  if (io%verbose > 2) &
+    print '(a,2i4,1p,10e14.6)','same_lagrange: j0, j1, time, times, w:', &
+    j0, j1, target%time, times(j0:j1), w
+  if (present(only)) then
+    iv1 = only
+    iv2 = only
+  else
+    iv1 = 1
+    iv2 = target%nv
+  end if
+  if (present(all_cells)) then
+    all_cells_l = all_cells
+  else
+    all_cells_l = .false.
+  end if
+  !print *,'same: target, source, iv =', target%id, source%id, iv1, iv2
+  do iv=iv1, iv2
+    if (iv == target%idx%phi) then
+      if (target%poisson_time > source%poisson_time + source%dtime*source%grace) then
+        if (io%verbose>1) print *, target%id, ' not using same level potential from', source%id
+        cycle
+      else
+        if (io%verbose>1) print *, target%id, '     using same level potential from', source%id
+      end if
+    end if
+    if (source%quality > 1000.) then
+      if (iv==target%idx%d .or. (iv >= target%idx%px .and. iv <= target%idx%pz)) then
+        all_cells_l = .true.
+        !print *, 'all cells for source id', source%id
+      end if
+    end if
+    if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
+    li = target%mesh%li
+    ui = target%mesh%ui
+    call dnload_range (target, source, iv, l, u, o)
+    if (target%id==io%id_debug) print'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)',target%id,source%id,l,u,o
+    l = max(l,source%mesh%lb-o)
+    u = min(u,source%mesh%ub-o)
+    if (target%id==io%id_debug) print'(2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)',target%id,source%id,l,u,o
+    if (product(max(0,u-l+1))>0) then
+      !---------------------------------------------------------------------------
+      ! Extend the pick-up region to fill the guard zones also in the BC regions
+      !---------------------------------------------------------------------------
+      do i=1,3
+        if (source%mesh(i)%lower_boundary) l(i) = target%mesh(i)%lb
+        if (source%mesh(i)%upper_boundary) u(i) = target%mesh(i)%ub
+      end do
+      if (source%unsigned(iv)) then
+        do iz=l(3),u(3)
+          do iy=l(2),u(2)
+            do ix=l(1),u(1)
+              if (all_cells_l .or. .not.all((ii>=li).and.(ii<=ui))) then
+                do jt=j0,j1
+                  if (jt==j0) then
+                    target%mem(ix,iy,iz,iv,target%it,1) = &
+                      w(1+jt-j0)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1))
+                  else
+                    target%mem(ix,iy,iz,iv,target%it,1) = &
+                    target%mem(ix,iy,iz,iv,target%it,1) + &
+                      w(1+jt-j0)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1))
+                  end if
+                end do
+                target%mem(ix,iy,iz,iv,target%it,1) = exp(target%mem(ix,iy,iz,iv,target%it,1))
+                filled(ix,iy,iz,iv) = source%level
+              end if
+            end do
+          end do
+        end do
+      else
+        do iz=l(3),u(3)
+          do iy=l(2),u(2)
+            do ix=l(1),u(1)
+              ii = [ix,iy,iz]
+              if (all_cells_l .or. .not.all((ii>=li).and.(ii<=ui))) then
+                do jt=j0,j1
+                  if (jt==j0) then
+                    target%mem(ix,iy,iz,iv,target%it,1) = &
+                      w(1+jt-j0)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1)
+                  else
+                    target%mem(ix,iy,iz,iv,target%it,1) = &
+                    target%mem(ix,iy,iz,iv,target%it,1) + &
+                      w(1+jt-j0)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1)
+                  end if
+                end do
+                filled(ix,iy,iz,iv) = source%level
+              end if
+            end do
+          end do
+        end do
+      end if
+      if ((io%verbose>2.or.target%id==io%id_debug).and.product(max(0,u-l+1))>0) &
+        print '(i6,4(2x,a,i6),1p,2e12.4)', target%id, &
+        'same picked up', product(max(0,u-l+1)), &
+        'values of', product(target%n), &
+        'from', source%id, &
+        ' iv, min, max =', iv, &
+        minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,target%it,1)), &
+        maxval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,target%it,1))
+    end if
+  end do
+  call trace%end (itimer)
+END SUBROUTINE same_lagrange
 
 !> =============================================================================
 !> Same as above, but for RT_solver type patches
