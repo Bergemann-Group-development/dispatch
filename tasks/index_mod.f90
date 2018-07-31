@@ -3,6 +3,7 @@
 !> index_mod.f90 file in the solver directory, or the experiment directory.
 !> =============================================================================
 MODULE index_mod
+  USE io_unit_mod
   implicit none
   private
   type, public:: index_t
@@ -16,8 +17,8 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE write (self)
   class(index_t):: self
-  integer:: d, e, s, px, py, pz, bx, by, bz, phi
-  namelist /idx_nml/ d, e, s, px, py, pz, bx, by, bz, phi
+  integer:: d, e, s, tt, px, py, pz, bx, by, bz, phi
+  namelist /idx_nml/ d, e, s, px, py, pz, bx, by, bz, phi, tt
   d   = self%d   - 1
   e   = self%e   - 1
   s   = self%s   - 1
