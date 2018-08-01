@@ -265,7 +265,7 @@ SUBROUTINE pde (self)
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
   logical, save:: first_time=.true.
   !.............................................................................
-  real(8):: ds(3)
+  real(8):: ds(3), dsmax
   integer, save:: itimer=0
   type(index_t):: i
   real:: u_max
@@ -318,32 +318,37 @@ SUBROUTINE pde (self)
   ss = s/d                                                                      ! ops: 0 0 1
   self%pg => pg
   !-----------------------------------------------------------------------------
-  ! Divergence of velocity, and artificial pressure.  The divergence is valid
-  ! in (2,gn-1)
-  !-----------------------------------------------------------------------------
-  ds = self%ds
-  du = -maxval(ds,self%n > 1)*div(ds,U)                 ! convergence rate      ! ops: 0 1 0
-  du = max(du,0.0)                                      ! positive part
-  self%u_max = 0.0
-  !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   ! The diagonal fxx is valid in (2:gn-1)
   !-----------------------------------------------------------------------------
   call allocate_scalars (self%gn, Txx, Tyy, Tzz)
+  ds = self%ds
   Txx = ddxup(ds,Ux)
   Tyy = ddyup(ds,Uy)
   Tzz = ddzup(ds,Uz)
+  !-----------------------------------------------------------------------------
+  ! Divergence of velocity, and artificial pressure.  The divergence is valid
+  ! in (2,gn-1)
+  !-----------------------------------------------------------------------------
+  du = Txx+Tyy+Tzz                                      ! convergence rate      ! ops: 0 1 0
+  dsmax = maxval(ds,self%n > 1)
+  du = max(-dsmax*du,0.0)                               ! positive part
+  self%u_max = 0.0
   ! Diagonal Reynolds stress
   fxx = xup(Ux)**2
   fyy = yup(Uy)**2
   fzz = zup(Uz)**2
-  pp = (fxx+fyy+fzz)
+  call allocate_scalars (self%gn, uu)
+  uu = sqrt(fxx+fyy+fzz)
   ! Artificial pressure, possibly with 3-point smoothing
   if (do_smooth) then
-    pa = self%nu(2)*d*xyzsm(du**2)
+    pa = self%nu(2)*d*xyzsm(du)**2
   else
     pa = self%nu(2)*d*du**2                                                     ! ops: 0 3 0
   end if
+  !-----------------------------------------------------------------------------
+  ! MHHD stress diagonal
+  !-----------------------------------------------------------------------------
   if (self%mhd) then
     ! Diagonal (negative) Maxwell stress (borrowing emf for scratch)
     Ex = xup(Bx)**2                                                             ! mhd: 0 1 0
@@ -357,21 +362,18 @@ SUBROUTINE pde (self)
       self%u_max = max(self%u_max,u_max)
       print 1, self%id, 'u_max(ca)     ', u_max, self%u_max
     1 format(i6,2x,a,1p,2g12.3)
-      u_max = self%fmaxval(cs + sqrt(pp))
-      self%u_max = max(self%u_max,u_max)
-      print 1, self%id, 'u_max(ca+u)   ', u_max, self%u_max
     end if
-    cs = cs + sqrt(pp) + du
-    u_max = self%fmaxval(cs)
-    self%u_max = max(self%u_max,u_max)
-    if (io%verbose>2) print 1, self%id, 'u_max(ca+u+du)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
-    du = (maxval(ds,self%n > 1)*self%nu(1))*cs
+    !du = (dsmax*self%nu(1))*cs + (dsmax*self%nu(7))*uu                          ! ops: 0 1 0
+    du = (dsmax*self%nu(1))*(cs + uu)                                           ! ops: 0 1 0
     fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
     fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
     fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
+  !-----------------------------------------------------------------------------
+  ! HD stress diagonal
+  !-----------------------------------------------------------------------------
   else
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
@@ -379,31 +381,29 @@ SUBROUTINE pde (self)
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
       print 1, self%id, 'u_max(cs)     ', u_max, self%u_max
-      u_max = self%fmaxval(cs + sqrt(pp))
-      self%u_max = max(self%u_max,u_max)
-      print 1, self%id, 'u_max(cs+u)   ', u_max, self%u_max
     end if
-    cs = cs + sqrt(pp) + du
-    u_max = self%fmaxval(cs)
-    self%u_max = max(self%u_max,u_max)
-    if (self%id==1 .or. io%verbose>2) print 1, self%id, 'u_max(cs+u+du)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa                                                                ! ops: 1 0 0
     ! Total diagonal stress, with density factor
-    du = (maxval(ds,self%n > 1)*self%nu(1))*cs                                  ! ops: 0 1 0
     !---------------------------------------------------------------------------
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
+    !du = (dsmax*self%nu(1))*cs + (dsmax*self%nu(7))*uu                          ! ops: 0 1 0
+    du = (dsmax*self%nu(1))*(cs + uu)                                           ! ops: 0 1 0
     fxx = pp + d*(fxx - du*Txx)                                                 ! ops: 2 2 0
     fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
     fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
   end if
+  u_max = self%fmaxval(cs + uu )
+  self%u_max = max(self%u_max,u_max)
+  if (io%verbose>2) print 1, self%id, 'u_max(cs+u)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! du has units area per unit time, which gives velocity squared times mass
   ! density per unit time = energy per unit volume and time
   !-----------------------------------------------------------------------------
   Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)                                           ! ops: 2 5 0
-  call deallocate_scalars (Txx, Tyy, Tzz)
+  call deallocate_scalars (Txx, Tyy, Tzz, uu)
+  if (verbose==1) print *, 'average(Q):', self%faver(Q)
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
@@ -421,7 +421,9 @@ SUBROUTINE pde (self)
   fyz = zdn(Uy)*ydn(Uz)                                                         ! ops: 0 1 0
   fzx = xdn(Uz)*zdn(Ux)                                                         ! ops: 0 1 0
   !-----------------------------------------------------------------------------
-  ! Add viscous part -- edge-centered
+  ! Add viscous part -- edge-centered. Tij should really be divided by two, in
+  ! which case twice the product nu*Tij**2 should be added, so here a factor 0.5
+  ! is needed in the contribution to Q
   !-----------------------------------------------------------------------------
   call allocate_scalars (self%gn, Txy, Tyz, Tzx)
   Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)                                               ! ops: 0 1 0
@@ -430,7 +432,7 @@ SUBROUTINE pde (self)
   fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*Txy                                 ! ops: 1 3 0
   fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*Tyz                                 ! ops: 1 3 0
   fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*Tzx                                 ! ops: 1 3 0
-  Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
+  Q = Q + self%nu(3)*.25*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
                                yup(zup(Tyz))**2 + &                             ! ops: 1 1 0
                                zup(xup(Tzx))**2)                                ! ops: 1 0 0
   call deallocate_scalars (Txy, Tyz, Tzx)

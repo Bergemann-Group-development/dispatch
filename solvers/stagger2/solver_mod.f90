@@ -178,7 +178,7 @@ SUBROUTINE ss2e(self, ss, it)
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
-  e = d**self%gamma*exp(ss/d*g1)/g1
+  e = d**self%gamma*exp(ss*g1)/g1
   end associate
 END SUBROUTINE ss2e
 

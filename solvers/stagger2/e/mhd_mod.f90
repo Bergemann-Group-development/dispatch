@@ -247,14 +247,10 @@ SUBROUTINE pde (self)
       print 1, 'u_max(ca)', u_max, self%u_max
     1 format(1x,a,1p,2g12.3)
     end if
-    cs = cs + uu
-    u_max = self%fmaxval(cs)
-    self%u_max = max(self%u_max,u_max)
-    if (verbose>2) print 1, 'u_max(ca+u)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
-    du = (dsmax*self%nu(1))*cs
+    du = (dsmax*self%nu(1))*(cs+uu)
     fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
     fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
     fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
@@ -266,20 +262,19 @@ SUBROUTINE pde (self)
       self%u_max = max(self%u_max,u_max)
       print 1, 'u_max(cs)', u_max, self%u_max
     end if
-    cs = cs + uu
-    u_max = self%fmaxval(cs)
-    self%u_max = max(self%u_max,u_max)
-    if (verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
     pp = pg + pa                                                                ! ops: 1 0 0
-    ! Total diagondal stress, with density factor
-    du = (dsmax*self%nu(1))*cs                                                  ! ops: 0 1 0
+    du = (dsmax*self%nu(1))*(cs+uu)                                             ! ops: 0 1 0
     !---------------------------------------------------------------------------
+    ! Total diagonal stress, with density factor
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
     fxx = pp + d*(fxx - du*Txx)                                                 ! ops: 2 2 0
     fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
     fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
   end if
+  u_max = self%fmaxval(cs+uu)
+  self%u_max = max(self%u_max,u_max)
+  if (verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! du has units area per unit time, which gives velocity squared times mass
   ! density per unit time = energy per unit volume and time
@@ -377,7 +372,6 @@ SUBROUTINE pde (self)
     real:: afm
     afm = self%faver(fm(:,:,:,1))
     fm = fm*down(ee) - (self%nu(5)*dd*down(du))*ddown(ds,ee)                    ! ops: 1 4 0
-    Q = uu
     dedt = -div(ds,fm) - pg*(Txx+Tyy+Tzz) + Q
     if (verbose==1) print '(a,10f12.6)', 'average(Q):', &
       self%time, self%time*self%faver(Q), &

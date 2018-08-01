@@ -49,7 +49,6 @@
 &patch_params
  nt=5
  ng=3*4
- courant=0.2
  grace=0.0
  n=3*32
  dt_fixed=3e-4
@@ -63,8 +62,8 @@
  guard_zones=t
  time_derivs=f
 /
-&mhd_params
- flop_count=f
+&stagger_params
+ courant=0.2
  hardwire=f
  eos='ideal'
  gamma=1.6666667
