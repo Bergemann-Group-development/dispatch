@@ -3,6 +3,7 @@
 !> =============================================================================
 MODULE stagger_mod
   USE io_mod
+  USE trace_mod
   USE stagger_16
   USE stagger_20
   USE stagger_24
@@ -41,6 +42,10 @@ MODULE stagger_mod
     procedure, nopass:: xup
     procedure, nopass:: yup
     procedure, nopass:: zup
+    procedure, nopass:: xsm
+    procedure, nopass:: ysm
+    procedure, nopass:: zsm
+    procedure, nopass:: xyzsm
     procedure, nopass:: stagger_test
   end type
   type(stagger_t):: stagger
@@ -621,6 +626,94 @@ FUNCTION zup (a) RESULT (b)
 !  call trace%end (itimer)
   stagger%flops = stagger%flops + 2
   stagger%count = stagger%count + 1
+END FUNCTION
+
+!*******************************************************************************
+FUNCTION xsm (a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  real    :: c
+  integer :: i, n
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::xsm', itimer=itimer)
+  n = size(a,1)
+  if (n > 1) then
+    c = 0.25
+    do i=2,n-1
+      b(i,:,:) = (a(i-1,:,:) + a(i+1,:,:))*c +  a(i,:,:)*(1.-2.*c)
+    end do
+    do i=1,n,n-1
+      b(i,:,:) = a(i,:,:)
+    end do
+  else
+    b = a
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
+  stagger%count = stagger%count + 1
+END FUNCTION
+
+!*******************************************************************************
+FUNCTION ysm (a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  real    :: c
+  integer :: i, n
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::ysm', itimer=itimer)
+  n = size(a,2)
+  if (n > 1) then
+    c = 0.25
+    do i=2,n-1
+      b(:,i,:) = (a(:,i-1,:) + a(:,i+1,:))*c +  a(:,i,:)*(1.-2.*c)
+    end do
+    do i=1,n,n-1
+      b(:,i,:)  = a(:,i,:) 
+    end do
+  else
+    b = a
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
+  stagger%count = stagger%count + 1
+END FUNCTION
+
+!*******************************************************************************
+FUNCTION zsm (a) RESULT (b)
+  real, dimension(:,:,:), intent(in):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  real    :: c
+  integer :: i, n
+  integer, save:: itimer=0
+!...............................................................................
+!  call trace%begin ('stagger_mod::zsm', itimer=itimer)
+  n = size(a,3)
+  if (n > 1) then
+    c = 0.25
+    do i=2,n-1
+      b(:,:,i) = (a(:,:,i-1) + a(:,:,i+1))*c +  a(:,:,i)*(1.-2.*c)
+    end do
+    do i=1,n,n-1
+      b(:,:,i) = a(:,:,i)
+    end do
+  else
+    b = a
+  endif
+!  call trace%end (itimer)
+  stagger%flops = stagger%flops + 2
+  stagger%count = stagger%count + 1
+END FUNCTION
+
+!*******************************************************************************
+FUNCTION xyzsm(a) RESULT (b)
+  real, dimension(:,:,:):: a
+  real, dimension(size(a,1),size(a,2),size(a,3)):: b
+  integer, save:: itimer=0
+  call trace%begin ('stagger_mod::xyzsm', itimer=itimer)
+  b = zsm(ysm(xsm(a)))
+  call trace%end (itimer)
 END FUNCTION
 
 !> =============================================================================

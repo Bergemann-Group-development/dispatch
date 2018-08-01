@@ -49,9 +49,10 @@ MODULE mhd_mod
     procedure:: gas_pressure
   end type
   type(index_t):: idx
+  integer:: verbose=0
   logical, save:: flop_count=.false.
   logical, save:: do_2nd_div=.true.
-  logical, save:: isothermal=.false.
+  logical, save:: do_smooth=.false.
 CONTAINS
 
 !> =============================================================================
@@ -61,19 +62,20 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer:: i, iv
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.4, csound=1.0, cdtd=0.5
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
+  real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
   character(len=16), save:: eos
-  namelist /mhd_params/ nu, gamma, csound, cdtd, hardwire, eos, flop_count, &
-                        do_2nd_div, isothermal
+  namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
+    do_smooth, do_2nd_div, flop_count, verbose
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
   if (first_time) then
     eos = self%eos
     rewind (io%input)
-    read (io%input, mhd_params)
-    if (io%master) write (*, mhd_params)
+    read (io%input, stagger_params)
+    if (io%master) write (*, stagger_params)
     call non_ideal%init
     call timestep%init
     ! fool-proofing
@@ -84,6 +86,7 @@ SUBROUTINE init (self)
   self%nu = nu
   self%gamma = gamma
   self%csound = csound
+  self%courant = courant
   self%cdtd = cdtd
   !-----------------------------------------------------------------------------
   ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
@@ -333,8 +336,12 @@ SUBROUTINE pde (self)
   fyy = yup(Uy)**2
   fzz = zup(Uz)**2
   pp = (fxx+fyy+fzz)
-  ! Artificial pressure
-  pa = self%nu(2)*d*du**2                                                       ! ops: 0 3 0
+  ! Artificial pressure, possibly with 3-point smoothing
+  if (do_smooth) then
+    pa = self%nu(2)*d*xyzsm(du**2)
+  else
+    pa = self%nu(2)*d*du**2                                                     ! ops: 0 3 0
+  end if
   if (self%mhd) then
     ! Diagonal (negative) Maxwell stress (borrowing emf for scratch)
     Ex = xup(Bx)**2                                                             ! mhd: 0 1 0
@@ -403,7 +410,7 @@ SUBROUTINE pde (self)
   dddt = -div(ds,fm)                                    ! density derivative
   u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs(dddt/d))             ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
-  if (self%id==1 .or. io%verbose>2) print 1, self%id, 'u_max(dddt)   ', u_max, self%u_max
+  !if (self%id==1 .or. io%verbose>2) print 1, self%id, 'u_max(dddt)   ', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -486,7 +493,7 @@ SUBROUTINE pde (self)
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
   ! plus a contribution proportional to the gradient of specific entropy ss.
   !-----------------------------------------------------------------------------
-  if (isothermal.or.self%gamma==1.0) then
+  if (self%gamma==1d0) then
     dsdt = 0.0
   else
     fm = fm*down(ss) - (self%nu(5)*dd*down(du))*ddown(ds,ss)                    ! ops: 1 4 0
@@ -515,7 +522,7 @@ SUBROUTINE pde (self)
     Ey = Ey + zdn(Ux)*xdn(Bz) - xdn(Uz)*zdn(Bx)                                 ! mhd: 2 2 0
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
     call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
-    if (isothermal.or.self%gamma==1.0) then
+    if (self%gamma==1d0) then
       dsdt = 0.0
     else
       dsdt = dsdt + Q*d/pg                                                      ! mhd: 1 1 1
@@ -610,7 +617,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   if (trim(self%eos)=='ideal') then
     d => self%mem(:,:,:,self%idx%d,self%it,1)
     s => self%mem(:,:,:,self%idx%s,self%it,1)
-    if (isothermal .or. self%gamma==1.0) then
+    if (self%gamma==1d0) then
       s = 0.0
       pg = d*self%csound**2
     else

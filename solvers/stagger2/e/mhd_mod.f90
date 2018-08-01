@@ -47,8 +47,8 @@ MODULE mhd_mod
     procedure:: output
     procedure:: gas_pressure
   end type
+  logical, save:: do_smooth=.false.
   integer, save:: verbose=0
-  logical, save:: isothermal=.false.
 CONTAINS
 
 !> =============================================================================
@@ -59,10 +59,12 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   type(index_t):: idx
   integer:: i, iv
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
+  real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
   character(len=16), save:: eos
-  namelist /mhd_params/ nu, gamma, csound, isothermal, cdtd, hardwire, eos, verbose
+  namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
+    do_smooth, verbose
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -70,8 +72,8 @@ SUBROUTINE init (self)
     first_time = .false.
     eos = self%eos
     rewind (io%input)
-    read (io%input, mhd_params)
-    if (io%master) write (*, mhd_params)
+    read (io%input, stagger_params)
+    if (io%master) write (*, stagger_params)
     call non_ideal%init
     call timestep%init
     ! fool-proofing
@@ -82,9 +84,10 @@ SUBROUTINE init (self)
   self%nu = nu
   self%gamma = gamma
   self%csound = csound
+  self%courant = courant
   self%cdtd = cdtd
   self%initial%mhd = self%mhd
-  call self%initial%init (self%kind, self%gamma)
+  call self%initial%init (self%kind, real(self%gamma))
   self%mhd = self%initial%mhd
   if (self%mhd) then
     self%kind = 'stagger2e_mhd_patch'
@@ -214,6 +217,12 @@ SUBROUTINE pde (self)
   Txx = ddxup(ds,Ux)
   Tyy = ddyup(ds,Uy)
   Tzz = ddzup(ds,Uz)
+  ! Fast mode speed + velocity
+  if (do_smooth) then
+    pa = self%nu(2)*d*xyzsm(du**2)
+  else
+    pa = self%nu(2)*d*du**2                                                     ! ops: 0 3 0
+  end if
   if (self%mhd) then
     ! Diagonal Reynolds stress
     fxx = xup(Ux)**2
@@ -226,8 +235,6 @@ SUBROUTINE pde (self)
     Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
     ! Magnetic pressure
     pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
-    ! Fast mode speed + velocity
-    pa = self%nu(2)*d*du**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
     if (verbose>3) then
       u_max = self%fmaxval(cs)
@@ -254,8 +261,6 @@ SUBROUTINE pde (self)
     fyy = yup(Uy)**2                                                            ! ops: 0 1 0
     fzz = zup(Uz)**2                                                            ! ops: 0 1 0
     pp = (fxx+fyy+fzz)                                                          ! ops: 2 0 0
-    ! Isotropic pressure part
-    pa = self%nu(2)*d*du**2                          ! dimension: pressure      ! ops: 0 3 0
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
     if (verbose>3) then
@@ -368,7 +373,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Conservation of energy; reuse the mass flux for the energy flux
   !-----------------------------------------------------------------------------
-  if (isothermal .or. self%gamma == 1.0) then                                   ! unless isothermal
+  if (self%gamma == 1d0) then                                                   ! unless isothermal
     dedt = dddt*ee                                                              ! ops: 0 1 0
   else
     fm = fm*down(ee) - (self%nu(5)*dd*down(du))*ddown(ds,ee)                    ! ops: 1 4 0
@@ -398,7 +403,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
   !-----------------------------------------------------------------------------
-  if (.not.isothermal) then
+  if (self%gamma /= 1d0) then
     u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs((dedt-ee*dddt)/d)) ! ops: 1 1 1
     self%u_max = max(self%u_max,u_max)
     if (verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
@@ -430,7 +435,7 @@ SUBROUTINE update (self)
   ! the call here will have no effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
   call self%output
-  if (isothermal) then
+  if (self%gamma==1d0) then
     self%mem(:,:,:,idx%e,self%it,1) = &
     self%mem(:,:,:,idx%d,self%it,1)*self%csound**2
   end if
@@ -482,7 +487,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   if (trim(self%eos)=='ideal') then
     d => self%mem(:,:,:,self%idx%d,self%it,1)
     e => self%mem(:,:,:,self%idx%e,self%it,1)
-    if (isothermal .or. self%gamma==1.0) then
+    if (self%gamma==1d0) then
       pg = d*self%csound**2
     else
       pg = e*(self%gamma-1)

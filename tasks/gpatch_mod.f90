@@ -100,7 +100,7 @@ SUBROUTINE init (self)
     call self%patch_t%init
   end if
   self%d0 = d0
-  call self%initial%init (self%kind, self%gamma)
+  call self%initial%init (self%kind, real(self%gamma))
   !$omp critical (poisson_cr)
   if (first_time) then
     first_time = .false.
