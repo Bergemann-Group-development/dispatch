@@ -200,10 +200,11 @@ def snapshots(run='',data='data', verbose=0):
             for subdir in subdirs:
                 datadir=_dir(rund,subdir)
                 snap=snapshot(data=data,run=run,datadir=datadir,verbose=verbose)
-                if len(snap.patches)>0:
-                    snaps.append(snap)
-                    if verbose>0:
-                        print (_dir(rund,subdir))
+                if hasattr(snap,'patches'):
+                    if len(snap.patches)>0:
+                        snaps.append(snap)
+                        if verbose>0:
+                            print (_dir(rund,subdir))
             break
     return snaps
 
