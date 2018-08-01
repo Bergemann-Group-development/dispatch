@@ -58,6 +58,7 @@ sinclude $(TOP)/dispatchers/Makefile
 sinclude $(TOP)/lists/Makefile
 sinclude $(TOP)/tasks/Makefile
 sinclude $(TOP)/meshes/Makefile
+sinclude $(TOP)/interpolation/Makefile
 sinclude $(TOP)/microphysics/Makefile
 sinclude $(TOP)/timestep/$(UPD)/Makefile
 sinclude $(TOP)/particles/Makefile
