@@ -189,11 +189,11 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
   o = min(o,n-1)
   ! Search for identical initial points
   i1 = 1
-  do while (x(i1)==x(1) .and. i1<=n)
+  do while (x(i1)==x(1) .and. i1<n)
     i1 = i1+1
   end do
   ! All points are equal to x(1)
-  if (i1==n+1) then
+  if (x(i1)==x(1)) then
     i0 = n
     i2 = n
     o = 0
@@ -259,11 +259,11 @@ SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
   o = min(o,n-1)
   ! Search for identical initial points
   i1 = 1
-  do while (x(i1)==x(1) .and. i1<=n)
+  do while (x(i1)==x(1) .and. i1<n)
     i1 = i1+1
   end do
   ! All points are equal to x(1)
-  if (i1==n+1) then
+  if (x(i1)==x(1)) then
     i0 = n
     i2 = n
     o = 0
