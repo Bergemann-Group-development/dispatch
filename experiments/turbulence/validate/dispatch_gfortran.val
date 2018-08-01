@@ -176,7 +176,6 @@ reading /proc/cpuinfo:   0.0 sec
  NV=          5,
  NG= 3*2          ,
  NT=          5,
- COURANT= 0.200000003    ,
  U_FIXED= -1.00000000    ,
  DT_FIXED= -1.00000000    ,
  GRACE=  2.00000000    ,

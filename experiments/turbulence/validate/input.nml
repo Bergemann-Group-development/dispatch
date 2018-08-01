@@ -41,7 +41,6 @@
 /
 &patch_params
  nt=5
- courant=0.2
  grace=2.0
  !n=3*64
  !n=3*32
