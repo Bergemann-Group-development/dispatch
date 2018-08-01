@@ -688,7 +688,7 @@ SUBROUTINE same_lagrange (target, source, filled, all_cells, only)
   integer                 :: l(3), u(3), o(3), ii(3), jt, i
   real(8)                 :: position(3), xx, dist(3)
   integer                 :: ix, iy, iz, iv, iv1, iv2, li(3), ui(3)
-  integer, save           :: itimer=0
+  integer, save           :: itimer=0, nprint=20
   logical                 :: all_cells_l, filter
   integer, parameter      :: order=2
   real(8)                 :: w(order+1)
@@ -769,7 +769,16 @@ SUBROUTINE same_lagrange (target, source, filled, all_cells, only)
         end do
       end if
       if (filter) then
-        print *,'WARNING: attempt to set internal cells in download_t%same_lagrange!'
+        if (nprint > 0) then
+          print *,'WARNING: attempt to set internal cells in download_t%same_lagrange, using filter!'
+          nprint = nprint - 1
+          if (nprint==0) then
+            print *,'target id, position =', target%id, target%position
+            print *,'source id, position =', source%id, source%position
+            print *,'l , u =', l, u
+            print *,'gn, o =', target%gn, o
+          end if
+        end if
       end if
       !---------------------------------------------------------------------------
       ! Unsigned => use interpolation in the log
