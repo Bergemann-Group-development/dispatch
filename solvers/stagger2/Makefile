@@ -23,5 +23,5 @@ mhd_rt_mod.o            : $(PDE) trace_mod.o microphysics_mod.o
 gmhd_mod.o              : io_mod.o omp_timer_mod.o trace_mod.o task_mod.o patch_mod.o scalar_mod.o laplace_mod.o $(PDE) boundary_mod.o scalar_mod.o
 rmhd_mod.o              : io_mod.o trace_mod.o mhd_mod.o eos_mod.o rt_mod.o solver_mod.o timestep_mod.o
 solver_mod.o            : io_mod.o trace_mod.o mhd_mod.o eos_mod.o
-non_ideal_mod.o         : io_mod.o trace_mod.o $(STAGGER)
+non_ideal_mod.o         : io_mod.o trace_mod.o scalar_mod.o $(STAGGER)
 index_mod.o		: io_unit_mod.o
