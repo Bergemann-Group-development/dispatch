@@ -53,7 +53,7 @@ CONTAINS
 
 !> =============================================================================
 FUNCTION ddxdn1 (ds, a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real(8):: ds(3)
     b= ddxdn (ds, a)
@@ -61,7 +61,7 @@ END FUNCTION ddxdn1
 
 !*******************************************************************************
 FUNCTION ddydn1 (ds, a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real(8):: ds(3)
     b= ddydn (ds, a)
@@ -69,7 +69,7 @@ END FUNCTION ddydn1
 
 !*******************************************************************************
 FUNCTION ddzdn1 (ds, a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real(8):: ds(3)
     b= ddzdn (ds, a)
@@ -77,7 +77,7 @@ END FUNCTION ddzdn1
 
 !*******************************************************************************
 FUNCTION ddxup1 (ds, a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real(8):: ds(3)
     b= ddxup (ds, a)
@@ -85,7 +85,7 @@ END FUNCTION ddxup1
 
 !*******************************************************************************
 FUNCTION ddyup1 (ds, a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real(8):: ds(3)
     b= ddyup (ds, a)
@@ -93,7 +93,7 @@ END FUNCTION ddyup1
 
 !*******************************************************************************
 FUNCTION ddzup1 (ds, a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real(8):: ds(3)
     b= ddzup (ds, a)
@@ -101,49 +101,49 @@ END FUNCTION ddzup1
 
 !*******************************************************************************
 FUNCTION xdn1 (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
     b = xdn (a)
 END FUNCTION xdn1
 
 !*******************************************************************************
 FUNCTION ydn1 (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
     b = ydn (a)
 END FUNCTION ydn1
 
 !*******************************************************************************
 FUNCTION zdn1 (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
     b = zdn (a)
 END FUNCTION zdn1
 
 !*******************************************************************************
 FUNCTION xup1 (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
     b = xup (a)
 END FUNCTION xup1
 
 !*******************************************************************************
 FUNCTION yup1 (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
     b = yup (a)
 END FUNCTION yup1
 
 !*******************************************************************************
 FUNCTION zup1 (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
     b = zup (a)
 END FUNCTION zup1
 
 !*******************************************************************************
 FUNCTION ddxdn (ds, a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real(8):: ds(3), c
   integer :: ix, iy, iz, n(3)
@@ -169,6 +169,7 @@ FUNCTION ddxdn (ds, a) RESULT (b)
     c = 1./ds(1)
     do iz=1,n(3)
     do iy=1,n(2)
+    !$vector always assert
     do ix=2,n(1)
       b(ix,iy,iz) = c*(a(ix  ,iy,iz) - a(ix-1,iy,iz))
     end do
@@ -178,13 +179,13 @@ FUNCTION ddxdn (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddxdn
 
 !*******************************************************************************
 FUNCTION ddydn (ds, a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
   real(8):: ds(3), c
@@ -210,6 +211,7 @@ FUNCTION ddydn (ds, a) RESULT (b)
     c = 1./ds(2)
     do iz=1,n(3)
     do iy=2,n(2)
+    !$vector always assert
     do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy  ,iz) - a(ix,iy-1,iz))
     end do
@@ -219,13 +221,13 @@ FUNCTION ddydn (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(3)*(n(2)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddydn
 
 !*******************************************************************************
 FUNCTION ddzdn (ds, a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real(8):: ds(3), c
   integer :: ix, iy, iz, n(3)
@@ -251,6 +253,7 @@ FUNCTION ddzdn (ds, a) RESULT (b)
     c = 1./ds(3)
     do iz=2,n(3)
     do iy=1,n(2)
+    !$vector always assert
     do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy,iz  ) - a(ix,iy,iz-1))
     end do
@@ -260,13 +263,13 @@ FUNCTION ddzdn (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(2)*(n(3)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddzdn
 
 !*******************************************************************************
 FUNCTION ddxup (ds, a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
   real(8):: ds(3), c
@@ -293,6 +296,7 @@ FUNCTION ddxup (ds, a) RESULT (b)
     !print*,'mk'
     do iz=1,n(3)
     do iy=1,n(2)
+    !$vector always assert
     do ix=1,n(1)-1
       b(ix,iy,iz) = c*(a(ix+1,iy,iz) - a(ix  ,iy,iz))
     end do
@@ -302,13 +306,13 @@ FUNCTION ddxup (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(3)*n(2)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddxup
 
 !*******************************************************************************
 FUNCTION ddyup (ds, a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
   real(8):: ds(3), c
@@ -334,6 +338,7 @@ FUNCTION ddyup (ds, a) RESULT (b)
     c = 1./ds(2)
     do iz=1,n(3)
     do iy=1,n(2)-1
+    !$vector always assert
     do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy+1,iz) - a(ix,iy  ,iz))
     end do
@@ -343,13 +348,13 @@ FUNCTION ddyup (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(3)*(n(2)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddyup
 
 !*******************************************************************************
 FUNCTION ddzup (ds, a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer :: ix, iy, iz, n(3)
   real(8):: ds(3), c
@@ -375,6 +380,7 @@ FUNCTION ddzup (ds, a) RESULT (b)
     c = 1./ds(3)
     do iz=1,n(3)-1
     do iy=1,n(2)
+    !$vector always assert
     do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy,iz+1) - a(ix,iy,iz  ))
     end do
@@ -384,13 +390,13 @@ FUNCTION ddzup (ds, a) RESULT (b)
     b = 0.0
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(2)*(n(3)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddzup
 
 !*******************************************************************************
 FUNCTION xdn (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
   integer :: ix, iy, iz, n(3)
@@ -415,6 +421,7 @@ FUNCTION xdn (a) RESULT (b)
     b(1,:,:) = a(1,:,:)
     do iz=1,n(3)
     do iy=1,n(2)
+    !$vector always assert
     do ix=2,n(1)
       b(ix,iy,iz) = c*(a(ix  ,iy,iz) + a(ix-1,iy,iz))
     end do
@@ -424,13 +431,13 @@ FUNCTION xdn (a) RESULT (b)
     b = a
   end if
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION xdn
 
 !*******************************************************************************
 FUNCTION ydn (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
   integer :: ix, iy, iz, n(3)
@@ -455,6 +462,7 @@ FUNCTION ydn (a) RESULT (b)
     b(:,1,:) = a(:,1,:)
     do iz=1,n(3)
     do iy=2,n(2)
+    !$vector always assert
     do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy-1,iz))
     end do
@@ -464,13 +472,13 @@ FUNCTION ydn (a) RESULT (b)
     b = a
   end if
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(3)*(n(2)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ydn
 
 !*******************************************************************************
 FUNCTION zdn (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
   integer :: ix, iy, iz, n(3)
@@ -495,6 +503,7 @@ FUNCTION zdn (a) RESULT (b)
     b(:,:,1) = a(:,:,1)
     do iz=2,n(3)
     do iy=1,n(2)
+    !$vector always assert
     do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy,iz) + a(ix,iy,iz-1))
     end do
@@ -504,13 +513,13 @@ FUNCTION zdn (a) RESULT (b)
     b = a
   end if
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(2)*(n(3)-1)
   stagger%count = stagger%count + 1
 END FUNCTION zdn
 
 !*******************************************************************************
 FUNCTION xup (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
   integer :: ix, iy, iz, n(3)
@@ -535,6 +544,7 @@ FUNCTION xup (a) RESULT (b)
     b(n(1),:,:) = a(n(1),:,:)
     do iz=1,n(3)
     do iy=1,n(2)
+    !$vector always assert
     do ix=1,n(1)-1
       b(ix,iy,iz) = c*(a(ix+1,iy,iz) + a(ix  ,iy,iz))
     end do
@@ -544,13 +554,13 @@ FUNCTION xup (a) RESULT (b)
     b = a
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION
 
 !*******************************************************************************
 FUNCTION yup (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
   integer :: ix, iy, iz, n(3)
@@ -575,6 +585,7 @@ FUNCTION yup (a) RESULT (b)
     b(:,n(2),:) = a(:,n(2),:)
     do iz=1,n(3)
     do iy=1,n(2)-1
+    !$vector always assert
     do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy+1,iz) + a(ix,iy  ,iz))
     end do
@@ -584,13 +595,13 @@ FUNCTION yup (a) RESULT (b)
     b = a
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(3)*(n(2)-1)
   stagger%count = stagger%count + 1
 END FUNCTION
 
 !*******************************************************************************
 FUNCTION zup (a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   real    :: c
   integer :: ix, iy, iz, n(3)
@@ -615,6 +626,7 @@ FUNCTION zup (a) RESULT (b)
     b(:,:,n(3)) = a(:,:,n(3))
     do iz=1,n(3)-1
     do iy=1,n(2)
+    !$vector always assert
     do ix=1,n(1)
       b(ix,iy,iz) = c*(a(ix,iy,iz+1) + a(ix,iy,iz  ))
     end do
@@ -624,7 +636,7 @@ FUNCTION zup (a) RESULT (b)
     b = a
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 2*n(1)*n(2)*(n(3)-1)
   stagger%count = stagger%count + 1
 END FUNCTION
 
@@ -650,7 +662,7 @@ FUNCTION xsm (a) RESULT (b)
     b = a
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 4*n*n*(n-2)
   stagger%count = stagger%count + 1
 END FUNCTION
 
@@ -676,7 +688,7 @@ FUNCTION ysm (a) RESULT (b)
     b = a
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 4*n*n*(n-2)
   stagger%count = stagger%count + 1
 END FUNCTION
 
@@ -702,13 +714,13 @@ FUNCTION zsm (a) RESULT (b)
     b = a
   endif
 !  call trace%end (itimer)
-  stagger%flops = stagger%flops + 2
+  stagger%flops = stagger%flops + 4*n*n*(n-2)
   stagger%count = stagger%count + 1
 END FUNCTION
 
 !*******************************************************************************
 FUNCTION xyzsm(a) RESULT (b)
-  real, dimension(:,:,:):: a
+  real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
   integer, save:: itimer=0
   call trace%begin ('stagger_mod::xyzsm', itimer=itimer)
