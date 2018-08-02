@@ -445,8 +445,8 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call self%output
   if (self%gamma==1d0) then
-    self%mem(:,:,:,idx%e,self%it,1) = &
-    self%mem(:,:,:,idx%d,self%it,1)*self%csound**2
+    self%mem(:,:,:,self%idx%e,self%it,1) = &
+    self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
   end if
   call self%pde
   call self%courant_condition

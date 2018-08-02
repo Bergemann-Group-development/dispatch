@@ -39,7 +39,7 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma1)
   class(initial_t):: self
   character(len=64):: solver
-  character(len=32), save:: type='single_solenoidal'
+  character(len=32), save:: type='void'
   real, optional:: gamma1
   real(8), save:: fgamma
   logical, save:: first_time=.true.
@@ -72,6 +72,8 @@ SUBROUTINE init (self, solver, gamma1)
     self%condition => exa256
   case ('raw')
     self%condition => raw
+  case ('void')
+    self%condition => void
   case default
     print*,'UNKNOWN INITIAL CONDITION TYPE :'//trim(type)//':'
     stop
@@ -83,6 +85,16 @@ END SUBROUTINE init
 SUBROUTINE cleanup
   if (associated(buffer)) deallocate(buffer)
 END SUBROUTINE cleanup
+
+!> =============================================================================
+!> Initialize a single 3-D wavenumber
+!> =============================================================================
+SUBROUTINE void (self, m, ff, idx)
+  class(initial_t) :: self
+  type(index_t):: idx
+  class(mesh_t)    :: m(3)
+  real, dimension(:,:,:,:) :: ff
+END SUBROUTINE void
 
 !> =============================================================================
 !> Initialize a single 3-D wavenumber

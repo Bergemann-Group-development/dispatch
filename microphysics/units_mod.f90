@@ -38,13 +38,13 @@ MODULE units_mod
   !-----------------------------------------------------------------------------
   type, public:: units_t
     character(len=4):: system='code'
-    real(kind=8):: l
-    real(kind=8):: t
-    real(kind=8):: m
+    real(kind=8):: l=1d0
+    real(kind=8):: t=1d0
+    real(kind=8):: m=1d0
   contains
     procedure:: output
   end type
-  type(units_t):: units
+  type(units_t), public:: units
 CONTAINS
 
 SUBROUTINE init (self)

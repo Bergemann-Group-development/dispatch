@@ -15,5 +15,5 @@
 &timestep_params        time_order=2 /
 &timer_params           sec_per_report=15.0 /
 
-&iniitial_params        /
+&initial_params         /
 &force_params           /
