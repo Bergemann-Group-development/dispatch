@@ -39,6 +39,7 @@ SUBROUTINE init (self, solver, gamma1)
   class(initial_t):: self
   character(len=64):: solver
   character(len=32), save:: type='void'
+  integer:: iostat
   real, optional:: gamma1
   real(8), save:: fgamma
   logical, save:: first_time=.true.
@@ -49,7 +50,8 @@ SUBROUTINE init (self, solver, gamma1)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_params)
+    read (io%input, initial_params, iostat=iostat)
+    if (iostat/=0) call io%namelist_warning ('ramses/hydro/initial_mod.f90: initial_params')
     if (io%master) write (*, initial_params)
     if (isothermal .or. gamma==1d0) then
       fgamma = 1d0
@@ -75,7 +77,6 @@ SUBROUTINE init (self, solver, gamma1)
     self%condition => void
   case default
     print*,'UNKNOWN INITIAL CONDITION TYPE :'//trim(type)//':'
-    stop
   end select
   call trace_end
 END SUBROUTINE init
@@ -86,7 +87,7 @@ SUBROUTINE cleanup
 END SUBROUTINE cleanup
 
 !> =============================================================================
-!> Initialize a single 3-D wavenumber
+!> Void initializer
 !> =============================================================================
 SUBROUTINE void (self, m, ff, idx)
   class(initial_t) :: self
@@ -100,9 +101,9 @@ END SUBROUTINE void
 !> =============================================================================
 SUBROUTINE single_solenoidal (self, m, ff, idx)
   class(initial_t) :: self
-  type(index_t):: idx
   class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
+  type(index_t):: idx
   !.............................................................................
   integer        :: ix, iy, iz
   real(8)        :: kx, ky, kz

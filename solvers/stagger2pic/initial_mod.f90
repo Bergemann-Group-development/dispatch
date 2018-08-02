@@ -27,7 +27,6 @@ MODULE initial_mod
   end type
   logical, save:: first_time=.true.
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
-  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================

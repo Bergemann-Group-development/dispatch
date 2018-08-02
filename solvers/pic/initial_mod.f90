@@ -82,7 +82,7 @@ END SUBROUTINE cleanup
 !> =============================================================================
 FUNCTION single_solenoidal (self, m, idx) RESULT (ff)
   class(initial_t)      :: self
-  type(index_t):: idx
+  type(index_t)         :: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
@@ -98,14 +98,14 @@ FUNCTION single_solenoidal (self, m, idx) RESULT (ff)
       ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,1) = self%d0
-        ff(ix,iy,iz,2) = self%e0
-        ff(ix,iy,iz,3) = self%a0(1)*(sin(ky)+sin(kz))
-        ff(ix,iy,iz,4) = self%a0(2)*(sin(kz)+sin(kx))
-        ff(ix,iy,iz,5) = self%a0(3)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,6) = self%b0(1)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,7) = self%b0(2)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,8) = self%b0(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,idx%d) = self%d0
+        ff(ix,iy,iz,idx%e) = self%e0
+        ff(ix,iy,iz,idx%px) = self%a0(1)*(sin(ky)+sin(kz))
+        ff(ix,iy,iz,idx%py) = self%a0(2)*(sin(kz)+sin(kx))
+        ff(ix,iy,iz,idx%pz) = self%a0(3)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,idx%bx) = self%b0(1)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,idx%by) = self%b0(2)*(sin(kx)+sin(ky))
+        ff(ix,iy,iz,idx%bz) = self%b0(3)*(sin(kx)+sin(ky))
       end do
     end do
   end do
@@ -133,14 +133,14 @@ FUNCTION single_compressive (self, m, idx) RESULT (ff)
       ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,1) = self%d0
-        ff(ix,iy,iz,2) = self%e0
-        ff(ix,iy,iz,3) = self%u0(1)*sin(kx)
-        ff(ix,iy,iz,4) = self%u0(2)*sin(ky)
-        ff(ix,iy,iz,5) = self%u0(3)*sin(kz)
-        ff(ix,iy,iz,6) = self%b0(1)
-        ff(ix,iy,iz,7) = self%b0(2)
-        ff(ix,iy,iz,8) = self%b0(3)
+        ff(ix,iy,iz,idx%d) = self%d0
+        ff(ix,iy,iz,idx%e) = self%e0
+        ff(ix,iy,iz,idx%px) = self%u0(1)*sin(kx)
+        ff(ix,iy,iz,idx%py) = self%u0(2)*sin(ky)
+        ff(ix,iy,iz,idx%pz) = self%u0(3)*sin(kz)
+        ff(ix,iy,iz,idx%bx) = self%b0(1)
+        ff(ix,iy,iz,idx%by) = self%b0(2)
+        ff(ix,iy,iz,idx%bz) = self%b0(3)
       end do
     end do
   end do
@@ -152,7 +152,7 @@ END FUNCTION single_compressive
 !> =============================================================================
 FUNCTION single_advection (self, m, idx) RESULT (ff)
   class(initial_t)        :: self
-  type(index_t):: idx
+  type(index_t)           :: idx
   class(mesh_t), pointer, dimension(:):: m
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
@@ -168,14 +168,14 @@ FUNCTION single_advection (self, m, idx) RESULT (ff)
       ky   =  pi2*self%k(2)*(m(2)%r(iy)+m(2)%p)/m(2)%b + self%phi(2)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*self%k(1)*(m(1)%r(ix)+m(1)%p)/m(1)%b + self%phi(1)
-        ff(ix,iy,iz,1) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
-        ff(ix,iy,iz,2) = self%e0
-        ff(ix,iy,iz,3) = self%d0*self%u0(1)
-        ff(ix,iy,iz,4) = self%d0*self%u0(2)
-        ff(ix,iy,iz,5) = self%d0*self%u0(3)
-        ff(ix,iy,iz,6) = self%b0(3)*sin(kz)
-        ff(ix,iy,iz,7) = self%b0(1)*sin(kx)
-        ff(ix,iy,iz,8) = self%b0(2)*sin(ky)
+        ff(ix,iy,iz,idx%d) = self%d0*(1.+self%a0(1)*sin(kx)+self%a0(2)*sin(ky)+self%a0(3)*sin(kz))
+        ff(ix,iy,iz,idx%e) = self%e0
+        ff(ix,iy,iz,idx%px) = self%d0*self%u0(1)
+        ff(ix,iy,iz,idx%py) = self%d0*self%u0(2)
+        ff(ix,iy,iz,idx%pz) = self%d0*self%u0(3)
+        ff(ix,iy,iz,idx%bx) = self%b0(3)*sin(kz)
+        ff(ix,iy,iz,idx%by) = self%b0(1)*sin(kx)
+        ff(ix,iy,iz,idx%bz) = self%b0(2)*sin(ky)
       end do
     end do
   end do
@@ -225,12 +225,12 @@ FUNCTION raw (self, m, idx) RESULT (ff)
                                     i(3):i(3)+m(3)%n-1,iv)
   end do
   do iv=2,4
-    ff(:,:,:,iv) = ff(:,:,:,1)*ff(:,:,:,iv)
+    ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', i, &
-      minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
-      maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
+      minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,idx%d)), &
+      maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,idx%d))
   call trace_end
 END FUNCTION raw
 
