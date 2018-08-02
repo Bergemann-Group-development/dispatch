@@ -885,7 +885,7 @@ subroutine cmpflxm(self)
   class(mhd_t):: self
   ! local variables
   integer:: i, j, k, lb(3), ub(3)
-  real(dp), dimension(self%mesh(1)%gn,self%idx%e):: qleft, qright, fgdnv
+  real(dp), dimension(self%mesh(1)%gn,self%nv):: qleft, qright, fgdnv
   real(dp):: dtds(3)
   logical:: error
   integer,save:: itimer=0
@@ -980,6 +980,7 @@ subroutine cmpflxm(self)
 contains
   subroutine cmpflxm_y
   ! local variables
+  real(dp), dimension(self%mesh(2)%gn,self%nv):: qleft, qright, fgdnv
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   !-----------------------------------------------------------------------------
@@ -1010,7 +1011,7 @@ contains
   !-----------------------------------------------------------------------------
   subroutine cmpflxm_z
   ! local variables
-  integer:: i, j, k, lb(3), ub(3)
+  real(dp), dimension(self%mesh(3)%gn,self%nv):: qleft, qright, fgdnv
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   dtds = self%dtime/self%mesh%d       ! needed here

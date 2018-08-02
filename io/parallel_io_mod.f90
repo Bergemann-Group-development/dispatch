@@ -81,7 +81,7 @@ SUBROUTINE output (patch)
   class(patch_t):: patch
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
-  integer:: iv, n(3), jt(2), nv, iw
+  integer:: iv, n(3), jt(2), nv, iw, nw
   real, dimension(:,:,:,:), allocatable:: buffer
   type(mpi_io_t):: thread_io
   real:: pt(2)
@@ -125,7 +125,8 @@ SUBROUTINE output (patch)
     call patch%time_interval (patch%out_next, jt, pt)
   end if
   nv = merge (io%nv, patch%nv, io%nv>0)
-  do iw=1,patch%nw
+  nw = merge (patch%nw, 1, io%time_derivs)
+  do iw=1,nw
     do iv=1,nv
       if (io%guard_zones) then
         buffer(:,:,:,iv) = patch%mem(:,:,:,iv,jt(1),1)*pt(1) &
@@ -160,11 +161,7 @@ SUBROUTINE output (patch)
     ! If native time derivatives (nw=2), output the time deriv buffer
     !---------------------------------------------------------------------------
     if (io%time_derivs) then
-      if (patch%nw==1) then
-        call thread_io_write (1+2*patch%iout)
-      else
-        call thread_io_write (iw+2*patch%iout)
-      end if
+      call thread_io_write (iw+2*patch%iout)
     !---------------------------------------------------------------------------
     ! If no time derivs, increment with one per snapshot
     !---------------------------------------------------------------------------

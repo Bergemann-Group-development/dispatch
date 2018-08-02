@@ -30,7 +30,7 @@
 !size=2,4,4 dims=20,40,40                               ! 32 processes = 16 nodes, 1280x1280x1280 cells
  origin=0,0,0
 /
-&patch_params           nt=5 courant=0.2 grace=0.2 n=3*32 no_mans_land=t do_check_nan=t use_data_hub=f /
+&patch_params           nt=5 grace=0.2 n=3*32 no_mans_land=t do_check_nan=t use_data_hub=f /
 !out_params             end_time=1.000 out_time=0.00 print_time=0.0 guard_zones=t time_derivs=f /
 &out_params             end_time=1.000 out_time=0.003 print_time=0.0 guard_zones=t time_derivs=f /
 &timestep_params        /
