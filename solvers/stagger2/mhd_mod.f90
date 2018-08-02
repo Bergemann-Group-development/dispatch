@@ -12,6 +12,7 @@ MODULE mhd_mod
   USE io_mod
   USE bits_mod
   USE omp_mod
+  USE omp_timer_mod
   USE mpi_mod
   USE trace_mod
   USE kinds_mod
@@ -47,6 +48,7 @@ MODULE mhd_mod
     procedure:: update
     procedure:: output
     procedure:: gas_pressure
+    procedure:: gas_pressure_sub
   end type
   type(index_t):: idx
   integer:: verbose=0
@@ -314,8 +316,8 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Gas pressure.
   !-----------------------------------------------------------------------------
-  pg = self%gas_pressure()
   ss = s/d                                                                      ! ops: 0 0 1
+  call self%gas_pressure_sub (d, s, ss, pg)
   self%pg => pg
   !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
@@ -332,7 +334,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   du = Txx+Tyy+Tzz                                      ! convergence rate      ! ops: 0 1 0
   dsmax = maxval(ds,self%n > 1)
-  du = max(-dsmax*du,0.0)                               ! positive part
+  du = -dsmax*min(du,0.0)                               ! positive part
   self%u_max = 0.0
   ! Diagonal Reynolds stress
   fxx = xup(Ux)**2
@@ -357,7 +359,7 @@ SUBROUTINE pde (self)
     ! Magnetic pressure and fast mode speed
     pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
-    if (io%verbose>2) then
+    if (verbose>2) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
       print 1, self%id, 'u_max(ca)     ', u_max, self%u_max
@@ -367,7 +369,7 @@ SUBROUTINE pde (self)
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
     !du = (dsmax*self%nu(1))*cs + (dsmax*self%nu(7))*uu                          ! ops: 0 1 0
-    du = (dsmax*self%nu(1))*(cs + uu)                                           ! ops: 0 1 0
+    du = (dsmax*self%nu(1))*(cs + 2.*uu)                                        ! ops: 0 1 0
     fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
     fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
     fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
@@ -377,7 +379,7 @@ SUBROUTINE pde (self)
   else
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
-    if (self%id==1 .or. io%verbose>2) then
+    if (verbose>2) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
       print 1, self%id, 'u_max(cs)     ', u_max, self%u_max
@@ -389,14 +391,16 @@ SUBROUTINE pde (self)
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
     !du = (dsmax*self%nu(1))*cs + (dsmax*self%nu(7))*uu                          ! ops: 0 1 0
-    du = (dsmax*self%nu(1))*(cs + uu)                                           ! ops: 0 1 0
+    du = (dsmax*self%nu(1))*(cs + 2.*uu)                                        ! ops: 0 1 0
     fxx = pp + d*(fxx - du*Txx)                                                 ! ops: 2 2 0
     fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
     fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
   end if
+  if (first_time) &
+    print *, stagger%count, ' stagger calls', stagger%flops/product(real(self%n)),' flops per interior point'
   u_max = self%fmaxval(cs + uu )
   self%u_max = max(self%u_max,u_max)
-  if (io%verbose>2) print 1, self%id, 'u_max(cs+u)', u_max, self%u_max
+  if (verbose>2) print 1, self%id, 'u_max(cs+u)   ', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! du has units area per unit time, which gives velocity squared times mass
   ! density per unit time = energy per unit volume and time
@@ -410,9 +414,9 @@ SUBROUTINE pde (self)
   fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux   ! ops: 0 9 0
   fm = p+fd                                             ! mass flux             ! ops: 3 0 0
   dddt = -div(ds,fm)                                    ! density derivative
-  u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs(dddt/d))             ! ops: 0 0 1
+  u_max = self%cdtd*dsmax*self%fmaxval(abs(dddt/d))                             ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
-  !if (self%id==1 .or. io%verbose>2) print 1, self%id, 'u_max(dddt)   ', u_max, self%u_max
+  !if (verbose>2) print 1, self%id, 'u_max(dddt)   ', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -536,9 +540,9 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dS/dt = (ds/dt-(s/d)*dddt)/d
   !-----------------------------------------------------------------------------
-  u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs((dsdt-s*dddt/d)/d))  ! ops: 1 1 2
+  u_max = self%cdtd*dsmax*self%fmaxval(abs((dsdt-s*dddt/d)/d))                  ! ops: 1 1 2
   self%u_max = max(self%u_max,u_max)
-  if (io%verbose>2) print 1, self%id, 'u_max(dsdt)', u_max, self%u_max
+  if (verbose>2) print 1, self%id, 'u_max(dsdt)   ', u_max, self%u_max
   !-----------------------------------------------------------------------------
   call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
   call deallocate_scalars (lnd, pa, du, ss, cs, pp, pb, Q)
@@ -547,10 +551,11 @@ SUBROUTINE pde (self)
     call deallocate_scalars_p (pg)
   end if
   call trace%end (itimer)
-  if (flop_count) then
+  if (mpi%master .and. (first_time .or. flop_count)) then
     print *, stagger%count, ' stagger calls', stagger%flops/product(real(self%n)),' flops per interior point'
     stagger%count=0
     stagger%flops=0
+    first_time = .false.
   end if
 END SUBROUTINE pde
 
@@ -627,6 +632,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
     else
       s => self%mem(:,:,:,self%idx%s,self%it,1)
       pg = d**self%gamma*exp(s/d*(self%gamma-1))
+      !pg = exp(self%gamma*log(d))*exp(ss*(self%gamma-1.0))
     end if
   else
     call eos%lookup (shape(d), x=s, y=d, pg=pg)
@@ -636,5 +642,30 @@ FUNCTION gas_pressure (self) RESULT (pg)
     print *, 'mhd_t%gas_pressure: min, max =', self%fminval(pg), self%fmaxval(pg)
   end if
 END FUNCTION gas_pressure
+
+!> =============================================================================
+SUBROUTINE gas_pressure_sub (self, d, s, ss, pg)
+  class(mhd_t):: self
+  real, dimension(:,:,:), pointer:: d, s, pg
+  real, dimension(:,:,:):: ss
+  integer:: i1, i2, i3
+  integer, save:: nprint=3
+  !-----------------------------------------------------------------------------
+  if (trim(self%eos)=='ideal') then
+    if (self%gamma==1d0) then
+      ss = 0.0
+      pg = d*self%csound**2
+    else
+      pg = exp(self%gamma*log(d))*exp(ss*(self%gamma-1.0))
+    end if
+  else
+    print *,'yyy'
+    call eos%lookup (shape(d), x=s, y=d, pg=pg)
+  end if
+  if (io%master .and. nprint>0) then
+    nprint = nprint - 1
+    print *, 'mhd_t%gas_pressure: min, max =', self%fminval(pg), self%fmaxval(pg)
+  end if
+END SUBROUTINE gas_pressure_sub
 
 END MODULE mhd_mod
