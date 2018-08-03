@@ -119,8 +119,8 @@ SUBROUTINE init (self)
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  self%unsigned(idx%d)  = .true.
-  self%pervolume(idx%s) = .true.
+  self%unsigned(self%idx%d)  = .true.
+  self%pervolume(self%idx%s) = .true.
   call self%force%init (self%kind, self%id, self%mesh)
  call trace%end
 END SUBROUTINE init
@@ -155,6 +155,7 @@ SUBROUTINE pde (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
+  associate (i => self%idx)
   self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
   self%e => self%mem(:,:,:,i%e      ,self%it,1); self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
   self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
@@ -168,6 +169,7 @@ SUBROUTINE pde (self)
     Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
+  end associate
   call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
   call allocate_scalars (self%gn, lnd, pa, du, ee, cs, pp, pb, Q, uu, divU)
   if (self%do_pebbles) then
@@ -218,7 +220,7 @@ SUBROUTINE pde (self)
   ! Divergence of velocity, and artificial pressure.  The divergence is valid
   ! in (2,gn-1)
   !-----------------------------------------------------------------------------
-  dsmax = maxval(ds,self%n > 1)
+  dsmax = maxval(ds,self%n > 2)
   du = -dsmax*min(divU,0.0)                             ! positive part
   if (do_smooth) then
     pa = self%nu(2)*d*xyzsm(du**2)

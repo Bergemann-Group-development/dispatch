@@ -125,8 +125,8 @@ SUBROUTINE init (self)
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  self%unsigned(idx%d)  = .true.
-  self%pervolume(idx%s) = .true.
+  self%unsigned(self%idx%d)  = .true.
+  self%pervolume(self%idx%s) = .true.
   !-----------------------------------------------------------------------------
   ! Initialize force
   !-----------------------------------------------------------------------------
@@ -271,6 +271,7 @@ SUBROUTINE pde (self)
   real:: u_max
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
+  associate (i => self%idx)
   self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
   self%s => self%mem(:,:,:,i%s      ,self%it,1); self%dsdt => self%mem(:,:,:,i%s      ,self%it,2)
   self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
@@ -284,6 +285,7 @@ SUBROUTINE pde (self)
     Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
+  end associate
   call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
   call allocate_scalars (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
   if (self%do_pebbles) then
@@ -331,7 +333,7 @@ SUBROUTINE pde (self)
   ! in (2,gn-1)
   !-----------------------------------------------------------------------------
   du = Txx+Tyy+Tzz                                      ! convergence rate      ! ops: 0 1 0
-  dsmax = maxval(ds,self%n > 1)
+  dsmax = maxval(ds,self%n > 2)
   du = -dsmax*min(du,0.0)                               ! positive part
   self%u_max = 0.0
   ! Diagonal Reynolds stress
