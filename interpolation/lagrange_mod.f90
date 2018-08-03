@@ -7,6 +7,8 @@ MODULE lagrange_mod
   private
   type, public:: lagrange_t
     integer:: verbose=0
+    integer:: order=2
+    logical:: initialized=.false.
   contains
     procedure interpolation4
     procedure interpolation8
@@ -32,6 +34,8 @@ MODULE lagrange_mod
     procedure interpolate3d
     procedure trilinear3d
     procedure test
+    procedure debug
+    procedure init
   end type
   type(lagrange_t), public:: lagrange
 CONTAINS
@@ -310,8 +314,9 @@ SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
       o = min(o,i2-i0)
     end if
   end if
-  if (self%verbose>0) then
-    print*,'lagrange_interval: i0, i2, o =', i0, i2, o
+  if (self%debug(1)) then
+    print '("lagrange_interval: i0,i2:",2i3,3x,"o:",i2,3x,"x0:",f10.6,3x,"x:",10f10.6)', &
+                                i0,i2,          o,         x0,           x
   end if
 END SUBROUTINE interval8
 
@@ -575,5 +580,37 @@ SUBROUTINE test (self)
   end do
   print *,'--------------------------------------------------'
 END SUBROUTINE test
+
+!> -----------------------------------------------------------------------------
+!> -----------------------------------------------------------------------------
+FUNCTION debug (self, verbose)
+  class(lagrange_t):: self
+  integer:: verbose
+  logical:: debug
+  !-----------------------------------------------------------------------------
+  if (.not.self%initialized) call self%init
+  debug = (verbose >= self%verbose)
+END FUNCTION debug
+
+!> -----------------------------------------------------------------------------
+!> Initialize (only) this instance of lagrange
+!> -----------------------------------------------------------------------------
+SUBROUTINE init (self)
+  class(lagrange_t):: self
+  integer:: iostat
+  integer:: verbose=0, order=2
+  namelist /lagrange_params/ verbose, order
+  !-----------------------------------------------------------------------------
+  !$omp critical (lagrange_cr)
+  if (.not.self%initialized) then
+    self%initialized = .true.
+    rewind (io_unit%input)
+    read (io_unit%input, lagrange_params, iostat=iostat)
+    if (io%master) write (io%output, lagrange_params)
+    self%verbose = verbose
+    self%order = order
+  end if
+  !$omp end critical (lagrange_cr)
+END SUBROUTINE init
 
 END MODULE
