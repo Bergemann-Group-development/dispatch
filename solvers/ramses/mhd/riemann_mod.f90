@@ -40,7 +40,11 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub)
   !-----------------------------------------------------------------------------
   call trace%begin('riemann_mod::hlld_vec', 2, itimer=itimer)
   !
-  entho = one/max(gamma-one,1e-6)
+  if (isothermal) then
+    entho = one
+  else
+    entho = one/max(gamma-one,1e-6)
+  end if
   !
   ! Enforce continuity of normal component
   A=half*(qleft(lb:ub,4)+qright(lb:ub,4))
@@ -272,7 +276,11 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
   call trace%begin('riemann_mod::hlld', 2, itimer=itimer)
   !
   ! constants
-  entho = one/max(gamma-one,1e-6)
+  if (isothermal) then
+    entho = one
+  else
+    entho = one/max(gamma-one,1e-6)
+  end if
   !
   fgdnv      = 0d0
   do i=1,ngrid

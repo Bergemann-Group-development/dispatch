@@ -80,7 +80,7 @@ SUBROUTINE cleanup
 END SUBROUTINE cleanup
 
 !> =============================================================================
-!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> Void initialization
 !> =============================================================================
 SUBROUTINE void (self, m, ff, idx)
   class(initial_t) :: self
@@ -195,7 +195,8 @@ SUBROUTINE single_compressive (self, m, ff, idx)
         ff(ix,iy,iz,idx%py) = u0(2)*sin(ky)
         ff(ix,iy,iz,idx%pz) = u0(3)*sin(kz)
         if (gamma==1.0) then
-          ff(ix,iy,iz,idx%e ) = d0*csound**2
+          ff(ix,iy,iz,idx%e ) = d0*csound**2 + &
+            half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         else
           ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1d0)) + &
             half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)

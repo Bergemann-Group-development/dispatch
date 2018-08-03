@@ -66,11 +66,7 @@ SUBROUTINE init (self)
 !...............................................................................
   call trace%begin('mhd_mod%init')
 
-  ! Fool-proofing
-  if (self%mhd) then
-    call mpi%abort('This is the RAMSES hydro solver. But MHD is turned on!')
-  end if
-
+  self%mhd = .false.
   self%nw = 1
   self%kind = 'ramses_hd_patch'
   if (self%nv == 0) self%nv = 5
