@@ -22,8 +22,6 @@ MODULE experiment_mod
     procedure:: update
   end type
 
-  type(index_t):: idx
-
 CONTAINS
 
 !> =============================================================================
@@ -78,7 +76,7 @@ SUBROUTINE init (self)
   d2   => self%mem(:,:,:,self%idx%d+5               ,self%it,1)
   s2   => self%mem(:,:,:,self%idx%s+5               ,self%it,1)
   pp2  => self%mem(:,:,:,self%idx%px+5:self%idx%pz+5,self%it,1)
-  !dtr2 => self%mem(:,:,:,idx%dtr+5        ,self%it,1)
+  !dtr2 => self%mem(:,:,:,self%idx%dtr+5        ,self%it,1)
   px2  => pp2(:,:,:,1); py2 => pp2(:,:,:,2); pz2 => pp2(:,:,:,3);
 
   call allocate_scalars(self%gn, r2, lnPg)

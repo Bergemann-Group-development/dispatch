@@ -50,7 +50,6 @@ MODULE mhd_mod
     procedure:: velocity_magnitude                                              ! for refinement
     procedure:: magnetic_field_magnitude                                        ! for refinement
   end type
-  type(index_t):: idx
   !-----------------------------------------------------------------------------
 CONTAINS
 

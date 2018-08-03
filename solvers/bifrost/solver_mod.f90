@@ -40,7 +40,6 @@ MODULE solver_mod
     generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
   end type
   type(solver_t), public:: solver
-  type(index_t):: idx
   character(len=80), save:: id = &
   '$Id$'
 CONTAINS

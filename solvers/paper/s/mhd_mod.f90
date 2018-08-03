@@ -71,7 +71,6 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  type(index_t):: idx
   integer:: i
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   real, save:: gamma_AD=75., rho_ions=1., niMHD_courant=0.1
@@ -107,8 +106,8 @@ SUBROUTINE init (self)
     self%mesh(i)%h(2+i) = -0.5
     if (self%mhd) self%mesh(i)%h(5+i) = -0.5
   end do
-  self%unsigned(idx%d)  = .true.
-  self%pervolume(idx%s) = .true.
+  self%unsigned(self%idx%d)  = .true.
+  self%pervolume(self%idx%s) = .true.
   call self%force%init(self%kind)
   call trace%end
 END SUBROUTINE init

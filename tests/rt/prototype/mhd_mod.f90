@@ -39,7 +39,6 @@ MODULE mhd_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
   end type
-  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================

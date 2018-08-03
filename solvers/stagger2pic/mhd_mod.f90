@@ -63,7 +63,6 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
-  type(index_t):: idx
   integer:: i
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
   real, save:: gamma_AD=75., rho_ions=1.
@@ -108,7 +107,7 @@ SUBROUTINE init (self)
     self%mesh(i)%h(2+i) = -0.5
     if (self%mhd) self%mesh(i)%h(5+i) = -0.5
   end do
-  !self%unsigned(idx%d) = .true.
+  !self%unsigned(self%self%idx%d) = .true.
   call self%force%init(self%kind)
   call trace%end
 END SUBROUTINE init
@@ -136,9 +135,9 @@ SUBROUTINE pde (self)
   !.............................................................................
   real(8):: ds(3), dx
   integer, save:: itimer=0
-  type(index_t):: i
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
+  associate (i => self%idx)
   self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
   self%s => self%mem(:,:,:,i%s      ,self%it,1); self%dsdt => self%mem(:,:,:,i%s      ,self%it,2)
   self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
@@ -152,6 +151,7 @@ SUBROUTINE pde (self)
     Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
+  end associate
   call allocate_vectors (self%gn, ld, dd, E, J, fd, fx, fy, fz, fm)
   call allocate_scalars (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
   if (self%mhd_Ohm) call allocate_scalars (self%gn, eta_Ohm)

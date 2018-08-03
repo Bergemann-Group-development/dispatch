@@ -47,7 +47,6 @@ MODULE mhd_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
   end type
-  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
@@ -87,8 +86,8 @@ SUBROUTINE init (self)
     self%mesh(i)%h(2+i) = -0.5
     if (self%nv > 5) self%mesh(i)%h(5+i) = -0.5
   end do
-  !self%unsigned(idx%d) = .true.
-  !self%unsigned(idx%e) = .true.
+  !self%unsigned(self%idx%d) = .true.
+  !self%unsigned(self%idx%e) = .true.
   call self%force%init(self%kind)
   call trace%end
 END SUBROUTINE init

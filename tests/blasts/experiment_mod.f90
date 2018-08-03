@@ -16,7 +16,6 @@ MODULE experiment_mod
   contains
     procedure:: init
   end type
-  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================

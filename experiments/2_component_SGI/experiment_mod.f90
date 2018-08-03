@@ -21,10 +21,7 @@ MODULE experiment_mod
     procedure :: update => update_experiment
   end type
 
-  type(index_t):: idx
-
   real(8), parameter :: pi = asin(1.0d0) * 2.0d0
-
 CONTAINS
 
 !> =============================================================================

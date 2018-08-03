@@ -81,7 +81,6 @@ MODULE gmhd_mod
     procedure:: update
     procedure:: solve
   end type
-  type(index_t):: idx
   !type(operator_t):: o
 CONTAINS
 
