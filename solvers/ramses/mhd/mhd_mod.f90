@@ -60,7 +60,6 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hlld'
-  type(index_t):: idx
   integer:: i
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
     smallc, isothermal, csound, verbose

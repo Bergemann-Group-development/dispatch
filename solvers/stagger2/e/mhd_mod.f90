@@ -151,7 +151,6 @@ SUBROUTINE pde (self)
   logical, save:: first_time=.true.
   !.............................................................................
   real(8):: ds(3), dsmax
-  type(index_t):: i
   real:: u_max
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------

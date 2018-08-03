@@ -5,6 +5,7 @@ MODULE interpolate_mod
   USE trace_mod
   USE mpi_mod
   USE kinds_mod
+  USE index_mod
   implicit none
   private
 
@@ -273,14 +274,11 @@ END FUNCTION interpolator_unsigned
 !> density to velocity!!
 !> =============================================================================
 FUNCTION interpolator_specific (q,i,j,k,iv,w) result(qtilde)
-  USE index_mod
-
   real(kind=KindScalarVar), intent(in):: q(:,:,:,:)
   integer, intent(in):: i, j, k, iv
   real, intent(in):: w(3)
   real(kind=KindScalarVar):: qtilde
   real(kind=KindScalarVar), allocatable:: qod(:,:,:,:)
-  type(index_t):: idx
   !-----------------------------------------------------------------------------
   call trace_begin('interpolate_mod::specific', 2)
 

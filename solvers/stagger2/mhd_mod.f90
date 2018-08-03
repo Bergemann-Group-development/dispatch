@@ -50,7 +50,6 @@ MODULE mhd_mod
     procedure:: gas_pressure
     procedure:: gas_pressure_sub
   end type
-  type(index_t):: idx
   integer:: verbose=0
   logical, save:: flop_count=.false.
   logical, save:: do_2nd_div=.true.
@@ -269,7 +268,6 @@ SUBROUTINE pde (self)
   !.............................................................................
   real(8):: ds(3), dsmax
   integer, save:: itimer=0
-  type(index_t):: i
   real:: u_max
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)

@@ -51,6 +51,7 @@ SUBROUTINE init (self)
   end if
   self%nv = 0
   self%mhd = mhd
+  call self%idx%init (5, self%mhd)
   call self%mhd_t%init
   print *, 'nv, mhd =', self%nv, self%mhd
   !-----------------------------------------------------------------------------
@@ -150,9 +151,9 @@ SUBROUTINE init (self)
         pz(k,:,:)= 0.
         px(k,:,:)= ampl*d0*(1.+1e-3*cs)
         if (self%mhd) then
-        Bx(k,:,:)= 0.0
-        By(k,:,:)= 0.0
-        Bz(k,:,:)= 0.0
+          Bx(k,:,:)= 0.0
+          By(k,:,:)= 0.0
+          Bz(k,:,:)= 0.0
         end if
       else
         call io%abort ('experiment_t%init: unknown experiment type')
@@ -204,7 +205,7 @@ SUBROUTINE init (self)
       end if
     end do
     if (mhd) then
-    e = 0.5*(px**2+py**2+pz**2)/d + 0.5*(bx**2+by**2+bz**2)
+      e = 0.5*(px**2+py**2+pz**2)/d + 0.5*(bx**2+by**2+bz**2)
     else
       e = 0.5*(px**2+py**2+pz**2)/d
     end if

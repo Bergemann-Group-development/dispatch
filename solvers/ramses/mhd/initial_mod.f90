@@ -28,7 +28,6 @@ MODULE initial_mod
   end type
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
   real, save:: csound=1.
-  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
