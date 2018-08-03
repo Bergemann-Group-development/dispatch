@@ -218,7 +218,6 @@ CONTAINS
 SUBROUTINE init_zeus (self)
   class(mhd_t):: self
   integer:: i
-  type(index_t):: idx
   logical, save :: first_time=.true.
 
   namelist / zeus_params /  gamma   , qcon    , qlin    , nghst   &
@@ -315,11 +314,17 @@ SUBROUTINE init_zeus (self)
   ! don't store the time derivatives, only the MHD quantities;
   ! this also implies that `time_order` in `timestep_params` should be set to 0.
   self%nw = 1
+  self%idx%d=1   ; self%idx%e=2 ; self%idx%et=3
+  self%idx%px=4  ; self%idx%py=5; self%idx%pz=6
+  self%idx%bx=7  ; self%idx%by=8; self%idx%bz=9
+  self%idx%phi=10
+  self%idx%tt=-1 ; self%idx%s=-1; self%idx%dphi=-1
   call self%gpatch_t%init()
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5 ! momentum/velocity components
     self%mesh(i)%h(self%idx%bx+i-1) = -0.5 ! mag. field components
   end do
+  idx = self%idx
 
   self%dt(self%it) = dtinit
   self%t(self%it) = 0.0d0
