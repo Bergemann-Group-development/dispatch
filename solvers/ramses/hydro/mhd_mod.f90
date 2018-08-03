@@ -129,6 +129,7 @@ SUBROUTINE update (self)
   allocate (self%fl(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%c(n(1),n(2),n(3)))
   allocate (self%s(n(1),n(2),n(3)))
+  self%q=0.0; self%qp=0.0; self%qm=0.0; self%dq=0.0; self%fl=0.; self%c=0.0; self%s=0.0
   if (detailed_timer) call trace_end (itimer)
   if (debug) then
     if (self%id==229.or.self%id==231) then
@@ -897,6 +898,7 @@ subroutine cmpflxm(self)
   dtds = self%dtime/self%mesh%d
   lb = self%mesh%li
   ub = self%mesh%uo
+  qleft=0.0; qright=0.0
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
       do i = lb(1),ub(1)
@@ -984,6 +986,7 @@ contains
   dtds = self%dtime/self%mesh%d       ! needed here
   lb = self%mesh%li
   ub = self%mesh%uo
+  qleft=0.0; qright=0.0
   do k = lb(3),ub(3)
     do i = lb(1),ub(1)
       qleft (:,1) = qm(i,:,k,1,2); qright(:,1) = qp(i,:,k,1,2)
@@ -1014,6 +1017,7 @@ contains
   dtds = self%dtime/self%mesh%d       ! needed here
   lb = self%mesh%li
   ub = self%mesh%uo
+  qleft=0.0; qright=0.0
   do j = lb(2),ub(2)
     do i = lb(1),ub(1)
       qleft (:,1) = qm(i,j,:,1,3); qright(:,1) = qp(i,j,:,1,3)
