@@ -56,7 +56,7 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
   if (present(set_verbose)) then
     verbosity(level) = set_verbose
   else
-    verbosity(level) = 0
+    verbosity(level) = -1
   end if
   verbose = verbosity(level)
   if (level<maxlev) then

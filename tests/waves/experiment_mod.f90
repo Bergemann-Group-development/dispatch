@@ -33,7 +33,7 @@ SUBROUTINE init (self)
   integer, save:: waves=1, nj=1
   character(len=16):: type='transverse'
   character(len=1):: direction='z'
-  logical, save:: first_time=.true., mhd=.true.
+  logical, save:: first_time=.true., mhd=.false.
   namelist /experiment_params/ type, mhd, direction, ampl, d0, B0, csound, waves, nj
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
@@ -50,6 +50,7 @@ SUBROUTINE init (self)
     first_time = .false.
   end if
   self%nv = 0
+  self%mhd = mhd
   call self%mhd_t%init
   print *, 'nv, mhd =', self%nv, self%mhd
   !-----------------------------------------------------------------------------
@@ -202,7 +203,11 @@ SUBROUTINE init (self)
         call io%abort ('experiment_t%init: unknown experiment type')
       end if
     end do
+    if (mhd) then
     e = 0.5*(px**2+py**2+pz**2)/d + 0.5*(bx**2+by**2+bz**2)
+    else
+      e = 0.5*(px**2+py**2+pz**2)/d
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Energy variable
@@ -217,7 +222,6 @@ SUBROUTINE init (self)
   print *,minval(d),minval(e)
   !
   self%periodic = .true.
-  self%mhd = .true.
   print*, 'done!'
   call trace_end
 END SUBROUTINE init
