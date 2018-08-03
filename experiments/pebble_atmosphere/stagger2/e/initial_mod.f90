@@ -93,7 +93,6 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx, level)
   !.............................................................................
   integer :: ix, iy, iz, nr
   real(8) :: x, y, z, r, d, d0, p, ux, uy, uz
-  type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
   real, save:: omega(3)=0.0
@@ -136,8 +135,8 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx, level)
         d = d + &
           atmosphere%external%density*(exp(-(planet%omega(3)**2*d0/p*0.5*z**2))-1d0)
         p = p*(d/d0)
-        mem(ix,iy,iz,i%d) = d
-        mem(ix,iy,iz,i%e) = p/(gamma-1.0)
+        mem(ix,iy,iz,idx%d) = d
+        mem(ix,iy,iz,idx%e) = p/(gamma-1.0)
         !-----------------------------------------------------------------------
         ! A rotation profile, where the rotation center is at y=+1 AU, and
         ! the direction of rotation is +x, so the head wind is in the -x
@@ -151,13 +150,13 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx, level)
         ux = self%v_accrete
         uy = (1.5*planet%omega(3)*x + self%v_head)
         uz = 0.0
-        mem(ix,iy,iz,i%px) = -d*ux                                       ! radial speed
-        mem(ix,iy,iz,i%py) = -d*uy                                       ! azimuthal speed
-        mem(ix,iy,iz,i%pz) = -d*uz                                       ! vertical speed
+        mem(ix,iy,iz,idx%px) = -d*ux                                       ! radial speed
+        mem(ix,iy,iz,idx%py) = -d*uy                                       ! azimuthal speed
+        mem(ix,iy,iz,idx%pz) = -d*uz                                       ! vertical speed
         if (self%mhd) then
-          mem(ix,iy,iz,i%bx) = b0(1)
-          mem(ix,iy,iz,i%by) = b0(2)
-          mem(ix,iy,iz,i%bz) = b0(3)
+          mem(ix,iy,iz,idx%bx) = b0(1)
+          mem(ix,iy,iz,idx%by) = b0(2)
+          mem(ix,iy,iz,idx%bz) = b0(3)
         end if
       end do
     end do
@@ -178,7 +177,6 @@ SUBROUTINE disk (self, m, mem, idx, level)
   !.............................................................................
   integer :: ix, iy, iz, nr
   real(8) :: x, y, z, r, d, d0, p, ux, uy, uz, om2, uy2
-  type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
   real, save:: omega(3)=0.0
@@ -217,8 +215,8 @@ SUBROUTINE disk (self, m, mem, idx, level)
         d0 = d
         d = d0*exp(-(planet%omega(3)**2*d0/p*0.5*z**2))
         p = p*(d/d0)
-        mem(ix,iy,iz,i%d) = d
-        mem(ix,iy,iz,i%e) = p/(gamma-1.0)
+        mem(ix,iy,iz,idx%d) = d
+        mem(ix,iy,iz,idx%e) = p/(gamma-1.0)
         !-----------------------------------------------------------------------
         ! A rotation profile, where the rotation center is at y=+1 AU, and
         ! the direction of rotation is +x, so the head wind is in the -x
@@ -232,13 +230,13 @@ SUBROUTINE disk (self, m, mem, idx, level)
         ux = self%v_accrete
         uy = 1.5*planet%omega(3)*x + self%v_head
         uz = 0.0
-        mem(ix,iy,iz,i%px) = -d*ux                                       ! radial speed
-        mem(ix,iy,iz,i%py) = -d*uy                                       ! azimuthal speed
-        mem(ix,iy,iz,i%pz) = -d*uz                                       ! vertical speed
+        mem(ix,iy,iz,idx%px) = -d*ux                                       ! radial speed
+        mem(ix,iy,iz,idx%py) = -d*uy                                       ! azimuthal speed
+        mem(ix,iy,iz,idx%pz) = -d*uz                                       ! vertical speed
         if (self%mhd) then
-          mem(ix,iy,iz,i%bx) = b0(1)
-          mem(ix,iy,iz,i%by) = b0(2)
-          mem(ix,iy,iz,i%bz) = b0(3)
+          mem(ix,iy,iz,idx%bx) = b0(1)
+          mem(ix,iy,iz,idx%by) = b0(2)
+          mem(ix,iy,iz,idx%bz) = b0(3)
         end if
       end do
     end do

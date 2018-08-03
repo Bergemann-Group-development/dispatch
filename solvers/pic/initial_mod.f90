@@ -89,6 +89,7 @@ FUNCTION single_solenoidal (self, m, idx) RESULT (ff)
   type(random_t)        :: random
   integer               :: ix, iy, iz
   real(8)               :: kx, ky, kz
+  type(index_t)         :: idx
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal')
   self%phi = 0.0
@@ -119,6 +120,7 @@ FUNCTION single_compressive (self, m, idx) RESULT (ff)
   class(initial_t)        :: self
   type(index_t):: idx
   class(mesh_t), pointer, dimension(:):: m
+  type(index_t)           :: idx
   real, dimension(m(1)%gn,m(2)%gn,m(3)%gn,8) :: ff
   !.............................................................................
   type(random_t)        :: random

@@ -58,7 +58,6 @@ SUBROUTINE init (self, ie, mhd)
   !-----------------------------------------------------------------------------
   !$omp critical (index_cr)
   idx = self
-  print *, 'IDX', idx%e
   !$omp end critical (index_cr)
 END SUBROUTINE init
 

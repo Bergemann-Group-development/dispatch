@@ -133,7 +133,6 @@ SUBROUTINE stagger (self, m, ff, idx)
   !.............................................................................
   integer, save:: dims(3)=63
   integer, save:: order=2
-  type(index_t):: i
   character(len=64):: file='snapshot'
   namelist /stagger_params/ file, dims, iread, iwrite, order
   !-----------------------------------------------------------------------------
@@ -159,8 +158,8 @@ SUBROUTINE stagger (self, m, ff, idx)
     recl = 4*product(dims)                                           ! FIXME
     if (io%master) print *,'reading MHD data from ' //trim(file)//'.dat'
     open (io_unit%data, file=trim(file)//'.dat', form='unformatted', access='direct', recl=recl)
-    i%tt = 9
-    ii=[i%d,i%px,i%py,i%pz,i%e,i%tt,i%bx,i%by,i%bz]
+    idx%tt = 9
+    ii=[idx%d,idx%px,idx%py,idx%pz,idx%e,idx%tt,idx%bx,idx%by,idx%bz]
     do iv=1,self%nv
       read (io_unit%data, rec=iv) buffer(:,:,:,ii(iv))
     end do
@@ -214,9 +213,9 @@ SUBROUTINE stagger (self, m, ff, idx)
     xi => xm
     yi => ym
     zi => zm
-    if (iv==i%px.or.iv==i%bx) xi => xmdn
-    if (iv==i%py.or.iv==i%by) yi => ymdn
-    if (iv==i%pz.or.iv==i%bz) zi => zmdn
+    if (iv==idx%px.or.iv==idx%bx) xi => xmdn
+    if (iv==idx%py.or.iv==idx%by) yi => ymdn
+    if (iv==idx%pz.or.iv==idx%bz) zi => zmdn
     !print '(i4,2x,2(2x,3(2x,2f7.2)))', iv, &
       !minval(xi), maxval(xi), minval(yi), maxval(yi), minval(zi), maxval(zi), &
       !minval(xo), maxval(xo), minval(yo), maxval(yo), minval(zo), maxval(zo)
