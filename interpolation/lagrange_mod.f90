@@ -589,7 +589,7 @@ FUNCTION debug (self, verbose)
   logical:: debug
   !-----------------------------------------------------------------------------
   if (.not.self%initialized) call self%init
-  debug = (verbose >= self%verbose)
+  debug = (self%verbose >= verbose)
 END FUNCTION debug
 
 !> -----------------------------------------------------------------------------
