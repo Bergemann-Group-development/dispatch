@@ -19,9 +19,6 @@ MODULE experiment_mod
     procedure:: init
     procedure:: update
   end type
-
-  type(index_t):: idx
-
 CONTAINS
 
 !> =============================================================================
@@ -63,15 +60,15 @@ SUBROUTINE init (self)
 
   d   => self%mem(:,:,:,self%idx%d        ,self%it,1)
   s   => self%mem(:,:,:,self%idx%s        ,self%it,1)
-  p   => self%mem(:,:,:,self%idx%px:idx%pz,self%it,1)
+  p   => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   dtr => self%mem(:,:,:,self%idx%dtr      ,self%it,1)
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);                       ! ADDED TRACER DENSITY
 
   self%no_pressure = 2
   d2   => self%mem(:,:,:,self%idx%d +5         ,self%it,1)                 ! ADDED SECOND COMPONENT VARIABLES
   s2   => self%mem(:,:,:,self%idx%s +5         ,self%it,1)
-  p2   => self%mem(:,:,:,self%idx%px+5:idx%pz+5,self%it,1)
-  !dtr2 => self%mem(:,:,:,idx%dtr+nvc         ,self%it,1)
+  p2   => self%mem(:,:,:,self%idx%px+5:self%idx%pz+5,self%it,1)
+  !dtr2 => self%mem(:,:,:,self%idx%dtr+nvc         ,self%it,1)
   px2=>p2(:,:,:,1); py2=>p2(:,:,:,2); pz2=>p2(:,:,:,3);
 
   print*, 'gn is:', self%gn(1)

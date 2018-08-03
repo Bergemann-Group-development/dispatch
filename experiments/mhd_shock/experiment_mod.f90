@@ -22,8 +22,6 @@ MODULE experiment_mod
     procedure:: update
   end type
 
-  type(index_t):: idx
-
   logical, save:: first_time = .true.
 
 CONTAINS
@@ -71,26 +69,26 @@ SUBROUTINE init (self)
     call mpi%abort("Shock tubes in the x-direction must have a constant Bx!")
   end if
 
-  d  => self%mem(:,:,:,idx%d ,self%it,1)
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
   if (self%kind(1:14) == 'zeus_mhd_patch' .or. self%kind(1:10) == 'stagger2e_') then
-    e1 => self%mem(:,:,:,idx%e ,self%it,1)
+    e1 => self%mem(:,:,:,self%idx%e ,self%it,1)
   end if
   if (self%kind(1:9) == 'stagger2_') then
-    s => self%mem(:,:,:,idx%s ,self%it,1)
+    s => self%mem(:,:,:,self%idx%s ,self%it,1)
   end if
   if (self%kind(1:14) == 'zeus_mhd_patch') then
-    et => self%mem(:,:,:,idx%et,self%it,1)
+    et => self%mem(:,:,:,self%idx%et,self%it,1)
   end if
   if (self%kind(1:6) == 'ramses') then
-    et => self%mem(:,:,:,idx%e,self%it,1)
+    et => self%mem(:,:,:,self%idx%e,self%it,1)
     allocate (e1(self%gn(1),self%gn(2),self%gn(3)))
   end if
-  px => self%mem(:,:,:,idx%px,self%it,1)
-  py => self%mem(:,:,:,idx%py,self%it,1)
-  pz => self%mem(:,:,:,idx%pz,self%it,1)
-  Bx => self%mem(:,:,:,idx%bx,self%it,1)
-  By => self%mem(:,:,:,idx%by,self%it,1)
-  Bz => self%mem(:,:,:,idx%bz,self%it,1)
+  px => self%mem(:,:,:,self%idx%px,self%it,1)
+  py => self%mem(:,:,:,self%idx%py,self%it,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
+  Bx => self%mem(:,:,:,self%idx%bx,self%it,1)
+  By => self%mem(:,:,:,self%idx%by,self%it,1)
+  Bz => self%mem(:,:,:,self%idx%bz,self%it,1)
   
   m1 => self%mesh(1)
   m2 => self%mesh(2)
