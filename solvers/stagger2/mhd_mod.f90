@@ -159,6 +159,8 @@ SUBROUTINE test (self)
   call trace%begin('mhd_t%test')
   allocate (tmp)
   tmp%nv = self%nv
+  tmp%mhd = self%mhd
+  call tmp%idx%init (5, tmp%mhd)
   call tmp%patch_t%init
   n0 = 2*(tmp%ncell/2)
   if (any(tmp%n /= n0)) then
@@ -178,15 +180,15 @@ SUBROUTINE test (self)
       fy = sin(4.*cgs%pi*tmp%mesh(2)%r(iy)/tmp%size(2))
       do ix=tmp%mesh(1)%lb,tmp%mesh(1)%ub
         fx = sin(4.*cgs%pi*tmp%mesh(1)%r(ix)/tmp%size(1))
-        tmp%mem(ix,iy,iz,idx%d,tmp%it,1) = 1.0+0.1*(fx+fy+fz)
-        tmp%mem(ix,iy,iz,idx%s,tmp%it,1) = 0.1*(fx+fy+fz)
-        tmp%mem(ix,iy,iz,idx%px,tmp%it,1) = fx
-        tmp%mem(ix,iy,iz,idx%py,tmp%it,1) = fy
-        tmp%mem(ix,iy,iz,idx%pz,tmp%it,1) = fz
-        if (tmp%nv >= 8) then
-          tmp%mem(ix,iy,iz,idx%bx,tmp%it,1) = fy
-          tmp%mem(ix,iy,iz,idx%by,tmp%it,1) = fz
-          tmp%mem(ix,iy,iz,idx%bz,tmp%it,1) = fx
+        tmp%mem(ix,iy,iz,tmp%idx%d,tmp%it,1) = 1.0+0.1*(fx+fy+fz)
+        tmp%mem(ix,iy,iz,tmp%idx%s,tmp%it,1) = 0.1*(fx+fy+fz)
+        tmp%mem(ix,iy,iz,tmp%idx%px,tmp%it,1) = fx
+        tmp%mem(ix,iy,iz,tmp%idx%py,tmp%it,1) = fy
+        tmp%mem(ix,iy,iz,tmp%idx%pz,tmp%it,1) = fz
+        if (tmp%mhd) then
+          tmp%mem(ix,iy,iz,tmp%idx%bx,tmp%it,1) = fy
+          tmp%mem(ix,iy,iz,tmp%idx%by,tmp%it,1) = fz
+          tmp%mem(ix,iy,iz,tmp%idx%bz,tmp%it,1) = fx
         end if
       end do
     end do
