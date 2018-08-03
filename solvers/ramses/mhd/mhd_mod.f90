@@ -72,6 +72,7 @@ SUBROUTINE init (self)
     self%nv = 5
     if (self%mhd) self%nv = self%nv + 3
   end if
+  call self%idx%init (5, self%mhd)
   call self%gpatch_t%init
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance

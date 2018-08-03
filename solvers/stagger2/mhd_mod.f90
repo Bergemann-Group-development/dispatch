@@ -93,6 +93,7 @@ SUBROUTINE init (self)
   ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
   ! called again, from gpatch_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
+  call self%idx%init (5, self%mhd)
   self%initial%mhd = self%mhd
   call self%initial%init (self%kind)
   self%mhd = self%initial%mhd
@@ -114,6 +115,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
+  call self%idx%init (5, self%mhd)
   call self%gpatch_t%init
   self%type = 'mhd_t'
   do i=1,3

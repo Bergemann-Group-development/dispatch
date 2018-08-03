@@ -87,7 +87,12 @@ SUBROUTINE init (self)
   self%csound = csound
   self%courant = courant
   self%cdtd = cdtd
+  !-----------------------------------------------------------------------------
+  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
+  ! called again, from gpatch_t%init, when gamma is known and can be passed on.
+  !-----------------------------------------------------------------------------
   self%initial%mhd = self%mhd
+  call self%idx%init (5, self%mhd)
   call self%initial%init (self%kind, real(self%gamma))
   self%mhd = self%initial%mhd
   if (self%mhd) then
@@ -108,6 +113,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
+  call self%idx%init (5, self%mhd)
   call self%gpatch_t%init
   self%type = 'mhd_t'
   do i=1,3

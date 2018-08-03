@@ -12,3 +12,4 @@ refine_mod.o:           io_mod.o trace_mod.o bits_mod.o list_mod.o link_mod.o ki
 random_mod.o:           io_mod.o trace_mod.o
 radiation_mod.o:        io_mod.o trace_mod.o mesh_mod.o link_mod.o
 sinkparticles_mod.o:	io_unit_mod.o trace_mod.o download_mod.o data_hub_mod.o link_mod.o list_mod.o particle_history_mod.o
+index_mod.o:            io_mod.o

@@ -51,7 +51,6 @@ SUBROUTINE init (self)
   end if
   self%nv = 0
   self%mhd = mhd
-  call self%idx%init (5, self%mhd)
   call self%mhd_t%init
   print *, 'nv, mhd =', self%nv, self%mhd
   !-----------------------------------------------------------------------------
@@ -62,7 +61,7 @@ SUBROUTINE init (self)
   e => self%mem(:,:,:,self%idx%e,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
-  if  (mhd) then
+  if  (self%mhd) then
     B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
     Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
   end if
@@ -160,7 +159,7 @@ SUBROUTINE init (self)
       end if
       print '(i4,5f12.6)',k,x,cc,cs,d(k,1,1),px(k,1,1)
     end do
-    if (mhd) then
+    if (self%mhd) then
       e = 0.5*(px**2+py**2+pz**2)/d + 0.5*(bx**2+by**2+bz**2)
     else
       e = 0.5*(px**2+py**2+pz**2)/d
@@ -204,7 +203,7 @@ SUBROUTINE init (self)
         call io%abort ('experiment_t%init: unknown experiment type')
       end if
     end do
-    if (mhd) then
+    if (self%mhd) then
       e = 0.5*(px**2+py**2+pz**2)/d + 0.5*(bx**2+by**2+bz**2)
     else
       e = 0.5*(px**2+py**2+pz**2)/d

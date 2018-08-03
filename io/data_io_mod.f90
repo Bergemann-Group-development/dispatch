@@ -260,7 +260,7 @@ SUBROUTINE output_nml (patch, append)
     open  (io_unit%data, file=trim(filename), form='formatted', status='unknown')
     write (io_unit%data, io_nml)
     write (io_unit%data, snapshot_nml)
-    call patch%idx%write
+    call patch%idx%output
     call file_append (io_unit%nml, io_unit%data)
     close (io_unit%data)
     if (io%debug(2)) print'(a,3x,"time:",2f13.6)', &
@@ -277,7 +277,7 @@ SUBROUTINE output_nml (patch, append)
   ! Write the namelist info, including a leading idx_nml
   !-----------------------------------------------------------------------------
   if (mpi%master .and. .not.append) then
-    call patch%idx%write
+    call patch%idx%output
   end if
   l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
   u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
