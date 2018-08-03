@@ -10,6 +10,7 @@ MODULE index_mod
   private
   type, public:: index_t
     integer:: d=0, e=0, px=0, py=0, pz=0, bx=0, by=0, bz=0, phi=0, tt=0, s=0, et=0, dphi=0
+    integer:: dtr=0
   contains
     procedure:: init
     procedure:: output

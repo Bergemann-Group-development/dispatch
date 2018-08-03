@@ -324,15 +324,15 @@ FUNCTION gas_velocity_vector (self) RESULT (v)
   !-----------------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
-  call allocate_vectors (self%gn, ld, dd)
-  call allocate_scalars (self%gn, lnd)
+  call allocate_vectors_a (self%gn, ld, dd)
+  call allocate_scalars_a (self%gn, lnd)
   lnd = log(d)
   ld = down(lnd)
   dd = exp(ld)
   v = p/dd
 
-  call deallocate_vectors (ld, dd)
-  call deallocate_scalars (lnd)
+  call deallocate_vectors_a (ld, dd)
+  call deallocate_scalars_a (lnd)
   nullify (d,p)
 END FUNCTION gas_velocity_vector
 
@@ -346,7 +346,7 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: v
   !-----------------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d,self%it,1)
-  call allocate_scalars (self%gn, lnd, ld, dd)
+  call allocate_scalars_a (self%gn, lnd, ld, dd)
   lnd = log(d)
   select case (idir)
   case (1)
@@ -365,7 +365,7 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
     error stop "solver_mod::gas_velocity_scalar:: invalid value of idir"
   end select
 
-  call deallocate_scalars (lnd, ld, dd)
+  call deallocate_scalars_a (lnd, ld, dd)
   nullify (d)
 END FUNCTION gas_velocity_scalar
 

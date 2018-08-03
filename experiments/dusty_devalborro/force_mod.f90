@@ -110,7 +110,6 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   integer:: ix, iy, iz
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%dust_gas_interaction')
-  i = idx
   gn(1)=size(mem,1); gn(2)=size(mem,2); gn(3)=size(mem,3)
   nv = size(mem,4)
   !--------------------------------------------------------------------------
@@ -273,7 +272,6 @@ FUNCTION turbulent_pressure(self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   !-----------------------------------------------------------------------------
   call trace_begin('force_mod::turbulent_pressure')
   !-----------------------------------------------------------------------------
-  i = idx
   if (self%i == self%i_dust) then
     gn(1)=size(mem,1); gn(2)=size(mem,2); gn(3)=size(mem,3)
     call allocate_scalars(gn, lnd, cd2)

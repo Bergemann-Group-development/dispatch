@@ -81,7 +81,7 @@ SUBROUTINE update (self, gn, ds, d, Jx, Jy, Jz, Bx, By, Bz, Q, E, u_max)
   if (.not.self%is_used) return
   call trace%begin ('non_ideal_t%update', itimer=itimer)
   if (self%mhd_AD) then
-    call allocate_scalars (gn, ambi, Ud_x, Ud_y, Ud_z)
+    call allocate_scalars_a (gn, ambi, Ud_x, Ud_y, Ud_z)
     ambi = 1./(self%gamma_AD*d*self%rho_ions)
     Ud_x = xdn(ambi) * (zup(Jy)*xdn(zup(Bz)) - yup(Jz)*xdn(yup(By)))
     Ud_y = ydn(ambi) * (xup(Jz)*ydn(xup(Bx)) - zup(Jx)*ydn(zup(Bz)))
@@ -90,7 +90,7 @@ SUBROUTINE update (self, gn, ds, d, Jx, Jy, Jz, Bx, By, Bz, Q, E, u_max)
     E(:,:,:,2) = E(:,:,:,2) - (Ud_z*Bx - Ud_x*Bz)
     E(:,:,:,3) = E(:,:,:,3) - (Ud_x*By - Ud_y*Bx)
     Q = Q + self%rho_ions*d*self%gamma_AD*(xup(Ud_x)**2+yup(Ud_y)**2+zup(Ud_z)**2)
-    call deallocate_scalars (ambi, Ud_x, Ud_y, Ud_z)
+    call deallocate_scalars_a (ambi, Ud_x, Ud_y, Ud_z)
     u_max = max(u_max,maxval((xup(Bx)**2+yup(By)**2+zup(Bz)**2)/(self%gamma_AD*self%rho_ions*d*ds)))
   end if
   if (self%mhd_Ohm) then

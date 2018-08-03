@@ -176,15 +176,15 @@ SUBROUTINE pde (self)
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
   end associate
-  call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
-  call allocate_scalars (self%gn, lnd, pa, du, ee, cs, pp, pb, Q, uu, divU)
+  call allocate_vectors_a (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
+  call allocate_scalars_a (self%gn, lnd, pa, du, ee, cs, pp, pb, Q, uu, divU)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
     self%density => self%mem(:,:,:,1,:,1)
   else
-    call allocate_scalars_p (self%gn, pg)
-    call allocate_vectors_p (self%gn, U)
+    call allocate_scalars (self%gn, pg)
+    call allocate_vectors (self%gn, U)
   end if
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
   Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
@@ -216,7 +216,7 @@ SUBROUTINE pde (self)
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   ! The diagonal fxx is valid in (2:gn-1)
   !-----------------------------------------------------------------------------
-  call allocate_scalars (self%gn, Txx, Tyy, Tzz)
+  call allocate_scalars_a (self%gn, Txx, Tyy, Tzz)
   ds = self%ds
   Txx = ddxup(ds,Ux)
   Tyy = ddyup(ds,Uy)
@@ -310,7 +310,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !-----------------------------------------------------------------------------
-  call allocate_scalars (self%gn, Txy, Tyz, Tzx)
+  call allocate_scalars_a (self%gn, Txy, Tyz, Tzx)
   Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)                                               ! ops: 0 1 0
   Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)                                               ! ops: 0 1 0
   Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)                                               ! ops: 0 1 0
@@ -320,7 +320,7 @@ SUBROUTINE pde (self)
   Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
                                yup(zup(Tyz))**2 + &                             ! ops: 1 1 0
                                zup(xup(Tzx))**2)                                ! ops: 1 0 0
-  call deallocate_scalars (Txy, Tyz, Tzx)
+  call deallocate_scalars_a (Txy, Tyz, Tzx)
   !-----------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !-----------------------------------------------------------------------------
@@ -389,7 +389,7 @@ SUBROUTINE pde (self)
       afm, self%faver(fm(:,:,:,1))
     end block
   end if
-  call deallocate_scalars (Txx, Tyy, Tzz)
+  call deallocate_scalars_a (Txx, Tyy, Tzz)
   !-----------------------------------------------------------------------------
   ! Induction equation
   !-----------------------------------------------------------------------------
@@ -420,11 +420,11 @@ SUBROUTINE pde (self)
     if (verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
   end if
   !-----------------------------------------------------------------------------
-  call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
-  call deallocate_scalars (lnd, pa, du, ee, cs, pp, pb, Q, uu, divU)
+  call deallocate_vectors_a (ld, dd, emf, J, fd, fx, fy, fz, fm)
+  call deallocate_scalars_a (lnd, pa, du, ee, cs, pp, pb, Q, uu, divU)
   if (.not.self%do_pebbles) then
-    call deallocate_vectors_p (U)
-    call deallocate_scalars_p (pg)
+    call deallocate_vectors (U)
+    call deallocate_scalars (pg)
   end if
   call trace%end (itimer)
   if (mpi%master .and. first_time) then

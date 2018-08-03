@@ -79,14 +79,14 @@ SUBROUTINE initial_conditions (patch)
   m2 => patch%mesh(2)
   m3 => patch%mesh(3)
 
-  d  => patch%mem(:,:,:,self%idx%d        ,patch%it,1)
-  p  => patch%mem(:,:,:,self%idx%px:self%idx%pz,patch%it,1)
+  d  => patch%mem(:,:,:,patch%idx%d        ,patch%it,1)
+  p  => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%it,1)
   px => p(:,:,:,1); py => p(:,:,:,2); pz => p(:,:,:,3);
 
   if (patch%nc==2) then
     patch%no_pressure = 2
-    dd  => patch%mem(:,:,:,self%idx%d+5,patch%it,1)
-    pd  => patch%mem(:,:,:,self%idx%px+5:self%idx%pz+5,patch%it,1)
+    dd  => patch%mem(:,:,:,patch%idx%d+5,patch%it,1)
+    pd  => patch%mem(:,:,:,patch%idx%px+5:patch%idx%pz+5,patch%it,1)
     pxd => pd(:,:,:,1); pyd => pd(:,:,:,2); pzd => pd(:,:,:,3);
   end if
 
@@ -114,19 +114,19 @@ SUBROUTINE initial_conditions (patch)
         pz(i1,i2,i3) = pz(i1,i2,i3) * m1%h31c(i1) * m2%h32c(i2)
 
         if      (trim(patch%kind) == 'stagger2_hd_patch' ) then
-          patch%mem(i1,i2,i3,self%idx%s,patch%it,1) = (log(P0) - log(sigma0) * patch%gamma) &
+          patch%mem(i1,i2,i3,patch%idx%s,patch%it,1) = (log(P0) - log(sigma0) * patch%gamma) &
                                                         * sigma0 / (patch%gamma - 1.0)
         else if (trim(patch%kind) == 'stagger2e_hd_patch') then
-          patch%mem(i1,i2,i3,self%idx%e,patch%it,1) = P0 / (patch%gamma - 1.0)
+          patch%mem(i1,i2,i3,patch%idx%e,patch%it,1) = P0 / (patch%gamma - 1.0)
         else if (trim(patch%kind) == 'ramses_hd_patch'   ) then
-          patch%mem(i1,i2,i3,self%idx%e,patch%it,1) = P0 / (patch%gamma - 1.0) &
+          patch%mem(i1,i2,i3,patch%idx%e,patch%it,1) = P0 / (patch%gamma - 1.0) &
                                                         + 0.5*sigma0*vkep(i2)**2
         else if (trim(patch%kind) == 'zeus_hd_patch'     ) then
-          patch%mem(i1,i2,i3,self%idx%e,patch%it,1) = P0 / (patch%gamma - 1.0)
+          patch%mem(i1,i2,i3,patch%idx%e,patch%it,1) = P0 / (patch%gamma - 1.0)
         end if
         if (patch%nc == 2) then
           dd (i1,i2,i3) = sigma0 * experiment_params%dust2gas
-          patch%mem(i1,i2,i3,self%idx%s+5,patch%it,1) = 0.0
+          patch%mem(i1,i2,i3,patch%idx%s+5,patch%it,1) = 0.0
           pxd(i1,i2,i3) = 0.0
           pyd(i1,i2,i3) = 0.0
           pzd(i1,i2,i3) = vkep(i2) * sigma0 * experiment_params%dust2gas!* (1.0 - experiment_params%aspect_rat**2)

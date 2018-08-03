@@ -290,15 +290,15 @@ SUBROUTINE pde (self)
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
   end associate
-  call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
-  call allocate_scalars (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
+  call allocate_vectors_a (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
+  call allocate_scalars_a (self%gn, lnd, pa, du, ss, cs, pp, pb, Q)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
     self%density => self%mem(:,:,:,1,:,1)
   else
-    call allocate_scalars_p (self%gn, pg)
-    call allocate_vectors_p (self%gn, U)
+    call allocate_scalars (self%gn, pg)
+    call allocate_vectors (self%gn, U)
   end if
   Ux=>U(:,:,:,1); Uy=>U(:,:,:,2); Uz=>U(:,:,:,3)
   Ex=>emf(:,:,:,1); Ey=>emf(:,:,:,2); Ez=>emf(:,:,:,3)
@@ -327,7 +327,7 @@ SUBROUTINE pde (self)
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   ! The diagonal fxx is valid in (2:gn-1)
   !-----------------------------------------------------------------------------
-  call allocate_scalars (self%gn, Txx, Tyy, Tzz)
+  call allocate_scalars_a (self%gn, Txx, Tyy, Tzz)
   ds = self%ds
   Txx = ddxup(ds,Ux)
   Tyy = ddyup(ds,Uy)
@@ -344,7 +344,7 @@ SUBROUTINE pde (self)
   fxx = xup(Ux)**2
   fyy = yup(Uy)**2
   fzz = zup(Uz)**2
-  call allocate_scalars (self%gn, uu)
+  call allocate_scalars_a (self%gn, uu)
   uu = sqrt(fxx+fyy+fzz)
   ! Artificial pressure, possibly with 3-point smoothing
   if (do_smooth) then
@@ -410,7 +410,7 @@ SUBROUTINE pde (self)
   ! density per unit time = energy per unit volume and time
   !-----------------------------------------------------------------------------
   Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)                                           ! ops: 2 5 0
-  call deallocate_scalars (Txx, Tyy, Tzz, uu)
+  call deallocate_scalars_a (Txx, Tyy, Tzz, uu)
   if (verbose==1) print *, 'average(Q):', self%faver(Q)
   !-----------------------------------------------------------------------------
   ! Conservation of mass
@@ -433,7 +433,7 @@ SUBROUTINE pde (self)
   ! which case twice the product nu*Tij**2 should be added, so here a factor 0.5
   ! is needed in the contribution to Q
   !-----------------------------------------------------------------------------
-  call allocate_scalars (self%gn, Txy, Tyz, Tzx)
+  call allocate_scalars_a (self%gn, Txy, Tyz, Tzx)
   Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)                                               ! ops: 0 1 0
   Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)                                               ! ops: 0 1 0
   Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)                                               ! ops: 0 1 0
@@ -443,7 +443,7 @@ SUBROUTINE pde (self)
   Q = Q + self%nu(3)*.25*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
                                yup(zup(Tyz))**2 + &                             ! ops: 1 1 0
                                zup(xup(Tzx))**2)                                ! ops: 1 0 0
-  call deallocate_scalars (Txy, Tyz, Tzx)
+  call deallocate_scalars_a (Txy, Tyz, Tzx)
   !-----------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !-----------------------------------------------------------------------------
@@ -548,11 +548,11 @@ SUBROUTINE pde (self)
   self%u_max = max(self%u_max,u_max)
   if (verbose>2) print 1, self%id, 'u_max(dsdt)   ', u_max, self%u_max
   !-----------------------------------------------------------------------------
-  call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
-  call deallocate_scalars (lnd, pa, du, ss, cs, pp, pb, Q)
+  call deallocate_vectors_a (ld, dd, emf, J, fd, fx, fy, fz, fm)
+  call deallocate_scalars_a (lnd, pa, du, ss, cs, pp, pb, Q)
   if (.not.self%do_pebbles) then
-    call deallocate_vectors_p (U)
-    call deallocate_scalars_p (pg)
+    call deallocate_vectors (U)
+    call deallocate_scalars (pg)
   end if
   call trace%end (itimer)
   if (mpi%master .and. (first_time .or. flop_count)) then

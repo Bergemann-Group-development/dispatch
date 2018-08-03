@@ -41,11 +41,11 @@ FUNCTION scalar_exp_scalar(in) RESULT (out)
 END FUNCTION
 
 !> =============================================================================
-SUBROUTINE allocate_scalars (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
+SUBROUTINE allocate_scalars_a (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:), allocatable, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
   !.............................................................................
-  call trace_begin('allocate_scalars')
+  call trace_begin('allocate_scalars_a')
   if (present(v1)) allocate(v1(n(1),n(2),n(3)))
   if (present(v2)) allocate(v2(n(1),n(2),n(3)))
   if (present(v3)) allocate(v3(n(1),n(2),n(3)))
@@ -60,7 +60,7 @@ SUBROUTINE allocate_scalars (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
 END SUBROUTINE
 
 !> =============================================================================
-SUBROUTINE allocate_scalars_p (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
+SUBROUTINE allocate_scalars (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
   !.............................................................................
@@ -79,11 +79,11 @@ SUBROUTINE allocate_scalars_p (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
 END SUBROUTINE
 
 !> =============================================================================
-SUBROUTINE deallocate_scalars (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
+SUBROUTINE deallocate_scalars_a (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:), allocatable, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
   !.............................................................................
-  call trace_begin('deallocate_scalars')
+  call trace_begin('deallocate_scalars_a')
   if (present(v1)) deallocate(v1)
   if (present(v2)) deallocate(v2)
   if (present(v3)) deallocate(v3)
@@ -98,7 +98,7 @@ SUBROUTINE deallocate_scalars (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
 END SUBROUTINE
 
 !> =============================================================================
-SUBROUTINE deallocate_scalars_p (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
+SUBROUTINE deallocate_scalars (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
   !.............................................................................
