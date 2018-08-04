@@ -6,16 +6,17 @@
 image: perrybothron/ubuntu-gfortran5-openmpi:16.04-5.4.0-1.10.2
 
 pipelines:
-  default:
-    - step:
-        script:
-          - export OMP_STACKSIZE=256m; export OMP_NUM_THREADS=1
-          - echo "Run simple tests"
-          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -x tests/meshes
-          - cd $BITBUCKET_CLONE_DIR; cd tests/meshes; make clean; make; ./test.x
-          - echo "Check compilation of experiments in validation-x_list.txt"
-          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -x experiments/ramses_snapshots
-          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -x experiments/turbulence
-          - echo "Check running experiments in validation_list.txt"
-          - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -m experiments/turbulence
-          - echo "Everything is awesome!"
+  custom:
+    default:
+      - step:
+          script:
+            - export OMP_STACKSIZE=256m; export OMP_NUM_THREADS=1
+            - echo "Run simple tests"
+            - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -x tests/meshes
+            - cd $BITBUCKET_CLONE_DIR; cd tests/meshes; make clean; make; ./test.x
+            - echo "Check compilation of experiments in validation-x_list.txt"
+            - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -x experiments/ramses_snapshots
+            - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -x experiments/turbulence
+            - echo "Check running experiments in validation_list.txt"
+            - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -m experiments/turbulence
+            - echo "Everything is awesome!"
