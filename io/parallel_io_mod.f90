@@ -86,8 +86,9 @@ SUBROUTINE output (patch)
   type(mpi_io_t):: thread_io
   real:: pt(2)
   logical:: first_time=.true.
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('parallel_io_t%output')
+  call trace%begin ('parallel_io_t%output', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Set size parameters
   !-----------------------------------------------------------------------------
@@ -180,6 +181,7 @@ SUBROUTINE output (patch)
   end if
   deallocate (buffer)
   call trace%end
+  call trace%end (itimer)
 contains
   subroutine thread_io_write (slot)
     integer:: slot
@@ -198,8 +200,9 @@ SUBROUTINE input (patch, ok)
   integer:: iv, n(3), nv
   real, dimension(:,:,:), allocatable:: buffer
   type(mpi_io_t):: thread_io
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('parallel_io_t%input')
+  call trace%begin ('parallel_io_t%input', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Set size parameters
   !-----------------------------------------------------------------------------
@@ -246,7 +249,7 @@ SUBROUTINE input (patch, ok)
   if (io%verbose>1) print '(a,4i6,2i7)', &
     ' parallel_io_t%input: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE input
 
 END MODULE parallel_io_mod
