@@ -268,7 +268,7 @@ SUBROUTINE spawn_update (self, task_list, link, test)
   !...........................................................................
   call self%set_state (link%task, 2)
   if (self%verbose>2) print fmt0,wallclock(),omp%thread,'spawning task',link%task%id, link%task%state, link%task%thread
-  !$omp task default(none) firstprivate(self,link,test,task_list) shared(use_locks)
+  !$omp task firstprivate(self,link,test,task_list) default(shared)
     if (use_locks) then
       if (link%task%lock%test()) then
         call self%update (task_list, link, test)
