@@ -85,7 +85,6 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
   integer :: ix, iy, iz, nr, l(3), u(3)
   real(8) :: x, y, z, rp, d, ds, d0, T0, p, ux, uy, uz, ds2(3)
   real(8) :: xs, ys, zs, xp, yp, zp, R_Hill, f_Hill
-  type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
   real, save:: omega(3)=0.0
@@ -146,7 +145,7 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
         d0 = d
         d = d*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xp**2)/T0))
         p = p*(d/d0)
-        mem(ix,iy,iz,i%d) = d
+        mem(ix,iy,iz,idx%d) = d
         !-----------------------------------------------------------------------
         ! Non-zero initial velocity components, to be used in tests only
         !-----------------------------------------------------------------------
@@ -177,29 +176,29 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
         rp = sqrt(xs**2+yp**2+zp**2)
         ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
         ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xs**2)/T0))
-        mem(ix,iy,iz,i%px) = ds*ux
+        mem(ix,iy,iz,idx%px) = ds*ux
         rp = sqrt(xp**2+ys**2+zp**2)
         ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
         ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xp**2)/T0))
-        mem(ix,iy,iz,i%py) = ds*uy
+        mem(ix,iy,iz,idx%py) = ds*uy
         rp = sqrt(xp**2+yp**2+zs**2)
         ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
         ds = ds*exp(-(planet%omega(3)**2*0.5*(zs**2+2.*planet%trap*xp**2)/T0))
-        mem(ix,iy,iz,i%pz) = ds*uz
+        mem(ix,iy,iz,idx%pz) = ds*uz
         if (self%solver(1:7)=='ramses_') then
-          mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
+          mem(ix,iy,iz,idx%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
         else if (self%solver(1:9)=='stagger2e') then
-          mem(ix,iy,iz,i%e) = p/(gamma-1.0)
+          mem(ix,iy,iz,idx%e) = p/(gamma-1.0)
         else if (self%solver(1:9)=='stagger2_') then
-          mem(ix,iy,iz,i%s) = d*(log(p)-gamma*log(d))/(gamma-1.0)
+          mem(ix,iy,iz,idx%s) = d*(log(p)-gamma*log(d))/(gamma-1.0)
         else
           print *,trim(self%solver)
           error stop "initial_mod (1): solver type not known"
         end if
         if (self%mhd) then
-          mem(ix,iy,iz,i%bx) = b0(1)
-          mem(ix,iy,iz,i%by) = b0(2)
-          mem(ix,iy,iz,i%bz) = b0(3)
+          mem(ix,iy,iz,idx%bx) = b0(1)
+          mem(ix,iy,iz,idx%by) = b0(2)
+          mem(ix,iy,iz,idx%bz) = b0(3)
         end if
       end do
     end do
@@ -222,7 +221,6 @@ SUBROUTINE disk (self, m, mem, idx)
   integer :: ix, iy, iz, nr
   real(8) :: x, y, z, r, d, ds, d0, T0, p, ux, uy, uz, ds2(3)
   real(8) :: xs, ys, zs, xp, yp, zp, rp
-  type(index_t):: i
   !-----------------------------------------------------------------------------
   logical, save:: first_time=.true.
   real, save:: omega(3)=0.0
@@ -272,7 +270,7 @@ SUBROUTINE disk (self, m, mem, idx)
         d0 = d
         d = d*exp(-(planet%omega(3)**2*0.5*(z**2+2.*planet%trap*xp**2)/T0))
         p = p*(d/d0)
-        mem(ix,iy,iz,i%d) = d
+        mem(ix,iy,iz,idx%d) = d
         !-----------------------------------------------------------------------
         ! A rotation profile, where the rotation center is at x=-1 AU, and
         ! the direction of rotation is +y, so the head wind is in the -y
@@ -298,29 +296,29 @@ SUBROUTINE disk (self, m, mem, idx)
         !rp = sqrt(xs**2+yp**2+zp**2)
         !ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
         !ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xs**2)/T0))
-        mem(ix,iy,iz,i%px) = d*ux
+        mem(ix,iy,iz,idx%px) = d*ux
         !rp = sqrt(xp**2+ys**2+zp**2)
         !ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
         !ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xp**2)/T0))
-        mem(ix,iy,iz,i%py) = d*uy
+        mem(ix,iy,iz,idx%py) = d*uy
         !rp = sqrt(xp**2+yp**2+zs**2)
         !ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
         !ds = ds*exp(-(planet%omega(3)**2*0.5*(zs**2+2.*planet%trap*xp**2)/T0))
-        mem(ix,iy,iz,i%pz) = d*uz
+        mem(ix,iy,iz,idx%pz) = d*uz
         if (self%solver(1:7)=='ramses_') then
-          mem(ix,iy,iz,i%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
+          mem(ix,iy,iz,idx%e) = p/(gamma-1.0) + 0.5*d*(ux**2+uy**2+uz**2)
         else if (self%solver(1:9)=='stagger2e') then
-          mem(ix,iy,iz,i%e) = p/(gamma-1.0)
+          mem(ix,iy,iz,idx%e) = p/(gamma-1.0)
         else if (self%solver(1:9)=='stagger2_') then
-          mem(ix,iy,iz,i%s) = d*(log(p)-gamma*log(d))/(gamma-1.0)
+          mem(ix,iy,iz,idx%s) = d*(log(p)-gamma*log(d))/(gamma-1.0)
         else
           print *,trim(self%solver)
           error stop "initial_mod (1): solver type not known"
         end if
         if (self%mhd) then
-          mem(ix,iy,iz,i%bx) = b0(1)
-          mem(ix,iy,iz,i%by) = b0(2)
-          mem(ix,iy,iz,i%bz) = b0(3)
+          mem(ix,iy,iz,idx%bx) = b0(1)
+          mem(ix,iy,iz,idx%by) = b0(2)
+          mem(ix,iy,iz,idx%bz) = b0(3)
         end if
       end do
     end do

@@ -94,7 +94,6 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   integer, dimension(3):: gn
   !.............................................................................
   integer:: ix, iy, iz
-  type(index_t):: i
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%dust_gas_interaction')
 
@@ -116,9 +115,9 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     ! gas density for reuse
     !---------------------------------------------------------------------------
     ic    =  5*(self%i_gas-1)
-    d_gas =  mem(:,:,:,i%d +ic        )
-    p     =  mem(:,:,:,i%px+ic:i%pz+ic)
-    s     =  mem(:,:,:,i%s +ic        )
+    d_gas =  mem(:,:,:,idx%d +ic        )
+    p     =  mem(:,:,:,idx%px+ic:idx%pz+ic)
+    s     =  mem(:,:,:,idx%s +ic        )
     lnd   =  log(d_gas)
     ld    =  down(lnd)
     dd    =  exp(ld)
@@ -128,8 +127,8 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     ! dust density for reuse
     !--------------------------------------------------------------------------
     ic     =  5*(self%i_dust-1)
-    d_dust =  mem(:,:,:,i%d +ic        )
-    p      =  mem(:,:,:,i%px+ic:i%pz+ic)
+    d_dust =  mem(:,:,:,idx%d +ic        )
+    p      =  mem(:,:,:,idx%px+ic:idx%pz+ic)
     lnd    =  log(d_dust)
     ld     =  down(lnd)
     dd     =  exp(ld)
