@@ -120,7 +120,6 @@ reading /proc/cpuinfo:   0.0 sec
  VERBOSE=          0,
  TEST=F,
  TEST_SECONDS=  30.000000000000000     ,
- USE_LOCKS=F,
  /
 &MPI_MESG_PARAMS
  MIN_NQ=         10,
