@@ -175,13 +175,18 @@ SUBROUTINE update (self)
   !call check_small (self)
   call ctoprim(self)                                    ! Primitive variables
   self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
-  call uslope(self,self%bf,self%q,self%dq,self%dbf)              ! TVD slopes
+  call uslope(self,self%bf,self%q,self%dq,self%dbf,slope_type)   ! TVD slopes
   if (verbose>0) print *, 'uslope', self%id, minval(self%dbf), maxval(self%dbf)
-  if (slope_type==3.0) then
+  !-----------------------------------------------------------------------------
+  ! For slope types in the interval 3-4, use the conservative 3.0 for corners
+  ! (cf. RAMSES/CPH)
+  !-----------------------------------------------------------------------------
+  if (slope_type <= 3.0) then
     self%dq2=self%dq
   else
-    call uslope(self,self%bf,self%q,self%dq2,self%dbf)              ! TVD slopes
+    call uslope(self,self%bf,self%q,self%dq2,self%dbf,3.0)       ! TVD slopes
   endif
+
   if (verbose>0) print *, 'uslope', self%id, minval(self%dq), maxval(self%dq)
   if (verbose>0) print *, 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
 
@@ -499,12 +504,13 @@ end subroutine ctoprim
 !> =============================================================================
 !> Slope limiters
 !> =============================================================================
-subroutine uslope(self,bf,q,dq,dbf)
+subroutine uslope(self,bf,q,dq,dbf,rslope_type)
   class(mhd_t):: self
   real, dimension(:,:,:,:):: q
   real, dimension(:,:,:,:):: bf
   real, dimension(:,:,:,:,:):: dq
   real, dimension(:,:,:,:,:):: dbf
+  real:: rslope_type
   integer::nv, islope_type
   integer::i, j, k, n, l(3), u(3)
   real(dp)::dsgn, dlim, dcen, dlft, drgt, slop, xslope_type
@@ -517,7 +523,7 @@ subroutine uslope(self,bf,q,dq,dbf)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%uslope', itimer=itimer)
   !
-  islope_type = int(slope_type)
+  islope_type = int(rslope_type)
   l = self%mesh%lb+1
   u = self%mesh%ub-1
   nv=self%nv
