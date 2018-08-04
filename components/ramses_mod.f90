@@ -22,6 +22,7 @@ MODULE ramses_mod
   USE experiment_mod
   USE download_mod
   USE scene_mod
+  USE index_mod
   implicit none
   private
 
@@ -47,7 +48,7 @@ MODULE ramses_mod
   contains
     procedure :: init
     procedure :: read_snapshot
-    procedure :: entropy
+    procedure :: energy
     procedure :: read_sink
     procedure :: merge_ramses_octs
     procedure :: evaluate
@@ -85,6 +86,7 @@ MODULE ramses_mod
   logical, save:: centre_on_sink        ! centre on the last sink
   logical, save:: merge_octs            ! merge octs into larger patches
   logical, save:: do_evaluate           ! evaluate costs
+  logical, save:: remove_b              ! remove B-field, for tests
   type(sink_t):: sink
   type(ramses_t), public:: ramses
 CONTAINS
@@ -101,8 +103,8 @@ SUBROUTINE init (self, name)
   real, save:: d_min, tt_min, size, size_au
   character(len=64), save:: path='.'
   namelist /ramses_reader_params/ nout, xmin, xmax, ymin, ymax, zmin, zmax, size, &
-                           nmerged_max, minlvl, maxlvl, rank_load, path, &
-                           centre_on_sink, merge_octs, make_cartesian, patch_n
+    nmerged_max, minlvl, maxlvl, rank_load, path, centre_on_sink, merge_octs, &
+    make_cartesian, patch_n, remove_b
   !.............................................................................
   call trace_begin('ramses_t%init')
   call io%init ('ramses snapshot reader')
@@ -130,6 +132,7 @@ SUBROUTINE init (self, name)
     centre_on_sink = .false.
     merge_octs = .true.
     do_evaluate = .true.
+    remove_b = .false.
     patch_n = 16
     ! read namelist
     rewind (io%input); read (io%input,ramses_reader_params)
@@ -236,6 +239,7 @@ SUBROUTINE read_snapshot (self)
   !---- dispatch variables ----
   class(task_t), pointer:: task, parent
   class(experiment_t), pointer:: patch
+  type(index_t):: idx
 
   !.............................................................................
   call trace_begin('read_ramses_snapshot')
@@ -866,14 +870,16 @@ SUBROUTINE read_snapshot (self)
                         n_tt_min = n_tt_min+1
                       end if
                       d_min_level = min(d_min_level, var(l,j,1))
-                      patch%mem(ix,iy,iz,1,patch%it,1) = var(l,j,1) ! density
-                      patch%mem(ix,iy,iz,2,patch%it,1) = self%entropy(var(l,j,:)) ! entropy
-                      patch%mem(ix,iy,iz,3,patch%it,1) = var(l,j,1) * var(l,j,2) ! convert to momentum
-                      patch%mem(ix,iy,iz,4,patch%it,1) = var(l,j,1) * var(l,j,3)
-                      patch%mem(ix,iy,iz,5,patch%it,1) = var(l,j,1) * var(l,j,4)
-                      patch%mem(ix,iy,iz,6,patch%it,1) = var(l,j,5) ! only the "left" fields are kept
-                      patch%mem(ix,iy,iz,7,patch%it,1) = var(l,j,6)
-                      patch%mem(ix,iy,iz,8,patch%it,1) = var(l,j,7)
+                      if (remove_b) &
+                        var(l,j,5:7) = 0.0
+                      patch%mem(ix,iy,iz,idx%d ,patch%it,1) = var(l,j,1) ! density
+                      patch%mem(ix,iy,iz,idx%e ,patch%it,1) = self%energy(var(l,j,:),patch) ! entropy / energy
+                      patch%mem(ix,iy,iz,idx%px,patch%it,1) = var(l,j,1) * var(l,j,2) ! convert to momentum
+                      patch%mem(ix,iy,iz,idx%py,patch%it,1) = var(l,j,1) * var(l,j,3)
+                      patch%mem(ix,iy,iz,idx%pz,patch%it,1) = var(l,j,1) * var(l,j,4)
+                      patch%mem(ix,iy,iz,idx%bx,patch%it,1) = var(l,j,5) ! only the "left" fields are kept
+                      patch%mem(ix,iy,iz,idx%by,patch%it,1) = var(l,j,6)
+                      patch%mem(ix,iy,iz,idx%bz,patch%it,1) = var(l,j,7)
                       !!!patch%mem(ix,iy,iz,3,patch%it,1) = var(l,j,nvar_mhd+1) ! grav. pot; SKIP!
                       j = j + 1
                     enddo
@@ -1039,17 +1045,24 @@ END SUBROUTINE hilbert3d
 !> DISPATCH uses the entropy rather than the internal energy/pressure or total
 !> energy.)
 !> =============================================================================
-FUNCTION entropy (self, vars) RESULT (s)
+FUNCTION energy (self, vars, patch) RESULT (e)
   class(ramses_t):: self
-  real(kind=8):: s
+  real(kind=8):: e
   real(kind=8), dimension(:):: vars
+  class(experiment_t), pointer:: patch
   !.............................................................................
-  if (self%gamma==1d0) then
-    s = vars(11)/vars(1)                ! temperature
+  if (patch%gamma==1d0) then
+    e = vars(11)
+  else if (patch%kind(1:6)=='ramses') then
+    e = vars(11)/(patch%gamma-1d0) &
+      + 0.5d0*vars(1)*(vars(2)**2+vars(3)**2+vars(4)**2) &
+      + 0.5d0        *(vars(5)**2+vars(6)**2+vars(7)**2)
+  else if (patch%kind(1:9)=='stagger2e') then
+    e = vars(1)*(log(vars(11))-log(vars(1))*patch%gamma)/(patch%gamma-1.0)
   else
-    s = vars(1)*(log(vars(11))-log(vars(1))*self%gamma)/(self%gamma-1.0)
+    e = vars(11)/(patch%gamma-1d0)
   end if
-END FUNCTION entropy
+END FUNCTION energy
 
 !> =============================================================================
 !> Read sink particle information; the zoom-in sink is the last one, generally
@@ -1380,8 +1393,9 @@ SUBROUTINE evaluate (self)
   class (task_t), pointer:: task
   real, dimension(:,:,:,:), pointer:: mem
   integer:: l(3), u(3), i, ix, iy, iz, nskip, level
-  real:: ds, d, pg, ux, uy, uz, umax, bx, by, bz, p(3), cs, cf, ua, ub, ctmax, dsmin, ct
+  real:: ds, d, e, pg, ux, uy, uz, umax, bx, by, bz, p(3), cs, cf, ua, ub, ctmax, dsmin, ct
   real(8):: cost1, cost2, cost3
+  type(index_t):: idx
   !.............................................................................
   call trace_begin('ramses_t%evaluate')
   cost1 = 0d0
@@ -1413,19 +1427,26 @@ SUBROUTINE evaluate (self)
       do iz=l(3),u(3)
         do iy=l(2),u(2)
           do ix=l(1),u(1)
-            d =  mem(ix,iy,iz,1)
+            d =  mem(ix,iy,iz,task%idx%d)
+            e =  mem(ix,iy,iz,task%idx%e)
             if (d <= 0.0) then
               nskip = nskip+1
               cycle
             end if
-            pg = mem(ix,iy,iz,2)/d*(self%gamma-1.0)+log(d)*self%gamma
-            pg = exp(pg)
-            ux = mem(ix,iy,iz,3)/d
-            uy = mem(ix,iy,iz,4)/d
-            uz = mem(ix,iy,iz,5)/d
-            bx = mem(ix,iy,iz,6)
-            by = mem(ix,iy,iz,7)
-            bz = mem(ix,iy,iz,8)
+            ux = mem(ix,iy,iz,task%idx%px)/d
+            uy = mem(ix,iy,iz,task%idx%py)/d
+            uz = mem(ix,iy,iz,task%idx%pz)/d
+            bx = mem(ix,iy,iz,task%idx%bx)
+            by = mem(ix,iy,iz,task%idx%by)
+            bz = mem(ix,iy,iz,task%idx%bz)
+            if (task%kind(1:6)=='ramses') then
+              pg = (e-0.5*d*((ux**2+uy**2+uz**2) &
+                            +(bx**2+by**2+bz**2)))*(task%gamma-1d0)
+            else if (task%kind(1:9)=='stagger2e') then
+              pg = d**task%gamma*exp(e/d*(task%gamma-1.0))
+            else
+              pg = e*(task%gamma-1d0)
+            end if
             cs = sqrt(self%gamma*pg/d)
             cf = sqrt((bx**2+by**2+bz**2+self%gamma*pg)/d)
             ua = sqrt(ux**2+uy**2+uz**2)
