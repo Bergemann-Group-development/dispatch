@@ -19,9 +19,10 @@ CONTAINS
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE time_derivative (patch, iv, buffer)
+SUBROUTINE time_derivative (patch, mem, buffer)
   class(patch_t):: patch
   integer:: iv
+  real(kind=KindScalarVar), dimension(:,:,:,:):: mem
   real(kind=KindScalarVar), dimension(:,:,:):: buffer
   !.............................................................................
   real(8):: times(patch%nt-1)
@@ -37,7 +38,7 @@ SUBROUTINE time_derivative (patch, iv, buffer)
   end if
   buffer = 0.0
   do i=i1,i2
-    buffer = buffer + w(1+i-i1)*patch%mem(:,:,:,iv,patch%iit(i),1)
+    buffer = buffer + w(1+i-i1)*mem(:,:,:,patch%iit(i))
   end do
 END SUBROUTINE time_derivative
 

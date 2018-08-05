@@ -22,7 +22,7 @@ MODULE parallel_io_mod
     procedure, nopass:: output
     procedure, nopass:: close
   end type
-  integer, parameter:: verbose=1
+  integer, parameter:: verbose=0
   type(central_t):: central
   type(mpi_io_file_t), save:: file_in, file_out
   type(parallel_io_t), public:: parallel_io
@@ -41,13 +41,15 @@ SUBROUTINE init (patch)
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%init')
   if (patch%restart > 0) then
-    filename=trim(io%inputname)//'snapshots.dat'
+    filename=trim(io%outputname)//'snapshots.dat'
     inquire (file=filename, exist=exists)
     if (.not.exists) then
-      filename=trim(io%inputname)//'00000/snapshot.dat'
+      filename=trim(io%outputname)//'00000/snapshot.dat'
       inquire (file=filename, exist=exists)
       if (.not.exists) then
-        call mpi%abort('input file '//trim(filename)//' not found')
+        if (io%master) print *, 'neither '//trim(io%outputname) &
+          //'snapshots.dat, nor '//trim(filename)//' exist'
+        call mpi%abort()
       end if
     end if
     if (mpi%master) print *,' input file: ',filename
@@ -82,7 +84,7 @@ SUBROUTINE output (patch)
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
   integer:: iv, n(3), jt(2), nv, iw, nw
-  real, dimension(:,:,:,:), allocatable:: buffer
+  real, dimension(:,:,:,:), allocatable:: buffer, mem
   type(mpi_io_t):: thread_io
   real:: pt(2)
   logical:: first_time=.true.
@@ -90,16 +92,32 @@ SUBROUTINE output (patch)
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%output', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Set size parameters
+  ! Allow the output to have fewer variables than the solver (e.g. for isothermal)
   !-----------------------------------------------------------------------------
-  call thread_io%use (file_out)
+  nv = merge (io%nv, patch%nv, io%nv>0)
+  !-----------------------------------------------------------------------------
+  ! Set size parameters; a buffer is all variables in the patch, and the
+  ! snspshot offset is that times the number of patches per snapshot.
+  !-----------------------------------------------------------------------------
   if (io%guard_zones) then
     n = patch%gn
   else
     n = patch%n
   end if
-  buffer_words = product(n)*patch%nv
-  snapshot_words = buffer_words*io%ntotal
+  !-----------------------------------------------------------------------------
+  ! A call to thread_io%write (iout, id) result in slots in the file ordered
+  ! by (iv,id,iout), where iv=1,nv; id=1,io%ntotal, iout=1,nsnap. To output
+  ! time derivatives, while still using a buffer with nv slots, we pretend that
+  ! io%ntotal is twice as large, and output the time derivs as patch 2+2*(id-1),
+  ! with variables as patch 1+2*(id-1).
+  !-----------------------------------------------------------------------------
+  buffer_words = product(n)*nv
+  if (io%time_derivs) then
+    snapshot_words = buffer_words*io%ntotal*2
+  else
+    snapshot_words = buffer_words*io%ntotal
+  end if
+  call thread_io%use (file_out)
   call thread_io%init (snapshot_words, buffer_words)
   !-----------------------------------------------------------------------------
   ! Info
@@ -119,13 +137,7 @@ SUBROUTINE output (patch)
   ! Interpolate to the given output time
   !-----------------------------------------------------------------------------
   allocate (buffer(n(1),n(2),n(3),patch%nv))
-  if (io%out_time==0d0) then
-    jt = patch%iit(patch%nt-1)
-    pt = 0.5_8
-  else
-    call patch%time_interval (patch%out_next, jt, pt)
-  end if
-  nv = merge (io%nv, patch%nv, io%nv>0)
+  call patch%time_interval (patch%out_next, jt, pt)
   nw = merge (patch%nw, 1, io%time_derivs)
   do iw=1,nw
     do iv=1,nv
@@ -167,27 +179,19 @@ SUBROUTINE output (patch)
       write (io_unit%mpi,*) 'WR6', patch%id, patch%iout, pos
     end if
     !---------------------------------------------------------------------------
-    ! If native time derivatives (nw=2), output the time deriv buffer.
-    ! A call to thread_io%write (iout, id) result in slots in the file ordered
-    ! by (iv,id,iout), where iv=1,nv; id=1,io%ntotal, iout=1,nsnap. To output
-    ! time derivatives, while still using a buffer with nv slots, we pretend that
-    ! io%ntotal is twice as large, and output the time derivs as patch 2+2*(id-1),
-    ! with variables as patch 1+2*(id-1).
+    ! If native time derivatives are available (nw=2), output these to buffer,
+    ! using offsets that effectively double the number of variables per snapshot
     !---------------------------------------------------------------------------
     if (io%time_derivs) then
       if (patch%nw==1) then
-        if (patch%id==1) print *,'variables(1)   to slot', 1 +patch%iout, &
-          minval(buffer(:,:,:,2)), maxval(buffer(:,:,:,2))
         call thread_io%write (buffer, 1+patch%iout, 1+2*(patch%id-1))
       else
-        if (patch%id==1) print *,'time_derivs(1) to slot', iw +2*patch%iout
         call thread_io%write (buffer, 1+patch%iout, 2+2*(patch%id-1))
       end if
     !---------------------------------------------------------------------------
     ! If no time derivs, increment with one per snapshot
     !---------------------------------------------------------------------------
     else
-      if (patch%id==1) print *,'variables(2)   to slot', 1 +2*patch%iout
       call thread_io%write (buffer, 1+patch%iout, patch%id)
     end if
   end do
@@ -196,18 +200,23 @@ SUBROUTINE output (patch)
   !-----------------------------------------------------------------------------
   if (io%time_derivs .and. patch%nw==1) then
     do iv=1,nv
-      call central%time_derivative (patch, iv, buffer(:,:,:,iv))
+      if (patch%solver_is('ramses')) then
+        allocate (mem(patch%gn(1),patch%gn(2),patch%gn(3),patch%nt))
+        if ((iv >= patch%idx%px) .and. (iv <= patch%idx%pz)) then
+          mem = patch%mem(:,:,:,iv,:,1)/patch%mem(:,:,:,patch%idx%d,:,1)
+        else
+          mem = patch%mem(:,:,:,iv,:,1)
+        end if
+        call central%time_derivative (patch, mem, buffer(:,:,:,iv))
+        deallocate (mem)
+      else
+        call central%time_derivative (patch, patch%mem(:,:,:,iv,:,1), buffer(:,:,:,iv))
+      end if
     end do
-    call thread_io_write (2+2*patch%iout)
+    call thread_io%write (buffer, 1+patch%iout, 2+2*(patch%id-1))
   end if
   deallocate (buffer)
-  call trace%end
   call trace%end (itimer)
-contains
-  subroutine thread_io_write (slot)
-    integer:: slot
-    call thread_io%write (buffer, slot, patch%id)
-  end subroutine thread_io_write
 END SUBROUTINE output
 
 !> =============================================================================
@@ -219,7 +228,7 @@ SUBROUTINE input (patch, ok)
   !.............................................................................
   integer(8):: snapshot_words, buffer_words
   integer:: iv, n(3), nv
-  real, dimension(:,:,:), allocatable:: buffer
+  real, dimension(:,:,:,:), allocatable:: buffer
   type(mpi_io_t):: thread_io
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -230,38 +239,52 @@ SUBROUTINE input (patch, ok)
   if (file_in%handle==0) then
     call init (patch)
   end if
-  call thread_io%use (file_in)
   if (io%guard_zones) then
     n = patch%gn
   else
     n = patch%n
   end if
-  buffer_words = product(n)
-  snapshot_words = buffer_words*patch%nv*io%ntotal
+  !-----------------------------------------------------------------------------
+  ! Allow the data to have fewer variables than the solver.  Note that this
+  ! requires using namelist parameters when reading that are consistent with the
+  ! parameters used when writing.
+  !-----------------------------------------------------------------------------
+  nv = merge (io%nv, patch%nv, io%nv>0)
+  !-----------------------------------------------------------------------------
+  ! Compute offset size constants for the thread_io reader
+  !-----------------------------------------------------------------------------
+  buffer_words = product(n)*nv
+  if (io%time_derivs) then
+    snapshot_words = buffer_words*io%ntotal*2
+  else
+    snapshot_words = buffer_words*io%ntotal
+  end if
+  call thread_io%use (file_in)
   call thread_io%init (snapshot_words, buffer_words)
   !-----------------------------------------------------------------------------
   ! Read via buffer, in case guard zones not included. FIXME: read snapshot
   ! guard zone parameter, to allow it to differ
   !-----------------------------------------------------------------------------
-  allocate (buffer(n(1),n(2),n(3)))
-  nv = merge (io%nv, patch%nv, io%nv>0)
-  do iv=1,nv
-    call thread_io%read (buffer, patch%restart+1, patch%id + (iv-1)*io%ntotal)
-    if (thread_io%err /= 0) then
-      ok = .false.
-      call trace%end
-      return
-    end if
-    if (io%guard_zones) then
-      patch%mem(:,:,:,iv,patch%it,1) = buffer
-    else
-      patch%mem(patch%li(1):patch%ui(1), &
-                patch%li(2):patch%ui(2), &
-                patch%li(3):patch%ui(3),iv,patch%it,1) = buffer
-    end if
-    if (verbose>0) &
-      write (io_unit%mpi,*) 'RD', patch%id, patch%iout, iv, minval(buffer), maxval(buffer)
-  end do
+  allocate (buffer(n(1),n(2),n(3),nv))
+  if (io%time_derivs) then
+    call thread_io%read (buffer, 1+patch%restart, 1 + 2*(patch%id-1))
+  else
+    call thread_io%read (buffer, 1+patch%restart, 1 +   (patch%id-1))
+  end if
+  if (thread_io%err /= 0) then
+    ok = .false.
+    call trace%end
+    return
+  end if
+  if (io%guard_zones) then
+    patch%mem(:,:,:,:,patch%it,1) = buffer
+  else
+    patch%mem(patch%li(1):patch%ui(1), &
+              patch%li(2):patch%ui(2), &
+              patch%li(3):patch%ui(3),:,patch%it,1) = buffer
+  end if
+  if (verbose>0) &
+      write (io_unit%mpi,*) 'RD', patch%id, patch%iout, minval(buffer), maxval(buffer)
   deallocate (buffer)
   !-----------------------------------------------------------------------------
   ! Restore to momentum variables for RAMSES snapshots

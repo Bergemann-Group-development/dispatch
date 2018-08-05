@@ -60,7 +60,9 @@ MODULE mpi_io_mod
     procedure, private:: write4
     generic, public :: write => write3, write4
     procedure:: iwrite
-    procedure:: read
+    procedure, private:: read3
+    procedure, private:: read4
+    generic, public :: read => read3, read4
     procedure:: test
     procedure:: wait
     procedure:: assert
@@ -191,7 +193,7 @@ END SUBROUTINE iwrite
 !> =============================================================================
 !> Read a chunk (self%lsize) from the open file
 !> =============================================================================
-SUBROUTINE read (self, f, rec, id)
+SUBROUTINE read3 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:):: f
   integer rec, id
@@ -199,7 +201,7 @@ SUBROUTINE read (self, f, rec, id)
   integer(kind=MPI_OFFSET_KIND):: pos
   !-----------------------------------------------------------------------------
   if (rec < 1) return
-  call trace%begin ('mpi_io_t%read')
+  call trace%begin ('mpi_io_t%read3')
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   !$omp critical (mpi_io_cr)
@@ -211,7 +213,32 @@ SUBROUTINE read (self, f, rec, id)
   !$omp end critical (mpi_io_cr)
   call trace%end
 #endif
-END SUBROUTINE read
+END SUBROUTINE read3
+
+!> =============================================================================
+!> Read a chunk (self%lsize) from the open file
+!> =============================================================================
+SUBROUTINE read4 (self, f, rec, id)
+  class(mpi_io_t):: self
+  real(kind=4), dimension(:,:,:,:):: f
+  integer rec, id
+#ifdef MPI
+  integer(kind=MPI_OFFSET_KIND):: pos
+  !-----------------------------------------------------------------------------
+  if (rec < 1) return
+  call trace%begin ('mpi_io_t%read4')
+  call self%check_init
+  pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
+  !$omp critical (mpi_io_cr)
+  call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
+                         self%status, self%err)
+  if (verbose>1) &
+    write(io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%read: rec, id, words, pos =', &
+      rec, id, self%chunk_words, pos, minval(f), maxval(f)
+  !$omp end critical (mpi_io_cr)
+  call trace%end
+#endif
+END SUBROUTINE read4
 
 !> =============================================================================
 !> Test if an I/O operation is complete
