@@ -34,7 +34,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  call self%initial%init (self%kind, self%gamma)
+  call self%initial%init (self%kind, real(self%gamma))
   self%mhd = .true.
   call self%initial%condition(self%mesh, self%mem(:,:,:,:,1,1), self%idx)
   !

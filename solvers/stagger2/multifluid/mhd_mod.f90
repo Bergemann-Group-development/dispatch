@@ -147,7 +147,6 @@ SUBROUTINE pde (self)
   integer:: k, ic, i2                                                                           ! ADDED INTEGER FOR LOOPS OVER ALL COMPONENTS
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
-  associate (i => self%idx)
   self%u_max = 0.0                                                                              ! INITIALIZE u_max
   if (self%mhd) then
     self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,2) = 0.0                                                   ! INITIALIZE dBdt
@@ -168,7 +167,6 @@ SUBROUTINE pde (self)
     Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
-  end associate
   if (self%tracer .and. k==1) then                                                              ! ADDED POINTER TO TRACER IF tracer IS TRUE
     self%dtr => self%mem(:,:,:,self%idx%dtr,self%it,1); self%ddtrdt => self%mem(:,:,:,self%idx%dtr,self%it,2)
     dtr => self%dtr; ddtrdt => self%ddtrdt
