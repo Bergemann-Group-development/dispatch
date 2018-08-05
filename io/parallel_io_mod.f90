@@ -154,20 +154,41 @@ SUBROUTINE output (patch)
           patch%fmaxval(patch%mem(:,:,:,iv,jt(2),1)), &
           jt, pt
     end do
+    !---------------------------------------------------------------------------
+    ! For RAMSES consistency, convert momenta to velocities for ramses solver
+    !---------------------------------------------------------------------------
+    if (patch%solver_is('ramses')) then
+      do iv=patch%idx%px,patch%idx%pz
+        buffer(:,:,:,iv) = buffer(:,:,:,iv)/buffer(:,:,:,patch%idx%d)
+      end do
+    end if
     if (verbose > 0) then
       pos = 4_8*(patch%iout*snapshot_words + (patch%id-1_8)*buffer_words)
       write (io_unit%mpi,*) 'WR6', patch%id, patch%iout, pos
     end if
     !---------------------------------------------------------------------------
-    ! If native time derivatives (nw=2), output the time deriv buffer
+    ! If native time derivatives (nw=2), output the time deriv buffer.
+    ! A call to thread_io%write (iout, id) result in slots in the file ordered
+    ! by (iv,id,iout), where iv=1,nv; id=1,io%ntotal, iout=1,nsnap. To output
+    ! time derivatives, while still using a buffer with nv slots, we pretend that
+    ! io%ntotal is twice as large, and output the time derivs as patch 2+2*(id-1),
+    ! with variables as patch 1+2*(id-1).
     !---------------------------------------------------------------------------
     if (io%time_derivs) then
-      call thread_io_write (iw+2*patch%iout)
+      if (patch%nw==1) then
+        if (patch%id==1) print *,'variables(1)   to slot', 1 +patch%iout, &
+          minval(buffer(:,:,:,2)), maxval(buffer(:,:,:,2))
+        call thread_io%write (buffer, 1+patch%iout, 1+2*(patch%id-1))
+      else
+        if (patch%id==1) print *,'time_derivs(1) to slot', iw +2*patch%iout
+        call thread_io%write (buffer, 1+patch%iout, 2+2*(patch%id-1))
+      end if
     !---------------------------------------------------------------------------
     ! If no time derivs, increment with one per snapshot
     !---------------------------------------------------------------------------
     else
-      call thread_io_write (1+patch%iout)
+      if (patch%id==1) print *,'variables(2)   to slot', 1 +2*patch%iout
+      call thread_io%write (buffer, 1+patch%iout, patch%id)
     end if
   end do
   !-----------------------------------------------------------------------------
@@ -242,6 +263,19 @@ SUBROUTINE input (patch, ok)
       write (io_unit%mpi,*) 'RD', patch%id, patch%iout, iv, minval(buffer), maxval(buffer)
   end do
   deallocate (buffer)
+  !-----------------------------------------------------------------------------
+  ! Restore to momentum variables for RAMSES snapshots
+  !-----------------------------------------------------------------------------
+  if (patch%solver_is('ramses')) then
+    do iv=patch%idx%px,patch%idx%pz
+      patch%mem(:,:,:,iv         ,patch%it,1) = &
+      patch%mem(:,:,:,iv         ,patch%it,1) * &
+      patch%mem(:,:,:,patch%idx%d,patch%it,1)
+    end do
+  end if
+  !-----------------------------------------------------------------------------
+  ! Signal success
+  !-----------------------------------------------------------------------------
   ok = .true.
   patch%time = patch%restart*io%out_time
   if (io%verbose==1) print '(a,2i6,1p,e16.6)', ' parallel_io_t%input: iout, id, time =', &

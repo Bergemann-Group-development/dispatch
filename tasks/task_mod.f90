@@ -55,8 +55,8 @@ MODULE task_mod
     real(8), dimension(:), pointer:: dt
     character(len=64), pointer:: name
     class(task_t), pointer:: parent
-    character(len=64):: kind='task'
-    character(len=12):: type='task_t'
+    character(len=64):: kind='task'     ! solver name
+    character(len=12):: type='task_t'   ! task type
     real:: latency=0.0                  ! MPI message latency
     real(8):: wc_last=0.0_8
     class(mesg_t), pointer:: mesg=>null()
@@ -93,6 +93,7 @@ MODULE task_mod
     procedure:: unpack
     procedure:: is_relevant
     procedure:: test_update
+    procedure:: solver_is
   end type
   integer, save:: id=0
   type(dll_t), pointer:: deleted_list
@@ -500,5 +501,15 @@ SUBROUTINE test_update (self)
   self%dtime = self%random%ran1()
   self%dt(self%it) = self%dtime
 END SUBROUTINE test_update
+
+!> =============================================================================
+!> Test if solver leading characters match a given string
+!> =============================================================================
+FUNCTION solver_is (self, kind)
+  class(task_t):: self
+  logical solver_is
+  character(len=*):: kind
+  solver_is = self%kind(1:len(kind)) == kind
+END FUNCTION solver_is
 
 END MODULE task_mod
