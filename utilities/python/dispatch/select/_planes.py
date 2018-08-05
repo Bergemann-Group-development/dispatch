@@ -33,11 +33,15 @@ def unigrid_plane(snap,dir=0,iv=0,position=[0.5,0.5,0.5],verbose=0):
         dirs = [2,0,1]
     f = np.zeros((n[dirs[1]],n[dirs[2]]))
     for p in pp:
+        if pp[0].no_mans_land:
+            pn=p.n
+        else:
+            pn=p.n-1
         i0 = int(0.5+(position[dirs[0]]-p.llc_cart[dirs[0]])/p.ds[dirs[0]])
         i0 = min(p.n[dir]-1,max(0,i0))
         o = map(int,0.5+(p.llc_cart-snap.cartesian.origin)/p.ds)
-        for i2 in range(0,p.n[dirs[2]]):
-            i1 = range(0,p.n[dirs[1]])
+        for i2 in range(0,pn[dirs[2]]):
+            i1 = range(0,pn[dirs[1]])
             if dir==0:
                 i=i0; j=i1; k=i2
             elif dir==1:

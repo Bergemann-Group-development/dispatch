@@ -7,8 +7,6 @@ import sys
 import f90nml
 import numpy as np
 
-import select
-
 def _p2():
     """ convenience function to check Python version """
     return sys.version_info.major==2
@@ -136,7 +134,8 @@ class snapshot():
                 patch.data=_data(patch)
                 self._add_axes(patch)
                 if not hasattr(patch,'units'):
-                    patch.units=self.units
+                    if hasattr(self,'units'):
+                        patch.units=self.units
                 patches.append(patch)
             # Add indices
             if 'idx_nml' in top.keys():
