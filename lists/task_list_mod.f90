@@ -26,6 +26,7 @@ MODULE task_list_mod
   contains
     procedure:: init
     procedure:: startup
+    procedure:: execute
     procedure:: update
     procedure:: average
     procedure:: print => print1
@@ -107,6 +108,42 @@ SUBROUTINE startup (self)
   self%n_tasks = self%na
   call trace%end (itimer)
 END SUBROUTINE startup
+
+!> =============================================================================
+!> Execute the task list, updating it until it is empty.  With !$omp parallel here,
+!> everything local to self%update is thread private.
+!> =============================================================================
+SUBROUTINE execute (self)
+  USE omp_timer_mod
+  class(task_list_t):: self
+  real(8):: sec
+  integer:: dims(4)
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%execute', itimer=itimer)
+  call self%startup
+  call tic (time=sec)
+  call timer%print
+  !-----------------------------------------------------------------------------
+  ! Loop over tasks
+  !-----------------------------------------------------------------------------
+  io%ntask = self%n
+  !$omp parallel
+  do while (self%na > 0 .and. .not.io%do_stop)
+    call self%update (self%head, .false.)
+  end do
+  call timer%print
+  call mpi_mesg%diagnostics(1)
+  write (io_unit%log,*) 'thread',omp%thread,' arrived'
+  flush (io_unit%log)
+  !$omp end parallel
+  call toc ('wall time', n_update, time=sec)
+  call mpi%barrier ('end')
+  !if (io%master) &
+  !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
+  !    max(1,(download%n_differ+download%n_same))
+  call trace%end (itimer)
+END SUBROUTINE execute
 
 !> =============================================================================
 !> Common part of task list update, used by dispatchers
