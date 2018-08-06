@@ -17,23 +17,32 @@ MODULE rt_sc_mod
   USE timer_mod
   implicit none
   private
+  !-----------------------------------------------------------------------------
   type, public:: mesh_t
     integer:: gn, ng, n, li, ui
     real(8):: d=1.
   end type
+  !-----------------------------------------------------------------------------
+  type, public:: omega_t
+    real:: mu, phi, w
+  end type
+  !-----------------------------------------------------------------------------
   type, public:: rt_sc_t
-    real:: mu=1.0, phi=0.0
-    type(mesh_t), pointer:: mesh(:)
-    integer:: nl
+    type(omega_t):: omega
+    integer:: nl, n_bin
     integer:: o(2)
     real:: p(2)
+    real(8):: time
     logical:: double_solution=.true.
-    real, dimension(:,:,:,:,:)  , allocatable:: vars
+    type(mesh_t), pointer:: mesh(:)
+    real, dimension(:), allocatable:: w_bin
+    real, dimension(:,:,:), allocatable:: q
+    real, dimension(:,:,:,:,:), allocatable:: vars
     real, dimension(:,:,:,:,:,:), allocatable:: layers
   contains
     procedure:: init
     procedure:: test
-    procedure:: volume_solver
+    procedure:: update
     procedure:: layer_solver
     procedure:: prepare_layers
     procedure:: calculate_offsets
@@ -71,9 +80,10 @@ SUBROUTINE init (self)
   ! The variables are: rk, s, q for each wavelength
   !-----------------------------------------------------------------------------
   !                                nx,              ny,              nz,   nlam, ksq
+  allocate (self%q   (self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn))
   allocate (self%vars(self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, self%nl,  3))
   self%vars = 1.0
-  call self%volume_solver
+  call self%update
   call timer%print
 END SUBROUTINE init
 
@@ -104,9 +114,9 @@ END SUBROUTINE test
 !> ============================================================================
 !> Integral SC/RT solver
 !> ============================================================================
-SUBROUTINE volume_solver (self)
+SUBROUTINE update (self)
   class (rt_sc_t):: self
-  integer:: i3
+  integer:: i3, i_bin
   !-----------------------------------------------------------------------------
   ! Compute the opacity and source function for all bins
   !-----------------------------------------------------------------------------
@@ -136,8 +146,15 @@ SUBROUTINE volume_solver (self)
                             self%vars  (:,:,:,:  ,3), &   ! q = solution
                             i3, 3, 1)
   end do
+  !-----------------------------------------------------------------------------
+  ! Integrate over bins
+  !-----------------------------------------------------------------------------
+  self%q = 0.0
+  do i_bin=1,self%n_bin
+    self%q = self%q + self%vars(:,:,:,i_bin,3)*self%w_bin(i_bin)
+  end do
   deallocate (self%layers)
-END SUBROUTINE volume_solver
+END SUBROUTINE update
 
 !> =============================================================================
 !> Integral solver for one layer.  The exact integal solution Q=I-S for a 2nd
@@ -229,7 +246,7 @@ SUBROUTINE calculate_offsets (self, i3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_sc_t%calculate_offsets', itimer=itimer)
-  self%p = -self%mesh(3)%d*self%mu*[cos(self%phi),sin(self%phi)]
+  self%p = -self%mesh(3)%d*self%omega%mu*[cos(self%omega%phi),sin(self%omega%phi)]
   self%o = floor(self%p)
   self%p = self%p - self%o
   call trace%end (itimer)

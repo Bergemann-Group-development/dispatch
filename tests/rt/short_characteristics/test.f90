@@ -9,5 +9,5 @@ PROGRAM test
   call mpi%init
   call rt_sc%init
   call rt_sc%test
-  call rt_sc%volume_solver
+  call rt_sc%update
 END PROGRAM test
