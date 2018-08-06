@@ -10,6 +10,10 @@ from __future__ import print_function
 import numpy as np
 
 def unigrid_plane(snap,dir=0,iv=0,position=[0.5,0.5,0.5],verbose=0):
+    """
+        assemble a plane from a unigrid experiment, where all
+        patches have the same size and resolution
+    """
     assert dir<3, 'dir must be in the range 0-2'
     if type(position)==type(1.0) or type(position)==type(1):
         pos=0.5*np.ones(3)
