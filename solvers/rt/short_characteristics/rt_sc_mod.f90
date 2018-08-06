@@ -39,6 +39,7 @@ MODULE rt_sc_mod
     real, dimension(:,:,:), allocatable:: q
     real, dimension(:,:,:,:,:), allocatable:: vars
     real, dimension(:,:,:,:,:,:), allocatable:: layers
+    real(8), dimension(:), allocatable:: upstream_times
   contains
     procedure:: init
     procedure:: test
@@ -117,6 +118,11 @@ END SUBROUTINE test
 SUBROUTINE update (self)
   class (rt_sc_t):: self
   integer:: i3, i_bin
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  ! Decide if we have enough upstream info
+  !-----------------------------------------------------------------------------
+  call trace%begin ('rt_sc_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Compute the opacity and source function for all bins
   !-----------------------------------------------------------------------------
@@ -154,6 +160,7 @@ SUBROUTINE update (self)
     self%q = self%q + self%vars(:,:,:,i_bin,3)*self%w_bin(i_bin)
   end do
   deallocate (self%layers)
+  call trace%end (itimer)
 END SUBROUTINE update
 
 !> =============================================================================

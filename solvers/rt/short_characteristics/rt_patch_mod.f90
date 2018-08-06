@@ -14,41 +14,20 @@ MODULE rt_patch_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
-  ! Extended index data type for RT
-  !-----------------------------------------------------------------------------
-  type, public, extends(index_t):: rt_index_t
-    integer:: q=10
-  contains
-    procedure:: init => init_index
-  end type
-  !-----------------------------------------------------------------------------
   ! RT patch data type, extended from MHD, with extra RT memory and parameters
   !-----------------------------------------------------------------------------
   type, public, extends(mhd_t):: rt_patch_t
-    real(8):: rt_time, rt_grace=1.0
-    type(rt_index_t):: idr
+    real(8), allocatable:: rt_time(:)
+    real(8):: rt_grace_time=0.0
     integer:: n_omega, n_bin
     type(rt_sc_t), dimension(:), allocatable:: rt_sc
   contains
     procedure:: init
     procedure:: update 
+    procedure:: upstream_is_ok
     !procedure:: test
   end type
 CONTAINS
-
-!> ============================================================================
-!> RT variable indices.  Initialize both self%idx, which is used in the rest
-!> of DISPATCH, and the extension, which is used only in the RT part.
-!> ============================================================================
-SUBROUTINE init_index (self, ie, mhd)
-  class (rt_index_t):: self
-  integer:: ie
-  logical:: mhd
-  !----------------------------------------------------------------------------
-  call self%index_t%init (ie, mhd)
-  self%tt = 9
-  self%q  = 10
-END SUBROUTINE init_index
 
 !> ============================================================================
 !> Read parameters
@@ -89,22 +68,23 @@ SUBROUTINE init (self)
     end do
   end do
   !-----------------------------------------------------------------------------
-  ! Initialize variable indices
+  ! Initialize variable indices, using slot 9 for temperature and slot 10 for Q
   !-----------------------------------------------------------------------------
   self%mhd = .true.
-  call self%idr%init (5, self%mhd)
+  self%nv  = 10
+  self%nt  = 5
   call self%idx%init (5, self%mhd)
-  self%idx%tt = self%idr%tt
+  self%idx%tt = 9
+  self%idx%qr = 10
+  call self%idx%copy
   !-----------------------------------------------------------------------------
   ! Allocate the required RT solvers for all angles
   !-----------------------------------------------------------------------------
   allocate (self%rt_sc(self%n_omega))
+  allocate (self%rt_time(self%nt))
   !-----------------------------------------------------------------------------
-  ! Punt to the next level, using slot 9 for temperature and slot 10 for Q.
-  ! This initializes patch memory and meshes.
+  ! Punt to the next level, initializing patch memory and meshes
   !-----------------------------------------------------------------------------
-  self%nv  = 10
-  self%nt  = 5
   call self%mhd_t%init
 END SUBROUTINE init
 
@@ -126,12 +106,14 @@ SUBROUTINE update (self)
   integer:: i_omega
   real, dimension(:,:,:), pointer:: q
   !----------------------------------------------------------------------------
-  self%time = self%rt_sc(1)%time
-  q => self%mem(:,:,:,self%idr%q,self%it,1)
+  self%rt_time(self%it) = self%rt_sc(1)%time
+  q => self%mem(:,:,:,self%idx%qr,self%it,1)
   do i_omega=2,self%n_omega
-    call self%rt_sc(i_omega)%update
+    if (self%upstream_is_ok(i_omega)) then
+      call self%rt_sc(i_omega)%update
+    end if
     q = q + self%rt_sc(i_omega)%q*self%rt_sc(i_omega)%omega%w
-    self%rt_time = min(self%rt_time, self%rt_sc(i_omega)%time)
+    self%rt_time(self%it) = min(self%rt_time(self%it), self%rt_sc(i_omega)%time)
   end do
   !----------------------------------------------------------------------------
   ! If the RT solution is far enough advanced, ask the MHD solver to update.
@@ -139,9 +121,21 @@ SUBROUTINE update (self)
   ! task will again get a chance to update when the scheduler calls it next
   ! time.
   !----------------------------------------------------------------------------
-  if (self%rt_time + self%rt_grace*self%dtime > self%time) then
+  if (self%rt_time(self%it) + self%rt_grace_time > self%time) then
     call self%mhd_t%update
   end if
 END SUBROUTINE update
+
+!> ============================================================================
+!> Check upstream times
+!> ============================================================================
+FUNCTION upstream_is_ok (self, i_omega)
+  logical:: upstream_is_ok
+  class (rt_patch_t):: self
+  integer:: i_omega
+  !-----------------------------------------------------------------------------
+  upstream_is_ok = all(self%rt_sc(i_omega)%upstream_times &
+                       > self%time - self%grace*self%dtime)
+END FUNCTION
 
 END MODULE rt_patch_mod

@@ -6,7 +6,8 @@ OPTS = optimized
 # Common configuration
 EXEC = test.x
 UPD = adams_bashforth
-SOLVER = stagger2
+SOLVER = stagger2/e
+RT_SOLVER = short_characteristics
 TOP = ../../..
 include $(TOP)/config/Makefile
 

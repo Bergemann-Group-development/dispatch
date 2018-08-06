@@ -35,6 +35,7 @@ MODULE mhd_mod
     real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real, dimension(:,:,:),   pointer:: lnd, ee, pg
+    real, dimension(:,:,:), allocatable:: qrad
     real:: nu(6)
     real:: csound
     real:: cdtd
@@ -410,6 +411,12 @@ SUBROUTINE pde (self)
     Ez = Ez + xdn(Uy)*ydn(Bx) - ydn(Ux)*xdn(By)                                 ! mhd: 2 2 0
     call non_ideal%update (self%gn, minval(ds), d, Jx, Jy, Jz, Bx, By, Bz, Q, emf, self%u_max)
     dBdt = -curl_up(ds,emf)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Radiative heating / cooling, if any
+  !-----------------------------------------------------------------------------
+  if (self%idx%qr > 0) then
+    dedt = dedt + self%mem(:,:,:,self%idx%qr,self%it,1)
   end if
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d

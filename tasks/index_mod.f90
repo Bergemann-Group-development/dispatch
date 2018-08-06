@@ -9,10 +9,12 @@ MODULE index_mod
   implicit none
   private
   type, public:: index_t
-    integer:: d=0, e=0, px=0, py=0, pz=0, bx=0, by=0, bz=0, phi=0, tt=0, s=0, et=0, dphi=0
+    integer:: d=0, e=0, px=0, py=0, pz=0, bx=0, by=0, bz=0, phi=0, tt=0, s=0, &
+              et=0, dphi=0, qr=0
     integer:: dtr=0
   contains
     procedure:: init
+    procedure:: copy
     procedure:: output
   end type
   type(index_t), public:: idx
@@ -50,6 +52,13 @@ SUBROUTINE init (self, ie, mhd)
     self%by = -1
     self%bz = -1
   end if
+END SUBROUTINE init
+
+!> =============================================================================
+!> Initialize the indices to default values, possibly to be modified by solvers
+!> =============================================================================
+SUBROUTINE copy (self)
+  class(index_t):: self
   !-----------------------------------------------------------------------------
   ! Ugly fix, necessary because there are a large number of places that refer to
   ! a local instance of index_t, which is assumed to be authentative.  In cases
@@ -60,7 +69,7 @@ SUBROUTINE init (self, ie, mhd)
   !$omp critical (index_cr)
   idx = self
   !$omp end critical (index_cr)
-END SUBROUTINE init
+END SUBROUTINE copy
 
 !> =============================================================================
 !> Write out index value namelist, for python/dispatch/
@@ -68,7 +77,7 @@ END SUBROUTINE init
 SUBROUTINE output (self)
   class(index_t):: self
   integer:: d, e, et, s, px, py, pz, bx, by, bz, phi, dphi, p1, p2, p3, b1, b2, b3
-  integer:: dddt, dedt, dsdt, dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, dphidt
+  integer:: dddt, dedt, dsdt, dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, dphidt, qr
   namelist /idx_nml/ d, e, s, px, py, pz, bx, by, bz, phi, dphi, p1, p2, p3, b1, b2, b3
   if (io%time_derivs) then
     call output_time_derivs (self)
@@ -77,6 +86,7 @@ SUBROUTINE output (self)
     e    = self%e   - 1
     s    = self%s   - 1
     et   = self%et  - 1
+    qr   = self%qr  - 1
     px   = self%px  - 1
     py   = self%py  - 1
     pz   = self%pz  - 1
