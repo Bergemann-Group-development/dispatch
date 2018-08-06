@@ -15,18 +15,16 @@ MODULE rt_sc_mod
   USE io_mod
   USE trace_mod
   USE timer_mod
+  USE solver_mod
+  USE mesh_mod
   implicit none
   private
-  !-----------------------------------------------------------------------------
-  type, public:: mesh_t
-    integer:: gn, ng, n, li, ui
-    real(8):: d=1.
-  end type
   !-----------------------------------------------------------------------------
   type, public:: omega_t
     real:: mu, phi, w
   end type
   !-----------------------------------------------------------------------------
+  !type, public, extends(solver_t):: rt_sc_t
   type, public:: rt_sc_t
     type(omega_t):: omega
     integer:: nl, n_bin
@@ -34,7 +32,7 @@ MODULE rt_sc_mod
     real:: p(2)
     real(8):: time
     logical:: double_solution=.true.
-    type(mesh_t), pointer:: mesh(:)
+    class(mesh_t), pointer:: mesh(:)
     real, dimension(:), allocatable:: w_bin
     real, dimension(:,:,:), allocatable:: q
     real, dimension(:,:,:,:,:), allocatable:: vars
@@ -70,7 +68,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Make a mesh
   !-----------------------------------------------------------------------------
-  allocate (self%mesh(3))
   self%mesh%n  = n
   self%mesh%ng = ng
   self%mesh%gn = n+2*ng

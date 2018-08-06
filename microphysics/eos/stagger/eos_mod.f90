@@ -125,7 +125,7 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamm
   real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y, lnd, ee
   real, dimension(:,:,:),                      optional :: pg, tt, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
-  real, dimension(:,:,:), pointer :: x_loc, y_loc, lnd, ee
+  real, dimension(:,:,:), pointer :: x_loc, y_loc, lnd_l, ee_l
   integer:: i
   integer, save:: itimer=0
   real:: stefan
@@ -153,19 +153,19 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamm
     call mpi%abort ('eos_t: missing 1st argument')
   end if
   !-----------------------------------------------------------------------------
-  if (present(lnr).and.present(ee) then
+  if (present(lnd).and.present(ee)) then
     if (present(src)) then
       call lookup_table (self, dim, ee=ee, lnd=lnd, rk=rk, src=src)
     else
       call lookup_table (self, dim, ee=ee, lnd=lnd, rk=rk)
     end if
   else if (present(src).and.present(rk)) then
-    allocate (lnd(dim(1),dim(2),dim(3)))
-    allocate (ee (dim(1),dim(2),dim(3)))
-    lnd = log(x_loc)
-    ee  = y_loc/x_loc
-    call lookup_table (self, dim, ee=ee, lnd=lnd, src=src, rk=rk)
-    deallocate (lnd, ee)
+    allocate (lnd_l(dim(1),dim(2),dim(3)))
+    allocate (ee_l (dim(1),dim(2),dim(3)))
+    lnd_l = log(x_loc)
+    ee_l = y_loc/x_loc
+    call lookup_table (self, dim, ee=ee_l, lnd=lnd_l, src=src, rk=rk)
+    deallocate (lnd_l, ee_l)
   else
     if (present(tt)) then
       tt = (self%gamma-1.0)*x_loc

@@ -16,14 +16,12 @@ MODULE experiment_mod
   USE io_mod
   USE bits_mod
   USE trace_mod
-  USE rmhd_mod
-  USE initial_mod
-  USE timestep_mod
+  USE rt_solver_mod
   USE timer_mod
   USE link_mod
   implicit none
   private
-  type, public, extends(rmhd_t):: experiment_t
+  type, public, extends(rt_solver_t):: experiment_t
   contains
     procedure init
     procedure update
@@ -43,28 +41,12 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
-  call self%initial%init (self%kind)
-  self%nv  = self%initial%nv
-  self%mhd = self%initial%mhd
   self%periodic(2) = .false.                     ! non-periodic vertically
-  self%initial%id = self%id
-  call self%rmhd_t%init
-  if (self%mhd) then
-    self%idx%bx=6
-    self%idx%by=7
-    self%idx%bz=8
-    self%idx%tt=9
-  else
-    self%idx%tt=6
-  end if
+  call self%rt_solver_t%init
   call self%set(bits%static)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  self%time = self%initial%time
-  self%t(:) = self%initial%time
-  self%dtime = 1.0
-  self%dt(:) = self%dtime
   call self%boundary_conditions
   call trace_end (itimer=itimer)
 END SUBROUTINE init
@@ -88,13 +70,8 @@ SUBROUTINE update (self)
     first_time = .false.
     call self%initial%cleanup
   end if
-  call self%rmhd_t%update
+  call self%rt_solver_t%update
   call self%boundary_conditions
-  call self%courant_condition
-  if (io%verbose>2) &
-    call self%check_density('before timestep')
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  call self%check_density(' after timestep')
   call trace_end
 END SUBROUTINE update
 

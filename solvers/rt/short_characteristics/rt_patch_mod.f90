@@ -10,14 +10,17 @@ MODULE rt_patch_mod
   USE index_mod
   USE radau_mod
   USE rt_sc_mod
-  USE mhd_mod
+  USE solver_mod
+  USE task_mod
+  USE link_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
   ! RT patch data type, extended from MHD, with extra RT memory and parameters
   !-----------------------------------------------------------------------------
-  type, public, extends(mhd_t):: rt_patch_t
-    real(8), allocatable:: rt_time(:)
+  type, public, extends(solver_t):: rt_patch_t
+    real(8):: rt_time
+    real(8), dimension(:), allocatable:: rt_t
     real(8):: rt_grace_time=0.0
     integer:: n_omega, n_bin
     type(rt_sc_t), dimension(:), allocatable:: rt_sc
@@ -81,11 +84,11 @@ SUBROUTINE init (self)
   ! Allocate the required RT solvers for all angles
   !-----------------------------------------------------------------------------
   allocate (self%rt_sc(self%n_omega))
-  allocate (self%rt_time(self%nt))
+  allocate (self%rt_t(self%nt))
   !-----------------------------------------------------------------------------
   ! Punt to the next level, initializing patch memory and meshes
   !-----------------------------------------------------------------------------
-  call self%mhd_t%init
+  call self%solver_t%init
 END SUBROUTINE init
 
 !> ============================================================================
@@ -106,14 +109,15 @@ SUBROUTINE update (self)
   integer:: i_omega
   real, dimension(:,:,:), pointer:: q
   !----------------------------------------------------------------------------
-  self%rt_time(self%it) = self%rt_sc(1)%time
+  self%rt_time = self%rt_sc(1)%time
   q => self%mem(:,:,:,self%idx%qr,self%it,1)
   do i_omega=2,self%n_omega
     if (self%upstream_is_ok(i_omega)) then
       call self%rt_sc(i_omega)%update
     end if
     q = q + self%rt_sc(i_omega)%q*self%rt_sc(i_omega)%omega%w
-    self%rt_time(self%it) = min(self%rt_time(self%it), self%rt_sc(i_omega)%time)
+    self%rt_time = min(self%rt_time, self%rt_sc(i_omega)%time)
+    self%rt_t(self%it) = self%rt_time
   end do
   !----------------------------------------------------------------------------
   ! If the RT solution is far enough advanced, ask the MHD solver to update.
@@ -121,21 +125,33 @@ SUBROUTINE update (self)
   ! task will again get a chance to update when the scheduler calls it next
   ! time.
   !----------------------------------------------------------------------------
-  if (self%rt_time(self%it) + self%rt_grace_time > self%time) then
-    call self%mhd_t%update
+  if (self%rt_time + self%rt_grace_time > self%time) then
+    call self%solver_t%update
   end if
 END SUBROUTINE update
 
 !> ============================================================================
-!> Check upstream times
+!> Check upstream times.  Upstream tasks are marked 'needed' in the nbor list
 !> ============================================================================
 FUNCTION upstream_is_ok (self, i_omega)
   logical:: upstream_is_ok
   class (rt_patch_t):: self
   integer:: i_omega
+  type(link_t), pointer:: link, nbor, next
+  class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
-  upstream_is_ok = all(self%rt_sc(i_omega)%upstream_times &
-                       > self%time - self%grace*self%dtime)
+  upstream_is_ok = .true.
+  do while (associated(nbor))
+    task => nbor%task
+    select type (task)
+    type is (rt_patch_t)
+    if (nbor%needed .and. task%rt_time < self%time - self%grace*self%dtime) then
+      upstream_is_ok = .false.
+      exit
+    end if
+    end select
+    nbor => nbor%next
+  end do
 END FUNCTION
 
 END MODULE rt_patch_mod
