@@ -12,7 +12,7 @@ CONTAINS
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE init (k,wi,xi)
+SUBROUTINE init (k,xi,wi)
 !
 !  Routine to return weights and abscissa points for Gauss-Radau
 !  integration in the interval [a; b]. The transformation from
