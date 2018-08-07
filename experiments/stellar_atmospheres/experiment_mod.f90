@@ -22,21 +22,22 @@ MODULE experiment_mod
   USE gpatch_mod
   USE link_mod
   USE rt_solver_mod
+  USE solver_mod
   implicit none
   private
   type, public, extends(rt_solver_t):: experiment_t
   contains
     procedure init
     procedure update
+    procedure initial_condition
     procedure boundary_conditions
   end type
-  real, save, pointer, dimension(:,:,:,:):: buffer => null()
+  real, save, allocatable, dimension(:,:,:,:):: buffer
   integer, save:: verbose=1
   integer, save:: dims(3)=63
   integer, save:: order=2
   real, save:: grav=2.75
-  character(len=64):: file='snapshot'
-  logical, save:: first_time=.true.
+  character(len=64):: file='mhd63'
 CONTAINS
 
 !> =============================================================================
@@ -45,7 +46,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
-  logical, save:: first_time
+  logical, save:: first_time=.true.
   integer, save:: itimer=0
   namelist /experiment_params/ file, grav, dims, order, verbose
   !----------------------------------------------------------------------------
@@ -61,6 +62,7 @@ SUBROUTINE init (self)
     end if
     !$omp end critical (init_cr)
   end if
+  if (.not. io%master) verbose=0
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
@@ -90,35 +92,57 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(experiment_t):: self
   class(link_t), pointer:: link
+  logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   if (first_time) then
     first_time = .false.
-    call self%initial%cleanup
+    if (allocated(buffer)) &
+      deallocate (buffer)
   end if
+  call self%solver_t%update
   call self%rt_solver_t%update
   call self%boundary_conditions
   call trace_end
 END SUBROUTINE update
 
 !> =============================================================================
+!> For now, uses initiallu frozen BCs, which will work for at least a while --
+!> enough to develope and validate the RT
 !> =============================================================================
 SUBROUTINE boundary_conditions (self)
   class(experiment_t):: self
-  integer:: iy, li(3), ui(3)
+  integer, dimension(3):: lb, lo, li, ui, uo, ub
+  integer:: iz, m(6)
+  real, save, dimension(:,:,:,:), pointer:: lower => null()
+  real, save, dimension(:,:,:,:), pointer:: upper => null()
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%boundary_conditions')
-  li = self%mesh%li
-  ui = self%mesh%ui
-  if (self%mesh(2)%lower_boundary) then
-    do iy=self%mesh(2)%lb,self%mesh(2)%lo
-      self%mem(:,iy,:,:,self%it,1) = self%mem(:,self%mesh(2)%li,:,:,self%it,1)
-    end do
+  lb = self%mesh%lb; lo = self%mesh%lo; li = self%mesh%li
+  ub = self%mesh%ub; uo = self%mesh%uo; ui = self%mesh%ui
+  m = shape(self%mem)
+  m(3) = self%ng(3)
+  if (self%mesh(3)%lower_boundary) then
+    if (.not.associated(lower)) then
+      allocate (lower(m(1),m(2),m(3),m(4)))
+      lower = self%mem(:,:,lb(3):lo(3),:,self%it,1)
+      if (verbose > 0) &
+        print *,'LBC',self%id,self%position, &
+        minval(lower(:,:,:,1)),maxval(lower(:,:,:,1))
+    else
+      self%mem(:,:,lb(3):lo(3),:,self%it,1) = lower
+    end if
   end if
-  if (self%mesh(2)%upper_boundary) then
-    do iy=self%mesh(2)%uo,self%mesh(2)%ub
-      self%mem(:,iy,:,:,self%it,1) = self%mem(:,self%mesh(2)%ui,:,:,self%it,1)
-    end do
+  if (self%mesh(3)%upper_boundary) then
+    if (.not.associated(upper)) then
+      allocate (upper(m(1),m(2),m(3),m(4)))
+      upper = self%mem(:,:,uo(3):ub(3),:,self%it,1)
+      if (verbose > 0) &
+        print *,'UBC',self%id,self%position, &
+        minval(upper(:,:,:,1)),maxval(upper(:,:,:,1))
+    else
+      self%mem(:,:,uo(3):ub(3),:,self%it,1) = upper
+    end if
   end if
   call trace_end
 END SUBROUTINE boundary_conditions
@@ -129,7 +153,7 @@ END SUBROUTINE boundary_conditions
 SUBROUTINE initial_condition (self)
   class(experiment_t):: self
   class(mesh_t), pointer, dimension(:):: m
-  integer:: n(3), o(3), iv, recl, iy
+  integer:: n(3), o(3), iv, recl, ix, iy, iz
   logical, save:: first_time=.true.
   integer:: mx, my, mz, ii(9)
   real, save, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn, dxidxup, dxidxdn
@@ -140,35 +164,24 @@ SUBROUTINE initial_condition (self)
   !-----------------------------------------------------------------------------
   call trace_begin('experiment_t%initial_condition')
   !-----------------------------------------------------------------------------
-  !$omp critical (init_cr)
   m => self%mesh
   n = nint(m%b/m%d)
-  n(2) = n(2)+4
-  if (.not.all(n==dims)) then
-    if (io%master) print *, 'file  dims =', dims, self%nv
-    if (io%master) print *, 'setup dims =', n
-  end if
-  !---------------------------------------------------------------------------
-  ! At first call, allocate a buffer and read the entire file -- this is OK since
-  ! we only use one thread per rank to initialize, computing also how many calls
-  ! will be made, so the buffer can be deallocated when all patches are done
-  !---------------------------------------------------------------------------
-  allocate (buffer(dims(1),dims(2),dims(3),self%nv))
-  recl = 4*product(dims)                                           ! FIXME
-  if (io%master) print *,'reading MHD data from ' //trim(file)//'.dat'
-  open (io_unit%data, file=trim(file)//'.dat', form='unformatted', access='direct', recl=recl)
-  ii=[self%idx%d,self%idx%px,self%idx%py,self%idx%pz, &
-      self%idx%e,self%idx%tt,self%idx%bx,self%idx%by,self%idx%bz]
-  do iv=1,self%nv
-    read (io_unit%data, rec=iv) buffer(:,:,:,ii(iv))
-  end do
-  close (io_unit%data)
-  !---------------------------------------------------------------------------
-  ! Read the vertical meshs from the .msh file
-  !---------------------------------------------------------------------------
-  open (io_unit%data, file=trim(file)//'.msh', form='unformatted')
-  ! read dimensions
-    read(io_unit%data) mx, my, mz
+  n(3) = n(3)+4
+  !$omp critical (init_cr)
+  if (first_time) then
+    first_time = .false.
+    if (io%master) &
+      print *,'reading MHD data from ' //trim(file)//'.*'
+    if (.not.all(n==dims)) then
+      if (io%master) print *, 'file  dimensions =', dims, self%nv
+      if (io%master) print *, 'setup dimensions =', n
+    end if
+    !---------------------------------------------------------------------------
+    ! Read the vertical meshs from the .msh file
+    !---------------------------------------------------------------------------
+    open (io_unit%data, file=trim(file)//'.msh', form='unformatted')
+    ! read dimensions
+    read(io_unit%data) mx, mz, my
     if (.not. all(dims==[mx,my,mz])) then
       if (io%master) print *, ' file dims =', dims
       if (io%master) print *, ' mesh dims =', m%n, m%gn
@@ -180,21 +193,48 @@ SUBROUTINE initial_condition (self)
     allocate( dym(my), dymdn(my), ym(my), ymdn(my), dyidyup(my), dyidydn(my) )
     allocate( dzm(mz), dzmdn(mz), zm(mz), zmdn(mz), dzidzup(mz), dzidzdn(mz) )
     ! read single-precision variables
-    read(io_unit%data) dxm, dxmdn, xm, xmdn, dxidxup, dxidxdn
     read(io_unit%data) dym, dymdn, ym, ymdn, dyidyup, dyidydn
     read(io_unit%data) dzm, dzmdn, zm, zmdn, dzidzup, dzidzdn
-    if (io%verbose>1) then
-      do iy=1,size(dym)
-        print *, 'initial_t%stagger: min(dx),dy,min(dz)', &
-          iy, minval(dxm), dym(iy), minval(dzm)
+    read(io_unit%data) dxm, dxmdn, xm, xmdn, dxidxup, dxidxdn
+    if (verbose>1) then
+      do iz=1,size(dzm)
+        print *, 'initial_t%stagger: iz, min(dx),min(dy), dz', &
+          iy, minval(dxm), minval(dym), dzm(iz)
       end do
     end if
-    print *, 'initial_t%stagger: min(dx),min(dy),min(dz)', &
+    print *, 'experiment_t%ICs: min(dx),min(dy),min(dz)', &
           minval(dxm), minval(dym), minval(dzm)
-    print *,'initial_t%stagger: ny for max res:', int((ym(my)-ym(1))/minval(dym))+1
-  close (io_unit%data)
+    print *,'experiment_t%ICs: ny for max res:', int((zm(my)-zm(1))/minval(dzm))+1
+    close (io_unit%data)
+    !---------------------------------------------------------------------------
+    ! At first call, allocate a buffer and read the entire file -- this is OK since
+    ! we only use one thread per rank to initialize, computing also how many calls
+    ! will be made, so the buffer can be deallocated when all patches are done
+    !---------------------------------------------------------------------------
+    allocate (buffer(dims(1),dims(2),dims(3),self%nv))
+    recl = 4*product(dims)                                           ! FIXME
+    if (io%master) &
+      print *,'reading MHD data from ' //trim(file)//'.dat'
+    open (io_unit%data, file=trim(file)//'.dat', form='unformatted', access='direct', recl=recl)
+    ii=[self%idx%d,self%idx%py,self%idx%pz,self%idx%px, &
+        self%idx%e,self%idx%tt,self%idx%by,self%idx%bz,self%idx%bx]
+    !---------------------------------------------------------------------------
+    ! Read data, and swap indices, so z becomes vertical
+    !---------------------------------------------------------------------------
+    do iv=1,min(self%nv,9)
+      read (io_unit%data, rec=iv) (((buffer(ix,iy,iz,ii(iv)), iy=1,my), iz=1,mz), ix=1,mx)
+      if (verbose > 0) &
+        print *, iv, minval(buffer(:,:,:,ii(iv))), maxval(buffer(:,:,:,ii(iv)))
+    end do
+    close (io_unit%data)
+    if (verbose > 0) then
+      print *,'input model:'
+      do iz=1,dims(3)
+        print '(i4,1p,6e12.3)',iz, (buffer(1,1,iz,ii(iv)), iv=1,6)
+      end do
+    end if
+  end if
   !$omp end critical (init_cr)
-  self%nv = self%nv
   !-----------------------------------------------------------------------------
   ! Pick out the piece that belongs to this patch, based on its position
   !-----------------------------------------------------------------------------
@@ -205,6 +245,7 @@ SUBROUTINE initial_condition (self)
   allocate (yo(ny))
   allocate (zo(nz))
   associate (ff=>self%mem(:,:,:,:,self%it,1))
+  if (verbose>0) print *, 'experiment_t%IC: id, pos =', self%id, m%p
   do iv=1,self%nv
     xo = m(1)%p + m(1)%r + m(1)%h(iv)
     yo = m(2)%p + m(2)%r + m(2)%h(iv)
@@ -215,7 +256,7 @@ SUBROUTINE initial_condition (self)
     if (iv==self%idx%px.or.iv==self%idx%bx) xi => xmdn
     if (iv==self%idx%py.or.iv==self%idx%by) yi => ymdn
     if (iv==self%idx%pz.or.iv==self%idx%bz) zi => zmdn
-    if (verbose>1) &
+    if (verbose>2) &
       print '(i4,2x,2(2x,3(2x,2f7.2)))', iv, &
       minval(xi), maxval(xi), minval(yi), maxval(yi), minval(zi), maxval(zi), &
       minval(xo), maxval(xo), minval(yo), maxval(yo), minval(zo), maxval(zo)
@@ -226,19 +267,18 @@ SUBROUTINE initial_condition (self)
       call lagrange%interpolate3d (xi, yi, zi, buffer(:,:,:,iv), &
                                    xo, yo, zo,     ff(:,:,:,iv), order)
     end if
-    if (verbose>0) &
-      print '(i4,i3,2x,3f8.3,1p,2e12.4)', self%id, iv, m%p, minval(ff(:,:,:,iv)), maxval(ff(:,:,:,iv))
   end do
   deallocate (xo, yo, zo)
-  if (io%verbose>0) print *, 'initial_t%stagger: id, pos =', self%id, m%p
   !-----------------------------------------------------------------------------
   ! Diagnostic output
   !-----------------------------------------------------------------------------
-  if (io%verbose > 0) then
+  if (verbose>0) then
     do iv=1,self%nv
-      write (io_unit%log,'(a,3i4,i5,1p,2g12.3)') 'ix,iy,iz,fmin,fmax =', o, iv, &
-        minval(ff(m(1)%li:m(1)%ui,m(2)%lb:m(2)%ub,m(3)%li:m(3)%ui,iv)), &
-        maxval(ff(m(1)%li:m(1)%ui,m(2)%lb:m(2)%ub,m(3)%li:m(3)%ui,iv))
+      o = maxloc(ff(:,:,:,iv))
+      print '(a,i3,3i4,2x,3f8.3,1p,2(2x,2e12.4))', &
+        'iv,ix,iy,iz,pos,bufmin,bufmax,fmin,fmax =', iv, o, m%p, &
+        minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv)), &
+        minval(    ff(:,:,:,iv)), maxval(    ff(:,:,:,iv))
     end do
   end if
   end associate

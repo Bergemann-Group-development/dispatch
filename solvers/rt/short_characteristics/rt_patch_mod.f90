@@ -44,6 +44,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Read parameters
   !-----------------------------------------------------------------------------
+  call trace%begin ('rt_patch_t%init')
   rewind (io%input)
   read (io%input, rt_patch_params)
   if (io%master) write (io%output, rt_patch_params)
@@ -89,6 +90,7 @@ SUBROUTINE init (self)
   ! Punt to the next level, initializing patch memory and meshes
   !-----------------------------------------------------------------------------
   call self%solver_t%init
+  call trace%end
 END SUBROUTINE init
 
 !> ============================================================================
@@ -110,6 +112,7 @@ SUBROUTINE update (self)
   real, dimension(:,:,:), pointer:: q
   !----------------------------------------------------------------------------
   self%rt_time = self%rt_sc(1)%time
+  call trace%begin ('rt_patch_t%update')
   q => self%mem(:,:,:,self%idx%qr,self%it,1)
   do i_omega=2,self%n_omega
     if (self%upstream_is_ok(i_omega)) then
@@ -128,6 +131,7 @@ SUBROUTINE update (self)
   if (self%rt_time + self%rt_grace_time > self%time) then
     call self%solver_t%update
   end if
+  call trace%end
 END SUBROUTINE update
 
 !> ============================================================================

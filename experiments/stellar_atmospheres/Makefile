@@ -7,7 +7,7 @@ OPTS = full_debug
 # Default target and methods
 UPD             = adams_bashforth
 RT_SOLVER       = short_characteristics
-SOLVER          = stagger2
+SOLVER          = stagger2/e
 EXEC            = dispatch.x
 TOP             = ../..
 

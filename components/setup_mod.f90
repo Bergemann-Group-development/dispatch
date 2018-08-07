@@ -2,6 +2,7 @@
 !> =============================================================================
 MODULE setup_mod
   USE io_mod
+  USE trace_mod
   USE mpi_mod
   USE eos_mod
   USE opacity_mod
@@ -28,11 +29,13 @@ SUBROUTINE init (self)
   !.............................................................................
   call mpi%init                         ! MPI startup
   call io%init                          ! I/O system
+  call trace%begin ('setup_t%init')
   call scaling%init                     ! Scaling to code units
   call eos%init                         ! Equation-of-state
   call opacity%init                     ! Opacity
   call refine%init                      ! Refinement parameters
   call download%init                    ! Downloading and interpolation parameters
+  call trace%end
 END SUBROUTINE init
  
 !> =============================================================================

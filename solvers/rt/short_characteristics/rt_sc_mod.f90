@@ -10,6 +10,16 @@
 !> The layers (scratch) array has one more index:
 !>
 !>      i6 = the three layers before, at, and after i5
+!>
+!> The propagation of EOS information is as follows:
+!>
+!> eos%lookup_table (d=d, e=e, ...)            rt_patch_t%vars(:,:,:,:,1:2)
+!> rt_sc_t%prepare_layers                      rt_sc_t%vars
+!>   rt_scr_t%bilinear                         rt_sc_t%layers
+!> rt_sc_t%update
+!>   rt_sc_t%layer_solver                      rt_sc_t%layers
+!> rt_patch_t%update                           rt_patch_t%vars(:,:,:,:,3)
+!> experiment_t%update                         patch_t%mem(:,:,:,idx%qr,2)
 !> ============================================================================
 MODULE rt_sc_mod
   USE io_mod
