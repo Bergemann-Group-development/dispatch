@@ -9,7 +9,7 @@ from __future__ import print_function
 
 import numpy as np
 
-def unigrid_plane(snap,dir=0,iv=0,position=[0.5,0.5,0.5],verbose=0):
+def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
     """
         assemble a plane from a unigrid experiment, where all
         patches have the same size and resolution

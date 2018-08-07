@@ -50,7 +50,10 @@ def _data(patch,verbose=0):
         if patch.ioformat==5:
             offset = (patch.id-1) + iv*patch.ntotal
         elif patch.ioformat==6:
-            offset = iv + (patch.id-1)*patch.nv
+            if patch.time_derivs:
+                offset = iv + (patch.id-1)*patch.nv/2
+            else:
+                offset = iv + (patch.id-1)*patch.nv
         offset += patch.iout*patch.ntotal*patch.nv
         offset *= bytes
         patch.offset.append(offset)
@@ -88,6 +91,33 @@ def _add_nml_list_to(obj,nml_list,verbose=0):
             subobj=getattr(obj,name)
             _add_nml_to(subobj,nml_dict,verbose=verbose)
 
+class _patch(object):
+    def __init__(self, d):
+        for a, b in d.items():
+            ba = np.array(b) if isinstance(b, list) else b
+            setattr(self, a, _obj(b) if isinstance(b, dict) else ba)
+    def cache(self,verbose=0):
+        setattr(self,'o',_param())
+        self.d={}
+        for k,v in self.idx.dict.items():
+            if v >= 0:
+                if verbose:
+                    print("adding p.o."+k+" and p.d['"  +k+"']")
+                setattr(self.o,k,self.data[v])
+                self.d[k]=self.data[v]
+                self.d[v]=self.data[v]
+        if verbose:
+            print("\nBinary data can always be accessed via the patch.data memmap, \
+the patch.idx object, and the patch.idx.dict dictionary. Examples:\n\
+    d=p.data[0]\n\
+    d=p.data[p.idx.d]\n\
+    d=p.data[p.idx.dict['d']]\n\n\
+patch.cache() adds an object .o and a dict .d as shorthand attributes. The dict \
+object takes both numeric and text key values: Examples:\n\
+    d=p.o.d\n\
+    d=p.d[0]\n\
+    d=p.d['d']")
+
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
     """
@@ -124,19 +154,20 @@ class snapshot():
             if hasattr(dlist,'keys'):           # if not it is a dict ...
                 dlist=[dlist]                   # make it a list of one
             for dict in dlist:                  # for each dict
-                patch=_obj(dict)                # make patch class instance
-                patch.file=f
-                if patch.ioformat==5:
-                    patch.datafile=_file(_dir(rundir,'00000'),'snapshot.dat')
+                p=_patch(dict)                  # make patch class instance
+                p.file=f
+                if p.ioformat==5:
+                    p.datafile=_file(_dir(rundir,'00000'),'snapshot.dat')
                 else:
-                    patch.datafile=_file(rundir,'snapshots.dat')
-                assert os.path.isfile(patch.datafile), '{} does not exist'.format(patch.datafile)
-                patch.data=_data(patch)
-                self._add_axes(patch)
-                if not hasattr(patch,'units'):
+                    p.datafile=_file(rundir,'snapshots.dat')
+                assert os.path.isfile(p.datafile), '{} does not exist'.format(
+                    p.datafile)
+                p.data=_data(p)
+                self._add_axes(p)
+                if not hasattr(p,'units'):
                     if hasattr(self,'units'):
-                        patch.units=self.units
-                patches.append(patch)
+                        p.units=self.units
+                patches.append(p)
             # Add indices
             if 'idx_nml' in top.keys():
                 dict=top['idx_nml']
