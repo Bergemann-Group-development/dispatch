@@ -64,13 +64,15 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
-  self%periodic(2) = .false.                     ! non-periodic vertically
   call self%rt_solver_t%init
   call self%set(bits%static)
   self%force_per_unit_mass => force
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
+  self%periodic(3) = .false.                     ! non-periodic vertically
+  call self%initial_condition
+  call self%init_bdries
   call self%boundary_conditions
   call trace_end (itimer=itimer)
 END SUBROUTINE init

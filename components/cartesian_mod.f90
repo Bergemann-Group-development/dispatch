@@ -238,7 +238,8 @@ SUBROUTINE init (self, label)
   end do
   !$omp end master
   !$omp end parallel
-  !call task_list%reset_status
+  call self%task_list%reset_status
+  call self%task_list%init_bdries
   call self%diagnostics
   write (io_unit%mpi,*) npatch,' patches',nvpatch,' virtual',nbpatch,' boundary'
   write (io_unit%mpi,*) nlpatch,' local patches'

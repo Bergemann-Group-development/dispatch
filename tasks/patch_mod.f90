@@ -73,6 +73,7 @@ MODULE patch_mod
   contains
     procedure:: init
     procedure:: init_default
+    procedure:: init_bdries
     procedure:: setup
     procedure:: delete
     procedure:: rotate
@@ -379,6 +380,46 @@ SUBROUTINE init_default (self)
   self%print_next  = print_time
   call trace%end
 END SUBROUTINE init_default
+
+SUBROUTINE init_bdries (self)
+  class(patch_t):: self
+  real(8):: position(3), limit(3)
+  !---------------------------------------------------------------------------
+  ! If at edge, set boundary bits
+  !---------------------------------------------------------------------------
+  position = self%position - self%mesh%origin - 0.5d0 * self%box
+  limit = 0.5d0 * (self%box - self%size - self%ds)
+  if (.not.self%periodic(1)) then
+    if (position(1)  <= -limit(1)) then
+      call self%boundaries%set (bits%xl)
+      self%mesh(1)%lower_boundary = .true.
+    end if
+    if (position(1) >= +limit(1)) then
+      call self%boundaries%set (bits%xu)
+      self%mesh(1)%upper_boundary = .true.
+    end if
+  end if
+  if (.not.self%periodic(2)) then
+    if (position(2)  <= -limit(2)) then
+      call self%boundaries%set (bits%yl)
+      self%mesh(2)%lower_boundary = .true.
+    end if
+    if (position(2) >= +limit(2)) then
+      call self%boundaries%set (bits%yu)
+      self%mesh(2)%upper_boundary = .true.
+    end if
+  end if
+  if (.not.self%periodic(3)) then
+    if (position(3)  <= -limit(3)) then
+      call self%boundaries%set (bits%zl)
+      self%mesh(3)%lower_boundary = .true.
+    end if
+    if (position(3) >= +limit(3)) then
+      call self%boundaries%set (bits%zu)
+      self%mesh(3)%upper_boundary = .true.
+    end if
+  end if
+END SUBROUTINE init_bdries
 
 !> =============================================================================
 !> Setup a patch, possibly with non-standard parameters. First setup with
