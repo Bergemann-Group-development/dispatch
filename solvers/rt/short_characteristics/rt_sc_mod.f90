@@ -56,7 +56,7 @@ MODULE rt_sc_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: layer_solver
+    procedure:: integral_solver
     procedure:: prepare_layers
     procedure:: calculate_offsets
     procedure:: bilinear
@@ -90,7 +90,7 @@ SUBROUTINE update (self, dir)
   class (rt_sc_t):: self
   integer:: dir, i3, i_bin
   integer, save:: itimer=0
-  real, dimension(:,:,:,:), pointer:: rk
+  real, dimension(:,:,:), pointer:: rk, q
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_sc_t%update', itimer=itimer)
   if (self%done) then
@@ -109,7 +109,7 @@ SUBROUTINE update (self, dir)
   !-----------------------------------------------------------------------------
   if (dir > 0) then
     do i3=self%mesh(3)%li,self%mesh(3)%ui
-      call self%layer_solver (self%layers(:,:,:,:,:,1), &   ! k = opacity
+      call self%integral_solver (self%layers(:,:,:,:,:,1), &   ! k = opacity
                               self%layers(:,:,:,:,:,2), &   ! s = source
                               self%layers(:,:,:,:,:,3), &   ! q = input
                               self%vars  (:,:,:,:  ,3), &   ! q = solution
@@ -120,7 +120,7 @@ SUBROUTINE update (self, dir)
   ! Reverse-index solution
   !-----------------------------------------------------------------------------
     do i3=self%mesh(3)%ui,self%mesh(3)%li,-1
-      call self%layer_solver (self%layers(:,:,:,:,:,1), &   ! k = opacity
+      call self%integral_solver (self%layers(:,:,:,:,:,1), &   ! k = opacity
                               self%layers(:,:,:,:,:,2), &   ! s = source
                               self%layers(:,:,:,:,:,3), &   ! q = input
                               self%vars  (:,:,:,:  ,3), &   ! q = solution
@@ -135,7 +135,9 @@ SUBROUTINE update (self, dir)
   else
     self%q = 0.0
     do i_bin=1,self%n_bin
-      self%q = self%q + self%vars(:,:,:,i_bin,3)*self%w_bin(i_bin)
+      rk => self%vars(:,:,:,i_bin,1)
+      q  => self%vars(:,:,:,i_bin,3)
+      self%q = self%q + rk*q*self%w_bin(i_bin)
     end do
     deallocate (self%layers)
     call io%bits_mem (-storage_size(self%layers), product(self%mesh%gn)*3*3)
@@ -145,12 +147,12 @@ SUBROUTINE update (self, dir)
 END SUBROUTINE update
 
 !> =============================================================================
-!> Integral solver for one layer.  The exact integal solution Q=I-S for a 2nd
+!> Integral solver for one layer.  The exact integral solution Q=I-S for a 2nd
 !> order polynomial has coefficient for the upstream Q, and for the 1st and 2nd
 !> derivative of S.  However, if one is doing a solution both forwards and 
 !> backward, the term in the 1st derivative cancels.
 !> =============================================================================
-SUBROUTINE layer_solver (self, k, s, qin, qout, i3, l1, l3)
+SUBROUTINE integral_solver (self, k, s, qin, qout, i3, l1, l3)
   class (rt_sc_t):: self
   real, dimension(:,:,:,:,:) :: k, s, qin
   real, dimension(:,:,:,:)   :: qout
@@ -161,7 +163,7 @@ SUBROUTINE layer_solver (self, k, s, qin, qout, i3, l1, l3)
   integer, save:: itimer=0
   real(8), pointer:: z(:)
   !-----------------------------------------------------------------------------
-  call trace%begin ('rt_sc_t%integral_forward', itimer=itimer)
+  call trace%begin ('rt_sc_t%integral_solver', itimer=itimer)
   dz2 = self%mesh(3)%d/2.0
   l = self%mesh(1:3)%li
   u = self%mesh(1:3)%ui
@@ -184,7 +186,7 @@ SUBROUTINE layer_solver (self, k, s, qin, qout, i3, l1, l3)
     end do
   end do
   call trace%end (itimer)
-END SUBROUTINE layer_solver
+END SUBROUTINE integral_solver
 
 !> ============================================================================
 !> Prepare three layers; one centered on the mesh points, one above and below
@@ -226,14 +228,15 @@ SUBROUTINE calculate_offsets (self, i3a, i3b)
   integer:: i3a, i3b
   integer, save:: itimer=0
   real(8), pointer:: z(:)
-  real(8):: dx, dy, dz
+  real:: dxdz, dydz, dz, sinmu
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_sc_t%calculate_offsets', 2, itimer=itimer)
   z => self%mesh(3)%r
   dz = z(i3b)-z(i3a)
-  dx = self%mesh(1)%d
-  dy = self%mesh(2)%d
-  self%p = dz*self%omega%mu*[cos(self%omega%phi)/dx,sin(self%omega%phi)/dy]
+  sinmu = sqrt(1.0-self%omega%mu**2)
+  dxdz = sinmu*self%mesh(1)%d/dz
+  dydz = sinmu*self%mesh(2)%d/dz
+  self%p = [dxdz, dydz]
   self%o = floor(self%p)
   self%p = self%p - self%o
   call trace%end (itimer)
@@ -256,15 +259,45 @@ SUBROUTINE bilinear (self, in, out)
   o = self%o
   p = self%p
   q = 1.0-p
+  !-----------------------------------------------------------------------------
+  ! Purely vertical case
+  !-----------------------------------------------------------------------------
+  if (all(abs(o+p) < 1e-5)) then
+    out = in
+  !-----------------------------------------------------------------------------
+  ! Interpolation only in y
+  !-----------------------------------------------------------------------------
+  else if (abs(o(1)+p(1)) < 1e-5) then
+    do i2=l(2),u(2)
+    do i1=l(1),u(1)
+      out(i1,i2) = &
+        q(2)*in(i1,i2+o(2)) + p(2)*in(i1,i2+o(2)+1)
+    end do
+    end do
+  !-----------------------------------------------------------------------------
+  ! Interpolation only in x
+  !-----------------------------------------------------------------------------
+  else if (abs(o(2)+p(2)) < 1e-5) then
+    do i2=l(2),u(2)
+    do i1=l(1),u(1)
+      out(i1,i2) = &
+        q(1)*in(i1+o(1),i2) + p(1)*in(i1+o(1)+1,i2)
+    end do
+    end do
+  !-----------------------------------------------------------------------------
+  ! Interpolation in x and y
+  !-----------------------------------------------------------------------------
+  else
   do i2=l(2),u(2)
   do i1=l(1),u(1)
     out(i1,i2) = &
-      p(1)*p(2)*in(i1+o(1)  ,i2+o(2)  ) + &
-      q(1)*p(2)*in(i1+o(1)+1,i2+o(2)  ) + &
-      p(1)*q(2)*in(i1+o(1)+1,i2+o(2)+1) + &
-      q(1)*q(2)*in(i1+o(1)+1,i2+o(2)+1)
+        q(1)*q(2)*in(i1+o(1)  ,i2+o(2)  ) + &
+        p(1)*q(2)*in(i1+o(1)+1,i2+o(2)  ) + &
+        q(1)*p(2)*in(i1+o(1)+1,i2+o(2)+1) + &
+        p(1)*p(2)*in(i1+o(1)+1,i2+o(2)+1)
   end do
   end do
+  end if
   call trace%end (itimer)
 END SUBROUTINE bilinear
 

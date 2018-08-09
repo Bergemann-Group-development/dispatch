@@ -1,6 +1,6 @@
 
 &experiment_params      file='mhd63' dims=3*63 order=1 verbose=0 /
-&rt_patch_params        n_mu=2 n_phi=3, n_bin=4 verbose=0 /
+&rt_patch_params        n_mu=2 n_phi=4 n_bin=4 verbose=0 /
 
 &io_params              verbose=0 do_trace=f do_output=t method='parallel' id_debug=0 /
 &cartesian_params       size=6,6,3 dims=2*6,3 origin=0,0,-0.5 /

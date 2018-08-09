@@ -85,8 +85,8 @@ SUBROUTINE init (self)
   i_omega = i_omega+1
   self%rt_sc(i_omega)%id = self%id
   self%rt_sc(i_omega)%omega%id = i_omega
-  self%rt_sc(i_omega)%omega%mu  = mu(1)
-  self%rt_sc(i_omega)%omega%w   = w_mu(1)
+  self%rt_sc(i_omega)%omega%mu  = mu(n_mu)
+  self%rt_sc(i_omega)%omega%w   = w_mu(n_mu)
   self%rt_sc(i_omega)%omega%phi = 0.0
   !-----------------------------------------------------------------------------
   ! Punt to the next level, initializing patch memory and meshes
@@ -159,7 +159,10 @@ SUBROUTINE update (self)
         call self%rt_sc(i_omega)%update(dir)
       end if
     end do
-    !q = q + self%rt_sc(i_omega)%q*self%rt_sc(i_omega)%omega%w
+    !---------------------------------------------------------------------------
+    ! Sum the net heating over angle
+    !---------------------------------------------------------------------------
+    q = q + self%rt_sc(i_omega)%q*self%rt_sc(i_omega)%omega%w
   end do
   !----------------------------------------------------------------------------
   ! If the RT solution is far enough advanced, ask the MHD solver to update.
@@ -243,7 +246,7 @@ FUNCTION upstream_is_ok (self, i_omega, dir)
     nbor => nbor%next
   end do
   call trace%end
-END FUNCTION
+END FUNCTION upstream_is_ok
 
 !> ============================================================================
 !> Compute the EOS quantities for the volume.  The 1,2 slots of the last index
