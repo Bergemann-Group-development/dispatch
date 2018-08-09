@@ -48,6 +48,7 @@ MODULE io_mod
     procedure:: init
     procedure:: debug
     procedure:: check_flags
+    procedure:: bits_mem
     procedure:: gb_mem
     procedure, nopass:: namelist_warning
     procedure, nopass:: abort
@@ -201,9 +202,16 @@ SUBROUTINE init (self, name)
 END SUBROUTINE init
 
 !> =============================================================================
-!> Check debug flag files.  To avoid having to synchronize when using MPI, we
-!> give the ranks 5 seconds to detect and read flag files, and then we let one
-!> rank remove them.
+!> Register increase of memory, counted in storage_size bits, times a count
+!> =============================================================================
+SUBROUTINE bits_mem (self, bits, count)
+  class (io_t)      :: self
+  integer:: bits, count
+  call self%gb_mem ((bits/(8.*1024.**3))*count)
+END SUBROUTINE bits_mem
+
+!> =============================================================================
+!> Register increase of memory, counted in gigabytes
 !> =============================================================================
 SUBROUTINE gb_mem (self, gb)
   class (io_t)      :: self

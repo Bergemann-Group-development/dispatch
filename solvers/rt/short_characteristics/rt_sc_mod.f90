@@ -77,6 +77,7 @@ SUBROUTINE init (self)
   call trace%begin ('rt_sc_t%init')
   !                                nx,              ny,              nz,   nlam, ksq
   allocate (self%q   (self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn))
+  call io%bits_mem (storage_size(self%q), product(self%mesh%gn))
   allocate (self%w_bin (self%n_bin))
   self%w_bin = 1.0/self%n_bin
   call trace%end
@@ -100,6 +101,7 @@ SUBROUTINE update (self, dir)
     ! Allocate scratch space, and compute three depth layers of everything
     !-----------------------------------------------------------------------------
     allocate (self%layers(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn,self%n_bin,3,3))
+    call io%bits_mem (storage_size(self%layers), product(self%mesh%gn)*3*3)
     call self%prepare_layers
   end if
   !-----------------------------------------------------------------------------
@@ -136,6 +138,7 @@ SUBROUTINE update (self, dir)
       self%q = self%q + self%vars(:,:,:,i_bin,3)*self%w_bin(i_bin)
     end do
     deallocate (self%layers)
+    call io%bits_mem (-storage_size(self%layers), product(self%mesh%gn)*3*3)
     self%done = .true.
   end if
   call trace%end (itimer)

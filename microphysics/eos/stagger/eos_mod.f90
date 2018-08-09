@@ -217,7 +217,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
   ! Allocate temporary arrays
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%lookup_table', itimer=itimer)
-  if (io%verbose>1) then
+  if (io%verbose>2) then
     print *, 'present(lnd) =', present(lnd)
     print *, 'present(ee)  =', present(ee)
     print *, 'present(pg)  =', present(pg)

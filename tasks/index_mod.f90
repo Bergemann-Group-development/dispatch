@@ -110,10 +110,11 @@ END SUBROUTINE output
 !> =============================================================================
 SUBROUTINE output_time_derivs (self)
   class(index_t):: self
-  integer:: d, e, et, s, px, py, pz, bx, by, bz, phi, p1, p2, p3, b1, b2, b3, dphi
+  integer:: d, e, et, s, px, py, pz, bx, by, bz, phi, p1, p2, p3, b1, b2, b3, &
+            dphi, qr, tt
   integer:: dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, dphidt, dddt, dedt, dsdt
   integer:: dp1dt, dp2dt, dp3dt, db1dt, db2dt, db3dt
-  namelist /idx_nml/ d, e, s, phi, dphi, &
+  namelist /idx_nml/ d, e, s, phi, dphi, qr, &
                      dddt, dedt, dsdt, dphidt, &
                      px, py, pz, bx, by, bz, &
                      p1, p2, p3, b1, b2, b3, &
@@ -123,6 +124,8 @@ SUBROUTINE output_time_derivs (self)
   e   = self%e   - 1
   s   = self%s   - 1
   et  = self%et  - 1
+  qr  = self%qr  - 1
+  tt  = self%tt  - 1
   px  = self%px  - 1
   py  = self%py  - 1
   pz  = self%pz  - 1

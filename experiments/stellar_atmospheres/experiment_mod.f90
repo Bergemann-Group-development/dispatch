@@ -99,6 +99,7 @@ SUBROUTINE update (self)
     first_time = .false.
     if (allocated(buffer)) &
       deallocate (buffer)
+      call io%bits_mem (-storage_size (buffer), product(dims)*self%nv)
   end if
   call self%solver_t%update
   call self%rt_solver_t%update
@@ -204,7 +205,7 @@ SUBROUTINE initial_condition (self)
     end if
     print *, 'experiment_t%ICs: min(dx),min(dy),min(dz)', &
           minval(dxm), minval(dym), minval(dzm)
-    print *,'experiment_t%ICs: ny for max res:', int((zm(my)-zm(1))/minval(dzm))+1
+    print *,'experiment_t%ICs: nz for max res:', int((zm(my)-zm(1))/minval(dzm))+1
     close (io_unit%data)
     !---------------------------------------------------------------------------
     ! At first call, allocate a buffer and read the entire file -- this is OK since
@@ -212,6 +213,7 @@ SUBROUTINE initial_condition (self)
     ! will be made, so the buffer can be deallocated when all patches are done
     !---------------------------------------------------------------------------
     allocate (buffer(dims(1),dims(2),dims(3),self%nv))
+    call io%bits_mem (storage_size (buffer), product(dims)*self%nv)
     recl = 4*product(dims)                                           ! FIXME
     if (io%master) &
       print *,'reading MHD data from ' //trim(file)//'.dat'
@@ -230,7 +232,7 @@ SUBROUTINE initial_condition (self)
     if (verbose > 0) then
       print *,'input model:'
       do iz=1,dims(3)
-        print '(i4,1p,6e12.3)',iz, (buffer(1,1,iz,ii(iv)), iv=1,6)
+        print '(i4,f10.3,1p,6e12.3)',iz, zm(iz), (buffer(1,1,iz,ii(iv)), iv=1,6)
       end do
     end if
   end if
@@ -256,10 +258,6 @@ SUBROUTINE initial_condition (self)
     if (iv==self%idx%px.or.iv==self%idx%bx) xi => xmdn
     if (iv==self%idx%py.or.iv==self%idx%by) yi => ymdn
     if (iv==self%idx%pz.or.iv==self%idx%bz) zi => zmdn
-    if (verbose>2) &
-      print '(i4,2x,2(2x,3(2x,2f7.2)))', iv, &
-      minval(xi), maxval(xi), minval(yi), maxval(yi), minval(zi), maxval(zi), &
-      minval(xo), maxval(xo), minval(yo), maxval(yo), minval(zo), maxval(zo)
     if (order==1) then
       call lagrange%trilinear3d (xi, yi, zi, buffer(:,:,:,iv), &
                                  xo, yo, zo,     ff(:,:,:,iv), order)
@@ -268,6 +266,10 @@ SUBROUTINE initial_condition (self)
                                    xo, yo, zo,     ff(:,:,:,iv), order)
     end if
   end do
+  if (verbose>2) &
+    print '(i4,2x,2(2x,3(2x,2f7.2)))', iv, &
+    minval(xi), maxval(xi), minval(yi), maxval(yi), minval(zi), maxval(zi), &
+    minval(xo), maxval(xo), minval(yo), maxval(yo), minval(zo), maxval(zo)
   deallocate (xo, yo, zo)
   !-----------------------------------------------------------------------------
   ! Diagnostic output

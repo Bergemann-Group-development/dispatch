@@ -107,6 +107,7 @@ SUBROUTINE init (self)
   ! Initialize the directional solvers
   !-----------------------------------------------------------------------------
   allocate (self%vars(self%gn(1),self%gn(2),self%gn(3),self%n_bin,3))
+  call io%bits_mem(storage_size(self%vars),product(self%gn)*3)
   do i_omega=1,self%n_omega
     self%rt_sc(i_omega)%verbose = verbose
     self%rt_sc(i_omega)%vars => self%vars
@@ -256,7 +257,6 @@ SUBROUTINE eos_volume (self)
   integer:: m(4), ib, i3
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_sc_t%eos_volume', itimer=itimer)
-  allocate (self%vars(self%gn(1),self%gn(2),self%gn(3),self%n_bin,3))
   d   => self%mem(:,:,:,self%idx%d,self%it,1)
   e   => self%mem(:,:,:,self%idx%e,self%it,1)
   rk  => self%vars(:,:,:,:,1)

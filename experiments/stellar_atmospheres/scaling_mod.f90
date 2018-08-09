@@ -33,6 +33,7 @@ SUBROUTINE init (self)
   first_time = .false.
   call cgs%init
   !--------------------------- defining quantities -----------------------------
+  self%system = 'cgs'                                   ! pass on to Python
   self%l  = 1d8                                         ! length = 1Mm = 1e8 cm
   self%d  = 1d-7                                        ! photospheric density
   self%t  = 1d2                                         ! time = 100 sec
