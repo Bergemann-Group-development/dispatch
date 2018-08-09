@@ -26,6 +26,8 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(rt_solver_t):: experiment_t
+    real, dimension(:,:,:,:), pointer:: lower => null()
+    real, dimension(:,:,:,:), pointer:: upper => null()
   contains
     procedure init
     procedure update
@@ -115,8 +117,6 @@ SUBROUTINE boundary_conditions (self)
   class(experiment_t):: self
   integer, dimension(3):: lb, lo, li, ui, uo, ub
   integer:: iz, m(6)
-  real, save, dimension(:,:,:,:), pointer:: lower => null()
-  real, save, dimension(:,:,:,:), pointer:: upper => null()
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%boundary_conditions')
   lb = self%mesh%lb; lo = self%mesh%lo; li = self%mesh%li
@@ -124,25 +124,27 @@ SUBROUTINE boundary_conditions (self)
   m = shape(self%mem)
   m(3) = self%ng(3)
   if (self%mesh(3)%lower_boundary) then
-    if (.not.associated(lower)) then
-      allocate (lower(m(1),m(2),m(3),m(4)))
-      lower = self%mem(:,:,lb(3):lo(3),:,self%it,1)
+    if (.not.associated(self%lower)) then
+      allocate (self%lower(m(1),m(2),m(3),m(4)))
+      call io%bits_mem (storage_size(self%lower), product(m(1:4)))
+      self%lower = self%mem(:,:,lb(3):lo(3),:,self%it,1)
       if (verbose > 0) &
         print *,'LBC',self%id,self%position, &
-        minval(lower(:,:,:,1)),maxval(lower(:,:,:,1))
+        minval(self%lower(:,:,:,1)),maxval(self%lower(:,:,:,1))
     else
-      self%mem(:,:,lb(3):lo(3),:,self%it,1) = lower
+      self%mem(:,:,lb(3):lo(3),:,self%it,1) = self%lower
     end if
   end if
   if (self%mesh(3)%upper_boundary) then
-    if (.not.associated(upper)) then
-      allocate (upper(m(1),m(2),m(3),m(4)))
-      upper = self%mem(:,:,uo(3):ub(3),:,self%it,1)
+    if (.not.associated(self%upper)) then
+      allocate (self%upper(m(1),m(2),m(3),m(4)))
+      call io%bits_mem (storage_size(self%lower), product(m(1:4)))
+      self%upper = self%mem(:,:,uo(3):ub(3),:,self%it,1)
       if (verbose > 0) &
         print *,'UBC',self%id,self%position, &
-        minval(upper(:,:,:,1)),maxval(upper(:,:,:,1))
+        minval(self%upper(:,:,:,1)),maxval(self%upper(:,:,:,1))
     else
-      self%mem(:,:,uo(3):ub(3),:,self%it,1) = upper
+      self%mem(:,:,uo(3):ub(3),:,self%it,1) = self%upper
     end if
   end if
   call trace_end

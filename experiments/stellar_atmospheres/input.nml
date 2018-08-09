@@ -2,15 +2,14 @@
 &experiment_params      file='mhd63' dims=3*63 order=1 verbose=0 /
 &rt_patch_params        n_mu=2 n_phi=3, n_bin=4 verbose=0 /
 
-&io_params              verbose=0 do_trace=f do_output=t /
-&cartesian_params       size=6,6,3 dims=6,6,3 origin=0,-0.5,0 /
-&patch_params           nt=5 grace=0.1 n=21,21,21
-                        no_mans_land=t use_data_hub=f do_check_nan=t /
-&out_params             end_time=6e-1 out_time=5e-2 print_time=0.0 guard_zones=t time_derivs=f /
+&io_params              verbose=0 do_trace=f do_output=t method='parallel' id_debug=0 /
+&cartesian_params       size=6,6,3 dims=8,8,4 origin=0,0,-0.5 /
+&patch_params           nt=5 grace=0.0 n=3*32 no_mans_land=t use_data_hub=f dt_fixed=-1 /
+&out_params             end_time=1e-1 out_time=1e-3 print_time=0.0 guard_zones=t time_derivs=f /
                         !    cs    pa  ofd   mas  kap  eta
 &stagger_params         nu=  0.05, 1.0, 1.0, 0.1, 1.0, 1.0
                         gamma=1.4 eos='tabular' courant=0.15 /
 &eos_params             do_rt=t /
-&timer_params           sec_per_report=10 /
+&timer_params           sec_per_report=30 /
 &timestep_params        time_order=2 /
 &ramses_params          /
