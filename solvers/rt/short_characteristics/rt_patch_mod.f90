@@ -22,12 +22,13 @@ MODULE rt_patch_mod
   type, public, extends(solver_t):: rt_patch_t
     logical                    :: needs_nbors=.true.
     integer                    :: n_omega=0
-    integer                    :: n_bin=0
     real(8)                    :: rt_time=0.0
     real(8)                    :: rt_grace_time=0.0
     real(8), pointer           :: rt_t(:)
     type(rt_sc_t), pointer     :: rt_sc(:)
-    real, pointer              :: vars(:,:,:,:,:)
+    real, pointer              :: vars(:,:,:,:,:,:)
+    real, pointer              :: rk(:,:,:,:)
+    real, pointer              :: src(:,:,:,:)
   contains
     procedure:: init
     procedure:: update 
@@ -46,6 +47,8 @@ SUBROUTINE init (self)
   integer, save:: n_mu=3, n_phi=4, n_bin=4
   integer:: i_mu, i_phi, i_omega, n_omega, iostat
   real, dimension(:), allocatable:: mu, w_mu, phi
+  class(rt_sc_t), pointer:: rt_sc
+  class(task_t), pointer:: rt_patch
   logical, save:: first_time=.true.
   namelist /rt_patch_params/ n_mu, n_phi, n_bin, verbose
   !-----------------------------------------------------------------------------
@@ -63,31 +66,31 @@ SUBROUTINE init (self)
   if (.not. io%master) verbose=0
   n_omega      = 1 + n_phi*(n_mu-1)
   self%n_omega = n_omega
-  self%n_bin   = n_bin
   !-----------------------------------------------------------------------------
   ! Assign angles and integration weight and allocate the required RT solvers
   ! for all angles
   !-----------------------------------------------------------------------------
   allocate (mu(n_mu),w_mu(n_mu), phi(n_phi))
-  allocate (self%rt_sc(self%n_omega))
   call radau%init (n_mu, mu, w_mu)
+  !-----------------------------------------------------------------------------
+  ! Allocate n_omega copies of self, and specify angles
+  !-----------------------------------------------------------------------------
+  allocate (self%rt_sc(n_omega))
   i_omega = 0
   do i_phi=1,n_phi
     do i_mu=1,n_mu-1
       i_omega = i_omega+1
-      self%rt_sc(i_omega)%id = self%id
-      self%rt_sc(i_omega)%omega%id = i_omega
-      self%rt_sc(i_omega)%omega%mu  = mu(i_mu)
-      self%rt_sc(i_omega)%omega%w   = w_mu(i_mu)
-      self%rt_sc(i_omega)%omega%phi = phi(i_phi)
+      rt_sc => self%rt_sc(i_omega)
+      rt_sc%omega%mu  = mu(i_mu)
+      rt_sc%omega%w   = w_mu(i_mu)
+      rt_sc%omega%phi = phi(i_phi)
     end do
   end do
   i_omega = i_omega+1
-  self%rt_sc(i_omega)%id = self%id
-  self%rt_sc(i_omega)%omega%id = i_omega
-  self%rt_sc(i_omega)%omega%mu  = mu(n_mu)
-  self%rt_sc(i_omega)%omega%w   = w_mu(n_mu)
-  self%rt_sc(i_omega)%omega%phi = 0.0
+  rt_sc => self%rt_sc(i_omega)
+  rt_sc%omega%mu  = mu(n_mu)
+  rt_sc%omega%w   = w_mu(n_mu)
+  rt_sc%omega%phi = 0.0
   !-----------------------------------------------------------------------------
   ! Punt to the next level, initializing patch memory and meshes
   !-----------------------------------------------------------------------------
@@ -106,14 +109,31 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Initialize the directional solvers
   !-----------------------------------------------------------------------------
-  allocate (self%vars(self%gn(1),self%gn(2),self%gn(3),self%n_bin,3))
-  call io%bits_mem(storage_size(self%vars),product(self%gn)*3)
+  allocate (self%rk  (self%gn(1),self%gn(2),self%gn(3),n_bin))
+  allocate (self%src (self%gn(1),self%gn(2),self%gn(3),n_bin))
+  allocate (self%vars(self%gn(1),self%gn(2),self%gn(3),n_bin,1,n_omega))
+  call io%bits_mem(storage_size(self%rk  ),product(shape(self%rk  )))
+  call io%bits_mem(storage_size(self%src ),product(shape(self%src )))
+  call io%bits_mem(storage_size(self%vars),product(shape(self%vars)))
   do i_omega=1,self%n_omega
-    self%rt_sc(i_omega)%verbose = verbose
-    self%rt_sc(i_omega)%vars => self%vars
-    self%rt_sc(i_omega)%n_bin = self%n_bin
-    self%rt_sc(i_omega)%mesh => self%mesh
-    call self%rt_sc(i_omega)%init
+    rt_sc => self%rt_sc(i_omega)
+    rt_sc%nt       = 1
+    rt_sc%n_bin    = n_bin
+    rt_sc%id       = self%id
+    rt_sc%omega%id = i_omega
+    rt_sc%position = self%position
+    rt_sc%size     = self%size
+    rt_sc%box      = self%box
+    rt_sc%time     = self%time
+    rt_sc%n        = self%n
+    rt_sc%ng       = self%ng
+    rt_sc%gn       = self%gn
+    rt_sc%li       = self%li
+    rt_sc%ui       = self%ui
+    rt_sc%link => self%link
+    rt_sc%mesh => self%mesh
+    rt_sc%mem  => self%vars(:,:,:,:,1:1,i_omega:i_omega)
+    call rt_sc%init
   end do
   call trace%end
 END SUBROUTINE init
@@ -135,6 +155,7 @@ SUBROUTINE update (self)
   class (rt_patch_t):: self
   integer:: i_omega, dir
   real, dimension(:,:,:), pointer:: q
+  class(rt_sc_t), pointer:: rt_sc
   !-----------------------------------------------------------------------------
   ! Make sure nbor lists exit
   !-----------------------------------------------------------------------------
@@ -155,14 +176,19 @@ SUBROUTINE update (self)
   do i_omega=1,self%n_omega
     do dir=-1,1,2
       if (self%upstream_is_ok(i_omega,dir)) then
-        self%rt_sc(i_omega)%vars => self%vars
-        call self%rt_sc(i_omega)%update(dir)
+        rt_sc%mem => self%vars
+        if (i_omega < self%n_omega) then
+          rt_sc%verbose = verbose
+        else
+          rt_sc%verbose = 2
+        end if
+        call rt_sc%solve(dir)
       end if
     end do
     !---------------------------------------------------------------------------
     ! Sum the net heating over angle
     !---------------------------------------------------------------------------
-    q = q + self%rt_sc(i_omega)%q*self%rt_sc(i_omega)%omega%w
+    q = q + rt_sc%q*rt_sc%omega%w
   end do
   !----------------------------------------------------------------------------
   ! If the RT solution is far enough advanced, ask the MHD solver to update.
@@ -184,14 +210,15 @@ SUBROUTINE init_nbors (self)
   integer:: i_omega, n_fw, n_rv
   type(link_t), pointer:: nbor, fw, fw_prev, rv, rv_prev
   class(task_t), pointer:: task
+  class(rt_sc_t), pointer:: rt_sc
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_patch_t%init_nbors')
   do i_omega=1,self%n_omega
     nbor => self%link%nbor
     allocate (fw, source=nbor)
     allocate (rv, source=nbor)
-    self%rt_sc(i_omega)%fw_nbor => fw
-    self%rt_sc(i_omega)%rv_nbor => rv
+    rt_sc%fw_nbor => fw
+    rt_sc%rv_nbor => rv
     fw_prev => fw
     rv_prev => rv
     n_fw = 0
@@ -199,12 +226,12 @@ SUBROUTINE init_nbors (self)
     do while (associated(nbor))
       allocate (fw, source=nbor)
       allocate (rv, source=nbor)
-      if (self%rt_sc(i_omega)%needs(nbor%task,+1)) then
+      if (rt_sc%needs(nbor%task,+1)) then
         fw_prev%next => fw
         fw_prev => fw
         n_fw = n_fw+1
       end if
-      if (self%rt_sc(i_omega)%needs(nbor%task,-1)) then
+      if (rt_sc%needs(nbor%task,-1)) then
         rv_prev%next => rv
         rv_prev => rv
         n_rv = n_rv+1
@@ -226,13 +253,14 @@ FUNCTION upstream_is_ok (self, i_omega, dir)
   integer:: i_omega, dir
   type(link_t), pointer:: link, nbor, next
   class(task_t), pointer:: task
+  class(rt_sc_t), pointer:: rt_sc
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_patch_t%upstream_is_ok')
   upstream_is_ok = .true.
   if (dir>0) then
-    nbor => self%rt_sc(i_omega)%fw_nbor
+    nbor => rt_sc%fw_nbor
   else
-    nbor => self%rt_sc(i_omega)%rv_nbor
+    nbor => rt_sc%rv_nbor
   end if
   do while (associated(nbor))
     task => nbor%task
@@ -262,8 +290,8 @@ SUBROUTINE eos_volume (self)
   call trace%begin ('rt_sc_t%eos_volume', itimer=itimer)
   d   => self%mem(:,:,:,self%idx%d,self%it,1)
   e   => self%mem(:,:,:,self%idx%e,self%it,1)
-  rk  => self%vars(:,:,:,:,1)
-  src => self%vars(:,:,:,:,2)
+  rk  => self%vars(:,:,:,:,1,1)
+  src => self%vars(:,:,:,:,2,1)
   m = shape(rk)
   call eos%lookup_table (m, d=d, e=e, rk=rk, src=src)
   call trace%end (itimer)

@@ -345,6 +345,8 @@ SUBROUTINE download_link (self, link, all_cells, only)
   nbor => link%nbor
   do while (associated(nbor))
     source => task2patch(nbor%task)
+    if (source%nt == 1) &
+      self%same => same_linear
     if (trim(target%kind)/='rt_solver') then
       if (source%is_clear(bits%no_download)) then
         if (source%level==target%level) then
@@ -577,7 +579,40 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only)
       if (target%id==io%id_debug) &
         print 1, source%id, l, u, o, jt, pt
         1 format("DBG download_t%same:", i6,"  l,u,o:",3(3i4,2x)," jt,pt:",2i4,2x,2f6.2)
-      if (source%unsigned(iv)) then
+      if (source%nt == 1) then
+        if (all_cells_l) then
+          do iz=l(3),u(3)
+            do iy=l(2),u(2)
+              do ix=l(1),u(1)
+                target%mem(ix,iy,iz,iv,target%it,1) =  &
+                  source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)
+              end do
+            end do
+            if (check_filled) then
+              do ix=l(1),u(1)
+                filled(ix,iy,iz,iv) = source%level
+              end do
+            end if
+          end do
+        else
+          do iz=l(3),u(3)
+            do iy=l(2),u(2)
+              do ix=l(1),u(1)
+                ii = [ix,iy,iz]
+                target%mem(ix,iy,iz,iv,target%it,1) = &
+                  merge(target%mem(ix,iy,iz,iv,target%it,1),  &
+                        source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1), &
+                        all((ii>=li).and.(ii<=ui)))
+              end do
+              if (check_filled) then
+                do ix=l(1),u(1)
+                  filled(ix,iy,iz,iv) = source%level
+                end do
+              end if
+            end do
+          end do
+        end if      
+      else if (source%unsigned(iv)) then
         if (all_cells_l) then
           do iz=l(3),u(3)
             do iy=l(2),u(2)
