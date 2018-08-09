@@ -508,20 +508,20 @@ SUBROUTINE trilinear3d (self, xi, yi, zi, fi, xo, yo, zo, fo, order)
   dy = (yi(niy)-yi(1))/(niy-1)
   dz = (zi(niz)-zi(1))/(niz-1)
   do iz=1,noz
-    pz = (zo(iz)-zi(1))/dz
-    jz = pz
-    jz = max(1,min(niz-1,jz))
-    pz = max(0.0,min(1.0,pz -jz))
+    do jz=1,niz-2
+      if (zi(jz+1)>zo(iz)) exit
+    end do
+    pz = (zo(iz)-zi(jz))/(zi(jz+1)-zi(jz))
+    pz = max(0.0,min(1.0,pz))
     qz = 1.0-pz
     do iy=1,noy
-      do jy=1,niy-2
-        if (yi(jy+1)>yo(iy)) exit
-      end do
-      py = (yo(iy)-yi(jy))/(yi(jy+1)-yi(jy))
-      py = max(0.0,min(1.0,py))
+      py = (yo(iy)-yi(1))/dy + 1.
+      jy = py
+      jy = max(1,min(niy-1,jy))
+      py = max(0.0,min(1.0,py -jy))
       qy = 1.0-py
       do ix=1,nox
-        px = (xo(ix)-xi(1))/dx
+        px = (xo(ix)-xi(1))/dx + 1.
         jx = px
         jx = max(1,min(nix-1,jx))
         px = max(0.0,min(1.0,px -jx))
