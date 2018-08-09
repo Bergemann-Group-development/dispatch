@@ -563,6 +563,8 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
 !    call self%set (bits%root_grid)
 !    if (io%verbose > 1) print *, 'set bits%root_grid id =', self%id
 !  end if
+  if (self%id == io%id_debug) &
+    call self%link%print_nbors ('initial state ID_DEBUG nbors:')
   call trace%end
 END SUBROUTINE setup
 
