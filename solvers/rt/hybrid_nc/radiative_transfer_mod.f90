@@ -36,7 +36,9 @@ SUBROUTINE rt_setup (self, level_min)
   class(list_t), pointer :: list
   class(link_t), pointer :: t_list, link, rt_link
   class(task_t), pointer :: task
-  class(mesh_t), pointer :: mesh(:), m1
+#ifdef __GFORTRAN__
+  class(mesh_t), pointer:: mesh
+#endif
   class(experiment_t), pointer :: mhd_patch
   class(rt_t),   pointer :: rt_task
   real(8) :: eps = 1d-3
@@ -44,25 +46,28 @@ SUBROUTINE rt_setup (self, level_min)
   real(8):: uc(3) = -huge(0d0)        ! upper corner
   real(8):: llc(3) = +huge(0d0)       ! lower left corner
   real(8):: urc(3) = -huge(0d0)       ! upper right corner
-  integer :: nd, lmin
+  integer :: nd, lmin, ii
   integer :: itimer=0
   !---------------------------------------------------------------------
   call trace%begin('radiative_transfer::rt_setup', itimer=itimer)
   associate (mhd => self%head%task)
-  select type(mhd)
+  SELECT TYPE(mhd)
   class is (experiment_t)
     mhd_patch => mhd
   class default
-    error stop '(1) in rt_setup'
-  end select
+    error stop '(1) in rt_setup: unknown task type'
+  end SELECT
   end associate
 
   !> -------------------------------------------------------------------
   !> Init the ray_geometry objet.
   !> -------------------------------------------------------------------
-  mesh => mhd_patch%mesh
-  m1 => mesh(1)
-  select type(m1)
+#ifndef __GFORTRAN__
+  associate (mesh => mhd_patch%mesh(1))
+#else
+  mesh => mhd_patch%mesh(1)
+#endif
+  select type(mesh)
     type is(Cartesian_mesh)
       call ray_geometry%init(geometry=1, &
       n=mhd_patch%n, ng=mhd_patch%ng, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land)
@@ -73,9 +78,13 @@ SUBROUTINE rt_setup (self, level_min)
       call ray_geometry%init(geometry=3, &
       n=mhd_patch%n,  ng=mhd_patch%ng, cell_dims=mhd_patch%ds, no_mans_land=mhd_patch%no_mans_land)
     class default
-      error stop "Mesh type not recognised in rt_setup. Abort!"
+      error stop '(2) in rt_setup: unknown mesh type'
   end select
+#ifndef __GFORTRAN__
+  end associate
+#else
   nullify(mesh)
+#endif
   if (ray_geometry%head%ray_list%directionality(1) == 1) then
     nd = 2
   else
@@ -128,7 +137,7 @@ SUBROUTINE rt_setup (self, level_min)
         !> -------------------------------------------------------------
         link%task         => rt_task                                    ! connect to RT task
         rt_task%link => link                                            ! save it's link for convenience
-        if (ray_geometry%head%do_chains) call connect_nbors(link,t_list)  ! connect rt task and rmhd task
+        !call connect_nbors(link,t_list)                                ! connect rt task and rmhd task
         mhd%rt => rt_task                                               ! save link to rt task
         rt_task%mhd_link => t_list                                      ! save link to mhd task
         rt_task%position = mhd_patch%position                           ! shadow the position
@@ -139,6 +148,9 @@ SUBROUTINE rt_setup (self, level_min)
         rt_task%box      = mhd_patch%box                                ! same box
         rt_task%level    = mhd_patch%level                              ! same level
         rt_task%ds       = mhd_patch%ds                                 ! same cell size
+        rt_task%time     = mhd_patch%time                               ! same cell size
+        rt_task%iout     = mhd_patch%iout                               ! same cell size
+        rt_task%out_next = mhd_patch%out_next                           ! same cell size
         call rt_task%init                                               ! initialise
         !> -------------------------------------------------------------
         !> Set up the boundary bits
@@ -156,7 +168,6 @@ SUBROUTINE rt_setup (self, level_min)
           if (rt_task%position(3) >= uc(3)-eps) call rt_task%rt_boundaries%set (bits%zu)
         end if
         call rt_task%rt_boundaries%init (rt_task%gn, ray_geometry%head%n_ray_dirs*nd, rt_task%mesh)
-        if (mhd%is_set(bits%spherical)) call rt_task%set(bits%spherical)! set spherical bits if needed
         call rt_task_list%append_link(link)                             ! insert rt_task into the rt task list
       end SELECT
       end associate
@@ -178,17 +189,27 @@ SUBROUTINE rt_setup (self, level_min)
   !> -------------------------------------------------------------------
   !> append the rt tasks to the task list.
   !> -------------------------------------------------------------------
-  if (ray_geometry%head%do_chains) then
+  do ii = 1,ray_geometry%head%n_warm_up
     link => rt_task_list%head
-    nd=1
+    print *, 'Warming up the RT communication...', ii
     do while (associated(link))
+      associate (mhd => link%task)
+      SELECT TYPE(mhd)
+      class is (rt_t)
+        rt_task => mhd
+      class default
+        error stop '(2) in rt_setup'
+      end SELECT
+      end associate
       rt_link => link%next
-      call self%append_link (link)                                        ! append the task to the task list
+      rt_task%dry = .true.
+      call rt_task%update 
+      rt_task%dry = .false.
+      call rt_task%finish()
+      !print *, ii,'dry-update for rt task', rt_task%id, rt_task%time
       link => rt_link
-      nd = nd + 1
     end do
-    print *, 'added',nd,' rt tasks to the task list'
-  end if
+  end do
   call self%print
   call trace%end (itimer)
   if (io%master) then
@@ -253,7 +274,7 @@ SUBROUTINE make_chains (self)
   logical :: upstream = .false.
   logical :: connected = .false.
   logical :: is_bndry
-  integer:: ibnd, ibn, n_links, n_masters, n_slaves, n_conn,n_bn
+  integer:: ip, ipn, n_links, n_masters, n_slaves, n_conn,n_bn
   !---------------------------------------------------------------------
   call trace_begin('radiative_transfer_mod%add_correction_nbors ')
   print *, 'making chains...'
@@ -274,11 +295,11 @@ SUBROUTINE make_chains (self)
       ithis => this
     end SELECT
 
-    do ibnd = 1, ithis%n_bundle                                         ! loop over chain links
+    do ip = 1, ithis%n_packet                                           ! loop over chain links
       is_bndry=.false.                                                  ! reset the boundary flag
       connected = .false.                                               ! no connections have been made
       n_links=n_links+1
-      my_link => ithis%my_links(ibnd)
+      my_link => ithis%my_links(ip)
       my_link%master = .true.                                           ! flag the link as being the master for now
 
       !> ---------------------------------------------------------------
@@ -306,10 +327,10 @@ SUBROUTINE make_chains (self)
           if (ithis%id /= ithat%id) then                                ! not the same patch
             if (ithis%overlaps(ithat)) then                             ! patches overlap
               ! loop over ithat links
-              nblink_loop: do ibn=1, ithat%n_bundle                     ! loop over nbor links
+              nblink_loop: do ipn=1, ithat%n_packet                     ! loop over nbor links
                 connects = .false.                                      ! can links connect?
                 upstream = .false.                                      ! nbor is different lvl upstreamer?
-                nb_link => ithat%my_links(ibn)
+                nb_link => ithat%my_links(ipn)
                 call ithis%link_connects_to(ithat,my_link,nb_link, &
                 connects, upstream)
                 !> -----------------------------------------------------

@@ -2,6 +2,7 @@ MODULE rt_components_mod
   USE link_mod
   USE patch_mod
   USE ray_geometry_v3_mod
+  USE rt_boundaries_mod
   USE eos_mod
   implicit none
 !> =====================================================================
@@ -10,18 +11,6 @@ MODULE rt_components_mod
 !> =====================================================================
   type, public :: rt_packet
     real, dimension(:,:), pointer :: in  => null()                        ! (wl_bin|time slot) incoming intensity.
-  end type
-
-  type, public :: rt_hub_t
-    real, dimension(:), pointer :: in  => null()                        ! (wl_bin) incoming intensity.
-    real, dimension(:), pointer :: out => null()                        ! leaving intensity
-    integer, pointer :: dir_ID
-    !> Subsequent pointers are used to handle upstreams with different refinement level
-    type (rt_hub_t), pointer :: head => null()
-    type (rt_hub_t), pointer :: next => null()
-    type (rt_hub_t), pointer :: tail => null()
-    integer :: n_upstream = 0
-    real :: weight = 1.
   end type
 !> =====================================================================
 !> rt_chain_t is used to make a linked list of chain link. Each rt_task
@@ -35,10 +24,8 @@ MODULE rt_components_mod
     class(chain_link_t),   pointer :: next   => null()
     class(chain_link_t),   pointer :: prev   => null()
     class(chain_link_t),   pointer :: temp   => null()                  ! temporal chain connection to do any required modifications
-    class(packet_t),       pointer :: packet => null()                  ! ray packet of this chain link in no_chain mode
-    class(ray_bndl_t),     pointer :: bundle => null()                  ! ray bundle of this chain link in chain mode
-    class(rt_packet), dimension(:), pointer :: pdata => null()          ! quick pointing to the right locations in the data sets in no_chain mode
-    class(rt_hub_t), dimension(:), pointer :: packet_data => null()     ! quick pointing to the right locations in the data sets in chain mode
+    class(packet_t),       pointer :: packet => null()                  ! ray packet of this chain link
+    class(rt_packet), dimension(:), pointer :: pdata => null()          ! quick pointing to the right locations in the data sets
     logical, dimension(:), pointer :: nudged => null()                  ! which links have already nudged me
     integer :: direction                                                ! 1 = forward / 2 = reverse
     integer :: dir_id
@@ -84,7 +71,7 @@ END SUBROUTINE check_masters
 !> Here a modificator should come, which decides the position, depending
 !> whether the no mans land is true or false.
 !> =====================================================================
-FUNCTION get_upstream_coord_same(self, pck, ray) result(coords)
+FUNCTION get_upstream_coord_same(self, ray) result(coords)
  class(chain_link_t) :: self
  class(patch_t), pointer :: patch
  integer :: pck, ray, coords(3), i
@@ -92,9 +79,9 @@ FUNCTION get_upstream_coord_same(self, pck, ray) result(coords)
  patch => task2patch(self%link%task)
  select case(self%direction)
  case(1)
-   coords = self%bundle%packet(pck)%rev_coords(:,ray)
+   coords = self%packet%rev_coords(:,ray)
  case(2)
-   coords = self%bundle%packet(pck)%fwd_coords(:,ray)
+   coords = self%packet%fwd_coords(:,ray)
  case default
    error stop "chain_link_t::get_upstream_coords:: direction not understood"
  end select
@@ -179,7 +166,7 @@ SUBROUTINE finish_chain(self)
   class(chain_link_t), pointer :: this, prev
   class(chain_link_t), pointer :: link, plink
   class(patch_t),      pointer :: patch
-  integer :: cn, ir, cc(3), ip
+  integer :: cn, ir, cc(3)
   integer, dimension(:), pointer :: nb_ray_pos
   !---------------------------------------------------------------------
   this => self%prev                                                     ! first item is not needed
@@ -194,18 +181,11 @@ SUBROUTINE finish_chain(self)
       link%chain_nm = cn                                                ! link's list number in the chain
       cn = cn+1
       if(.not.link%BC(1).and..not.link%BC(3)) then                      ! avoid master links, whose incoming intensities are from the boundaries or upstreams
-        select case(link%direction)                                     ! select the right direction of this link
-        case(1)                                                         ! forward = upstream is behind me
-          do ir = 1, link%bundle%n_rays                                 ! loop over the rays of the link's bundle
-            ip=link%bundle%rays_rev(ir)                                 ! get the ray position in the upstream bundle
-            link%packet_data(ir)%in => plink%packet_data(ip)%out        ! connect the ray to the appropriate patch intensity shell position
-          end do                       
-        case(2)                                                         ! reverse = upstream is in front of me
-          do ir = 1, link%bundle%n_rays                               
-            ip=link%bundle%rays_fw(ir)                                  ! get the ray position in the upstream bundle
-            link%packet_data(ir)%in => plink%packet_data(ip)%out        ! connect the ray to the appropriate patch intensity shell position
-          end do
-        end select
+        patch => task2patch(plink%link%task)
+        do ir = 1, link%packet%n_rays
+          cc = link%get_upstream_coord_same(ir)
+          link%pdata(ir)%in => patch%mem(cc(1),cc(2),cc(3),link%ivl:link%ivu,:,1)
+        end do
       end if
       plink => link                                                     ! this will now be the previous link
       link => link%next                                                 ! move to the next link
@@ -215,8 +195,7 @@ SUBROUTINE finish_chain(self)
     this%nudged(:) = .false.                                            ! nothing is nudged yet.
     this => prev                                                        ! point to next master link
   end do
-  !if (io%verbose>1)
-  call self%check_masters
+  !if (io%verbose>1) call self%check_masters
 END SUBROUTINE finish_chain
 
 END MODULE rt_components_mod
