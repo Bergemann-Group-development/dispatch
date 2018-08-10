@@ -103,8 +103,8 @@ SUBROUTINE update (self)
       deallocate (buffer)
       call io%bits_mem (-storage_size (buffer), product(dims)*self%nv)
   end if
-  call self%solver_t%update
   call self%rt_solver_t%update
+  call self%solver_t%update
   call self%boundary_conditions
   call trace_end
 END SUBROUTINE update

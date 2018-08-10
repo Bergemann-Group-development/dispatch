@@ -31,7 +31,7 @@ MODULE rt_mod
   ! RT patch data type, extended from MHD, with extra RT memory and parameters
   !-----------------------------------------------------------------------------
   type, public, extends(solver_t):: rt_t
-    logical                    :: done=.true.
+    logical                    :: done=.false.
     logical                    :: needs_nbors=.true.
     type(rt_t), pointer        :: omega(:)
     integer                    :: n_omega=0
@@ -40,10 +40,10 @@ MODULE rt_mod
     real                       :: offset_p(2)
     real                       :: mu, phi, w
     real(8), pointer           :: rt_t(:)
-    real(8)                    :: rt_time=0.0
-    real(8)                    :: rt_next=0.0
+    real(8)                    :: rt_time=0d0
+    real(8)                    :: rt_next=0d0
+    real(8)                    :: eos_time=0d0
     real(8)                    :: rt_grace_time=0.0
-    type(link_t), pointer      :: nbor => null()
     real, pointer              :: w_bin(:)
     real, pointer              :: q(:,:,:,:)
     real, pointer              :: rk(:,:,:,:)
@@ -70,6 +70,7 @@ CONTAINS
 !> ============================================================================
 SUBROUTINE init (self)
   class (rt_t):: self
+  real(8):: rt_time=0.01_8
   integer, save:: n_mu=3, n_phi=4, n_bin=4
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat
   real, dimension(:), allocatable:: mu, w_mu, phi
@@ -77,7 +78,7 @@ SUBROUTINE init (self)
   class(task_t), pointer:: task
   class(rt_t),   pointer:: rt_task
   logical, save:: first_time=.true.
-  namelist /rt_patch_params/ n_mu, n_phi, n_bin, verbose
+  namelist /rt_params/ n_mu, n_phi, n_bin, verbose, rt_time
   !-----------------------------------------------------------------------------
   ! Read parameters
   !-----------------------------------------------------------------------------
@@ -86,14 +87,15 @@ SUBROUTINE init (self)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, rt_patch_params, iostat=iostat)
-    if (io%master) write (io%output, rt_patch_params)
+    read (io%input, rt_params, iostat=iostat)
+    if (io%master) write (io%output, rt_params)
   end if
   !$omp end critical (input_cr)
   if (.not. io%master) verbose=0
   n_omega      = 1 + n_phi*(n_mu-1)
   n_omega      = 2*n_omega
   self%n_omega = n_omega
+  self%rt_time = rt_time
   !-----------------------------------------------------------------------------
   ! Punt to the next level, initializing patch memory and meshes
   !-----------------------------------------------------------------------------
@@ -128,15 +130,24 @@ SUBROUTINE init (self)
   call io%bits_mem(storage_size(self%rk  ),product(shape(self%rk )))
   call io%bits_mem(storage_size(self%src ),product(shape(self%src)))
   !-----------------------------------------------------------------------------
-  ! Allocate n_omega copies of self, cloning self via pointer to self
+  ! Allocate n_omega copies of self, cloning self via self
   !-----------------------------------------------------------------------------
-  !task => self%link%task
-  !select type (task)
-  !class is (rt_t)
-  !rt_task => task
-  !end select
-  !allocate (self%omega(n_omega), source=rt_task)
   allocate (self%omega(n_omega), source=self)
+  !-----------------------------------------------------------------------------
+  ! Initialize the directional solver connection links and data
+  !-----------------------------------------------------------------------------
+  do i_omega=1,self%n_omega
+    omega => self%omega(i_omega)
+    omega = self
+    allocate (omega%link)
+    omega%link%task => omega
+    omega%nt = 1
+    omega%id = i_omega
+    omega%nv = n_bin
+    allocate (omega%mem(self%gn(1),self%gn(2),self%gn(3),n_bin,1,1))
+    call io%bits_mem(storage_size(self%mem),product(shape(self%mem)))
+    omega%q => omega%mem(:,:,:,:,1,1)
+  end do
   !-----------------------------------------------------------------------------
   ! Assign angles
   !-----------------------------------------------------------------------------
@@ -152,21 +163,12 @@ SUBROUTINE init (self)
       end do
     end do
   end do
-  i_omega = i_omega+1
-  omega => self%omega(i_omega)
-  omega%mu  = mu(n_mu)
-  omega%w   = w_mu(n_mu)
-  omega%phi = 0.0
-  !-----------------------------------------------------------------------------
-  ! Initialize the directional solver data
-  !-----------------------------------------------------------------------------
-  do i_omega=1,self%n_omega
+  do dir=-1,1,2
+    i_omega = i_omega+1
     omega => self%omega(i_omega)
-    allocate (omega%mem(self%gn(1),self%gn(2),self%gn(3),n_bin,1,1))
-    call io%bits_mem(storage_size(self%mem),product(shape(self%mem)))
-    omega%q => omega%mem(:,:,:,:,1,1)
-    omega%nt       = 1
-    omega%id = i_omega
+    omega%mu  = dir*mu(n_mu)
+    omega%w   = w_mu(n_mu)
+    omega%phi = 0.0
   end do
   call trace%end
 END SUBROUTINE init
@@ -186,62 +188,81 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class (rt_t):: self
-  integer:: i_omega, dir
+  integer:: i_omega, n_solve
   real, dimension(:,:,:), pointer:: q
   class(rt_t), pointer:: omega
   !-----------------------------------------------------------------------------
-  ! Check if time has advanced past the next RT time
+  ! Compute the opacity and source function for all bins
   !-----------------------------------------------------------------------------
-  if (self%time > self%rt_next) then
-    !---------------------------------------------------------------------------
-    ! Compute the opacity and source function for all bins
-    !---------------------------------------------------------------------------
+  if (self%eos_time < self%time) then
     call self%rt_eos
-    !---------------------------------------------------------------------------
-    ! Loop over directions, make sure nbor list exist, check it, and solve if OK
-    !---------------------------------------------------------------------------
-    self%done = .true.
-    do i_omega=1,self%n_omega
-      omega => self%omega(i_omega)
-      if (omega%needs_nbors) &
-        call self%init_nbors (omega)
-      if (self%upstream_is_ok(i_omega)) &
-        call self%solve
-      self%done = self%done .and. omega%done
-    end do
-    !---------------------------------------------------------------------------
-    ! If (and only if) all omega are done, update the time for the next RT solution
-    !---------------------------------------------------------------------------
-    if (self%done) &
-      self%rt_next = self%rt_next + self%rt_time
+    self%eos_time = self%time
   end if
-  !----------------------------------------------------------------------------
-  ! Update the MHD solver; it will use time inter- / extrapolated Qrad
-  !----------------------------------------------------------------------------
-  call self%solver_t%update
+  !-----------------------------------------------------------------------------
+  ! Loop over directions, make sure nbor list exist, check it, and solve if OK
+  !-----------------------------------------------------------------------------
+  self%done = .true.
+  n_solve = 0
+  do i_omega=1,self%n_omega
+    omega => self%omega(i_omega)
+    !---------------------------------------------------------------------------
+    ! Check if time has advanced past the next RT time
+    !---------------------------------------------------------------------------
+    if (omega%time < self%time) then
+      if (self%upstream_is_ok(i_omega)) then
+        call omega%solve
+        omega%time = self%time
+        n_solve = n_solve+1
+      end if
+    end if
+    self%done = self%done .and. (omega%time == self%time)
+  end do
+  if (verbose > 0) &
+    print *, self%id, 'rt_t%update: n_solve =', n_solve, self%done
+  !---------------------------------------------------------------------------
+  ! If (and only if) all omega are done, update the time for the next RT solution
+  !---------------------------------------------------------------------------
+  if (self%done) then
+    self%rt_next = self%rt_next + self%rt_time
+    if (verbose > 0) &
+      print *, self%id, 'rt_t%update: rt_next =', self%rt_next, self%rt_time
+  end if
   call trace%end
 END SUBROUTINE update
 
-!> ============================================================================
+!> =============================================================================
 !> Check upstream relations. Upstream tasks are added to an nbor list
-!> ============================================================================
-SUBROUTINE init_nbors (self, omega)
+!> =============================================================================
+SUBROUTINE init_nbors (self, i_omega)
   class (rt_t):: self
+  integer:: i_omega
+  !.............................................................................
   type(rt_t), pointer:: omega
   type(link_t), pointer:: nbor, new, prev
+  class(task_t), pointer:: rt_task
   integer:: n_nbor
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%init_nbors')
   nbor => self%link%nbor
+  omega => self%omega(i_omega)
   n_nbor = 0
+  if (verbose>1) print *, self%id, omega%id, 'init_nbors begin'
   do while (associated(nbor))
     if (omega%needs(nbor%task)) then
-      allocate (new, source=nbor)
-      if (.not.associated(self%nbor)) then
-        self%nbor => new
+      allocate (new)
+      rt_task => nbor%task
+      select type (rt_task)
+      class is (rt_t)
+        new%task => rt_task%omega(i_omega)
+      end select
+      if (.not.associated(omega%link%nbor)) then
+        omega%link%nbor => new
+        if (verbose>1) print *, self%id, omega%id, 'nbor => new'
       else
+        if (verbose>1) print *, self%id, omega%id, 'prev%next => new'
         prev%next => new
       end if
+      if (verbose>1) print *, self%id, omega%id, 'prev => new'
       prev => new
       n_nbor = n_nbor+1
     end if
@@ -249,36 +270,50 @@ SUBROUTINE init_nbors (self, omega)
   end do
   omega%needs_nbors = .false.
   if (verbose > 0) &
-    print *, 'rt_t%init_nbors: id, n_fw, n_rv =', omega%id, n_nbor
+    print *, omega%id, 'rt_t%init_nbors: n_nbor=', n_nbor
   call trace%end
 END SUBROUTINE init_nbors
 
-!> ============================================================================
-!> Check upstream times, returning OK if they are ahead
-!> ============================================================================
+!> =============================================================================
+!> Check upstream times, returning OK if they are ahead.  "self" is the i_omega
+!> task in the local patch, and we compare its time with the time of the upstream
+!> task.
+!> =============================================================================
 FUNCTION upstream_is_ok (self, i_omega)
   logical:: upstream_is_ok
-  class (rt_t):: self
+  class(rt_t):: self
   integer:: i_omega
-  type(rt_t), pointer:: omega
+  !.............................................................................
+  class(rt_t), pointer:: omega
   type(link_t), pointer:: link, nbor, next
-  class(task_t), pointer:: rt
+  class(task_t), pointer:: rt, nbtask
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%upstream_is_ok')
-  upstream_is_ok = .true.
   omega => self%omega(i_omega)
-  nbor => omega%nbor
+  if (omega%needs_nbors) &
+    call self%init_nbors (i_omega)
+  upstream_is_ok = .true.
+  nbor => omega%link%nbor
   do while (associated(nbor))
     rt => nbor%task
     select type (rt)
-      type is (rt_t)
-      if (rt%omega(i_omega)%time < self%time) then
-        upstream_is_ok = .false.
-        exit
-      end if
+    type is (rt_t)
+      nbtask => rt%omega(i_omega)
+      select type (nbtask)
+        type is (rt_t)
+        if (.not. (nbtask%mesh(3)%lower_boundary .or. &
+                   nbtask%mesh(3)%upper_boundary)) then
+          if (rt%omega(i_omega)%time < omega%time) then
+            upstream_is_ok = .false.
+            exit
+          end if
+        end if
+      end select
     end select
     nbor => nbor%next
   end do
+  if (verbose>1) &
+    print *, self%id, omega%id, 'rt_t:upstream_is_ok =', upstream_is_ok
   if (upstream_is_ok) &
     call download%download_link (omega%link)
   call trace%end
@@ -293,7 +328,7 @@ SUBROUTINE rt_eos (self)
   real, dimension(:,:,:), pointer:: d, e
   integer:: m(4), ib, i3
   !-----------------------------------------------------------------------------
-  call trace%begin ('rt_t%rt_eos_volume', itimer=itimer)
+  call trace%begin ('rt_t%rt_eos', itimer=itimer)
   d   => self%mem(:,:,:,self%idx%d,self%it,1)
   e   => self%mem(:,:,:,self%idx%e,self%it,1)
   m = shape(self%rk)
@@ -302,7 +337,8 @@ SUBROUTINE rt_eos (self)
 END SUBROUTINE rt_eos
 
 !> ============================================================================
-!> Integral SC/RT solver.
+!> Integral short characteristics RT solver.  Flips between 1st and 2nd solution,
+!> with the order of forward and revers unknown.
 !> ============================================================================
 SUBROUTINE solve (self)
   class(rt_t):: self
@@ -348,9 +384,10 @@ SUBROUTINE solve (self)
   if (self%done) then
     self%done = .false.
   else
-    self%done = .true.
     deallocate (self%layers)
+    nullify (self%layers)
     call io%bits_mem (-storage_size(self%layers), product(shape(self%layers)))
+    self%done = .true.
   end if
   call trace%end (itimer)
 END SUBROUTINE solve
@@ -541,7 +578,7 @@ FUNCTION needs (self, task)
   if (self%mu==1.0) then
     do i=1,3
       if (is1(i)/=is2(i)) then
-        needs = .false.
+        !needs = .false.
         exit 
       end if
     end do
@@ -553,7 +590,7 @@ FUNCTION needs (self, task)
   else
     do i=1,3
       if (is1(i) /= 0 .and. is1(i) /= is2(i)) then
-        needs = .false.
+        !needs = .false.
         exit 
       end if
     end do

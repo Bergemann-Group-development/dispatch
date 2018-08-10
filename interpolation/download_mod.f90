@@ -585,7 +585,7 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only)
             do iy=l(2),u(2)
               do ix=l(1),u(1)
                 target%mem(ix,iy,iz,iv,target%it,1) =  &
-                  source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)
+                  source%mem(ix+o(1),iy+o(2),iz+o(3),iv,1,1)
               end do
             end do
             if (check_filled) then
@@ -601,7 +601,7 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only)
                 ii = [ix,iy,iz]
                 target%mem(ix,iy,iz,iv,target%it,1) = &
                   merge(target%mem(ix,iy,iz,iv,target%it,1),  &
-                        source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1), &
+                        source%mem(ix+o(1),iy+o(2),iz+o(3),iv,1,1), &
                         all((ii>=li).and.(ii<=ui)))
               end do
               if (check_filled) then

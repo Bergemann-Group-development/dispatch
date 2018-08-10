@@ -2064,17 +2064,22 @@ SUBROUTINE time_interval (self, time, jt, pt)
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
   !call trace%begin ('patch_t%time_interval', 2, itimer=itimer)
-  t = self%t(self%iit)
-  j = 1
-  do i=1,self%nt-2
-    if (t(i) < time) j=i
-  end do
-  jt = self%iit(j:j+1)
-  dt = t(j+1)-t(j)
-  if (dt==0.0) then
+  if (self%nt==1) then
+    jt = 1
     pt(2) = 0.0
   else
-    pt(2) = (time-t(j))/dt
+    t = self%t(self%iit)
+    j = 1
+    do i=1,self%nt-2
+      if (t(i) < time) j=i
+    end do
+    jt = self%iit(j:j+1)
+    dt = t(j+1)-t(j)
+    if (dt==0.0) then
+      pt(2) = 0.0
+    else
+      pt(2) = (time-t(j))/dt
+    end if
   end if
   pt(1) = 1.-pt(2)
   if ((io%verbose>3 .or. io_unit%do_validate) .and. pt(2)>0.0) then
