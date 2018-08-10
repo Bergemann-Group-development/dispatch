@@ -37,6 +37,10 @@
  no_mans_land=f
 /
 
+&download_params
+check_filled=t
+/
+
 &eos_params
   gamma = 1.666667
   do_rt = t
@@ -47,7 +51,7 @@
 &rt_params
  solver= 'integral'
  use_data_hub = f
- do_output = t
+ do_output = f
  cr_heating = 0.0
  init_time = 0d0
  !periodic = f,t,t
@@ -57,11 +61,11 @@
 &cartesian_ray_geometry_params
 do_chains = f
 ! along x axis
-nx = 2 xti = 0.,45.
+nx = 1 xti = 0.,45.
 ! along y axis
-ny = 2 yti = 0.,45.
+ny = 1 yti = 0.,45.
 ! along z axis
-nz = 2 zti = 0.,45.
+nz = 1 zti = 0.,45.
 ! use space_diagonals?
 space_diagonals=t
 /

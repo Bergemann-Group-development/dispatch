@@ -118,11 +118,11 @@ SUBROUTINE condition (self, m, mem, i)
         mem(ix,iy,iz,i%py) = 0.0
         mem(ix,iy,iz,i%pz) = 0.0
         ! magnetic field components
-        !if (self%mhd) then
+        if (self%mhd) then
           mem(ix,iy,iz,i%bx) = 0.0
           mem(ix,iy,iz,i%by) = 0.0
           mem(ix,iy,iz,i%bz) = 0.0
-        !end if
+        end if
       end do
     end do
   end do
