@@ -79,16 +79,16 @@ SUBROUTINE update (self)
   call self%output
   call self%mhd_t%pde
   allocate (q (self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn))
-  self%d => self%mem(:,:,:,self%i_d,self%it,1)
+  self%d => self%mem(:,:,:,self%idx%d,self%it,1)
   call allocate_scalars (self%gn, self%pg)
   self%pg = self%gas_pressure()
-  self%d => self%mem(:,:,:,self%i_d,self%it,1)
+  self%d => self%mem(:,:,:,self%idx%d,self%it,1)
   q = 0.0
   call self%q_diffuse(q)
   !-----------------------------------------------------------------------------
   ! Update dsdt and apply spherical boundary condition
   !-----------------------------------------------------------------------------
-  dsdt => self%mem(:,:,:,self%i_s,self%it,2)
+  dsdt => self%mem(:,:,:,self%idx%s,self%it,2)
   dsdt = dsdt + q*self%d/self%pg
   call self%rt%finish ()
   call self%courant_condition
@@ -131,7 +131,7 @@ SUBROUTINE q_diffuse (self, q)
     fmax = fmax/(1.+(rk_min*minval(self%ds))**2)
     u_max = scaling%stefan*16./3.*self%fmaxval(fmax)*self%courant/self%cdtd*epsilon
     deallocate(fmax)
-    if (self%debug(2)) print 1, self%id, 'u_max(RT)', u_max, self%u_max
+    if (io%debug(2)) print 1, self%id, 'u_max(RT)', u_max, self%u_max
     1 format(i6,3x,a,1p,2g12.3)
     self%u_max = max(self%u_max,u_max)
     call trace%end (itimer)

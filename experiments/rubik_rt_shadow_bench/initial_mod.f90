@@ -29,9 +29,10 @@ CONTAINS
 !> =============================================================================
 !> Read namelist
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, gam)
   class(initial_t):: self
   character(len=64):: solver
+  real, optional :: gam
   real, save:: clump_pos(3)=0.0, clump_a=0.1, clump_b=0.06, d0=1.0, t0=290.0, clump_dfact=10.0
   real, save:: gamma=1.4
   namelist /initial_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact, gamma
@@ -59,17 +60,17 @@ SUBROUTINE init (self, solver)
   call trace_end
 END SUBROUTINE init
 
-SUBROUTINE condition (self, m, mem)
+SUBROUTINE condition (self, m, mem, i)
 !> =============================================================================
 !> Set the initial conditions
 !> =============================================================================
   class(initial_t) :: self
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(:,:,:,:), pointer :: mem
+  type(index_t) :: i
   class(mesh_t), pointer :: mx, my, mz
   integer :: ix, iy, iz
   real :: p0, q, x, y, z, d
-  type(index_t) :: i
   !----------------------------------------------------------------------------
   call trace_begin('initial_t::initial_conditions')
 

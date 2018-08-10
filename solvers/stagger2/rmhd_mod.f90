@@ -21,7 +21,6 @@ MODULE rmhd_mod
   USE solver_mod
   USE rt_mod
   USE timestep_mod
-  USE scaling_mod
   implicit none
   private
   ! --------------------------------------------------------------------
@@ -80,35 +79,38 @@ SUBROUTINE update (self)
       dedt=0.0
       call self%rt%get_q (self%time, dedt)                                  ! interpolate in time and space
       pgas = self%gas_pressure()
-      d    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%it,1)
-      dsdt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%it,2)
+      d    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,1)
+      dsdt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s,self%it,2)
       dsdt = dsdt + dedt*d/pgas(l(1):u(1),l(2):u(2),l(3):u(3))
       !-----------------------------------------------------------------------------
       ! Time step limitation for rate of change dS/dt = (ds/dt-(s/d)*dddt)/d
       !-----------------------------------------------------------------------------
-      s    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%it,1)
-      dddt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d,self%it,2)
-      if (self%debug(1)) then
+      s    => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s,self%it,1)
+      dddt => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,2)
+      if (io%debug(1)) then
         print *,'mk: cdtd', self%cdtd
         print *,'mk:    d', minval(d), maxval(d)
         print *,'mk: dedt', minval(dedt), maxval(dedt)
-        print *,'mk: pgas', minval(pgas(l(1):u(1),l(2):u(2),l(3):u(3))), maxval(pgas(l(1):u(1),l(2):u(2),l(3):u(3)))
+        print *,'mk: pgas', minval(pgas(l(1):u(1),l(2):u(2),l(3):u(3))), &
+                            maxval(pgas(l(1):u(1),l(2):u(2),l(3):u(3)))
         print *,'mk: dsdt', minval(dsdt), maxval(dsdt)
         print *,'mk: dddt', minval(dddt), maxval(dddt)
         print *,'mk:    s', minval(s), maxval(s)
       end if
       if (io%verbose>0) then
         if (self%id == 100) print *, self%id, 'minmax dsdt', minval(dsdt), maxval(dsdt)
-        if (self%id == 100) print *, 'minmax S', minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%it,1)), maxval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_s,self%it,1))
+        if (self%id == 100) print *, 'minmax S', &
+         minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s,self%it,1)), &
+         maxval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%s,self%it,1))
       end if
       deallocate(dedt, pgas)
-      d    => self%mem(:,:,:,self%i_d,self%it,1)
-      dsdt => self%mem(:,:,:,self%i_s,self%it,2)
-      s    => self%mem(:,:,:,self%i_s,self%it,1)
-      dddt => self%mem(:,:,:,self%i_d,self%it,2)
+      d    => self%mem(:,:,:,self%idx%d,self%it,1)
+      dsdt => self%mem(:,:,:,self%idx%s,self%it,2)
+      s    => self%mem(:,:,:,self%idx%s,self%it,1)
+      dddt => self%mem(:,:,:,self%idx%d,self%it,2)
       u_max = maxval(self%ds)*self%fmaxval(abs((dsdt-s*dddt/d)/d))*self%courant/self%cdtd
       self%u_max = max(self%u_max,u_max)
-    if (self%debug(1)) print 1, self%id, 'u_max(RT)', u_max, self%u_max
+    if (io%debug(1)) print 1, self%id, 'u_max(RT)', u_max, self%u_max
     1 format(i6,3x,a,1p,2g12.3)
     end associate
   else
@@ -119,6 +121,7 @@ SUBROUTINE update (self)
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
+  !end if
   call trace%end (itimer)
 END SUBROUTINE update
 

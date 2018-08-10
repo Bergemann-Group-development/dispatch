@@ -31,6 +31,10 @@ MODULE list_mod
     integer:: ne=0                      ! external
     integer:: na=0                      ! active = internal+boundary
     integer:: nac=0                     ! active tasks
+    real(8):: lc(3) = +huge(0d0)        ! lower corner
+    real(8):: uc(3) = -huge(0d0)        ! upper corner
+    real(8):: llc(3) = +huge(0d0)       ! lower left corner
+    real(8):: urc(3) = -huge(0d0)       ! upper right corner
     real(8):: position(3) = 0.0_8       ! center offset
     real(8):: size(3) = 1.0_8           ! full extent = uc-lc
     integer:: n_behind=0, n_check=0, n_ready=0, n_nbor=0
@@ -1487,6 +1491,10 @@ SUBROUTINE init_bdries (self)
     class is (patch_t)
       call patch%init_bdries
     end select
+    self%lc  = min(self%lc,  link%task%position)
+    self%uc  = max(self%uc,  link%task%position)
+    self%llc = min(self%llc, link%task%position-0.5000000001_8*link%task%size)
+    self%urc = max(self%urc, link%task%position+0.5000000001_8*link%task%size)
     link => link%next
   end do
   call trace_end

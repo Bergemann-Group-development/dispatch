@@ -31,7 +31,6 @@
 
 &patch_params
  nt=5
- courant=0.0
  grace=0.0
  n=43,43,43
  !dt_fixed=1d-11
@@ -74,7 +73,7 @@ hot_temp  = 1740!621180!240000 !1740
 /
 
 
-&mhd_params
+&stagger_params
  nu=  0.15, 1.0, 1.0, 0.2, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
  gamma=1.666667

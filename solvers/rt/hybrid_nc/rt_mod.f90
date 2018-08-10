@@ -7,6 +7,7 @@ MODULE rt_mod
   USE mesh_mod
   USE ray_geometry_v3_mod
   USE rt_components_mod
+  USE rt_boundaries_mod
   USE rt_solver_mod
   USE patch_mod
   USE task_mod
@@ -124,6 +125,7 @@ SUBROUTINE init_rt (self)
   end if
   !$omp end critical (init_cr)
   self%do_output = do_output
+  if (do_output) error stop "rt_mod::init:: do_output=true, but IO for RT is not rewritten for the master branch"
   if (ray_geometry%head%ray_list%directionality(1) == 1) then
     nd = 2
   else
@@ -287,9 +289,9 @@ END SUBROUTINE init_no_chain
 !> Type-specific version of `dnload`. This is a *duplicate* of what's in
 !> `gpatch_t` because `rt_t` extends `patch_t`.
 !> =====================================================================
-SUBROUTINE dnload (self)
+SUBROUTINE dnload (self, only)
   class (rt_t) :: self
-  !integer, optional:: only
+  integer, optional:: only
   !---------------------------------------------------------------------
   if (self%use_data_hub) then
     call self%data_hub%update (self%link)
@@ -383,20 +385,20 @@ SUBROUTINE update_rt (self)
   !> -------------------------------------------------------------------
   !> Take entropy and density from MHD patch
   !> -------------------------------------------------------------------
-  self%d = mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_d,mhd%it,1)
+  self%d = mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%idx%d,mhd%it,1)
   if (mhd%kind(1:9)=='stagger2e') then
-    self%e = mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_e,mhd%it,1)
+    self%e = mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%idx%e,mhd%it,1)
     self%e = self%e/self%d
   else if (mhd%kind(1:9)=='stagger2_') then
-    associate(d => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_d,mhd%it,1), &
-              s => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%i_s,mhd%it,1))
+    associate(d => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%idx%d,mhd%it,1), &
+              s => mhd%mem(l(1):u(1),l(2):u(2),l(3):u(3),mhd%idx%s,mhd%it,1))
     g1 = mhd%gamma-1.0
     self%e = d**g1*exp(s/d*g1)/g1
     end associate
   else if (mhd%kind(1:7)=='ramses_') then
-    associate(d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_d           ,mhd%it,1), &
-              e => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_e           ,mhd%it,1), &
-              p => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_px:self%i_pz,mhd%it,1))
+    associate(d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d           ,mhd%it,1), &
+              e => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e           ,mhd%it,1), &
+              p => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%px:self%idx%pz,mhd%it,1))
     allocate(k(size(d,1),size(d,2),size(d,3)))
     k = 0.0
     do i=1,size(p,4)
@@ -873,7 +875,10 @@ SUBROUTINE finish(self)
   class is (patch_t)
     mhd => task
   end select
-  if (.not.self%dry.and.self%do_output) call self%output
+  if (.not.self%dry.and.self%do_output) then
+    !call self%output
+    error stop "rt_mod::finish:: output called, but IO for RT needs to be rewritten"
+  end if
   self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)            ! predict
   deallocate (self%d, self%e, self%rk, self%src)                        ! deallocate scratch
   call trace%end
@@ -1008,8 +1013,8 @@ END SUBROUTINE solve_feautrier
 SUBROUTINE ray_vol_map4 (self, packet, in, out)
   class(rt_t) :: self
   class(packet_t), pointer :: packet
-  real(kind=KindRTVar), dimension(:,:,:)   , pointer, intent(out) :: out
-  real(kind=KindRTVar), dimension(:,:,:,:) , pointer, intent(in)  :: in
+  real(kind=KindRTVar), dimension(:,:,:)   , pointer :: out
+  real(kind=KindRTVar), dimension(:,:,:,:) , pointer :: in
   !.....................................................................
   integer, dimension(:,:,:), pointer :: cell
   integer :: p(3), p2(3), ray, pt, nwb, wl, lp
@@ -1167,6 +1172,7 @@ SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
   !.....................................................................
   integer                         :: pt
   !---------------------------------------------------------------------
+  dtau(:,:,1) = 0.0
   do pt = 2, size(rk,3)
     dtau(:,:,pt) = ds * 0.5 * (rk(:,:,pt-1) + rk(:,:,pt))
   end do
@@ -1185,8 +1191,8 @@ SUBROUTINE optical_depth_staggered_weighted (self, ds, rk, dtau)
   !.....................................................................
   integer                         :: pt, n
   !---------------------------------------------------------------------
-  n = size(rk,3)
-  do pt=2,n
+  dtau(:,:,1) = 0.0
+  do pt=2,size(rk,3)
     dtau(:,:,pt) = min((rk(:,:,pt-1)+rk(:,:,pt))*0.5, &
                    max(2*rk(:,:,pt-1)*rk(:,:,pt)/(rk(:,:,pt-1)+rk(:,:,pt)), &
                    1.33333/ds)) *ds
@@ -1310,6 +1316,10 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
     write (io_unit%log,*) 'TOO MANY FILES'
     stop
   end if
+  
+  error stop "ERROR: rt_mod::output_legacy_rt:: IO for RT has to be redone"
+  
+  
   !-----------------------------------------------------------------------------
   ! If guard_zones is true, include the guard zones.  If time_derivs is true,
   ! write out the time derivatives also.
@@ -1336,11 +1346,11 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
-  if (self%no_mans_land) then
-    self%ioformat = 1
-  else
-    self%ioformat = 2
-  end if
+  !if (self%no_mans_land) then
+  !  self%ioformat = 1
+  !else
+  !  self%ioformat = 2
+  !end if
   write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout+1
   write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, self%id
   if (io%debug(0)) then
@@ -1348,7 +1358,7 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
       print'(a,3x,"time:",2f13.6)', ' patch_t%output_legacy: '//trim(filename), time, self%time
   end if
   open (io%data_unit, file=trim(filename)//'.txt', form='formatted', status='unknown')
-  write (io%data_unit,'(i2.2)') self%ioformat
+  !write (io%data_unit,'(i2.2)') self%ioformat
   write (io%data_unit,'(a)') trim(self%kind)
   write (io%data_unit,'(a)') trim(self%eos)
   write (io%data_unit,'(a)') trim(self%opacity)
@@ -1381,21 +1391,21 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
         write (io_unit%log,'(1x,a,2i5,i3,1p,2e11.3)') &
           trim(filename),1,self%it,jo,minval(buf),maxval(buf)
       write (io%data_unit,rec=iv+(jo-1)*2) buf
-      if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
+      if (io%verbose>1 .and. iv==self%idx%d) print *,'rho minmax',minval(buf), maxval(buf)
     iv = 2
       buf = self%src(:,:,:,1)
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,2e11.3)') &
           trim(filename),1,self%it,jo,minval(buf),maxval(buf)
       write (io%data_unit,rec=iv+(jo-1)*2) buf
-      if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
+      if (io%verbose>1 .and. iv==self%idx%d) print *,'rho minmax',minval(buf), maxval(buf)
     iv = 3
       buf = self%rk(:,:,:,1)
       if (io%verbose>1) &
         write (io_unit%log,'(1x,a,2i5,i3,1p,2e11.3)') &
           trim(filename),1,self%it,jo,minval(buf),maxval(buf)
       write (io%data_unit,rec=iv+(jo-1)*2) buf
-      if (io%verbose>1 .and. iv==self%i_d) print *,'rho minmax',minval(buf), maxval(buf)
+      if (io%verbose>1 .and. iv==self%idx%d) print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)
   end do
   close (io%data_unit)
