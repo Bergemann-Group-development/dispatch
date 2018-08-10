@@ -31,7 +31,7 @@ MODULE rt_mod
   ! RT patch data type, extended from MHD, with extra RT memory and parameters
   !-----------------------------------------------------------------------------
   type, public, extends(solver_t):: rt_t
-    logical                    :: done=.false.
+    logical                    :: done=.true.
     logical                    :: needs_nbors=.true.
     type(rt_t), pointer        :: omega(:)
     integer                    :: n_omega=0
@@ -192,40 +192,49 @@ SUBROUTINE update (self)
   real, dimension(:,:,:), pointer:: q
   class(rt_t), pointer:: omega
   !-----------------------------------------------------------------------------
-  ! Compute the opacity and source function for all bins
+  ! Call (only) the MHD solver, until it has passed the rt_next time, then
+  ! work repeatedly with the RT solver, until that is ahead again
   !-----------------------------------------------------------------------------
-  if (self%eos_time < self%time) then
-    call self%rt_eos
-    self%eos_time = self%time
-  end if
-  !-----------------------------------------------------------------------------
-  ! Loop over directions, make sure nbor list exist, check it, and solve if OK
-  !-----------------------------------------------------------------------------
-  self%done = .true.
-  n_solve = 0
-  do i_omega=1,self%n_omega
-    omega => self%omega(i_omega)
-    !---------------------------------------------------------------------------
-    ! Check if time has advanced past the next RT time
-    !---------------------------------------------------------------------------
-    if (omega%time < self%time) then
-      if (self%upstream_is_ok(i_omega)) then
-        call omega%solve
-        omega%time = self%time
-        n_solve = n_solve+1
-      end if
+  call trace%begin ('rt_t%update')
+  if (self%time < self%rt_next) then
+    call self%solver_t%update
+  else
+    !-----------------------------------------------------------------------------
+    ! Compute the opacity and source function for all bins
+    !-----------------------------------------------------------------------------
+    if (self%eos_time < self%time) then
+      call self%rt_eos
+      self%eos_time = self%time
     end if
-    self%done = self%done .and. (omega%time == self%time)
-  end do
-  if (verbose > 0) &
-    print *, self%id, 'rt_t%update: n_solve =', n_solve, self%done
-  !---------------------------------------------------------------------------
-  ! If (and only if) all omega are done, update the time for the next RT solution
-  !---------------------------------------------------------------------------
-  if (self%done) then
-    self%rt_next = self%rt_next + self%rt_time
+    !-----------------------------------------------------------------------------
+    ! Loop over directions, make sure nbor list exist, check it, and solve if OK
+    !-----------------------------------------------------------------------------
+    self%done = .true.
+    n_solve = 0
+    do i_omega=1,self%n_omega
+      omega => self%omega(i_omega)
+      !---------------------------------------------------------------------------
+      ! Check if time has advanced past the next RT time
+      !---------------------------------------------------------------------------
+      if (omega%time < self%time) then
+        if (self%upstream_is_ok(i_omega)) then
+          call omega%solve
+          omega%time = self%time
+          n_solve = n_solve+1
+        end if
+      end if
+      self%done = self%done .and. (omega%time == self%time)
+    end do
     if (verbose > 0) &
-      print *, self%id, 'rt_t%update: rt_next =', self%rt_next, self%rt_time
+      print *, self%id, 'rt_t%update: n_solve =', n_solve, self%done
+    !---------------------------------------------------------------------------
+    ! If (and only if) all omega are done, update the time for the next RT solution
+    !---------------------------------------------------------------------------
+    if (self%done) then
+      self%rt_next = self%rt_next + self%rt_time
+      if (verbose > 0) &
+        print *, self%id, 'rt_t%update: rt_next =', self%rt_next, self%rt_time
+    end if
   end if
   call trace%end
 END SUBROUTINE update
@@ -595,7 +604,7 @@ FUNCTION needs (self, task)
       end if
     end do
   end if
-  if (self%verbose>0) then
+  if (verbose>0) then
     if (needs) print &
     '("RT task",i5,i4,4x,"needs patch",i5,4x,"rel pos:",3f8.3,4x,"ray:",3f8.3,6i3)', &
     self%id, self%id, task%id, ds1, ds2, is1, is2

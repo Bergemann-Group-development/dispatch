@@ -207,6 +207,7 @@ END SUBROUTINE init
 SUBROUTINE bits_mem (self, bits, count)
   class (io_t)      :: self
   integer:: bits, count
+  print *, bits,' bits per word', count,' words, for', (bits/(8.*1024.**3))*count, 'GB'
   call self%gb_mem ((bits/(8.*1024.**3))*count)
 END SUBROUTINE bits_mem
 
@@ -220,6 +221,7 @@ SUBROUTINE gb_mem (self, gb)
   !-----------------------------------------------------------------------------
   if (mpi%master) then
     self%gb = self%gb + gb
+    print *,'added',gb,' total',self%gb
     if (self%gb > gb_next) then
       !$omp critical (gb_cr)
       if (self%gb > gb_next) then

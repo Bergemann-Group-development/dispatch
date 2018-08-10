@@ -101,10 +101,9 @@ SUBROUTINE update (self)
     first_time = .false.
     if (allocated(buffer)) &
       deallocate (buffer)
-      call io%bits_mem (-storage_size (buffer), product(dims)*self%nv)
+      call io%bits_mem (-storage_size (buffer), product(shape(buffer)))
   end if
   call self%rt_solver_t%update
-  call self%solver_t%update
   call self%boundary_conditions
   call trace_end
 END SUBROUTINE update
@@ -126,7 +125,7 @@ SUBROUTINE boundary_conditions (self)
   if (self%mesh(3)%lower_boundary) then
     if (.not.associated(self%lower)) then
       allocate (self%lower(m(1),m(2),m(3),m(4)))
-      call io%bits_mem (storage_size(self%lower), product(m(1:4)))
+      call io%bits_mem (storage_size(self%lower), product(shape(self%lower)))
       self%lower = self%mem(:,:,lb(3):lo(3),:,self%it,1)
       if (verbose > 0) &
         print *,'LBC',self%id,self%position, &
@@ -138,7 +137,7 @@ SUBROUTINE boundary_conditions (self)
   if (self%mesh(3)%upper_boundary) then
     if (.not.associated(self%upper)) then
       allocate (self%upper(m(1),m(2),m(3),m(4)))
-      call io%bits_mem (storage_size(self%lower), product(m(1:4)))
+      call io%bits_mem (storage_size(self%upper), product(shape(self%upper)))
       self%upper = self%mem(:,:,uo(3):ub(3),:,self%it,1)
       if (verbose > 0) &
         print *,'UBC',self%id,self%position, &
@@ -220,7 +219,7 @@ SUBROUTINE initial_condition (self)
     ! will be made, so the buffer can be deallocated when all patches are done
     !---------------------------------------------------------------------------
     allocate (buffer(mx+1,my+1,mz,self%nv))
-    call io%bits_mem (storage_size (buffer), product(dims)*self%nv)
+    call io%bits_mem (storage_size (buffer), product(shape(buffer)))
     recl = 4*product(dims)                                           ! FIXME
     if (io%master) &
       print *,'reading MHD data from ' //trim(file)//'.dat'
