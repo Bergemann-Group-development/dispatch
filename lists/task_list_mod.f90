@@ -225,18 +225,22 @@ SUBROUTINE update (self, head, test, was_refined)
     'thread', omp_mythread, 'task', task%id, trim(task%type), &
     'step', task%istep, 'dt, time:', task%dtime, task%time, &
     'n, nq', self%n, self%nq, associated(head%nbor)
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! The rotate procedure in the generic patch_t module is responsible for
   ! updating the time, and rotating the memory slots where information about
-  ! previous time steps are saved.
-  !----------------------------------------------------------------------------
-  call task%rotate
-  select type (task)
-  class is (patch_t)
-    !$omp atomic
-    n_update = n_update + product(task%n)
-  end select
-  call task%info (self%nq, self%na)                   ! print info on stdout
+  ! previous time steps are saved.  Task may signal that they have already done
+  ! the rotate internally, or else are not yet ready to do so, by setting the
+  ! task%rotated flag
+  !-----------------------------------------------------------------------------
+  if (.not.task%rotated) then
+    call task%rotate
+    select type (task)
+    class is (patch_t)
+      !$omp atomic
+      n_update = n_update + product(task%n)
+    end select
+    call task%info (self%nq, self%na)                   ! print info on stdout
+  end if
   !-----------------------------------------------------------------------------
   ! Tasks that have finished are subtracted from the task list count but are
   ! not removed, since their data may be needed by other tasks (including on

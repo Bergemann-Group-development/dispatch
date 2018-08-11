@@ -108,7 +108,7 @@ SUBROUTINE update (self)
       deallocate (buffer)
       call io%bits_mem (-storage_size (buffer), product(shape(buffer)),'buffer')
   end if
-  call self%solver_t%update
+!  call self%solver_t%update
   call self%rt_solver_t%update
   call self%test_d (50)
   call self%boundary_conditions

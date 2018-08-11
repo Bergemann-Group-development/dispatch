@@ -35,6 +35,7 @@ MODULE rt_mod
     logical                    :: needs_nbors=.true.
     type(rt_t), pointer        :: omega(:)
     integer                    :: n_omega=0
+    integer                    :: i_omega=0
     integer                    :: n_bin
     integer                    :: offset_o(2)
     real                       :: offset_p(2)
@@ -63,6 +64,7 @@ MODULE rt_mod
     procedure:: bilinear
     procedure:: needs
   end type
+  real, parameter:: pi=acos(-1.0)
   integer:: verbose=1
 CONTAINS
 
@@ -74,7 +76,7 @@ SUBROUTINE init (self)
   real(8):: rt_time=0.01_8
   integer, save:: n_mu=3, n_phi=4, n_bin=4
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat
-  real, dimension(:), allocatable:: mu, w_mu, phi
+  real, dimension(:), allocatable:: mu, w_mu
   type(rt_t), pointer:: omega
   class(task_t), pointer:: task
   class(rt_t),   pointer:: rt_task
@@ -120,7 +122,7 @@ SUBROUTINE init (self)
   ! Assign angles and integration weight and allocate the required RT solvers
   ! for all angles
   !-----------------------------------------------------------------------------
-  allocate (mu(n_mu),w_mu(n_mu), phi(n_phi))
+  allocate (mu(n_mu),w_mu(n_mu))
   call radau%init (n_mu, mu, w_mu)
   !-----------------------------------------------------------------------------
   ! Allocate data common to all sub-tasks
@@ -142,10 +144,11 @@ SUBROUTINE init (self)
     omega = self
     allocate (omega%link)
     omega%link%task => omega
-    omega%nt = 1
-    omega%id = i_omega
-    omega%nv = n_bin
-    omega%time = -1d0
+    omega%nt      = 1
+    omega%id      = self%id
+    omega%i_omega = i_omega
+    omega%nv      = n_bin
+    omega%time    = -1d0
     allocate (omega%mem(self%gn(1),self%gn(2),self%gn(3),n_bin,1,1))
     call io%bits_mem(storage_size(omega%mem),product(shape(omega%mem)),'q')
     omega%q => omega%mem(:,:,:,:,1,1)
@@ -155,14 +158,14 @@ SUBROUTINE init (self)
   ! Assign angles
   !-----------------------------------------------------------------------------
   i_omega = 0
-  do i_phi=1,n_phi
-    do i_mu=1,n_mu-1
+  do i_mu=1,n_mu-1
+    do i_phi=1,n_phi
       do dir=-1,1,2
         i_omega = i_omega+1
         omega => self%omega(i_omega)
         omega%mu  = dir*mu(i_mu)
         omega%w   = w_mu(i_mu)
-        omega%phi = phi(i_phi)
+        omega%phi = pi*(modulo(real(2*(i_phi-1))/n_phi + (dir+1)/2.0, 2.0) - 1.0)
       end do
     end do
   end do
@@ -173,11 +176,22 @@ SUBROUTINE init (self)
     omega%w   = w_mu(n_mu)
     omega%phi = 0.0
   end do
+  !-----------------------------------------------------------------------------
+  ! Check task angles
+  !-----------------------------------------------------------------------------
+  if (verbose > 0 .and. self%id == 1) then
+    do i_omega=1,n_omega
+      omega => self%omega(i_omega)
+      print *, 'rt_t%init: i_omega, elevation, phi, mu =', &
+        i_omega, nint(asin(omega%mu)*180./pi), nint(omega%phi*180./pi), &
+        omega%mu
+    end do
+  end if
   call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
-!> Run through all angular solvers, and attempt to update them.  Solvers that
+!> Run through all angular solvers and attempt to update them.  Solvers that
 !> lack upstream info (based on internal criteria) will do nothing, while 
 !> solvers that have enough information will be updated.  The angular solvers
 !> are so lightweight (taking of the order 100-200 ns) that it would be too
@@ -191,64 +205,71 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class (rt_t):: self
-  integer:: i_omega, n_solve, iter
+  integer:: i_omega, n_solve
   real, dimension(:,:,:), pointer:: q
   class(rt_t), pointer:: omega
-  integer, parameter:: max_iter=3
   !-----------------------------------------------------------------------------
   ! Call (only) the MHD solver, until it has passed the rt_next time, then
   ! work repeatedly with the RT solver, until that is ahead again
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%update')
-call self%test_d (1)
+                                                            call self%test_d (1)
   if (self%time < self%rt_next) then
     call self%solver_t%update
   else
+    !---------------------------------------------------------------------------
+    ! Prevent time slot rotation and time update, as long as only RT is done
+    !---------------------------------------------------------------------------
+    self%rotated = .true.
     !---------------------------------------------------------------------------
     ! Compute the opacity and source function for all bins
     !---------------------------------------------------------------------------
     if (self%eos_time < self%time) then
       call self%rt_eos
       self%eos_time = self%time
-call self%test_d (2)
+                                                            call self%test_d (2)
     end if
-    do iter=1,max_iter
-      !-------------------------------------------------------------------------
-      ! Loop over directions, make sure nbor list exist, check it, and solve if OK
-      !-------------------------------------------------------------------------
-      self%done = .true.
-      n_solve = 0
-      do i_omega=1,self%n_omega
-        omega => self%omega(i_omega)
-        !-----------------------------------------------------------------------
-        ! Check if time has advanced past the next RT time
-        !-----------------------------------------------------------------------
-        if (omega%time < self%rt_next) then
-          if (self%upstream_is_ok(i_omega)) then
-            call self%solve (omega)
-  call self%test_d (2+i_omega)
-            n_solve = n_solve+1
-          else if (verbose > 0) then
-              print *, self%id, omega%id, 'rt_t%update: upstream_not_OK' 
-          end if
+    self%done = .true.
+    n_solve = 0
+    !-------------------------------------------------------------------------
+    ! Loop over directions, make sure nbor list exist, check it, and solve if OK
+    !-------------------------------------------------------------------------
+    do i_omega=1,self%n_omega
+      omega => self%omega(i_omega)
+      !-----------------------------------------------------------------------
+      ! Check if time has advanced past the next RT time
+      !-----------------------------------------------------------------------
+      if (omega%time < self%rt_next) then
+        if (self%upstream_is_ok(i_omega)) then
+          call self%solve (omega)
+          omega%time = self%rt_next
+                                                  call self%test_d (2+i_omega)
+          n_solve = n_solve+1
+          if (verbose > 0) &
+            print *, self%id, i_omega, 'rt_t%update: time =', omega%time
+        else if (verbose > 1) then
+            print *, self%id, i_omega, 'rt_t%update: upstream_not_OK' 
         end if
-        self%done = self%done .and. (omega%time == self%rt_next)
-      end do
-      if (verbose > 0) &
-        print *, self%id, 'rt_t%update: iter, n_solve, done =', iter, n_solve, self%done
+      end if
+      self%done = self%done .and. (omega%time == self%rt_next)
+      if (verbose > 1) &
+        print *, self%id, i_omega, 'rt_t%update: time, rt_next =', omega%time, self%rt_next 
     end do
     !---------------------------------------------------------------------------
     ! If (and only if) all omega are done, update the time for the next RT solution
     !---------------------------------------------------------------------------
     if (self%done) then
       self%rt_next = self%rt_next + self%rt_time
-      if (verbose > 0) &
-        print *, self%id, omega%id, 'rt_t%update: rt_next =', self%rt_next, self%rt_time
     end if
+    if (verbose > 0) &
+      print *, self%id, 'rt_t%update: n_solve, rt_next, done =', &
+        n_solve, self%rt_next, self%done
   end if
   call trace%end
 END SUBROUTINE update
 
+!> =============================================================================
+!> =============================================================================
 SUBROUTINE test_d (self, label)
   class(rt_t):: self
   real:: dmin, dmax
@@ -301,12 +322,12 @@ SUBROUTINE init_nbors (self, i_omega)
       !-------------------------------------------------------------------------
       if (.not.associated(omega%link%nbor)) then
         omega%link%nbor => new
-        if (verbose>2) print *, self%id, omega%id, 'nbor => new'
+        if (verbose>2) print *, self%id, omega%i_omega, 'nbor => new'
       else
-        if (verbose>2) print *, self%id, omega%id, 'prev%next => new'
+        if (verbose>2) print *, self%id, omega%i_omega, 'prev%next => new'
         prev%next => new
       end if
-      if (verbose>2) print *, self%id, omega%id, 'prev => new'
+      if (verbose>2) print *, self%id, omega%i_omega, 'prev => new'
       prev => new
       n_nbor = n_nbor+1
     end if
@@ -314,7 +335,7 @@ SUBROUTINE init_nbors (self, i_omega)
   end do
   omega%needs_nbors = .false.
   if (verbose > 0) &
-    print *, self%id, omega%id, 'rt_t%init_nbors: n_nbor=', n_nbor
+    print *, self%id, omega%i_omega, 'rt_t%init_nbors: n_nbor=', n_nbor
   call trace%end
 END SUBROUTINE init_nbors
 
@@ -331,41 +352,33 @@ FUNCTION upstream_is_ok (self, i_omega)
   class(rt_t), pointer:: omega
   type(link_t), pointer:: link, nbor, next
   class(task_t), pointer:: rt, nbtask
-  logical:: lower, upper
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%upstream_is_ok')
   omega => self%omega(i_omega)
   if (omega%needs_nbors) &
     call self%init_nbors (i_omega)
   upstream_is_ok = .true.
-  !-----------------------------------------------------------------------------
-  ! A boundary with infalling intensity is always considered OK
-  !-----------------------------------------------------------------------------
-  lower = self%mesh(3)%lower_boundary .and. omega%mu > 0.0
-  upper = self%mesh(3)%upper_boundary .and. omega%mu < 0.0
-  if (.not.(lower .or. upper)) then
-    nbor => omega%link%nbor
-    do while (associated(nbor))
-      nbtask => nbor%task
-      select type (nbtask)
-        type is (rt_t)
-        !---------------------------------------------------------------------
-        ! The upstream time must be larger than the local omega task time.
-        ! Equal is not OK, to force initial start from the boundaries and in.
-        !---------------------------------------------------------------------
-        if (nbtask%time <= omega%time) then
-          upstream_is_ok = .false.
-          if (verbose > 1) &
-            print *, self%id, omega%id, 'rt_t%upstream_is_ok: fail on id, mu, pos =', &
-              nbtask%id, nbtask%mu, nbtask%position
-          exit
-        end if
-      end select
-      nbor => nbor%next
-    end do
-  end if
+  nbor => omega%link%nbor
+  do while (associated(nbor))
+    nbtask => nbor%task
+    select type (nbtask)
+      type is (rt_t)
+      !---------------------------------------------------------------------
+      ! The upstream time must be larger than the local omega task time.
+      ! Equal is not OK, to force initial start from the boundaries and in.
+      !---------------------------------------------------------------------
+      if (nbtask%time <= omega%time) then
+        upstream_is_ok = .false.
+        if (verbose > 1) &
+          print *, self%id, i_omega, 'rt_t%upstream_is_ok: fail on id, mu, pos =', &
+            nbtask%id, nbtask%mu, nbtask%position
+        exit
+      end if
+    end select
+    nbor => nbor%next
+  end do
   if (verbose > 1) &
-    print *, self%id, omega%id, 'rt_t%upstream_is_ok:', upstream_is_ok
+    print *, self%id, i_omega, 'rt_t%upstream_is_ok:', upstream_is_ok
   if (upstream_is_ok) &
     call download%download_link (omega%link)
   call trace%end
@@ -449,11 +462,10 @@ SUBROUTINE solve (self, omega)
     deallocate (omega%layers)
     nullify (omega%layers)
     call io%bits_mem (-storage_size(omega%layers), product(shape(omega%layers)),'layers')
-    omega%time = self%rt_next
     omega%done = .true.
   end if
   if (verbose > 1) then
-    print *, self%id, omega%id, 'rt_t%solve: mu, time, done', &
+    print *, self%id, omega%i_omega, 'rt_t%solve: mu, time, done', &
       omega%mu, omega%time, omega%done
   end if
   call trace%end (itimer)
@@ -519,11 +531,11 @@ SUBROUTINE prepare_layers (self, omega, ib)
   if     (self%mesh(3)%lower_boundary .and. omega%mu > 0.0) then
     self%mem(:,:,l(3)-1,:,1,1) = -self%src(:,:,l(3)-1,:)
     if (verbose > 1) &
-      print *, self%id, omega%id, 'rt_t%prepare_layers: using lower BC'
+      print *, self%id, omega%i_omega, 'rt_t%prepare_layers: using lower BC'
   else if(self%mesh(3)%upper_boundary .and. self%mu < 0.0) then
     self%mem(:,:,u(3)+1,:,1,1) = 0.0
     if (verbose > 1) &
-      print *, self%id, omega%id, 'rt_t%prepare_layers: using upper BC'
+      print *, self%id, omega%i_omega, 'rt_t%prepare_layers: using upper BC'
   end if
   !-----------------------------------------------------------------------------
   do i3=2,self%mesh(3)%gn-1
@@ -632,35 +644,65 @@ FUNCTION needs (self, omega, task)
   logical:: needs
   class(rt_t):: self, omega
   class(task_t), pointer:: task
-  real:: ds1(3), ds2(3), sinmu
+  real:: ds1(3), ds2(3), sinth
   real, parameter:: eps=1e-4
   integer:: i, is1(3), is2(3)
+  logical:: lower, upper
   !-----------------------------------------------------------------------------
-  needs = .true.
-  ds1 = (task%position-omega%mesh%p)/omega%mesh%b
-  sinmu = sqrt(1d0-omega%mu**2)
-  ds2 = [sinmu*cos(omega%phi),sinmu*sin(omega%phi),omega%mu]
-  is1 = 0
-  is2 = 0
-  do i=1,3
-    if (ds1(i) > +eps) is1(i)=1
-    if (ds2(i) > +eps) is2(i)=1
-    if (ds1(i) < -eps) is1(i)=-1
-    if (ds2(i) < -eps) is2(i)=-1
-  end do
+  ! A task at a boundary with infalling intensity is always considered OK, even
+  ! if the angle also requires wall intensities, because in a horizontally 
+  ! periodic system nothing would ever start, otherwise.  The intensity coming
+  ! in trough side walls is going to be slightly delayed in time, in some cases,
+  ! depending on the order of task execution.
   !-----------------------------------------------------------------------------
-  ! Define upstream as "not downstream in any direction"
-  !-----------------------------------------------------------------------------
-  if (abs(omega%mu)==1.0) then
-    needs = all(is1==is2)
+  lower = self%mesh(3)%lower_boundary .and. omega%mu > 0.0
+  upper = self%mesh(3)%upper_boundary .and. omega%mu < 0.0
+  if (lower .or. upper) then
+    needs = .false.
   else
-    needs = .not.any(is1*is2 < 0)
+    ds1 = self%position-task%position
+    where (self%periodic)
+      ds1 = modulo(ds1 + 0.5*self%box, self%box) - 0.5*self%box
+    end where
+    ds1 = ds1/self%box
+    sinth = merge(0.0, sqrt(1.0-omega%mu**2), abs(omega%mu)==1.0)
+    ds2 = [sinth*cos(omega%phi),sinth*sin(omega%phi),omega%mu]
+    is1 = 0
+    is2 = 0
+    do i=1,3
+      if (ds1(i) > +eps) is1(i)=1
+      if (ds2(i) > +eps) is2(i)=1
+      if (ds1(i) < -eps) is1(i)=-1
+      if (ds2(i) < -eps) is2(i)=-1
+    end do
+    !---------------------------------------------------------------------------
+    ! Vertical rays depend only on exact alignment
+    !---------------------------------------------------------------------------
+    if (abs(omega%mu)==1.0) then
+      needs = all(is1==is2)
+    !---------------------------------------------------------------------------
+    ! Define upstream as "not downstream in any direction"
+    !---------------------------------------------------------------------------
+    else
+      needs = .not.any(is1*is2 < 0)
+    end if
+    !---------------------------------------------------------------------------
+    ! I a horizontal ray component is axis aligned, exclude non-aligned nbors
+    !---------------------------------------------------------------------------
+    if (is2(1)==0 .and. is1(1)/=0) needs = .false.
+    if (is2(2)==0 .and. is1(2)/=0) needs = .false.
+    !---------------------------------------------------------------------------
+    ! Cannot allow purely horizontal dependencies, since they would never be
+    ! resolved.  Need to rely on delayed information, possibly also keeping
+    ! track of the delay, and requiring catch-up.
+    !---------------------------------------------------------------------------
+    if (is1(3)==0) needs = .false.
+    if (verbose>0) then
+      if (needs .or. verbose>1) print &
+      '("RT task",2i5,4x,"needs patch",i5,4x,"rel pos:",3f8.3,4x,"ray:",3f8.3,6i3,l3)', &
+      self%id, omega%i_omega, task%id, ds1, ds2, is1, is2, needs
+     end if
   end if
-  if (verbose>0) then
-    if (needs) print &
-    '("RT task",2i5,4x,"needs patch",i5,4x,"rel pos:",3f8.3,4x,"ray:",3f8.3,6i3)', &
-    self%id, omega%id, task%id, ds1, ds2, is1, is2
-   end if
 END FUNCTION needs
 
 END MODULE rt_mod

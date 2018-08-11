@@ -1,8 +1,8 @@
 
 &experiment_params      file='mhd63' dims=3*63 order=1 verbose=0 /
-&rt_params              n_mu=2 n_phi=3 n_bin=4 verbose=2 rt_time=0.02 /
+&rt_params              n_mu=2 n_phi=3 n_bin=4 verbose=0 rt_time=0.02 /
 
-&io_params              verbose=0 do_trace=f do_output=t method='parallel' id_debug=0 /
+&io_params              verbose=1 do_trace=f do_output=t method='parallel' id_debug=0 /
 &cartesian_params       size=6,6,3 dims=2*6,3 origin=0,0,-0.5 /
 &patch_params           nt=5 grace=0.0 n=3*32 no_mans_land=t use_data_hub=f dt_fixed=-1 /
 &out_params             end_time=1e-1 out_time=1e-2 print_time=0.0 guard_zones=t time_derivs=f /
