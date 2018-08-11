@@ -537,7 +537,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
                        self%mesh(3)%gn, &
                        self%nv,self%nt,self%nw))
     self%mem_allocated = .true.               ! mark
-    call io%bits_mem (storage_size(self%mem), product(shape(self%mem)))
+    call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
     allocate (self%unsigned (self%nv))
     allocate (self%pervolume(self%nv))
     self%unsigned (:) = .false.

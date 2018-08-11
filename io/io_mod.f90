@@ -204,28 +204,46 @@ END SUBROUTINE init
 !> =============================================================================
 !> Register increase of memory, counted in storage_size bits, times a count
 !> =============================================================================
-SUBROUTINE bits_mem (self, bits, count)
+SUBROUTINE bits_mem (self, bits, count, label)
   class (io_t)      :: self
   integer:: bits, count
-  print *, bits,' bits per word', count,' words, for', (bits/(8.*1024.**3))*count, 'GB'
-  call self%gb_mem ((bits/(8.*1024.**3))*count)
+  character(len=*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (io%verbose>2) then
+    if (present(label)) then
+      print *, bits,' bits per word', count,' words, for', &
+        (bits/(8.*1024.**3))*count, 'GB '//trim(label)
+    else
+      print *, bits,' bits per word', count,' words, for', &
+        (bits/(8.*1024.**3))*count, 'GB'
+    end if
+  end if
+  call self%gb_mem ((bits/(8.*1024.**3))*count, label)
 END SUBROUTINE bits_mem
 
 !> =============================================================================
 !> Register increase of memory, counted in gigabytes
 !> =============================================================================
-SUBROUTINE gb_mem (self, gb)
+SUBROUTINE gb_mem (self, gb, label)
   class (io_t)      :: self
   real:: gb
   real, save:: gb_next=1.0
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (mpi%master) then
     self%gb = self%gb + gb
-    print *,'added',gb,' total',self%gb
     if (self%gb > gb_next) then
       !$omp critical (gb_cr)
       if (self%gb > gb_next) then
-        print '(1x,a,f8.3,a)', 'process memory allocated:', self%gb,' GB'
+        if (io%verbose>1) then
+          if (present(label)) then
+            print '(1x,a,f8.3,a)', trim(label)//': process memory allocated:', &
+              self%gb,' GB'
+          else
+            print '(1x,a,f8.3,a)', 'process memory allocated:', &
+              self%gb,' GB'
+          end if
+        end if
         gb_next = gb_next+1.0
       end if
       !$omp end critical (gb_cr)
