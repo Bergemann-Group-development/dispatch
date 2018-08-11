@@ -200,11 +200,6 @@ SUBROUTINE update (self)
   ! work repeatedly with the RT solver, until that is ahead again
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%update')
-  if (self%needs_nbors) then
-    call self%init_bdries
-    self%needs_nbors = .false.
-  end if
-
 call self%test_d (1)
   if (self%time < self%rt_next) then
     call self%solver_t%update
@@ -282,7 +277,6 @@ SUBROUTINE init_nbors (self, i_omega)
   nbor => self%link%nbor
   omega => self%omega(i_omega)
   n_nbor = 0
-  if (verbose>1) print *, self%id, omega%id, 'init_nbors begin'
   do while (associated(nbor))
     if (self%needs(omega,nbor%task)) then
       allocate (new)
@@ -306,7 +300,7 @@ SUBROUTINE init_nbors (self, i_omega)
   end do
   omega%needs_nbors = .false.
   if (verbose > 0) &
-    print *, omega%id, 'rt_t%init_nbors: n_nbor=', n_nbor
+    print *, self%id, omega%id, 'rt_t%init_nbors: n_nbor=', n_nbor
   call trace%end
 END SUBROUTINE init_nbors
 
@@ -624,7 +618,7 @@ FUNCTION needs (self, omega, task)
   real:: ds1(3), ds2(3), sinmu
   real, parameter:: eps=1e-4
   integer:: i, is1(3), is2(3)
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   needs = .true.
   ds1 = (omega%mesh%p-task%position)/omega%mesh%b
   sinmu = sqrt(1d0-omega%mu**2)
@@ -638,28 +632,9 @@ FUNCTION needs (self, omega, task)
     if (ds2(i) < -eps) is2(i)=-1
   end do
   !-----------------------------------------------------------------------------
-  ! For purely vertical rays, only patches below or above are needed
+  ! Define upstream as "not downstream in any direction"
   !-----------------------------------------------------------------------------
-  if (abs(omega%mu)==1.0) then
-    do i=1,3
-      if (is1(i)/=is2(i)) then
-        needs = .false.
-        exit 
-      end if
-    end do
-  !-----------------------------------------------------------------------------
-  ! For general directions, a patch "on the wrong side" is not needed.  This
-  ! requires that it is not at the same position in that direction, and is on
-  ! the opposite side, relative to the ray direction
-  !-----------------------------------------------------------------------------
-  else
-    do i=1,3
-      if (is1(i) /= 0 .and. is1(i) /= is2(i)) then
-        needs = .false.
-        exit 
-      end if
-    end do
-  end if
+  needs = .not.any(is1*is2 < 0)
   if (verbose>0) then
     if (needs) print &
     '("RT task",2i5,4x,"needs patch",i5,4x,"rel pos:",3f8.3,4x,"ray:",3f8.3,6i3)', &
