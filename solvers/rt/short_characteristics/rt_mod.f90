@@ -191,9 +191,10 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class (rt_t):: self
-  integer:: i_omega, n_solve
+  integer:: i_omega, n_solve, iter
   real, dimension(:,:,:), pointer:: q
   class(rt_t), pointer:: omega
+  integer, parameter:: max_iter=3
   !-----------------------------------------------------------------------------
   ! Call (only) the MHD solver, until it has passed the rt_next time, then
   ! work repeatedly with the RT solver, until that is ahead again
@@ -216,24 +217,26 @@ call self%test_d (1)
       self%eos_time = self%time
 call self%test_d (2)
     end if
-    !---------------------------------------------------------------------------
-    ! Loop over directions, make sure nbor list exist, check it, and solve if OK
-    !---------------------------------------------------------------------------
-    self%done = .true.
-    n_solve = 0
-    do i_omega=1,self%n_omega
-      omega => self%omega(i_omega)
-      !---------------------------------------------------------------------------
-      ! Check if time has advanced past the next RT time
-      !---------------------------------------------------------------------------
-      if (omega%time < self%time) then
-        if (self%upstream_is_ok(i_omega)) then
-          call self%solve (omega)
-call self%test_d (2+i_omega)
-          n_solve = n_solve+1
+    do iter=1,max_iter
+      !-------------------------------------------------------------------------
+      ! Loop over directions, make sure nbor list exist, check it, and solve if OK
+      !-------------------------------------------------------------------------
+      self%done = .true.
+      n_solve = 0
+      do i_omega=1,self%n_omega
+        omega => self%omega(i_omega)
+        !-----------------------------------------------------------------------
+        ! Check if time has advanced past the next RT time
+        !-----------------------------------------------------------------------
+        if (omega%time < self%rt_next) then
+          if (self%upstream_is_ok(i_omega)) then
+            call self%solve (omega)
+  call self%test_d (2+i_omega)
+            n_solve = n_solve+1
+          end if
         end if
-      end if
-      self%done = self%done .and. (omega%time == self%time)
+        self%done = self%done .and. (omega%time == self%rt_next)
+      end do
     end do
     if (verbose > 0) &
       print *, self%id, omega%id, 'rt_t%update: n_solve =', n_solve, self%done
@@ -640,7 +643,7 @@ FUNCTION needs (self, omega, task)
   if (omega%mu==1.0) then
     do i=1,3
       if (is1(i)/=is2(i)) then
-        !needs = .false.
+        needs = .false.
         exit 
       end if
     end do
@@ -652,7 +655,7 @@ FUNCTION needs (self, omega, task)
   else
     do i=1,3
       if (is1(i) /= 0 .and. is1(i) /= is2(i)) then
-        !needs = .false.
+        needs = .false.
         exit 
       end if
     end do

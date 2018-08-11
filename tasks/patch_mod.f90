@@ -387,7 +387,10 @@ SUBROUTINE init_bdries (self)
   !---------------------------------------------------------------------------
   ! If at edge, set boundary bits
   !---------------------------------------------------------------------------
-  position = self%position - self%mesh%origin - 0.5d0 * self%box
+  print *, self%id, 'pos', self%position
+  print *, self%id, 'box', self%box
+  print *, self%id, 'ori', self%mesh%origin
+  position = self%position - self%origin - 0.5d0 * self%box
   limit = 0.5d0 * (self%box - self%size - self%ds)
   if (.not.self%periodic(1)) then
     if (position(1)  <= -limit(1)) then

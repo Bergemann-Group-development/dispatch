@@ -43,7 +43,8 @@ MODULE task_mod
     real(8):: dtime = 0d0
     real(4):: grace = 0.0
     real(8):: position(3) = 0d0
-    real(8):: velocity(3) = 0d0  ! the velocity of the task in Cartesian coords.
+    real(8):: origin(3)=0d0             ! the cartesian box origin (for BCs)
+    real(8):: velocity(3) = 0d0         ! velocity of task in Cartesian coords.
     real(8):: size(3) = 0.9999d0
     real(8):: gsize(3)                  ! convenience
     real(8):: ds(3)                     ! convenience

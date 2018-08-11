@@ -77,6 +77,8 @@ SUBROUTINE init (self)
   self%periodic(3) = .false.                     ! non-periodic vertically
   call self%initial_condition
   call self%init_bdries
+  if (self%mesh(3)%lower_boundary) print *, self%id, 'at lower B'
+  if (self%mesh(3)%upper_boundary) print *, self%id, 'at upper B'
   call self%boundary_conditions
   call trace_end (itimer=itimer)
 END SUBROUTINE init
