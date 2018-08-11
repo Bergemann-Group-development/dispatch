@@ -228,13 +228,15 @@ call self%test_d (2)
             call self%solve (omega)
   call self%test_d (2+i_omega)
             n_solve = n_solve+1
+          else if (verbose > 0) then
+              print *, self%id, omega%id, 'rt_t%update: upstream_not_OK' 
           end if
         end if
         self%done = self%done .and. (omega%time == self%rt_next)
       end do
+      if (verbose > 0) &
+        print *, self%id, 'rt_t%update: iter, n_solve, done =', iter, n_solve, self%done
     end do
-    if (verbose > 0) &
-      print *, self%id, omega%id, 'rt_t%update: n_solve =', n_solve, self%done
     !---------------------------------------------------------------------------
     ! If (and only if) all omega are done, update the time for the next RT solution
     !---------------------------------------------------------------------------
@@ -270,7 +272,7 @@ SUBROUTINE init_nbors (self, i_omega)
   !.............................................................................
   type(rt_t), pointer:: omega
   type(link_t), pointer:: nbor, new, prev
-  class(task_t), pointer:: rt_task
+  class(task_t), pointer:: nbtask, raytask
   integer:: n_nbor
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%init_nbors')
@@ -279,12 +281,24 @@ SUBROUTINE init_nbors (self, i_omega)
   n_nbor = 0
   do while (associated(nbor))
     if (self%needs(omega,nbor%task)) then
-      allocate (new)
-      rt_task => nbor%task
-      select type (rt_task)
+      !-------------------------------------------------------------------------
+      ! Add a new nbor, a new nbor%link, and pointers from link to task and from
+      ! task to link.  The omega-task on nbor already has its own link.
+      !-------------------------------------------------------------------------
+      nbtask => nbor%task
+      select type (nbtask)
       class is (rt_t)
-        new%task => rt_task%omega(i_omega)
+        raytask => nbtask%omega(i_omega)
+        select type (raytask)
+        class is (rt_t)
+          allocate (new)
+          new%link => raytask%link
+          new%task  => raytask
+        end select
       end select
+      !-------------------------------------------------------------------------
+      ! Point to the new nbor,from the task%link, or from the previous nbor
+      !-------------------------------------------------------------------------
       if (.not.associated(omega%link%nbor)) then
         omega%link%nbor => new
         if (verbose>2) print *, self%id, omega%id, 'nbor => new'
@@ -339,8 +353,11 @@ FUNCTION upstream_is_ok (self, i_omega)
         ! The upstream time must be larger than the local omega task time.
         ! Equal is not OK, to force initial start from the boundaries and in.
         !---------------------------------------------------------------------
-        if (nbtask%omega(i_omega)%time <= omega%time) then
+        if (nbtask%time <= omega%time) then
           upstream_is_ok = .false.
+          if (verbose > 1) &
+            print *, self%id, omega%id, 'rt_t%upstream_is_ok: fail on id, mu, pos =', &
+              nbtask%id, nbtask%mu, nbtask%position
           exit
         end if
       end select
@@ -348,7 +365,7 @@ FUNCTION upstream_is_ok (self, i_omega)
     end do
   end if
   if (verbose > 1) &
-    print *, self%id, omega%id, 'rt_t:upstream_is_ok =', upstream_is_ok
+    print *, self%id, omega%id, 'rt_t%upstream_is_ok:', upstream_is_ok
   if (upstream_is_ok) &
     call download%download_link (omega%link)
   call trace%end
@@ -620,7 +637,7 @@ FUNCTION needs (self, omega, task)
   integer:: i, is1(3), is2(3)
   !-----------------------------------------------------------------------------
   needs = .true.
-  ds1 = (omega%mesh%p-task%position)/omega%mesh%b
+  ds1 = (task%position-omega%mesh%p)/omega%mesh%b
   sinmu = sqrt(1d0-omega%mu**2)
   ds2 = [sinmu*cos(omega%phi),sinmu*sin(omega%phi),omega%mu]
   is1 = 0
@@ -634,7 +651,11 @@ FUNCTION needs (self, omega, task)
   !-----------------------------------------------------------------------------
   ! Define upstream as "not downstream in any direction"
   !-----------------------------------------------------------------------------
-  needs = .not.any(is1*is2 < 0)
+  if (abs(omega%mu)==1.0) then
+    needs = all(is1==is2)
+  else
+    needs = .not.any(is1*is2 < 0)
+  end if
   if (verbose>0) then
     if (needs) print &
     '("RT task",2i5,4x,"needs patch",i5,4x,"rel pos:",3f8.3,4x,"ray:",3f8.3,6i3)', &
