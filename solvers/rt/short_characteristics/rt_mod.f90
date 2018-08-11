@@ -65,8 +65,10 @@ MODULE rt_mod
     procedure:: needs
   end type
   real, parameter:: pi=acos(-1.0)
-  integer:: verbose=1
-  logical:: vertical_propagation=.false.
+  real, save:: dtau_min=1e-3, dtau_max=30., dtau_dif=10.
+  integer(8):: n_min=0, n_max=0, n_dif, n_ful=0
+  integer, save:: verbose=1
+  logical, save:: vertical_propagation=.false.
 CONTAINS
 
 !> =============================================================================
@@ -82,7 +84,8 @@ SUBROUTINE init (self)
   class(task_t), pointer:: task
   class(rt_t),   pointer:: rt_task
   logical, save:: first_time=.true.
-  namelist /rt_params/ n_mu, n_phi, n_bin, verbose, rt_time, vertical_propagation
+  namelist /rt_params/ n_mu, n_phi, n_bin, verbose, rt_time, dtau_min, dtau_max, &
+                       dtau_dif, vertical_propagation
   !-----------------------------------------------------------------------------
   ! Read parameters
   !-----------------------------------------------------------------------------
@@ -98,6 +101,7 @@ SUBROUTINE init (self)
   if (.not. io%master) verbose=0
   n_omega      = 1 + n_phi*(n_mu-1)
   n_omega      = 2*n_omega
+  self%n_bin   = n_bin
   self%n_omega = n_omega
   self%rt_time = rt_time
   !-----------------------------------------------------------------------------
@@ -206,7 +210,8 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class (rt_t):: self
-  integer:: i_omega, n_solve
+  integer:: i_omega, i_bin, n_solve
+  real:: n_tot
   real, dimension(:,:,:), pointer:: q
   class(rt_t), pointer:: omega
   !-----------------------------------------------------------------------------
@@ -215,12 +220,34 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%update')
                                                             call self%test_d (1)
+  !-----------------------------------------------------------------------------
+  ! Guard against round-off, and catch the MHD task at exactly self%rt_next
+  !-----------------------------------------------------------------------------
+  if (abs(self%time-self%rt_next) < 1e-6*self%dtime) then
+    self%time = self%rt_next
+    if (self%dt_fixed > 0.0) then
+      if (verbose > 0) &
+        print *, self%id, 'rt_t%update: arrived at =', self%rt_next
+      self%dt_fixed = -1.0
+    end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! If self%rt_next is within reach, then set a constant time step to reach it,
+  ! and if not, take a normal MHD step.
+  !-----------------------------------------------------------------------------
   if (self%time < self%rt_next) then
+    if (self%time + self%dtime > self%rt_next) then
+      self%dt_fixed = self%rt_next-self%time
+      if (verbose > 0) &
+        print *, self%id, 'rt_t%update: setting dt_fixed =', self%dt_fixed
+    end if
     call self%solver_t%update
   else
     !---------------------------------------------------------------------------
-    ! Prevent time slot rotation and time update, as long as only RT is done
+    ! Cancel the fixed time step, and prevent time slot rotation and time update, 
+    ! as long as only RT is done
     !---------------------------------------------------------------------------
+    self%dt_fixed = -1.0
     self%rotated = .true.
     !---------------------------------------------------------------------------
     ! Compute the opacity and source function for all bins
@@ -228,7 +255,6 @@ SUBROUTINE update (self)
     if (self%eos_time < self%time) then
       call self%rt_eos
       self%eos_time = self%time
-                                                            call self%test_d (2)
     end if
     self%done = .true.
     n_solve = 0
@@ -249,7 +275,6 @@ SUBROUTINE update (self)
           else
             omega%time = self%rt_next
           end if
-                                                  call self%test_d (2+i_omega)
           n_solve = n_solve+1
           if (verbose > 0) &
             print *, self%id, i_omega, 'rt_t%update: time =', &
@@ -263,10 +288,24 @@ SUBROUTINE update (self)
         print *, self%id, i_omega, 'rt_t%update: time, rt_next =', omega%time, self%rt_next 
     end do
     !---------------------------------------------------------------------------
-    ! If (and only if) all omega are done, update the time for the next RT solution
+    ! If (and only if) all omega are done, sum up the net heating rates and
+    ! update the time for the next RT solution
     !---------------------------------------------------------------------------
     if (self%done) then
       self%rt_next = self%rt_next + self%rt_time
+      q => self%mem(:,:,:,self%idx%qr,self%it,1)
+      q = 0.0
+      do i_omega=1,self%n_omega
+        omega => self%omega(i_omega)
+        do i_bin=1,self%n_bin
+          q = q + omega%mem(:,:,:,i_bin,1,1)*self%w_bin(i_bin)*omega%w
+        end do
+      end do
+      if (self%id==1 .and. verbose > 0) then
+        n_tot = max(n_min+n_max+n_dif+n_ful,1)
+        print '(1x,a,4f8.3)', 'rt_t%update: n_min, n_max, n_dif, n_ful =', &
+          n_min/n_tot, n_max/n_tot, n_dif/n_tot, n_ful/n_tot
+      end if
     end if
     if (verbose > 1) &
       print *, self%id, 'rt_t%update: n_solve, rt_next, done =', &
@@ -381,8 +420,9 @@ FUNCTION upstream_is_ok (self, i_omega)
         if (nbtask%position(3) /= self%position(3)) then
           upstream_is_ok = .false.
           if (verbose > 1) &
-            print *, self%id, i_omega, 'rt_t%upstream_is_ok: fail on id, mu, pos =', &
-              nbtask%id, nbtask%mu, nbtask%position
+            print *, self%id, i_omega, &
+              'rt_t%upstream_is_ok: fail on id, mu, pos =', &
+              nbtask%id, nbtask%mu, nbtask%time, omega%time
           exit
         end if
       end if
@@ -496,9 +536,10 @@ SUBROUTINE integral_solver (self, k, s, qin, qout, i3, l1, l3)
   integer:: i3, l1, l3, iv
   !.............................................................................
   integer:: l(3), u(3), i1, i2
-  real:: dz1, dz2, dtau1, dtau2, dsdtau1, dsdtau2, d2sdtau2, ex0, ex2
+  real:: dz1, dz2, dsdtau1, dsdtau2, d2sdtau2, ex0, ex2, dtaumin, dtaumax
   integer, save:: itimer=0
   real(8), pointer:: z(:)
+  real, dimension(self%mesh(1)%gn):: dtau1, dtau2
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%integral_solver', itimer=itimer)
   dz2 = self%mesh(3)%d/2.0
@@ -508,17 +549,45 @@ SUBROUTINE integral_solver (self, k, s, qin, qout, i3, l1, l3)
   dz1      = abs(z(l1)-z(2))*0.5
   dz2      = abs(z(2)-z(l3))*0.5
   do i2=l(2),u(2)
-    do i1=l(1),u(2)
-      dtau1    = dz1*(k(i1,i2,i3, 2) + k(i1,i2,i3,l1))
-      dtau2    = dz2*(k(i1,i2,i3,l3) + k(i1,i2,i3, 2))
-      dsdtau1  =     (s(i1,i2,i3, 2) - s(i1,i2,i3,l1))/dtau1
-      dsdtau2  =     (s(i1,i2,i3,l3) - s(i1,i2,i3, 2))/dtau2
-      d2sdtau2 = (dsdtau2 - dsdtau1)*2.0/(dtau1+dtau2)
-      ex0      = exp(-dtau1)
-      ex2      = (1.0-ex0) - dtau1*ex0
-      qout(i1,i2,i3) = qin(i1,i2,i3,l1)*ex0 &
-                        + d2sdtau2     *ex2
-    end do
+    dtau1(l(1):u(1)) = dz1*(k(l(1):u(1),i2,i3,2)+k(l(1):u(1),i2,i3,l1))
+    dtau2(l(1):u(1)) = dz2*(k(l(1):u(1),i2,i3,2)+k(l(1):u(1),i2,i3,l3))
+    dtaumin = minval(dtau1(l(1):u(1)))
+    dtaumax = maxval(dtau1(l(1):u(1)))
+    if (dtaumin > dtau_max) then
+      do i1=l(1),u(1)
+        qout(i1,i2,i3) = 0.0
+      end do
+      !$omp atomic
+      n_max = n_max+1
+    else if (dtaumin > dtau_dif) then
+      do i1=l(1),u(1)
+        dsdtau1  =     (s(i1,i2,i3, 2) - s(i1,i2,i3,l1))/dtau1(i1)
+        dsdtau2  =     (s(i1,i2,i3,l3) - s(i1,i2,i3, 2))/dtau2(i1)
+        d2sdtau2 = (dsdtau2 - dsdtau1)*2.0/(dtau1(i1)+dtau2(i1))
+        qout(i1,i2,i3) = d2sdtau2
+      end do
+      !$omp atomic
+      n_dif = n_dif+1
+    else if (dtaumax < dtau_min) then
+      do i1=l(1),u(1)
+        ex0      = 1.0-dtau1(i1)
+        qout(i1,i2,i3) = qin(i1,i2,i3,l1)*ex0
+      end do
+      !$omp atomic
+      n_min = n_min+1
+    else 
+      do i1=l(1),u(1)
+        dsdtau1  =     (s(i1,i2,i3, 2) - s(i1,i2,i3,l1))/dtau1(i1)
+        dsdtau2  =     (s(i1,i2,i3,l3) - s(i1,i2,i3, 2))/dtau2(i1)
+        d2sdtau2 = (dsdtau2 - dsdtau1)*2.0/(dtau1(i1)+dtau2(i1))
+        ex0      = exp(-dtau1(i1))
+        ex2      = (1.0-ex0) - dtau1(i1)*ex0
+        qout(i1,i2,i3) = qin(i1,i2,i3,l1)*ex0 &
+                          + d2sdtau2     *ex2
+      end do
+      !$omp atomic
+      n_ful = n_ful+1
+    end if
   end do
   call trace%end (itimer)
 END SUBROUTINE integral_solver
@@ -538,14 +607,17 @@ SUBROUTINE prepare_layers (self, omega, ib)
   l = self%mesh(1:3)%li
   u = self%mesh(1:3)%ui
   !-----------------------------------------------------------------------------
-  ! Vertical boundary conditions
+  ! Vertical boundary conditions; here we explicitly assume the vertical direction
+  ! to be downwards, so the lower boundar index-wise os the top physical booundary,
+  ! where I=0 => Q=-S, and the "upper" boundary is the physical "bottom" boundary,
+  ! where I=S => Q=0.
   !-----------------------------------------------------------------------------
   if     (self%mesh(3)%lower_boundary .and. omega%mu > 0.0) then
-    self%mem(:,:,l(3)-1,:,1,1) = -self%src(:,:,l(3)-1,:)
+    omega%mem(:,:,l(3)-1,:,1,1) = -self%src(:,:,l(3)-1,:)
     if (verbose > 1) &
       print *, self%id, omega%i_omega, 'rt_t%prepare_layers: using lower BC'
   else if(self%mesh(3)%upper_boundary .and. self%mu < 0.0) then
-    self%mem(:,:,u(3)+1,:,1,1) = 0.0
+    omega%mem(:,:,u(3)+1,:,1,1) = 0.0
     if (verbose > 1) &
       print *, self%id, omega%i_omega, 'rt_t%prepare_layers: using upper BC'
   end if
