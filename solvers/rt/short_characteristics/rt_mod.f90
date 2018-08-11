@@ -363,16 +363,21 @@ FUNCTION upstream_is_ok (self, i_omega)
     nbtask => nbor%task
     select type (nbtask)
       type is (rt_t)
-      !---------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       ! The upstream time must be larger than the local omega task time.
       ! Equal is not OK, to force initial start from the boundaries and in.
-      !---------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       if (nbtask%time <= omega%time) then
-        upstream_is_ok = .false.
-        if (verbose > 1) &
-          print *, self%id, i_omega, 'rt_t%upstream_is_ok: fail on id, mu, pos =', &
-            nbtask%id, nbtask%mu, nbtask%position
-        exit
+        !-----------------------------------------------------------------------
+        ! Ignore purely horizontal dependency, since it would never be resolved
+        !-----------------------------------------------------------------------
+        if (nbtask%position(3) /= self%position(3)) then
+          upstream_is_ok = .false.
+          if (verbose > 1) &
+            print *, self%id, i_omega, 'rt_t%upstream_is_ok: fail on id, mu, pos =', &
+              nbtask%id, nbtask%mu, nbtask%position
+          exit
+        end if
       end if
     end select
     nbor => nbor%next
@@ -691,12 +696,6 @@ FUNCTION needs (self, omega, task)
     !---------------------------------------------------------------------------
     if (is2(1)==0 .and. is1(1)/=0) needs = .false.
     if (is2(2)==0 .and. is1(2)/=0) needs = .false.
-    !---------------------------------------------------------------------------
-    ! Cannot allow purely horizontal dependencies, since they would never be
-    ! resolved.  Need to rely on delayed information, possibly also keeping
-    ! track of the delay, and requiring catch-up.
-    !---------------------------------------------------------------------------
-    if (is1(3)==0) needs = .false.
     if (verbose>0) then
       if (needs .or. verbose>1) print &
       '("RT task",2i5,4x,"needs patch",i5,4x,"rel pos:",3f8.3,4x,"ray:",3f8.3,6i3,l3)', &
