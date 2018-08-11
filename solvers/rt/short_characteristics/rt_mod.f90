@@ -640,7 +640,7 @@ FUNCTION needs (self, omega, task)
   !-----------------------------------------------------------------------------
   ! For purely vertical rays, only patches below or above are needed
   !-----------------------------------------------------------------------------
-  if (omega%mu==1.0) then
+  if (abs(omega%mu)==1.0) then
     do i=1,3
       if (is1(i)/=is2(i)) then
         needs = .false.
