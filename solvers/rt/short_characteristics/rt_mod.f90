@@ -40,7 +40,7 @@ MODULE rt_mod
     integer                    :: offset_o(2)
     real                       :: offset_p(2)
     real                       :: mu, phi, w
-    real(8), pointer           :: rt_t(:)
+    real(8), pointer           :: rt_tm(:)
     real(8)                    :: rt_time=0d0
     real(8)                    :: rt_next=0d0
     real(8)                    :: eos_time=-1d0
@@ -132,7 +132,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate data common to all sub-tasks
   !-----------------------------------------------------------------------------
-  allocate (self%rt_t(self%nt))
+  allocate (self%rt_tm(self%nt))
   allocate (self%rk (self%gn(1),self%gn(2),self%gn(3),n_bin))
   allocate (self%src(self%gn(1),self%gn(2),self%gn(3),n_bin))
   call io%bits_mem(storage_size(self%rk  ),product(shape(self%rk )),'rk')
