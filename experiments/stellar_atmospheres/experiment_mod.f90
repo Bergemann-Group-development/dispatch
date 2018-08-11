@@ -170,6 +170,7 @@ SUBROUTINE initial_condition (self)
   real, save, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn, dxidxup, dxidxdn
   real, save, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn, dyidyup, dyidydn
   real, save, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn, dzidzup, dzidzdn
+  real, dimension(:,:,:), allocatable:: rbuf
   real, dimension(:), pointer:: xi, yi, zi, xo, yo, zo
   integer:: nx, ny, nz
   !-----------------------------------------------------------------------------
@@ -226,6 +227,7 @@ SUBROUTINE initial_condition (self)
     ! we only use one thread per rank to initialize, computing also how many calls
     ! will be made, so the buffer can be deallocated when all patches are done
     !---------------------------------------------------------------------------
+    allocate (rbuf(my,mz,mx))
     allocate (buffer(mx+1,my+1,mz,self%nv))
     call io%bits_mem (storage_size (buffer), product(shape(buffer)),'buffer')
     recl = 4*product(dims)                                           ! FIXME
@@ -238,15 +240,19 @@ SUBROUTINE initial_condition (self)
     ! Read data, and swap indices, so z becomes vertical
     !---------------------------------------------------------------------------
     do iv=1,min(self%nv,9)
-      read (io_unit%data, rec=iv) (((buffer(ix,iy,iz,ii(iv)), iy=1,my), iz=1,mz), ix=1,mx)
+      read (io_unit%data, rec=iv) rbuf
+      do iz=1,mz; do iy=1,my; do ix=1,mx
+        buffer(ix,iy,iz,ii(iv)) = rbuf(iy,iz,ix)
+      end do; end do; end do
       if (verbose > 0) &
-        print *, iv, minval(buffer(:,:,:,ii(iv))), maxval(buffer(:,:,:,ii(iv)))
+        print *, iv, minval(rbuf), maxval(rbuf)
     end do
+    deallocate(rbuf)
+    buffer(mx+1,:,:,:) = buffer(1,:,:,:)
+    buffer(:,my+1,:,:) = buffer(:,1,:,:)
     !---------------------------------------------------------------------------
     ! Add periodic extension
     !---------------------------------------------------------------------------
-    buffer(mx+1,:,:,:) = buffer(1,:,:,:)
-    buffer(:,my+1,:,:) = buffer(:,1,:,:)
     close (io_unit%data)
     if (verbose > 0) then
       print *,'input model:'
@@ -288,7 +294,7 @@ SUBROUTINE initial_condition (self)
                                    xo, yo, zo,     ff(:,:,:,iv), order)
     end if
     if (verbose>0) &
-      print '(i4,i3,2x,2(2x,a,3(2x,2f7.2)))', self%id, iv, &
+      print '(i5,i3,2x,2(2x,a,3(2x,2f7.2)))', self%id, iv, &
       'xyz(in):', &
       minval(xi), maxval(xi), minval(yi), maxval(yi), minval(zi), maxval(zi), &
       'xyz(out):', &
