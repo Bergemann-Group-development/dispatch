@@ -66,6 +66,7 @@ MODULE rt_mod
   end type
   real, parameter:: pi=acos(-1.0)
   integer:: verbose=1
+  logical:: vertical_propagation=.false.
 CONTAINS
 
 !> =============================================================================
@@ -81,7 +82,7 @@ SUBROUTINE init (self)
   class(task_t), pointer:: task
   class(rt_t),   pointer:: rt_task
   logical, save:: first_time=.true.
-  namelist /rt_params/ n_mu, n_phi, n_bin, verbose, rt_time
+  namelist /rt_params/ n_mu, n_phi, n_bin, verbose, rt_time, vertical_propagation
   !-----------------------------------------------------------------------------
   ! Read parameters
   !-----------------------------------------------------------------------------
@@ -148,7 +149,7 @@ SUBROUTINE init (self)
     omega%id      = self%id
     omega%i_omega = i_omega
     omega%nv      = n_bin
-    omega%time    = -1d0
+    omega%time    = -self%rt_time
     allocate (omega%mem(self%gn(1),self%gn(2),self%gn(3),n_bin,1,1))
     call io%bits_mem(storage_size(omega%mem),product(shape(omega%mem)),'q')
     omega%q => omega%mem(:,:,:,:,1,1)
@@ -242,11 +243,17 @@ SUBROUTINE update (self)
       if (omega%time < self%rt_next) then
         if (self%upstream_is_ok(i_omega)) then
           call self%solve (omega)
-          omega%time = self%rt_next
+          if (vertical_propagation) then
+            omega%time = omega%time + self%rt_time*abs(omega%mu)
+            omega%time = min(omega%time, self%rt_next)
+          else
+            omega%time = self%rt_next
+          end if
                                                   call self%test_d (2+i_omega)
           n_solve = n_solve+1
           if (verbose > 0) &
-            print *, self%id, i_omega, 'rt_t%update: time =', omega%time
+            print *, self%id, i_omega, 'rt_t%update: time =', &
+              omega%time, self%rt_next
         else if (verbose > 1) then
             print *, self%id, i_omega, 'rt_t%update: upstream_not_OK' 
         end if
@@ -261,7 +268,7 @@ SUBROUTINE update (self)
     if (self%done) then
       self%rt_next = self%rt_next + self%rt_time
     end if
-    if (verbose > 0) &
+    if (verbose > 1) &
       print *, self%id, 'rt_t%update: n_solve, rt_next, done =', &
         n_solve, self%rt_next, self%done
   end if
@@ -696,8 +703,8 @@ FUNCTION needs (self, omega, task)
     !---------------------------------------------------------------------------
     if (is2(1)==0 .and. is1(1)/=0) needs = .false.
     if (is2(2)==0 .and. is1(2)/=0) needs = .false.
-    if (verbose>0) then
-      if (needs .or. verbose>1) print &
+    if (verbose > 0) then
+      if (needs .or. verbose > 1) print &
       '("RT task",2i5,4x,"needs patch",i5,4x,"rel pos:",3f8.3,4x,"ray:",3f8.3,6i3,l3)', &
       self%id, omega%i_omega, task%id, ds1, ds2, is1, is2, needs
      end if
