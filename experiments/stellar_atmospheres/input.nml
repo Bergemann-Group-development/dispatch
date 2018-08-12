@@ -1,5 +1,6 @@
 
-&experiment_params      file='mhd63' dims=3*63 order=1 verbose=0 /
+&experiment_params      file='mhd63' dims=3*63 order=1 verbose=1 /
+&ic_params              file='mhd63' order=1 verbose=2 /
 &rt_params              n_mu=2 n_phi=3 n_bin=4 verbose=0 rt_time=0.01 vertical_propagation=f /
 
 &io_params              verbose=0 do_trace=f do_output=t method='parallel' id_debug=0 /

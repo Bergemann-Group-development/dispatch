@@ -23,6 +23,7 @@ MODULE experiment_mod
   USE link_mod
   USE rt_solver_mod
   USE solver_mod
+  !USE initial_mod
   implicit none
   private
   type, public, extends(rt_solver_t):: experiment_t
@@ -75,13 +76,13 @@ SUBROUTINE init (self)
   ! Initial conditions
   !----------------------------------------------------------------------------
   self%periodic(3) = .false.                     ! non-periodic vertically
-  call self%initial_condition
+  !call initial%condition (self)
   call self%init_bdries
   if (verbose > 0) then
     if (self%mesh(3)%lower_boundary) print *, self%id, 'at lower B'
     if (self%mesh(3)%upper_boundary) print *, self%id, 'at upper B'
   end if
-  call self%boundary_conditions
+  !call self%boundary_conditions
   call trace_end (itimer=itimer)
 END SUBROUTINE init
 
@@ -109,10 +110,11 @@ SUBROUTINE update (self)
       call io%bits_mem (-storage_size (buffer), product(shape(buffer)),'buffer')
   end if
 !  call self%solver_t%update
-  call self%rt_solver_t%update
   call self%test_d (50)
-  call self%boundary_conditions
+  call self%rt_solver_t%update
   call self%test_d (51)
+  call self%boundary_conditions
+  call self%test_d (52)
   call trace_end
 END SUBROUTINE update
 
