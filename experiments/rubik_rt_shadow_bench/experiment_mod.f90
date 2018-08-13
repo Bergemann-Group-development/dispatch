@@ -127,6 +127,8 @@ SUBROUTINE q_diffuse (self, q)
     !---------------------------------------------------------------------------
     rk_min=minval(self%rt%rk)
     allocate(fmax(self%gn(1), self%gn(2), self%gn(3)))
+    print *, 'pg, d, pg/d max', maxval(self%pg), maxval(self%d), minval(self%d), maxval(self%pg/self%d)
+    print *, 'pg/d 4', maxval((self%pg/self%d)**4)
     fmax = (self%pg/self%d)**4/self%pg*(rk_min*minval(self%ds))
     fmax = fmax/(1.+(rk_min*minval(self%ds))**2)
     u_max = scaling%stefan*16./3.*self%fmaxval(fmax)*self%courant/self%cdtd*epsilon

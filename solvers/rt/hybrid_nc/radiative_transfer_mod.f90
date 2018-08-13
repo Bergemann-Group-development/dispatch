@@ -210,7 +210,7 @@ SUBROUTINE rt_setup (self, level_min)
       link => rt_link
     end do
   end do
-  call self%print
+  !call self%print
   call trace%end (itimer)
   if (io%master) then
     print *, '=================================='
