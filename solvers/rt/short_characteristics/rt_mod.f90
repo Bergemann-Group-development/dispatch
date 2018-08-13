@@ -169,7 +169,7 @@ SUBROUTINE init (self)
         i_omega = i_omega+1
         omega => self%omega(i_omega)
         omega%mu  = dir*mu(i_mu)
-        omega%w   = w_mu(i_mu)
+        omega%w   = w_mu(i_mu)*4.*pi/n_phi
         omega%phi = math%pi*(modulo(real(2*(i_phi-1))/n_phi + (dir+1)/2.0, 2.0) - 1.0)
       end do
     end do
@@ -178,7 +178,7 @@ SUBROUTINE init (self)
     i_omega = i_omega+1
     omega => self%omega(i_omega)
     omega%mu  = dir*mu(n_mu)
-    omega%w   = w_mu(n_mu)
+    omega%w   = w_mu(n_mu)*4.*pi
     omega%phi = 0.0
   end do
   !-----------------------------------------------------------------------------
@@ -298,7 +298,8 @@ SUBROUTINE update (self)
       do i_omega=1,self%n_omega
         omega => self%omega(i_omega)
         do i_bin=1,self%n_bin
-          q = q + omega%mem(:,:,:,i_bin,1,1)*self%w_bin(i_bin)*omega%w
+          q = q + self%rk(:,:,:,i_bin)*omega%mem(:,:,:,i_bin,1,1) &
+                 *self%w_bin(i_bin)*omega%w
         end do
       end do
       if (self%id==1 .and. verbose > 0) then
@@ -613,29 +614,31 @@ SUBROUTINE prepare_layers (self, omega, ib)
   ! where I=S => Q=0.
   !-----------------------------------------------------------------------------
   if     (self%mesh(3)%lower_boundary .and. omega%mu > 0.0) then
-    omega%mem(:,:,l(3)-1,:,1,1) = -self%src(:,:,l(3)-1,:)
+    omega%mem(:,:,l(3)-1,:,1,1) = -self%src(:,:,l(3)-1,:)* &
+      exp(-self%rk(:,:,l(3),:)*self%ds(3))
     if (verbose > 1) &
       print *, self%id, omega%i_omega, 'rt_t%prepare_layers: using lower BC'
+    !print *,'xxx1',q(lo) = omega%mem(3,3,l(3-1),1,1,1)
   else if(self%mesh(3)%upper_boundary .and. self%mu < 0.0) then
     omega%mem(:,:,u(3)+1,:,1,1) = 0.0
     if (verbose > 1) &
       print *, self%id, omega%i_omega, 'rt_t%prepare_layers: using upper BC'
   end if
   !-----------------------------------------------------------------------------
-  do i3=2,self%mesh(3)%gn-1
+  do i3=self%mesh(3)%li,self%mesh(3)%ui
     call self%calculate_offsets (i3, i3-1)
-    call self%bilinear (self%rk (:,:,i3,ib)     , omega%layers(:,:,i3,1,1))
-    call self%bilinear (self%src(:,:,i3,ib)     , omega%layers(:,:,i3,1,2))
-    call self%bilinear (omega%mem(:,:,i3,ib,1,1), omega%layers(:,:,i3,1,3))
+    call self%bilinear (self%rk  (:,:,i3-1,ib)    , omega%layers(:,:,i3,1,1))
+    call self%bilinear (self%src (:,:,i3-1,ib)    , omega%layers(:,:,i3,1,2))
+    call self%bilinear (omega%mem(:,:,i3-1,ib,1,1), omega%layers(:,:,i3,1,3))
     !---------------------------------------------------------------------------
     omega%layers(:,:,i3,2,1) = self%rk (:,:,i3,ib)
     omega%layers(:,:,i3,2,2) = self%src(:,:,i3,ib)
     omega%layers(:,:,i3,2,3) = omega%mem(:,:,i3,ib,1,1)
     !---------------------------------------------------------------------------
     call self%calculate_offsets (i3, i3+1)
-    call self%bilinear (self%rk (:,:,i3,ib)     , omega%layers(:,:,i3,3,1))
-    call self%bilinear (self%src(:,:,i3,ib)     , omega%layers(:,:,i3,3,2))
-    call self%bilinear (omega%mem(:,:,i3,ib,1,1), omega%layers(:,:,i3,3,3))
+    call self%bilinear (self%rk  (:,:,i3+1,ib)    , omega%layers(:,:,i3,3,1))
+    call self%bilinear (self%src (:,:,i3+1,ib)    , omega%layers(:,:,i3,3,2))
+    call self%bilinear (omega%mem(:,:,i3+1,ib,1,1), omega%layers(:,:,i3,3,3))
   end do
   call trace%end (itimer)
 END SUBROUTINE prepare_layers

@@ -111,9 +111,12 @@ SUBROUTINE boundary_conditions (self)
       self%lower = self%mem(:,:,lb(3):lo(3),:,self%it,1)
       if (verbose > 0) &
         print *,'LBC',self%id,self%position, &
-        minval(self%lower(:,:,:,1)),maxval(self%lower(:,:,:,1))
+        minval(self%lower(:,:,:,self%idx%e)),maxval(self%lower(:,:,:,self%idx%e))
     else
       self%mem(:,:,lb(3):lo(3),:,self%it,1) = self%lower
+      if (verbose > 1) &
+        print *,'LBC',self%id,self%position, &
+        minval(self%lower(:,:,:,self%idx%e)),maxval(self%lower(:,:,:,self%idx%e))
     end if
   end if
   if (self%mesh(3)%upper_boundary) then

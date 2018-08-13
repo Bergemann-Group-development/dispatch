@@ -418,7 +418,7 @@ SUBROUTINE pde (self)
   ! Radiative heating / cooling, if any
   !-----------------------------------------------------------------------------
   if (self%idx%qr > 0) then
-!    dedt = dedt + self%mem(:,:,:,self%idx%qr,self%it,1)
+    dedt = dedt + self%mem(:,:,:,self%idx%qr,self%it,1)
   end if
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
@@ -525,7 +525,7 @@ END SUBROUTINE output
 FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  real, dimension(:,:,:), pointer:: d, e
+  real, dimension(:,:,:), pointer:: d, e, tt
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure')
@@ -538,12 +538,14 @@ FUNCTION gas_pressure (self) RESULT (pg)
       pg = e*(self%gamma-1)
     end if
   else
-    call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg)
+    tt => self%mem(:,:,:,self%idx%tt,self%it,1)
+    call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg, tt=tt)
     if (io%master .and. (verbose>1 .or. nprint>0)) then
       nprint = nprint-1
       print *, self%id, 'lookup_table: lnd =', minval(self%lnd), maxval(self%lnd)
       print *, self%id, 'lookup_table:  ee =', minval(self%ee ), maxval(self%ee )
       print *, self%id, 'lookup_table:  pg =', minval(pg),       maxval(pg)
+      print *, self%id, 'lookup_table:  tt =', minval(tt),       maxval(tt)
     end if
   end if
   call trace%end

@@ -130,7 +130,7 @@ SUBROUTINE init (task_list)
     do iz=1,mz; do iy=1,my; do ix=1,mx
       buffer(ix,iy,iz) = rbuf(iy,iz,ix)
     end do; end do; end do
-    if (verbose > 0) &
+    if (verbose == 1) &
       print *, iv, minval(rbuf), maxval(rbuf)
     !---------------------------------------------------------------------------
     ! Add periodic extension
@@ -145,18 +145,13 @@ SUBROUTINE init (task_list)
     link => task_list%head
     do while (associated(link))
       patch => task2patch(link%task)
-      if (verbose==3) print *, 'ic_t%init: spawning task for patch%id =', patch%id
+      if (verbose==4) print *, 'ic_t%init: spawning task for patch%id =', patch%id
       !-------------------------------------------------------------------------
       ! Spawn OMP tasks to interpolate the patch data
       !-------------------------------------------------------------------------
       !$omp task default(shared) firstprivate(patch,iiv)
         call interpolate (iiv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ymdn, zmdn)
-        call patch%init_bdries
-        select type (patch)
-        class is (experiment_t)
-          call patch%boundary_conditions
-        end select
-      !$omp end task
+       !$omp end task
       link => link%next
     end do
     !$omp end single
@@ -214,13 +209,13 @@ SUBROUTINE interpolate (iv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ymdn, z
   !-----------------------------------------------------------------------
   ! Diagnostic output
   !-----------------------------------------------------------------------
-  if (verbose==1) then
+  if (verbose==2) then
     print '(i5,i3,2x,2(2x,a,3(2x,2f7.2)))', patch%id, iv, &
     'xyz(in):', &
     minval(xi), maxval(xi), minval(yi), maxval(yi), minval(zi), maxval(zi), &
     'xyz(out):', &
     minval(xo), maxval(xo), minval(yo), maxval(yo), minval(zo), maxval(zo)
-  else if (verbose==2) then
+  else if (verbose==3) then
       o = maxloc(ff)
       print '(1x,a,2i3,3i4,2x,3f8.3,1p,2(2x,2e12.4))', &
         'omp,iv,ix,iy,iz,pos,bufmin,bufmax,fmin,fmax =', omp%thread, iv, o, m%p, &

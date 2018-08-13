@@ -76,9 +76,10 @@ END SUBROUTINE copy
 !> =============================================================================
 SUBROUTINE output (self)
   class(index_t):: self
-  integer:: d, e, et, s, px, py, pz, bx, by, bz, phi, dphi, p1, p2, p3, b1, b2, b3
-  integer:: dddt, dedt, dsdt, dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, dphidt, qr
-  namelist /idx_nml/ d, e, s, px, py, pz, bx, by, bz, phi, dphi, p1, p2, p3, b1, b2, b3
+  integer:: &
+    d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3
+  namelist /idx_nml/ &
+    d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3
   if (io%time_derivs) then
     call output_time_derivs (self)
   else
@@ -99,8 +100,9 @@ SUBROUTINE output (self)
     b1   = self%bx  - 1
     b2   = self%by  - 1
     b3   = self%bz  - 1
+    qr   = self%qr  - 1
+    tt   = self%tt  - 1
     phi  = self%phi - 1
-    dphi = self%dphi - 1
     write (io_unit%data, idx_nml)
   end if
 END SUBROUTINE output
@@ -110,16 +112,14 @@ END SUBROUTINE output
 !> =============================================================================
 SUBROUTINE output_time_derivs (self)
   class(index_t):: self
-  integer:: d, e, et, s, px, py, pz, bx, by, bz, phi, p1, p2, p3, b1, b2, b3, &
-            dphi, qr, tt
-  integer:: dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, dphidt, dddt, dedt, dsdt
-  integer:: dp1dt, dp2dt, dp3dt, db1dt, db2dt, db3dt
-  namelist /idx_nml/ d, e, s, phi, dphi, qr, &
-                     dddt, dedt, dsdt, dphidt, &
-                     px, py, pz, bx, by, bz, &
-                     p1, p2, p3, b1, b2, b3, &
-                     dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, &
-                     dp1dt, dp2dt, dp3dt, db1dt, db2dt, db3dt
+  integer:: &
+    d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3, &
+    dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, dphidt, dddt, dedt, dsdt, &
+    dp1dt, dp2dt, dp3dt, db1dt, db2dt, db3dt
+  namelist /idx_nml/ &
+    d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3, &
+    dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, dphidt, dddt, dedt, dsdt, &
+    dp1dt, dp2dt, dp3dt, db1dt, db2dt, db3dt
   d   = self%d   - 1
   e   = self%e   - 1
   s   = self%s   - 1
