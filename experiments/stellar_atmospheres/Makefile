@@ -31,11 +31,8 @@ sinclude $(TOP)/config/Makefile
 $(EXEC): cartesian_mod.o setup_mod.o eos_mod.o dispatcher_mod.o ic_mod.o
 
 # Dependencies
-experiment_mod.o        : io_mod.o trace_mod.o download_mod.o link_mod.o rt_solver_mod.o
-stagger_mod.o           : io_mod.o trace_mod.o scalar_mod.o vector_mod.o \
-                          stagger_16.o stagger_20.o stagger_24.o stagger_32.o stagger_36.o
-mhd_mod.o               : io_mod.o trace_mod.o scalar_mod.o vector_mod.o force_mod.o patch_mod.o scaling_mod.o units_mod.o download_mod.o \
-                          stagger_mod.o mesh_mod.o
-patches_mod.o           : io_mod.o trace_mod.o timestep_mod.o
-eos_mod.o               : io_mod.o trace_mod.o
-ic_mod.o                : io_mod.o trace_mod.o patch_mod.o mesh_mod.o link_mod.o task_list_mod.o lagrange_mod.o
+experiment_mod.o        : link_mod.o rt_solver_mod.o
+ic_mod.o                : task_list_mod.o lagrange_mod.o experiment_mod.o
+scaling_mod.o           : io_mod.o trace_mod.o units_mod.o
+#mhd_mod.o               : io_mod.o trace_mod.o scalar_mod.o vector_mod.o force_mod.o patch_mod.o scaling_mod.o units_mod.o download_mod.o \
+#                          stagger_mod.o mesh_mod.o

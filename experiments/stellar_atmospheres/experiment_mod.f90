@@ -14,7 +14,6 @@
 !> =============================================================================
 MODULE experiment_mod
   USE io_mod
-  USE bits_mod
   USE trace_mod
   USE gpatch_mod
   USE link_mod
@@ -61,7 +60,6 @@ SUBROUTINE init (self)
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
   call self%rt_solver_t%init
-  call self%set(bits%static)
   self%force_per_unit_mass => force
   !----------------------------------------------------------------------------
   ! Boundary setup

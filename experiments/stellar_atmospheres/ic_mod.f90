@@ -1,3 +1,19 @@
+!> =============================================================================
+!> IC module for reading in legacy Stagger snapshots into existing patches.
+!>
+!> The purpose with this separate module is to avoid having to load the entire
+!> snapshot on each MPI rank --  there isn't enough memory to do that on the
+!> largest experiments from the archive.  In this module one can loop over either
+!> variable index iv, or even iv and depth index, reading only one xy-slice at a
+!> time.
+!>
+!> To save startup timme, separate OMP tasks are spawned for each patch, to work
+!> in parallel on the interpolation of the ICs to the new patch mesh.
+!>
+!> The separate reader also saves memory because it operates before the RT solver
+!> has started to run, allocating additional scratch memory.
+!> =============================================================================
+
 MODULE IC_mod
   USE io_mod
   USE trace_mod
@@ -6,6 +22,7 @@ MODULE IC_mod
   USE link_mod
   USE task_list_mod
   USE lagrange_mod
+  USE experiment_mod
   USE omp_mod
   implicit none
   private
@@ -38,12 +55,13 @@ SUBROUTINE init (task_list)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('ic_mod%init', itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Continue in single thread of parallel region
-  !-----------------------------------------------------------------------------
   rewind (io%input)
   read (io%input, ic_params, iostat=iostat)
-  if (io%master) write (*, ic_params)
+  if (io%master) then
+    write (*, ic_params)
+  else
+    verbose = 0
+  end if
   !-----------------------------------------------------------------------------
   ! Pick up patch info from task_list
   !-----------------------------------------------------------------------------
@@ -53,16 +71,18 @@ SUBROUTINE init (task_list)
   n = nint(m%b/m%d)
   n(3) = n(3)+4
   !---------------------------------------------------------------------------
-  ! Read the vertical meshs from the .msh file
+  ! Read the mesh meta-data from the .msh file
   !---------------------------------------------------------------------------
-  print *,'reading mesh data from ' //trim(file)//'.msh'
-  print *, 'setup dimensions =', n, nv
   open (io_unit%data, file=trim(file)//'.msh', form='unformatted')
   read(io_unit%data) mx, mz, my
-  print *, ' file dims =', mx, mz, my
-  print *, ' mesh dims =', m%n, m%gn
-  print *, 'setup dims =', nint(m%b/m%d), m%b
-  ! allocate single-precision variables for reading
+  if (io%master) then
+    print *,'reading mesh data from ' //trim(file)//'.msh'
+    print *, 'setup dimensions =', n, nv
+    print *, ' file dims =', mx, mz, my
+    print *, ' mesh dims =', m%n, m%gn
+    print *, 'setup dims =', nint(m%b/m%d), m%b
+  end if
+  ! allocate mesh arrays
   allocate( dxm(mx), dxmdn(mx), xm(mx+1), xmdn(mx+1))
   allocate( dym(my), dymdn(my), ym(my+1), ymdn(my+1))
   allocate( dzm(mz), dzmdn(mz), zm(mz  ), zmdn(mz  ))
@@ -70,6 +90,7 @@ SUBROUTINE init (task_list)
   read(io_unit%data) dym, dymdn, (ym(iy),iy=1,my), (ymdn(iy),iy=1,my)
   read(io_unit%data) dzm, dzmdn, (zm(iz),iz=1,mz), (zmdn(iz),iz=1,mz)
   read(io_unit%data) dxm, dxmdn, (xm(ix),ix=1,mx), (xmdn(ix),ix=1,mx)
+  ! periodic extensions
   xm(mx+1) = xm(mx) + (xm(mx)-xm(mx-1))
   ym(my+1) = ym(my) + (ym(my)-ym(my-1))
   xmdn(mx+1) = xmdn(mx) + (xmdn(mx)-xmdn(mx-1))
@@ -80,31 +101,31 @@ SUBROUTINE init (task_list)
         iy, minval(dxm), minval(dym), dzm(iz)
     end do
   end if
-  print *, 'min(dx),min(dy),min(dz)', &
-        minval(dxm), minval(dym), minval(dzm)
-  print *, 'nz for max res:', int((zm(my)-zm(1))/minval(dzm))+1
+  if (io%master) then
+    print *, 'min(dx),min(dy),min(dz)', minval(dxm), minval(dym), minval(dzm)
+    print *, 'nz for max res:', int((zm(my)-zm(1))/minval(dzm))+1
+  end if
   close (io_unit%data)
   !---------------------------------------------------------------------------
-  ! At first call, allocate a buffer and read the entire file -- this is OK since
-  ! we only use one thread per rank to initialize, computing also how many calls
-  ! will be made, so the buffer can be deallocated when all patches are done
+  ! Allocate buffers for reading and for transposing to z vertical
   !---------------------------------------------------------------------------
   allocate (rbuf(my,mz,mx))
   call io%bits_mem (storage_size (rbuf), mx*my*mz)
   allocate (buffer(mx+1,my+1,mz))
   call io%bits_mem (storage_size (buffer), product(shape(buffer)), 'buffer')
-  recl = 4*product(shape(rbuf))                                           ! FIXME
+  recl = 4*product(shape(rbuf))     ! FIXME; this could be compiler dependent
   if (io%master) &
     print *,'reading MHD data from ' //trim(file)//'.dat'
   open (io_unit%data, file=trim(file)//'.dat', form='unformatted', access='direct', recl=recl)
   ii=[patch%idx%d,patch%idx%py,patch%idx%pz,patch%idx%px, &
       patch%idx%e,patch%idx%tt,patch%idx%by,patch%idx%bz,patch%idx%bx]
   !-----------------------------------------------------------------------------
-  ! Read data, and swap indices, so z becomes vertical
+  ! Read data and swap indices, so z becomes vertical
   !-----------------------------------------------------------------------------
   do iv=1,min(nv,9)
     iiv = ii(iv)
-    print *, 'reading variable index iv =', iv
+    if (io%master) &
+      print *, 'reading variable index iv =', iv
     read (io_unit%data, rec=iv) rbuf
     do iz=1,mz; do iy=1,my; do ix=1,mx
       buffer(ix,iy,iz) = rbuf(iy,iz,ix)
@@ -125,10 +146,16 @@ SUBROUTINE init (task_list)
     do while (associated(link))
       patch => task2patch(link%task)
       if (verbose==3) print *, 'ic_t%init: spawning task for patch%id =', patch%id
+      !-------------------------------------------------------------------------
+      ! Spawn OMP tasks to interpolate the patch data
+      !-------------------------------------------------------------------------
       !$omp task default(shared) firstprivate(patch,iiv)
         call interpolate (iiv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ymdn, zmdn)
-        !call patch%init_bdries
-        !call patch%boundary_conditions
+        call patch%init_bdries
+        select type (patch)
+        class is (experiment_t)
+          call patch%boundary_conditions
+        end select
       !$omp end task
       link => link%next
     end do
@@ -138,7 +165,8 @@ SUBROUTINE init (task_list)
   close (io_unit%data)
   deallocate (rbuf, buffer)
   deallocate (xm,ym,zm,xmdn,ymdn,zmdn)
-  print *,'init end'
+  if (io%master) &
+    print *,'ic_t%init finished'
   call trace_end
 END SUBROUTINE init
 
