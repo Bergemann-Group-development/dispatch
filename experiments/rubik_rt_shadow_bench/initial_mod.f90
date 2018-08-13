@@ -12,8 +12,6 @@ MODULE initial_mod
   implicit none
   private
 
-  real(8), parameter:: pi2=8d0*atan(1d0)
-
   type, public:: initial_t
     real:: clump_pos(3), clump_a, clump_b, d0, t0, clump_dfact, gamma
     character(len=64):: solver

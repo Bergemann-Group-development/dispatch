@@ -19,6 +19,7 @@ MODULE rt_mod
   USE trace_mod
   USE timer_mod
   USE index_mod
+  USE math_mod
   USE radau_mod
   USE solver_mod
   USE task_mod
@@ -64,7 +65,6 @@ MODULE rt_mod
     procedure:: bilinear
     procedure:: needs
   end type
-  real, parameter:: pi=acos(-1.0)
   real, save:: dtau_min=1e-3, dtau_max=30., dtau_dif=10.
   integer(8):: n_min=0, n_max=0, n_dif, n_ful=0
   integer, save:: verbose=1
@@ -170,7 +170,7 @@ SUBROUTINE init (self)
         omega => self%omega(i_omega)
         omega%mu  = dir*mu(i_mu)
         omega%w   = w_mu(i_mu)
-        omega%phi = pi*(modulo(real(2*(i_phi-1))/n_phi + (dir+1)/2.0, 2.0) - 1.0)
+        omega%phi = math%pi*(modulo(real(2*(i_phi-1))/n_phi + (dir+1)/2.0, 2.0) - 1.0)
       end do
     end do
   end do
@@ -188,7 +188,7 @@ SUBROUTINE init (self)
     do i_omega=1,n_omega
       omega => self%omega(i_omega)
       print *, 'rt_t%init: i_omega, elevation, phi, mu =', &
-        i_omega, nint(asin(omega%mu)*180./pi), nint(omega%phi*180./pi), &
+        i_omega, nint(asin(omega%mu)*180./math%pi), nint(omega%phi*180./math%pi), &
         omega%mu
     end do
   end if

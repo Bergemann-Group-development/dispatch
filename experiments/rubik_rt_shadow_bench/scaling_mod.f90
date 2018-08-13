@@ -4,6 +4,7 @@
 MODULE scaling_mod
   USE units_mod
   USE io_mod
+  USE math_mod
   implicit none
   private
   type, public:: scaling_t
@@ -35,7 +36,7 @@ SUBROUTINE init (self)
   self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature for given mu
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
   self%stefan = cgs%stefan/(self%p*self%u)*self%temp**4 ! Stefan's constant
-  self%stefan_pi = self%stefan/cgs%pi                   ! Stefan's constant / pi
+  self%stefan_pi = self%stefan/math%pi                  ! Stefan's constant / pi
   !code%r_earth = cgs%r_earth/self%l
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
@@ -51,7 +52,7 @@ SUBROUTINE init (self)
   1 format(1x,a,1p,e11.3)
     print *, 'omega consistency:', &
       sqrt(cgs%grav*cgs%m_sun/cgs%au**3)/ &
-      (2.*cgs%pi/cgs%yr) - 1.d0
+      (2.*math%pi/cgs%yr) - 1.d0
   end if
 END SUBROUTINE init
 

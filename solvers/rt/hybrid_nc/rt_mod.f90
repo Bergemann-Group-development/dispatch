@@ -4,6 +4,7 @@ MODULE rt_mod
   USE io_mod
   USE link_mod
   USE kinds_mod
+  USE math_mod
   USE mesh_mod
   USE ray_geometry_v3_mod
   USE rt_components_mod
@@ -82,7 +83,6 @@ MODULE rt_mod
     procedure :: update => update_rt
     procedure :: update_q
   end type
-  real, parameter:: pi4 = 16.*atan(1.)
   logical:: debug=.false., detailed_timer=.false.
 CONTAINS
 
@@ -160,7 +160,7 @@ SUBROUTINE init_rt (self)
   !> -------------------------------------------------------------------
   allocate (self%w_lambda(self%nv))                                     ! frequency bin weights
   allocate (self%w_bundle(self%nv))                                     ! space angle weights
-  self%w_bundle = pi4/(ray_geometry%head%n_ray_dirs * nd)               ! space angle weights FIXME: could/should be different weights for different directions
+  self%w_bundle = math%pi4/(ray_geometry%head%n_ray_dirs * nd)               ! space angle weights FIXME: could/should be different weights for different directions
 
   self%solver = solver                                                  ! solver selection
   select case(self%solver)
@@ -456,7 +456,7 @@ SUBROUTINE update_rt (self)
   do iv = 1, self%nv
     self%jj = self%jj + &
             + self%mem(:,:,:,iv,self%it,1) &
-            * self%w_bundle(iv) * self%w_lambda(iv)/(4.*cgs%pi)
+            * self%w_bundle(iv) * self%w_lambda(iv)/math%pi4
   end do
   self%jj = self%jj + self%src(:,:,:,1)
   !
@@ -1215,7 +1215,7 @@ SUBROUTINE get_q (self, time, de)
   associate (l => self%li, u => self%ui)
   de = de + (self%jj (l(1):u(1),l(2):u(2),l(3):u(3)) &
            - self%src(l(1):u(1),l(2):u(2),l(3):u(3),1)) &
-          * self%rk(l(1):u(1),l(2):u(2),l(3):u(3),1) * (4.*cgs%pi)
+          * self%rk(l(1):u(1),l(2):u(2),l(3):u(3),1) * math%pi4
   end associate
   call trace%end (itimer)
 END SUBROUTINE get_q
