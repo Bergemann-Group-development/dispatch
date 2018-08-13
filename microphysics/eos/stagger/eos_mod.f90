@@ -203,7 +203,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
   real, dimension(:,:,:)           , optional :: pg
   real, optional:: gamma
   !.............................................................................
-  real, dimension(:,:,:), pointer    :: lnd_loc=>null(), ee_loc=>null()
+  real, dimension(:,:,:), pointer    :: lnd_loc, ee_loc
   integer,         dimension(dim(1)) :: np,np1,ik,ntab,ik1,ntab1
   real(kind=4),    dimension(dim(1)) :: px,py,f00,f01,f10,f11, &
                                         fx00,fx01,fx10,fx11,fy00,fy01,fy10,fy11

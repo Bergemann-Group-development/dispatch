@@ -52,17 +52,16 @@ SUBROUTINE init (task_list)
   nv = patch%nv
   n = nint(m%b/m%d)
   n(3) = n(3)+4
-  print *, 'reading MHD data from ' //trim(file)//'.*'
-  print *, 'setup dimensions =', n, nv
   !---------------------------------------------------------------------------
   ! Read the vertical meshs from the .msh file
   !---------------------------------------------------------------------------
   print *,'reading mesh data from ' //trim(file)//'.msh'
+  print *, 'setup dimensions =', n, nv
   open (io_unit%data, file=trim(file)//'.msh', form='unformatted')
   read(io_unit%data) mx, mz, my
   print *, ' file dims =', mx, mz, my
   print *, ' mesh dims =', m%n, m%gn
-  print *, 'setup dims =', nint(m%b/m%d), m%b, m%d
+  print *, 'setup dims =', nint(m%b/m%d), m%b
   ! allocate single-precision variables for reading
   allocate( dxm(mx), dxmdn(mx), xm(mx+1), xmdn(mx+1))
   allocate( dym(my), dymdn(my), ym(my+1), ymdn(my+1))
@@ -81,9 +80,9 @@ SUBROUTINE init (task_list)
         iy, minval(dxm), minval(dym), dzm(iz)
     end do
   end if
-  print *, 'experiment_t%ICs: min(dx),min(dy),min(dz)', &
+  print *, 'min(dx),min(dy),min(dz)', &
         minval(dxm), minval(dym), minval(dzm)
-  print *,'experiment_t%ICs: nz for max res:', int((zm(my)-zm(1))/minval(dzm))+1
+  print *, 'nz for max res:', int((zm(my)-zm(1))/minval(dzm))+1
   close (io_unit%data)
   !---------------------------------------------------------------------------
   ! At first call, allocate a buffer and read the entire file -- this is OK since
@@ -91,9 +90,9 @@ SUBROUTINE init (task_list)
   ! will be made, so the buffer can be deallocated when all patches are done
   !---------------------------------------------------------------------------
   allocate (rbuf(my,mz,mx))
-  !call io%bits_mem (storage_size (rbuf), mx*my*mz)
+  call io%bits_mem (storage_size (rbuf), mx*my*mz)
   allocate (buffer(mx+1,my+1,mz))
-  !call io%bits_mem (storage_size (buffer), product(shape(buffer)), 'buffer')
+  call io%bits_mem (storage_size (buffer), product(shape(buffer)), 'buffer')
   recl = 4*product(shape(rbuf))                                           ! FIXME
   if (io%master) &
     print *,'reading MHD data from ' //trim(file)//'.dat'
@@ -105,7 +104,7 @@ SUBROUTINE init (task_list)
   !-----------------------------------------------------------------------------
   do iv=1,min(nv,9)
     iiv = ii(iv)
-    print *, 'ic_t%init: reading variable index iv =', iv
+    print *, 'reading variable index iv =', iv
     read (io_unit%data, rec=iv) rbuf
     do iz=1,mz; do iy=1,my; do ix=1,mx
       buffer(ix,iy,iz) = rbuf(iy,iz,ix)
@@ -125,7 +124,7 @@ SUBROUTINE init (task_list)
     link => task_list%head
     do while (associated(link))
       patch => task2patch(link%task)
-      if (verbose==0) print *, 'ic_t%init: spawning task for patch%id =', patch%id
+      if (verbose==3) print *, 'ic_t%init: spawning task for patch%id =', patch%id
       !$omp task default(shared) firstprivate(patch,iiv)
         call interpolate (iiv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ymdn, zmdn)
         !call patch%init_bdries

@@ -16,9 +16,6 @@ MODULE experiment_mod
   USE io_mod
   USE bits_mod
   USE trace_mod
-  USE timer_mod
-  USE lagrange_mod
-  USE mesh_mod
   USE gpatch_mod
   USE link_mod
   USE rt_solver_mod
@@ -33,10 +30,7 @@ MODULE experiment_mod
     procedure update
     procedure boundary_conditions
   end type
-  real, save, allocatable, dimension(:,:,:,:):: buffer
   integer, save:: verbose=1
-  integer, save:: dims(3)=63
-  integer, save:: order=2
   real, save:: grav=2.75
 CONTAINS
 
@@ -48,7 +42,7 @@ SUBROUTINE init (self)
   integer:: iostat
   logical, save:: first_time=.true.
   integer, save:: itimer=0
-  namelist /experiment_params/ grav, dims, order, verbose
+  namelist /experiment_params/ grav, verbose
   !----------------------------------------------------------------------------
   call trace_begin('experiment_mod::init', itimer=itimer)
   !----------------------------------------------------------------------------
@@ -90,13 +84,6 @@ SUBROUTINE update (self)
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-  !call self%link%print_nbors
-  if (first_time) then
-    first_time = .false.
-    if (allocated(buffer)) &
-      deallocate (buffer)
-      call io%bits_mem (-storage_size (buffer), product(shape(buffer)),'buffer')
-  end if
   call self%test_d (50)
   call self%rt_solver_t%update
   call self%test_d (51)
@@ -147,7 +134,7 @@ SUBROUTINE boundary_conditions (self)
 END SUBROUTINE boundary_conditions
 
 !> =============================================================================
-!> Stellar atmoshpere with gravity pointing in the positive y-direction
+!> Stellar atmosphere with gravity pointing in the positive y-direction
 !> =============================================================================
 FUNCTION force (self) RESULT (ff)
   class(gpatch_t)   :: self

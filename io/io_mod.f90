@@ -218,34 +218,25 @@ SUBROUTINE bits_mem (self, bits, count, label)
         (bits/(8.*1024.**3))*count, 'GB'
     end if
   end if
-  call self%gb_mem ((bits/(8.*1024.**3))*count, label)
+  call self%gb_mem ((bits/(8.*1024.**3))*count)
 END SUBROUTINE bits_mem
 
 !> =============================================================================
 !> Register increase of memory, counted in gigabytes
 !> =============================================================================
-SUBROUTINE gb_mem (self, gb, label)
+SUBROUTINE gb_mem (self, gb)
   class (io_t)      :: self
   real:: gb
   real, save:: gb_next=1.0
-  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   if (mpi%master) then
     self%gb = self%gb + gb
     if (self%gb > gb_next) then
       !$omp critical (gb_cr)
-      if (self%gb > gb_next) then
-        if (io%verbose>1) then
-          if (present(label)) then
-            print '(1x,a,f8.3,a)', trim(label)//': process memory allocated:', &
-              self%gb,' GB'
-          else
-            print '(1x,a,f8.3,a)', 'process memory allocated:', &
-              self%gb,' GB'
-          end if
-        end if
+      do while (self%gb > gb_next)
+        print '(1x,a,f8.3,a)', 'process memory allocated:', self%gb,' GB'
         gb_next = gb_next+1.0
-      end if
+      end do
       !$omp end critical (gb_cr)
     end if
   end if
