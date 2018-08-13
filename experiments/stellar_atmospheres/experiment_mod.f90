@@ -23,7 +23,6 @@ MODULE experiment_mod
   USE link_mod
   USE rt_solver_mod
   USE solver_mod
-  !USE initial_mod
   implicit none
   private
   type, public, extends(rt_solver_t):: experiment_t
@@ -32,7 +31,6 @@ MODULE experiment_mod
   contains
     procedure init
     procedure update
-    procedure initial_condition
     procedure boundary_conditions
   end type
   real, save, allocatable, dimension(:,:,:,:):: buffer
@@ -40,18 +38,17 @@ MODULE experiment_mod
   integer, save:: dims(3)=63
   integer, save:: order=2
   real, save:: grav=2.75
-  character(len=64):: file='mhd63'
 CONTAINS
 
 !> =============================================================================
-!> Setup a uniform initial state, with density=d0 and B=B0
+!> Experiment setup
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
   integer, save:: itimer=0
-  namelist /experiment_params/ file, grav, dims, order, verbose
+  namelist /experiment_params/ grav, dims, order, verbose
   !----------------------------------------------------------------------------
   call trace_begin('experiment_mod::init', itimer=itimer)
   !----------------------------------------------------------------------------
@@ -73,28 +70,19 @@ SUBROUTINE init (self)
   call self%set(bits%static)
   self%force_per_unit_mass => force
   !----------------------------------------------------------------------------
-  ! Initial conditions
+  ! Boundary setup
   !----------------------------------------------------------------------------
   self%periodic(3) = .false.                     ! non-periodic vertically
-  !call initial%condition (self)
   call self%init_bdries
   if (verbose > 0) then
     if (self%mesh(3)%lower_boundary) print *, self%id, 'at lower B'
     if (self%mesh(3)%upper_boundary) print *, self%id, 'at upper B'
   end if
-  !call self%boundary_conditions
   call trace_end (itimer=itimer)
 END SUBROUTINE init
 
 !> =============================================================================
-!> The update procedure calls a (generic name) MHD update procedure, whose
-!> actual implementation is in $(TOP)/solvers/$(SOLVER)/mhd_mod.f90.  It then
-!> calls a courant_condition procedure, which if not overloaded is the one in
-!> the patch_t object (but one can replace it at the mhd_t or experiment_t
-!> level, by simply adding a courant_condition procedure there).  The next step
-!> is to call a timestep%udpate, whose actual implementation is in a file
-!> $(TOP)/timestep/$(UPD)/timestep_mod.f90 -- currently an Adams-Bashforth
-!> method.
+!> Experiment update
 !> =============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
@@ -109,7 +97,6 @@ SUBROUTINE update (self)
       deallocate (buffer)
       call io%bits_mem (-storage_size (buffer), product(shape(buffer)),'buffer')
   end if
-!  call self%solver_t%update
   call self%test_d (50)
   call self%rt_solver_t%update
   call self%test_d (51)
@@ -158,167 +145,6 @@ SUBROUTINE boundary_conditions (self)
   end if
   call trace_end
 END SUBROUTINE boundary_conditions
-
-!> =============================================================================
-!> Initialize from a legacy raw data file, with auxciliary grid file
-!> =============================================================================
-SUBROUTINE initial_condition (self)
-  class(experiment_t):: self
-  class(mesh_t), pointer, dimension(:):: m
-  integer:: n(3), o(3), iv, recl, ix, iy, iz
-  logical, save:: first_time=.true.
-  integer, save:: mx, my, mz
-  integer:: ii(9)
-  real, save, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn, dxidxup, dxidxdn
-  real, save, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn, dyidyup, dyidydn
-  real, save, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn, dzidzup, dzidzdn
-  real, dimension(:,:,:), allocatable:: rbuf
-  real, dimension(:), pointer:: xi, yi, zi, xo, yo, zo
-  integer:: nx, ny, nz
-  !-----------------------------------------------------------------------------
-  call trace_begin('experiment_t%initial_condition')
-  !-----------------------------------------------------------------------------
-  m => self%mesh
-  n = nint(m%b/m%d)
-  n(3) = n(3)+4
-  !$omp critical (init_cr)
-  if (first_time) then
-    first_time = .false.
-    if (io%master) &
-      print *,'reading MHD data from ' //trim(file)//'.*'
-    if (.not.all(n==dims)) then
-      if (io%master) print *, 'file  dimensions =', dims, self%nv
-      if (io%master) print *, 'setup dimensions =', n
-    end if
-    !---------------------------------------------------------------------------
-    ! Read the vertical meshs from the .msh file
-    !---------------------------------------------------------------------------
-    open (io_unit%data, file=trim(file)//'.msh', form='unformatted')
-    ! read dimensions
-    read(io_unit%data) mx, mz, my
-    if (.not. all(dims==[mx,my,mz])) then
-      if (io%master) print *, ' file dims =', dims
-      if (io%master) print *, ' mesh dims =', m%n, m%gn
-      if (io%master) print *, 'setup dims =', nint(m%b/m%d), m%b, m%d
-    end if
-    if (io%master) print *,'reading mesh data from ' //trim(file)//'.msh', mx, my, mz
-    ! allocate single-precision variables for reading
-    allocate( dxm(mx), dxmdn(mx), xm(mx+1), xmdn(mx+1), dxidxup(mx), dxidxdn(mx) )
-    allocate( dym(my), dymdn(my), ym(my+1), ymdn(my+1), dyidyup(my), dyidydn(my) )
-    allocate( dzm(mz), dzmdn(mz), zm(mz  ), zmdn(mz  ), dzidzup(mz), dzidzdn(mz) )
-    ! read meash properties, in order y,z,x -- to make z vertical
-    read(io_unit%data) dym, dymdn, (ym(iy),iy=1,my), (ymdn(iy),iy=1,my), dyidyup, dyidydn
-    read(io_unit%data) dzm, dzmdn, (zm(iz),iz=1,mz), (zmdn(iz),iz=1,mz), dzidzup, dzidzdn
-    read(io_unit%data) dxm, dxmdn, (xm(ix),ix=1,mx), (xmdn(ix),ix=1,mx), dxidxup, dxidxdn
-    xm(mx+1) = xm(mx) + (xm(mx)-xm(mx-1))
-    ym(my+1) = ym(my) + (ym(my)-ym(my-1))
-    xmdn(mx+1) = xmdn(mx) + (xmdn(mx)-xmdn(mx-1))
-    ymdn(my+1) = ymdn(my) + (ymdn(my)-ymdn(my-1))
-    if (verbose>1) then
-      do iz=1,size(dzm)
-        print *, 'initial_t%stagger: iz, min(dx),min(dy), dz', &
-          iy, minval(dxm), minval(dym), dzm(iz)
-      end do
-    end if
-    print *, 'experiment_t%ICs: min(dx),min(dy),min(dz)', &
-          minval(dxm), minval(dym), minval(dzm)
-    print *,'experiment_t%ICs: nz for max res:', int((zm(my)-zm(1))/minval(dzm))+1
-    close (io_unit%data)
-    !---------------------------------------------------------------------------
-    ! At first call, allocate a buffer and read the entire file -- this is OK since
-    ! we only use one thread per rank to initialize, computing also how many calls
-    ! will be made, so the buffer can be deallocated when all patches are done
-    !---------------------------------------------------------------------------
-    allocate (rbuf(my,mz,mx))
-    allocate (buffer(mx+1,my+1,mz,self%nv))
-    call io%bits_mem (storage_size (buffer), product(shape(buffer)),'buffer')
-    recl = 4*product(dims)                                           ! FIXME
-    if (io%master) &
-      print *,'reading MHD data from ' //trim(file)//'.dat'
-    open (io_unit%data, file=trim(file)//'.dat', form='unformatted', access='direct', recl=recl)
-    ii=[self%idx%d,self%idx%py,self%idx%pz,self%idx%px, &
-        self%idx%e,self%idx%tt,self%idx%by,self%idx%bz,self%idx%bx]
-    !---------------------------------------------------------------------------
-    ! Read data, and swap indices, so z becomes vertical
-    !---------------------------------------------------------------------------
-    do iv=1,min(self%nv,9)
-      read (io_unit%data, rec=iv) rbuf
-      do iz=1,mz; do iy=1,my; do ix=1,mx
-        buffer(ix,iy,iz,ii(iv)) = rbuf(iy,iz,ix)
-      end do; end do; end do
-      if (verbose > 0) &
-        print *, iv, minval(rbuf), maxval(rbuf)
-    end do
-    deallocate(rbuf)
-    buffer(mx+1,:,:,:) = buffer(1,:,:,:)
-    buffer(:,my+1,:,:) = buffer(:,1,:,:)
-    !---------------------------------------------------------------------------
-    ! Add periodic extension
-    !---------------------------------------------------------------------------
-    close (io_unit%data)
-    if (verbose > 0) then
-      print *,'input model:'
-      do iz=1,dims(3)
-        print '(i4,f10.3,1p,6e12.3)',iz, zm(iz), (buffer(1,1,iz,ii(iv)), iv=1,6)
-      end do
-    end if
-  end if
-  !$omp end critical (init_cr)
-  !-----------------------------------------------------------------------------
-  ! Pick out the piece that belongs to this patch, based on its position
-  !-----------------------------------------------------------------------------
-  nx = m(1)%gn
-  ny = m(2)%gn
-  nz = m(3)%gn
-  allocate (xo(nx))
-  allocate (yo(ny))
-  allocate (zo(nz))
-  associate (ff=>self%mem(:,:,:,:,self%it,1))
-  if (verbose>1) print *, 'experiment_t%IC: id, pos =', self%id, m%p
-  associate (m1=>m(1), m2=>m(2), m3=>m(3))
-  do iv=1,self%nv
-    xo = m1%p + m1%r + m1%h(iv)*m1%d
-    yo = m2%p + m2%r + m2%h(iv)*m2%d
-    zo = m3%p + m3%r + m3%h(iv)*m3%d
-    xi => xm
-    yi => ym
-    zi => zm
-    if (iv==self%idx%px.or.iv==self%idx%bx) xi => xmdn
-    if (iv==self%idx%py.or.iv==self%idx%by) yi => ymdn
-    if (iv==self%idx%pz.or.iv==self%idx%bz) zi => zmdn
-    xo = modulo(xo-xi(1),xm(mx+1)-xm(1))
-    yo = modulo(yo-yi(1),ym(my+1)-ym(1))
-    if (order==1) then
-      call lagrange%trilinear3d (xi, yi, zi, buffer(:,:,:,iv), &
-                                 xo, yo, zo,     ff(:,:,:,iv), order)
-    else
-      call lagrange%interpolate3d (xi, yi, zi, buffer(:,:,:,iv), &
-                                   xo, yo, zo,     ff(:,:,:,iv), order)
-    end if
-    if (verbose>0) &
-      print '(i5,i3,2x,2(2x,a,3(2x,2f7.2)))', self%id, iv, &
-      'xyz(in):', &
-      minval(xi), maxval(xi), minval(yi), maxval(yi), minval(zi), maxval(zi), &
-      'xyz(out):', &
-      minval(xo), maxval(xo), minval(yo), maxval(yo), minval(zo), maxval(zo)
-  end do
-  end associate
-  deallocate (xo, yo, zo)
-  !-----------------------------------------------------------------------------
-  ! Diagnostic output
-  !-----------------------------------------------------------------------------
-  if (verbose>1) then
-    do iv=1,self%nv
-      o = maxloc(ff(:,:,:,iv))
-      print '(a,i3,3i4,2x,3f8.3,1p,2(2x,2e12.4))', &
-        'iv,ix,iy,iz,pos,bufmin,bufmax,fmin,fmax =', iv, o, m%p, &
-        minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv)), &
-        minval(    ff(:,:,:,iv)), maxval(    ff(:,:,:,iv))
-    end do
-  end if
-  end associate
-  call trace_end
-END SUBROUTINE initial_condition
 
 !> =============================================================================
 !> Stellar atmoshpere with gravity pointing in the positive y-direction
