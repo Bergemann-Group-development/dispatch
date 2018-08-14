@@ -12,4 +12,4 @@ microphysics_factory_mod.o : io_mod.o io_unit_mod.o trace_mod.o scaling_mod.o un
                              radiative_transfer_mod.o microphysics_mod.o
 units_mod.o                : io_unit_mod.o math_mod.o
 scaling_mod.o              : io_mod.o units_mod.o math_mod.o
-math_mod.o                 : io_unit_mod.o
+math_mod.o                 :

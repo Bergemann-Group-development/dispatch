@@ -2,7 +2,6 @@
 !> Fundamental constants in CGS and SI units
 !> =============================================================================
 MODULE math_mod
-  USE io_unit_mod
   implicit none
   private
   !---------------------------------------------------------------------
@@ -12,7 +11,9 @@ MODULE math_mod
     character(len=16):: name='not set'
     real(kind=8):: pi  =         acos(-1.0_8)
     real(kind=8):: pi2 = 2.0_8 * acos(-1.0_8)
-    real(kind=8):: pi4 = 2.0_8 * acos(-1.0_8)
+    real(kind=8):: pi4 = 4.0_8 * acos(-1.0_8)
+    real(kind=8):: e = exp(1d0)
+    real(kind=8):: ln10 = log(10d0)
   contains
     procedure:: init
   end type
