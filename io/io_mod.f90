@@ -231,11 +231,11 @@ SUBROUTINE gb_mem (self, gb)
   !-----------------------------------------------------------------------------
   if (mpi%master) then
     self%gb = self%gb + gb
-    if (self%gb > gb_next) then
+    if (abs(self%gb - gb_next) > 1.0) then
       !$omp critical (gb_cr)
-      do while (self%gb > gb_next)
+      do while (abs(self%gb - gb_next) > 1.0)
         print '(1x,a,f8.3,a)', 'process memory allocated:', self%gb,' GB'
-        gb_next = gb_next+1.0
+        gb_next = gb_next + sign(1d0,self%gb - gb_next)
       end do
       !$omp end critical (gb_cr)
     end if

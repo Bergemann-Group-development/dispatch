@@ -295,13 +295,19 @@ LOGICAL FUNCTION is_ahead_of (self, task)
   nbtime = self%time
   !$omp atomic read
   nbdtime = self%dtime
-  if (self%level==task%level .and. self%istep>2) then
-    is_ahead_of = nbtime + nbdtime*task%grace >= task%time
-  else
+  ! -- if a task is frozen (in time) assume it is forever ahead of other tasks
+  if (self%is_set(bits%frozen)) then
+    is_ahead_of = .true.
+  ! -- a negative nbor time signals an invalid (e.g. initial RT) state
+!  else if (nbtime < 0.0) then
+!    is_ahead_of = .false.
+  ! -- do not use a grace interval for different levels or for the first steps
+  else if (self%level /= task%level .or. self%istep < 3) then
     is_ahead_of = nbtime >= task%time
+  ! -- use a grace interval that is fraction of the nbor time step
+  else
+    is_ahead_of = nbtime + nbdtime*task%grace >= task%time
   end if
-  ! if a task is frozen (in time), then we assume it is forever ahead of other tasks
-  if (self%is_set(bits%frozen)) is_ahead_of = .true.
   if (io_unit%verbose>1) then
     if (task%id==io%id_debug.or.io_unit%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &

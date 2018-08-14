@@ -60,6 +60,7 @@ MODULE dispatcher3_mod
     integer:: n_spawn=0
     type(task_list_t), pointer:: task_list => null()
   contains
+    procedure:: init
     procedure:: execute
     procedure:: update
     procedure:: spawn_update
@@ -79,6 +80,7 @@ MODULE dispatcher3_mod
   logical:: use_taskyield=.false.
   character(len=32):: fmt0='(    f12.6,i4,2x,a,2x,i7,2i4)'
   character(len=32):: fmt1='(40x,f12.6,i4,2x,a,2x,i7,2i4)'
+  character(len=48):: fmt2='(40x,f12.6,i4,2x,a,2x,i7,2x,a,1p,g14.5)'
   type(dispatcher3_t), public:: dispatcher3
 CONTAINS
 
@@ -92,6 +94,7 @@ SUBROUTINE init (self, task_list)
   !.............................................................................
   rewind (io%input); read (io%input, dispatcher3_params, iostat=iostat)
   if (io%master) write (io%output, dispatcher3_params)
+  self%verbose = verbose
 END SUBROUTINE init
 
 !> =============================================================================
@@ -111,14 +114,16 @@ SUBROUTINE execute (self, task_list, test)
   real(8):: start_fail, start_iter
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin ('dispatcher3_t%execute', itimer=itimer)
+  call self%init (task_list)
   self%task_list    => task_list
-  call task_list%init_all_nbors
+  ! -- this spoils a list that has been doctored by e.g. rt_setup
+  !call task_list%init_all_nbors
   n_state = 0; n_state(0) = io%ntask
   call tic (time=start)
   call timer%print
   !$omp parallel private(link,nbor,task,mytask) shared(n_state) default(shared)
   !$omp master
-  call trace%begin ('dispatcher3_t%execute', itimer=itimer)
   do while (task_list%na>0 .and. wallclock()-start < io%job_seconds)
     start_iter = wallclock()
     !---------------------------------------------------------------------------
@@ -201,13 +206,13 @@ SUBROUTINE execute (self, task_list, test)
       n_fail = 0
     end if
   end do
-  call trace%end (itimer)
   !$omp end master
   !$omp end parallel
   call timer%print
   call finalize
   call mpi_mesg%diagnostics(1)
   call toc ('wall time', n_update, time=start)
+  call trace%end (itimer)
 END SUBROUTINE execute
 
 !> =============================================================================
@@ -216,7 +221,7 @@ SUBROUTINE print_state (self, label)
   class(dispatcher3_t):: self
   character(len=*):: label
   !$omp critical (set_state_cr)
-  print '("DISPATCHER4: ",a,f12.6,f9.3,4x,a,i8,6(4x,a,i4))', &
+  print '("DISPATCHER3: ",a,f12.6,f9.3,4x,a,i8,6(4x,a,i4))', &
     label, wallclock(), &
     wc_failed/max(1d-10,wallclock()-start), &
     'failed:'  , n_fail, &
@@ -229,7 +234,7 @@ SUBROUTINE print_state (self, label)
 END SUBROUTINE
 
 !> =============================================================================
-!> A task that is being acticely updated is set in state 3, and when finished
+!> A task that is being actively updated is set in state 3, and when finished
 !> it switched to state 4.   We then use the same OMP task to check if any if
 !> the nbors have beome ready to update, switching the state if it has, and
 !> leaving it to the master thread to actually activate the task.
@@ -238,13 +243,17 @@ SUBROUTINE update (self, task_list, link, test)
   class(dispatcher3_t):: self
   type(task_list_t), pointer:: task_list
   class(link_t), pointer:: link, nbor
+  class(task_t), pointer:: task
   logical:: test
   !...........................................................................
   call self%set_state (link%task, 3)
-  link%task%thread = omp%thread
-  if (self%verbose>3) print fmt1,wallclock(),omp%thread,'updating task',link%task%id
+  task => link%task
+  task%thread = omp%thread
+  if (self%verbose>3) print fmt2, &
+    wallclock(), omp%thread, 'updating task', task%id, 'from', task%time
   call task_list%update (link, test)
-  if (self%verbose>3) print fmt1,wallclock(),omp%thread,'updated  task',link%task%id
+  if (self%verbose>3) print fmt2, &
+    wallclock(), omp%thread, 'updated  task', task%id, '  to', task%time
   nbor => link%nbor
   do while (associated(nbor))
     if (self%is_ready(nbor%link)) then
@@ -324,6 +333,8 @@ LOGICAL FUNCTION is_ready (self, link)
   !...........................................................................
   !$omp atomic
   n_check = n_check+1
+  call io%assert (associated(link), 'is_ready: link missing')
+  call io%assert (associated(link%task), 'is_ready: link%task missing')
   !$omp atomic read
   state = link%task%state
   if (link%task%is_set (bits%virtual)) then
@@ -342,6 +353,9 @@ LOGICAL FUNCTION is_ready (self, link)
         is_ready = is_ready .and. nbor%task%is_ahead_of (link%task)
       end if
       if (.not.is_ready) then
+        if (verbose > 2) &
+          print *, link%task%id, 'is_ready: failed  on', nbor%task%id, &
+            nbor%task%time, link%task%time
         exit
       end if
       nbor => nbor%next

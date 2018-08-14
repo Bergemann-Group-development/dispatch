@@ -385,9 +385,10 @@ END SUBROUTINE init_default
 SUBROUTINE init_bdries (self)
   class(patch_t):: self
   real(8):: position(3), limit(3)
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! If at edge, set boundary bits
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  call trace%begin ('patch_t%init_bdries')
   position = self%position - self%origin - 0.5d0 * self%box
   limit = 0.5d0 * (self%box - self%size - self%ds)
   if (.not.self%periodic(1)) then
@@ -420,6 +421,7 @@ SUBROUTINE init_bdries (self)
       self%mesh(3)%upper_boundary = .true.
     end if
   end if
+  call trace%end
 END SUBROUTINE init_bdries
 
 !> =============================================================================
@@ -547,8 +549,9 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   self%dt = 0.0
   self%t =  0.0
   self%iit = 1                                  ! initial memory slots
-  self%iit(self%nt) = 2                         ! first output slot
-  self%it = self%iit(self%nt-1)                 ! short-hand (=1 initially)
+  self%it = 1                                   ! short-hand (=1 initially)
+  self%new = min(2,self%nt)                     ! slot for updates
+  self%iit(self%nt) = self%new                  ! first output slot
   self%new = self%iit(self%nt)                  ! short-hand
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
@@ -1209,8 +1212,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%info')
   if (io_unit%do_validate) then
-    it0 = self%iit(self%nt-2)
-    it1 = self%iit(self%nt-1)
+    it0 = merge (self%iit(self%nt-2), 1, self%nt>2)
+    it1 = merge (self%iit(self%nt-1), 1, self%nt>1)
     if (self%nw==1) then
       allocate (df(size(self%mem,1),size(self%mem,2),size(self%mem,3)))
     end if

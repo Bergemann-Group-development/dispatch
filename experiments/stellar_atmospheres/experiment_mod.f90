@@ -61,6 +61,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call self%rt_solver_t%init
   self%force_per_unit_mass => force
+  self%grav = grav
   !----------------------------------------------------------------------------
   ! Boundary setup
   !----------------------------------------------------------------------------
@@ -82,11 +83,8 @@ SUBROUTINE update (self)
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-  call self%test_d (50)
   call self%rt_solver_t%update
-  call self%test_d (51)
   call self%boundary_conditions
-  call self%test_d (52)
   call trace_end
 END SUBROUTINE update
 
@@ -98,37 +96,40 @@ SUBROUTINE boundary_conditions (self)
   class(experiment_t):: self
   integer, dimension(3):: lb, lo, li, ui, uo, ub
   integer:: iz, m(6)
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace_begin('experiment_t%boundary_conditions')
-  lb = self%mesh%lb; lo = self%mesh%lo; li = self%mesh%li
-  ub = self%mesh%ub; uo = self%mesh%uo; ui = self%mesh%ui
-  m = shape(self%mem)
-  m(3) = self%ng(3)
-  if (self%mesh(3)%lower_boundary) then
-    if (.not.associated(self%lower)) then
-      allocate (self%lower(m(1),m(2),m(3),m(4)))
-      call io%bits_mem (storage_size(self%lower), product(shape(self%lower)),'lower')
-      self%lower = self%mem(:,:,lb(3):lo(3),:,self%it,1)
-      if (verbose > 0) &
-        print *,'LBC',self%id,self%position, &
-        minval(self%lower(:,:,:,self%idx%e)),maxval(self%lower(:,:,:,self%idx%e))
-    else
-      self%mem(:,:,lb(3):lo(3),:,self%it,1) = self%lower
-      if (verbose > 1) &
-        print *,'LBC',self%id,self%position, &
-        minval(self%lower(:,:,:,self%idx%e)),maxval(self%lower(:,:,:,self%idx%e))
+  ! -- apply BCs only to the parent MHD task
+  if (self%i_omega == 0) then
+    lb = self%mesh%lb; lo = self%mesh%lo; li = self%mesh%li
+    ub = self%mesh%ub; uo = self%mesh%uo; ui = self%mesh%ui
+    m = shape(self%mem)
+    m(3) = self%ng(3)
+    if (self%mesh(3)%lower_boundary) then
+      if (.not.associated(self%lower)) then
+        allocate (self%lower(m(1),m(2),m(3),m(4)))
+        call io%bits_mem (storage_size(self%lower), product(shape(self%lower)),'lower')
+        self%lower = self%mem(:,:,lb(3):lo(3),:,self%it,1)
+        if (verbose > 0) &
+          print *,'LBC',self%id,self%position, &
+          minval(self%lower(:,:,:,self%idx%e)),maxval(self%lower(:,:,:,self%idx%e))
+      else
+        self%mem(:,:,lb(3):lo(3),:,self%it,1) = self%lower
+        if (verbose > 1) &
+          print *,'LBC',self%id,self%position, &
+          minval(self%lower(:,:,:,self%idx%e)),maxval(self%lower(:,:,:,self%idx%e))
+      end if
     end if
-  end if
-  if (self%mesh(3)%upper_boundary) then
-    if (.not.associated(self%upper)) then
-      allocate (self%upper(m(1),m(2),m(3),m(4)))
-      call io%bits_mem (storage_size(self%upper), product(shape(self%upper)),'upper')
-      self%upper = self%mem(:,:,uo(3):ub(3),:,self%it,1)
-      if (verbose > 0) &
-        print *,'UBC',self%id,self%position, &
-        minval(self%upper(:,:,:,1)),maxval(self%upper(:,:,:,1))
-    else
-      self%mem(:,:,uo(3):ub(3),:,self%it,1) = self%upper
+    if (self%mesh(3)%upper_boundary) then
+      if (.not.associated(self%upper)) then
+        allocate (self%upper(m(1),m(2),m(3),m(4)))
+        call io%bits_mem (storage_size(self%upper), product(shape(self%upper)),'upper')
+        self%upper = self%mem(:,:,uo(3):ub(3),:,self%it,1)
+        if (verbose > 0) &
+          print *,'UBC',self%id,self%position, &
+          minval(self%upper(:,:,:,1)),maxval(self%upper(:,:,:,1))
+      else
+        self%mem(:,:,uo(3):ub(3),:,self%it,1) = self%upper
+      end if
     end if
   end if
   call trace_end

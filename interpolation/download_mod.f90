@@ -30,6 +30,7 @@ MODULE download_mod
     procedure:: init
     procedure:: test
   end type
+  integer:: verbose=0
   logical:: check_filled=.false.
   type(download_t), public:: download
 CONTAINS
@@ -42,7 +43,8 @@ SUBROUTINE init (self)
   integer:: iostat
   integer, save:: order_interpolator=-1, order_time=1
   logical, save:: first_time=.true.
-  namelist /download_params/ order_interpolator, order_time, check_filled
+  namelist /download_params/ order_interpolator, order_time, check_filled, &
+    verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%init')
   !$omp critical (download_cr)
@@ -340,11 +342,16 @@ SUBROUTINE download_link (self, link, all_cells, only)
   ! Take the nbor list and produce a list sorted by decreasing distance from `target`.
   !!!call sort_nbors_by_distance (link,sorted_head)
 
-  ! Walk through the sorted neighbour list
+  ! Walk through the sorted neighbor list
   !!!nbor => sorted_head
+  !call link%print_nbors ('download')
   nbor => link%nbor
   do while (associated(nbor))
-    source => task2patch(nbor%task)
+   source => task2patch(nbor%task)
+   if (verbose > 0) &
+     print *, target%id, 'download_t%download_link: source, download =', &
+       source%id, nbor%download
+   if (nbor%download) then
     if (source%nt == 1) &
       self%same => same_linear
     if (trim(target%kind)/='rt_solver') then
@@ -384,7 +391,8 @@ SUBROUTINE download_link (self, link, all_cells, only)
         end if
       end if
     end if
-    nbor => nbor%next
+   end if
+   nbor => nbor%next
   end do
 
   if (present(only)) then

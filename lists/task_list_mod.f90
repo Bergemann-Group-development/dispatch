@@ -1,6 +1,7 @@
 !> =============================================================================
-!> Task list data type, with methods for startup and udpates.  Message handling
-!> is inherited from the task_mesg_t data type.
+!> Task list data type, with methods for startup and updates.  Message handling
+!> is inherited from the task_mesg_t data type.  At this level, task handling
+!> is aware of experiment_t data types, and all data types it has inheritet from.
 !> =============================================================================
 MODULE task_list_mod
   USE io_mod
@@ -29,6 +30,7 @@ MODULE task_list_mod
     procedure:: execute
     procedure:: update
     procedure:: average
+    procedure:: append_task_list
     procedure:: print => print1
   end type
   public:: task2patch
@@ -345,6 +347,20 @@ FUNCTION average (self, idx, time)
 END FUNCTION average
 
 !> =============================================================================
+!> Append a task list to self
+!> =============================================================================
+SUBROUTINE append_task_list (self, task_list)
+  class (task_list_t):: self
+  class (task_list_t), pointer:: task_list
+  class (list_t), pointer:: list
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%append_task_list')
+  list => task_list
+  call self%append_list (list)
+  call trace%end
+END SUBROUTINE append_task_list
+
+!> =============================================================================
 !> Print a table with task id and all neighbors
 !> =============================================================================
 SUBROUTINE print1 (self, label)
@@ -353,7 +369,7 @@ SUBROUTINE print1 (self, label)
   class(link_t) , pointer:: link, nbor
   !.............................................................................
   call trace%begin ('task_list_t%print_tasklist')
-  if (io%master.and.present(label)) write (io_unit%log,*) label
+  if (io%master.and.present(label)) write (io_unit%output,*) label
   link => self%head
   do while (associated(link))
     call link%print_nbors ('')

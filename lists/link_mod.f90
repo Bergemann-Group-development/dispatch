@@ -32,8 +32,9 @@ MODULE link_mod
     ! so when parsing the list starting with link%nbor, one uses nbor%needed
     ! in check_ready(), and nbor%needs_me in check_nbors().
     !---------------------------------------------------------------------------
-    logical:: needed   = .true.                      ! marks nbors that are needed by link%task
-    logical:: needs_me  = .true.                     ! marks nbors that need link%task
+    logical:: needed   = .true.     ! marks nbors included in check_nbors()
+    logical:: needs_me  = .true.    ! marks nbors included in check_ready()
+    logical:: download = .true.     ! marks nbors included in download_link()
   contains
     procedure:: add_nbor_by_quality
     procedure:: add_nbor_by_rank
@@ -41,7 +42,7 @@ MODULE link_mod
     procedure:: remove_from_nbors
     procedure:: make_new_nbors
     procedure:: make_new_nbor
-    procedure:: update_nbors
+    !procedure:: update_nbors
     procedure:: update_nbor_status
     procedure:: update_status
     procedure:: give_to
@@ -370,20 +371,21 @@ END SUBROUTINE remove_from_nbors
 !> =============================================================================
 !> Update the nbor list of self, adding self to the each nbor's nbor list
 !> =============================================================================
-SUBROUTINE update_nbors (self)
-  class(link_t):: self
-  class(link_t), pointer:: nbor, new
-  !.............................................................................
-  call trace_begin('link_t%update_nbors')
-  nbor => self%nbor                                     ! start checking nbors
-  do while (associated(nbor))                           ! loop over nbor list
-    allocate (new)                                      ! new link for nbor's nbor list
-    new%task => self%task                               ! its task is the link task
-    call nbor%add_nbor_by_rank (new)                    ! add a new nbor link
-    nbor => nbor%next                                   ! continue on nbor list
-  end do
-  call trace_end
-END SUBROUTINE update_nbors
+! SUBROUTINE update_nbors (self)
+  ! class(link_t):: self
+  ! class(link_t), pointer:: nbor, new
+  ! !.............................................................................
+  ! call trace_begin('link_t%update_nbors')
+  ! nbor => self%nbor                                     ! start checking nbors
+  ! do while (associated(nbor))                           ! loop over nbor list
+    ! allocate (new)                                      ! new link for nbor's nbor list
+    ! new%task => self%task                               ! its task is the link task
+    ! new%link => self%task%link                          ! add also the link pointer
+    ! call nbor%add_nbor_by_rank (new)                    ! add a new nbor link
+    ! nbor => nbor%next                                   ! continue on nbor list
+  ! end do
+  ! call trace_end
+! END SUBROUTINE update_nbors
 
 !> =============================================================================
 !> Update the nbor/vnbor status of a links nbor list, including the self link.
@@ -528,23 +530,28 @@ END SUBROUTINE log_nbors
 SUBROUTINE print_nbors (self, label)
   class (link_t):: self
   character(len=*), optional:: label
-  class(link_t) , pointer:: link, nbor
+  class(link_t) , pointer:: nbor
   integer:: idmax
   character(len=16):: fmt
   !.............................................................................
   if (present(label)) write (io_unit%output,'(a,$)') label
+  write (io_unit%output, '(i6," nbors:",$)') self%task%id
   idmax = 0
-  link => self%nbor
-  do while (associated(link))
-    idmax = max(idmax, link%task%id)
-    link => link%next
+  nbor => self%nbor
+  do while (associated(nbor))
+    idmax = max(idmax, nbor%task%id)
+    nbor => nbor%next
   end do
   idmax = floor(log10(real(idmax)))+2
-  write (fmt, '("(i",i1,",l1,$)")') idmax
-  link => self%nbor
-  do while (associated(link))
-    write (io_unit%output,fmt) link%task%id, link%task%is_ahead_of(self%task)
-    link => link%next
+  write (fmt, '("(i",i1,",2l1,$)")') idmax
+  nbor => self%nbor
+  do while (associated(nbor))
+    write (io_unit%output,fmt) nbor%task%id, nbor%download, &
+      nbor%task%is_ahead_of(self%task)
+    if (.not.associated(nbor%link)) &
+      print *, 'link_t%print_nbors: WARNING, nbor%link not associated for task', &
+        nbor%task%id
+    nbor => nbor%next
   end do
   write (io_unit%output,*) ''
 END SUBROUTINE print_nbors

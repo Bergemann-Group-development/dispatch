@@ -12,6 +12,7 @@ PROGRAM dispatch
   call dispatcher%init                          ! Set dispatcher method
   call cartesian%init                           ! Initialize the patch list and patches
   call ic%init (cartesian%task_list)            ! Construct ICs
+  call rt_setup(cartesian%task_list)            ! Add RT subtasks to task list
   call dispatcher%execute (cartesian%task_list) ! Call dispatcher
   call setup%end
 !> =============================================================================

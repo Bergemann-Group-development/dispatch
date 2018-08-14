@@ -45,6 +45,7 @@ MODULE mhd_mod
     procedure:: init
     procedure:: pde
     procedure:: update
+    procedure:: test_d
     procedure:: output
     procedure:: gas_pressure
   end type
@@ -492,6 +493,22 @@ SUBROUTINE update (self)
   !call self%gpatch_t%update
   call trace%end (itimer)
 END SUBROUTINE update
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE test_d (self, label)
+  class(mhd_t):: self
+  real:: dmin, dmax
+  integer:: label
+  dmin = minval(self%mem(:,:,:,1,self%it,1))
+  dmax = maxval(self%mem(:,:,:,1,self%it,1))
+  if (dmin <= 0.0) then
+    print *, self%id, 'error at ',label
+    stop
+  else
+    !print *, self%id, 'dmin,max', label, dmin, dmax
+  end if
+END SUBROUTINE test_d
 
 !> =============================================================================
 !> Add extra, MHD-related information to the patch .txt output file

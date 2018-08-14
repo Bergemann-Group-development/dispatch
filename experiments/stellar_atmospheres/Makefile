@@ -28,7 +28,7 @@ sinclude $(TOP)/config/Makefile
 
 
 # List the .o files the main program depends on after the colon:
-$(EXEC): cartesian_mod.o setup_mod.o eos_mod.o dispatcher_mod.o ic_mod.o
+$(EXEC): cartesian_mod.o setup_mod.o eos_mod.o dispatcher_mod.o ic_mod.o rt_setup.o
 
 # Dependencies
 experiment_mod.o        : link_mod.o rt_solver_mod.o

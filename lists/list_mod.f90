@@ -128,6 +128,7 @@ SUBROUTINE reset (self)
 END SUBROUTINE reset
 
 !> =============================================================================
+!> Allocate a new link and append to the list, optionally setting attributes
 !> =============================================================================
 SUBROUTINE append (self, task, nbor, needed, needs_me)
   class(list_t):: self
