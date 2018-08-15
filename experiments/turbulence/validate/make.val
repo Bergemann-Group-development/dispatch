@@ -9,6 +9,7 @@ rm -f *.o *.mod *.stackdump
  [ FC ] os_mod.o
  [ FC ] io_mod.o
  [ FC ] trace_mod.o
+ [ FC ] math_mod.o
  [ FC ] units_mod.o
  [ FC ] scaling_mod.o
  [ FC ] kinds_mod.o
