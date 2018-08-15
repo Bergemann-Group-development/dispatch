@@ -92,7 +92,7 @@ subroutine non_ideal_comp(self,bf,uin,qin,fluxambdiff,emfambdiff,u_max,ds,dt,gam
   class (non_ideal_t):: self
   integer:: n(4)
   real :: u_max
-  real :: gamma
+  real(8) :: gamma
   real(8) :: ds(3), dt
   real, dimension(:,:,:,:):: bf, uin, qin, fluxambdiff, emfambdiff
   ! Output electromotive force
@@ -574,7 +574,7 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
 
   real(8) :: ds(3)
   real(8) :: dx, dy, dz, dt, c2_4pi, mp, kB, Bcode_to_Gauss, pi, scale_v, scale_d, scale_l, scale_t, scale_T2
-  real    :: gamma 
+  real(8) :: gamma 
 
   n = shape(u)
 
@@ -1052,7 +1052,7 @@ subroutine eta_table_init(self,eta_ohm_tbl,eta_ad_tbl)
     self%NA  = 6.022140857e23            ! Avogadro constant
 
     nrho = 200. ; nT = 60. ; nE = nT ; nB = 150.
-    rho0 = 300. * muH ; rhoend = 1.7688710202180409e25 * mu * mp
+    rho0 = 300. * mu * mp ; rhoend = 1.7688710202180409e25 * mu * mp
     crho= (rhoend/rho0)**(1. / (nrho - 1.) ) 
 
     T0 = 10.    ; Tend   = 1.2449399509181750e5
@@ -1161,7 +1161,7 @@ real(dp) :: sig_p, sig_perp, sig_h, eta_ohm, eta_hall, eta_ad
 
 real, dimension(:,:,:) :: eta_Ohm_tbl, eta_AD_tbl
 
-   open(42,file='/home/michael/tmp/non-ideal_tbl/Table_abundances.dat', status='old')
+   open(42,file='../../../tables/non-ideal_tbl/Table_abundances.dat', status='old')
    read(42,*) nchimie, tchimie, xichimie, nvar       ! Number of  steps in density, temperature and ionisation rate
    read(42,*) nislin, tislin, xiislin                      ! 1: Constant step in logscale, 0: Not constant step in logscale
    read(42,*)
