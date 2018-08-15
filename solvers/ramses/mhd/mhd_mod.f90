@@ -184,7 +184,7 @@ SUBROUTINE update (self)
   if (non_ideal%is_used) then
     allocate (fluxambdiff(self%gn(1),self%gn(2),self%gn(3),3))
     allocate (emfambdiff(self%gn(1),self%gn(2),self%gn(3),3))
-    call non_ideal%non_ideal_comp(self%bf,self%uin,self%q,fluxambdiff,emfambdiff,self%u_max,self%ds,self%dtime)
+    call non_ideal%non_ideal_comp(self%bf,self%uin,self%q,fluxambdiff,emfambdiff,self%u_max,self%ds,self%dtime,self%gamma)
   end if
   call self%courant_condition                           ! compute dt
 
