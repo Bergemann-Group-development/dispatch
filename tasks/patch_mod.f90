@@ -115,7 +115,6 @@ MODULE patch_mod
     procedure:: patch_to_header
     procedure:: header_to_patch
     procedure:: local_iit
-    !!!procedure:: time_interpolate
     procedure:: stats
     procedure:: MapVectors
     procedure:: beyond_patch_edge
@@ -1789,102 +1788,6 @@ FUNCTION local_iit (self) RESULT (iit)
   !iit = [(1+mod(it+i,self%nt), i=1,self%nt)]
   iit = self%iit
 END FUNCTION local_iit
-
-!> =============================================================================
-!> Find the right time interval in source%t(source%iit), which are the source
-!> times in increasing order.  To avoid having to lock access to source%iit while
-!> reading it, we read instead (with an atomic read) source%new, from which a
-!> consisten local copy of itt can be constructed.
-!> =============================================================================
-!SUBROUTINE time_interpolate (self, source, jt, pt)
-!  class(patch_t):: self, source
-!  integer:: jt(2)
-!  integer:: i, id, it, iit(self%nt), verbose
-!  real(8):: pt(2), dt1, t(self%nt), dt(self%nt)
-!  !.............................................................................
-!  call trace_begin ('task_t::time_interpolate',3)
-!  verbose = io_unit%verbose
-!  !-----------------------------------------------------------------------------
-!  ! In case of e.g. an error in initial conditions, choose a valid default
-!  !-----------------------------------------------------------------------------
-!  !!omp critical (time_cr)
-!  iit = source%iit
-!  t   = source%t
-!  dt  = source%dt
-!  id  = source%id
-!  !!omp end critical (time_cr)
-!  !-----------------------------------------------------------------------------
-!  ! The (nt) slot is intended for the new values, but at this point they
-!  ! actually contain the oldest values, which may be used in the interpolation,
-!  ! if we circularly shift the iit indices one step (sign tested).
-!  !-----------------------------------------------------------------------------
-!  iit = cshift(iit,-1)
-!  !-----------------------------------------------------------------------------
-!  ! As long as the first source time is earlier than, or equal to the target
-!  ! time, renew the interval.  Initially, when all times are zero, we are left
-!  ! with the interval nt-2:nt-1 and dt=0d0, which means slot nt-1 is used.
-!  !-----------------------------------------------------------------------------
-!  jt = iit(1:2)
-!  do i=2,self%nt-1
-!    if (t(iit(i)) <= self%time) then
-!      jt = iit(i:i+1)
-!    end if
-!  end do
-!  !-----------------------------------------------------------------------------
-!  ! A vanishing source time interval happens only at the initial condition ...
-!  !-----------------------------------------------------------------------------
-!  dt1 = t(jt(2))-t(jt(1))
-!  if (dt1==0d0) then
-!    pt(2) = 1d0
-!  !-----------------------------------------------------------------------------
-!  ! If a task lags behind, prevent backwards time interpolation, with a warning
-!  !-----------------------------------------------------------------------------
-!  else
-!    pt(2) = (self%time - t(jt(1)))/dt1
-!    if (pt(2) < -self%grace) then
-!      write (io_unit%log,1) &
-!        'patch_mod::time_interpolate WARNING: backward extrapolation, trg,src,pt,jt =', &
-!        self%id, id, pt(2), jt
-!      pt(2) = -self%grace
-!      verbose = 3
-!    else if (pt(2) > 1.001+self%grace) then
-!      write (io_unit%log,1) &
-!        'patch_mod::time_interpolate WARNING: forward extrapolation, trg,src,pt,jt =', &
-!        self%id, id, pt(2), jt, dt1, dt(jt(1)), dt(jt(2)), &
-!        'patch_mod::time_interpolate WARNING: time:', self%time, t(iit), source%time
-!      1 format(a,2i9,f7.2,3x,2i3,3x,"dt:",0p,3f11.6/a,f11.6,5x,"t:",9f11.6)
-!      pt(2) = 1.0+self%grace
-!      verbose = 3
-!    end if
-!  end if
-!  pt(1) = 1d0-pt(2)
-!  !print '(a,2i6,3f11.6,2i4,2f8.3)', 'TIME INTERPOLATE:', source%id, self%id, t(jt(1)), self%time, t(jt(2)), jt, pt
-!  if (verbose > 2) then
-!    write (io_unit%log,'(a,2i5,2f7.3,1p,g16.6)') &
-!      'patch_mod::time_interpolation jt, pt, target', &
-!      jt, pt, self%time
-!    do i=1,self%nt
-!      write (io_unit%log,'(a,2i4,1p,2g16.6)') &
-!        'patch_mod::time_interpolation i,src%iit,src%t,src%dt:', &
-!        i, iit(i), t(iit(i)), dt(iit(i))
-!    end do
-!    flush (io_unit%log)
-!  end if
-!  !print'(a,5i3,3x,2i3,2x,2f7.3)', 'MK:', iit-source%iit, jt, pt
-!  !-----------------------------------------------------------------------------
-!  ! Facilitate exact time evolution when dt_fixed is being used
-!  !-----------------------------------------------------------------------------
-!  if (self%dt_fixed > 0.0) then
-!    if (abs(pt(1))< 1d-5) then
-!      if (io_unit%verbose>2) write (io_unit%log,*) 'EXACT'
-!      pt(1)=0d0; pt(2)=1d0
-!    else if (abs(pt(2)) < 1d-5) then
-!      if (io_unit%verbose>2) write (io_unit%log,*) 'EXACT'
-!      pt(1)=1d0; pt(2)=0d0
-!    end if
-!  end if
-!  call trace_end
-!END SUBROUTINE time_interpolate
 
 !> =============================================================================
 FUNCTION task2patch (task) RESULT (patch)

@@ -1321,7 +1321,6 @@ SUBROUTINE count_status (self)
   class(link_t) , pointer:: link, nbor
   integer:: nf
   !.............................................................................
-  if (io%verbose < 2) return
   call trace%begin ('list_t%count_status')
   !$omp critical (list_cr)
   self%nb=0; self%nv=0; self%ni=0; self%ne=0; self%n = 0

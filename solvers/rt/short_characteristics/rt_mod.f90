@@ -34,7 +34,7 @@ MODULE rt_mod
   USE link_mod
   USE eos_mod
   USE download_mod
-  USE counters_mod
+  USE scalar_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -79,7 +79,6 @@ MODULE rt_mod
   integer(8):: n_min=0, n_max=0, n_dif, n_ful=0
   integer, save:: verbose=1
   logical, save:: vertical_propagation=.false.
-  integer, save:: counter_id=1
 CONTAINS
 
 !> =============================================================================
@@ -160,12 +159,14 @@ SUBROUTINE init (self)
   do i_omega=1,self%n_omega
     omega => self%omega(i_omega)
     omega = self
+    omega%kind    = 'rt_t'   ! to be used in data_io_mod
     omega%nt      = 1
     omega%new     = 1
     omega%nw      = 1
     omega%id      = self%id*100 + i_omega
     omega%i_omega = i_omega
     omega%nv      = n_bin
+    omega%status  = self%status
     ! -- force 3 solutions before Q is valid in MHD update
     omega%time    = -2.5*self%rt_time
     omega%rk      => self%rk
@@ -334,7 +335,8 @@ SUBROUTINE init_nbors (self)
             allocate (new)
             new%link => raytask%link
             new%task  => raytask
-            print *, 'init_nbors: om=', omega%id, omega%link%task%id, 'nb=', &
+            if (verbose > 1) &
+              print *, 'init_nbors: om=', omega%id, omega%link%task%id, 'nb=', &
             nbtask%id, nbtask%link%task%id, 'ray=', raytask%id, raytask%link%task%id
           end select
         end select
@@ -421,18 +423,25 @@ SUBROUTINE rt_eos (self)
   class (rt_t):: self
   integer, save:: itimer=0
   real, dimension(:,:,:), pointer:: d, e
-  integer:: m(4), ib, i3
+  integer:: m(4), ib, i3, jt(2)
+  real:: pt(2)
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%rt_eos', itimer=itimer)
-  d   => self%mem(:,:,:,self%idx%d,self%it,1)
-  e   => self%mem(:,:,:,self%idx%e,self%it,1)
+  ! -- interpolate to time = self%rt_next
+  call self%time_interval (self%rt_next, jt, pt)
   m = shape(self%rk)
+  call allocate_scalars (m, d, e)
+  d = self%mem(:,:,:,self%idx%d,jt(1),1)*pt(1) &
+    + self%mem(:,:,:,self%idx%d,jt(2),1)*pt(2)
+  e = self%mem(:,:,:,self%idx%e,jt(1),1)*pt(1) &
+    + self%mem(:,:,:,self%idx%e,jt(2),1)*pt(2)
   call eos%lookup_table (m, d=d, e=e, rk=self%rk, src=self%src)
   if (verbose > 2) then
     print *,minval(d),maxval(d)
     print *,minval(e),maxval(e)
     print *,minval(self%rk),maxval(self%rk)
   end if
+  call deallocate_scalars (d, e)
   call trace%end (itimer)
 END SUBROUTINE rt_eos
 

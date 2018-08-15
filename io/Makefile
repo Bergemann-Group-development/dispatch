@@ -13,4 +13,4 @@ direct_io_mod.o:        io_mod.o trace_mod.o patch_mod.o
 parallel_io_mod.o:      io_mod.o trace_mod.o patch_mod.o mpi_io_mod.o central_mod.o
 snapshot_list_mod.o:    io_mod.o trace_mod.o patch_mod.o 
 data_io_mod.o:          io_mod.o trace_mod.o patch_mod.o direct_io_mod.o parallel_io_mod.o buffered_io_mod.o legacy_io_mod.o \
-                        snapshot_list_mod.o
+                        snapshot_list_mod.o dll_mod.o

@@ -22,12 +22,20 @@ MODULE data_io_mod
   USE buffered_io_mod
   USE snapshot_list_mod
   USE index_mod
+  USE dll_mod
   implicit none
   private
+  type, public:: io_kind_t
+    character(len=64):: filename=''
+    class(patch_t), pointer:: patch=>null()
+    integer:: size=0, nv=0
+  end type
   type, public:: data_io_t
     logical:: initialized=.false.
+    type(dll_t):: kind_list
   contains
     procedure:: init
+    procedure:: register_kind
     procedure:: output
     procedure, nopass:: output_txt
     procedure, nopass:: output_nml
@@ -61,11 +69,35 @@ SUBROUTINE init (self, task)
         end if
       end select
     end if
+    call self%kind_list%init
     self%initialized = .true.
     call trace%end
   end if
   !$omp end critical (data_io_cr)
 END SUBROUTINE init
+
+!> =============================================================================
+!> Register one type of task, for output into separate file
+!> =============================================================================
+SUBROUTINE register_kind (self, patch)
+  class(data_io_t):: self
+  class(patch_t), pointer:: patch
+  class(dll_node_t), pointer:: item
+  type(io_kind_t), pointer:: io_kind
+  !-----------------------------------------------------------------------------
+  allocate (item, io_kind)
+  item%car => io_kind
+  io_kind%patch => patch
+  io_kind%filename = 'snapshot_'//trim(patch%kind)//'.dat'
+  io_kind%size = product(shape(patch%mem))
+  io_kind%nv = patch%nv
+  if (io%master) then
+    print '(1x,a,4x,a,i8,4x,a,i3)', &
+     'data_io_t%register_kind: filename = '//trim(io_kind%filename), &
+     'array size (words) =', io_kind%size, 'nv =', io_kind%nv
+  end if
+  call self%kind_list%append (item)
+END SUBROUTINE register_kind
 
 !> =============================================================================
 !> Write results to disk
