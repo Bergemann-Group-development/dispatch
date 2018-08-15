@@ -12,7 +12,7 @@ MODULE scaling_mod
   ! units: length, mass, and time (cf. CGS and MKS)
   !-----------------------------------------------------------------------------
   type, public, extends(units_t):: scaling_t
-    real(kind=8):: d, e, p, u, temp, grav, mu, pi
+    real(kind=8):: d, e, p, u, temp, grav, mu
   contains
     procedure:: init
   end type

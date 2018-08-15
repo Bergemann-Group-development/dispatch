@@ -12,6 +12,7 @@ MODULE setup_mod
   USE task_list_mod
   USE mesh_mod
   USE experiment_mod
+  USE math_mod
   USE scaling_mod
   implicit none
   private
@@ -58,7 +59,7 @@ SUBROUTINE init_setup (self)
 
   zextent = (z_max - z_min) * cgs%AU / npatches(1)
   rextent = (r_max - r_min) * cgs%AU / npatches(2)
-  phiextent = scaling%pi * 2.0  ! npatches(3) is ignored!
+  phiextent = math%pi * 2.0  ! npatches(3) is ignored!
   n_per_patch = [nz / npatches(1), nr / npatches(2), 1]
 
   do ip3=1,npatches(3)

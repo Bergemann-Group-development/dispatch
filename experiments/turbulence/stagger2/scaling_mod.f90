@@ -7,7 +7,7 @@ MODULE scaling_mod
   implicit none
   private
   type, public:: scaling_t
-    real(kind=8):: l, t, m, d, e, ee, p, u, temp, grav, mu, pi, rk, src
+    real(kind=8):: l, t, m, d, e, ee, p, u, temp, grav, mu, rk, src
   contains
     procedure:: init
   end type

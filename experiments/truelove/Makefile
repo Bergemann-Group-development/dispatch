@@ -19,6 +19,6 @@ $(EXEC): setup_mod.o cartesian_mod.o
 # Dependencies
 experiment_mod.o	: io_mod.o trace_mod.o kinds_mod.o mesh_mod.o solver_mod.o
 initial_mod.o		: io_mod.o trace_mod.o kinds_mod.o mesh_mod.o patch_mod.o index_mod.o units_mod.o
-scaling_mod.o           : io_mod.o units_mod.o
-gpatch_mod.o		: pboundary_mod.o
+scaling_mod.o           : io_mod.o units_mod.o math_mod.o
+gpatch_mod.o		: pboundary_mod.o timestep_mod.o
 pboundary_mod.o		: io_mod.o trace_mod.o mesh_mod.o patch_mod.o bits_mod.o

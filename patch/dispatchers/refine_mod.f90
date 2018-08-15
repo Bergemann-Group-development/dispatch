@@ -417,6 +417,7 @@ END FUNCTION check_nbor_support
 !> Calculate the Jeans length and compare it to the patch resolution.
 !> =============================================================================
 FUNCTION check_jeans (self, patch) RESULT(refine_it)
+  USE math_mod
   USE scaling_mod
   class(refine_t):: self
   class(patch_t), pointer:: patch
@@ -439,7 +440,7 @@ FUNCTION check_jeans (self, patch) RESULT(refine_it)
     call mpi%abort("Unrecognised patch type. Abort!")
   end select
   c_sound2 = patch%gamma * pg(l(1):u(1),l(2):u(2),l(3):u(3)) / d
-  Jeans_length = minval(sqrt(scaling%pi * c_sound2 / (d*scaling%grav)))
+  Jeans_length = minval(sqrt(math%pi * c_sound2 / (d*scaling%grav)))
   Jeans_num = minval(patch%mesh%d) / Jeans_length
   refine_it = Jeans_num > min_jeans
 

@@ -20,7 +20,6 @@ MODULE scaling_mod
     real(kind=8):: temp = 1.0
     real(kind=8):: stefan = 1.0
     real(kind=8):: mu = 1.0                             ! mean molecular weight
-    real(kind=8):: pi = asin(1.0) * 2.0
   contains
     procedure:: init
   end type

@@ -6,7 +6,7 @@ MODULE scaling_mod
   USE io_mod
   implicit none
   private
-  type, public:: units_t
+  type, public:: scaling_t
     real(kind=8):: l = 1.0
     real(kind=8):: t = 1.0
     real(kind=8):: m = 1.0
@@ -18,17 +18,17 @@ MODULE scaling_mod
     real(kind=8):: grav = 1.0
     real(kind=8):: temp = 1.0
     real(kind=8):: mu = 2.4                             ! mean molecular weight
-    real(kind=8):: pi = asin(1.0) * 2.0
   contains
     procedure:: init
   end type
-  type(units_t), public:: scaling
+  type(scaling_t), public:: scaling
 CONTAINS
 !> =============================================================================
 !> Initialize code units:
 !> =============================================================================
 SUBROUTINE init (self)
-  class(units_t):: self
+  USE math_mod
+  class(scaling_t):: self
   real(kind=8):: l0=3.12e16
   logical, save:: first_time=.true.
   namelist / scaling_params / l0
@@ -47,7 +47,7 @@ SUBROUTINE init (self)
   self%l = l0                                           ! length; cm
   self%m = cgs%m_sun                                    ! mass; g
   self%d = self%m/self%l**3                             ! mass density; g cm**-3
-  self%grav = 0.25 / self%pi                            ! gravitational constant
+  self%grav = 0.25 / math%pi                            ! gravitational constant
   self%t = sqrt(self%grav / cgs%grav / self%d)          ! time; s
   self%u = self%l/self%t                                ! speed
   self%p = self%d*self%u**2                             ! pressure = energy density

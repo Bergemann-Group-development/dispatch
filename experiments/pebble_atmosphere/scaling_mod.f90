@@ -4,10 +4,11 @@
 MODULE scaling_mod
   USE units_mod
   USE io_mod
+  USE math_mod
   implicit none
   private
   type, public:: scaling_t
-    real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu, pi, stefan
+    real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu, stefan
   contains
     procedure:: init
   end type
@@ -51,7 +52,7 @@ SUBROUTINE init (self)
   1 format(1x,a,1p,e11.3)
     print *, 'omega consistency:', &
       sqrt(cgs%grav*cgs%m_sun/cgs%au**3)/ &
-      (2.*cgs%pi/cgs%yr) - 1.d0
+      (2.*math%pi/cgs%yr) - 1.d0
   end if
 END SUBROUTINE init
 

@@ -35,7 +35,7 @@ setup_mod.o             : io_mod.o trace_mod.o units_mod.o scaling_mod.o atmosph
 atmosphere_mod.o        : io_mod.o trace_mod.o units_mod.o scaling_mod.o particle_mod.o planet_mod.o
 experiment_mod.o        : io_mod.o trace_mod.o units_mod.o scaling_mod.o pebble_patch_mod.o kinds_mod.o \
                           timestep_mod.o initial_mod.o atmosphere_mod.o boundaries_mod.o force_mod.o
-scaling_mod.o           : io_mod.o trace_mod.o units_mod.o
+scaling_mod.o           : io_mod.o units_mod.o math_mod.o
 units_mod.o               : io_mod.o
 star_mod.o              : io_mod.o trace_mod.o units_mod.o scaling_mod.o
 planet_mod.o            : io_mod.o trace_mod.o units_mod.o scaling_mod.o

@@ -5,6 +5,7 @@ MODULE pboundary_mod
   USE io_mod
   USE trace_mod
   USE kinds_mod
+  USE math_mod
   USE scaling_mod
   USE units_mod
   USE mesh_mod
@@ -79,7 +80,7 @@ SUBROUTINE conditions (self, patch, cit)
           T     = T0 * exp(-(r/RT)**(-gamma_T))                             ! temperature in cgs units
           cs    = sqrt(cgs%k_b*T/(mu*cgs%m_u))                              ! sound speed in cgs units
           H     = cs/(vkep*scaling%u/(r*scaling%l))                         ! scale height in cgs units
-          rho   = sigma/(sqrt(2.0*scaling%pi)*H)                            ! gas density in cgs units
+          rho   = sigma/(sqrt(2.0*math%pi)*H)                            ! gas density in cgs units
           d     = rho/scaling%d
           p0    = ( cs**2 * rho / patch%gamma ) / scaling%p
           skep  = d * vkep * m1%h31c(i1) * m2%h32c(i2)
@@ -130,7 +131,7 @@ SUBROUTINE conditions (self, patch, cit)
             T     = T0 * exp(-(r/RT)**(-gamma_T))                             ! temperature in cgs units
             cs    = sqrt(cgs%k_b*T/(mu*cgs%m_u))                              ! sound speed in cgs units
             H     = cs/(vkep*scaling%u/(r*scaling%l))                         ! scale height in cgs units
-            rho   = sigma/(sqrt(2.0*scaling%pi)*H)                            ! gas density in cgs units
+            rho   = sigma/(sqrt(2.0*math%pi)*H)                            ! gas density in cgs units
             d     = rho/scaling%d
             skep  = d * vkep * m1%h31c(i1) * m2%h32c(i2)
             p0    = ( cs**2 * rho / patch%gamma ) / scaling%p
@@ -165,7 +166,7 @@ SUBROUTINE conditions (self, patch, cit)
             T     = T0 * exp(-(r/RT)**(-gamma_T))                             ! temperature in cgs units
             cs    = sqrt(cgs%k_b*T/(mu*cgs%m_u))                              ! sound speed in cgs units
             H     = cs/(vkep*scaling%u/(r*scaling%l))                         ! scale height in cgs units
-            rho   = sigma/(sqrt(2.0*scaling%pi)*H)                            ! gas density in cgs units
+            rho   = sigma/(sqrt(2.0*math%pi)*H)                            ! gas density in cgs units
             d     = rho/scaling%d
             skep  = d * vkep * m1%h31c(i1) * m2%h32c(i2)
             p0    = ( cs**2 * rho / patch%gamma ) / scaling%p

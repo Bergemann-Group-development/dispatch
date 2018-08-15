@@ -7,7 +7,7 @@ MODULE scaling_mod
   USE parameters_mod
   implicit none
   private
-  type, public:: units_t
+  type, public:: scaling_t
     real(kind=8):: l = 1.0
     real(kind=8):: t = 1.0
     real(kind=8):: m = 1.0
@@ -19,17 +19,16 @@ MODULE scaling_mod
     real(kind=8):: grav = 1.0
     real(kind=8):: temp = 1.0
     real(kind=8):: mu = 2.34                             ! mean molecular weight
-    real(kind=8):: pi = asin(1.0) * 2.0
   contains
     procedure:: init
   end type
-  type(units_t), public:: scaling
+  type(scaling_t), public:: scaling
 CONTAINS
 !> =============================================================================
 !> Initialize code units:
 !> =============================================================================
 SUBROUTINE init (self)
-  class(units_t):: self
+  class(scaling_t):: self
   logical, save:: first_time=.true.
   if (.not.first_time) return
   first_time = .false.

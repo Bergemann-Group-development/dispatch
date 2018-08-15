@@ -8,7 +8,7 @@ MODULE scaling_mod
   implicit none
   private
   type, public:: scaling_t
-    real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu, pi
+    real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu
   contains
     procedure:: init
   end type
@@ -36,7 +36,6 @@ SUBROUTINE init (self)
   self%mu = 1.0
   self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e)  ! temperature for given mu
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
-  self%pi = cgs%pi
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
     print 1,'     length: ',self%l
