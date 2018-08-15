@@ -83,6 +83,10 @@ SUBROUTINE init (self)
   if ( (self%is_used .eqv. .true.) .and. (self%ntestDADM .eqv. .false.) ) then
     self%eta_Ohm_tbl = 0.d0
     self%eta_AD_tbl  = 0.d0
+    self%kB  = 1.3807e-16                ! Boltzmann constant
+    self%mu  = 2.37                      ! mean molecular weight
+    self%mp  = 1.6737236e-24             ! Proton mass  
+    self%NA  = 6.022140857e23            ! Avogadro constant
     call eta_table_init(self,self%eta_Ohm_tbl,self%eta_AD_tbl)
   endif
 
@@ -661,17 +665,19 @@ SUBROUTINE  computambip(self,u,q,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz
 
   dx = ds(1) ; dy = ds(2) ; dz = ds(3)
 
-  scale_v = 1e6
-  scale_d = 1e-17
-  scale_l = 5e15
-  scale_t = scale_l/scale_v
-  scale_T2 = (scale_v)**2 * self%mp / self%kB
+  if ( self%ntestDADM .eqv. .false. ) then
+    scale_v = 1e6
+    scale_d = 1e-17
+    scale_l = 5e15
+    scale_t = scale_l/scale_v
+    scale_T2 = (scale_v)**2 * self%mp / self%kB
+    pi = 4.*atan(1.d0)
+    c2_4pi = 7.152426325648638e+19
+    Bcode_to_Gauss = (4.d0*pi*scale_d)**0.5*scale_v
+  endif
 
-  pi = 4.*atan(1.d0)
-  c2_4pi = 7.152426325648638e+19
-  dtlim=dt!*coefalfven
-  Bcode_to_Gauss = (4.d0*pi*scale_d)**0.5*scale_v
   !dt est deja dtnew, qui a été choisi comme le dt normal (avec la condition de courant) ou le dt normal seuillé si le dtAD est trop faible(bricolo)
+  dtlim=dt!*coefalfven
 
   jxb=0.0d0
   jxbsquare=0.0d0
@@ -1046,10 +1052,10 @@ subroutine eta_table_init(self,eta_ohm_tbl,eta_ad_tbl)
     integer :: i,j
     real    :: nrho, nT, nB, nE, kB, mu, mp, NA
 
-    self%kB  = 1.3807e-16                ! Boltzmann constant
-    self%mu  = 2.37                      ! mean molecular weight
-    self%mp  = 1.6737236e-24             ! Proton mass  
-    self%NA  = 6.022140857e23            ! Avogadro constant
+    kB = self%kB             ! Boltzmann constant
+    mu = self%mu             ! mean molecular weight
+    mp = self%mp             ! Proton mass  
+    NA = self%NA             ! Avogadro constant
 
     nrho = 200. ; nT = 60. ; nE = nT ; nB = 150.
     rho0 = 300. * mu * mp ; rhoend = 1.7688710202180409e25 * mu * mp
@@ -1161,7 +1167,7 @@ real(dp) :: sig_p, sig_perp, sig_h, eta_ohm, eta_hall, eta_ad
 
 real, dimension(:,:,:) :: eta_Ohm_tbl, eta_AD_tbl
 
-   open(42,file='../../../tables/non-ideal_tbl/Table_abundances.dat', status='old')
+   open(42,file='../../tables/non-ideal_tbl/Table_abundances.dat', status='old')
    read(42,*) nchimie, tchimie, xichimie, nvar       ! Number of  steps in density, temperature and ionisation rate
    read(42,*) nislin, tislin, xiislin                      ! 1: Constant step in logscale, 0: Not constant step in logscale
    read(42,*)
