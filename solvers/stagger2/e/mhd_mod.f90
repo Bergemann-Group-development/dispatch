@@ -128,7 +128,7 @@ SUBROUTINE init (self)
   end if
   self%unsigned(self%idx%d)  = .true.
   self%pervolume(self%idx%s) = .true.
-  call self%force%init
+  call self%force%init (self%kind, self%id, self%mesh)
  call trace%end
 END SUBROUTINE init
 
@@ -365,7 +365,7 @@ SUBROUTINE pde (self)
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) &
-   dpdt = dpdt + dd*self%force%selected ()                                      ! ops: 1 0 0
+   dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)                                      ! ops: 1 0 0
   if (self%selfgravity) then
     phi => self%mem(:,:,:,self%idx%phi,self%it,1)
     dpdtx = dpdtx - dd(:,:,:,1)*ddxdn(ds,phi)

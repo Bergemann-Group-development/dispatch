@@ -6,6 +6,7 @@
 !> =============================================================================
 MODULE gpatch_mod
   USE io_mod
+  USE os_mod
   USE trace_mod
   USE patch_mod
   USE download_mod
@@ -19,6 +20,7 @@ MODULE gpatch_mod
   USE bits_mod
   USE timestep_mod
   USE pboundary_mod
+  USE data_io_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
@@ -28,6 +30,8 @@ MODULE gpatch_mod
     logical:: selfgravity=.false.
     real(8):: d0
   contains
+    procedure:: input
+    procedure:: output
     procedure:: init
     procedure:: dnload
     procedure:: gravity
@@ -40,6 +44,26 @@ MODULE gpatch_mod
   integer, save :: verbose=0
   integer, save :: order=1
 CONTAINS
+
+!> =============================================================================
+!> Interface routine to the data_io input procedure, signalling if the patch
+!> could be read, or not
+!> =============================================================================
+SUBROUTINE input (self, ok)
+  class(gpatch_t):: self
+  logical:: ok
+  !-----------------------------------------------------------------------------
+  call data_io%input (self, ok)
+END SUBROUTINE input
+
+!> =============================================================================
+!> Interface routine to the data_io output procedure
+!> =============================================================================
+SUBROUTINE output (self)
+  class(gpatch_t):: self
+  !-----------------------------------------------------------------------------
+  call data_io%output (self)
+END SUBROUTINE output
 
 !> =============================================================================
 !> Add restart functionality to patch initialization
@@ -155,7 +179,7 @@ SUBROUTINE init (self)
     self%iout = self%restart+1
     !$omp master
     write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout
-    if (io%iodir/=self%iout) call io%mkdir (trim(filename))
+    if (io%iodir/=self%iout) call os%mkdir (trim(filename))
     io%iodir = self%iout
     !$omp end master
   end if
