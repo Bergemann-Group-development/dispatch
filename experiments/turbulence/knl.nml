@@ -16,7 +16,7 @@
  do_debug=f
  do_output=f
 /
-&box_params
+&cartesian_params
  size=2,2,2 dims=20,20,20 mpi_dims=2,2,2
  origin=0,0,0
 /

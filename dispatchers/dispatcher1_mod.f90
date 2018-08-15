@@ -49,7 +49,6 @@ SUBROUTINE execute (self, task_list, test)
   logical:: ready, mytask
   real(8):: start, v, t
   integer, save:: itimer=0
-  type(index_t):: idx
   !-----------------------------------------------------------------------------
   self%task_list => task_list
   call task_list%init_all_nbors

@@ -21,6 +21,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(scaling_t):: self
   logical, save:: first_time=.true.
+  type(units_t):: units
   !-----------------------------------------------------------------------------
   if (.not.first_time) return
   if (io%master) print *, &
@@ -31,6 +32,12 @@ SUBROUTINE init (self)
   self%l  = 40.*cgs%pc                                  ! length = 40 pc
   self%d  = 1d-24                                       ! mass density
   self%u  = cgs%kms                                     ! speed = 1 km/s
+  !--------------------------- defining unit system ----------------------------
+  units%system = 'cgs'
+  units%l = self%l
+  units%t = self%l/self%u
+  units%m = self%d*self%l**3
+  call units%output
   !--------------------------- derived quantities ------------------------------
   self%m  = self%d*self%l**3                            ! mass
   self%t  = self%l/self%u                               ! time ~ 6700 sec < 2 hours

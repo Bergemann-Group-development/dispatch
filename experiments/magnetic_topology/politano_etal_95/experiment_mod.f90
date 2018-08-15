@@ -58,10 +58,9 @@ END SUBROUTINE init
 SUBROUTINE update (self)
   class(experiment_t):: self
   class(link_t), pointer:: link
-  type(index_t):: idx
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
-  self%mem(:,:,:,idx%e,self%it,1) = 1.0
+  self%mem(:,:,:,self%idx%e,self%it,1) = 1.0
   call self%mhd_t%update
   call trace_end
 END SUBROUTINE update

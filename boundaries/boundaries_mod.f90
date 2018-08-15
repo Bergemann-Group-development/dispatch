@@ -629,7 +629,6 @@ SUBROUTINE spherical_p_ns (self, p, m, position, radius)
   integer                                      :: ix, iy, iz, iv, i
   real                                         :: h(3), r(3)
   class(mesh_t), pointer                       :: mm
-  type(index_t)                                :: idx
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%spherical0_ns')
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
@@ -664,7 +663,6 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
   integer                                    :: iv
   logical, optional                          :: maxfill
   !............................................................................
-  type(index_t):: idx
   integer      :: ix, iy, iz
   real(8)      :: x, y, z, r, h(3)
   real(8)      :: d1, dw, x1, rp, p1, p2
@@ -817,7 +815,6 @@ SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
   class(mesh_t), pointer                       :: m(:), m1, m2, m3
   integer                                      :: iv, it, new
   !............................................................................
-  type(index_t):: idx
   integer      :: ix, iy, iz
   real(8)      :: x1, x2, y1, y2, z1, z2
   real(8)      :: r2
@@ -869,7 +866,6 @@ SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
   integer                                    :: iv, it
   real                                       :: v
   !............................................................................
-  type(index_t):: idx
   integer      :: ix, iy, iz
   real(8)      :: x1, x2, y1, y2, z1, z2
   real(8)      :: r2
@@ -919,7 +915,6 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
   class(mesh_t), pointer                     :: m(:), m1, m2, m3
   integer                                    :: iv
   !............................................................................
-  type(index_t):: idx
   integer      :: ix, iy, iz
   real(8)      :: x1, x2, y1, y2, z1, z2
   real(8)      :: r2, h(3)

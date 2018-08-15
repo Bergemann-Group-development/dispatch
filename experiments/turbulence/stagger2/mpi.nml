@@ -22,7 +22,7 @@
  do_debug=f
  do_output=f
 /
-&box_params
+&cartesian_params
  size=1,1,1
  dims=16,16,16
  origin=0,0,0

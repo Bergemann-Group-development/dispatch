@@ -14,7 +14,7 @@
  time_derivs=f
 /
 
-&box_params
+&cartesian_params
  size=1.0,1.0,1.0
  dims=3,3,3
  origin=0.0,0.0,0.0

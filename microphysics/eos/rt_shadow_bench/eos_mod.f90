@@ -128,7 +128,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   end if
   if (present(src)) then
     do i=1,size(src,4)
-      src(:,:,:,i) = scaling%stefan*real(((self%gamma-1.0)*x_loc),kind=8)**4
+      src(:,:,:,i) = scaling%stefan_pi*real(((self%gamma-1.0)*x_loc),kind=8)**4
     end do
   end if
   if (present(pg)) then

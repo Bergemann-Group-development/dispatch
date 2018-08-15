@@ -65,8 +65,7 @@ SUBROUTINE init (self, solver, id, mesh)
   mz = self%mesh(3)%gn
   if (.not.allocated(self%fran)) then
     allocate (self%fran(mx,my,mz,3,2))
-    !$omp atomic
-    io%gb = io%gb + storage_size(self%fran)*(product(shape(self%fran))/(8.*1024.**3))
+    call io%gb_mem (storage_size(self%fran)*(product(shape(self%fran))/(8.*1024.**3)))
     self%fran = 0.0
   end if
   self%selected => turbulence

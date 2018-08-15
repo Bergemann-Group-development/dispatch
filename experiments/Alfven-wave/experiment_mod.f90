@@ -22,8 +22,6 @@ MODULE experiment_mod
     procedure:: update
   end type
 
-  type(index_t):: idx
-
 CONTAINS
 
 !> =============================================================================
@@ -58,14 +56,14 @@ SUBROUTINE init (self)
     first_time = .false.
   end if
   if (self%kind(1:6) == 'ramses') then 
-    et => self%mem(:,:,:,idx%e,self%it,1)
+    et => self%mem(:,:,:,self%idx%e,self%it,1)
     allocate (e1(self%gn(1),self%gn(2),self%gn(3)))
   endif
 
-  d => self%mem(:,:,:,idx%d,self%it,1)
-  if (self%kind(1:7) == 'stagger') s => self%mem(:,:,:,idx%s,self%it,1)
-  p => self%mem(:,:,:,idx%px:idx%pz,self%it,1)
-  B => self%mem(:,:,:,idx%bx:idx%bz,self%it,1)
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  if (self%kind(1:7) == 'stagger') s => self%mem(:,:,:,self%idx%s,self%it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
   px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
   Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
   print*, 'gn is:', self%gn(1)

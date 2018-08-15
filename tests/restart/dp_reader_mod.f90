@@ -142,7 +142,6 @@ SUBROUTINE snapshot (self, mesh, mem, level, used)
   real, dimension(:,:,:,:), pointer  :: mem
   integer :: level
   !.....................................................................
-  type(index_t):: idx
   class(task_t), pointer :: task
   class(patch_list_t), pointer :: dpatch, bpatch                                
   logical :: same_found, used

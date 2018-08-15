@@ -108,10 +108,8 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   integer, dimension(3):: gn
   !.............................................................................
   integer:: ix, iy, iz
-  type(index_t):: i
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%dust_gas_interaction')
-
   gn(1)=size(mem,1); gn(2)=size(mem,2); gn(3)=size(mem,3)
   nv = size(mem,4)
   !--------------------------------------------------------------------------
@@ -130,9 +128,9 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     ! gas density for reuse
     !--------------------------------------------------------------------------
     ic     =  5*(self%i_gas-1)
-    d_gas  =  mem(:,:,:,i%d +ic        )
-    p      =  hinv_vector(m,mem(:,:,:,i%px+ic:i%pz+ic))
-    s      =  mem(:,:,:,i%s +ic        )
+    d_gas  =  mem(:,:,:,idx%d +ic        )
+    p      =  hinv_vector(m,mem(:,:,:,idx%px+ic:idx%pz+ic))
+    s      =  mem(:,:,:,idx%s +ic        )
     lnd    =  log(d_gas)
     ld     =  down(lnd)
     dd     =  exp(ld)
@@ -142,8 +140,8 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     ! dust density for reuse
     !--------------------------------------------------------------------------
     ic     =  5*(self%i_dust-1)
-    d_dust =  mem(:,:,:,i%d +ic        )
-    p      =  hinv_vector(m,mem(:,:,:,i%px+ic:i%pz+ic))
+    d_dust =  mem(:,:,:,idx%d +ic        )
+    p      =  hinv_vector(m,mem(:,:,:,idx%px+ic:idx%pz+ic))
     lnd    =  log(d_dust)
     ld     =  down(lnd)
     dd     =  exp(ld)
@@ -271,7 +269,6 @@ FUNCTION turbulent_pressure(self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   real, dimension(:,:,:), pointer:: lnd, d_gas, s, tO, pg, cs, cd2
   real, dimension(:,:,:):: Ux, Uy, Uz, d
   integer:: i1, i2, i3, ic, gn(3)
-  type(index_t):: i
   !-----------------------------------------------------------------------------
   call trace_begin('force_mod::turbulent_pressure')
   !-----------------------------------------------------------------------------
@@ -294,8 +291,8 @@ FUNCTION turbulent_pressure(self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
         end do
       end do
       ic = 5*(self%i_gas-1)
-      d_gas = mem(:,:,:,i%d+ic)
-      s     = mem(:,:,:,i%s+ic)
+      d_gas = mem(:,:,:,idx%d+ic)
+      s     = mem(:,:,:,idx%s+ic)
       if (self%gamma==1.0) then
         pg    = d_gas*self%csound**2
       else

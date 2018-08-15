@@ -49,7 +49,6 @@ MODULE mhd_mod
     procedure:: update
     procedure:: gas_pressure
   end type
-  logical:: isothermal=.false.
   logical:: first_time=.true.
   integer:: verbose=0
   character(len=16):: eqn='mhd'
@@ -61,7 +60,6 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hlld'
-  type(index_t):: idx
   integer:: i
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
     smallc, isothermal, csound, verbose
@@ -74,6 +72,7 @@ SUBROUTINE init (self)
     self%nv = 5
     if (self%mhd) self%nv = self%nv + 3
   end if
+  call self%idx%init (5, self%mhd)
   call self%gpatch_t%init
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
@@ -83,6 +82,11 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, ramses_params)
+    isothermal = isothermal .or. gamma==1d0
+    !---------------------------------------------------------------------------
+    ! The HLLD solver throws a divide fault if gamma==1, hence this workaround:
+    !---------------------------------------------------------------------------
+    if (isothermal) gamma=1.000001d0
     if (io_unit%master) write (*, ramses_params)
   end if
   !$omp end critical (pde)
@@ -171,13 +175,18 @@ SUBROUTINE update (self)
   !call check_small (self)
   call ctoprim(self)                                    ! Primitive variables
   self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
-  call uslope(self,self%bf,self%q,self%dq,self%dbf)              ! TVD slopes
+  call uslope(self,self%bf,self%q,self%dq,self%dbf,slope_type)   ! TVD slopes
   if (verbose>0) print *, 'uslope', self%id, minval(self%dbf), maxval(self%dbf)
-  if (slope_type==3.0) then
+  !-----------------------------------------------------------------------------
+  ! For slope types in the interval 3-4, use the conservative 3.0 for corners
+  ! (cf. RAMSES/CPH)
+  !-----------------------------------------------------------------------------
+  if (slope_type <= 3.0) then
     self%dq2=self%dq
   else
-    call uslope(self,self%bf,self%q,self%dq2,self%dbf)              ! TVD slopes
+    call uslope(self,self%bf,self%q,self%dq2,self%dbf,3.0)       ! TVD slopes
   endif
+
   if (verbose>0) print *, 'uslope', self%id, minval(self%dq), maxval(self%dq)
   if (verbose>0) print *, 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
 
@@ -409,7 +418,7 @@ subroutine check_small (self)
     emag = 0.5*(B1**2+B2**2+B3**2)
     if (isothermal) then
       p = d*csound**2
-      uu(i,j,k,5) = p/(gamma-one)+ekin+emag
+      uu(i,j,k,5) = p+ekin+emag
     else
       p = (uu(i,j,k,5)-ekin)*(gamma-one)
       if (p < smallr*smallc**2) then
@@ -435,13 +444,18 @@ end subroutine check_small
 subroutine ctoprim(self)
   class(mhd_t):: self
   integer::n(4)
-  real(dp):: smallp, c
+  real(dp):: smallp, c, entho
   real(dp):: eken, emag, etot, eint
   integer, save:: itimer=0
   integer:: i,j,k
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim',itimer=itimer)
+  if (isothermal) then
+    entho = one
+  else
+    entho = one/max(gamma-one,1e-6)
+  end if
   smallp = smallr*smallc**2/self%gamma
   n = shape(uin)-1
   !
@@ -469,7 +483,7 @@ subroutine ctoprim(self)
     emag = half*( q(i,j,k,6)**2 + q(i,j,k,7)**2 + q(i,j,k,8)**2)
     etot = uin(i,j,k,5) - emag
     eint = etot/uin(i,j,k,1) - eken
-    q(i,j,k,5) = MAX((self%gamma-one)*q(i,j,k,1)*eint,smallp)
+    q(i,j,k,5) = MAX(entho*q(i,j,k,1)*eint,smallp)
     !
   end do
   end do
@@ -490,12 +504,13 @@ end subroutine ctoprim
 !> =============================================================================
 !> Slope limiters
 !> =============================================================================
-subroutine uslope(self,bf,q,dq,dbf)
+subroutine uslope(self,bf,q,dq,dbf,rslope_type)
   class(mhd_t):: self
   real, dimension(:,:,:,:):: q
   real, dimension(:,:,:,:):: bf
   real, dimension(:,:,:,:,:):: dq
   real, dimension(:,:,:,:,:):: dbf
+  real:: rslope_type
   integer::nv, islope_type
   integer::i, j, k, n, l(3), u(3)
   real(dp)::dsgn, dlim, dcen, dlft, drgt, slop, xslope_type
@@ -508,7 +523,7 @@ subroutine uslope(self,bf,q,dq,dbf)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%uslope', itimer=itimer)
   !
-  islope_type = int(slope_type)
+  islope_type = int(rslope_type)
   l = self%mesh%lb+1
   u = self%mesh%ub-1
   nv=self%nv

@@ -42,7 +42,6 @@ MODULE bifrost_mod
     procedure:: magnetic_field_magnitude => void
   end type
   type(bifrost_t), public:: bifrost
-  type(index_t):: idx
   character(len=80), save:: id = &
   '$Id$'
 CONTAINS

@@ -7,22 +7,23 @@
 /
 
 &rubiks_params
- n_levels=3                         ! # of refinement levels in for the rubiks cube
+ size=3*0.1111111
+ n_levels=2                         ! # of refinement levels in for the rubiks cube
  n_patch=3                          ! # of patches per direction
  m_zoom=3                           ! zoom-in level per direction
  n_repeat=1                         ! how many times rubiks cube is repeated along the orbit
 /
 
 &out_params
- end_time=3d-9
- out_time=1d-10
+ end_time=3d-4
+ out_time=1d-5
  print_time=0.0
  guard_zones=t
  time_derivs=f
 /
 
 &box_params
- size=1.0,1.0,1.0
+ size=1,1,1
  dims=3,3,3
  origin=0.0,0.0,0.0
  !origin=-0.005,-0.005,-0.005
@@ -30,11 +31,14 @@
 
 &patch_params
  nt=5
- courant=0.2
  grace=0.0
  n=43,43,43
- dt_fixed=1d-10
+ !dt_fixed=1d-11
  no_mans_land=f
+/
+
+&download_params
+check_filled=t
 /
 
 &eos_params
@@ -47,13 +51,11 @@
 &rt_params
  solver= 'integral'
  use_data_hub = f
- do_output = t
+ do_output = f
  cr_heating = 0.0
- init_time=-1d-11
- dtime = 1d-10
- debug=f
- detailed_timer=f
- dtau='staggered'   !other options: centered, weighted
+ init_time = 0d0
+ !periodic = f,t,t
+ dtau='staggered'   !other options: centered, weighted, staggered
 /
 
 &cartesian_ray_geometry_params
@@ -75,8 +77,8 @@ hot_temp  = 1740!621180!240000 !1740
 /
 
 
-&mhd_params
- nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
+&stagger_params
+ nu=  0.15, 1.0, 1.0, 0.2, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
  gamma=1.666667
 /
@@ -95,14 +97,14 @@ hot_temp  = 1740!621180!240000 !1740
 /
 
 &initial_params
- clump_pos = 0.6,0.0,0.5 
+ clump_pos = 0.5,0.0,0.0 
  !clump_pos = 0.6666,0.6666,0.6666
  d0=1.0
  clump_dfact=10.0
  !t0=103530.0
  t0=290.0
- clump_a=0.07
- clump_b=0.04
+ clump_a=0.1
+ clump_b=0.06
  gamma=1.666667
 /
 &force_params   /

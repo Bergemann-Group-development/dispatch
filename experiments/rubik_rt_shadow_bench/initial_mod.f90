@@ -12,8 +12,6 @@ MODULE initial_mod
   implicit none
   private
 
-  real(8), parameter:: pi2=8d0*atan(1d0)
-
   type, public:: initial_t
     real:: clump_pos(3), clump_a, clump_b, d0, t0, clump_dfact, gamma
     character(len=64):: solver
@@ -29,17 +27,16 @@ CONTAINS
 !> =============================================================================
 !> Read namelist
 !> =============================================================================
-SUBROUTINE init (self, solver, gamma)
+SUBROUTINE init (self, solver, gam)
   class(initial_t):: self
   character(len=64):: solver
-  real, optional:: gamma
-  !.............................................................................
+  real, optional :: gam
   real, save:: clump_pos(3)=0.0, clump_a=0.1, clump_b=0.06, d0=1.0, t0=290.0, clump_dfact=10.0
-  namelist /initial_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact
+  real, save:: gamma=1.4
+  namelist /initial_params/ clump_pos, clump_a, clump_b, d0, t0, clump_dfact, gamma
   integer:: iostat
   !----------------------------------------------------------------------------
   call trace_begin('initial_t%init')
-  if (present(gamma)) self%gamma = gamma
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -56,18 +53,19 @@ SUBROUTINE init (self, solver, gamma)
   self%d0 = d0 /scaling%d
   self%t0 = t0 /scaling%temp
   self%clump_dfact = clump_dfact
+  self%gamma=gamma
 
   call trace_end
 END SUBROUTINE init
 
-SUBROUTINE condition (self, m, mem, idx)
+SUBROUTINE condition (self, m, mem, i)
 !> =============================================================================
 !> Set the initial conditions
 !> =============================================================================
   class(initial_t) :: self
-  type(index_t):: idx
   class(mesh_t), pointer, dimension(:) :: m
   real, dimension(:,:,:,:), pointer :: mem
+  type(index_t) :: i
   class(mesh_t), pointer :: mx, my, mz
   integer :: ix, iy, iz
   real :: p0, q, x, y, z, d
@@ -92,37 +90,37 @@ SUBROUTINE condition (self, m, mem, idx)
         q = ((x - self%clump_pos(1)) / self%clump_a)**2 &
           + ((y - self%clump_pos(2)) / self%clump_b)**2 &
           + ((z - self%clump_pos(3)) / self%clump_b)**2
-        q = 10.0 * (q - 1.0)
+		q = 10.0 * (q - 1.0)
         ! the if-then-else is to prevent overflow when (x,y,z) is very from zero.
         if (q > 88.0) then
-          mem(ix,iy,iz,idx%d) = self%d0
+          mem(ix,iy,iz,i%d) = self%d0
         else
-          mem(ix,iy,iz,idx%d) = self%d0 + (self%clump_dfact * self%d0 - self%d0) &
+          mem(ix,iy,iz,i%d) = self%d0 + (self%clump_dfact * self%d0 - self%d0) &
                                   / (1.0 + exp(q))
         end if
         ! the clump is initially in pressure equilibrium with the ambient medium
-        d = mem(ix,iy,iz,idx%d)
+        d = mem(ix,iy,iz,i%d)
         if (self%solver(1:7)=='ramses_') then
-          mem(ix,iy,iz,idx%e) = p0/(self%gamma-1.0)!*d
+          mem(ix,iy,iz,i%e) = p0/(self%gamma-1.0)!*d
         else if (self%solver(1:9)=='stagger2e') then
-          mem(ix,iy,iz,idx%e) = p0/(self%gamma-1.0)!*d
+          mem(ix,iy,iz,i%e) = p0/(self%gamma-1.0)!*d
         else if (self%solver(1:9)=='stagger2_') then
-          mem(ix,iy,iz,idx%s) = d*(log(p0)-self%gamma*log(d))/(self%gamma-1.0)
+          mem(ix,iy,iz,i%s) = d*(log(p0)-self%gamma*log(d))/(self%gamma-1.0)
         else
           print *,trim(self%solver)
           error stop "initial_mod (1): solver type not known"
         end if
 
         ! momentum components
-        mem(ix,iy,iz,idx%px) = 0.0
-        mem(ix,iy,iz,idx%py) = 0.0
-        mem(ix,iy,iz,idx%pz) = 0.0
+        mem(ix,iy,iz,i%px) = 0.0
+        mem(ix,iy,iz,i%py) = 0.0
+        mem(ix,iy,iz,i%pz) = 0.0
         ! magnetic field components
-        !if (self%mhd) then
-          mem(ix,iy,iz,idx%bx) = 0.0
-          mem(ix,iy,iz,idx%by) = 0.0
-          mem(ix,iy,iz,idx%bz) = 0.0
-        !end if
+        if (self%mhd) then
+          mem(ix,iy,iz,i%bx) = 0.0
+          mem(ix,iy,iz,i%by) = 0.0
+          mem(ix,iy,iz,i%bz) = 0.0
+        end if
       end do
     end do
   end do

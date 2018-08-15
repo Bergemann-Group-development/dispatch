@@ -12,6 +12,7 @@ MODULE mhd_mod
   USE io_mod
   USE bits_mod
   USE omp_mod
+  USE omp_timer_mod
   USE mpi_mod
   USE trace_mod
   USE kinds_mod
@@ -34,6 +35,7 @@ MODULE mhd_mod
     real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real, dimension(:,:,:),   pointer:: lnd, ee, pg
+    real, dimension(:,:,:), allocatable:: qrad
     real:: nu(6)
     real:: csound
     real:: cdtd
@@ -47,8 +49,8 @@ MODULE mhd_mod
     procedure:: output
     procedure:: gas_pressure
   end type
+  logical, save:: do_smooth=.false.
   integer, save:: verbose=0
-  logical, save:: isothermal=.false.
 CONTAINS
 
 !> =============================================================================
@@ -59,10 +61,12 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   type(index_t):: idx
   integer:: i, iv
-  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
+  real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
+  real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
   character(len=16), save:: eos
-  namelist /mhd_params/ nu, gamma, csound, isothermal, cdtd, hardwire, eos, verbose
+  namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
+    do_smooth, verbose
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -70,8 +74,8 @@ SUBROUTINE init (self)
     first_time = .false.
     eos = self%eos
     rewind (io%input)
-    read (io%input, mhd_params)
-    if (io%master) write (*, mhd_params)
+    read (io%input, stagger_params)
+    if (io%master) write (*, stagger_params)
     call non_ideal%init
     call timestep%init
     ! fool-proofing
@@ -82,9 +86,15 @@ SUBROUTINE init (self)
   self%nu = nu
   self%gamma = gamma
   self%csound = csound
+  self%courant = courant
   self%cdtd = cdtd
+  !-----------------------------------------------------------------------------
+  ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
+  ! called again, from gpatch_t%init, when gamma is known and can be passed on.
+  !-----------------------------------------------------------------------------
   self%initial%mhd = self%mhd
-  call self%initial%init (self%kind, self%gamma)
+  call self%idx%init (5, self%mhd)
+  call self%initial%init (self%kind, real(self%gamma))
   self%mhd = self%initial%mhd
   if (self%mhd) then
     self%kind = 'stagger2e_mhd_patch'
@@ -104,6 +114,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
+  call self%idx%init (5, self%mhd)
   call self%gpatch_t%init
   self%type = 'mhd_t'
   do i=1,3
@@ -115,9 +126,9 @@ SUBROUTINE init (self)
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  self%unsigned(idx%d)  = .true.
-  self%pervolume(idx%s) = .true.
-  call self%force%init (self%kind, self%id, self%mesh)
+  self%unsigned(self%idx%d)  = .true.
+  self%pervolume(self%idx%s) = .true.
+  call self%force%init
  call trace%end
 END SUBROUTINE init
 
@@ -126,29 +137,32 @@ SUBROUTINE pde (self)
   USE scalar_mod
   class(mhd_t):: self
   !.............................................................................
-  real, dimension(:,:,:,:), pointer:: U, emf, J, p, B, dpdt, dBdt
-  real, dimension(:,:,:,:), pointer:: fx, fy, fz, fd, ld, dd, fm
   real, dimension(:,:,:),   pointer:: d, e, dddt, dedt
-  real, dimension(:,:,:),   pointer:: du, lnd, ee, cs, pg, pa, pp, pb, Q
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
   real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi
-  real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, Ex, Ey, Ez, Jx, Jy, Jz
+  real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, pg
+  real, dimension(:,:,:,:), pointer:: U, p, B, dpdt, dBdt
+  real, dimension(:,:,:),   pointer:: Ex, Ey, Ez, Jx, Jy, Jz
   real, dimension(:,:,:),   pointer:: fdx, fdy, fdz, ldx, ldy, ldz, ddx, ddy, ddz
   real, dimension(:,:,:),   pointer:: fxx, fxy
   real, dimension(:,:,:),   pointer::      fyy, fyz
   real, dimension(:,:,:),   pointer:: fzx,      fzz
-  real, dimension(:,:,:),   pointer:: Txx, Txy
-  real, dimension(:,:,:),   pointer::      Tyy, Tyz
-  real, dimension(:,:,:),   pointer:: Tzx,      Tzz
+  real, dimension(:,:,:),   allocatable:: du, ss, cs, pa, pp, pb, Q, uu, divU
+  real, dimension(:,:,:),   allocatable, target:: ee, lnd
+  real, dimension(:,:,:),   allocatable:: Txx, Txy
+  real, dimension(:,:,:),   allocatable::      Tyy, Tyz
+  real, dimension(:,:,:),   allocatable:: Tzx,      Tzz
+  real, dimension(:,:,:,:), allocatable, target:: emf, J
+  real, dimension(:,:,:,:), allocatable, target:: fx, fy, fz, fd, ld, dd, fm
   integer :: OMP_GET_NUM_THREADS, OMP_GET_THREAD_NUM
   logical, save:: first_time=.true.
   !.............................................................................
-  real(8):: ds(3)
-  integer, save:: itimer=0
-  type(index_t):: i
+  real(8):: ds(3), dsmax
   real:: u_max
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%pde',itimer=itimer)
+  associate (i => self%idx)
   self%d => self%mem(:,:,:,i%d      ,self%it,1); self%dddt => self%mem(:,:,:,i%d      ,self%it,2)
   self%e => self%mem(:,:,:,i%e      ,self%it,1); self%dedt => self%mem(:,:,:,i%e      ,self%it,2)
   self%p => self%mem(:,:,:,i%px:i%pz,self%it,1); self%dpdt => self%mem(:,:,:,i%px:i%pz,self%it,2)
@@ -162,8 +176,9 @@ SUBROUTINE pde (self)
     Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
     dBdtx=>dBdt(:,:,:,1); dBdty=>dBdt(:,:,:,2); dBdtz=>dBdt(:,:,:,3);
   end if
-  call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
-  call allocate_scalars (self%gn, lnd, pa, du, ee, cs, pp, pb, Q)
+  end associate
+  call allocate_vectors_a (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
+  call allocate_scalars_a (self%gn, lnd, pa, du, ee, cs, pp, pb, Q, uu, divU)
   if (self%do_pebbles) then
     U => self%vgas(:,:,:,:,self%it)
     pg => self%pressure(:,:,:,self%it)
@@ -199,99 +214,91 @@ SUBROUTINE pde (self)
   pg = self%gas_pressure ()
   self%pg => pg
   !-----------------------------------------------------------------------------
-  ! Divergence of velocity, and artificial pressure.  The divergence is valid
-  ! in (2,gn-1)
-  !-----------------------------------------------------------------------------
-  ds = self%ds
-  du = -maxval(ds,self%n > 1)*div(ds,U)                 ! convergence rate      ! ops: 0 1 0
-  du = max(du,0.0)                                      ! positive part
-  self%u_max = 0.0
-  !-----------------------------------------------------------------------------
   ! Conservation of momentum -- first the diagonal part of the stress tensor
   ! The diagonal fxx is valid in (2:gn-1)
   !-----------------------------------------------------------------------------
-  call allocate_scalars (self%gn, Txx, Tyy, Tzz)
+  call allocate_scalars_a (self%gn, Txx, Tyy, Tzz)
+  ds = self%ds
   Txx = ddxup(ds,Ux)
   Tyy = ddyup(ds,Uy)
   Tzz = ddzup(ds,Uz)
+  divU = Txx+Tyy+Tzz                                    ! convergence rate      ! ops: 0 2 0
+  !-----------------------------------------------------------------------------
+  ! Divergence of velocity, and artificial pressure.  The divergence is valid
+  ! in (2,gn-1)
+  !-----------------------------------------------------------------------------
+  dsmax = maxval(ds,self%n > 2)
+  du = -dsmax*min(divU,0.0)                             ! positive part
+  if (do_smooth) then
+    pa = self%nu(2)*d*xyzsm(du**2)
+  else
+    pa = self%nu(2)*d*du**2                                                     ! ops: 0 3 0
+  end if
+  !-----------------------------------------------------------------------------
+  ! Diagonal Reynolds stress
+  !-----------------------------------------------------------------------------
+  fxx = xup(Ux)**2
+  fyy = yup(Uy)**2
+  fzz = zup(Uz)**2
+  uu = sqrt(fxx+fyy+fzz)
+  self%u_max = 0.0
   if (self%mhd) then
     ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2
-    fyy = yup(Uy)**2
-    fzz = zup(Uz)**2
-    pp = (fxx+fyy+fzz)
     ! Diagonal (negative) Maxwell stress (borrowing emf for scratch)
     Ex = xup(Bx)**2                                                             ! mhd: 0 1 0
     Ey = yup(By)**2                                                             ! mhd: 0 1 0
     Ez = zup(Bz)**2                                                             ! mhd: 0 1 0
     ! Magnetic pressure
     pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
-    ! Fast mode speed + velocity
-    pa = self%nu(2)*d*du**2
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
     if (verbose>3) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      print 1, 'u_max(ca)', u_max, self%u_max
+      print 1, 'u_max(ca)  ', u_max, self%u_max
     1 format(1x,a,1p,2g12.3)
-      u_max = self%fmaxval(cs + sqrt(pp))
-      self%u_max = max(self%u_max,u_max)
-      print 1, 'u_max(ca+u)', u_max, self%u_max
     end if
-    u_max = self%fmaxval(cs + sqrt(pp) + du)
-    self%u_max = max(self%u_max,u_max)
-    if (verbose>2) print 1, 'u_max(ca+u+du)', u_max, self%u_max
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
-    du = (maxval(ds,self%n > 1)*self%nu(1))*cs
+    du = (dsmax*self%nu(1))*(cs + 2.*uu)                                        ! mhd: 0 2 0
     fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
     fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
     fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
   else
-    ! Diagonal Reynolds stress
-    fxx = xup(Ux)**2                                                            ! ops: 0 1 0
-    fyy = yup(Uy)**2                                                            ! ops: 0 1 0
-    fzz = zup(Uz)**2                                                            ! ops: 0 1 0
-    pp = (fxx+fyy+fzz)                                                          ! ops: 2 0 0
-    ! Isotropic pressure part
-    pa = self%nu(2)*d*du**2                          ! dimension: pressure      ! ops: 0 3 0
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
     if (verbose>3) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      print 1, 'u_max(cs)', u_max, self%u_max
-      u_max = self%fmaxval(cs + sqrt(pp))
-      self%u_max = max(self%u_max,u_max)
-      print 1, 'u_max(cs+u)', u_max, self%u_max
+      print 1, 'u_max(cs)  ', u_max, self%u_max
     end if
-    u_max = self%fmaxval(cs + sqrt(pp) + du)
-    self%u_max = max(self%u_max,u_max)
-    if (verbose>2) print 1, 'u_max(cs+u+du)', u_max, self%u_max
     pp = pg + pa                                                                ! ops: 1 0 0
-    ! Total diagondal stress, with density factor
-    du = (maxval(ds,self%n > 1)*self%nu(1))*cs                                  ! ops: 0 1 0
+    du = (dsmax*self%nu(1))*(cs + 2.*uu)                                        ! ops: 0 2 0
     !---------------------------------------------------------------------------
+    ! Total diagonal stress, with density factor
     ! Incoming fxx is valid in (2:gn-1), as is du and ddxup(Ux)
     !---------------------------------------------------------------------------
     fxx = pp + d*(fxx - du*Txx)                                                 ! ops: 2 2 0
     fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
     fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
   end if
+  u_max = self%fmaxval(cs+uu)
+  self%u_max = max(self%u_max,u_max)
+  if (verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! du has units area per unit time, which gives velocity squared times mass
   ! density per unit time = energy per unit volume and time
   !-----------------------------------------------------------------------------
   Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)                                           ! ops: 2 5 0
-  call deallocate_scalars (Txx, Tyy, Tzz)
+  !if (verbose==1) print *, 'average(Q):', self%faver(Q), &
+    !self%faver(e-d**self%gamma/(self%gamma-1.0)), self%faver(fm(:,:,:,1))
   !-----------------------------------------------------------------------------
   ! Conservation of mass
   !-----------------------------------------------------------------------------
   fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux   ! ops: 0 9 0
   fm = p+fd                                             ! mass flux             ! ops: 3 0 0
   dddt = -div(ds,fm)                                    ! density derivative
-  u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs(dddt/d))             ! ops: 0 0 1
+  u_max = self%cdtd*dsmax*self%fmaxval(abs(dddt/d))                             ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
   if (verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
@@ -304,7 +311,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !-----------------------------------------------------------------------------
-  call allocate_scalars (self%gn, Txy, Tyz, Tzx)
+  call allocate_scalars_a (self%gn, Txy, Tyz, Tzx)
   Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)                                               ! ops: 0 1 0
   Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)                                               ! ops: 0 1 0
   Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)                                               ! ops: 0 1 0
@@ -314,7 +321,7 @@ SUBROUTINE pde (self)
   Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
                                yup(zup(Tyz))**2 + &                             ! ops: 1 1 0
                                zup(xup(Tzx))**2)                                ! ops: 1 0 0
-  call deallocate_scalars (Txy, Tyz, Tzx)
+  call deallocate_scalars_a (Txy, Tyz, Tzx)
   !-----------------------------------------------------------------------------
   ! Multiply with edge-centered density
   !-----------------------------------------------------------------------------
@@ -358,7 +365,7 @@ SUBROUTINE pde (self)
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) &
-   dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)! ops: 1 0 0
+   dpdt = dpdt + dd*self%force%selected ()                                      ! ops: 1 0 0
   if (self%selfgravity) then
     phi => self%mem(:,:,:,self%idx%phi,self%it,1)
     dpdtx = dpdtx - dd(:,:,:,1)*ddxdn(ds,phi)
@@ -368,12 +375,22 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Conservation of energy; reuse the mass flux for the energy flux
   !-----------------------------------------------------------------------------
-  if (isothermal .or. self%gamma == 1.0) then                                   ! unless isothermal
+  if (self%gamma == 1d0) then                                                   ! unless isothermal
     dedt = dddt*ee                                                              ! ops: 0 1 0
   else
+    block
+    real:: afm
+    afm = self%faver(fm(:,:,:,1))
     fm = fm*down(ee) - (self%nu(5)*dd*down(du))*ddown(ds,ee)                    ! ops: 1 4 0
-    dedt = -div(ds,fm) - pg*du + Q
+    dedt = -div(ds,fm) - pg*divU + Q
+    if (verbose==1) print '(a,10f12.6)', 'average(Q):', &
+      self%time, self%time*self%faver(Q), &
+      self%faver(e-d**self%gamma/(self%gamma-1.0)), &
+      self%faver(- pg*divU), &
+      afm, self%faver(fm(:,:,:,1))
+    end block
   end if
+  call deallocate_scalars_a (Txx, Tyy, Tzz)
   !-----------------------------------------------------------------------------
   ! Induction equation
   !-----------------------------------------------------------------------------
@@ -396,21 +413,33 @@ SUBROUTINE pde (self)
     dBdt = -curl_up(ds,emf)
   end if
   !-----------------------------------------------------------------------------
+  ! Radiative heating / cooling, if any
+  !-----------------------------------------------------------------------------
+  if (self%idx%qr > 0) then
+    dedt = dedt + self%mem(:,:,:,self%idx%qr,self%it,1)
+  end if
+  !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
   !-----------------------------------------------------------------------------
-  if (.not.isothermal) then
-    u_max = self%cdtd*maxval(ds,self%n > 1)*self%fmaxval(abs((dedt-ee*dddt)/d)) ! ops: 1 1 1
+  if (self%gamma /= 1d0) then
+    u_max = self%cdtd*dsmax*self%fmaxval(abs((dedt-ee*dddt)/d)) ! ops: 1 1 1
     self%u_max = max(self%u_max,u_max)
     if (verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
   end if
   !-----------------------------------------------------------------------------
-  call deallocate_vectors (ld, dd, emf, J, fd, fx, fy, fz, fm)
-  call deallocate_scalars (lnd, pa, du, ee, cs, pp, pb, Q)
+  call deallocate_vectors_a (ld, dd, emf, J, fd, fx, fy, fz, fm)
+  call deallocate_scalars_a (lnd, pa, du, ee, cs, pp, pb, Q, uu, divU)
   if (.not.self%do_pebbles) then
     call deallocate_vectors (U)
     call deallocate_scalars (pg)
   end if
   call trace%end (itimer)
+  if (mpi%master .and. first_time) then
+    print *, stagger%count, ' stagger calls', stagger%flops/product(real(self%n)),' flops per interior point'
+    stagger%count=0
+    stagger%flops=0
+    first_time = .false.
+  end if
 END SUBROUTINE pde
 
 !> =============================================================================
@@ -420,7 +449,6 @@ END SUBROUTINE pde
 SUBROUTINE update (self)
   class(mhd_t):: self
   integer, save:: itimer=0
-  type(index_t):: idx
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
   !call self%gravity
@@ -430,9 +458,9 @@ SUBROUTINE update (self)
   ! the call here will have no effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
   call self%output
-  if (isothermal) then
-    self%mem(:,:,:,idx%e,self%it,1) = &
-    self%mem(:,:,:,idx%d,self%it,1)*self%csound**2
+  if (self%gamma==1d0) then
+    self%mem(:,:,:,self%idx%e,self%it,1) = &
+    self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
   end if
   call self%pde
   call self%courant_condition
@@ -482,7 +510,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   if (trim(self%eos)=='ideal') then
     d => self%mem(:,:,:,self%idx%d,self%it,1)
     e => self%mem(:,:,:,self%idx%e,self%it,1)
-    if (isothermal .or. self%gamma==1.0) then
+    if (self%gamma==1d0) then
       pg = d*self%csound**2
     else
       pg = e*(self%gamma-1)

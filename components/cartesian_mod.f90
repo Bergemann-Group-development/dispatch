@@ -54,15 +54,16 @@ SUBROUTINE init (self, label)
   logical:: face_nbors=.false.
   integer:: thread, icoords(3),ipos(3)
   integer, save:: itimer=0
-  namelist /box_params/ size, dims, mpi_dims, per_rank, origin, face_nbors
+  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors
   !-----------------------------------------------------------------------------
   call trace_begin ('cartesian_mod::init',itimer=itimer)
-  rewind (io%input); read (io%input, box_params)
+  rewind (io%input); read (io%input, cartesian_params)
   if (any(per_rank/=0)) then
     where (per_rank/=0) dims=per_rank*mpi_dims
   end if
   per_rank = dims/mpi_dims
-  if (io%master) write (*, box_params)
+  if (io%master) write (*, cartesian_params)
+  if (io%master) write (io_unit%nml, cartesian_params)
   self%dims = dims
   self%size = size
   !-----------------------------------------------------------------------------
@@ -113,6 +114,7 @@ SUBROUTINE init (self, label)
     patch%box = self%size
     patch%size = self%size / self%dims
     patch%position = ([i,j,k]+0.5d0)*patch%size + origin
+    patch%origin = origin
     patch%llc_cart = patch%position - 0.5 * patch%size
     patch%llc_nat = patch%llc_cart
     call patch%set(bits%static)
@@ -237,7 +239,8 @@ SUBROUTINE init (self, label)
   end do
   !$omp end master
   !$omp end parallel
-  !call task_list%reset_status
+  call self%task_list%reset_status
+  call self%task_list%init_bdries
   call self%diagnostics
   write (io_unit%mpi,*) npatch,' patches',nvpatch,' virtual',nbpatch,' boundary'
   write (io_unit%mpi,*) nlpatch,' local patches'

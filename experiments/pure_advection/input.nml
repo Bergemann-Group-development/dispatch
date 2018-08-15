@@ -16,7 +16,7 @@
  guard_zones=t
 /
 
-&box_params
+&cartesian_params
   size=1.0,1.0,0.01
   dims=3,3,1
   origin=-0.5,-0.5,0.0

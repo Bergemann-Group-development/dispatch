@@ -3,6 +3,7 @@
 !> =============================================================================
 MODULE non_ideal_mod
   USE io_mod
+  USE trace_mod
   USE io_unit_mod
   USE scalar_mod
   USE stagger_mod
@@ -10,7 +11,7 @@ MODULE non_ideal_mod
   private
   type, public:: non_ideal_t
     real:: eta_Ohm, gamma_AD, rho_ions
-    logical:: mhd_Ohm, mhd_AD
+    logical:: mhd_Ohm, mhd_AD, is_used
   contains
     procedure:: init
     procedure:: update
@@ -36,6 +37,7 @@ SUBROUTINE init (self)
   self%mhd_AD   = mhd_AD
   self%gamma_AD = gamma_AD
   self%rho_ions = rho_ions
+  self%is_used  = mhd_Ohm .or. mhd_AD
 END SUBROUTINE init
 
 !> =============================================================================
@@ -47,10 +49,11 @@ SUBROUTINE update (self, gn, ds, d, Jx, Jy, Jz, Bx, By, Bz, Q, E, u_max)
   real(8):: ds
   real:: u_max, gamma_AD
   logical::mhd_AD, mhd_Ohm
-  real, dimension(:,:,:,:), pointer:: E
+  real, dimension(:,:,:,:):: E
   real, dimension(:,:,:):: d, Jx, Jy, Jz, Bx, By, Bz, Q
-  real, dimension(:,:,:), pointer:: ambi, Ud_x, Ud_y, Ud_z
-  namelist /non_ideal_params/ mhd_AD, mhd_Ohm, gamma_AD
+  real, dimension(:,:,:), allocatable:: Ud_x, Ud_y, Ud_z
+  real, dimension(:,:,:), allocatable:: ambi
+  integer, save:: itimer=0
   !---------------------------------------------------------------------------
   ! Below is the actual ambipolar drift parameter as given in equation 20 in
   ! Padoan, Zweibel and Nordlund (2000).
@@ -74,8 +77,11 @@ SUBROUTINE update (self, gn, ds, d, Jx, Jy, Jz, Bx, By, Bz, Q, E, u_max)
   ! gamma_AD = av_sigv / (m_i + m_n) = 3.28e13 g^-1cm^3s^-1
   ! ambi = 1.4 / (gamma_AD*d**1.5)
   ! rho_i = 1.
+  !---------------------------------------------------------------------------
+  if (.not.self%is_used) return
+  call trace%begin ('non_ideal_t%update', itimer=itimer)
   if (self%mhd_AD) then
-    call allocate_scalars (gn, ambi, Ud_x, Ud_y, Ud_z)
+    call allocate_scalars_a (gn, ambi, Ud_x, Ud_y, Ud_z)
     ambi = 1./(self%gamma_AD*d*self%rho_ions)
     Ud_x = xdn(ambi) * (zup(Jy)*xdn(zup(Bz)) - yup(Jz)*xdn(yup(By)))
     Ud_y = ydn(ambi) * (xup(Jz)*ydn(xup(Bx)) - zup(Jx)*ydn(zup(Bz)))
@@ -84,7 +90,7 @@ SUBROUTINE update (self, gn, ds, d, Jx, Jy, Jz, Bx, By, Bz, Q, E, u_max)
     E(:,:,:,2) = E(:,:,:,2) - (Ud_z*Bx - Ud_x*Bz)
     E(:,:,:,3) = E(:,:,:,3) - (Ud_x*By - Ud_y*Bx)
     Q = Q + self%rho_ions*d*self%gamma_AD*(xup(Ud_x)**2+yup(Ud_y)**2+zup(Ud_z)**2)
-    call deallocate_scalars (ambi, Ud_x, Ud_y, Ud_z)
+    call deallocate_scalars_a (ambi, Ud_x, Ud_y, Ud_z)
     u_max = max(u_max,maxval((xup(Bx)**2+yup(By)**2+zup(Bz)**2)/(self%gamma_AD*self%rho_ions*d*ds)))
   end if
   if (self%mhd_Ohm) then
@@ -94,6 +100,7 @@ SUBROUTINE update (self, gn, ds, d, Jx, Jy, Jz, Bx, By, Bz, Q, E, u_max)
     Q = Q + yup(zup(self%eta_Ohm*Jx**2)) + zup(xup(self%eta_Ohm*Jy**2)) + xup(yup(self%eta_Ohm*Jz**2))
     u_max = max(u_max,self%eta_Ohm/ds)
   end if
+  call trace%end (itimer)
 END SUBROUTINE update
 
 END MODULE non_ideal_mod

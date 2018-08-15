@@ -5,12 +5,7 @@ PDE     ?= mhd_mod.o
 STAGGER ?= stagger_mod.o
 
 # Dependencies
-scalar_mod.o            : io_mod.o trace_mod.o
-vector_mod.o            : io_mod.o trace_mod.o scalar_mod.o
 vector_ops.o            : $(STAGGER)
-$(STAGGER)              : io_mod.o trace_mod.o scalar_mod.o vector_mod.o \
-                          stagger_16.o stagger_20.o stagger_24.o stagger_32.o stagger_36.o
-stagger_4th.o           : io_mod.o trace_mod.o scalar_mod.o vector_mod.o
 mhd_mod.o               : io_mod.o trace_mod.o scalar_mod.o vector_mod.o force_mod.o gpatch_mod.o scaling_mod.o units_mod.o download_mod.o \
                           $(STAGGER) eos_mod.o index_mod.o timestep_mod.o vector_ops.o kinds_mod.o non_ideal_mod.o
 hd_mod.o                : io_mod.o trace_mod.o scalar_mod.o vector_mod.o force_mod.o gpatch_mod.o scaling_mod.o units_mod.o download_mod.o \
@@ -23,5 +18,5 @@ mhd_rt_mod.o            : $(PDE) trace_mod.o microphysics_mod.o
 gmhd_mod.o              : io_mod.o omp_timer_mod.o trace_mod.o task_mod.o patch_mod.o scalar_mod.o laplace_mod.o $(PDE) boundary_mod.o scalar_mod.o
 rmhd_mod.o              : io_mod.o trace_mod.o mhd_mod.o eos_mod.o rt_mod.o solver_mod.o timestep_mod.o
 solver_mod.o            : io_mod.o trace_mod.o mhd_mod.o eos_mod.o
-non_ideal_mod.o         : io_mod.o trace_mod.o $(STAGGER)
+non_ideal_mod.o         : io_mod.o trace_mod.o scalar_mod.o $(STAGGER)
 index_mod.o		: io_unit_mod.o

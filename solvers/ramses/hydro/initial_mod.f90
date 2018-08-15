@@ -30,7 +30,6 @@ MODULE initial_mod
   end type
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
   real, save:: csound=1.
-  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
@@ -39,7 +38,8 @@ CONTAINS
 SUBROUTINE init (self, solver, gamma1)
   class(initial_t):: self
   character(len=64):: solver
-  character(len=32), save:: type='single_solenoidal'
+  character(len=32), save:: type='void'
+  integer:: iostat
   real, optional:: gamma1
   real(8), save:: fgamma
   logical, save:: first_time=.true.
@@ -50,7 +50,8 @@ SUBROUTINE init (self, solver, gamma1)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
-    read (io%input, initial_params)
+    read (io%input, initial_params, iostat=iostat)
+    if (iostat/=0) call io%namelist_warning ('ramses/hydro/initial_mod.f90: initial_params')
     if (io%master) write (*, initial_params)
     if (isothermal .or. gamma==1d0) then
       fgamma = 1d0
@@ -72,9 +73,10 @@ SUBROUTINE init (self, solver, gamma1)
     self%condition => exa256
   case ('raw')
     self%condition => raw
+  case ('void')
+    self%condition => void
   case default
     print*,'UNKNOWN INITIAL CONDITION TYPE :'//trim(type)//':'
-    stop
   end select
   call trace_end
 END SUBROUTINE init
@@ -85,13 +87,23 @@ SUBROUTINE cleanup
 END SUBROUTINE cleanup
 
 !> =============================================================================
-!> Initialize a single 3-D wavenumber
+!> Void initializer
 !> =============================================================================
-SUBROUTINE single_solenoidal (self, m, ff, idx)
+SUBROUTINE void (self, m, ff, idx)
   class(initial_t) :: self
   type(index_t):: idx
   class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
+END SUBROUTINE void
+
+!> =============================================================================
+!> Initialize a single 3-D wavenumber
+!> =============================================================================
+SUBROUTINE single_solenoidal (self, m, ff, idx)
+  class(initial_t) :: self
+  class(mesh_t)    :: m(3)
+  real, dimension(:,:,:,:) :: ff
+  type(index_t):: idx
   !.............................................................................
   integer        :: ix, iy, iz
   real(8)        :: kx, ky, kz
@@ -125,7 +137,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,idx%py) = a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,idx%pz) = a0(3)*(sin(kx)+sin(ky))
-        if (isothermal) then
+        if (isothermal .or. gamma==1d0) then
           ff(ix,iy,iz,idx%e ) = d0*csound**2 + &
             half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         else

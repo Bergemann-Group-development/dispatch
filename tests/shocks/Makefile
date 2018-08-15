@@ -7,6 +7,7 @@ OPTS = debug
 # Default target and methods
 UPD             = adams_bashforth
 SOLVER          = stagger2
+#SOLVER          = stagger2/e
 #SOLVER          = ramses/mhd
 EXEC            = dispatch.x
 TOP             = ../..

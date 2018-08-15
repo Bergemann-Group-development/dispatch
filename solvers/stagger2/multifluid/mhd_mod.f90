@@ -42,7 +42,6 @@ MODULE mhd_mod
     procedure:: output
     procedure:: gas_pressure
   end type
-  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
@@ -144,7 +143,6 @@ SUBROUTINE pde (self)
   !.............................................................................
   real(8):: ds(3), ds_min(3), dsmax, dsmin
   integer, save:: itimer=0
-  type(index_t):: i
   real:: u_max
   integer:: k, ic, i2                                                                           ! ADDED INTEGER FOR LOOPS OVER ALL COMPONENTS
   !-----------------------------------------------------------------------------

@@ -36,7 +36,7 @@ SUBROUTINE conditions (self, patch, cit)
   real(8) :: r
   real(8) :: rmin, rmax, tau_in, tau_out, rbnd, rkill, tau, &
              dt
-  real(kind=KindScalarVar):: sigma0, p0, skep, vkep
+  real(kind=KindScalarVar):: sigma0, p0, skep, vkep, gamma
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: q
   !-----------------------------------------------------------------------------
   call trace_begin('boundary_t%conditions')
@@ -88,6 +88,7 @@ SUBROUTINE conditions (self, patch, cit)
           else
             cycle
           end if
+          gamma = patch%gamma
           q(i1,i2,i3,patch%idx%d+ic)  = q(i1,i2,i3,patch%idx%d+ic) &
                                   + dt * wave_killing(q(i1,i2,i3,patch%idx%d+ic), sigma0, tau, rkill, rbnd, r)
           q(i1,i2,i3,patch%idx%px+ic) = q(i1,i2,i3,patch%idx%px+ic) &
@@ -101,17 +102,17 @@ SUBROUTINE conditions (self, patch, cit)
               q(i1,i2,i3,patch%idx%s+ic) = 0d0
             else
               q(i1,i2,i3,patch%idx%s+ic) = q(i1,i2,i3,patch%idx%s+ic) + dt * wave_killing(q(i1,i2,i3,patch%idx%s+ic) &
-                                  , (log(p0)-log(sigma0)*patch%gamma)*sigma0/(patch%gamma - 1.0), tau, rkill, rbnd, r)
+                                  , (log(p0)-log(sigma0)*gamma)*sigma0/(gamma - 1.0), tau, rkill, rbnd, r)
             end if
           else if (trim(patch%kind) == 'stagger2e_hd_patch') then
             q(i1,i2,i3,patch%idx%e+ic) = q(i1,i2,i3,patch%idx%e+ic) + dt * wave_killing(q(i1,i2,i3,patch%idx%e+ic) &
-                                  , p0 / (patch%gamma - 1.0), tau, rkill, rbnd, r)
+                                  , p0 / (gamma - 1.0), tau, rkill, rbnd, r)
           else if (trim(patch%kind) == 'ramses_hd_patch'   ) then
             q(i1,i2,i3,patch%idx%e+ic) = q(i1,i2,i3,patch%idx%e+ic) + dt * wave_killing(q(i1,i2,i3,patch%idx%e+ic) &
-                                  , p0 / (patch%gamma - 1.0) + 0.5*sigma0*vkep**2, tau, rkill, rbnd, r)
+                                  , p0 / (gamma - 1.0) + 0.5*sigma0*vkep**2, tau, rkill, rbnd, r)
           else if (trim(patch%kind) == 'zeus_hd_patch'     ) then
             q(i1,i2,i3,patch%idx%e+ic) = q(i1,i2,i3,patch%idx%e+ic) + dt * wave_killing(q(i1,i2,i3,patch%idx%e+ic) &
-                                  , p0 / (patch%gamma - 1.0), tau, rkill, rbnd, r)
+                                  , p0 / (gamma - 1.0), tau, rkill, rbnd, r)
           end if
         end do
         if (m2%llc_nat <= experiment_params%roffset ) then

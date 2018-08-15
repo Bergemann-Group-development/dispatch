@@ -50,7 +50,7 @@ SUBROUTINE p2U(self, U, it)
   real, dimension(:,:,:,:), pointer:: U
   integer:: it
   !.....................................................................
-  real, dimension(:,:,:,:), pointer:: dd
+  real, dimension(:,:,:,:), allocatable:: dd
   !---------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,           it,1), &
             p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
@@ -69,7 +69,7 @@ SUBROUTINE U2p(self, U, it)
   real, dimension(:,:,:,:), pointer:: U
   integer:: it
   !.....................................................................
-  real, dimension(:,:,:,:), pointer:: dd
+  real, dimension(:,:,:,:), allocatable:: dd
   !---------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
             p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
@@ -178,7 +178,7 @@ SUBROUTINE ss2e(self, ss, it)
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
             e => self%mem(:,:,:,self%idx%s,it,1))
   g1 = self%gamma-1.0
-  e = d**self%gamma*exp(ss/d*g1)/g1
+  e = d**self%gamma*exp(ss*g1)/g1
   end associate
 END SUBROUTINE ss2e
 
@@ -316,21 +316,23 @@ END SUBROUTINE
 FUNCTION gas_velocity_vector (self) RESULT (v)
   USE scalar_mod
   class (solver_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d, lnd
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: p, ld, dd
+  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable :: lnd
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: p
+  real(kind=KindScalarVar), dimension(:,:,:,:), allocatable:: ld, dd
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
   !-----------------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
-  call allocate_vectors (self%gn, ld, dd)
-  call allocate_scalars (self%gn, lnd)
+  call allocate_vectors_a (self%gn, ld, dd)
+  call allocate_scalars_a (self%gn, lnd)
   lnd = log(d)
   ld = down(lnd)
   dd = exp(ld)
   v = p/dd
 
-  call deallocate_vectors (ld, dd)
-  call deallocate_scalars (lnd)
+  call deallocate_vectors_a (ld, dd)
+  call deallocate_scalars_a (lnd)
   nullify (d,p)
 END FUNCTION gas_velocity_vector
 
@@ -339,11 +341,12 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
   USE scalar_mod
   class (solver_t):: self
   integer:: idir
-  real(kind=KindScalarVar), dimension(:,:,:), pointer :: d, lnd, ld, dd
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: lnd, ld, dd
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: v
   !-----------------------------------------------------------------------------
   d => self%mem(:,:,:,self%idx%d,self%it,1)
-  call allocate_scalars (self%gn, lnd, ld, dd)
+  call allocate_scalars_a (self%gn, lnd, ld, dd)
   lnd = log(d)
   select case (idir)
   case (1)
@@ -362,7 +365,7 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
     error stop "solver_mod::gas_velocity_scalar:: invalid value of idir"
   end select
 
-  call deallocate_scalars (lnd, ld, dd)
+  call deallocate_scalars_a (lnd, ld, dd)
   nullify (d)
 END FUNCTION gas_velocity_scalar
 

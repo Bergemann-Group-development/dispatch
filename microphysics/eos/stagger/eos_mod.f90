@@ -54,6 +54,7 @@ SUBROUTINE init (self)
   real, save :: kappa = 1.0
   namelist /eos_params/ do_eos, top, tablefile, do_rt, kappa
   !-----------------------------------------------------------------------------
+  call trace%begin ('eos_t%init')
   do_rt = self%do_rt
   !$omp critical (eos_cr)
   if (first_time) then
@@ -93,6 +94,7 @@ SUBROUTINE init (self)
   self%kappa = kappa
   !$omp end critical (eos_cr)
   !$omp barrier
+  call trace%end
 END SUBROUTINE init
 
 !-------------------------------------------------------------------------------
@@ -125,7 +127,7 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamm
   real, dimension(:,:,:), intent(in), pointer, optional :: lnx, x, lny, y, lnd, ee
   real, dimension(:,:,:),                      optional :: pg, tt, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
-  real, dimension(:,:,:), pointer :: x_loc, y_loc, lnd, ee
+  real, dimension(:,:,:), pointer :: x_loc, y_loc, lnd_l, ee_l
   integer:: i
   integer, save:: itimer=0
   real:: stefan
@@ -153,19 +155,19 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamm
     call mpi%abort ('eos_t: missing 1st argument')
   end if
   !-----------------------------------------------------------------------------
-  if (present(lnr).and.present(ee) then
+  if (present(lnd).and.present(ee)) then
     if (present(src)) then
       call lookup_table (self, dim, ee=ee, lnd=lnd, rk=rk, src=src)
     else
       call lookup_table (self, dim, ee=ee, lnd=lnd, rk=rk)
     end if
   else if (present(src).and.present(rk)) then
-    allocate (lnd(dim(1),dim(2),dim(3)))
-    allocate (ee (dim(1),dim(2),dim(3)))
-    lnd = log(x_loc)
-    ee  = y_loc/x_loc
-    call lookup_table (self, dim, ee=ee, lnd=lnd, src=src, rk=rk)
-    deallocate (lnd, ee)
+    allocate (lnd_l(dim(1),dim(2),dim(3)))
+    allocate (ee_l (dim(1),dim(2),dim(3)))
+    lnd_l = log(x_loc)
+    ee_l = y_loc/x_loc
+    call lookup_table (self, dim, ee=ee_l, lnd=lnd_l, src=src, rk=rk)
+    deallocate (lnd_l, ee_l)
   else
     if (present(tt)) then
       tt = (self%gamma-1.0)*x_loc
@@ -193,15 +195,15 @@ END SUBROUTINE lookup
 !> =============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> =============================================================================
-SUBROUTINE lookup_table (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
+SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
-  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,ee,tt,ne
+  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,e,ee,tt,ne
   real, dimension(:,:,:,:)         , optional :: src,rk
   real, dimension(:,:,:)           , optional :: pg
   real, optional:: gamma
   !.............................................................................
-  real, dimension(:,:,:),   pointer  :: lnd_loc, ee_loc
+  real, dimension(:,:,:), pointer    :: lnd_loc, ee_loc
   integer,         dimension(dim(1)) :: np,np1,ik,ntab,ik1,ntab1
   real(kind=4),    dimension(dim(1)) :: px,py,f00,f01,f10,f11, &
                                         fx00,fx01,fx10,fx11,fy00,fy01,fy10,fy11
@@ -215,7 +217,7 @@ SUBROUTINE lookup_table (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
   ! Allocate temporary arrays
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%lookup_table', itimer=itimer)
-  if (io%verbose>1) then
+  if (io%verbose>2) then
     print *, 'present(lnd) =', present(lnd)
     print *, 'present(ee)  =', present(ee)
     print *, 'present(pg)  =', present(pg)
@@ -237,6 +239,9 @@ SUBROUTINE lookup_table (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
   end if
   if (present(ee)) then
     ee_loc => ee
+  else if (present(e)) then
+    allocate (ee_loc(dim(1),dim(2),dim(3)))
+    ee_loc = e/d
   else if (present(lne)) then
     allocate (ee_loc(dim(1),dim(2),dim(3)))
     ee_loc = exp(lne)
@@ -427,8 +432,14 @@ SUBROUTINE lookup_table (self, dim, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
     end if
   end do
   end do
-  if (present(d))   deallocate (lnd_loc)
-  if (present(lne)) deallocate (ee_loc)
+  if (present(d)) then
+    deallocate (lnd_loc)
+    nullify (lnd_loc)
+  end if
+  if (present(e).or.present(lne)) then
+    deallocate (ee_loc)
+    nullify (ee_loc)
+  end if
   call trace%end (itimer)
 END SUBROUTINE lookup_table
 

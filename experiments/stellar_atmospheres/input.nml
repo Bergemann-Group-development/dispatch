@@ -1,47 +1,16 @@
 
-&io_params    verbose=0 do_output=t do_trace=f /
-&box_params   size=6,3,6 dims=9,5,9 origin=0,-0.5,0 /
-&patch_params
- nt=5
- courant=0.15
- grace=0.1
- n=21,21,21
- no_mans_land=t
- use_data_hub=f
- do_check_nan=t
- !dt_fixed=1e-4
-/
-&out_params
- end_time=6e-1 out_time=5e-2 print_time=0.0
- guard_zones=t time_derivs=f
-/
-&mhd_params
- !     cs    pa  ofd  mas  kap  eta
- nu=  0.05, 1.0, 1.0, 0.1, 1.0, 1.0
- gamma=1.4
- eos='tabular'
-/
-&initial_params type='stagger'                 /
-&stagger_params file='mhd63' dims=3*63 order=1 /
-&eos_params     do_rt=t                        /
-&rt_params
- solver='integral' use_data_hub=f do_output=f
- cr_heating=0.0 init_time=0d0
- dtau='staggered'   !other options: centered, weighted, staggered
-/
-&rt_bc_params /
-&cartesian_ray_geometry_params
- do_chains=f space_diagonals=f
- nx=0 xti=0.,45.
- ny=1 yti=0.,45.
- nz=0 zti=0.,45.
-/
+&experiment_params      verbose=0 /
+&ic_params              file='mhd63' order=1 verbose=0 /
+&rt_params              n_mu=2 n_phi=3 n_bin=4 verbose=0 rt_time=0.01 vertical_propagation=f /
 
-&timer_params       sec_per_report=10      /
-&stellar_params                            /
-&force_params                              /
-&solenoidal_params                         /
-&snapshot_params    iread=0 iwrite=1       /
-&experiment_params                         /
-&timestep_params    time_order=2           /
-&ramses_params                             /
+&io_params              verbose=0 do_trace=f do_output=t method='parallel' id_debug=0 /
+&cartesian_params       size=6,6,3 dims=2*6,3 origin=0,0,-0.5 /
+&patch_params           nt=5 grace=0.0 n=3*32 no_mans_land=t use_data_hub=f dt_fixed=-1 /
+&out_params             end_time=1e-1 out_time=1e-2 print_time=0.0 guard_zones=t time_derivs=f /
+                        !    cs    pa  ofd   mas  kap  eta
+&stagger_params         nu=  0.05, 1.0, 1.0, 0.1, 1.0, 1.0
+                        gamma=1.4 eos='tabular' courant=0.15 /
+&eos_params             do_rt=t /
+&timer_params           sec_per_report=30 /
+&timestep_params        time_order=2 /
+&ramses_params          /

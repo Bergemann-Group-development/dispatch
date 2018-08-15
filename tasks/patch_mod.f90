@@ -31,8 +31,9 @@ MODULE patch_mod
     real(kind=KindScalarVar), dimension(:,:,:,:),     pointer:: pressure => null()
     class(mesh_t), dimension(:), pointer:: mesh => null()
     real:: courant                      ! courant number
-    real:: gamma=1.0                    ! gas gamma
-    real:: dt_fixed, u_fixed, u_max     ! for fixed time step Courant condition
+    real(8):: gamma=1.4                 ! gas gamma
+    real(8):: dt_fixed                  ! for fixed time step Courant condition
+    real:: u_fixed, u_max               ! for fixed time step Courant condition
     integer:: ndim = ndim               ! number of dimensions
     integer:: nv=0                      ! number of variables
     integer:: nw=2                      ! number of work indices
@@ -73,6 +74,7 @@ MODULE patch_mod
   contains
     procedure:: init
     procedure:: init_default
+    procedure:: init_bdries
     procedure:: setup
     procedure:: delete
     procedure:: rotate
@@ -322,11 +324,11 @@ SUBROUTINE init_default (self)
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, restart=-9
   logical, save:: guard_zones=.false., time_derivs=.false., periodic(3)=.true.
   logical, save:: no_mans_land=.false., use_data_hub=.false.
-  real, save:: u_fixed=-1.0, dt_fixed=-1.0, grace=0.0, courant=0.2
-  real, save:: end_time=1.0, out_time=0.1, print_time=0.1
+  real, save:: u_fixed=-1.0, grace=0.0
+  real(8), save:: end_time=1.0, out_time=0.1, print_time=0.1, dt_fixed=-1.0
   real(8):: position(3), size(3)
   integer:: iostat, i, n_alloc=0, n_ext=0
-  namelist /patch_params/ n, nv, ng, nt, courant, u_fixed, dt_fixed, &
+  namelist /patch_params/ n, nv, ng, nt, u_fixed, dt_fixed, &
     grace, periodic, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
     zero_order_extrap
   namelist /out_params/ out_time, end_time, print_time, max_files, &
@@ -369,7 +371,6 @@ SUBROUTINE init_default (self)
   io%print_time    = print_time
   !$omp end critical (input_cr)
   self%restart     = restart                    ! restart snapshot
-  self%courant     = courant                    ! courant number
   self%grace       = grace                      ! grace fraction of dtime
   self%dt_fixed    = dt_fixed
   self%u_fixed     = u_fixed
@@ -380,6 +381,46 @@ SUBROUTINE init_default (self)
   self%print_next  = print_time
   call trace%end
 END SUBROUTINE init_default
+
+SUBROUTINE init_bdries (self)
+  class(patch_t):: self
+  real(8):: position(3), limit(3)
+  !---------------------------------------------------------------------------
+  ! If at edge, set boundary bits
+  !---------------------------------------------------------------------------
+  position = self%position - self%origin - 0.5d0 * self%box
+  limit = 0.5d0 * (self%box - self%size - self%ds)
+  if (.not.self%periodic(1)) then
+    if (position(1)  <= -limit(1)) then
+      call self%boundaries%set (bits%xl)
+      self%mesh(1)%lower_boundary = .true.
+    end if
+    if (position(1) >= +limit(1)) then
+      call self%boundaries%set (bits%xu)
+      self%mesh(1)%upper_boundary = .true.
+    end if
+  end if
+  if (.not.self%periodic(2)) then
+    if (position(2)  <= -limit(2)) then
+      call self%boundaries%set (bits%yl)
+      self%mesh(2)%lower_boundary = .true.
+    end if
+    if (position(2) >= +limit(2)) then
+      call self%boundaries%set (bits%yu)
+      self%mesh(2)%upper_boundary = .true.
+    end if
+  end if
+  if (.not.self%periodic(3)) then
+    if (position(3)  <= -limit(3)) then
+      call self%boundaries%set (bits%zl)
+      self%mesh(3)%lower_boundary = .true.
+    end if
+    if (position(3) >= +limit(3)) then
+      call self%boundaries%set (bits%zu)
+      self%mesh(3)%upper_boundary = .true.
+    end if
+  end if
+END SUBROUTINE init_bdries
 
 !> =============================================================================
 !> Setup a patch, possibly with non-standard parameters. First setup with
@@ -497,8 +538,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
                        self%mesh(3)%gn, &
                        self%nv,self%nt,self%nw))
     self%mem_allocated = .true.               ! mark
-    !$omp atomic
-    io%gb = io%gb + storage_size(self%mem)*(product(shape(self%mem))/(8.*1024.**3))
+    call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
     allocate (self%unsigned (self%nv))
     allocate (self%pervolume(self%nv))
     self%unsigned (:) = .false.
@@ -524,6 +564,8 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
 !    call self%set (bits%root_grid)
 !    if (io%verbose > 1) print *, 'set bits%root_grid id =', self%id
 !  end if
+  if (self%id == io%id_debug) &
+    call self%link%print_nbors ('initial state ID_DEBUG nbors:')
   call trace%end
 END SUBROUTINE setup
 
@@ -1003,8 +1045,7 @@ SUBROUTINE allocate_mesg (self)
     self%mesg%nbuf = self%mesg%nbuf * 2  ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
   self%mesg%nbuf = n_header + self%nv*self%mesg%nbuf
   allocate (self%mesg%buffer(self%mesg%nbuf))
-  io%gb = io%gb + storage_size(self%mesg%buffer)*self%mesg%nbuf/(8*1024.**3)
-  !print *, 'allocate_mesg', self%mesg%nbuf
+  call io%bits_mem (storage_size(self%mesg%buffer), product(shape(self%mesg%buffer)))
 END SUBROUTINE allocate_mesg
 
 !> =============================================================================
@@ -1031,7 +1072,7 @@ SUBROUTINE pack (self, mesg)
     mesg%nbuf = mesg%nbuf+ self%nv*n_buf
   end if
   allocate (mesg%buffer(mesg%nbuf))
-  io%gb = io%gb + storage_size(mesg%buffer)*mesg%nbuf/(8*1024.**3)
+  call io%bits_mem (storage_size(self%mesg%buffer), product(shape(self%mesg%buffer)))
   allocate (mesg%reqs(self%n_nbors))
   mesg%id = self%id                                             ! MPI message tag
   mesg%nreq = 0                                                 ! reset counter
@@ -1469,7 +1510,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   !-----------------------------------------------------------------------------
   ! Prevent large (cheap) patches from taking time steps longer than the out_time
   !-----------------------------------------------------------------------------
-  if (io%out_time > 0.0) &
+  if (io%do_output .and. io%out_time > 0.0) &
     self%dtime = min (self%dtime, io%out_time)
   self%dt(self%it) = self%dtime
   if (io%verbose>3) &
@@ -2024,17 +2065,22 @@ SUBROUTINE time_interval (self, time, jt, pt)
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
   !call trace%begin ('patch_t%time_interval', 2, itimer=itimer)
-  t = self%t(self%iit)
-  j = 1
-  do i=1,self%nt-2
-    if (t(i) < time) j=i
-  end do
-  jt = self%iit(j:j+1)
-  dt = t(j+1)-t(j)
-  if (dt==0.0) then
+  if (self%nt==1) then
+    jt = 1
     pt(2) = 0.0
   else
-    pt(2) = (time-t(j))/dt
+    t = self%t(self%iit)
+    j = 1
+    do i=1,self%nt-2
+      if (t(i) < time) j=i
+    end do
+    jt = self%iit(j:j+1)
+    dt = t(j+1)-t(j)
+    if (dt==0.0) then
+      pt(2) = 0.0
+    else
+      pt(2) = (time-t(j))/dt
+    end if
   end if
   pt(1) = 1.-pt(2)
   if ((io%verbose>3 .or. io_unit%do_validate) .and. pt(2)>0.0) then

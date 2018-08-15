@@ -19,7 +19,7 @@
  do_output=f
  id_debug=0
 /
-&box_params
+&cartesian_params
  size=4,2,2 dims=32,16,16 mpi_dims=4,2,2
  !size=2,2,2 dims=16,16,16 mpi_dims=2,2,2
  !size=2,2,1 dims=16,16,08 mpi_dims=2,2,1

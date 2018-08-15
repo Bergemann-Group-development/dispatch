@@ -19,7 +19,7 @@
  print_time=20.0
 /
 
-&box_params
+&cartesian_params
  size=1,1,1
  !dims=1,1,1
  !dims=3,3,1

@@ -20,9 +20,6 @@ MODULE experiment_mod
     procedure:: init
     procedure:: update
   end type
-
-  type(index_t):: idx
-
 CONTAINS
 
 !> =============================================================================

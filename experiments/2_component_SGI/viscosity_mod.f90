@@ -127,11 +127,9 @@ FUNCTION dust_diffusivity (self, time, mem, U, m, force) RESULT (dddt)
   real, dimension(:,:,:), pointer:: d_gas, d_dust, cs, s
   real, dimension(:,:,:,:):: mem, U
   class(mesh_t), pointer :: m1, m2, m3
-  type(index_t) :: i
   integer:: i1, i2, i3, ic
   !-----------------------------------------------------------------------------
   call trace_begin('viscosity_t:dust_diffusivity')
-   
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
@@ -141,8 +139,8 @@ FUNCTION dust_diffusivity (self, time, mem, U, m, force) RESULT (dddt)
     allocate(cs(m(1)%gn,m(2)%gn,m(3)%gn))
     allocate(s(m(1)%gn,m(2)%gn,m(3)%gn))
     ic     = 5*(self%i_gas-1)
-    d_gas  = mem(:,:,:,i%d+ic)
-    s      =  mem(:,:,:,i%s +ic        )
+    d_gas  = mem(:,:,:,idx%d+ic)
+    s      =  mem(:,:,:,idx%s +ic        )
     if (force%gamma==1.0) then
       pg    = d_gas*force%csound**2
     else
@@ -150,7 +148,7 @@ FUNCTION dust_diffusivity (self, time, mem, U, m, force) RESULT (dddt)
     end if
     cs     = sqrt((force%gamma*pg)/d_gas)
     ic     = 5*(self%i_dust-1)
-    d_dust = mem(:,:,:,i%d+ic)
+    d_dust = mem(:,:,:,idx%d+ic)
     t_stop = force%stopping_time(d_gas,cs,m)
     do i2 = m2%lb,m2%ub
       r = m2%centre_nat + m2%r(i2)
@@ -189,11 +187,9 @@ FUNCTION dust_dispersion (self, time, mem, U, m, force) RESULT (dpdt)
   real, dimension(:,:,:), pointer:: d_gas, d_dust, cs, s
   real, dimension(:,:,:,:):: mem, U
   class(mesh_t), pointer :: m1, m2, m3
-  type(index_t) :: i
   integer:: i1, i2, i3, ic
   !-----------------------------------------------------------------------------
   call trace_begin('viscosity_t:dust_dispersion')
-
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
@@ -203,8 +199,8 @@ FUNCTION dust_dispersion (self, time, mem, U, m, force) RESULT (dpdt)
     allocate(cs(m(1)%gn,m(2)%gn,m(3)%gn))
     allocate(s(m(1)%gn,m(2)%gn,m(3)%gn))
     ic     = 5*(self%i_gas-1)
-    d_gas  = mem(:,:,:,i%d+ic)
-    s      =  mem(:,:,:,i%s +ic        )
+    d_gas  = mem(:,:,:,idx%d+ic)
+    s      =  mem(:,:,:,idx%s +ic        )
     if (force%gamma==1.0) then
       pg    = d_gas*force%csound**2
     else
@@ -212,7 +208,7 @@ FUNCTION dust_dispersion (self, time, mem, U, m, force) RESULT (dpdt)
     end if
     cs     = sqrt((force%gamma*pg)/d_gas)
     ic     = 5*(self%i_dust-1)
-    d_dust = mem(:,:,:,i%d+ic)
+    d_dust = mem(:,:,:,idx%d+ic)
     t_stop = force%stopping_time(d_gas,cs,m)
     do i2 = m2%lb,m2%ub
       r = m2%centre_nat + m2%r(i2)

@@ -20,9 +20,6 @@ MODULE experiment_mod
     procedure:: init
     procedure:: update
   end type
-
-  type(index_t):: idx
-
 CONTAINS
 
 !> =============================================================================
@@ -68,14 +65,14 @@ SUBROUTINE init (self)
 
   d   => self%mem(:,:,:,self%idx%d        ,self%it,1)
   s   => self%mem(:,:,:,self%idx%s        ,self%it,1)
-  pp  => self%mem(:,:,:,self%idx%px:idx%pz,self%it,1)
+  pp  => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   dtr => self%mem(:,:,:,self%idx%dtr      ,self%it,1)
   px  => pp(:,:,:,1); py => pp(:,:,:,2); pz => pp(:,:,:,3);
 
   self%no_pressure = 2
   d2   => self%mem(:,:,:,self%idx%d+5          ,self%it,1)
   s2   => self%mem(:,:,:,self%idx%s+5          ,self%it,1)
-  pp2  => self%mem(:,:,:,self%idx%px+5:idx%pz+5,self%it,1)
+  pp2  => self%mem(:,:,:,self%idx%px+5:self%idx%pz+5,self%it,1)
   !dtr2 => self%mem(:,:,:,idx%dtr+5        ,self%it,1)
   px2  => pp2(:,:,:,1); py2 => pp2(:,:,:,2); pz2 => pp2(:,:,:,3);
 

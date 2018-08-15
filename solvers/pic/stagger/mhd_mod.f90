@@ -31,7 +31,7 @@ MODULE mhd_mod
     procedure:: update
     procedure:: dnload
     procedure:: pde
-    procedure:: output
+    !procedure:: output
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure
@@ -153,7 +153,7 @@ SUBROUTINE update (self)
   ! placed at an earlier point in the task handling the call here will have no
   ! effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
-  call self%output
+  !call self%output
   call self%pde
   call self%courant_condition
   if (io%verbose>2) &
@@ -416,30 +416,6 @@ SUBROUTINE pde (self)
   end if
   call trace_end (itimer)
 END SUBROUTINE pde
-
-!> =============================================================================
-!> Add extra, MHD-related information to the patch .txt output file
-!> =============================================================================
-SUBROUTINE output (self, experiment_name)
-  class(mhd_t):: self
-  character(len=64):: experiment_name, filename
-  optional:: experiment_name
-  logical:: exists
-  !-----------------------------------------------------------------------------
-  if (self%time < self%out_next .or. .not.io%do_output .or. .not.io%do_legacy) return
-  call self%patch_t%output (experiment_name)
-  !$omp critical (out_cr)
-  write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
-    self%id, self%iout-1
-  inquire(file=filename, exist=exists)
-  if (exists) then
-    open (io%data_unit, file=trim(filename), form='formatted', status='old', &
-      position='append')
-    write (io%data_unit,'(8f10.4)') self%nu
-    close (io%data_unit)
-  end if
-  !$omp end critical (out_cr)
-END SUBROUTINE output
 
 !> =============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)

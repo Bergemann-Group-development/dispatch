@@ -18,7 +18,6 @@ MODULE boundary_mod
     procedure:: condition
   end type
   type(boundary_t), public:: boundary
-  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================

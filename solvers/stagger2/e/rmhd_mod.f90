@@ -103,8 +103,8 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     ! Store qrad in temperatures slot for now
     !---------------------------------------------------------------------------
-    self%mem(:,:,:,self%i_tt,self%it,1) = 0.0
-    self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%i_tt,self%it,1) = qrad
+    self%mem(:,:,:,self%idx%tt,self%it,1) = 0.0
+    self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%tt,self%it,1) = qrad
     deallocate (qrad)
   end if                              
   call self%courant_condition

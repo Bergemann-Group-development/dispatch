@@ -34,7 +34,6 @@ MODULE mhd_mod
     procedure:: gas_pressure
   end type
   real, save:: smag_s=0.2, smag_d=0.1
-  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================
@@ -88,11 +87,10 @@ SUBROUTINE pde (self)
   !.............................................................................
   real(8):: ds(3), dx
   integer, save:: itimer=0
-  type(index_t):: i
   !-----------------------------------------------------------------------------
   call trace_begin('mhd_t%pde',itimer=itimer)
   call self%output
-
+  associate (i => self%idx)
   !-----------------------------------------------------------------------------
   ! Pointer assignment and scratch allocation
   !-----------------------------------------------------------------------------
@@ -102,6 +100,7 @@ SUBROUTINE pde (self)
   if (self%mhd) then
     self%B => self%mem(:,:,:,i%bx:i%bz,self%it,1); self%dBdt => self%mem(:,:,:,i%bx:i%bz,self%it,2)
   end if
+  end associate
   call allocate_vectors (self%gn, ld, dd, emf, J, fd, fx, fy, fz, fm)
   call allocate_scalars (self%gn, lnd, pa, du, ee, cs, pp, pb, Q)
   call allocate_scalars (self%gn, divu, s2, sxx, syy, szz, sxy, sxz, syz)

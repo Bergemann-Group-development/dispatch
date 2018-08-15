@@ -24,7 +24,6 @@ MODULE initial_mod
     procedure, nopass:: cleanup
   end type
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
-  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================

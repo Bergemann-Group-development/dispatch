@@ -46,6 +46,7 @@ MODULE link_mod
     procedure:: update_status
     procedure:: give_to
     procedure:: send_to_vnbors
+    procedure:: log_nbors
     procedure:: print_nbors
     procedure:: test_nbor_status
     procedure:: check_level_sort
@@ -493,9 +494,9 @@ SUBROUTINE update_status (self)
 END SUBROUTINE update_status
 
 !> =============================================================================
-!> Print a list of nbors
+!> Print a list of nbors to the rank-thread log file
 !> =============================================================================
-SUBROUTINE print_nbors (self, label)
+SUBROUTINE log_nbors (self, label)
   class (link_t):: self
   character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
@@ -519,6 +520,33 @@ SUBROUTINE print_nbors (self, label)
     link => link%next
   end do
   write (io_unit%log,*) ''
+END SUBROUTINE log_nbors
+
+!> =============================================================================
+!> Print a list of nbors to stdout
+!> =============================================================================
+SUBROUTINE print_nbors (self, label)
+  class (link_t):: self
+  character(len=*), optional:: label
+  class(link_t) , pointer:: link, nbor
+  integer:: idmax
+  character(len=16):: fmt
+  !.............................................................................
+  if (present(label)) write (io_unit%output,'(a,$)') label
+  idmax = 0
+  link => self%nbor
+  do while (associated(link))
+    idmax = max(idmax, link%task%id)
+    link => link%next
+  end do
+  idmax = floor(log10(real(idmax)))+2
+  write (fmt, '("(i",i1,",l1,$)")') idmax
+  link => self%nbor
+  do while (associated(link))
+    write (io_unit%output,fmt) link%task%id, link%task%is_ahead_of(self%task)
+    link => link%next
+  end do
+  write (io_unit%output,*) ''
 END SUBROUTINE print_nbors
 
 !> =============================================================================

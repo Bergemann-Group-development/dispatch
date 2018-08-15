@@ -11,7 +11,7 @@
  do_debug=f
  do_output=t
 /
-&box_params
+&cartesian_params
  size=72,9,9            ! cut down size to approx 3 patches
  dims=30,3,3            ! use only 3x3 patches in the yz-plane
  origin=0,0,0

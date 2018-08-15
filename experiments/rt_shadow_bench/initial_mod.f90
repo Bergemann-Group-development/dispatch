@@ -72,7 +72,6 @@ SUBROUTINE condition (self, m, mem, idx)
   class(mesh_t), pointer :: mx, my, mz
   integer :: ix, iy, iz
   real :: p0, q, x, y, z, d
-  type(index_t) :: i
   !----------------------------------------------------------------------------
   call trace_begin('initial_t::initial_conditions')
   mx => m(1)
@@ -94,32 +93,32 @@ SUBROUTINE condition (self, m, mem, idx)
         q = 10.0 * (q - 1.0)
         ! the if-then-else is to prevent overflow when (x,y,z) is very from zero.
         if (q > 88.0) then
-          mem(ix,iy,iz,i%d) = self%d0
+          mem(ix,iy,iz,idx%d) = self%d0
         else
-          mem(ix,iy,iz,i%d) = self%d0 + (self%clump_dfact * self%d0 - self%d0) &
+          mem(ix,iy,iz,idx%d) = self%d0 + (self%clump_dfact * self%d0 - self%d0) &
                                   / (1.0 + exp(q))
         end if
         ! the clump is initially in pressure equilibrium with the ambient medium
-        d = mem(ix,iy,iz,i%d)
+        d = mem(ix,iy,iz,idx%d)
         if (self%solver(1:7)=='ramses_') then
-          mem(ix,iy,iz,i%e) = p0/(self%gamma-1.0)!*d
+          mem(ix,iy,iz,idx%e) = p0/(self%gamma-1.0)!*d
         else if (self%solver(1:9)=='stagger2e') then
-          mem(ix,iy,iz,i%e) = p0/(self%gamma-1.0)!*d
+          mem(ix,iy,iz,idx%e) = p0/(self%gamma-1.0)!*d
         else if (self%solver(1:9)=='stagger2_') then
-          mem(ix,iy,iz,i%s) = d*(log(p0)-self%gamma*log(d))/(self%gamma-1.0)
+          mem(ix,iy,iz,idx%s) = d*(log(p0)-self%gamma*log(d))/(self%gamma-1.0)
         else
           print *,trim(self%solver)
           error stop "initial_mod (1): solver type not known"
         end if
         ! momentum components
-        mem(ix,iy,iz,i%px) = 0.0
-        mem(ix,iy,iz,i%py) = 0.0
-        mem(ix,iy,iz,i%pz) = 0.0
+        mem(ix,iy,iz,idx%px) = 0.0
+        mem(ix,iy,iz,idx%py) = 0.0
+        mem(ix,iy,iz,idx%pz) = 0.0
         ! magnetic field components
         if (self%mhd) then
-          mem(ix,iy,iz,i%bx) = 0.0
-          mem(ix,iy,iz,i%by) = 0.0
-          mem(ix,iy,iz,i%bz) = 0.0
+          mem(ix,iy,iz,idx%bx) = 0.0
+          mem(ix,iy,iz,idx%by) = 0.0
+          mem(ix,iy,iz,idx%bz) = 0.0
         end if
       end do
     end do

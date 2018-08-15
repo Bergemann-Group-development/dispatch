@@ -38,28 +38,33 @@ MODULE data_io_mod
 CONTAINS
 
 !> =============================================================================
-!> Initialize the I/O method
+!> Initialize the I/O method, if not already done
 !> =============================================================================
 SUBROUTINE init (self, task)
   class(data_io_t):: self
   class(patch_t):: task
   !.............................................................................
-  call trace%begin('data_io_t%init')
-  if (io%do_output) then
-    select type (task)
-    class is (patch_t)
-      if      (io%method=='direct') then
-        call direct_io%init (task)
-      else if (io%method=='parallel') then
-        call parallel_io%init (task)
-      else if (io%method=='paralle5') then
-        io%format = 5
-        call parallel_io%init (task)
-      end if
-    end select
+  if (self%initialized) return
+  !$omp critical (data_io_cr)
+  if (.not.self%initialized) then
+    call trace%begin('data_io_t%init')
+    if (io%do_output) then
+      select type (task)
+      class is (patch_t)
+        if      (io%method=='direct') then
+          call direct_io%init (task)
+        else if (io%method=='parallel') then
+          call parallel_io%init (task)
+        else if (io%method=='paralle5') then
+          io%format = 5
+          call parallel_io%init (task)
+        end if
+      end select
+    end if
+    self%initialized = .true.
+    call trace%end
   end if
-  self%initialized = .true.
-  call trace%end
+  !$omp end critical (data_io_cr)
 END SUBROUTINE init
 
 !> =============================================================================
@@ -76,10 +81,17 @@ SUBROUTINE output (self, patch, experiment_name)
   type(snapshot_t), pointer:: snapshot
   integer, save:: itimer=0
   logical:: append
+  integer:: it
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
-  do while (patch%time >= patch%out_next)
+  call self%init (patch)
+  if (io%time_derivs) then
+    it = patch%iit(patch%nt-2)
+  else
+    it = patch%iit(patch%nt-1)
+  end if
+  do while (patch%t(it) >= patch%out_next)
     !$omp critical (outputname_cr)
     if (.not.checked) then
       checked = .true.
@@ -108,8 +120,8 @@ SUBROUTINE output (self, patch, experiment_name)
     call output_nml (patch, append)
     if (snapshot%ibuf==0) &
       call snapshot_list%remove (snapshot)
-    if (io%out_time==0.0) exit
     patch%iout = patch%iout+1
+    if (io%out_time==0.0) exit
     patch%out_next = (nint(patch%out_next/io%out_time)+1)*io%out_time
     call os%mkdir_no (patch%iout)
   end do
@@ -126,13 +138,7 @@ SUBROUTINE input (self, patch, ok)
   type(snapshot_t), pointer:: snapshot
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%input')
-  if (.not.self%initialized) then
-    !$omp critical (data_io_cr)
-    if (.not.self%initialized) then
-      call self%init (patch)
-    end if
-    !$omp end critical (data_io_cr)
-  end if
+  call self%init (patch)
   ok = .false.
   if (patch%restart > 0) then
     if      (io%method=='direct') then
@@ -206,25 +212,6 @@ SUBROUTINE output_txt (patch, append)
 END SUBROUTINE output_txt
 
 !> =============================================================================
-!> =============================================================================
-SUBROUTINE index_write
-  type(index_t):: idx
-  integer:: d, e, s, px, py, pz, bx, by, bz, phi
-  namelist /index_nml/ d, e, s, px, py, pz, bx, by, bz, phi
-  d   = idx%d   - 1
-  e   = idx%e   - 1
-  s   = idx%s   - 1
-  px  = idx%px  - 1
-  py  = idx%py  - 1
-  pz  = idx%pz  - 1
-  bx  = idx%bx  - 1
-  by  = idx%by  - 1
-  bz  = idx%bz  - 1
-  phi = idx%phi - 1
-  write (io_unit%data, index_nml)
-END SUBROUTINE index_write
-
-!> =============================================================================
 !> Output text with patch info, either to individual files (io%format=1,2) or
 !> to one file per rank (io%format>2).  This is not threadsafe, both because of
 !> the text file I/O, and because snapshot%ibuf is consantly being modified by
@@ -236,36 +223,45 @@ SUBROUTINE output_nml (patch, append)
   !.............................................................................
   character(len=128)   :: filename
   integer              :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
-                          nw, ntotal
+                          nw, ntotal, format
   integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
   real                 :: gamma, quality
-  real(8)              :: time, dtime, out_next
+  real(8)              :: time, dtime, out_next, out_time
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
+  logical              :: guard_zones, time_derivs, no_mans_land, periodic(3)
   character(len=16)    :: kind, eos, opacity
-  namelist /snapshot_nml/ ioformat, iout, time, dtime, ntotal
+  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs
+  namelist /snapshot_nml/ iout, time, dtime, ntotal
   namelist /patch_nml/ ioformat, iout, time, dtime, id, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, &
     ncell, li, ui, n, ng, gn, nv, nt, nw, ntotal, &
-    llc_nat, llc_cart, centre_nat, kind, eos, opacity
+    llc_nat, llc_cart, centre_nat, kind, eos, opacity, &
+    periodic, guard_zones, time_derivs, no_mans_land
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%output_nml')
   !$omp critical (output_cr)
   !-----------------------------------------------------------------------------
-  ! Write snapshot_nml to the file "data/run/rank_rrrrr_snapshot.nml"
+  ! Write snapshot_nml to the file "data/run/NNNNN/snapshot.nml"
   !-----------------------------------------------------------------------------
-  ioformat = io%format
-  iout     = patch%iout
-  time     = patch%out_next
-  dtime    = patch%dtime
-  ntotal   = io%ntotal
+  format      = io%format
+  ioformat    = io%format
+  ntotal      = io%ntotal
+  out_time    = io%out_time
+  guard_zones = io%guard_zones
+  time_derivs = io%time_derivs
+  iout        = patch%iout
+  time        = merge (patch%time, patch%out_next, io%out_time==0)
+  dtime       = patch%dtime
   if (mpi%master .and. .not.append) then
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
     open  (io_unit%data, file=trim(filename), form='formatted', status='unknown')
+    write (io_unit%data, io_nml)
     write (io_unit%data, snapshot_nml)
-    call patch%idx%write
+    call patch%idx%output
+    call file_append (io_unit%nml, io_unit%data)
     close (io_unit%data)
     if (io%debug(2)) print'(a,3x,"time:",2f13.6)', &
       ' data_io_t%output_nml: '//trim(filename), patch%out_next, patch%time
@@ -278,45 +274,64 @@ SUBROUTINE output_nml (patch, append)
   open  (io_unit%data, file=trim(filename), form='formatted', status='unknown', &
          access=trim(merge('append    ','sequential',append)))
   !-----------------------------------------------------------------------------
-  ! Write the namelist info, including a leading index_nml
+  ! Write the namelist info, including a leading idx_nml
   !-----------------------------------------------------------------------------
   if (mpi%master .and. .not.append) then
-    call patch%idx%write
+    call patch%idx%output
   end if
   l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
   u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
-  ncell      = u-l+1
-  id         = patch%id
-  istep      = patch%istep
-  mesh_type  = patch%mesh_type
-  position   = patch%position
-  size       = patch%size
-  ds         = patch%ds
-  box        = patch%box
-  velocity   = patch%velocity
-  level      = patch%level
-  quality    = patch%quality
-  gamma      = patch%gamma
-  llc_nat    = patch%llc_nat
-  llc_cart   = patch%llc_cart
-  centre_nat = patch%centre_nat
-  li         = patch%li
-  ui         = patch%ui
-  n          = patch%n
-  gn         = patch%gn
-  ng         = patch%ng
-  nv         = patch%nv
-  nv         = merge (io%nv, patch%nv, io%nv>0)
-  nt         = patch%nt
-  nw         = patch%nw
-  kind       = patch%kind
-  eos        = patch%eos
-  opacity    = patch%opacity
+  ncell        = u-l+1
+  id           = patch%id
+  istep        = patch%istep
+  mesh_type    = patch%mesh_type
+  position     = patch%position
+  size         = patch%size
+  ds           = patch%ds
+  box          = patch%box
+  velocity     = patch%velocity
+  level        = patch%level
+  quality      = patch%quality
+  gamma        = patch%gamma
+  llc_nat      = patch%llc_nat
+  llc_cart     = patch%llc_cart
+  centre_nat   = patch%centre_nat
+  li           = patch%li
+  ui           = patch%ui
+  n            = patch%n
+  gn           = patch%gn
+  ng           = patch%ng
+  nv           = patch%nv
+  nv           = merge (io%nv, patch%nv, io%nv>0)
+  nv           = merge (2*nv, nv, io%time_derivs)
+  nt           = patch%nt
+  nw           = patch%nw
+  kind         = patch%kind
+  eos          = patch%eos
+  opacity      = patch%opacity
+  no_mans_land = patch%no_mans_land
+  periodic     = patch%periodic
   write (io_unit%data, patch_nml)
   close (io_unit%data)
   !$omp end critical (output_cr)
   call trace%end
 END SUBROUTINE output_nml
+
+!> =============================================================================
+!> Copy one text file to another
+!> =============================================================================
+SUBROUTINE file_append (unit1, unit2)
+  integer:: unit1, unit2
+  character(len=128):: line
+  integer:: iostat
+  !-----------------------------------------------------------------------------
+  rewind (unit1)
+  do while (.true.)
+    read (unit1,'(a)',iostat=iostat) line
+    if (iostat /= 0) exit
+    write (unit2,'(a)') trim(line)
+  end do
+END SUBROUTINE file_append
 
 !> =============================================================================
 !> Close the data I/O

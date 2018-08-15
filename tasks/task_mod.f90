@@ -43,7 +43,8 @@ MODULE task_mod
     real(8):: dtime = 0d0
     real(4):: grace = 0.0
     real(8):: position(3) = 0d0
-    real(8):: velocity(3) = 0d0  ! the velocity of the task in Cartesian coords.
+    real(8):: origin(3)=0d0             ! the cartesian box origin (for BCs)
+    real(8):: velocity(3) = 0d0         ! velocity of task in Cartesian coords.
     real(8):: size(3) = 0.9999d0
     real(8):: gsize(3)                  ! convenience
     real(8):: ds(3)                     ! convenience
@@ -55,8 +56,8 @@ MODULE task_mod
     real(8), dimension(:), pointer:: dt
     character(len=64), pointer:: name
     class(task_t), pointer:: parent
-    character(len=64):: kind='task'
-    character(len=12):: type='task_t'
+    character(len=64):: kind='task'     ! solver name
+    character(len=12):: type='task_t'   ! task type
     real:: latency=0.0                  ! MPI message latency
     real(8):: wc_last=0.0_8
     class(mesg_t), pointer:: mesg=>null()
@@ -93,6 +94,7 @@ MODULE task_mod
     procedure:: unpack
     procedure:: is_relevant
     procedure:: test_update
+    procedure:: solver_is
   end type
   integer, save:: id=0
   type(dll_t), pointer:: deleted_list
@@ -293,16 +295,18 @@ LOGICAL FUNCTION is_ahead_of (self, task)
   nbtime = self%time
   !$omp atomic read
   nbdtime = self%dtime
-  if (self%level==task%level) then
+  if (self%level==task%level .and. self%istep>2) then
     is_ahead_of = nbtime + nbdtime*task%grace >= task%time
   else
     is_ahead_of = nbtime >= task%time
   end if
   ! if a task is frozen (in time), then we assume it is forever ahead of other tasks
   if (self%is_set(bits%frozen)) is_ahead_of = .true.
-  if (task%id==io%id_debug.or.io_unit%verbose>4) &
+  if (io_unit%verbose>1) then
+    if (task%id==io%id_debug.or.io_unit%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &
     task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of
+  end if
 END FUNCTION
 
 SUBROUTINE print (self)
@@ -500,5 +504,15 @@ SUBROUTINE test_update (self)
   self%dtime = self%random%ran1()
   self%dt(self%it) = self%dtime
 END SUBROUTINE test_update
+
+!> =============================================================================
+!> Test if solver leading characters match a given string
+!> =============================================================================
+FUNCTION solver_is (self, kind)
+  class(task_t):: self
+  logical solver_is
+  character(len=*):: kind
+  solver_is = self%kind(1:len(kind)) == kind
+END FUNCTION solver_is
 
 END MODULE task_mod

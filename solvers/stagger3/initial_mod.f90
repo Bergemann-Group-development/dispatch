@@ -29,7 +29,6 @@ MODULE initial_mod
   type(initial_t), public:: initial
   real, dimension(:,:,:,:), pointer, save:: p
   real, dimension(:,:,:),   pointer, save:: d, s
-  type(index_t):: idx
 CONTAINS
 
 !> =============================================================================

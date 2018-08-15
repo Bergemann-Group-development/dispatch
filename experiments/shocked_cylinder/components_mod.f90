@@ -55,7 +55,7 @@ SUBROUTINE init_box (self)
   integer, dimension(3) :: n_patch, n_per_patch
   real(8), dimension(3) :: extent, centre, llc, urc
   logical, save :: first_time = .true.
-  namelist /box_params/ n_per_patch, n_patch, extent, centre
+  namelist /cartesian_params/ n_per_patch, n_patch, extent, centre
   !-----------------------------------------------------------------------------
   call trace_begin ('box%init')
   
@@ -66,7 +66,7 @@ SUBROUTINE init_box (self)
     centre = [0.0, 0.0, 0.0]
     n_per_patch = [32, 32, 1]
     n_patch = [1, 1, 1]
-    rewind (io%input); read (io%input, box_params)
+    rewind (io%input); read (io%input, cartesian_params)
     wholebox = extent
   end if
 

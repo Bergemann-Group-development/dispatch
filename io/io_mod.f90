@@ -48,6 +48,8 @@ MODULE io_mod
     procedure:: init
     procedure:: debug
     procedure:: check_flags
+    procedure:: bits_mem
+    procedure:: gb_mem
     procedure, nopass:: namelist_warning
     procedure, nopass:: abort
     procedure, nopass:: assert
@@ -120,6 +122,8 @@ SUBROUTINE init (self, name)
       self%inputname = 'input.nml'
       self%outputname = trim(datadir)//self%sep                 ! data/
     end if
+    call os%mkdir (trim(self%outputname))
+    open (io_unit%nml, file=trim(self%outputname)//'params.nml', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
     rewind (io_unit%input)
     read (io_unit%input, io_params, iostat=iostat)
@@ -144,7 +148,6 @@ SUBROUTINE init (self, name)
     ! Open MPI rank and OMP thread-specific log files
     !---------------------------------------------------------------------------
     io_unit%do_validate = do_validate
-    call os%mkdir (trim(self%outputname))
     write (filename,'(a,i5.5,"/")') trim(io%outputname), 0
     call os%mkdir (trim(filename))
     if (omp_trace .and. omp%nthreads>1) then
@@ -197,6 +200,47 @@ SUBROUTINE init (self, name)
   io_unit%do_validate = do_validate
   call timer%init
 END SUBROUTINE init
+
+!> =============================================================================
+!> Register increase of memory, counted in storage_size bits, times a count
+!> =============================================================================
+SUBROUTINE bits_mem (self, bits, count, label)
+  class (io_t)      :: self
+  integer:: bits, count
+  character(len=*), optional:: label
+  !-----------------------------------------------------------------------------
+  if (io%verbose>2) then
+    if (present(label)) then
+      print *, bits,' bits per word', count,' words, for', &
+        (bits/(8.*1024.**3))*count, 'GB '//trim(label)
+    else
+      print *, bits,' bits per word', count,' words, for', &
+        (bits/(8.*1024.**3))*count, 'GB'
+    end if
+  end if
+  call self%gb_mem ((bits/(8.*1024.**3))*count)
+END SUBROUTINE bits_mem
+
+!> =============================================================================
+!> Register increase of memory, counted in gigabytes
+!> =============================================================================
+SUBROUTINE gb_mem (self, gb)
+  class (io_t)      :: self
+  real:: gb
+  real, save:: gb_next=1.0
+  !-----------------------------------------------------------------------------
+  if (mpi%master) then
+    self%gb = self%gb + gb
+    if (self%gb > gb_next) then
+      !$omp critical (gb_cr)
+      do while (self%gb > gb_next)
+        print '(1x,a,f8.3,a)', 'process memory allocated:', self%gb,' GB'
+        gb_next = gb_next+1.0
+      end do
+      !$omp end critical (gb_cr)
+    end if
+  end if
+END SUBROUTINE gb_mem
 
 !> =============================================================================
 !> Check debug flag files.  To avoid having to synchronize when using MPI, we

@@ -10,9 +10,9 @@ MODULE initial_mod
   USE mesh_mod
   USE random_mod
   USE index_mod
+  USE math_mod
   implicit none
   private
-  real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     logical:: mhd
     integer:: nv
@@ -300,11 +300,11 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   !$omp end critical (init_cr)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
+    kz   =  math%pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + phi(2)
+      ky   =  math%pi2*k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
+        kx   =  math%pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
         ff(ix,iy,iz,1) = d0
         ff(ix,iy,iz,2) = e0
         ff(ix,iy,iz,3) = a0(1)*(sin(ky)+sin(kz))

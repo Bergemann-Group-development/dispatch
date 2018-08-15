@@ -17,7 +17,6 @@ MODULE dispatcher_mod
   private
   type, public:: dispatcher_t
     procedure(method0), nopass, pointer:: method => null()
-    logical:: use_locks=.false.
   contains
     procedure:: init
     procedure:: execute
@@ -41,12 +40,10 @@ CONTAINS
 SUBROUTINE init (self)
   class(dispatcher_t):: self
   integer:: iostat
-  logical:: use_locks=.false.
-  namelist /dispatcher_params/ method, verbose, test, test_seconds, use_locks
+  namelist /dispatcher_params/ method, verbose, test, test_seconds
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher_t%init')
-  rewind (io%input)
-  read (io%input, dispatcher_params, iostat=iostat)
+  rewind (io%input); read (io%input, dispatcher_params, iostat=iostat)
   if (io%master) write (io%output, dispatcher_params)
   select case (method)
   case (0)

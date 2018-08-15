@@ -1,9 +1,14 @@
-!> -----------------------------------------------------------------------------
+!> =============================================================================
 !> Fundamental constants in CGS and SI units
-!> -----------------------------------------------------------------------------
+!> =============================================================================
 MODULE units_mod
+  USE io_unit_mod
+  USE math_mod
   implicit none
   private
+  !-----------------------------------------------------------------------------
+  ! Data type holding constants of nature for a system
+  !-----------------------------------------------------------------------------
   type, public:: const_t
     character(len=16):: name='not set'
     real(kind=8):: m_u
@@ -29,6 +34,18 @@ MODULE units_mod
     procedure:: init
   end type
   type(const_t), public:: cgs, si
+  !-----------------------------------------------------------------------------
+  ! Data type for transmitting system info as meta-data
+  !-----------------------------------------------------------------------------
+  type, public:: units_t
+    character(len=4):: system='code'
+    real(kind=8):: l=1d0
+    real(kind=8):: t=1d0
+    real(kind=8):: m=1d0
+  contains
+    procedure:: output
+  end type
+  type(units_t), public:: units
 CONTAINS
 
 SUBROUTINE init (self)
@@ -55,7 +72,7 @@ SUBROUTINE init (self)
   cgs%r_sun   = 6.9598d10
   cgs%m_earth = 5.972d27
   cgs%r_earth = 6.371d8
-  cgs%pi      = asin(1.0) * 2.0
+  cgs%pi      = math%pi
   !-----------------------------------------------------------------------------
   ! SI units
   !-----------------------------------------------------------------------------
@@ -78,7 +95,23 @@ SUBROUTINE init (self)
   si%r_sun   = 6.9598d8
   si%m_earth = 5.972d25
   si%r_earth = 6.371d6
-  si%pi      = asin(1.0) * 2.0
+  si%pi      = math%pi
 END SUBROUTINE init
+
+!> =============================================================================
+!> Write out unit system info
+!> =============================================================================
+SUBROUTINE output (self)
+  class(units_t):: self
+  character(len=4):: system
+  real(kind=8):: l, t, m
+  namelist /units_nml/ system, l, t, m
+  !----------------------------------------------------------------------------
+  system = self%system
+  l      = self%l
+  t      = self%t
+  m      = self%m
+  write (io_unit%nml, units_nml)
+END SUBROUTINE output
 
 END MODULE units_mod

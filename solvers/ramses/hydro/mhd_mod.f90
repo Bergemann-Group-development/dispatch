@@ -66,15 +66,12 @@ SUBROUTINE init (self)
 !...............................................................................
   call trace%begin('mhd_mod%init')
 
-  ! Fool-proofing
-  if (self%mhd) then
-    call mpi%abort('This is the RAMSES hydro solver. But MHD is turned on!')
-  end if
-
+  self%mhd = .false.
   self%nw = 1
   self%kind = 'ramses_hd_patch'
   if (self%nv == 0) self%nv = 5
 
+  call self%idx%init (5, self%mhd)
   call self%gpatch_t%init
   !$omp critical (input_cr)
   if (first_time) then
@@ -132,6 +129,7 @@ SUBROUTINE update (self)
   allocate (self%fl(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%c(n(1),n(2),n(3)))
   allocate (self%s(n(1),n(2),n(3)))
+  self%q=0.0; self%qp=0.0; self%qm=0.0; self%dq=0.0; self%fl=0.; self%c=0.0; self%s=0.0
   if (detailed_timer) call trace_end (itimer)
   if (debug) then
     if (self%id==229.or.self%id==231) then
@@ -162,7 +160,7 @@ SUBROUTINE update (self)
   ! Godunov solver
   !-----------------------------------------------------------------------------
   call godunov (self)
-  if (isothermal) &
+  if (isothermal .or. gamma==1d0) &
     self%mem(:,:,:,self%idx%e,self%new,1) = &
     self%mem(:,:,:,self%idx%d,self%new,1)*csound**2
   if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
@@ -407,7 +405,7 @@ subroutine check_small (self, uu)
     v =  uu(i,j,k,self%idx%py)*c
     w =  uu(i,j,k,self%idx%pz)*c
     ekin = 0.5*d*(u**2+v**2+w**2)
-    if (isothermal) then
+    if (isothermal .or. gamma==1d0) then
       uu(i,j,k,self%idx%e) = max(uu(i,j,k,self%idx%e), smallr*smallc**2)
     else
       p = (uu(i,j,k,self%idx%e)-ekin)*(gamma-one)
@@ -473,7 +471,7 @@ subroutine ctoprim (self)
   d => q(:,:,:,1)
   e => s
   pg => q(:,:,:,5)
-  if (isothermal) then
+  if (isothermal .or. gamma==1d0) then
     pg = d*csound**2
   else
     pg = e*(gamma-1.0)
@@ -885,7 +883,7 @@ subroutine cmpflxm(self)
   class(mhd_t):: self
   ! local variables
   integer:: i, j, k, lb(3), ub(3)
-  real(dp), dimension(self%mesh(1)%gn,self%idx%e):: qleft, qright, fgdnv
+  real(dp), dimension(self%mesh(1)%gn,self%nv):: qleft, qright, fgdnv
   real(dp):: dtds(3)
   logical:: error
   integer,save:: itimer=0
@@ -900,6 +898,7 @@ subroutine cmpflxm(self)
   dtds = self%dtime/self%mesh%d
   lb = self%mesh%li
   ub = self%mesh%uo
+  qleft=0.0; qright=0.0
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
       do i = lb(1),ub(1)
@@ -980,12 +979,14 @@ subroutine cmpflxm(self)
 contains
   subroutine cmpflxm_y
   ! local variables
+  real(dp), dimension(self%mesh(2)%gn,self%nv):: qleft, qright, fgdnv
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   !-----------------------------------------------------------------------------
   dtds = self%dtime/self%mesh%d       ! needed here
   lb = self%mesh%li
   ub = self%mesh%uo
+  qleft=0.0; qright=0.0
   do k = lb(3),ub(3)
     do i = lb(1),ub(1)
       qleft (:,1) = qm(i,:,k,1,2); qright(:,1) = qp(i,:,k,1,2)
@@ -1010,12 +1011,13 @@ contains
   !-----------------------------------------------------------------------------
   subroutine cmpflxm_z
   ! local variables
-  integer:: i, j, k, lb(3), ub(3)
+  real(dp), dimension(self%mesh(3)%gn,self%nv):: qleft, qright, fgdnv
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   dtds = self%dtime/self%mesh%d       ! needed here
   lb = self%mesh%li
   ub = self%mesh%uo
+  qleft=0.0; qright=0.0
   do j = lb(2),ub(2)
     do i = lb(1),ub(1)
       qleft (:,1) = qm(i,j,:,1,3); qright(:,1) = qp(i,j,:,1,3)

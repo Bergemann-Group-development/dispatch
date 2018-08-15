@@ -70,7 +70,6 @@ SUBROUTINE initial_conditions (self)
                bx1=0.0, by1=0.0, bz1=0.0, pbufferfrac=0.2
   real, dimension(3), save:: pcentre=0.0, psize=0.5
   logical, save:: add_patch=.true., pmoving=.true.
-  type(index_t):: idx
   integer:: i, j, k
   real(8):: x, y, z
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: f
@@ -114,30 +113,30 @@ SUBROUTINE initial_conditions (self)
           x = m1%p + m1%r(i)
 
           ! ambient
-          f(i,j,k,idx%d ) = rho0
-          f(i,j,k,idx%e ) = p0 / (self%gamma - 1.0)
-          f(i,j,k,idx%px) = rho0 * vx0
-          f(i,j,k,idx%py) = rho0 * vy0
-          f(i,j,k,idx%pz) = rho0 * vz0
-          f(i,j,k,idx%bx) = bx0
-          f(i,j,k,idx%by) = by0
-          f(i,j,k,idx%bz) = bz0
+          f(i,j,k,self%idx%d ) = rho0
+          f(i,j,k,self%idx%e ) = p0 / (self%gamma - 1.0)
+          f(i,j,k,self%idx%px) = rho0 * vx0
+          f(i,j,k,self%idx%py) = rho0 * vy0
+          f(i,j,k,self%idx%pz) = rho0 * vz0
+          f(i,j,k,self%idx%bx) = bx0
+          f(i,j,k,self%idx%by) = by0
+          f(i,j,k,self%idx%bz) = bz0
 
           ! pulse
           if (x >= (pcentre(1)-psize(1)*0.5) .and. x <= (pcentre(1)+psize(1)*0.5) .and. &
               y >= (pcentre(2)-psize(2)*0.5) .and. y <= (pcentre(2)+psize(2)*0.5) .and. &
               z >= (pcentre(3)-psize(3)*0.5) .and. z <= (pcentre(3)+psize(3)*0.5) ) then
-            f(i,j,k,idx%d ) = rho1
-            f(i,j,k,idx%e ) = p1 / (self%gamma - 1.0)
-            f(i,j,k,idx%px) = rho1 * vx1
-            f(i,j,k,idx%py) = rho1 * vy1
-            f(i,j,k,idx%pz) = rho1 * vz1
-            f(i,j,k,idx%bx) = bx1
-            f(i,j,k,idx%by) = by1
-            f(i,j,k,idx%bz) = bz1
+            f(i,j,k,self%idx%d ) = rho1
+            f(i,j,k,self%idx%e ) = p1 / (self%gamma - 1.0)
+            f(i,j,k,self%idx%px) = rho1 * vx1
+            f(i,j,k,self%idx%py) = rho1 * vy1
+            f(i,j,k,self%idx%pz) = rho1 * vz1
+            f(i,j,k,self%idx%bx) = bx1
+            f(i,j,k,self%idx%by) = by1
+            f(i,j,k,self%idx%bz) = bz1
           end if
-          f(i,j,k,idx%et) = f(i,j,k,idx%e ) + 0.5 * rho0 * (vx0**2 + vy0**2 + vz0**2) &
-                          + 0.5 * (f(i,j,k,idx%bx)**2 + f(i,j,k,idx%by)**2 + f(i,j,k,idx%bz)**2)
+          f(i,j,k,self%idx%et) = f(i,j,k,self%idx%e ) + 0.5 * rho0 * (vx0**2 + vy0**2 + vz0**2) &
+                          + 0.5 * (f(i,j,k,self%idx%bx)**2 + f(i,j,k,self%idx%by)**2 + f(i,j,k,self%idx%bz)**2)
         end do
       end do
     end do

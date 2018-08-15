@@ -25,7 +25,7 @@
  out_time=0.0100        ! output cadence
  dt_fixed=0.0002        ! fixed time step
 /
-&box_params
+&cartesian_params
  dims=1,1,1             ! number of patches
 /
 &timestep_params

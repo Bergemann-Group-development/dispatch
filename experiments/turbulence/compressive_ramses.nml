@@ -10,7 +10,7 @@
  do_output=f
  omp_trace=t
 /
-&box_params
+&cartesian_params
  face_nbors=f
  size=1,1,1
  !dims=16,16,16

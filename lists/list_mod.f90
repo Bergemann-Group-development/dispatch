@@ -31,6 +31,10 @@ MODULE list_mod
     integer:: ne=0                      ! external
     integer:: na=0                      ! active = internal+boundary
     integer:: nac=0                     ! active tasks
+    real(8):: lc(3) = +huge(0d0)        ! lower corner
+    real(8):: uc(3) = -huge(0d0)        ! upper corner
+    real(8):: llc(3) = +huge(0d0)       ! lower left corner
+    real(8):: urc(3) = -huge(0d0)       ! upper right corner
     real(8):: position(3) = 0.0_8       ! center offset
     real(8):: size(3) = 1.0_8           ! full extent = uc-lc
     integer:: n_behind=0, n_check=0, n_ready=0, n_nbor=0
@@ -1470,61 +1474,27 @@ END SUBROUTINE print_tasks
 
 !> =============================================================================
 !> Initialize boundary bits, which may (optionally) be used to apply boundary
-!> conditions in experiment_t%update() procedures.  This procedure must be called
-!> while each rank still has a list of all patches.
+!> conditions in experiment_t%update() procedures. 
 !> =============================================================================
 SUBROUTINE init_bdries (self)
   implicit none
   class(list_t):: self
   class(link_t), pointer:: link
-  class(task_t), pointer:: task
+  class(task_t), pointer:: patch
   real(8):: position(3), limit(3)
   !-----------------------------------------------------------------------------
   call trace%begin('task_list_t%init_bdries')
   link => self%head
   do while (associated(link))
-    task => link%task
-    select type (task)
+    patch => link%task
+    select type (patch)
     class is (patch_t)
-    !---------------------------------------------------------------------------
-    ! If at edge, set boundary bits
-    !---------------------------------------------------------------------------
-    position = task%position - task%mesh%origin - 0.5d0 * task%box
-    limit = 0.5d0 * (task%box - task%size - task%ds)
-    if (.not.task%periodic(1)) then
-      if (position(1)  <= -limit(1)) then
-        call task%boundaries%set (bits%xl)
-        task%mesh(1)%lower_boundary = .true.
-      end if
-      if (position(1) >= +limit(1)) then
-        call task%boundaries%set (bits%xu)
-        task%mesh(1)%upper_boundary = .true.
-      end if
-    end if
-    if (.not.task%periodic(2)) then
-      if (position(2)  <= -limit(2)) then
-        call task%boundaries%set (bits%yl)
-        task%mesh(2)%lower_boundary = .true.
-      end if
-      if (position(2) >= +limit(2)) then
-        call task%boundaries%set (bits%yu)
-        task%mesh(2)%upper_boundary = .true.
-      end if
-    end if
-    if (.not.task%periodic(3)) then
-      if (position(3)  <= -limit(3)) then
-        call task%boundaries%set (bits%zl)
-        task%mesh(3)%lower_boundary = .true.
-      end if
-      if (position(3) >= +limit(3)) then
-        call task%boundaries%set (bits%zu)
-        task%mesh(3)%upper_boundary = .true.
-      end if
-    end if
-    if (task%boundaries%bits /= 0) print '(2i6,2(2x,a6),o9,2(2x,3f10.0))', &
-      task%id, task%level, 'BCs: ', formatted(task), task%boundaries%bits, &
-      task%size, task%position
+      call patch%init_bdries
     end select
+    self%lc  = min(self%lc,  link%task%position)
+    self%uc  = max(self%uc,  link%task%position)
+    self%llc = min(self%llc, link%task%position-0.5000000001_8*link%task%size)
+    self%urc = max(self%urc, link%task%position+0.5000000001_8*link%task%size)
     link => link%next
   end do
   call trace_end

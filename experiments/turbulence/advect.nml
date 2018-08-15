@@ -2,7 +2,7 @@
  do_trace=f
  verbose=0
 /
-&box_params
+&cartesian_params
  size=1,1,1
  dims=2,2,2
  origin=0,0,0
@@ -12,7 +12,6 @@
 &patch_params
  nt=5
  n=10,10,10
- courant=0.2
 !dt_fixed=0.1
 /
 &out_params

@@ -14,7 +14,7 @@
  do_debug=f
  do_output=f
 /
-&box_params
+&cartesian_params
  face_nbors=f
  size=1,1,1
  !dims=16,16,16
