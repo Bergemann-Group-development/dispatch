@@ -54,6 +54,8 @@ SUBROUTINE init (self)
     first_time = .false.
   end if
 
+  idx%d=1; idx%px=2; idx%py=3; idx%pz=4
+  idx%e=5; idx%bx=6; idx%by=7; idx%bz=8
   if (self%kind(1:6) == 'ramses') then 
     et => self%mem(:,:,:,idx%e,self%it,1)
     allocate (e1(self%gn(1),self%gn(2),self%gn(3)))
