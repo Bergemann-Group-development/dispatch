@@ -39,7 +39,7 @@ SUBROUTINE conditions (self, patch, cit)
   real(8) :: rmin, rmax, tau_in, tau_out, rbnd, rkill, tau, &
              dt
   real(4) :: Rc, RT
-  real(kind=KindScalarVar):: sigma0, p0, skep, vkep, d
+  real(kind=KindScalarVar):: sigma0, p0, skep, vkep, d, gamma
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: q
   !-----------------------------------------------------------------------------
   call trace_begin('boundary_t%conditions')
@@ -54,6 +54,9 @@ SUBROUTINE conditions (self, patch, cit)
   tau_in  = 2.0 * pi * sqrt(rmin**3/(scaling%grav * experiment_params%mstar))
   tau_out = 2.0 * pi * sqrt(rmax**3/(scaling%grav * experiment_params%mstar))
   dt = patch%dtime
+
+  ! to ensure that `p0/(gamma - 1.0)` has the same precision as `q`, `p0`, etc.
+  gamma = real(patch%gamma, kind=KindScalarVar)
 
   ! periodic in z (is this necessary?)
 
@@ -82,7 +85,7 @@ SUBROUTINE conditions (self, patch, cit)
           H     = cs/(vkep*scaling%u/(r*scaling%l))                         ! scale height in cgs units
           rho   = sigma/(sqrt(2.0*math%pi)*H)                            ! gas density in cgs units
           d     = rho/scaling%d
-          p0    = ( cs**2 * rho / patch%gamma ) / scaling%p
+          p0    = ( cs**2 * rho / gamma ) / scaling%p
           skep  = d * vkep * m1%h31c(i1) * m2%h32c(i2)
           if ( r <= experiment_params%kill_rmin ) then
             rkill = experiment_params%kill_rmin
@@ -108,17 +111,17 @@ SUBROUTINE conditions (self, patch, cit)
               q(i1,i2,i3,patch%idx%s+ic) = 0d0
             else
               q(i1,i2,i3,patch%idx%s+ic) = q(i1,i2,i3,patch%idx%s+ic) + dt * wave_killing(q(i1,i2,i3,patch%idx%s+ic) &
-                                  , (log(p0)-log(d)*patch%gamma)*d/(patch%gamma - 1.0), tau, rkill, rbnd, r)
+                                  , (log(p0)-log(d)*gamma)*d/(gamma - 1.0), tau, rkill, rbnd, r)
             end if
           else if (trim(patch%kind) == 'stagger2e_hd_patch') then
             q(i1,i2,i3,patch%idx%e+ic) = q(i1,i2,i3,patch%idx%e+ic) + dt * wave_killing(q(i1,i2,i3,patch%idx%e+ic) &
-                                  , p0 / (patch%gamma - 1.0), tau, rkill, rbnd, r)
+                                  , p0 / (gamma - 1.0), tau, rkill, rbnd, r)
           else if (trim(patch%kind) == 'ramses_hd_patch'   ) then
             q(i1,i2,i3,patch%idx%e+ic) = q(i1,i2,i3,patch%idx%e+ic) + dt * wave_killing(q(i1,i2,i3,patch%idx%e+ic) &
-                                  , p0 / (patch%gamma - 1.0) + 0.5*d*vkep**2, tau, rkill, rbnd, r)
+                                  , p0 / (gamma - 1.0) + 0.5*d*vkep**2, tau, rkill, rbnd, r)
           else if (trim(patch%kind) == 'zeus_hd_patch'     ) then
             q(i1,i2,i3,patch%idx%e+ic) = q(i1,i2,i3,patch%idx%e+ic) + dt * wave_killing(q(i1,i2,i3,patch%idx%e+ic) &
-                                  , p0 / (patch%gamma - 1.0), tau, rkill, rbnd, r)
+                                  , p0 / (gamma - 1.0), tau, rkill, rbnd, r)
           end if
         end do
         end if
@@ -134,7 +137,7 @@ SUBROUTINE conditions (self, patch, cit)
             rho   = sigma/(sqrt(2.0*math%pi)*H)                            ! gas density in cgs units
             d     = rho/scaling%d
             skep  = d * vkep * m1%h31c(i1) * m2%h32c(i2)
-            p0    = ( cs**2 * rho / patch%gamma ) / scaling%p
+            p0    = ( cs**2 * rho / gamma ) / scaling%p
             q(i1,i2,i3,patch%idx%d+ic)  = d
             q(i1,i2,i3,patch%idx%px+ic) = 0.0d0
             jay2 = 2*m2%lo + 1 - i2
@@ -145,16 +148,16 @@ SUBROUTINE conditions (self, patch, cit)
               if (k.EQ.2) then
                 q(i1,i2,i3,patch%idx%s+ic) = 0d0
               else
-                q(i1,i2,i3,patch%idx%s+ic) = (log(p0) - log(d) * patch%gamma) &
-                                        * d / (patch%gamma - 1.0)
+                q(i1,i2,i3,patch%idx%s+ic) = (log(p0) - log(d) * gamma) &
+                                        * d / (gamma - 1.0)
               end if
             else if (trim(patch%kind) == 'stagger2e_hd_patch') then
-              q(i1,i2,i3,patch%idx%e+ic) = p0 / (patch%gamma - 1.0)
+              q(i1,i2,i3,patch%idx%e+ic) = p0 / (gamma - 1.0)
             else if (trim(patch%kind) == 'ramses_hd_patch'   ) then
-              q(i1,i2,i3,patch%idx%e+ic) = p0 / (patch%gamma - 1.0) &
+              q(i1,i2,i3,patch%idx%e+ic) = p0 / (gamma - 1.0) &
                                         + 0.5*d*vkep**2
             else if (trim(patch%kind) == 'zeus_hd_patch'     ) then
-              q(i1,i2,i3,patch%idx%e+ic) = p0 / (patch%gamma - 1.0)
+              q(i1,i2,i3,patch%idx%e+ic) = p0 / (gamma - 1.0)
             end if
           end do
         end if
@@ -169,7 +172,7 @@ SUBROUTINE conditions (self, patch, cit)
             rho   = sigma/(sqrt(2.0*math%pi)*H)                            ! gas density in cgs units
             d     = rho/scaling%d
             skep  = d * vkep * m1%h31c(i1) * m2%h32c(i2)
-            p0    = ( cs**2 * rho / patch%gamma ) / scaling%p
+            p0    = ( cs**2 * rho / gamma ) / scaling%p
             q(i1,i2,i3,patch%idx%d+ic)  = d
             q(i1,i2,i3,patch%idx%px+ic) = 0.0d0
             jay2 = 2*m2%uo - 1 - i2
@@ -180,16 +183,16 @@ SUBROUTINE conditions (self, patch, cit)
               if (k.EQ.2) then
                 q(i1,i2,i3,patch%idx%s+ic) = 0d0
               else
-                q(i1,i2,i3,patch%idx%s+ic) = (log(p0) - log(d) * patch%gamma) &
-                                        * d / (patch%gamma - 1.0)
+                q(i1,i2,i3,patch%idx%s+ic) = (log(p0) - log(d) * gamma) &
+                                        * d / (gamma - 1.0)
               end if
             else if (trim(patch%kind) == 'stagger2e_hd_patch') then
-              q(i1,i2,i3,patch%idx%e+ic) = p0 / (patch%gamma - 1.0)
+              q(i1,i2,i3,patch%idx%e+ic) = p0 / (gamma - 1.0)
             else if (trim(patch%kind) == 'ramses_hd_patch'   ) then
-              q(i1,i2,i3,patch%idx%e+ic) = p0 / (patch%gamma - 1.0) &
+              q(i1,i2,i3,patch%idx%e+ic) = p0 / (gamma - 1.0) &
                                         + 0.5*d*vkep**2
             else if (trim(patch%kind) == 'zeus_hd_patch'     ) then
-              q(i1,i2,i3,patch%idx%e+ic) = p0 / (patch%gamma - 1.0)
+              q(i1,i2,i3,patch%idx%e+ic) = p0 / (gamma - 1.0)
             end if
           end do
         end if

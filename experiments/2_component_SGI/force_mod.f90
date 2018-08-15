@@ -121,7 +121,7 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   integer:: ix, iy, iz
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%dust_gas_interaction')
-  i = idx
+  !!!i = idx
   gn(1)=size(mem,1); gn(2)=size(mem,2); gn(3)=size(mem,3)
   nv = size(mem,4)
   !--------------------------------------------------------------------------
