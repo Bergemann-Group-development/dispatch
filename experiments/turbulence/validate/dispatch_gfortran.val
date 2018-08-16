@@ -87,6 +87,7 @@ reading /proc/cpuinfo:   0.0 sec
  ORDER_INTERPOLATOR=         -1,
  ORDER_TIME=          1,
  CHECK_FILLED=F,
+ VERBOSE=          0,
  /
  --------------- lagrange_t%test ------------------
      x           y           y==1    order
@@ -180,7 +181,7 @@ reading /proc/cpuinfo:   0.0 sec
  NG= 3*2          ,
  NT=          5,
  U_FIXED= -1.00000000    ,
- DT_FIXED= -1.0000000000000000    ,
+ DT_FIXED= -1.0000000000000000     ,
  GRACE=  2.00000000    ,
  PERIODIC= 3*T,
  EXTRAPOLATE_GZ=F,

@@ -28,6 +28,7 @@
 
 from _select import *
 from _planes import *
+from _averages import *
 
 __all__ = "minloc,maxloc,patch_at,is_inside,count_inside,patches_along" \
         + ",indices_and_weights,values_in,values_along,corners,shell_values,demo"

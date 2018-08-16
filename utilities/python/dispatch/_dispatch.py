@@ -61,7 +61,7 @@ def _data(patch,verbose=0):
             if verbose>0:
                 print (patch.iout,offset)
             var=np.memmap(patch.datafile, dtype=np.float32, offset=offset,
-                          mode='r', order='F', shape=shape)
+                          mode='r+', order='F', shape=shape)
             data.append(var)
         except:
             print ('Error in memmap:')
@@ -134,6 +134,9 @@ class snapshot():
             nml_list=f90nml.read(file)
             self.nml_list=nml_list
             _add_nml_list_to(self,nml_list,verbose=verbose)
+            # Add index dict
+            if 'idx_nml' in nml_list.keys() and hasattr(self,'idx'):
+                self.idx.dict=nml_list['idx_nml']
             # Add array of patch instances
             self.patches=self._patches(datadir,rundir,verbose=verbose)
 
@@ -181,6 +184,13 @@ class snapshot():
         sorted=[]
         for i in ii:
             patch=patches[i]
+            if hasattr(patch,'x'):
+                patch.s=[patch.x]
+            if hasattr(p,'y'):
+                patch.s.append(patch.y)
+            if hasattr(p,'z'):
+                patch.s.append(patch.z)
+
             if verbose==2:
                 dmax=patch.data[0].max()
                 print ('    id:{:4d}  pos: {} {}'.format(patch.id,patch.position,dmax))
