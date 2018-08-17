@@ -483,8 +483,7 @@ subroutine ctoprim(self)
     emag = half*( q(i,j,k,6)**2 + q(i,j,k,7)**2 + q(i,j,k,8)**2)
     etot = uin(i,j,k,5) - emag
     eint = etot/uin(i,j,k,1) - eken
-    q(i,j,k,5) = MAX(entho*q(i,j,k,1)*eint,smallp)
-    !
+    q(i,j,k,5) = MAX((self%gamma-one)*q(i,j,k,1)*eint,smallp)    !
   end do
   end do
   end do
