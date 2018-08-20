@@ -79,12 +79,18 @@ SUBROUTINE startup (self)
   integer, save:: itimer=0
   logical:: was_refined
   !-----------------------------------------------------------------------------
-  ! Initialize nbor lists, and set virtual and boundary bits
-  !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%startup', itimer=itimer)
-  call self%init_bdries
-  call self%init_all_nbors
-  call self%reset_status
+  !-----------------------------------------------------------------------------
+  ! Initialize nbor lists and setting virtual and boundary bit should NOT be
+  ! done here, since at this point the task list may be a splice between the
+  ! task lists of several components, with nbor relations that should not be
+  ! overwritten.  Each component should return a task list with appropriate
+  ! nbor lists, which may then be combined into a more comprehensive setup, with
+  ! special handling of nbor relations
+  !-----------------------------------------------------------------------------
+  !call self%init_bdries
+  !call self%init_all_nbors
+  !call self%reset_status
   !-----------------------------------------------------------------------------
   ! Check the ready status of all tasks
   !-----------------------------------------------------------------------------
@@ -129,7 +135,6 @@ SUBROUTINE execute (self)
   !-----------------------------------------------------------------------------
   ! Loop over tasks
   !-----------------------------------------------------------------------------
-  io%ntask = self%n
   !$omp parallel
   do while (self%na > 0 .and. .not.io%do_stop)
     call self%update (self%head, .false.)

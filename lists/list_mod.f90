@@ -1080,10 +1080,10 @@ SUBROUTINE real_queue_by_time (self, this, error)
       else if (next%task%time > task%time) then
         this%next_time => next
         if (associated(prev)) then
-          write (io_unit%output,'(i4,2x,a,i6,a,i6,i5,1p,3g16.6)') &
+          if (io%verbose > 1) then
+            write (io_unit%output,'(i4,2x,a,i6,a,i6,i5,1p,3g16.6)') &
               omp%thread, 'task',task%id,' in ready queue between',prev%task%id,next%task%id, &
               prev%task%time, this%task%time, next%task%time
-          if (io%verbose > 1) then
             write (io_unit%log,'(i4,2x,a,i6,a,i6,i5,1p,3g16.6)') &
               omp%thread, 'task',task%id,' in ready queue between',prev%task%id,next%task%id, &
               prev%task%time, this%task%time, next%task%time
@@ -1091,8 +1091,8 @@ SUBROUTINE real_queue_by_time (self, this, error)
           prev%next_time => this
         else
           self%queue => this
-          write (io_unit%output,*) 'task',task%id,' at ready queue head',self%nq
           if (io%verbose > 1) then
+            write (io_unit%output,*) 'task',task%id,' at ready queue head',self%nq
             write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
           end if
         end if
@@ -1105,14 +1105,14 @@ SUBROUTINE real_queue_by_time (self, this, error)
     end do
     self%nq = self%nq+1
     if (associated(prev)) then
-      write (io_unit%output,*) 'task',task%id,' in ready queue after',prev%task%id,self%nq
       if (io%verbose > 1) then
+        write (io_unit%output,*) 'task',task%id,' in ready queue after',prev%task%id,self%nq
         write (io_unit%log,*) 'task',task%id,' in ready queue after',prev%task%id,self%nq
       end if
       prev%next_time => this
     else
-      write (io_unit%output,*) 'task',task%id,' at ready queue head',self%nq
       if (io%verbose > 1) then
+        write (io_unit%output,*) 'task',task%id,' at ready queue head',self%nq
         write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
       end if
       self%queue => this

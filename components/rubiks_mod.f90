@@ -39,7 +39,6 @@ SUBROUTINE init_hierarchy (self, label)
   class(rubiks_t):: self
   character(len=*), optional:: label
   !.............................................................................
-  type(task_list_t):: task_list
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
   integer, save:: n_patch(3)=0, m_zoom(3)=3, n_levels=5
@@ -99,6 +98,7 @@ SUBROUTINE init_hierarchy (self, label)
   ! self%size, on the other hand, is the size of the smallest, central patch.
   !-----------------------------------------------------------------------------
   allocate (self%task_list)
+  call self%task_list%init (label)
   self%task_list%size = self%size*self%n_patch*scene%f_zoom**(n_levels-1)*n_repeat
   n_repeat = (n_repeat/2)*2 + 1
   scene%n_repeat = n_repeat
@@ -123,9 +123,15 @@ SUBROUTINE init_hierarchy (self, label)
     call self%init_level (level, position)
   end do
   !-----------------------------------------------------------------------------
-  ! Initialize the task list
+  ! Initialize the task list, setting bits for internal, boundary, virtual and
+  ! external patches, counting these, setting physical boundary bits, and 
+  ! initialize nbor lists based on this.
   !-----------------------------------------------------------------------------
-  call self%task_list%init (label)
+  call self%task_list%reset_status
+  call self%task_list%count_status
+  io%ntask = self%task_list%na
+  call self%task_list%init_bdries
+  call self%task_list%init_all_nbors
   call trace%end
 END SUBROUTINE init_hierarchy
 

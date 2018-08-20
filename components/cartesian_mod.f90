@@ -161,38 +161,6 @@ SUBROUTINE init (self, label)
   end do
   end do
   !-----------------------------------------------------------------------------
-  ! Add an nbor list to each patch.  The modulo below assumes a period mesh in
-  ! all directions.  If this is not the case on one or more directions, the
-  ! nbor lists must be adjusted accordingly
-  !-----------------------------------------------------------------------------
-  link => self%task_list%head
-  do while (associated(link))
-    task => link%task
-    select type (task)
-    class is (experiment_t)
-      patch => task
-    class default
-      error stop 'xx'
-    end select
-    do k1=nn(1,3),nn(2,3)
-    do j1=nn(1,2),nn(2,2)
-    do i1=nn(1,1),nn(2,1)
-      if (i1==0.and.j1==0.and.k1==0) cycle
-      ipos = modulo(patch%ipos+[i1,j1,k1],self%dims)
-      if (associated(links(ipos(1),ipos(2),ipos(3))%p)) then
-        allocate (nbor)
-        nbor%task => links(ipos(1),ipos(2),ipos(3))%p%task
-        nbor%link => links(ipos(1),ipos(2),ipos(3))%p
-        nbor%nbor => nbor%link
-        call link%add_nbor_by_rank (nbor)
-      end if
-    end do
-    end do
-    end do
-    link => link%next
-  end do
-  deallocate (links)
-  !-----------------------------------------------------------------------------
   ! Initialize patches on our rank and virtual patches, in parallel OMP tasks
   !-----------------------------------------------------------------------------
   link => self%task_list%head
@@ -239,7 +207,13 @@ SUBROUTINE init (self, label)
   end do
   !$omp end master
   !$omp end parallel
+  !-----------------------------------------------------------------------------
+  ! Ŕeset the boundary / internal / virtual and boundary bits (and flags), and
+  ! reconstruct the nbor lists based on that
+  !-----------------------------------------------------------------------------
   call self%task_list%reset_status
+  call self%task_list%count_status
+  io%ntask = self%task_list%na
   call self%task_list%init_bdries
   call self%task_list%init_all_nbors
   call self%diagnostics

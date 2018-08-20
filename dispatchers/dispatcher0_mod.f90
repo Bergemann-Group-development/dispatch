@@ -80,7 +80,6 @@ SUBROUTINE execute (self, task_list, test)
   !-----------------------------------------------------------------------------
   ! Loop over tasks
   !-----------------------------------------------------------------------------
-  io%ntask = task_list%na
   !$omp parallel
   do while (task_list%na > 0 .and. wallclock() < io%job_seconds)
     call self%update (task_list, test)

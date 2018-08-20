@@ -109,7 +109,6 @@ SUBROUTINE execute (self, task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   task_list%method = method
-  io%ntask = task_list%na
   if (io%ntask==0) then
     call mpi%abort &
       ('ERROR: io%ntask, which should be the number of active tasks, is zero')
@@ -118,8 +117,6 @@ SUBROUTINE execute (self, task_list)
     call mpi%abort &
       ('ERROR: io%ntotal, which should be the total number of tasks, is zero')
   end if
-  if (verbose>0 .and. mpi%master) &
-    print *, 'dispatcher_t%execute: setting io%ntask =', io%ntask
   if (test) call set_io
   call self%method (task_list)
 END SUBROUTINE execute
@@ -141,7 +138,6 @@ SUBROUTINE method0 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   task_list%method = method
-  io%ntask = task_list%na
   if (test) call set_io
   call dispatcher0%execute (task_list, test)
 END SUBROUTINE method0
