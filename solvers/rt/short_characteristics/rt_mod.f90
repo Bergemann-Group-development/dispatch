@@ -14,13 +14,23 @@
 !> guard zone filling must take place for each angle, just before the solver
 !> is called.
 !>
-!> The self%time, self%rt_time, self%first, and self%done are used to control
-!> the actions of the solver.  
+!> The self%time, self%rt_time, and self%rt_next control the scheduling of the
+!> tasks.  The MHD tasks require that the times of their nbors are "ahead", 
+!> allowing for a grace fraction of the nbor time step.  The RT sub-tasks
+!> advance their time by self%rt_time (effectively their self%dtime) when done,
+!> hence they must update when their MHD master task passes their own time,
+!> which conforms with standard nbor relations.
 !>
-!> This will only work with schedulers that try to execute all tasks in the 
-!> task list, while a scheduler (dispatcher 0) that always takes the oldest
-!> tasks will get into a deadlock, with the RT solver in one patch waiting on
-!> an upstream patch whose MHD time (self%time) happens to be larger.
+!> Can this also be consistent with the "always update the oldest taske"
+!> strategy of dispather0?  It will update the MHD task, as long as it does
+!> not pass beyond the rt_next time (which generally should be the same while
+!> the RT sub-task are idle).  Once it passes rt_next (which should also be
+!> the self%time of all RT sub-tasks), they will be "older" than the MHD task,
+!> and will all be updated (subject to their inter-dependencies).
+!>
+!> Initially, we wish that only the MHD states are ready to update, and we set
+!> things up so the only thing they do is compute the EOS for the RT solvers.
+!> So, we need self%time < omega%time, and self%eos_time < self%rt_time < 0.
 !> =============================================================================
 MODULE rt_mod
   USE io_mod
@@ -35,6 +45,9 @@ MODULE rt_mod
   USE eos_mod
   USE download_mod
   USE scalar_mod
+  USE bits_mod
+  USE scaling_mod
+  USE rt_integral_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -59,6 +72,7 @@ MODULE rt_mod
     real(8)                    :: rt_grace_time=0.0
     real, pointer              :: w_bin(:)
     real, pointer              :: q(:,:,:,:)
+    real, pointer              :: tt(:,:,:)
     real, pointer              :: rk(:,:,:,:)
     real, pointer              :: src(:,:,:,:)
     real, pointer              :: layers(:,:,:,:,:)
@@ -66,18 +80,14 @@ MODULE rt_mod
     procedure:: init
     procedure:: update
     procedure:: init_nbors
-    procedure:: upstream_is_ok
     procedure:: rt_eos
+    procedure:: boundary_conditions
     procedure:: solve
-    procedure:: integral_solver
-    procedure:: prepare_layers
-    procedure:: calculate_offsets
-    procedure:: bilinear
     procedure:: needs
   end type
   real, save:: dtau_min=1e-3, dtau_max=30., dtau_dif=10.
   integer(8):: n_min=0, n_max=0, n_dif, n_ful=0
-  integer, save:: verbose=1
+  integer, save:: verbose=0
   logical, save:: vertical_propagation=.false.
 CONTAINS
 
@@ -125,8 +135,8 @@ SUBROUTINE init (self)
   ! Initialize variable indices, using slot 9 for temperature and slot 10 for Q
   !-----------------------------------------------------------------------------
   call self%idx%init (5, self%mhd)
-  self%idx%tt = 9
-  self%idx%qr = 10
+  self%idx%tt = 10
+  self%idx%qr = 9
   call self%idx%copy
   !-----------------------------------------------------------------------------
   ! Integration weights (w_bin is baked into the source function in this case)
@@ -156,6 +166,9 @@ SUBROUTINE init (self)
   ! FIXME: For now, we give the task IDs that make them easy to recognize in 
   ! debugging.  Later, we must give them unique task IDs across MPI ranks
   !-----------------------------------------------------------------------------
+  self%eos_time = 0.0_8*self%rt_time     ! ensure that we start with and EOS
+  self%time     = 0.0_8*self%rt_time     ! ensure scheduler picks MHD solver
+  self%rt_next  = 1.0_8*self%rt_time     ! enforce 3 initial RT solutions
   do i_omega=1,self%n_omega
     omega => self%omega(i_omega)
     omega = self
@@ -163,15 +176,19 @@ SUBROUTINE init (self)
     omega%nt      = 1
     omega%new     = 1
     omega%nw      = 1
-    omega%id      = self%id*100 + i_omega
+    omega%id      = self%id*1000 + i_omega
     omega%i_omega = i_omega
     omega%nv      = n_bin
     omega%status  = self%status
+    omega%grav    = self%grav
     call omega%set (bits%no_density)
     ! -- force 3 solutions before Q is valid in MHD update
-    omega%time    = -2.5*self%rt_time
+    omega%time    = self%time
+    omega%rt_next = self%rt_next
+    omega%tt      => self%tt
     omega%rk      => self%rk
     omega%src     => self%src
+    omega%pg      => self%pg
     nullify (omega%link)
     allocate (omega%link)
     omega%link%task => omega
@@ -182,13 +199,6 @@ SUBROUTINE init (self)
     omega%q => omega%mem(:,:,:,:,1,1)
     omega%q = 0.0
   end do
-  !-----------------------------------------------------------------------------
-  ! Setup flags for the first RT solutions
-  !-----------------------------------------------------------------------------
-  self%first = .true.
-  self%done = .false.
-  self%omega%done = .false.
-  self%omega%first = .true.
   !-----------------------------------------------------------------------------
   ! Assign angles
   !-----------------------------------------------------------------------------
@@ -241,25 +251,28 @@ END SUBROUTINE init
 !> =============================================================================
 SUBROUTINE update (self)
   class (rt_t):: self
-  integer:: i_omega, i_bin, n_solve, count, id
+  integer:: i_omega, i_bin, n_solve, count, id, i3, l(3), u(3)
   real:: n_tot
   real, dimension(:,:,:), pointer:: q
-  class(rt_t), pointer:: omega, reverse
+  class(rt_t), pointer:: omega, reverse, mhd
   !-----------------------------------------------------------------------------
   ! Call (only) the MHD solver, until it has passed the rt_next time, then
   ! work repeatedly with the RT solver, until that is ahead again
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%update')
+  if (verbose > 0) &
+    print *, self%id, 'rt_t%update: time, i_omega', self%time, self%i_omega
   !-----------------------------------------------------------------------------
   ! Call the MHD solver update when self is the main task
   !-----------------------------------------------------------------------------
   if (self%i_omega==0) then
-!    print *, self%id, 'calling the MHD solver'
-    !---------------------------------------------------------------------------
-    ! Sum Q over angles and bin
-    !---------------------------------------------------------------------------
+    ! -- Sum Q over angles and bin
+    if (verbose > 0) &
+      print *, self%id, 'rt_t%update: compute Q at', self%rt_next
+    self%tt => self%mem(:,:,:,self%idx%tt,self%it,1)
     q => self%mem(:,:,:,self%idx%qr,self%it,1)
     q = 0.0
+    self%mem(:,:,:,self%idx%qr,self%it,2) = 0.0
     do i_omega=1,self%n_omega
       omega => self%omega(i_omega)
       omega%rt_next = self%rt_next
@@ -268,38 +281,76 @@ SUBROUTINE update (self)
                *self%w_bin(i_bin)*omega%w
       end do
     end do
-    !---------------------------------------------------------------------------
-    ! Update the MHD state
-    !---------------------------------------------------------------------------
+    if (self%id == io%id_debug) then
+      l = self%li
+      u = self%ui
+      do i3=l(3),u(3)
+      print '(a,i4,1p,10e10.2)', 'rt_t%update: i3, q =', i3, &
+        q(l(1):l(1)+9,(l(2)+u(2))/2,i3)
+      end do
+    end if
+    if (verbose > 0) &
+      call rt_integral%diagnostics ('at MHD update')
+    ! -- Update the MHD state
+    if (verbose > 0) &
+      print *, self%id, 'rt_t%update: update MHD at', self%time
     call self%solver_t%update
-    !---------------------------------------------------------------------------
-    ! At the RT time, call the EOS (interpolate to rt_next)
-    !---------------------------------------------------------------------------
+    if (self%id == io%id_debug) then
+      l = self%li
+      u = self%ui
+      do i3=l(3),u(3)
+      print '(a,i4,1p,10e10.2)', 'rt_t%update: i3, q =', i3, &
+        q(l(1):l(1)+9,(l(2)+u(2))/2,i3)
+      end do
+    end if
     if (self%time > self%rt_next) then
-      if (self%eos_time < self%rt_next) then
-        if (verbose > 0) &
-          print *, self%id, 'computing EOS at time =', self%rt_next
-        call self%rt_eos
-        self%eos_time = self%rt_next
-      end if
+      ! -- increase the "rabbit" time one RT time
+      self%rt_next = self%rt_next + self%rt_time
+      do i_omega=1,self%n_omega
+        self%omega(i_omega)%rt_next = self%rt_next
+      end do
+      if (verbose > 0) &
+        print *, self%id, 'rt_t%update: increased rt_next to', self%rt_next
+    end if
+    ! -- trigger an EOS calculation, interpolated to self%rt_time
+    if (self%eos_time < self%rt_next) then
+      if (verbose > 0) &
+        print *, self%id, 'computing EOS at time =', self%rt_next
+      call self%rt_eos
     end if
   !-----------------------------------------------------------------------------
-  ! Call the RT solver for RT sub-tasks
+  ! Call the RT solver for RT sub-tasks when self is not the main task, for as
+  ! long as self%time is less than the "rabbit time" rt_next:  For the RT solver,
+  ! self%time is not the time of the solution, but the time of the *next* solution
   !-----------------------------------------------------------------------------
-  else
+  else 
+    ! -- Call RT solver, after disabling the time slot rotation
     self%rotated = .true.
     call self%solve ()
+    if (verbose > 1) &
+      call rt_integral%diagnostics ('after omega solve')
     if (vertical_propagation) then
-      self%time = self%time + self%rt_time*abs(self%mu)
-      self%time = min(self%time, self%rt_next)
+      self%dtime = self%rt_time*abs(self%mu)
+      self%time = min(self%time+self%dtime, self%rt_next)
     else
-      self%time = self%time + self%rt_time
+      self%dtime = self%rt_time
     end if
-    self%done = (self%time == self%rt_next)
+    self%time  = self%time + self%dtime
+    if (abs(self%time-self%rt_next) < 0.001*self%rt_time) then
+      self%time = self%rt_next
+    end if
+    self%done = (self%time >= self%rt_next)
     n_solve = n_solve+1
     if (verbose > 0) &
-      print *, self%id, 'rt_t%update: time =', &
-        self%time, self%time-self%rt_next, self%done
+      print *, self%id, 'rt_t%update: time, rt_next, done =', &
+        self%time, self%rt_next, self%done
+  !-----------------------------------------------------------------------------
+  ! The scheduler compares the self%time of the RT solver, which is multiple
+  ! of rt_time, with the time of the MHD main task, and keeps calling update
+  ! for as long as self%time is less than the MHD time; i.e., until all RT
+  ! solutions are at the first rt_time multiple beyond self%time.  From then on
+  ! is should call the main MHD task, not the RT tasks.
+  !-----------------------------------------------------------------------------
   end if
   call trace%end
 END SUBROUTINE update
@@ -346,18 +397,18 @@ SUBROUTINE init_nbors (self)
         !-------------------------------------------------------------------------
         if (.not.associated(omega%link%nbor)) then
           omega%link%nbor => new
-          if (verbose>2) print *, omega%id, 'nbor => new'
+          if (verbose > 2) print *, omega%id, 'nbor => new'
         else
-          if (verbose>2) print *, omega%id, 'prev%next => new'
+          if (verbose > 2) print *, omega%id, 'prev%next => new'
           prev%next => new
         end if
-        if (verbose>2) print *, omega%id, 'prev => new'
+        if (verbose > 2) print *, omega%id, 'prev => new'
         prev => new
         n_nbor = n_nbor+1
       end if
       nbor => nbor%next
     end do
-    if (verbose > 0) &
+    if (verbose > 1) &
       print *, omega%id, 'rt_t%init_nbors: n_nbor=', n_nbor
   end do
   self%needs_nbors = .false.
@@ -365,90 +416,44 @@ SUBROUTINE init_nbors (self)
 END SUBROUTINE init_nbors
 
 !> =============================================================================
-!> Check upstream times, returning OK if they are ahead.  "self" is the i_omega
-!> task in the local patch, and we compare its time with the time of the upstream
-!> task.
-!> =============================================================================
-FUNCTION upstream_is_ok (self, i_omega)
-  logical:: upstream_is_ok
-  class(rt_t):: self
-  integer:: i_omega
-  !.............................................................................
-  class(rt_t), pointer:: omega
-  type(link_t), pointer:: link, nbor, next
-  class(task_t), pointer:: rt, nbtask
-  !-----------------------------------------------------------------------------
-  call trace%begin ('rt_t%upstream_is_ok')
-  omega => self%omega(i_omega)
-!  if (omega%needs_nbors) &
-!    call self%init_nbors (i_omega)
-  upstream_is_ok = .true.
-  nbor => omega%link%nbor
-  do while (associated(nbor))
-    nbtask => nbor%task
-    select type (nbtask)
-    type is (rt_t)
-      !-------------------------------------------------------------------------
-      ! Check that the nbor task is done, and is at the same or a more advanced
-      ! rt_next -- if not it cannot supply boundary values
-      !-------------------------------------------------------------------------
-      if (.not.nbtask%done .or. nbtask%rt_next < omega%rt_next) then
-!      if (.not.nbtask%done) then
-        !-----------------------------------------------------------------------
-        ! Ignore purely horizontal dependency, since it would never be resolved
-        !-----------------------------------------------------------------------
-        if (nbtask%position(3) /= self%position(3)) then
-          upstream_is_ok = .false.
-          if (verbose > 1) &
-            print *, omega%id, &
-              'rt_t%upstream_is_ok: fail on id, mu, nbtime, time =', &
-              nbtask%id, nbtask%mu, real(nbtask%rt_next-omega%time), &
-              nbtask%done
-          exit
-        end if
-      end if
-    end select
-    nbor => nbor%next
-  end do
-  if (verbose > 1 .and.  upstream_is_ok) &
-    print *, omega%id, 'rt_t%upstream_is_ok:', upstream_is_ok
-  if (upstream_is_ok) &
-    call download%download_link (omega%link)
-  call trace%end
-END FUNCTION upstream_is_ok
-
-!> =============================================================================
-!> Compute the RT EOS quantities for the patch
+!> Compute the RT EOS quantities for the patch.  Delay checking in critical
+!> region to here, so most threads never hit the critical region.
 !> =============================================================================
 SUBROUTINE rt_eos (self)
   class (rt_t):: self
   integer, save:: itimer=0
-  real, dimension(:,:,:), pointer:: d, e
+  real, dimension(:,:,:), pointer:: d, e, tt
   integer:: m(4), ib, i3, jt(2)
   real:: pt(2)
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%rt_eos', itimer=itimer)
-  ! -- interpolate to time = self%rt_next
-  call self%time_interval (self%rt_next, jt, pt)
-  m = shape(self%rk)
-  call allocate_scalars (m, d, e)
-  d = self%mem(:,:,:,self%idx%d,jt(1),1)*pt(1) &
-    + self%mem(:,:,:,self%idx%d,jt(2),1)*pt(2)
-  e = self%mem(:,:,:,self%idx%e,jt(1),1)*pt(1) &
-    + self%mem(:,:,:,self%idx%e,jt(2),1)*pt(2)
-  call eos%lookup_table (m, d=d, e=e, rk=self%rk, src=self%src)
-  if (verbose > 2) then
-    print *,minval(d),maxval(d)
-    print *,minval(e),maxval(e)
-    print *,minval(self%rk),maxval(self%rk)
+  !$omp critical (eos_cr)
+  if (self%eos_time < self%rt_next) then
+    ! -- interpolate to time = self%rt_next
+    call self%time_interval (self%rt_next, jt, pt)
+    m = shape(self%rk)
+    call allocate_scalars (m, d, e)
+    d = self%mem(:,:,:,self%idx%d,jt(1),1)*pt(1) &
+      + self%mem(:,:,:,self%idx%d,jt(2),1)*pt(2)
+    e = self%mem(:,:,:,self%idx%e,jt(1),1)*pt(1) &
+      + self%mem(:,:,:,self%idx%e,jt(2),1)*pt(2)
+    tt => self%mem(:,:,:,self%idx%tt,self%it,1)
+    call eos%lookup_table (m, d=d, e=e, rk=self%rk, src=self%src, tt=tt)
+    if (verbose > 2) then
+      print *,self%id,'rt_t%rt_eos:  d',jt,minval(d),maxval(d)
+      print *,self%id,'rt_t%rt_eos:  e',jt,minval(e),maxval(e)
+      print *,self%id,'rt_t%rt_eos: rk',jt,minval(self%rk),maxval(self%rk)
+      print *,self%id,'rt_t%rt_eos: tt',jt,minval(tt),maxval(tt),scaling%temp
+    end if
+    call deallocate_scalars (d, e)
+    self%eos_time = self%rt_next
   end if
-  call deallocate_scalars (d, e)
+  !$omp end critical (eos_cr)
   call trace%end (itimer)
 END SUBROUTINE rt_eos
 
 !> =============================================================================
-!> Integral short characteristics RT solver.  The order of forward and revers
-!> is unknown.
+!> Call integral short characteristics RT solver.
 !> =============================================================================
 SUBROUTINE solve (self)
   class(rt_t):: self
@@ -457,253 +462,43 @@ SUBROUTINE solve (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%solve', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Forward-index solution
-  !-----------------------------------------------------------------------------
-  if (self%mu > 0) then
-    do i3=self%mesh(3)%li,self%mesh(3)%ui
-      call self%prepare_layers (i3)
-      call self%integral_solver (self%layers(:,:,:,:,1)  , &   ! k = opacity
-                                 self%layers(:,:,:,:,2)  , &   ! s = source
-                                 self%layers(:,:,:,:,3)  , &   ! q = input
-                                 self%mem   (:,:,:,:,1,1), &   ! q = output
-                                 i3, 1, 3)
-    end do
-  else
-  !-----------------------------------------------------------------------------
-  ! Reverse-index solution
-  !-----------------------------------------------------------------------------
-    do i3=self%mesh(3)%ui,self%mesh(3)%li,-1
-      call self%prepare_layers (i3)
-      call self%integral_solver (self%layers(:,:,:,:,1)  , &   ! k = opacity
-                                 self%layers(:,:,:,:,2)  , &   ! s = source
-                                 self%layers(:,:,:,:,3)  , &   ! q = input
-                                 self%mem   (:,:,:,:,1,1), &   ! q = output
-                                 i3, 3, 1)
-    end do
-  end if
+  call rt_integral%solve (self%rk, self%src, self%q, self%mesh, self%mu, self%phi)
   call trace%end (itimer)
 END SUBROUTINE solve
 
 !> =============================================================================
-!> Integral solver for one layer.  The exact integral solution Q=I-S for a 2nd
-!> order polynomial has coefficient for the upstream Q, and for the 1st and 2nd
-!> derivative of S.  However, if one is doing a solution both forwards and 
-!> backward, the term in the 1st derivative cancels.
+!> Vertical boundary conditions; here we explicitly assume the vertical direction
+!> to be downwards, so the lower boundary index-wise is the top physical boundary,
+!> where I=0 => Q=-S.
 !> =============================================================================
-SUBROUTINE integral_solver (self, k, s, qin, qout, i3, l1, l3)
+SUBROUTINE boundary_conditions (self)
   class (rt_t):: self
-  real, dimension(:,:,:,:) :: k, s, qin
-  real, dimension(:,:,:,:) :: qout
-  integer:: i3, ib, l1, l3, iv
-  !.............................................................................
-  integer:: l(3), u(3), i1, i2
-  real:: dz1, dz2, dsdtau1, dsdtau2, d2sdtau2, ex0, ex2, dtaumin, dtaumax
-  integer, save:: itimer=0
-  real(8), pointer:: z(:)
-  real, dimension(self%mesh(1)%gn):: dtau1, dtau2
-  !-----------------------------------------------------------------------------
-!  call trace%begin ('rt_t%integral_solver', itimer=itimer)
-  dz2 = self%mesh(3)%d/2.0
-  l = self%mesh(1:3)%li
-  u = self%mesh(1:3)%ui
-  z => self%mesh(3)%r
-  dz1      = abs(z(l1)-z(2))*0.5
-  dz2      = abs(z(2)-z(l3))*0.5
-  do ib=1,self%n_bin
-    do i2=l(2),u(2)
-      dtau1(l(1):u(1)) = dz1*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,l1))
-      dtau2(l(1):u(1)) = dz2*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,l3))
-      dtaumin = minval(dtau1(l(1):u(1)))
-      dtaumax = maxval(dtau1(l(1):u(1)))
-      if (dtaumin > dtau_max) then
-        do i1=l(1),u(1)
-          qout(i1,i2,i3,ib) = 0.0
-        end do
-        !$omp atomic
-        n_max = n_max+1
-      else if (dtaumin > dtau_dif) then
-        do i1=l(1),u(1)
-          dsdtau1  =     (s(i1,i2,ib, 2) - s(i1,i2,ib,l1))/dtau1(i1)
-          dsdtau2  =     (s(i1,i2,ib,l3) - s(i1,i2,ib, 2))/dtau2(i1)
-          d2sdtau2 = (dsdtau2 - dsdtau1)*2.0/(dtau1(i1)+dtau2(i1))
-          qout(i1,i2,i3,ib) = d2sdtau2
-        end do
-        !$omp atomic
-        n_dif = n_dif+1
-      else if (dtaumax < dtau_min) then
-        do i1=l(1),u(1)
-          ex0      = 1.0-dtau1(i1)
-          qout(i1,i2,i3,ib) = qin(i1,i2,ib,l1)*ex0
-        end do
-        !$omp atomic
-        n_min = n_min+1
-      else 
-        do i1=l(1),u(1)
-          dsdtau1  =     (s(i1,i2,ib, 2) - s(i1,i2,ib,l1))/dtau1(i1)
-          dsdtau2  =     (s(i1,i2,ib,l3) - s(i1,i2,ib, 2))/dtau2(i1)
-          d2sdtau2 = (dsdtau2 - dsdtau1)*2.0/(dtau1(i1)+dtau2(i1))
-          ex0      = exp(-dtau1(i1))
-          ex2      = (1.0-ex0) - dtau1(i1)*ex0
-          qout(i1,i2,i3,ib) = qin(i1,i2,ib,l1)*ex0 &
-                            + d2sdtau2     *ex2
-        end do
-        !$omp atomic
-        n_ful = n_ful+1
-      end if
-    end do
-  end do
-!  call trace%end (itimer)
-END SUBROUTINE integral_solver
-
-!> =============================================================================
-!> Prepare three layers; one centered on the mesh points, one above and below
-!> The indices in the layers are (i1,i2,i3,il,iv,1:3), where i1-i3 are 3D coords,
-!> ib is bin index, iv is variable index (k,s,q), and the last is layer index
-!> =============================================================================
-SUBROUTINE prepare_layers (self, i3)
-  class (rt_t):: self
-  integer:: i3, ib
-  integer:: iv, l(3), u(3), i1, i2
-  integer, save:: itimer=0
   real:: h_scale, tau
-  real, pointer:: d(:,:,:)
+  integer:: l(3), u(3), i1, i2, i3, ib
   !-----------------------------------------------------------------------------
-  call trace%begin ('rt_t%prepare_layers', itimer=itimer)
-  l = self%mesh(1:3)%li
-  u = self%mesh(1:3)%ui
-  !-----------------------------------------------------------------------------
-  ! Vertical boundary conditions; here we explicitly assume the vertical direction
-  ! to be downwards, so the lower boundary index-wise is the top physical boundary,
-  ! where I=0 => Q=-S, and the "upper" boundary is the physical "bottom" boundary,
-  ! where I=S => Q=0.
-  !-----------------------------------------------------------------------------
-  if (self%mesh(3)%lower_boundary .and. self%mu > 0.0) then
-    d => self%mem(:,:,:,self%idx%d,self%it,1)
-    if (i3 == l(3)) then
-      !-------------------------------------------------------------------------
-      ! Estimate the boundary Q from an estimate of the total optical depth
-      !-------------------------------------------------------------------------
-      do ib=1,self%n_bin
-        do i2=l(2),u(2)
-          do i1=l(1),u(1)
-            !h_scale = self%pg(i1,i2,i3-1)/(self%grav*d(i1,i2,i3-1))
-            h_scale = 2.*self%ds(3)
-            tau = h_scale*self%rk(i1,i2,i3-1,ib)
-            self%mem(i1,i2,i3-1,ib,1,1) = -self%src(i1,i2,i3-1,ib)*exp(-tau)
-          end do
+  if (self%mu > 0) then
+    l = self%mesh(1:3)%li
+    u = self%mesh(1:3)%ui
+    i3 = l(3)-1
+    do ib=1,self%n_bin
+      do i2=l(2),u(2)
+        do i1=l(1),u(1)
+          ! -- Estimate the boundary Q from an estimate of the total optical depth
+          !h_scale = self%tt(i1,i2,i3)/(self%grav*scaling%temp)
+          h_scale = 0.15
+          tau = h_scale*self%rk(i1,i2,i3,ib)/self%mu
+          self%mem(i1,i2,i3,ib,1,1) = -self%src(i1,i2,i3,ib)*exp(-tau)
         end do
       end do
-      if (verbose > 1) &
-        print *, self%id, 'rt_t%prepare_layers: using lower BC'
-    end if
-  else if(self%mesh(3)%upper_boundary .and. self%mu < 0.0) then
-    self%mem(:,:,i3,:,1,1) = 0.0
+    end do
     if (verbose > 1) &
-      print *, self%id, 'rt_t%prepare_layers: using upper BC'
-  end if
-  !-----------------------------------------------------------------------------
-  call self%calculate_offsets (i3, i3-1)
-  call self%bilinear (self%rk  (:,:,i3-1,:)   , self%layers(:,:,:,1,1))
-  call self%bilinear (self%src (:,:,i3-1,:)   , self%layers(:,:,:,1,2))
-  call self%bilinear (self%mem(:,:,i3-1,:,1,1), self%layers(:,:,:,1,3))
-  !---------------------------------------------------------------------------
-  self%layers(:,:,:,2,1) = self%rk  (:,:,i3,:)
-  self%layers(:,:,:,2,2) = self%src (:,:,i3,:)
-  self%layers(:,:,:,2,3) = self%mem(:,:,i3,:,1,1)
-  !---------------------------------------------------------------------------
-  call self%calculate_offsets (i3, i3+1)
-  call self%bilinear (self%rk  (:,:,i3+1,:)   , self%layers(:,:,:,3,1))
-  call self%bilinear (self%src (:,:,i3+1,:)   , self%layers(:,:,:,3,2))
-  call self%bilinear (self%mem(:,:,i3+1,:,1,1), self%layers(:,:,:,3,3))
-  call trace%end (itimer)
-END SUBROUTINE prepare_layers
-
-!> =============================================================================
-!> Calculate offsets from one layer to the next
-!> =============================================================================
-SUBROUTINE calculate_offsets (self, i3a, i3b)
-  class (rt_t):: self
-  integer:: i3a, i3b
-  integer, save:: itimer=0
-  real(8), pointer:: z(:)
-  real:: dxdz, dydz, dz, sinmu
-  !-----------------------------------------------------------------------------
-  call trace%begin ('rt_t%calculate_offsets', 2, itimer=itimer)
-  z => self%mesh(3)%r
-  dz = z(i3b)-z(i3a)
-  sinmu = sqrt(1.0-self%mu**2)
-  dxdz = sinmu*self%mesh(1)%d/dz
-  dydz = sinmu*self%mesh(2)%d/dz
-  self%offset_p = [dxdz, dydz]
-  self%offset_o = floor(self%offset_p)
-  self%offset_p = self%offset_p - self%offset_o
-  call trace%end (itimer)
-END SUBROUTINE calculate_offsets
-
-!> =============================================================================
-!> Bilinear interpolation in a plane
-!> =============================================================================
-SUBROUTINE bilinear (self, in, out)
-  class (rt_t):: self
-  real, dimension(:,:,:), intent(in)  :: in
-  real, dimension(:,:,:), intent(out) :: out
-  real:: p(2), q(2)
-  integer:: i1, i2, ib, l(3), u(3), o(2)
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('rt_t%bilinear', 2, itimer=itimer)
-  l = self%mesh%li
-  u = self%mesh%ui
-  o = self%offset_o
-  p = self%offset_p
-  q = 1.0-p
-  !-----------------------------------------------------------------------------
-  ! Purely vertical case
-  !-----------------------------------------------------------------------------
-  if (all(abs(o+p) < 1e-5)) then
-    out = in
-  !-----------------------------------------------------------------------------
-  ! Interpolation only in y
-  !-----------------------------------------------------------------------------
-  else if (abs(o(1)+p(1)) < 1e-5) then
-    do ib=1,self%n_bin
-    do i2=l(2),u(2)
-    do i1=l(1),u(1)
-      out(i1,i2,ib) = &
-        q(2)*in(i1,i2+o(2),ib) + p(2)*in(i1,i2+o(2)+1,ib)
-    end do
-    end do
-    end do
-  !-----------------------------------------------------------------------------
-  ! Interpolation only in x
-  !-----------------------------------------------------------------------------
-  else if (abs(o(2)+p(2)) < 1e-5) then
-    do ib=1,self%n_bin
-    do i2=l(2),u(2)
-    do i1=l(1),u(1)
-      out(i1,i2,ib) = &
-        q(1)*in(i1+o(1),i2,ib) + p(1)*in(i1+o(1)+1,i2,ib)
-    end do
-    end do
-    end do
-  !-----------------------------------------------------------------------------
-  ! Interpolation in x and y
-  !-----------------------------------------------------------------------------
+      print *, self%id, 'rt_t%lower_BC', scaling%temp
   else
-    do ib=1,self%n_bin
-    do i2=l(2),u(2)
-    do i1=l(1),u(1)
-      out(i1,i2,ib) = &
-          q(1)*q(2)*in(i1+o(1)  ,i2+o(2)  ,ib) + &
-          p(1)*q(2)*in(i1+o(1)+1,i2+o(2)  ,ib) + &
-          q(1)*p(2)*in(i1+o(1)+1,i2+o(2)+1,ib) + &
-          p(1)*p(2)*in(i1+o(1)+1,i2+o(2)+1,ib)
-    end do
-    end do
-    end do
+    self%mem(:,:,self%mesh(3)%uo,:,1,1) = 0.0
+    if (verbose > 1) &
+      print *, self%id, 'rt_t%upper_BC'
   end if
-  call trace%end (itimer)
-END SUBROUTINE bilinear
+END SUBROUTINE boundary_conditions
 
 !> =============================================================================
 !> Determine if a task is needed (is upstream)
