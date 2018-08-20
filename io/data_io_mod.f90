@@ -20,7 +20,8 @@ MODULE data_io_mod
   USE legacy_io_mod
   USE parallel_io_mod
   USE buffered_io_mod
-  USE snapshot_list_mod
+  !USE snapshot_list_mod
+  USE counters_mod
   USE index_mod
   USE dll_mod
   implicit none
@@ -110,10 +111,9 @@ SUBROUTINE output (self, patch, experiment_name)
   optional:: experiment_name
   !.............................................................................
   logical, save:: checked=.false.
-  type(snapshot_t), pointer:: snapshot
   integer, save:: itimer=0
   logical:: append
-  integer:: it
+  integer:: it, count
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
@@ -131,8 +131,11 @@ SUBROUTINE output (self, patch, experiment_name)
     end if
     !$omp end critical (outputname_cr)
     call os%mkdir_no (patch%iout)
-    call snapshot_list%count (patch, snapshot, .false.)
-    append = (snapshot%ibuf < snapshot%nbuf-1)
+    !---------------------------------------------------------------------------
+    count = counters%decrement (patch%iout+1, io%ntask)
+    if (count==0) call counters%reset (patch%iout+1)
+    append = (count < io%ntask-1)
+    !---------------------------------------------------------------------------
     if      (io%method=='direct') then
       call direct_io%output (patch)
     else if (io%method=='legacy') then
@@ -149,9 +152,20 @@ SUBROUTINE output (self, patch, experiment_name)
     else
       call mpi%abort ('unknown io%method = '//io%method)
     end if
+    !---------------------------------------------------------------------------
+    if (count==0 .and. mpi%master) then
+      if (io%out_time > 0d0) then
+        print '(1x,a,2x,a,i5.5,5x,"time:",1p,2g14.5)', &
+          trim(io%method)//'_io:output', &
+          'snapshot '//trim(io%outputname), patch%iout, patch%out_next, patch%time
+      else
+        print '(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)', &
+          trim(io%method)//'_io:output', &
+          'snapshot '//trim(io%outputname), patch%iout, patch%time
+      end if
+    end if
+    !---------------------------------------------------------------------------
     call output_nml (patch, append)
-    if (snapshot%ibuf==0) &
-      call snapshot_list%remove (snapshot)
     patch%iout = patch%iout+1
     if (io%out_time==0.0) exit
     patch%out_next = (nint(patch%out_next/io%out_time)+1)*io%out_time
@@ -167,7 +181,7 @@ SUBROUTINE input (self, patch, ok)
   class(data_io_t):: self
   class(patch_t):: patch
   logical:: ok
-  type(snapshot_t), pointer:: snapshot
+  integer:: count
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%input')
   call self%init (patch)
@@ -183,10 +197,15 @@ SUBROUTINE input (self, patch, ok)
       call mpi%abort ('unknown io%method = '//io%method)
     end if
   end if
-  if (ok) &
-    call snapshot_list%count (patch, snapshot, .true.)
-  patch%t(patch%it) = patch%time
-  if (ok .and. io%verbose>2) print *, patch%id, ' LEGACY INPUT'
+  if (ok) then
+    count = counters%decrement (patch%restart+1, io%ntask)
+    if (count==0 .and. mpi%master) then
+      print '(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)', &
+        trim(io%method)//'_io:input', &
+        'snapshot '//trim(io%outputname), patch%restart, patch%time
+    end if
+    patch%t(patch%it) = patch%time
+  end if
   call trace%end
 END SUBROUTINE input
 
