@@ -13,7 +13,6 @@ MODULE rt_boundaries_mod
   USE units_mod
   USE scaling_mod
   USE ray_geometry_v3_mod
-  USE rt_components_mod
   USE planet_mod
   USE atmosphere_mod
   implicit none
@@ -36,8 +35,7 @@ MODULE rt_boundaries_mod
     procedure:: set
     procedure:: is_set
     procedure:: is_clear
-    procedure:: condition => condition_mem                              ! modify outer BCs if necessary in no chains mode
-    procedure:: condition_cell                                          ! modify outer BCs in chains mode
+    procedure:: condition                                               ! modify outer BCs if necessary
   end type
 !-----------------------------------------------------------------------
 
@@ -60,9 +58,11 @@ MODULE rt_boundaries_mod
     real(kind=KindRTVar), dimension(:), pointer :: src => null()
     real(kind=KindRTVar), dimension(:), pointer :: rk  => null()
     real(8) :: llc(3), urc(3)
+    real:: diffuse_radius
   contains
     procedure:: init
-    procedure:: spherical_jagged
+    procedure:: spherical_jagged => spherical_jagged2
+    procedure:: spherical_jagged0
     procedure:: update
   end type
   type(rt_boundaries_t), public :: rt_boundaries
@@ -99,6 +99,9 @@ SUBROUTINE init (self, llc, urc)
                     src=src, rk=rk)
     self%rk = rk(1,1,1,:)
     self%src = src(1,1,1,:)
+    print *, 'Rt boundaries: surf t, d, e:', t, d, e
+    print *, 'Rt boundaries:  CGS t, d, e:', t*scaling%temp, d*scaling%d, e*scaling%e
+    print *, 'Rt boundaries: self% rk, src', self%rk, self%src
     deallocate(src,d,e,rk)
   end if
   !$omp end critical (input_cr)
@@ -156,6 +159,92 @@ SUBROUTINE spherical_jagged (self, src, rk, m)
   call trace%end(itimer)
 END SUBROUTINE spherical_jagged
 
+!> =============================================================================
+!> Make the embryo totally opaque, and make sure no light is picked up from any
+!> of the optically thick cells.  This needs to be done well inside the dS/dt=0
+!> boundary, to avoid the spurious cooling / heating at the discontinuity.
+!> =============================================================================
+SUBROUTINE spherical_jagged2 (self, src,rk, m)
+  class(rt_boundaries_t)                   :: self
+  real(kind=KindRTVar), dimension(:,:,:,:) :: src, rk
+  class(mesh_t), pointer                   :: m(:)
+  !............................................................................
+  real(8)                                  :: position(3), rad2, r(3), f, c
+  integer                                  :: ix, iy, iz
+  !-----------------------------------------------------------------------------
+  call trace_begin('rt_boundaries_t%jagged2')
+  rad2 = (self%diffuse_radius*planet%radius)**2
+  c = 1./log(1e9)
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+    r(3) = m(3)%p - planet%position(3) + r3(iz)
+    do iy=m(2)%lb,m(2)%ub
+      r(2) = m(2)%p - planet%position(2) + r2(iy)
+      do ix=m(1)%lb,m(1)%ub
+        r(1) = m(1)%p - planet%position(1) + r1(ix)
+        !----------------------------------------------------------------------
+        ! The factor f is close to unity for r >> planet%radius, and smoothly
+        ! increases the opacity and reduces the source function as r approaches
+        ! planet%radius.  f is 0.61 at r=2*rp and 0.13 at r=rp. This avoids the
+        ! clitches caused by a rapid change, and cuts the point source region
+        ! out from the diffuse source.  f cannot become smaller than 1e-9 =
+        ! exp(-log(1e9)).
+        !----------------------------------------------------------------------
+        f = exp(-rad2/max(c*rad2,sum(r**2)))
+        rk (ix,iy,iz,:) = rk (ix,iy,iz,:)/max(f,1e-4)
+        src(ix,iy,iz,:) = src(ix,iy,iz,:)*f
+      end do
+    end do
+  end do
+  end associate
+  call trace_end
+END SUBROUTINE spherical_jagged2
+
+!> =============================================================================
+!> Impose spherical boundary condition, assuming that the sphere is jagged.
+!> =============================================================================
+SUBROUTINE spherical_jagged0 (self, dq, m, v)
+  class(rt_boundaries_t)                   :: self
+  real(kind=KindRTVar), dimension(:,:,:,:) :: dq
+  real(kind=KindRTVar):: v
+  class(mesh_t), pointer                   :: m(:), m1, m2, m3
+  !............................................................................
+  integer      :: ix, iy, iz
+  real(8)      :: x1, x2, y1, y2, z1, z2
+  real(8)      :: r2, r(3)
+  logical      :: inside(8)
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('rt_boundaries_t%spherical_jagged0', itimer=itimer)
+  m1 => m(1)
+  m2 => m(2)
+  m3 => m(3)
+  r2 = planet%radius**2
+  do iz = m3%lb, m3%ub
+    do iy = m2%lb, m2%ub
+      do ix = m1%lb, m1%ub
+        x1 = m1%p - planet%position(1) + m1%r(ix) + 0.5*m1%d
+        x2 = m1%p - planet%position(1) + m1%r(ix) - 0.5*m1%d
+        y1 = m2%p - planet%position(2) + m2%r(iy) + 0.5*m2%d
+        y2 = m2%p - planet%position(2) + m2%r(iy) - 0.5*m2%d
+        z1 = m3%p - planet%position(3) + m3%r(iz) + 0.5*m3%d
+        z2 = m3%p - planet%position(3) + m3%r(iz) - 0.5*m3%d
+        inside(1) = x1**2+y1**2+z1**2 < r2
+        inside(2) = x2**2+y1**2+z1**2 < r2
+        inside(3) = x1**2+y2**2+z1**2 < r2
+        inside(4) = x2**2+y2**2+z1**2 < r2
+        inside(5) = x1**2+y1**2+z2**2 < r2
+        inside(6) = x2**2+y1**2+z2**2 < r2
+        inside(7) = x1**2+y2**2+z2**2 < r2
+        inside(8) = x2**2+y2**2+z2**2 < r2
+        if (all(inside)) dq(ix,iy,iz,:) = v
+      end do
+    end do
+  end do
+  nullify (m1, m2, m3)
+  call trace%end(itimer)
+END SUBROUTINE spherical_jagged0
+
 !> =====================================================================
 !> Initialize the outer boundary shells for rt patches
 !> =====================================================================
@@ -205,12 +294,12 @@ END FUNCTION is_clear
 !> =====================================================================
 !> Apply a boundary condition
 !> =====================================================================
-SUBROUTINE condition_mem (self, f)
+SUBROUTINE condition (self, f,src,rk)
   class(rt_outer_bndry_t) :: self
-  real(kind=KindRTVar)           :: f(:,:,:,:)
+  real(kind=KindRTVar)           :: f(:,:,:,:), src(:,:,:,:), rk(:,:,:,:)
   !.....................................................................
   class(mesh_t), pointer:: m1, m2, m3
-  integer:: i, saved_status, il, iu, a, b
+  integer:: i, saved_status, il, iu, a, b, iv, nv, lam
   integer, save:: itimer=0
   !---------------------------------------------------------------------
   call trace%begin ('rt_boundaries_t%condition', itimer=itimer)
@@ -218,6 +307,7 @@ SUBROUTINE condition_mem (self, f)
     call mpi%abort ('rt_outer_boundaries_t%init has not been called')
   end if
   saved_status = self%bits
+  nv = size(f,4)
   !> -------------------------------------------------------------------
   !> set the boundary Q values to 0.0
   !> -------------------------------------------------------------------
@@ -267,7 +357,11 @@ SUBROUTINE condition_mem (self, f)
     m3 => self%m(3)
     do b=m2%lo,m2%uo
       do a=m1%lo,m1%uo
-        f(a,b,m3%lo,:) = 0d0
+        do iv=1,nv,eos%n_lambda
+          do lam=1,eos%n_lambda
+            f(a,b,m3%lo,iv+lam-1) = -src(a,b,m3%lo,lam)
+          end do
+        end do
       end do
     end do
   end if
@@ -277,51 +371,16 @@ SUBROUTINE condition_mem (self, f)
     m3 => self%m(3)
     do b=m2%lo,m2%uo
       do a=m1%lo,m1%uo
-        f(a,b,m3%uo,:) = 0d0
+        do iv=1,nv,eos%n_lambda
+          do lam=1,eos%n_lambda
+            f(a,b,m3%uo,iv+lam-1) = -src(a,b,m3%uo,lam)
+          end do
+        end do
       end do
     end do
   end if
   self%bits = saved_status
   call trace%end(itimer)
-END SUBROUTINE condition_mem
-
-!> =====================================================================
-!> Apply a boundary condition
-!> =====================================================================
-SUBROUTINE condition_cell (self, v,cell,dir)
-  class(rt_outer_bndry_t) :: self
-  real(kind=KindScalarVar):: v(:)
-  integer:: cell(3), dir
-  !.....................................................................
-  integer:: i, saved_status, il, iu, a, b
-  integer, save:: itimer
-  !---------------------------------------------------------------------
-  call trace%begin ('rt_boundaries_t%condition', itimer=itimer)
-  if (self%unset) then
-    call mpi%abort ('rt_outer_boundaries_t%init has not been called')
-  end if
-  saved_status = self%bits
-  if (self%is_set(bits%xl)) then
-    if (cell(1) < self%m(1)%li) v = 0d0
-  end if
-  if (self%is_set(bits%xu)) then
-    if (cell(1) > self%m(1)%ui) v = 0d0
-  end if
-  if (self%is_set(bits%yl)) then
-    if (cell(2) < self%m(2)%li) v = 0d0
-  end if
-  if (self%is_set(bits%yu)) then
-    if (cell(2) > self%m(2)%ui) v = 0d0
-  end if
-  if (self%is_set(bits%zl)) then
-    if (cell(3) < self%m(3)%li) v = 0d0
-  end if
-  if (self%is_set(bits%zu)) then
-    if (cell(3) > self%m(3)%ui) v = 0d0
-  end if
-  self%bits = saved_status
-  call trace%end(itimer)
-END SUBROUTINE condition_cell
-
+END SUBROUTINE condition
 
 END MODULE rt_boundaries_mod

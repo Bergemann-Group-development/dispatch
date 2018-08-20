@@ -83,7 +83,7 @@ SUBROUTINE init (self)
   self%mhd = .false.
   self%msplit = 3
   call scaling%init
-  call self%force%init (self%kind, type)
+  call self%force%init (self%kind, self%id, self%mesh)
   self%nv = 5
   self%mhd = .false.
   !----------------------------------------------------------------------------
@@ -103,6 +103,12 @@ SUBROUTINE init (self)
   self%initial%initial_condition = type
   self%initial%solver = 'planet_atmosphere'
   call self%pebble_patch_t%init
+  !----------------------------------------------------------------------------
+  ! Initialize the variable indices, and copy the self%idx instance to a public
+  ! instance, for backwards compatibility
+  !----------------------------------------------------------------------------
+  call self%idx%init (2, .false.)
+  call self%idx%copy
   ! In the case that we're using ZEUS, `self%nv` should now be 10.
   !self%mhd = .false.
   !self%nv = 5
@@ -261,9 +267,8 @@ END SUBROUTINE update
 !> =============================================================================
 !> Interface to patch_t%output, for debug printout
 !> =============================================================================
-SUBROUTINE output (self, experiment_name)
+SUBROUTINE output (self)
   class(experiment_t):: self
-  character(len=64), optional:: experiment_name
   integer:: iv, it, m(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------

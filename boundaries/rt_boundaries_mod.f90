@@ -292,7 +292,7 @@ END FUNCTION is_clear
 !> =====================================================================
 !> Apply a boundary condition
 !> =====================================================================
-SUBROUTINE condition (self, f,src,rk)
+SUBROUTINE condition (self, f, src, rk)
   class(rt_outer_bndry_t) :: self
   real(kind=KindRTVar)           :: f(:,:,:,:), src(:,:,:,:), rk(:,:,:,:)
   !.....................................................................

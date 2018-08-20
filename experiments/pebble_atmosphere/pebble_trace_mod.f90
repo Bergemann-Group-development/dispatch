@@ -34,10 +34,11 @@ MODULE pebble_trace_mod
     type(lock_t):: lock
     type(trace_buffer_t), dimension(:), pointer:: buffer
     integer:: npebble=20
-    integer:: nbuffer=10000                     ! max number of traces
+    integer:: nbuffer=25000                     ! max number of traces
     integer:: every=1000                        ! save frequency
     logical:: do_trace_output=.true.
   contains
+    procedure flush_buffer
     procedure init
     procedure trace_pebble                      ! trace pebbles
     procedure trace_output                      ! dump traced pebbles
@@ -115,6 +116,19 @@ SUBROUTINE trace_pebble (self, pebble, ip, level)
   call trace_end (itimer)
 END SUBROUTINE trace_pebble
 
+SUBROUTINE flush_buffer(self)
+  class(pebble_trace_t):: self
+  integer :: i
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  if (.not.pebble_trace%do_trace_output) return
+  call trace_begin ('pebble_trace_t%flush_buffer', itimer=itimer)
+  do i=1, id
+    call self%trace_output (i)
+  end do
+  call trace_end (itimer)
+END SUBROUTINE flush_buffer
+
 !> =============================================================================
 !> Write out a pebble trace buffer.  Each record consists of:
 !>
@@ -136,6 +150,7 @@ SUBROUTINE trace_output (self, i, close_key)
   if (.not.associated(self%buffer)) return
   if (self%buffer(i)%n==0) return
   call trace_begin ('pebbles_mod::trace_output', itimer=itimer)
+  !$omp critical (tr_out_cr)
   write (filename,'(a,i5.5,".trc")') trim(io%outputname), i
   if (io%verbose>0) &
     print*,'pebble_trace: ', trim(filename), self%buffer(i)%record, self%buffer(i)%n
@@ -161,6 +176,7 @@ SUBROUTINE trace_output (self, i, close_key)
   self%buffer(i)%n = 0
   write (unit) 0,0,0,0
   close (unit)
+  !$omp end critical (tr_out_cr)
   call trace_end (itimer)
 END SUBROUTINE trace_output
 

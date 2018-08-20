@@ -10,6 +10,7 @@ MODULE pebble_mod
   !-----------------------------------------------------------------------------
   type, public:: pebble_t
     integer:: id                        ! pebble nr
+    integer:: parent=0                  ! pebble nr
     integer:: status=0                  ! status bits
     real::  p(3)                        ! position
     real::  v(3)                        ! velocity

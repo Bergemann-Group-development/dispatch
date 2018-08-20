@@ -442,11 +442,11 @@ SUBROUTINE update_rt (self)
     print *, self%id, 'src', minval(self%src), maxval(self%src)
   end if
   if (self%do_chains) then
-    call self%rt_boundaries%condition(self%mem(:,:,:,:,self%it,1), self%src,self%rk)
+    call self%rt_boundaries%condition (self%mem(:,:,:,:,self%it,1), self%src, self%rk)
     call self%nudge                                                     ! nudge the chain heads
   else
     call self%dnload
-    call self%rt_boundaries%condition(self%mem(:,:,:,:,self%it,1),self%src,self%rk)
+    call self%rt_boundaries%condition (self%mem(:,:,:,:,self%it,1), self%src, self%rk)
     call self%execute_no_chain
   end if
   !> -------------------------------------------------------------------

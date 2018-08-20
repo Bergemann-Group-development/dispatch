@@ -25,10 +25,11 @@ CONTAINS
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self, solver, default)
+SUBROUTINE init (self, solver, id, mesh)
    class(force_t):: self
+   integer:: id
+   class(mesh_t), pointer:: mesh(:)
    character(len=64):: solver
-   character(len=*), optional:: default
    integer:: iostat
    character(len=20), save:: type='planet_atmosphere'
    namelist /force_params/ type
@@ -37,7 +38,6 @@ SUBROUTINE init (self, solver, default)
    !$omp critical (input_cr)
    if (first_time) then
      first_time = .false.
-     if (present(default)) type = default
      rewind (io%input)
      read (io%input, force_params, iostat=iostat)
      if (io%master) write (*, force_params)

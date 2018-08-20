@@ -2,7 +2,6 @@ MODULE rt_components_mod
   USE link_mod
   USE patch_mod
   USE ray_geometry_v3_mod
-  USE rt_boundaries_mod
   USE eos_mod
   implicit none
 !> =====================================================================

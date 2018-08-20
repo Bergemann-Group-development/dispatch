@@ -23,12 +23,15 @@ MODULE pebbles_mod
     integer:: id = -1
     integer:: n = 0                             ! number of active pebbles
     integer:: n_old = 0                         ! have stepped to many times
+    integer:: n_max = huge(1)                   ! max number of particles
     integer:: n_accrete = 0                     ! have accreted
     integer:: n_outside(3) = 0                  ! have left the patch
     integer:: n_behind = 0                      ! are behind self%time
     integer:: n_export = 0                      ! number of exported pebbles
+    integer:: n_import = 0                      ! number of exported pebbles
     integer:: n_remove = 0                      ! number of removed pebbles
     integer:: n_frozen = 0                      ! number of frozen pebbles
+    integer:: n_split = 0                       ! number of split pebbles
     integer:: it_max                            ! max life time
     integer:: id_dbg = 0                        ! follow this pebble
     integer(8):: n_update = 0                   ! speed counter
@@ -94,7 +97,6 @@ SUBROUTINE append (self, pebble)
   class(pebble_t), pointer:: pebble
   !.............................................................................
   if (debug) print *,self%id,'dbg: append pebble',pebble%id,self%lock%id,self%n
-  call self%lock%set ('append')
   !$omp flush
   !-----------------------------------------------------------------------------
   ! Place the pebble at the tail, which might be empty, in which case the prev
@@ -114,7 +116,6 @@ SUBROUTINE append (self, pebble)
   self%tail => pebble
   self%n = self%n + 1
   !$omp flush
-  call self%lock%unset ('append')
 END SUBROUTINE append
 
 !> =============================================================================
@@ -190,11 +191,11 @@ SUBROUTINE freeze (self, pebble)
 END SUBROUTINE freeze
 
 !> =============================================================================
-SUBROUTINE export (self, pebble, nbor_list, mass_ratio, ds)
+SUBROUTINE export (self, pebble, nbor_list, w_norm, ds)
   class(pebbles_t), target:: self
   class(pebble_t), pointer:: pebble
   class(pebbles_t), pointer:: nbor_list
-  real, optional:: mass_ratio
+  real, optional:: w_norm
   real(8), optional:: ds(3)
   integer, save:: nprint=20
   !.............................................................................
@@ -205,27 +206,46 @@ SUBROUTINE export (self, pebble, nbor_list, mass_ratio, ds)
       print*,'ERROR: attempting to export to self', self%id, pebble%id
       stop
     end if
-    if (present(mass_ratio).and.present(ds)) then
-      if (mass_ratio > 1.5) then
-        block
-          integer:: i, n
-          class(pebble_t), pointer:: new_pebble
-          real:: dr(3)
-          !.......................................................................
-          n = ceiling(mass_ratio)
-          print *, 'splitting pebble into', n
-          pebble%w = pebble%w/n
-          do i=2,n
-            allocate (new_pebble, source=pebble)
-            call new_pebble%init
-            call random_number (dr)
-            new_pebble%p = new_pebble%p + ds*(dr-0.5)
-            call nbor_list%append (new_pebble)
-          end do
-        end block
+    call nbor_list%lock%set ('export')
+    if (present(w_norm).and.present(ds)) then
+      if (pebble%w > 5.*w_norm) then
+        if (nbor_list%n < nbor_list%n_max) then
+          block
+            integer:: i, n
+            class(pebble_t), pointer:: new_pebble
+            real:: dr(3)
+            !.......................................................................
+            n = nint(pebble%w/w_norm)
+            pebble%w = pebble%w/n
+            do i=2,n
+              allocate (new_pebble, source=pebble)
+              call new_pebble%init
+              if (pebble%parent==0) then
+                new_pebble%parent = pebble%id
+              else
+                new_pebble%parent = pebble%parent
+              end if
+              !-----------------------------------------------------------------
+              ! Mark children with busy bit, to allow trace detection
+              !-----------------------------------------------------------------
+              new_pebble%status = ior(bits%busy,new_pebble%status)
+              call random_number (dr)
+              new_pebble%p = new_pebble%p + ds*(dr-0.5)
+              call nbor_list%append (new_pebble)
+              nbor_list%n_split = nbor_list%n_split + 1
+            end do
+          end block
+          if (io%verbose>0) &
+            print *, nbor_list%id, 'splitting', pebble%id, nbor_list%n, nbor_list%n_max
+        else
+          print *, nbor_list%id, 'splitting prevented', pebble%id, nbor_list%n, nbor_list%n_max
+        end if
       end if
     end if
     call nbor_list%append (pebble)
+    nbor_list%n_import = nbor_list%n_import + 1
+         self%n_export =      self%n_export + 1
+    call nbor_list%lock%unset ('export')
     if (debug) print*,'dbg: export done', pebble%id, self%id, nbor_list%id, nbor_list%initialized
   else
     if (nprint > 0) then
