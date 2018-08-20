@@ -167,6 +167,7 @@ SUBROUTINE init (self)
     omega%i_omega = i_omega
     omega%nv      = n_bin
     omega%status  = self%status
+    call omega%set (bits%no_density)
     ! -- force 3 solutions before Q is valid in MHD update
     omega%time    = -2.5*self%rt_time
     omega%rk      => self%rk

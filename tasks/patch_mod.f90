@@ -566,8 +566,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
 !    call self%set (bits%root_grid)
 !    if (io%verbose > 1) print *, 'set bits%root_grid id =', self%id
 !  end if
-  if (self%id == io%id_debug) &
-    call self%link%print_nbors ('initial state ID_DEBUG nbors:')
   call trace%end
 END SUBROUTINE setup
 
@@ -1726,6 +1724,7 @@ SUBROUTINE check_density (self, label)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (io%verbose < 1) return
+  if (self%is_set(bits%no_density)) return
   if (.not. associated(self%mem)) return
   call trace%begin ('patch_t%check_density', itimer=itimer)
   l = self%mesh%lb
@@ -1760,12 +1759,12 @@ SUBROUTINE check_density (self, label)
     1 format(a,i8,3x,a,i8,a,i8,a)
     if (present(label)) then
       if (io%verbose>1 .or. nins>0) &
-        write (io_unit%log,1) 'ID ',self%id, &
+        write (io_unit%output,1) 'ID ',self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside, '// &
          trim(label)
     else
       if (io%verbose>1 .or. nins>0) &
-        write (io_unit%log,1) 'ID ',self%id, &
+        write (io_unit%output,1) 'ID ',self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside'
     end if
   end if
