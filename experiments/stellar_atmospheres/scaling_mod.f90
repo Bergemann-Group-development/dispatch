@@ -42,7 +42,7 @@ SUBROUTINE init (self)
   self%m  = self%d*self%l**3                            ! mass
   self%p  = self%d*self%u**2                            ! pressure = energy density
   self%e  = self%m*self%u**2                            ! energy
-  self%mu = 2.
+  self%mu = 1.3
   self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature for given mu
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
   if (io%master) then

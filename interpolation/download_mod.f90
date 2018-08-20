@@ -483,12 +483,12 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
         target%id, target%level, source%id, source%level
       call mpi%abort('dnload_range')
     end if
-    if (io%verbose>3.or.io_unit%do_validate.or.target%id==io%id_debug) &
+    if (verbose>2.or.io_unit%do_validate.or.target%id==io%id_debug) &
       print 1, target%id, target%level, iv, source%id, source%level, l, u, offset
       1 format("download_t%dnload_range: id,lv,iv:",i6,2i3, &
                "  source,lv,l,u,o:",i6,i3,3(2x,3i4))
   else
-    if (io%verbose>3.or.io_unit%do_validate.or.target%id==io%id_debug) &
+    if (verbose>2.or.io_unit%do_validate.or.target%id==io%id_debug) &
       print 1, target%id, target%level, iv, source%id, source%level, l, u
   end if
   call trace%end
@@ -702,14 +702,16 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only)
           end do
         end if
       end if
-      if ((io%verbose>2.or.target%id==io%id_debug).and.product(max(0,u-l+1))>0) &
-        print '(i6,4(2x,a,i6),1p,2e12.4)', target%id, &
-        'same picked up', product(max(0,u-l+1)), &
-        'values of', product(target%n), &
-        'from', source%id, &
-        ' iv, min, max =', iv, &
-        minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,target%it,1)), &
-        maxval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,target%it,1))
+      if ((verbose>1.or.target%id==io%id_debug).and.product(max(0,u-l+1))>0) then
+        if (iv==1.or.verbose>2) &
+          print '(i6,4(2x,a,i6),1p,2e12.4)', target%id, &
+          'same picked up', product(max(0,u-l+1)), &
+          'values of', product(target%n), &
+          'from', source%id, &
+          ' iv, min, max =', iv, &
+          minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,target%it,1)), &
+          maxval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,target%it,1))
+      end if
     end if
   end do
   call trace%end (itimer)

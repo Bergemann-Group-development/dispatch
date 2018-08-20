@@ -443,28 +443,37 @@ SUBROUTINE check_ready (self, link)
   class(link_t), pointer:: link
   class(task_t), pointer:: task
   class(link_t), pointer:: nbor
+  logical:: debug
   !-----------------------------------------------------------------------------
   ! Since we may be called upon to check nbors of a patch that should not itself
   ! be checked, we first check if any bits are set indicating this to be the case
   !-----------------------------------------------------------------------------
   task => link%task
   if (task%is_set (bits%hands_off)) return              ! ready+busy+frozen+..
+  debug = io%verbose > 1 .or. task%id==io%id_debug
   nbor => link%nbor                                     ! start on nbor list
   do while (associated (nbor))                          ! keep going until end
     if (nbor%needed) then
       if (nbor%task%is_ahead_of(task)) then             ! and is ahead in time
+        if (debug) &
+          write (io_unit%output,'("list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
+            task%id, task%time, '  is OK on', nbor%task%id, nbor%task%time, &
+            nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
         nbor => nbor%next                               ! next nbor
       else                                              ! not ahead in time
-        if (io%verbose > 1) &
-          write (io_unit%log,'(i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
-            task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, nbor%task%dtime, &
-            nbor%task%grace, nbor%task%is_set(bits%virtual)
+        if (debug) &
+          write (io_unit%output,'("list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
+            task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
+            nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
         return
       end if
     else                                                ! nbor not needed
       nbor => nbor%next                                 ! skip to the next
     end if
   end do
+  if (debug) &
+    write (io_unit%output,'("lis_t%check_ready:",i5,f10.6,a)') &
+      task%id, task%time, ' succeded'
   call self%queue_by_time (link)                        ! add task to queue
 END SUBROUTINE check_ready
 
@@ -1071,6 +1080,9 @@ SUBROUTINE real_queue_by_time (self, this, error)
       else if (next%task%time > task%time) then
         this%next_time => next
         if (associated(prev)) then
+          write (io_unit%output,'(i4,2x,a,i6,a,i6,i5,1p,3g16.6)') &
+              omp%thread, 'task',task%id,' in ready queue between',prev%task%id,next%task%id, &
+              prev%task%time, this%task%time, next%task%time
           if (io%verbose > 1) then
             write (io_unit%log,'(i4,2x,a,i6,a,i6,i5,1p,3g16.6)') &
               omp%thread, 'task',task%id,' in ready queue between',prev%task%id,next%task%id, &
@@ -1079,6 +1091,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
           prev%next_time => this
         else
           self%queue => this
+          write (io_unit%output,*) 'task',task%id,' at ready queue head',self%nq
           if (io%verbose > 1) then
             write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
           end if
@@ -1092,11 +1105,13 @@ SUBROUTINE real_queue_by_time (self, this, error)
     end do
     self%nq = self%nq+1
     if (associated(prev)) then
+      write (io_unit%output,*) 'task',task%id,' in ready queue after',prev%task%id,self%nq
       if (io%verbose > 1) then
         write (io_unit%log,*) 'task',task%id,' in ready queue after',prev%task%id,self%nq
       end if
       prev%next_time => this
     else
+      write (io_unit%output,*) 'task',task%id,' at ready queue head',self%nq
       if (io%verbose > 1) then
         write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
       end if

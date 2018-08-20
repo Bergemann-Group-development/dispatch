@@ -153,12 +153,14 @@ SUBROUTINE output (patch)
                                      patch%li(3):patch%ui(3),iv,jt(2),iw)*pt(2)
       end if
       if (io%verbose>2 .or. (io%verbose>1 .and. iv==patch%idx%d)) &
-        write (io_unit%output,'(a,i7,i4,1p,e14.6,i4,2e12.4)') &
-         ' id,iout,time,iv,vmin,vmax:', patch%id, patch%iout, patch%time, iv, &
+        write (io_unit%output,'(2a,i7,i4,1p,e14.6,i4,2e12.4)') &
+         ' parallel_io_t%output: ', &
+         ' id,iout,time,iv,vmin,vmax =', patch%id, patch%iout, patch%time, iv, &
           minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv))
       if (verbose>0) &
-        write (io_unit%mpi,'(a,i7,i4,1p,e14.6,i3,6e12.4,2i3,0p,2f7.3)') &
-         'id,iout,time,iv,vmin,vmax:', patch%id, patch%iout, patch%time, iv, &
+        write (io_unit%mpi,'(2a,i7,i4,1p,e14.6,i3,6e12.4,2i3,0p,2f7.3)') &
+         ' parallel_io_t%output: ', &
+         'id,iout,time,iv,vmin,vmax =', patch%id, patch%iout, patch%time, iv, &
           minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv)), &
           patch%fminval(patch%mem(:,:,:,iv,jt(1),1)), &
           patch%fmaxval(patch%mem(:,:,:,iv,jt(1),1)), &
