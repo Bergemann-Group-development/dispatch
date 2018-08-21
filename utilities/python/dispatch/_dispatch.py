@@ -6,6 +6,36 @@ import os
 import sys
 import f90nml
 import numpy as np
+from time import time
+
+class _timer():
+    def __init__(self):
+        self.dict={}
+        self._start=time()
+    def start(self):
+        self.__init__()
+    def add(self,key):
+        now=time()
+        if self.dict.has_key(key):
+            self.dict[key]+=now-self._start
+        else:
+            self.dict[key]=now-self._start
+        self._start=now
+    def print(self,verbose=0):
+        l=0
+        skip=True
+        for k,v in self.dict.items():
+            l=max(l,len(k))
+            if v>2.0:
+                skip=False
+        if not skip or verbose:
+            s='{:>XX}: {:7.3f} sec'
+            s=s.replace('XX','{}'.format(l))
+            print('\ntimer:')
+            for k,v in self.dict.items():
+                print(s.format(k,v))
+
+timer=_timer()
 
 def _p2():
     """ convenience function to check Python version """
@@ -46,6 +76,7 @@ def _data(patch,verbose=0):
     shape=tuple(patch.ncell)
     data=[]
     patch.offset=[]
+    timer.add('_data startup')
     for iv in range(patch.nv):
         if patch.ioformat==5:
             offset = (patch.id-1) + iv*patch.ntotal
@@ -57,6 +88,7 @@ def _data(patch,verbose=0):
         offset += patch.iout*patch.ntotal*patch.nv
         offset *= bytes
         patch.offset.append(offset)
+        timer.add('_data offset')
         try:
             if verbose>0:
                 print (patch.iout,offset)
@@ -66,6 +98,7 @@ def _data(patch,verbose=0):
         except:
             print ('Error in memmap:')
             print ('file:{} offset:{} shape:{}'.format(patch.datafile,offset,shape))
+        timer.add('_data memmap')
     return data
 
 def _add_nml_to(obj,dict,verbose=0):
@@ -118,20 +151,24 @@ object takes both numeric and text key values: Examples:\n\
     d=p.d[0]\n\
     d=p.d['d']")
 
+
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
     """
     def __init__(self, iout=0, run='', data='data', datadir='', verbose=0):
+        timer.start()
         rundir=_dir(data,run)
         if datadir=='':
             datadir=_dir(rundir,'{:05d}'.format(iout))
         files=[f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
+
         for f in files:
             # add parameter groups from data/run/NNNNN/*snapshot.nml
             file=_file(datadir,f)
             if verbose>0:
                 print ('parsing',file)
             nml_list=f90nml.read(file)
+            timer.add('parsing')
             self.nml_list=nml_list
             _add_nml_list_to(self,nml_list,verbose=verbose)
             # Add index dict
@@ -139,6 +176,18 @@ class snapshot():
                 self.idx.dict=nml_list['idx_nml']
             # Add array of patch instances
             self.patches=self._patches(datadir,rundir,verbose=verbose)
+        timer.print(verbose=verbose)
+
+    def _h(self,p,idx):
+        h=np.zeros((3,p.nv))
+        if p.kind[0:7]=='stagger':
+            if idx.p1>=0: h[0,idx.p1]=-0.5
+            if idx.b1>=0: h[0,idx.b1]=-0.5
+            if idx.p2>=0: h[1,idx.p2]=-0.5
+            if idx.b2>=0: h[1,idx.b2]=-0.5
+            if idx.p3>=0: h[2,idx.p3]=-0.5
+            if idx.b3>=0: h[2,idx.b3]=-0.5
+        return h
 
     def _patches(self,datadir,rundir,verbose=0):
         """ Read all patch meta data in a directory
@@ -149,10 +198,12 @@ class snapshot():
             return None
         # Convert list of patch dicts to list of patch objects
         patches=[]
+        timer.add('_patches')
         for f in files:
             if verbose>0:
                 print('scanning',f,'for patches')
             top=f90nml.read(f)                  # get top dict
+            timer.add('f90nml.read')
             dlist=top['patch_nml']              # should be list of dicts
             if hasattr(dlist,'keys'):           # if not it is a dict ...
                 dlist=[dlist]                   # make it a list of one
@@ -175,6 +226,7 @@ class snapshot():
             if 'idx_nml' in top.keys():
                 dict=top['idx_nml']
                 idx=_obj(dict)
+                idx.h=self._h(patches[0],idx)
                 idx.dict=dict
                 for patch in patches:
                     patch.idx=idx
@@ -206,6 +258,7 @@ class snapshot():
             sorted.append(patch)
         if verbose>0:
             print('  added',len(sorted),'patches')
+        timer.add('_patches')
         return sorted
 
     def _add_axes(self,patch):

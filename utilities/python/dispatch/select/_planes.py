@@ -14,6 +14,26 @@ def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
         assemble a plane from a unigrid experiment, where all
         patches have the same size and resolution
     """
+    if type(iv)==type('d'):
+        if iv=='u1':
+            p=unigrid_plane(snap,iv='p1',position=position,dir=dir,\
+              verbose=verbose)
+            d=unigrid_plane(snap,iv='d',position=position,dir=dir,\
+              verbose=verbose)
+            return p/d
+        if iv=='u2':
+            p=unigrid_plane(snap,iv='p2',position=position,dir=dir,\
+              verbose=verbose)
+            d=unigrid_plane(snap,iv='d',position=position,dir=dir,\
+              verbose=verbose)
+            return p/d
+        if iv=='u3':
+            p=unigrid_plane(snap,iv='p3',position=position,dir=dir,\
+              verbose=verbose)
+            d=unigrid_plane(snap,iv='d',position=position,dir=dir,\
+              verbose=verbose)
+            return p/d
+        iv=snap.idx.dict[iv]
     assert dir<3, 'dir must be in the range 0-2'
     if type(position)==type(1.0) or type(position)==type(1):
         pos=0.5*np.ones(3)
@@ -64,6 +84,8 @@ def unigrid_volume(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
         assemble a plane from a unigrid experiment, where all
         patches have the same size and resolution
     """
+    if type(iv)==type('d'):
+        iv=snap.idx.dict[iv]
     assert dir<3, 'dir must be in the range 0-2'
     if type(position)==type(1.0) or type(position)==type(1):
         pos=0.5*np.ones(3)
