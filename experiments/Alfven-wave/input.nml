@@ -1,31 +1,12 @@
 &experiment_params
- !-----------------------------------------------------------------------------
- ! Physical initial conditions: !!!AD!!! Same values as in Masson et al. 2012
- ! Left hand side
- !-----------------------------------------------------------------------------
- rho_l = 5d-1
- P_l   = 0.125 
- vx_l = 5d0 
- vy_l = 0d0
- Bx_l = 1.4142135623730951d0
- By_l = 1.4142135623730951d0
- !-----------------------------------------------------------------------------
- ! Physical initial conditions: right hand side (isothermal)
- !-----------------------------------------------------------------------------
- rho_r = 1.0727d0
- P_r = 0.2681
- vx_r = 2.3305d0
- vy_r = 1.3953d0
- Bx_r = 1.4142135623730951d0
- By_r = 3.8809d0
- x0 = 0.5
 /
-&mhd_params              ! defaults are visible in the log file
- !nu=    0.5, 1.0, 1.0, 0.1, 0.1, 0.1
+&stagger_params              ! defaults are visible in the log file
+ nu=    0.5, 1.0, 1.0, 0.1, 0.1, 0.1
  !nu=    0.5, 1., 0., 1., 0.1, 0.1
  !nu=    0.1, 1., 1., 1., 0.1, 0.1
  !nu=    0.2, 0., 0.1, 1., 0.1, 0.
- nu= 0., 0., 0., 0., 0., 0.
+ ! nu=0.20,1.4,1.0,0.0,1.0,1.0 /
+ !nu= 0., 0., 0., 0., 0., 0.
  !     cs    du   pa   ofd   mas   eta
  !gamma=1.0001
  gamma=1.666667
@@ -43,7 +24,7 @@
  !dt_fixed=1d-9        ! fixed time step
  ng =3,3,3
  nt=8                   ! time slots
- no_mans_land = t
+ no_mans_land = f
 /
 &timer_params
  sec_per_report=15.0

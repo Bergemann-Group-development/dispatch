@@ -4,19 +4,15 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE experiment_mod
   USE io_mod
-  USE bits_mod
   USE trace_mod
-  USE patch_mod
-!  USE scalar_mod
   USE boundary_mod
-!  USE timestep_mod
+  USE bits_mod
   USE index_mod
-!  USE solver_mod
-  USE mhd_mod
+  USE solver_mod
   implicit none
   private
 
-  type, public, extends(mhd_t):: experiment_t
+  type, public, extends(solver_t):: experiment_t
   contains
     procedure:: init
     procedure:: update
@@ -34,78 +30,26 @@ SUBROUTINE init (self)
   logical:: first_time = .true.
   real, dimension(:,:,:,:), pointer:: b, p
   real, dimension(:,:,:), pointer:: d, vx, vy, vz, Bx, By, Bz, px, py, pz, s, e1, et
-  real,save:: P_l, P_r, rho_i, rho_l, vx_l, vy_l, vz_l=0., &
-              Bx_l, By_l, Bz_l=0., rho_r, vx_r, vy_r, vz_r=0., Bx_r, By_r, Bz_r=0., &
-              x0=0.0, rhov2, B2,et_l,et_r,lambda,k_w
-  namelist /experiment_params/ P_l, P_r, rho_l, vx_l, vy_l, Bx_l, By_l, rho_r, &
-                               vx_r, vy_r, Bx_r, By_r, x0
+  real,save:: lambda,k_w
 
+  call trace_begin('experiment_t%init')
   !----------------------------------------------------------------------------
-  ! Allocate memory and set default values
+  ! Initial conditions
   !----------------------------------------------------------------------------
-  print*, 'start init'
-  call trace_begin ('experiment_t%init')
-  self%nv = 8
   self%mhd = .true.
-  call self%mhd_t%init
- 
-  if (first_time) then
-    rewind (io%input)
-    read (io%input, experiment_params)
-    if (io%master) write (*,experiment_params)
-    first_time = .false.
+  call self%solver_t%init
+  !
+  if (self%kind(1:10) == 'stagger2e_') then
+    call self%s2e (self%mem(:,:,:,self%idx%e,self%it,1), self%it)
   end if
-  if (self%kind(1:6) == 'ramses') then 
-    et => self%mem(:,:,:,self%idx%e,self%it,1)
-    allocate (e1(self%gn(1),self%gn(2),self%gn(3)))
-  endif
-
-  d => self%mem(:,:,:,self%idx%d,self%it,1)
-  if (self%kind(1:7) == 'stagger') s => self%mem(:,:,:,self%idx%s,self%it,1)
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
-  B => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
-  px=>p(:,:,:,1); py=>p(:,:,:,2); pz=>p(:,:,:,3);
-  Bx=>B(:,:,:,1); By=>B(:,:,:,2); Bz=>B(:,:,:,3);
-  print*, 'gn is:', self%gn(1)
-
-  print*,'self%mesh%lo!!!',self%mesh%lo
-
-  lambda=1.
-  k_w=2.*acos(-1.0d0)/lambda
-
-  do i=self%mesh(1)%lb,self%mesh(1)%ub
-    do j=self%mesh(2)%lb,self%mesh(2)%ub
-      do k=self%mesh(3)%lb,self%mesh(3)%ub
-        x = self%mesh(1)%p + self%mesh(1)%r(i)
-        y = self%mesh(2)%p + self%mesh(2)%r(j)
-        z = self%mesh(3)%p + self%mesh(3)%r(k)
-        d (i,j,k)= 1.
-        px(i,j,k)= d(i,j,k) * 1.*cos(k_w*z)
-        py(i,j,k)=-d(i,j,k) * 1.*sin(k_w*z)
-        pz(i,j,k)= 0.
-        Bx(i,j,k)= 1.*cos(k_w*z) 
-        By(i,j,k)=-1.*sin(k_w*z)
-        Bz(i,j,k)= 1.
-        if (self%kind(1:6) == 'ramses') then
-          et(i,j,k)= 1./(self%gamma-1d0) + 0.5*d(i,j,k)*(cos(k_w*z)**2 + sin(k_w*z)**2) + 0.5 * (Bx(i,j,k)**2 + By(i,j,k)**2 + Bz(i,j,k)**2)  
-        end if
-        if (self%kind(1:7) == 'stagger') then
-          s(i,j,k)= (log(1.)-log(d(i,j,k))*self%gamma)/(self%gamma-1.0) * d(i,j,k)
-        end if
-      end do
-    end do
-  end do
-
-  self%mhd = .true.
-  self%periodic=.true.
-  print*, 'done!'
-
-  print*,'self%mem(1,1,1,:,self%it,1) in experiment setup',self%mem(1,1,1,:,self%it,1)
+  !
+  call self%set (bits%static)
   if (self%initial%time > 0d0) then
     self%time = self%initial%time
     self%t(self%it) = self%initial%time
   end if
-
+  self%unsigned(self%idx%d) = .true.
+  self%periodic = .true.
   call trace_end
 END SUBROUTINE init
 

@@ -44,11 +44,7 @@ SUBROUTINE condition (self, iv, mem, m, lower,idim,no_mans_land)
         mem(:,:,m(3)%lb) = mem(:,:,m(3)%ui-2)
         mem(:,:,m(3)%lo) = mem(:,:,m(3)%ui-1)
       endif      
-!      mem(:,:,m(3)%li) = mem(:,:,m(3)%ui  )
-!      do i3=m(3)%lb,m(3)%li
-!        jay3 = modulo(i3 - m(3)%li, m(3)%n) + m(3)%li
-!        mem(:,:,i3) = mem(:,:,jay3)
-!      end do
+
     else
       if (no_mans_land) then
         mem(:,:,m(3)%uo) = mem(:,:,m(3)%li  )
@@ -117,29 +113,6 @@ SUBROUTINE condition (self, iv, mem, m, lower,idim,no_mans_land)
 !      end do
     endif
   endif
-
-!  do iz=m(3)%lb,m(3)%ub
-!    do ix=m(1)%lb,m(1)%ub
-!      if (lower) then
-!        ! outflow conditions
-!        mem(ix,m(2)%lb:m(2)%lo,iz) = mem(ix,m(2)%ui,iz)        
-!      else
-!        ! outflow conditions
-!        mem(ix,m(2)%uo:m(2)%ub,iz) = mem(ix,m(2)%ui,iz)
-!      end if
-!    end do
-!  end do
-!  do ix=m(1)%lb,m(1)%ub
-!    do iy=m(2)%lb,m(2)%ub
-!      if (lower) then
-!        ! outflow conditions
-!        mem(ix,iy,m(3)%lb:m(3)%lo) = mem(ix,iy,m(3)%ui)        
-!      else
-!        ! outflow conditions
-!        mem(ix,iy,m(3)%uo:m(3)%ub) = mem(ix,iy,m(3)%ui)
-!      end if
-!    end do
-!  end do
 
   call trace_end
 END SUBROUTINE condition
