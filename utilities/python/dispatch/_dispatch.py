@@ -6,6 +6,35 @@ import os
 import sys
 import f90nml
 import numpy as np
+from time import time
+
+class _timer():
+    def __init__(self):
+        self.dict={}
+        self._start=time()
+    def start(self):
+        self.__init__()
+    def add(self,key):
+        now=time()
+        if self.dict.has_key(key):
+            self.dict[key]+=now-self._start
+        else:
+            self.dict[key]=now-self._start
+        self._start=now
+    def print(self,verbose=0):
+        l=0
+        skip=True
+        for k,v in self.dict.items():
+            l=max(l,len(k))
+            if v>2.0:
+                skip=False
+        if not skip or verbose:
+            s='{:>XX}: {:7.3f} sec'
+            s=s.replace('XX','{}'.format(l))
+            print('\ntimer:')
+            for k,v in self.dict.items():
+                print(s.format(k,v))
+timer=_timer()
 
 def _p2():
     """ convenience function to check Python version """
@@ -66,33 +95,6 @@ def _add_nml_list_to(obj,nml_list,verbose=0):
             subobj=getattr(obj,name)
             _add_nml_to(subobj,nml_dict,verbose=verbose)
 
-class _patch(object):
-    def __init__(self, d):
-        for a, b in d.items():
-            ba = np.array(b) if isinstance(b, list) else b
-            setattr(self, a, _obj(b) if isinstance(b, dict) else ba)
-    def cache(self,verbose=0):
-        setattr(self,'o',_param())
-        self.d={}
-        for k,v in self.idx.dict.items():
-            if v >= 0:
-                if verbose:
-                    print("adding p.o."+k+" and p.d['"  +k+"']")
-                setattr(self.o,k,self.data[v])
-                self.d[k]=self.data[v]
-                self.d[v]=self.data[v]
-        if verbose:
-            print("\nBinary data can always be accessed via the patch.data memmap, \
-the patch.idx object, and the patch.idx.dict dictionary. Examples:\n\
-    d=p.data[0]\n\
-    d=p.data[p.idx.d]\n\
-    d=p.data[p.idx.dict['d']]\n\n\
-patch.cache() adds an object .o and a dict .d as shorthand attributes. The dict \
-object takes both numeric and text key values: Examples:\n\
-    d=p.o.d\n\
-    d=p.d[0]\n\
-    d=p.d['d']")
-
 def _var(patch,filed,verbose=0):
     """ Too avoid the "too many file open" problem (Python on steno allows 
         "only" about 800 files, patch.data is defined as a function, which
@@ -127,16 +129,17 @@ def _var(patch,filed,verbose=0):
                          mode='r', order='F', shape=shape)
     return var
 
-class patch():
+class _patch():
     def __init__(self,id,pos,snap):
-        self.id=id
-        self.pos=pos
         # add attributes from snapshot_nml
         for k,v in snap.dict.items():
             setattr(self,k,v)
+        self.id=id
+        self.position=pos
         # add idx attribute
         if hasattr(snap,'idx'):
             self.idx=snap.idx
+            self.idx.h=self._h()
         # reconstruct items pruned from patch_nml
         if hasattr(self,'size') and hasattr(self,'position') :
             self.llc_cart=self.position-self.size/2.0
@@ -144,11 +147,22 @@ class patch():
             if hasattr(snap,'units'):
                 self.units=snap.units
         self.var=_var(self,snap.datafiled)
+    def _h(self):
+        idx=self.idx
+        h=np.zeros((3,self.nv))
+        if self.kind[0:7]=='stagger':
+            if idx.p1>=0: h[0,idx.p1]=-0.5
+            if idx.b1>=0: h[0,idx.b1]=-0.5
+            if idx.p2>=0: h[1,idx.p2]=-0.5
+            if idx.b2>=0: h[1,idx.b2]=-0.5
+            if idx.p3>=0: h[2,idx.p3]=-0.5
+            if idx.b3>=0: h[2,idx.b3]=-0.5
+        return h
     def cache(self,verbose=0):
         setattr(self,'o',_param())
         self.data={}
         for k,v in self.idx.vars.items():
-            self.data[k]=self.var(v)
+            self.data[k]=np.copy(self.var(v))
             self.data[v]=self.data[k]
             setattr(self.o,v,self.data[v])
         if verbose:
@@ -190,11 +204,12 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
     """
-    def __init__(self, iout=0, run='', data='data', datadir='', mapit=True, verbose=0):
+    def __init__(self, iout=0, run='', data='data', datadir='', verbose=0):
+        timer.start()
         rundir=_dir(data,run)
         if datadir=='':
             datadir=_dir(rundir,'{:05d}'.format(iout))
-        self.patches=[]
+
         files=[f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
         for f in files:
             # add parameter groups from data/run/NNNNN/*snapshot.nml
@@ -208,7 +223,7 @@ class snapshot():
                 dict=nml_list['idx_nml']
                 idx=_obj(dict)
                 idx.dict=dict
-                # add a dict with alphabetic variable names that have values
+                # add a dict with (existing) alphabetic variable names
                 idx.vars={}
                 for k,v in idx.dict.items():
                     if not idx.vars.has_key(v):
@@ -220,10 +235,12 @@ class snapshot():
                 for k,v in self.idx.vars.items():
                     self.keys.append(k)
                     self.keys.append(v)
+        timer.add('snapshot metadata')
 
         self.datafile=_file(rundir,'snapshots.dat')
         self.datafiled=open(self.datafile,'rb')
         self.dict=nml_list['snapshot_nml']
+
         # "dress" the patches with attributes from snapshot_nml, where
         # lists are turned into arrays
         for k,v in self.dict.items():
@@ -240,7 +257,8 @@ class snapshot():
                 print ('parsing',file)
             dict=parse_patches(file)
             for id in sorted(dict.keys()):
-                p=patch(id,dict[id],self)
+                p=_patch(id,dict[id],self)
+                self._add_axes(p)
                 self.patches.append(p)            # Add array of patch instances
 
                 # verbose info
@@ -258,6 +276,8 @@ class snapshot():
                     attributes(p)
             if verbose==1:
                 print('  added',len(self.patches),'patches')
+        timer.add('_patches')
+        timer.print(verbose=verbose)
 
     def _add_axes(self,patch):
         if patch.no_mans_land:
@@ -279,6 +299,7 @@ class snapshot():
         patch.xs=patch.x-0.5*patch.ds[0]
         patch.ys=patch.y-0.5*patch.ds[1]
         patch.zs=patch.z-0.5*patch.ds[2]
+        patch.xyz=[patch.x,patch.y,patch.z]
 
 
 def snapshots(run='',data='data', verbose=0):
