@@ -36,46 +36,6 @@ class _obj(object):
             ba = np.array(b) if isinstance(b, list) else b
             setattr(self, a, _obj(b) if isinstance(b, dict) else ba)
 
-def _data(patch,verbose=0):
-    """ Map patch data to patch.data, returning an array of variables
-    """
-    if _p2():
-        bytes=long(4*np.product(patch.ncell))
-    else:
-        bytes=4*np.product(patch.ncell)
-    shape=tuple(patch.ncell)
-    data=[]
-    dict={}
-    patch.offset=[]
-    if verbose==5:
-        print('id:',patch.id)
-    for iv in range(patch.nv):
-        if patch.ioformat==5:
-            offset = (patch.id-1) + iv*patch.ntotal
-        elif patch.ioformat==6:
-            if patch.time_derivs:
-                offset = iv + (patch.id-1)*patch.nv/2
-            else:
-                offset = iv + (patch.id-1)*patch.nv
-        offset += patch.iout*patch.ntotal*patch.nv
-        offset *= bytes
-        patch.offset.append(offset)
-        try:
-            if verbose==5:
-                print (' iv, offset:',iv,offset)
-            var=np.memmap(patch.datafile, dtype=np.float32, offset=offset,
-                          mode='r', order='F', shape=shape)
-            data.append(var)
-        except:
-            print ('Error in memmap:')
-            print ('file:{} offset:{} shape:{}'.format(patch.datafile,offset,shape))
-        dict[iv]=var
-    if hasattr(patch,'idx'):
-        for k,v in patch.idx.dict.items():
-            if v>=0:
-                dict[k]=dict[v]
-    return dict
-
 def _add_nml_to(obj,dict,verbose=0):
     for key,value in dict.items():
         setattr(obj,key,value)
@@ -133,10 +93,75 @@ object takes both numeric and text key values: Examples:\n\
     d=p.d[0]\n\
     d=p.d['d']")
 
+def _var(patch,filed,verbose=0):
+    """ Too avoid the "too many file open" problem (Python on steno allows 
+        "only" about 800 files, patch.data is defined as a function, which
+        return a memmap.  The function takes numeric or alphbetic arguments,
+        so patch.data(0) and patch.data('d') is typically the density.
+    """
+    if _p2():
+        bytes=long(4*np.product(patch.ncell))
+    else:
+        bytes=4*np.product(patch.ncell)
+    shape=tuple(patch.ncell)
+    patch.offset=[]
+    if verbose==5:
+        print('id:',patch.id)
+    for iv in range(patch.nv):
+        if patch.ioformat==5:
+            offset = (patch.id-1) + iv*patch.ntotal
+        elif patch.ioformat==6:
+            if patch.time_derivs:
+                offset = iv + (patch.id-1)*patch.nv/2
+            else:
+                offset = iv + (patch.id-1)*patch.nv
+        offset += patch.iout*patch.ntotal*patch.nv
+        offset *= bytes
+        patch.offset.append(offset)
+        if verbose==5:
+            print (' iv, offset:',iv,patch.iout,patch.ntotal,patch.nv,offset)
+    def var(iv):
+        if type(iv)==type('d'):
+            iv=patch.idx.dict[iv]
+        return np.memmap(filed, dtype=np.float32, offset=patch.offset[iv],
+                         mode='r', order='F', shape=shape)
+    return var
+
 class patch():
-    def __init__(self,id,pos):
+    def __init__(self,id,pos,snap):
         self.id=id
         self.pos=pos
+        # add attributes from snapshot_nml
+        for k,v in snap.dict.items():
+            setattr(self,k,v)
+        # add idx attribute
+        if hasattr(snap,'idx'):
+            self.idx=snap.idx
+        # reconstruct items pruned from patch_nml
+        if hasattr(self,'size') and hasattr(self,'position') :
+            self.llc_cart=self.position-self.size/2.0
+        if not hasattr(self,'units'):
+            if hasattr(snap,'units'):
+                self.units=snap.units
+        self.var=_var(self,snap.datafiled)
+    def cache(self,verbose=0):
+        setattr(self,'o',_param())
+        self.data={}
+        for k,v in self.idx.vars.items():
+            self.data[k]=self.var(v)
+            self.data[v]=self.data[k]
+            setattr(self.o,v,self.data[v])
+        if verbose:
+            print("\nBinary data can always be accessed via the patch.data memmap, \
+the patch.idx object, and the patch.idx.dict dictionary. Examples:\n\
+    d=p.data[0]\n\
+    d=p.data[p.idx.d]\n\
+    d=p.data[p.idx.dict['d']]\n\n\
+patch.cache() adds an object .o and a dict .d as shorthand attributes. The dict \
+object takes both numeric and text key values: Examples:\n\
+    d=p.o.d\n\
+    d=p.d[0]\n\
+    d=p.d['d']")
 
 def parse_patches(file='data/00000/rank_00000_patches.nml'):
     dict={}
@@ -165,7 +190,7 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
     """
-    def __init__(self, iout=0, run='', data='data', datadir='', verbose=0):
+    def __init__(self, iout=0, run='', data='data', datadir='', mapit=True, verbose=0):
         rundir=_dir(data,run)
         if datadir=='':
             datadir=_dir(rundir,'{:05d}'.format(iout))
@@ -183,12 +208,27 @@ class snapshot():
                 dict=nml_list['idx_nml']
                 idx=_obj(dict)
                 idx.dict=dict
+                # add a dict with alphabetic variable names that have values
                 idx.vars={}
                 for k,v in idx.dict.items():
                     if not idx.vars.has_key(v):
                         if v>=0:
                             idx.vars[v]=k
                 self.idx=idx
+                # add a list of all possible keys
+                self.keys=[]
+                for k,v in self.idx.vars.items():
+                    self.keys.append(k)
+                    self.keys.append(v)
+
+        self.datafile=_file(rundir,'snapshots.dat')
+        self.datafiled=open(self.datafile,'rb')
+        self.dict=nml_list['snapshot_nml']
+        # "dress" the patches with attributes from snapshot_nml, where
+        # lists are turned into arrays
+        for k,v in self.dict.items():
+            if isinstance(v,list): 
+                self.dict[k]=np.array(v)
 
         # add patches as a list of dicts
         self.patches=[]
@@ -199,24 +239,8 @@ class snapshot():
             if verbose>0:
                 print ('parsing',file)
             dict=parse_patches(file)
-            # "dress" the patches with attributes from snapshot_nml
-            snap_dict=nml_list['snapshot_nml']
             for id in sorted(dict.keys()):
-                p=patch(id,dict[id])
-                for k,v in snap_dict.items():
-                    setattr(p,k,v)
-                # reconstruct items pruned from patch_nml
-                if hasattr(p,'size') and hasattr(p,'position') :
-                    p.size=np.array(p.size)
-                    p.position=np.array(p.position)
-                    p.llc_cart=p.position-p.size/2.0
-                p.datafile=_file(rundir,'snapshots.dat')
-                if hasattr(self,'idx'):
-                    p.idx=idx
-                p.data=_data(p,verbose=verbose)
-                if not hasattr(p,'units'):
-                    if hasattr(self,'units'):
-                        p.units=self.units
+                p=patch(id,dict[id],self)
                 self.patches.append(p)            # Add array of patch instances
 
                 # verbose info
