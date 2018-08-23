@@ -28,5 +28,5 @@
         shell_values()
 """
 
-from _graphics import *
-from demo import demo
+from ._graphics import *
+from .demo import demo

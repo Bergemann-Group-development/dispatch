@@ -11,7 +11,7 @@
 
 """
 
-from _yt import *
-from demo import demo
+from ._yt import *
+from .demo import demo
 
 __all__ = "parameters,patch,patches,domain_dimensions"
