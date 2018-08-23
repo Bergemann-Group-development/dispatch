@@ -21,6 +21,7 @@ MODULE cartesian_mod
     procedure init
     procedure, nopass:: diagnostics
   end type
+  logical:: omp_init=.false.
   integer, save:: np=0                  ! patches per process
   public task_list_t                    ! export, to avoid excessive USE
 CONTAINS
@@ -53,10 +54,12 @@ SUBROUTINE init (self, label)
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
   logical:: face_nbors=.false.
   integer:: thread, icoords(3),ipos(3)
+  integer:: id
   integer, save:: itimer=0
-  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors
+  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
+    omp_init
   !-----------------------------------------------------------------------------
-  call trace_begin ('cartesian_mod::init',itimer=itimer)
+  !call trace_begin ('cartesian_mod::init',itimer=itimer)
   rewind (io%input); read (io%input, cartesian_params)
   if (any(per_rank/=0)) then
     where (per_rank/=0) dims=per_rank*mpi_dims
@@ -163,50 +166,13 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   ! Initialize patches on our rank and virtual patches, in parallel OMP tasks
   !-----------------------------------------------------------------------------
-  link => self%task_list%head
-  !$omp parallel
-  !$omp master
-  do while (associated(link))
-    !xomp task firstprivate(link) private(task,patch) shared(np)
-    task => link%task
-    select type (task)
-    class is (experiment_t)
-      patch => task
-      call timer%end (itimer=itimer)
-      call patch%init
-      call timer%begin (itimer=itimer)
-      patch%mesh%origin = origin
-      !$omp atomic
-      np = np + 1
-      ! Set physical boundary bits if required.
-      if (.not.patch%periodic(1).and.patch%ipos(1)==0)              call patch%boundaries%set(bits%xl)
-      if (.not.patch%periodic(2).and.patch%ipos(2)==0)              call patch%boundaries%set(bits%yl)
-      if (.not.patch%periodic(3).and.patch%ipos(3)==0)              call patch%boundaries%set(bits%zl)
-      if (.not.patch%periodic(1).and.patch%ipos(1)==self%dims(1)-1) call patch%boundaries%set(bits%xu)
-      if (.not.patch%periodic(2).and.patch%ipos(2)==self%dims(2)-1) call patch%boundaries%set(bits%yu)
-      if (.not.patch%periodic(3).and.patch%ipos(3)==self%dims(3)-1) call patch%boundaries%set(bits%zu)
-
-      if (io%verbose>0) then
-        write (io_unit%log,1) &
-          'init_cartesian: id, rank, size, pos =', &
-          patch%id, patch%rank, patch%size, patch%position, &
-          patch%is_set(bits%boundary), patch%is_set(bits%virtual)
-        1 format(a,i8,i6,1p,2(2x,3e14.6),2x,2l1)
-        flush (io_unit%log)
-      end if
-      if (io_unit%verbose>1 .and. io_unit%master) then
-        write (io_unit%output,1) &
-          'init_cartesian: id, rank, size, pos =', &
-          patch%id, patch%rank, patch%size, patch%position, &
-          patch%is_set(bits%boundary), patch%is_set(bits%virtual)
-        flush (io_unit%log)
-      end if
-    end select
-    !xomp end task
-    link => link%next
-  end do
-  !$omp end master
-  !$omp end parallel
+  if (omp_init) then
+    !$omp parallel default(shared)
+    call init_exp (self, origin)
+    !$omp end parallel
+  else
+    call init_exp (self, origin)
+  end if
   !-----------------------------------------------------------------------------
   ! Ŕeset the boundary / internal / virtual and boundary bits (and flags), and
   ! reconstruct the nbor lists based on that
@@ -221,8 +187,63 @@ SUBROUTINE init (self, label)
   write (io_unit%mpi,*) nlpatch,' local patches'
   flush (io%log_unit)
   call self%task_list%print_tasks
-  call trace_end (itimer)
+  !call trace_end (itimer)
 END SUBROUTINE init
+
+SUBROUTINE init_exp (self, origin)
+  class(cartesian_t):: self
+  real(8):: origin(3)
+  !.............................................................................
+  type(link_t), pointer:: link
+  class(task_t), pointer:: task
+  class(experiment_t), pointer:: patch
+  integer:: id
+  !-----------------------------------------------------------------------------
+  id = 0
+  link => self%task_list%head
+  do while (associated(link))
+    id = id+1
+    if (.not.omp_init .or. mod(id,omp%nthreads)==omp%thread) then
+      task => link%task
+      select type (task)
+      class is (experiment_t)
+        patch => task
+        call patch%init
+        if (omp_init .and. omp%nthreads>1) then
+          task%mem_thread = omp%thread
+        else
+          task%mem_thread = -1
+        end if
+        patch%mesh%origin = origin
+        !$omp atomic
+        np = np + 1
+        ! Set physical boundary bits if required.
+        if (.not.patch%periodic(1).and.patch%ipos(1)==0)              call patch%boundaries%set(bits%xl)
+        if (.not.patch%periodic(2).and.patch%ipos(2)==0)              call patch%boundaries%set(bits%yl)
+        if (.not.patch%periodic(3).and.patch%ipos(3)==0)              call patch%boundaries%set(bits%zl)
+        if (.not.patch%periodic(1).and.patch%ipos(1)==self%dims(1)-1) call patch%boundaries%set(bits%xu)
+        if (.not.patch%periodic(2).and.patch%ipos(2)==self%dims(2)-1) call patch%boundaries%set(bits%yu)
+        if (.not.patch%periodic(3).and.patch%ipos(3)==self%dims(3)-1) call patch%boundaries%set(bits%zu)
+        if (io%verbose>0) then
+          write (io_unit%log,1) &
+            'init_cartesian: id, rank, size, pos =', &
+            patch%id, patch%rank, patch%size, patch%position, &
+            patch%is_set(bits%boundary), patch%is_set(bits%virtual)
+          1 format(a,i8,i6,1p,2(2x,3e14.6),2x,2l1)
+          flush (io_unit%log)
+        end if
+        if (io_unit%verbose>1 .and. io_unit%master) then
+          write (io_unit%output,1) &
+            'init_cartesian: id, rank, size, pos =', &
+            patch%id, patch%rank, patch%size, patch%position, &
+            patch%is_set(bits%boundary), patch%is_set(bits%virtual)
+          flush (io_unit%log)
+        end if
+      end select
+    end if
+    link => link%next
+  end do
+END SUBROUTINE
 
 !> =============================================================================
 !> Diagnostics: Number of patches and GB of mem

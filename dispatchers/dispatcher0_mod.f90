@@ -126,7 +126,7 @@ SUBROUTINE update (self, task_list, test)
   type(task_list_t), pointer:: task_list
   logical:: test
   !.............................................................................
-  class(link_t), pointer:: head
+  class(link_t), pointer:: head, prev
   class(task_t), pointer:: task, otask
   class(mesg_t), pointer:: mesg
   logical:: already_busy, was_refined
@@ -145,9 +145,26 @@ SUBROUTINE update (self, task_list, test)
   ! Pick a task off the queue, in a very brief critical region
   !-----------------------------------------------------------------------------
   !$omp critical (queue_cr)
+  nullify (prev)
   head => task_list%queue                                    ! queue start
   if (associated(head) .and. .not.task_list%syncing) then
-    task => head%task                                   ! head task
+    !---------------------------------------------------------------------------
+    ! If the patch mem was OMP placed, search ready queue for matching thread
+    !---------------------------------------------------------------------------
+    do while (associated(head))
+      task => head%task
+      if (task%mem_thread==-1 .or. omp%thread == task%mem_thread) exit
+      prev => head
+      head => head%next_time
+    end do
+    !---------------------------------------------------------------------------
+    ! If not found, fall back on first task in queue
+    !---------------------------------------------------------------------------
+    if (.not. associated(head)) then
+      nullify (prev)
+      head => task_list%queue
+      task => head%task                                   ! head task
+    end if
     task%atime = task%time
     if (io%verbose > 1) then
       write (io_unit%log,'(f12.6,2x,a,i4,2x,a,i6,2x,a,1p,g16.6,2x,a,i5)') &
@@ -186,13 +203,19 @@ SUBROUTINE update (self, task_list, test)
     already_busy = task%is_set (bits%busy)
     id = task%id
     if (.not.already_busy) then
-      call task%set (bits%busy)                         ! mark task busy
-      task_list%queue => head%next_time                      ! chop head off
-      call task%clear (bits%ready)                      ! not in queue
+      call task%set (bits%busy)                              ! mark task busy
+      if (associated(prev)) then
+        !print *, omp%thread, 'match'
+        prev%next_time => head%next_time                     ! skip over
+      else
+        !print *, omp%thread, 'fall back'
+        task_list%queue => head%next_time                    ! chop head off
+      end if
+      call task%clear (bits%ready)                           ! not in queue
       if (track_active) &
         call task_list%queue_active (head)
       !$omp atomic
-      task_list%nq = task_list%nq-1                               ! decrement queue count
+      task_list%nq = task_list%nq-1                          ! decrement queue count
       task%nq = task_list%nq                                 ! for info print
       if (io%verbose >= 0) then
         if (track_active) then

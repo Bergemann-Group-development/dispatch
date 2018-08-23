@@ -73,6 +73,7 @@ MODULE dispatcher3_mod
   integer:: n_state(0:4)=0
   integer:: verbose=0
   integer(8):: n_check=0, n_ready=0
+  real:: f_over=2.0
   real(8):: wc_failed=0d0
   real(8):: start
   logical:: use_locks=.false.
@@ -90,7 +91,8 @@ SUBROUTINE init (self, task_list)
   class(dispatcher3_t):: self
   type(task_list_t), pointer:: task_list
   integer:: iostat
-  namelist /dispatcher3_params/ use_locks, use_critical, use_taskyield, verbose
+  namelist /dispatcher3_params/ use_locks, use_critical, use_taskyield, f_over, &
+    verbose
   !.............................................................................
   rewind (io%input); read (io%input, dispatcher3_params, iostat=iostat)
   if (io%master) write (io%output, dispatcher3_params)
@@ -171,14 +173,14 @@ SUBROUTINE execute (self, task_list, test)
           task_list%nq = n_state(2)
           if (use_critical) then
             !$omp critical (set_state_cr)
-            mytask = omp%nthreads==1 .or. n_state(1)==1 .or. n_state(2)>omp%nthreads
+            mytask = omp%nthreads==1 .or. n_state(1)==1 .or. n_state(2)>f_over*omp%nthreads
             !$omp end critical (set_state_cr)
           else
             !$omp atomic read
             n1 = n_state(1)
             !$omp atomic read
             n2 = n_state(2)
-            mytask = omp%nthreads==1 .or. n1==1 .or. n2>omp%nthreads
+            mytask = omp%nthreads==1 .or. n1==1 .or. n2>f_over*omp%nthreads
           end if
           if (mytask) then
             call self%set_state (task, 2)
@@ -245,25 +247,44 @@ SUBROUTINE update (self, task_list, link, test)
   class(link_t), pointer:: link, nbor
   class(task_t), pointer:: task
   logical:: test
-  !...........................................................................
-  call self%set_state (link%task, 3)
+  integer:: n_ready
+  !.............................................................................
   task => link%task
-  task%thread = omp%thread
-  if (self%verbose>3) print fmt2, &
-    wallclock(), omp%thread, 'updating task', task%id, 'from', task%time
-  call task_list%update (link, test)
-  if (self%verbose>3) print fmt2, &
-    wallclock(), omp%thread, 'updated  task', task%id, '  to', task%time
-  nbor => link%nbor
-  do while (associated(nbor))
-    if (self%is_ready(nbor%link)) then
-      call self%set_state (nbor%link%task, 1)
-      if (self%verbose>3) print fmt1,wallclock(),omp%thread,'found(2) task',nbor%task%id
-    end if
-    nbor => nbor%next
-  end do
-  call self%set_state (link%task, 4)
+  !-----------------------------------------------------------------------------
+  ! If task mem is OMP placed, ignore tasks allocated on a different thread,
+  ! passing them on to a matching thead -- unless there are no more tasks to
+  ! choose from, or the current thread is the master thread
+  !-----------------------------------------------------------------------------
+  !$omp atomic read
+  n_ready = n_state(1)
+  !$omp atomic
+  n_ready = n_ready + n_state(2)
+  if (omp%thread==task%mem_thread .or. n_ready<omp%nthreads .or.&
+      omp%thread==0 .or. task%mem_thread==-1) then
+    call self%set_state (task, 3)
+    task%thread = omp%thread
+    if (self%verbose>3) print fmt2, &
+      wallclock(), omp%thread, 'updating task', task%id, 'from', task%time
+    call task_list%update (link, test)
+    if (self%verbose>3) print fmt2, &
+      wallclock(), omp%thread, 'updated  task', task%id, '  to', task%time
+    nbor => link%nbor
+    do while (associated(nbor))
+      if (self%is_ready(nbor%link)) then
+        call self%set_state (nbor%link%task, 1)
+        if (self%verbose>3) print fmt1,wallclock(),omp%thread,'found(2) task',nbor%task%id
+      end if
+      nbor => nbor%next
+    end do
+    if (verbose > 2) &
+      print *, omp%thread, 'match  ', task%id
+  else
+    if (verbose > 2) &
+      print *, omp%thread, 'skipped', task%id, task%mem_thread
+    !$omp taskyield
+  end if
   link%task%thread = -1
+  call self%set_state (link%task, 4)
 END SUBROUTINE
 
 !> =============================================================================
