@@ -11,14 +11,15 @@ MODULE rt_integral_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
+  USE omp_mod
   implicit none
   private
   type, public:: rt_integral_t
-    real:: mu(3)
   contains
-    procedure:: solve
+    procedure, nopass:: solve
     procedure, nopass:: diagnostics
   end type
+  logical:: detailed_timer=.false.
   integer:: verbose=0
   real:: dtau_min=1e-3, dtau_dif=1e3, dtau_max=1e4
   integer(8), save:: n_cases(4)=0
@@ -28,27 +29,27 @@ CONTAINS
 !> =============================================================================
 !> Solve the radiative transfer for all bins, along the closest axis direction
 !> =============================================================================
-SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
-  class(rt_integral_t):: self
+SUBROUTINE solve (k, s, q, mesh, mu3, phi3)
   real, dimension(:,:,:,:), pointer:: k, s, q
   class(mesh_t), pointer:: mesh(:)
-  real:: mu3, phi3
+  real:: mu3, phi3, mu(3)
   !.............................................................................
   real, dimension(:,:,:,:), allocatable:: k3, s3, q3
   real:: dr
   integer:: m(4), loc(1), dir, i, i1, i2, i3, ib, l(3), u(3), ii(3)
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('rt_integral_t%solve')
+  call trace%begin ('rt_integral_t%solve', itimer=itimer)
   m = shape(k)
   !-----------------------------------------------------------------------------
   ! Determine closest axis direction
   !-----------------------------------------------------------------------------
-  self%mu(1) = sin(acos(mu3))*cos(phi3)
-  self%mu(2) = sin(acos(mu3))*sin(phi3)
-  self%mu(3) = mu3
-  loc = maxloc(abs(self%mu))
+  mu(1) = sin(acos(mu3))*cos(phi3)
+  mu(2) = sin(acos(mu3))*sin(phi3)
+  mu(3) = mu3
+  loc = maxloc(abs(mu))
   dir = loc(1)
-  dr = mesh(dir)%d/abs(self%mu(dir))
+  dr = mesh(dir)%d/abs(mu(dir))
   !-----------------------------------------------------------------------------
   ! Transpose dimensions to solver index coordinates and allocate
   !-----------------------------------------------------------------------------
@@ -68,20 +69,20 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
   !-----------------------------------------------------------------------------
   l = mesh(ii)%li
   u = mesh(ii)%ui
-  if (self%mu(dir) > 0.0) then
+  if (mu(dir) > 0.0) then
     i1=l(3); i2=u(3); i3=+1
   else
     i1=u(3); i2=l(3); i3=-1
   end if
   if (verbose > 0) &
-    print *, 'rt_integral_t%solve: mu, phi, dir, dr =', self%mu, dir, i1, i2, i3
+    print *, 'rt_integral_t%solve: mu, phi, dir, dr =', mu, dir, i1, i2, i3
   !-----------------------------------------------------------------------------
   ! Prepare layers for the single layer solver and call it
   !-----------------------------------------------------------------------------
   do i=i1,i2,i3
-    call prepare_layers (self, dir, mesh, k, k3, i, i3)
-    call prepare_layers (self, dir, mesh, s, s3, i, i3)
-    call prepare_layers (self, dir, mesh, q, q3, i, i3)
+    call prepare_layers (mu, dir, mesh, k, k3, i, i3)
+    call prepare_layers (mu, dir, mesh, s, s3, i, i3)
+    call prepare_layers (mu, dir, mesh, q, q3, i, i3)
     if (dir==1) then
       call solve1 (k3, s3, q3, q(i,:,:,:), dr, l, u)
     else if (dir==2) then
@@ -98,7 +99,7 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
     end do
   end if
   !call diagnostics
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE solve
 
 !> =============================================================================
@@ -106,8 +107,8 @@ END SUBROUTINE solve
 !> after, in the RT direction.  The indices in the layers are (i1,i2,ib,1:3), 
 !> where i1-i3 are 3D coords, ib is bin index, and the last is layer index
 !> =============================================================================
-SUBROUTINE prepare_layers (self, dir, mesh, in, out, i, i3)
-  class(rt_integral_t):: self
+SUBROUTINE prepare_layers (mu, dir, mesh, in, out, i, i3)
+  real:: mu(3)
   integer:: dir, i, i3
   class(mesh_t), pointer:: mesh(:)
   real, dimension(:,:,:,:):: in, out
@@ -115,9 +116,9 @@ SUBROUTINE prepare_layers (self, dir, mesh, in, out, i, i3)
   real:: p(2,2)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('rt_integral_t%prepare_layers', itimer=itimer)
+  call trc_begin ('rt_integral_t%prepare_layers', itimer=itimer)
   !-----------------------------------------------------------------------------
-  call calculate_offsets (self, dir, mesh, o, p)
+  call calculate_offsets (mu, dir, mesh, o, p)
   if (dir==1) then
     l = [mesh(2)%li, mesh(3)%li]
     u = [mesh(2)%ui, mesh(3)%ui]
@@ -139,33 +140,32 @@ SUBROUTINE prepare_layers (self, dir, mesh, in, out, i, i3)
   end if
   if (verbose > 1) &
     print *, 'rt_integral_t%prepare_layers: dir, l, u =', dir, l, u
-  call trace%end (itimer)
+  call trc_end (itimer)
 END SUBROUTINE prepare_layers
 
 !> =============================================================================
 !> Calculate perpendicular index offsets from one layer to the next
 !> =============================================================================
-SUBROUTINE calculate_offsets (self, dir, mesh, o, p)
-  class(rt_integral_t):: self
+SUBROUTINE calculate_offsets (mu, dir, mesh, o, p)
   class(mesh_t), pointer:: mesh(:)
   integer:: dir, o(2,2)
-  real:: p(2,2)
+  real:: mu(3), p(2,2)
   !.............................................................................
   real(8), pointer, dimension(:):: x, y, z
   real:: dpdi(2)
   integer:: j
   !-----------------------------------------------------------------------------
-  call trace%begin ('rt_integral_t%calculate_offsets')
+  call trc_begin ('rt_integral_t%calculate_offsets')
   ! -- Fractional steps in perpendicular indices per parallel index
   if (dir==1) then
-    dpdi(1) = self%mu(2)/self%mu(1)*mesh(1)%d/mesh(2)%d
-    dpdi(2) = self%mu(3)/self%mu(1)*mesh(1)%d/mesh(3)%d
+    dpdi(1) = mu(2)/mu(1)*mesh(1)%d/mesh(2)%d
+    dpdi(2) = mu(3)/mu(1)*mesh(1)%d/mesh(3)%d
   else if (dir==2) then
-    dpdi(1) = self%mu(1)/self%mu(2)*mesh(2)%d/mesh(1)%d
-    dpdi(2) = self%mu(3)/self%mu(2)*mesh(2)%d/mesh(3)%d
+    dpdi(1) = mu(1)/mu(2)*mesh(2)%d/mesh(1)%d
+    dpdi(2) = mu(3)/mu(2)*mesh(2)%d/mesh(3)%d
   else
-    dpdi(1) = self%mu(1)/self%mu(3)*mesh(3)%d/mesh(1)%d
-    dpdi(2) = self%mu(2)/self%mu(3)*mesh(3)%d/mesh(2)%d
+    dpdi(1) = mu(1)/mu(3)*mesh(3)%d/mesh(1)%d
+    dpdi(2) = mu(2)/mu(3)*mesh(3)%d/mesh(2)%d
   end if
   ! -- backward and forwards one index
   do j=1,2
@@ -173,11 +173,12 @@ SUBROUTINE calculate_offsets (self, dir, mesh, o, p)
   end do
   o = floor(p)
   p = p - o
-  if (verbose > 1) &
-    print '(a,2x,3f7.3,2x,2f7.3,2(2x,2i3),0p,2(2x,2f7.3))', &
-      ' rt_integral_t%calculate_offsets: mu, dpdi, o, p =', &
-      self%mu, dpdi, o, p
-  call trace%end
+  if (verbose > 1) then
+    print '(i2,2x,a,2x,3f7.3,2x,2f7.3,2(2x,2i3),0p,2(2x,2f7.3))', &
+      omp%thread, 'rt_integral_t%calculate_offsets: mu, dpdi, o, p =', &
+      mu, dpdi, o, p
+  end if
+  call trc_end
 END SUBROUTINE calculate_offsets
 
 !> =============================================================================
@@ -192,7 +193,7 @@ SUBROUTINE bilinear (in, out, o, p, l, u)
   integer:: i1, i2, ib, m(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('rt_integral_t%bilinear', 2, itimer=itimer)
+  call trc_begin ('rt_integral_t%bilinear', 2, itimer=itimer)
   m = shape(in)
   q = 1.0-p
   !-----------------------------------------------------------------------------
@@ -239,19 +240,31 @@ SUBROUTINE bilinear (in, out, o, p, l, u)
     if (verbose > 1) &
       print *, 'rt_integral_t%bilinear: o, p =', &
         o, p
+    do i1=l(1),u(1),u(1)-l(1)
+      if (i1+o(1) < 1 .or. i1+o(1) > size(in,1)) then
+        print *, 'index 1 outside range', i1, o(1), p(1)
+        stop
+      end if
+    end do
+    do i2=l(2),u(2),u(2)-l(2)
+      if (i2+o(2) < 1 .or. i2+o(2) > size(in,2)) then
+        print *, 'index 2 outside range', i2, o(2), p(2)
+        stop
+      end if
+    end do
     do ib=1,m(3)
     do i2=l(2),u(2)
     do i1=l(1),u(1)
       out(i1,i2,ib) = &
           q(1)*q(2)*in(i1+o(1)  ,i2+o(2)  ,ib) + &
           p(1)*q(2)*in(i1+o(1)+1,i2+o(2)  ,ib) + &
-          q(1)*p(2)*in(i1+o(1)+1,i2+o(2)+1,ib) + &
+          q(1)*p(2)*in(i1+o(1)  ,i2+o(2)+1,ib) + &
           p(1)*p(2)*in(i1+o(1)+1,i2+o(2)+1,ib)
     end do
     end do
     end do
   end if
-  call trace%end (itimer)
+  call trc_end (itimer)
 END SUBROUTINE bilinear
 
 !> =============================================================================
@@ -270,11 +283,11 @@ SUBROUTINE solve1 (k, s, qin, qout, dr, l, u)
   !.............................................................................
   integer:: i1, i2, ib, m(4)
   real:: dsdtau1, dsdtau2, d2sdtau2, ex0, ex2, dtaumin, dtaumax
-  integer, save:: itimer=0
   real(8), pointer:: z(:)
   real, dimension(size(k,1)):: dtau1, dtau2
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('rt_integral_t%solve1', 1, itimer=itimer)
+  call trc_begin ('rt_integral_t%solve1', 1, itimer=itimer)
   m = shape(k)
   do ib=1,m(4)
     do i2=l(2),u(2)
@@ -323,10 +336,9 @@ SUBROUTINE solve1 (k, s, qin, qout, dr, l, u)
         qout(l(1):l(1)+9,(l(2)+u(2))/2,ib)
     end if
   end do
-  call trace%end (itimer)
+  call trc_end (itimer)
 END SUBROUTINE solve1
 
-!> =============================================================================
 !> =============================================================================
 SUBROUTINE diagnostics (label)
   character(len=*):: label
@@ -335,5 +347,27 @@ SUBROUTINE diagnostics (label)
   print *, 'fractions of thin, full, diff, and zero cases: ', &
     trim(label), n_cases*f
 END SUBROUTINE diagnostics 
+
+!> =============================================================================
+SUBROUTINE trc_begin (label, idebug, itimer)
+  character(len=*):: label
+  integer, optional:: idebug
+  integer, optional:: itimer
+  if (detailed_timer) then
+    call trace%begin (label, idebug, itimer)
+  else
+    call trace%begin (label, idebug)
+  end if
+END SUBROUTINE
+
+!> =============================================================================
+SUBROUTINE trc_end (itimer)
+  integer, optional:: itimer
+  if (detailed_timer) then
+    call trace%end (itimer)
+  else
+    call trace%end
+  end if
+END SUBROUTINE
 
 END MODULE rt_integral_mod

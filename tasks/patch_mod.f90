@@ -1494,10 +1494,12 @@ SUBROUTINE courant_condition (self, detailed_timer)
   endif
   !$omp atomic write
   self%dtime = dtime
-  if (io%verbose>2 .or. &
-      (dtime < 0.5*self%dt(self%iit(self%nt-2)) .and. self%dt_fixed < 0.0)) &
-    print '(a,i6,1p,3g11.2,2x,3g11.2)', ' courant: id, dt, cdt, u_max, ds =', &
-      self%id, dtime, courant, self%u_max, ds
+  if (self%nt>1) then
+    if (io%verbose>2 .or. (self%istep>3 .and. &
+        dtime < 0.5*self%dt(self%iit(self%nt-2)) .and. self%dt_fixed < 0.0)) &
+      print '(a,i6,1p,3g11.2,2x,3g11.2)', ' courant: id, dt, cdt, u_max, ds =', &
+        self%id, dtime, courant, self%u_max, ds
+  end if
   !-----------------------------------------------------------------------------
   ! Force the time step to give exactly sync_time if within reach
   !-----------------------------------------------------------------------------

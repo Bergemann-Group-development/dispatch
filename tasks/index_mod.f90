@@ -52,6 +52,7 @@ SUBROUTINE init (self, ie, mhd)
     self%by = -1
     self%bz = -1
   end if
+  call self%copy
 END SUBROUTINE init
 
 !> =============================================================================

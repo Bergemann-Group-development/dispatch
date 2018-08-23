@@ -33,8 +33,8 @@ SUBROUTINE rt_setup (task_list)
   type(task_list_t):: task_list
   !.............................................................................
   class(link_t), pointer:: link, nbor
-  class(task_t), pointer:: mhd, task
-  class(rt_t), pointer:: omega
+  class(task_t), pointer:: task
+  class(rt_t), pointer:: omega=>null(), mhd
   class(patch_t), pointer:: patch
   class(task_list_t), pointer:: rt_task_list
   integer:: i_omega, ntask, iter, iostat
@@ -54,11 +54,12 @@ SUBROUTINE rt_setup (task_list)
   link => task_list%head
   do while (associated(link))
     call io%assert (associated(link%task), 'link%task missing')
-    mhd => link%task
+    task => link%task
     if (verbose > 0) & 
-      print *,'processing MHD task', mhd%id
-    select type (mhd)
+      print *,'processing MHD task', task%id
+    select type (task)
     class is (rt_t)
+      mhd => task
       call io%assert (associated(mhd%link%task), 'mhd%link%task missing')
       !-------------------------------------------------------------------------
       ! Add nbor lists to the sub-tasks
@@ -121,31 +122,33 @@ SUBROUTINE rt_setup (task_list)
     link => link%next
   end do
   !-----------------------------------------------------------------------------
-  ! Merge task lists
+  ! Merge task lists, if RT is present
   !-----------------------------------------------------------------------------
-  patch => omega
-  call data_io%register_kind (patch)
-  if (verbose > 1) &
-    call rt_task_list%print ('rt_task_list')
-  call task_list%append_task_list (rt_task_list)
-  !-----------------------------------------------------------------------------
-  ! Warm up the RT
-  !-----------------------------------------------------------------------------
-  do iter=1,n_warmup
-    print *, 'warm-up, iteration', iter
-    link => task_list%head
-    do while (associated(link))
-      task => link%task
-      select type (task)
-      class is (rt_t)
-      if (task%i_omega > 0) then
-        call download%download_link (link)
-        call task%solve
-      end if
-      end select
-      link => link%next
+  if (associated(omega)) then
+    patch => omega
+    call data_io%register_kind (patch)
+    if (verbose > 1) &
+      call rt_task_list%print ('rt_task_list')
+    call task_list%append_task_list (rt_task_list)
+    !---------------------------------------------------------------------------
+    ! Warm up the RT
+    !---------------------------------------------------------------------------
+    do iter=1,n_warmup
+      print *, 'warm-up, iteration', iter
+      link => task_list%head
+      do while (associated(link))
+        task => link%task
+        select type (task)
+        class is (rt_t)
+        if (task%i_omega > 0) then
+          call download%download_link (link)
+          call task%solve
+        end if
+        end select
+        link => link%next
+      end do
     end do
-  end do
+  end if
   !-----------------------------------------------------------------------------
   if (verbose > 0) &
     print *, 'rt_setup: io%ntask =', io%ntask
