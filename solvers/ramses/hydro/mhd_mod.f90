@@ -129,7 +129,7 @@ SUBROUTINE update (self)
   allocate (self%fl(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%c(n(1),n(2),n(3)))
   allocate (self%s(n(1),n(2),n(3)))
-  self%q=0.0; self%qp=0.0; self%qm=0.0; self%dq=0.0; self%fl=0.; self%c=0.0; self%s=0.0
+  !self%q=0.0; self%qp=0.0; self%qm=0.0; self%dq=0.0; self%fl=0.; self%c=0.0; self%s=0.0
   if (detailed_timer) call trace_end (itimer)
   if (debug) then
     if (self%id==229.or.self%id==231) then
