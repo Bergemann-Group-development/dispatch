@@ -2,8 +2,10 @@
 !
 ! Input file for speed measurements
 
+&dispatcher_params      method=3 /
+&dispatcher3_params     verbose=0 /
 &timer_params
- sec_per_report=10
+ sec_per_report=5
 /
 &task_list_params
  job_seconds=79
@@ -29,27 +31,37 @@
  do_debug=f
  do_output=f
  omp_trace=f
+ method='parallel'
 /
+
 &cartesian_params
+ omp_init=f
  size=1,1,1
 !dims=16,16,16          ! nearly full 20 core Ivy Bridge at steno
 !dims=32,64,64          ! 32 nodes (64 sockets)
- per_rank=3*1 mpi_dims=2,2,2
+ dims=8,8,8
  origin=0,0,0
 /
+&box_params
+ size=1,1,1
+!dims=16,16,16          ! nearly full 20 core Ivy Bridge at steno
+!dims=32,64,64          ! 32 nodes (64 sockets)
+ dims=8,8,8
+ origin=0,0,0
+/
+
 &experiment_params
 /
 &patch_params
  nt=5
- courant=0.2
- grace=0.5              ! instead of sync_time, use grace to avoid empty queues
+ grace=0.2              ! instead of sync_time, use grace to avoid empty queues
  n=32,32,32
-!dt_fixed=0.001
+ !dt_fixed=1e-4
 /
 &out_params
- end_time=0.4           ! large, to let job_seconds determine length of job
+ end_time=40            ! large, to let job_seconds determine length of job
  out_time=1
- print_time=0
+ print_time=0.0
  guard_zones=f
  time_derivs=f
 /
@@ -68,12 +80,11 @@
 
 &ramses_params
  !detailed_timer=f
- courant_factor=0.8
- gamma=1.00001
+ courant_factor=0.25
+ gamma=1.4
  slope_type=2
  !slope_type=-1
  smallr=1e-4
  smallc=5e-1
- riemann='hlld'
- do_isothermal=t
+ riemann='hllc'
 /
