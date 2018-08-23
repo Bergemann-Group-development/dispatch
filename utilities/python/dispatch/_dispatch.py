@@ -1,4 +1,3 @@
-
 # Pythn 2/3 compatibility
 from __future__ import print_function
 
@@ -68,7 +67,7 @@ class _obj(object):
 def _add_nml_to(obj,dict,verbose=0):
     for key,value in dict.items():
         setattr(obj,key,value)
-        if verbose>1:
+        if verbose==2:
             print('      adding property '+key+', with value',value)
 
 class _param():
@@ -83,13 +82,13 @@ def _add_nml_list_to(obj,nml_list,verbose=0):
         if type(snap_dict['ntotal'])==list:
             snap_dict['ntotal']=snap_dict['ntotal'][0]
     for key,nml_dict in nml_list.items():
-        if (verbose):
+        if (verbose==1):
             print('  parsing',key)
         if key=='snapshot_nml':
             _add_nml_to(obj,nml_dict)
         else:
             name=key.replace('_nml','').replace('_params','')
-            if (verbose>0):
+            if (verbose==1):
                 print('    adding property',name)
             setattr(obj,name,_param())
             subobj=getattr(obj,name)
@@ -214,7 +213,7 @@ class snapshot():
         for f in files:
             # add parameter groups from data/run/NNNNN/*snapshot.nml
             file=_file(datadir,f)
-            if verbose>0:
+            if verbose==1:
                 print ('parsing',file)
             nml_list=f90nml.read(file)
             self.nml_list=nml_list
@@ -253,7 +252,7 @@ class snapshot():
         for f in files:
             # add parameter groups from data/run/NNNNN/*snapshot.nml
             file=_file(datadir,f)
-            if verbose>0:
+            if verbose==1:
                 print ('parsing',file)
             dict=parse_patches(file)
             for id in sorted(dict.keys()):
@@ -263,13 +262,15 @@ class snapshot():
 
                 # verbose info
                 if verbose==2 and hasattr(p,'idx'):
-                    dmax=p.data[p.idx.d].max()
+                    data=p.var('d')
+                    dmax=data.max()
                     print ('    id:{:4d}  pos: {} {}'.format(p.id,p.position,dmax))
                 elif verbose==3:
                     print('id:',p.id)
                     for iv in range(p.nv):
-                        vmin=float(p.data[iv].min())
-                        vmax=float(p.data[iv].max())
+                        data=p.var(iv)
+                        vmin=float(data.min())
+                        vmax=float(data.max())
                         print ('{:>5}:  min = {:10.3e}   max = {:10.3e}'.format(
                             p.idx.vars[iv], vmin, vmax))
                 elif verbose==4:

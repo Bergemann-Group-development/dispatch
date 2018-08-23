@@ -17,8 +17,7 @@ def aver(s,iv=0):
     f=0.0
     v=0.0
     p=s.patches[0]
-    if not hasattr(p,'data'):
-        data=p.var(iv)
+    data=p.data[iv] if hasattr(p,'data') else p.var(iv)
     if type(iv)==type('d'):
         iv=p.idx.dict[iv]
     for p in s.patches:
@@ -33,8 +32,7 @@ def rms(s,iv=0):
     f=0.0
     v=0.0
     p=s.patches[0]
-    if not hasattr(p,'data'):
-        data=p.var(iv)
+    data=p.data[iv] if hasattr(p,'data') else p.var(iv)
     if type(iv)==type('d'):
         iv=p.idx.dict[iv]
     for p in s.patches:
@@ -44,8 +42,7 @@ def rms(s,iv=0):
     fa=f/v
     f=0.0
     for p in s.patches:
-        if not hasattr(p,'data'):
-            data=p.var(iv)
+        data=p.data[iv] if hasattr(p,'data') else p.var(iv)
         dv=np.product(p.ds)
         v=v+dv
         f=f+dv*np.sum((data-fa)**2)
@@ -80,8 +77,7 @@ def stat(s,iv=0):
     p=pp[0]
     if type(iv)==type('d'):
         iv=p.idx.dict[iv]
-    if not hasattr(p,'data'):
-        data=p.var(iv)
+    data=p.data[iv] if hasattr(p,'data') else p.var(iv)
     d=data
     m=maxloc(d)
     dmin=float(d.min())
@@ -90,8 +86,7 @@ def stat(s,iv=0):
     m=minloc(d)
     rmin=[p.x[m[0]],p.y[m[1]],p.z[m[2]]]
     for p in pp:
-        if not hasattr(p,'data'):
-            data=p.var(iv)
+        data=p.data[iv] if hasattr(p,'data') else p.var(iv)
         dv=np.product(p.ds)
         v=v+dv
         d=data
@@ -109,8 +104,7 @@ def stat(s,iv=0):
     av=float(f/v)
     f=0.0
     for p in pp:
-        if not hasattr(p,'data'):
-            data=p.var(iv)
+        data=p.data[iv] if hasattr(p,'data') else p.var(iv)
         dv=np.product(p.ds)
         v=v+dv
         f=f+dv*np.sum((data-av)**2)
@@ -134,8 +128,7 @@ def haver1(s,iv=0,point=0.0,dir=2,verbose=0):
             n+=1
             dv=np.product(p.ds)
             v=v+dv
-            if not hasattr(p,'data'):
-                data=p.var(iv)
+            data=p.data[iv] if hasattr(p,'data') else p.var(iv)
             if dir==0:
                 s=np.abs(p.x-point)
                 i=np.argmin(s)
@@ -157,14 +150,12 @@ def hminmax(s,iv=0,dir=2,verbose=0):
     if type(iv)==type('d'):
         iv=s.idx.dict[iv]
     pp=_patches(s)
-    print(len(pp))
     xx=[]
     hmin=[]
     hmax=[]
     for p in pp:
         rr=p.xyz[dir]
-        if not hasattr(p,'data'):
-            data=p.var(iv)
+        data=p.data[iv] if hasattr(p,'data') else p.var(iv)
         for i in range(len(rr)):
             if dir==0:
                 f=data[i,:,:]
@@ -188,7 +179,6 @@ def hminmax(s,iv=0,dir=2,verbose=0):
     ymin=[]
     ymax=[]
     i=0
-    print(len(xx))
     while i<len(xx):
         x0=xx[i]
         h1=hmin[i]
@@ -201,7 +191,6 @@ def hminmax(s,iv=0,dir=2,verbose=0):
         ss.append(x0)
         ymin.append(h1)
         ymax.append(h2)
-    print(len(ss))
     xx=np.array(ss)
     hmin=np.array(ymin)
     hmax=np.array(ymax)
@@ -218,8 +207,7 @@ def haver(s,iv=0,dir=2,verbose=0):
         es=0.5 if p.no_mans_land else 0.0
         es=es+p.idx.h[dir,iv]
         rr=p.llc_cart[dir]+p.ds[dir]*(np.arange(p.n[dir])+es)
-        if not hasattr(p,'data'):
-            data=np.copy(p.var(iv))
+        data=p.data[iv] if hasattr(p,'data') else p.var(iv)
         for i in range(len(rr)):
             if dir==0:
                 f=data[i,:,:]

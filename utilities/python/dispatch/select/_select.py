@@ -105,9 +105,13 @@ def indices_and_weights(point,p,iv=0):
         if iv==p.idx.b2: y0=p.ys[0]
         if iv==p.idx.b3: z0=p.zs[0]
     corner=np.array([x0,y0,z0])
-    p=(point-corner)/p.ds
-    indices=np.array(p,dtype=np.int32)
-    weights=p-indices
+    weights=(point-corner)/p.ds
+    indices=np.array(weights,dtype=np.int32)
+    #print('before:',indices,weights)
+    for i in range(3):
+        indices[i]=max(0,min(p.n[i]-2,indices[i]))
+    weights=weights-indices
+    #print(' after:',indices,weights)
     return indices, weights
 
 def values_in(point,p,dir=0,iv=0,var=None,verbose=0,all=0):
@@ -118,10 +122,14 @@ def values_in(point,p,dir=0,iv=0,var=None,verbose=0,all=0):
     ss=[]
     ff=[]
     ii,w=indices_and_weights(point,p,iv)
+    data=p.data[iv] if hasattr(p,'data') else p.var(iv)
     if verbose:
         print('{:3d} {}   {} {:5.1f} {:4.1f} {:4.1f}'.\
           format(p.id,iv,ii,w[0],w[1],w[2]))
-    if all:
+    if not p.guard_zones:
+        m=np.zeros(3,dtype=np.int32)
+        n=p.n
+    elif all:
         m=np.zeros(3,dtype=np.int32)
         n=p.gn
     else:
@@ -133,8 +141,8 @@ def values_in(point,p,dir=0,iv=0,var=None,verbose=0,all=0):
         j=ii[1]
         k=ii[2]
         for i in range(m[0],m[0]+n[0]):
-            f1=p.data[iv][i,j,k  ]*(1-w[1])+p.data[iv][i,j+1,k, ]*w[1]
-            f2=p.data[iv][i,j,k+1]*(1-w[1])+p.data[iv][i,j+1,k+1]*w[1]
+            f1=data[i,j,k  ]*(1-w[1])+data[i,j+1,k, ]*w[1]
+            f2=data[i,j,k+1]*(1-w[1])+data[i,j+1,k+1]*w[1]
             f=f1*(1-w[2])+f2*w[2]
             if hasattr(p,'p1'):
                 if iv==p.idx.p1:
@@ -148,8 +156,8 @@ def values_in(point,p,dir=0,iv=0,var=None,verbose=0,all=0):
         i=ii[0]
         k=ii[2]
         for j in range(m[1],m[1]+n[1]):
-            f1=p.data[iv][i,j,k  ]*(1-w[0])+p.data[iv][i+1,j,k  ]*w[0]
-            f2=p.data[iv][i,j,k+1]*(1-w[0])+p.data[iv][i+1,j,k+1]*w[0]
+            f1=data[i,j,k  ]*(1-w[0])+data[i+1,j,k  ]*w[0]
+            f2=data[i,j,k+1]*(1-w[0])+data[i+1,j,k+1]*w[0]
             f=f1*(1-w[2])+f2*w[2]
             if hasattr(p,'p2'):
                 if iv==p.idx.p2:
@@ -163,8 +171,8 @@ def values_in(point,p,dir=0,iv=0,var=None,verbose=0,all=0):
         i=ii[0]
         j=ii[1]
         for k in range(m[2],m[2]+n[2]):
-            f1=p.data[iv][i,j  ,k]*(1-w[0])+p.data[iv][i+1,j  ,k]*w[0]
-            f2=p.data[iv][i,j+1,k]*(1-w[0])+p.data[iv][i+1,j+1,k]*w[0]
+            f1=data[i,j  ,k]*(1-w[0])+data[i+1,j  ,k]*w[0]
+            f2=data[i,j+1,k]*(1-w[0])+data[i+1,j+1,k]*w[0]
             f=f1*(1-w[1])+f2*w[1]
             if hasattr(p,'p3'):
                 if iv==p.idx.p3:
@@ -288,7 +296,7 @@ class shell_values:
                 r2=sum(rr**2,0)
                 d={}
                 for key in keys:
-                    d[key]=p.data[p.idx.dict[key]]
+                    d[key]=p.var(iv)
                 d['x']=rr[0]
                 d['y']=rr[1]
                 d['z']=rr[2]

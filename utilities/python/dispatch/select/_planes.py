@@ -57,6 +57,7 @@ def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
         dirs = [2,0,1]
     f = np.zeros((n[dirs[1]],n[dirs[2]]))
     for p in pp:
+        data=p.data[iv] if hasattr(p,'data') else p.var(iv)
         if pp[0].no_mans_land:
             pn=p.n
         else:
@@ -76,7 +77,7 @@ def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
             j2=i2+o[dirs[2]]
             if verbose>2:
                 print('j1:',j1[0],'j2:',j2,'i0:',i0,'i1:',i1[0],'i2:',i2)
-            f[j1,j2] = p.data[iv][i,j,k]
+            f[j1,j2] = data[i,j,k]
     return f
 
 def unigrid_volume(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
@@ -109,6 +110,7 @@ def unigrid_volume(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
         dirs = [2,0,1]
     f = np.zeros((n[dirs[1]],n[dirs[2],dirs[3]]))
     for p in pp:
+        data=p.data[iv] if hasattr(p,'data') else p.var(iv)
         if pp[0].no_mans_land:
             pn=p.n
         else:
@@ -128,5 +130,5 @@ def unigrid_volume(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
             j2=i2+o[dirs[2]]
             if verbose>2:
                 print('j1:',j1[0],'j2:',j2,'i0:',i0,'i1:',i1[0],'i2:',i2)
-            f[j0,j1,j2] = p.data[iv][i,j,k]
+            f[j0,j1,j2] = data[i,j,k]
     return f
