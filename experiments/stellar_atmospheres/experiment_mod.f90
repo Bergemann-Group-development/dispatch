@@ -46,14 +46,14 @@ SUBROUTINE init (self)
   call trace_begin('experiment_mod::init', itimer=itimer)
   !----------------------------------------------------------------------------
   if (first_time) then
-    !$omp critical (init_cr)
+    !$omp critical (input_cr)
     if (first_time) then
       first_time = .false.
       rewind (io%input)
       read (io%input, experiment_params, iostat=iostat)
       if (io%master) write (*, experiment_params)
     end if
-    !$omp end critical (init_cr)
+    !$omp end critical (input_cr)
   end if
   if (.not. io%master) verbose=0
   !----------------------------------------------------------------------------

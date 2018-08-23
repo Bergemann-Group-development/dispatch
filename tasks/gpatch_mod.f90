@@ -72,19 +72,20 @@ SUBROUTINE init (self)
   character(len=64)                 :: filename
   logical                           :: ok
   integer                           :: iostat
-  logical, save                     :: first_time=.true.
+  logical, save                     :: first_time=.true., first_poisson=.true.
   real, save                        :: d0=-1.0
   real(kind=KindScalarVar), pointer :: d(:,:,:)
   namelist /selfgravity_params/ selfgravity, prediction, order, d0, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%init')
-  !$omp critical (poisson_cr)
+  !$omp critical (input_cr)
   if (first_time) then
+    first_time = .false.
     rewind (io%input)
     read (io%input, selfgravity_params, iostat=iostat)
     if (io%master) write (io%output, selfgravity_params)
   end if
-  !$omp end critical (poisson_cr)
+  !$omp end critical (input_cr)
   if (selfgravity) then
     self%selfgravity = selfgravity
     if (trim(self%kind) /= 'zeus_mhd_patch') self%nv = self%nv + 1
@@ -102,8 +103,8 @@ SUBROUTINE init (self)
   self%d0 = d0
   call self%initial%init (self%kind, real(self%gamma))
   !$omp critical (poisson_cr)
-  if (first_time) then
-    first_time = .false.
+  if (first_poisson) then
+    first_poisson = .false.
     if (self%use_data_hub) then
       !call data_hub%test
     else
