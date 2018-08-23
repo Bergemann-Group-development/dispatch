@@ -15,7 +15,7 @@ class _timer():
         self.__init__()
     def add(self,key):
         now=time()
-        if self.dict.has_key(key):
+        if key in self.dict.keys():
             self.dict[key]+=now-self._start
         else:
             self.dict[key]=now-self._start
@@ -78,7 +78,7 @@ def _add_nml_list_to(obj,nml_list,verbose=0):
     """
     # Repair strange interpretation of ntotal
     snap_dict=nml_list['snapshot_nml']
-    if snap_dict.has_key('ntotal'):
+    if 'ntotal' in snap_dict.keys():
         if type(snap_dict['ntotal'])==list:
             snap_dict['ntotal']=snap_dict['ntotal'][0]
     for key,nml_dict in nml_list.items():
@@ -225,7 +225,7 @@ class snapshot():
                 # add a dict with (existing) alphabetic variable names
                 idx.vars={}
                 for k,v in idx.dict.items():
-                    if not idx.vars.has_key(v):
+                    if not v in idx.vars.keys():
                         if v>=0:
                             idx.vars[v]=k
                 self.idx=idx
