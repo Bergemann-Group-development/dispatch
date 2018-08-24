@@ -197,7 +197,7 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
                     if pos[1].find('2*')>=0:
                         pos[1]=pos[1].replace('2*','')
                         pos=[pos[0],pos[1],pos[1]]
-                dict[id]=map(float,pos)
+                dict[id]=np.array(list(map(float,pos)))
     return dict
 
 class snapshot():
