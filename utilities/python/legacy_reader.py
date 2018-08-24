@@ -13,7 +13,7 @@ import numpy as np
 mesh_types = {1: 'Cartesian',
               2: 'spherical',
               3: 'cylindrical',}
-mesh_types_r = {v: k for k, v in mesh_types.iteritems()}
+mesh_types_r = {v: k for k, v in mesh_types.items()}
 
 def get_mesh_type(current_mesh_type):
     """

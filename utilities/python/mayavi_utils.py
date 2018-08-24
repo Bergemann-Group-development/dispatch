@@ -1,3 +1,6 @@
+# Pythn 2/3 compatibility
+from __future__ import print_function
+
 import matplotlib.mlab as mml
 import mayavi.mlab as ml
 import numpy as np
@@ -16,8 +19,8 @@ def mayavi_utils():
     Type e.g. spin?<RETURN> for iPython help, or spin( for 
     pop-up help in Canopy.
     '''
-    print "Type mayavi_utils?<RETURN> for help text, or \
-mayavi_utils( for pop-up help in Canopy"
+    print("Type mayavi_utils?<RETURN> for help text, or \
+mayavi_utils( for pop-up help in Canopy")
  
 @ml.animate(delay=30)
 def spin():
@@ -92,7 +95,7 @@ def spin_movie(dir='anim',n=360):
         g.scene.render()
         ml.show()
         file=dir+'/im_{:03d}.png'.format(i)
-        print file
+        print(file)
         yield
         #ml.savefig(file)
 
