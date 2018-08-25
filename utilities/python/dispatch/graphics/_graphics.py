@@ -15,7 +15,8 @@ def _kw_extract(kw,dict):
         dict[key]=kw.pop(key,value)
     return kw,dict
 
-def imshow(f,colorbar=None,origin='lower',interpolation='nearest',verbose=0,**kw):
+def imshow(f,colorbar=None,origin='lower',interpolation='nearest',
+           cmap='coolwarm',verbose=0,**kw):
     """
         imshow with default options and updateable colorbar.  Example use:
 
@@ -32,7 +33,7 @@ def imshow(f,colorbar=None,origin='lower',interpolation='nearest',verbose=0,**kw
     """
     if verbose>0:
         print ('min:',f.min(),' max:',f.max())
-    pl.imshow(np.transpose(f),origin=origin,interpolation=interpolation,**kw)
+    pl.imshow(np.transpose(f),origin=origin,interpolation=interpolation,cmap=cmap,**kw)
     if type(colorbar)==matplotlib.colorbar.Colorbar:
         colorbar.set_clim(f.min(),f.max())
         colorbar.draw_all()
