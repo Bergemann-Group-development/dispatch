@@ -34,10 +34,10 @@ class SI:
     c=2.9979e8
     stefan=5.6704e-5
 
-def scaling(units=cgs,verbose=0):
+def scaling(type='ISM',units=cgs,verbose=0,mu=2):
     '''
     Return a structure with scaling constants.  Use e.g.
-    
+
         scgs=scaling(cgs)
         sSI=scaling(SI)
         print (cgs.k_b, SI.k_b)
@@ -46,14 +46,20 @@ def scaling(units=cgs,verbose=0):
         print("using "+units.name+" units")
     class s:
         system=units.name
-        l=units.pc
-        d=1e-24
+        if type=='ISM':
+            l=units.pc
+            d=1e-24
+            v=1e5
+            t=l/v
+        elif type=='solar':
+            l=1e8
+            t=1e2
+            d=1e-7
+            v=l/t
         m=d*l**3
-        v=1e5
-        t=l/v
         p=d*v**2
         g=units.grav*d*t**2
         u=units.kms
         e=m*u**2
-        temp = units.mu*(units.m_u/m)/(units.k_b/e)
+        temp = mu*(units.m_u)/(units.k_b)*v**2
     return s
