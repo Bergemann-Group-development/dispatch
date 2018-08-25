@@ -16,23 +16,23 @@ def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
     """
     if type(iv)==type('d'):
         if iv=='u1':
-            p=unigrid_plane(snap,iv='p1',position=position,dir=dir,\
+            pi=unigrid_plane(snap,iv='p1',position=position,dir=dir,\
               verbose=verbose)
             d=unigrid_plane(snap,iv='d',position=position,dir=dir,\
               verbose=verbose)
-            return p/d
+            return pi/d
         if iv=='u2':
-            p=unigrid_plane(snap,iv='p2',position=position,dir=dir,\
+            pi=unigrid_plane(snap,iv='p2',position=position,dir=dir,\
               verbose=verbose)
             d=unigrid_plane(snap,iv='d',position=position,dir=dir,\
               verbose=verbose)
-            return p/d
+            return pi/d
         if iv=='u3':
-            p=unigrid_plane(snap,iv='p3',position=position,dir=dir,\
+            pi=unigrid_plane(snap,iv='p3',position=position,dir=dir,\
               verbose=verbose)
             d=unigrid_plane(snap,iv='d',position=position,dir=dir,\
               verbose=verbose)
-            return p/d
+            return pi/d
         iv=snap.idx.dict[iv]
     assert dir<3, 'dir must be in the range 0-2'
     if type(position)==type(1.0) or type(position)==type(1):
@@ -42,7 +42,7 @@ def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
     position=np.array(position)
     def contains(p,s):
         return np.abs(p.position[dir]-s) <= 0.5*p.size[dir]
-    pp=[p for p in snap.patches if contains(p,p.position[dir])]
+    pp=[p for p in snap.patches if contains(p,position[dir])]
     n=list(map(int,0.5+snap.cartesian.size/snap.patches[0].ds))
     if verbose:
         print (len(pp),'patches, dimensions',n)

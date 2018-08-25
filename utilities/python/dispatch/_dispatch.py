@@ -121,11 +121,20 @@ def _var(patch,filed,verbose=0):
         patch.offset.append(offset)
         if verbose==5:
             print (' iv, offset:',iv,patch.iout,patch.ntotal,patch.nv,offset)
-    def var(iv):
+    def mem(iv):
         if type(iv)==type('d'):
             iv=patch.idx.dict[iv]
-        return np.memmap(filed, dtype=np.float32, offset=patch.offset[iv],
-                         mode='r', order='F', shape=shape)
+        return np.copy(np.memmap(filed, dtype=np.float32, offset=patch.offset[iv],
+                         mode='r', order='F', shape=shape))
+    def var(iv):
+        if   iv=='u1':
+            return mem('p1')/mem('d')
+        elif iv=='u2':
+            return mem('p2')/mem('d')
+        elif iv=='u3':
+            return mem('p3')/mem('d')
+        else:
+            return mem(iv)
     return var
 
 class _patch():
@@ -161,7 +170,7 @@ class _patch():
         setattr(self,'o',_param())
         self.data={}
         for k,v in self.idx.vars.items():
-            self.data[k]=np.copy(self.var(v))
+            self.data[k]=self.var(v)
             self.data[v]=self.data[k]
             setattr(self.o,v,self.data[v])
         if verbose:

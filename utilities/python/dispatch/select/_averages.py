@@ -60,7 +60,7 @@ def maxloc(a):
 
 def _patches(s):
     """ Allow a snapshot, a patch, or a list of patches """
-    if type(s)==types.InstanceType:
+    if hasattr(s,'dict'):
         pp=s.patches
     elif isinstance(s,dispatch._dispatch._patch):
         pp=[s]
@@ -145,17 +145,29 @@ def haver1(s,iv=0,point=0.0,dir=2,verbose=0):
         print('using',n,'patches')
     return f/v
 
+def map_var(p,iv):
+    jv=iv
+    if iv=='u1': 
+        jv=p.idx.dict['p1']
+    if iv=='u2': 
+        jv=p.idx.dict['p2']
+    if iv=='u3': 
+        jv=p.idx.dict['p3']
+    elif type(iv)==type('d'):
+        jv=p.idx.dict[iv]
+    return jv
+
 def hminmax(s,iv=0,dir=2,verbose=0):
     """ Horizontal average """
-    if type(iv)==type('d'):
-        iv=s.idx.dict[iv]
     pp=_patches(s)
+    p=pp[0]
     xx=[]
     hmin=[]
     hmax=[]
+    jv=map_var(p,iv)
     for p in pp:
         rr=p.xyz[dir]
-        data=p.data[iv] if hasattr(p,'data') else p.var(iv)
+        data=p.data[jv] if hasattr(p,'data') else p.var(iv)
         for i in range(len(rr)):
             if dir==0:
                 f=data[i,:,:]
@@ -198,14 +210,14 @@ def hminmax(s,iv=0,dir=2,verbose=0):
 
 def haver(s,iv=0,dir=2,verbose=0):
     """ Horizontal average in all planes """
-    if type(iv)==type('d'):
-        iv=s.idx.dict[iv]
     pp=_patches(s)
+    p=pp[0]
     xx=[]
     hav=[]
+    jv=map_var(p,iv)
     for p in pp:
         es=0.5 if p.no_mans_land else 0.0
-        es=es+p.idx.h[dir,iv]
+        es=es+p.idx.h[dir,jv]
         rr=p.llc_cart[dir]+p.ds[dir]*(np.arange(p.n[dir])+es)
         data=p.data[iv] if hasattr(p,'data') else p.var(iv)
         for i in range(len(rr)):
