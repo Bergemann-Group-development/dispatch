@@ -138,12 +138,13 @@ def _var(patch,filed,verbose=0):
     return var
 
 class _patch():
-    def __init__(self,id,pos,snap):
+    def __init__(self,id,pos,dtime,snap):
         # add attributes from snapshot_nml
         for k,v in snap.dict.items():
             setattr(self,k,v)
         self.id=id
         self.position=pos
+        self.dtime=dtime
         # add idx attribute
         if hasattr(snap,'idx'):
             self.idx=snap.idx
@@ -187,6 +188,8 @@ object takes both numeric and text key values: Examples:\n\
 
 def parse_patches(file='data/00000/rank_00000_patches.nml'):
     dict={}
+    class props():
+        pass
     with open(file,'r') as fd:
         for line in fd:
             # strip commas and equal sign from line and split
@@ -194,6 +197,7 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
             items=line.split()
             if items[0]=='ID':
                 id=int(items[1])
+                p=props()
             elif items[0]=='POSITION':
                 pos=items[1:]
                 if len(pos)==1:
@@ -206,7 +210,10 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
                     if pos[1].find('2*')>=0:
                         pos[1]=pos[1].replace('2*','')
                         pos=[pos[0],pos[1],pos[1]]
-                dict[id]=np.array(list(map(float,pos)))
+                p.pos=np.array(list(map(float,pos))) 
+            elif items[0]=='DTIME':
+                p.dtime=float(items[1])
+                dict[id]=p
     return dict
 
 class snapshot():
@@ -265,7 +272,7 @@ class snapshot():
                 print ('parsing',file)
             dict=parse_patches(file)
             for id in sorted(dict.keys()):
-                p=_patch(id,dict[id],self)
+                p=_patch(id,dict[id].pos,dict[id].dtime,self)
                 self._add_axes(p)
                 self.patches.append(p)            # Add array of patch instances
 
