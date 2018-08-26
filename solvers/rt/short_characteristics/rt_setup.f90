@@ -38,8 +38,9 @@ SUBROUTINE rt_setup (task_list)
   class(patch_t), pointer:: patch
   class(task_list_t), pointer:: rt_task_list
   integer:: i_omega, ntask, iter, iostat
-  integer, save:: verbose=0, n_warmup=5
-  namelist /rt_setup_params/ n_warmup
+  integer, save:: verbose=0, n_warmup=5, n_omega=0
+  real(8):: boundary_distance
+  namelist /rt_setup_params/ n_warmup, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_setup')
   !-----------------------------------------------------------------------------
@@ -62,6 +63,11 @@ SUBROUTINE rt_setup (task_list)
       mhd => task
       call io%assert (associated(mhd%link%task), 'mhd%link%task missing')
       !-------------------------------------------------------------------------
+      ! Measure distance from lower or upper boundary, in patch size units
+      !-------------------------------------------------------------------------
+      boundary_distance = min(mhd%position(3)-task_list%lc(3), &
+                              task_list%uc(3)-mhd%position(3))/mhd%size(3)
+      !-------------------------------------------------------------------------
       ! Add nbor lists to the sub-tasks
       !-------------------------------------------------------------------------
       call mhd%init_nbors
@@ -82,8 +88,10 @@ SUBROUTINE rt_setup (task_list)
       ! Prepend subtasks to the MHD task nbor list, prepend the MHD task to the
       ! subtask nbor list, and finally append the sub-task link to the task list
       !-------------------------------------------------------------------------
+      n_omega = mhd%n_omega
       do i_omega=1,mhd%n_omega
         omega => mhd%omega(i_omega)
+        omega%parent => mhd
         if (verbose > 1) &
           print *,'appending task', omega%id, omega%nw, omega%it, omega%new
         call io%assert (associated(omega%link), 'omega%link missing')
@@ -99,6 +107,7 @@ SUBROUTINE rt_setup (task_list)
         omega%link%nbor%needs_me = .true.
         ! -- include RT sub-task in check_ready() of MHD task
         omega%link%nbor%needed = .true.
+        omega%rt_next = (1.0-boundary_distance*0.5)*mhd%rt_time
         !-----------------------------------------------------------------------
         call omega%clear (bits%ready)
         call rt_task_list%append_link (omega%link)
@@ -108,10 +117,14 @@ SUBROUTINE rt_setup (task_list)
       call link%print_nbors
     link => link%next
   end do
+  if (associated(omega)) then
+    patch => omega
+    call data_io%register_kind (patch)
+  end if
   !-----------------------------------------------------------------------------
   ! EOS for warm up
   !-----------------------------------------------------------------------------
-   print *, 'EOS for warm-up'
+  print *, 'EOS for warm-up'
   link => task_list%head
   do while (associated(link))
     task => link%task
@@ -124,9 +137,7 @@ SUBROUTINE rt_setup (task_list)
   !-----------------------------------------------------------------------------
   ! Merge task lists, if RT is present
   !-----------------------------------------------------------------------------
-  if (associated(omega)) then
-    patch => omega
-    call data_io%register_kind (patch)
+  if (n_omega>0) then
     if (verbose > 1) &
       call rt_task_list%print ('rt_task_list')
     call task_list%append_task_list (rt_task_list)

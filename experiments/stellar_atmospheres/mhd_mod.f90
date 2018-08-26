@@ -139,7 +139,7 @@ SUBROUTINE pde (self)
   !.............................................................................
   real, dimension(:,:,:),   pointer:: d, e, dddt, dedt
   real, dimension(:,:,:),   pointer:: dpdtx, dpdty, dpdtz, dBdtx, dBdty, dBdtz
-  real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi
+  real, dimension(:,:,:),   pointer:: Bx, By, Bz, px, py, pz, phi, qr
   real, dimension(:,:,:),   pointer:: Ux, Uy, Uz, pg
   real, dimension(:,:,:,:), pointer:: U, p, B, dpdt, dBdt
   real, dimension(:,:,:),   pointer:: Ex, Ey, Ez, Jx, Jy, Jz
@@ -251,11 +251,11 @@ SUBROUTINE pde (self)
     ! Magnetic pressure
     pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
-    if (verbose>3) then
+    if (verbose>3 .or. self%id==io%id_debug) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      print 1, 'u_max(ca)  ', u_max, self%u_max
-    1 format(1x,a,1p,2g12.3)
+      print 1, self%id, self%time, 'u_max(ca)  ', u_max, self%u_max
+    1 format(i7,f12.6,1x,a,1p,2g12.3)
     end if
     ! Isotropic pressure part
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
@@ -267,10 +267,10 @@ SUBROUTINE pde (self)
   else
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
-    if (verbose>3) then
+    if (verbose>3 .or. self%id==io%id_debug) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      print 1, 'u_max(cs)  ', u_max, self%u_max
+      print 1, self%id, self%time, 'u_max(cs)  ', u_max, self%u_max
     end if
     pp = pg + pa                                                                ! ops: 1 0 0
     du = (dsmax*self%nu(1))*(cs + 2.*uu)                                        ! ops: 0 2 0
@@ -284,7 +284,7 @@ SUBROUTINE pde (self)
   end if
   u_max = self%fmaxval(cs+uu)
   self%u_max = max(self%u_max,u_max)
-  if (verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
+  if (verbose>2 .or. self%id==io%id_debug) print 1, self%id, self%time, 'u_max(cs+u)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! du has units area per unit time, which gives velocity squared times mass
   ! density per unit time = energy per unit volume and time
@@ -300,7 +300,7 @@ SUBROUTINE pde (self)
   dddt = -div(ds,fm)                                    ! density derivative
   u_max = self%cdtd*dsmax*self%fmaxval(abs(dddt/d))                             ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
-  if (verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
+  if (verbose>2 .or. self%id==io%id_debug) print 1, self%id, self%time, 'u_max(dddt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -419,15 +419,20 @@ SUBROUTINE pde (self)
   ! Radiative heating / cooling, if any
   !-----------------------------------------------------------------------------
   if (self%idx%qr > 0) then
-    dedt = dedt + self%mem(:,:,:,self%idx%qr,self%it,1)
+    qr => self%mem(:,:,:,self%idx%qr,self%it,1)
+    dedt = dedt + qr
+    if (verbose>2 .or. self%id==io%id_debug) then
+      u_max = self%cdtd*dsmax*self%fmaxval(abs((qr-ee*dddt)/d))
+      print 1, self%id, self%time, 'u_max(qrad)', u_max, self%u_max
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
   !-----------------------------------------------------------------------------
   if (self%gamma /= 1d0) then
-    u_max = self%cdtd*dsmax*self%fmaxval(abs((dedt-ee*dddt)/d)) ! ops: 1 1 1
+    u_max = self%cdtd*dsmax*self%fmaxval(abs((dedt-ee*dddt)/d))
     self%u_max = max(self%u_max,u_max)
-    if (verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
+    if (verbose>2 .or. self%id==io%id_debug) print 1, self%id, self%time, 'u_max(dedt)', u_max, self%u_max
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors_a (ld, dd, emf, J, fd, fx, fy, fz, fm)

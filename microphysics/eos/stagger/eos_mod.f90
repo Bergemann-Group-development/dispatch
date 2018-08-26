@@ -19,7 +19,7 @@ MODULE eos_mod
   real(kind=4), allocatable, dimension(:):: tmean,tamp,rhm,xcorr,thmin,thmax, &
     dth,eemin,eemax,deetab,tab
   integer, allocatable, dimension(:):: itab,mtab
-  integer, save:: nbelow=0, ncall=0, mbox
+  integer, save:: ncall=0, mbox
   character(len=64):: top, tablefile, file
   logical, save:: do_eos
   logical, save:: first_time=.true.
@@ -211,7 +211,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
   real    :: qx,qy,pxqx,pxpx,qxqx,pypy,pyqy,qyqy,pxpy,qxqy,pxqy,qxpy
   logical :: newtable
   integer :: ix,iy,iz,kee,kee1,j
-  integer :: mx,my,mz,mbox
+  integer :: mx,my,mz,mbox,nbelow_d, nbelow_e
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Allocate temporary arrays
@@ -255,6 +255,8 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
   !-----------------------------------------------------------------------------
   ! Loop over points
   !-----------------------------------------------------------------------------
+  nbelow_d = 0
+  nbelow_e = 0
   do iz=1,mz
   do iy=1,my
     !---------------------------------------------------------------------------
@@ -262,6 +264,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
     !---------------------------------------------------------------------------
     do ix=1,mx
       algrk=1.+(lnd_loc(ix,iy,iz)-rhm1)/drhm
+      nbelow_d = nbelow_d + merge(1,0,lnd_loc(ix,iy,iz)<rhm1)
       np(ix)=max0(1,min0(md-1,int(algrk)))
       px(ix)=algrk-np(ix)
     end do
@@ -271,12 +274,12 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
       !-------------------------------------------------------------------------
       ntab(ix)   = mtab(np(ix))
       eek       = 1.+(ee_loc(ix,iy,iz)-eemin(np(ix)))/deetab(np(ix))
-      nbelow    = nbelow + merge(1,0,eek<1.0)           ! FIXME
+      nbelow_e  = nbelow_e + merge(1,0,eek<1.0)         ! FIXME
       eek       = max(eek,1.0)                          ! FIXME
       kee       = min(ntab(ix)-1,max(1,int(eek)))
-      py(ix)     = eek-kee
-      ik(ix)     = itab(np(ix))+kee-1
-      ntab1(ix)  = mtab(np(ix)+1)
+      py(ix)    = eek-kee
+      ik(ix)    = itab(np(ix))+kee-1
+      ntab1(ix) = mtab(np(ix)+1)
       kee1      = kee - nint((eemin(np(ix)+1)-eemin(np(ix))) &
                                             /deetab(np(ix)))
       kee1      = min0(ntab1(ix)-1,max0(1,kee1))
@@ -286,7 +289,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
       ! it never panics
       !-------------------------------------------------------------------------
       eek1      = 1.+(ee_loc(ix,iy,iz)-eemin(np(ix)+1))/deetab(np(ix)+1)
-      nbelow    = nbelow + merge(1,0,eek1<kee1)         ! FIXME
+      nbelow_e  = nbelow_e + merge(1,0,eek1<kee1)       ! FIXME
       eek1      = max(eek1,real(kee1))                  ! FIXME
       py1       = eek1-kee1
     end do
@@ -430,6 +433,9 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
     end if
   end do
   end do
+  if (nbelow_d+nbelow_e > 0) then
+    print *,'WARNING: number of points below table d & e:', nbelow_d, nbelow_e
+  end if
   if (present(d)) then
     deallocate (lnd_loc)
     nullify (lnd_loc)

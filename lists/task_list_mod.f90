@@ -246,8 +246,8 @@ SUBROUTINE update (self, head, test, was_refined)
       !$omp atomic
       n_update = n_update + product(task%n)
     end select
-    call task%info (self%nq, self%na)                   ! print info on stdout
   end if
+  call task%info (self%nq, self%na)                   ! print info on stdout
   !-----------------------------------------------------------------------------
   ! Tasks that have finished are subtracted from the task list count but are
   ! not removed, since their data may be needed by other tasks (including on

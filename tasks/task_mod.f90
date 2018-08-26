@@ -268,6 +268,13 @@ SUBROUTINE rotate (self)
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
   nullify (rptr, iptr)
   self%rotated = .true.
+  ! if (self%nt==5) then
+    ! print '(i6,1x,a,i4,2x,5i3,2(2x,5f8.4))', self%id, 'rotate5', &
+    ! self%it, self%iit, self%dt, self%t
+  ! else
+    ! print '(i6,1x,a,i4,2x,4i3,2(2x,4f8.4))', self%id, 'rotate4', &
+    ! self%it, self%iit, self%dt, self%t
+  ! end if
   !$omp end critical (queue_cr)
   call trace_end (itimer)
 END SUBROUTINE rotate

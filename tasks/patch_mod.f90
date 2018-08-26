@@ -1501,8 +1501,9 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (self%nt>1) then
     if (io%verbose>2 .or. (self%istep>3 .and. &
         dtime < 0.5*self%dt(self%iit(self%nt-2)) .and. self%dt_fixed < 0.0)) &
-      print '(a,i6,1p,3g11.2,2x,3g11.2)', ' courant: id, dt, cdt, u_max, ds =', &
-        self%id, dtime, courant, self%u_max, ds
+      print '(i6,a,i3,1p,3g11.2,2x,8g11.2)', self%id, &
+        ' courant: it, dtm, cdt, u_max, dt =', &
+        self%it, dtime, courant, self%u_max, self%dt(self%iit)
   end if
   !-----------------------------------------------------------------------------
   ! Force the time step to give exactly sync_time if within reach
@@ -2005,13 +2006,14 @@ END SUBROUTINE log_interpolate
 !> Search for a time interval to interpolate in, and return the time
 !> slot indices and weight factors
 !> =====================================================================
-SUBROUTINE time_interval (self, time, jt, pt)
+SUBROUTINE time_interval (self, time, jt, pt, all)
   class (patch_t)                 :: self
   real(8)                         :: time
   integer                         :: jt(2)
   real                            :: pt(2)
+  logical, optional               :: all
   !.....................................................................
-  integer                         :: i, j
+  integer                         :: i, j, n
   real(8)                         :: t(self%nt), dt
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
@@ -2022,7 +2024,8 @@ SUBROUTINE time_interval (self, time, jt, pt)
   else
     t = self%t(self%iit)
     j = 1
-    do i=1,self%nt-2
+    n = merge(self%nt-1, self%nt-2, present(all))    
+    do i=1,n
       if (t(i) < time) j=i
     end do
     jt = self%iit(j:j+1)
