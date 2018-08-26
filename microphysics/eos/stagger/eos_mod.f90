@@ -407,8 +407,6 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
         )
       end do
     end if
-    ik  = ik  + 3*ntab
-    ik1 = ik1 + 3*ntab1
     !---------------------------------------------------------------------------
     if (present(src)) then
       do j=1,size(src,4)
