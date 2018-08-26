@@ -30,31 +30,21 @@ MODULE IC_mod
   contains
     procedure, nopass:: init
   end type
-  integer, save:: verbose=1
+  logical, save:: do_ic=.true.
+  character(len=64), save:: file='mhd63'
   integer, save:: order=2
+  integer, save:: verbose=1
+  real, save:: b0=1
   type(ic_t), public:: ic
 CONTAINS
 
 !> =============================================================================
-!> Initialize from a legacy raw data file, with auxiliary grid file
 !> =============================================================================
 SUBROUTINE init (task_list)
   type(task_list_t), pointer:: task_list
-  !.............................................................................
-  class(link_t), pointer:: link
-  class(patch_t), pointer:: patch
-  class(mesh_t), pointer, dimension(:):: m
-  integer:: n(3), iv, iiv, recl, ix, iy, iz, iostat
-  integer:: mx, my, mz, nx, ny, nz, nv, ii(9)
-  real, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn
-  real, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn
-  real, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn
-  real, dimension(:,:,:), allocatable:: rbuf, buffer
-  character(len=64):: file='mhd63'
-  namelist /ic_params/ file, order, verbose
-  integer, save:: itimer=0
+  integer:: iostat
+  namelist /ic_params/ do_ic, file, order, verbose, b0
   !-----------------------------------------------------------------------------
-  call trace_begin('ic_mod%init', itimer=itimer)
   rewind (io%input)
   read (io%input, ic_params, iostat=iostat)
   if (io%master) then
@@ -62,6 +52,27 @@ SUBROUTINE init (task_list)
   else
     verbose = 0
   end if
+  if (do_ic) call read_stagger(task_list)
+END SUBROUTINE init
+
+!> =============================================================================
+!> Read a legacy Stagger raw data file, with auxiliary grid file
+!> =============================================================================
+SUBROUTINE read_stagger (task_list)
+  type(task_list_t), pointer:: task_list
+  !.............................................................................
+  class(link_t), pointer:: link
+  class(patch_t), pointer:: patch
+  class(mesh_t), pointer, dimension(:):: m
+  integer:: n(3), iv, iiv, recl, ix, iy, iz
+  integer:: mx, my, mz, nx, ny, nz, nv, ii(9)
+  real, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn
+  real, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn
+  real, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn
+  real, dimension(:,:,:), allocatable:: rbuf, buffer
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace_begin('ic_mod%init', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Pick up patch info from task_list
   !-----------------------------------------------------------------------------
@@ -160,10 +171,19 @@ SUBROUTINE init (task_list)
   close (io_unit%data)
   deallocate (rbuf, buffer)
   deallocate (xm,ym,zm,xmdn,ymdn,zmdn)
+  !-----------------------------------------------------------------------------
+  ! Reset the vertical magnetic field
+  !-----------------------------------------------------------------------------
+  link => task_list%head
+  do while (associated(link))
+    patch => task2patch(link%task)
+    patch%mem(:,:,:,patch%idx%bz,1,1) = b0
+    link => link%next
+  end do
   if (io%master) &
     print *,'ic_t%init finished'
   call trace_end
-END SUBROUTINE init
+END SUBROUTINE read_stagger
 
 !> =============================================================================
 !> Thread safe interpolation work, where only iv, patch, ff changes in the calls
