@@ -186,7 +186,7 @@ SUBROUTINE input (self, patch, ok)
   call trace%begin ('data_io_t%input')
   call self%init (patch)
   ok = .false.
-  if (patch%restart > 0) then
+  if (io%restart > 0) then
     if      (io%method=='direct') then
       call direct_io%input (patch, ok)
     else if (io%method=='legacy') then
@@ -198,11 +198,11 @@ SUBROUTINE input (self, patch, ok)
     end if
   end if
   if (ok) then
-    count = counters%decrement (patch%restart+1, io%ntask)
+    count = counters%decrement (io%restart+1, io%ntask)
     if (count==0 .and. mpi%master) then
       print '(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)', &
         trim(io%method)//'_io:input', &
-        'snapshot '//trim(io%outputname), patch%restart, patch%time
+        'snapshot '//trim(io%outputname), io%restart, patch%time
     end if
     patch%t(patch%it) = patch%time
   end if
@@ -283,11 +283,11 @@ SUBROUTINE output_nml (patch, append)
   logical              :: guard_zones, time_derivs, no_mans_land, periodic(3)
   character(len=16)    :: kind, eos, opacity
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs
-  namelist /snapshot_nml/ ioformat, iout, time, dtime, ntotal, istep, mesh_type, &
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, ntotal, kind, eos, opacity, periodic, guard_zones, &
     time_derivs, no_mans_land
-  namelist /patch_nml/ id, position
+  namelist /patch_nml/ id, position, dtime
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------

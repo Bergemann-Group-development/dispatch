@@ -343,6 +343,7 @@ SUBROUTINE init_default (self)
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
+    restart = io%restart
     rewind (io%input)
     read (io%input, patch_params)
     if (io%master) write (*, patch_params)

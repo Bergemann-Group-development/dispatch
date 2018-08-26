@@ -40,14 +40,14 @@ SUBROUTINE init (patch)
   logical:: exists
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%init')
-  if (patch%restart > 0) then
-    filename=trim(io%outputname)//'snapshots.dat'
+  if (io%restart > 0) then
+    filename=trim(io%inputdir)//'snapshots.dat'
     inquire (file=filename, exist=exists)
     if (.not.exists) then
-      filename=trim(io%outputname)//'00000/snapshot.dat'
+      filename=trim(io%inputdir)//'00000/snapshot.dat'
       inquire (file=filename, exist=exists)
       if (.not.exists) then
-        if (io%master) print *, 'neither '//trim(io%outputname) &
+        if (io%master) print *, 'neither '//trim(io%inputdir) &
           //'snapshots.dat, nor '//trim(filename)//' exist'
         call mpi%abort()
       end if
@@ -269,9 +269,9 @@ SUBROUTINE input (patch, ok)
   !-----------------------------------------------------------------------------
   allocate (buffer(n(1),n(2),n(3),nv))
   if (io%time_derivs) then
-    call thread_io%read (buffer, 1+patch%restart, 1 + 2*(patch%id-1))
+    call thread_io%read (buffer, 1+io%restart, 1 + 2*(patch%id-1))
   else
-    call thread_io%read (buffer, 1+patch%restart, 1 +   (patch%id-1))
+    call thread_io%read (buffer, 1+io%restart, 1 +   (patch%id-1))
   end if
   if (thread_io%err /= 0) then
     ok = .false.
@@ -285,8 +285,12 @@ SUBROUTINE input (patch, ok)
               patch%li(2):patch%ui(2), &
               patch%li(3):patch%ui(3),:,patch%it,1) = buffer
   end if
-  if (verbose>0) &
-      write (io_unit%mpi,*) 'RD', patch%id, patch%iout, minval(buffer), maxval(buffer)
+  if (io%verbose>1) then
+    do iv=1,patch%nv
+      write (io_unit%output,*) 'parallel_io_t%input: id, iv, iout, min, max =', &
+        patch%id, iv, patch%iout, patch%fminval(iv), patch%fmaxval(iv)
+    end do
+  end if
   deallocate (buffer)
   !-----------------------------------------------------------------------------
   ! Restore to momentum variables for RAMSES snapshots
@@ -302,7 +306,7 @@ SUBROUTINE input (patch, ok)
   ! Signal success
   !-----------------------------------------------------------------------------
   ok = .true.
-  patch%time = patch%restart*io%out_time
+  patch%time = io%restart*io%out_time
   if (io%verbose==1) print '(a,2i6,1p,e16.6)', ' parallel_io_t%input: iout, id, time =', &
     patch%iout, patch%id, patch%time
   if (io%verbose>1) print '(a,4i6,2i7)', &

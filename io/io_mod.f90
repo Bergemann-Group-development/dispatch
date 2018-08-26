@@ -18,10 +18,12 @@ MODULE io_mod
     character(len=16):: method='legacy'
     integer:: levelmax
     integer:: word_size=4
-    integer:: iodir = -1
+    integer:: iodir=-1
     integer:: format=0
+    integer:: restart=-1
     integer:: nwrite=0, ntask=0, ntotal=0
-    character(len=64):: inputname, outputname, datadir='data', top, inputdir
+    character(len=64):: inputname, outputname, datadir='data', top
+    character(len=64):: rundir='data', inputdir='data'
     character(len=1):: sep = '/'
     character(len=72):: hl='-------------------------------------------------------------------------'
     character(len=72):: hs='*************************************************************************'
@@ -80,16 +82,16 @@ SUBROUTINE init (self, name)
   'io_mod.f90 $Id$'
   integer, save:: verbose=0, levelmax=10
   character(len=*), optional:: name
-  character(len=64):: filename, datadir='data'
+  character(len=64):: filename, datadir='data', inputdir='data'
   character(len=64), save:: top='../../'
   character(len=8), save:: method='legacy'
-  integer, save:: id_debug=-1
+  integer, save:: id_debug=-1, restart=-9
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.false., do_flags=.false., do_direct=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
     do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, top, &
-    datadir, method
+    datadir, inputdir, method, restart
   real:: test
   integer:: iostat
   !.............................................................................
@@ -116,15 +118,20 @@ SUBROUTINE init (self, name)
     call getarg(1,filename)                                     ! command line
     if (filename/=' '.and.trim(filename)/='input.nml') then
       self%inputname = filename                                 ! run_name.nml
-      self%outputname = trim(datadir)//self%sep// &             ! data/run_name/
+      self%rundir = trim(datadir)//self%sep// &                 ! data/run_name/
         trim(filename(1:index(filename,'.')-1))//self%sep
     else
       self%inputname = 'input.nml'
-      self%outputname = trim(datadir)//self%sep                 ! data/
+      self%rundir = trim(datadir)//self%sep                     ! data/
     end if
-    call os%mkdir (trim(self%outputname))
-    open (io_unit%nml, file=trim(self%outputname)//'params.nml', form='formatted', status='unknown')
+    self%outputname = self%rundir                               ! compatibility
+    call os%mkdir (trim(self%rundir))
+    open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
+    !---------------------------------------------------------------------------
+    ! Read io_params namelist
+    !---------------------------------------------------------------------------
+    inputdir = self%rundir
     rewind (io_unit%input)
     read (io_unit%input, io_params, iostat=iostat)
     if (self%master.and.first_time) write (*,io_params)
@@ -133,11 +140,14 @@ SUBROUTINE init (self, name)
       print'(a,i4)', '   n_core =', omp%ncores
       print'(a,i4)', ' n_thread =', omp_nthreads
     end if
+    self%inputdir = inputdir
     !---------------------------------------------------------------------------
     ! OMP specific setup
     !---------------------------------------------------------------------------
     !$omp parallel
     !$omp critical (open_cr)
+    io_unit%rundir = self%rundir
+    io_unit%inputdir = self%inputdir    
     io_unit%outputname = self%outputname
     if (omp%master) then
       io_unit%verbose = verbose
@@ -180,6 +190,7 @@ SUBROUTINE init (self, name)
     end if
     first_time=.false.
   end if
+  self%restart   = restart
   self%datadir   = datadir
   self%id_debug  = id_debug
   self%verbose   = verbose

@@ -175,10 +175,14 @@ SUBROUTINE init (self)
     self%time = restart_time
     self%t(self%it) = self%time
     self%out_next = (int(self%time/io%out_time+1.0e-4)+1)*io%out_time ! add an `eps` to avoid round-off errors
-    self%iout = self%restart+1
+    self%iout = io%restart+1
     !$omp master
-    write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout
-    if (io%iodir/=self%iout) call os%mkdir (trim(filename))
+    write (filename,'(a,i5.5,"/")') trim(io%rundir), self%iout
+    if (io%iodir/=self%iout) then
+      print *,'gpatch_t%init: mkdir ', filename
+      call os%mkdir (trim(filename))
+    end if
+    !$omp atomic write
     io%iodir = self%iout
     !$omp end master
   end if
