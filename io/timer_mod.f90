@@ -30,6 +30,7 @@ MODULE timer_mod
     integer:: istack=0
     real(8):: bytes_recv=0.0_8
     real(8):: sec_per_report=10d0
+    integer(8):: n_update=0
     integer(8):: n_recv=0_8, n_test=0_8
     integer:: nq_send_max=0
     integer:: nq_recv_max=0
@@ -53,13 +54,12 @@ MODULE timer_mod
   integer, save:: nprint=20
   real(8), save:: next_report_sec=0d0
   real(8), save:: prev2=0d0
-  integer(8), save:: n_update=0
   interface toc
     module procedure toc_i4, toc_i8, toc_1
   end interface
   real(8), save:: wt=0d0
   !$omp threadprivate (wt)
-  public tic, toc, n_update
+  public tic, toc
 CONTAINS
 
 !> =============================================================================
@@ -239,7 +239,7 @@ SUBROUTINE real_print ()
   ! ghost cells) across *all* threads.
   ! `musppt` is defined to be the number of microseconds per update per thread.
   !-----------------------------------------------------------------------------
-  updates = max(1.0,real(n_update-n_previous))
+  updates = max(1.0,real(timer%n_update-n_previous))
   musppt = sec*1d6*min(omp%nthreads,omp%ncores)/updates
   n_recv = max(timer%n_recv,1)
   if (mpi%master) &
@@ -252,7 +252,7 @@ SUBROUTINE real_print ()
   timer%n_recv = 0_8
   timer%nq_send_max = 0
   timer%nq_recv_max = 0
-  n_previous = n_update
+  n_previous = timer%n_update
   prev2 = wc
   timer%latency%max  = 0.0
   timer%latency%aver = 0d0

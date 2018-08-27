@@ -495,7 +495,7 @@ SUBROUTINE update (self)
   ! end do
   !-----------------------------------------------------------------------------
   call self%check_density(' after timestep')
-  !call self%gpatch_t%update
+  call self%gpatch_t%update
   call trace%end (itimer)
 END SUBROUTINE update
 

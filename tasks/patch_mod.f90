@@ -1233,7 +1233,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       self%dtime, self%u_max, fmin, fmax, &
       self%fminval(self%mem(:,:,:,iv,it0,1)), &
       self%fmaxval(self%mem(:,:,:,iv,it0,1)), &
-      real(n_update), ntask, nq, self%is_set(bits%boundary), self%is_set(bits%virtual)
+      real(timer%n_update), ntask, nq, self%is_set(bits%boundary), self%is_set(bits%virtual)
     2 format(a,i8,2i4,i3,1p,e14.5,e12.4,0p,f7.2,2x,1p,2e12.4,1x,2e12.4,2x,e10.2,2i5,l3,l1,o12)
     end do
     if (self%nw==1) then
@@ -1263,7 +1263,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-            real(n_update), ntask, nq, &
+            real(timer%n_update), ntask, nq, &
             mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
             mpi_mesg%n_send, mpi_mesg%n_recv, mpi_mesg%n_unpk, mpi_mesg%n_delay, &
             mpi_mesg%nq_send, mpi_mesg%nq_recv, &
@@ -1277,7 +1277,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
               self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
               self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
               self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-              real(n_update), ntask, nq, &
+              real(timer%n_update), ntask, nq, &
               mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
               mpi_mesg%n_send, mpi_mesg%n_recv, mpi_mesg%n_unpk, mpi_mesg%n_delay, &
               mpi_mesg%nq_send, mpi_mesg%nq_recv, &
@@ -1322,7 +1322,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
               self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
               self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
               self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-              real(n_update), ntask, nq, counts, &
+              real(timer%n_update), ntask, nq, counts, &
               mpi_mesg%nq_send, mpi_mesg%nq_recv, &
               self%is_set(bits%boundary), self%is_set(bits%virtual)
             write (io_unit%log,fmt) &
@@ -1332,7 +1332,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
               self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
               self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
               self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-              real(n_update), ntask, nq, counts, &
+              real(timer%n_update), ntask, nq, counts, &
               mpi_mesg%nq_send, mpi_mesg%nq_recv, &
               self%is_set(bits%boundary), self%is_set(bits%virtual)
           end do

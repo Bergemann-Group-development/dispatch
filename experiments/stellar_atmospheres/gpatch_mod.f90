@@ -16,6 +16,7 @@ MODULE gpatch_mod
   USE mesh_mod
   USE units_mod
   USE poisson_mod
+  USE timer_mod
   USE omp_timer_mod
   USE bits_mod
   USE data_io_mod
@@ -33,6 +34,7 @@ MODULE gpatch_mod
     procedure:: input
     procedure:: output
     procedure:: init
+    procedure:: update
     procedure:: dnload
     procedure:: gravity
     !procedure:: update
@@ -270,6 +272,16 @@ SUBROUTINE update_tmp (self)
   end if
   call trace%end
 END SUBROUTINE update_tmp
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE update (self)
+  class(gpatch_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('gpatch_t%update')
+  timer%n_update = timer%n_update + product(self%n)
+  call trace%end
+END SUBROUTINE update
 
 !> =============================================================================
 !> Compute an approximate, conservative estimate of dphi/dt, which will cause

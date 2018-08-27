@@ -19,6 +19,7 @@ MODULE task_list_mod
   USE refine_mod
   USE load_balance_mod
   USE task_mesg_mod
+  USE timer_mod
   implicit none
   private
   type, public, extends(task_mesg_t):: task_list_t
@@ -144,7 +145,7 @@ SUBROUTINE execute (self)
   write (io_unit%log,*) 'thread',omp%thread,' arrived'
   flush (io_unit%log)
   !$omp end parallel
-  call toc ('wall time', n_update, time=sec)
+  call toc ('wall time', timer%n_update, time=sec)
   call mpi%barrier ('end')
   !if (io%master) &
   !  write (io_unit%log,*) 'download_differ % =', 100.*download%n_differ/ &
@@ -241,11 +242,6 @@ SUBROUTINE update (self, head, test, was_refined)
   !-----------------------------------------------------------------------------
   if (.not.task%rotated) then
     call task%rotate
-    select type (task)
-    class is (patch_t)
-      !$omp atomic
-      n_update = n_update + product(task%n)
-    end select
   end if
   call task%info (self%nq, self%na)                   ! print info on stdout
   !-----------------------------------------------------------------------------
