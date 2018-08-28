@@ -19,6 +19,7 @@
 SUBROUTINE rt_setup (task_list)
   USE io_mod
   USE io_unit_mod
+  USE mpi_mod
   USE task_list_mod
   USE list_mod
   USE link_mod
@@ -40,12 +41,17 @@ SUBROUTINE rt_setup (task_list)
   integer:: i_omega, ntask, iter, iostat
   integer, save:: verbose=0, n_warmup=5, n_omega=0
   real(8):: boundary_distance
-  namelist /rt_setup_params/ n_warmup, verbose
+  logical, save:: unique_ids=.false.
+  namelist /rt_setup_params/ n_warmup, verbose, unique_ids
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_setup')
   !-----------------------------------------------------------------------------
   rewind (io_unit%input)
   read (io_unit%input, rt_setup_params, iostat=iostat)
+  if (mpi%size > 1 .and. .not.unique_ids) then
+    print *, 'WARNING: unique_ids set to .true. when using MPI'
+    unique_ids = .true.
+  end if
   if (io%master) write (io_unit%output, rt_setup_params)
   !-----------------------------------------------------------------------------
   allocate (rt_task_list)
@@ -86,34 +92,34 @@ SUBROUTINE rt_setup (task_list)
       end do
       if (mhd%is_clear(bits%no_rt)) then
         !-----------------------------------------------------------------------
-      ! Prepend subtasks to the MHD task nbor list, prepend the MHD task to the
-      ! subtask nbor list, and finally append the sub-task link to the task list
+        ! Prepend subtasks to the MHD task nbor list, prepend the MHD task to the
+        ! subtask nbor list, and finally append the sub-task link to the task list
         !-----------------------------------------------------------------------
-      n_omega = mhd%n_omega
-      do i_omega=1,mhd%n_omega
-        omega => mhd%omega(i_omega)
-        omega%parent => mhd
-        if (verbose > 1) &
-          print *,'appending task', omega%id, omega%nw, omega%it, omega%new
-        call io%assert (associated(omega%link), 'omega%link missing')
-        call prepend_task (link%nbor, omega)
-        call io%assert (associated(mhd%link), 'mhd%link missing')
-        call io%assert (associated(mhd%link%task), 'mhd%link%task missing')
-        call prepend_task (omega%link%nbor, mhd)
-        ! -- do not download RT values to MHD task
-        link%nbor%download = .false.
-        ! -- do not download MHD values to RT task
-        omega%link%nbor%download = .false.
-        ! -- call check_ready() on RT task when MHD task updates
-        omega%link%nbor%needs_me = .true.
-        ! -- include RT sub-task in check_ready() of MHD task
-        omega%link%nbor%needed = .true.
+        n_omega = mhd%n_omega
+        do i_omega=1,mhd%n_omega
+          omega => mhd%omega(i_omega)
+          omega%parent => mhd
+          if (verbose > 1) &
+            print *,'appending task', omega%id, omega%nw, omega%it, omega%new
+          call io%assert (associated(omega%link), 'omega%link missing')
+          call prepend_task (link%nbor, omega)
+          call io%assert (associated(mhd%link), 'mhd%link missing')
+          call io%assert (associated(mhd%link%task), 'mhd%link%task missing')
+          call prepend_task (omega%link%nbor, mhd)
+          ! -- do not download RT values to MHD task
+          link%nbor%download = .false.
+          ! -- do not download MHD values to RT task
+          omega%link%nbor%download = .false.
+          ! -- call check_ready() on RT task when MHD task updates
+          omega%link%nbor%needs_me = .true.
+          ! -- include RT sub-task in check_ready() of MHD task
+          omega%link%nbor%needed = .true.
           !omega%rt_next = omega%time + (1.0-boundary_distance*0.5)*mhd%rt_time
           omega%rt_next = omega%time + mhd%rt_time
           !---------------------------------------------------------------------
-        call omega%clear (bits%ready)
-        call rt_task_list%append_link (omega%link)
-      end do
+          call omega%clear (bits%ready)
+          call rt_task_list%append_link (omega%link)
+        end do
       end if
     end select
     if (verbose > 1) &
@@ -125,18 +131,51 @@ SUBROUTINE rt_setup (task_list)
     call data_io%register_kind (patch)
   end if
   !-----------------------------------------------------------------------------
+  ! Reassign unique IDs to RT tasks
+  !-----------------------------------------------------------------------------
+  if (unique_ids) then
+    link => task_list%head
+    do while (associated(link))
+      task => link%task
+      select type (task)
+      class is (rt_t)
+        mhd => task
+        if (mhd%is_clear(bits%no_rt)) then
+          do i_omega=1,n_omega
+            omega => mhd%omega(i_omega)
+            omega%id = 0
+            call omega%task_t%init
+          end do
+        end if
+      end select
+      link => link%next
+    end do
+  end if
+  !-----------------------------------------------------------------------------
   ! EOS for warm up
   !-----------------------------------------------------------------------------
   print *, 'EOS for warm-up'
+  !$omp parallel default (shared) private(link, task)
+  !$omp single
   link => task_list%head
   do while (associated(link))
     task => link%task
     select type (task)
     class is (rt_t)
-      call task%rt_eos
+      mhd => task
+      if (task%is_clear(bits%no_rt)) then
+        !-----------------------------------------------------------------------
+        ! Spawn OMP tasks to compute EOS
+        !-----------------------------------------------------------------------
+        !$omp task default(shared) firstprivate(mhd)
+          call mhd%rt_eos
+        !$omp end task
+      end if
     end select
     link => link%next
   end do
+  !$omp end single
+  !$omp end parallel
   !-----------------------------------------------------------------------------
   ! Merge task lists, if RT is present
   !-----------------------------------------------------------------------------
