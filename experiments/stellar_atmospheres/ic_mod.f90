@@ -72,6 +72,7 @@ SUBROUTINE read_stagger (task_list)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('ic_mod%init', itimer=itimer)
+  call io%header('begin ic_mod%read_stagger: Reading legacy Stagger Code data')
   !-----------------------------------------------------------------------------
   ! Pick up patch info from task_list
   !-----------------------------------------------------------------------------

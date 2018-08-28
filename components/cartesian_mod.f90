@@ -60,6 +60,7 @@ SUBROUTINE init (self, label)
     omp_init
   !-----------------------------------------------------------------------------
   !call trace_begin ('cartesian_mod::init',itimer=itimer)
+  call io%header('begin cartesian_t%init: Cartesian patch arrangement')
   rewind (io%input); read (io%input, cartesian_params)
   if (any(per_rank/=0)) then
     where (per_rank/=0) dims=per_rank*mpi_dims

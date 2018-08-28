@@ -46,6 +46,7 @@ SUBROUTINE rt_setup (task_list)
   namelist /rt_setup_params/ n_warmup, verbose, unique_ids, only_vertical
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_setup')
+  call io%header ('begin rt_setup')
   !-----------------------------------------------------------------------------
   rewind (io_unit%input)
   read (io_unit%input, rt_setup_params, iostat=iostat)

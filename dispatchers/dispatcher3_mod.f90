@@ -126,6 +126,7 @@ SUBROUTINE execute (self, task_list, test)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher3_t%execute', itimer=itimer)
+  call io%header('begin dispatcher3_t%execute: Any opportunity dispatcher')
   call self%init (task_list)
   self%task_list    => task_list
   ! -- this spoils a list that has been doctored by e.g. rt_setup

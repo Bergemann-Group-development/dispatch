@@ -55,6 +55,7 @@ MODULE io_mod
     procedure, nopass:: namelist_warning
     procedure, nopass:: abort
     procedure, nopass:: assert
+    procedure, nopass:: header
   end type
   character(len=64), save:: inputname, outputname
   type(io_t), public:: io
@@ -408,5 +409,41 @@ SUBROUTINE assert (ok, message)
   if (.not.ok) &
     call mpi%abort (message)
 END SUBROUTINE assert
+
+!> =============================================================================
+!> Interface to mpi%abort, for modules that do not otherwise USE mpi_mod
+!> =============================================================================
+SUBROUTINE header (message)
+  character(len=*):: message
+  !.............................................................................
+  call line('')
+  call line(message)
+  call line('')
+!> =============================================================================
+contains
+  subroutine line (s)
+    character(len=*):: s
+    integer, parameter:: w=80
+    character(len=w):: buf
+    integer:: i, j, l1, l2, l
+    !-----------------------------------------------------------------------------
+    l = len_trim(s)
+    l1 = (w-l)/2-1
+    l2 = l1 + l + 1
+    j = 1
+    do i=1,w
+      buf(i:i) = '='
+      if (l==0) then
+        buf(i:i) = '='
+      else if (i==l1 .or. i==l2) then
+        buf(i:i) = ' '
+      else if (i > l1 .and. i < l2 .and. j <= l) then
+        buf(i:i) = s(j:j)
+        j = j+1
+      end if
+    end do
+    print '(a)', buf
+  end subroutine
+END SUBROUTINE header
 
 END MODULE io_mod
