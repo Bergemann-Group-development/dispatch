@@ -84,8 +84,8 @@ SUBROUTINE read_stagger (task_list)
   !---------------------------------------------------------------------------
   ! Read the mesh meta-data from the .msh file
   !---------------------------------------------------------------------------
-  open (io_unit%data, file=trim(file)//'.msh', form='unformatted')
-  read(io_unit%data) mx, mz, my
+  open (io_unit%datain, file=trim(file)//'.msh', form='unformatted')
+  read(io_unit%datain) mx, mz, my
   if (io%master) then
     print *,'reading mesh data from ' //trim(file)//'.msh'
     print *, 'setup dimensions =', n, nv
@@ -98,9 +98,9 @@ SUBROUTINE read_stagger (task_list)
   allocate( dym(my), dymdn(my), ym(my+1), ymdn(my+1))
   allocate( dzm(mz), dzmdn(mz), zm(mz  ), zmdn(mz  ))
   ! read meash properties, in order y,z,x -- to make z vertical
-  read(io_unit%data) dym, dymdn, (ym(iy),iy=1,my), (ymdn(iy),iy=1,my)
-  read(io_unit%data) dzm, dzmdn, (zm(iz),iz=1,mz), (zmdn(iz),iz=1,mz)
-  read(io_unit%data) dxm, dxmdn, (xm(ix),ix=1,mx), (xmdn(ix),ix=1,mx)
+  read(io_unit%datain) dym, dymdn, (ym(iy),iy=1,my), (ymdn(iy),iy=1,my)
+  read(io_unit%datain) dzm, dzmdn, (zm(iz),iz=1,mz), (zmdn(iz),iz=1,mz)
+  read(io_unit%datain) dxm, dxmdn, (xm(ix),ix=1,mx), (xmdn(ix),ix=1,mx)
   ! periodic extensions
   xm(mx+1) = xm(mx) + (xm(mx)-xm(mx-1))
   ym(my+1) = ym(my) + (ym(my)-ym(my-1))
@@ -116,7 +116,7 @@ SUBROUTINE read_stagger (task_list)
     print *, 'min(dx),min(dy),min(dz)', minval(dxm), minval(dym), minval(dzm)
     print *, 'nz for max res:', int((zm(my)-zm(1))/minval(dzm))+1
   end if
-  close (io_unit%data)
+  close (io_unit%datain)
   !---------------------------------------------------------------------------
   ! Allocate buffers for reading and for transposing to z vertical
   !---------------------------------------------------------------------------
@@ -127,7 +127,7 @@ SUBROUTINE read_stagger (task_list)
   recl = 4*product(shape(rbuf))     ! FIXME; this could be compiler dependent
   if (io%master) &
     print *,'reading MHD data from ' //trim(file)//'.dat'
-  open (io_unit%data, file=trim(file)//'.dat', form='unformatted', access='direct', recl=recl)
+  open (io_unit%datain, file=trim(file)//'.dat', form='unformatted', access='direct', recl=recl)
   ii=[patch%idx%d,patch%idx%py,patch%idx%pz,patch%idx%px, &
       patch%idx%e,patch%idx%tt,patch%idx%by,patch%idx%bz,patch%idx%bx]
   !-----------------------------------------------------------------------------
@@ -137,7 +137,7 @@ SUBROUTINE read_stagger (task_list)
     iiv = ii(iv)
     if (io%master) &
       print *, 'reading variable index iv =', iv
-    read (io_unit%data, rec=iv) rbuf
+    read (io_unit%datain, rec=iv) rbuf
     do iz=1,mz; do iy=1,my; do ix=1,mx
       buffer(ix,iy,iz) = rbuf(iy,iz,ix)
     end do; end do; end do
@@ -168,7 +168,7 @@ SUBROUTINE read_stagger (task_list)
     !$omp end single
     !$omp end parallel
   end do
-  close (io_unit%data)
+  close (io_unit%datain)
   deallocate (rbuf, buffer)
   deallocate (xm,ym,zm,xmdn,ymdn,zmdn)
   !-----------------------------------------------------------------------------
@@ -179,6 +179,11 @@ SUBROUTINE read_stagger (task_list)
     patch => task2patch(link%task)
     if (b0 >= 0.0) &
       patch%mem(:,:,:,patch%idx%bz,1,1) = b0
+    select type (patch)
+    class is (experiment_t)
+      if (patch%i_omega==0) &
+        call patch%output
+    end select
     link => link%next
   end do
   if (io%master) &
