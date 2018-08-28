@@ -30,7 +30,6 @@ MODULE IC_mod
   contains
     procedure, nopass:: init
   end type
-  logical, save:: do_ic=.true.
   character(len=64), save:: file='mhd63'
   integer, save:: order=2
   integer, save:: verbose=1
@@ -43,7 +42,7 @@ CONTAINS
 SUBROUTINE init (task_list)
   type(task_list_t), pointer:: task_list
   integer:: iostat
-  namelist /ic_params/ do_ic, file, order, verbose, b0
+  namelist /ic_params/ file, order, verbose, b0
   !-----------------------------------------------------------------------------
   rewind (io%input)
   read (io%input, ic_params, iostat=iostat)
@@ -52,7 +51,7 @@ SUBROUTINE init (task_list)
   else
     verbose = 0
   end if
-  if (do_ic) call read_stagger(task_list)
+  if (io%restart < 0) call read_stagger(task_list)
 END SUBROUTINE init
 
 !> =============================================================================

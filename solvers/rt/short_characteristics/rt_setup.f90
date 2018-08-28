@@ -107,7 +107,7 @@ SUBROUTINE rt_setup (task_list)
         omega%link%nbor%needs_me = .true.
         ! -- include RT sub-task in check_ready() of MHD task
         omega%link%nbor%needed = .true.
-        omega%rt_next = (1.0-boundary_distance*0.5)*mhd%rt_time
+        omega%rt_next = omega%time + (1.0-boundary_distance*0.5)*mhd%rt_time
         !-----------------------------------------------------------------------
         call omega%clear (bits%ready)
         call rt_task_list%append_link (omega%link)
