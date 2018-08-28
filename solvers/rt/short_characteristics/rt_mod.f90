@@ -88,6 +88,7 @@ MODULE rt_mod
   real, save:: dtau_min=1e-3, dtau_max=30., dtau_dif=10.
   ! -- tolerate that RT is up to one rt_time behind MHD
   real, save:: grace=0.0
+  real(8):: rt_bottom=0.45
   real(8):: dbg_position(2) = -1e30
   integer(8):: n_min=0, n_max=0, n_dif, n_ful=0
   integer, save:: verbose=0, order=1
@@ -109,7 +110,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   namelist /rt_params/ n_mu, n_phi, n_bin, verbose, rt_time, dtau_min, dtau_max, &
                        dtau_dif, vertical_propagation, dbg_position, grace, nt, &
-                       order
+                       order, rt_bottom
   !-----------------------------------------------------------------------------
   ! Read parameters
   !-----------------------------------------------------------------------------
@@ -164,14 +165,29 @@ SUBROUTINE init (self)
   call io%bits_mem(storage_size(self%rk  ),product(shape(self%rk )),'rk')
   call io%bits_mem(storage_size(self%src ),product(shape(self%src)),'src')
   !-----------------------------------------------------------------------------
+  ! Patches with top boundaries below rt_bottom have no RT and are not listed
+  !-----------------------------------------------------------------------------
+  if (self%position(3)-0.5_8*self%size(3) > rt_bottom) then
+    call self%set (bits%no_rt)
+    if (verbose > 0) &
+      print *, self%id, 'does not need to do RT'
+  !-----------------------------------------------------------------------------
+  ! Patches with bottom boundaries below rt_bottom are considered RT bdry
+  !-----------------------------------------------------------------------------
+  else if (self%position(3)+0.5_8*self%size(3) > rt_bottom) then
+    call self%boundaries%set (bits%zu)
+    if (verbose > 0) &
+      print *, self%id, 'is at the bottom RT boundary'
+  end if
+  !-----------------------------------------------------------------------------
   ! Allocate n_omega copies of self, cloning self via self
   !-----------------------------------------------------------------------------
   if (n_omega > 0) &
     allocate (self%omega(n_omega), source=self)
   !-----------------------------------------------------------------------------
-  ! Initialize the directional solver connection links and data
-  ! FIXME: For now, we give the task IDs that make them easy to recognize in 
-  ! debugging.  Later, we must give them unique task IDs across MPI ranks
+  ! Initialize the directional solver connection links and data.  For now, we
+  ! give the task IDs that make them easy to recognize in debugging.  Later,
+  ! in rt_setup, we optionally give them unique task IDs across MPI ranks.
   !-----------------------------------------------------------------------------
   self%eos_time = self%time
   self%rt_next  = self%time+self%rt_time
@@ -212,12 +228,15 @@ SUBROUTINE init (self)
     nullify (omega%link)
     allocate (omega%link)
     omega%link%task => omega
-    allocate (omega%layers(self%gn(1),self%gn(2),           n_bin,3,3))
-    allocate (omega%mem   (self%gn(1),self%gn(2),self%gn(3),n_bin,nt,1))
-    call io%bits_mem(storage_size(omega%layers),product(shape(omega%layers)),'l')
-    call io%bits_mem(storage_size(omega%mem)   ,product(shape(omega%mem))   ,'q')
-    omega%q => omega%mem(:,:,:,:,self%it,1)
-    omega%q = 0.0
+    ! -- only allocate RT mem on patches above rt_bottom
+    if (self%is_clear(bits%no_rt)) then
+      allocate (omega%layers(self%gn(1),self%gn(2),           n_bin,3,3))
+      allocate (omega%mem   (self%gn(1),self%gn(2),self%gn(3),n_bin,nt,1))
+      call io%bits_mem(storage_size(omega%layers),product(shape(omega%layers)),'l')
+      call io%bits_mem(storage_size(omega%mem)   ,product(shape(omega%mem))   ,'q')
+      omega%q => omega%mem(:,:,:,:,self%it,1)
+      omega%q = 0.0
+    end if
   end do
   !-----------------------------------------------------------------------------
   ! Assign angles
@@ -244,7 +263,7 @@ SUBROUTINE init (self)
     do i_omega=1,n_omega
       omega => self%omega(i_omega)
       if (verbose > 0) &
-        print *, 'rt_t%init: i_omega, elevation, phi, mu =', &
+        print '(a,3i7,f8.3)', 'rt_t%init: i_omega, elevation, phi, mu =', &
         i_omega, nint(asin(omega%mu)*180./math%pi), nint(omega%phi*180./math%pi), &
         omega%mu
     end do
@@ -295,35 +314,36 @@ SUBROUTINE update (self)
     q => self%mem(:,:,:,self%idx%qr,self%it,1)
     q = 0.0
     self%mem(:,:,:,self%idx%qr,self%it,2) = 0.0
-    do i_omega=1,self%n_omega
-      omega => self%omega(i_omega)
-      call omega%time_interval (self%time, jt, pt, all=.true.)
-      if (order<1) then
-        pt(2) = min(pt(2),1.0)
-        pt(1) = 1.0-pt(2)
+    if (self%is_clear (bits%no_rt)) then
+      do i_omega=1,self%n_omega
+        omega => self%omega(i_omega)
+        call omega%time_interval (self%time, jt, pt, all=.true.)
+        if (order<1) then
+          pt(2) = min(pt(2),1.0)
+          pt(1) = 1.0-pt(2)
+        end if
+        ! -- these should ALL be extrapolations forward in time
+        do i_bin=1,self%n_bin
+          q = q + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
+                  (omega%mem(:,:,:,i_bin,jt(1),1)*pt(1) + &
+                   omega%mem(:,:,:,i_bin,jt(2),1)*pt(2))
+        end do
+        if (verbose > 0) &
+          print '(i7,3x,2i3,2f7.3,3x,f8.4,3x,a,1p,2e12.4)', &
+            self%id, jt, pt, self%time, 'q', self%fminval(q), self%fmaxval(q)
+      end do
+      if (self%id == io%id_debug) then
+        l = self%li
+        u = self%ui
+        do i3=l(3),u(3)
+        print '(a,i4,1p,10e10.2)', 'rt_t%update: i3, q =', i3, &
+          minval(q(l(1):l(1),l(2):u(2),i3)), &
+          maxval(q(l(1):l(1),l(2):u(2),i3))
+        end do
       end if
-      ! -- these should ALL be extrapolations forward in time
-      do i_bin=1,self%n_bin
-        q = q + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
-                (omega%mem(:,:,:,i_bin,jt(1),1)*pt(1) + &
-                 omega%mem(:,:,:,i_bin,jt(2),1)*pt(2))
-      end do
-      if (verbose > 0) &
-        print '(i7,3x,2i3,2f7.3,3x,f8.4,3x,4f8.4,11x,a,1p,2e12.4)', &
-          self%id, jt, pt, self%time, omega%t, 'q', &
-          self%fminval(q), self%fmaxval(q)
-    end do
-    if (self%id == io%id_debug) then
-      l = self%li
-      u = self%ui
-      do i3=l(3),u(3)
-      print '(a,i4,1p,10e10.2)', 'rt_t%update: i3, q =', i3, &
-        minval(q(l(1):l(1),l(2):u(2),i3)), &
-        maxval(q(l(1):l(1),l(2):u(2),i3))
-      end do
+      if (verbose > 1) &
+        call rt_integral%diagnostics ('at MHD update')
     end if
-    if (verbose > 1) &
-      call rt_integral%diagnostics ('at MHD update')
     ! -- Update the MHD state
     if (verbose > 1) &
       print *, self%id, 'rt_t%update: update MHD at', self%time
@@ -342,17 +362,19 @@ SUBROUTINE update (self)
         q(l(1):l(1)+9,(l(2)+u(2))/2,i3)
       end do
     end if
-    if (self%time > self%rt_next) then
-      ! -- maake a new EOS calculation, interpolated to self%rt_time
-      call self%rt_eos
-      ! -- increase the "rabbit" time one RT time
-      self%rt_next = self%rt_next + self%rt_time
-      do i_omega=1,self%n_omega
-        self%omega(i_omega)%rt_next = &
-        self%omega(i_omega)%rt_next + self%rt_time
-      end do
-      if (verbose > 0) &
-        print *, self%id, 'rt_t%update: (1) increased rt_next to', self%rt_next
+    if (self%is_clear(bits%no_rt)) then
+      if (self%time > self%rt_next) then
+        ! -- maake a new EOS calculation, interpolated to self%rt_time
+        call self%rt_eos
+        ! -- increase the "rabbit" time one RT time
+        self%rt_next = self%rt_next + self%rt_time
+        do i_omega=1,self%n_omega
+          self%omega(i_omega)%rt_next = &
+          self%omega(i_omega)%rt_next + self%rt_time
+        end do
+        if (verbose > 0) &
+          print *, self%id, 'rt_t%update: (1) increased rt_next to', self%rt_next
+      end if
     end if
   !-----------------------------------------------------------------------------
   ! Call the RT solver for RT sub-tasks when self is not the main task, for as
@@ -434,10 +456,10 @@ SUBROUTINE init_nbors (self)
     nbor => self%link%nbor
     do while (associated(nbor))
       if (self%needs(omega,nbor%task)) then
-        !-------------------------------------------------------------------------
-        ! Add a new nbor, a new nbor%link, and pointers from link to task and from
-        ! task to link.  The omega-task on nbor already has its own link.
-        !-------------------------------------------------------------------------
+        !-----------------------------------------------------------------------
+        ! Add a new nbor, a new nbor%link, and pointers from link to task and
+        ! from task to link.  The omega-task on nbor already has its own link.
+        !-----------------------------------------------------------------------
         nbtask => nbor%task
         select type (nbtask)
         class is (rt_t)
@@ -452,9 +474,9 @@ SUBROUTINE init_nbors (self)
             nbtask%id, nbtask%link%task%id, 'ray=', raytask%id, raytask%link%task%id
           end select
         end select
-        !-------------------------------------------------------------------------
+        !-----------------------------------------------------------------------
         ! Point to the new nbor,from the task%link, or from the previous nbor
-        !-------------------------------------------------------------------------
+        !-----------------------------------------------------------------------
         if (.not.associated(omega%link%nbor)) then
           omega%link%nbor => new
           if (verbose > 3) print *, omega%id, 'nbor => new'
@@ -574,6 +596,7 @@ FUNCTION needs (self, omega, task)
   logical:: needs
   class(rt_t):: self, omega
   class(task_t), pointer:: task
+  class(rt_t), pointer:: rt_task
   real:: ds1(3), ds2(3), sinth
   real, parameter:: eps=1e-4
   integer:: i, is1(3), is2(3)
@@ -585,9 +608,17 @@ FUNCTION needs (self, omega, task)
   ! in trough side walls is going to be slightly delayed in time, in some cases,
   ! depending on the order of task execution.
   !-----------------------------------------------------------------------------
-  lower = self%mesh(3)%lower_boundary .and. omega%mu > 0.0
-  upper = self%mesh(3)%upper_boundary .and. omega%mu < 0.0
-  if (lower .or. upper) then
+  select type (task)
+  class is (rt_t)
+    rt_task => task
+  end select
+  lower = self%boundaries%is_set(bits%zl) .and. omega%mu > 0.0
+  upper = self%boundaries%is_set(bits%zu) .and. omega%mu < 0.0
+  !-----------------------------------------------------------------------------
+  ! If self is at a boundary and omega points inward, or the task has not RT,
+  ! then the task is outside and is not needed
+  !-----------------------------------------------------------------------------
+  if (lower .or. upper .or. task%is_set(bits%no_rt)) then
     needs = .false.
   else
     ds1 = self%position-task%position

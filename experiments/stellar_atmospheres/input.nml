@@ -1,11 +1,11 @@
 
 &task_list_params       job_seconds=1e6 /
 &experiment_params      verbose=0 d_bot=231.8 e_bot=2897.0 /
-&ic_params              do_ic=f file='mhd63' order=1 b0=1 verbose=0 /
-&rt_params              verbose=0 nt=4 n_mu=2 n_phi=4 n_bin=4 rt_time=0.005  
+&ic_params              verbose=0 file='mhd63' order=1 b0=1 /
+&rt_params              verbose=0 nt=4 n_mu=3 n_phi=8 n_bin=4 rt_time=0.005  
                         dtau_min=1e-6 dtau_dif=1e3 dtau_max=1e4 grace=0
                         order=0 dbg_position=2*-0.25 /
-&rt_setup_params        n_warmup=3 verbose=0 /
+&rt_setup_params        verbose=0 unique_ids=t n_warmup=3 /
 
 &io_params              verbose=0 do_trace=f do_output=t method='parallel' id_debug=0 restart=7 /
 &cartesian_params       size=2*6,3 dims=2*6,3 origin=0,0,-0.5 omp_init=f /

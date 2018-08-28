@@ -71,7 +71,7 @@ SUBROUTINE rt_setup (task_list)
       ! Add nbor lists to the sub-tasks
       !-------------------------------------------------------------------------
       call mhd%init_nbors
-      call mhd%rt_eos
+      !call mhd%rt_eos
       nbor => link%nbor
       do while (associated(nbor))
         call io%assert (associated(nbor%task), 'nbor%task missing')
@@ -84,10 +84,11 @@ SUBROUTINE rt_setup (task_list)
         nbor%needed = .true.
         nbor => nbor%next
       end do
-      !-------------------------------------------------------------------------
+      if (mhd%is_clear(bits%no_rt)) then
+        !-----------------------------------------------------------------------
       ! Prepend subtasks to the MHD task nbor list, prepend the MHD task to the
       ! subtask nbor list, and finally append the sub-task link to the task list
-      !-------------------------------------------------------------------------
+        !-----------------------------------------------------------------------
       n_omega = mhd%n_omega
       do i_omega=1,mhd%n_omega
         omega => mhd%omega(i_omega)
@@ -107,11 +108,13 @@ SUBROUTINE rt_setup (task_list)
         omega%link%nbor%needs_me = .true.
         ! -- include RT sub-task in check_ready() of MHD task
         omega%link%nbor%needed = .true.
-        omega%rt_next = omega%time + (1.0-boundary_distance*0.5)*mhd%rt_time
-        !-----------------------------------------------------------------------
+          !omega%rt_next = omega%time + (1.0-boundary_distance*0.5)*mhd%rt_time
+          omega%rt_next = omega%time + mhd%rt_time
+          !---------------------------------------------------------------------
         call omega%clear (bits%ready)
         call rt_task_list%append_link (omega%link)
       end do
+      end if
     end select
     if (verbose > 1) &
       call link%print_nbors
