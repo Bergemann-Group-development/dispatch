@@ -499,6 +499,10 @@ SUBROUTINE rt_eos (self)
     + self%mem(:,:,:,self%idx%d,jt(2),1)*pt(2)
   e = self%mem(:,:,:,self%idx%e,jt(1),1)*pt(1) &
     + self%mem(:,:,:,self%idx%e,jt(2),1)*pt(2)
+  if (verbose > 1) then
+    call self%stats (d, 'rt_eos')
+    call self%stats (e, 'rt_eos')
+  end if
   tt => self%mem(:,:,:,self%idx%tt,self%it,1)
   call eos%lookup_table (m, d=d, e=e, rk=self%rk, src=self%src, tt=tt)
   if (verbose > 3) then
