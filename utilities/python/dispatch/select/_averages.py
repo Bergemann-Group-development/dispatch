@@ -147,11 +147,11 @@ def haver1(s,iv=0,point=0.0,dir=2,verbose=0):
 
 def map_var(p,iv):
     jv=iv
-    if iv=='u1': 
+    if iv=='u1':
         jv=p.idx.dict['p1']
-    if iv=='u2': 
+    elif iv=='u2':
         jv=p.idx.dict['p2']
-    if iv=='u3': 
+    elif iv=='u3':
         jv=p.idx.dict['p3']
     elif type(iv)==type('d'):
         jv=p.idx.dict[iv]

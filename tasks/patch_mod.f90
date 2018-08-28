@@ -171,7 +171,6 @@ MODULE patch_mod
     integer:: n(3)=16                   ! convenience
     integer:: ng(3)=2                   ! convenience
   end type
-  character(len=64), save:: inputdir    ! input directory for restarts
   !-----------------------------------------------------------------------------
   ! Template task, with procedure to place it it MPI-space
   !-----------------------------------------------------------------------------
@@ -323,7 +322,7 @@ END SUBROUTINE init
 SUBROUTINE init_default (self)
   class(patch_t):: self
   !.............................................................................
-  integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000, restart=-9
+  integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000
   logical, save:: guard_zones=.false., time_derivs=.false., periodic(3)=.true.
   logical, save:: no_mans_land=.false., use_data_hub=.false.
   real, save:: u_fixed=-1.0, grace=0.0
@@ -334,7 +333,7 @@ SUBROUTINE init_default (self)
     grace, periodic, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
     zero_order_extrap
   namelist /out_params/ out_time, end_time, print_time, max_files, &
-    restart, inputdir, guard_zones, time_derivs
+    guard_zones, time_derivs
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init_default')
@@ -346,12 +345,10 @@ SUBROUTINE init_default (self)
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
-    restart = io%restart
     rewind (io%input)
     read (io%input, patch_params)
     if (io%master) write (*, patch_params)
     rewind (io%input)
-    inputdir = io%outputname
     read (io%input, out_params)
     if (io%master) write (*, out_params)
   end if
@@ -366,14 +363,13 @@ SUBROUTINE init_default (self)
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
-  io%inputdir      = inputdir
   io%guard_zones   = guard_zones
   io%time_derivs   = time_derivs
   io%end_time      = end_time
   io%out_time      = out_time
   io%print_time    = print_time
   !$omp end critical (input_cr)
-  self%restart     = restart                    ! restart snapshot
+  self%restart     = io%restart                 ! restart snapshot
   self%grace       = grace                      ! grace fraction of dtime
   self%dt_fixed    = dt_fixed
   self%u_fixed     = u_fixed
@@ -1493,8 +1489,10 @@ SUBROUTINE courant_condition (self, detailed_timer)
     courant = dtime*self%u_max/minval(ds)
   else if (self%u_fixed > 0.0) then
     dtime = self%courant*minval(ds)/self%u_fixed
+    courant = self%courant
   else
     dtime = self%courant*minval(ds)/self%u_max
+    courant = self%courant
   endif
   !$omp atomic write
   self%dtime = dtime
@@ -1862,26 +1860,26 @@ END SUBROUTINE stats_vector
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE scalar_stats (f, l, u, s)
-    real(kind=KindScalarVar), dimension(:,:,:):: f
-    integer:: l(3), u(3)
-    real(8):: s(4)
-    integer:: ix, iy, iz
-    s(2) = 0d0
-    s(3) = 0d0
-    s(1) = f(1,1,1)
-    s(4) = f(1,1,1)
-    do iz=l(3),u(3)
-    do iy=l(2),u(2)
-    do ix=l(1),u(1)
-      s(2) = s(2) + f(ix,iy,iz)
-      s(3) = s(3) + f(ix,iy,iz)**2
-      s(1) = min(s(1),f(ix,iy,iz))
-      s(4) = max(s(4),f(ix,iy,iz))
-    end do
-    end do
-    end do
-    s(2) = s(2)/product(u-l+1)
-    s(3) = sqrt(max(0d0,s(3)/product(u-l+1)-s(2)**2))
+  real(kind=KindScalarVar), dimension(:,:,:):: f
+  integer:: l(3), u(3)
+  real(8):: s(4)
+  integer:: ix, iy, iz
+  s(2) = 0d0
+  s(3) = 0d0
+  s(1) = f(1,1,1)
+  s(4) = f(1,1,1)
+  do iz=l(3),u(3)
+  do iy=l(2),u(2)
+  do ix=l(1),u(1)
+    s(2) = s(2) + f(ix,iy,iz)
+    s(3) = s(3) + f(ix,iy,iz)**2
+    s(1) = min(s(1),f(ix,iy,iz))
+    s(4) = max(s(4),f(ix,iy,iz))
+  end do
+  end do
+  end do
+  s(2) = s(2)/product(u-l+1)
+  s(3) = sqrt(max(0d0,s(3)/product(u-l+1)-s(2)**2))
 END SUBROUTINE scalar_stats
 
 !> =============================================================================
