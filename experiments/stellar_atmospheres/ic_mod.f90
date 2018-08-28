@@ -33,7 +33,7 @@ MODULE IC_mod
   character(len=64), save:: file='mhd63'
   integer, save:: order=2
   integer, save:: verbose=1
-  real, save:: b0=1
+  real, save:: b0=-1
   type(ic_t), public:: ic
 CONTAINS
 
@@ -176,7 +176,8 @@ SUBROUTINE read_stagger (task_list)
   link => task_list%head
   do while (associated(link))
     patch => task2patch(link%task)
-    patch%mem(:,:,:,patch%idx%bz,1,1) = b0
+    if (b0 >= 0.0) &
+      patch%mem(:,:,:,patch%idx%bz,1,1) = b0
     link => link%next
   end do
   if (io%master) &

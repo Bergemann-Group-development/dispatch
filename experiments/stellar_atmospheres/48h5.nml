@@ -1,0 +1,31 @@
+
+&task_list_params       job_seconds=1e6 /
+!experiment_params      verbose=0 d_bot=231.8 e_bot=2897.0 /
+&experiment_params      verbose=1 /
+
+&ic_params              verbose=0 file='48h5' order=1 b0=-1 /
+&rt_params              verbose=0 nt=4 n_mu=2 n_phi=4 n_bin=4 rt_time=0.005  
+                        dtau_min=1e-6 dtau_dif=1e3 dtau_max=1e4 grace=0
+                        order=0 dbg_position=2*-0.25 /
+&rt_setup_params        n_warmup=3 verbose=0 /
+
+&io_params              verbose=0 do_trace=f do_output=t method='parallel' id_debug=0 restart=7 /
+
+                        ! lower bdry = 20.90-0.54 = 20.36
+&cartesian_params       size=48,48,20.9 dims=48,48,20.8 mpi_dims=3,7,3 origin=0,0,-0.54 omp_init=f /
+
+&patch_params           nt=5 grace=0.1 n=3*21 no_mans_land=t use_data_hub=f dt_fixed=-1 /
+
+&out_params             end_time=0.10 out_time=0.01 print_time=0 guard_zones=t /
+                        !    cs    pa  ofd   mas  kap  eta
+&stagger_params         nu=  0.03, 1.0, 1.0, 0.15, 1.0, 1.0
+                        gamma=1.4 eos='tabular' courant=0.15 /
+
+&eos_params             /
+&timestep_params        time_order=2 /
+&ramses_params          /
+
+&timer_params           sec_per_report=20 /
+&dispatcher_params      method=3 /
+&dispatcher3_params     verbose=0 f_over=3 /
+&download_params        verbose=0 /
