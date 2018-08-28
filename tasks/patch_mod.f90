@@ -115,7 +115,10 @@ MODULE patch_mod
     procedure:: patch_to_header
     procedure:: header_to_patch
     procedure:: local_iit
-    procedure:: stats
+    procedure, private:: stats_patch
+    procedure, private:: stats_scalar
+    procedure, private:: stats_vector
+    generic,  public:: stats => stats_patch, stats_scalar, stats_vector
     procedure:: MapVectors
     procedure:: beyond_patch_edge
     procedure:: myfloatindex_scalar
@@ -1805,7 +1808,9 @@ FUNCTION task2patch (task) RESULT (patch)
 END FUNCTION
 
 !> =============================================================================
-SUBROUTINE stats (self, label)
+!> Statistics for all vars in a patch
+!> =============================================================================
+SUBROUTINE stats_patch (self, label)
   class (patch_t):: self
   character(len=*):: label
   integer:: iv
@@ -1813,11 +1818,49 @@ SUBROUTINE stats (self, label)
   do iv=1,self%nv
     call scalar_stats (self%mem(:,:,:,iv,self%it,1), self%mesh%li, self%mesh%ui, si)
     call scalar_stats (self%mem(:,:,:,iv,self%it,1), self%mesh%lb, self%mesh%ub, sb)
-    write (io_unit%log,'(a,i3,1p,2(3x,4g12.4))') &
-      trim(label)//' stats: iv, min, aver, rms, max =', iv, si, sb
+    write (io_unit%log,'(i7,2x,a,i3,1p,2(3x,4g12.4))') &
+      self%id, trim(label)//' stats: iv, min, aver, rms, max =', iv, si, sb
   end do
-contains
-  subroutine scalar_stats (f, l, u, s)
+END SUBROUTINE stats_patch
+
+!> =============================================================================
+!> Statistics for a scalar field
+!> =============================================================================
+SUBROUTINE stats_scalar (self, var, label)
+  class (patch_t):: self
+  real, dimension(:,:,:), pointer:: var
+  character(len=*):: label
+  !.............................................................................
+  real(8), dimension(4):: si, sb
+  !-----------------------------------------------------------------------------
+  call scalar_stats (var, self%mesh%li, self%mesh%ui, si)
+  call scalar_stats (var, self%mesh%lb, self%mesh%ub, sb)
+  write (io_unit%output,'(i7,2x,a,1p,2(3x,4g12.4))') &
+    self%id, trim(label)//' stats: min, aver, rms, max =', si, sb
+END SUBROUTINE stats_scalar
+
+!> =============================================================================
+!> Statistics for a vector field
+!> =============================================================================
+SUBROUTINE stats_vector (self, var, label)
+  class (patch_t):: self
+  real, dimension(:,:,:,:), pointer:: var
+  character(len=*):: label
+  !.............................................................................
+  integer:: iv
+  real(8), dimension(4):: si, sb
+  !-----------------------------------------------------------------------------
+  do iv=1,size(var,4)
+    call scalar_stats (var(:,:,:,iv), self%mesh%li, self%mesh%ui, si)
+    call scalar_stats (var(:,:,:,iv), self%mesh%lb, self%mesh%ub, sb)
+    write (io_unit%output,'(i7,2x,a,i3,1p,2(3x,4g12.4))') &
+      self%id, trim(label)//' stats: iv, min, aver, rms, max =', iv, si, sb
+  end do
+END SUBROUTINE stats_vector
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE scalar_stats (f, l, u, s)
     real(kind=KindScalarVar), dimension(:,:,:):: f
     integer:: l(3), u(3)
     real(8):: s(4)
@@ -1838,8 +1881,7 @@ contains
     end do
     s(2) = s(2)/product(u-l+1)
     s(3) = sqrt(max(0d0,s(3)/product(u-l+1)-s(2)**2))
-  end subroutine
-END SUBROUTINE
+END SUBROUTINE scalar_stats
 
 !> =============================================================================
 !> default version; only supports Cartesian coords.
