@@ -4,11 +4,11 @@ MODULE experiment_mod
   USE io_mod
   USE bits_mod
   USE trace_mod
-  USE mhd_mod
+  USE solver_mod
   USE initial_mod
   implicit none
   private
-  type, public, extends(mhd_t):: experiment_t
+  type, public, extends(solver_t):: experiment_t
   contains
     procedure init
     procedure update
@@ -27,18 +27,15 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !----------------------------------------------------------------------------
-  self%nv = 8
-  call self%mhd_t%init
-  call self%set (bits%static)
-  !
-  !----------------------------------------------------------------------------
-  ! Initial conditions
-  !----------------------------------------------------------------------------
-  call self%initial%init (self%kind, real(self%gamma))
   self%mhd = .true.
-  call self%initial%condition(self%mesh, self%mem(:,:,:,:,1,1), self%idx)
+  call self%solver_t%init
   !
-  call trace_end
+  if (self%kind(1:10) == 'stagger2e_') then
+    call self%s2e (self%mem(:,:,:,self%idx%e,self%it,1), self%it)
+  end if
+  !
+  self%unsigned(self%idx%d) = .true.
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================

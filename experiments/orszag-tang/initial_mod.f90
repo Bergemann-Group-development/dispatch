@@ -5,6 +5,7 @@ MODULE initial_mod
   USE trace_mod
   USE mesh_mod
   USE index_mod
+  USE math_mod
   implicit none
   private
   type, public :: initial_t
@@ -16,8 +17,6 @@ MODULE initial_mod
   contains
     procedure :: init
   end type
-
-  real(8), parameter:: pi = asin(1.0d0) * 2.0d0
 CONTAINS
 
 !> =============================================================================
@@ -37,8 +36,8 @@ SUBROUTINE init (self, solver, gamma)
 
   ! default values for namelist parameters
   idirect = 3
-  b0 = 0.5 / sqrt(pi)
-  p0 = 5.0 / (12.0 * pi)
+  b0 = 0.5 / sqrt(math%pi)
+  p0 = 5.0 / (12.0 * math%pi)
   v0 = 1.0
 
   !$omp critical (initial_t)
@@ -77,7 +76,7 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
 
   allocate(vecpot(m(1)%gn,m(2)%gn,m(3)%gn))
 
-  twopi = 2.0 * pi
+  twopi = 2.0 * math%pi
   d0 = self%gamma * self%p0
 
   ! "pre"-initialisation of all variables, independent of `idirect`.

@@ -24,7 +24,7 @@
  guard_zones=t
  time_derivs=f
 /
-&mhd_params
+&stagger_params
  courant=0.20
  nu=  0.1,  0.0, 1.0, 0.0,  0.0,  1.0
  !     cs    du   pa  ofd   mas   eta
@@ -34,7 +34,7 @@
 &force_params
 /
 &timestep_params
- time_order=4
+ !time_order=4
 /
 &initial_params
  idirect=3

@@ -1,13 +1,13 @@
 
 # Option groups
-OPTS = debug
-#OPTS = full_debug
+#OPTS = debug
+OPTS = full_debug
 #OPTS = optimized
 
 # Default target and methods
 UPD             = adams_bashforth
 #SOLVER         = stagger
-SOLVER          = stagger2
+SOLVER          = stagger2/e
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile
@@ -16,6 +16,6 @@ sinclude $(TOP)/config/Makefile
 $(EXEC): cartesian_mod.o setup_mod.o
 
 # Dependencies
-experiment_mod.o        : io_mod.o bits_mod.o mhd_mod.o trace_mod.o initial_mod.o
-initial_mod.o           : io_mod.o trace_mod.o mesh_mod.o index_mod.o
+experiment_mod.o        : io_mod.o bits_mod.o solver_mod.o trace_mod.o initial_mod.o
+initial_mod.o           : io_mod.o trace_mod.o mesh_mod.o index_mod.o math_mod.o
 
