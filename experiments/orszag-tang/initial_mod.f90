@@ -88,17 +88,18 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
   do iz=m(3)%lb,m(3)%ub
     do iy=m(2)%lb,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
-        ff(ix,iy,iz,1) = d0
-        ff(ix,iy,iz,2) = entropy*d0
-        ff(ix,iy,iz,3) = 0.0
-        ff(ix,iy,iz,4) = 0.0
-        ff(ix,iy,iz,5) = 0.0
-        ff(ix,iy,iz,6) = 0.0
-        ff(ix,iy,iz,7) = 0.0
-        ff(ix,iy,iz,8) = 0.0
+        ff(ix,iy,iz,idx%d) = d0
+        ff(ix,iy,iz,idx%s) = entropy*d0
+        ff(ix,iy,iz,idx%px) = 0.0
+        ff(ix,iy,iz,idx%py) = 0.0
+        ff(ix,iy,iz,idx%pz) = 0.0
+        ff(ix,iy,iz,idx%bx) = 0.0
+        ff(ix,iy,iz,idx%by) = 0.0
+        ff(ix,iy,iz,idx%bz) = 0.0
       end do
     end do
   end do
+ 
 
   ! initialisation based on value of `idirect`
   ! ---- x1-x2 plane ----
@@ -121,10 +122,10 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
         print*,iy,yb
         do ix=m(1)%lb,m(1)%ub-1
           xb = m(1)%p + r1(ix)
-          ff(ix,iy,iz,3) = -d0 * self%v0 * sin(twopi * yb)
-          ff(ix,iy,iz,4) =  d0 * self%v0 * sin(twopi * xb)
-          ff(ix,iy,iz,6) =  (vecpot(ix,iy+1,iz) - vecpot(ix,iy  ,iz) ) / m(2)%d
-          ff(ix,iy,iz,7) = -(vecpot(ix+1,iy,iz) - vecpot(ix  ,iy,iz) ) / m(1)%d
+          ff(ix,iy,iz,idx%px) = -d0 * self%v0 * sin(twopi * yb)
+          ff(ix,iy,iz,idx%py) =  d0 * self%v0 * sin(twopi * xb)
+          ff(ix,iy,iz,idx%bx) =  (vecpot(ix,iy+1,iz) - vecpot(ix,iy  ,iz) ) / m(2)%d
+          ff(ix,iy,iz,idx%by) = -(vecpot(ix+1,iy,iz) - vecpot(ix  ,iy,iz) ) / m(1)%d
         end do
       end do
     end do
@@ -149,10 +150,10 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
       do iy=m(2)%lb,m(2)%ub-1
         yb = m(2)%p + r2(iy)
         do ix=m(1)%lb,m(1)%ub
-          ff(ix,iy,iz,4) = -d0 * self%v0 * sin(twopi * zb)
-          ff(ix,iy,iz,5) =  d0 * self%v0 * sin(twopi * yb)
-          ff(ix,iy,iz,7) =  (vecpot(ix,iy,iz+1) - vecpot(ix,iy,iz  ) ) / m(3)%d
-          ff(ix,iy,iz,8) = -(vecpot(ix,iy+1,iz) - vecpot(ix,iy  ,iz) ) / m(2)%d
+          ff(ix,iy,iz,idx%py) = -d0 * self%v0 * sin(twopi * zb)
+          ff(ix,iy,iz,idx%pz) =  d0 * self%v0 * sin(twopi * yb)
+          ff(ix,iy,iz,idx%by) =  (vecpot(ix,iy,iz+1) - vecpot(ix,iy,iz  ) ) / m(3)%d
+          ff(ix,iy,iz,idx%bz) = -(vecpot(ix,iy+1,iz) - vecpot(ix,iy  ,iz) ) / m(2)%d
         end do
       end do
     end do
@@ -177,10 +178,10 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
       do iy=m(2)%lb,m(2)%ub
         do ix=m(1)%lb,m(1)%ub-1
           xb = m(1)%p + r1(ix)
-          ff(ix,iy,iz,5) = -d0 * self%v0 * sin(twopi * xb)
-          ff(ix,iy,iz,3) =  d0 * self%v0 * sin(twopi * zb)
-          ff(ix,iy,iz,8) =  (vecpot(ix+1,iy,iz) - vecpot(ix+1,iy,iz) ) / m(1)%d
-          ff(ix,iy,iz,6) = -(vecpot(ix,iy,iz+1) - vecpot(ix,iy,iz+1) ) / m(3)%d
+          ff(ix,iy,iz,idx%pz) = -d0 * self%v0 * sin(twopi * xb)
+          ff(ix,iy,iz,idx%px) =  d0 * self%v0 * sin(twopi * zb)
+          ff(ix,iy,iz,idx%bz) =  (vecpot(ix+1,iy,iz) - vecpot(ix+1,iy,iz) ) / m(1)%d
+          ff(ix,iy,iz,idx%bx) = -(vecpot(ix,iy,iz+1) - vecpot(ix,iy,iz+1) ) / m(3)%d
         end do
       end do
     end do
