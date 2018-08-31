@@ -38,6 +38,13 @@
 !> useful work to do, while other tasks are finishing, so when the master thread
 !> looks at the situation again, there are likely to be a number of new tasks
 !> ready to be updated.
+!>
+!> As is, this procedure assumes tasks have similar update cost.  If this is not
+!> the case, the buffer of "ready" tasks (state 1) may not be sufficient to 
+!> keep threads busy while the master thread does on update of an expensive task.
+!> A simple solution in this case is to disable task updating by the master
+!> thread, which instead should be dedicated only to keep the other threads 
+!> busy.
 !> =============================================================================
 MODULE dispatcher3_mod
   USE io_mod
@@ -67,6 +74,7 @@ MODULE dispatcher3_mod
     procedure:: set_state
     procedure:: is_ready
     procedure:: print_state
+    procedure:: diagnostics
   end type
   type(global_t):: average_density
   integer:: n_fail=0
@@ -76,6 +84,7 @@ MODULE dispatcher3_mod
   real:: f_over=2.0
   real(8):: wc_failed=0d0
   real(8):: start
+  logical:: master_works=.true.
   logical:: use_locks=.false.
   logical:: use_critical=.true.
   logical:: use_taskyield=.false.
@@ -92,7 +101,7 @@ SUBROUTINE init (self, task_list)
   type(task_list_t), pointer:: task_list
   integer:: iostat
   namelist /dispatcher3_params/ use_locks, use_critical, use_taskyield, f_over, &
-    verbose
+    master_works, verbose
   !.............................................................................
   rewind (io%input); read (io%input, dispatcher3_params, iostat=iostat)
   if (io%master) write (io%output, dispatcher3_params)
@@ -170,31 +179,39 @@ SUBROUTINE execute (self, task_list, test)
         ! only one left
         !-----------------------------------------------------------------------
         if (task%state==1) then
-          task_list%nq = n_state(2)
-          if (use_critical) then
-            !$omp critical (set_state_cr)
-            mytask = omp%nthreads==1 .or. n_state(1)==1 .or. n_state(2)>f_over*omp%nthreads
-            !$omp end critical (set_state_cr)
-          else
-            !$omp atomic read
-            n1 = n_state(1)
-            !$omp atomic read
-            n2 = n_state(2)
-            mytask = omp%nthreads==1 .or. n1==1 .or. n2>f_over*omp%nthreads
-          end if
-          if (mytask) then
-            call self%set_state (task, 2)
-            call self%update (task_list, link, test)
+          fell_through = .false.
+          !$omp atomic read
+          task_list%nq = n_state(1)
+          !$omp atomic
+          task_list%nq = task_list%nq  + n_state(2)
+          if (master_works) then
+            if (use_critical) then
+              !$omp critical (set_state_cr)
+              mytask = omp%nthreads==1 .or. n_state(1)==1 .or. n_state(2)>f_over*omp%nthreads
+              !$omp end critical (set_state_cr)
+            else
+              !$omp atomic read
+              n1 = n_state(1)
+              !$omp atomic read
+              n2 = n_state(2)
+              mytask = omp%nthreads==1 .or. n1==1 .or. n2>f_over*omp%nthreads
+            end if
+            if (mytask) then
+              call self%set_state (task, 2)
+              call self%update (task_list, link, test)
+            else
+              call self%spawn_update (task_list, link, test)
+            end if
           else
             call self%spawn_update (task_list, link, test)
           end if
-          fell_through = .false.
         end if
       end if
       link => link%next
     end do
     if (fell_through) then
       if (self%verbose>3) print *,'dispatcher3: fell through'
+      call self%diagnostics (task_list)
       wc_failed = wc_failed + (wallclock()-start_fail - start_iter)
       if (use_taskyield) then
         n_fail = n_fail+1
@@ -252,7 +269,7 @@ SUBROUTINE update (self, task_list, link, test)
   task => link%task
   !-----------------------------------------------------------------------------
   ! If task mem is OMP placed, ignore tasks allocated on a different thread,
-  ! passing them on to a matching thead -- unless there are no more tasks to
+  ! passing them on to a matching thread -- unless there are no more tasks to
   ! choose from, or the current thread is the master thread
   !-----------------------------------------------------------------------------
   !$omp atomic read
@@ -270,9 +287,11 @@ SUBROUTINE update (self, task_list, link, test)
       wallclock(), omp%thread, 'updated  task', task%id, '  to', task%time
     nbor => link%nbor
     do while (associated(nbor))
-      if (self%is_ready(nbor%link)) then
-        call self%set_state (nbor%link%task, 1)
-        if (self%verbose>3) print fmt1,wallclock(),omp%thread,'found(2) task',nbor%task%id
+      if (nbor%needs_me) then
+        if (self%is_ready(nbor%link)) then
+          call self%set_state (nbor%link%task, 1)
+          if (self%verbose>3) print fmt1,wallclock(),omp%thread,'found(2) task',nbor%task%id
+        end if
       end if
       nbor => nbor%next
     end do
@@ -285,7 +304,7 @@ SUBROUTINE update (self, task_list, link, test)
   end if
   link%task%thread = -1
   call self%set_state (link%task, 4)
-END SUBROUTINE
+END SUBROUTINE update
 
 !> =============================================================================
 !> Spawn an OpenMP task, for updating a DISPATCH task
@@ -310,7 +329,7 @@ SUBROUTINE spawn_update (self, task_list, link, test)
       call self%update (task_list, link, test)
     end if
   !$omp end task
-END SUBROUTINE
+END SUBROUTINE spawn_update
 
 !> =============================================================================
 !> Set a new task state, while keeping track of the number of tasks in each state
@@ -366,18 +385,20 @@ LOGICAL FUNCTION is_ready (self, link)
     is_ready = .true.
     nbor => link%nbor
     do while (associated(nbor))
-      !$omp atomic read
-      state = nbor%task%state
-      if (state==3) then
-        is_ready = .false.
-      else
-        is_ready = is_ready .and. nbor%task%is_ahead_of (link%task)
-      end if
-      if (.not.is_ready) then
-        if (verbose > 2) &
-          print *, link%task%id, 'is_ready: failed  on', nbor%task%id, &
-            nbor%task%time, link%task%time
-        exit
+      if (nbor%needed) then
+        !$omp atomic read
+        state = nbor%task%state
+        if (state==3) then
+          is_ready = .false.
+        else
+          is_ready = is_ready .and. nbor%task%is_ahead_of (link%task)
+        end if
+        if (.not.is_ready) then
+          if (verbose > 2) &
+            print *, link%task%id, 'is_ready: failed  on', nbor%task%id, &
+              nbor%task%time, link%task%time
+          exit
+        end if
       end if
       nbor => nbor%next
     end do
@@ -398,5 +419,20 @@ SUBROUTINE finalize
       ', fraction of dispatcher idle time =', wc_failed/max(1d-10,wallclock()-start)
 END SUBROUTINE finalize
 
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE diagnostics (self, task_list)
+  class(dispatcher3_t):: self
+  type(task_list_t), pointer:: task_list
+  class(link_t), pointer:: link, nbor, culprit
+  !-----------------------------------------------------------------------------
+  !write (io_unit%queue,*) 'begin starved analysis: nstate =', nstate
+  link => task_list%head
+  do while (associated(link))
+    nbor => link%nbor
+    link => link%next
+  end do
+  !write (io_unit%queue,*) 'end starved analysis: nstate =', nstate
+END SUBROUTINE diagnostics
 
 END MODULE dispatcher3_mod

@@ -19,6 +19,6 @@
 &ramses_params          /
 
 &timer_params           sec_per_report=20 /
-&dispatcher_params      method=3 /
+&dispatcher_params      method=3 master_works=f /
 &dispatcher3_params     f_over=3 verbose=0 /
 &download_params        verbose=0 /
