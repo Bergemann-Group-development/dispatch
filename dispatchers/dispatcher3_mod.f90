@@ -79,7 +79,9 @@ MODULE dispatcher3_mod
   type(global_t):: average_density
   integer:: n_fail=0
   integer:: n_state(0:4)=0
+  integer:: d_state(0:4)=0
   integer:: verbose=0
+  integer:: n_write=2000
   integer(8):: n_check=0, n_ready=0
   real:: f_over=2.0
   real(8):: wc_failed=0d0
@@ -101,7 +103,7 @@ SUBROUTINE init (self, task_list)
   type(task_list_t), pointer:: task_list
   integer:: iostat
   namelist /dispatcher3_params/ use_locks, use_critical, use_taskyield, f_over, &
-    master_works, verbose
+    master_works, n_write, verbose
   !.............................................................................
   rewind (io%input); read (io%input, dispatcher3_params, iostat=iostat)
   if (io%master) write (io%output, dispatcher3_params)
@@ -145,9 +147,11 @@ SUBROUTINE execute (self, task_list, test)
     !---------------------------------------------------------------------------
     ! Run through the task list, looking for and counting tasks that are ready
     !---------------------------------------------------------------------------
+    fell_through = .true.
     link => task_list%head
     do while (associated(link))
-      if (.not.link%task%is_set (bits%virtual)) then
+      task => link%task
+      if (.not.task%is_set (bits%virtual)) then
         !-----------------------------------------------------------------------
         ! If task is updated, set it to idle; this should ONLY be done by the
         ! master thread
@@ -158,26 +162,22 @@ SUBROUTINE execute (self, task_list, test)
         !-----------------------------------------------------------------------
         ! If task is idle, check if it is ready to update
         !-----------------------------------------------------------------------
-        if (link%task%state==0) then
+        if (task%state==0) then
           if (self%is_ready (link)) then
             call self%set_state (link%task, 1)
+          else if (link%task%time == 0.0_8) then
+            write(io_unit%queue,*) link%task%id, 'ERROR: at time=0, but not ready!'
+            nbor => link%nbor
+            do while (associated(nbor))
+              write(io_unit%queue,'(i7,2f10.6,2x,2l3)') &
+                nbor%task%id, (nbor%task%time-link%task%time), nbor%task%dtime, &
+                nbor%needed, nbor%task%is_ahead_of (link%task)
+              nbor => nbor%next
+            end do
           end if
         end if
-      end if
-      link => link%next
-    end do
-    if (self%verbose>1) call self%print_state ('1')
-    !---------------------------------------------------------------------------
-    ! Run through the task list and start updates of tasks that are ready
-    !---------------------------------------------------------------------------
-    fell_through = .true.
-    link => task_list%head
-    do while (associated(link))
-      task => link%task
-      if (.not.task%is_set (bits%virtual)) then
         !-----------------------------------------------------------------------
-        ! Spawn a background task, unless enough has been spawned, or there is
-        ! only one left
+        ! If task is ready to update, pawn a background task
         !-----------------------------------------------------------------------
         if (task%state==1) then
           fell_through = .false.
@@ -185,31 +185,16 @@ SUBROUTINE execute (self, task_list, test)
           task_list%nq = n_state(1)
           !$omp atomic
           task_list%nq = task_list%nq  + n_state(2)
-          if (master_works) then
-            if (use_critical) then
-              !$omp critical (set_state_cr)
-              mytask = omp%nthreads==1 .or. n_state(1)==1 .or. n_state(2)>f_over*omp%nthreads
-              !$omp end critical (set_state_cr)
-            else
-              !$omp atomic read
-              n1 = n_state(1)
-              !$omp atomic read
-              n2 = n_state(2)
-              mytask = omp%nthreads==1 .or. n1==1 .or. n2>f_over*omp%nthreads
-            end if
-            if (mytask) then
-              call self%set_state (task, 2)
-              call self%update (task_list, link, test)
-            else
-              call self%spawn_update (task_list, link, test)
-            end if
-          else
-            call self%spawn_update (task_list, link, test)
-          end if
+          call self%spawn_update (task_list, link, test)
         end if
       end if
       link => link%next
     end do
+    call write_state (self, io_unit%queue, '1')
+    if (self%verbose>1) call self%print_state ('1')
+    !---------------------------------------------------------------------------
+    ! Diagnostics
+    !---------------------------------------------------------------------------
     if (fell_through) then
       if (self%verbose>3) print *,'dispatcher3: fell through'
       call self%diagnostics (task_list)
@@ -240,18 +225,37 @@ END SUBROUTINE execute
 SUBROUTINE print_state (self, label)
   class(dispatcher3_t):: self
   character(len=*):: label
+  !-----------------------------------------------------------------------------
+  call write_state (self, io_unit%output, label)
+END SUBROUTINE
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE write_state (self, unit, label)
+  class(dispatcher3_t):: self
+  integer:: unit
+  character(len=*):: label
+  !-----------------------------------------------------------------------------
+  if (n_write <= 0) return
   !$omp critical (set_state_cr)
-  print '("DISPATCHER3: ",a,f12.6,f9.3,4x,a,i8,6(4x,a,i4))', &
+  n_write = n_write-1
+  write(unit,'("DISPATCHER3: ",a,f12.6,f9.3,2x,3(2x,a,i6),9(2x,a,i5))') &
     label, wallclock(), &
     wc_failed/max(1d-10,wallclock()-start), &
-    'failed:'  , n_fail, &
-    'idle:'    , n_state(0), &
-    'ready:'   , n_state(1), &
-    'spawned:' , n_state(2), &
-    'updating:', n_state(3), &
-    'updated:' , n_state(4)
+    'fail:',n_fail    , &
+    'idl:', n_state(0), &
+    'rdy:', n_state(1), &
+    'spw:', n_state(2), &
+    'act:', n_state(3), &
+    'upd:', n_state(4), &
+    'idl:', d_state(0), &
+    'rdy:', d_state(1), &
+    'spw:', d_state(2), &
+    'act:', d_state(3), &
+    'upd:', d_state(4)
+  d_state = 0
   !$omp end critical (set_state_cr)
-END SUBROUTINE
+END SUBROUTINE write_state
 
 !> =============================================================================
 !> A task that is being actively updated is set in state 3, and when finished
@@ -277,32 +281,25 @@ SUBROUTINE update (self, task_list, link, test)
   n_ready = n_state(1)
   !$omp atomic
   n_ready = n_ready + n_state(2)
-  if (omp%thread==task%mem_thread .or. n_ready<omp%nthreads .or.&
-      omp%thread==0 .or. task%mem_thread==-1) then
-    call self%set_state (task, 3)
-    task%thread = omp%thread
-    if (self%verbose>3) print fmt2, &
-      wallclock(), omp%thread, 'updating task', task%id, 'from', task%time
-    call task_list%update (link, test)
-    if (self%verbose>3) print fmt2, &
-      wallclock(), omp%thread, 'updated  task', task%id, '  to', task%time
-    nbor => link%nbor
-    do while (associated(nbor))
-      if (nbor%needs_me) then
-        if (self%is_ready(nbor%link)) then
-          call self%set_state (nbor%link%task, 1)
-          if (self%verbose>3) print fmt1,wallclock(),omp%thread,'found(2) task',nbor%task%id
-        end if
+  call self%set_state (task, 3)
+  task%thread = omp%thread
+  if (self%verbose>3) print fmt2, &
+    wallclock(), omp%thread, 'updating task', task%id, 'from', task%time
+  call task_list%update (link, test)
+  if (self%verbose>3) print fmt2, &
+    wallclock(), omp%thread, 'updated  task', task%id, '  to', task%time
+  nbor => link%nbor
+  do while (associated(nbor))
+    if (nbor%needs_me) then
+      if (self%is_ready(nbor%link)) then
+        call self%set_state (nbor%link%task, 1)
+        if (self%verbose>3) print fmt1,wallclock(),omp%thread,'found(2) task',nbor%task%id
       end if
-      nbor => nbor%next
-    end do
-    if (verbose > 2) &
-      print *, omp%thread, 'match  ', task%id
-  else
-    if (verbose > 2) &
-      print *, omp%thread, 'skipped', task%id, task%mem_thread
-    !$omp taskyield
-  end if
+    end if
+    nbor => nbor%next
+  end do
+  if (verbose > 2) &
+    print *, omp%thread, 'match  ', task%id
   link%task%thread = -1
   call self%set_state (link%task, 4)
 END SUBROUTINE update
@@ -346,6 +343,7 @@ SUBROUTINE set_state (self, task, in)
     task%state = in
     n_state(io) = n_state(io) - 1
     n_state(in) = n_state(in) + 1
+    d_state(in) = d_state(in) + 1
     if (self%verbose>1) &
       print '(a,i4,f12.6,2x,5i4,2x,2i3)', ' dispatcher3:', omp%thread, wallclock(), n_state, io, in
     !$omp end critical (set_state_cr)
@@ -356,6 +354,8 @@ SUBROUTINE set_state (self, task, in)
    n_state(io) = n_state(io) - 1
    !$omp atomic
    n_state(in) = n_state(in) + 1
+   !$omp atomic
+   d_state(in) = d_state(in) + 1
    !$omp atomic write
    task%state = in
     if (self%verbose>1) &
@@ -408,7 +408,7 @@ LOGICAL FUNCTION is_ready (self, link)
     !$omp atomic
     n_ready = n_ready+1
   end if
-END FUNCTION
+END FUNCTION is_ready
 
 !> =============================================================================
 !> Print statistics
