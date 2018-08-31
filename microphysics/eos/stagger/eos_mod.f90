@@ -33,7 +33,6 @@ MODULE eos_mod
     real    :: gamma
     real    :: kappa
     logical :: on = .false.
-    logical :: do_rt = .false.
   contains
     procedure:: init
     procedure:: lookup
@@ -41,6 +40,7 @@ MODULE eos_mod
     procedure:: pressure
     procedure:: temperature
   end type
+  integer, save:: verbose=0
   type (eos_t), public:: eos
 CONTAINS
 
@@ -50,12 +50,11 @@ CONTAINS
 SUBROUTINE init (self)
   class (eos_t):: self
   real, dimension(:,:,:), pointer:: d, ee, pg
-  logical, save :: do_rt = .false.
   real, save :: kappa = 1.0
-  namelist /eos_params/ do_eos, top, tablefile, do_rt, kappa
+  integer:: ir
+  namelist /eos_params/ do_eos, top, tablefile, kappa, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init')
-  do_rt = self%do_rt
   !$omp critical (eos_cr)
   if (first_time) then
     first_time = .false.
@@ -87,9 +86,15 @@ SUBROUTINE init (self)
       !call self%lookup (shape(ee), ee=ee, d=d, pg=pg)
       print *,'d, ee, pg =', d, ee, pg
       deallocate (d, ee, pg)
+      if (verbose > 0) then
+        print *, '      density       min(E)      max(E)        min(T)      max(T)'
+        do ir=1,md
+          print '(i4,1p,e12.4,2(2x,2e12.4))', ir, rhm(ir), eemin(ir), eemax(ir), &
+            tab(itab(ir)+2*3*mtab(ir)), tab(itab(ir)+(2*3+1)*mtab(ir)-1)
+        end do
+      end if
     end if
   end if
-  self%do_rt = do_rt
   self%on = do_eos
   self%kappa = kappa
   !$omp end critical (eos_cr)
@@ -272,26 +277,20 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
       !-------------------------------------------------------------------------
       ! Internal energy index -- this loop has indirect referencing (9 flops)
       !-------------------------------------------------------------------------
-      ntab(ix)   = mtab(np(ix))
+      ntab(ix)  = mtab(np(ix))
       eek       = 1.+(ee_loc(ix,iy,iz)-eemin(np(ix)))/deetab(np(ix))
-      nbelow_e  = nbelow_e + merge(1,0,eek<1.0)         ! FIXME
-      eek       = max(eek,1.0)                          ! FIXME
+      nbelow_e  = nbelow_e + merge(1,0,eek<1.0)
+      eek       = max(eek,1.0)
       kee       = min(ntab(ix)-1,max(1,int(eek)))
       py(ix)    = eek-kee
       ik(ix)    = itab(np(ix))+kee-1
       ntab1(ix) = mtab(np(ix)+1)
+      ! -- the integer offset below adjusts for a possible larger eemin at the
+      ! -- next table density.  Zero for square tables (e.g. default table.dat)
       kee1      = kee - nint((eemin(np(ix)+1)-eemin(np(ix))) &
                                             /deetab(np(ix)))
       kee1      = min0(ntab1(ix)-1,max0(1,kee1))
-      ik1(ix)    = itab(np(ix)+1)+kee1-1
-      !-------------------------------------------------------------------------
-      ! The three first lines below may be commented out when we are satisfied
-      ! it never panics
-      !-------------------------------------------------------------------------
-      eek1      = 1.+(ee_loc(ix,iy,iz)-eemin(np(ix)+1))/deetab(np(ix)+1)
-      nbelow_e  = nbelow_e + merge(1,0,eek1<kee1)       ! FIXME
-      eek1      = max(eek1,real(kee1))                  ! FIXME
-      py1       = eek1-kee1
+      ik1(ix)   = itab(np(ix)+1)+kee1-1
     end do
     !---------------------------------------------------------------------------
     ! Separate loop for weights, vectorizes well
