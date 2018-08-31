@@ -1247,9 +1247,9 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       if (io%verbose>2) nv = self%nv
       if (io%verbose>1) then
         if (self%time < 1d4) then
-          fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,9i5,2i4,l3,l1,o12)'
+          fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,8i5,2i4,l3,l1,o12)'
         else
-          fmt = '(a,i8,2i4,i3,1p,2e12.5,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,9i5,2i4,l3,l1,o12)'
+          fmt = '(a,i8,2i4,i3,1p,2e12.5,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,8i5,2i4,l3,l1,o12)'
         end if
         do iv=1,nv
           write (io_unit%log,fmt) &
@@ -1306,9 +1306,9 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             !$omp end critical (info_cr2)
           end if
           if (self%time < 1d4) then
-            fmt = '(a,i8,2i4,i3,f12.6,1p,e12.5,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,9i5,2i4,l3,l1,o12)'
+            fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,8i5,2i4,l3,l1,o12)'
           else
-            fmt = '(a,i8,2i4,i3,1p,2e12.5,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,9i5,2i4,l3,l1,o12)'
+            fmt = '(a,i8,2i4,i3,1p,2e12.5,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,8i5,2i4,l3,l1,o12)'
           end if
           do iv=1,nv
             print fmt, &

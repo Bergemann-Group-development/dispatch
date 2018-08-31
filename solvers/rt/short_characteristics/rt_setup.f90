@@ -38,7 +38,7 @@ SUBROUTINE rt_setup (task_list)
   class(rt_t), pointer:: omega=>null(), mhd
   class(patch_t), pointer:: patch
   class(task_list_t), pointer:: rt_task_list
-  integer:: i_omega, ntask, iter, iostat
+  integer:: i_omega, ntask, iter, iostat, id_save, n_mhd, n_rt
   integer, save:: verbose=0, n_warmup=5, n_omega=0
   real(8):: boundary_distance
   logical, save:: unique_ids=.false.
@@ -51,7 +51,7 @@ SUBROUTINE rt_setup (task_list)
   rewind (io_unit%input)
   read (io_unit%input, rt_setup_params, iostat=iostat)
   if (mpi%size > 1 .and. .not.unique_ids) then
-    print *, 'WARNING: unique_ids set to .true. when using MPI'
+    print *, 'WARNING: unique_ids set to .true. when using MPI size =', mpi%size
     unique_ids = .true.
   end if
   if (io%master) write (io_unit%output, rt_setup_params)
@@ -60,11 +60,8 @@ SUBROUTINE rt_setup (task_list)
   call rt_task_list%init
   if (verbose > 1) &
     call task_list%print ('task_list')
-  !-----------------------------------------------------------------------------
-  ! In this loop, "link" is the MHD task link, omega%link is the link of the
-  ! subtask, link%nbor points to MHD task nbors (including the RT sub-tasks),
-  ! and omega%link%nbor are RT task nbors (including the MHD task).
-  !-----------------------------------------------------------------------------
+  n_rt = 0
+  n_mhd = 0
   link => task_list%head
   do while (associated(link))
     call io%assert (associated(link%task), 'link%task missing')
@@ -105,6 +102,14 @@ SUBROUTINE rt_setup (task_list)
         n_omega = mhd%n_omega
         do i_omega=1,mhd%n_omega
           omega => mhd%omega(i_omega)
+          !---------------------------------------------------------------------
+          ! Reassign unique IDs to RT tasks
+          !---------------------------------------------------------------------
+          if (unique_ids) then
+            id_save = omega%id
+            omega%id = 0
+            call omega%task_t%init
+          end if
           omega%parent => mhd
           if (verbose > 1) &
             print *,'appending task', omega%id, omega%nw, omega%it, omega%new
@@ -127,12 +132,16 @@ SUBROUTINE rt_setup (task_list)
           call omega%clear (bits%ready)
           call rt_task_list%append_link (omega%link)
         end do
+        n_rt = n_rt+1
+      else
+        n_mhd = n_mhd+1
       end if
     end select
     if (verbose > 1) &
       call link%print_nbors
     link => link%next
   end do
+  print *, 'rt_setup: n_rt, n_mhd =', n_rt, n_mhd
   if (associated(omega)) then
     patch => omega
     call data_io%register_kind (patch)

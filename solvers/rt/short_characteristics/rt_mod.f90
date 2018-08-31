@@ -364,7 +364,7 @@ SUBROUTINE update (self)
     end if
     if (self%is_clear(bits%no_rt)) then
       if (self%time > self%rt_next) then
-        ! -- maake a new EOS calculation, interpolated to self%rt_time
+        ! -- maake a new EOS calculation, interpolated to self%rt_next
         call self%rt_eos
         ! -- increase the "rabbit" time one RT time
         self%rt_next = self%rt_next + self%rt_time
@@ -421,9 +421,9 @@ SUBROUTINE update (self)
       self%time = self%rt_next
     end if
     if (verbose > 0) &
-      print '(i6,2x,a,i3,4f8.4,3x,5f8.4)', self%id, &
+      print '(i6,2x,a,i3,4f8.4)', self%id, &
         'rt_t%update: it, t(it), time, dtime, rt_next, t =', &
-        self%it, self%t(self%it), self%time, self%dtime, self%rt_next, self%t
+        self%it, self%t(self%it), self%time, self%dtime, self%rt_next
     self%rotated = .true.
     !---------------------------------------------------------------------------
     if (self%time > self%rt_next) then
@@ -432,7 +432,6 @@ SUBROUTINE update (self)
     if (debug1(self)) &
       print '(i6,2f7.3,2x,a,f8.4)', self%id, self%position(3), self%mu, &
         'rt_t%update:  RT patch updated to t =', self%time
-    n_solve = n_solve+1
   end if
   call trace%end (itimer)
 END SUBROUTINE update

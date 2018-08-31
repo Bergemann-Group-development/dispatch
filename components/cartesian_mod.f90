@@ -178,16 +178,23 @@ SUBROUTINE init (self, label)
   ! Ŕeset the boundary / internal / virtual and boundary bits (and flags), and
   ! reconstruct the nbor lists based on that
   !-----------------------------------------------------------------------------
+  print *, 'cartesian_t%init: resetting patch status'
   call self%task_list%reset_status
+  print *, 'cartesian_t%init: counting patch status'
   call self%task_list%count_status
   io%ntask = self%task_list%na
+  print *, 'cartesian_t%init: init boundaries'
   call self%task_list%init_bdries
+  print *, 'cartesian_t%init: init all nbors'
   call self%task_list%init_all_nbors
+  print *, 'cartesian_t%init: diagnostics'
   call self%diagnostics
   write (io_unit%mpi,*) npatch,' patches',nvpatch,' virtual',nbpatch,' boundary'
   write (io_unit%mpi,*) nlpatch,' local patches'
   flush (io%log_unit)
+  print *, 'cartesian_t%init: print tasks'
   call self%task_list%print_tasks
+  print *, 'cartesian_t%init: done'
   !call trace_end (itimer)
 END SUBROUTINE init
 
