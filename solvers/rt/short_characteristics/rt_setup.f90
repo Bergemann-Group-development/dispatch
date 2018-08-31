@@ -42,7 +42,8 @@ SUBROUTINE rt_setup (task_list)
   integer, save:: verbose=0, n_warmup=5, n_omega=0
   real(8):: boundary_distance
   logical, save:: unique_ids=.false.
-  namelist /rt_setup_params/ n_warmup, verbose, unique_ids
+  logical, save:: only_vertical=.false.
+  namelist /rt_setup_params/ n_warmup, verbose, unique_ids, only_vertical
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_setup')
   !-----------------------------------------------------------------------------
@@ -58,6 +59,11 @@ SUBROUTINE rt_setup (task_list)
   call rt_task_list%init
   if (verbose > 1) &
     call task_list%print ('task_list')
+  !-----------------------------------------------------------------------------
+  ! In this loop, "link" is the MHD task link, omega%link is the link of the
+  ! subtask, link%nbor points to MHD task nbors (including the RT sub-tasks),
+  ! and omega%link%nbor are RT task nbors (including the MHD task).
+  !-----------------------------------------------------------------------------
   link => task_list%head
   do while (associated(link))
     call io%assert (associated(link%task), 'link%task missing')
@@ -82,11 +88,11 @@ SUBROUTINE rt_setup (task_list)
       do while (associated(nbor))
         call io%assert (associated(nbor%task), 'nbor%task missing')
         call io%assert (associated(nbor%link), 'nbor%link missing')
-        ! -- do not download RT values to MHD parent tasks
+        ! -- download MHD nbor values to the MHD parent tasks
         nbor%download = .true.
-        ! -- call check_ready() on MHD task when RT task updates
+        ! -- call check_ready() on MHD nbor task when MHD task updates
         nbor%needs_me = .true.
-        ! -- include MHD in check_ready() of RT task updates
+        ! -- include MHD nbor in check_ready() of MHD task updates
         nbor%needed = .true.
         nbor => nbor%next
       end do
@@ -129,6 +135,26 @@ SUBROUTINE rt_setup (task_list)
   if (associated(omega)) then
     patch => omega
     call data_io%register_kind (patch)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Run through all nbor tasks of all RT tasks
+  !-----------------------------------------------------------------------------
+  if (only_vertical) then
+    link => rt_task_list%head
+    do while (associated(link))
+      nbor => link%nbor
+      do while (associated(nbor))
+        !-------------------------------------------------------------------------
+        ! If the nbor task has a different horizontal position, do not check it's
+        ! time -- accepting a possible delay of information sideways.
+        !-------------------------------------------------------------------------
+        if (any(link%task%position(1:2) /= nbor%task%position(1:2))) then
+          nbor%needed = .false.
+        end if
+        nbor => nbor%next
+      end do
+      link => link%next
+    end do
   end if
   !-----------------------------------------------------------------------------
   ! Reassign unique IDs to RT tasks

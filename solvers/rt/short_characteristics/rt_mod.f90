@@ -648,7 +648,7 @@ FUNCTION needs (self, omega, task)
       needs = .not.any(is1*is2 < 0)
     end if
     !---------------------------------------------------------------------------
-    ! I a horizontal ray component is axis aligned, exclude non-aligned nbors
+    ! If a horizontal ray component is axis aligned, exclude non-aligned nbors
     !---------------------------------------------------------------------------
     if (is2(1)==0 .and. is1(1)/=0) needs = .false.
     if (is2(2)==0 .and. is1(2)/=0) needs = .false.
