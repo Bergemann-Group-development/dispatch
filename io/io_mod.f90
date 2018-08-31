@@ -416,9 +416,11 @@ END SUBROUTINE assert
 SUBROUTINE header (message)
   character(len=*):: message
   !.............................................................................
-  call line('')
-  call line(message)
-  call line('')
+  if (io%master) then
+    call line('')
+    call line(message)
+    call line('')
+  end if
 !> =============================================================================
 contains
   subroutine line (s)
