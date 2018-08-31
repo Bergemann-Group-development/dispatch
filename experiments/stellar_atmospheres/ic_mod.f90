@@ -179,11 +179,6 @@ SUBROUTINE read_stagger (task_list)
     patch => task2patch(link%task)
     if (b0 >= 0.0) &
       patch%mem(:,:,:,patch%idx%bz,1,1) = b0
-    select type (patch)
-    class is (experiment_t)
-      if (patch%i_omega==0) &
-        call patch%output
-    end select
     link => link%next
   end do
   if (io%master) &
