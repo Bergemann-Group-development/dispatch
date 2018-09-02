@@ -274,6 +274,7 @@ SUBROUTINE update (self, task_list, link, test)
   class(task_t), pointer:: task
   logical:: test
   integer:: n_ready
+  integer:: omp_get_thread_num
   !.............................................................................
   task => link%task
   !-----------------------------------------------------------------------------
@@ -288,7 +289,7 @@ SUBROUTINE update (self, task_list, link, test)
   call self%set_state (task, 3)
   task%thread = omp%thread
   if (self%verbose>3) print fmt2, &
-    wallclock(), omp%thread, 'updating task', task%id, 'from', task%time
+    wallclock(), omp_get_thread_num(), 'updating task', task%id, 'from', task%time
   call task_list%update (link, test)
   if (self%verbose>3) print fmt2, &
     wallclock(), omp%thread, 'updated  task', task%id, '  to', task%time
@@ -316,6 +317,7 @@ SUBROUTINE spawn_update (self, task_list, link, test)
   type(task_list_t), pointer:: task_list
   class(link_t), pointer:: link
   logical:: test
+  integer:: omp_get_thread_num
   !...........................................................................
   call self%set_state (link%task, 2)
   if (self%verbose>2) print fmt0,wallclock(),omp%thread,'spawning task',link%task%id, link%task%state, link%task%thread
@@ -327,6 +329,9 @@ SUBROUTINE spawn_update (self, task_list, link, test)
       else
         print *,'WARNING, lock conflict, thread, id =', omp%thread, link%task%id, link%task%thread
       end if
+    ! -- reject work on thread 0
+    else if (omp_get_thread_num() == 0) then
+      call self%set_state (link%task, 1)
     else
       call self%update (task_list, link, test)
     end if
