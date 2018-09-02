@@ -25,6 +25,7 @@ MODULE parallel_io_mod
   integer, parameter:: verbose=0
   type(central_t):: central
   type(mpi_io_file_t), save:: file_in, file_out
+  type(mpi_io_t):: thread_io
   type(parallel_io_t), public:: parallel_io
 CONTAINS
 
@@ -40,6 +41,7 @@ SUBROUTINE init (patch)
   logical:: exists
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%init')
+  call thread_io%init
   if (io%restart > 0) then
     filename=trim(io%inputdir)//'snapshots.dat'
     inquire (file=filename, exist=exists)
@@ -84,8 +86,7 @@ SUBROUTINE output (patch)
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
   integer:: iv, n(3), jt(2), nv, iw, nw
-  real, dimension(:,:,:,:), allocatable:: buffer, mem
-  type(mpi_io_t):: thread_io
+  real, dimension(:,:,:,:), pointer:: buffer, mem
   real:: pt(2)
   logical:: first_time=.true.
   integer, save:: itimer=0
@@ -105,7 +106,7 @@ SUBROUTINE output (patch)
     n = patch%n
   end if
   !-----------------------------------------------------------------------------
-  ! A call to thread_io%write (iout, id) result in slots in the file ordered
+  ! A call to thread_io%iwrite (iout, id) result in slots in the file ordered
   ! by (iv,id,iout), where iv=1,nv; id=1,io%ntotal, iout=1,nsnap. To output
   ! time derivatives, while still using a buffer with nv slots, we pretend that
   ! io%ntotal is twice as large, and output the time derivs as patch 2+2*(id-1),
@@ -118,7 +119,7 @@ SUBROUTINE output (patch)
     snapshot_words = buffer_words*io%ntotal
   end if
   call thread_io%use (file_out)
-  call thread_io%init (snapshot_words, buffer_words)
+  call thread_io%set (snapshot_words, buffer_words)
   !-----------------------------------------------------------------------------
   ! Info
   !-----------------------------------------------------------------------------
@@ -186,15 +187,15 @@ SUBROUTINE output (patch)
     !---------------------------------------------------------------------------
     if (io%time_derivs) then
       if (patch%nw==1) then
-        call thread_io%write (buffer, 1+patch%iout, 1+2*(patch%id-1))
+        call thread_io%iwrite (buffer, 1+patch%iout, 1+2*(patch%id-1))
       else
-        call thread_io%write (buffer, 1+patch%iout, 2+2*(patch%id-1))
+        call thread_io%iwrite (buffer, 1+patch%iout, 2+2*(patch%id-1))
       end if
     !---------------------------------------------------------------------------
     ! If no time derivs, increment with one per snapshot
     !---------------------------------------------------------------------------
     else
-      call thread_io%write (buffer, 1+patch%iout, patch%id)
+      call thread_io%iwrite (buffer, 1+patch%iout, patch%id)
     end if
   end do
   !-----------------------------------------------------------------------------
@@ -215,9 +216,8 @@ SUBROUTINE output (patch)
         call central%time_derivative (patch, patch%mem(:,:,:,iv,:,1), buffer(:,:,:,iv))
       end if
     end do
-    call thread_io%write (buffer, 1+patch%iout, 2+2*(patch%id-1))
+    call thread_io%iwrite (buffer, 1+patch%iout, 2+2*(patch%id-1))
   end if
-  deallocate (buffer)
   call trace%end (itimer)
 END SUBROUTINE output
 
@@ -231,7 +231,6 @@ SUBROUTINE input (patch, ok)
   integer(8):: snapshot_words, buffer_words
   integer:: iv, n(3), nv
   real, dimension(:,:,:,:), allocatable:: buffer
-  type(mpi_io_t):: thread_io
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%input', itimer=itimer)
@@ -262,7 +261,7 @@ SUBROUTINE input (patch, ok)
     snapshot_words = buffer_words*io%ntotal
   end if
   call thread_io%use (file_in)
-  call thread_io%init (snapshot_words, buffer_words)
+  call thread_io%set (snapshot_words, buffer_words)
   !-----------------------------------------------------------------------------
   ! Read via buffer, in case guard zones not included. FIXME: read snapshot
   ! guard zone parameter, to allow it to differ

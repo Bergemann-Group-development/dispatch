@@ -297,7 +297,7 @@ SUBROUTINE output_nml (patch, append)
   ms = wallclock()
   !$omp critical (output_cr)
   ms = 1e3*(wallclock()-ms)
-  if (ms > 0.1) &
+  if (ms > 1.0) &
     print '(a,i5,2x,a,f7.2,a)', ' thread', omp%thread, 'waited', ms, ' ms'
   !-----------------------------------------------------------------------------
   ! Write snapshot_nml to the file "data/run/NNNNN/snapshot.nml"
@@ -345,7 +345,7 @@ SUBROUTINE output_nml (patch, append)
     if (filename /= filename1) then
       if (open1) close (io_unit%nml1)
       open  (io_unit%nml1, file=trim(filename), form='formatted', status='unknown')
-      print '(a,i5,2x,2a)', ' thread', omp%thread, 'opened ', trim(filename)
+      !print '(a,i5,2x,2a)', ' thread', omp%thread, 'opened ', trim(filename)
       filename1 = filename
       open1 = .true.
     end if
@@ -365,7 +365,7 @@ SUBROUTINE output_nml (patch, append)
     if (open2) close (io_unit%nml2)
     open  (io_unit%nml2, file=trim(filename), form='formatted', status='unknown', &
          access=trim(merge('append    ','sequential',append)))
-    print '(a,i5,2x,2a)', ' thread', omp%thread, 'opened ', trim(filename)
+    !print '(a,i5,2x,2a)', ' thread', omp%thread, 'opened ', trim(filename)
     filename2 = filename
     open2 = .true.
   end if

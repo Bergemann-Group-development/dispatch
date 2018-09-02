@@ -35,11 +35,30 @@ MODULE mpi_io_mod
   USE trace_mod
   USE mpi_mod, only: mp=>mpi
   USE mpi_io_file_mod
+  USE dll_mod
 #ifdef MPI
   USE mpi
 #endif MPI
   implicit none
   private
+  !-----------------------------------------------------------------------------
+  ! dll_node extension with a request and buffer pointer
+  !-----------------------------------------------------------------------------
+  type, public, extends(dll_node_t):: iwrite_t
+    integer:: req
+    real, dimension(:,:,:,:), pointer:: buffer
+  end type
+  !-----------------------------------------------------------------------------
+  ! dll_t extension with a procedure for testing request completion
+  !-----------------------------------------------------------------------------
+  type, public, extends(dll_t):: iwrite_list_t
+    logical:: first_time=.true.
+  contains
+    procedure:: check
+  end type
+  !-----------------------------------------------------------------------------
+  ! MPI I/O data type
+  !-----------------------------------------------------------------------------
   type, public:: mpi_io_t
     type(mpi_io_file_t):: file
     integer:: req
@@ -55,6 +74,7 @@ MODULE mpi_io_mod
   contains
     procedure:: use
     procedure:: init
+    procedure:: set
     procedure:: check_init
     procedure, private:: write3
     procedure, private:: write4
@@ -63,12 +83,11 @@ MODULE mpi_io_mod
     procedure, private:: read3
     procedure, private:: read4
     generic, public :: read => read3, read4
-    procedure:: test
-    procedure:: wait
     procedure:: assert
   end type
   character(len=32), save:: fmt='(1x,a,4i8,1p,5e12.3)'
-  integer, save:: verbose=0
+  integer, save:: verbose=1
+  type(iwrite_list_t), public:: iwrite_list
 CONTAINS
 
 !> =============================================================================
@@ -86,7 +105,24 @@ END SUBROUTINE use
 !> =============================================================================
 !> Initialize the local size self%lsize, global size self%gsize
 !> =============================================================================
-SUBROUTINE init (self, rec_words, chunk_words)
+SUBROUTINE init (self)
+  class(mpi_io_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_t%init')
+  !$omp critical (iwrite_cr)
+  if (iwrite_list%first_time) then
+    iwrite_list%first_time = .false.
+    call iwrite_list%init ('iwrite_list')
+    print *, 'mpi_io_t%init done'
+  end if
+  !$omp end critical (iwrite_cr)
+  call trace%end
+END SUBROUTINE init
+
+!> =============================================================================
+!> Initialize the local size self%lsize, global size self%gsize
+!> =============================================================================
+SUBROUTINE set (self, rec_words, chunk_words)
   class(mpi_io_t):: self
   integer(8), optional:: rec_words, chunk_words
   !-----------------------------------------------------------------------------
@@ -100,7 +136,7 @@ SUBROUTINE init (self, rec_words, chunk_words)
     if (verbose > 2) print *, 'mpi_io_t%init: setting chunk_words =', chunk_words
   end if
   call trace%end
-END SUBROUTINE init
+END SUBROUTINE set
 
 !> =============================================================================
 !> Initialize the local size self%lsize, global size self%gsize
@@ -167,26 +203,35 @@ END SUBROUTINE write4
 !> =============================================================================
 SUBROUTINE iwrite (self, f, rec, id)
   class(mpi_io_t):: self
-  real(kind=4), dimension(:,:,:):: f
+  real(kind=4), dimension(:,:,:,:), pointer:: f
   integer:: rec, id
 #ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
+  class(iwrite_t), pointer:: item
+  class(dll_node_t), pointer:: node
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('mpi_io_t%iwrite')
+  call trace%begin ('mpi_io_t%iwrite', itimer=itimer)
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose>1) &
     print '(a,3i8,i15,2f12.0)', ' mpi_io_t%iwrite: rec, id, words, pos =', &
     rec, id, self%chunk_words, pos, minval(f), maxval(f)
-  !$omp critical (mpi_io_cr)
-  if (allocated(self%buf)) deallocate (self%buf)
-  allocate (self%buf(size(f,1),size(f,2),size(f,3)))
-  self%buf = f
-  call MPI_file_iwrite_at (self%file%handle, pos, self%buf, self%chunk_words, &
-                           MPI_REAL, self%req, self%err)
-  !$omp end critical (mpi_io_cr)
-  call self%assert ('mpi_io_mod::write MPI_File_iwrite_at '//trim(self%file%filename))
-  call trace%end
+  allocate (item)
+  call MPI_file_iwrite_at (self%file%handle, pos, f, self%chunk_words, &
+                           MPI_REAL, item%req, self%err)
+  !-----------------------------------------------------------------------------
+  ! Add details we need in order to check for buffers to deallocate
+  !-----------------------------------------------------------------------------
+  item%buffer => f
+  !$omp critical (iwrite_cr)
+  node => item
+  call iwrite_list%append (node)
+  if (verbose>1) &
+    print '(1x,a,z12,i4)', 'appended req, n =', item%req, iwrite_list%n
+  call check_real(iwrite_list)
+  !$omp end critical (iwrite_cr)
+  call trace%end (itimer)
 #endif
 END SUBROUTINE iwrite
 
@@ -241,42 +286,6 @@ SUBROUTINE read4 (self, f, rec, id)
 END SUBROUTINE read4
 
 !> =============================================================================
-!> Test if an I/O operation is complete
-!> =============================================================================
-FUNCTION test (self) RESULT (flag)
-  class(mpi_io_t):: self
-  logical:: flag
-  !-----------------------------------------------------------------------------
-#ifdef MPI
-  call trace%begin ('mpi_io_t%test')
-  call MPI_Test (self%req, flag, self%status, self%err)
-  call self%assert ('mpi_io_mod::read MPI_Test')
-  if (flag) then
-    if (allocated(self%buf)) deallocate (self%buf)
-    self%req = 0
-  end if
-  call trace%end
-#endif
-END FUNCTION test
-
-!> =============================================================================
-!> Wait for an MPI I/O operation to complete
-!> =============================================================================
-SUBROUTINE wait (self)
-  class(mpi_io_t):: self
-  !-----------------------------------------------------------------------------
-#ifdef MPI
-  if (self%req==0) return
-  call trace%begin ('mpi_io_t%wait')
-  call MPI_Wait (self%req, self%status, self%err)
-  call self%assert ('mpi_io_mod::read MPI_Wait')
-  deallocate (self%buf)
-  self%req = 0
-  call trace%end
-#endif
-END SUBROUTINE wait
-
-!> =============================================================================
 !> Assert no error
 !> =============================================================================
 SUBROUTINE assert (self, label, err)
@@ -293,5 +302,55 @@ SUBROUTINE assert (self, label, err)
     call mp%abort (label)
   end if
 END SUBROUTINE assert
+
+!> =============================================================================
+!> Check for completed iwrite
+!> =============================================================================
+SUBROUTINE check (self)
+  class(iwrite_list_t):: self
+  !$omp critical (iwrite_cr)
+  call check_real (self)
+  !$omp end critical (iwrite_cr)
+END SUBROUTINE check
+
+!> =============================================================================
+!> Check for completed iwrite
+!> =============================================================================
+SUBROUTINE check_real (self)
+  class(iwrite_list_t):: self
+  class(dll_node_t), pointer:: node
+  class(iwrite_t), pointer:: item
+  integer:: status(MPI_STATUS_SIZE), err
+  logical:: flag
+  integer:: n, req
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  if (self%n == 0) return
+  call trace%begin ('iwrite_list_t%check_real', itimer=itimer)
+  n = self%n
+  node => self%head
+  do while (associated(node))
+    flag = .false.
+    err = 0
+    select type (node)
+    class is (iwrite_t)
+      item => node
+      req = item%req
+      call MPI_Test (item%req, flag, status, err)
+      !call MPI_Wait (item%req, status, err); flag = .true.
+    end select
+    if (flag) then
+      if (associated(item%buffer)) then
+        deallocate (item%buffer)
+        nullify (item%buffer)
+      end if
+      call self%remove (node)
+    end if
+    if (verbose>0 .and. flag) &
+      print '(1x,a,z12,l4,z12,i5)', 'check req, flag, err, n =', req, flag, err, n
+    node => node%next
+  end do
+  call trace%end (itimer)
+END SUBROUTINE check_real
 
 END MODULE mpi_io_mod

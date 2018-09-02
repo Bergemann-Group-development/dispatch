@@ -53,6 +53,7 @@ MODULE dispatcher3_mod
   USE omp_mod
   USE omp_timer_mod
   USE mpi_mod
+  USE mpi_io_mod
   USE timer_mod
   USE link_mod
   USE mpi_mesg_mod
@@ -123,7 +124,7 @@ SUBROUTINE execute (self, task_list, test)
   class(link_t), pointer:: link, nbor
   class(task_t), pointer:: task
   logical:: mytask
-  integer:: n1, n2
+  integer:: n1, n2, iter
   real(8):: start_fail, start_iter
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -138,12 +139,18 @@ SUBROUTINE execute (self, task_list, test)
   call timer%print
   !$omp parallel private(link,nbor,task,mytask) shared(n_state) default(shared)
   !$omp master
+  iter = 0
   do while (task_list%na>0 .and. wallclock()-start < io%job_seconds)
     start_iter = wallclock()
     !---------------------------------------------------------------------------
     ! Check if there is MPI work
     !---------------------------------------------------------------------------
     call task_list%check_mpi()
+    iter = iter+1
+    if (iter==10) then
+      iter = 0
+      call iwrite_list%check()
+    end if
     !---------------------------------------------------------------------------
     ! Run through the task list, looking for and counting tasks that are ready
     !---------------------------------------------------------------------------
