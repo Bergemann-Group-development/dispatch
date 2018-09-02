@@ -179,7 +179,7 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   if (fast_nbors) then
     if (io%master) &
-      print *, 'cartesian_t%init: generate nbors'
+      print *, 'cartesian_t%init: generating nbors'
     do k=0,self%dims(3)-1
     do j=0,self%dims(2)-1
     do i=0,self%dims(1)-1

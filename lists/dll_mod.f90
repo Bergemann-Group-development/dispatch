@@ -5,13 +5,13 @@ MODULE dll_mod
   implicit none
   private
   type, public:: dll_node_t
-    type(dll_node_t), pointer:: prev => null()
-    type(dll_node_t), pointer:: next => null()
+    class(dll_node_t), pointer:: prev => null()
+    class(dll_node_t), pointer:: next => null()
     class(*), pointer:: car
   end type
   type, public:: dll_t
-    type(dll_node_t), pointer:: head => null()
-    type(dll_node_t), pointer:: tail => null()
+    class(dll_node_t), pointer:: head => null()
+    class(dll_node_t), pointer:: tail => null()
     integer:: n=0
     character(len=32):: name
   contains
@@ -129,7 +129,7 @@ END SUBROUTINE insert_after
 !> =============================================================================
 SUBROUTINE remove (self, old)
   class(dll_t):: self
-  type(dll_node_t), pointer:: old
+  class(dll_node_t), pointer:: old
   !.............................................................................
   if (associated(old%prev)) old%prev%next => old%next
   if (associated(old%next)) old%next%prev => old%prev

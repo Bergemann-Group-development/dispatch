@@ -693,7 +693,11 @@ FUNCTION debug (self, level) RESULT (yes)
   integer:: id
   !-----------------------------------------------------------------------------
   yes = maxval(abs(self%position(1:2)-dbg_position)/self%size(1:2)) < 0.55
-  id  = merge (self%id, self%parent%id, self%i_omega==0)
+  if (associated(self%parent)) then
+    id = self%parent%id
+  else
+    id = self%id
+  end if
   yes = yes .or. id == io%id_debug
   yes = yes .and. (verbose >= level)
 END FUNCTION debug

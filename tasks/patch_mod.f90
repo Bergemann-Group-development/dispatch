@@ -1239,6 +1239,11 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     return
   end if
   1 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,9i5,2i4,l3,l1,o12)
+  if (self%time < 1d4) then
+    fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,2i4,l3,l1,o12)'
+  else
+    fmt = '(a,i8,2i4,i3,1p,2e12.5,     0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,2i4,l3,l1,o12)'
+  end if
   if (io%verbose>=0) then
     if (self%time>=self%print_next) then
       if (io%print_time > 0) &
@@ -1246,11 +1251,6 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       nv = 1
       if (io%verbose>2) nv = self%nv
       if (io%verbose>1) then
-        if (self%time < 1d4) then
-          fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,8i5,2i4,l3,l1,o12)'
-        else
-          fmt = '(a,i8,2i4,i3,1p,2e12.5,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,8i5,2i4,l3,l1,o12)'
-        end if
         do iv=1,nv
           write (io_unit%log,fmt) &
             'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
@@ -1304,11 +1304,6 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
                        //'6....+....7....+....8....+....9....+....0....+....1 ntsk    nq ' &
                        //' chk  rdy  upd  snt  prb  unp  dly snq rcq  BV'
             !$omp end critical (info_cr2)
-          end if
-          if (self%time < 1d4) then
-            fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,8i5,2i4,l3,l1,o12)'
-          else
-            fmt = '(a,i8,2i4,i3,1p,2e12.5,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,8i5,2i4,l3,l1,o12)'
           end if
           do iv=1,nv
             print fmt, &
