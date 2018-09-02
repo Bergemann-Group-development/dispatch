@@ -1,4 +1,4 @@
-VPATH := $(VPATH):$(TOP)/par/mpi
+VPATH := $(VPATH):$(TOP)/mpi
 
 mpi_mod.o:         omp_mod.o io_unit_mod.o omp_timer_mod.o
 mpi_coords_mod.o:  mpi_mod.o io_mod.o

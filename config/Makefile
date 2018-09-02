@@ -45,8 +45,8 @@ default: $(EXEC)
 #############################################################################
 # Sources directories are searched in this exact order (VPATH inside Makefile)
 VPATH = $(TOP)
-sinclude $(TOP)/par/omp/Makefile
-sinclude $(TOP)/par/mpi/Makefile
+sinclude $(TOP)/omp/Makefile
+sinclude $(TOP)/mpi/Makefile
 ifeq ($(MPI),mpi)
   DEFS += -DMPI
 endif
