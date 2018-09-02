@@ -13,6 +13,7 @@ MODULE data_io_mod
   USE os_mod
   USE mpi_mod
   USE omp_mod
+  USE omp_timer_mod
   USE trace_mod
   USE task_mod
   USE patch_mod
@@ -20,7 +21,6 @@ MODULE data_io_mod
   USE legacy_io_mod
   USE parallel_io_mod
   USE buffered_io_mod
-  !USE snapshot_list_mod
   USE counters_mod
   USE index_mod
   USE dll_mod
@@ -273,11 +273,13 @@ SUBROUTINE output_nml (patch, append)
   logical :: append
   !.............................................................................
   character(len=128)   :: filename
+  character(len=128), save:: filename1='', filename2=''
+  logical, save        :: open1=.false., open2=.false.
   integer              :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
                           nw, ntotal, format
   integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
   real                 :: gamma, quality
-  real(8)              :: time, dtime, out_next, out_time
+  real(8)              :: time, dtime, out_next, out_time, ms
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
   logical              :: guard_zones, time_derivs, no_mans_land, periodic(3)
@@ -292,7 +294,11 @@ SUBROUTINE output_nml (patch, append)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%output_nml')
+  ms = wallclock()
   !$omp critical (output_cr)
+  ms = 1e3*(wallclock()-ms)
+  if (ms > 0.1) &
+    print '(a,i5,2x,a,f7.2,a)', ' thread', omp%thread, 'waited', ms, ' ms'
   !-----------------------------------------------------------------------------
   ! Write snapshot_nml to the file "data/run/NNNNN/snapshot.nml"
   !-----------------------------------------------------------------------------
@@ -336,12 +342,17 @@ SUBROUTINE output_nml (patch, append)
   periodic     = patch%periodic
   if (mpi%master .and. .not.append) then
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
-    open  (io_unit%data, file=trim(filename), form='formatted', status='unknown')
-    write (io_unit%data, io_nml)
-    write (io_unit%data, snapshot_nml)
-    call patch%idx%output
-    call file_append (io_unit%nml, io_unit%data)
-    close (io_unit%data)
+    if (filename /= filename1) then
+      if (open1) close (io_unit%nml1)
+      open  (io_unit%nml1, file=trim(filename), form='formatted', status='unknown')
+      print '(a,i5,2x,2a)', ' thread', omp%thread, 'opened ', trim(filename)
+      filename1 = filename
+      open1 = .true.
+    end if
+    write (io_unit%nml1, io_nml)
+    write (io_unit%nml1, snapshot_nml)
+    call patch%idx%output (io_unit%nml1)
+    call file_append (io_unit%nml, io_unit%nml1)
     if (io%debug(2)) print'(a,3x,"time:",2f13.6)', &
       ' data_io_t%output_nml: '//trim(filename), patch%out_next, patch%time
   end if
@@ -350,16 +361,21 @@ SUBROUTINE output_nml (patch, append)
   !-----------------------------------------------------------------------------
   write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
          trim(io%outputname), patch%iout, mpi%rank
-  open  (io_unit%data, file=trim(filename), form='formatted', status='unknown', &
+  if (filename /= filename2) then
+    if (open2) close (io_unit%nml2)
+    open  (io_unit%nml2, file=trim(filename), form='formatted', status='unknown', &
          access=trim(merge('append    ','sequential',append)))
+    print '(a,i5,2x,2a)', ' thread', omp%thread, 'opened ', trim(filename)
+    filename2 = filename
+    open2 = .true.
+  end if
   !-----------------------------------------------------------------------------
   ! Write the namelist info, including a leading idx_nml
   !-----------------------------------------------------------------------------
   if (mpi%master .and. .not.append) then
-    call patch%idx%output
+    call patch%idx%output (io_unit%nml2)
   end if
-  write (io_unit%data, patch_nml)
-  close (io_unit%data)
+  write (io_unit%nml2, patch_nml)
   !$omp end critical (output_cr)
   call trace%end
 END SUBROUTINE output_nml

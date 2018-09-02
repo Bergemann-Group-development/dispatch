@@ -75,12 +75,15 @@ END SUBROUTINE copy
 !> =============================================================================
 !> Write out index value namelist, for python/dispatch/
 !> =============================================================================
-SUBROUTINE output (self)
+SUBROUTINE output (self, unit)
   class(index_t):: self
+  integer:: unit
+  !.............................................................................
   integer:: &
     d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3
   namelist /idx_nml/ &
     d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3
+  !-----------------------------------------------------------------------------
   if (io%time_derivs) then
     call output_time_derivs (self)
   else
@@ -104,7 +107,7 @@ SUBROUTINE output (self)
     qr   = self%qr  - 1
     tt   = self%tt  - 1
     phi  = self%phi - 1
-    write (io_unit%data, idx_nml)
+    write (unit, idx_nml)
   end if
 END SUBROUTINE output
 

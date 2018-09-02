@@ -128,10 +128,10 @@ SUBROUTINE write3 (self, f, rec, id)
   if (verbose>1) &
     write (io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write3: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
-  !$omp critical (mpi_io_cr)
+  !!omp critical (mpi_io_cr)
   call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                           self%status, self%err)
-  !$omp end critical (mpi_io_cr)
+  !!omp end critical (mpi_io_cr)
   call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
   call trace%end
 #endif
@@ -153,10 +153,10 @@ SUBROUTINE write4 (self, f, rec, id)
   if (verbose>1) &
     write (io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write4: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
-  !$omp critical (mpi_io_cr)
+  !!omp critical (mpi_io_cr)
   call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                           self%status, self%err)
-  !$omp end critical (mpi_io_cr)
+  !!omp end critical (mpi_io_cr)
   call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
   call trace%end
 #endif
