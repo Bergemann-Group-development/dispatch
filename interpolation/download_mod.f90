@@ -306,10 +306,10 @@ END SUBROUTINE test
 !> Select the best method for each case.  So far, this only supports static
 !> patches at the same level, or static patches one level up or down
 !> =============================================================================
-SUBROUTINE download_link (self, link, all_cells, only)
+SUBROUTINE download_link (self, link, all_cells, only, all_times)
   class(download_t):: self
   class(link_t), pointer:: link
-  logical, optional:: all_cells
+  logical, optional:: all_cells, all_times
   integer, optional:: only
   !.............................................................................
   class(link_t), pointer:: nbor, sorted_head
@@ -520,10 +520,10 @@ END SUBROUTINE dnload_range
 !>   dnload_range
 !>   time_interval
 !> =============================================================================
-SUBROUTINE same_linear (target, source, filled, all_cells, only)
+SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
   class(patch_t), pointer :: target, source
   integer(int8), dimension(:,:,:,:):: filled
-  logical, optional       :: all_cells
+  logical, optional       :: all_cells, all_times
   integer, optional       :: only
   !.............................................................................
   integer                 :: l(3), u(3), o(3), ii(3), jt(2), i
@@ -534,7 +534,7 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only)
   logical                 :: all_cells_l
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%same_linear', itimer=itimer)
-  call source%time_interval (target%time, jt, pt)
+  call source%time_interval (target%time, jt, pt, all=all_times)
   if (present(only)) then
     iv1 = only
     iv2 = only
@@ -724,10 +724,10 @@ END SUBROUTINE same_linear
 !>   dnload_range
 !>   time_interval
 !> =============================================================================
-SUBROUTINE same_lagrange (target, source, filled, all_cells, only)
+SUBROUTINE same_lagrange (target, source, filled, all_cells, only, all_times)
   class(patch_t), pointer :: target, source
   integer(int8), dimension(:,:,:,:):: filled
-  logical, optional       :: all_cells
+  logical, optional       :: all_cells, all_times
   integer, optional       :: only
   !.............................................................................
   integer                 :: l(3), u(3), o(3), ii(3), jt, i

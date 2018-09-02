@@ -419,7 +419,7 @@ SUBROUTINE pde (self)
   ! Radiative heating / cooling, if any
   !-----------------------------------------------------------------------------
   if (self%idx%qr > 0) then
-    qr => self%mem(:,:,:,self%idx%qr,self%it,1)
+    qr => self%mem(:,:,:,self%idx%qr,self%new,1)
     dedt = dedt + qr
     if (verbose>2 .or. self%id==io%id_debug) then
       u_max = self%cdtd*dsmax*self%fmaxval(abs((qr-ee*dddt)/d))

@@ -314,7 +314,7 @@ LOGICAL FUNCTION is_ahead_of (self, task)
     is_ahead_of = nbtime >= task%time
   ! -- use a grace interval that is fraction of the nbor time step
   else
-    is_ahead_of = nbtime + nbdtime*task%grace >= task%time
+    is_ahead_of = nbtime + nbdtime*task%grace > task%time
   end if
   if (io_unit%verbose>1) then
     if (task%id==io%id_debug.or.io_unit%verbose>4) &

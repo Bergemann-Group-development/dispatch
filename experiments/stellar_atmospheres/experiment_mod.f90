@@ -21,6 +21,7 @@ MODULE experiment_mod
   USE solver_mod
   USE scaling_mod
   USE mesh_mod
+  USE download_mod
   implicit none
   private
   type, public, extends(rt_solver_t):: experiment_t
@@ -29,6 +30,7 @@ MODULE experiment_mod
   contains
     procedure:: init
     procedure:: update
+    procedure:: dnload
     procedure:: boundary_condition
   end type
   integer, save:: verbose=1
@@ -97,6 +99,18 @@ SUBROUTINE update (self)
   call self%rt_solver_t%update
   call trace_end
 END SUBROUTINE update
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE dnload (self, only)
+  class(experiment_t):: self
+  integer, optional:: only
+  if (self%i_omega > 0) then
+    call download%download_link (self%link, only=only, all_times=.true.)
+  else
+    call download%download_link (self%link, only=only)
+  end if
+END SUBROUTINE dnload
 
 !> =============================================================================
 !> =============================================================================

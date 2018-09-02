@@ -81,7 +81,6 @@ SUBROUTINE rt_setup (task_list)
       ! Add nbor lists to the sub-tasks
       !-------------------------------------------------------------------------
       call mhd%init_nbors
-      !call mhd%rt_eos
       nbor => link%nbor
       do while (associated(nbor))
         call io%assert (associated(nbor%task), 'nbor%task missing')
@@ -204,7 +203,7 @@ SUBROUTINE rt_setup (task_list)
         ! Spawn OMP tasks to compute EOS
         !-----------------------------------------------------------------------
         !$omp task default(shared) firstprivate(mhd)
-          call mhd%rt_eos
+          call mhd%rt_eos (mhd%time)
         !$omp end task
       end if
     end select

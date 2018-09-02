@@ -169,8 +169,8 @@ SUBROUTINE execute (self, task_list, test)
             write(io_unit%queue,*) link%task%id, 'ERROR: at time=0, but not ready!'
             nbor => link%nbor
             do while (associated(nbor))
-              write(io_unit%queue,'(i7,2f10.6,2x,2l3)') &
-                nbor%task%id, (nbor%task%time-link%task%time), nbor%task%dtime, &
+              write(io_unit%queue,'(i7,i3,2f10.6,2x,2l3)') &
+                nbor%task%id, nbor%task%state, (nbor%task%time-link%task%time), nbor%task%dtime, &
                 nbor%needed, nbor%task%is_ahead_of (link%task)
               nbor => nbor%next
             end do
@@ -185,7 +185,11 @@ SUBROUTINE execute (self, task_list, test)
           task_list%nq = n_state(1)
           !$omp atomic
           task_list%nq = task_list%nq  + n_state(2)
-          call self%spawn_update (task_list, link, test)
+          if (omp%nthreads > 1) then
+            call self%spawn_update (task_list, link, test)
+          else
+            call self%update (task_list, link, test)
+          end if
         end if
       end if
       link => link%next
@@ -379,8 +383,6 @@ LOGICAL FUNCTION is_ready (self, link)
   !$omp atomic read
   state = link%task%state
   if (link%task%is_set (bits%virtual)) then
-    is_ready = .false.
-  else if (state>=1) then
     is_ready = .false.
   else
     is_ready = .true.
