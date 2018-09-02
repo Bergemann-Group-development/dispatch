@@ -32,7 +32,6 @@ MODULE mpi_io_mod
   USE io_mod
   USE io_unit_mod
   USE omp_mod
-  USE omp_timer_mod
   USE trace_mod
   USE mpi_mod, only: mp=>mpi
   USE mpi_io_file_mod
@@ -143,40 +142,22 @@ END SUBROUTINE write3
 !> =============================================================================
 SUBROUTINE write4 (self, f, rec, id)
   class(mpi_io_t):: self
-  real(kind=4), dimension(:,:,:,:), pointer:: f
+  real(kind=4), dimension(:,:,:,:):: f
   integer:: rec, id
-  real(8):: ms, ms2
-  integer:: handle, chunk_words, err, thread, omp_get_thread_num
-  integer:: status(MPI_STATUS_SIZE)
 #ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%write')
-  ms = wallclock()
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose>1) &
     write (io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write4: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
   !!omp critical (mpi_io_cr)
-  handle = self%file%handle
-  chunk_words = self%chunk_words
-  status = self%status
-  thread = omp_get_thread_num()
-  !$omp task default(shared) firstprivate(handle,pos,f,chunk_words,status,thread) &
-  !$omp    & private(err,ms2)
-    !ms2 = wallclock()
-    call MPI_file_write_at (handle, pos, f, chunk_words, MPI_REAL, status, err)
-    !ms2 = 1d3*(wallclock()-ms2)
-    !if (ms2 > 0.1) print '(a,i5,2x,a,f8.2,a,i5)', &
-      !' thread', omp_get_thread_num(), 'waited in write4 for ', ms2, ' ms on behalf of', thread
-    deallocate (f)
-  !$omp end task
+  call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
+                          self%status, self%err)
   !!omp end critical (mpi_io_cr)
   call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
-  ms = 1d3*(wallclock()-ms)
-  if (ms > 0.1) print '(a,i5,2x,a,f8.2,a)', &
-    ' thread', omp%thread, 'waited in write4 for ', ms, ' ms'
   call trace%end
 #endif
 END SUBROUTINE write4

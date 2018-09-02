@@ -84,7 +84,7 @@ SUBROUTINE output (patch)
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
   integer:: iv, n(3), jt(2), nv, iw, nw
-  real, dimension(:,:,:,:), pointer:: buffer, mem
+  real, dimension(:,:,:,:), allocatable:: buffer, mem
   type(mpi_io_t):: thread_io
   real:: pt(2)
   logical:: first_time=.true.
@@ -217,6 +217,7 @@ SUBROUTINE output (patch)
     end do
     call thread_io%write (buffer, 1+patch%iout, 2+2*(patch%id-1))
   end if
+  deallocate (buffer)
   call trace%end (itimer)
 END SUBROUTINE output
 
