@@ -52,12 +52,12 @@ SUBROUTINE init (self, label)
   integer:: per_rank(3) = [0,0,0]
   integer:: npatch, nvpatch, nbpatch, nlpatch
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
-  logical:: face_nbors=.false.
+  logical:: face_nbors=.false., fast_nbors=.true.
   integer:: thread, icoords(3),ipos(3)
   integer:: id
   integer, save:: itimer=0
   namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
-    omp_init
+    fast_nbors, omp_init
   !-----------------------------------------------------------------------------
   !call trace_begin ('cartesian_mod::init',itimer=itimer)
   call io%header('begin cartesian_t%init: Cartesian patch arrangement')
@@ -175,6 +175,40 @@ SUBROUTINE init (self, label)
     call init_exp (self, origin)
   end if
   !-----------------------------------------------------------------------------
+  ! Use the links to generate nbor lists -- faster than using init_all_nbors
+  !-----------------------------------------------------------------------------
+  if (fast_nbors) then
+    if (io%master) &
+      print *, 'cartesian_t%init: generate nbors'
+    do k=0,self%dims(3)-1
+    do j=0,self%dims(2)-1
+    do i=0,self%dims(1)-1
+      link => links(i,j,k)%p
+      do k1=nn(1,3),nn(2,3)
+      do j1=nn(1,2),nn(2,2)
+      do i1=nn(1,1),nn(2,1)
+        if (i1==0.and.j1==0.and.k1==0) cycle
+        ipos = [i+i1,j+j1,k+k1]
+        where (link%task%periodic)
+          ipos = modulo(ipos,self%dims)
+        end where
+        ! -- skip nbors that fall outside non-periodic boundaries
+        if (any(ipos<0.or.ipos>=self%dims)) cycle
+        ! -- allocate nbor and set pointers
+        allocate (nbor)
+        nbor%link => links(ipos(1),ipos(2),ipos(3))%p
+        nbor%task => nbor%link%task
+        ! -- add rank sorted
+        call link%add_nbor_by_rank (nbor)
+      end do
+      end do
+      end do
+    end do
+    end do
+    end do
+  end if
+  deallocate (links)
+  !-----------------------------------------------------------------------------
   ! Ŕeset the boundary / internal / virtual and boundary bits (and flags), and
   ! reconstruct the nbor lists based on that
   !-----------------------------------------------------------------------------
@@ -188,9 +222,11 @@ SUBROUTINE init (self, label)
   if (io%master) &
     print *, 'cartesian_t%init: init boundaries'
   call self%task_list%init_bdries
-  if (io%master) &
-    print *, 'cartesian_t%init: init all nbors'
-  call self%task_list%init_all_nbors
+  if (.not. fast_nbors) then
+    if (io%master) &
+      print *, 'cartesian_t%init: init all nbors'
+    call self%task_list%init_all_nbors
+  end if
   if (io%master) &
     print *, 'cartesian_t%init: diagnostics'
   call self%diagnostics

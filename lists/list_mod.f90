@@ -826,7 +826,8 @@ SUBROUTINE reset_status (self)
         if (nbor%task%rank/=mpi%rank) then
           call link%task%set(bits%boundary)
           call link%task%clear(bits%internal)
-          exit
+          ! -- do not include in check_nbors()
+          nbor%needs_me = .false.
         end if
         nbor => nbor%next
       end do
@@ -837,6 +838,7 @@ SUBROUTINE reset_status (self)
       do while (associated(nbor))
         if (link%task%id==io%id_debug) write (io_unit%log,'(a,i5,2i4,3f9.4)') &
           'mk2', nbor%task%id, link%task%rank, nbor%task%rank, link%task%position-nbor%task%position
+        ! -- if an nbor task is ours, the task is a virtual task
         if (nbor%task%rank==mpi%rank) then
           call link%task%set(bits%virtual)
           call link%task%clear(bits%external)
