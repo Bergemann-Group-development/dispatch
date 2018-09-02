@@ -9,7 +9,7 @@
                         order=0 dbg_position=2*-0.25 rt_bottom=0.4 /            ! CHECK rt_bottom
 &rt_setup_params        verbose=0 n_warmup=2 only_vertical=t /                  ! CHECK only_vertical
 
-&io_params              verbose=0 do_trace=f do_output=t method='parallel' id_debug=96 restart=-1 /
+&io_params              verbose=0 do_trace=f do_output=t method='parallel' id_debug=0 restart=-1 /
 
                         ! zm = -0.55, -0.534778, -0.519650, -0.504616, -0.489676, -0.474831
                         ! dz = 0.0305 for 32 points x 21 patces, 0.0488 for 20 points

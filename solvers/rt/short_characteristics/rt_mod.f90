@@ -552,6 +552,8 @@ SUBROUTINE rt_eos (self, time)
       end if
     end if
     !$omp end critical (eos_cr)
+  else
+    print *, self%id, 'rt_t%rt_eos: WARNING, called w/o need', self%eos_time-time
   end if
   call trace%end (itimer)
 END SUBROUTINE rt_eos

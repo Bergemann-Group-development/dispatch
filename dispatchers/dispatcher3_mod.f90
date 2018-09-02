@@ -124,7 +124,7 @@ SUBROUTINE execute (self, task_list, test)
   class(link_t), pointer:: link, nbor
   class(task_t), pointer:: task
   logical:: mytask
-  integer:: n1, n2, iter
+  integer:: n1, n2
   real(8):: start_fail, start_iter
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -139,18 +139,12 @@ SUBROUTINE execute (self, task_list, test)
   call timer%print
   !$omp parallel private(link,nbor,task,mytask) shared(n_state) default(shared)
   !$omp master
-  iter = 0
   do while (task_list%na>0 .and. wallclock()-start < io%job_seconds)
     start_iter = wallclock()
     !---------------------------------------------------------------------------
     ! Check if there is MPI work
     !---------------------------------------------------------------------------
     call task_list%check_mpi()
-    iter = iter+1
-    if (iter==10) then
-      iter = 0
-      call iwrite_list%check()
-    end if
     !---------------------------------------------------------------------------
     ! Run through the task list, looking for and counting tasks that are ready
     !---------------------------------------------------------------------------
@@ -201,6 +195,14 @@ SUBROUTINE execute (self, task_list, test)
       end if
       link => link%next
     end do
+    !---------------------------------------------------------------------------
+    ! Start a thread doing I/O, if pending
+    !---------------------------------------------------------------------------
+    if (iwrite_list%n > 0) then
+      !$omp task default(shared)
+      call iwrite_list%check()
+      !$omp end task
+    end if
     call write_state (self, io_unit%queue, '1')
     if (self%verbose>1) call self%print_state ('1')
     !---------------------------------------------------------------------------
