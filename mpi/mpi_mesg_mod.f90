@@ -99,6 +99,7 @@ MODULE mpi_mesg_mod
   logical, save:: wait=.false.                  ! if true, always use MPI_Wait
   logical, save:: send_wait=.false.             ! if true, wait in OMP task
   integer, save:: id=0
+  integer, save:: verbose=0
 CONTAINS
 
 !> =============================================================================
@@ -115,7 +116,7 @@ SUBROUTINE send (self, rank, tag)
   else
     ltag = self%id
   end if
-  if (io%verbose>2) then
+  if (verbose>2) then
     write (io_unit%log,*) &
     'mpi_mesg::send id, nbuf, to =', self%id, self%nbuf, rank
     flush (io_unit%log)
@@ -125,8 +126,11 @@ SUBROUTINE send (self, rank, tag)
     !$omp critical (mpi_cr)
     call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, ltag, &
       mpi%comm, req, ierr)
-    if (mpi_mesg%debug) &
-      write (io_unit%mpi,*) wallclock(), omp%thread, 'ISEND', rank, req
+    if (mpi_mesg%debug) then
+      write (io_unit%log,'(f12.6,i5,2x,a,i5,z12)') &
+        wallclock(), omp%thread, 'ISEND', rank, req
+      flush (io_unit%log)
+    end if
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
     !$omp end critical (mpi_cr)
@@ -161,7 +165,7 @@ SUBROUTINE recv (self, rank, tag)
   else
     ltag = self%id
   end if
-  if (io%verbose>2) then
+  if (verbose>2) then
     write (io_unit%log,*) &
     'mpi_mesg%recv id, nbuf, to =', self%id, self%nbuf, rank
     flush (io_unit%log)
@@ -343,7 +347,7 @@ SUBROUTINE test_all (self, flag)
 #else
   flag = .true.
 #endif MPI
-  if (io%verbose>2) then
+  if (verbose>2) then
     write (io_unit%log,*) wallclock(), self%id, ' test_all flag =', flag
     flush (io_unit%log)
   end if
@@ -359,7 +363,7 @@ SUBROUTINE wait_all (self)
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('mesg_t%wait_all', itimer=itimer)
-  if (io%verbose >= 0) wc = wallclock()
+  if (verbose >= 0) wc = wallclock()
 #ifdef MPI
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
@@ -369,14 +373,16 @@ SUBROUTINE wait_all (self)
     call MPI_WAITALL (self%nreq, self%reqs, MPI_STATUSES_IGNORE, ierr)
   end if
 #endif MPI
-  if (io%verbose >= 0) then
+  if (verbose >= 0) then
     wc = wallclock()-wc
     !$omp atomic
     n_wait_all = n_wait_all + 1
     !$omp atomic
     t_wait_all = t_wait_all + wc
-    if (io%verbose > 0) &
+    if (verbose > 0) then
       write (io_unit%log,*) wallclock(), ' wait_all:', self%id, wc
+      flush (io_unit%log)
+    end if
   end if
   call trace_end (itimer)
 END SUBROUTINE wait_all
@@ -401,7 +407,7 @@ SUBROUTINE add (self, mesg)
   self%tail => mesg                             ! tail points to it
   !$omp atomic
   self%n = self%n+1                             ! increment counter
-  if (io%verbose>1) then
+  if (verbose>1) then
     write (io_unit%log,*) trim(self%name)//' added mesg', mesg%id, self%n
     flush (io_unit%log)
   end if
@@ -425,7 +431,7 @@ SUBROUTINE remove (self, mesg)
   else                                          ! mesg is tail
     self%tail => mesg%prev                      ! new tail
   end if
-  if (io%verbose>1) then
+  if (verbose>1) then
     write (io_unit%log,*) trim(self%name)//' remove mesg OK', mesg%id, self%n
     flush (io_unit%log)
   end if
@@ -496,7 +502,7 @@ SUBROUTINE count (self, label)
   class(mesg_t), pointer:: mesg
   integer:: n
   !-----------------------------------------------------------------------------
-  if (io%verbose < 1) return
+  if (verbose < 1) return
   mesg => self%head
   n = 0
   do while (associated(mesg))
@@ -523,7 +529,7 @@ SUBROUTINE init (self)
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, wait, send_wait, send_priv, &
                              recv_active, recv_priv, queue_unpack, test_time, debug, &
-                             check_ms
+                             check_ms, verbose
   integer:: iostat
   !-----------------------------------------------------------------------------
   ! Prevent initializing more than once
@@ -543,7 +549,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   rewind (io%input); read (io%input, mpi_mesg_params,iostat=iostat)
   if (io%master) write (io%output, mpi_mesg_params)
-  if (io%verbose>0) write (io_unit%log,*) 'mpi_mesg_mod::init'
+  if (verbose>0) write (io_unit%log,*) 'mpi_mesg_mod::init'
   self%debug = debug
   self%min_nq = min_nq
   self%max_recv = max_recv
@@ -616,8 +622,9 @@ SUBROUTINE sent (self, mesg)
   mpi_mesg%nq_send = mpi_mesg%nq_send+1
   if (mpi_mesg%send_priv) then
     call sent_list%add (mesg)
-    if (io%verbose>0) then
-      write (io_unit%log,*) 'sent:', omp_get_thread_num(), mesg%id, sent_list%n
+    if (verbose>0) then
+      write (io_unit%log,'(f12.6,2x,a,3i6)') &
+        wallclock(), 'sent: thread, id, n =', omp_get_thread_num(), mesg%id, sent_list%n
       flush (io_unit%log)
     end if
   else if (send_wait) then
@@ -632,8 +639,10 @@ SUBROUTINE sent (self, mesg)
     !$omp critical (sent_cr)
     call self%sent_list%add (mesg)
     !$omp end critical (sent_cr)
-    if (io%verbose>0) then
+    if (verbose>0) then
       write (io_unit%log,*) 'sent:', omp_get_thread_num(), mesg%id, self%sent_list%n
+      write (io_unit%log,'(f12.6,2x,a,3i6)') &
+        wallclock(), 'sent: thread, id, n =', omp_get_thread_num(), mesg%id, sent_list%n
       flush (io_unit%log)
     end if
   end if
@@ -798,7 +807,7 @@ contains
     real(8):: wc
     !---------------------------------------------------------------------------
     if (mpi_mesg%recv_list%n > max_recv .or. mpi_mesg%wait) then
-      if (io%verbose>1) then
+      if (verbose>1) then
         wc = wallclock()
         write (io_unit%log,*) wc, &
           'is_complete waiting for id', self%id, mpi_mesg%recv_list%n, mpi_mesg%wait
@@ -813,7 +822,7 @@ contains
         call MPI_WAIT (self%req, stat, ierr)
       end if
 #endif
-      if (io%verbose>1) then
+      if (verbose>1) then
         wc = wallclock()-wc
         write (io_unit%log,*) wallclock(), &
           'is_complete:', self%id, wc, mpi_mesg%recv_list%n, mpi_mesg%wait
@@ -851,8 +860,11 @@ SUBROUTINE irecv (self, rank, tag)
   else
     call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, rank, tag, mpi%comm, self%req, ierr)
   end if
-  if (mpi_mesg%debug) &
-    write (io_unit%mpi,*) wallclock(), omp%thread, 'IRECV', rank, self%req
+  if (mpi_mesg%debug) then
+    write (io_unit%log,'(f12.6,i5,2x,a,i5,z12)') &
+      wallclock(), omp%thread, 'IRECV', rank, self%req
+    flush (io_unit%log)
+  end if
 #endif
 END SUBROUTINE irecv
 
@@ -917,7 +929,7 @@ SUBROUTINE wait_for_completion (self)
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1) return
   call trace%begin ('mesg_t%wait_for_completion', itimer=itimer)
-  if (io%verbose>=0) wc=wallclock()
+  if (verbose>=0) wc=wallclock()
 #ifdef MPI
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
@@ -927,13 +939,13 @@ SUBROUTINE wait_for_completion (self)
     call MPI_WAIT (self%req, stat, ierr)
   end if
 #endif
-  if (io%verbose >= 0) then
+  if (verbose >= 0) then
     wc = wallclock()-wc
     !$omp atomic
     n_wait_for = n_wait_for + 1
     !$omp atomic
     t_wait_for = t_wait_for + wc
-    if (io%verbose > 0) &
+    if (verbose > 0) &
       write (io_unit%log,*) 'wait_for_completion', self%id, wc
   end if
   call trace%end (itimer)

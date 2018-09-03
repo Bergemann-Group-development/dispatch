@@ -55,6 +55,7 @@ SUBROUTINE init (self, name)
   call trace%begin('task_list_t%init')
   call self%list_t%init (name)
   call mpi_mesg%init
+  call task_mesg%init
   rewind (io%input); read(io%input, task_list_params, iostat=iostat)
   if (io%master) write (*,task_list_params)
   if (sync_time > 0.0) &
