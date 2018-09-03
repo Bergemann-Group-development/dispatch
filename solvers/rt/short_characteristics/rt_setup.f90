@@ -190,8 +190,8 @@ SUBROUTINE rt_setup (task_list)
   ! EOS for warm up
   !-----------------------------------------------------------------------------
   print *, 'EOS for warm-up'
-  !$omp parallel default (shared) private(link, task)
-  !$omp single
+  !1omp parallel default (shared) private(link, task)
+  !1omp single
   link => task_list%head
   do while (associated(link))
     task => link%task
@@ -202,15 +202,15 @@ SUBROUTINE rt_setup (task_list)
         !-----------------------------------------------------------------------
         ! Spawn OMP tasks to compute EOS
         !-----------------------------------------------------------------------
-        !$omp task default(shared) firstprivate(mhd)
+        !1omp task default(shared) firstprivate(mhd)
           call mhd%rt_eos (mhd%time)
-        !$omp end task
+        !1omp end task
       end if
     end select
     link => link%next
   end do
-  !$omp end single
-  !$omp end parallel
+  !1omp end single
+  !1omp end parallel
   !-----------------------------------------------------------------------------
   ! Merge task lists, if RT is present
   !-----------------------------------------------------------------------------

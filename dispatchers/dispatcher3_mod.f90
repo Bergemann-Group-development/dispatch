@@ -211,7 +211,7 @@ SUBROUTINE execute (self, task_list, test)
     if (fell_through) then
       if (self%verbose>3) print *,'dispatcher3: fell through'
       call self%diagnostics (task_list)
-      wc_failed = wc_failed + (wallclock()-start_fail - start_iter)
+      !wc_failed = wc_failed + (wallclock()-start_fail - start_iter)
       if (use_taskyield) then
         n_fail = n_fail+1
         !$omp taskyield
