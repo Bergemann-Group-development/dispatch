@@ -194,6 +194,9 @@ SUBROUTINE init (self)
   do i_omega=1,self%n_omega
     omega => self%omega(i_omega)
     omega = self
+    ! -- assign MPI-unique ID
+    omega%rank = self%rank
+    call omega%task_t%init_unique
     omega%track   = .false.
     omega%kind    = 'rt_t'   ! to be used in data_io_mod
     omega%nt      = nt
@@ -208,7 +211,6 @@ SUBROUTINE init (self)
     omega%it      = max(omega%nt-1,1)
     omega%new     = omega%nt
     omega%nw      = 1
-    omega%id      = self%id*1000 + i_omega
     omega%i_omega = i_omega
     omega%status  = self%status
     omega%grav    = self%grav

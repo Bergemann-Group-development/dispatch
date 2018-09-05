@@ -58,7 +58,7 @@ SUBROUTINE rt_setup (task_list)
   if (io%master) write (io_unit%output, rt_setup_params)
   !-----------------------------------------------------------------------------
   allocate (rt_task_list)
-  call rt_task_list%init
+  call rt_task_list%init ('RT')
   if (verbose > 1) &
     call task_list%print ('task_list')
   n_rt = 0
@@ -102,14 +102,6 @@ SUBROUTINE rt_setup (task_list)
         n_omega = mhd%n_omega
         do i_omega=1,mhd%n_omega
           omega => mhd%omega(i_omega)
-          !---------------------------------------------------------------------
-          ! Reassign unique IDs to RT tasks
-          !---------------------------------------------------------------------
-          if (unique_ids) then
-            id_save = omega%id
-            omega%id = 0
-            call omega%task_t%init
-          end if
           omega%parent => mhd
           if (verbose > 1) &
             write(io%output,*) &
@@ -168,32 +160,11 @@ SUBROUTINE rt_setup (task_list)
     end do
   end if
   !-----------------------------------------------------------------------------
-  ! Reassign unique IDs to RT tasks
-  !-----------------------------------------------------------------------------
-  if (unique_ids) then
-    link => task_list%head
-    do while (associated(link))
-      task => link%task
-      select type (task)
-      class is (rt_t)
-        mhd => task
-        if (mhd%is_clear(bits%no_rt)) then
-          do i_omega=1,n_omega
-            omega => mhd%omega(i_omega)
-            omega%id = 0
-            call omega%task_t%init
-          end do
-        end if
-      end select
-      link => link%next
-    end do
-  end if
-  !-----------------------------------------------------------------------------
   ! EOS for warm up
   !-----------------------------------------------------------------------------
-  !1omp parallel default (shared) private(link, task)
-  !1omp single
   write(io%output,*) 'EOS for warm-up'
+  !$omp parallel default (shared) private(link, task, mhd)
+  !$omp master
   link => task_list%head
   do while (associated(link))
     task => link%task
@@ -211,8 +182,8 @@ SUBROUTINE rt_setup (task_list)
     end select
     link => link%next
   end do
-  !1omp end single
-  !1omp end parallel
+  !$omp end master
+  !$omp end parallel
   !-----------------------------------------------------------------------------
   ! Merge task lists, if RT is present
   !-----------------------------------------------------------------------------

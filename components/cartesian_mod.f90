@@ -114,7 +114,7 @@ SUBROUTINE init (self, label)
     links(i,j,k)%p => null()
     patch%ipos = [i,j,k]
     patch%rank = mpi_coords%coords_to_rank ([i,j,k]/patches_per_mpi)
-    patch%id = 1+i+self%dims(1)*(j+k*self%dims(2))
+    call patch%task_t%init_unique
     patch%box = self%size
     patch%size = self%size / self%dims
     patch%position = ([i,j,k]+0.5d0)*patch%size + origin

@@ -71,6 +71,7 @@ MODULE task_mod
     type(random_t):: random             ! pseudo-random number generator
   contains
     procedure:: init
+    procedure:: init_unique
     procedure:: init_id_reset
     procedure:: delete
     procedure:: dnload
@@ -98,7 +99,7 @@ MODULE task_mod
     procedure:: solver_is
     procedure:: debug
   end type
-  integer, save:: id=0
+  integer, dimension(:), pointer, save:: id => null()
   type(dll_t), pointer:: deleted_list
 CONTAINS
 
@@ -116,22 +117,38 @@ SUBROUTINE dnload (self, only)
 END SUBROUTINE dnload
 
 !> =============================================================================
-!> Define unique patch ids.  A critical region is OK; this is only done once.
+!> Define unique task id, unless already set before entry.  The task 
+!> IDs must be unique across MPI ranks, and must initially satisfy 
+!> modulo(self%id, mpi%size) == self%rank + 1
 !> =============================================================================
 SUBROUTINE init (self)
   class (task_t):: self
-  logical:: first_time=.true.
   !.............................................................................
+  call trace_begin ('task_t%init',2)
+  call init_unique (self, keep=.true.)
+  call trace_end
+END SUBROUTINE init
+
+!> =============================================================================
+!> Define unique patch ids.  A critical region is OK; this is only done once.
+!> =============================================================================
+SUBROUTINE init_unique (self, keep)
+  class (task_t):: self
+  logical, optional:: keep
+  !.............................................................................
+  integer:: rank
+  logical:: first_time=.true.
   class(*), pointer:: idp
   !-----------------------------------------------------------------------------
-  call trace_begin ('task_t%init')
+  call trace_begin ('task_t%init_id')
   !$omp critical (task_init_cr)
   if (first_time) then
     first_time = .false.
-    if (self%id==0) then
-      id = mpi%rank+1
-      self%id = id
-    end if
+    allocate (id(0:mpi%size-1))
+    do rank=0,mpi%size-1
+      id(rank) = 1+rank
+    end do
+    self%id = id(self%rank)
   !else if (deleted_list%n > 0) then
   !  idp => deleted_list%pop()
   !  select type (idp)
@@ -140,12 +157,32 @@ SUBROUTINE init (self)
   !  end select
   !  dellocate (idp%car)
   !  dellocate (idp)
-  else if (self%id==0) then
-    id = id+mpi%size
-    self%id = id
+  !-----------------------------------------------------------------------------
+  ! If ID already assigned and keep==.true., check consistency with MPI, and
+  ! adjust the saved ID accordingly
+  !-----------------------------------------------------------------------------
+  else if (present(keep)) then
+    if (self%id > 0) then
+      if (mod(self%id-1,mpi%size) == self%rank) then
+        id(self%rank) = max(id(self%rank),self%id)
+      else
+        print '("enforced ID =",i7," not consistent with MPI rank/size",2i6)', &
+          self%id, self%rank, mpi%size
+        call mpi%abort
+      end if
+    else
+      id(self%rank) = id(self%rank) + mpi%size
+      self%id = id(self%rank)
+    end if
+  !-----------------------------------------------------------------------------
+  ! Here we enforce a unique and MPI-consistent ID
+  !-----------------------------------------------------------------------------
+  else
+    id(self%rank) = id(self%rank) + mpi%size
+    self%id = id(self%rank)
   end if
-  id = self%id
   if (self%id==1) self%track = .true.
+  if (self%id==io%id_debug) self%track = .true.
   scene%n_patch = self%id
   !$omp end critical (task_init_cr)
   if (io%verbose>2) &
@@ -153,7 +190,24 @@ SUBROUTINE init (self)
   call self%lock%init (self%kind)
   call self%random%init
   call trace_end
-END SUBROUTINE init
+END SUBROUTINE init_unique
+
+!> =============================================================================
+!> Reset unique patch ids.  A critical region is OK; this is only done once.
+!> This is done after, for example, `download%test`, which creates test patches.
+!> It is set to one rather than zero because there must have already been a
+!> patch with ID = 1 when `download%test` was called.
+!> =============================================================================
+SUBROUTINE init_id_reset (self)
+  class (task_t):: self
+  logical:: first_time=.true.
+  !.............................................................................
+  call trace_begin ('task_t%init_reset')
+  !$omp critical (task_init_cr)
+  id = 1 + self%rank
+  !$omp end critical (task_init_cr)
+  call trace_end
+END SUBROUTINE init_id_reset
 
 !> =============================================================================
 !> =============================================================================
@@ -173,23 +227,6 @@ SUBROUTINE delete (self)
   call deleted_list%append (node)
   call trace_end
 END SUBROUTINE delete
-
-!> =============================================================================
-!> Reset unique patch ids.  A critical region is OK; this is only done once.
-!> This is done after, for example, `download%test`, which creates test patches.
-!> It is set to one rather than zero because there must have already been a
-!> patch with ID = 1 when `download%test` was called.
-!> =============================================================================
-SUBROUTINE init_id_reset (self)
-  class (task_t):: self
-  logical:: first_time=.true.
-  !.............................................................................
-  call trace_begin ('task_t%init_reset')
-  !$omp critical (task_init_cr)
-  id = 1
-  !$omp end critical (task_init_cr)
-  call trace_end
-END SUBROUTINE init_id_reset
 
 !> =============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time
@@ -400,8 +437,8 @@ FUNCTION unique_id (self)
   class (task_t):: self
   integer:: unique_id
   !$omp atomic
-  id = id+1             ! FIXME
-  unique_id = id
+  id(self%rank) = id(self%rank) + mpi%size
+  unique_id = id(self%rank)
 END FUNCTION unique_id
 
 !> =============================================================================
