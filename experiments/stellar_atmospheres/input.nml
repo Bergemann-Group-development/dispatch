@@ -5,14 +5,14 @@
 
 &experiment_params      verbose=0 d_bot=231.8 e_bot=2897.0 /
 &ic_params              verbose=0 file='mhd63' order=1 b0=1 /
-&rt_params              verbose=0 nt=4 n_mu=2 n_phi=4 n_bin=4 rt_time=0.005
+&rt_params              verbose=0 nt=1 n_mu=2 n_phi=4 n_bin=4 rt_time=0.005
                         dtau_min=1e-6 dtau_dif=1e3 dtau_max=1e4 grace=0
                         order=0 dbg_position=2*-0.25 rt_bottom=0.45 /
 &rt_setup_params        verbose=0 n_warmup=3 unique_ids=t only_vertical=t /
 
 &io_params              verbose=0 do_trace=f omp_trace=f do_output=t method='parallel' id_debug=0 restart=-1 /
-&cartesian_params       size=2*6,3 dims=2*8,4 mpi_dims=2,1,1 origin=0,0,-0.5 omp_init=f fast_nbors=f /
-&patch_params           do_check_nan=t nt=5 grace=1e-5 n=3*20 no_mans_land=t use_data_hub=f dt_fixed=-1 /
+&cartesian_params       size=2*6,3 dims=2*12,6 mpi_dims=2,1,1 origin=0,0,-0.5 omp_init=f fast_nbors=f /
+&patch_params           do_check_nan=t nt=5 grace=1e-5 n=3*32 no_mans_land=t use_data_hub=f dt_fixed=-1 /
 &out_params             end_time=1.50 out_time=0.1 print_time=0 guard_zones=t /
                         !    cs    pa  ofd   mas  kap  eta
 &stagger_params         nu=  0.03, 1.0, 1.0, 0.15, 1.0, 1.0

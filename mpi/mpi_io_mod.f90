@@ -332,17 +332,19 @@ SUBROUTINE check_real (self)
   class(iwrite_t), pointer:: item
   integer:: status(MPI_STATUS_SIZE), err
   integer, save:: itimer=0
-  integer:: n, done
+  integer:: n, done, thread, omp_get_thread_num
   logical:: ok
   !-----------------------------------------------------------------------------
-  if (self%n == 0 .or. self%thread >=0) return
+  !$omp atomic read
+  thread = iwrite_list%thread
+  if (iwrite_list%n == 0 .or. thread >=0) return
   !$omp critical (iwrite_cr)
-  ok = (self%thread == -1)
-  self%thread = omp%thread
+  ok = (iwrite_list%thread == -1)
+  iwrite_list%thread = omp_get_thread_num()
   call trace%begin ('iwrite_list_t%check_real', itimer=itimer)
-  n = self%n
+  n = iwrite_list%n
   done = 0
-  node => self%head
+  node => iwrite_list%head
   !$omp end critical (iwrite_cr)
   if (ok) then
     do while (n>0 .and. associated(node))
@@ -356,8 +358,8 @@ SUBROUTINE check_real (self)
       deallocate (item%buffer)
       !$omp critical (iwrite_cr)
       next => node%next
-      call self%remove (node)
-      n = self%n
+      call iwrite_list%remove (node)
+      n = iwrite_list%n
       done = done+1
       if (verbose > 0 .and. mod(done,10000) == 0) &
         print '(1p,g14.6,3x,a,i7)', wallclock(), 'I/O done =', done
@@ -368,7 +370,7 @@ SUBROUTINE check_real (self)
     !$omp critical (iwrite_cr)
     if (verbose > 0) &
       print '(1p,g14.6,3x,a,i7)', wallclock(), 'I/O done =', done, verbose
-    self%thread = -1
+    iwrite_list%thread = -1
     !$omp end critical (iwrite_cr)
   end if
   call trace%end (itimer)
