@@ -123,7 +123,7 @@ SUBROUTINE init (self)
   end do
   if (verbose>1 .and. self%track) then
     do i=1,3
-      print '("h:",8f5.2)', self%mesh(i)%h
+      write(io%output,'("h:",8f5.2)') self%mesh(i)%h
     end do
   end if
   self%unsigned(self%idx%d)  = .true.
@@ -254,7 +254,7 @@ SUBROUTINE pde (self)
     if (verbose>3 .or. self%id==io%id_debug) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      print 1, self%id, self%time, 'u_max(ca)  ', u_max, self%u_max
+      write(io%output,1) self%id, self%time, 'u_max(ca)  ', u_max, self%u_max
     1 format(i7,f12.6,1x,a,1p,2g12.3)
     end if
     ! Isotropic pressure part
@@ -270,7 +270,7 @@ SUBROUTINE pde (self)
     if (verbose>3 .or. self%id==io%id_debug) then
       u_max = self%fmaxval(cs)
       self%u_max = max(self%u_max,u_max)
-      print 1, self%id, self%time, 'u_max(cs)  ', u_max, self%u_max
+      write(io%output,1) self%id, self%time, 'u_max(cs)  ', u_max, self%u_max
     end if
     pp = pg + pa                                                                ! ops: 1 0 0
     du = (dsmax*self%nu(1))*(cs + 2.*uu)                                        ! ops: 0 2 0
@@ -284,13 +284,14 @@ SUBROUTINE pde (self)
   end if
   u_max = self%fmaxval(cs+uu)
   self%u_max = max(self%u_max,u_max)
-  if (verbose>2 .or. self%id==io%id_debug) print 1, self%id, self%time, 'u_max(cs+u)', u_max, self%u_max
+  if (verbose>2 .or. self%id==io%id_debug) &
+    write(io%output,1) self%id, self%time, 'u_max(cs+u)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! du has units area per unit time, which gives velocity squared times mass
   ! density per unit time = energy per unit volume and time
   !-----------------------------------------------------------------------------
   Q = d*du*(Txx**2 + Tyy**2 + Tzz**2)                                           ! ops: 2 5 0
-  !if (verbose==1) print *, 'average(Q):', self%faver(Q), &
+  !if (verbose==1) write(io%output,*) 'average(Q):', self%faver(Q), &
     !self%faver(e-d**self%gamma/(self%gamma-1.0)), self%faver(fm(:,:,:,1))
   !-----------------------------------------------------------------------------
   ! Conservation of mass
@@ -300,7 +301,8 @@ SUBROUTINE pde (self)
   dddt = -div(ds,fm)                                    ! density derivative
   u_max = self%cdtd*dsmax*self%fmaxval(abs(dddt/d))                             ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
-  if (verbose>2 .or. self%id==io%id_debug) print 1, self%id, self%time, 'u_max(dddt)', u_max, self%u_max
+  if (verbose>2 .or. self%id==io%id_debug) &
+    write(io%output,1) self%id, self%time, 'u_max(dddt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
@@ -386,8 +388,8 @@ SUBROUTINE pde (self)
     afm = self%faver(fm(:,:,:,1))
     fm = fm*down(ee) - (self%nu(5)*dd*down(du))*ddown(ds,ee)                    ! ops: 1 4 0
     dedt = -div(ds,fm) - pg*divU + Q
-    if (verbose==1) print '(a,10f12.6)', 'average(Q):', &
-      self%time, self%time*self%faver(Q), &
+    if (verbose==1) write(io%output,'(a,10f12.6)') &
+      'average(Q):', self%time, self%time*self%faver(Q), &
       self%faver(e-d**self%gamma/(self%gamma-1.0)), &
       self%faver(- pg*divU), &
       afm, self%faver(fm(:,:,:,1))
@@ -423,7 +425,7 @@ SUBROUTINE pde (self)
     dedt = dedt + qr
     if (verbose>2 .or. self%id==io%id_debug) then
       u_max = self%cdtd*dsmax*self%fmaxval(abs((qr-ee*dddt)/d))
-      print 1, self%id, self%time, 'u_max(qrad)', u_max, self%u_max
+      write(io%output,1) self%id, self%time, 'u_max(qrad)', u_max, self%u_max
     end if
   end if
   !-----------------------------------------------------------------------------
@@ -432,7 +434,8 @@ SUBROUTINE pde (self)
   if (self%gamma /= 1d0) then
     u_max = self%cdtd*dsmax*self%fmaxval(abs((dedt-ee*dddt)/d))
     self%u_max = max(self%u_max,u_max)
-    if (verbose>2 .or. self%id==io%id_debug) print 1, self%id, self%time, 'u_max(dedt)', u_max, self%u_max
+    if (verbose>2 .or. self%id==io%id_debug) &
+      write(io%output,1) self%id, self%time, 'u_max(dedt)', u_max, self%u_max
   end if
   !-----------------------------------------------------------------------------
   call deallocate_vectors_a (ld, dd, emf, J, fd, fx, fy, fz, fm)
@@ -443,7 +446,8 @@ SUBROUTINE pde (self)
   end if
   call trace%end (itimer)
   if (mpi%master .and. first_time) then
-    print *, stagger%count, ' stagger calls', stagger%flops/product(real(self%n)),' flops per interior point'
+    write(io%output,*) stagger%count, ' stagger calls', &
+      stagger%flops/product(real(self%n)),' flops per interior point'
     stagger%count=0
     stagger%flops=0
     first_time = .false.
@@ -477,20 +481,20 @@ SUBROUTINE update (self)
     call self%check_density('before timestep')
   !-----------------------------------------------------------------------------
   it = self%iit(self%nt-1)
-  ! print *,'timestep: id =', self%id, self%dt(it)
+  ! write(io%output,*) 'timestep: id =', self%id, self%dt(it)
   ! do iv=1,self%nv
-    ! print *,'iv, fmin, fmax:', iv, self%fminval(self%mem(:,:,:,iv,it,1)), &
+    ! write(io%output,*) 'iv, fmin, fmax:', iv, self%fminval(self%mem(:,:,:,iv,it,1)), &
                                    ! self%fmaxval(self%mem(:,:,:,iv,it,1))
   ! end do
   ! do iv=1,self%nv
-    ! print *,'iv, dmin, dmax:', iv, self%fminval(self%mem(:,:,:,iv,it,2)), &
+    ! write(io%output,*) 'iv, dmin, dmax:', iv, self%fminval(self%mem(:,:,:,iv,it,2)), &
                                    ! self%fmaxval(self%mem(:,:,:,iv,it,2))
   ! end do
   !-----------------------------------------------------------------------------
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   !-----------------------------------------------------------------------------
   ! do iv=1,self%nv
-    ! print *,'iv, dmin, dmax:', iv, self%fminval(self%mem(:,:,:,iv,it,2)), &
+    ! write(io%output,*) 'iv, dmin, dmax:', iv, self%fminval(self%mem(:,:,:,iv,it,2)), &
                                    ! self%fmaxval(self%mem(:,:,:,iv,it,2))
   ! end do
   !-----------------------------------------------------------------------------
@@ -508,10 +512,10 @@ SUBROUTINE test_d (self, label)
   dmin = minval(self%mem(:,:,:,1,self%it,1))
   dmax = maxval(self%mem(:,:,:,1,self%it,1))
   if (dmin <= 0.0) then
-    print *, self%id, 'error at ',label
+    write(io%output,*) self%id, 'error at ',label
     stop
   else
-    !print *, self%id, 'dmin,max', label, dmin, dmax
+    !write(io%output,*) self%id, 'dmin,max', label, dmin, dmax
   end if
 END SUBROUTINE test_d
 
@@ -564,10 +568,10 @@ FUNCTION gas_pressure (self) RESULT (pg)
     call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg, tt=tt)
     if (io%master .and. (verbose>1 .or. nprint>0)) then
       nprint = nprint-1
-      print *, self%id, 'lookup_table: lnd =', minval(self%lnd), maxval(self%lnd)
-      print *, self%id, 'lookup_table:  ee =', minval(self%ee ), maxval(self%ee )
-      print *, self%id, 'lookup_table:  pg =', minval(pg),       maxval(pg)
-      print *, self%id, 'lookup_table:  tt =', minval(tt),       maxval(tt)
+      write(io%output,*) self%id, 'lookup_table: lnd =', minval(self%lnd), maxval(self%lnd)
+      write(io%output,*) self%id, 'lookup_table:  ee =', minval(self%ee ), maxval(self%ee )
+      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg),       maxval(pg)
+      write(io%output,*) self%id, 'lookup_table:  tt =', minval(tt),       maxval(tt)
     end if
   end if
   call trace%end

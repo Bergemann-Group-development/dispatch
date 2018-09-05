@@ -433,7 +433,8 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
   end do
   end do
   if (nbelow_d+nbelow_e > 0) then
-    print *,'WARNING: number of points below table d & e:', nbelow_d, nbelow_e
+    write(io%output,*) &
+      'WARNING: number of points below table d & e:', nbelow_d, nbelow_e
   end if
   if (present(d)) then
     deallocate (lnd_loc)

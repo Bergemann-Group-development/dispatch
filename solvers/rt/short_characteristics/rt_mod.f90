@@ -170,14 +170,14 @@ SUBROUTINE init (self)
   if (self%position(3)-0.5_8*self%size(3) > rt_bottom) then
     call self%set (bits%no_rt)
     if (debug(self,1)) &
-      print *, self%id, 'does not need to do RT'
+      write(io%output,*) self%id, 'does not need to do RT'
   !-----------------------------------------------------------------------------
   ! Patches with bottom boundaries below rt_bottom are considered RT bdry
   !-----------------------------------------------------------------------------
   else if (self%position(3)+0.5_8*self%size(3) > rt_bottom) then
     call self%boundaries%set (bits%zu)
     if (debug(self,1)) &
-      print *, self%id, 'is at the bottom RT boundary'
+      write(io%output,*) self%id, 'is at the bottom RT boundary'
   end if
   !-----------------------------------------------------------------------------
   ! Allocate n_omega copies of self, cloning self via self
@@ -263,8 +263,9 @@ SUBROUTINE init (self)
     do i_omega=1,n_omega
       omega => self%omega(i_omega)
       if (verbose > 0) &
-        print '(a,3i7,f8.3)', 'rt_t%init: i_omega, elevation, phi, mu =', &
-        i_omega, nint(asin(omega%mu)*180./math%pi), nint(omega%phi*180./math%pi), &
+        write(io%output,'(a,3i7,f8.3)') &
+          'rt_t%init: i_omega, elevation, phi, mu =', i_omega, &
+          nint(asin(omega%mu)*180./math%pi), nint(omega%phi*180./math%pi), &
         omega%mu
     end do
   end if
@@ -302,7 +303,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   if (self%i_omega==0) then
     if (verbose > 1) &
-      print *, self%id, 'rt_t%update: time, dtime, it, i_omega', &
+      write(io%output,*) self%id, 'rt_t%update: time, dtime, it, i_omega', &
         self%time, self%dtime, self%it, self%i_omega
     !---------------------------------------------------------------------------
     ! If the main task is called with self%time > self%rt_next, then the
@@ -313,7 +314,7 @@ SUBROUTINE update (self)
     if (self%time + self%grace*self%dtime >= self%rt_next) then
       ! -- Sum Q over angles and bin
       if (debug(self,0)) &
-        print *, self%id, 'rt_t%update: compute Q at', self%rt_next
+        write(io%output,*) self%id, 'DBG rt_t%update: compute Q at', self%rt_next
       self%tt => self%mem(:,:,:,self%idx%tt,self%it,1)
       q => self%mem(:,:,:,self%idx%qr,self%new,1)
       q = 0.0
@@ -328,26 +329,27 @@ SUBROUTINE update (self)
           end do
           omega%time = self%time
           if (debug(self,1)) &
-            print '(i7,3x,2i3,2f7.3,3x,f8.4,3x,a,1p,2e12.4)', &
+            write(io%output,'(i7,3x,2i3,2f7.3,3x,f8.4,3x,a,1p,2e12.4)') &
               self%id, jt, pt, self%time, 'q', self%fminval(q), self%fmaxval(q)
         end do
         if (debug(self,1)) then
           l = self%li
           u = self%ui
           loc = maxloc(abs(q(l(1):u(1),l(2):u(2),l(3):u(3)))) + l-1
-          print *, 'min/max loc, value =', loc, q(loc(1),loc(2),loc(3))
+          write(io%output,*) 'min/max loc, value =', loc, q(loc(1),loc(2),loc(3))
           do i_bin=1,self%n_bin
-            print *, 'i_bin, q1, q2 =', i_bin, &
+            write(io%output,*) 'i_bin, q1, q2 =', i_bin, &
               omega%mem(loc(1),loc(2),loc(3),i_bin,omega%it,1), &
               self%rk(loc(1),loc(2),loc(3),i_bin)
           end do
           do iv=1,self%nv
-            print *, 'iv, v', iv, self%mem(loc(1),loc(2),loc(3),iv,self%it,1)
+            write(io%output,*) 'iv, v', iv, self%mem(loc(1),loc(2),loc(3),iv,self%it,1)
           end do
           ! -- outgoing vertical ray
           omega => self%omega(self%n_omega)
           do i3=l(3),u(3)
-            print '(a,i4,1p,10e10.2)', 'rt_t%update: i3, q, q_cont, qmin, qmax =', i3, &
+            write(io%output,'(a,i4,1p,10e10.2)') &
+              'rt_t%update: i3, q, q_cont, qmin, qmax =', i3, &
               q(loc(1),loc(2),i3), &
               omega%mem(loc(1),loc(2),i3,1,omega%it,1), &
               minval(q(l(1):u(1),l(2):u(2),i3)), &
@@ -372,9 +374,8 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     if (self%is_clear(bits%no_rt)) then
       if (debug(self,0)) then
-        print *, self%id, 'rt_t%update: time   ', time
-        print *, self%id, 'rt_t%update: time +g', time+self%grace*self%dtime
-        print *, self%id, 'rt_t%update: rt_next', self%rt_next
+        write(io%output,*) self%id, 'rt_t%update: time   ', time
+        write(io%output,*) self%id, 'rt_t%update: rt_next', self%rt_next
       end if
       if (time + self%grace*self%dtime >= self%rt_next) then
         ! -- maake a new EOS calculation at self%time
@@ -391,8 +392,10 @@ SUBROUTINE update (self)
     ! call to rotate until after the rt_eos call
     !---------------------------------------------------------------------------
     call self%rotate
+!    write(io_unit%mpi,'(f12.6,i4,i7,2x,a,f12.6)') &
+!      wallclock(), omp%thread, self%id, 'rt_t%update: MHD time =', self%time
     if (debug(self,0)) &
-      print *, self%id, 'rt_t%update: MHD at ', self%time
+      write(io%output,*) self%id, 'DBG rt_t%update: MHD at ', self%time
   !-----------------------------------------------------------------------------
   ! Call the RT solver for RT sub-tasks when self is not the main task, for as
   ! long as self%time is less than the "rabbit time" rt_next:  For the RT solver,
@@ -412,23 +415,28 @@ SUBROUTINE update (self)
     ! Local equivalent of rotate, where we do not use %new, but make sure that
     ! the Q result is stored at the time
     !---------------------------------------------------------------------------
-    if (debug(self,1)) print *, mhd%id, &
+    if (debug(self,1)) write(io%output,*) mhd%id, &
       'rt_t%update: update  RT, id, t = ', self%id, self%time, mhd%time
     self%it = mod(self%it,self%nt)+1
     self%iit(1:self%nt-1) = self%iit(2:self%nt)
     self%iit(self%nt) = self%it
     self%time = mhd%time                ! set current time = MHD time
+    if (self%parent%id==io%id_debug) &
+      write(io%output,*) self%id, 'DBG rt_t%update: RT time =', self%time
     self%t  (self%it) = self%time
     self%dt (self%it) = self%dtime              ! this uses the previous dtime
-    if (debug(self,0)) print *, mhd%id, &
+    if (debug(self,0)) write(io%output,*) mhd%id, &
       'rt_t%update: RT  at ', self%time, self%id
+    if (mhd%eos_time /= self%time) then
+      write(io%output,'(i7,2x,a,i7,3f12.6)') &
+        self%id, 'WARNING: EOS out of sync:', &
+        mhd%id, mhd%eos_time, self%time
+!      write(io_unit%mpi,'(f12.6,i4,i7,2x,a,f12.6)') &
+!        wallclock(), omp%thread, self%id, 'rt_t%update: WARNING  =', self%time
+    end if
     ! -- Call RT solver, storing result in %it slot, at time = t(%it)
     self%q => self%mem(:,:,:,:,self%it,1)
-    if (mhd%eos_time /= self%time) &
-      print *, self%id, 'WARNING: EOS out of sync:', mhd%eos_time-self%time, mhd%id
     call self%solve ()
-    if (verbose > 2) &
-      call rt_integral%diagnostics ('after omega solve')
     if (vertical_propagation) then
       self%dtime = self%rt_time*abs(self%mu)
       self%time = self%time + self%dtime
@@ -439,8 +447,11 @@ SUBROUTINE update (self)
     end if
     self%rotated = .true.
     !---------------------------------------------------------------------------
+!    write(io_unit%mpi,'(f12.6,i4,i7,2x,a,f12.6)') &
+!      wallclock(), omp%thread, self%id, 'rt_t%update: RT  time =', self%time
     if (verbose > 2) &
-      print '(i6,2f7.3,2x,a,f8.4)', self%id, self%position(3), self%mu, &
+      write(io%output,'(i6,2f7.3,2x,a,f8.4)') &
+        self%id, self%position(3), self%mu, &
         'rt_t%update:  RT patch updated to t =', self%time
   end if
   call trace%end (itimer)
@@ -464,6 +475,12 @@ SUBROUTINE init_nbors (self)
     n_nbor = 0
     nbor => self%link%nbor
     do while (associated(nbor))
+      ! if (self%id == io%id_debug) &
+        ! write(io_unit%mpi,'(1x,a,i6,3f7.3,2x,3f7.3,l3)') &
+        ! 'DBG rt_t%init_nbors: nbor, relpos, mu, is needed', nbor%task%id, &
+        ! (nbor%task%position-self%position)/self%size, &
+        ! sin(acos(omega%mu))*[cos(omega%phi),sin(omega%phi)],omega%mu, &
+        ! self%needs(omega,nbor%task)
       if (self%needs(omega,nbor%task)) then
         !-----------------------------------------------------------------------
         ! Add a new nbor, a new nbor%link, and pointers from link to task and
@@ -479,7 +496,7 @@ SUBROUTINE init_nbors (self)
             new%link => raytask%link
             new%task  => raytask
             if (verbose > 2) &
-              print *, 'init_nbors: om=', omega%id, omega%link%task%id, 'nb=', &
+              write(io%output,*) 'init_nbors: om=', omega%id, omega%link%task%id, 'nb=', &
             nbtask%id, nbtask%link%task%id, 'ray=', raytask%id, raytask%link%task%id
           end select
         end select
@@ -488,19 +505,19 @@ SUBROUTINE init_nbors (self)
         !-----------------------------------------------------------------------
         if (.not.associated(omega%link%nbor)) then
           omega%link%nbor => new
-          if (verbose > 3) print *, omega%id, 'nbor => new'
+          if (verbose > 3) write(io%output,*) omega%id, 'nbor => new'
         else
-          if (verbose > 3) print *, omega%id, 'prev%next => new'
+          if (verbose > 3) write(io%output,*) omega%id, 'prev%next => new'
           prev%next => new
         end if
-        if (verbose > 3) print *, omega%id, 'prev => new'
+        if (verbose > 3) write(io%output,*) omega%id, 'prev => new'
         prev => new
         n_nbor = n_nbor+1
       end if
       nbor => nbor%next
     end do
     if (verbose > 2) &
-      print *, omega%id, 'rt_t%init_nbors: n_nbor=', n_nbor
+      write(io%output,*) omega%id, 'rt_t%init_nbors: n_nbor=', n_nbor
   end do
   self%needs_nbors = .false.
   call trace%end
@@ -525,8 +542,7 @@ SUBROUTINE rt_eos (self, time)
     !$omp critical (eos_cr)
     if (self%eos_time < time) then
       if (debug(self,0)) then
-        print *, self%id, 'rt_t%update: eos_tim', self%eos_time
-        print *, self%id, 'rt_t%update: EOS at ', time
+        write(io%output,*) self%id, 'DBG rt_t%update: EOS at ', time
       end if
       m = shape(self%rk)
       ! -- since rotate has not been called yet, use the %new slot
@@ -539,21 +555,23 @@ SUBROUTINE rt_eos (self, time)
       tt => self%mem(:,:,:,self%idx%tt,self%new,1)
       call eos%lookup_table (m, d=d, e=e, rk=self%rk, src=self%src, tt=tt)
       if (verbose > 3) then
-        print *,self%id,'rt_t%rt_eos:  d',minval(d),maxval(d)
-        print *,self%id,'rt_t%rt_eos:  e',minval(e),maxval(e)
-        print *,self%id,'rt_t%rt_eos: rk',minval(self%rk),maxval(self%rk)
-        print *,self%id,'rt_t%rt_eos: tt',minval(tt),maxval(tt),scaling%temp
+        write(io%output,*) self%id,'rt_t%rt_eos:  d',minval(d),maxval(d)
+        write(io%output,*) self%id,'rt_t%rt_eos:  e',minval(e),maxval(e)
+        write(io%output,*) self%id,'rt_t%rt_eos: rk',minval(self%rk),maxval(self%rk)
+        write(io%output,*) self%id,'rt_t%rt_eos: tt',minval(tt),maxval(tt),scaling%temp
       end if
       self%eos_time = time
+!      write(io_unit%mpi,'(f12.6,i4,i7,2x,a,f12.6)') &
+!        wallclock(), omp%thread, self%id, 'rt_t%rt_eos: eos_time =', self%eos_time
     else
       if (debug(self,0)) then
-        print *, self%id, 'rt_t%update: eos_tim', self%eos_time
-        print *, self%id, 'rt_t%update: EOS rej', time
+        write(io%output,*) self%id, 'DBG rt_t%update: EOS tim', self%eos_time
+        write(io%output,*) self%id, 'DBG rt_t%update: EOS REJ', time
       end if
     end if
     !$omp end critical (eos_cr)
   else
-    print *, self%id, 'rt_t%rt_eos: WARNING, called w/o need', self%eos_time-time
+    write(io%output,*) self%id, 'rt_t%rt_eos: WARNING, called w/o need', self%eos_time-time
   end if
   call trace%end (itimer)
 END SUBROUTINE rt_eos
@@ -599,11 +617,11 @@ SUBROUTINE boundary_conditions (self)
       end do
     end do
     if (verbose > 2) &
-      print *, self%id, 'rt_t%lower_BC', scaling%temp
+      write(io%output,*) self%id, 'rt_t%lower_BC', scaling%temp
   else if (self%mesh(3)%upper_boundary .and. self%mu < 0) then
     self%mem(:,:,self%mesh(3)%uo,:,self%it,1) = 0.0
     if (verbose > 2) &
-      print *, self%id, 'rt_t%upper_BC'
+      write(io%output,*) self%id, 'rt_t%upper_BC'
   end if
   call trace%end
 END SUBROUTINE boundary_conditions

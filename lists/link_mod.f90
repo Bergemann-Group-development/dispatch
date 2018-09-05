@@ -575,6 +575,9 @@ SUBROUTINE send_to_vnbors (self)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('link_mod::send_to_vnbors', itimer=itimer)
+  if (self%task%id == io%id_debug) &
+    write(io%output,*) 'DBG link_t%send_to_vnbors: id, rank =', &
+      self%task%id, mpi%rank
   !-----------------------------------------------------------------------------
   ! Send to all unique ranks in the nbor list (which is sorted by rank).  The
   ! task%pack procedure is only called once (at the first send), and each new
@@ -586,8 +589,12 @@ SUBROUTINE send_to_vnbors (self)
   nsend = 0
   do while (associated(nbor))                                   ! until end
     task => nbor%task
-    if (io%verbose>2) &
-      write (io_unit%log,*) 'send_to_vnb: id,nbor,rank =', self%task%id, task%id, task%rank
+    if (self%task%id == io%id_debug) &
+      write(io%output,*) 'DBG link_t%send_to_vnbors: nbor, rank =', &
+          task%id, task%rank
+    if (io%verbose > 2) &
+      write (io_unit%log,*) 'send_to_vnb: id,nbor,rank =', &
+        self%task%id, task%id, task%rank
     flush (io_unit%log)
     if (task%rank/=mpi%rank .and. task%rank/=rank) then         ! new rank?
       rank = nbor%task%rank                                     ! current rank
@@ -596,9 +603,11 @@ SUBROUTINE send_to_vnbors (self)
         call task%pack (mesg)                                   ! pack into mesg
         flag = .true.                                           ! mesg has been packed
       end if
+      if (self%task%id == io%id_debug) &
+        write(io%output,*) 'DBG link_t%send_to_vnbors: rank =', nbor%task%rank
       call mesg%send (rank)                                     ! send it
       nsend = nsend+1
-      if (io%verbose>1) then
+      if (io%verbose > 1) then
         write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6,2x,a,i5,2x,5l1)') &
           wallclock(), 'sent', mesg%id, self%task%time, 'to', rank, &
           self%task%is_set (bits%internal), &

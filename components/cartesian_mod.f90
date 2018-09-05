@@ -90,7 +90,7 @@ SUBROUTINE init (self, label)
   ! Begin on task list
   !-----------------------------------------------------------------------------
   allocate (self%task_list)
-  call self%task_list%init
+  call self%task_list%init ('Cartesian')
   self%task_list%size = self%size
   self%task_list%dims = self%dims
   self%task_list%n_tasks = product(self%dims)
@@ -277,15 +277,21 @@ SUBROUTINE init_exp (self, origin)
         if (.not.patch%periodic(3).and.patch%ipos(3)==self%dims(3)-1) call patch%boundaries%set(bits%zu)
         if (io%verbose>0) then
           write (io_unit%log,1) &
-            'init_cartesian: id, rank, size, pos =', &
+            'cartesian_t%init: id, rank, size, pos =', &
             patch%id, patch%rank, patch%size, patch%position, &
             patch%is_set(bits%boundary), patch%is_set(bits%virtual)
-          1 format(a,i8,i6,1p,2(2x,3e14.6),2x,2l1)
+          1 format(a,i8,i6,1p,2(2x,3e14.6),2x,2l1,2x,a)
           flush (io_unit%log)
         end if
-        if (io_unit%verbose>1 .and. io_unit%master) then
+        if (patch%id == io%id_debug) then
           write (io_unit%output,1) &
-            'init_cartesian: id, rank, size, pos =', &
+            'cartesian_t%init: id, rank, size, pos =', &
+            patch%id, patch%rank, patch%size, patch%position, &
+            patch%is_set(bits%boundary), patch%is_set(bits%virtual), 'DBG'
+          flush (io_unit%log)
+        else if (io_unit%verbose>1 .and. io_unit%master) then
+          write (io_unit%output,1) &
+            'cartesian_t%init: id, rank, size, pos =', &
             patch%id, patch%rank, patch%size, patch%position, &
             patch%is_set(bits%boundary), patch%is_set(bits%virtual)
           flush (io_unit%log)
@@ -294,7 +300,7 @@ SUBROUTINE init_exp (self, origin)
     end if
     link => link%next
   end do
-END SUBROUTINE
+END SUBROUTINE init_exp
 
 !> =============================================================================
 !> Diagnostics: Number of patches and GB of mem
@@ -303,6 +309,6 @@ SUBROUTINE diagnostics
   if (mpi%master) then
     print '(a,i8)',     ' Patches per process:', np
   end if
-END SUBROUTINE
+END SUBROUTINE diagnostics
 
 END MODULE cartesian_mod

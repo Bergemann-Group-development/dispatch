@@ -96,6 +96,7 @@ MODULE task_mod
     procedure:: is_relevant
     procedure:: test_update
     procedure:: solver_is
+    procedure:: debug
   end type
   integer, save:: id=0
   type(dll_t), pointer:: deleted_list
@@ -528,5 +529,16 @@ FUNCTION solver_is (self, kind)
   character(len=*):: kind
   solver_is = self%kind(1:len(kind)) == kind
 END FUNCTION solver_is
+
+!> =============================================================================
+!> Turn on debug output at and beyond a given level, and for id_debug task
+!> =============================================================================
+FUNCTION debug (self, level)
+  class(task_t):: self
+  integer:: level
+  logical debug
+  !-----------------------------------------------------------------------------
+  debug = (io%verbose >= level) .or. (self%id == io%id_debug)
+END FUNCTION debug
 
 END MODULE task_mod

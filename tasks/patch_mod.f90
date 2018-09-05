@@ -558,13 +558,13 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   type(header_t):: header
   n_header = storage_size(header)/32             ! 32 bits per word
   if (n_header*4 /= storage_size(header)/8) then
-    print *, n_header*4, storage_size(header)/8
+    write(io%output,*) n_header*4, storage_size(header)/8
     error stop 'n_header is incorrect'
   end if
   end block
 !  if (all(self%size == self%box)) then
 !    call self%set (bits%root_grid)
-!    if (io%verbose > 1) print *, 'set bits%root_grid id =', self%id
+!    if (io%verbose > 1) write(io%output,*) 'set bits%root_grid id =', self%id
 !  end if
   call trace%end
 END SUBROUTINE setup
@@ -649,7 +649,8 @@ FUNCTION myposition (self, ii, iv, pp) RESULT(out)
     cellpos = cellpos + h*self%mesh%d
   end if
   if (self%id==io%id_debug .and. io%verbose>1) &
-    print '(a,3i4,4(3x,3f10.2))', 'mypos:',ii,self%position,self%offset,self%ds,cellpos
+    write(io%output,'(a,3i4,4(3x,3f10.2))') &
+      'mypos:',ii,self%position,self%offset,self%ds,cellpos
   ! convert to Cartesian coords.
   if (self%mesh_type == mesh_types%cylindrical) then
     cellpos = CylindricalToCartesian(cellpos(1), cellpos(2), cellpos(3))
@@ -777,7 +778,7 @@ SUBROUTINE periodic_grid (self, only)
   end do
   end do
   end do
-  if (io%verbose > 1) print *, &
+  if (io%verbose > 1) write(io%output,*) &
     'periodic_grid: id, it, new =', self%id, self%it, self%new
   call trace_end
 END SUBROUTINE periodic_grid
@@ -957,7 +958,8 @@ SUBROUTINE extrapolate_guards (self)
     ui = self%mesh%ub
   end where
   if (io%id_debug>0.and.(self%id==io%id_debug.or.abs(self%id-io%id_debug)==27)) then
-    print '(i5,2x,a,6i7)',self%id,'MK extrapolating guard zone values', it2, it1, it0, self%it, self%new
+    write(io%output,'(i5,2x,a,6i7)') self%id, &
+      'MK extrapolating guard zone values', it2, it1, it0, self%it, self%new
   end if
   do iv=1,self%nv
     if (self%unsigned(iv)) then
@@ -1079,15 +1081,16 @@ SUBROUTINE pack (self, mesg)
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info to sequenced header, and copy that to the buffer
   !-----------------------------------------------------------------------------
-  if (io%verbose > 1) then
-    write (io_unit%log,1) 'patch_mod::pack, id, nq, time, status:', &
+  if (self%debug(2)) then
+    write (io_unit%log,1) wallclock(), &
+    'DBG patch_t%pack, id, nq, time, status:', &
     self%id, self%nq, self%time, &
     self%is_set (bits%internal), &
     self%is_set (bits%boundary), &
     self%is_set (bits%virtual), &
     self%is_set (bits%external), &
     self%is_set (bits%swap_request)
-    1 format(a,2i9,f12.6,2x,5l1)
+    1 format(f12.6,2x,a,2i9,f12.6,2x,5l1)
     flush (io_unit%log)
   end if
   call patch_to_header (self, header)
@@ -1224,7 +1227,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         fmin = self%fminval(self%mem(:,:,:,iv,it0,self%nw))
         fmax = self%fmaxval(self%mem(:,:,:,iv,it0,self%nw))
       end if
-      print 2, &
+      write(io%output,2) &
       'upd',self%id, self%level, iv, self%istep, self%time-self%dtime, &
       self%dtime, self%u_max, fmin, fmax, &
       self%fminval(self%mem(:,:,:,iv,it0,1)), &
@@ -1293,42 +1296,31 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
              mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &
              mpi_mesg%n_delay]
-        if (io%master .or. self%track) then
-          !$omp atomic
-          timer%n_lines = timer%n_lines-1
-          if (timer%n_lines==0) then
-            !$omp critical (info_cr2)
-            !$omp atomic write
-            timer%n_lines = max_lines
-            print '(a)', '0....+....1....+....2....+....3....+....4....+....5....+....' &
-                       //'6....+....7....+....8....+....9....+....0....+....1 ntsk    nq ' &
-                       //' chk  rdy  upd  snt  prb  unp  dly snq rcq  BV'
-            !$omp end critical (info_cr2)
-          end if
-          do iv=1,nv
-            print fmt, &
-              'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
-              self%dtime, log10(max(self%u_max,1e-30)), &
-              self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-              self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-              self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-              self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-              real(timer%n_update), ntask, nq, counts, &
-              mpi_mesg%nq_send, mpi_mesg%nq_recv, &
-              self%is_set(bits%boundary), self%is_set(bits%virtual)
-            write (io_unit%log,fmt) &
-              'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
-              self%dtime, log10(max(self%u_max,1e-30)), &
-              self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-              self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-              self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-              self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-              real(timer%n_update), ntask, nq, counts, &
-              mpi_mesg%nq_send, mpi_mesg%nq_recv, &
-              self%is_set(bits%boundary), self%is_set(bits%virtual)
-          end do
-          counts(:) = 0
+        !$omp atomic
+        timer%n_lines = timer%n_lines-1
+        if (timer%n_lines==0) then
+          !$omp critical (info_cr2)
+          !$omp atomic write
+          timer%n_lines = max_lines
+          write(io%output,'(a)') &
+          '0....+....1....+....2....+....3....+....4....+....5....+....' &
+          //'6....+....7....+....8....+....9....+....0....+....1 ntsk    nq ' &
+          //' chk  rdy   upd  snt  prb  unp  dly snq rcq  BV'
+          !$omp end critical (info_cr2)
         end if
+        do iv=1,nv
+          write(io%output,fmt) &
+            'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
+            self%dtime, log10(max(self%u_max,1e-30)), &
+            self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+            self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+            self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+            self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+            real(timer%n_update), ntask, nq, counts, &
+            mpi_mesg%nq_send, mpi_mesg%nq_recv, &
+            self%is_set(bits%boundary), self%is_set(bits%virtual)
+        end do
+        counts(:) = 0
         !-----------------------------------------------------------------------
         ! Reset the message counters after every timestep, if relevant
         !-----------------------------------------------------------------------
@@ -1385,8 +1377,10 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
     out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
   end where
   if (io%verbose>1 .and. (task%id==io%id_debug .or. self%id==io%id_debug)) then
-    print 1,'distance: self', self%id, self%position, self%size, self%box
-    print 1,'distance: task', task%id, task%position, task%size, task%box, out
+    write(io%output,1) &
+      'distance: self', self%id, self%position, self%size, self%box
+    write(io%output,1) &
+      'distance: task', task%id, task%position, task%size, task%box, out
     1 format(a,i5,4(3x,3f10.2))
   end if
   call trace%end
@@ -1494,7 +1488,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (self%nt>1) then
     if (io%verbose>2 .or. (self%istep>3 .and. &
         dtime < 0.5*self%dt(self%iit(self%nt-2)) .and. self%dt_fixed < 0.0)) &
-      print '(i6,a,i3,1p,3g11.2,2x,8g11.2)', self%id, &
+      write(io%output,'(i6,a,i3,1p,3g11.2,2x,8g11.2)') self%id, &
         ' courant: it, dtm, cdt, u_max, dt =', &
         self%it, dtime, courant, self%u_max, self%dt(self%iit)
   end if
@@ -1515,7 +1509,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
     self%dtime = min (self%dtime, io%out_time)
   self%dt(self%it) = self%dtime
   if (io%verbose>3) &
-    print'(a,i7,f12.6,f8.4,1p,e10.2)', 'courant:', &
+    write(io%output,'(a,i7,f12.6,f8.4,1p,e10.2)') 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
   call trace_end (itimer)
 END SUBROUTINE courant_condition
@@ -1664,11 +1658,11 @@ SUBROUTINE check_nan (self, label, always)
   call trace%begin ('patch_t%check_nan', itimer=itimer)
   if (io%verbose>1) then
     if (present(label)) then
-      print *, self%id, trim(label)//', min(d), max(d):', &
+      write(io%output,*) self%id, trim(label)//', min(d), max(d):', &
         minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
         maxval(self%mem(:,:,:,self%idx%d,self%it,1))
     else
-      print *, self%id, 'min(d), max(d):', &
+      write(io%output,*) self%id, 'min(d), max(d):', &
         minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
         maxval(self%mem(:,:,:,self%idx%d,self%it,1))
     end if
@@ -1681,10 +1675,11 @@ SUBROUTINE check_nan (self, label, always)
     if (isnan(self%mem(ix,iy,iz,iv,self%it,1))) then
       if (io%verbose>0) then
         if (present(label)) then
-          print 1,trim(label)//' ERROR: NaN id,ix,iy,iz,iv:', self%id,ix,iy,iz,iv
+          write(io%output,1) trim(label)//' ERROR: NaN id,ix,iy,iz,iv:', &
+          self%id,ix,iy,iz,iv
           1 format(a,i6,3i4,i5)
         else
-          print 1,'ERROR: NaN ix,iy,iz,iv:', ix,iy,iz,iv
+          write(io%output,1) 'ERROR: NaN ix,iy,iz,iv:', ix,iy,iz,iv
         end if
       end if
       ii = [ix,iy,iz]
@@ -1696,15 +1691,15 @@ SUBROUTINE check_nan (self, label, always)
   end do
   if (nan) then
     if (present(label)) then
-      print *, self%id, trim(label)//' ERROR NaN, min(d), max(d):', &
+      write(io%output,*) self%id, trim(label)//' ERROR NaN, min(d), max(d):', &
         minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
         maxval(self%mem(:,:,:,self%idx%d,self%it,1)), ii
     else
-      print *, self%id, ' ERROR NaN, min(d), max(d):', &
+      write(io%output,*) self%id, ' ERROR NaN, min(d), max(d):', &
         minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
         maxval(self%mem(:,:,:,self%idx%d,self%it,1)), ii
     end if
-    print *, self%unsigned
+    write(io%output,*) self%unsigned
     error stop 'NaN'
   end if
   call trace%end (itimer)
@@ -1985,9 +1980,9 @@ SUBROUTINE log_interpolate (self, time, i, a)
   call self%time_interval (time, jt, pt)
   if (io%verbose > 1) then
     b => self%mem(:,:,:,i,jt(1),1)
-    print *, self%id, 'log_interp(1)', jt(1), minval(b), maxval(b)
+    write(io%output,*) self%id, 'log_interp(1)', jt(1), minval(b), maxval(b)
     b => self%mem(:,:,:,i,jt(2),1)
-    print *, self%id, 'log_interp(2)', jt(2), minval(b), maxval(b)
+    write(io%output,*) self%id, 'log_interp(2)', jt(2), minval(b), maxval(b)
   end if
 
   a = log(self%mem(:,:,:,i,jt(1),1))*pt(1) &
@@ -2031,7 +2026,8 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
   end if
   pt(1) = 1.-pt(2)
   if ((io%verbose>3 .or. io_unit%do_validate) .and. pt(2)>0.0) then
-    print '(a,1p,3e12.4,2i5,0p,2f8.4)', 'time_interval: times  =', t(j), time, t(j+1), jt, pt
+    write(io%output,'(a,1p,3e12.4,2i5,0p,2f8.4)') &
+      'time_interval: times  =', t(j), time, t(j+1), jt, pt
   end if
   !call trace%end (itimer)
 END SUBROUTINE time_interval
@@ -2273,9 +2269,10 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
                                   (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))
   end if
   if (target%id==io%id_debug .and. io%verbose>2) &
-    print 1, target%id, ii, iv, self%id, j, jt, p, pt, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
-    1 format(i6,1x,3i3,i4,2x,"DBG patch_t%interpolate src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
-      "   out:",1p,e15.6)
+    write(io%output,1) target%id, ii, iv, self%id, j, jt, p, pt, &
+      target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
+    1 format(i6,1x,3i3,i4,2x,"DBG patch_t%interpolate src:",i6, &
+      "   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2,"   out:",1p,e15.6)
   !call trace%end (itimer)
 END SUBROUTINE interpolate
 
@@ -2330,9 +2327,10 @@ SUBROUTINE interpolate_specific (self, target, ii, iv, jt, pt)
     target%mem(ii(1),ii(2),ii(3),id,target%it,1)
   end associate
   if (target%id==io%id_debug .and. io%verbose>2) &
-    print 1, target%id, ii, iv, self%id, j, jt, p, pt, target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
-    1 format(i6,1x,3i3,i4,2x,"DBG patch_t%interpolate_specific src:",i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2, &
-      "   out:",1p,e15.6)
+    write(io%output,1) target%id, ii, iv, self%id, j, jt, p, pt, &
+      target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
+    1 format(i6,1x,3i3,i4,2x,"DBG patch_t%interpolate_specific src:", &
+      i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2,"   out:",1p,e15.6)
   !call trace%end (itimer)
 END SUBROUTINE interpolate_specific
 

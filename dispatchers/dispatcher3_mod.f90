@@ -22,7 +22,7 @@
 !> be part of the dispatcher data type.
 !>
 !> On the balance between spawning tasks for other treads and actually working
-!> on an updete:  If a process has N threads, and has N tasks active, evenly
+!> on an update:  If a process has N threads, and has N tasks active, evenly
 !> spread in their progress, then essentially all of these tasks will have
 !> finished updating while the master thread works on its update.  Hence there
 !> must be approximately N additional tasks spawned, but not yet busy updating.
@@ -38,13 +38,6 @@
 !> useful work to do, while other tasks are finishing, so when the master thread
 !> looks at the situation again, there are likely to be a number of new tasks
 !> ready to be updated.
-!>
-!> As is, this procedure assumes tasks have similar update cost.  If this is not
-!> the case, the buffer of "ready" tasks (state 1) may not be sufficient to 
-!> keep threads busy while the master thread does on update of an expensive task.
-!> A simple solution in this case is to disable task updating by the master
-!> thread, which instead should be dedicated only to keep the other threads 
-!> busy.
 !> =============================================================================
 MODULE dispatcher3_mod
   USE io_mod
@@ -312,8 +305,8 @@ SUBROUTINE update (self, task_list, link, test)
     nbor => nbor%next
   end do
   if (verbose > 2) &
-    print *, omp%thread, 'match  ', task%id
   link%task%thread = -1
+    write(io%output,*) omp%thread, 'match  ', task%id
   call self%set_state (link%task, 4)
 END SUBROUTINE update
 
@@ -327,14 +320,19 @@ SUBROUTINE spawn_update (self, task_list, link, test)
   logical:: test
   !...........................................................................
   call self%set_state (link%task, 2)
-  if (self%verbose>2) print fmt0,wallclock(),omp%thread,'spawning task',link%task%id, link%task%state, link%task%thread
+  if (self%verbose>2) &
+    write(io%output,fmt0) &
+      wallclock(), omp%thread, 'spawning task', link%task%id, link%task%state, &
+      link%task%thread
   !$omp task firstprivate(self,link,test,task_list) default(shared)
     if (use_locks) then
       if (link%task%lock%test()) then
         call self%update (task_list, link, test)
         call link%task%lock%unset
       else
-        print *,'WARNING, lock conflict, thread, id =', omp%thread, link%task%id, link%task%thread
+        write(io%output,*) &
+          'WARNING, lock conflict, thread, id =', &
+          omp%thread, link%task%id, link%task%thread
       end if
     else
       call self%update (task_list, link, test)
@@ -372,7 +370,8 @@ SUBROUTINE set_state (self, task, in)
    !$omp atomic write
    task%state = in
     if (self%verbose>1) &
-      print '(a,i4,f12.6,2x,5i4,2x,2i3)', ' dispatcher3:', omp%thread, wallclock(), n_state, io, in
+      write (io%output,'(a,i4,f12.6,2x,5i4,2x,2i3)') &
+        ' dispatcher3:', omp%thread, wallclock(), n_state, ip, in
   end if
 END SUBROUTINE
 
@@ -426,7 +425,8 @@ END FUNCTION is_ready
 !> =============================================================================
 SUBROUTINE finalize
   if (omp%master) &
-    print '(a,i6,4(a,f7.4))', ' dispatcher3_t%finalize: rank =',mpi%rank, &
+    write(io%output,'(a,i6,4(a,f7.4))') &
+      ' dispatcher3_t%finalize: rank =',mpi%rank, &
       ', fraction of ready tasks =', real(n_ready)/real(n_check), &
       ', fraction of dispatcher idle time =', wc_failed/max(1d-10,wallclock()-start)
 END SUBROUTINE finalize

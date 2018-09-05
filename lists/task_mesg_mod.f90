@@ -24,6 +24,7 @@ MODULE task_mesg_mod
   contains
     procedure:: init
     procedure:: check_mpi
+    procedure:: unpack
     procedure:: init_virtual
   end type
   integer, save:: verbose=0
@@ -318,10 +319,10 @@ SUBROUTINE unpack (self, mesg, link)
   !---------------------------------------------------------------------------
   id = task%id
   call task%unpack (mesg)
-  if (mpi_mesg%debug) then
+  if (mpi_mesg%debug .or. id==io%id_debug) then
     !$omp critical (debug_cr)
     write (io_unit%log,'(f12.6,2x,a,2i9,z12,2x,5l1)') wallclock(), &
-      'recv: id, sender, req =', mesg%id, task%rank, mesg%req, &
+      'DBG unpk: id, sender, req =', mesg%id, task%rank, mesg%req, &
       task%is_set (bits%internal), &
       task%is_set (bits%boundary), &
       task%is_set (bits%virtual), &
@@ -331,7 +332,8 @@ SUBROUTINE unpack (self, mesg, link)
   end if
   if (mpi_mesg%debug) &
     write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6)') wallclock(), 'unpk: id, time =', task%id, task%time
-  if (id /= mesg%id) print *,'unpack ERROR: wrong mesg%id', id, task%id, mesg%id
+  if (id /= mesg%id) &
+    write(io%output,*) 'unpack ERROR: wrong mesg%id', id, task%id, mesg%id
   if (.not. failed) then
     !$omp atomic
     mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
@@ -348,7 +350,7 @@ SUBROUTINE unpack (self, mesg, link)
       call link1%update_nbor_status (link1)
       call self%count_status
       if (verbose>1) &
-        print '(f12.6,2x,a,i6,a,i9,a,i6)', &
+        write(io%output,'(f12.6,2x,a,i6,a,i9,a,i6)') &
         wallclock(),'LB: rank',mpi%rank,' given patch',task%id,' by',mesg%sender
       if (verbose>0) &
         write (io_unit%log,*) 'task_mesg_t%unpack: swapped virtual to boundary:', task%id
@@ -483,7 +485,8 @@ SUBROUTINE init_virtual (self)
         call task%mesg%irecv  (task%rank, task%id)
         if (verbose>0) &
           write (io_unit%log,*) 'task_mesg_t%unpack: init_virtual', omp_get_thread_num(), task%id
-        !if (mpi%rank==0) print *,mpi%rank,'MK',omp_get_thread_num(),i,task%id,'irec'
+        !if (mpi%rank==0) &
+        !  write(io%output,*) mpi%rank,'MK',omp_get_thread_num(),i,task%id,'irec'
       end if
       i = i+1
     end if
@@ -528,8 +531,8 @@ SUBROUTINE check_virtual (self)
       !$omp atomic
       timer%n_recv = timer%n_recv + 1_8
       wc = wallclock()
-      if (wc-task%wc_last > 10.) print &
-        '("WARNING: virtual patch not updated in",f5.1," sec")', wc
+      if (wc-task%wc_last > 10.) write(io%output, &
+        '("WARNING: virtual patch not updated in",f5.1," sec")') wc
       task%wc_last = wc
       call task%mesg%irecv (task%rank, task%id)
       nunpk = nunpk+1
@@ -576,9 +579,9 @@ SUBROUTINE check_active (self)
       end if
       if (task%mesg%req == 0) then
         call task%mesg%irecv  (task%rank, task%id)
-        if (mpi_mesg%debug) &
+        if (mpi_mesg%debug .or. task%id==io%id_debug) &
           write (io_unit%log,'(f12.6,2x,a,2i9,z12)') wallclock(), &
-            'recv: id, sender, req =', task%id, task%rank, task%mesg%req
+            'DBG recv: id, sender, req =', task%id, task%rank, task%mesg%req
       end if
       !-------------------------------------------------------------------------
       ! If a mesg was recvd, then either unpack directly and issue a new request,

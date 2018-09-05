@@ -51,7 +51,8 @@ SUBROUTINE rt_setup (task_list)
   rewind (io_unit%input)
   read (io_unit%input, rt_setup_params, iostat=iostat)
   if (mpi%size > 1 .and. .not.unique_ids) then
-    print *, 'WARNING: unique_ids set to .true. when using MPI size =', mpi%size
+    write(io%output,*) &
+      'WARNING: unique_ids set to .true. when using MPI size =', mpi%size
     unique_ids = .true.
   end if
   if (io%master) write (io_unit%output, rt_setup_params)
@@ -67,7 +68,7 @@ SUBROUTINE rt_setup (task_list)
     call io%assert (associated(link%task), 'link%task missing')
     task => link%task
     if (verbose > 0) & 
-      print *,'processing MHD task', task%id
+      write(io%output,*) 'processing MHD task', task%id
     select type (task)
     class is (rt_t)
       mhd => task
@@ -111,7 +112,8 @@ SUBROUTINE rt_setup (task_list)
           end if
           omega%parent => mhd
           if (verbose > 1) &
-            print *,'appending task', omega%id, omega%nw, omega%it, omega%new
+            write(io%output,*) &
+              'appending task', omega%id, omega%nw, omega%it, omega%new
           call io%assert (associated(omega%link), 'omega%link missing')
           call prepend_task (link%nbor, omega)
           call io%assert (associated(mhd%link), 'mhd%link missing')
@@ -140,7 +142,7 @@ SUBROUTINE rt_setup (task_list)
       call link%print_nbors
     link => link%next
   end do
-  print *, 'rt_setup: n_rt, n_mhd =', n_rt, n_mhd
+  write(io%output,*) 'rt_setup: n_rt, n_mhd =', n_rt, n_mhd
   if (associated(omega)) then
     patch => omega
     call data_io%register_kind (patch)
@@ -153,10 +155,10 @@ SUBROUTINE rt_setup (task_list)
     do while (associated(link))
       nbor => link%nbor
       do while (associated(nbor))
-        !-------------------------------------------------------------------------
+        !-----------------------------------------------------------------------
         ! If the nbor task has a different horizontal position, do not check it's
         ! time -- accepting a possible delay of information sideways.
-        !-------------------------------------------------------------------------
+        !-----------------------------------------------------------------------
         if (any(link%task%position(1:2) /= nbor%task%position(1:2))) then
           nbor%needed = .false.
         end if
@@ -189,9 +191,9 @@ SUBROUTINE rt_setup (task_list)
   !-----------------------------------------------------------------------------
   ! EOS for warm up
   !-----------------------------------------------------------------------------
-  print *, 'EOS for warm-up'
   !1omp parallel default (shared) private(link, task)
   !1omp single
+  write(io%output,*) 'EOS for warm-up'
   link => task_list%head
   do while (associated(link))
     task => link%task
@@ -222,7 +224,7 @@ SUBROUTINE rt_setup (task_list)
     ! Warm up the RT
     !---------------------------------------------------------------------------
     do iter=1,n_warmup
-      print *, 'warm-up, iteration', iter
+      write(io%output,*) 'warm-up, iteration', iter
       link => task_list%head
       do while (associated(link))
         task => link%task
@@ -239,7 +241,7 @@ SUBROUTINE rt_setup (task_list)
   end if
   !-----------------------------------------------------------------------------
   if (verbose > 0) &
-    print *, 'rt_setup: io%ntask =', io%ntask
+    write(io%output,*) 'rt_setup: io%ntask =', io%ntask
   if (verbose > 0) &
     call task_list%print ('new task_list')
   call trace%end

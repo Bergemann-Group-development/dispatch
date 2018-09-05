@@ -155,11 +155,11 @@ SUBROUTINE output (self, patch, experiment_name)
     !---------------------------------------------------------------------------
     if (count==0 .and. mpi%master) then
       if (io%out_time > 0d0) then
-        print '(1x,a,2x,a,i5.5,5x,"time:",1p,2g14.5)', &
+        write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,2g14.5)') &
           trim(io%method)//'_io:output', &
           'snapshot '//trim(io%outputname), patch%iout, patch%out_next, patch%time
       else
-        print '(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)', &
+        write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)') &
           trim(io%method)//'_io:output', &
           'snapshot '//trim(io%outputname), patch%iout, patch%time
       end if
@@ -200,7 +200,7 @@ SUBROUTINE input (self, patch, ok)
   if (ok) then
     count = counters%decrement (io%restart+1, io%ntask)
     if (count==0 .and. mpi%master) then
-      print '(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)', &
+      write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)') &
         trim(io%method)//'_io:input', &
         'snapshot '//trim(io%outputname), io%restart, patch%time
     end if
@@ -236,8 +236,8 @@ SUBROUTINE output_txt (patch, append)
      write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), patch%iout, patch%id
   end if
   if (io%debug(2)) &
-    print'(a,3x,"time:",2f13.6)', ' data_io_t%output_txt: '//trim(filename), &
-    patch%out_next, patch%time
+    write(io%output,'(a,3x,"time:",2f13.6)') &
+      ' data_io_t%output_txt: '//trim(filename), patch%out_next, patch%time
   !-----------------------------------------------------------------------------
   ! Open the file, appending or not
   !-----------------------------------------------------------------------------
@@ -298,7 +298,8 @@ SUBROUTINE output_nml (patch, append)
   !$omp critical (output_cr)
   ms = 1e3*(wallclock()-ms)
   if (ms > 1.0) &
-    print '(a,i5,2x,a,f7.2,a)', ' thread', omp%thread, 'waited', ms, ' ms'
+    write(io%output,'(a,i5,2x,a,f7.2,a)') &
+      ' thread', omp%thread, 'waited', ms, ' ms'
   !-----------------------------------------------------------------------------
   ! Write snapshot_nml to the file "data/run/NNNNN/snapshot.nml"
   !-----------------------------------------------------------------------------
@@ -345,7 +346,7 @@ SUBROUTINE output_nml (patch, append)
     if (filename /= filename1) then
       if (open1) close (io_unit%nml1)
       open  (io_unit%nml1, file=trim(filename), form='formatted', status='unknown')
-      !print '(a,i5,2x,2a)', ' thread', omp%thread, 'opened ', trim(filename)
+      !write(io%output,'(a,i5,2x,2a)') ' thread', omp%thread, 'opened ', trim(filename)
       filename1 = filename
       open1 = .true.
     end if
@@ -353,7 +354,7 @@ SUBROUTINE output_nml (patch, append)
     write (io_unit%nml1, snapshot_nml)
     call patch%idx%output (io_unit%nml1)
     call file_append (io_unit%nml, io_unit%nml1)
-    if (io%debug(2)) print'(a,3x,"time:",2f13.6)', &
+    if (io%debug(2)) write(io%output,'(a,3x,"time:",2f13.6)') &
       ' data_io_t%output_nml: '//trim(filename), patch%out_next, patch%time
   end if
   !-----------------------------------------------------------------------------
@@ -365,7 +366,8 @@ SUBROUTINE output_nml (patch, append)
     if (open2) close (io_unit%nml2)
     open  (io_unit%nml2, file=trim(filename), form='formatted', status='unknown', &
          access=trim(merge('append    ','sequential',append)))
-    !print '(a,i5,2x,2a)', ' thread', omp%thread, 'opened ', trim(filename)
+    !write(io%output,'(a,i5,2x,2a)') &
+    !  ' thread', omp%thread, 'opened ', trim(filename)
     filename2 = filename
     open2 = .true.
   end if

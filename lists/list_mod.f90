@@ -443,7 +443,7 @@ SUBROUTINE check_ready (self, link)
   class(link_t), pointer:: link
   class(task_t), pointer:: task
   class(link_t), pointer:: nbor
-  logical:: debug
+  logical:: debug, debug1
   !-----------------------------------------------------------------------------
   ! Since we may be called upon to check nbors of a patch that should not itself
   ! be checked, we first check if any bits are set indicating this to be the case
@@ -453,26 +453,27 @@ SUBROUTINE check_ready (self, link)
   debug = io%verbose > 1 .or. task%id==io%id_debug
   nbor => link%nbor                                     ! start on nbor list
   do while (associated (nbor))                          ! keep going until end
+    debug1 = nbor%task%id==io%id_debug
+    if (debug1) write(io_unit%log,*) 'DBG check_ready: id, nbor, needed, ahead', &
+      task%id, nbor%task%id, nbor%needed, nbor%task%is_ahead_of(task)
     if (nbor%needed) then
       if (nbor%task%is_ahead_of(task)) then             ! and is ahead in time
-        if (debug) &
-          write (io_unit%output,'("list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
+        if (debug1) &
+          write (io_unit%log,'("DBG list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
             task%id, task%time, '  is OK on', nbor%task%id, nbor%task%time, &
             nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
-        nbor => nbor%next                               ! next nbor
       else                                              ! not ahead in time
-        if (debug) &
-          write (io_unit%output,'("list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
+        if (debug1) &
+          write (io_unit%log,'("DBG list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
             task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
             nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
         return
       end if
-    else                                                ! nbor not needed
-      nbor => nbor%next                                 ! skip to the next
     end if
+    nbor => nbor%next                                   ! next nbor
   end do
   if (debug) &
-    write (io_unit%output,'("lis_t%check_ready:",i5,f10.6,a)') &
+    write (io_unit%output,'("list_t%check_ready:",i5,f10.6,a)') &
       task%id, task%time, ' succeded'
   call self%queue_by_time (link)                        ! add task to queue
 END SUBROUTINE check_ready
@@ -1472,6 +1473,7 @@ SUBROUTINE print_tasks (self, label)
   class(link_t) , pointer:: link, nbor
   !.............................................................................
   !if (io%verbose < 2) return
+  call trace%begin ('list_t%print_tasks')
   if (present(label)) then
     write (io_unit%log,'(a,i8,":")') 'task_list: '//trim(label), self%n
   else
@@ -1487,6 +1489,7 @@ SUBROUTINE print_tasks (self, label)
     link => link%next
   end do
   write (io_unit%log,*) ''
+  call trace%end
 END SUBROUTINE print_tasks
 
 !> =============================================================================

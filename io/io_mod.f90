@@ -102,6 +102,12 @@ SUBROUTINE init (self, name)
   io_unit%master = io_unit%master.and.self%master
   !$omp end parallel
   !-----------------------------------------------------------------------------
+  ! For non-master MPI ranks, redirect log file output to rundir/rank_rrrrr.log
+  !-----------------------------------------------------------------------------
+  if (mpi%rank > 0) then
+    io_unit%output = io_unit%mpi
+  end if
+  !-----------------------------------------------------------------------------
   ! I/O unit numbers, for convenience and backwards compatibility.  All other
   ! unit numbers should be taken directly from io_unit_mod
   !-----------------------------------------------------------------------------
@@ -168,6 +174,14 @@ SUBROUTINE init (self, name)
     else
       io_unit%log = io_unit%mpi
     end if
+    !---------------------------------------------------------------------------
+    ! Log-file names:
+    ! -- io_unit%output     : stdout on rank 0, same as io_unit%mpi on rank 1-n
+    ! -- io_unit%mpi        : data/run/rank_rrrrr.log
+    ! -- io_unit%queue      : data/run/rank_rrrrr.nq
+    ! -- io_unit%dispatcher : data/run/rank_rrrrr.disp
+    ! -- io_unit%log        : data/run/thread_rrrrr_ttt.log
+    !---------------------------------------------------------------------------
     write (filename,'(a,"rank_",i5.5,".nq")') trim(self%outputname), mpi%rank
     open (io_unit%queue, file=filename, form='formatted', status='unknown')
     write (filename,'(a,"rank_",i5.5,".log")') trim(self%outputname), mpi%rank
@@ -180,15 +194,12 @@ SUBROUTINE init (self, name)
       io_unit%log, io_unit%master, io_unit%verbose
     !$omp end critical (open_cr)
     !$omp end parallel
-    if (verbose>1.or.self%master) &
-      print*, 'logfile:', filename
     self%log_unit = io_unit%log
-    if (self%master) then
-      print*,'======================================================================='
-      print*,'NOTE: Reading parameters from '//trim(self%inputname)
-      print'(a,i1)', ' This version was compiled with default real KIND=', kind(test)
-      print*,'======================================================================='
-    end if
+    write(io%output,*) 'logfile:', filename
+    write(io%output,*) '======================================================================='
+    write(io%output,*) 'NOTE: Reading parameters from '//trim(self%inputname)
+    write(io%output,*) ' This version was compiled with default real KIND=', kind(test)
+    write(io%output,*) '======================================================================='
     first_time=.false.
   end if
   self%restart   = restart
@@ -223,10 +234,10 @@ SUBROUTINE bits_mem (self, bits, count, label)
   !-----------------------------------------------------------------------------
   if (io%verbose>2) then
     if (present(label)) then
-      print *, bits,' bits per word', count,' words, for', &
+      write(io%output) bits,' bits per word', count,' words, for', &
         (bits/(8.*1024.**3))*count, 'GB '//trim(label)
     else
-      print *, bits,' bits per word', count,' words, for', &
+      write(io%output) bits,' bits per word', count,' words, for', &
         (bits/(8.*1024.**3))*count, 'GB'
     end if
   end if

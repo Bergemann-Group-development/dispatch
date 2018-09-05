@@ -274,6 +274,9 @@ SUBROUTINE update (self, head, test, was_refined)
        self%nv = self%nv-1
        call self%count_status                         ! redundant? (FIXME)
     end if
+    if (task%id == io%id_debug) &
+      write(io_unit%mpi,*) &
+        'DBG task_list_t%update: calling send_to_vnbors', task%id
     call head%send_to_vnbors                          ! send to virtual nbors
   end if
   !----------------------------------------------------------------------------

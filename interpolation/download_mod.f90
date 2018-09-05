@@ -320,6 +320,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link', itimer=itimer)
   target => task2patch(link%task)
+  if (target%id == io%id_debug) &
+    write(io%output,*) 'DBG download_t%download_link: time =', target%time
   !-----------------------------------------------------------------------------
   ! Allocate and initialise array to track filling of cells.
   ! A value of `-1` defines unfilled; all other values denote the *level* of the
@@ -334,8 +336,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   end if
 
   if (trim(target%kind)/='rt_solver') then
-    if (io%verbose>1) &
-      call target%check_density ("before download")
+    call target%check_density ("before download")
   end if
   if (target%is_periodic()) call target%periodic_grid
 
@@ -534,6 +535,9 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
   logical                 :: all_cells_l
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%same_linear', itimer=itimer)
+  if (target%id == io%id_debug) &
+    write(io%output,*) 'dbg download_t%same_linear: time, source =', &
+      target%time, source%id
   call source%time_interval (target%time, jt, pt, all=all_times)
   if (present(only)) then
     iv1 = only
@@ -586,7 +590,7 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
       end do
       if (target%id==io%id_debug) &
         print 1, source%id, l, u, o, jt, pt
-        1 format("DBG download_t%same:", i6,"  l,u,o:",3(3i4,2x)," jt,pt:",2i4,2x,2f6.2)
+        1 format("download_t%same:", i6,"  l,u,o:",3(3i4,2x)," jt,pt:",2i4,2x,2f6.2)
       if (source%nt == 1) then
         if (all_cells_l) then
           do iz=l(3),u(3)
@@ -741,6 +745,8 @@ SUBROUTINE same_lagrange (target, source, filled, all_cells, only, all_times)
   real(8)                 :: times(source%nt-1)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%same_lagrange', itimer=itimer)
+  if (target%id == io%id_debug) &
+    write(io%output,*) 'dbg download_t%same_lagrange: time =', target%time
   !-----------------------------------------------------------------------------
   ! Compute weights for Lagrange interpolation
   !-----------------------------------------------------------------------------
@@ -1025,7 +1031,7 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
 !    end do
     if (target%id==io%id_debug) &
       print 1, source%id, (source%position-target%position)/target%size, l, u
-      1 format("DBG download_t%different_prolong:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
+      1 format("download_t%different_prolong:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
     associate (q1 => source%mem(:,:,:,:,jt(1),1), q2 => source%mem(:,:,:,:,jt(2),1))
     do iz=l(3),u(3)
       do iy=l(2),u(2)
@@ -1034,11 +1040,11 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
           if (all_cells_l .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
             if (filled(ix,iy,iz,iv) > source%level) then
               if (target%id==io%id_debug .and. io%verbose>1) &
-                print *, target%id, 'DBG different_prolong: skipping', iv,ii, filled(ix,iy,iz,iv)
+                print *, target%id, 'different_prolong: skipping', iv,ii, filled(ix,iy,iz,iv)
               cycle
             end if
             if (target%id==io%id_debug .and. io%verbose>1) &
-              print *, target%id, 'DBG different_prolong:    using', iv,ii, present(all_cells), (ii-li) < 0
+              print *, target%id, 'different_prolong:    using', iv,ii, present(all_cells), (ii-li) < 0
             pos = target%myposition (ii, iv)
             call source%index_space (pos, iv, jj, pp)
             if (source%pervolume(iv)) then
@@ -1055,7 +1061,7 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
             filled(ix,iy,iz,iv) = source%level
           else
             if (target%id==io%id_debug .and. io%verbose>1) &
-              print *, target%id, 'DBG different_prolong: skipping', iv,ii, present(all_cells), (ii-li) < 0
+              print *, target%id, 'different_prolong: skipping', iv,ii, present(all_cells), (ii-li) < 0
             cycle
           end if
         end do

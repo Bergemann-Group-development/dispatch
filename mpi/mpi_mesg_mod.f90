@@ -116,9 +116,9 @@ SUBROUTINE send (self, rank, tag)
   else
     ltag = self%id
   end if
-  if (verbose>2) then
+  if (verbose>2 .or. self%id==io%id_debug) then
     write (io_unit%log,*) &
-    'mpi_mesg::send id, nbuf, to =', self%id, self%nbuf, rank
+    'mpi_mesg_t%send id, nbuf, to =', self%id, self%nbuf, rank
     flush (io_unit%log)
   end if
 #ifdef MPI
