@@ -15,13 +15,17 @@
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
+  USE omp_timer_mod
+  USE task_mod
   USE gpatch_mod
   USE link_mod
+  USE rt_mod
   USE rt_solver_mod
   USE solver_mod
   USE scaling_mod
   USE mesh_mod
   USE download_mod
+  USE bits_mod
   implicit none
   private
   type, public, extends(rt_solver_t):: experiment_t
@@ -32,10 +36,14 @@ MODULE experiment_mod
     procedure:: update
     procedure:: dnload
     procedure:: boundary_condition
+    procedure:: nbors_info
+    procedure, nopass:: nbor_info
+    procedure, nopass:: is_ready
   end type
   integer, save:: verbose=1
   real, save:: grav=2.75, d_bot=0.0, e_bot=0.0, top_temperature=4000.
   real, save:: bottom_bc_rate=0.01
+  type(experiment_t), public:: experiment
 CONTAINS
 
 !> =============================================================================
@@ -232,5 +240,119 @@ FUNCTION force (self) RESULT (ff)
   ff(:,:,:,3) = grav
   call trace_end
 END FUNCTION force
+
+!> =============================================================================
+SUBROUTINE nbors_info (self)
+  class(experiment_t):: self
+  integer:: i_omega
+  !-----------------------------------------------------------------------------
+  write (io_unit%mpi,*) 'experiment_mod::nbors_info: nbors of MHD task', self%id
+  call nbor_info(self%link)
+  do i_omega=1,self%n_omega
+    write (io_unit%mpi,*) 'experiment_mod::nbors of RT task', &
+      self%omega(i_omega)%id, self%omega(i_omega)%mu
+    call nbor_info (self%omega(i_omega)%link)
+  end do
+END SUBROUTINE nbors_info
+
+!> =============================================================================
+SUBROUTINE nbor_info (link)
+  class(link_t), pointer:: link, nbor
+  class(rt_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  task => rt%task2rt (link%task)
+  if (task%i_omega==0) then
+    write(io_unit%mpi,*) 'nbor_info: MHD task =', task%id
+  else
+    write(io_unit%mpi,*) 'nbor_info: RT task, mu =', task%id, task%mu
+  end if
+  nbor => link%nbor
+  do while (associated(nbor))
+    task => rt%task2rt(nbor%task)
+    write(io_unit%mpi,'(3x,a,i6,i4,2x,3l1,2x,2l1,f6.2,2x,3f9.3)') &
+      'nbor_info: id, rank, needed, needs_me, download, BV, mu, pos =', &
+      task%id, task%rank, nbor%needed, nbor%needs_me, nbor%download, &
+      task%is_set(bits%boundary), task%is_set(bits%virtual), &
+      task%mu, task%position
+    nbor => nbor%next
+  end do
+END SUBROUTINE nbor_info
+
+!> =============================================================================
+!> Check if a task is ready to update, by changing if all nbor task are "ahead
+!> of" the task in question
+!> =============================================================================
+LOGICAL FUNCTION is_ready (link)
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(link_t), pointer:: nbor
+  class(rt_t), pointer:: target, source
+  integer:: state
+  logical:: debug1, debug2
+  !-----------------------------------------------------------------------------
+  target => rt%task2rt(link%task)
+  !!$omp atomic
+  !n_check = n_check+1
+  !$omp atomic read
+  state = link%task%state
+  debug2 = .false.
+  if (target%is_set (bits%virtual)) then
+    is_ready = .false.
+  else
+    is_ready = .true.
+    nbor => link%nbor
+    do while (associated(nbor))
+     source => rt%task2rt(nbor%task)
+     debug1 = source%id==io%id_debug
+     debug2 = debug2 .or. debug1
+     if (debug1) write(io_unit%log,*) 'dbg check_ready: id, nbor, needed, ahead', &
+       link%task%id, source%id, nbor%needed, source%is_ahead_of(target), &
+       source%is_set (bits%virtual)
+     if (nbor%needed) then
+        !$omp atomic read
+        state = source%state
+        if (state==3) then
+          is_ready = .false.
+        else
+          is_ready = is_ready .and. source%is_ahead_of (target)
+        end if
+        !if (source%id == io%id_debug) then
+         ! write(io%output,*) '    dispatcher3_t%is_ready: id, nbid, ready =', &
+          !  target%id, source%id, is_ready
+        !end if
+        if (.not.is_ready) then
+          if (verbose > 2) &
+            write(io_unit%mpi,*) &
+              target%id, 'is_ready: failed  on', source%id, &
+              source%time, target%time
+          exit
+        end if
+      end if
+      nbor => nbor%next
+    end do
+  end if
+  if (is_ready) then
+    !!$omp atomic
+    !n_ready = n_ready+1
+    if (target%id == io%id_debug) &
+      write(io%output,*) 'DBG dispatcher3_t%is_ready: id =', target%id
+    if (debug2) &
+      write(io_unit%log,*) 'DBG dispatcher3_t%is_ready: id =', target%id
+!    write(io_unit%mpi,'(f12.6,2x,a,i6,f12.6)') &
+!      wallclock(), 'is_ready:', target%id, target%time
+  end if
+contains
+  !-----------------------------------------------------------------------------
+  function task2rt(task) result(rt)
+    class(task_t), pointer:: task
+    class(rt_t), pointer:: rt
+    !...........................................................................
+    select type (task)
+    class is (rt_t)
+    rt => task
+    end select
+  end function task2rt
+  !-----------------------------------------------------------------------------
+END FUNCTION is_ready
 
 END MODULE

@@ -19,6 +19,7 @@
 SUBROUTINE rt_setup (task_list)
   USE io_mod
   USE io_unit_mod
+  USE omp_mod
   USE mpi_mod
   USE task_list_mod
   USE list_mod
@@ -175,9 +176,15 @@ SUBROUTINE rt_setup (task_list)
         !-----------------------------------------------------------------------
         ! Spawn OMP tasks to compute EOS
         !-----------------------------------------------------------------------
-        !1omp task default(shared) firstprivate(mhd)
+        if (omp%nthreads > 1) then
+          !$omp task default(shared) firstprivate(mhd)
+            mhd%mem(:,:,:,:,mhd%new,1) = mhd%mem(:,:,:,:,mhd%it,1)
+            call mhd%rt_eos (mhd%time)
+          !$omp end task
+        else
+            mhd%mem(:,:,:,:,mhd%new,1) = mhd%mem(:,:,:,:,mhd%it,1)
           call mhd%rt_eos (mhd%time)
-        !1omp end task
+        end if
       end if
     end select
     link => link%next

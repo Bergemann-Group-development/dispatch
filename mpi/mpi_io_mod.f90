@@ -89,7 +89,7 @@ MODULE mpi_io_mod
     procedure:: assert
   end type
   character(len=32), save:: fmt='(1x,a,4i8,1p,5e12.3)'
-  integer, save:: verbose=1
+  integer, save:: verbose=0
   type(iwrite_list_t), public:: iwrite_list
 CONTAINS
 
@@ -307,12 +307,26 @@ SUBROUTINE assert (self, label, err)
 END SUBROUTINE assert
 
 !> =============================================================================
+!> Multi-thread interface
+!> =============================================================================
+SUBROUTINE check (self)
+  class(iwrite_list_t):: self
+  if (omp%nthreads > 1) then
+    !$omp task default(shared)
+    call check_real (self)
+    !$omp end task
+  else
+    call check_real (self)
+  end if
+END SUBROUTINE check
+
+!> =============================================================================
 !> Check for queued I/O, and do it all with one single thread, to avoid
 !> slowing down the other threads.  Other threads are free to append more
 !> items at the end of the iwrite_list in the mean time -- this does not
 !> disturb the 
 !> =============================================================================
-SUBROUTINE check (self)
+SUBROUTINE check_real (self)
   class(iwrite_list_t):: self
   class(dll_node_t), pointer:: node, next
   class(iwrite_t), pointer:: item
@@ -353,11 +367,11 @@ SUBROUTINE check (self)
     end do
     !$omp critical (iwrite_cr)
     if (verbose > 0) &
-      print '(1p,g14.6,3x,a,i7)', wallclock(), 'I/O done =', done
+      print '(1p,g14.6,3x,a,i7)', wallclock(), 'I/O done =', done, verbose
     self%thread = -1
     !$omp end critical (iwrite_cr)
   end if
   call trace%end (itimer)
-END SUBROUTINE check
+END SUBROUTINE check_real
 
 END MODULE mpi_io_mod

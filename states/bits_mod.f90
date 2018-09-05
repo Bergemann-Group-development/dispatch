@@ -19,13 +19,14 @@ MODULE bits_mod
   integer, parameter::        retry_bit=2**14
   integer, parameter::       remove_bit=2**15
   integer, parameter::   top_bottom_bit=2**16
+! NOTE: the first (or last) 16 bits are masked out in some contexts; please CHECK
   integer, parameter::       has_BC_bit=2**30
   integer, parameter::        trace_bit=2**29
   integer, parameter::       frozen_bit=2**28
   integer, parameter::         busy_bit=2**27
   integer, parameter::  no_download_bit=2**26
   integer, parameter::   no_density_bit=2**25
-  integer, parameter::        no_rt_bit=2**25
+  integer, parameter::        no_rt_bit=2**24
   integer, parameter::      counter_bit=2**20
   type bits_t
     integer:: remove       = remove_bit

@@ -52,6 +52,7 @@ MODULE io_mod
     procedure:: check_flags
     procedure:: bits_mem
     procedure:: gb_mem
+    procedure:: gb_print
     procedure, nopass:: namelist_warning
     procedure, nopass:: abort
     procedure, nopass:: assert
@@ -248,7 +249,7 @@ END SUBROUTINE bits_mem
 !> Register increase of memory, counted in gigabytes
 !> =============================================================================
 SUBROUTINE gb_mem (self, gb)
-  class (io_t)      :: self
+  class (io_t):: self
   real:: gb
   real, save:: gb_next=1.0
   !-----------------------------------------------------------------------------
@@ -257,13 +258,23 @@ SUBROUTINE gb_mem (self, gb)
     if (abs(self%gb - gb_next) > 1.0) then
       !$omp critical (gb_cr)
       do while (abs(self%gb - gb_next) > 1.0)
-        print '(1x,a,f8.3,a)', 'process memory allocated:', self%gb,' GB'
+        call self%gb_print
         gb_next = gb_next + sign(1d0,self%gb - gb_next)
       end do
       !$omp end critical (gb_cr)
     end if
   end if
 END SUBROUTINE gb_mem
+
+!> =============================================================================
+!> Register increase of memory, counted in gigabytes
+!> =============================================================================
+SUBROUTINE gb_print (self)
+  class (io_t):: self
+  !.............................................................................
+  print '(1x,a,f8.3,a)', 'process memory allocated:', self%gb,' GB'
+END SUBROUTINE gb_print
+
 
 !> =============================================================================
 !> Check debug flag files.  To avoid having to synchronize when using MPI, we

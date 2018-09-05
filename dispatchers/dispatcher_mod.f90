@@ -86,14 +86,13 @@ SUBROUTINE init (self)
   case (3)
     self%method => method3
     !---------------------------------------------------------------------------
-    ! This method uses send_priv=.true. to make each thread takes care sending.
-    ! It uses the check_active() procedure in task_mesg_mod to actively check
-    ! for incoming messages.  Since this is done by only the master thread,
-    ! there is no point in making an unpack queue.
+    ! This method uses send_priv=.false., collecting a list of sent messages in
+    ! the shared mpi_mesg%sent_list.  No other mpi_mesg attribute is relevant, 
+    ! but for good measure we nevertheless set them accordingly.
     !---------------------------------------------------------------------------
-    mpi_mesg%send_priv    = .true.
-    mpi_mesg%recv_active  = .true.
+    mpi_mesg%send_priv    = .false.
     mpi_mesg%recv_priv    = .false.
+    mpi_mesg%recv_active  = .true.
     mpi_mesg%queue_unpack = .false.
   case default
     call io%abort ('unknown method in dispatcher_mod')

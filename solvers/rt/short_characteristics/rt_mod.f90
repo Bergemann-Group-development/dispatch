@@ -35,6 +35,8 @@
 MODULE rt_mod
   USE io_mod
   USE trace_mod
+  USE omp_mod
+  USE omp_timer_mod
   USE timer_mod
   USE index_mod
   USE math_mod
@@ -84,6 +86,7 @@ MODULE rt_mod
     procedure:: boundary_conditions
     procedure:: solve
     procedure:: needs
+    procedure, nopass:: task2rt
   end type
   real, save:: dtau_min=1e-3, dtau_max=30., dtau_dif=10.
   ! -- tolerate that RT is up to one rt_time behind MHD
@@ -93,6 +96,7 @@ MODULE rt_mod
   integer(8):: n_min=0, n_max=0, n_dif, n_ful=0
   integer, save:: verbose=0, order=1
   logical, save:: vertical_propagation=.false.
+  type(rt_t), public:: rt
 CONTAINS
 
 !> =============================================================================
@@ -185,11 +189,8 @@ SUBROUTINE init (self)
   if (n_omega > 0) &
     allocate (self%omega(n_omega), source=self)
   !-----------------------------------------------------------------------------
-  ! Initialize the directional solver connection links and data.  For now, we
-  ! give the task IDs that make them easy to recognize in debugging.  Later,
-  ! in rt_setup, we optionally give them unique task IDs across MPI ranks.
+  ! Initialize the directional solver connection links and data. 
   !-----------------------------------------------------------------------------
-  self%eos_time = self%time
   self%rt_next  = self%time+self%rt_time
   do i_omega=1,self%n_omega
     omega => self%omega(i_omega)
@@ -212,17 +213,16 @@ SUBROUTINE init (self)
     omega%new     = omega%nt
     omega%nw      = 1
     omega%i_omega = i_omega
-    omega%status  = self%status
     omega%grav    = self%grav
-    call omega%set (bits%no_density)
     omega%time    = self%rt_next
+    omega%status  = self%status
+    call omega%set (bits%no_density)
     !! -- force 3 solutions before Q is valid in MHD update
     !omega%time    = -3.0_8*self%rt_time
     !! -- force starting at boundaries
     !if (self%mesh(3)%lower_boundary .or. self%mesh(3)%upper_boundary) &
       !omega%time    = -4.0_8*self%rt_time
     omega%grace   = grace
-    omega%rt_next = self%rt_next
     omega%tt      => self%tt
     omega%rk      => self%rk
     omega%src     => self%src
@@ -268,7 +268,7 @@ SUBROUTINE init (self)
         write(io%output,'(a,3i7,f8.3)') &
           'rt_t%init: i_omega, elevation, phi, mu =', i_omega, &
           nint(asin(omega%mu)*180./math%pi), nint(omega%phi*180./math%pi), &
-        omega%mu
+          omega%mu
     end do
   end if
   call trace%end
@@ -296,12 +296,52 @@ SUBROUTINE update (self)
   real(8):: time
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  ! Call (only) the MHD solver, until it has passed the rt_next time, then
-  ! work repeatedly with the RT solver, until that is ahead again
-  !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%update', itimer=itimer)
+  if (self%id == io%id_debug) &
+    write (io%output,*) 'DBG rt_t%udpate: time =', self%time, &
+    self%is_set(bits%boundary), self%is_set(bits%virtual)
   !-----------------------------------------------------------------------------
-  ! Call the MHD solver update when self is the main task
+  ! The MHD tasks are called repeatedly, until their time has surpassed (one of)
+  ! the RT tasks that it depends upon.  These should all have formal self%time
+  ! set to the previous EOS time + rt_time.  Therefore, as soon as the MHD task
+  ! time is actually set to the new time, all RT tasks should be behind it, and
+  ! at least the boundary RT tasks should be able to execute.  When they do,
+  ! they should be using EOS values from the time the MHD task has reached.  
+  ! These must therefore be computed before setting mhd%time, to ensure that the
+  ! EOS values are actually available when the RT tasks are released.
+  !
+  ! The next phase should then consist of all RT sub-tasks updating, in the order
+  ! needed to ensure upstream tasks preceded downstream tasks.  A dead-lock 
+  ! situation to avoid is to have an upstream RT task that cannot run, because
+  ! it is actually too far ahead of other MHD tasks.   But this should not be
+  ! able to happen, since by construction, after landing on the right side of
+  ! the rabbit time, it did compute the new EOS values, so the RT tasks then
+  ! only depend on being able to extrapolate nbor tasks Q values ahead in time,
+  ! if necessary.  This will indeed be necessary, if the situations is the
+  ! following:
+  !
+  ! ------------- BC --------------------------------------
+  ! ------------- MHD1 ---------------|--+
+  ! --------------RT1  ---------------|--+
+  ! ------------- MHD2 ---------------|---+
+  ! --------------RT2  ---------------|---+
+  !
+  ! Now RT1 can run, because it relies on the upstream BC.  But RT2 cannot run,
+  ! unless a grace period is allow, because RT1 is at an earlier time.
+  !
+  ! Hence it is only possible to enforce strict time order btw the RT tasks if
+  ! they all are solved at the same time.  So, either we maintain a strict
+  ! cadence of RT times, or we must allow a grace time, at least as large as
+  ! the largest difference btw MHD times.
+  !
+  ! A strict RT cadence has two (related) advantages:  1) no time interpolation
+  ! will be needed when communicating RT data btw patches.  2) for the same
+  ! reason, it won't be necessary to keep a number of time slices of the angular
+  ! and bin dependent radiation field.
+  !
+  ! A slight disadvantage is the need to interpolate backwards in MHD time to
+  ! the common EOS/RT time, plus the fact that the RT field is not quite as far
+  ! advanced in time as the MHD variables are.
   !-----------------------------------------------------------------------------
   if (self%i_omega==0) then
     if (verbose > 1) &
@@ -313,7 +353,7 @@ SUBROUTINE update (self)
     ! we can update self%q, which is later used (and reused) as the next
     ! radiative heating.
     !---------------------------------------------------------------------------
-    if (self%time + self%grace*self%dtime >= self%rt_next) then
+    if (self%time >= self%rt_next) then
       ! -- Sum Q over angles and bin
       if (debug(self,0)) &
         write(io%output,*) self%id, 'DBG rt_t%update: compute Q at', self%rt_next
@@ -329,7 +369,6 @@ SUBROUTINE update (self)
             q = q + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
                     omega%mem(:,:,:,i_bin,omega%it,1)
           end do
-          omega%time = self%time
           if (debug(self,1)) &
             write(io%output,'(i7,3x,2i3,2f7.3,3x,f8.4,3x,a,1p,2e12.4)') &
               self%id, jt, pt, self%time, 'q', self%fminval(q), self%fmaxval(q)
@@ -368,25 +407,25 @@ SUBROUTINE update (self)
     ! to the current omega%rt_next
     !---------------------------------------------------------------------------
     call self%solver_t%update
-    time = self%time + self%dtime
     !---------------------------------------------------------------------------
     ! If self%time, after update to happen in self%rotate, will be larger than
-    ! self%rt_next, then set self%rt_next and omega%rt_next to self%time, call
-    ! the EOS, and increment self%rt_next to the next anticipated RT time.
+    ! self%rt_next, then call the EOS, and increment self%rt_next to the next 
+    ! anticipated RT time.
     !---------------------------------------------------------------------------
     if (self%is_clear(bits%no_rt)) then
+      time = self%time + self%dtime
       if (debug(self,0)) then
         write(io%output,*) self%id, 'rt_t%update: time   ', time
         write(io%output,*) self%id, 'rt_t%update: rt_next', self%rt_next
       end if
-      if (time + self%grace*self%dtime >= self%rt_next) then
-        ! -- maake a new EOS calculation at self%time
-        call self%rt_eos(time)
-        ! -- increase the "rabbit" time one RT time, or at least self%dtime
-        self%rt_next = time + self%rt_time
-        do i_omega=1,self%n_omega
-          self%omega(i_omega)%rt_next = self%rt_next
-        end do
+      if (time >= self%rt_next) then
+        ! -- make sure the new time slot is up-to-date
+        !$omp atomic write
+        self%t(self%new) = time
+        ! -- make a new EOS calculation at self%time
+        call self%rt_eos(self%rt_next)
+        ! -- increase the "rabbit" time one RT time
+        self%rt_next = self%rt_next + self%rt_time
       end if
     end if
     !---------------------------------------------------------------------------
@@ -407,12 +446,7 @@ SUBROUTINE update (self)
     !---------------------------------------------------------------------------
     ! Get rt_t qualified mhd task pointer
     !---------------------------------------------------------------------------
-    associate (parent => self%parent)
-    select type (parent)
-    class is (rt_t)
-    mhd => parent
-    end select
-    end associate
+    mhd => task2rt (self%parent)
     !---------------------------------------------------------------------------
     ! Local equivalent of rotate, where we do not use %new, but make sure that
     ! the Q result is stored at the time
@@ -422,11 +456,10 @@ SUBROUTINE update (self)
     self%it = mod(self%it,self%nt)+1
     self%iit(1:self%nt-1) = self%iit(2:self%nt)
     self%iit(self%nt) = self%it
-    self%time = mhd%time                ! set current time = MHD time
     if (self%parent%id==io%id_debug) &
       write(io%output,*) self%id, 'DBG rt_t%update: RT time =', self%time
     self%t  (self%it) = self%time
-    self%dt (self%it) = self%dtime              ! this uses the previous dtime
+    self%dt (self%it) = self%rt_time
     if (debug(self,0)) write(io%output,*) mhd%id, &
       'rt_t%update: RT  at ', self%time, self%id
     if (mhd%eos_time /= self%time) then
@@ -436,9 +469,12 @@ SUBROUTINE update (self)
 !      write(io_unit%mpi,'(f12.6,i4,i7,2x,a,f12.6)') &
 !        wallclock(), omp%thread, self%id, 'rt_t%update: WARNING  =', self%time
     end if
+    !---------------------------------------------------------------------------
     ! -- Call RT solver, storing result in %it slot, at time = t(%it)
     self%q => self%mem(:,:,:,:,self%it,1)
     call self%solve ()
+    !---------------------------------------------------------------------------
+    self%rotated = .true.
     if (vertical_propagation) then
       self%dtime = self%rt_time*abs(self%mu)
       self%time = self%time + self%dtime
@@ -447,7 +483,6 @@ SUBROUTINE update (self)
       self%dtime = self%rt_time
       self%time = self%time + self%dtime
     end if
-    self%rotated = .true.
     !---------------------------------------------------------------------------
 !    write(io_unit%mpi,'(f12.6,i4,i7,2x,a,f12.6)') &
 !      wallclock(), omp%thread, self%id, 'rt_t%update: RT  time =', self%time
@@ -503,7 +538,7 @@ SUBROUTINE init_nbors (self)
           end select
         end select
         !-----------------------------------------------------------------------
-        ! Point to the new nbor,from the task%link, or from the previous nbor
+        ! Point to the new nbor, from the task%link, or from the previous nbor
         !-----------------------------------------------------------------------
         if (.not.associated(omega%link%nbor)) then
           omega%link%nbor => new
@@ -536,8 +571,8 @@ SUBROUTINE rt_eos (self, time)
   !.............................................................................
   integer, save:: itimer=0
   real, dimension(:,:,:), pointer:: d, e, tt
-  integer:: m(4), ib, i3
-  real:: z
+  integer:: m(4), ib, i3, jt(2)
+  real:: z, pt(2)
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%rt_eos', itimer=itimer)
   if (self%eos_time < time) then
@@ -546,10 +581,14 @@ SUBROUTINE rt_eos (self, time)
       if (debug(self,0)) then
         write(io%output,*) self%id, 'DBG rt_t%update: EOS at ', time
       end if
+      ! -- interpolate to the self%eos_time
+      call self%time_interval (time, jt, pt, all=.true.)
       m = shape(self%rk)
-      ! -- since rotate has not been called yet, use the %new slot
-      d => self%mem(:,:,:,self%idx%d,self%new,1)
-      e => self%mem(:,:,:,self%idx%e,self%new,1)
+      allocate (d(m(1),m(2),m(3)),e(m(1),m(2),m(3)))
+      d = self%mem(:,:,:,self%idx%d,jt(1),1)*pt(1) &
+        + self%mem(:,:,:,self%idx%d,jt(2),1)*pt(2)
+      e = self%mem(:,:,:,self%idx%e,jt(1),1)*pt(1) &
+        + self%mem(:,:,:,self%idx%e,jt(2),1)*pt(2)
       if (verbose > 1) then
         call self%stats (d, 'rt_eos')
         call self%stats (e, 'rt_eos')
@@ -562,6 +601,7 @@ SUBROUTINE rt_eos (self, time)
         write(io%output,*) self%id,'rt_t%rt_eos: rk',minval(self%rk),maxval(self%rk)
         write(io%output,*) self%id,'rt_t%rt_eos: tt',minval(tt),maxval(tt),scaling%temp
       end if
+      deallocate (d, e)
       self%eos_time = time
 !      write(io_unit%mpi,'(f12.6,i4,i7,2x,a,f12.6)') &
 !        wallclock(), omp%thread, self%id, 'rt_t%rt_eos: eos_time =', self%eos_time
@@ -629,7 +669,9 @@ SUBROUTINE boundary_conditions (self)
 END SUBROUTINE boundary_conditions
 
 !> =============================================================================
-!> Determine if a task is needed (is upstream)
+!> Determine if a task is needed (is upstream).  We are being presented with
+!> the nbors of the MHD task, so there is no task above the top-most task, but
+!> there may well be tasks below the rt_bottom, which are not needed as RT nbors
 !> =============================================================================
 FUNCTION needs (self, omega, task)
   logical:: needs
@@ -641,67 +683,98 @@ FUNCTION needs (self, omega, task)
   integer:: i, is1(3), is2(3)
   logical:: lower, upper
   !-----------------------------------------------------------------------------
-  ! A task at a boundary with infalling intensity is always considered OK, even
-  ! if the angle also requires wall intensities, because in a horizontally
-  ! periodic system nothing would ever start, otherwise.  The intensity coming
-  ! in trough side walls is going to be slightly delayed in time, in some cases,
-  ! depending on the order of task execution.
   !-----------------------------------------------------------------------------
   select type (task)
   class is (rt_t)
     rt_task => task
   end select
-  lower = self%boundaries%is_set(bits%zl) .and. omega%mu > 0.0
-  upper = self%boundaries%is_set(bits%zu) .and. omega%mu < 0.0
   !-----------------------------------------------------------------------------
-  ! If self is at a boundary and omega points inward, or the task has not RT,
+  ! If self is at a boundary and omega points inward, or the task has no RT,
   ! then the task is outside and is not needed
   !-----------------------------------------------------------------------------
-  if (lower .or. upper .or. task%is_set(bits%no_rt)) then
+  ds1 = self%position-task%position
+  where (self%periodic)
+    ds1 = modulo(ds1 + 0.5*self%box, self%box) - 0.5*self%box
+  end where
+  ds1 = ds1/self%box
+  sinth = merge(0.0, sqrt(1.0-omega%mu**2), abs(omega%mu)==1.0)
+  ds2 = [sinth*cos(omega%phi),sinth*sin(omega%phi),omega%mu]
+  is1 = 0
+  is2 = 0
+  do i=1,3
+    if (ds1(i) > +eps) is1(i)=1
+    if (ds2(i) > +eps) is2(i)=1
+    if (ds1(i) < -eps) is1(i)=-1
+    if (ds2(i) < -eps) is2(i)=-1
+  end do
+  lower = self%boundaries%is_set(bits%zl)
+  upper = self%boundaries%is_set(bits%zu)
+  needs = .true.
+  !-----------------------------------------------------------------------------
+  ! If the task does not have RT it is not needed
+  !-----------------------------------------------------------------------------
+  if (task%is_set(bits%no_rt)) then
     needs = .false.
-  else
-    ds1 = self%position-task%position
-    where (self%periodic)
-      ds1 = modulo(ds1 + 0.5*self%box, self%box) - 0.5*self%box
-    end where
-    ds1 = ds1/self%box
-    sinth = merge(0.0, sqrt(1.0-omega%mu**2), abs(omega%mu)==1.0)
-    ds2 = [sinth*cos(omega%phi),sinth*sin(omega%phi),omega%mu]
-    is1 = 0
-    is2 = 0
-    do i=1,3
-      if (ds1(i) > +eps) is1(i)=1
-      if (ds2(i) > +eps) is2(i)=1
-      if (ds1(i) < -eps) is1(i)=-1
-      if (ds2(i) < -eps) is2(i)=-1
-    end do
-    !---------------------------------------------------------------------------
-    ! Vertical rays depend only on exact alignment
-    !---------------------------------------------------------------------------
-    if (abs(omega%mu)==1.0) then
-      needs = all(is1==is2)
-    !---------------------------------------------------------------------------
-    ! Define upstream as "not downstream in any direction"
-    !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  ! If the nbor lies outside the boundaries it is not needed
+  !-----------------------------------------------------------------------------
+  else if (upper .and. ds1(3)==1) then
+    needs = .false.
+  else if (lower .and. ds1(3)==-1) then
+    needs = .false.
+  !-----------------------------------------------------------------------------
+  ! Vertical rays depend only on exact alignment
+  !-----------------------------------------------------------------------------
+  else if (abs(omega%mu)==1.0) then
+    needs = all(is1==is2)
+  !-----------------------------------------------------------------------------
+  ! For inclined rays, define upstream as "not downstream in any direction"
+  !-----------------------------------------------------------------------------
+  else if (any(is1*is2 < 0)) then
+    needs = .false.
+  !-----------------------------------------------------------------------------
+  ! If a horizontal ray component is axis aligned, exclude non-aligned nbors
+  !-----------------------------------------------------------------------------
+  else if (is2(1)==0 .and. is1(1)/=0) then
+    needs = .false.
+  else if (is2(2)==0 .and. is1(2)/=0) then
+    needs = .false.
+  end if
+  i = omega%i_omega
+  if (needs) &
+    write(io_unit%mpi, &
+    '("DBG rt_t",i7,4x,"needs task",i7,4x,"rel pos:",3f8.3,4x,"ray:",3f8.3,6i3,l3)') &
+    omega%id, rt_task%omega(i)%id, ds1, ds2, is1, is2, needs
+END FUNCTION needs
+
+!> =============================================================================
+!> self is the source task
+!> =============================================================================
+FUNCTION is_ahead_of (self, target)
+  logical:: is_ahead_of
+  class(rt_t):: self, target
+  !-----------------------------------------------------------------------------
+  ! If target is an MHD task, require that RT tasks are at least at the same
+  ! time, while accepting a grace period for other MHD tasks
+  !-----------------------------------------------------------------------------
+  if (target%i_omega==0) then
+    if (self%i_omega>0) then
+      is_ahead_of = self%time >=  target%time
     else
-      needs = .not.any(is1*is2 < 0)
+      is_ahead_of = self%time + self%grace*self%dtime >= target%time
     end if
-    !---------------------------------------------------------------------------
-    ! If a horizontal ray component is axis aligned, exclude non-aligned nbors
-    !---------------------------------------------------------------------------
-    if (is2(1)==0 .and. is1(1)/=0) needs = .false.
-    if (is2(2)==0 .and. is1(2)/=0) needs = .false.
-    if (verbose > 2) then
-      i = omega%i_omega
-      select type(task)
-      class is (rt_t)
-      if (needs .or. verbose > 3) print &
-        '("RT task",i7,4x,"needs task",i7,4x,"rel pos:",3f8.3,4x,"ray:",3f8.3,6i3,l3)', &
-        omega%id, task%omega(i)%id, ds1, ds2, is1, is2, needs
-      end select
+  !-----------------------------------------------------------------------------
+  ! If target is an RT task, require that other RT tasks are strictly ahead,
+  ! while accepting also equal MHD task times
+  !-----------------------------------------------------------------------------
+  else
+    if (self%i_omega>0) then
+      is_ahead_of = self%time >  target%time
+    else
+      is_ahead_of = self%time >= target%time
     end if
   end if
-END FUNCTION needs
+END FUNCTION is_ahead_of
 
 !> =============================================================================
 !> Return true if the patch is the horizontally closest to a give position, or
@@ -723,5 +796,18 @@ FUNCTION debug (self, level) RESULT (yes)
   yes = yes .or. id == io%id_debug
   yes = yes .and. (verbose >= level)
 END FUNCTION debug
+
+!> =============================================================================
+!> Upgrade task pointer to experiment level
+!> =============================================================================
+FUNCTION task2rt (task) RESULT (rt)
+  class(task_t), pointer:: task
+  class(rt_t), pointer:: rt
+  !...........................................................................
+  select type (task)
+  class is (rt_t)
+  rt => task
+  end select
+END FUNCTION task2rt
 
 END MODULE rt_mod

@@ -299,7 +299,7 @@ SUBROUTINE output_nml (patch, append)
   ms = 1e3*(wallclock()-ms)
   if (ms > 1.0) &
     write(io%output,'(a,i5,2x,a,f7.2,a)') &
-      ' thread', omp%thread, 'waited', ms, ' ms'
+      ' thread', omp%thread, 'waited for I/O', ms, ' ms'
   !-----------------------------------------------------------------------------
   ! Write snapshot_nml to the file "data/run/NNNNN/snapshot.nml"
   !-----------------------------------------------------------------------------
