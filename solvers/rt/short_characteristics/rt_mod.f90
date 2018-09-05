@@ -50,6 +50,7 @@ MODULE rt_mod
   USE bits_mod
   USE scaling_mod
   USE rt_integral_mod
+  USE timestep_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -402,11 +403,10 @@ SUBROUTINE update (self)
       self%mem(:,:,:,self%idx%qr,self%new,1) = self%mem(:,:,:,self%idx%qr,self%it,1)
     end if
     !---------------------------------------------------------------------------
-    ! Update the MHD, and also rotate the time slots (which updates self%time).
-    ! This clears the way for RT-subtasks, which currently have omega%time equal
-    ! to the current omega%rt_next
+    ! Update the MHD, limiting the suggested time step to at most rt_time,
+    ! to avoid synchronization problems
     !---------------------------------------------------------------------------
-    call self%solver_t%update
+    call mhd_update (self)
     !---------------------------------------------------------------------------
     ! If self%time, after update to happen in self%rotate, will be larger than
     ! self%rt_next, then call the EOS, and increment self%rt_next to the next 
@@ -493,6 +493,29 @@ SUBROUTINE update (self)
   end if
   call trace%end (itimer)
 END SUBROUTINE update
+
+!> =============================================================================
+!> This replaces mhd_t%update, and is identical, except for the extra limit on
+!> the timestep
+!> =============================================================================
+SUBROUTINE mhd_update (self)
+  class(rt_t):: self
+  integer, save:: itimer=0
+  integer:: it, iv, nt
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%update',itimer=itimer)
+  !call self%gravity
+  call self%output
+  call self%pde
+  call self%courant_condition
+  if (self%is_clear(bits%no_rt)) then
+    self%dtime = min(self%dtime, 0.999999d0*self%rt_time)
+  end if
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call self%check_density(' after timestep')
+  call self%gpatch_t%update
+  call trace%end (itimer)
+END SUBROUTINE mhd_update
 
 !> =============================================================================
 !> Add upstream tasks to an nbor list
