@@ -234,6 +234,7 @@ SUBROUTINE iwrite (self, f, rec, id)
   if (verbose>1) &
     print '(1x,a,z12,i4)', 'appended req, n =', item%req, iwrite_list%n
   !$omp end critical (iwrite_cr)
+  call check_real (iwrite_list)
   call trace%end (itimer)
 #endif
 END SUBROUTINE iwrite

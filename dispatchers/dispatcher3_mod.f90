@@ -196,13 +196,6 @@ SUBROUTINE execute (self, task_list, test)
     !---------------------------------------------------------------------------
     if (mpi%size > 1) &
       call check_sent (mpi_mesg%sent_list)
-    !---------------------------------------------------------------------------
-    ! Start a thread doing I/O, if pending
-    !---------------------------------------------------------------------------
-    if (iwrite_list%n > 0) then
-      call iwrite_list%check()
-    end if
-    call write_state (self, io_unit%queue, '1')
     if (self%verbose>1) call self%print_state ('1')
     !---------------------------------------------------------------------------
     ! Diagnostics
