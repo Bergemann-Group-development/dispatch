@@ -51,9 +51,8 @@ SUBROUTINE execute (self, task_list, test)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   self%task_list => task_list
-  call task_list%init_all_nbors
   call tic (time=start)
-  call self%process%update (task_list)
+  !call self%process%update (task_list)
   !call average_density%init ('density', mpi%size, 5, cadence=0.01)
   call timer%print
   !$omp parallel private(link,nbor,ready,mytask) default(shared)

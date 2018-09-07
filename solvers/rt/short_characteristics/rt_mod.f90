@@ -88,6 +88,7 @@ MODULE rt_mod
     procedure:: solve
     procedure:: needs
     procedure, nopass:: task2rt
+    procedure:: is_ahead_of
   end type
   real, save:: dtau_min=1e-3, dtau_max=30., dtau_dif=10.
   ! -- tolerate that RT is up to one rt_time behind MHD
@@ -775,11 +776,15 @@ END FUNCTION needs
 !> =============================================================================
 FUNCTION is_ahead_of (self, target)
   logical:: is_ahead_of
-  class(rt_t):: self, target
+  class(rt_t):: self
+  class(task_t):: target
   !-----------------------------------------------------------------------------
   ! If target is an MHD task, require that RT tasks are at least at the same
   ! time, while accepting a grace period for other MHD tasks
   !-----------------------------------------------------------------------------
+  select type (target)
+  class is (rt_t)
+  call trace%begin ('rt_t%is_ahead_of')
   if (target%i_omega==0) then
     if (self%i_omega>0) then
       is_ahead_of = self%time >=  target%time
@@ -797,6 +802,8 @@ FUNCTION is_ahead_of (self, target)
       is_ahead_of = self%time >= target%time
     end if
   end if
+  end select
+  call trace%end
 END FUNCTION is_ahead_of
 
 !> =============================================================================

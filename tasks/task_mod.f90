@@ -328,13 +328,13 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
 END SUBROUTINE info
 
 !> =============================================================================
-!> Check if self (which is a nbor task) is ahead of task (which is the one to
-!> possibly move to the ready queue), using self%dtime*task%grace as the grace
+!> Check if self (which is a nbor task) is ahead of target (which is the one to
+!> possibly move to the ready queue), using self%dtime*target%grace as the grace
 !> period, since we want to limit the extrapolation in the nbor task to at most
-!> task%grace*self%dtime.
+!> target%grace*self%dtime.
 !> =============================================================================
-LOGICAL FUNCTION is_ahead_of (self, task)
-  class (task_t):: self, task
+LOGICAL FUNCTION is_ahead_of (self, target)
+  class (task_t):: self, target
   real(8):: nbtime, nbdtime
   !.............................................................................
   !$omp atomic read
@@ -348,16 +348,16 @@ LOGICAL FUNCTION is_ahead_of (self, task)
 !  else if (nbtime < 0.0) then
 !    is_ahead_of = .false.
   ! -- do not use a grace interval for different levels or for the first steps
-  else if (self%level /= task%level .or. self%istep < 3) then
-    is_ahead_of = nbtime >= task%time
+  else if (self%level /= target%level .or. self%istep < 3) then
+    is_ahead_of = nbtime >= target%time
   ! -- use a grace interval that is fraction of the nbor time step
   else
-    is_ahead_of = nbtime + nbdtime*task%grace > task%time
+    is_ahead_of = nbtime + nbdtime*target%grace > target%time
   end if
   if (io_unit%verbose>1) then
-    if (task%id==io%id_debug.or.io_unit%verbose>4) &
+    if (target%id==io%id_debug.or.io_unit%verbose>4) &
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &
-    task%id, self%time, self%dtime*task%grace, task%time, is_ahead_of
+    target%id, self%time, self%dtime*target%grace, target%time, is_ahead_of
   end if
 END FUNCTION
 
