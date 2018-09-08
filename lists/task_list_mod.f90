@@ -33,6 +33,7 @@ MODULE task_list_mod
     procedure:: average
     procedure:: append_task_list
     procedure:: print => print1
+    procedure:: info
   end type
   public:: task2patch
 CONTAINS
@@ -93,6 +94,7 @@ SUBROUTINE startup (self)
   !call self%init_bdries
   !call self%init_all_nbors
   !call self%reset_status
+  call self%info
   !-----------------------------------------------------------------------------
   ! Check the ready status of all tasks
   !-----------------------------------------------------------------------------
@@ -383,5 +385,34 @@ SUBROUTINE print1 (self, label)
   call self%print_queue
   call trace%end
 END SUBROUTINE print1
+
+!> =============================================================================
+!> Dump nbor relations, flags and status bits around io%id_debug
+!> =============================================================================
+SUBROUTINE info (self)
+  class(task_list_t):: self
+  class(link_t), pointer:: link
+  class(experiment_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  link => self%head
+  do while (associated(link))
+    task => task2experiment(link%task)
+    call task%nbor_info(link)
+    link => link%next
+  end do
+END SUBROUTINE info
+
+!> =============================================================================
+!> Upgrade task pointer to experiment level
+!> =============================================================================
+FUNCTION task2experiment (task) RESULT (exper)
+  class(task_t), pointer:: task
+  class(experiment_t), pointer:: exper
+  !...........................................................................
+  select type (task)
+  class is (experiment_t)
+  exper => task
+  end select
+END FUNCTION task2experiment
 
 END MODULE task_list_mod
