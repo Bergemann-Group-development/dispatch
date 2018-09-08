@@ -53,11 +53,10 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  integer, save:: itimer=0
   namelist /experiment_params/ grav, d_bot, e_bot, bottom_bc_rate, &
                                top_temperature, verbose
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_mod::init', itimer=itimer)
+  call trace_begin('experiment_t%init')
   !----------------------------------------------------------------------------
   if (first_time) then
     !$omp critical (input_cr)
@@ -70,9 +69,9 @@ SUBROUTINE init (self)
     !$omp end critical (input_cr)
   end if
   if (.not. io%master) verbose=0
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Allocate memory and set default values
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call self%rt_solver_t%init
   self%force_per_unit_mass => force
   self%grav = grav
@@ -85,7 +84,7 @@ SUBROUTINE init (self)
     if (self%mesh(3)%lower_boundary) print *, self%id, 'at lower B'
     if (self%mesh(3)%upper_boundary) print *, self%id, 'at upper B'
   end if
-  call trace_end (itimer=itimer)
+  call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
