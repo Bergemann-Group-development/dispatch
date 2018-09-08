@@ -54,8 +54,6 @@ MODULE dispatcher3_mod
   USE bits_mod
   USE global_mod
   USE task_mod
-  USE patch_mod
-  USE experiment_mod
   implicit none
   private
   type, public:: dispatcher3_t
@@ -68,6 +66,7 @@ MODULE dispatcher3_mod
     procedure:: update
     procedure:: spawn_update
     procedure:: set_state
+    procedure:: is_ready
     procedure:: print_state
     procedure:: diagnostics
   end type
@@ -124,12 +123,11 @@ SUBROUTINE execute (self, task_list, test)
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher3_t%execute', itimer=itimer)
   call io%header('begin dispatcher3_t%execute: Any opportunity dispatcher')
-  call io%gb_print
   call self%init (task_list)
-  self%task_list => task_list
+  self%task_list    => task_list
+  ! -- this spoils a list that has been doctored by e.g. rt_setup
+  !call task_list%init_all_nbors
   n_state = 0; n_state(0) = io%ntask
-  call info (task_list) 
-  call check (task_list)
   call tic (time=start)
   call timer%print
   !$omp parallel private(link,nbor,task,mytask) shared(n_state) default(shared)
@@ -137,18 +135,17 @@ SUBROUTINE execute (self, task_list, test)
   do while (task_list%na>0 .and. wallclock()-start < io%job_seconds)
     start_iter = wallclock()
     !---------------------------------------------------------------------------
+    ! Check if there is MPI work
+    !---------------------------------------------------------------------------
+    call task_list%check_mpi()
+    !---------------------------------------------------------------------------
     ! Run through the task list, looking for and counting tasks that are ready
     !---------------------------------------------------------------------------
     fell_through = .true.
     link => task_list%head
     do while (associated(link))
       task => link%task
-      !-------------------------------------------------------------------------
-      ! For virtual tasks, check for incoming messages
-      !-------------------------------------------------------------------------
-      if ((mpi%size > 1) .and. task%is_set (bits%virtual)) then
-        call check_recv (task, task_list)
-      else
+      if (.not.task%is_set (bits%virtual)) then
         !-----------------------------------------------------------------------
         ! If task is updated, set it to idle; this should ONLY be done by the
         ! master thread
@@ -160,7 +157,7 @@ SUBROUTINE execute (self, task_list, test)
         ! If task is idle, check if it is ready to update
         !-----------------------------------------------------------------------
         if (task%state==0) then
-          if (experiment%is_ready (link)) then
+          if (self%is_ready (link)) then
             call self%set_state (link%task, 1)
           else if (link%task%time == 0.0_8) then
             write(io_unit%queue,*) link%task%id, 'ERROR: at time=0, but not ready!'
@@ -174,7 +171,7 @@ SUBROUTINE execute (self, task_list, test)
           end if
         end if
         !-----------------------------------------------------------------------
-        ! If task is ready to update, spawn a background task
+        ! If task is ready to update, pawn a background task
         !-----------------------------------------------------------------------
         if (task%state==1) then
           fell_through = .false.
@@ -192,10 +189,14 @@ SUBROUTINE execute (self, task_list, test)
       link => link%next
     end do
     !---------------------------------------------------------------------------
-    ! Check if there are MPI package buffers to reclaim
+    ! Start a thread doing I/O, if pending
     !---------------------------------------------------------------------------
-    if (mpi%size > 1) &
-      call check_sent (mpi_mesg%sent_list)
+    if (iwrite_list%n > 0) then
+      !$omp task default(shared)
+      call iwrite_list%check()
+      !$omp end task
+    end if
+    call write_state (self, io_unit%queue, '1')
     if (self%verbose>1) call self%print_state ('1')
     !---------------------------------------------------------------------------
     ! Diagnostics
@@ -272,11 +273,11 @@ SUBROUTINE update (self, task_list, link, test)
   class(dispatcher3_t):: self
   type(task_list_t), pointer:: task_list
   class(link_t), pointer:: link, nbor
-  class(experiment_t), pointer:: task
+  class(task_t), pointer:: task
   logical:: test
   integer:: n_ready
   !.............................................................................
-  task => task2experiment (link%task)
+  task => link%task
   !-----------------------------------------------------------------------------
   ! If task mem is OMP placed, ignore tasks allocated on a different thread,
   ! passing them on to a matching thread -- unless there are no more tasks to
@@ -286,50 +287,28 @@ SUBROUTINE update (self, task_list, link, test)
   n_ready = n_state(1)
   !$omp atomic
   n_ready = n_ready + n_state(2)
-  call self%set_state (link%task, 3)
-!  !$omp atomic write
-!  task%thread = omp%thread
-  if (self%verbose>3) write(io%output,fmt2) &
+  call self%set_state (task, 3)
+  task%thread = omp%thread
+  if (self%verbose>3) print fmt2, &
     wallclock(), omp%thread, 'updating task', task%id, 'from', task%time
-  !-----------------------------------------------------------------------------
-  ! The link%task is updated, which includes calling link%send_to_vnbors(),
-  ! which call mpi_mesg%sent() that adds an item to the list mpi_mesg%sent_list,
-  ! in a critical region (sent_cr)
-  !-----------------------------------------------------------------------------
   call task_list%update (link, test)
-  !-----------------------------------------------------------------------------
-  if (self%verbose>3) write(io%output,fmt2) &
+  if (self%verbose>3) print fmt2, &
     wallclock(), omp%thread, 'updated  task', task%id, '  to', task%time
-  ! nbor => link%nbor
-  ! do while (associated(nbor))
-    ! if (nbor%needs_me) then
-      ! if (experiment%is_ready(nbor%link)) then
-        ! call self%set_state (nbor%link%task, 1)
-        ! if (self%verbose>3) &
-          ! write(io%output,fmt1) &
-            ! wallclock(), omp%thread, 'found(2) task', nbor%task%id
-      ! end if
-    ! end if
-    ! nbor => nbor%next
-  ! end do
+  nbor => link%nbor
+  do while (associated(nbor))
+    if (nbor%needs_me) then
+      if (self%is_ready(nbor%link)) then
+        call self%set_state (nbor%link%task, 1)
+        if (self%verbose>3) print fmt1,wallclock(),omp%thread,'found(2) task',nbor%task%id
+      end if
+    end if
+    nbor => nbor%next
+  end do
   if (verbose > 2) &
+  link%task%thread = -1
     write(io%output,*) omp%thread, 'match  ', task%id
-!  link%task%thread = -1
   call self%set_state (link%task, 4)
 END SUBROUTINE update
-
-!> =============================================================================
-!> Upgrade task pointer to experiment level
-!> =============================================================================
-FUNCTION task2experiment (task) RESULT (exper)
-  class(task_t), pointer:: task
-  class(experiment_t), pointer:: exper
-  !...........................................................................
-  select type (task)
-  class is (experiment_t)
-  exper => task
-  end select
-END FUNCTION task2experiment
 
 !> =============================================================================
 !> Spawn an OpenMP task, for updating a DISPATCH task
@@ -376,9 +355,8 @@ SUBROUTINE set_state (self, task, in)
     n_state(ip) = n_state(ip) - 1
     n_state(in) = n_state(in) + 1
     d_state(in) = d_state(in) + 1
-    if (self%verbose > 1) &
-      write (io%output, '(a,i4,f12.6,2x,5i4,2x,2i3)') &
-        ' dispatcher3:', omp%thread, wallclock(), n_state, ip, in
+    if (self%verbose>1) &
+      print '(a,i4,f12.6,2x,5i4,2x,2i3)', ' dispatcher3:', omp%thread, wallclock(), n_state, ip, in
     !$omp end critical (set_state_cr)
   else
    !$omp atomic read
@@ -391,11 +369,56 @@ SUBROUTINE set_state (self, task, in)
    d_state(in) = d_state(in) + 1
    !$omp atomic write
    task%state = in
-    if (self%verbose>1) &
-      write (io%output,'(a,i4,f12.6,2x,5i4,2x,2i3)') &
-        ' dispatcher3:', omp%thread, wallclock(), n_state, ip, in
+   if (self%verbose>1) &
+     write (io%output,'(a,i4,f12.6,2x,5i4,2x,2i3)') &
+       ' dispatcher3:', omp%thread, wallclock(), n_state, ip, in
   end if
 END SUBROUTINE
+
+!> =============================================================================
+!> Check if a task is ready to update, by changing if all nbor task are "ahead
+!> of" the task in question
+!> =============================================================================
+LOGICAL FUNCTION is_ready (self, link)
+  class(dispatcher3_t):: self
+  class(link_t), pointer:: link, nbor
+  integer:: state
+  !...........................................................................
+  !$omp atomic
+  n_check = n_check+1
+  call io%assert (associated(link), 'is_ready: link missing')
+  call io%assert (associated(link%task), 'is_ready: link%task missing')
+  !$omp atomic read
+  state = link%task%state
+  if (link%task%is_set (bits%virtual)) then
+    is_ready = .false.
+  else
+    is_ready = .true.
+    nbor => link%nbor
+    do while (associated(nbor))
+      if (nbor%needed) then
+        !$omp atomic read
+        state = nbor%task%state
+        if (state==3) then
+          is_ready = .false.
+        else
+          is_ready = is_ready .and. nbor%task%is_ahead_of (link%task)
+        end if
+        if (.not.is_ready) then
+          if (verbose > 2) &
+            print *, link%task%id, 'is_ready: failed  on', nbor%task%id, &
+              nbor%task%time, link%task%time
+          exit
+        end if
+      end if
+      nbor => nbor%next
+    end do
+  end if
+  if (is_ready) then
+    !$omp atomic
+    n_ready = n_ready+1
+  end if
+END FUNCTION is_ready
 
 !> =============================================================================
 !> Print statistics
@@ -423,158 +446,5 @@ SUBROUTINE diagnostics (self, task_list)
   end do
   !write (io_unit%queue,*) 'end starved analysis: nstate =', nstate
 END SUBROUTINE diagnostics
-
-!> =============================================================================
-!> Check messages on the mpi_mesg%sent_list for completeness.  Since threads
-!> add items to the sent_list in a critical region (sent_cr), we use the same
-!> =============================================================================
-SUBROUTINE check_sent (list)
-  type(mesg_list_t):: list
-  !.............................................................................
-  class(mesg_t), pointer:: mesg, next
-  logical:: flag
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('dispatcher3_t%check_sent', itimer=itimer)
-  if (associated(list%head)) then
-    !write(io_unit%mpi,*) wallclock(), 'check_sent: n =', mpi_mesg%sent_list%n
-    !$omp critical (sent_cr)
-    mesg => list%head                                           ! top of list
-    do while (associated(mesg))
-      next => mesg%next                                         ! in case removed
-      call mesg%test_all (flag)                                 ! done with?
-      if (flag) then
-        write(io_unit%mpi,*) 'check_sent:     done', mesg%id
-        call list%remove (mesg)                                 ! yes, remove
-        call list%delete (mesg, send=.true.)                    ! deallocate
-      else
-        write(io_unit%mpi,*) wallclock(), 'check_sent: not done', mesg%id
-      end if
-      mesg => next                                              ! true next
-    end do
-    !$omp end critical (sent_cr)
-  end if
-  call trace%end (itimer)
-END SUBROUTINE check_sent
-
-!> =============================================================================
-!> Check that task has a message data type, make sure it has an active recv req,
-!> check if there is a message, unpack if so, and issue a new request.
-!> =============================================================================
-SUBROUTINE check_recv (task, task_list)
-  class(task_t), pointer:: task
-  type(task_list_t), pointer:: task_list
-  class(patch_t), pointer:: patch
-  integer, save:: itimer=0
-  !.............................................................................
-  call trace%begin ('dispatcher3_t%check_recv', itimer=itimer)
-  !write(io_unit%mpi,*) wallclock(), 'check_recv: incoming', task%id 
-  if (.not.associated(task%mesg)) then
-    select type (task)
-    class is (patch_t)
-    call task%allocate_mesg
-    end select
-    write(io_unit%mpi,*) wallclock(), 'check_recv: allocated', task%mesg%id 
-    call task%mesg%irecv  (task%rank, task%id)
-    write(io_unit%mpi,*) wallclock(), 'check_recv: irecv', task%mesg%id 
-  end if
-  if (task%mesg%test_recv()) then
-    write(io_unit%mpi,*) wallclock(), 'check_recv: unpacking', task%mesg%id 
-    call task_list%unpack (task%mesg)
-    write(io_unit%mpi,*) wallclock(), 'check_recv: irecv', task%mesg%id 
-    call task%mesg%irecv (task%rank, task%id)
-  end if
-  call trace%end (itimer)
-END SUBROUTINE check_recv
-
-!> =============================================================================
-!> Dump nbor relations, flags and status bits around io%id_debug
-!> =============================================================================
-SUBROUTINE nbors_info (task_list, id_debug)
-  type(task_list_t), pointer:: task_list
-  integer, optional:: id_debug
-  type(link_t), pointer:: link
-  class(task_t), pointer:: task
-  !-----------------------------------------------------------------------------
-  link => task_list%head
-  do while (associated(link))
-    task => link%task
-    select type (task)
-    class is (experiment_t)
-    if (present(id_debug)) then
-      if (task%id == id_debug) then
-          call task%nbors_info()
-        exit
-      end if
-    else
-      if (task%i_omega==0) then
-        call task%nbors_info()
-      end if
-    end if
-    end select
-    link => link%next
-  end do
-END SUBROUTINE nbors_info
-
-!> =============================================================================
-!> Dump nbor relations, flags and status bits around io%id_debug
-!> =============================================================================
-SUBROUTINE info (task_list)
-  type(task_list_t), pointer:: task_list
-  class(link_t), pointer:: link
-  class(experiment_t), pointer:: task
-  !-----------------------------------------------------------------------------
-  link => task_list%head
-  do while (associated(link))
-    task => task2experiment(link%task)
-    call task%nbor_info(link)
-    link => link%next
-  end do
-END SUBROUTINE info
-
-!> =============================================================================
-!> Check that all nbor task needed are in the task list
-!> =============================================================================
-SUBROUTINE check (task_list)
-  class(task_list_t):: task_list
-  class(link_t), pointer:: link, nbor
-  logical:: ok
-  !-----------------------------------------------------------------------------
-  ok = .true.
-  link => task_list%head
-  do while (associated(link))
-    nbor => link%nbor
-    do while (associated(nbor))
-      if (nbor%needed .and. .not. found(nbor%link)) then
-        write (io_unit%mpi,*) &
-          'link task, missing nbor task:', link%task%id, nbor%task%id
-        ok = .false.
-      end if
-      nbor => nbor%next
-    end do
-    link => link%next
-  end do
-  if (ok) then
-    write (io_unit%mpi,*) 'INFO: task_list checked: no missing tasks'
-  else
-    call mpi%abort ('ERROR: missing tasks')
-  end if
-contains
-  !-----------------------------------------------------------------------------
-  function found (test)
-    logical:: found
-    class(link_t), pointer:: link, test
-    !...........................................................................
-    found = .false.
-    link => task_list%head
-    do while (associated(link))
-      if (associated(link,test)) then
-        found = .true.
-        exit
-      end if
-      link => link%next
-    end do
-  end function found
-END SUBROUTINE check
 
 END MODULE dispatcher3_mod
