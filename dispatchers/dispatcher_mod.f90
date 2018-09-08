@@ -11,6 +11,7 @@ MODULE dispatcher_mod
   USE dispatcher1_mod
   USE dispatcher2_mod
   USE dispatcher3_mod
+  USE dispatcher4_mod
   USE mpi_mesg_mod
   USE data_io_mod
   implicit none
@@ -94,6 +95,17 @@ SUBROUTINE init (self)
     mpi_mesg%recv_priv    = .false.
     mpi_mesg%recv_active  = .true.
     mpi_mesg%queue_unpack = .false.
+  case (4)
+    self%method => method4
+    !---------------------------------------------------------------------------
+    ! This method uses send_priv=.false., collecting a list of sent messages in
+    ! the shared mpi_mesg%sent_list.  No other mpi_mesg attribute is relevant, 
+    ! but for good measure we nevertheless set them accordingly.
+    !---------------------------------------------------------------------------
+    mpi_mesg%send_priv    = .false.
+    mpi_mesg%recv_priv    = .false.
+    mpi_mesg%recv_active  = .true.
+    mpi_mesg%queue_unpack = .false.
   case default
     call io%abort ('unknown method in dispatcher_mod')
   end select
@@ -161,5 +173,12 @@ SUBROUTINE method3 (task_list)
   if (test) call set_io
   call dispatcher3%execute (task_list, test)
 END SUBROUTINE method3
+
+!> =============================================================================
+SUBROUTINE method4 (task_list)
+  type(task_list_t), pointer:: task_list
+  if (test) call set_io
+  call dispatcher4%execute (task_list, test)
+END SUBROUTINE method4
 
 END MODULE dispatcher_mod

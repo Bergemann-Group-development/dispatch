@@ -272,41 +272,11 @@ END SUBROUTINE write_state
 SUBROUTINE update (self, task_list, link, test)
   class(dispatcher3_t):: self
   type(task_list_t), pointer:: task_list
-  class(link_t), pointer:: link, nbor
-  class(task_t), pointer:: task
+  class(link_t), pointer:: link
   logical:: test
-  integer:: n_ready
   !.............................................................................
-  task => link%task
-  !-----------------------------------------------------------------------------
-  ! If task mem is OMP placed, ignore tasks allocated on a different thread,
-  ! passing them on to a matching thread -- unless there are no more tasks to
-  ! choose from, or the current thread is the master thread
-  !-----------------------------------------------------------------------------
-  !$omp atomic read
-  n_ready = n_state(1)
-  !$omp atomic
-  n_ready = n_ready + n_state(2)
-  call self%set_state (task, 3)
-  task%thread = omp%thread
-  if (self%verbose>3) print fmt2, &
-    wallclock(), omp%thread, 'updating task', task%id, 'from', task%time
+  call self%set_state (link%task, 3)
   call task_list%update (link, test)
-  if (self%verbose>3) print fmt2, &
-    wallclock(), omp%thread, 'updated  task', task%id, '  to', task%time
-  nbor => link%nbor
-  do while (associated(nbor))
-    if (nbor%needs_me) then
-      if (self%is_ready(nbor%link)) then
-        call self%set_state (nbor%link%task, 1)
-        if (self%verbose>3) print fmt1,wallclock(),omp%thread,'found(2) task',nbor%task%id
-      end if
-    end if
-    nbor => nbor%next
-  end do
-  if (verbose > 2) &
-  link%task%thread = -1
-    write(io%output,*) omp%thread, 'match  ', task%id
   call self%set_state (link%task, 4)
 END SUBROUTINE update
 
@@ -320,23 +290,8 @@ SUBROUTINE spawn_update (self, task_list, link, test)
   logical:: test
   !...........................................................................
   call self%set_state (link%task, 2)
-  if (self%verbose>2) &
-    write(io%output,fmt0) &
-      wallclock(), omp%thread, 'spawning task', link%task%id, link%task%state, &
-      link%task%thread
-  !$omp task firstprivate(self,link,test,task_list) default(shared)
-    if (use_locks) then
-      if (link%task%lock%test()) then
-        call self%update (task_list, link, test)
-        call link%task%lock%unset
-      else
-        write(io%output,*) &
-          'WARNING, lock conflict, thread, id =', &
-          omp%thread, link%task%id, link%task%thread
-      end if
-    else
-      call self%update (task_list, link, test)
-    end if
+  !$omp task firstprivate(link) default(shared)
+  call self%update (task_list, link, test)
   !$omp end task
 END SUBROUTINE spawn_update
 
