@@ -80,22 +80,22 @@ SUBROUTINE rt_setup (task_list)
       boundary_distance = min(mhd%position(3)-task_list%lc(3), &
                               task_list%uc(3)-mhd%position(3))/mhd%size(3)
       !-------------------------------------------------------------------------
-      ! Add nbor lists to the sub-tasks
+      ! Add nbor lists to the sub-tasks, if RT is active in the MHD patch
       !-------------------------------------------------------------------------
-      call mhd%init_nbors
-      nbor => link%nbor
-      do while (associated(nbor))
-        call io%assert (associated(nbor%task), 'nbor%task missing')
-        call io%assert (associated(nbor%link), 'nbor%link missing')
-        ! -- download MHD nbor values to the MHD parent tasks
-        nbor%download = .true.
-        ! -- call check_ready() on MHD nbor task when MHD task updates
-        nbor%needs_me = .true.
-        ! -- include MHD nbor in check_ready() of MHD task updates
-        nbor%needed = .true.
-        nbor => nbor%next
-      end do
       if (mhd%is_clear(bits%no_rt)) then
+        call mhd%init_nbors
+        nbor => link%nbor
+        do while (associated(nbor))
+          call io%assert (associated(nbor%task), 'nbor%task missing')
+          call io%assert (associated(nbor%link), 'nbor%link missing')
+          ! -- download MHD nbor values to the MHD parent tasks
+          nbor%download = .true.
+          ! -- call check_ready() on MHD nbor task when MHD task updates
+          nbor%needs_me = .true.
+          ! -- include MHD nbor in check_ready() of MHD task updates
+          nbor%needed = .true.
+          nbor => nbor%next
+        end do
         !-----------------------------------------------------------------------
         ! Prepend subtasks to the MHD task nbor list, prepend the MHD task to the
         ! subtask nbor list, and finally append the sub-task link to the task list
@@ -103,7 +103,6 @@ SUBROUTINE rt_setup (task_list)
         n_omega = mhd%n_omega
         do i_omega=1,mhd%n_omega
           omega => mhd%omega(i_omega)
-          omega%parent => mhd
           if (verbose > 1) &
             write(io%output,*) &
               'appending task', omega%id, omega%nw, omega%it, omega%new

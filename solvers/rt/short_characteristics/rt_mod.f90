@@ -219,6 +219,7 @@ SUBROUTINE init (self)
     omega%time    = self%rt_next
     omega%status  = self%status
     call omega%set (bits%no_density)
+    omega%parent => self%link%task
     !! -- force 3 solutions before Q is valid in MHD update
     !omega%time    = -3.0_8*self%rt_time
     !! -- force starting at boundaries
@@ -457,15 +458,15 @@ SUBROUTINE update (self)
     self%it = mod(self%it,self%nt)+1
     self%iit(1:self%nt-1) = self%iit(2:self%nt)
     self%iit(self%nt) = self%it
-    if (self%parent%id==io%id_debug) &
+    if (mhd%id==io%id_debug) &
       write(io%output,*) self%id, 'DBG rt_t%update: RT time =', self%time
     self%t  (self%it) = self%time
     self%dt (self%it) = self%rt_time
     if (debug(self,0)) write(io%output,*) mhd%id, &
       'rt_t%update: RT  at ', self%time, self%id
     if (mhd%eos_time /= self%time) then
-      write(io%output,'(i7,2x,a,i7,3f12.6)') &
-        self%id, 'WARNING: EOS out of sync:', &
+      write(io%output,'(i7,2x,a,i7,2f12.6)') &
+        self%id, 'WARNING: EOS out of sync: mhd%id, eos%time, rt%time =', &
         mhd%id, mhd%eos_time, self%time
 !      write(io_unit%mpi,'(f12.6,i4,i7,2x,a,f12.6)') &
 !        wallclock(), omp%thread, self%id, 'rt_t%update: WARNING  =', self%time
@@ -519,14 +520,28 @@ SUBROUTINE mhd_update (self)
 END SUBROUTINE mhd_update
 
 !> =============================================================================
-!> Add upstream tasks to an nbor list
+!> Add upstream and downstream tasks to an nbor list.  The upstream nbors should
+!> have the settings needed=T, needs_me=F, download=T, while the downstream 
+!> tasks should have needed=F, needs_me=T, download=F.
+!>
+!> Each omega subtask of an MHD task has, for each MHD nbor, either
+!> 1) no connection, or
+!> 2) an upstream connection, or
+!> 3) a downstream connection
+!>
+!> The nbor's sub-task in the omega direction should not be added to then MHD
+!> task's nbor list, and should, in the local sub-tasks nbor list, either
+!> 1) not be added
+!> 2) be added with needed=T, needs_me=F, download=T, or
+!> 3) be added with needed=F, needs_me=t, download=F
+!>
 !> =============================================================================
 SUBROUTINE init_nbors (self)
   class (rt_t):: self
   !.............................................................................
   integer:: i_omega
   type(rt_t), pointer:: omega
-  type(link_t), pointer:: nbor, new, prev
+  class(link_t), pointer:: nbor, new
   class(task_t), pointer:: nbtask, raytask
   integer:: n_nbor
   !-----------------------------------------------------------------------------
@@ -551,28 +566,38 @@ SUBROUTINE init_nbors (self)
         select type (nbtask)
         class is (rt_t)
           raytask => nbtask%omega(i_omega)
-          select type (raytask)
-          class is (rt_t)
+          if (raytask%is_clear(bits%no_rt)) then
+            select type (raytask)
+            class is (rt_t)
+            !-------------------------------------------------------------------
+            ! Create an "upstrean type" nbor node pointing to the nbor sub-task
+            !-------------------------------------------------------------------
             allocate (new)
             new%link => raytask%link
             new%task  => raytask
-            if (verbose > 2) &
-              write(io%output,*) 'init_nbors: om=', omega%id, omega%link%task%id, 'nb=', &
-            nbtask%id, nbtask%link%task%id, 'ray=', raytask%id, raytask%link%task%id
-          end select
+            ! -- set "upstream attributes"
+            new%needed = .true.
+            new%needs_me = .false.
+            new%download = .true.
+            ! -- add to the sub-tasks nbor list, in MPI rank order
+            call omega%link%add_nbor_by_rank (new)
+            !-------------------------------------------------------------------
+            ! Create a "downstrean type" nbor node pointing back to omega
+            !-------------------------------------------------------------------
+            allocate (new)
+            new%link => omega%link
+            new%task  => omega%link%task
+            new%needed = .false.
+            new%needs_me = .true.
+            new%download = .false.
+            !! -- add it to the nbor's nbor chain, in rank order
+            call raytask%link%add_nbor_by_rank (new)
+            end select
+          end if
         end select
         !-----------------------------------------------------------------------
-        ! Point to the new nbor, from the task%link, or from the previous nbor
+        ! Add the new nbor to the sub-tasks nbor list, sorted by MPI rank
         !-----------------------------------------------------------------------
-        if (.not.associated(omega%link%nbor)) then
-          omega%link%nbor => new
-          if (verbose > 3) write(io%output,*) omega%id, 'nbor => new'
-        else
-          if (verbose > 3) write(io%output,*) omega%id, 'prev%next => new'
-          prev%next => new
-        end if
-        if (verbose > 3) write(io%output,*) omega%id, 'prev => new'
-        prev => new
         n_nbor = n_nbor+1
       end if
       nbor => nbor%next
@@ -784,7 +809,7 @@ FUNCTION is_ahead_of (self, target)
   !-----------------------------------------------------------------------------
   select type (target)
   class is (rt_t)
-  call trace%begin ('rt_t%is_ahead_of')
+  call trace%begin ('rt_t%is_ahead_of',2)
   if (target%i_omega==0) then
     if (self%i_omega>0) then
       is_ahead_of = self%time >=  target%time

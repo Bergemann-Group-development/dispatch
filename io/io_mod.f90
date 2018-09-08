@@ -235,11 +235,12 @@ SUBROUTINE bits_mem (self, bits, count, label)
   !-----------------------------------------------------------------------------
   if (io%verbose>2) then
     if (present(label)) then
-      write(io%output) bits,' bits per word', count,' words, for', &
-        (bits/(8.*1024.**3))*count, 'GB '//trim(label)
+      write(io%output,1) bits,' bits per word', count,' words, for', &
+        (bits/(8.*1024.**3))*count, ' GB '//trim(label)
+      1 format(i3,a,i8,a,f6.3,a)
     else
-      write(io%output) bits,' bits per word', count,' words, for', &
-        (bits/(8.*1024.**3))*count, 'GB'
+      write(io%output,1) bits,' bits per word', count,' words, for', &
+        (bits/(8.*1024.**3))*count, ' GB'
     end if
   end if
   call self%gb_mem ((bits/(8.*1024.**3))*count)

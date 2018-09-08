@@ -551,7 +551,14 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
   else
     all_cells_l = .false.
   end if
-  !print *,'same: target, source, iv =', target%id, source%id, iv1, iv2
+  if (verbose > 0) &
+    print *,'same_linear: target, source, iv1, iv2 =', target%id, source%id, iv1, iv2
+  if (iv2 > source%nv) then
+    print *, 'iv loop limit:', iv1, iv2
+    print *, 'source: id, nv =', source%id, source%nv
+    print *, 'target: id, nv =', target%id, target%nv
+    call io%abort
+  end if
   do iv=iv1, iv2
     if (iv == target%idx%phi) then
       if (target%poisson_time > source%poisson_time + source%dtime*source%grace) then
