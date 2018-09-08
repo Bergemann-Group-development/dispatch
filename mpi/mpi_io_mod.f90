@@ -57,7 +57,7 @@ MODULE mpi_io_mod
     logical:: first_time=.true.
     integer:: thread=-1
   contains
-    procedure:: check
+    procedure, nopass:: check
   end type
   !-----------------------------------------------------------------------------
   ! MPI I/O data type
@@ -116,7 +116,8 @@ SUBROUTINE init (self)
   if (iwrite_list%first_time) then
     iwrite_list%first_time = .false.
     call iwrite_list%init ('iwrite_list')
-    print *, 'mpi_io_t%init done'
+    if (io%master) &
+      print *, 'mpi_io_t%init done'
   end if
   !$omp end critical (iwrite_cr)
   call trace%end
@@ -234,7 +235,7 @@ SUBROUTINE iwrite (self, f, rec, id)
   if (verbose>1) &
     print '(1x,a,z12,i4)', 'appended req, n =', item%req, iwrite_list%n
   !$omp end critical (iwrite_cr)
-  call check_real (iwrite_list)
+  call check()
   call trace%end (itimer)
 #endif
 END SUBROUTINE iwrite
@@ -310,14 +311,13 @@ END SUBROUTINE assert
 !> =============================================================================
 !> Multi-thread interface
 !> =============================================================================
-SUBROUTINE check (self)
-  class(iwrite_list_t):: self
+SUBROUTINE check ()
   if (omp%nthreads > 1) then
     !$omp task default(shared)
-    call check_real (self)
+    call check_real (iwrite_list)
     !$omp end task
   else
-    call check_real (self)
+    call check_real (iwrite_list)
   end if
 END SUBROUTINE check
 
