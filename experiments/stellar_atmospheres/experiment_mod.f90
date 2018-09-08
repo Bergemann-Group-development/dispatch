@@ -36,8 +36,6 @@ MODULE experiment_mod
     procedure:: update
     procedure:: dnload
     procedure:: boundary_condition
-    procedure:: nbors_info
-    procedure, nopass:: nbor_info
     procedure, nopass:: is_ready
   end type
   integer, save:: verbose=1
@@ -239,43 +237,6 @@ FUNCTION force (self) RESULT (ff)
   ff(:,:,:,3) = grav
   call trace_end
 END FUNCTION force
-
-!> =============================================================================
-SUBROUTINE nbors_info (self)
-  class(experiment_t):: self
-  integer:: i_omega
-  !-----------------------------------------------------------------------------
-  write (io_unit%mpi,*) 'experiment_mod::nbors_info: nbors of MHD task', self%id
-  call nbor_info(self%link)
-  do i_omega=1,self%n_omega
-    write (io_unit%mpi,*) 'experiment_mod::nbors of RT task', &
-      self%omega(i_omega)%id, self%omega(i_omega)%mu
-    call nbor_info (self%omega(i_omega)%link)
-  end do
-END SUBROUTINE nbors_info
-
-!> =============================================================================
-SUBROUTINE nbor_info (link)
-  class(link_t), pointer:: link, nbor
-  class(rt_t), pointer:: task
-  !-----------------------------------------------------------------------------
-  task => rt%task2rt (link%task)
-  if (task%i_omega==0) then
-    write(io_unit%mpi,*) 'nbor_info: MHD task =', task%id
-  else
-    write(io_unit%mpi,*) 'nbor_info: RT task, mu =', task%id, task%mu
-  end if
-  nbor => link%nbor
-  do while (associated(nbor))
-    task => rt%task2rt(nbor%task)
-    write(io_unit%mpi,'(3x,a,i6,i4,2x,3l1,2x,2l1,f6.2,2x,3f9.3)') &
-      'nbor_info: id, rank, needed, needs_me, download, BV, mu, pos =', &
-      task%id, task%rank, nbor%needed, nbor%needs_me, nbor%download, &
-      task%is_set(bits%boundary), task%is_set(bits%virtual), &
-      task%mu, task%position
-    nbor => nbor%next
-  end do
-END SUBROUTINE nbor_info
 
 !> =============================================================================
 !> Check if a task is ready to update, by changing if all nbor task are "ahead

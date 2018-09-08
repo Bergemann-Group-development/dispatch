@@ -1080,7 +1080,7 @@ SUBROUTINE pack (self, mesg)
     mesg%nbuf = mesg%nbuf+ self%nv*n_buf
   end if
   allocate (mesg%buffer(mesg%nbuf))
-  !call io%bits_mem (storage_size(self%mesg%buffer), product(shape(self%mesg%buffer)))
+  call io%bits_mem (storage_size(mesg%buffer), product(shape(mesg%buffer)))
   allocate (mesg%reqs(self%n_nbors))
   mesg%id = self%id                                             ! MPI message tag
   mesg%nreq = 0                                                 ! reset counter

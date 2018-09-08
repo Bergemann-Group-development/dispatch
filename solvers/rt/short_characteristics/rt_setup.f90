@@ -34,7 +34,7 @@ SUBROUTINE rt_setup (task_list)
   implicit none
   type(task_list_t):: task_list
   !.............................................................................
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link, nbor, new
   class(task_t), pointer:: task
   class(rt_t), pointer:: omega=>null(), mhd
   class(patch_t), pointer:: patch
@@ -84,44 +84,35 @@ SUBROUTINE rt_setup (task_list)
       !-------------------------------------------------------------------------
       if (mhd%is_clear(bits%no_rt)) then
         call mhd%init_nbors
-        nbor => link%nbor
-        do while (associated(nbor))
-          call io%assert (associated(nbor%task), 'nbor%task missing')
-          call io%assert (associated(nbor%link), 'nbor%link missing')
-          ! -- download MHD nbor values to the MHD parent tasks
-          nbor%download = .true.
-          ! -- call check_ready() on MHD nbor task when MHD task updates
-          nbor%needs_me = .true.
-          ! -- include MHD nbor in check_ready() of MHD task updates
-          nbor%needed = .true.
-          nbor => nbor%next
-        end do
         !-----------------------------------------------------------------------
-        ! Prepend subtasks to the MHD task nbor list, prepend the MHD task to the
-        ! subtask nbor list, and finally append the sub-task link to the task list
+        ! Append the sub-task links to the task list
         !-----------------------------------------------------------------------
         n_omega = mhd%n_omega
         do i_omega=1,mhd%n_omega
           omega => mhd%omega(i_omega)
-          if (verbose > 1) &
-            write(io%output,*) &
-              'appending task', omega%id, omega%nw, omega%it, omega%new
-          call io%assert (associated(omega%link), 'omega%link missing')
-          call prepend_task (link%nbor, omega)
-          call io%assert (associated(mhd%link), 'mhd%link missing')
-          call io%assert (associated(mhd%link%task), 'mhd%link%task missing')
-          call prepend_task (omega%link%nbor, mhd)
-          ! -- do not download RT values to MHD task
-          link%nbor%download = .false.
-          ! -- do not download MHD values to RT task
-          omega%link%nbor%download = .false.
-          ! -- call check_ready() on RT task when MHD task updates
-          omega%link%nbor%needs_me = .true.
-          ! -- include RT sub-task in check_ready() of MHD task
-          omega%link%nbor%needed = .true.
-          !omega%rt_next = omega%time + (1.0-boundary_distance*0.5)*mhd%rt_time
-          omega%rt_next = omega%time + mhd%rt_time
-          !---------------------------------------------------------------------
+          !-------------------------------------------------------------------
+          ! Add a link to the sub-task to the MHD task nbor list
+          !-------------------------------------------------------------------
+          allocate (new)
+          new%link => omega%link
+          new%task => omega
+          new%needed   = .true.
+          new%needs_me = .true.
+          new%download = .false.
+          call link%add_nbor_by_rank(new)
+          !-------------------------------------------------------------------
+          ! Add a link to the MHD task to the sub-task nbor list
+          !-------------------------------------------------------------------
+          allocate (new)
+          new%link => link
+          new%task => task
+          new%needed   = .true.
+          new%needs_me = .true.
+          new%download = .false.
+          call omega%link%add_nbor_by_rank(new)
+          !-------------------------------------------------------------------
+          ! Add the sub-task to the RT task list
+          !-------------------------------------------------------------------
           call omega%clear (bits%ready)
           call rt_task_list%append_link (omega%link)
         end do

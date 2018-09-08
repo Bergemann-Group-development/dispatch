@@ -35,6 +35,7 @@
 MODULE rt_mod
   USE io_mod
   USE trace_mod
+  USE mpi_mod
   USE omp_mod
   USE omp_timer_mod
   USE timer_mod
@@ -89,6 +90,8 @@ MODULE rt_mod
     procedure:: needs
     procedure, nopass:: task2rt
     procedure:: is_ahead_of
+    procedure:: nbors_info
+    procedure, nopass:: nbor_info
   end type
   real, save:: dtau_min=1e-3, dtau_max=30., dtau_dif=10.
   ! -- tolerate that RT is up to one rt_time behind MHD
@@ -199,7 +202,8 @@ SUBROUTINE init (self)
     omega = self
     ! -- assign MPI-unique ID
     omega%rank = self%rank
-    call omega%task_t%init_unique
+    ! -- assign unique and globally valid ID
+    omega%id = self%id + mpi%size*(1 + io%ntotal/mpi%size + i_omega)
     omega%track   = .false.
     omega%kind    = 'rt_t'   ! to be used in data_io_mod
     omega%nt      = nt
@@ -576,7 +580,7 @@ SUBROUTINE init_nbors (self)
             new%link => raytask%link
             new%task  => raytask
             ! -- set "upstream attributes"
-            new%needed = .true.
+            new%needed   = .true.
             new%needs_me = .false.
             new%download = .true.
             ! -- add to the sub-tasks nbor list, in MPI rank order
@@ -587,7 +591,7 @@ SUBROUTINE init_nbors (self)
             allocate (new)
             new%link => omega%link
             new%task  => omega%link%task
-            new%needed = .false.
+            new%needed   = .false.
             new%needs_me = .true.
             new%download = .false.
             !! -- add it to the nbor's nbor chain, in rank order
@@ -595,9 +599,6 @@ SUBROUTINE init_nbors (self)
             end select
           end if
         end select
-        !-----------------------------------------------------------------------
-        ! Add the new nbor to the sub-tasks nbor list, sorted by MPI rank
-        !-----------------------------------------------------------------------
         n_nbor = n_nbor+1
       end if
       nbor => nbor%next
@@ -864,5 +865,42 @@ FUNCTION task2rt (task) RESULT (rt)
   rt => task
   end select
 END FUNCTION task2rt
+
+!> =============================================================================
+SUBROUTINE nbors_info (self)
+  class(rt_t):: self
+  integer:: i_omega
+  !-----------------------------------------------------------------------------
+  !write (io_unit%mpi,*) 'experiment_mod::nbors_info: nbors of MHD task', self%id
+  call nbor_info(self%link)
+  !do i_omega=1,self%n_omega
+  !  write (io_unit%mpi,*) 'experiment_mod::nbors of RT task', &
+  !    self%omega(i_omega)%id, self%omega(i_omega)%mu
+  !  call nbor_info (self%omega(i_omega)%link)
+  !end do
+END SUBROUTINE nbors_info
+
+!> =============================================================================
+SUBROUTINE nbor_info (link)
+  class(link_t), pointer:: link, nbor
+  class(rt_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  task => rt%task2rt (link%task)
+  if (task%i_omega==0) then
+    write(io_unit%mpi,*) 'nbor_info: MHD task =', task%id
+  else
+    write(io_unit%mpi,*) 'nbor_info: RT task, mu =', task%id, task%mu
+  end if
+  nbor => link%nbor
+  do while (associated(nbor))
+    task => rt%task2rt(nbor%task)
+    write(io_unit%mpi,'(3x,a,i6,i4,2x,3l1,2x,2l1,f6.2,2x,3f9.3)') &
+      'nbor_info: id, rank, needed, needs_me, download, BV, mu, pos =', &
+      task%id, task%rank, nbor%needed, nbor%needs_me, nbor%download, &
+      task%is_set(bits%boundary), task%is_set(bits%virtual), &
+      task%mu, task%position
+    nbor => nbor%next
+  end do
+END SUBROUTINE nbor_info
 
 END MODULE rt_mod
