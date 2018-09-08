@@ -392,12 +392,12 @@ END SUBROUTINE print1
 SUBROUTINE info (self)
   class(task_list_t):: self
   class(link_t), pointer:: link
-  class(experiment_t), pointer:: task
+  class(patch_t), pointer:: task
   !-----------------------------------------------------------------------------
   link => self%head
   do while (associated(link))
-    task => task2experiment(link%task)
-    call task%nbor_info(link)
+    task => task2patch(link%task)
+    call task%nbors_info()
     link => link%next
   end do
 END SUBROUTINE info
