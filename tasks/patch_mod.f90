@@ -301,12 +301,12 @@ END SUBROUTINE init
 !> order of setting values is that the calling code, typically experiment_mod,
 !> may set preferred defaults that differ from the ones set here.  The input
 !> namelist then allows these to be changed.  This is done (only) once, on first
-!> call, after which the savde propertis are reused on subsequent calls.
+!> call, after which the saved properties are reused on subsequent calls.
 !>
 !> However, in cases where not all patches should have identical properties it
 !> is necessary be able to override the saved default.  In the case of n and ng
-!> -- the most likely proerties to vary -- this can be done by changing the patch
-!> values !> before the call, since only properties with default (zero) values
+!> -- the most likely properties to vary -- this can be done by changing the patch
+!> values before the call, since only properties with default (zero) values
 !> are set to the saved values.  It is possible to change other parameters, by
 !> instead of calling patch_t%init, first call patch_t%init_default, and then
 !> call patch_t%setup (nt=..., nv=..., ...).
@@ -344,7 +344,12 @@ SUBROUTINE init_default (self)
   ! the calling code -- typically in experiment_mod.f90
   !-----------------------------------------------------------------------------
   !$omp critical (input_cr)
-  if (first_time) then
+    if (first_time) then
+    ! -- if values have been imposed from above, FI show them as default
+    if (any(self%n  /= 0)) n  = self%n          ! patch dimensions
+    if (any(self%ng /= 0)) ng = self%ng         ! patch guard zones
+    if (    self%nv /= 0 ) nv = self%nv         ! number of variables
+    if (    self%nt /= 0 ) nt = self%nt         ! number of time slices
     first_time = .false.
     rewind (io%input)
     read (io%input, patch_params)
