@@ -297,7 +297,7 @@ SUBROUTINE output_nml (patch, append)
   ms = wallclock()
   !$omp critical (output_cr)
   ms = 1e3*(wallclock()-ms)
-  if (ms > 1.0) &
+  if (ms > 10.) &
     write(io%output,'(a,i5,2x,a,f7.2,a)') &
       ' thread', omp%thread, 'waited for I/O', ms, ' ms'
   !-----------------------------------------------------------------------------

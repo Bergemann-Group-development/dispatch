@@ -8,7 +8,7 @@
 &rt_params              verbose=0 nt=1 n_mu=2 n_phi=4 n_bin=4 rt_time=0.005
                         dtau_min=1e-6 dtau_dif=1e3 dtau_max=1e4 grace=0
                         order=0 dbg_position=2*-0.25 rt_bottom=0.45 /
-&rt_setup_params        verbose=0 n_warmup=3 unique_ids=t only_vertical=t /
+&rt_setup_params        verbose=0 n_warmup=0 unique_ids=t only_vertical=t /
 
 &io_params              verbose=0 do_trace=f omp_trace=f do_output=t method='parallel' id_debug=0 restart=-1 /
 &cartesian_params       size=2*6,3 dims=2*6,3 mpi_dims=2,1,1 origin=0,0,-0.5 omp_init=f fast_nbors=f /

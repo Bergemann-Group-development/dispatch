@@ -55,9 +55,9 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   namelist /experiment_params/ grav, d_bot, e_bot, bottom_bc_rate, &
                                top_temperature, verbose
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
@@ -81,8 +81,8 @@ SUBROUTINE init (self)
   self%periodic(3) = .false.                     ! non-periodic vertically
   call self%init_bdries
   if (verbose > 0) then
-    if (self%mesh(3)%lower_boundary) print *, self%id, 'at lower B'
-    if (self%mesh(3)%upper_boundary) print *, self%id, 'at upper B'
+    if (self%mesh(3)%lower_boundary) write(io%output,*) self%id, 'at lower B'
+    if (self%mesh(3)%upper_boundary) write(io%output,*) self%id, 'at upper B'
   end if
   call trace_end
 END SUBROUTINE init
@@ -162,7 +162,7 @@ SUBROUTINE boundary_condition (self)
       d_ratio = exp((z(iz)-z(li(3)))/h_scale)
       if (first_lower) then
         first_lower = .false.
-        print *, self%id, 'experiment_t%boundary_condition (lower)', &
+        write(io%output,*) self%id, 'experiment_t%boundary_condition (lower)', &
           tt(ix,iy,li(3)), scaling%temp, h_scale, d_ratio
       end if
       ! -- velocity / momentum boundary conditions
@@ -181,7 +181,7 @@ SUBROUTINE boundary_condition (self)
     ! of the horizontal components involve a vertical derivative, and the horizontal
     ! components of the electric field controlling the vertical component of the
     ! magnetic field depend on vertical velocities coming out of vertical staggering
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     if (self%mhd) then
       do iz=lb(3),lo(3)-1
         bx(:,:,iz) = bx(:,:,li(3)-1)
@@ -209,7 +209,7 @@ SUBROUTINE boundary_condition (self)
       e(ix,iy,iz) = e(ix,iy,ui(3))*exp((z(iz)-z(ui(3)))*dlnedz)
       if (first_upper) then
         first_upper = .false.
-        print *, self%id, 'experiment_t%boundary_condition (upper)', &
+        write(io%output,*) self%id, 'experiment_t%boundary_condition (upper)', &
           dlnddz, dlnedz, z(ui(3)-1), z(ui(3)), d_ratio
       end if
     end do

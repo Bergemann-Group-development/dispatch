@@ -424,12 +424,8 @@ LOGICAL FUNCTION has_finished (self)
   class (task_t):: self
   integer:: bit
   !.............................................................................
-  if (io%do_output) then
-    has_finished = (self%out_next > io%end_time)
-  else
-    has_finished = (self%time + 1e-6*self%dtime > io%end_time) &
-      .or. self%is_set(bits%virtual)
-  end if
+  has_finished = (self%time-self%dtime > io%end_time) &
+    .or. self%is_set(bits%virtual)
 END FUNCTION
 
 !> =============================================================================

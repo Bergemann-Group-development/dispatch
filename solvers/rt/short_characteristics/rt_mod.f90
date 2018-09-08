@@ -216,7 +216,7 @@ SUBROUTINE init (self)
     omega%nw      = 1
     omega%i_omega = i_omega
     omega%grav    = self%grav
-    omega%time    = self%rt_next
+    omega%time    = self%rt_time
     omega%status  = self%status
     call omega%set (bits%no_density)
     omega%parent => self%link%task
@@ -464,7 +464,7 @@ SUBROUTINE update (self)
     self%dt (self%it) = self%rt_time
     if (debug(self,0)) write(io%output,*) mhd%id, &
       'rt_t%update: RT  at ', self%time, self%id
-    if (mhd%eos_time /= self%time) then
+    if (mhd%eos_time /= self%time .and. self%time >= 0.0) then
       write(io%output,'(i7,2x,a,i7,2f12.6)') &
         self%id, 'WARNING: EOS out of sync: mhd%id, eos%time, rt%time =', &
         mhd%id, mhd%eos_time, self%time
