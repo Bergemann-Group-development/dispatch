@@ -6,6 +6,7 @@
 MODULE download_mod
   USE iso_fortran_env, only: int8
   USE io_mod
+  USE io_unit_mod
   USE omp_mod
   USE mpi_mod
   USE bits_mod
@@ -349,8 +350,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   nbor => link%nbor
   do while (associated(nbor))
    source => task2patch(nbor%task)
-   if (verbose > 0) &
-     print *, target%id, 'download_t%download_link: source, download =', &
+   if (verbose > 1) &
+     write(io_unit%log,*) target%id, 'download_t%download_link: source, download =', &
        source%id, nbor%download
    if (nbor%download) then
     if (source%nt == 1) &
@@ -368,13 +369,13 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
         end if
       end if
       if (target%id==io%id_debug) then
-        print '(a,i6,1p,4e12.5)', 'source: id,min,max,fmin,fmaxval:', &
+        write(io_unit%log,'(a,i6,1p,4e12.5)') 'source: id,min,max,fmin,fmaxval:', &
                  source%id, &
                  minval(source%mem(:,:,:,source%idx%d,source%it,1)), &
                  maxval(source%mem(:,:,:,source%idx%d,source%it,1)), &
                  source%fminval(source%idx%d), &
                  source%fmaxval(source%idx%d)
-        print '(a,i6,1p,4e12.5)', 'target: id,min,max,fmin,fmaxval:', &
+        write(io_unit%log,'(a,i6,1p,4e12.5)') 'target: id,min,max,fmin,fmaxval:', &
                  target%id, &
                  minval(target%mem(:,:,:,target%idx%d,target%it,1)), &
                  maxval(target%mem(:,:,:,target%idx%d,target%it,1)), &
@@ -480,17 +481,17 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
     if (source%level==target%level) then
       offset = nint(-dist/target%ds + source%offset - target%offset)
     else
-      print *, 'ERROR: fixed offset not valid for different levels', &
+      write(io_unit%log,*) 'ERROR: fixed offset not valid for different levels', &
         target%id, target%level, source%id, source%level
       call mpi%abort('dnload_range')
     end if
     if (verbose>2.or.io_unit%do_validate.or.target%id==io%id_debug) &
-      print 1, target%id, target%level, iv, source%id, source%level, l, u, offset
+      write(io_unit%log,1) target%id, target%level, iv, source%id, source%level, l, u, offset
       1 format("download_t%dnload_range: id,lv,iv:",i6,2i3, &
                "  source,lv,l,u,o:",i6,i3,3(2x,3i4))
   else
     if (verbose>2.or.io_unit%do_validate.or.target%id==io%id_debug) &
-      print 1, target%id, target%level, iv, source%id, source%level, l, u
+      write(io_unit%log,1) target%id, target%level, iv, source%id, source%level, l, u
   end if
   call trace%end
 contains
@@ -529,7 +530,7 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
   !.............................................................................
   integer                 :: l(3), u(3), o(3), ii(3), jt(2), i
   real(8)                 :: position(3), xx, dist(3)
-  real                    :: pt(2)
+  real                    :: pt(2), fmin
   integer                 :: ix, iy, iz, iv, iv1, iv2, li(3), ui(3)
   integer, save           :: itimer=0
   logical                 :: all_cells_l
@@ -551,37 +552,48 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
   else
     all_cells_l = .false.
   end if
-  if (verbose > 0) &
-    print *,'same_linear: target, source, iv1, iv2 =', target%id, source%id, iv1, iv2
+  if (verbose > 0) then
+    write(io_unit%log,'(a,2i7,2i4)') &
+      ' same_linear: target, source, iv1, iv2 =', target%id, source%id, iv1, iv2
+  end if
   if (iv2 > source%nv) then
-    print *, 'iv loop limit:', iv1, iv2
-    print *, 'source: id, nv =', source%id, source%nv
-    print *, 'target: id, nv =', target%id, target%nv
+    write(io_unit%log,*) 'iv loop limit:', iv1, iv2
+    write(io_unit%log,*) 'source: id, nv =', source%id, source%nv
+    write(io_unit%log,*) 'target: id, nv =', target%id, target%nv
     call io%abort
   end if
   do iv=iv1, iv2
+    if (verbose > 0 .and. source%unsigned(iv)) then
+      fmin = min(minval(source%mem(:,:,:,iv,jt(1),1)),minval(source%mem(:,:,:,iv,jt(2),1)))
+      if (fmin <= 0.0) then
+        write(io_unit%log,*) 'iv, jt, pt / minval, minloc =', iv, jt, pt
+        write(io_unit%log,*) minval(source%mem(:,:,:,iv,jt(1),1)), minloc(source%mem(:,:,:,iv,jt(1),1))
+        write(io_unit%log,*) minval(source%mem(:,:,:,iv,jt(2),1)), minloc(source%mem(:,:,:,iv,jt(2),1))
+        flush(io_unit%log)
+      end if
+    end if
     if (iv == target%idx%phi) then
       if (target%poisson_time > source%poisson_time + source%dtime*source%grace) then
-        if (io%verbose>1) print *, target%id, ' not using same level potential from', source%id
+        if (io%verbose>1) write(io_unit%log,*) target%id, ' not using same level potential from', source%id
         cycle
       else
-        if (io%verbose>1) print *, target%id, '     using same level potential from', source%id
+        if (io%verbose>1) write(io_unit%log,*) target%id, '     using same level potential from', source%id
       end if
     end if
     if (source%quality > 1000.) then
       if (iv==target%idx%d .or. (iv >= target%idx%px .and. iv <= target%idx%pz)) then
         all_cells_l = .true.
-        !print *, 'all cells for source id', source%id
+        !write(io_unit%log,*)  'all cells for source id', source%id
       end if
     end if
     if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
-    if (target%id==io%id_debug) print'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)',target%id,source%id,l,u,o
+    if (target%id==io%id_debug) write(io_unit%log,'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') target%id,source%id,l,u,o
     l = max(l,source%mesh%lb-o)
     u = min(u,source%mesh%ub-o)
-    if (target%id==io%id_debug) print'(2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)',target%id,source%id,l,u,o
+    if (target%id==io%id_debug) write(io_unit%log,'(2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') target%id,source%id,l,u,o
     if (product(max(0,u-l+1))>0) then
       !---------------------------------------------------------------------------
       ! Extend the pick-up region to fill the guard zones also in the BC regions
@@ -596,7 +608,7 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
   !      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
       end do
       if (target%id==io%id_debug) &
-        print 1, source%id, l, u, o, jt, pt
+        write(io_unit%log,1) source%id, l, u, o, jt, pt
         1 format("download_t%same:", i6,"  l,u,o:",3(3i4,2x)," jt,pt:",2i4,2x,2f6.2)
       if (source%nt == 1) then
         if (all_cells_l) then
@@ -715,7 +727,7 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
       end if
       if ((verbose>1.or.target%id==io%id_debug).and.product(max(0,u-l+1))>0) then
         if (iv==1.or.verbose>2) &
-          print '(i6,4(2x,a,i6),1p,2e12.4)', target%id, &
+          write(io_unit%log,'(i6,4(2x,a,i6),1p,2e12.4)') target%id, &
           'same picked up', product(max(0,u-l+1)), &
           'values of', product(target%n), &
           'from', source%id, &
@@ -761,7 +773,7 @@ SUBROUTINE same_lagrange (target, source, filled, all_cells, only, all_times)
   times = source%t(iit)
   call lagrange%sequence_weights (target%time, times, j0, j1, w, order)
   if (io%verbose > 2) &
-    print '(a,2i4,1p,10e14.6)','same_lagrange: j0, j1, time, times, w:', &
+    write(io_unit%log,'(a,2i4,1p,10e14.6)') 'same_lagrange: j0, j1, time, times, w:', &
     j0, j1, target%time, times(j0:j1), w
   if (present(only)) then
     iv1 = only
@@ -779,26 +791,26 @@ SUBROUTINE same_lagrange (target, source, filled, all_cells, only, all_times)
   do iv=iv1, iv2
     if (iv == target%idx%phi) then
       if (target%poisson_time > source%poisson_time + source%dtime*source%grace) then
-        if (io%verbose>1) print *, target%id, ' not using same level potential from', source%id
+        if (io%verbose>1) write(io_unit%log,*) target%id, ' not using same level potential from', source%id
         cycle
       else
-        if (io%verbose>1) print *, target%id, '     using same level potential from', source%id
+        if (io%verbose>1) write(io_unit%log,*) target%id, '     using same level potential from', source%id
       end if
     end if
     if (source%quality > 1000.) then
       if (iv==target%idx%d .or. (iv >= target%idx%px .and. iv <= target%idx%pz)) then
         all_cells_l = .true.
-        !print *, 'all cells for source id', source%id
+        !write(io_unit%log,*, 'all cells for source id', source%id
       end if
     end if
     if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
-    if (target%id==io%id_debug) print'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)',target%id,source%id,l,u,o
+    if (target%id==io%id_debug) write(io_unit%log,'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') target%id,source%id,l,u,o
     l = max(l,source%mesh%lb-o)
     u = min(u,source%mesh%ub-o)
-    if (target%id==io%id_debug) print'(2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)',target%id,source%id,l,u,o
+    if (target%id==io%id_debug) write(io_unit%log,'(2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') target%id,source%id,l,u,o
     if (product(max(0,u-l+1))>0) then
       !---------------------------------------------------------------------------
       ! Extend the pick-up region to fill the guard zones also in the BC regions
@@ -828,13 +840,13 @@ SUBROUTINE same_lagrange (target, source, filled, all_cells, only, all_times)
       end if
       if (filter) then
         if (nprint > 0) then
-          print *,'WARNING: attempt to set internal cells in download_t%same_lagrange, using filter!'
+          write(io_unit%log,*) 'WARNING: attempt to set internal cells in download_t%same_lagrange, using filter!'
           nprint = nprint - 1
           if (nprint==0) then
-            print *,'target id, position =', target%id, target%position
-            print *,'source id, position =', source%id, source%position
-            print *,'l , u =', l, u
-            print *,'gn, o =', target%gn, o
+            write(io_unit%log,*) 'target id, position =', target%id, target%position
+            write(io_unit%log,*) 'source id, position =', source%id, source%position
+            write(io_unit%log,*) 'l , u =', l, u
+            write(io_unit%log,*) 'gn, o =', target%gn, o
           end if
         end if
       end if
@@ -940,7 +952,7 @@ SUBROUTINE same_lagrange (target, source, filled, all_cells, only, all_times)
         end do
       end if
       if ((io%verbose>2.or.target%id==io%id_debug).and.product(max(0,u-l+1))>0) &
-        print '(i6,4(2x,a,i6),1p,2e12.4)', target%id, &
+        write(io_unit%log,'(i6,4(2x,a,i6),1p,2e12.4)') target%id, &
         'same picked up', product(max(0,u-l+1)), &
         'values of', product(target%n), &
         'from', source%id, &
@@ -1008,7 +1020,7 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_prolong', itimer=itimer)
   if (io%verbose > 1) &
-    print '(2(a,i7,i4,1p,3e11.3,4x))', &
+    write(io_unit%log,'(2(a,i7,i4,1p,3e11.3,4x))') &
       'MK different_prolong; target:', target%id, target%level, target%ds, &
                             'source:', source%id, source%level, source%ds
   call source%time_interval (target%time, jt, pt)
