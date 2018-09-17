@@ -123,56 +123,58 @@ SUBROUTINE output (self, patch, experiment_name)
   else
     it = patch%iit(patch%nt-1)
   end if
-  do while (patch%t(it) >= patch%out_next)
-    !$omp critical (outputname_cr)
-    if (.not.checked) then
-      checked = .true.
-      call os%mkdir (trim(io%outputname))
-    end if
-    !$omp end critical (outputname_cr)
-    call os%mkdir_no (patch%iout)
-    !---------------------------------------------------------------------------
+  if (patch%t(it) >= patch%out_next) then
+    !$omp critical (data_io_cr)
+    do while (patch%t(it) >= patch%out_next)
+      if (.not.checked) then
+        checked = .true.
+        call os%mkdir (trim(io%outputname))
+      end if
+      call os%mkdir_no (patch%iout)
+      !---------------------------------------------------------------------------
       count = counters%decrement (patch%iout+1, io%nwrite)
       if (io%verbose > 0) &
         write (io_unit%log,*) 'count, nwrite =', count, io%nwrite
-    if (count==0) call counters%reset (patch%iout+1)
+      if (count==0) call counters%reset (patch%iout+1)
       append = (count < io%nwrite-1)
-    !---------------------------------------------------------------------------
-    if      (io%method=='direct') then
-      call direct_io%output (patch)
-    else if (io%method=='legacy') then
-      call legacy_io%output (patch)
-      call output_txt (patch, append)
-    else if (io%method=='buffered') then
-      call buffered_io%output (patch)
-    else if (io%method=='paralle5') then
-      io%format = 5
-      call parallel_io%output (patch)
-    else if (io%method=='parallel') then
-      io%format = 6
-      call parallel_io%output (patch)
-    else
-      call mpi%abort ('unknown io%method = '//io%method)
-    end if
-    !---------------------------------------------------------------------------
-      if (count==0) then
-      if (io%out_time > 0d0) then
-        write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,2g14.5)') &
-          trim(io%method)//'_io:output', &
-          'snapshot '//trim(io%outputname), patch%iout, patch%out_next, patch%time
+      !---------------------------------------------------------------------------
+      if      (io%method=='direct') then
+        call direct_io%output (patch)
+      else if (io%method=='legacy') then
+        call legacy_io%output (patch)
+        call output_txt (patch, append)
+      else if (io%method=='buffered') then
+        call buffered_io%output (patch)
+      else if (io%method=='paralle5') then
+        io%format = 5
+        call parallel_io%output (patch)
+      else if (io%method=='parallel') then
+        io%format = 6
+        call parallel_io%output (patch)
       else
-        write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)') &
-          trim(io%method)//'_io:output', &
-          'snapshot '//trim(io%outputname), patch%iout, patch%time
+        call mpi%abort ('unknown io%method = '//io%method)
       end if
-    end if
-    !---------------------------------------------------------------------------
-    call output_nml (patch, append)
-    patch%iout = patch%iout+1
-    if (io%out_time==0.0) exit
-    patch%out_next = (nint(patch%out_next/io%out_time)+1)*io%out_time
-    call os%mkdir_no (patch%iout)
-  end do
+      !---------------------------------------------------------------------------
+      if (count==0) then
+        if (io%out_time > 0d0) then
+          write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,2g14.5)') &
+            trim(io%method)//'_io:output', &
+            'snapshot '//trim(io%outputname), patch%iout, patch%out_next, patch%time
+        else
+          write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)') &
+            trim(io%method)//'_io:output', &
+            'snapshot '//trim(io%outputname), patch%iout, patch%time
+        end if
+      end if
+      !---------------------------------------------------------------------------
+      call output_nml (patch, append)
+      patch%iout = patch%iout+1
+      if (io%out_time==0.0) exit
+      patch%out_next = (nint(patch%out_next/io%out_time)+1)*io%out_time
+      call os%mkdir_no (patch%iout)
+    end do
+    !$omp end critical (data_io_cr)
+  end if
   call trace%end (itimer)
 END SUBROUTINE output
 
