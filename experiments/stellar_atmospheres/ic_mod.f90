@@ -114,7 +114,7 @@ SUBROUTINE read_stagger (task_list)
   end if
   if (io%master) then
     print *, 'min(dx),min(dy),min(dz)', minval(dxm), minval(dym), minval(dzm)
-    print *, 'nz for max res:', int((zm(my)-zm(1))/minval(dzm))+1
+    print *, 'nz for max res:', int((zm(mz)-zm(1))/minval(dzm))+1
   end if
   close (io_unit%datain)
   !---------------------------------------------------------------------------
