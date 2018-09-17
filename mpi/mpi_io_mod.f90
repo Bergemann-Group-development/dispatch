@@ -312,13 +312,13 @@ END SUBROUTINE assert
 !> Multi-thread interface
 !> =============================================================================
 SUBROUTINE check ()
-  if (omp%nthreads > 1) then
-    !$omp task default(shared)
+  !if (omp%nthreads > 1) then
+  !  !$omp task default(shared)
+  !  call check_real (iwrite_list)
+  !  !$omp end task
+  !else
     call check_real (iwrite_list)
-    !$omp end task
-  else
-    call check_real (iwrite_list)
-  end if
+  !end if
 END SUBROUTINE check
 
 !> =============================================================================
