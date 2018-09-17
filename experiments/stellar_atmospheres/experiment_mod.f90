@@ -73,6 +73,7 @@ SUBROUTINE init (self)
   call self%rt_solver_t%init
   self%force_per_unit_mass => force
   self%grav = grav
+  self%unsigned = .false.
   !----------------------------------------------------------------------------
   ! Boundary setup
   !----------------------------------------------------------------------------
