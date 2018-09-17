@@ -266,7 +266,9 @@ SUBROUTINE unpack (self, mesg, link)
   class(task_t), pointer:: task
   logical:: found, failed
   integer:: id
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin ('task_mesg_t%unpack', itimer=itimer)
   if (mesg%nbuf < 40) then
     call load_balance%unpack (mesg%buffer)
     return
@@ -382,6 +384,7 @@ SUBROUTINE unpack (self, mesg, link)
   !  call link1%test_nbor_status
   if (self%method==0) &
     call self%check_nbors (link1)
+  call trace%end (itimer)
 END SUBROUTINE unpack
 
 !> =============================================================================
