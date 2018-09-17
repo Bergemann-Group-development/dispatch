@@ -214,9 +214,6 @@ SUBROUTINE init (self, label)
   ! Ŕeset the boundary / internal / virtual and boundary bits (and flags), and
   ! reconstruct the nbor lists based on that
   !-----------------------------------------------------------------------------
-  if (io%master) &
-    print *, 'cartesian_t%init: resetting patch status'
-  call self%task_list%reset_status
   if (io%verbose > 0) &
     write(io%output,*) 'cartesian_t%init: counting patch status'
   call self%task_list%count_status
