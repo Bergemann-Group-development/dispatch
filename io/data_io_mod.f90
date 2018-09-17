@@ -200,8 +200,8 @@ SUBROUTINE input (self, patch, ok)
     end if
   end if
   if (ok) then
-    count = counters%decrement (io%restart+1, io%ntask)
-    if (count==0 .and. mpi%master) then
+    count = counters%decrement (io%restart+1, io%nwrite)
+    if (count==0) then
       write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)') &
         trim(io%method)//'_io:input', &
         'snapshot '//trim(io%outputname), io%restart, patch%time

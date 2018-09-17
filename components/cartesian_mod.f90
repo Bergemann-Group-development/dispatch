@@ -86,6 +86,8 @@ SUBROUTINE init (self, label)
   mpi_dims = mpi_coords%dims
   patches_per_mpi = self%dims/mpi_dims
   io%ntask = product(patches_per_mpi)
+  io%nwrite = product(patches_per_mpi)
+  write (io_unit%log,*) 'io%nwrite =', io%nwrite
   !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------
