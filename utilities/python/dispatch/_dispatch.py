@@ -103,7 +103,7 @@ def _var(patch,filed,verbose=0):
     if _p2():
         bytes=long(4*np.product(patch.ncell))
     else:
-        bytes=4*np.product(patch.ncell)
+        bytes=np.longlong(4*np.product(patch.ncell))
     shape=tuple(patch.ncell)
     patch.offset=[]
     if verbose==5:
