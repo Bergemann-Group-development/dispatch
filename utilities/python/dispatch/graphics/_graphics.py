@@ -68,3 +68,22 @@ def _rotate(d,e):
     d=d.transpose()
     e=[e[2],e[3],e[0],e[1]]
     return d,e
+
+def power2d(f,*kw):
+    """plot power spectrum of 2D array"""
+    ft2=np.abs(np.fft.fft2(f))**2
+    m=f.shape
+    k=np.meshgrid(range(m[0]),range(m[1]))
+    k=np.sqrt(k[0]**2+k[1]**2)
+    a=2
+    k0=1.0/a**0.5
+    k1=1.0*a**0.5
+    power=[]
+    kk=[]
+    while(k1 <= m[0]//2):
+        kk.append((k0*k1)**0.5)
+        w=np.where((k>k0) & (k <= k1))
+        power.append(ft2[w].sum())
+        k0=k1
+        k1=k1*a
+    pl.loglog(kk,power,*kw)
