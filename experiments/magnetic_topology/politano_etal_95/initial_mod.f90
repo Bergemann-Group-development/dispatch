@@ -3,8 +3,8 @@
 !> additional random components added to the velocity and magnetic field.
 !>
 !> The module uses as little as possible from the general DISPATCH set of
-!> modules, and should be easy to rewrite into a selfcontained module that
-!> reads the random numbers needed from random.dat.
+!> modules, and has the option to use random numbers read from a file
+!> random.dat.
 !> =============================================================================
 MODULE initial_mod
   USE io_mod

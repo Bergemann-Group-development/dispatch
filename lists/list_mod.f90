@@ -793,7 +793,8 @@ SUBROUTINE init_all_nbors (self)
     if (link%task%is_set(bits%virtual)) nv = nv+1
     link => link%next                                   ! continue list
   end do
-  write (io_unit%mpi,*) 'tasks: n, nb, nv =', n, nb, nv
+  write (io%output,'(1x,a,3i6)') &
+    'list_t%init_all_nbors: n, nb, nv =', n, nb, nv
   call trace_end (itimer)
 END SUBROUTINE init_all_nbors
 
@@ -819,10 +820,17 @@ SUBROUTINE reset_status (self)
   !-----------------------------------------------------------------------------
   link => self%head
   do while (associated(link))
+    write(io_unit%log,*) 'id, rank, IBV =', link%task%id, link%task%rank, &
+      link%task%is_set(bits%internal), &
+      link%task%is_set(bits%boundary), &
+      link%task%is_set(bits%virtual)
     if (link%task%rank == mpi%rank) then
       nbor => link%nbor
       call link%task%set(bits%internal)
       call link%task%clear(bits%virtual+bits%external)
+      !-------------------------------------------------------------------------
+      ! If at least one nbor task is on a different rank, set boundary bit
+      !-------------------------------------------------------------------------
       do while (associated(nbor))
         if (nbor%task%rank/=mpi%rank) then
           call link%task%set(bits%boundary)
@@ -833,9 +841,12 @@ SUBROUTINE reset_status (self)
         nbor => nbor%next
       end do
     else
-      nbor => link%nbor
       call link%task%set(bits%external)
       call link%task%clear(bits%internal+bits%boundary)
+      nbor => link%nbor
+      !-------------------------------------------------------------------------
+      ! If at least one nbor task is on a this rank, set virtual bit
+      !-------------------------------------------------------------------------
       do while (associated(nbor))
         if (link%task%id==io%id_debug) write (io_unit%log,'(a,i5,2i4,3f9.4)') &
           'mk2', nbor%task%id, link%task%rank, nbor%task%rank, link%task%position-nbor%task%position
@@ -859,14 +870,12 @@ SUBROUTINE reset_status (self)
   self%ni = n_internal
   self%na = n_internal+n_boundary
   self%n  = n_internal+n_boundary+n_virtual
-  if (io%verbose>0) then
     write (io_unit%log,'(4(a,i7,5x))') &
       'rank:',mpi%rank, &
       'n_internal:', n_internal, &
       'n_boundary:', n_boundary, &
       'n_virtual:' , n_virtual
     flush (io_unit%log)
-  end if
   !$omp end critical (list_cr)
   call trace%end
 END SUBROUTINE reset_status
@@ -1354,9 +1363,9 @@ SUBROUTINE count_status (self)
     link => link%next
   end do
   self%na = self%ni+self%nb-nf
+  write (io%output,'(1x,a,5i6)') 'list_t%count_status: n[ibvea] = ', &
+    self%ni, self%nb, self%nv, self%ne, self%na
   !$omp end critical (list_cr)
-  if (io%verbose>1) write (io_unit%log,'(a,5i6)') &
-    'count_status: n[ibvea] = ', self%ni, self%nb, self%nv, self%ne, self%na
   call trace%end
 END SUBROUTINE count_status
 

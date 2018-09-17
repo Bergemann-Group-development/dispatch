@@ -27,6 +27,7 @@ MODULE dispatcher0_mod
     procedure:: execute
     procedure:: update
   end type
+  integer, save:: verbose=0
   integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
   integer, save:: min_nq=2**30
   logical, save:: do_delay=.false.
@@ -46,8 +47,7 @@ SUBROUTINE init (self, name)
   !.............................................................................
   class(link_t), pointer:: link
   integer:: iostat
-  integer:: debug=0
-  namelist /dispatcher0_params/ debug, max_stalled, retry_stalled, do_delay
+  namelist /dispatcher0_params/ verbose, max_stalled, retry_stalled, do_delay
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -97,7 +97,7 @@ SUBROUTINE execute (self, task_list, test)
   call mpi_mesg%diagnostics(1)
   call toc ('wall time', timer%n_update, time=sec)
   call mpi%barrier ('end')
-  if (io%master) write (*,*) "task list finished, min_nq =", min_nq
+  write (io%output,*) "task list finished, min_nq =", min_nq
   call trace%end (itimer)
 END SUBROUTINE execute
 
@@ -148,6 +148,8 @@ SUBROUTINE update (self, task_list, test)
   nullify (prev)
   head => task_list%queue                                    ! queue start
   if (associated(head) .and. .not.task_list%syncing) then
+    if (verbose > 0) &
+      write(io_unit%log,'(f12.6,i6,i7)') wallclock(), task_list%na, head%task%id
     !---------------------------------------------------------------------------
     ! If the patch mem was OMP placed, search ready queue for matching thread
     !---------------------------------------------------------------------------
@@ -255,6 +257,9 @@ SUBROUTINE update (self, task_list, test)
       write (io_unit%mpi,*) task%id,omp%thread, &
         ' is triggering a sync at t =', task_list%sync_next
     end if
+  else
+    if (verbose > 0) &
+      write(io_unit%log,'(f12.6,i6,2x,a)') wallclock(), task_list%na, 'no queue'
   end if
   !$omp end critical (queue_cr)
   !-----------------------------------------------------------------------------

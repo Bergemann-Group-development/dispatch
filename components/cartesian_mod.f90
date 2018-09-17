@@ -59,7 +59,7 @@ SUBROUTINE init (self, label)
   namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
     fast_nbors, omp_init
   !-----------------------------------------------------------------------------
-  !call trace_begin ('cartesian_mod::init',itimer=itimer)
+  call trace_begin ('cartesian_mod::init')
   call io%header('begin cartesian_t%init: Cartesian patch arrangement')
   rewind (io%input); read (io%input, cartesian_params)
   if (any(per_rank/=0)) then
@@ -215,30 +215,29 @@ SUBROUTINE init (self, label)
   if (io%master) &
     print *, 'cartesian_t%init: resetting patch status'
   call self%task_list%reset_status
-  if (io%master) &
-    print *, 'cartesian_t%init: counting patch status'
+  if (io%verbose > 0) &
+    write(io%output,*) 'cartesian_t%init: counting patch status'
   call self%task_list%count_status
   io%ntask = self%task_list%na
-  if (io%master) &
-    print *, 'cartesian_t%init: init boundaries'
+  if (io%verbose > 0) &
+    write(io%output,*) 'cartesian_t%init: init boundaries'
   call self%task_list%init_bdries
   if (.not. fast_nbors) then
-    if (io%master) &
-      print *, 'cartesian_t%init: init all nbors'
+    if (io%verbose > 0) &
+      write(io%output,*) 'cartesian_t%init: init all nbors'
     call self%task_list%init_all_nbors
   end if
-  if (io%master) &
-    print *, 'cartesian_t%init: diagnostics'
+  if (io%verbose > 0) &
+    write(io%output,*) 'cartesian_t%init: diagnostics'
   call self%diagnostics
-  write (io_unit%mpi,*) npatch,' patches',nvpatch,' virtual',nbpatch,' boundary'
-  write (io_unit%mpi,*) nlpatch,' local patches'
-  flush (io%log_unit)
-  if (io%master) &
-    print *, 'cartesian_t%init: print tasks'
+  write (io_unit%output,'(1x,a,5(i5,1x,a))') 'cartesian_t%init: ', &
+    npatch,'patches',nvpatch,'virtual',nbpatch,'boundary',nlpatch,'local'
+  if (io%verbose > 0) &
+    write(io%output,*) 'cartesian_t%init: print tasks'
   call self%task_list%print_tasks
-  if (io%master) &
-    print *, 'cartesian_t%init: done'
-  !call trace_end (itimer)
+  if (io%verbose > 0) &
+    write(io%output,*) 'cartesian_t%init: done'
+  call trace_end
 END SUBROUTINE init
 
 SUBROUTINE init_exp (self, origin)

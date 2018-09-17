@@ -132,9 +132,11 @@ SUBROUTINE output (self, patch, experiment_name)
     !$omp end critical (outputname_cr)
     call os%mkdir_no (patch%iout)
     !---------------------------------------------------------------------------
-    count = counters%decrement (patch%iout+1, io%ntask)
+      count = counters%decrement (patch%iout+1, io%nwrite)
+      if (io%verbose > 0) &
+        write (io_unit%log,*) 'count, nwrite =', count, io%nwrite
     if (count==0) call counters%reset (patch%iout+1)
-    append = (count < io%ntask-1)
+      append = (count < io%nwrite-1)
     !---------------------------------------------------------------------------
     if      (io%method=='direct') then
       call direct_io%output (patch)
@@ -153,7 +155,7 @@ SUBROUTINE output (self, patch, experiment_name)
       call mpi%abort ('unknown io%method = '//io%method)
     end if
     !---------------------------------------------------------------------------
-    if (count==0 .and. mpi%master) then
+      if (count==0) then
       if (io%out_time > 0d0) then
         write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,2g14.5)') &
           trim(io%method)//'_io:output', &
@@ -354,6 +356,7 @@ SUBROUTINE output_nml (patch, append)
     write (io_unit%nml1, snapshot_nml)
     call patch%idx%output (io_unit%nml1)
     call file_append (io_unit%nml, io_unit%nml1)
+    flush (io_unit%nml1)
     if (io%debug(2)) write(io%output,'(a,3x,"time:",2f13.6)') &
       ' data_io_t%output_nml: '//trim(filename), patch%out_next, patch%time
   end if
@@ -378,6 +381,7 @@ SUBROUTINE output_nml (patch, append)
     call patch%idx%output (io_unit%nml2)
   end if
   write (io_unit%nml2, patch_nml)
+  flush (io_unit%nml2)
   !$omp end critical (output_cr)
   call trace%end
 END SUBROUTINE output_nml
