@@ -66,8 +66,11 @@ SUBROUTINE init (self, label)
     where (per_rank/=0) dims=per_rank*mpi_dims
   end if
   per_rank = dims/mpi_dims
-  if (io%master) write (*, cartesian_params)
-  if (io%master) write (io_unit%nml, cartesian_params)
+  if (io%master) then
+    write (*, cartesian_params)
+    write (io_unit%nml, cartesian_params)
+    flush (io_unit%nml)
+  end if
   self%dims = dims
   self%size = size
   !-----------------------------------------------------------------------------
