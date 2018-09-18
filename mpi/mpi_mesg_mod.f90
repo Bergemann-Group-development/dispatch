@@ -447,8 +447,10 @@ SUBROUTINE delete (self, mesg, send)
   class(mesg_t), pointer:: mesg
   logical, optional:: send
   !.............................................................................
-  if (associated(mesg%buffer)) deallocate (mesg%buffer)
-  call io%gb_mem (-storage_size(mesg%buffer)*mesg%nbuf/(8.*1024**3))
+  if (associated(mesg%buffer)) then
+    call io%bits_mem (-storage_size(mesg%buffer), product(shape(mesg%buffer)), 'mem')
+    deallocate (mesg%buffer)
+  end if
   if (associated(mesg%reqs)) deallocate (mesg%reqs)
   deallocate (mesg)
   if (present(send)) then
@@ -630,6 +632,7 @@ SUBROUTINE sent (self, mesg)
   else if (send_wait) then
     !$omp task firstprivate(mesg)
     call mesg%wait_all
+    call io%bits_mem (-storage_size(mesg%buffer), product(shape(mesg%buffer)), 'mem')
     deallocate (mesg%buffer)
     deallocate (mesg)
     !$omp atomic
@@ -696,7 +699,7 @@ contains
       allocate (mesg)
       call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
       allocate (mesg%buffer(nbuf))
-      call io%gb_mem (storage_size(mesg%buffer)*mesg%nbuf/(8.*1024**3))
+      call io%bits_mem (storage_size(mesg%buffer),product(shape(mesg%buffer)), 'buf')
       !$omp atomic
       mpi_mesg%nq_recv = mpi_mesg%nq_recv+1
       call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
