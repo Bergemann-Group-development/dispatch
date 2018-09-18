@@ -445,7 +445,7 @@ SUBROUTINE pde (self)
     call deallocate_scalars (pg)
   end if
   call trace%end (itimer)
-  if (mpi%master .and. first_time) then
+  if (io%master .and. first_time) then
     write(io%output,*) stagger%count, ' stagger calls', &
       stagger%flops/product(real(self%n)),' flops per interior point'
     stagger%count=0
