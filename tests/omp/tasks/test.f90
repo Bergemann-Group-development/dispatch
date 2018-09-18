@@ -4,6 +4,7 @@ PROGRAM test
   USE mpi_mod
   USE omp_mod
   USE omp_timer_mod
+  USE timer_mod
   implicit none
   integer:: i, j, n, parent, child, task
   !-----------------------------------------------------------------------------
@@ -28,15 +29,15 @@ PROGRAM test
     task = n
     !$omp end critical
     child = omp_get_thread_num()
-    print*,mpi%rank,parent,' starts', child,' on task',task
+    !print*,mpi%rank,parent,' starts', child,' on task',task
     call delay (real(mpi%rank+2))
     child = omp_get_thread_num()
-    print*,mpi%rank,parent,'   ends', child,' on task',task
+    !print*,mpi%rank,parent,'   ends', child,' on task',task
     !$omp end task
   end do
-  print*,mpi%rank,parent,' loop done'
+  print*,wallclock(),mpi%rank,parent,' loop done', n
   !$omp taskwait
-  print*,mpi%rank,parent,' wait done'
+  print*,wallclock(),mpi%rank,parent,' wait done', n
   !$omp end parallel
   call toc ('took')
   call mpi%end
