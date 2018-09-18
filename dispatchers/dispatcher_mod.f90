@@ -49,16 +49,13 @@ SUBROUTINE init (self)
   select case (method)
   case (0)
     self%method => method0
-    call dispatcher0%init
     !---------------------------------------------------------------------------
     ! By default this method uses the most optimal send and receive procedures,
     ! which means each thread takes care of its own sent_list, and each thread
-    ! checks a dedicated set of tasks for incoming messages.
+    ! checks a dedicated set of tasks for incoming messages.  Non-default
+    ! choices can be made with the dispatcher0_params namelist
     !---------------------------------------------------------------------------
-    mpi_mesg%recv_active  = .true.
-    mpi_mesg%queue_unpack = .true.
-    mpi_mesg%recv_priv    = .true.
-    mpi_mesg%send_priv    = .true.
+    call dispatcher0%init
   case (1)
     self%method => method1
     dispatcher1%verbose = verbose
