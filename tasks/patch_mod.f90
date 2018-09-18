@@ -357,6 +357,8 @@ SUBROUTINE init_default (self)
     rewind (io%input)
     read (io%input, out_params)
     if (io%master) write (*, out_params)
+    if (mpi%rank > 0) &
+      self%track = .true.
   end if
   !-----------------------------------------------------------------------------
   ! To allow patches to have n, ng, nv, and nt values that differ, values that
@@ -1494,9 +1496,9 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (self%nt>1) then
     if (io%verbose>2 .or. (self%istep>3 .and. &
         dtime < 0.5*self%dt(self%iit(self%nt-2)) .and. self%dt_fixed < 0.0)) &
-      write(io%output,'(i6,a,i3,1p,3g11.2,2x,8g11.2)') self%id, &
-        ' courant: it, dtm, cdt, u_max, dt =', &
-        self%it, dtime, courant, self%u_max, self%dt(self%iit)
+      write(io%output,'(i6,a,i3,1p,2(3g11.2,2x),8g11.2)') self%id, &
+        ' courant: it, dtm, cdt, u_max, dt, post =', &
+        self%it, dtime, courant, self%u_max, self%position, self%dt(self%iit)
   end if
   !-----------------------------------------------------------------------------
   ! Force the time step to give exactly sync_time if within reach
