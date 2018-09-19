@@ -191,9 +191,9 @@ SUBROUTINE execute (self, task_list, test)
     !---------------------------------------------------------------------------
     ! Start a thread doing I/O, if pending
     !---------------------------------------------------------------------------
-    if (iwrite_list%n > 0) then
+    if (mpi_io%iwrite_list%n > 0) then
       !$omp task default(shared)
-      call iwrite_list%check()
+      call mpi_io%iwrite_list%check()
       !$omp end task
     end if
     call write_state (self, io_unit%queue, '1')

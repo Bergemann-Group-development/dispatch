@@ -25,7 +25,6 @@ MODULE parallel_io_mod
   integer, parameter:: verbose=0
   type(central_t):: central
   type(mpi_io_file_t), save:: file_in, file_out
-  type(mpi_io_t):: thread_io
   type(parallel_io_t), public:: parallel_io
 CONTAINS
 
@@ -41,7 +40,7 @@ SUBROUTINE init (patch)
   logical:: exists
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%init')
-  call thread_io%init
+  call mpi_io%init
   if (io%restart > 0) then
     filename=trim(io%inputdir)//'snapshots.dat'
     inquire (file=filename, exist=exists)
@@ -106,7 +105,7 @@ SUBROUTINE output (patch)
     n = patch%n
   end if
   !-----------------------------------------------------------------------------
-  ! A call to thread_io%iwrite (iout, id) result in slots in the file ordered
+  ! A call to mpi_io%iwrite (iout, id) result in slots in the file ordered
   ! by (iv,id,iout), where iv=1,nv; id=1,io%ntotal, iout=1,nsnap. To output
   ! time derivatives, while still using a buffer with nv slots, we pretend that
   ! io%ntotal is twice as large, and output the time derivs as patch 2+2*(id-1),
@@ -118,8 +117,8 @@ SUBROUTINE output (patch)
   else
     snapshot_words = buffer_words*io%ntotal
   end if
-  call thread_io%use (file_out)
-  call thread_io%set (snapshot_words, buffer_words)
+  call mpi_io%use (file_out)
+  call mpi_io%set (snapshot_words, buffer_words)
   !-----------------------------------------------------------------------------
   ! Info
   !-----------------------------------------------------------------------------
@@ -187,15 +186,15 @@ SUBROUTINE output (patch)
     !---------------------------------------------------------------------------
     if (io%time_derivs) then
       if (patch%nw==1) then
-        call thread_io%iwrite (buffer, 1+patch%iout, 1+2*(patch%id-1))
+        call mpi_io%iwrite (buffer, 1+patch%iout, 1+2*(patch%id-1))
       else
-        call thread_io%iwrite (buffer, 1+patch%iout, 2+2*(patch%id-1))
+        call mpi_io%iwrite (buffer, 1+patch%iout, 2+2*(patch%id-1))
       end if
     !---------------------------------------------------------------------------
     ! If no time derivs, increment with one per snapshot
     !---------------------------------------------------------------------------
     else
-      call thread_io%iwrite (buffer, 1+patch%iout, patch%id)
+      call mpi_io%iwrite (buffer, 1+patch%iout, patch%id)
     end if
   end do
   !-----------------------------------------------------------------------------
@@ -216,7 +215,7 @@ SUBROUTINE output (patch)
         call central%time_derivative (patch, patch%mem(:,:,:,iv,:,1), buffer(:,:,:,iv))
       end if
     end do
-    call thread_io%iwrite (buffer, 1+patch%iout, 2+2*(patch%id-1))
+    call mpi_io%iwrite (buffer, 1+patch%iout, 2+2*(patch%id-1))
   end if
   call trace%end (itimer)
 END SUBROUTINE output
@@ -230,7 +229,7 @@ SUBROUTINE input (patch, ok)
   !.............................................................................
   integer(8):: snapshot_words, buffer_words
   integer:: iv, n(3), nv
-  real, dimension(:,:,:,:), allocatable:: buffer
+  real, dimension(:,:,:,:), pointer:: buffer
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%input', itimer=itimer)
@@ -252,7 +251,7 @@ SUBROUTINE input (patch, ok)
   !-----------------------------------------------------------------------------
   nv = merge (io%nv, patch%nv, io%nv>0)
   !-----------------------------------------------------------------------------
-  ! Compute offset size constants for the thread_io reader
+  ! Compute offset size constants for the mpi_io reader
   !-----------------------------------------------------------------------------
   buffer_words = product(n)*nv
   if (io%time_derivs) then
@@ -260,19 +259,19 @@ SUBROUTINE input (patch, ok)
   else
     snapshot_words = buffer_words*io%ntotal
   end if
-  call thread_io%use (file_in)
-  call thread_io%set (snapshot_words, buffer_words)
+  call mpi_io%use (file_in)
+  call mpi_io%set (snapshot_words, buffer_words)
   !-----------------------------------------------------------------------------
   ! Read via buffer, in case guard zones not included. FIXME: read snapshot
   ! guard zone parameter, to allow it to differ
   !-----------------------------------------------------------------------------
   allocate (buffer(n(1),n(2),n(3),nv))
   if (io%time_derivs) then
-    call thread_io%read (buffer, 1+io%restart, 1 + 2*(patch%id-1))
+    call mpi_io%read (buffer, 1+io%restart, 1 + 2*(patch%id-1))
   else
-    call thread_io%read (buffer, 1+io%restart, 1 +   (patch%id-1))
+    call mpi_io%read (buffer, 1+io%restart, 1 +   (patch%id-1))
   end if
-  if (thread_io%err /= 0) then
+  if (mpi_io%err /= 0) then
     ok = .false.
     call trace%end
     return

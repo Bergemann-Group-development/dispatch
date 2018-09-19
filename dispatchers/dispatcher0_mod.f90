@@ -10,6 +10,7 @@ MODULE dispatcher0_mod
   USE timer_mod
   USE omp_timer_mod
   USE mpi_mod
+  USE mpi_io_mod
   USE mpi_mesg_mod
   USE link_mod
   USE list_mod
@@ -150,7 +151,8 @@ SUBROUTINE update (self, task_list, test)
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
-  call task_list%check_mpi                                   ! check incoming MPI
+  call task_list%check_mpi                              ! check incoming MPI
+  call mpi_io%iwrite_list%check                        ! I/O check
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in a very brief critical region
   !-----------------------------------------------------------------------------

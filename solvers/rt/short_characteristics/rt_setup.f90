@@ -155,7 +155,7 @@ SUBROUTINE rt_setup (task_list)
   !-----------------------------------------------------------------------------
   ! EOS for warm up
   !-----------------------------------------------------------------------------
-  write(io%output,*) 'EOS for warm-up'
+  write(io%output,*) 'EOS for RT'
   !!omp parallel default (shared) private(link, task, mhd)
   !!!mp master
   link => task_list%head

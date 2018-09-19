@@ -881,11 +881,13 @@ FUNCTION test_recv (self) RESULT (flag)
   logical:: flag
 #ifdef MPI
   integer:: stat(MPI_STATUS_SIZE)
-  real(8):: now
+  real(8):: now, wc, dwc
+  integer, save:: itimer=0
   !.............................................................................
   now = wallclock()
   flag = .false.
   if (now < self%test_next) return
+  call trace%begin('mesg_t%test_recv', itimer=itimer)
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     if (wait) then
@@ -902,7 +904,11 @@ FUNCTION test_recv (self) RESULT (flag)
       flag = .true.
       now = wallclock()
     else
+      wc = wallclock()
       call MPI_TEST (self%req, flag, stat, ierr)
+      dwc = wallclock()-wc
+      if (dwc > 1d-2) &
+        write(io%output,'(f12.6,2x,a,f12.6)') wc, 'WARNING: MPI_Test time =', dwc
     end if
   end if
   if (flag) then
@@ -915,6 +921,7 @@ FUNCTION test_recv (self) RESULT (flag)
 #else
   flag = .true.
 #endif
+  call trace%end (itimer)
 END FUNCTION test_recv
 
 !> =============================================================================

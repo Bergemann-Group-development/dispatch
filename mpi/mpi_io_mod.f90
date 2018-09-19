@@ -38,7 +38,7 @@ MODULE mpi_io_mod
   USE mpi_io_file_mod
   USE dll_mod
 #ifdef MPI
-  USE mpi
+  USE mpi, only: MPI_OFFSET_KIND, MPI_REAL, MPI_STATUS_SIZE
 #endif MPI
   implicit none
   private
@@ -57,7 +57,7 @@ MODULE mpi_io_mod
     logical:: first_time=.true.
     integer:: thread=-1
   contains
-    procedure, nopass:: check
+    procedure:: check
   end type
   !-----------------------------------------------------------------------------
   ! MPI I/O data type
@@ -69,6 +69,7 @@ MODULE mpi_io_mod
     integer:: chunk_words
     integer:: err
     real, dimension(:,:,:), allocatable:: buf
+    type(iwrite_list_t), public:: iwrite_list
 #ifdef MPI
     integer:: status(MPI_STATUS_SIZE)
 #else
@@ -89,8 +90,8 @@ MODULE mpi_io_mod
     procedure:: assert
   end type
   character(len=32), save:: fmt='(1x,a,4i8,1p,5e12.3)'
-  integer, save:: verbose=0
-  type(iwrite_list_t), public:: iwrite_list
+  integer, save:: verbose=1
+  type(mpi_io_t), public:: mpi_io
 CONTAINS
 
 !> =============================================================================
@@ -113,9 +114,9 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%init')
   !$omp critical (iwrite_cr)
-  if (iwrite_list%first_time) then
-    iwrite_list%first_time = .false.
-    call iwrite_list%init ('iwrite_list')
+  if (self%iwrite_list%first_time) then
+    self%iwrite_list%first_time = .false.
+    call self%iwrite_list%init ('iwrite_list')
     if (io%master) &
       print *, 'mpi_io_t%init done'
   end if
@@ -213,14 +214,15 @@ SUBROUTINE iwrite (self, f, rec, id)
   integer(kind=MPI_OFFSET_KIND):: pos
   class(iwrite_t), pointer:: item
   class(dll_node_t), pointer:: node
+  integer:: n
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%iwrite', itimer=itimer)
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
-  if (verbose>1) &
+  if (verbose>2) &
     print '(a,3i8,i15,2f12.0)', ' mpi_io_t%iwrite: rec, id, words, pos =', &
-    rec, id, self%chunk_words, pos, minval(f), maxval(f)
+    rec, id, self%chunk_words, pos !, minval(f), maxval(f)
   !-----------------------------------------------------------------------------
   ! Add details we need in order to check for buffers to deallocate
   !-----------------------------------------------------------------------------
@@ -228,14 +230,16 @@ SUBROUTINE iwrite (self, f, rec, id)
   item%handle = self%file%handle
   item%words  = self%chunk_words
   item%pos    = pos
+  item%req    = id
   item%buffer => f
   !$omp critical (iwrite_cr)
   node => item
-  call iwrite_list%append (node)
-  if (verbose>1) &
-    print '(1x,a,z12,i4)', 'appended req, n =', item%req, iwrite_list%n
+  call self%iwrite_list%append (node)
+  n = self%iwrite_list%n
   !$omp end critical (iwrite_cr)
-  call check()
+  if (verbose>1) &
+    write(io%output,'(f12.6,i5,2x,a,i7,i4)') &
+      wallclock(), omp%thread, 'appended req, n =', item%req, n
   call trace%end (itimer)
 #endif
 END SUBROUTINE iwrite
@@ -309,72 +313,103 @@ SUBROUTINE assert (self, label, err)
 END SUBROUTINE assert
 
 !> =============================================================================
-!> Multi-thread interface
-!> =============================================================================
-SUBROUTINE check ()
-  !if (omp%nthreads > 1) then
-  !  !$omp task default(shared)
-  !  call check_real (iwrite_list)
-  !  !$omp end task
-  !else
-    call check_real (iwrite_list)
-  !end if
-END SUBROUTINE check
-
-!> =============================================================================
 !> Check for queued I/O, and do it all with one single thread, to avoid
 !> slowing down the other threads.  Other threads are free to append more
 !> items at the end of the iwrite_list in the mean time -- this does not
 !> disturb the 
 !> =============================================================================
-SUBROUTINE check_real (self)
+SUBROUTINE check (self)
   class(iwrite_list_t):: self
   class(dll_node_t), pointer:: node, next
   class(iwrite_t), pointer:: item
   integer:: status(MPI_STATUS_SIZE), err
-  integer, save:: itimer=0
-  integer:: n, done, thread, omp_get_thread_num
+  integer, save:: itimer=0, nprint=10
+  integer:: done, omp_get_thread_num
   logical:: ok
+  real(8):: start, wc, dwc
   !-----------------------------------------------------------------------------
-  !$omp atomic read
-  thread = iwrite_list%thread
-  if (iwrite_list%n == 0 .or. thread >=0) return
-  !$omp critical (iwrite_cr)
-  ok = (iwrite_list%thread == -1)
-  iwrite_list%thread = omp_get_thread_num()
-  call trace%begin ('iwrite_list_t%check_real', itimer=itimer)
-  n = iwrite_list%n
-  done = 0
-  node => iwrite_list%head
-  !$omp end critical (iwrite_cr)
+  ! Most threads will exit immediately here
+  !-----------------------------------------------------------------------------
+  if (self%n < io%nwrite .or. self%thread >=0) then
+    if (verbose > 1 .and. self%thread >= 0) &
+      write(io%output,'(f12.6,i5,2x,a,i7,i4)') &
+        wallclock(), omp%thread, ' returning immediately', self%n, self%thread
+    return
+  end if
+  call trace%begin ('iwrite_list_t%check', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! More than one thread may succeed getting to here, so we pick the first of
+  ! them in a critical region -- the rest will find ok to be false and exit
+  !-----------------------------------------------------------------------------
+  !$omp critical (check_cr)
+  ok = (self%thread == -1)
+  if (ok) &
+    self%thread = omp_get_thread_num()
+  !$omp end critical (check_cr)
+  !-----------------------------------------------------------------------------
+  ! The thread that wins the race starts writing out data, while also allowing
+  ! more buffers to be appended simultaneously
+  !-----------------------------------------------------------------------------
   if (ok) then
-    do while (n>0 .and. associated(node))
+    if (verbose > 0) &
+      write(io%output,'(1p,g14.6,i6,3x,a,i7)') &
+        wallclock(), self%thread, 'I/O start, n =', self%n
+    start = wallclock()
+    done = 0
+    !!omp critical (iwrite_cr)
+    node => self%head
+    !!omp end critical (iwrite_cr)
+    do while (self%n > 0 .and. associated(node))
       err = 0
       select type (node)
       class is (iwrite_t)
         item => node
-        call MPI_file_write_at (item%handle, item%pos, item%buffer, item%words, &
-                                MPI_REAL, status, err)
+        if (associated(item%buffer)) then
+          wc = wallclock()
+          call MPI_file_write_at (item%handle, item%pos, item%buffer, &
+                                  item%words, MPI_REAL, status, err)
+          deallocate (item%buffer)
+          if (nprint > 0) then
+            nprint = nprint-1
+            dwc = wallclock()-wc
+            write(io%output,*) 'MPI_File_write_at time =', dwc
+          end if
+          !---------------------------------------------------------------------
+          ! Spin for similar time, to yield to other MPI processes
+          !---------------------------------------------------------------------
+          !wc = wallclock()
+          !do while (wallclock()-wc < dwc)
+          !end do
+        else
+          write(io%output) &
+            self%thread, 'buffer not associated on req', item%req
+        end if
       end select
-      deallocate (item%buffer)
-      !$omp critical (iwrite_cr)
-      next => node%next
-      call iwrite_list%remove (node)
-      n = iwrite_list%n
       done = done+1
-      if (verbose > 0 .and. mod(done,10000) == 0) &
-        print '(1p,g14.6,3x,a,i7)', wallclock(), 'I/O done =', done
+      if (verbose > 1) &
+        write(io%output,'(1p,g14.6,i6,3x,a,2i7)') &
+          wallclock(), self%thread, 'I/O req =', item%req, done
+      if (verbose > 0 .and. mod(done,1000) == 0) &
+        write(io%output,'(1p,g14.6,i6,3x,a,i7)') &
+          wallclock(), self%thread, 'I/O done =', done
+      !!omp critical (iwrite_cr)
+      next => node%next
+      call self%remove (node)
       deallocate (node)
       node => next
-      !$omp end critical (iwrite_cr)
+      !!omp end critical (iwrite_cr)
     end do
-    !$omp critical (iwrite_cr)
     if (verbose > 0) &
-      print '(1p,g14.6,3x,a,i7)', wallclock(), 'I/O done =', done, verbose
-    iwrite_list%thread = -1
-    !$omp end critical (iwrite_cr)
+      write(io%output,'(1p,g14.6,i6,3x,a,i7,g11.3," s")') &
+        wallclock(), self%thread, 'I/O final =', done, wallclock()-start
+    !!omp critical (iwrite_cr)
+    self%thread = -1
+    !!omp end critical (iwrite_cr)
+  else
+    if (verbose > 0) &
+      write(io%output,'(1p,g14.6,i6,3x,a,i7)') wallclock(), omp_get_thread_num(), 'I/O skip'
   end if
   call trace%end (itimer)
-END SUBROUTINE check_real
+END SUBROUTINE check
 
 END MODULE mpi_io_mod
