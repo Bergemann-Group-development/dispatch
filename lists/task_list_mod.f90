@@ -193,7 +193,7 @@ SUBROUTINE update (self, head, test, was_refined)
   !---------------------------------------------------------------------------
   ! If the task is frozen (e.g. because it has finished), return
   !---------------------------------------------------------------------------
-  if (task%is_set (bits%frozen+bits%virtual)) then
+  if (task%is_set (bits%frozen)) then
     !if (task%iout == 0) call task%output(self%name)
     ! if a frozen task is set to ready, make it not ready
     if (task%is_set(bits%ready)) then
@@ -246,6 +246,10 @@ SUBROUTINE update (self, head, test, was_refined)
   if (.not.task%rotated) then
     call task%rotate
   end if
+  select type (task)
+  class is (patch_t)
+    timer%n_update = timer%n_update + product(task%n)
+  end select
   call task%info (self%nq, self%na)                   ! print info on stdout
   !-----------------------------------------------------------------------------
   ! Tasks that have finished are subtracted from the task list count but are
@@ -281,12 +285,12 @@ SUBROUTINE update (self, head, test, was_refined)
         'DBG task_list_t%update: calling send_to_vnbors', task%id
     call head%send_to_vnbors                          ! send to virtual nbors
   end if
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Periodic task syncronization:  The first time a task%time is exactly equal
   ! to load_balance%sync_next, we wait for all ranks to arrive at the same
   ! time. All tasks within a rank are then also at this time, since as long as
   ! one has not arrived there yet, the head%ask%time is smaller.
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (self%syncing) then
     write (io_unit%mpi,*) task%id,omp%thread, &
       ' is waiting on a sync at t =', self%sync_next

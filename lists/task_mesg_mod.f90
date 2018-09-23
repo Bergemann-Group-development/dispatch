@@ -26,6 +26,7 @@ MODULE task_mesg_mod
     procedure:: check_mpi
     procedure:: unpack
     procedure:: init_virtual
+    procedure:: find_task
   end type
   integer, save:: verbose=0
   type(task_mesg_t), save:: virtual_list

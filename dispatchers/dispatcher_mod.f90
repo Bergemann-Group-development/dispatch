@@ -12,6 +12,7 @@ MODULE dispatcher_mod
   USE dispatcher2_mod
   USE dispatcher3_mod
   USE dispatcher4_mod
+  USE dispatcher5_mod
   USE mpi_mesg_mod
   USE data_io_mod
   implicit none
@@ -25,6 +26,8 @@ MODULE dispatcher_mod
     procedure, nopass:: method1
     procedure, nopass:: method2
     procedure, nopass:: method3
+    procedure, nopass:: method4
+    procedure, nopass:: method5
   end type
   integer, save:: verbose=0
   integer, save:: method=0
@@ -103,6 +106,8 @@ SUBROUTINE init (self)
     mpi_mesg%recv_priv    = .false.
     mpi_mesg%recv_active  = .true.
     mpi_mesg%queue_unpack = .false.
+  case (5)
+    self%method => method5
   case default
     call io%abort ('unknown method in dispatcher_mod')
   end select
@@ -177,5 +182,12 @@ SUBROUTINE method4 (task_list)
   if (test) call set_io
   call dispatcher4%execute (task_list, test)
 END SUBROUTINE method4
+
+!> =============================================================================
+SUBROUTINE method5 (task_list)
+  type(task_list_t), pointer:: task_list
+  if (test) call set_io
+  call dispatcher5%execute (task_list, test)
+END SUBROUTINE method5
 
 END MODULE dispatcher_mod

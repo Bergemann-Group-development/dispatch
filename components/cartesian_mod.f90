@@ -52,7 +52,7 @@ SUBROUTINE init (self, label)
   integer:: per_rank(3) = [0,0,0]
   integer:: npatch, nvpatch, nbpatch, nlpatch
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
-  logical:: face_nbors=.false., fast_nbors=.true.
+  logical:: face_nbors=.false., fast_nbors=.false.
   integer:: thread, icoords(3),ipos(3)
   integer:: id
   integer, save:: itimer=0
