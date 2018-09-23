@@ -30,7 +30,6 @@ MODULE dispatcher5_mod
   contains
     procedure:: init
     procedure:: execute
-    procedure:: update
   end type
   integer, save:: verbose=0
   integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
@@ -97,7 +96,7 @@ SUBROUTINE execute (self, task_list, test)
   !-----------------------------------------------------------------------------
   !$omp parallel
   do while (task_list%na > 0 .and. wallclock() < io%job_seconds)
-    call self%update (task_list, test)
+    call update_list (task_list, test)
     if (io%do_stop) call mpi%abort ('stop flag')
     if (task_list%na == task_list%n_tasks) then
       !$omp atomic
@@ -136,8 +135,7 @@ END SUBROUTINE execute
 !>    OMP thread to update it, and checking for nbors that are ready to be
 !>    updated as a consquence
 !> =============================================================================
-SUBROUTINE update (self, task_list, test)
-  class(dispatcher5_t):: self
+SUBROUTINE update_list (task_list, test)
   type(task_list_t), pointer:: task_list
   logical:: test
   !.............................................................................
@@ -151,7 +149,7 @@ SUBROUTINE update (self, task_list, test)
   integer:: id, nq
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin('dispatcher5_t%update', itimer=itimer)
+  call trace%begin('dispatcher5::update_list', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
@@ -228,10 +226,8 @@ SUBROUTINE update (self, task_list, test)
     if (.not.already_busy) then
       call task%set (bits%busy)                              ! mark task busy
       if (associated(prev)) then
-        !print *, omp%thread, 'match'
         prev%next_time => head%next_time                     ! skip over
       else
-        !print *, omp%thread, 'fall back'
         task_list%queue => head%next_time                    ! chop head off
       end if
       call task%clear (bits%ready)                           ! not in queue
@@ -290,43 +286,43 @@ SUBROUTINE update (self, task_list, test)
   !-----------------------------------------------------------------------------
   if (associated(head)) then
     if (already_busy) then
-      !!$omp critical (io_cr)
-      !write (io_unit%log,*) mpi%rank,' WARNING: thread',omp%thread, &
-      !  ' tried to update busy task', task%id
-      print *, mpi%rank,' WARNING: thread',omp%thread, &
+      !$omp critical (io_cr)
+      write (io_unit%output,*) mpi%rank,' WARNING: thread',omp%thread, &
         ' tried to update busy task', task%id
-      !!$omp end critical (io_cr)
+      !$omp end critical (io_cr)
       call trace_end (itimer)
       return
     end if
     if (task%is_set(bits%virtual)) then
       call unpack (task_list, task%mesg, head)
     else
-      call update2 (task_list, head, test, was_refined)
+      call update_task (task_list, head, test, was_refined)
     end if
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the
     ! queue, and its neighbors should also be checked for return to the queue.
     ! If the task was turned into a virtual task by the load balance, its virtual
     ! bit will prevent it being checked, but its nbors still need to be checked
-    !-----------------------------------------------------------------------------
-    call task%clear (bits%busy)                         ! clear busy bit (FIXME: check this!)
+    !---------------------------------------------------------------------------
+    call task%clear (bits%busy)                         ! clear busy bit
     if (.not. was_refined) then
       call check_nbors (task_list, head)                ! any nbors ready?
       !$omp atomic write
       stalled = 0
-      !call mpi_mesg%diagnostics (0)
     end if
+  !-----------------------------------------------------------------------------
+  ! If the queue is empty, check all tasks; this may be due to late packages
+  !-----------------------------------------------------------------------------
   else
     call check_all (task_list)
   end if
   call trace_end (itimer)
-END SUBROUTINE update
+END SUBROUTINE update_list
 
 !> =============================================================================
-!> Common part of task list update, used by dispatchers
+!> Update the task
 !> =============================================================================
-SUBROUTINE update2 (self, head, test, was_refined)
+SUBROUTINE update_task (self, head, test, was_refined)
   class(task_list_t):: self
   class(link_t), pointer:: head
   logical:: test
@@ -370,32 +366,18 @@ SUBROUTINE update2 (self, head, test, was_refined)
     call trace%end (itimer)
     return
   end if
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Download nbor info -- this may be an experiment_t procedure, but if not,
   ! the call should be answered by a solver-specific procedure (which may or
   ! may not choose to call the generic patch guard zone handler in tasks/)
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (.not.test) &
     call task%dnload                                  ! download nbor info
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Update the task, whatever that means (may include call to task%output)
-  !----------------------------------------------------------------------------
-  if (mpi_mesg%delay_ms==0.0) then
-    wc = wallclock()
-  end if
+  !-----------------------------------------------------------------------------
   task%rotated = .false.
-  if (test) then
-    call task%test_update
-  else
-    call task%update                                  ! update the task
-  end if
-  !----------------------------------------------------------------------------
-  ! Default delay time = first update time
-  !----------------------------------------------------------------------------
-  if (mpi_mesg%delay_ms==0.0) then
-    !$omp atomic write
-    mpi_mesg%delay_ms = 1d3*(wallclock()-wc)
-  end if
+  call task%update                                  ! update the task
   !$omp atomic
   mpi_mesg%n_update = mpi_mesg%n_update+1
   if (io%verbose>1) &
@@ -410,7 +392,7 @@ SUBROUTINE update2 (self, head, test, was_refined)
   ! the rotate internally, or else are not yet ready to do so, by setting the
   ! task%rotated flag
   !-----------------------------------------------------------------------------
-  if (.not.(task%rotated)) then
+  if (.not.task%rotated) then
     call task%rotate
   end if
   select type (task)
@@ -418,17 +400,6 @@ SUBROUTINE update2 (self, head, test, was_refined)
     timer%n_update = timer%n_update + product(task%n)
   end select
   call task%info (self%nq, self%na)                   ! print info on stdout
-  !-----------------------------------------------------------------------------
-  ! Tasks that have finished are subtracted from the task list count but are
-  ! not removed, since their data may be needed by other tasks (including on
-  ! other ranks).  They are, however, not added back onto the ready queue.
-  !-----------------------------------------------------------------------------
-  if (task%has_finished()) then                       ! finished:
-    call task%set (bits%frozen)
-    call load_balance%active (.false.)                ! turn off load balancing
-    !$omp atomic
-    self%na = self%na-1
-  end if
   !-----------------------------------------------------------------------------
   ! If the task is a boundary patch, first check if it should be given to
   ! another rank.  A patch that has been given to another rank becomes
@@ -453,6 +424,17 @@ SUBROUTINE update2 (self, head, test, was_refined)
     call head%send_to_vnbors                          ! send to virtual nbors
   end if
   !-----------------------------------------------------------------------------
+  ! Tasks that have finished are subtracted from the task list count but are
+  ! not removed, since their data may be needed by other tasks (including on
+  ! other ranks).  They are, however, not added back onto the ready queue.
+  !-----------------------------------------------------------------------------
+  if (task%has_finished()) then                       ! finished:
+    call task%set (bits%frozen)
+    call load_balance%active (.false.)                ! turn off load balancing
+    !$omp atomic
+    self%na = self%na-1
+  end if
+  !-----------------------------------------------------------------------------
   ! Periodic task syncronization:  The first time a task%time is exactly equal
   ! to load_balance%sync_next, we wait for all ranks to arrive at the same
   ! time. All tasks within a rank are then also at this time, since as long as
@@ -471,10 +453,10 @@ SUBROUTINE update2 (self, head, test, was_refined)
   end if
   task%sync_time = self%sync_next
   call trace%end (itimer)
-END SUBROUTINE update2
+END SUBROUTINE update_task
 
 !> =============================================================================
-!> Check if the link task is ready, and if so, add it to self (the ready_queue)
+!> Check if the link task is ready, and if so, add it to the ready_queue
 !> =============================================================================
 SUBROUTINE check_ready (self, link)
   class(list_t):: self
@@ -485,48 +467,48 @@ SUBROUTINE check_ready (self, link)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher5::check_ready', itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Since we may be called upon to check nbors of a patch that should not itself
-  ! be checked, we first check if any bits are set indicating this to be the case
-  !-----------------------------------------------------------------------------
   task => link%task
   debug = io%verbose > 1 .or. task%id==io%id_debug
-  if (task%is_set(bits%virtual)) then
-    ok = task%mesg%test_recv()
-    if (ok) then
-      call task%mesg%irecv (task%rank, task%id)
-    end if
-  else if (task%is_clear(bits%ready+bits%busy+bits%frozen+bits%external)) then
-    ok = .true.
-    nbor => link%nbor                                     ! start on nbor list
-    do while (associated (nbor))                          ! keep going until end
-      debug1 = nbor%task%id==io%id_debug
-      if (debug1) write(io_unit%log,*) 'DBG check_ready: id, nbor, needed, ahead', &
-        task%id, nbor%task%id, nbor%needed, nbor%task%is_ahead_of(task)
-      if (nbor%needed) then
-        if (nbor%task%is_ahead_of(task)) then             ! and is ahead in time
-          if (debug1) &
-            write (io_unit%log,'("DBG list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
-              task%id, task%time, '  is OK on', nbor%task%id, nbor%task%time, &
-              nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
-        else                                              ! not ahead in time
-          if (debug1) &
-            write (io_unit%log,'("DBG list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
-              task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
-              nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
-          ok = .false.
-          exit
-        end if
+  !-----------------------------------------------------------------------------
+  ! Only check tasks that are not in the queue, busy, frozen, or external
+  !-----------------------------------------------------------------------------
+  if (task%is_clear(bits%ready+bits%busy+bits%frozen+bits%external)) then
+    if (task%is_set(bits%virtual)) then
+      ok = task%mesg%test_recv()
+      if (ok) then
+        call task%mesg%irecv (task%rank, task%id)
       end if
-      nbor => nbor%next                                   ! next nbor
-    end do
-  end if
-  if (ok) then
-    if (debug) &
-      write (io_unit%output,'("list_t%check_ready:",i5,f10.6,a)') &
-        task%id, task%time, ' succeded'
-    if (task%is_clear(bits%ready+bits%busy+bits%frozen+bits%external)) &
+    else 
+      ok = .true.
+      nbor => link%nbor                                     ! start on nbor list
+      do while (associated (nbor))                          ! keep going until end
+        debug1 = nbor%task%id==io%id_debug
+        if (debug1) write(io_unit%log,*) 'DBG check_ready: id, nbor, needed, ahead', &
+          task%id, nbor%task%id, nbor%needed, nbor%task%is_ahead_of(task)
+        if (nbor%needed) then
+          if (nbor%task%is_ahead_of(task)) then             ! and is ahead in time
+            if (debug1) &
+              write (io_unit%log,'("DBG list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
+                task%id, task%time, '  is OK on', nbor%task%id, nbor%task%time, &
+                nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
+          else                                              ! not ahead in time
+            if (debug1) &
+              write (io_unit%log,'("DBG list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
+                task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
+                nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
+            ok = .false.
+            exit
+          end if
+        end if
+        nbor => nbor%next                                   ! next nbor
+      end do
+    end if
+    if (ok) then
+      if (debug) &
+        write (io_unit%output,'("list_t%check_ready:",i5,f10.6,a)') &
+          task%id, task%time, ' succeded'
       call self%queue_by_time (link)                      ! add task to queue
+    end if
   end if
   call trace%end (itimer)
 END SUBROUTINE check_ready
@@ -547,32 +529,16 @@ SUBROUTINE check_nbors (self, link)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('dispatcher5::check_nbors', itimer=itimer)
-  if (io%verbose > 1) &
-    write (io_unit%log,*) 'checking nbors of',link%task%id,associated(link%nbor)
-  !.... critical (queue_cr)
   task => link%task                                   ! main task
   nbor => link%nbor                                   ! first nbor
   do while (associated (nbor))                        ! keep going until end
-    if (nbor%task%id==io%id_debug) print *, &
-      'task', task%id,' needs task ', nbor%task%id, nbor%needs_me
-!    if (nbor%needs_me) then                          ! needs checking?
-      if (io%verbose > 1) &
-        write (io_unit%log,*) 'check nbor', nbor%task%id
-      call check_ready (self, nbor%link)              ! pointer back
-!    else
-!      if (io%verbose > 1) &
-!        write (io_unit%log,*) 'no need to', nbor%task%id
-!    end if
+    if (verbose > 1 .or. nbor%task%id==io%id_debug) &
+      write(io_unit%log) &
+        'task', task%id,' needs task ', nbor%task%id, nbor%needs_me
+    call check_ready (self, nbor%link)                ! pointer back
     nbor => nbor%next                                 ! next nbor
   end do
-  !-----------------------------------------------------------------------------
-  ! Since we may be called upon to check nbors of a patch that should not itself
-  ! be checked, we check if any bits are set indicating this to be the case
-  !-----------------------------------------------------------------------------
-  if (task%is_clear (bits%external)) then
-    call check_ready (self, link)                     ! finally check link task
-  end if
-  !.... end critical (queue_cr)
+  call check_ready (self, link)                     ! finally check link task
   call trace_end (itimer)
 END SUBROUTINE check_nbors
 
@@ -585,10 +551,10 @@ END SUBROUTINE check_nbors
 SUBROUTINE unpack (self, mesg, link)
   class(task_mesg_t):: self
   class(mesg_t), pointer:: mesg
-  class(link_t), pointer, optional:: link
-  class(link_t), pointer:: link1, link2
+  class(link_t), pointer:: link
+  class(link_t), pointer:: link2
   class(task_t), pointer:: task
-  logical:: found, failed
+  logical:: failed
   integer:: id
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -598,12 +564,7 @@ SUBROUTINE unpack (self, mesg, link)
     return
   end if
   !$omp critical (unpack_cr)
-  if (present(link)) then
-    link1 => link
-  else
-    link1 => task_mesg%find_task (mesg%id)
-  end if
-  task => link1%task
+  task => link%task
   failed = .false.
   !-----------------------------------------------------------------------------
   ! Guard against lingering extra messages to a swapped patch
@@ -619,17 +580,9 @@ SUBROUTINE unpack (self, mesg, link)
     failed = .true.
   end if
   if (task%is_set (bits%ready)) then
-    found = .false.
-    link2 => self%queue
-    do while (associated(link2))
-      if (link2%task%id == task%id) then
-        found = .true.
-        exit
-      end if
-      link2 => link2%next_time
-    end do
-    write (io_unit%log,'(f12.6,2x,a,i9,l3,3x,5l1)') wallclock(), &
-      'task_mesg_mod::unpack ERROR, received mpi_mesg for task with ready bit:', task%id, found, &
+    write (io_unit%log,'(f12.6,2x,a,i9,3x,5l1)') wallclock(), &
+      'task_mesg_mod::unpack ERROR, received mpi_mesg for task with ready bit:', &
+      task%id, &
       task%is_set(bits%internal), &
       task%is_set(bits%boundary), &
       task%is_set(bits%virtual), &
@@ -645,17 +598,6 @@ SUBROUTINE unpack (self, mesg, link)
   !---------------------------------------------------------------------------
   id = task%id
   call task%unpack (mesg)
-  if (mpi_mesg%debug .or. id==io%id_debug) then
-    !$omp critical (debug_cr)
-    write (io_unit%log,'(f12.6,2x,a,2i9,z12,2x,5l1)') wallclock(), &
-      'DBG unpk: id, sender, req =', mesg%id, task%rank, mesg%req, &
-      task%is_set (bits%internal), &
-      task%is_set (bits%boundary), &
-      task%is_set (bits%virtual), &
-      task%is_set (bits%external), &
-      task%is_set (bits%swap_request)
-    !$omp end critical (debug_cr)
-  end if
   if (mpi_mesg%debug) &
     write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6)') wallclock(), 'unpk: id, time =', task%id, task%time
   if (id /= mesg%id) &
@@ -671,9 +613,9 @@ SUBROUTINE unpack (self, mesg, link)
     !---------------------------------------------------------------------------
     if (task%is_set(bits%swap_request) .and. task%is_set(bits%boundary)) then
       self%na = self%na+1; self%nb = self%nb+1; self%nv = self%nv-1
-      call self%init_nbors (link1)
+      call self%init_nbors (link)
       call task%clear (bits%swap_request+bits%ready)
-      call link1%update_nbor_status (link1)
+      call link%update_nbor_status (link)
       call self%count_status
       if (verbose>1) &
         write(io%output,'(f12.6,2x,a,i6,a,i9,a,i6)') &
@@ -690,59 +632,31 @@ SUBROUTINE unpack (self, mesg, link)
     !else if (.not.associated(link%nbor)) then
     else if (task%is_set(bits%swap_request) .and. task%is_set(bits%virtual)) then
       if (verbose>0) &
-        write (io_unit%log,*) 'task_mesg_t%unpack: new virtal patch:', task%id
+        write (io_unit%log,*) 'task_mesg_t%unpack: new virtual patch:', task%id
       self%nv = self%nv+1
-      call self%init_nbors (link1)
+      call self%init_nbors (link)
       call task%clear (bits%swap_request+bits%ready)
-      call link1%update_nbor_status (link1)
+      call link%update_nbor_status (link)
       call self%count_status
     end if
   end if
   !$omp end critical (unpack_cr)
-  !-----------------------------------------------------------------------------
-  ! As the task has now been updated, we need to check if any of the neighbors
-  ! have become ready to update. If the task has just been swapped into being
-  ! a boundary patch, it could possibly also be ready to update.
-  !-----------------------------------------------------------------------------
-  !if (verbose>1) &
-  !  call link1%test_nbor_status
-  if (self%method==0) &
-    call check_nbors (self, link1)
   call trace%end (itimer)
 END SUBROUTINE unpack
 
 !> =============================================================================
+!> Start-up preparation; initialize task message, look for updateable tasks
 !> =============================================================================
-SUBROUTINE startup (self)
-  class(task_list_t):: self
-  !.............................................................................
-  class(link_t), pointer:: link
-  !-----------------------------------------------------------------------------
-  call trace%begin ('dispatcher5::startup')
-  call init_virtual (self)
-  link => self%head
-  do while (associated(link))
-    call link%task%clear(bits%ready)
-    call check_ready (self, link)
-    link => link%next
-  end do
-  call mpi%barrier ('self%execute')
-  call timer%print
-  self%n_tasks = self%na
-  call trace%end
-END SUBROUTINE startup
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE init_virtual (self)
-  class(task_mesg_t):: self
+SUBROUTINE startup (task_list)
+  class(task_list_t):: task_list
   class(link_t), pointer:: link
   class(task_t), pointer:: task
-  !.............................................................................
-  if (mpi%size==1) return
-  call trace%begin ('dispatcher5::init_virtual')
   !-----------------------------------------------------------------------------
-  link => self%head
+  call trace%begin ('dispatcher5::startup')
+  !-----------------------------------------------------------------------------
+  ! Initialize the task message, and request the first package
+  !-----------------------------------------------------------------------------
+  link => task_list%head
   do while (associated(link))
     task => link%task
     if (task%is_set (bits%virtual)) then
@@ -752,24 +666,39 @@ SUBROUTINE init_virtual (self)
     end if
     link => link%next
   end do
+  !-----------------------------------------------------------------------------
+  ! Look for tasks ready to update
+  !-----------------------------------------------------------------------------
+  link => task_list%head
+  do while (associated(link))
+    call link%task%clear(bits%ready)
+    call check_ready (task_list, link)
+    link => link%next
+  end do
+  call timer%print
+  task_list%n_tasks = task_list%na
+  !-----------------------------------------------------------------------------
+  ! This may not be needed, but might avoid initial load balance excursions
+  !-----------------------------------------------------------------------------
+  call mpi%barrier ('task_list%execute')
   call trace%end
-END SUBROUTINE init_virtual
+END SUBROUTINE startup
 
 !> =============================================================================
 !> Among a task and its neighbor tasks, move local tasks to ready_queue if they
 !> are ready, and send task data to non-locals.
 !> =============================================================================
-SUBROUTINE check_all (self)
-  class(list_t):: self
+SUBROUTINE check_all (list)
+  class(list_t):: list
   class(link_t), pointer:: link
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('dispatcer5::check_all', itimer=itimer)
   !$omp critical (list_cr)
-  link => self%head
+  link => list%head
   do while (associated (link))                          ! keep going until end
     call link%task%clear (bits%ready)
-    call check_ready (self, link)                       ! link ready?
+    call check_ready (list, link)                       ! link ready?
     link => link%next
   end do
   !$omp end critical (list_cr)
