@@ -33,7 +33,6 @@ MODULE trace_mod
   integer, private, save:: indent=4                             ! trace indent
   integer, private, save:: level=1                              ! trace level
   !$omp threadprivate(indent,level,tracing,verbosity)
-  real(8), save:: wc0=0d0
 PUBLIC trace_begin, trace_tag, trace_end
 CONTAINS
 
@@ -65,10 +64,7 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
   end if
   write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
   if (io%verbose>=verbose) then
-    if (wc0==0d0) then
-      wc0 = wallclock()
-    end if
-    wc = wallclock()-wc0
+    wc = wallclock()
     if (io_unit%do_validate) wc = 0d0
     if (io%omp_trace) then
       write(io_unit%log,fmt) omp_mythread, wc, trim(id)//' begin'
@@ -93,7 +89,7 @@ SUBROUTINE trace_tag (id)
   verbose = verbosity(level)
   if (io%verbose>=verbose) then
     write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
-    wc = wallclock()-wc0
+    wc = wallclock()
     level  = max(level-1,1)
     if (io%omp_trace) then
       write(io_unit%log,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
@@ -126,7 +122,7 @@ SUBROUTINE trace_end (itimer)
   verbose = verbosity(level)
   if (io%verbose>=verbose) then
     write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
-    wc = wallclock()-wc0
+    wc = wallclock()
     if (io_unit%do_validate) wc = 0d0
     if (io%omp_trace) then
       write(io_unit%log,fmt) omp_mythread, wc, trim(tracing(level))//' end'
