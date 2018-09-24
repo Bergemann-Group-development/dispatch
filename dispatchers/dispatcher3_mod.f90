@@ -20,24 +20,6 @@
 !> in each state, by incrementing the count for the new state and decrementing
 !> the count for the old state, whenever the state changes. These counts should
 !> be part of the dispatcher data type.
-!>
-!> On the balance between spawning tasks for other treads and actually working
-!> on an update:  If a process has N threads, and has N tasks active, evenly
-!> spread in their progress, then essentially all of these tasks will have
-!> finished updating while the master thread works on its update.  Hence there
-!> must be approximately N additional tasks spawned, but not yet busy updating.
-!> Hence, the criterion for the master thread to take on work itself is that
-!> there are at least N tasks in state 2 (not counting those in state 3 or 4).
-!>
-!> If the master thread is unable to find enough tasks in state 1 for it to be
-!> able to reach N in state 2, then it is certainly not a good idea to take on
-!> one of the tasks, since there is already a surplus of threads available.
-!>
-!> If, on the other hand, there is only single task available in state 2, then
-!> it IS a good idea to let the master thread update it, since it then has some
-!> useful work to do, while other tasks are finishing, so when the master thread
-!> looks at the situation again, there are likely to be a number of new tasks
-!> ready to be updated.
 !> =============================================================================
 MODULE dispatcher3_mod
   USE io_mod
@@ -72,8 +54,7 @@ MODULE dispatcher3_mod
   integer(8):: n_check=0, n_ready=0
   real(8):: wc_failed=0d0
   real(8):: start
-  logical:: use_critical=.true.
-  logical:: use_taskyield=.false.
+  logical:: use_critical=.false.
   type(dispatcher3_t), public:: dispatcher3
 CONTAINS
 
@@ -83,7 +64,7 @@ SUBROUTINE init (self, task_list)
   class(dispatcher3_t):: self
   type(task_list_t), pointer:: task_list
   integer:: iostat
-  namelist /dispatcher3_params/ verbose, use_critical, use_taskyield, n_write
+  namelist /dispatcher3_params/ verbose, use_critical, n_write
   !.............................................................................
   rewind (io%input); read (io%input, dispatcher3_params, iostat=iostat)
   if (io%master) write (io%output, dispatcher3_params)
@@ -99,7 +80,9 @@ SUBROUTINE init (self, task_list)
 END SUBROUTINE init
 
 !> =============================================================================
-!> Simple dispatcher, which spawns other threads that handle tasks that are ready
+!> Simple dispatcher, which spawns other threads that handle tasks that are
+!> ready. If / when the master thread has spawned a number of tasks that depend
+!> on the implementation, it will participate in execution of the tasks.
 !> =============================================================================
 SUBROUTINE execute (self, task_list, test)
   class(dispatcher3_t):: self
@@ -128,13 +111,13 @@ SUBROUTINE execute (self, task_list, test)
     !---------------------------------------------------------------------------
     call task_list%check_mpi()
     !---------------------------------------------------------------------------
-    ! Run through the task list, looking for and counting tasks that are ready
+    ! Run through the task list, looking for tasks that are ready
     !---------------------------------------------------------------------------
     fell_through = .true.
     link => task_list%head
     do while (associated(link))
       task => link%task
-      if (.not.task%is_set (bits%virtual)) then
+      if (task%is_clear (bits%virtual)) then
         !-----------------------------------------------------------------------
         ! If task is updated, set it to idle; this should ONLY be done by the
         ! master thread
@@ -146,18 +129,8 @@ SUBROUTINE execute (self, task_list, test)
         ! If task is idle, check if it is ready to update
         !-----------------------------------------------------------------------
         if (task%state==0) then
-          if (is_ready (link)) then
+          if (is_ready (link)) &
             call set_state (link%task, 1)
-          else if (link%task%time == 0.0_8) then
-            write(io_unit%queue,*) link%task%id, 'ERROR: at time=0, but not ready!'
-            nbor => link%nbor
-            do while (associated(nbor))
-              write(io_unit%queue,'(i7,i3,2f10.6,2x,2l3)') &
-                nbor%task%id, nbor%task%state, (nbor%task%time-link%task%time), nbor%task%dtime, &
-                nbor%needed, nbor%task%is_ahead_of (link%task)
-              nbor => nbor%next
-            end do
-          end if
         end if
         !-----------------------------------------------------------------------
         ! If task is ready to update, spawn a background task
@@ -179,9 +152,9 @@ SUBROUTINE execute (self, task_list, test)
       link => link%next
     end do
     !---------------------------------------------------------------------------
-    ! Start a thread doing I/O, if pending
+    ! Start a thread doing I/O, if buffers from all tasks pending
     !---------------------------------------------------------------------------
-    if (mpi_io%iwrite_list%n > 0) then
+    if (mpi_io%iwrite_list%n == io%nwrite) then
       !$omp task default(shared)
       call mpi_io%iwrite_list%check()
       !$omp end task
@@ -194,12 +167,7 @@ SUBROUTINE execute (self, task_list, test)
     if (fell_through) then
       if (verbose>3) print *,'dispatcher3: fell through'
       wc_failed = wc_failed + (wallclock()-start_fail - start_iter)
-      if (use_taskyield) then
-        n_fail = n_fail+1
-        !$omp taskyield
-      else
-        n_fail = n_fail+1
-      end if
+      n_fail = n_fail+1
     else
       if (n_fail>0 .and. verbose>0) &
         call print_state ('2')
@@ -286,7 +254,7 @@ SUBROUTINE set_state (task, in)
      write (io%output,'(a,i4,f12.6,2x,5i4,2x,2i3)') &
        ' dispatcher3:', omp%thread, wallclock(), n_state, ip, in
   end if
-END SUBROUTINE
+END SUBROUTINE set_state
 
 !> =============================================================================
 !> Check if a task is ready to update, by changing if all nbor task are "ahead

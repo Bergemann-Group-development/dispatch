@@ -86,15 +86,6 @@ SUBROUTINE init (self)
     mpi_mesg%queue_unpack = .false.
   case (3)
     self%method => method3
-    !---------------------------------------------------------------------------
-    ! This method uses send_priv=.false., collecting a list of sent messages in
-    ! the shared mpi_mesg%sent_list.  No other mpi_mesg attribute is relevant, 
-    ! but for good measure we nevertheless set them accordingly.
-    !---------------------------------------------------------------------------
-    mpi_mesg%send_priv    = .false.
-    mpi_mesg%recv_priv    = .false.
-    mpi_mesg%recv_active  = .true.
-    mpi_mesg%queue_unpack = .false.
   case (4)
     self%method => method4
     !---------------------------------------------------------------------------
