@@ -474,10 +474,14 @@ SUBROUTINE check_ready (self, link)
   !-----------------------------------------------------------------------------
   if (task%is_clear(bits%ready+bits%busy+bits%frozen+bits%external)) then
     if (task%is_set(bits%virtual)) then
+      !$omp critical (irecv_cr)
       ok = task%mesg%test_recv()
       if (ok) then
-        call task%mesg%irecv (task%rank, task%id)
+        if (task%mesg%req==0) then
+          call task%mesg%irecv (task%rank, task%id)
+        end if
       end if
+      !$omp end critical (irecv_cr)
     else 
       ok = .true.
       nbor => link%nbor                                     ! start on nbor list
