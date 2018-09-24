@@ -323,8 +323,8 @@ SUBROUTINE check (self)
   class(dll_node_t), pointer:: node, next
   class(iwrite_t), pointer:: item
   integer:: status(MPI_STATUS_SIZE), err
-  integer, save:: itimer=0, nprint=10
-  integer:: done, omp_get_thread_num
+  integer, save:: itimer=0, nprint=3
+  integer:: done, omp_get_thread_num, rec
   logical:: ok
   real(8):: start, wc, dwc
   !-----------------------------------------------------------------------------
@@ -366,13 +366,15 @@ SUBROUTINE check (self)
         item => node
         if (associated(item%buffer)) then
           wc = wallclock()
-          call MPI_file_write_at (item%handle, item%pos, item%buffer, &
-                                  item%words, MPI_REAL, status, err)
+          !call MPI_file_write_at (item%handle, item%pos, item%buffer, &
+          !                        item%words, MPI_REAL, status, err)
+          rec = 1 + item%pos/item%words/4
+          write (io_unit%direct, rec=rec) item%buffer
           deallocate (item%buffer)
           if (nprint > 0) then
             nprint = nprint-1
             dwc = wallclock()-wc
-            write(io%output,*) 'MPI_File_write_at time =', dwc
+            write(io%output,'(10x,a,f12.6)') 'patch write time:', dwc
           end if
           !---------------------------------------------------------------------
           ! Spin for similar time, to yield to other MPI processes
@@ -400,8 +402,8 @@ SUBROUTINE check (self)
       !!omp end critical (iwrite_cr)
     end do
     if (verbose > 0) &
-      write(io%output,'(1p,g14.6,i6,3x,a,i7,g11.3," s")') &
-        wallclock(), self%thread, 'I/O final =', done, wallclock()-start
+      write(io%output,'(1p,g14.6,i6,3x,a,i6,f12.3," s")') &
+        wallclock(), self%thread, 'I/O final, n =', done, wallclock()-start
     !!omp critical (iwrite_cr)
     self%thread = -1
     !!omp end critical (iwrite_cr)

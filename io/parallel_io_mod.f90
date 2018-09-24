@@ -38,6 +38,7 @@ SUBROUTINE init (patch)
   character(len=5):: snapname
   character(len=120):: filename
   logical:: exists
+  integer:: recl
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%init')
   call mpi_io%init
@@ -63,6 +64,15 @@ SUBROUTINE init (patch)
   end if
   if (mpi%master) print *,'output file: ',filename
   call file_out%openw (filename)
+  !-----------------------------------------------------------------------------
+  if (io%guard_zones) then
+    recl = patch%nv*product(patch%gn)*4
+  else
+    recl = patch%nv*product(patch%n)*4
+  end if
+  print *, 'open:', trim(filename), recl
+  open (unit=io_unit%direct, file=filename, access='direct', recl=recl, &
+    status='unknown')
   call trace%end
 END SUBROUTINE init
 
