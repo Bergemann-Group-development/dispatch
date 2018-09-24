@@ -247,22 +247,24 @@ END SUBROUTINE gravity
 SUBROUTINE update_tmp (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
-  if (.not. selfgravity) return
   call trace%begin ('gpatch_t%update')
-  if (self%poisson_time == self%time) then
-    !call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
-    call self%rotate
-    self%rotated = .true.
-    if (verbose>0) &
-      print *, self%id, 'gpatch_t%update updated self%time to', self%time
-  else
-    call self%dnload (only=self%idx%d)
-    call self%dnload (only=self%idx%phi)
-    call self%gravity
-    self%poisson_time = self%time
-    self%rotated = .true.
-    if (verbose>0) &
-      print *, self%id, 'gpatch_t%update updated self%poisson_time to', self%poisson_time
+  timer%n_update = timer%n_update + product(self%n)
+  if (selfgravity) then
+    if (self%poisson_time == self%time) then
+      !call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
+      call self%rotate
+      self%rotated = .true.
+      if (verbose>0) &
+        print *, self%id, 'gpatch_t%update updated self%time to', self%time
+    else
+      call self%dnload (only=self%idx%d)
+      call self%dnload (only=self%idx%phi)
+      call self%gravity
+      self%poisson_time = self%time
+      self%rotated = .true.
+      if (verbose>0) &
+        print *, self%id, 'gpatch_t%update updated self%poisson_time to', self%poisson_time
+    end if
   end if
   call trace%end
 END SUBROUTINE update_tmp

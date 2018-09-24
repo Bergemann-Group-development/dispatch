@@ -248,7 +248,7 @@ SUBROUTINE update (self, head, test, was_refined)
   end if
   select type (task)
   class is (patch_t)
-    timer%n_update = timer%n_update + product(task%n)
+    !timer%n_update = timer%n_update + product(task%n)
   end select
   call task%info (self%nq, self%na)                   ! print info on stdout
   !-----------------------------------------------------------------------------
