@@ -907,12 +907,13 @@ FUNCTION test_recv (self) RESULT (flag)
       wc = wallclock()
       call MPI_TEST (self%req, flag, stat, ierr)
       dwc = wallclock()-wc
-      if (dwc > 1d-2) &
+      if (dwc > 0.1) &
         write(io%output,'(f12.6,2x,a,f12.6)') wc, 'WARNING: MPI_Test time =', dwc
     end if
   end if
   if (flag) then
     self%id = stat(MPI_TAG)
+    self%req = 0
   end if
   !$omp atomic write
   self%test_next = now + test_time

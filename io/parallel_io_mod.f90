@@ -63,16 +63,13 @@ SUBROUTINE init (patch)
     filename=trim(io%outputname)//'snapshots.dat'
   end if
   if (mpi%master) print *,'output file: ',filename
-  call file_out%openw (filename)
   !-----------------------------------------------------------------------------
   if (io%guard_zones) then
     recl = patch%nv*product(patch%gn)*4
   else
     recl = patch%nv*product(patch%n)*4
   end if
-  print *, 'open:', trim(filename), recl
-  open (unit=io_unit%direct, file=filename, access='direct', recl=recl, &
-    status='unknown')
+  call file_out%openw (filename, recl)
   call trace%end
 END SUBROUTINE init
 

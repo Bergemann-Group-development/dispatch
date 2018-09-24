@@ -91,6 +91,7 @@ MODULE mpi_io_mod
   end type
   character(len=32), save:: fmt='(1x,a,4i8,1p,5e12.3)'
   integer, save:: verbose=1
+  logical, save:: direct=.false.
   type(mpi_io_t), public:: mpi_io
 CONTAINS
 
@@ -111,8 +112,19 @@ END SUBROUTINE use
 !> =============================================================================
 SUBROUTINE init (self)
   class(mpi_io_t):: self
+  integer:: iostat
+  logical, save:: first_time=.true.
+  namelist /mpi_io_params/ verbose, direct
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%init')
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, mpi_io_params, iostat=iostat)
+    if (io%master) write (io%output, mpi_io_params)
+  end if
+  !$omp end critical (input_cr)
   !$omp critical (iwrite_cr)
   if (self%iwrite_list%first_time) then
     self%iwrite_list%first_time = .false.
@@ -352,7 +364,7 @@ SUBROUTINE check (self)
   !-----------------------------------------------------------------------------
   if (ok) then
     if (verbose > 0) &
-      write(io%output,'(1p,g14.6,i6,3x,a,i7)') &
+      write(io%output,'(1p,g14.6,i6,3x,a,i6)') &
         wallclock(), self%thread, 'I/O start, n =', self%n
     start = wallclock()
     done = 0
@@ -366,15 +378,22 @@ SUBROUTINE check (self)
         item => node
         if (associated(item%buffer)) then
           wc = wallclock()
-          !call MPI_file_write_at (item%handle, item%pos, item%buffer, &
-          !                        item%words, MPI_REAL, status, err)
-          rec = 1 + item%pos/item%words/4
-          write (io_unit%direct, rec=rec) item%buffer
+          if (direct) then
+            rec = 1 + item%pos/item%words/4
+            write (io_unit%direct, rec=rec) item%buffer
+          else
+            call MPI_file_write_at (item%handle, item%pos, item%buffer, &
+                                    item%words, MPI_REAL, status, err)
+          end if
           deallocate (item%buffer)
           if (nprint > 0) then
             nprint = nprint-1
             dwc = wallclock()-wc
-            write(io%output,'(10x,a,f12.6)') 'patch write time:', dwc
+            if (direct) then
+              write(io%output,'(10x,a,f12.6)') 'direct access write time:', dwc
+            else
+              write(io%output,'(10x,a,f12.6)') 'MPI_File_write_at time:', dwc
+            end if
           end if
           !---------------------------------------------------------------------
           ! Spin for similar time, to yield to other MPI processes
@@ -402,7 +421,7 @@ SUBROUTINE check (self)
       !!omp end critical (iwrite_cr)
     end do
     if (verbose > 0) &
-      write(io%output,'(1p,g14.6,i6,3x,a,i6,f12.3," s")') &
+      write(io%output,'(1p,g14.6,i6,3x,a,i6,0p,f12.3," s")') &
         wallclock(), self%thread, 'I/O final, n =', done, wallclock()-start
     !!omp critical (iwrite_cr)
     self%thread = -1

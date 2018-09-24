@@ -65,15 +65,21 @@ END SUBROUTINE open
 !> Open a file for writing, relieving the user from having to remember (and
 !> having access to) the appropriate mode integers
 !> =============================================================================
-SUBROUTINE openw (self, filename)
+SUBROUTINE openw (self, filename, recl)
   class(mpi_io_file_t):: self
   character(len=*) filename
+  integer, optional:: recl
   integer mode
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%openw')
 #ifdef MPI
   call self%open (filename, MPI_MODE_CREATE + MPI_MODE_RDWR)
 #endif
+  if (present(recl)) then
+    write (io%output,*) 'open:', trim(filename), recl
+    open (unit=io_unit%direct, file=filename, access='direct', recl=recl, &
+      status='unknown')
+  end if
   call trace%end
 END SUBROUTINE openw
 
