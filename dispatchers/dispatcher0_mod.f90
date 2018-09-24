@@ -161,7 +161,8 @@ SUBROUTINE update (self, task_list, test)
   head => task_list%queue                                    ! queue start
   if (associated(head) .and. .not.task_list%syncing) then
     if (verbose > 0) &
-      write(io_unit%log,'(f12.6,i6,i7)') wallclock(), task_list%na, head%task%id
+      write(io_unit%log,'(f12.6,2x,a,i6,i7)') wallclock(), &
+        'dispather0::update: na, id =',task_list%na, head%task%id
     !---------------------------------------------------------------------------
     ! If the patch mem was OMP placed, search ready queue for matching thread
     !---------------------------------------------------------------------------

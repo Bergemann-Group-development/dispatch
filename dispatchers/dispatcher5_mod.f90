@@ -603,9 +603,14 @@ SUBROUTINE unpack (self, mesg, link)
   id = task%id
   call task%unpack (mesg)
   if (mpi_mesg%debug) &
-    write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6)') wallclock(), 'unpk: id, time =', task%id, task%time
-  if (id /= mesg%id) &
-    write(io%output,*) 'unpack ERROR: wrong mesg%id', id, task%id, mesg%id
+    write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6)') wallclock(), &
+      'unpk: id, time =', task%id, task%time
+  if (id /= mesg%id) then
+    write(io%output,'(i6,i4,2x,a,3i6)') mpi%rank, omp%thread, &
+      'unpack ERROR: wrong mesg%id', id, task%id, mesg%id
+    write(io_unit%log,'(f12.6,i6,i4,2x,a,4i6)') wallclock(), mpi%rank, &
+      omp%thread, 'unpack ERROR: wrong mesg%id', mesg%sender, id, task%id, mesg%id
+  end if
   if (.not. failed) then
     !$omp atomic
     mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
