@@ -919,10 +919,10 @@ FUNCTION test_recv (self) RESULT (flag)
   self%test_next = now + test_time
   !$omp atomic
   timer%n_test = timer%n_test + 1
+  call trace%end (itimer)
 #else
   flag = .true.
 #endif
-  call trace%end (itimer)
 END FUNCTION test_recv
 
 !> =============================================================================
