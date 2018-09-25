@@ -16,7 +16,6 @@ MODULE mhd_mod
   USE viscosity_mod
   USE index_mod
   USE timestep_mod
-  USE planet_mod
   USE eos_mod
   USE non_ideal_mod
   implicit none

@@ -14,7 +14,6 @@ MODULE force_mod
   USE stagger_mod
   USE scalar_mod
   USE scaling_mod
-  USE star_mod
   USE potential_mod
   USE parameters_mod
   implicit none
