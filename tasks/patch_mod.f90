@@ -1827,7 +1827,7 @@ END SUBROUTINE stats_patch
 !> =============================================================================
 SUBROUTINE stats_scalar (self, var, label)
   class (patch_t):: self
-  real, dimension(:,:,:), pointer:: var
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: var
   character(len=*):: label
   !.............................................................................
   real(8), dimension(4):: si, sb
@@ -1843,7 +1843,7 @@ END SUBROUTINE stats_scalar
 !> =============================================================================
 SUBROUTINE stats_vector (self, var, label)
   class (patch_t):: self
-  real, dimension(:,:,:,:), pointer:: var
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: var
   character(len=*):: label
   !.............................................................................
   integer:: iv
@@ -1862,7 +1862,7 @@ END SUBROUTINE stats_vector
 SUBROUTINE scalar_stats (f, l, u, s)
   real(kind=KindScalarVar), dimension(:,:,:):: f
   integer:: l(3), u(3)
-  real(8):: s(4)
+  real(8), dimension(4):: s
   integer:: ix, iy, iz
   s(2) = 0d0
   s(3) = 0d0
