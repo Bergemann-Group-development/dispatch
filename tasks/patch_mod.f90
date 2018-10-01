@@ -184,6 +184,7 @@ MODULE patch_mod
   end type
   logical, save:: extrapolate_gz=.false.
   logical, save:: do_check_nan=.false.
+  logical, save:: panic=.false.
   logical, save:: zero_order_extrap=.true.
   public task2patch
 CONTAINS
@@ -1662,8 +1663,9 @@ SUBROUTINE check_nan (self, label, always)
   logical:: nan
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (.not. do_check_nan) return
-  if (io%verbose<1 .and. .not. present(always)) return
+  if (.not. do_check_nan) then
+    if (io%verbose<1 .and. .not. present(always)) return
+  end if
   if (.not. associated(self%mem)) return
   call trace%begin ('patch_t%check_nan', itimer=itimer)
   if (io%verbose>1) then
@@ -1682,7 +1684,7 @@ SUBROUTINE check_nan (self, label, always)
   do iz=1,self%gn(3)
   do iy=1,self%gn(2)
   do ix=1,self%gn(1)
-    if (isnan(self%mem(ix,iy,iz,iv,self%it,1))) then
+    if (isinf(self%mem(ix,iy,iz,iv,self%it,1))) then
       if (io%verbose>0) then
         if (present(label)) then
           write(io%output,1) trim(label)//' ERROR: NaN id,ix,iy,iz,iv:', &
@@ -1700,6 +1702,7 @@ SUBROUTINE check_nan (self, label, always)
   end do
   end do
   if (nan) then
+    panic = .true.
     if (present(label)) then
       write(io%output,*) self%id, trim(label)//' ERROR NaN, min(d), max(d):', &
         minval(self%mem(:,:,:,self%idx%d,self%it,1)), &
@@ -1715,6 +1718,11 @@ SUBROUTINE check_nan (self, label, always)
   call trace%end (itimer)
 END SUBROUTINE check_nan
 
+LOGICAL FUNCTION isinf(a)
+  real(kind=KindScalarVar):: a
+  isinf = isnan(a) .or. (abs(a) > huge(1.0_KindScalarVar))
+END FUNCTION isinf
+
 !> =============================================================================
 !> Check if the density is negative somewhere, counting points in the interior
 !> and guard zones separately.  Attempt to patch the guard zones, if applicable.
@@ -1724,11 +1732,11 @@ SUBROUTINE check_density (self, label)
   character(len=*), optional:: label
   real(kind=KindScalarVar):: mind, posd
   real:: tiny = 1.0e-32
-  integer:: ix, iy, iz, iv, ii(3), ntot, nins, l(3), u(3)
+  integer:: ix, iy, iz, iv, ii(3), ntot, nins, l(3), u(3), it, jt, iw
   logical:: inside, nan
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (io%verbose < 1) return
+  if (io%verbose < 1 .and. .not.do_check_nan) return
   if (self%is_set(bits%no_density)) return
   if (.not. associated(self%mem)) return
   call trace%begin ('patch_t%check_density', itimer=itimer)
@@ -1737,6 +1745,7 @@ SUBROUTINE check_density (self, label)
   mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1))
   if (present(label) .and. io%verbose>1) write (io_unit%log,*) label, self%id, mind
   if (mind <= 0.0) then
+    panic = .true.
     !---------------------------------------------------------------------------
     ! Negative densities appear to develop at a few points in the guard zones,
     ! so this tries to patch up, sampling densitites in the guard zone.
@@ -1774,6 +1783,22 @@ SUBROUTINE check_density (self, label)
     end if
   end if
   call self%check_nan (label)
+  !-----------------------------------------------------------------------------
+  ! If error indicated by check_density or check_nan, dump the patch and abort
+  !-----------------------------------------------------------------------------
+  if (panic) then
+    !$omp critical (panic_cr)
+    write (io_unit%dump) self%id, self%gn, self%nv, self%nt, self%nw, self%istep
+    write (io_unit%dump) self%time, self%dtime
+    do iw=1,self%nw
+    do it=1,self%nt
+      jt = self%iit(it)
+      write (io_unit%dump) self%mem(:,:,:,:,jt,iw)
+    end do
+    end do
+    !$omp end critical (panic_cr)
+    call io%abort ('panic')
+  end if
   call trace%end (itimer)
 END SUBROUTINE check_density
 

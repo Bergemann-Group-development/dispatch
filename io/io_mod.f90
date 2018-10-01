@@ -135,6 +135,7 @@ SUBROUTINE init (self, name)
     self%outputname = self%rundir                               ! compatibility
     call os%mkdir (trim(self%rundir))
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
+    open (io_unit%dump, file=trim(self%rundir)//'dump.dat', form='unformatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
     !---------------------------------------------------------------------------
     ! Read io_params namelist
