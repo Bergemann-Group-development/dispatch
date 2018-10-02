@@ -198,8 +198,8 @@ SUBROUTINE boundary_condition (self)
         px(ix,iy,ui(3)) = px(ix,iy,ui(3))*(1.-bottom_bc_rate)
         py(ix,iy,ui(3)) = py(ix,iy,ui(3))*(1.-bottom_bc_rate)
       end if
-      dlnddz = log(d(ix,iy,ui(3))/d(ix,iy,ui(3)-2))/(z(ui(3)-z(ui(3)-2)))
-      dlnedz = log(e(ix,iy,ui(3))/e(ix,iy,ui(3)-2))/(z(ui(3)-z(ui(3)-2)))
+      dlnddz = log(d(ix,iy,ui(3))/d(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
+      dlnedz = log(e(ix,iy,ui(3))/e(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
       d_ratio = exp((z(iz)-z(ui(3)))*dlnddz)
       d (ix,iy,iz) = d (ix,iy,ui(3))*d_ratio
       px(ix,iy,iz) = px(ix,iy,ui(3))*d_ratio
