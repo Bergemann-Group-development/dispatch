@@ -8,6 +8,7 @@ MODULE download_mod
   USE io_mod
   USE io_unit_mod
   USE omp_mod
+  USE omp_timer_mod
   USE mpi_mod
   USE bits_mod
   USE kinds_mod
@@ -318,6 +319,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   integer:: edges, l(3), u(3)
   integer, save:: itimer=0
   integer(kind=int8), dimension(:,:,:,:), allocatable:: filled
+  real(8):: wc(0:4)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link', itimer=itimer)
   target => task2patch(link%task)
@@ -347,9 +349,13 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   ! Walk through the sorted neighbor list
   !!!nbor => sorted_head
   !call link%print_nbors ('download')
+  wc = 0d0
   nbor => link%nbor
   do while (associated(nbor))
+   wc(0) = wallclock()
    source => task2patch(nbor%task)
+   call source%lock%set
+   wc(1) = wc(1) + wallclock() - wc(0)
    if (verbose > 1) &
      write(io_unit%log,*) target%id, 'download_t%download_link: source, download =', &
        source%id, nbor%download
@@ -394,9 +400,18 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       end if
     end if
    end if
+   wc(2) = wc(2) + wallclock() - wc(0)
+   call source%lock%unset
+   wc(3) = wc(3) + wallclock() - wc(0)
+   wc(4) = wc(4) + 1d0
    nbor => nbor%next
   end do
-
+  if (verbose > 0) then
+    wc(3) = wc(3)-wc(2)
+    wc(2) = wc(2)-wc(1)
+    write (io%output,'(a,6p,3f7.1,i6)') &
+      'lock%set, source use, lock%unset =', wc(1:3)/wc(4), nint(wc(4))
+  end if
   if (present(only)) then
     if (only==target%idx%d) then
       call target%check_density (" after download")

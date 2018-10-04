@@ -1,15 +1,15 @@
 ! $Id$
 !> =============================================================================
 MODULE omp_lock_mod
-  USE io_unit_mod
   USE omp_mod
   USE omp_lib
-  USE omp_timer_mod
+!  USE trace_mod
   implicit none
   private
   type, public:: lock_t
-    integer:: id=0
+    integer:: id=-1
     integer(kind=omp_lock_kind):: lock
+    integer:: thread=-1
     character(len=4):: kind
   contains
     procedure:: init
@@ -19,109 +19,116 @@ MODULE omp_lock_mod
     procedure:: destroy
   end type
   type(lock_t), public:: lock
-  integer:: id=0
-  logical:: debug=.false.
-  real(8):: wc0=0d0
+  integer, save:: id_save=-1
 CONTAINS
 
 !> =============================================================================
 !> Initialize a lock, taking care not to do it more than once
 !> =============================================================================
-SUBROUTINE init (self, kind)
+SUBROUTINE init (self, kind, id)
   class(lock_t):: self
+  integer, optional:: id
   character(len=4), optional:: kind
   logical omp_in_parallel
   !-----------------------------------------------------------------------------
-  !$omp critical
-  if (self%id == 0) then
+  !$omp critical (lock_cr)
+  if (self%id == -1) then
     call omp_init_lock (self%lock)
-    id = id+1
-    self%id = id
+    if (present(id)) then
+      self%id = id
+      id_save = max(id_save,id)
+    else
+      id_save = id_save+1
+      self%id = id_save
+    end if
     if (present(kind)) self%kind = kind
+    !print *, omp_get_thread_num(), 'initialized lock id', self%id
   end if
-  !$omp end critical
+  !$omp end critical (lock_cr)
 END SUBROUTINE init
 
+!> =============================================================================
+!> Return with the lock, waiting of necessary
 !> =============================================================================
 SUBROUTINE set (self, label)
   class(lock_t):: self
   character(len=*), optional:: label
   character(len=32):: filename
+  integer:: thread
   !-----------------------------------------------------------------------------
-  if (omp_test_lock (self%lock)) then
-    if (debug) then
-      if (present(label)) then
-        write (log_unit,'(f15.7,2x,a,i14,1x,a)') wallclock()-wc0, '  set lock', self%id, self%kind//': '//trim(label)
-        flush (log_unit)
-      else
-        write (log_unit,'(f15.7,2x,a,i14,1x,a)') wallclock()-wc0, '  set lock', self%id, self%kind
-        flush (log_unit)
-      end if
-      flush(6)
-    end if
-  else
-    if (debug) then
-      if (present(label)) then
-        write (log_unit,'(f15.7,2x,a,i14,1x,a)') wallclock()-wc0, ' wait lock', self%id, self%kind//': '//trim(label)
-        flush (log_unit)
-      else
-        write (log_unit,'(f15.7,2x,a,i14,1x,a)') wallclock()-wc0, ' wait lock', self%id, self%kind
-        flush (log_unit)
-      end if
-      flush(6)
-    end if
+  !call trace%begin('dispatcher6::set')
+  thread = omp_get_thread_num()
+  !print *, thread, ' set begin id, thread', self%id, self%thread
+  if (.not. self%test()) then
     call omp_set_lock (self%lock)
-    if (debug) then
-      if (present(label)) then
-        write (log_unit,'(f15.7,2x,a,i14,1x,a)') wallclock()-wc0, '  set lock', self%id, self%kind//': '//trim(label)
-        flush (log_unit)
-      else
-        write (log_unit,'(f15.7,2x,a,i14,1x,a)') wallclock()-wc0, '  set lock', self%id, self%kind
-        flush (log_unit)
-      end if
-      flush(6)
-    end if
+    self%thread = thread
+    !print *, thread, ' set has lock id', self%id, self%thread
+    !$omp flush
   end if
+  !print *, thread, ' set end id, thread', self%id, self%thread
+  !call trace%end()
 END SUBROUTINE set
 
+!> =============================================================================
+!> Return true if we already have the lock, or if we get it now
 !> =============================================================================
 FUNCTION test (self) RESULT (out)
   class(lock_t):: self
   logical:: out
+  integer:: thread
   !-----------------------------------------------------------------------------
-  if (debug) then
-    write (log_unit,'(f15.7,2x,a,i14,1x,a)') wallclock()-wc0, ' test lock', self%id, self%kind
-    flush (log_unit)
+  !call trace%begin('dispatcher6::test')
+  thread = omp_get_thread_num()
+  !print *, thread, ' set lock id, thread', self%id, self%thread
+  !$omp flush
+  !print *, thread, ' testing lock id', self%id, self%thread
+  if (thread == self%thread) then
+    out = .true.
+    !print *, thread, ' already has lock id', self%id
+  else
+    !print *, thread, ' omp_test_lock for id', self%id
+    out =  omp_test_lock (self%lock)
+    if (out) then
+      self%thread = thread
+      !print *, thread, ' test has lock id', self%id, self%thread
+    else
+      !print *, thread, ' failed to acquire lock id', self%id, self%thread
+    end if
   end if
-  out =  omp_test_lock (self%lock)
+  !$omp flush
+  !call trace%end()
 END FUNCTION test
 
+!> =============================================================================
+!> Unset the associated thread number and relase the lock (in that order!)
 !> =============================================================================
 SUBROUTINE unset (self, label)
   class(lock_t):: self
   character(len=*), optional:: label
+  integer:: thread
   !-----------------------------------------------------------------------------
-  if (debug) then
-    if (present(label)) then
-      write (log_unit,'(f15.7,2x,a,i14,1x,a)') wallclock()-wc0, 'unset lock', self%id, self%kind//': '//trim(label)
-      flush (log_unit)
-    else
-      write (log_unit,'(f15.7,2x,a,i14,1x,a)') wallclock()-wc0, 'unset lock', self%id, self%kind
-      flush (log_unit)
-    end if
+  !call trace%begin('dispatcher6::unset')
+  thread = omp_get_thread_num()
+  !$omp flush
+  if (self%thread == thread) then
+    !print *, self%thread, ' releases lock id', self%id
+    self%thread = -1
+    call omp_unset_lock (self%lock)
+  else if (self%thread == -1) then
+    print *, thread, 'ERROR: trying to release unlocked lock id', self%id
+  else
+    print *, thread, 'ERROR: trying to release lock of thread', self%thread, self%id
   end if
-  call omp_unset_lock (self%lock)
+  !$omp flush
+  !call trace%end()
 END SUBROUTINE unset
 
 !> =============================================================================
 SUBROUTINE destroy (self)
   class(lock_t):: self
   !-----------------------------------------------------------------------------
-  if (debug) then
-    print*, omp_mythread,' destr lock', self%id, self%kind
-    flush(6)
-  end if
   call omp_destroy_lock (self%lock)
+  self%thread = -1
 END SUBROUTINE destroy
 
 !> =============================================================================

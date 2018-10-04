@@ -97,7 +97,7 @@ SUBROUTINE init (self, name)
     self%name = name
     write (io_unit%log,*)'init_list: ', name
   end if
-  call self%lock%init (self%kind)
+  call self%lock%init (self%kind, id=0)
   call trace_end
 END SUBROUTINE init
 

@@ -204,6 +204,8 @@ SUBROUTINE init (self)
     omega%rank = self%rank
     ! -- assign unique and globally valid ID
     omega%id = self%id + mpi%size*(1 + io%ntotal/mpi%size + i_omega)
+    omega%lock%id = -1
+    call omega%lock%init (id=omega%id)
     omega%track   = .false.
     omega%kind    = 'rt_t'   ! to be used in data_io_mod
     omega%nt      = nt
@@ -834,7 +836,7 @@ END FUNCTION is_ahead_of
 
 !> =============================================================================
 !> Return true if the patch is the horizontally closest to a give position, or
-!> if the patch ID equals io%id_debug, unlesslevel is less than verbose.
+!> if the patch ID equals io%id_debug, unless level is less than verbose.
 !> =============================================================================
 FUNCTION debug (self, level) RESULT (yes)
   class(rt_t):: self

@@ -13,6 +13,7 @@ MODULE dispatcher_mod
   USE dispatcher3_mod
   USE dispatcher4_mod
   USE dispatcher5_mod
+  USE dispatcher6_mod
   USE mpi_mesg_mod
   USE data_io_mod
   implicit none
@@ -99,6 +100,8 @@ SUBROUTINE init (self)
     mpi_mesg%queue_unpack = .false.
   case (5)
     self%method => method5
+  case (6)
+    self%method => method6
   case default
     call io%abort ('unknown method in dispatcher_mod')
   end select
@@ -180,5 +183,12 @@ SUBROUTINE method5 (task_list)
   if (test) call set_io
   call dispatcher5%execute (task_list, test)
 END SUBROUTINE method5
+
+!> =============================================================================
+SUBROUTINE method6 (task_list)
+  type(task_list_t), pointer:: task_list
+  if (test) call set_io
+  call dispatcher6%execute (task_list, test)
+END SUBROUTINE method6
 
 END MODULE dispatcher_mod

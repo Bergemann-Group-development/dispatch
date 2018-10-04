@@ -187,7 +187,7 @@ SUBROUTINE init_unique (self, keep)
   !$omp end critical (task_init_cr)
   if (io%verbose>2) &
     write (io%log_unit,*) 'obtained patch id', self%id
-  call self%lock%init (self%kind)
+  call self%lock%init (self%kind, id=self%id)
   call self%random%init
   call trace_end
 END SUBROUTINE init_unique
