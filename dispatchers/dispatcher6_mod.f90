@@ -80,7 +80,7 @@ MODULE dispatcher6_mod
   USE patch_mod
   USE load_balance_mod
   USE task_mesg_mod
-  USE rt_mod
+  !USE rt_mod
   implicit none
   private
   type, public:: dispatcher6_t

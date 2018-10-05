@@ -43,7 +43,7 @@ rm -f *.o *.mod *.stackdump
  [ FC ] parallel_io_mod.o
  [ FC ] buffered_io_mod.o
  [ FC ] legacy_io_mod.o
- [ FC ] snapshot_list_mod.o
+ [ FC ] counters_mod.o
  [ FC ] data_io_mod.o
  [ FC ] gpatch_mod.o
  [ FC ] riemann_mod.o
@@ -69,5 +69,8 @@ rm -f *.o *.mod *.stackdump
  [ FC ] dispatcher1_mod.o
  [ FC ] dispatcher2_mod.o
  [ FC ] dispatcher3_mod.o
+ [ FC ] dispatcher4_mod.o
+ [ FC ] dispatcher5_mod.o
+ [ FC ] dispatcher6_mod.o
  [ FC ] dispatcher_mod.o
  [ LD ] dispatch.x
