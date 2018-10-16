@@ -157,7 +157,7 @@ def map_var(p,iv):
         jv=p.idx.dict[iv]
     return jv
 
-def hminmax(s,iv=0,dir=2,verbose=0):
+def hminmax(s,iv=0,dir=2,offset=0,verbose=0):
     """ Horizontal average """
     pp=_patches(s)
     p=pp[0]
@@ -168,14 +168,20 @@ def hminmax(s,iv=0,dir=2,verbose=0):
     for p in pp:
         rr=p.xyz[dir]
         data=p.data[jv] if hasattr(p,'data') else p.var(iv)
-        for i in range(len(rr)):
+        if offset != 0:
+            o=offset
+        elif p.guard_zones:
+            o=p.ng[dir]
+        else:
+            o=0
+        for i in range(p.n[dir]):
             if dir==0:
-                f=data[i,:,:]
+                f=data[i+o,:,:]
             elif dir==1:
-                f=data[:,i,:]
+                f=data[:,i+o,:]
             else:
-                f=data[:,:,i]
-            xx.append(rr[i])
+                f=data[:,:,i+o]
+            xx.append(rr[i+o])
             hmin.append(f.min())
             hmax.append(f.max())
     # sort the results
@@ -208,7 +214,7 @@ def hminmax(s,iv=0,dir=2,verbose=0):
     hmax=np.array(ymax)
     return xx,hmin,hmax
 
-def haver(s,iv=0,dir=2,verbose=0):
+def haver(s,iv=0,dir=2,offset=0,verbose=0):
     """ Horizontal average in all planes """
     pp=_patches(s)
     p=pp[0]
@@ -220,13 +226,19 @@ def haver(s,iv=0,dir=2,verbose=0):
         es=es+p.idx.h[dir,jv]
         rr=p.llc_cart[dir]+p.ds[dir]*(np.arange(p.n[dir])+es)
         data=p.data[iv] if hasattr(p,'data') else p.var(iv)
+        if offset != 0:
+            o=offset
+        elif p.guard_zones:
+            o=p.ng[dir]
+        else:
+            o=0
         for i in range(len(rr)):
             if dir==0:
-                f=data[i,:,:]
+                f=data[i+o,:,:]
             elif dir==1:
-                f=data[:,i,:]
+                f=data[:,i+o,:]
             else:
-                f=data[:,:,i]
+                f=data[:,:,i+o]
             xx.append(rr[i])
             hav.append(np.average(f))
     # sort the results

@@ -104,6 +104,7 @@ def _var(patch,filed,verbose=0):
         bytes=long(4*np.product(patch.ncell))
     else:
         bytes=np.longlong(4*np.product(patch.ncell))
+        #print('bytes:',bytes)
     shape=tuple(patch.ncell)
     patch.offset=[]
     if verbose==5:
@@ -111,13 +112,12 @@ def _var(patch,filed,verbose=0):
     for iv in range(patch.nv):
         if patch.ioformat==5:
             offset = (patch.id-1) + iv*patch.ntotal
-        elif patch.ioformat==6:
-            if patch.time_derivs:
-                offset = iv + (patch.id-1)*patch.nv/2
-            else:
-                offset = iv + (patch.id-1)*patch.nv
+        elif patch.ioformat>=6:
+            offset = iv + (patch.id-1)*patch.nv
         offset += patch.iout*patch.ntotal*patch.nv
         offset *= bytes
+        if patch.id==1:
+            print('offset:',offset,bytes,patch.nv,patch.ncell)
         patch.offset.append(offset)
         if verbose==5:
             print (' iv, offset:',iv,patch.iout,patch.ntotal,patch.nv,offset)

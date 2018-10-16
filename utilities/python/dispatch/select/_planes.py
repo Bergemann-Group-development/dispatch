@@ -35,7 +35,9 @@ def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
             return pi/d
         iv=snap.idx.dict[iv]
     assert dir<3, 'dir must be in the range 0-2'
-    if type(position)==type(1.0) or type(position)==type(1):
+    if type(position)==np.float   or \
+       type(position)==np.float64 or \
+       type(position)==int:
         pos=0.5*np.ones(3)
         pos[dir]=position
         position=pos
