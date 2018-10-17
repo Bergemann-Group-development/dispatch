@@ -12,7 +12,7 @@ MODULE parallel_io_mod
   USE mpi_io_mod
   USE mpi_io_file_mod
   USE trace_mod
-  USE central_mod
+  USE time_slices_mod
   implicit none
   private
   type, public:: parallel_io_t
@@ -23,7 +23,6 @@ MODULE parallel_io_mod
     procedure, nopass:: close
   end type
   integer, parameter:: verbose=0
-  type(central_t):: central
   type(mpi_io_file_t), save:: file_in, file_out
   type(parallel_io_t), public:: parallel_io
 CONTAINS
@@ -140,91 +139,76 @@ SUBROUTINE output (patch)
   if (io%verbose>1) print '(a,4i6,2i12)', &
     ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words
+  allocate (mem(patch%gn(1),patch%gn(2),patch%gn(3),patch%nt))
   !-----------------------------------------------------------------------------
-  ! Interpolate to the given output time
+  ! Time interpolation to exaxt out_next
   !-----------------------------------------------------------------------------
-  allocate (buffer(n(1),n(2),n(3),patch%nv))
-  call patch%time_interval (patch%out_next, jt, pt)
-  nw = merge (patch%nw, 1, io%time_derivs)
-  do iw=1,nw
-    do iv=1,nv
-      if (io%guard_zones) then
-        buffer(:,:,:,iv) = patch%mem(:,:,:,iv,jt(1),1)*pt(1) &
-                         + patch%mem(:,:,:,iv,jt(2),1)*pt(2)
-      else
-        buffer(:,:,:,iv) = patch%mem(patch%li(1):patch%ui(1), &
-                                     patch%li(2):patch%ui(2), &
-                                     patch%li(3):patch%ui(3),iv,jt(1),iw)*pt(1) &
-                         + patch%mem(patch%li(1):patch%ui(1), &
-                                     patch%li(2):patch%ui(2), &
-                                     patch%li(3):patch%ui(3),iv,jt(2),iw)*pt(2)
-      end if
-      if (io%verbose>2 .or. (io%verbose>1 .and. iv==patch%idx%d)) &
-        write (io_unit%output,'(2a,i7,i4,1p,e14.6,i4,2e12.4)') &
-         ' parallel_io_t%output: ', &
-         ' id,iout,time,iv,vmin,vmax =', patch%id, patch%iout, patch%time, iv, &
-          minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv))
-      if (verbose>0) &
-        write (io_unit%mpi,'(2a,i7,i4,1p,e14.6,i3,6e12.4,2i3,0p,2f7.3)') &
-         ' parallel_io_t%output: ', &
-         'id,iout,time,iv,vmin,vmax =', patch%id, patch%iout, patch%time, iv, &
-          minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv)), &
-          patch%fminval(patch%mem(:,:,:,iv,jt(1),1)), &
-          patch%fmaxval(patch%mem(:,:,:,iv,jt(1),1)), &
-          patch%fminval(patch%mem(:,:,:,iv,jt(2),1)), &
-          patch%fmaxval(patch%mem(:,:,:,iv,jt(2),1)), &
-          jt, pt
+  allocate (buffer(n(1),n(2),n(3),io%nv))
+  do iv=1,io%nv
+    call convert_variables
+    call time_slices%interpolate (patch, mem, buffer(:,:,:,iv))
     end do
-    !---------------------------------------------------------------------------
-    ! For RAMSES consistency, convert momenta to velocities for ramses solver
-    !---------------------------------------------------------------------------
-    if (patch%solver_is('ramses')) then
-      do iv=patch%idx%px,patch%idx%pz
-        buffer(:,:,:,iv) = buffer(:,:,:,iv)/buffer(:,:,:,patch%idx%d)
+  call io_write ((io%time_derivs+1)*patch%iout, 0)
+  !-----------------------------------------------------------------------------
+  ! On-the-fly time derivatives output
+  !-----------------------------------------------------------------------------
+  if (io%time_derivs>0) then
+    allocate (buffer(n(1),n(2),n(3),io%nv))
+    do iv=1,io%nv
+      call convert_variables
+      call time_slices%derivative1 (patch, mem, buffer(:,:,:,iv))
       end do
+    call io_write ((io%time_derivs+1)*patch%iout, 1)
+    if (io%time_derivs==2) then
+      allocate (buffer(n(1),n(2),n(3),io%nv))
+      do iv=1,io%nv
+        call convert_variables
+        call time_slices%derivative2 (patch, mem, buffer(:,:,:,iv))
+      end do
+      call io_write ((io%time_derivs+1)*patch%iout, 2)
     end if
-    if (verbose > 0) then
-      pos = 4_8*(patch%iout*snapshot_words + (patch%id-1_8)*buffer_words)
-      write (io_unit%mpi,*) 'WR6', patch%id, patch%iout, pos
     end if
-    !---------------------------------------------------------------------------
-    ! If native time derivatives are available (nw=2), output these to buffer,
-    ! using offsets that effectively double the number of variables per snapshot
-    !---------------------------------------------------------------------------
-    if (io%time_derivs) then
-      if (patch%nw==1) then
-        call mpi_io%iwrite (buffer, 1+patch%iout, 1+2*(patch%id-1))
-      else
-        call mpi_io%iwrite (buffer, 1+patch%iout, 2+2*(patch%id-1))
-      end if
-    !---------------------------------------------------------------------------
-    ! If no time derivs, increment with one per snapshot
-    !---------------------------------------------------------------------------
-    else
-      call mpi_io%iwrite (buffer, 1+patch%iout, patch%id)
-    end if
-  end do
+  deallocate (mem)
+  call trace%end (itimer)
+contains
   !-----------------------------------------------------------------------------
-  ! On-the-fly time derivative output
-  !-----------------------------------------------------------------------------
-  if (io%time_derivs .and. patch%nw==1) then
-    do iv=1,nv
-      if (patch%solver_is('ramses')) then
-        allocate (mem(patch%gn(1),patch%gn(2),patch%gn(3),patch%nt))
-        if ((iv >= patch%idx%px) .and. (iv <= patch%idx%pz)) then
+  subroutine convert_variables
+    if (io%format >= 8 .and. iv==patch%idx%d) then
+      ! --- Convert density to log density ---
+      mem = log(patch%mem(:,:,:,iv,:,1))
+    else if ((io%format == 6 .or. io%format==9) .and. patch%solver_is('ramses') &
+        .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
+    else if ((io%format == 6 .or. io%format==9) .and. &
+             patch%solver_is('ramses') .and. &
+             iv >= patch%idx%px .and. iv <= patch%idx%pz)  then
+      ! --- Convert momentum to velocity ---
           mem = patch%mem(:,:,:,iv,:,1)/patch%mem(:,:,:,patch%idx%d,:,1)
         else
           mem = patch%mem(:,:,:,iv,:,1)
         end if
-        call central%time_derivative (patch, mem, buffer(:,:,:,iv))
-        deallocate (mem)
+  end subroutine
+  !-----------------------------------------------------------------------------
+  subroutine io_write (slot, ider)
+    integer:: slot, ider
+    !---------------------------------------------------------------------------
+    ! This ordering has the derivative order added to the snapshot number, which
+    ! is incremented by (io%time_derivs+1), with patch%id starting with 1, and
+    ! ider and slot starting with 0. This make the time derivative results 
+    ! appear to be extra snapshots (thus making accessing the snapshot metadata
+    ! difficult). Introduced for compatibility with Paolo's analysis scripts.
+    !---------------------------------------------------------------------------
+    if (io%method == 'pan') then
+      call mpi_io%iwrite (buffer, 1+ider+slot, patch%id)
+    !---------------------------------------------------------------------------
+    ! This ordering has the derivative order added to the patch%id, which is
+    ! in turn causing an increment by (io%time_derivs+1), so effectively adding
+    ! nv additional variables for each derivative ordre, making it easy to
+    ! address the derivatives, while using snapshot numbers incremented by 1.
+    !---------------------------------------------------------------------------
       else
-        call central%time_derivative (patch, patch%mem(:,:,:,iv,:,1), buffer(:,:,:,iv))
-      end if
-    end do
-    call mpi_io%iwrite (buffer, 1+patch%iout, 2+2*(patch%id-1))
+      call mpi_io%iwrite (buffer, 1+slot, 1+ider+(patch%id-1)*(io%time_derivs+1))
   end if
-  call trace%end (itimer)
+  end subroutine
 END SUBROUTINE output
 
 !> =============================================================================

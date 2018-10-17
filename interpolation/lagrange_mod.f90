@@ -25,12 +25,18 @@ MODULE lagrange_mod
     procedure deriv_weights4
     procedure deriv_weights8
     generic:: deriv_weights => deriv_weights4, deriv_weights8
+    procedure deriv2_weights4
+    procedure deriv2_weights8
+    generic:: deriv2_weights => deriv2_weights4, deriv2_weights8
     procedure sequence_weights4
     procedure sequence_weights8
     generic:: sequence_weights => sequence_weights4, sequence_weights8
     procedure deriv_sequence_weights4
     procedure deriv_sequence_weights8
     generic:: deriv_sequence_weights => deriv_sequence_weights4, deriv_sequence_weights8
+    procedure deriv2_sequence_weights4
+    procedure deriv2_sequence_weights8
+    generic:: deriv2_sequence_weights => deriv2_sequence_weights4, deriv2_sequence_weights8
     procedure interpolate3d
     procedure trilinear3d
     procedure test
@@ -92,7 +98,13 @@ FUNCTION weights4 (self, x0, x) RESULT(w)
   do i=1,n
     w(i) = 1.0
     do j=1,n
-      w(i) = merge(w(i),w(i)*(x0-x(j))/(x(i)-x(j)),j==i)
+      if (j==i) cycle
+      if (x(j)==x(i)) then
+        w = 0.0
+        w(1) = 1.0
+        return
+      end if
+      w(i) = w(i)*(x0-x(j))/(x(i)-x(j))
     end do
   end do
 END FUNCTION weights4
@@ -107,7 +119,13 @@ FUNCTION weights8 (self, x0, x) RESULT(w)
   do i=1,n
     w(i) = 1.0
     do j=1,n
-      w(i) = merge(w(i),w(i)*(x0-x(j))/(x(i)-x(j)),j==i)
+      if (j==i) cycle
+      if (x(j)==x(i)) then
+        w = 0d0
+        w(1) = 1d0
+        return
+      end if
+      w(i) = w(i)*(x0-x(j))/(x(i)-x(j))
     end do
   end do
 END FUNCTION weights8
@@ -136,7 +154,7 @@ FUNCTION deriv_weights4 (self, x0, x) RESULT(w)
       end if
       g = 1.
       do k=1,n
-        if (k==j) cycle
+        if (k==j .or. k==i) cycle
         g = g*(x0-x(k))
       end do
       nomin = nomin + g
@@ -173,6 +191,74 @@ FUNCTION deriv_weights8 (self, x0, x) RESULT(w)
     w(i) = nomin/denom
   end do
 END FUNCTION deriv_weights8
+
+!> -----------------------------------------------------------------------------
+!> Classical Lagrange interpolation weights.  w(i) is the contribution factor
+!> of a value y(i) to the 2nd derivative value at x0, given that there are mesh
+!> points at x = [x(j), j=1,n], so the function value f(x0) = sum(y(i)*w(i))
+!> -----------------------------------------------------------------------------
+FUNCTION deriv2_weights4 (self, x0, x) RESULT(w)
+  class(lagrange_t):: self
+  real(kind=4), dimension(:):: x
+  real(kind=4), dimension(size(x)):: w
+  real(kind=4):: x0, nomin, denom, g
+  integer:: n, i, j, k, l
+  !.............................................................................
+  n = size(x)
+  do i=1,n
+    denom = 1.0_4
+    nomin = 0.0_4
+    do j=1,n
+      if (j==i) cycle
+      if (x(i)==x(j)) then
+        w = 0.0
+        return
+      end if
+      do k=1,n
+        if (k==j .or. k==i) cycle
+        g = 1.
+        do l=1,n
+          if (l==k .or. l==j .or. l==i) cycle
+          g = g*(x0-x(l))
+        end do
+        nomin = nomin + g
+      end do
+      denom = denom*(x(i)-x(j))
+    end do
+    w(i) = nomin/denom
+  end do
+END FUNCTION deriv2_weights4
+FUNCTION deriv2_weights8 (self, x0, x) RESULT(w)
+  class(lagrange_t):: self
+  real(kind=8), dimension(:):: x
+  real(kind=8), dimension(size(x)):: w
+  real(kind=8):: x0, nomin, denom, g
+  integer:: n, i, j, k, l
+  !.............................................................................
+  n = size(x)
+  do i=1,n
+    denom = 1.0_8
+    nomin = 0.0_8
+    do j=1,n
+      if (j==i) cycle
+      if (x(i)==x(j)) then
+        w = 0.0_8
+        return
+      end if
+      do k=1,n
+        if (k == j .or. k == i) cycle
+        g = 1.0_8
+        do l=1,n
+          if (l == k .or. l == j .or. l == i) cycle
+          g = g*(x0-x(l))
+        end do
+        nomin = nomin + g
+      end do
+      denom = denom*(x(i)-x(j))
+    end do
+    w(i) = nomin/denom
+  end do
+END FUNCTION deriv2_weights8
 
 !> -----------------------------------------------------------------------------
 !> Prepare to use Lagrange interpolation of given order to interpolate to
@@ -440,6 +526,35 @@ SUBROUTINE deriv_sequence_weights8 (self, x0, x, i0, i2, w, order)
   w = 0d0
   w(1:i2-i0+1) = self%deriv_weights (x0, x(i0:i2))
 END SUBROUTINE deriv_sequence_weights8
+
+!> -----------------------------------------------------------------------------
+!> Use Lagrange interpolation of given order to get weights for interpolate to
+!> coordinate x0 in a sequence of increasing x that may be longer than needed
+!> -----------------------------------------------------------------------------
+SUBROUTINE deriv2_sequence_weights4 (self, x0, x, i0, i2, w, order)
+  class(lagrange_t):: self
+  integer, optional:: order
+  real(kind=4), dimension(:):: x, w
+  real(kind=4):: x0
+  integer:: i0, i2, o, n
+  !.............................................................................
+  n = size(x)
+  call self%interval (x0, x, i0, i2, o, order)
+  w = 0d0
+  w(1:i2-i0+1) = self%deriv2_weights (x0, x(i0:i2))
+END SUBROUTINE deriv2_sequence_weights4
+SUBROUTINE deriv2_sequence_weights8 (self, x0, x, i0, i2, w, order)
+  class(lagrange_t):: self
+  integer, optional:: order
+  real(kind=8), dimension(:):: x, w
+  real(kind=8):: x0
+  integer:: i0, i2, o, n
+  !.............................................................................
+  n = size(x)
+  call self%interval (x0, x, i0, i2, o, order)
+  w = 0d0
+  w(1:i2-i0+1) = self%deriv2_weights (x0, x(i0:i2))
+END SUBROUTINE deriv2_sequence_weights8
 
 !> -----------------------------------------------------------------------------
 !> Interpolate in 3D from fi to fo
