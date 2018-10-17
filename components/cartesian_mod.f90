@@ -89,7 +89,12 @@ SUBROUTINE init (self, label)
   mpi_dims = mpi_coords%dims
   patches_per_mpi = self%dims/mpi_dims
   io%ntask = product(patches_per_mpi)
-  io%nwrite = product(patches_per_mpi)
+  !-----------------------------------------------------------------------------
+  ! io%nwrite is the number of task writes this process is doing per snapshot --
+  ! it is given a default value here, which may be modified in data_io_mod, if
+  ! more than one write per task is being performed.
+  !-----------------------------------------------------------------------------
+  io%nwrite = io%ntask
   write (io_unit%log,*) 'io%nwrite =', io%nwrite
   !-----------------------------------------------------------------------------
   ! Begin on task list

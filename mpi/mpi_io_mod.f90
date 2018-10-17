@@ -48,7 +48,7 @@ MODULE mpi_io_mod
   type, public, extends(dll_node_t):: iwrite_t
     integer:: req, handle, words
     integer(kind=MPI_OFFSET_KIND):: pos
-    real, dimension(:,:,:,:), pointer:: buffer
+    real, dimension(:,:,:,:), pointer:: buffer => null()
   end type
   !-----------------------------------------------------------------------------
   ! dll_t extension with a procedure for testing request completion
@@ -64,7 +64,7 @@ MODULE mpi_io_mod
   !-----------------------------------------------------------------------------
   type, public:: mpi_io_t
     type(mpi_io_file_t):: file
-    integer:: req
+    integer:: req, nwrite=-1
     integer(8):: rec_words
     integer:: chunk_words
     integer:: err
@@ -139,9 +139,10 @@ END SUBROUTINE init
 !> =============================================================================
 !> Initialize the local size self%lsize, global size self%gsize
 !> =============================================================================
-SUBROUTINE set (self, rec_words, chunk_words)
+SUBROUTINE set (self, rec_words, chunk_words, nwrite)
   class(mpi_io_t):: self
   integer(8), optional:: rec_words, chunk_words
+  integer, optional:: nwrite
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%init')
   if (present(rec_words)) then
@@ -151,6 +152,10 @@ SUBROUTINE set (self, rec_words, chunk_words)
   if (present(chunk_words)) then
     self%chunk_words = chunk_words
     if (verbose > 2) print *, 'mpi_io_t%init: setting chunk_words =', chunk_words
+  end if
+  if (present(nwrite)) then
+    mpi_io%nwrite = nwrite
+    if (verbose > 2) print *, 'mpi_io_t%init: setting nwrite =', nwrite
   end if
   call trace%end
 END SUBROUTINE set
@@ -234,7 +239,7 @@ SUBROUTINE iwrite (self, f, rec, id)
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose>2) &
     print '(a,3i8,i15,2f12.0)', ' mpi_io_t%iwrite: rec, id, words, pos =', &
-    rec, id, self%chunk_words, pos !, minval(f), maxval(f)
+    rec, id, self%chunk_words, pos , minval(f), maxval(f)
   !-----------------------------------------------------------------------------
   ! Add details we need in order to check for buffers to deallocate
   !-----------------------------------------------------------------------------
@@ -328,7 +333,7 @@ END SUBROUTINE assert
 !> Check for queued I/O, and do it all with one single thread, to avoid
 !> slowing down the other threads.  Other threads are free to append more
 !> items at the end of the iwrite_list in the mean time -- this does not
-!> disturb the 
+!> disturb the thread doing I/O.
 !> =============================================================================
 SUBROUTINE check (self)
   class(iwrite_list_t):: self
@@ -342,7 +347,7 @@ SUBROUTINE check (self)
   !-----------------------------------------------------------------------------
   ! Most threads will exit immediately here
   !-----------------------------------------------------------------------------
-  if (self%n < io%nwrite .or. self%thread >=0) then
+  if (self%n < mpi_io%nwrite .or. self%thread >=0) then
     if (verbose > 1 .and. self%thread >= 0) &
       write(io%output,'(f12.6,i5,2x,a,i7,i4)') &
         wallclock(), omp%thread, ' returning immediately', self%n, self%thread
@@ -382,10 +387,12 @@ SUBROUTINE check (self)
             rec = 1 + item%pos/item%words/4
             write (io_unit%direct, rec=rec) item%buffer
           else
-            call MPI_file_write_at (item%handle, item%pos, item%buffer, &
+            call MPI_File_write_at (item%handle, item%pos, item%buffer, &
                                     item%words, MPI_REAL, status, err)
+            call io%assert (err==0, 'MPI_File_write_at: error code non-zero')
           end if
           deallocate (item%buffer)
+          nullify (item%buffer)
           if (nprint > 0) then
             nprint = nprint-1
             dwc = wallclock()-wc

@@ -84,8 +84,8 @@ SUBROUTINE output (self, unit)
   namelist /idx_nml/ &
     d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3
   !-----------------------------------------------------------------------------
-  if (io%time_derivs) then
-    call output_time_derivs (self)
+  if (io%time_derivs>0) then
+    call output_time_derivs (self, unit)
   else
     d    = self%d   - 1
     e    = self%e   - 1
@@ -114,8 +114,10 @@ END SUBROUTINE output
 !> =============================================================================
 !> Write out time derivative index value namelist, for python/dispatch/
 !> =============================================================================
-SUBROUTINE output_time_derivs (self)
+SUBROUTINE output_time_derivs (self, unit)
   class(index_t):: self
+  integer:: unit
+  !.............................................................................
   integer:: &
     d, e, et, s, px, py, pz, bx, by, bz, qr, tt, phi, p1, p2, p3, b1, b2, b3, &
     dpxdt, dpydt, dpzdt, dbxdt, dbydt, dbzdt, dphidt, dddt, dedt, dsdt, &
@@ -147,17 +149,29 @@ SUBROUTINE output_time_derivs (self)
   ! These values are preliminary, and are reassigned in python/dispatch/, based
   ! on knowledge of the mhd and selfgravity swwitches (not available here)
   !-----------------------------------------------------------------------------
-  dddt   = self%d   + 5
-  dedt   = self%e   + 5
-  dsdt   = self%s   + 5
-  dpxdt  = self%px  + 5
-  dpydt  = self%py  + 5
-  dpzdt  = self%pz  + 5
-  dbxdt  = self%bx  + 8
-  dbydt  = self%by  + 8
-  dbzdt  = self%bz  + 8
-  dphidt = self%phi + 9
-  write (io_unit%data, idx_nml)
+  dddt   = d   + io%nv
+  dedt   = e   + io%nv
+  dsdt   = s   + io%nv
+  dpxdt  = px  + io%nv
+  dpydt  = py  + io%nv
+  dpzdt  = pz  + io%nv
+  dphidt = phi + io%nv
+  dp1dt  = dpxdt
+  dp2dt  = dpydt
+  dp3dt  = dpzdt
+  if (bx > 0) then
+    dbxdt  = bx + io%nv
+    dbydt  = by + io%nv
+    dbzdt  = bz + io%nv
+  else
+    dbxdt  = -1
+    dbydt  = -1
+    dbzdt  = -1
+  end if
+  db1dt  = dbxdt
+  db2dt  = dbydt
+  db3dt  = dbzdt
+  write (unit, idx_nml)
 END SUBROUTINE output_time_derivs
 
 END MODULE index_mod
