@@ -38,16 +38,13 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Check number of patches written and issue a message when all done
   !-----------------------------------------------------------------------------
-  if (io%nwrite<=0) then
-    io%nwrite = io%ntask
-  end if
   self%max_files = self%max_files-1
   if (self%max_files <= 0) then
     write (io_unit%log,*) 'TOO MANY FILES'
     stop
   end if
   !-----------------------------------------------------------------------------
-  ! If guard_zones is true, include the guard zones.  If time_derivs is true,
+  ! If guard_zones is true, include the guard zones.  If time_derivs is >0
   ! write out the time derivatives also.
   !-----------------------------------------------------------------------------
   if (io%guard_zones) then
@@ -57,14 +54,14 @@ SUBROUTINE output (self, experiment_name)
     l = self%mesh%li
     u = self%mesh%ui
   end if
-  if (io%time_derivs) then
+  if (io%time_derivs>0) then
     no = min(2,self%nw)
   else
     no = 1
   end if
   if (io%out_time==0.0) then
     time = self%time
-  else if (io%time_derivs) then
+  else if (io%time_derivs>0) then
     time = self%t(self%nt-2)
   else
     time = self%out_next

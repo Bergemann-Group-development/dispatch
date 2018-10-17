@@ -34,7 +34,7 @@ MODULE io_mod
     logical:: do_flags=.false.
     logical:: do_stop=.false.
     logical:: guard_zones=.false.
-    logical:: time_derivs=.false.
+    integer:: time_derivs=0
     integer:: id_debug=0
     integer:: id_track=0
     integer:: nv=0
@@ -87,13 +87,13 @@ SUBROUTINE init (self, name)
   character(len=64):: filename, datadir='data', inputdir='data'
   character(len=64), save:: top='../../'
   character(len=8), save:: method='legacy'
-  integer, save:: id_debug=-1, restart=-9
+  integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
-    do_legacy=.false., do_flags=.false., do_direct=.false.
+    do_legacy=.false., do_flags=.false., do_direct=.false., guard_zones=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
     do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, top, &
-    datadir, inputdir, method, restart
+    datadir, inputdir, method, restart, format, guard_zones, time_derivs
   real:: test
   integer:: iostat
   !.............................................................................
@@ -149,6 +149,7 @@ SUBROUTINE init (self, name)
       print'(a,i4)', '   n_core =', omp%ncores
       print'(a,i4)', ' n_thread =', omp_nthreads
     end if
+    self%format = format
     self%inputdir = inputdir
     !---------------------------------------------------------------------------
     ! OMP specific setup
@@ -204,6 +205,8 @@ SUBROUTINE init (self, name)
     write(io%output,*) '======================================================================='
     first_time=.false.
   end if
+  self%guard_zones = guard_zones
+  self%time_derivs = time_derivs
   self%restart   = restart
   self%datadir   = datadir
   self%id_debug  = id_debug

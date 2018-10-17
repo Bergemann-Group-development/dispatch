@@ -62,24 +62,24 @@ SUBROUTINE init (self, task)
       class is (patch_t)
         if      (io%method=='direct') then
           call direct_io%init (task)
-        else if (io%method=='parallel') then
+        else if (io%method=='pan') then
           call parallel_io%init (task)
-        else if (io%method=='paralle5') then
-          io%format = 5
+        else if (io%method=='parallel') then
           call parallel_io%init (task)
         end if
       end select
     end if
     call self%kind_list%init
     self%initialized = .true.
+    print *,'data_io_t%init: io%nwrite =', io%nwrite
     call trace%end
   end if
-  !$omp end critical (data_io_cr)
-END SUBROUTINE init
+!$omp end critical (data_io_cr)
+  END SUBROUTINE init
 
-!> =============================================================================
-!> Register one type of task, for output into separate file
-!> =============================================================================
+  !> =============================================================================
+  !> Register one type of task, for output into separate file
+  !> =============================================================================
 SUBROUTINE register_kind (self, patch)
   class(data_io_t):: self
   class(patch_t), pointer:: patch
@@ -118,7 +118,7 @@ SUBROUTINE output (self, patch, experiment_name)
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
   call self%init (patch)
-  if (io%time_derivs) then
+  if (io%time_derivs > 0) then
     it = patch%iit(patch%nt-2)
   else
     it = patch%iit(patch%nt-1)
@@ -145,11 +145,13 @@ SUBROUTINE output (self, patch, experiment_name)
         call output_txt (patch, append)
       else if (io%method=='buffered') then
         call buffered_io%output (patch)
-      else if (io%method=='paralle5') then
-        io%format = 5
+      else if (io%method=='pan') then
+        if (io%format == 0) &
+          io%format = 6
         call parallel_io%output (patch)
       else if (io%method=='parallel') then
-        io%format = 6
+        if (io%format == 0) &
+          io%format = 6
         call parallel_io%output (patch)
       else
         call mpi%abort ('unknown io%method = '//io%method)
@@ -195,6 +197,8 @@ SUBROUTINE input (self, patch, ok)
       call direct_io%input (patch, ok)
     else if (io%method=='legacy') then
       call legacy_io%input (patch, ok)
+    else if (io%method=='pan') then
+      call parallel_io%input (patch, ok)
     else if (io%method=='parallel') then
       call parallel_io%input (patch, ok)
     else
@@ -286,13 +290,14 @@ SUBROUTINE output_nml (patch, append)
   real(8)              :: time, dtime, out_next, out_time, ms
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
-  logical              :: guard_zones, time_derivs, no_mans_land, periodic(3)
+  integer              :: time_derivs
+  logical              :: guard_zones, no_mans_land, periodic(3)
   character(len=16)    :: kind, eos, opacity
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
-    ng, gn, nv, nt, nw, ntotal, kind, eos, opacity, periodic, guard_zones, &
-    time_derivs, no_mans_land
+    ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
+    no_mans_land
   namelist /patch_nml/ id, position, dtime
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
@@ -336,8 +341,8 @@ SUBROUTINE output_nml (patch, append)
   gn           = patch%gn
   ng           = patch%ng
   nv           = patch%nv
-  nv           = merge (io%nv, patch%nv, io%nv>0)
-  nv           = merge (2*nv, nv, io%time_derivs)
+  nv           = merge (io%nv, patch%nv, io%nv>0 .and. io%nv<patch%nv)
+  nv           = nv*(io%time_derivs+1)
   nt           = patch%nt
   nw           = patch%nw
   kind         = patch%kind
@@ -417,6 +422,8 @@ SUBROUTINE close
     call direct_io%close
   else if (io%method=='buffered') then
     call buffered_io%close
+  else if (io%method=='pan') then
+    call parallel_io%close
   else if (io%method=='parallel') then
     call parallel_io%close
   end if

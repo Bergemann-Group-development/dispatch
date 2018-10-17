@@ -64,11 +64,13 @@ SUBROUTINE init (patch)
   if (mpi%master) print *,'output file: ',filename
   !-----------------------------------------------------------------------------
   if (io%guard_zones) then
-    recl = patch%nv*product(patch%gn)*4
+    recl = io%nv*product(patch%gn)*4
   else
-    recl = patch%nv*product(patch%n)*4
+    recl = io%nv*product(patch%n)*4
   end if
   call file_out%openw (filename, recl)
+  call mpi_io%set (nwrite=io%nwrite*(io%time_derivs+1))
+  call time_slices%test
   call trace%end
 END SUBROUTINE init
 
@@ -90,17 +92,13 @@ SUBROUTINE output (patch)
   class(patch_t):: patch
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
-  integer:: iv, n(3), jt(2), nv, iw, nw
+  integer:: iv, n(3), jt(2), iw, nw
   real, dimension(:,:,:,:), pointer:: buffer, mem
   real:: pt(2)
   logical:: first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%output', itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Allow the output to have fewer variables than the solver (e.g. for isothermal)
-  !-----------------------------------------------------------------------------
-  nv = merge (io%nv, patch%nv, io%nv>0)
   !-----------------------------------------------------------------------------
   ! Set size parameters; a buffer is all variables in the patch, and the
   ! snspshot offset is that times the number of patches per snapshot.
@@ -117,14 +115,10 @@ SUBROUTINE output (patch)
   ! io%ntotal is twice as large, and output the time derivs as patch 2+2*(id-1),
   ! with variables as patch 1+2*(id-1).
   !-----------------------------------------------------------------------------
-  buffer_words = product(n)*nv
-  if (io%time_derivs) then
-    snapshot_words = buffer_words*io%ntotal*2
-  else
-    snapshot_words = buffer_words*io%ntotal
-  end if
+  buffer_words = product(n)*io%nv
+  snapshot_words = buffer_words*io%ntotal
   call mpi_io%use (file_out)
-  call mpi_io%set (snapshot_words, buffer_words)
+  call mpi_io%set (snapshot_words, buffer_words, io%nwrite*(io%time_derivs+1))
   !-----------------------------------------------------------------------------
   ! Info
   !-----------------------------------------------------------------------------
@@ -147,7 +141,7 @@ SUBROUTINE output (patch)
   do iv=1,io%nv
     call convert_variables
     call time_slices%interpolate (patch, mem, buffer(:,:,:,iv))
-    end do
+  end do
   call io_write ((io%time_derivs+1)*patch%iout, 0)
   !-----------------------------------------------------------------------------
   ! On-the-fly time derivatives output
@@ -157,7 +151,7 @@ SUBROUTINE output (patch)
     do iv=1,io%nv
       call convert_variables
       call time_slices%derivative1 (patch, mem, buffer(:,:,:,iv))
-      end do
+    end do
     call io_write ((io%time_derivs+1)*patch%iout, 1)
     if (io%time_derivs==2) then
       allocate (buffer(n(1),n(2),n(3),io%nv))
@@ -167,7 +161,7 @@ SUBROUTINE output (patch)
       end do
       call io_write ((io%time_derivs+1)*patch%iout, 2)
     end if
-    end if
+  end if
   deallocate (mem)
   call trace%end (itimer)
 contains
@@ -182,10 +176,10 @@ contains
              patch%solver_is('ramses') .and. &
              iv >= patch%idx%px .and. iv <= patch%idx%pz)  then
       ! --- Convert momentum to velocity ---
-          mem = patch%mem(:,:,:,iv,:,1)/patch%mem(:,:,:,patch%idx%d,:,1)
-        else
-          mem = patch%mem(:,:,:,iv,:,1)
-        end if
+      mem = patch%mem(:,:,:,iv,:,1)/patch%mem(:,:,:,patch%idx%d,:,1)
+    else
+      mem = patch%mem(:,:,:,iv,:,1)
+    end if
   end subroutine
   !-----------------------------------------------------------------------------
   subroutine io_write (slot, ider)
@@ -205,9 +199,9 @@ contains
     ! nv additional variables for each derivative ordre, making it easy to
     ! address the derivatives, while using snapshot numbers incremented by 1.
     !---------------------------------------------------------------------------
-      else
+    else
       call mpi_io%iwrite (buffer, 1+slot, 1+ider+(patch%id-1)*(io%time_derivs+1))
-  end if
+    end if
   end subroutine
 END SUBROUTINE output
 
@@ -219,7 +213,7 @@ SUBROUTINE input (patch, ok)
   logical:: ok
   !.............................................................................
   integer(8):: snapshot_words, buffer_words
-  integer:: iv, n(3), nv
+  integer:: iv, n(3)
   real, dimension(:,:,:,:), pointer:: buffer
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -236,35 +230,21 @@ SUBROUTINE input (patch, ok)
     n = patch%n
   end if
   !-----------------------------------------------------------------------------
-  ! Allow the data to have fewer variables than the solver.  Note that this
-  ! requires using namelist parameters when reading that are consistent with the
-  ! parameters used when writing.
-  !-----------------------------------------------------------------------------
-  nv = merge (io%nv, patch%nv, io%nv>0)
-  !-----------------------------------------------------------------------------
   ! Compute offset size constants for the mpi_io reader
   !-----------------------------------------------------------------------------
-  buffer_words = product(n)*nv
-  if (io%time_derivs) then
-    snapshot_words = buffer_words*io%ntotal*2
-  else
-    snapshot_words = buffer_words*io%ntotal
-  end if
+  buffer_words = product(n)*io%nv
+  snapshot_words = buffer_words*io%ntotal
   call mpi_io%use (file_in)
-  call mpi_io%set (snapshot_words, buffer_words)
+  call mpi_io%set (snapshot_words, buffer_words, io%nwrite*(io%time_derivs+1))
   !-----------------------------------------------------------------------------
   ! Read via buffer, in case guard zones not included. FIXME: read snapshot
   ! guard zone parameter, to allow it to differ
   !-----------------------------------------------------------------------------
-  allocate (buffer(n(1),n(2),n(3),nv))
-  if (io%time_derivs) then
-    call mpi_io%read (buffer, 1+io%restart, 1 + 2*(patch%id-1))
-  else
-    call mpi_io%read (buffer, 1+io%restart, 1 +   (patch%id-1))
-  end if
+  allocate (buffer(n(1),n(2),n(3),io%nv))
+  call mpi_io%read (buffer, 1+io%restart, 1 + (io%time_derivs+1)*(patch%id-1))
   if (mpi_io%err /= 0) then
     ok = .false.
-    call trace%end
+    call trace%end (itimer)
     return
   end if
   if (io%guard_zones) then
@@ -275,22 +255,15 @@ SUBROUTINE input (patch, ok)
               patch%li(3):patch%ui(3),:,patch%it,1) = buffer
   end if
   if (io%verbose>1) then
-    do iv=1,patch%nv
+    do iv=1,io%nv
       write (io_unit%output,*) 'parallel_io_t%input: id, iv, iout, min, max =', &
         patch%id, iv, patch%iout, patch%fminval(iv), patch%fmaxval(iv)
     end do
   end if
   deallocate (buffer)
-  !-----------------------------------------------------------------------------
-  ! Restore to momentum variables for RAMSES snapshots
-  !-----------------------------------------------------------------------------
-  if (patch%solver_is('ramses')) then
-    do iv=patch%idx%px,patch%idx%pz
-      patch%mem(:,:,:,iv         ,patch%it,1) = &
-      patch%mem(:,:,:,iv         ,patch%it,1) * &
-      patch%mem(:,:,:,patch%idx%d,patch%it,1)
-    end do
-  end if
+  do iv=1,io%nv
+    call convert_variables
+  end do
   !-----------------------------------------------------------------------------
   ! Signal success
   !-----------------------------------------------------------------------------
@@ -302,6 +275,25 @@ SUBROUTINE input (patch, ok)
     ' parallel_io_t%input: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words
   call trace%end (itimer)
+contains
+  !-----------------------------------------------------------------------------
+  subroutine convert_variables
+    !-----------------------------------------------------------------------------
+    ! Using log(d) if io%format==8
+    !-----------------------------------------------------------------------------
+    if (io%format == 8 .and. iv==patch%idx%d) then
+      ! --- Convert log density to density ---
+      patch%mem(:,:,:,iv,:,1) = exp(patch%mem(:,:,:,iv,:,1))
+    end if
+    !-----------------------------------------------------------------------------
+    ! Restore to momentum variables for RAMSES snapshots
+    !-----------------------------------------------------------------------------
+    if ((io%format == 6 .or. io%format==9) .and. patch%solver_is('ramses') &
+        .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
+      ! --- Convert velocity to momentum ---
+      patch%mem(:,:,:,iv,:,1) = patch%mem(:,:,:,iv,:,1)*patch%mem(:,:,:,patch%idx%d,:,1)
+    end if
+  end subroutine
 END SUBROUTINE input
 
 END MODULE parallel_io_mod

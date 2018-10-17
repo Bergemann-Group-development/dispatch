@@ -327,7 +327,7 @@ SUBROUTINE init_default (self)
   class(patch_t):: self
   !.............................................................................
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000
-  logical, save:: guard_zones=.false., time_derivs=.false., periodic(3)=.true.
+  logical, save:: periodic(3)=.true.
   logical, save:: no_mans_land=.false., use_data_hub=.false.
   real, save:: u_fixed=-1.0, grace=0.0
   real(8), save:: end_time=1.0, out_time=0.1, print_time=0.1, dt_fixed=-1.0
@@ -336,8 +336,7 @@ SUBROUTINE init_default (self)
   namelist /patch_params/ n, nv, ng, nt, u_fixed, dt_fixed, &
     grace, periodic, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
     zero_order_extrap
-  namelist /out_params/ out_time, end_time, print_time, max_files, &
-    guard_zones, time_derivs
+  namelist /out_params/ out_time, end_time, print_time, max_files
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init_default')
@@ -374,11 +373,11 @@ SUBROUTINE init_default (self)
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
-  io%guard_zones   = guard_zones
-  io%time_derivs   = time_derivs
   io%end_time      = end_time
   io%out_time      = out_time
   io%print_time    = print_time
+  if (io%nv==0) &
+    io%nv = self%nv
   !$omp end critical (input_cr)
   self%restart     = io%restart                 ! restart snapshot
   self%grace       = grace                      ! grace fraction of dtime
