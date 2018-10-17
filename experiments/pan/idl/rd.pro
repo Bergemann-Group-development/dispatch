@@ -1,4 +1,4 @@
-FUNCTION rd,run,iv=iv,iout=iout,id=id,n=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=verbose,order=order,time=time
+FUNCTION rd,run,iv=iv,iout=iout,id=id,nn=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=verbose,order=order,time=time
   default,iout,0L
   default,n,32L
   default,gn,1024L
@@ -14,8 +14,7 @@ FUNCTION rd,run,iv=iv,iout=iout,id=id,n=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=
   if n_elements(ix) eq 1 then ix=[ix,ix]
   if n_elements(iy) eq 1 then iy=[iy,iy]
   if n_elements(iz) eq 1 then iz=[iz,iz]
-  file='data/'+run+'/'+string(iout,format='(i5.5)')+'/snapshot.dat'
-  file='data/'+run+'/00000/snapshot.dat'
+  file='data/'+run+'/snapshots.dat'
   openr,u,/get,file
   a=assoc(u,fltarr(n,n,n))
   m=long(gn)/n
@@ -35,7 +34,7 @@ FUNCTION rd,run,iv=iv,iout=iout,id=id,n=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=
     print,ix
     print,iy
     print,iz
-  end 
+  end
   for i=i0,i1 do begin
     ii=i
     jz=i/m^2

@@ -116,8 +116,6 @@ def _var(patch,filed,verbose=0):
             offset = iv + (patch.id-1)*patch.nv
         offset += patch.iout*patch.ntotal*patch.nv
         offset *= bytes
-        if patch.id==1:
-            print('offset:',offset,bytes,patch.nv,patch.ncell)
         patch.offset.append(offset)
         if verbose==5:
             print (' iv, offset:',iv,patch.iout,patch.ntotal,patch.nv,offset)

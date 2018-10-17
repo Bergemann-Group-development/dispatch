@@ -176,8 +176,8 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   if (self%selfgravity) then
     call gravitational_force(self)
-    call self%gpatch_t%update
   end if
+  call self%gpatch_t%update
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
