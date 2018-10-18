@@ -70,7 +70,7 @@ SUBROUTINE init (patch)
   end if
   call file_out%openw (filename, recl)
   call mpi_io%set (nwrite=io%nwrite*(io%time_derivs+1))
-  call time_slices%test
+  call time_slices%init (patch)
   call trace%end
 END SUBROUTINE init
 
@@ -170,11 +170,8 @@ contains
     if (io%format >= 8 .and. iv==patch%idx%d) then
       ! --- Convert density to log density ---
       mem = log(patch%mem(:,:,:,iv,:,1))
-    else if ((io%format == 6 .or. io%format==9) .and. patch%solver_is('ramses') &
+    else if ((io%format == 6 .or. io%format==8) .and. patch%solver_is('ramses') &
         .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
-    else if ((io%format == 6 .or. io%format==9) .and. &
-             patch%solver_is('ramses') .and. &
-             iv >= patch%idx%px .and. iv <= patch%idx%pz)  then
       ! --- Convert momentum to velocity ---
       mem = patch%mem(:,:,:,iv,:,1)/patch%mem(:,:,:,patch%idx%d,:,1)
     else
@@ -281,14 +278,14 @@ contains
     !-----------------------------------------------------------------------------
     ! Using log(d) if io%format==8
     !-----------------------------------------------------------------------------
-    if (io%format == 8 .and. iv==patch%idx%d) then
+    if (io%format >= 8 .and. iv==patch%idx%d) then
       ! --- Convert log density to density ---
       patch%mem(:,:,:,iv,:,1) = exp(patch%mem(:,:,:,iv,:,1))
     end if
     !-----------------------------------------------------------------------------
     ! Restore to momentum variables for RAMSES snapshots
     !-----------------------------------------------------------------------------
-    if ((io%format == 6 .or. io%format==9) .and. patch%solver_is('ramses') &
+    if ((io%format == 6 .or. io%format==8) .and. patch%solver_is('ramses') &
         .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
       ! --- Convert velocity to momentum ---
       patch%mem(:,:,:,iv,:,1) = patch%mem(:,:,:,iv,:,1)*patch%mem(:,:,:,patch%idx%d,:,1)

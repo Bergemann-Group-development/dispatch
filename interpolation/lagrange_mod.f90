@@ -303,12 +303,11 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
     o = min(o,2)
   end if
 
-  if (i1 < 3+o/2) then
+  if (i1 < 2+o/2) then
     ! We are at the start of the interval, and need 1 point before i1
     i0 = i1 - (o+1)/2
     if (i0 < 1) then
       i0 = 1
-      i1 = i0 + (o+1)/2
     end if
     i2 = i0+o
     if (i2 > n) then
@@ -321,7 +320,6 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
     ! Shift left if not enough points
     if (i2 > n) then
       i2 = n
-      i1 = n-1
     end if
     i0 = i2 - o
     if (i0 < 1) then
@@ -373,12 +371,11 @@ SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
     o = min(o,2)
   end if
 
-  if (i1 < 3+o/2) then
+  if (i1 < 2+o/2) then
     ! We are at the start of the interval, and need 1 point before i1
     i0 = i1 - (o+1)/2
     if (i0 < 1) then
       i0 = 1
-      i1 = i0 + (o+1)/2
     end if
     i2 = i0+o
     if (i2 > n) then
@@ -391,7 +388,6 @@ SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
     ! Shift left if not enough points
     if (i2 > n) then
       i2 = n
-      i1 = n-1
     end if
     i0 = i2 - o
     if (i0 < 1) then

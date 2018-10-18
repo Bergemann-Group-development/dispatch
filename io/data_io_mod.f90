@@ -24,6 +24,7 @@ MODULE data_io_mod
   USE counters_mod
   USE index_mod
   USE dll_mod
+  USE time_slices_mod
   implicit none
   private
   type, public:: io_kind_t
@@ -113,16 +114,13 @@ SUBROUTINE output (self, patch, experiment_name)
   logical, save:: checked=.false.
   integer, save:: itimer=0
   logical:: append
-  integer:: it, count
+  integer:: it, count, np
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
   call self%init (patch)
-  if (io%time_derivs > 0) then
-    it = patch%iit(patch%nt-2)
-  else
-    it = patch%iit(patch%nt-1)
-  end if
+  np = (time_slices%order+1)/2
+  it = patch%iit(patch%nt-np)
   if (patch%t(it) >= patch%out_next) then
     !$omp critical (data_io_cr)
     do while (patch%t(it) >= patch%out_next)
@@ -199,8 +197,10 @@ SUBROUTINE input (self, patch, ok)
       call legacy_io%input (patch, ok)
     else if (io%method=='pan') then
       call parallel_io%input (patch, ok)
+      call input_nml (patch)
     else if (io%method=='parallel') then
       call parallel_io%input (patch, ok)
+      call input_nml (patch)
     else
       call mpi%abort ('unknown io%method = '//io%method)
     end if
@@ -292,8 +292,8 @@ SUBROUTINE output_nml (patch, append)
                           llc_nat, llc_cart, centre_nat
   integer              :: time_derivs
   logical              :: guard_zones, no_mans_land, periodic(3)
-  character(len=16)    :: kind, eos, opacity
-  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs
+  character(len=16)    :: kind, eos, opacity, method
+  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
@@ -318,6 +318,7 @@ SUBROUTINE output_nml (patch, append)
   out_time    = io%out_time
   guard_zones = io%guard_zones
   time_derivs = io%time_derivs
+  method      = io%method
   iout        = patch%iout
   time        = merge (patch%time, patch%out_next, io%out_time==0)
   dtime       = patch%dtime
@@ -392,6 +393,56 @@ SUBROUTINE output_nml (patch, append)
   !$omp end critical (output_cr)
   call trace%end
 END SUBROUTINE output_nml
+
+!> =============================================================================
+!> Output text with patch info, either to individual files (io%format=1,2) or
+!> to one file per rank (io%format>2).  This is not threadsafe, both because of
+!> the text file I/O, and because snapshot%ibuf is consantly being modified by
+!> other threads (must be protected by the same critical region!).
+!> =============================================================================
+SUBROUTINE input_nml (patch)
+  class(patch_t):: patch
+  !.............................................................................
+  character(len=128)   :: filename
+  character(len=128), save:: filename1='', filename2=''
+  integer, save        :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
+                          nw, ntotal, format
+  integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
+  real   , save        :: gamma, quality
+  real(8), save        :: time, dtime, out_next, out_time, ms
+  real(8), dimension(3):: size, position, ds, box, velocity, &
+                          llc_nat, llc_cart, centre_nat
+  integer, save        :: time_derivs
+  logical, save        :: guard_zones, no_mans_land, periodic(3)
+  character(len=16)    :: kind, eos, opacity, method
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
+    position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
+    ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
+    no_mans_land
+  logical, save:: first_time=.true.
+  !-----------------------------------------------------------------------------
+  ! Read info from namelist
+  !-----------------------------------------------------------------------------
+  call trace%begin ('data_io_t%input_nml')
+  !$omp critical (output_cr)
+  if (first_time) then
+    first_time = .false.
+    patch%iout = io%restart
+    write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
+    open  (unit=io_unit%nml1, file=filename, form='formatted', status='old')
+    read  (io_unit%nml1, snapshot_nml)
+    close (io_unit%nml1)
+  end if
+  patch%iit   = patch%it
+  patch%t     = time
+  patch%dt    = 0d0
+  patch%time  = time
+  patch%istep = 0
+  patch%out_next = (int(patch%time/io%out_time)+1)*io%out_time
+  print *,'XXXX', patch%id, patch%time, patch%it, patch%out_next
+  !$omp end critical (output_cr)
+  call trace%end
+END SUBROUTINE input_nml
 
 !> =============================================================================
 !> Copy one text file to another

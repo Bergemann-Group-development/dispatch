@@ -4,6 +4,7 @@
 !> =============================================================================
 MODULE time_slices_mod
   USE io_mod
+  USE io_unit_mod
   USE trace_mod
   USE patch_mod
   USE kinds_mod
@@ -11,22 +12,42 @@ MODULE time_slices_mod
   implicit none
   private
   type, public:: time_slices_t
+    integer:: order=3
   contains
-    procedure, nopass:: test
+    procedure:: init
     procedure, nopass:: interpolate
     procedure, nopass:: derivative1
     procedure, nopass:: derivative2
   end type
-  integer, parameter:: verbose=0
-  integer, parameter:: order=4
+  integer, save:: verbose=0
+  integer, save:: order=3
+  integer, save:: id_debug=0
   type(time_slices_t), public:: time_slices
 CONTAINS
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE test()
+SUBROUTINE init (self, patch)
+  class(time_slices_t):: self
+  !.............................................................................
+  class(patch_t):: patch
+  integer:: iostat
+  namelist /time_slices_params/ verbose, order, id_debug
+  logical:: first_time=.true.
+  !-----------------------------------------------------------------------------
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io_unit%input)
+    read (io_unit%input, time_slices_params, iostat=iostat)
+    order = min(order,patch%nt-2)
+    write (io%output, time_slices_params)
+    write (io_unit%nml, time_slices_params)
+  end if
+  !$omp end critical (input_cr)
+  self%order = order
   call lagrange%test
-END SUBROUTINE test
+END SUBROUTINE init
 
 !> =============================================================================
 !> Time interpolation
@@ -41,7 +62,7 @@ SUBROUTINE interpolate (patch, mem, buffer)
   real(8), dimension(order+1):: w
   integer:: i1, i2
   !-----------------------------------------------------------------------------
-  if (verbose > 0) print *, patch%id, 'time_slices_t%interpolate'
+  if (verbose > 0) write(io_unit%log,*) patch%id, 'time_slices_t%interpolate'
   times = patch%t(patch%iit(1:patch%nt-1))
   call lagrange%sequence_weights (patch%out_next, times, i1, i2, w, order)
   call weighted_sum (patch, times, w, i1, i2, mem, buffer)
@@ -60,7 +81,7 @@ SUBROUTINE derivative1 (patch, mem, buffer)
   real(8), dimension(order+1):: w
   integer:: i1, i2
   !-----------------------------------------------------------------------------
-  if (verbose > 0) print *, patch%id, 'time_slices_t%derivative1'
+  if (verbose > 0) write(io_unit%log,*) patch%id, 'time_slices_t%derivative1'
   times = patch%t(patch%iit(1:patch%nt-1))
   call lagrange%deriv_sequence_weights (patch%out_next, times, i1, i2, w, order)
   call weighted_sum (patch, times, w, i1, i2, mem, buffer)
@@ -79,7 +100,7 @@ SUBROUTINE derivative2 (patch, mem, buffer)
   real(8), dimension(order+1):: w
   integer:: i1, i2
   !-----------------------------------------------------------------------------
-  if (verbose > 0) print *, patch%id, 'time_slices_t%derivative2'
+  if (verbose > 0) write(io_unit%log,*) patch%id, 'time_slices_t%derivative2'
   times = patch%t(patch%iit(1:patch%nt-1))
   call lagrange%deriv2_sequence_weights (patch%out_next, times, i1, i2, w, order)
   call weighted_sum (patch, times, w, i1, i2, mem, buffer)
@@ -97,10 +118,10 @@ SUBROUTINE weighted_sum (patch, times, w, i1, i2, mem, buffer)
   !.............................................................................
   integer:: i, li(3), ui(3)
   !-----------------------------------------------------------------------------
-  if (verbose>0) then
-    print '(a,2i4,2x,10i4)', 'indices:', i1, i2, patch%iit(i1:i2)
-    print '(a,f12.6,2x,10f12.6)'   , '  times:', patch%out_next, times(i1:i2)
-    print '(a,f12.6,2x,10f12.3)'   , 'weights:', sum(w), w
+  if (verbose>0 .or. patch%id==id_debug) then
+    write (io_unit%output,'(a,2i4,2x,10i4)')      'indices:', i1, i2, patch%iit(i1:i2)
+    write (io_unit%output,'(a,f12.6,2x,10f14.6)') '  times:', patch%out_next, times(i1:i2)
+    write (io_unit%output,'(a,f12.6,2x,10f14.3)') 'weights:', sum(w), w
   end if
   buffer = 0.0
   if (io%guard_zones) then
