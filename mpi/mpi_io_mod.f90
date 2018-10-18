@@ -368,7 +368,7 @@ SUBROUTINE check (self)
   ! more buffers to be appended simultaneously
   !-----------------------------------------------------------------------------
   if (ok) then
-    if (verbose > 0) &
+    if (verbose > 0 .and. .not.io_unit%do_validate) &
       write(io%output,'(1p,g14.6,i6,3x,a,i6)') &
         wallclock(), self%thread, 'I/O start, n =', self%n
     start = wallclock()
@@ -393,7 +393,7 @@ SUBROUTINE check (self)
           end if
           deallocate (item%buffer)
           nullify (item%buffer)
-          if (nprint > 0) then
+          if (nprint > 0 .and. .not.io_unit%do_validate) then
             nprint = nprint-1
             dwc = wallclock()-wc
             if (direct) then
@@ -414,12 +414,14 @@ SUBROUTINE check (self)
         end if
       end select
       done = done+1
-      if (verbose > 1) &
-        write(io%output,'(1p,g14.6,i6,3x,a,2i7)') &
-          wallclock(), self%thread, 'I/O req =', item%req, done
-      if (verbose > 0 .and. mod(done,1000) == 0) &
-        write(io%output,'(1p,g14.6,i6,3x,a,i7)') &
-          wallclock(), self%thread, 'I/O done =', done
+      if (.not.io_unit%do_validate) then
+        if (verbose > 1) &
+          write(io%output,'(1p,g14.6,i6,3x,a,2i7)') &
+            wallclock(), self%thread, 'I/O req =', item%req, done
+        if (verbose > 0 .and. mod(done,1000) == 0) &
+          write(io%output,'(1p,g14.6,i6,3x,a,i7)') &
+            wallclock(), self%thread, 'I/O done =', done
+      end if
       !!omp critical (iwrite_cr)
       next => node%next
       call self%remove (node)
@@ -427,7 +429,7 @@ SUBROUTINE check (self)
       node => next
       !!omp end critical (iwrite_cr)
     end do
-    if (verbose > 0) &
+    if (verbose > 0 .and. .not.io_unit%do_validate) &
       write(io%output,'(1p,g14.6,i6,3x,a,i6,0p,f12.3," s")') &
         wallclock(), self%thread, 'I/O final, n =', done, wallclock()-start
     !!omp critical (iwrite_cr)

@@ -157,7 +157,7 @@ SUBROUTINE output (self, patch, experiment_name)
         call mpi%abort ('unknown io%method = '//io%method)
       end if
       !---------------------------------------------------------------------------
-      if (count==0) then
+      if (count==0 .and. .not.io_unit%do_validate) then
         if (io%out_time > 0d0) then
           write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,2g14.5)') &
             trim(io%method)//'_io:output', &
