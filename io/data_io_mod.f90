@@ -428,7 +428,7 @@ SUBROUTINE input_nml (patch)
   if (first_time) then
     first_time = .false.
     patch%iout = io%restart
-    write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
+    write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%inputdir), patch%iout
     open  (unit=io_unit%nml1, file=filename, form='formatted', status='old')
     read  (io_unit%nml1, snapshot_nml)
     close (io_unit%nml1)
@@ -439,7 +439,6 @@ SUBROUTINE input_nml (patch)
   patch%time  = time
   patch%istep = 0
   patch%out_next = (int(patch%time/io%out_time)+1)*io%out_time
-  print *,'XXXX', patch%id, patch%time, patch%it, patch%out_next
   !$omp end critical (output_cr)
   call trace%end
 END SUBROUTINE input_nml

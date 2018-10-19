@@ -210,7 +210,7 @@ SUBROUTINE input (patch, ok)
   logical:: ok
   !.............................................................................
   integer(8):: snapshot_words, buffer_words
-  integer:: iv, n(3)
+  integer:: iv, n(3), slot
   real, dimension(:,:,:,:), pointer:: buffer
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -238,7 +238,9 @@ SUBROUTINE input (patch, ok)
   ! guard zone parameter, to allow it to differ
   !-----------------------------------------------------------------------------
   allocate (buffer(n(1),n(2),n(3),io%nv))
-  call mpi_io%read (buffer, 1+io%restart, 1 + (io%time_derivs+1)*(patch%id-1))
+  patch%iout = io%restart
+  slot = (io%time_derivs+1)*patch%iout
+  call mpi_io%read (buffer, 1+slot, 1+(patch%id-1)*(io%time_derivs+1))
   if (mpi_io%err /= 0) then
     ok = .false.
     call trace%end (itimer)

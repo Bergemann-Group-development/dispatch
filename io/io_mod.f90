@@ -151,6 +151,8 @@ SUBROUTINE init (self, name)
     end if
     self%format = format
     self%inputdir = inputdir
+    call ensure_dirname (self%inputdir)
+    call ensure_dirname (self%outputname)
     !---------------------------------------------------------------------------
     ! OMP specific setup
     !---------------------------------------------------------------------------
@@ -227,6 +229,14 @@ SUBROUTINE init (self, name)
   io_unit%top    = top
   io_unit%do_validate = do_validate
   call timer%init
+contains
+  !-----------------------------------------------------------------------------
+  subroutine ensure_dirname (s)
+    character(len=*):: s
+    integer:: l
+    l = len(trim(s))
+    if (s(l:l) /= '/') s(l+1:l+1)='/'
+  end subroutine
 END SUBROUTINE init
 
 !> =============================================================================
