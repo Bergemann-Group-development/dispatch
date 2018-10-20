@@ -468,7 +468,7 @@ SUBROUTINE update (self)
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
-  !call self%gpatch_t%update
+  call self%gpatch_t%update
   call trace%end (itimer)
 END SUBROUTINE update
 

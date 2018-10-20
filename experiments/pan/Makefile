@@ -8,8 +8,8 @@ OPTS = optimized
 #PATCH           = dispatchers
 EXEC            = dispatch.x
 UPD             = adams_bashforth
-#SOLVER          = stagger2
-SOLVER          = ramses/hydro
+SOLVER          = stagger2/e
+#SOLVER          = ramses/hydro
 #SOLVER          = ramses/mhd
 TOP             = ../..
 
