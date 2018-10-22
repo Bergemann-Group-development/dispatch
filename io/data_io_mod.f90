@@ -433,7 +433,6 @@ SUBROUTINE input_nml (patch)
     read  (io_unit%nml1, snapshot_nml)
     close (io_unit%nml1)
   end if
-  patch%iit   = patch%it
   patch%t     = time
   patch%dt    = 0d0
   patch%time  = time
