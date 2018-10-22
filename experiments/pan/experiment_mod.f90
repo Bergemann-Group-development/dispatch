@@ -55,10 +55,10 @@ SUBROUTINE init (self)
   !call self%periodic_grid
   !call particle_patch%init
   !call particle_patch%test
-  self%unsigned(self%idx%d) = .true.
-  self%pervolume(self%idx%px) = .true.
-  self%pervolume(self%idx%py) = .true.
-  self%pervolume(self%idx%pz) = .true.
+  self%unsigned(self%idx%d) = .false.
+  self%pervolume(self%idx%px) = .false.
+  self%pervolume(self%idx%py) = .false.
+  self%pervolume(self%idx%pz) = .false.
   call trace_end
 END SUBROUTINE init
 

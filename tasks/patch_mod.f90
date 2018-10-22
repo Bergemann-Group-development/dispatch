@@ -357,6 +357,7 @@ SUBROUTINE init_default (self)
     first_time = .false.
     rewind (io%input)
     read (io%input, patch_params)
+    if (dt_fixed > 0.0) grace=max(grace,1e-6)
     if (io%master) write (*, patch_params)
     rewind (io%input)
     read (io%input, out_params)
