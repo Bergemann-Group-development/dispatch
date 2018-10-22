@@ -282,7 +282,7 @@ SUBROUTINE pde (self)
     fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
     fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
   end if
-  u_max = self%fmaxval(cs+uu)
+  u_max = self%fmaxval(cs+uu) + self%fmaxval(cs)*self%nu(1)*3.0
   self%u_max = max(self%u_max,u_max)
   if (verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
   !-----------------------------------------------------------------------------
@@ -449,6 +449,7 @@ END SUBROUTINE pde
 SUBROUTINE update (self)
   class(mhd_t):: self
   integer, save:: itimer=0
+  integer:: i, it
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
   !call self%gravity
@@ -467,6 +468,16 @@ SUBROUTINE update (self)
   if (verbose>2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  if (self%id==io%id_debug) then
+    do i=1,self%nt
+      it = self%iit(i)
+      print'(a,i7,2x,4i3,2x,1p,e14.5,a,4e12.4)', &
+        'id,it,new,i,iit(i),t(iit(i)):', &
+        self%id, self%it, self%new, i, it, self%t(it), 'minmax(d):', &
+        self%fminval(self%mem(:,:,:,1,it,2)), self%fmaxval(self%mem(:,:,:,1,it,2)), &
+        self%fminval(self%mem(:,:,:,1,it,1)), self%fmaxval(self%mem(:,:,:,1,it,1))
+    end do
+  end if
   call self%check_density(' after timestep')
   call self%gpatch_t%update
   call trace%end (itimer)
