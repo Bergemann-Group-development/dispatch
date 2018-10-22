@@ -49,6 +49,8 @@ MODULE mhd_mod
     procedure:: output
     procedure:: gas_pressure
   end type
+  real, save:: d_floor=1e-4
+  logical, save:: test_p=.false.
   logical, save:: do_smooth=.false.
   integer, save:: verbose=0
 CONTAINS
@@ -66,7 +68,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    do_smooth, verbose
+    do_smooth, verbose, test_p, d_floor
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -149,6 +151,7 @@ SUBROUTINE pde (self)
   real, dimension(:,:,:),   pointer:: fzx,      fzz
   real, dimension(:,:,:),   allocatable:: du, ss, cs, pa, pp, pb, Q, uu, divU
   real, dimension(:,:,:),   allocatable, target:: ee, lnd
+  real, dimension(:,:,:),   allocatable:: dxy, dyz, dzx
   real, dimension(:,:,:),   allocatable:: Txx, Txy
   real, dimension(:,:,:),   allocatable::      Tyy, Tyz
   real, dimension(:,:,:),   allocatable:: Tzx,      Tzz
@@ -302,6 +305,47 @@ SUBROUTINE pde (self)
   self%u_max = max(self%u_max,u_max)
   if (verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
+  ! Test, explictly equal to the IDL re-inaction
+  !-----------------------------------------------------------------------------
+  call allocate_scalars_a (self%gn, Txy, Tyz, Tzx)
+  if (test_p) then
+    if (verbose>2) print *,self%id,' special case'
+    pg=d*self%csound**2
+    ux=px/exp(xdn(lnd))
+    uy=py/exp(ydn(lnd))
+    uz=pz/exp(zdn(lnd))
+    !
+    Txx=ddxup(ds,ux)
+    Tyy=ddyup(ds,uy)
+    Tzz=ddzup(ds,uz)
+    !
+    Txy=(ddxdn(ds,uy)+ddydn(ds,ux))*0.5
+    Tyz=(ddydn(ds,uz)+ddzdn(ds,uy))*0.5
+    Tzx=(ddzdn(ds,ux)+ddxdn(ds,uz))*0.5
+    !
+    call allocate_scalars_a (self%gn, dxy, dyz, dzx)
+    dxy=exp(xdn(ydn(lnd)))
+    dyz=exp(ydn(zdn(lnd)))
+    dzx=exp(zdn(xdn(lnd)))
+    !
+    fxx=d  *(xup(ux)**2     -ds(1)*self%nu(1)*Txx)+pg
+    fyy=d*  (yup(uy)**2     -ds(1)*self%nu(1)*Tyy)+pg
+    fzz=d*  (zup(uz)**2     -ds(1)*self%nu(1)*Tzz)+pg
+    fxy=dxy*(xdn(uy)*ydn(ux)-ds(1)*self%nu(1)*Txy)
+    fzx=dzx*(zdn(ux)*xdn(uz)-ds(1)*self%nu(1)*Tzx)
+    fyz=dyz*(ydn(uz)*zdn(uy)-ds(1)*self%nu(1)*Tyz)
+    !
+    call deallocate_scalars_a (dxy, dyz, dzx)
+    !
+    dpdtx=-ddxdn(ds,fxx)-ddyup(ds,fxy)-ddzup(ds,fzx)
+    dpdty=-ddxup(ds,fxy)-ddydn(ds,fyy)-ddzup(ds,fyz)
+    dpdtz=-ddxup(ds,fzx)-ddyup(ds,fyz)-ddzdn(ds,fzz)
+    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)                                      ! ops: 1 0 0
+  !-----------------------------------------------------------------------------
+  ! Original part
+  !-----------------------------------------------------------------------------
+  else
+  !-----------------------------------------------------------------------------
   ! Off-diagonal part of Reynolds stress, for now without the density factor.
   ! Note that, because of the symmmetry, we define only three components
   !-----------------------------------------------------------------------------
@@ -311,7 +355,6 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Add viscous part -- edge-centered
   !-----------------------------------------------------------------------------
-  call allocate_scalars_a (self%gn, Txy, Tyz, Tzx)
   Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)                                               ! ops: 0 1 0
   Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)                                               ! ops: 0 1 0
   Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)                                               ! ops: 0 1 0
@@ -360,12 +403,15 @@ SUBROUTINE pde (self)
   dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)                    ! ops: 2 0 0
   dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)                    ! ops: 2 0 0
   dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)                    ! ops: 2 0 0
+  end if
   !-----------------------------------------------------------------------------
-  ! External force; e.g. point source gravity.  Note that the density factor is
-  ! applied here, and should not be included in the function definition
+  ! External force, momentarily turned off for the time steps used in snapshots
   !-----------------------------------------------------------------------------
-  if (associated(self%force%selected)) &
+  if (associated(self%force%selected)) then
+    if (abs(self%time-self%out_next) > 4.0*self%dtime) then
    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)                                      ! ops: 1 0 0
+    end if
+  end if
   if (self%selfgravity) then
     phi => self%mem(:,:,:,self%idx%phi,self%it,1)
     dpdtx = dpdtx - dd(:,:,:,1)*ddxdn(ds,phi)
