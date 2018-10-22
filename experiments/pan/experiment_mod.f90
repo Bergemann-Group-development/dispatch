@@ -56,6 +56,9 @@ SUBROUTINE init (self)
   !call particle_patch%init
   !call particle_patch%test
   self%unsigned(self%idx%d) = .true.
+  self%pervolume(self%idx%px) = .true.
+  self%pervolume(self%idx%py) = .true.
+  self%pervolume(self%idx%pz) = .true.
   call trace_end
 END SUBROUTINE init
 
