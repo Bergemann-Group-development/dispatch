@@ -246,10 +246,6 @@ SUBROUTINE update (self, head, test, was_refined)
   if (.not.task%rotated) then
     call task%rotate
   end if
-  select type (task)
-  class is (patch_t)
-    !timer%n_update = timer%n_update + product(task%n)
-  end select
   call task%info (self%nq, self%na)                   ! print info on stdout
   !-----------------------------------------------------------------------------
   ! Tasks that have finished are subtracted from the task list count but are

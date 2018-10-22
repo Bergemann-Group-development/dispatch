@@ -439,6 +439,8 @@ SUBROUTINE input_nml (patch)
   patch%time  = time
   patch%istep = 0
   patch%out_next = (int(patch%time/io%out_time)+1)*io%out_time
+  patch%guard_zones = guard_zones
+  patch%time_derivs = time_derivs
   !$omp end critical (output_cr)
   call trace%end
 END SUBROUTINE input_nml

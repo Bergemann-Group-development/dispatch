@@ -40,6 +40,8 @@ MODULE patch_mod
     integer:: msplit=0                  ! how to split a patch when refining
     integer:: max_files                 ! prevent disk overrun when NaN happens
     integer:: check_refine_next=0
+    integer:: time_derivs               ! for restart changes
+    logical:: guard_zones               ! for restart changes
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
@@ -561,7 +563,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   self%it = 1                                   ! short-hand (=1 initially)
   self%new = min(2,self%nt)                     ! slot for updates
   self%iit(self%nt) = self%new                  ! first output slot
-  self%new = self%iit(self%nt)                  ! short-hand
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
   block
@@ -1692,6 +1693,7 @@ SUBROUTINE check_nan (self, label, always)
         else
           write(io%output,1) 'ERROR: NaN ix,iy,iz,iv:', ix,iy,iz,iv
         end if
+        flush (io%output)
       end if
       ii = [ix,iy,iz]
       nan = .true.
@@ -1701,6 +1703,7 @@ SUBROUTINE check_nan (self, label, always)
   end do
   end do
   if (nan) then
+    flush (io%output)
     panic = .true.
     if (present(label)) then
       write(io%output,*) self%id, trim(label)//' ERROR NaN, min(d), max(d):', &
@@ -1712,7 +1715,8 @@ SUBROUTINE check_nan (self, label, always)
         maxval(self%mem(:,:,:,self%idx%d,self%it,1)), ii
     end if
     write(io%output,*) self%unsigned
-    error stop 'NaN'
+    flush (io%output)
+    call io%abort ('found NaN -- check rank & thread logs!')
   end if
   call trace%end (itimer)
 END SUBROUTINE check_nan
@@ -1744,7 +1748,6 @@ SUBROUTINE check_density (self, label)
   mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1))
   if (present(label) .and. io%verbose>1) write (io_unit%log,*) label, self%id, mind
   if (mind <= 0.0) then
-    panic = .true.
     !---------------------------------------------------------------------------
     ! Negative densities appear to develop at a few points in the guard zones,
     ! so this tries to patch up, sampling densitites in the guard zone.
@@ -1771,15 +1774,26 @@ SUBROUTINE check_density (self, label)
     end do
     1 format(a,i8,3x,a,i8,a,i8,a)
     if (present(label)) then
-      if (io%verbose>1 .or. nins>0) &
+      if (nins > 0) then
         write (io_unit%output,1) 'ID ',self%id, &
-         'WARNING: density non-positive in',ntot,' points,',nins,' inside, '// &
+         'ERROR: density non-positive in',ntot,' points,',nins,' inside, '// &
          trim(label)
+      else if (io%verbose>0) then
+          write (io_unit%output,1) 'ID ',self%id, &
+           'WARNING: density non-positive in',ntot,' points,',nins,' inside, '// &
+           trim(label)
+      end if
     else
-      if (io%verbose>1 .or. nins>0) &
+      if (nins > 0) then
+        write (io_unit%output,1) 'ID ',self%id, &
+         'ERROR: density non-positive in',ntot,' points,',nins,' inside'
+      else if (io%verbose>0) then
         write (io_unit%output,1) 'ID ',self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside'
+      end if
     end if
+    if (nins > 0) &
+      panic = .true.
   end if
   call self%check_nan (label)
   !-----------------------------------------------------------------------------
@@ -1796,7 +1810,7 @@ SUBROUTINE check_density (self, label)
     end do
     end do
     !$omp end critical (panic_cr)
-    call io%abort ('panic')
+    call io%abort ('found non-positive density points -- check rank and thread logs')
   end if
   call trace%end (itimer)
 END SUBROUTINE check_density

@@ -552,8 +552,9 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%same_linear', itimer=itimer)
   if (target%id == io%id_debug) &
-    write(io%output,*) 'dbg download_t%same_linear: time, source =', &
-      target%time, source%id
+    write(io%output,'(a,1p,e14.5,i7,e14.5)') &
+      'dbg download_t%same_linear: time, source =', &
+      target%time, source%id, source%time
   call source%time_interval (target%time, jt, pt, all=all_times)
   if (present(only)) then
     iv1 = only
@@ -740,7 +741,7 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
           end do
         end if
       end if
-      if ((verbose>1.or.target%id==io%id_debug).and.product(max(0,u-l+1))>0) then
+      if (target%id==io%id_debug .and. product(max(0,u-l+1))>0) then
         if (iv==1.or.verbose>2) &
           write(io_unit%log,'(i6,4(2x,a,i6),1p,2e12.4)') target%id, &
           'same picked up', product(max(0,u-l+1)), &
