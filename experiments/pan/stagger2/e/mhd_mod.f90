@@ -332,15 +332,14 @@ SUBROUTINE pde (self)
     fyy=d*  (yup(uy)**2     -ds(1)*self%nu(1)*Tyy)+pg
     fzz=d*  (zup(uz)**2     -ds(1)*self%nu(1)*Tzz)+pg
     fxy=dxy*(xdn(uy)*ydn(ux)-ds(1)*self%nu(1)*Txy)
-    fzx=dzx*(zdn(ux)*xdn(uz)-ds(1)*self%nu(1)*Tzx)
     fyz=dyz*(ydn(uz)*zdn(uy)-ds(1)*self%nu(1)*Tyz)
+    fzx=dzx*(zdn(ux)*xdn(uz)-ds(1)*self%nu(1)*Tzx)
     !
     call deallocate_scalars_a (dxy, dyz, dzx)
     !
     dpdtx=-ddxdn(ds,fxx)-ddyup(ds,fxy)-ddzup(ds,fzx)
     dpdty=-ddxup(ds,fxy)-ddydn(ds,fyy)-ddzup(ds,fyz)
     dpdtz=-ddxup(ds,fzx)-ddyup(ds,fyz)-ddzdn(ds,fzz)
-    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)                                      ! ops: 1 0 0
   !-----------------------------------------------------------------------------
   ! Original part
   !-----------------------------------------------------------------------------
