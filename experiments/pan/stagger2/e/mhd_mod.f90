@@ -345,71 +345,71 @@ SUBROUTINE pde (self)
   ! Original part
   !-----------------------------------------------------------------------------
   else
-  !-----------------------------------------------------------------------------
-  ! Off-diagonal part of Reynolds stress, for now without the density factor.
-  ! Note that, because of the symmmetry, we define only three components
-  !-----------------------------------------------------------------------------
-  fxy = ydn(Ux)*xdn(Uy)                                                         ! ops: 0 1 0
-  fyz = zdn(Uy)*ydn(Uz)                                                         ! ops: 0 1 0
-  fzx = xdn(Uz)*zdn(Ux)                                                         ! ops: 0 1 0
-  !-----------------------------------------------------------------------------
-  ! Add viscous part -- edge-centered
-  !-----------------------------------------------------------------------------
-  Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)                                               ! ops: 0 1 0
-  Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)                                               ! ops: 0 1 0
-  Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)                                               ! ops: 0 1 0
-  fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*Txy                                 ! ops: 1 3 0
-  fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*Tyz                                 ! ops: 1 3 0
-  fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*Tzx                                 ! ops: 1 3 0
-  Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
-                               yup(zup(Tyz))**2 + &                             ! ops: 1 1 0
-                               zup(xup(Tzx))**2)                                ! ops: 1 0 0
-  call deallocate_scalars_a (Txy, Tyz, Tzx)
-  !-----------------------------------------------------------------------------
-  ! Multiply with edge-centered density
-  !-----------------------------------------------------------------------------
-  fxy = exp(ydn(ldx))*fxy                                                       ! ops: 0 1 0 0 1
-  fyz = exp(zdn(ldy))*fyz                                                       ! ops: 0 1 0 0 1
-  fzx = exp(xdn(ldz))*fzx                                                       ! ops: 0 1 0 0 1
-  !-----------------------------------------------------------------------------
-  ! Off-diagonal Maxwell stress
-  !-----------------------------------------------------------------------------
-  if (self%mhd) then
-    fxy = fxy - ydn(Bx)*xdn(By)                                                 ! mhd: 1 1 0
-    fyz = fyz - zdn(By)*ydn(Bz)                                                 ! mhd: 1 1 0
-    fzx = fzx - xdn(Bz)*zdn(Bx)                                                 ! mhd: 1 1 0
-  end if
-  !-----------------------------------------------------------------------------
-  ! Consistent addition of mass flux related momentum flux, symmetrized. The
-  ! diagonal part is analogous, a centered version of \nu \rho U_i \grad\ln\rho,
-  ! while the off-diagonal part needs to be properly symmetrized.
-  !-----------------------------------------------------------------------------
-  if (self%nu(4) > 0.0) then
-    pa = d*du*self%nu(4)                                                        ! ops: 0 2 0
-    !---------------------------------------------------------------------------
-    ! fxx, pa, ddxup(ldx), and xup(Ux) are all valid in (2:gn-1)
-    !---------------------------------------------------------------------------
-    fxx = fxx - pa*ddxup(ds,ldx)*xup(Ux)                                        ! ops: 1 2 0
-    fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)                                        ! ops: 1 2 0
-    fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)                                        ! ops: 1 2 0
-    fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))                           ! ops: 2 2 0
-    fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))                           ! ops: 2 2 0
-    fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))                           ! ops: 2 2 0
-  end if
-  !-----------------------------------------------------------------------------
-  ! Momentum equations.  The ddxdn(fxx) part is valid in (3:gn-1), and hence px
-  ! only needs guard zones in (1:2) and (gn:gn)
-  !-----------------------------------------------------------------------------
-  dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)                    ! ops: 2 0 0
-  dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)                    ! ops: 2 0 0
-  dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)                    ! ops: 2 0 0
+    !-----------------------------------------------------------------------------
+    ! Off-diagonal part of Reynolds stress, for now without the density factor.
+    ! Note that, because of the symmmetry, we define only three components
+    !-----------------------------------------------------------------------------
+    fxy = ydn(Ux)*xdn(Uy)                                                         ! ops: 0 1 0
+    fyz = zdn(Uy)*ydn(Uz)                                                         ! ops: 0 1 0
+    fzx = xdn(Uz)*zdn(Ux)                                                         ! ops: 0 1 0
+    !-----------------------------------------------------------------------------
+    ! Add viscous part -- edge-centered
+    !-----------------------------------------------------------------------------
+    Txy = ddxdn(ds,Uy)+ddydn(ds,Ux)                                               ! ops: 0 1 0
+    Tyz = ddydn(ds,Uz)+ddzdn(ds,Uy)                                               ! ops: 0 1 0
+    Tzx = ddzdn(ds,Ux)+ddxdn(ds,Uz)                                               ! ops: 0 1 0
+    fxy = fxy - self%nu(3)*0.5*xdn1(ydn1(du))*Txy                                 ! ops: 1 3 0
+    fyz = fyz - self%nu(3)*0.5*ydn1(zdn1(du))*Tyz                                 ! ops: 1 3 0
+    fzx = fzx - self%nu(3)*0.5*zdn1(xdn1(du))*Tzx                                 ! ops: 1 3 0
+    Q = Q + self%nu(3)*0.5*d*du*(xup(yup(Txy))**2 + &                             ! ops: 2 5 0
+                                 yup(zup(Tyz))**2 + &                             ! ops: 1 1 0
+                                 zup(xup(Tzx))**2)                                ! ops: 1 0 0
+    call deallocate_scalars_a (Txy, Tyz, Tzx)
+    !-----------------------------------------------------------------------------
+    ! Multiply with edge-centered density
+    !-----------------------------------------------------------------------------
+    fxy = exp(ydn(ldx))*fxy                                                       ! ops: 0 1 0 0 1
+    fyz = exp(zdn(ldy))*fyz                                                       ! ops: 0 1 0 0 1
+    fzx = exp(xdn(ldz))*fzx                                                       ! ops: 0 1 0 0 1
+    !-----------------------------------------------------------------------------
+    ! Off-diagonal Maxwell stress
+    !-----------------------------------------------------------------------------
+    if (self%mhd) then
+      fxy = fxy - ydn(Bx)*xdn(By)                                                 ! mhd: 1 1 0
+      fyz = fyz - zdn(By)*ydn(Bz)                                                 ! mhd: 1 1 0
+      fzx = fzx - xdn(Bz)*zdn(Bx)                                                 ! mhd: 1 1 0
+    end if
+    !-----------------------------------------------------------------------------
+    ! Consistent addition of mass flux related momentum flux, symmetrized. The
+    ! diagonal part is analogous, a centered version of \nu \rho U_i \grad\ln\rho,
+    ! while the off-diagonal part needs to be properly symmetrized.
+    !-----------------------------------------------------------------------------
+    if (self%nu(4) > 0.0) then
+      pa = d*du*self%nu(4)                                                        ! ops: 0 2 0
+      !---------------------------------------------------------------------------
+      ! fxx, pa, ddxup(ldx), and xup(Ux) are all valid in (2:gn-1)
+      !---------------------------------------------------------------------------
+      fxx = fxx - pa*ddxup(ds,ldx)*xup(Ux)                                        ! ops: 1 2 0
+      fyy = fyy - pa*ddyup(ds,ldy)*yup(Uy)                                        ! ops: 1 2 0
+      fzz = fzz - pa*ddzup(ds,ldz)*zup(Uz)                                        ! ops: 1 2 0
+      fxy = fxy + (xdn1(fdy)*ydn(Ux)+ydn1(fdx)*xdn(Uy))                           ! ops: 2 2 0
+      fyz = fyz + (ydn1(fdz)*zdn(Uy)+zdn1(fdy)*ydn(Uz))                           ! ops: 2 2 0
+      fzx = fzx + (zdn1(fdx)*xdn(Uz)+xdn1(fdz)*zdn(Ux))                           ! ops: 2 2 0
+    end if
+    !-----------------------------------------------------------------------------
+    ! Momentum equations.  The ddxdn(fxx) part is valid in (3:gn-1), and hence px
+    ! only needs guard zones in (1:2) and (gn:gn)
+    !-----------------------------------------------------------------------------
+    dpdtx = - ddxdn1(ds,fxx) - ddyup1(ds,fxy) - ddzup1(ds,fzx)                    ! ops: 2 0 0
+    dpdty = - ddxup1(ds,fxy) - ddydn1(ds,fyy) - ddzup1(ds,fyz)                    ! ops: 2 0 0
+    dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)                    ! ops: 2 0 0
   end if
   !-----------------------------------------------------------------------------
   ! External force, momentarily turned off for the time steps used in snapshots
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) then
     if (abs(self%time-self%out_next) > 4.0*self%dtime) then
-   dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)                                      ! ops: 1 0 0
+      dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)                                      ! ops: 1 0 0
     end if
   end if
   if (self%selfgravity) then
@@ -496,6 +496,7 @@ SUBROUTINE update (self)
   class(mhd_t):: self
   integer, save:: itimer=0
   integer:: i, it
+  real, dimension(:,:,:), pointer:: d
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
   !call self%gravity
@@ -514,6 +515,8 @@ SUBROUTINE update (self)
   if (verbose>2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  d => self%mem(:,:,:,self%idx%d,self%new,1)
+  d = max(d,d_floor)
   if (self%id==io%id_debug) then
     do i=1,self%nt
       it = self%iit(i)
