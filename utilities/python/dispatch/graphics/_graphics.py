@@ -87,3 +87,20 @@ def power2d(f,*kw):
         k0=k1
         k1=k1*a
     pl.loglog(kk,power,*kw)
+
+def show_plot(figure_id=None):
+    """ raise a figure to the top """
+    if figure_id is None:
+        fig = pl.gcf()
+    else:
+        # do this even if figure_id == 0
+        fig = pl.figure(num=figure_id)
+    pl.show()
+    pl.pause(1e-9)
+    fig.canvas.manager.window.activateWindow()
+    fig.canvas.manager.window.raise_()
+
+def pause(time=1e-6):
+    """ replace the normal pause, w/o raising window() """
+    pl.draw()
+    pl.gcf().canvas.start_event_loop(time)
