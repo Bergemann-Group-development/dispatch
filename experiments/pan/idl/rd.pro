@@ -1,5 +1,5 @@
 ; ==============================================================================
-; Convert a zero-based integer address to a 3-D address
+; Convert a zero-based integer address to a 3-D address -- optional /mpi order
 ; ==============================================================================
 FUNCTION from_1D_to_3D, i, n, mpi=mpi
   if keyword_set(mpi) then begin
@@ -43,24 +43,18 @@ END
 ; ==============================================================================
 ; Read a DISPATCH unigrid snapshot
 ; ==============================================================================
-FUNCTION rd,run,mpi=mpi,iv=iv,iout=iout,nn=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv, $
-            order=order,time=time,hack=hack,verbose=verbose
+FUNCTION rd,run,mpi=mpi,iv=iv,iout=iout,nn=n,gn=gn,nv=nv,order=order,time=time, $
+            hack=hack,verbose=verbose
   default,mpi,[1,1,1]
   default,iout,0L
   default,n,32L
   default,gn,1024L
   default,iv,0
   default,nv,5L
-  default,ix,[0,gn/n-1]
-  default,iy,[0,gn/n-1]
-  default,iz,[0,gn/n-1]
   default,verbose,0
   default,order,0
   default,hack,0
   if keyword_set(time) then wc=systime(1)
-  if n_elements(ix) eq 1 then ix=[ix,ix]
-  if n_elements(iy) eq 1 then iy=[iy,iy]
-  if n_elements(iz) eq 1 then iz=[iz,iz]
   ;
   ; Open file for reading patch variables
   file='data/'+run+'/snapshots.dat'
