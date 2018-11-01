@@ -69,9 +69,11 @@ SUBROUTINE trace_begin (id, set_verbose, itimer)
     if (io%omp_trace) then
       write(io_unit%log,fmt) omp_mythread, wc, trim(id)//' begin'
       flush(io_unit%log)
-    else if (io%master) then
+    else
+      !$omp critical (trace_cr)
       write(io%output,fmt) omp_mythread, wc, trim(id)//' begin'
       flush(io%output)
+      !$omp end critical (trace_cr)
     end if
   end if
 END SUBROUTINE trace_begin
@@ -94,9 +96,11 @@ SUBROUTINE trace_tag (id)
     if (io%omp_trace) then
       write(io_unit%log,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
       flush(io_unit%log)
-    else if (io%master) then
+    else
+      !$omp critical (trace_cr)
       write(io%output,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
       flush(io%output)
+      !$omp end critical (trace_cr)
     end if
     level  = min(level+1,maxlev)
   end if
@@ -127,9 +131,11 @@ SUBROUTINE trace_end (itimer)
     if (io%omp_trace) then
       write(io_unit%log,fmt) omp_mythread, wc, trim(tracing(level))//' end'
       flush(io_unit%log)
-    else if (io%master) then
+    else
+      !$omp critical (trace_cr)
       write(io%output,fmt) omp_mythread, wc, trim(tracing(level))//' end'
       flush(io%output)
+      !$omp end critical (trace_cr)
     end if
   end if
   indent = max(indent-3,4)
