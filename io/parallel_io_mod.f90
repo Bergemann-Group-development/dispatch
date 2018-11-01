@@ -69,6 +69,11 @@ SUBROUTINE init (patch)
     recl = io%nv*product(patch%n)*4
   end if
   call file_out%openw (filename, recl)
+  if (io%format > 9 .and. io%format < 14) then
+    io%nwrite = io%ntask*io%nv
+  else
+    io%nwrite = io%ntask
+  end if
   call mpi_io%set (nwrite=io%nwrite*(io%time_derivs+1))
   call time_slices%init (patch)
   call trace%end
@@ -109,11 +114,11 @@ SUBROUTINE output (patch)
     n = patch%n
   end if
   !-----------------------------------------------------------------------------
-  ! If io%method is 'compact', then slots in the file are ordered (id,iv,iout),
+  ! If 9 < io%format < 14 then slots in the file are ordered (id,iv,iout),
   ! while otherwise they are ordered (iv,id,iout).  The former is much faster
   ! to read, while the latter is faster to write.
   !-----------------------------------------------------------------------------
-  if (io%method == 'compact') then
+  if (io%format > 9 .and. io%format < 14) then
     buffer_words = product(n)
   else
     buffer_words = product(n)*io%nv
@@ -169,10 +174,17 @@ SUBROUTINE output (patch)
 contains
   !-----------------------------------------------------------------------------
   subroutine convert_variables
-    if (io%format >= 8 .and. iv==patch%idx%d) then
+    integer:: ioformat
+    !...........................................................................
+    if (io%format > 9 .and. io%format < 14) then
+      ioformat = io%format - 4
+    else
+      ioformat = io%format
+    end if
+    if (ioformat >= 8 .and. iv==patch%idx%d) then
       ! --- Convert density to log density ---
       mem = log(patch%mem(:,:,:,iv,:,1))
-    else if ((io%format == 6 .or. io%format==8) .and. patch%solver_is('ramses') &
+    else if ((ioformat == 6 .or. ioformat==8) .and. patch%solver_is('ramses') &
         .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
       ! --- Convert momentum to velocity ---
       mem = patch%mem(:,:,:,iv,:,1)/patch%mem(:,:,:,patch%idx%d,:,1)
@@ -182,7 +194,8 @@ contains
   end subroutine
   !-----------------------------------------------------------------------------
   subroutine io_write (slot, ider)
-    integer:: slot, ider, iv, islot
+    integer:: slot, ider, iv, islot, m(4)
+    real, dimension(:,:,:), pointer:: buf
     !---------------------------------------------------------------------------
     ! This ordering has the derivative order added to the snapshot number, which
     ! is incremented by (io%time_derivs+1), with patch%id starting with 1, and
@@ -196,11 +209,15 @@ contains
     ! This ordering has all patch data for one variable inside the same N**3
     ! section of the disk, so it can be read directly, and reordered in memory
     !---------------------------------------------------------------------------
-    else if (io%method == 'compact') then
+    else if (io%format > 9 .and. io%format < 14) then
+      m = rank(buffer)
       do iv=1,io%nv
         islot = 1 + iv + io%nv*(ider + patch%iout*(io%time_derivs+1))
-        call mpi_io%iwrite (buffer, islot, patch%id)
+        allocate (buf(m(1),m(2),m(3)))
+        buf = buffer(:,:,:,iv)
+        call mpi_io%iwrite (buf, islot, patch%id)
       end do
+      deallocate (buffer)
     !---------------------------------------------------------------------------
     ! This ordering has the derivative order added to the patch%id, which is
     ! in turn causing an increment by (io%time_derivs+1), so effectively adding
@@ -240,7 +257,11 @@ SUBROUTINE input (patch, ok)
   !-----------------------------------------------------------------------------
   ! Compute offset size constants for the mpi_io reader
   !-----------------------------------------------------------------------------
-  buffer_words = product(n)*io%nv
+  if (io%format > 9 .and. io%format < 14) then
+    buffer_words = product(n)
+  else
+    buffer_words = product(n)*io%nv
+  end if
   snapshot_words = buffer_words*io%ntotal
   call mpi_io%use (file_in)
   call mpi_io%set (snapshot_words, buffer_words, io%nwrite*(io%time_derivs+1))

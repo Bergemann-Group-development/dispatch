@@ -48,6 +48,7 @@ MODULE mpi_io_mod
   type, public, extends(dll_node_t):: iwrite_t
     integer:: req, handle, words
     integer(kind=MPI_OFFSET_KIND):: pos
+    real, dimension(:,:,:), pointer:: buffer3 => null()
     real, dimension(:,:,:,:), pointer:: buffer => null()
   end type
   !-----------------------------------------------------------------------------
@@ -83,7 +84,9 @@ MODULE mpi_io_mod
     procedure, private:: write3
     procedure, private:: write4
     generic, public :: write => write3, write4
-    procedure:: iwrite
+    procedure, private:: iwrite3
+    procedure, private:: iwrite4
+    generic, public :: iwrite => iwrite3, iwrite4
     procedure, private:: read3
     procedure, private:: read4
     generic, public :: read => read3, read4
@@ -223,7 +226,48 @@ END SUBROUTINE write4
 !> =============================================================================
 !> Write a chunk (self%lsize) out to the open file
 !> =============================================================================
-SUBROUTINE iwrite (self, f, rec, id)
+SUBROUTINE iwrite3 (self, f, rec, id)
+  class(mpi_io_t):: self
+  real(kind=4), dimension(:,:,:), pointer:: f
+  integer:: rec, id
+#ifdef MPI
+  integer(kind=MPI_OFFSET_KIND):: pos
+  class(iwrite_t), pointer:: item
+  class(dll_node_t), pointer:: node
+  integer:: n
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_t%iwrite', itimer=itimer)
+  call self%check_init
+  pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
+  if (verbose>2) &
+    print '(a,3i8,i15,2f12.0)', ' mpi_io_t%iwrite: rec, id, words, pos =', &
+    rec, id, self%chunk_words, pos , minval(f), maxval(f)
+  !-----------------------------------------------------------------------------
+  ! Add details we need in order to check for buffers to deallocate
+  !-----------------------------------------------------------------------------
+  allocate (item)
+  item%handle = self%file%handle
+  item%words  = self%chunk_words
+  item%pos    = pos
+  item%req    = id
+  item%buffer3 => f
+  !$omp critical (iwrite_cr)
+  node => item
+  call self%iwrite_list%append (node)
+  n = self%iwrite_list%n
+  !$omp end critical (iwrite_cr)
+  if (verbose>1) &
+    write(io%output,'(f12.6,i5,2x,a,i7,i4)') &
+      wallclock(), omp%thread, 'appended req, n =', item%req, n
+  call trace%end (itimer)
+#endif
+END SUBROUTINE iwrite3
+
+!> =============================================================================
+!> Write a chunk (self%lsize) out to the open file
+!> =============================================================================
+SUBROUTINE iwrite4 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:,:), pointer:: f
   integer:: rec, id
@@ -259,7 +303,7 @@ SUBROUTINE iwrite (self, f, rec, id)
       wallclock(), omp%thread, 'appended req, n =', item%req, n
   call trace%end (itimer)
 #endif
-END SUBROUTINE iwrite
+END SUBROUTINE iwrite4
 
 !> =============================================================================
 !> Read a chunk (self%lsize) from the open file
@@ -381,17 +425,24 @@ SUBROUTINE check (self)
       select type (node)
       class is (iwrite_t)
         item => node
-        if (associated(item%buffer)) then
+        if (associated(item%buffer) .or. associated(item%buffer3)) then
           wc = wallclock()
           if (direct) then
             rec = 1 + item%pos/item%words/4
             write (io_unit%direct, rec=rec) item%buffer
+            deallocate (item%buffer)
+          else if (associated(item%buffer3)) then
+            call MPI_File_write_at (item%handle, item%pos, item%buffer3, &
+                                    item%words, MPI_REAL, status, err)
+            call io%assert (err==0, 'MPI_File_write_at: error code non-zero')
+            deallocate (item%buffer3)
+            nullify (item%buffer3)
           else
             call MPI_File_write_at (item%handle, item%pos, item%buffer, &
                                     item%words, MPI_REAL, status, err)
             call io%assert (err==0, 'MPI_File_write_at: error code non-zero')
+            deallocate (item%buffer)
           end if
-          deallocate (item%buffer)
           nullify (item%buffer)
           if (nprint > 0 .and. .not.io_unit%do_validate) then
             nprint = nprint-1
@@ -409,7 +460,7 @@ SUBROUTINE check (self)
           !do while (wallclock()-wc < dwc)
           !end do
         else
-          write(io%output) &
+          write(io%output,*) &
             self%thread, 'buffer not associated on req', item%req
         end if
       end select

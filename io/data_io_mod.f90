@@ -67,14 +67,12 @@ SUBROUTINE init (self, task)
           call parallel_io%init (task)
         else if (io%method=='parallel') then
           call parallel_io%init (task)
-        else if (io%method=='compact') then
-          call parallel_io%init (task)
         end if
       end select
     end if
     call self%kind_list%init
     self%initialized = .true.
-    print *,'data_io_t%init: io%nwrite =', io%nwrite
+    if (io%master) print *,'data_io_t%init: io%nwrite =', io%nwrite
     call trace%end
   end if
 !$omp end critical (data_io_cr)
@@ -152,10 +150,6 @@ SUBROUTINE output (self, patch, experiment_name)
       else if (io%method=='parallel') then
         if (io%format == 0) &
           io%format = 6
-        call parallel_io%output (patch)
-      else if (io%method=='compact') then
-        if (io%format == 0) &
-          io%format = 10
         call parallel_io%output (patch)
       else
         call mpi%abort ('unknown io%method = '//io%method)
