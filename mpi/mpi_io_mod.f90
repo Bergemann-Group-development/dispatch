@@ -212,7 +212,8 @@ SUBROUTINE write4 (self, f, rec, id)
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose>1) &
-    write (io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write4: rec, id, words, pos =', &
+    write (io_unit%mpi, '(a,2i6,i12,i15,1p,2e14.6)') &
+      ' mpi_io_t%write4: rec, id, words, pos, min/max =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
   !!omp critical (mpi_io_cr)
   call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &

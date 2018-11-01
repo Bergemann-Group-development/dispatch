@@ -328,7 +328,12 @@ SUBROUTINE output_single (patch, count)
     start = wallclock()
     do ider=1,nder
     do iv=1,io%nv
-      irec = 1 + mpi%rank + mpi%size*(iv + ider*io%nv)
+      !-------------------------------------------------------------------------
+      ! Each "record" is product(n)*io%ntasks words long, and contains values
+      ! for one variable, for all the patches in a rank.  The ranks are written
+      ! out one after the other for one variable, followed by then next var
+      !-------------------------------------------------------------------------
+      irec = 1 + mpi%rank + mpi%size*(iv-1 + (ider-1)*io%nv)
       call mpi_io%write (parallel_io%buffer(:,:,:,:,iv,ider), 1+patch%iout, irec)
     end do
     end do

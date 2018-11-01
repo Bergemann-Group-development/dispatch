@@ -1,11 +1,30 @@
+;===============================================================================
+; Read the RHS value of a namelist variable in a file with NAME = value
+;===============================================================================
+FUNCTION read_str,file,name
+  openr,u,file,/get
+  str=''
+  while not eof(u) do begin
+    readf,u,str
+    if stregex(str,strupcase(name)+' *=') ne -1 then begin
+      a=strsplit(str,'=',/extract)
+      b=strsplit(a[1],',',/extract)
+      free_lun,u
+      return,strtrim(b[0],2)
+    end
+  end
+  free_lun,u
+  return,''
+END
+
 ; ==============================================================================
 ; Convert a zero-based integer address to a 3-D address -- optional /mpi order
 ; ==============================================================================
 FUNCTION from_1D_to_3D, i, n, mpi=mpi
   if keyword_set(mpi) then begin
     ii=i
-    iz=ii mod n[0]
-    ii=(ii-iz)/n[0]
+    iz=ii mod n[2]
+    ii=(ii-iz)/n[2]
     iy=ii mod n[1]
     ii=(ii-iy)/n[1]
     ix=ii
@@ -41,6 +60,34 @@ FUNCTION id_to_cartesian, id, n_mpi, n_patch, verbose=verbose
 END
 
 ; ==============================================================================
+; Read a DISPATCH unigrid snapshot in compact format.  Assumes that the patches
+; in each rank are collected and written out in sequentail order.
+; ==============================================================================
+FUNCTION rd_single,u,mpi,iout,iv,nv,gn,n,verbose=verbose
+  v=fltarr(gn,gn,gn,/nozero)
+  n_patch=[1,1,1]*gn/n
+  n_per_rank=n_patch/mpi
+  nrank=product(mpi,/integer)
+  ntask=product(n_per_rank,/integer)
+  a=assoc(u,fltarr(n,n,n,ntask,nrank))
+  b=a[iv+nv*iout]
+  free_lun,u
+  for ir=0,nrank-1 do begin
+    i_mpi=from_1d_to_3d(ir,mpi,/mpi)
+    for ip=0,ntask-1 do begin
+      i_pos=from_1d_to_3d(ip,n_per_rank)
+      i_patch=i_mpi*n_per_rank+i_pos
+      ix=i_patch[0]*n & jx=ix+n-1
+      iy=i_patch[1]*n & jy=iy+n-1
+      iz=i_patch[2]*n & jz=iz+n-1
+      if verbose gt 1 then print,ir,ip
+      v[ix:jx,iy:jy,iz:jz]=b[*,*,*,ip,ir]
+    end
+  end
+  return,v
+END
+
+; ==============================================================================
 ; Read a DISPATCH unigrid snapshot
 ; ==============================================================================
 FUNCTION rd,run,mpi=mpi,iv=iv,iout=iout,nn=n,gn=gn,nv=nv,order=order,time=time, $
@@ -58,7 +105,16 @@ FUNCTION rd,run,mpi=mpi,iv=iv,iout=iout,nn=n,gn=gn,nv=nv,order=order,time=time, 
   ;
   ; Open file for reading patch variables
   file='data/'+run+'/snapshots.dat'
+  meta='data/'+run+'/'+string(iout,format='(i5.5)')+'/snapshot.nml'
+  ioformat=long(read_str(meta,'format'))
+  if verbose gt 0 then print,'ioformat:', ioformat
   openr,u,/get,file
+  if ioformat gt 9 and ioformat lt 14 then begin
+    start=systime(1)
+    v=rd_single(u,mpi,iout,iv,nv,gn,n,verbose=verbose)
+    if keyword_set(time) then print,systime(1)-start,' sec'
+    return,v
+  end
   a=assoc(u,fltarr(n,n,n))
   ;
   ; Compute 3D dimensions
