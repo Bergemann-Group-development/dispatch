@@ -656,6 +656,8 @@ SUBROUTINE test (self)
   integer:: order, i, i0, i1
   real(8), dimension(n):: x, y, w
   real(8):: x0, y0
+  !-----------------------------------------------------------------------------
+  if (.not. io%master) return
   print *,'--------------- lagrange_t%test ------------------'
   x = 0.0
   y = 1.0

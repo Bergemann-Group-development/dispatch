@@ -146,11 +146,11 @@ SUBROUTINE output (self, patch, experiment_name)
       else if (io%method=='pan') then
         if (io%format == 0) &
           io%format = 6
-        call parallel_io%output (patch)
+        call parallel_io%output (patch, count)
       else if (io%method=='parallel') then
         if (io%format == 0) &
           io%format = 6
-        call parallel_io%output (patch)
+        call parallel_io%output (patch, count)
       else
         call mpi%abort ('unknown io%method = '//io%method)
       end if

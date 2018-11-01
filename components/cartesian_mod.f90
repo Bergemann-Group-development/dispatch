@@ -54,7 +54,7 @@ SUBROUTINE init (self, label)
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
   logical:: face_nbors=.false., fast_nbors=.false.
   integer:: thread, icoords(3),ipos(3)
-  integer:: id
+  integer:: id, ip
   integer, save:: itimer=0
   namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
     fast_nbors, omp_init
@@ -88,6 +88,7 @@ SUBROUTINE init (self, label)
   end if
   mpi_dims = mpi_coords%dims
   patches_per_mpi = self%dims/mpi_dims
+  mpi_coords%npatch = patches_per_mpi
   io%ntask = product(patches_per_mpi)
   !-----------------------------------------------------------------------------
   ! io%nwrite is the number of task writes this process is doing per snapshot --
@@ -116,14 +117,20 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   allocate (links(0:self%dims(1)-1,0:self%dims(2)-1,0:self%dims(3)-1))
   io%ntotal = product(self%dims)
+  ip = 0
   do k=0,self%dims(3)-1
   do j=0,self%dims(2)-1
   do i=0,self%dims(1)-1
     allocate (link, patch); link%task => patch; patch%link => link
     task => link%task
     links(i,j,k)%p => null()
+    ! --- patch 3D and 1D coordinates ---
     patch%ipos = [i,j,k]
     patch%rank = mpi_coords%coords_to_rank ([i,j,k]/patches_per_mpi)
+    if (patch%rank == mpi%rank) then
+      ip = ip + 1
+      patch%ip = ip
+    end if
     call patch%task_t%init_unique
     patch%box = self%size
     patch%size = self%size / self%dims

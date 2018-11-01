@@ -6,11 +6,14 @@ OPTS = optimized
 
 # Default target and methods
 #PATCH           = dispatchers
-EXEC            = dispatch.x
 UPD             = adams_bashforth
-SOLVER          = stagger2/e
 #SOLVER          = ramses/hydro
+#EXEC            = dispatch_hllc.x
 #SOLVER          = ramses/mhd
+#EXEC            = dispatch_hlld.x
+SOLVER          = stagger2/e
+EXEC            = dispatch_stagger2e.x
+EXEC            = dispatch.x
 TOP             = ../..
 
 # Tomida & Hori, with opacity

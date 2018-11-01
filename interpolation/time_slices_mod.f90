@@ -46,7 +46,8 @@ SUBROUTINE init (self, patch)
   end if
   !$omp end critical (input_cr)
   self%order = order
-  call lagrange%test
+  if (io%master) &
+    call lagrange%test
 END SUBROUTINE init
 
 !> =============================================================================
@@ -116,7 +117,7 @@ SUBROUTINE weighted_sum (patch, times, w, i1, i2, mem, buffer)
   real(kind=KindScalarVar), dimension(:,:,:,:):: mem
   real(kind=KindScalarVar), dimension(:,:,:):: buffer
   !.............................................................................
-  integer:: i, li(3), ui(3)
+  integer:: i
   !-----------------------------------------------------------------------------
   if (verbose>0 .or. patch%id==id_debug) then
     write (io_unit%output,'(a,2i4,2x,10i4)')      'indices:', i1, i2, patch%iit(i1:i2)
@@ -124,17 +125,9 @@ SUBROUTINE weighted_sum (patch, times, w, i1, i2, mem, buffer)
     write (io_unit%output,'(a,f12.6,2x,10f14.3)') 'weights:', sum(w), w
   end if
   buffer = 0.0
-  if (io%guard_zones) then
-    do i=i1,i2
-      buffer = buffer + w(1+i-i1)*mem(:,:,:,patch%iit(i))
-    end do
-  else
-    li = patch%mesh%li
-    ui = patch%mesh%ui
-    do i=i1,i2
-      buffer = buffer + w(1+i-i1)*mem(li(1):ui(1),li(2):ui(2),li(3):ui(3),patch%iit(i))
-    end do
-  end if
+  do i=i1,i2
+    buffer = buffer + w(1+i-i1)*mem(:,:,:,i)
+  end do
 END SUBROUTINE weighted_sum
 
 END MODULE time_slices_mod

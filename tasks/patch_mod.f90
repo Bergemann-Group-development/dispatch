@@ -63,7 +63,8 @@ MODULE patch_mod
     integer:: n(3)=0, ng(3)=0           ! defaults, to detect unchanged values
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
     integer:: ncell(3)                  ! number of cells per patch
-    integer:: ipos(3)                   ! integer position
+    integer:: ip                        ! integer position, 1D
+    integer:: ipos(3)                   ! integer position, 3D
     real(8):: offset(3)                 ! this is used to compute indices, locations
     real(8):: llc_cart(3)=0d0           ! the lower left corner of the patch in *Cartesian* coords.
     real(8):: llc_nat(3)=0d0            ! the lower left corner of the patch in its *own* coords.

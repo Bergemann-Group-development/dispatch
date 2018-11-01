@@ -8,14 +8,17 @@ MODULE parallel_io_mod
   USE io_mod
   USE io_unit_mod
   USE omp_mod
+  USE omp_timer_mod
   USE mpi_mod
   USE mpi_io_mod
   USE mpi_io_file_mod
   USE trace_mod
   USE time_slices_mod
+  USE counters_mod
   implicit none
   private
   type, public:: parallel_io_t
+    real, dimension(:,:,:,:,:,:), pointer:: buffer => null()
   contains
     procedure, nopass:: init
     procedure, nopass:: input
@@ -69,11 +72,7 @@ SUBROUTINE init (patch)
     recl = io%nv*product(patch%n)*4
   end if
   call file_out%openw (filename, recl)
-  if (io%format > 9 .and. io%format < 14) then
-    io%nwrite = io%ntask*io%nv
-  else
-    io%nwrite = io%ntask
-  end if
+  io%nwrite = io%ntask
   call mpi_io%set (nwrite=io%nwrite*(io%time_derivs+1))
   call time_slices%init (patch)
   call trace%end
@@ -93,8 +92,9 @@ END SUBROUTINE close
 !> =============================================================================
 !> Write output in increments of one patch data cube
 !> =============================================================================
-SUBROUTINE output (patch)
+SUBROUTINE output (patch, count)
   class(patch_t):: patch
+  integer:: count
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
   integer:: iv, n(3), jt(2), iw, nw
@@ -103,6 +103,10 @@ SUBROUTINE output (patch)
   logical:: first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  if (io%format > 9 .and. io%format < 14) then
+    call output_single (patch, count)
+    return
+  end if
   call trace%begin ('parallel_io_t%output', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Set size parameters; a buffer is all variables in the patch, and the
@@ -118,12 +122,12 @@ SUBROUTINE output (patch)
   ! while otherwise they are ordered (iv,id,iout).  The former is much faster
   ! to read, while the latter is faster to write.
   !-----------------------------------------------------------------------------
+  snapshot_words = product(n)*io%nv*io%ntotal
   if (io%format > 9 .and. io%format < 14) then
-    buffer_words = product(n)
+    buffer_words = snapshot_words
   else
     buffer_words = product(n)*io%nv
   end if
-  snapshot_words = product(n)*io%nv*io%ntotal
   call mpi_io%use (file_out)
   call mpi_io%set (snapshot_words, buffer_words, io%nwrite*(io%time_derivs+1))
   !-----------------------------------------------------------------------------
@@ -229,6 +233,140 @@ contains
     end if
   end subroutine
 END SUBROUTINE output
+
+!> =============================================================================
+!> Write output as one single buffer
+!> =============================================================================
+SUBROUTINE output_single (patch, count)
+  class(patch_t):: patch
+  integer:: count
+  !.............................................................................
+  integer(8):: snapshot_words, buffer_words, pos
+  integer:: iv, n(3), jt(2), iw, nw, nder, irec, ider, ip
+  real, dimension(:,:,:,:), pointer:: mem
+  real, dimension(:,:,:), pointer:: buffer
+  real:: pt(2)
+  real(8):: start
+  logical:: first_time=.true.
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('parallel_io_t%output_single', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Set size parameters; a buffer is all variables in the patch, and the
+  ! snspshot offset is that times the number of patches per snapshot.
+  !-----------------------------------------------------------------------------
+  if (io%guard_zones) then
+    n = patch%gn
+  else
+    n = patch%n
+  end if
+  !-----------------------------------------------------------------------------
+  ! If 9 < io%format < 14 then slots in the file are ordered (id,iv,iout),
+  ! while otherwise they are ordered (iv,id,iout).  The former is much faster
+  ! to read, while the latter is faster to write.
+  !-----------------------------------------------------------------------------
+  nder = io%time_derivs+1
+  snapshot_words = product(n)*io%ntotal*io%nv*nder
+  buffer_words = product(n)*io%ntask
+  call mpi_io%use (file_out)
+  call mpi_io%set (snapshot_words, buffer_words, 99)
+  if (.not.associated(parallel_io%buffer)) then
+    nder = io%time_derivs+1
+    allocate (parallel_io%buffer(n(1),n(2),n(3),io%ntask,io%nv,nder))
+    write (io%output,*) 'shape io%biffer =', shape(parallel_io%buffer)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Info
+  !-----------------------------------------------------------------------------
+  if (first_time .and. io%master) then
+    first_time = .false.
+    print '(a,f8.3,a,i10,a)', &
+      ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
+      io%ntotal, ' patches'
+  end if
+  ! --- rank-local patch 1D index; cf. cartesian_mod ---
+  ip = patch%ip
+  !ip = io%ntask - count
+  if (ip < 0 .or. ip > io%ntask) then
+    print *, 'WARNING', ip
+    ip = max(1,min(ip,io%ntask))
+  end if
+  if (io%verbose>0) then
+    write(io%output,'(a,6i6,2i12,l3)') &
+      ' parallel_io_t%output_single: id, ip, iout, n, snapshot_words, buffer_words =', &
+      patch%id, ip, patch%iout, n, snapshot_words, buffer_words, associated(parallel_io%buffer)
+    flush (io%output)
+  end if
+  allocate (mem(n(1),n(2),n(3),patch%nt-1))
+  !-----------------------------------------------------------------------------
+  ! Time interpolation to exaxt out_next
+  !-----------------------------------------------------------------------------
+  do iv=1,io%nv
+    call convert_variables
+    buffer => parallel_io%buffer(:,:,:,ip,iv,1)
+    call time_slices%interpolate (patch, mem, buffer)
+  end do
+  !-----------------------------------------------------------------------------
+  ! On-the-fly time derivatives output
+  !-----------------------------------------------------------------------------
+  if (io%time_derivs>0) then
+    do iv=1,io%nv
+      call convert_variables
+      buffer => parallel_io%buffer(:,:,:,ip,iv,2)
+      call time_slices%derivative1 (patch, mem, buffer)
+    end do
+    if (io%time_derivs==2) then
+      do iv=1,io%nv
+        call convert_variables
+        buffer => parallel_io%buffer(:,:,:,ip,iv,3)
+        call time_slices%derivative2 (patch, mem, buffer)
+      end do
+    end if
+  end if
+  deallocate (mem)
+  if (count == 0) then
+    start = wallclock()
+    do ider=1,nder
+    do iv=1,io%nv
+      irec = 1 + mpi%rank + mpi%size*(iv + ider*io%nv)
+      call mpi_io%write (parallel_io%buffer(:,:,:,:,iv,ider), 1+patch%iout, irec)
+    end do
+    end do
+    write (io%output,'(a,f7.3,1x,a)') &
+      'parallel_io%output_single: MPI_File_write_at I/O', wallclock()-start, 'sec'
+  end if
+  call trace%end (itimer)
+contains
+  !-----------------------------------------------------------------------------
+  subroutine convert_variables
+    integer:: ioformat, nt1, l(3), u(3)
+    !...........................................................................
+    if (io%format > 9 .and. io%format < 14) then
+      ioformat = io%format - 4
+    else
+      ioformat = io%format
+    end if
+    if (io%guard_zones) then
+      l = patch%mesh%lb
+      u = patch%mesh%ub
+    else
+      l = patch%mesh%li
+      u = patch%mesh%ui
+    end if
+    nt1 = patch%nt-1
+    if (ioformat >= 8 .and. iv==patch%idx%d) then
+      ! --- Convert density to log density ---
+      mem = log(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1))
+    else if ((ioformat == 6 .or. ioformat==8) .and. patch%solver_is('ramses') &
+        .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
+      ! --- Convert momentum to velocity ---
+      mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1) &
+          / patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%iit(1:nt1),1)
+    else
+      mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1)
+    end if
+  end subroutine
+END SUBROUTINE output_single
 
 !> =============================================================================
 !> Read input in increments of one variable data cube

@@ -137,7 +137,7 @@ SUBROUTINE init_unique (self, keep)
   logical, optional:: keep
   !.............................................................................
   integer:: rank
-  logical:: first_time=.true.
+  logical, save:: first_time=.true.
   class(*), pointer:: idp
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init_id')
