@@ -109,14 +109,16 @@ SUBROUTINE output (patch)
     n = patch%n
   end if
   !-----------------------------------------------------------------------------
-  ! A call to mpi_io%iwrite (iout, id) result in slots in the file ordered
-  ! by (iv,id,iout), where iv=1,nv; id=1,io%ntotal, iout=1,nsnap. To output
-  ! time derivatives, while still using a buffer with nv slots, we pretend that
-  ! io%ntotal is twice as large, and output the time derivs as patch 2+2*(id-1),
-  ! with variables as patch 1+2*(id-1).
+  ! If io%method is 'compact', then slots in the file are ordered (id,iv,iout),
+  ! while otherwise they are ordered (iv,id,iout).  The former is much faster
+  ! to read, while the latter is faster to write.
   !-----------------------------------------------------------------------------
-  buffer_words = product(n)*io%nv
-  snapshot_words = buffer_words*io%ntotal
+  if (io%method == 'compact') then
+    buffer_words = product(n)
+  else
+    buffer_words = product(n)*io%nv
+  end if
+  snapshot_words = product(n)*io%nv*io%ntotal
   call mpi_io%use (file_out)
   call mpi_io%set (snapshot_words, buffer_words, io%nwrite*(io%time_derivs+1))
   !-----------------------------------------------------------------------------
@@ -180,7 +182,7 @@ contains
   end subroutine
   !-----------------------------------------------------------------------------
   subroutine io_write (slot, ider)
-    integer:: slot, ider
+    integer:: slot, ider, iv, islot
     !---------------------------------------------------------------------------
     ! This ordering has the derivative order added to the snapshot number, which
     ! is incremented by (io%time_derivs+1), with patch%id starting with 1, and
@@ -190,6 +192,15 @@ contains
     !---------------------------------------------------------------------------
     if (io%method == 'pan') then
       call mpi_io%iwrite (buffer, 1+ider+slot, patch%id)
+    !---------------------------------------------------------------------------
+    ! This ordering has all patch data for one variable inside the same N**3
+    ! section of the disk, so it can be read directly, and reordered in memory
+    !---------------------------------------------------------------------------
+    else if (io%method == 'compact') then
+      do iv=1,io%nv
+        islot = 1 + iv + io%nv*(ider + patch%iout*(io%time_derivs+1))
+        call mpi_io%iwrite (buffer, islot, patch%id)
+      end do
     !---------------------------------------------------------------------------
     ! This ordering has the derivative order added to the patch%id, which is
     ! in turn causing an increment by (io%time_derivs+1), so effectively adding

@@ -67,6 +67,8 @@ SUBROUTINE init (self, task)
           call parallel_io%init (task)
         else if (io%method=='parallel') then
           call parallel_io%init (task)
+        else if (io%method=='compact') then
+          call parallel_io%init (task)
         end if
       end select
     end if
@@ -151,6 +153,10 @@ SUBROUTINE output (self, patch, experiment_name)
         if (io%format == 0) &
           io%format = 6
         call parallel_io%output (patch)
+      else if (io%method=='compact') then
+        if (io%format == 0) &
+          io%format = 10
+        call parallel_io%output (patch)
       else
         call mpi%abort ('unknown io%method = '//io%method)
       end if
@@ -207,7 +213,7 @@ SUBROUTINE input (self, patch, ok)
   end if
   if (ok) then
     count = counters%decrement (io%restart+1, io%nwrite)
-    if (count==0) then
+    if (count==0 .and. io%master) then
       write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)') &
         trim(io%method)//'_io:input', &
         'snapshot '//trim(io%outputname), io%restart, patch%time
