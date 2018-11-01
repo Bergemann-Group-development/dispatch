@@ -149,6 +149,8 @@ SUBROUTINE init_unique (self, keep)
       id(rank) = 1+rank
     end do
     self%id = id(self%rank)
+    !print *, self%rank, 'IDDBG first time, id =', id(self%rank)
+    id(self%rank) = id(self%rank) + mpi%size
   !else if (deleted_list%n > 0) then
   !  idp => deleted_list%pop()
   !  select type (idp)
@@ -170,16 +172,19 @@ SUBROUTINE init_unique (self, keep)
           self%id, self%rank, mpi%size
         call mpi%abort
       end if
+      !print *, self%rank, 'IDDBG present(keep) 1, id =', id(self%rank)
     else
-      id(self%rank) = id(self%rank) + mpi%size
       self%id = id(self%rank)
+      !print *, self%rank, 'IDDBG present(keep) 2, id =', id(self%rank)
+      id(self%rank) = id(self%rank) + mpi%size
     end if
   !-----------------------------------------------------------------------------
   ! Here we enforce a unique and MPI-consistent ID
   !-----------------------------------------------------------------------------
   else
-    id(self%rank) = id(self%rank) + mpi%size
     self%id = id(self%rank)
+    !print *, self%rank, 'IDDBG generic, id =', id(self%rank)
+    id(self%rank) = id(self%rank) + mpi%size
   end if
   if (self%id==1) self%track = .true.
   if (self%id==io%id_debug) self%track = .true.
