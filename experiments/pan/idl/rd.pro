@@ -1,35 +1,50 @@
 ; ==============================================================================
 ; Convert a zero-based integer address to a 3-D address
 ; ==============================================================================
-FUNCTION from_1D_to_3D, i, n
-  ii=i
-  ix=ii mod n[0]
-  ii=(ii-ix)/n[0]
-  iy=ii mod n[1]
-  ii=(ii-iy)/n[1]
-  iz=ii
+FUNCTION from_1D_to_3D, i, n, mpi=mpi
+  if keyword_set(mpi) then begin
+    ii=i
+    iz=ii mod n[0]
+    ii=(ii-iz)/n[0]
+    iy=ii mod n[1]
+    ii=(ii-iy)/n[1]
+    ix=ii
+  end else begin
+    ii=i
+    ix=ii mod n[0]
+    ii=(ii-ix)/n[0]
+    iy=ii mod n[1]
+    ii=(ii-iy)/n[1]
+    iz=ii
+  end
   return, [ix,iy,iz]
 END
 
 ; ==============================================================================
 ; Convert a zero-based patch number to a 3-D space address, with MPI-numbering
 ; ==============================================================================
-FUNCTION id_to_cartesian, id, n_mpi, n_patch
+FUNCTION id_to_cartesian, id, n_mpi, n_patch, verbose=verbose
   n_rank = product(n_mpi,/integer)
   rank = id mod n_rank
-  mpi_3d = from_1d_to_3d (rank, n_mpi)
+  mpi_3d = from_1d_to_3d (rank, n_mpi, /mpi)
   id_1d = (id-rank)/n_rank
   id_3d = from_1d_to_3d(id_1d, n_patch)
   cart_3d = id_3d + mpi_3d*n_patch
-  print,'   rank:',rank
-  print,' mpi_3d:',mpi_3d
-  print,'  id_1d:',id_1d
-  print,'  id_3d:',id_3d
-  print,'cart_3d:',cart_3d
+  if verbose gt 1 then begin
+    print,'   rank:',rank
+    print,' mpi_3d:',mpi_3d
+    print,'  id_1d:',id_1d
+    print,'  id_3d:',id_3d
+    print,'cart_3d:',cart_3d
+  end
   return, cart_3d
 END
 
-FUNCTION rd,run,mpi=mpi,iv=iv,iout=iout,nn=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=verbose,order=order,time=time
+; ==============================================================================
+; Read a DISPATCH unigrid snapshot
+; ==============================================================================
+FUNCTION rd,run,mpi=mpi,iv=iv,iout=iout,nn=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv, $
+            order=order,time=time,hack=hack,verbose=verbose
   default,mpi,[1,1,1]
   default,iout,0L
   default,n,32L
@@ -41,6 +56,7 @@ FUNCTION rd,run,mpi=mpi,iv=iv,iout=iout,nn=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbo
   default,iz,[0,gn/n-1]
   default,verbose,0
   default,order,0
+  default,hack,0
   if keyword_set(time) then wc=systime(1)
   if n_elements(ix) eq 1 then ix=[ix,ix]
   if n_elements(iy) eq 1 then iy=[iy,iy]
@@ -70,7 +86,7 @@ FUNCTION rd,run,mpi=mpi,iv=iv,iout=iout,nn=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbo
   ;
   ; Loop over all patches (IDL_id = Fortan_id - 1)
   for id1=0L,np-1 do begin
-    cart=id_to_cartesian(id1,n_mpi,n_patch)
+    cart=id_to_cartesian(id1,n_mpi,n_patch,verbose=verbose)
     jx=cart[0]
     jy=cart[1]
     jz=cart[2]
@@ -85,10 +101,10 @@ FUNCTION rd,run,mpi=mpi,iv=iv,iout=iout,nn=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbo
     ;
     ; Read patch and insert values
     nmpi=product(n_mpi,/integer)
-    if id1 mod nmpi eq 0 then begin
-      id=id1
-    end else begin
+    if keyword_set(hack) and id1 mod nmpi ne 0 then begin
       id=id1+nmpi
+    end else begin
+      id=id1
     end
     if order eq 0 then ii=iv+id*nv+iout*nv*np else ii=id+(iv+iout*nv)*np
     ff=a[ii]
