@@ -1,73 +1,100 @@
-FUNCTION rd,run,iv=iv,iout=iout,id=id,nn=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=verbose,order=order,time=time
+; ==============================================================================
+; Convert a zero-based integer address to a 3-D address
+; ==============================================================================
+FUNCTION from_1D_to_3D, i, n
+  ii=i
+  ix=ii mod n[0]
+  ii=(ii-ix)/n[0]
+  iy=ii mod n[1]
+  ii=(ii-iy)/n[1]
+  iz=ii
+  return, [ix,iy,iz]
+END
+
+; ==============================================================================
+; Convert a zero-based patch number to a 3-D space address, with MPI-numbering
+; ==============================================================================
+FUNCTION id_to_cartesian, id, n_mpi, n_patch
+  n_rank = product(n_mpi,/integer)
+  rank = id mod n_rank
+  mpi_3d = from_1d_to_3d (rank, n_mpi)
+  id_1d = (id-rank)/n_rank
+  id_3d = from_1d_to_3d(id_1d, n_patch)
+  cart_3d = id_3d + mpi_3d*n_patch
+  print,'   rank:',rank
+  print,' mpi_3d:',mpi_3d
+  print,'  id_1d:',id_1d
+  print,'  id_3d:',id_3d
+  print,'cart_3d:',cart_3d
+  return, cart_3d
+END
+
+FUNCTION rd,run,mpi=mpi,iv=iv,iout=iout,nn=n,gn=gn,ix=ix,iy=iy,iz=iz,nv=nv,verbose=verbose,order=order,time=time
+  default,mpi,[1,1,1]
   default,iout,0L
   default,n,32L
   default,gn,1024L
   default,iv,0
-  default,id,0
   default,nv,5L
   default,ix,[0,gn/n-1]
   default,iy,[0,gn/n-1]
   default,iz,[0,gn/n-1]
   default,verbose,0
-  default,order,1
+  default,order,0
   if keyword_set(time) then wc=systime(1)
   if n_elements(ix) eq 1 then ix=[ix,ix]
   if n_elements(iy) eq 1 then iy=[iy,iy]
   if n_elements(iz) eq 1 then iz=[iz,iz]
+  ;
+  ; Open file for reading patch variables
   file='data/'+run+'/snapshots.dat'
   openr,u,/get,file
   a=assoc(u,fltarr(n,n,n))
-  m=long(gn)/n
-  np=m^3
-  if id gt 0 then begin
-    i0=id
-    i1=id
-    f=fltarr(n,n,n,/nozer)
-  end else begin
-    i0=0L
-    i1=np-1
-    f=fltarr(n*(ix[1]-ix[0]+1),n*(iy[1]-iy[0]+1),n*(iz[1]-iz[0]+1),/nozer)
-  end
+  ;
+  ; Compute 3D dimensions
+  m_cell=[gn,gn,gn]                     ; 3D total cells
+  n_cell=[n,n,n]                        ; 3D patch cells
+  m_patch=m_cell/n_cell                 ; 3D patch count
+  n_mpi=long(mpi)                       ; 3D MPI rank dims
+  n_patch=m_patch/n_mpi                 ; 3D patches per MPI rank
+  ;
+  np=product(m_patch,/integer)
   if verbose gt 0 then begin
-    help,f
-    print,np
-    print,ix
-    print,iy
-    print,iz
+    print,' m_cell:',m_cell
+    print,' n_cell:',n_cell
+    print,'m_patch:',m_patch
+    print,'n_patch:',n_patch
+    print,'  n_mpi:',n_mpi
   end
-  for i=i0,i1 do begin
-    ii=i
-    jz=i/m^2
-    if jz lt iz[0] then continue
-    if jz gt iz[1] then continue
-    ii=i-jz*m^2
-    jy=ii/m
-    if jy lt iy[0] then continue
-    if jy gt iy[1] then continue
-    jx=ii-jy*m
-    if jx lt ix[0] then continue
-    if jx gt ix[1] then continue
-    kx=n*(jx-ix[0])
-    ky=n*(jy-iy[0])
-    kz=n*(jz-iz[0])
+  f=fltarr(gn,gn,gn,/nozero)
+  ;
+  ; Loop over all patches (IDL_id = Fortan_id - 1)
+  for id1=0L,np-1 do begin
+    cart=id_to_cartesian(id1,n_mpi,n_patch)
+    jx=cart[0]
+    jy=cart[1]
+    jz=cart[2]
+    ;
+    ; At this point [jx,jy,jz] are the coordinates in patch 3D space
+    kx=n*jx
+    ky=n*jy
+    kz=n*jz
     nx=n
     ny=n
     nz=n
-    if verbose eq 2 then print,i,kx,ky,kz,jx,jy,jz
-    if verbose gt 2 then begin
-      if order eq 0 then ii=iv+i*nv+iout*nv*np else ii=i+(iv+iout*nv)*np
-      ff=a[ii]
-      print,i,kx,ky,kz,nx,ny,nz,min(ff,max=max),max
-      f[kx:kx+nx-1,ky:ky+ny-1,kz:kz+nx-1]=ff
+    ;
+    ; Read patch and insert values
+    nmpi=product(n_mpi,/integer)
+    if id1 mod nmpi eq 0 then begin
+      id=id1
     end else begin
-      if order eq 0 then ii=iv+i*nv+iout*nv*np else ii=i+(iv+iout*nv)*np
-      if id gt 0 then begin
-        print,'jx,jy,jz=',jx,jy,jz
-        f=a[ii]
-      end else begin
-        f[kx:kx+nx-1,ky:ky+ny-1,kz:kz+nx-1]=a[ii]
-      end
+      id=id1+nmpi
     end
+    if order eq 0 then ii=iv+id*nv+iout*nv*np else ii=id+(iv+iout*nv)*np
+    ff=a[ii]
+    f[kx:kx+nx-1,ky:ky+ny-1,kz:kz+nx-1]=ff
+    if verbose eq 2 then print,id,jx,jy,jz,kx,ky,kz
+    if verbose gt 2 then print,id,kx,ky,kz,min(ff,max=max),max
   end
   close,u
   free_lun,u
