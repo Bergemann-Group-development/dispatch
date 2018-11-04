@@ -273,7 +273,7 @@ SUBROUTINE output_single (patch, count)
   if (.not.associated(parallel_io%buffer)) then
     nder = io%time_derivs+1
     allocate (parallel_io%buffer(n(1),n(2),n(3),io%ntask,io%nv,nder))
-    write (io%output,*) 'shape io%biffer =', shape(parallel_io%buffer)
+    write (io%output,*) 'shape io%buffer =', shape(parallel_io%buffer)
   end if
   !-----------------------------------------------------------------------------
   ! Info
@@ -286,7 +286,6 @@ SUBROUTINE output_single (patch, count)
   end if
   ! --- rank-local patch 1D index; cf. cartesian_mod ---
   ip = patch%ip
-  !ip = io%ntask - count
   if (ip < 0 .or. ip > io%ntask) then
     print *, 'WARNING', ip
     ip = max(1,min(ip,io%ntask))
@@ -344,13 +343,8 @@ SUBROUTINE output_single (patch, count)
 contains
   !-----------------------------------------------------------------------------
   subroutine convert_variables
-    integer:: ioformat, nt1, l(3), u(3)
+    integer:: nt1, l(3), u(3)
     !...........................................................................
-    if (io%format > 9 .and. io%format < 14) then
-      ioformat = io%format - 4
-    else
-      ioformat = io%format
-    end if
     if (io%guard_zones) then
       l = patch%mesh%lb
       u = patch%mesh%ub
@@ -359,10 +353,10 @@ contains
       u = patch%mesh%ui
     end if
     nt1 = patch%nt-1
-    if (ioformat >= 8 .and. iv==patch%idx%d) then
+    if (io%format >= 8 .and. iv==patch%idx%d) then
       ! --- Convert density to log density ---
       mem = log(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1))
-    else if ((ioformat == 6 .or. ioformat==8) .and. patch%solver_is('ramses') &
+    else if ((io%format == 6 .or. io%format==8) .and. patch%solver_is('ramses') &
         .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
       ! --- Convert momentum to velocity ---
       mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1) &
@@ -384,6 +378,11 @@ SUBROUTINE input (patch, ok)
   integer:: iv, n(3), slot
   real, dimension(:,:,:,:), pointer:: buffer
   integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  if (io%format > 9 .and. io%format < 14) then
+    call input_single (patch, ok)
+    return
+  end if
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%input', itimer=itimer)
   !-----------------------------------------------------------------------------
@@ -453,7 +452,7 @@ contains
   !-----------------------------------------------------------------------------
   subroutine convert_variables
     !-----------------------------------------------------------------------------
-    ! Using log(d) if io%format==8
+    ! Using log(d) if io%format==8 or 9
     !-----------------------------------------------------------------------------
     if (io%format >= 8 .and. iv==patch%idx%d) then
       ! --- Convert log density to density ---
@@ -469,5 +468,120 @@ contains
     end if
   end subroutine
 END SUBROUTINE input
+
+!> =============================================================================
+!> Read input in just one read per variable, reading all patches for this rank
+!> in one go.  Use the same parallel_io%buffer as for writes.
+!> =============================================================================
+SUBROUTINE input_single (patch, ok)
+  class(patch_t):: patch
+  logical:: ok
+  !.............................................................................
+  integer(8):: snapshot_words, buffer_words
+  integer:: iv, n(3), slot, nder, irec
+  logical, save:: read_failed=.false., first_time=.true.
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('parallel_io_t%input', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Set size parameters
+  !-----------------------------------------------------------------------------
+  if (file_in%handle==0) then
+    call init (patch)
+  end if
+  if (io%guard_zones) then
+    n = patch%gn
+  else
+    n = patch%n
+  end if
+  !-----------------------------------------------------------------------------
+  ! Slots in the file are ordered (ip,rank,iv,iout), so all patches for one
+  ! variable that belong to this rank may be read at once
+  !-----------------------------------------------------------------------------
+  nder = io%time_derivs+1
+  snapshot_words = product(n)*io%ntotal*io%nv*nder
+  buffer_words = product(n)*io%ntask
+  call mpi_io%use (file_in)
+  call mpi_io%set (snapshot_words, buffer_words, 99)
+  if (.not.associated(parallel_io%buffer)) then
+    nder = io%time_derivs+1
+    allocate (parallel_io%buffer(n(1),n(2),n(3),io%ntask,io%nv,nder))
+    write (io%output,*) 'shape io%buffer =', shape(parallel_io%buffer)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Read via buffer, in case guard zones not included. FIXME: read snapshot
+  ! guard zone parameter, to allow it to differ
+  !-----------------------------------------------------------------------------
+  patch%iout = io%restart
+  if (first_time) then
+    first_time = .false.
+    do iv=1,io%nv
+      !-------------------------------------------------------------------------
+      ! Each "record" is product(n)*io%ntasks words long, and contains values
+      ! for one variable, for all the patches in a rank.  The ranks are written
+      ! out one after the other for one variable, followed by then next var
+      !-------------------------------------------------------------------------
+      irec = 1 + mpi%rank + mpi%size*(iv-1)
+      call mpi_io%read (parallel_io%buffer(:,:,:,:,iv,1), 1+patch%iout, irec)
+    end do
+    if (mpi_io%err /= 0) then
+      read_failed = .true.
+      print *, mpi%rank, ' read failed', io%restart
+    else
+      print *, mpi%rank, ' read succeeded', io%restart
+    end if
+  end if
+  if (read_failed) then
+    ok = .false.
+    call trace%end (itimer)
+    return
+  end if
+  if (io%guard_zones) then
+    patch%mem(:,:,:,:,patch%it,1) = parallel_io%buffer(:,:,:,patch%ip,:,1)
+  else
+    patch%mem(patch%li(1):patch%ui(1), &
+              patch%li(2):patch%ui(2), &
+              patch%li(3):patch%ui(3),:,patch%it,1) = parallel_io%buffer(:,:,:,patch%ip,:,1)
+  end if
+  if (io%verbose>1) then
+    do iv=1,io%nv
+      write (io_unit%output,*) 'parallel_io_t%input: id, iv, iout, min, max =', &
+        patch%id, iv, patch%iout, patch%fminval(iv), patch%fmaxval(iv)
+    end do
+  end if
+  do iv=1,io%nv
+    call convert_variables
+  end do
+  !-----------------------------------------------------------------------------
+  ! Signal success
+  !-----------------------------------------------------------------------------
+  ok = .true.
+  patch%time = io%restart*io%out_time
+  if (io%verbose==1) print '(a,2i6,1p,e16.6)', ' parallel_io_t%input: iout, id, time =', &
+    patch%iout, patch%id, patch%time
+  if (io%verbose>1) print '(a,4i6,2i7)', &
+    ' parallel_io_t%input: iout, n, snapshot_words, buffer_words =', &
+    patch%iout, n, snapshot_words, buffer_words
+  call trace%end (itimer)
+contains
+  !-----------------------------------------------------------------------------
+  subroutine convert_variables
+    !-----------------------------------------------------------------------------
+    ! Using log(d) if io%format==12 or 13
+    !-----------------------------------------------------------------------------
+    if (io%format >= 12 .and. iv==patch%idx%d) then
+      ! --- Convert log density to density ---
+      patch%mem(:,:,:,iv,:,1) = exp(patch%mem(:,:,:,iv,:,1))
+    end if
+    !-----------------------------------------------------------------------------
+    ! Restore to momentum variables for RAMSES snapshots
+    !-----------------------------------------------------------------------------
+    if ((io%format == 10 .or. io%format==12) .and. patch%solver_is('ramses') &
+        .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
+      ! --- Convert velocity to momentum ---
+      patch%mem(:,:,:,iv,:,1) = patch%mem(:,:,:,iv,:,1)*patch%mem(:,:,:,patch%idx%d,:,1)
+    end if
+  end subroutine
+END SUBROUTINE input_single
 
 END MODULE parallel_io_mod
