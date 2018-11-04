@@ -380,7 +380,9 @@ SUBROUTINE input (patch, ok)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (io%format > 9 .and. io%format < 14) then
+    !!omp critical (parallel_in_cr)
     call input_single (patch, ok)
+    !!omp end critical (parallel_in_cr)
     return
   end if
   !-----------------------------------------------------------------------------
@@ -438,10 +440,14 @@ SUBROUTINE input (patch, ok)
     call convert_variables
   end do
   !-----------------------------------------------------------------------------
+  ! Make sure all time slots have the correct time set
+  !-----------------------------------------------------------------------------
+  patch%time = io%restart*io%out_time
+  patch%t(patch%iit) = patch%time
+  !-----------------------------------------------------------------------------
   ! Signal success
   !-----------------------------------------------------------------------------
   ok = .true.
-  patch%time = io%restart*io%out_time
   if (io%verbose==1) &
     write(io%output,'(a,2i6,1p,e16.6)') ' parallel_io_t%input: iout, id, time =', &
     patch%iout, patch%id, patch%time
@@ -484,7 +490,7 @@ SUBROUTINE input_single (patch, ok)
   logical, save:: read_failed=.false., first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('parallel_io_t%input', itimer=itimer)
+  call trace%begin ('parallel_io_t%input_single', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Set size parameters
   !-----------------------------------------------------------------------------
@@ -505,24 +511,23 @@ SUBROUTINE input_single (patch, ok)
   buffer_words = product(n)*io%ntask
   call mpi_io%use (file_in)
   call mpi_io%set (snapshot_words, buffer_words, 99)
-  if (.not.associated(parallel_io%buffer)) then
-    nder = io%time_derivs+1
-    allocate (parallel_io%buffer(n(1),n(2),n(3),io%ntask,io%nv,nder))
-    write (io%output,*) 'shape io%buffer =', shape(parallel_io%buffer)
-  end if
   !-----------------------------------------------------------------------------
-  ! Read via buffer, in case guard zones not included. FIXME: read snapshot
-  ! guard zone parameter, to allow it to differ
+  ! Make sure only the first thread to come here allocates the buffer, if needed
   !-----------------------------------------------------------------------------
   patch%iout = io%restart
+  !$omp critical (parallel_in_cr)
   if (first_time) then
     first_time = .false.
+    if (.not.associated(parallel_io%buffer)) then
+      nder = io%time_derivs+1
+      allocate (parallel_io%buffer(n(1),n(2),n(3),io%ntask,io%nv,nder))
+      write (io%output,*) 'shape io%buffer =', shape(parallel_io%buffer)
+    end if
+    !---------------------------------------------------------------------------
+    ! Read via buffer, in case guard zones not included. FIXME: read snapshot
+    ! guard zone parameter, to allow it to differ
+    !---------------------------------------------------------------------------
     do iv=1,io%nv
-      !-------------------------------------------------------------------------
-      ! Each "record" is product(n)*io%ntasks words long, and contains values
-      ! for one variable, for all the patches in a rank.  The ranks are written
-      ! out one after the other for one variable, followed by then next var
-      !-------------------------------------------------------------------------
       irec = 1 + mpi%rank + mpi%size*(iv-1)
       call mpi_io%read (parallel_io%buffer(:,:,:,:,iv,1), 1+patch%iout, irec)
     end do
@@ -533,6 +538,7 @@ SUBROUTINE input_single (patch, ok)
       write(io%output,*) 'io%parallel_io: read succeeded', io%restart
     end if
   end if
+  !$omp end critical (parallel_in_cr)
   if (read_failed) then
     ok = .false.
     call trace%end (itimer)
@@ -555,17 +561,14 @@ SUBROUTINE input_single (patch, ok)
     call convert_variables
   end do
   !-----------------------------------------------------------------------------
+  ! Make sure all time slots have the correct time set
+  !-----------------------------------------------------------------------------
+  patch%time = io%restart*io%out_time
+  patch%t(patch%iit) = patch%time
+  !-----------------------------------------------------------------------------
   ! Signal success
   !-----------------------------------------------------------------------------
   ok = .true.
-  patch%time = io%restart*io%out_time
-  if (io%verbose==1) &
-    write(io%output,'(a,2i6,1p,e16.6)') ' parallel_io_t%input: iout, id, time =', &
-    patch%iout, patch%id, patch%time
-  if (io%verbose>1) &
-    write(io%output,'(a,4i6,2i7)') &
-    ' parallel_io_t%input: iout, n, snapshot_words, buffer_words =', &
-    patch%iout, n, snapshot_words, buffer_words
   call trace%end (itimer)
 contains
   !-----------------------------------------------------------------------------
