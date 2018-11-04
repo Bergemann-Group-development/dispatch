@@ -51,12 +51,12 @@ SUBROUTINE init (patch)
       filename=trim(io%inputdir)//'00000/snapshot.dat'
       inquire (file=filename, exist=exists)
       if (.not.exists) then
-        if (io%master) print *, 'neither '//trim(io%inputdir) &
+        if (io%master) write(io%output,*) 'neither '//trim(io%inputdir) &
           //'snapshots.dat, nor '//trim(filename)//' exist'
         call mpi%abort()
       end if
     end if
-    if (mpi%master) print *,' input file: ',filename
+    if (mpi%master) write(io%output,*) ' input file: ',filename
     call file_in%openr (filename)
   end if
   if (io%format==5) then
@@ -64,7 +64,7 @@ SUBROUTINE init (patch)
   else
     filename=trim(io%outputname)//'snapshots.dat'
   end if
-  if (mpi%master) print *,'output file: ',filename
+  if (mpi%master) write(io%output,*) 'output file: ',filename
   !-----------------------------------------------------------------------------
   if (io%guard_zones) then
     recl = io%nv*product(patch%gn)*4
@@ -133,15 +133,15 @@ SUBROUTINE output (patch, count)
   !-----------------------------------------------------------------------------
   ! Info
   !-----------------------------------------------------------------------------
-  if (io%verbose==1) print '(a,2i6)', ' parallel_io_t%output: iout, id =', &
+  if (io%verbose==1) write(io%output,'(a,2i6)') ' parallel_io_t%output: iout, id =', &
     patch%iout, patch%id
   if (first_time) then
     first_time = .false.
-    if (io%master) print '(a,f8.3,a,i10,a)', &
+    if (io%master) write(io%output,'(a,f8.3,a,i10,a)') &
       ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
       io%ntotal, ' patches'
   end if
-  if (io%verbose>1) print '(a,4i6,2i12)', &
+  if (io%verbose>1) write(io%output,'(a,4i6,2i12)') &
     ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words
   allocate (mem(patch%gn(1),patch%gn(2),patch%gn(3),patch%nt))
@@ -280,14 +280,14 @@ SUBROUTINE output_single (patch, count)
   !-----------------------------------------------------------------------------
   if (first_time .and. io%master) then
     first_time = .false.
-    print '(a,f8.3,a,i10,a)', &
+    write(io%output,'(a,f8.3,a,i10,a)') &
       ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
       io%ntotal, ' patches'
   end if
   ! --- rank-local patch 1D index; cf. cartesian_mod ---
   ip = patch%ip
   if (ip < 0 .or. ip > io%ntask) then
-    print *, 'WARNING', ip
+    write(io%output,*) 'WARNING', ip
     ip = max(1,min(ip,io%ntask))
   end if
   if (io%verbose>0) then
@@ -442,9 +442,11 @@ SUBROUTINE input (patch, ok)
   !-----------------------------------------------------------------------------
   ok = .true.
   patch%time = io%restart*io%out_time
-  if (io%verbose==1) print '(a,2i6,1p,e16.6)', ' parallel_io_t%input: iout, id, time =', &
+  if (io%verbose==1) &
+    write(io%output,'(a,2i6,1p,e16.6)') ' parallel_io_t%input: iout, id, time =', &
     patch%iout, patch%id, patch%time
-  if (io%verbose>1) print '(a,4i6,2i7)', &
+  if (io%verbose>1) &
+    write(io%output,'(a,4i6,2i7)') &
     ' parallel_io_t%input: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words
   call trace%end (itimer)
@@ -526,9 +528,9 @@ SUBROUTINE input_single (patch, ok)
     end do
     if (mpi_io%err /= 0) then
       read_failed = .true.
-      print *, mpi%rank, ' read failed', io%restart
+      write(io%output,*) 'io%parallel_io: read failed', io%restart
     else
-      print *, mpi%rank, ' read succeeded', io%restart
+      write(io%output,*) 'io%parallel_io: read succeeded', io%restart
     end if
   end if
   if (read_failed) then
@@ -557,9 +559,11 @@ SUBROUTINE input_single (patch, ok)
   !-----------------------------------------------------------------------------
   ok = .true.
   patch%time = io%restart*io%out_time
-  if (io%verbose==1) print '(a,2i6,1p,e16.6)', ' parallel_io_t%input: iout, id, time =', &
+  if (io%verbose==1) &
+    write(io%output,'(a,2i6,1p,e16.6)') ' parallel_io_t%input: iout, id, time =', &
     patch%iout, patch%id, patch%time
-  if (io%verbose>1) print '(a,4i6,2i7)', &
+  if (io%verbose>1) &
+    write(io%output,'(a,4i6,2i7)') &
     ' parallel_io_t%input: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words
   call trace%end (itimer)
