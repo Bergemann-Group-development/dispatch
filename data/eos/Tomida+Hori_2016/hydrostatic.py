@@ -226,3 +226,21 @@ for i in range(len(evol.mass)-1):
 print('\nFinal surface temperature: {:.0f} K'.format(temp))
 pl.plot(maver,taver,'-o')
 
+#%%
+pl.figure(6)
+pl.clf()
+pl.loglog(np.array(evol.press)*1e-6,evol.temp,'-o')
+pl.xlabel('P [bar]')
+pl.ylabel('T [K]')
+pl.title('surface T(P) for mass=[0.1,0.2,0.4,0.6,0.8,1.0]')
+pl.savefig('surface T-P evolution');
+
+#%%
+pl.figure(7)
+pl.clf()
+pl.loglog(np.array(evol.press)*1e-6,taver,'-o')
+pl.xlabel('P [bar]')
+pl.ylabel('T [K]')
+pl.title('solid surface T(P) for mass=[0.1,0.2,0.4,0.6,0.8,1.0]')
+pl.tight_layout()
+pl.savefig('surface T-P evolution');
