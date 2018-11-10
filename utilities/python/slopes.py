@@ -1,8 +1,71 @@
-from numpy import abs, zeros, min, product
+# -*- coding: utf-8 -*-
+"""
+Optimized version of slope limiters, with periodic wrapping.  The slope limiters
+are some of the most common ones used in Godunov type Riemann solvers.
+
+Created on Sat Nov 10 11:27:58 2018
+
+@author: Aake
+"""
+from numpy import abs, zeros, ones, product, roll, where, min, minimum, maximum, asarray
 from time import time
+from random import random
+import slopes_scalar as scalar
+
+def dxdn(f):
+    d=zeros(f.shape)
+    d[1:,:,:]=f[1:,:,:]-f[0:-1,:,:]
+    d[0,:,:]=f[0,:,:]-f[-1,:,:]
+    return d
+
+def dxup(f):
+    d=zeros(f.shape)
+    d[0:-1,:,:]=f[1:,:,:]-f[0:-1,:,:]
+    d[-1,:,:]=f[0,:,:]-f[-1,:,:]
+    return d
+
+def dydn(f):
+    d=zeros(f.shape)
+    d[:,1:,:]=f[:,1:,:]-f[:,0:-1,:]
+    d[:,0,:]=f[:,0,:]-f[:,-1,:]
+    return d
+
+def dyup(f):
+    d=zeros(f.shape)
+    d[:,0:-1,:]=f[:,1:,:]-f[:,0:-1,:]
+    d[:,-1,:]=f[:,0,:]-f[:,-1,:]
+    return d
+
+def dzdn(f):
+    d=zeros(f.shape)
+    d[:,:,1:]=f[:,:,1:]-f[:,:,0:-1]
+    d[:,:,0]=f[:,:,0]-f[:,:,-1]
+    return d
+
+def dzup(f):
+    d=zeros(f.shape)
+    d[:,:,0:-1]=f[:,:,1:]-f[:,:,0:-1]
+    d[:,:,-1]=f[:,:,0]-f[:,:,-1]
+    return d
+
+def ddn(f,i):
+    if i==0:
+        return dxdn(f)
+    if i==1:
+        return dydn(f)
+    if i==2:
+        return dzdn(f)
+
+def dup(f,i):
+    if i==0:
+        return dxup(f)
+    if i==1:
+        return dyup(f)
+    if i==2:
+        return dzup(f)
 
 def slopes (xx, slope_type, timeit=False):
-     """
+    """
      Computes slopes for hydro and radiative transfer
      variables in 3 dimensions.
      The different slope limiters are:
@@ -12,298 +75,136 @@ def slopes (xx, slope_type, timeit=False):
      - 4 : Harmonic average
      - 5 : Van Albada & Van Leer
      - 6 : Superbee
-     """
-     m = xx.shape
-     ndim = 3-m.count(1)
-     m = list(m)
-     m.append(ndim)
-     pxxG = zeros(m)
-     pxxD = zeros(m)
-
-     if timeit:
+    """
+    m = xx.shape
+    ndim = 3-m.count(1)
+    m = list(m)
+    m1 = (3,m[0],m[1],m[2])
+    df = zeros(m1)
+    
+    if timeit:
          start=time()
 
-     if(slope_type == 0):  
-        return zeros(m)
+    if(slope_type == 0):  
+        return zeros(m1)
 
-     elif slope_type==1: # MINMOD
-        for i in range(1,m[0]-1):
-           for j in range(1,m[1]-1):
-              for k in range(1,m[2]-1):
-	      
-                 dflmm = ( xx[i-1,j  ,k  ]-xx[i,j,k] )
-                 dfrmm = ( xx[i+1,j  ,k  ]-xx[i,j,k] )
-                 pxxG[i,j,k,0] = MinMod(dfrmm, -dflmm)
+    elif slope_type==1: # MINMOD
+         for i in range(ndim):
+             dn = ddn(xx,i)
+             up = dup(xx,i)
+             s = ones(xx.shape)
+             s[where(dn < 0.0)] -= 1.0
+             s[where(up < 0.0)] -= 1.0
+             df[i] = minimum(abs(dn),abs(up))*s
 
-                 if (ndim > 1):  # slopes along y direction
-                    dfmlm = ( xx[i  ,j-1,k  ]-xx[i,j,k] )
-                    dfmrm = ( xx[i  ,j+1,k  ]-xx[i,j,k] )
-                    pxxG[i,j,k,1] = MinMod(dfmrm, -dfmlm)
+    elif slope_type==2: # MONCEN
+         for i in range(ndim):
+             # Down, up, and center slopes
+             dn = ddn(xx,i)*2.0
+             up = dup(xx,i)*2.0
+             cn = (dn+up)*0.25
+             # Switch, vanishes when one of three slopes differs
+             sw = ones(xx.shape)
+             sw[where(dn*up < 0.0)] = 0.0
+             sw[where(dn*cn < 0.0)] = 0.0
+             sw[where(up*cn < 0.0)] = 0.0
+             # Slope is smallest of the three
+             dm = min([abs(dn),abs(up),abs(cn)],axis=0)
+             d = cn
+             w = where(dm==abs(dn)); d[w] = dn[w]
+             w = where(dm==abs(up)); d[w] = up[w]
+             d[where(cn*up < 0.0)] = 0.0
+             d[where(cn*dn < 0.0)] = 0.0
+             d[where(dn*up < 0.0)] = 0.0
+             df[i] = d
 
-                 if (ndim > 2):  # slopes along z direction
-                    dfmml = ( xx[i  ,j  ,k-1]-xx[i,j,k] )
-                    dfmmr = ( xx[i  ,j  ,k+1]-xx[i,j,k] )
-                    pxxG[i,j,k,2] = MinMod(dfmmr, -dfmml)
+    elif slope_type==3: # positivity preserving
+        dflll = roll(xx,( 1, 1, 1),(0,1,2))-xx
+        dflml = roll(xx,( 1, 0, 1),(0,1,2))-xx
+        dflrl = roll(xx,( 1,-1, 1),(0,1,2))-xx
+        dfmll = roll(xx,( 0, 1, 1),(0,1,2))-xx
+        dfmml = roll(xx,( 0, 0, 1),(0,1,2))-xx
+        dfmrl = roll(xx,( 0,-1, 1),(0,1,2))-xx
+        dfrll = roll(xx,(-1, 1, 1),(0,1,2))-xx
+        dfrml = roll(xx,(-1, 0, 1),(0,1,2))-xx
+        dfrrl = roll(xx,(-1,-1, 1),(0,1,2))-xx
+        
+        dfllm = roll(xx,( 1, 1, 0),(0,1,2))-xx
+        dflmm = roll(xx,( 1, 0, 0),(0,1,2))-xx
+        dflrm = roll(xx,( 1,-1, 0),(0,1,2))-xx
+        dfmlm = roll(xx,( 0, 1, 0),(0,1,2))-xx
+        dfmmm = roll(xx,( 0, 0, 0),(0,1,2))-xx
+        dfmrm = roll(xx,( 0,-1, 0),(0,1,2))-xx
+        dfrlm = roll(xx,(-1, 1, 0),(0,1,2))-xx
+        dfrmm = roll(xx,(-1, 0, 0),(0,1,2))-xx
+        dfrrm = roll(xx,(-1,-1, 0),(0,1,2))-xx
 
-                 pxxD[i,j,k,:] = pxxG[i,j,k,:]
+        dfllr = roll(xx,( 1, 1,-1),(0,1,2))-xx
+        dflmr = roll(xx,( 1, 0,-1),(0,1,2))-xx
+        dflrr = roll(xx,( 1,-1,-1),(0,1,2))-xx
+        dfmlr = roll(xx,( 0, 1,-1),(0,1,2))-xx
+        dfmmr = roll(xx,( 0, 0,-1),(0,1,2))-xx
+        dfmrr = roll(xx,( 0,-1,-1),(0,1,2))-xx
+        dfrlr = roll(xx,(-1, 1,-1),(0,1,2))-xx
+        dfrmr = roll(xx,(-1, 0,-1),(0,1,2))-xx
+        dfrrr = roll(xx,(-1,-1,-1),(0,1,2))-xx
 
-     elif slope_type==2: # MONCEN
+        V = asarray([dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml,dfrrl, 
+                     dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm,dfrrm, 
+                     dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr,dfrrr])
+        vmin=V.min(0)
+        vmax=V.max(0)
 
-        for i in range(1,m[0]-1):
-           for j in range(1,m[1]-1):
-              for k in range(1,m[2]-1):
+        dfx = 0.5*(dfrmm-dflmm)
+        dfy = 0.5*(dfmrm-dfmlm)
+        dfz = 0.5*(dfmmr-dfmml)
+        dff = 0.5*(abs(dfx)+abs(dfy)+abs(dfz))
 
-                 dflmm = 2.0 * ( xx[i,  j,  k  ]-xx[i-1,j  ,k  ] )
-                 dfrmm = 2.0 * ( xx[i+1,j  ,k  ]-xx[i  ,j  ,k  ] )
-                 dfcen = ( xx[i+1,j  ,k  ]-xx[i-1,j  ,k  ] ) / 2.0
-                 pxxG[i,j,k,0] = MonCen(dflmm,dfrmm,dfcen)
+        dlim = minimum(abs(vmin),abs(vmax))/dff
+        dlim = minimum(1.0,dlim)
 
-                 if (ndim > 1):  # slopes along y direction
-                    dfmlm = 2.0 * ( xx[i,  j,  k  ]-xx[i  ,j-1,k  ] )
-                    dfmrm = 2.0 * ( xx[i  ,j+1,k  ]-xx[i  ,j  ,k  ] )
-                    dfcen = ( xx[i  ,j+1,k  ]-xx[i  ,j-1,k  ] ) / 2.0
-                    pxxG[i,j,k,1] = MonCen(dfmlm,dfmrm,dfcen)
+        df[0] = dlim*dfx
+        df[1] = dlim*dfy
+        df[2] = dlim*dfz
 
-                 if (ndim > 2):  # slopes along z direction
-                    dfmml = 2.0 * ( xx[i,  j,  k  ]-xx[i  ,j  ,k-1] )
-                    dfmmr = 2.0 * ( xx[i  ,j  ,k+1]-xx[i  ,j  ,k  ] )
-                    dfcen = ( xx[i  ,j  ,k+1]-xx[i  ,j  ,k-1] ) / 2.0
-                    pxxG[i,j,k,2] = MonCen(dfmml,dfmmr,dfcen)
+    elif slope_type==4: # HARMONIC AVERAGE
+         for i in range(ndim):
+             dn = ddn(xx,i)
+             up = dup(xx,i)
+             df[i] = maximum(dn*up,0.0)*2./(dn+up)
 
-                 pxxD[i,j,k,:] = pxxG[i,j,k,:]
+    elif slope_type==5: # Van Albada Van Leer
+        for i in range(ndim):
+            pa = dup(xx,i)
+            pb = ddn(xx,i)
+            e = 1.0e-8    
+            num = (pa*pa + e*e)*pb + (pb*pb + e*e)*pa
+            den = (pa*pa + pb*pb + 2.0*e*e )
+            vv = num/den
+            vv[where(pa*pb < 0.0)] = 0.0
+            df[i] = vv
+    
+    elif slope_type>10: # otimized
+        df = scalar.slopes(xx,slope_type-10,timeit=timeit)
 
-     elif slope_type==2: # positivity preserving
-
-        if( ndim == 1):
-            for i in range(1,m[0]-1):
-               for j in range(1,m[1]-1):
-                  for k in range(1,m[2]-1):
-                    dflm = xx[i-1]-xx[i]
-                    dfmm = xx[i  ]-xx[i]
-                    dfrm = xx[i+1]-xx[i]
-
-                    vmin = min(dflm,dfmm,dfrm)
-                    vmax = max(dflm,dfmm,dfrm)
-
-                    dfx  = 0.5*(xx[i+1]-xx[i-1])
-                    dff  = abs(dfx)
-
-                    if (dff > 0.0):
-                       slop = min(1.0,min(abs(vmin),abs(vmax))/dff)
-                    else:
-                       slop = 1.0
-
-                    dlim = slop
-
-                    pxxG[i,0] = dlim*dfx
-                    pxxD[i,:] = pxxG[i,:]
-
-        elif (ndim == 2):
-
-            for i in range(1,m[0]-1):
-               for j in range(1,m[1]-1):
-                  for k in range(1,m[2]-1):
-                    dfll = xx[i-1,j-1]-xx[i,j]
-                    dflm = xx[i-1,j  ]-xx[i,j]
-                    dflr = xx[i-1,j+1]-xx[i,j]
-                    dfml = xx[i  ,j-1]-xx[i,j]
-                    dfmm = xx[i  ,j  ]-xx[i,j]
-                    dfmr = xx[i  ,j+1]-xx[i,j]
-                    dfrl = xx[i+1,j-1]-xx[i,j]
-                    dfrm = xx[i+1,j  ]-xx[i,j]
-                    dfrr = xx[i+1,j+1]-xx[i,j]
-
-                    vmin = min(dfll,dflm,dflr,dfml,dfmm,dfmr,dfrl,dfrm,dfrr)
-                    vmax = max(dfll,dflm,dflr,dfml,dfmm,dfmr,dfrl,dfrm,dfrr)
-
-                    dfx  = 0.5*(xx[i+1,j]-xx[i-1,j])
-                    dfy  = 0.5*(xx[i,j+1]-xx[i,j-1])
-                    dff  = 0.5*(abs(dfx)+abs(dfy))
-
-                    if(dff>0.0):
-                       slop = min(1.0,min(abs(vmin),abs(vmax))/dff)
-                    else:
-                       slop = 1.0
-
-                    dlim = slop
-
-                    pxxG[i,j,0] = dlim*dfx
-                    pxxG[i,j,1] = dlim*dfy
-                    pxxD[i,j,:] = pxxG[i,j,:]
-           
-        else:
-            for i in range(1,m[0]-1):
-               for j in range(1,m[1]-1):
-                  for k in range(1,m[2]-1):
-
-                    dflll = xx[i-1,j-1,k-1]-xx[i,j,k]
-                    dflml = xx[i-1,j  ,k-1]-xx[i,j,k]
-                    dflrl = xx[i-1,j+1,k-1]-xx[i,j,k]
-                    dfmll = xx[i  ,j-1,k-1]-xx[i,j,k]
-                    dfmml = xx[i  ,j  ,k-1]-xx[i,j,k]
-                    dfmrl = xx[i  ,j+1,k-1]-xx[i,j,k]
-                    dfrll = xx[i+1,j-1,k-1]-xx[i,j,k]
-                    dfrml = xx[i+1,j  ,k-1]-xx[i,j,k]
-                    dfrrl = xx[i+1,j+1,k-1]-xx[i,j,k]
-
-                    dfllm = xx[i-1,j-1,k  ]-xx[i,j,k]
-                    dflmm = xx[i-1,j  ,k  ]-xx[i,j,k]
-                    dflrm = xx[i-1,j+1,k  ]-xx[i,j,k]
-                    dfmlm = xx[i  ,j-1,k  ]-xx[i,j,k]
-                    dfmmm = 0.0
-                    dfmrm = xx[i  ,j+1,k  ]-xx[i,j,k]
-                    dfrlm = xx[i+1,j-1,k  ]-xx[i,j,k]
-                    dfrmm = xx[i+1,j  ,k  ]-xx[i,j,k]
-                    dfrrm = xx[i+1,j+1,k  ]-xx[i,j,k]
-
-                    dfllr = xx[i-1,j-1,k+1]-xx[i,j,k]
-                    dflmr = xx[i-1,j  ,k+1]-xx[i,j,k]
-                    dflrr = xx[i-1,j+1,k+1]-xx[i,j,k]
-                    dfmlr = xx[i  ,j-1,k+1]-xx[i,j,k]
-                    dfmmr = xx[i  ,j  ,k+1]-xx[i,j,k]
-                    dfmrr = xx[i  ,j+1,k+1]-xx[i,j,k]
-                    dfrlr = xx[i+1,j-1,k+1]-xx[i,j,k]
-                    dfrmr = xx[i+1,j  ,k+1]-xx[i,j,k]
-                    dfrrr = xx[i+1,j+1,k+1]-xx[i,j,k]
-
-                    vmin = min(dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml,dfrrl, 
-                               dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm,dfrrm, 
-                               dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr,dfrrr)
-                    vmax = max(dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml,dfrrl, 
-                               dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm,dfrrm, 
-                               dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr,dfrrr)
-
-                    dfx  = 0.5*(xx[i+1,j,k]-xx[i-1,j,k])
-                    dfy  = 0.5*(xx[i,j+1,k]-xx[i,j-1,k])
-                    dfz  = 0.5*(xx[i,j,k+1]-xx[i,j,k-1])
-                    dff  = 0.5*(abs(dfx)+abs(dfy)+abs(dfz))
-
-                    if (dff > 0.0):
-                       dlim = min(1.0,min(abs(vmin),abs(vmax))/dff)
-                    else:
-                       dlim = 1.0
-
-                    pxxG[i,j,k,0] = dlim*dfx
-
-                    if (ndim > 1):  # slopes along y direction
-                       pxxG[i,j,k,1] = dlim*dfy
-
-                    if (ndim > 2):  # slopes along z direction
-                       pxxG[i,j,k,2] = dlim*dfz
-
-                    pxxD[i,j,k,:] = pxxG[i,j,k,:]
-
-     elif slope_type==4: # HARMONIC AVERAGE
-
-        for i in range(1,m[0]-1):
-           for j in range(1,m[1]-1):
-              for k in range(1,m[2]-1):
-
-                 dflmm = ( xx[i-1,j  ,k  ]-xx[i,j,k] )
-                 dfrmm = ( xx[i+1,j  ,k  ]-xx[i,j,k] )
-                 pxxG[i,j,k,0] = MoyHarm(dfrmm, -dflmm)
-
-                 if (ndim > 1):  # slopes along y direction
-                    dfmlm = ( xx[i  ,j-1,k  ]-xx[i,j,k] )
-                    dfmrm = ( xx[i  ,j+1,k  ]-xx[i,j,k] )
-                    pxxG[i,j,k,1] = MoyHarm(dfmrm, -dfmlm)
-
-                 if (ndim > 2):  # slopes along z direction
-                    dfmml = ( xx[i  ,j  ,k-1]-xx[i,j,k] )
-                    dfmmr = ( xx[i  ,j  ,k+1]-xx[i,j,k] )
-                    pxxG[i,j,k,2] = MoyHarm(dfmmr, -dfmml)
-
-                 pxxD[i,j,k,:] = pxxG[i,j,k,:]
-
-     elif slope_type==5: # Van Albada Van Leer
-
-        for i in range(1,m[0]-1):
-           for j in range(1,m[1]-1):
-              for k in range(1,m[2]-1):
-
-                 dflmm = ( xx[i-1,j  ,k  ]-xx[i,j,k] )
-                 dfrmm = ( xx[i+1,j  ,k  ]-xx[i,j,k] )
-                 pxxG[i,j,k,0] = VAVL(dfrmm, -dflmm )
-
-                 if(ndim > 1):  # slopes along y direction
-                    dfmlm = ( xx[i  ,j-1,k  ]-xx[i,j,k] )
-                    dfmrm = ( xx[i  ,j+1,k  ]-xx[i,j,k] )
-                    pxxG[i,j,k,1] = VAVL(dfmrm, -dfmlm)
-
-                 if(ndim > 2):  # slopes along z direction
-                    dfmml = ( xx[i  ,j  ,k-1]-xx[i,j,k] )
-                    dfmmr = ( xx[i  ,j  ,k+1]-xx[i,j,k] )
-                    pxxG[i,j,k,2] = VAVL(dfmmr, -dfmml)
-
-                 pxxD[i,j,k,:] = pxxG[i,j,k,:]
-
-     elif slope_type==6: # Superbee
-
-        for i in range(1,m[0]-1):
-           for j in range(1,m[1]-1):
-              for k in range(1,m[2]-1):
-
-                 dflmm = ( xx[i-1,j  ,k  ]-xx[i,j,k] )
-                 dfrmm = ( xx[i+1,j  ,k  ]-xx[i,j,k] )
-                 pxxD[i,j,k,0] = MinMod(dfrmm, -2.0*dflmm)
-                 pxxG[i,j,k,0] = MinMod(2.0*dfrmm, -dflmm)
-
-                 if (ndim > 1):  # slopes along y direction
-                    dfmlm = ( xx[i  ,j-1,k  ]-xx[i,j,k] )
-                    dfmrm = ( xx[i  ,j+1,k  ]-xx[i,j,k] )
-                    pxxD[i,j,k,1] = MinMod(dfmrm, -2.0*dfmlm)
-                    pxxG[i,j,k,1] = MinMod(2.0*dfmrm, -dfmlm)
-
-                 if (ndim > 2):  # slopes along z direction
-                    dfmml = ( xx[i  ,j  ,k-1]-xx[i,j,k] )
-                    dfmmr = ( xx[i  ,j  ,k+1]-xx[i,j,k] )
-                    pxxD[i,j,k,2] = MinMod(dfmmr, -2.0*dfmml)
-                    pxxG[i,j,k,2] = MinMod(2.0*dfmmr, -dfmml)
-
-     if timeit:
+    if timeit:
          musec = (time()-start)/product(m[0:3])*1e6
-         print('{:.2f} microsec per cell'.format(musec))
+         print('slope_type={}:  {:6.2f} microsec per cell'.format(slope_type,musec))
 
-     return pxxD, pxxG
+    return df
 
-def SIGN(a,b):
-    if b>0:
-        return a
-    else:
-        return -a
+def make_random(n):
+    f=zeros((n,n,n))
+    for i in range(n):
+        for j in range(n):
+            for k in range(n):
+                f[i,j,k]=random()
+    return f
 
-def MinMod(pa,pb):
-    """ Minmod averaging function """
-    MMod = 0.5*min([abs(pa),abs(pb)])*(SIGN(1.0,pa) + SIGN(1.0,pb))
-    return MMod
-
-def MonCen (pa,pb,pc):
-    """ Monotonised centred averaging function """
-    if ((pa*pb < 0.0) or (pa*pc < 0.0) or (pb*pc < 0.0)):
-        mcen = 0.0    
-    elif ((abs(pa) < abs(pb)) and (abs(pa) < abs(pc))):
-        mcen = pa
-    elif ((abs(pb) < abs(pa)) and (abs(pb) < abs(pc))):
-        mcen = pb
-    else:
-        mcen = pc
-    return mcen
-
-def MoyHarm(pa,pb):
-    """ Harmonic averaging function """
-    if (pa*pb > 0.0):
-       MMod = 2.*pa*pb/(pa+pb)
-    else:
-       MMod = 0.
-    return MMod
-
-def VAVL(pa,pb):
-    """ Van Albada & Van Leer averaging function """
-    if(pa*pb > 0.0):
-       e = 1.0e-8    
-       num = ( pa*pa + e*e )*pb + ( pb*pb + e*e )*pa
-       den = ( pa*pa +  pb*pb + 2.0*e*e )
-       vv  = num/den
-    else:
-       vv  = 0.0    
-    return vv
+def test(n=32):
+    f=make_random(n)
+    for i in range(1,6):
+        d1=slopes(f,i)
+        d2=slopes(f,i+10)
+        d=(d2-d1)[:,2:-2,2:-2,2:-2]
+        print(d.min(),d.max())
