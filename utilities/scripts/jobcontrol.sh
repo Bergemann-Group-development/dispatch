@@ -13,9 +13,9 @@
 
 #set -x
 
-export DISPATCHTOP=$HOME/codes/DISPATCH2
+export DISPATCH_TOP=$HOME/codes/dispatch2
 
-export PATH="${DISPATCHTOP}/config/host/${HOST}:${DISPATCHTOP}/utilities/scripts:${PATH}"
+export PATH="${DISPATCH_TOP}/config/host/${HOST}:${DISPATCH_TOP}/utilities/scripts:${PATH}"
 
 for f in jobrunning jobkill jobid jobmail jobhelper; do
   if { ! which $f >/dev/null 2>&1; }; then

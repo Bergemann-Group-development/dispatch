@@ -1,0 +1,10 @@
+#! /bin/csh
+
+ps -ef | grep 'jobhelper$'
+if ($status == 0) exit
+if ($#argv > 0) then
+  cd $1
+endif
+echo starting
+set path = ( $HOME/codes/dispatch2/utilities/scripts $path )
+jobhelper >& jobhelper.log </dev/null &

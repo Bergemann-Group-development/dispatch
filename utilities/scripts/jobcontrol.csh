@@ -14,21 +14,22 @@
 #set echo							# for debugging
 
 # Where to find DISPATCH
-if (! $?DISPATCHTOP) then
+if (! $?DISPATCH_TOP) then
   if      (-d ~/codes/DISPATCH2) then
-    setenv DISPATCHTOP ~/codes/DISPATCH2
+    setenv DISPATCH_TOP ~/codes/DISPATCH2
   else if (-d ~/codes/dispatch2) then
-    setenv DISPATCHTOP ~/codes/dispatch2
+    setenv DISPATCH_TOP ~/codes/dispatch2
   else if (-d ~/codes/DISPATCH) then
-    setenv DISPATCHTOP ~/codes/DISPATCH
+    setenv DISPATCH_TOP ~/codes/DISPATCH
   else if (-d ~/codes/dispatch) then
-    setenv DISPATCHTOP ~/codes/dispatch
+    setenv DISPATCH_TOP ~/codes/dispatch
   else
-    echo "DISPATCHTOP must be set in the environment"
+    echo "DISPATCH_TOP must be set in the environment"
     exit
   endif
 endif
-source $DISPATCH_TOP/config/startup.csh
+
+set path = ( $DISPATCH_TOP/utilities/scripts $DISPATCH_TOP/utilities/scripts/slurm $path )
 
 foreach f ( jobrunning jobkill jobid jobmail jobhelper )	# check that commands are in path
   which $f >/dev/null 
@@ -104,7 +105,7 @@ if ($wt > 0) echo "waited $wt seconds"				# info
 @ s = 120							# process restar
 @ retrymax = 18000						# 5h
 
-jobhelper >& jobhelper.log </dev/null &				# start jobhelper
+#( cd data/$2; jobhelper >& jobhelper.log </dev/null & )		# start jobhelper
 if (-e jobhelper.flag) \rm jobhelper.flag			# remove any initial flag
 
 restart:
@@ -132,10 +133,10 @@ if (-e restart.flag) then					# should we attempt to restart?
     @ retrymax = `cat retrymax.flag`
     \rm retrymax.flag
   endif
-  if (-e jobhelper.flag) then					# new jobhelper flag?
+  if (-e data/$2/jobhelper.flag) then				# new jobhelper flag?
     killall jobhelper						# kill any of ours
-    jobhelper >& jobhelper.log </dev/null &a			# start a new one
-    \rm jobhelper.flag						# clear flag
+    #( cd data/$2; jobhelper >& jobhelper.log </dev/null & )	# start jobhelper
+    \rm -f data/$2/jobhelper.flag					# clear flag
   endif
   if (-e wait.flag) then					# allow change
     @ s = `cat wait.flag`					# new wait time
