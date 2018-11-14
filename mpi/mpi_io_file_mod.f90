@@ -13,6 +13,7 @@ MODULE mpi_io_file_mod
   private
   type, public:: mpi_io_file_t
     integer:: handle = 0
+    integer:: comm = 0
     integer:: err = 0
     character(len=64):: filename
   contains
@@ -34,6 +35,7 @@ SUBROUTINE open (self, filename, mode)
   class(mpi_io_file_t):: self
   character(len=*) filename
   integer:: mode
+  !.............................................................................
   integer:: n
 #ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
@@ -43,18 +45,18 @@ SUBROUTINE open (self, filename, mode)
   !$omp critical (mpi_io_cr)
   if (self%handle == 0) then
     self%filename = filename
-    call MPI_File_open (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
-    if (io%verbose>0 .and. io%master) then
-      print'(a," status:",i4)',' MPI_File_open: file='//trim(filename)//'  mode='// &
+    call MPI_Comm_dup (mp%comm, self%comm, self%err)
+    call MPI_File_open (self%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
+    if (io%verbose > 0) then
+      write(io_unit%mpi,'(a," status:",i4)') &
+        ' MPI_File_open: file='//trim(filename)//'  mode='// &
         trim(merge('MPI_MODE_CREATE', &
                    '               ' ,iand(mode,MPI_MODE_CREATE) .ne. 0)) // &
         trim(merge('+MPI_MODE_RDWR' , &
                    '              '  ,iand(mode,MPI_MODE_RDWR)   .ne. 0)) // &
         trim(merge('MPI_MODE_RDONLY', &
                    '               ' ,iand(mode,MPI_MODE_RDONLY) .ne. 0)), self%err
-    endif
-    if (io%verbose > 0 .and. io%master) then
-      print'(1x,a,2i8)','mpi_io_mod::open: '//trim(filename), mp%rank, self%err
+      flush (io_unit%mpi)
     end if
   end if
   !$omp end critical (mpi_io_cr)
