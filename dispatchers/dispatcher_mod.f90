@@ -116,6 +116,7 @@ SUBROUTINE execute (self, task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
   task_list%method = method
+  task_list%dispatcher = .true.
   if (io%ntask==0) then
     call mpi%abort &
       ('ERROR: io%ntask, which should be the number of active tasks, is zero')

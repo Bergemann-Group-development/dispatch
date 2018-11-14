@@ -3,6 +3,8 @@
  verbose=2
  do_debug=f
  do_output=t
+ guard_zones=t
+ time_derivs=f
 /
 &cartesian_params
  size=1,1,1
@@ -16,16 +18,14 @@
 &patch_params
  n=128,128,1
  nt=5
- courant=0.20
 /
 &out_params
  end_time=0.600
  out_time=0.010
  print_time=0
- guard_zones=t
- time_derivs=f
 /
-&mhd_params
+&stagger_params
+courant=0.20
  nu=  0.001,  0.0, 1.0, 0.0,  0.0,  1.0
  !     cs    du   pa   ofd   mas   eta
  gamma=1.6666666666667

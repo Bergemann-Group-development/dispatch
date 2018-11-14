@@ -24,6 +24,7 @@ MODULE task_list_mod
   private
   type, public, extends(task_mesg_t):: task_list_t
     logical:: syncing=.false.
+    logical:: dispatcher=.false.
     real(8):: sync_time=-1.0, sync_next=-1.0
   contains
     procedure:: init
@@ -83,6 +84,7 @@ SUBROUTINE startup (self)
   logical:: was_refined
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%startup', itimer=itimer)
+  if (.not.self%dispatcher) call mpi%abort ("no dispatcher is used to execute the task list. Execution is unpredictable, therefore aborting.")
   !-----------------------------------------------------------------------------
   ! Initialize nbor lists and setting virtual and boundary bit should NOT be
   ! done here, since at this point the task list may be a splice between the
