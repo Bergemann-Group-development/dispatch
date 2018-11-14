@@ -90,8 +90,8 @@ FUNCTION find (self, id, start) RESULT (counter)
     else
       self%id = id
     end if
-!    call io%assert (present(start), &
-!      'counters_t%find: start parameter must be present')
+    call io%assert (present(start), &
+      'counters_t%find: start parameter must be present')
     counter%id    = self%id
     counter%start = start
     counter%count = start

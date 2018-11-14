@@ -14,7 +14,7 @@ MODULE parallel_io_mod
   USE mpi_io_file_mod
   USE trace_mod
   USE time_slices_mod
-  USE counters_mod
+  USE bits_mod
   implicit none
   private
   type, public:: parallel_io_t
@@ -24,10 +24,14 @@ MODULE parallel_io_mod
     procedure, nopass:: input
     procedure, nopass:: output
     procedure, nopass:: close
+    procedure, nopass:: open_and_close
   end type
   integer, parameter:: verbose=0
-  type(mpi_io_file_t), save:: file_in, file_out
+  logical:: check_files=.false.
+  type(mpi_io_file_t), pointer:: file_in=>null(), file_out=>null()
+  type(mpi_io_file_t), pointer, dimension(:):: files_out=>null()
   type(parallel_io_t), public:: parallel_io
+  integer, save:: io0, io1
 CONTAINS
 
 !> =============================================================================
@@ -40,41 +44,18 @@ SUBROUTINE init (patch)
   character(len=5):: snapname
   character(len=120):: filename
   logical:: exists
-  integer:: recl
+  integer:: i
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%init')
-  call mpi_io%init
-  if (io%restart > 0) then
-    filename=trim(io%inputdir)//'snapshots.dat'
-    inquire (file=filename, exist=exists)
-    if (.not.exists) then
-      filename=trim(io%inputdir)//'00000/snapshot.dat'
-      inquire (file=filename, exist=exists)
-      if (.not.exists) then
-        if (io%master) write(io%output,*) 'neither '//trim(io%inputdir) &
-          //'snapshots.dat, nor '//trim(filename)//' exist'
-        call mpi%abort()
-      end if
-    end if
-    if (mpi%master) write(io%output,*) ' input file: ',filename
-    call file_in%openr (filename)
-  end if
-  if (io%format==5) then
-    filename=trim(io%outputname)//'00000/snapshot.dat'
-  else
-    filename=trim(io%outputname)//'snapshots.dat'
-  end if
-  if (mpi%master) write(io%output,*) 'output file: ',filename
-  !-----------------------------------------------------------------------------
-  if (io%guard_zones) then
-    recl = io%nv*product(patch%gn)*4
-  else
-    recl = io%nv*product(patch%n)*4
-  end if
-  call file_out%openw (filename, recl)
   io%nwrite = io%ntask
+  call mpi_io%init
   call mpi_io%set (nwrite=io%nwrite*(io%time_derivs+1))
-  call time_slices%init (patch)
+  if (io%method=='parallel') then
+    allocate (file_out)
+    write (filename,'(a,"/snapshots.dat")') trim(io%outputname)
+    call file_out%openw (filename)
+  end if
+  call time_slices%init (patch%nt)
   call trace%end
 END SUBROUTINE init
 
@@ -82,12 +63,44 @@ END SUBROUTINE init
 !> Close the data I/O method
 !> =============================================================================
 SUBROUTINE close
+  integer:: i
   !.............................................................................
   call trace%begin ('parallel_io_t%close')
-  call file_out%close
+  if (io%method == 'snapshot') then
+    do i=io0,io1
+      call files_out(i)%close
+    end do
+  else
+    call file_out%close
+  end if
   call file_in%close
   call trace%end
 END SUBROUTINE close
+
+!> =============================================================================
+!> Adjust the open / closed status of the data I/O files
+!> =============================================================================
+SUBROUTINE open_and_close ()
+  integer:: i
+  !-----------------------------------------------------------------------------
+  ! Only check files when a request to open or close has just been made. Only
+  ! one thread should do the checking.
+  !-----------------------------------------------------------------------------
+  if (check_files) then
+    !$omp critical (files_out_cr)
+    if (check_files) then
+      check_files = .false.
+      call trace%begin ('parallel_io_t%open_and_close')
+      if (associated(files_out)) then
+        do i=io0,io1
+          call files_out(i)%open_and_close()
+        end do
+      end if
+      call trace%end
+    end if
+    !$omp end critical (files_out_cr)
+  end if
+END SUBROUTINE open_and_close
 
 !> =============================================================================
 !> Write output in increments of one patch data cube
@@ -99,15 +112,25 @@ SUBROUTINE output (patch, count)
   integer(8):: snapshot_words, buffer_words, pos
   integer:: iv, n(3), jt(2), iw, nw
   real, dimension(:,:,:,:), pointer:: buffer, mem
+  character(len=120):: filename
   real:: pt(2)
-  logical:: first_time=.true.
+  logical, save:: first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin ('parallel_io_t%output', itimer=itimer)
   if (io%format > 9 .and. io%format < 14) then
     call output_single (patch, count)
+    call trace%end (itimer)
     return
   end if
-  call trace%begin ('parallel_io_t%output', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Initialize file_out
+  !-----------------------------------------------------------------------------
+  if (.not.associated(file_out)) then
+    write (filename,'(a,"/snapshots.dat")') trim(io%outputname)
+    allocate (file_out)
+    call file_out%openw (filename)
+  end if
   !-----------------------------------------------------------------------------
   ! Set size parameters; a buffer is all variables in the patch, and the
   ! snspshot offset is that times the number of patches per snapshot.
@@ -123,12 +146,12 @@ SUBROUTINE output (patch, count)
   ! to read, while the latter is faster to write.
   !-----------------------------------------------------------------------------
   snapshot_words = product(n)*io%nv*io%ntotal
-  if (io%format > 9 .and. io%format < 14) then
-    buffer_words = snapshot_words
+  buffer_words = product(n)*io%nv
+  if (io%method == 'snapshot') then
+    call mpi_io%use (files_out(patch%iout))
   else
-    buffer_words = product(n)*io%nv
+    call mpi_io%use (file_out)
   end if
-  call mpi_io%use (file_out)
   call mpi_io%set (snapshot_words, buffer_words, io%nwrite*(io%time_derivs+1))
   !-----------------------------------------------------------------------------
   ! Info
@@ -178,17 +201,11 @@ SUBROUTINE output (patch, count)
 contains
   !-----------------------------------------------------------------------------
   subroutine convert_variables
-    integer:: ioformat
     !...........................................................................
-    if (io%format > 9 .and. io%format < 14) then
-      ioformat = io%format - 4
-    else
-      ioformat = io%format
-    end if
-    if (ioformat >= 8 .and. iv==patch%idx%d) then
+    if (io%format >= 8 .and. iv==patch%idx%d) then
       ! --- Convert density to log density ---
       mem = log(patch%mem(:,:,:,iv,:,1))
-    else if ((ioformat == 6 .or. ioformat==8) .and. patch%solver_is('ramses') &
+    else if ((io%format == 6 .or. io%format==8) .and. patch%solver_is('ramses') &
         .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
       ! --- Convert momentum to velocity ---
       mem = patch%mem(:,:,:,iv,:,1)/patch%mem(:,:,:,patch%idx%d,:,1)
@@ -210,19 +227,6 @@ contains
     if (io%method == 'pan') then
       call mpi_io%iwrite (buffer, 1+ider+slot, patch%id)
     !---------------------------------------------------------------------------
-    ! This ordering has all patch data for one variable inside the same N**3
-    ! section of the disk, so it can be read directly, and reordered in memory
-    !---------------------------------------------------------------------------
-    else if (io%format > 9 .and. io%format < 14) then
-      m = rank(buffer)
-      do iv=1,io%nv
-        islot = 1 + iv + io%nv*(ider + patch%iout*(io%time_derivs+1))
-        allocate (buf(m(1),m(2),m(3)))
-        buf = buffer(:,:,:,iv)
-        call mpi_io%iwrite (buf, islot, patch%id)
-      end do
-      deallocate (buffer)
-    !---------------------------------------------------------------------------
     ! This ordering has the derivative order added to the patch%id, which is
     ! in turn causing an increment by (io%time_derivs+1), so effectively adding
     ! nv additional variables for each derivative ordre, making it easy to
@@ -242,15 +246,45 @@ SUBROUTINE output_single (patch, count)
   integer:: count
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
-  integer:: iv, n(3), jt(2), iw, nw, nder, irec, ider, ip
+  integer:: iv, n(3), jt(2), iw, nw, nder, irec, ider, ip, i, iout
   real, dimension(:,:,:,:), pointer:: mem
   real, dimension(:,:,:), pointer:: buffer
   real:: pt(2)
   real(8):: start
   logical:: first_time=.true.
+  character(len=120):: filename
+  integer, save:: opened=-1
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%output_single', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! method='snapshot' => One file per snapshot
+  !-----------------------------------------------------------------------------
+  if (io%method == 'snapshot') then
+    if (.not. associated(files_out)) then
+      io0 = patch%iout
+      io1 = io0 + nint((io%end_time-patch%out_next)/io%out_time) + 1
+      if (omp%master) &
+        write (io_unit%mpi,'(a,i4," -- ",i4)') &
+          'parallel_io_t%output: initializing for snapshots', io0, io1
+      allocate (files_out(io0:io1))
+      do i=io0,io0+1
+        write (filename,'(a,"/",i5.5,"/snapshot.dat")') trim(io%outputname), i
+        call files_out(i)%openw (filename)
+      end do
+    end if
+    !---------------------------------------------------------------------------
+    ! If new snapshot number, open a new file
+    !---------------------------------------------------------------------------
+    if (patch%iout+1 > opened) then
+      opened = patch%iout+1
+      write (filename,'(a,"/",i5.5,"/snapshot.dat")') trim(io%outputname), opened
+      !$omp critical (files_out_cr)
+      call files_out(opened)%request_open (filename)
+      check_files = .true.
+      !$omp end critical (files_out_cr)
+    end if
+  end if
   !-----------------------------------------------------------------------------
   ! Set size parameters; a buffer is all variables in the patch, and the
   ! snspshot offset is that times the number of patches per snapshot.
@@ -261,14 +295,16 @@ SUBROUTINE output_single (patch, count)
     n = patch%n
   end if
   !-----------------------------------------------------------------------------
-  ! If 9 < io%format < 14 then slots in the file are ordered (id,iv,iout),
-  ! while otherwise they are ordered (iv,id,iout).  The former is much faster
-  ! to read, while the latter is faster to write.
+  ! Slots in the file are ordered (id,iv,iout).
   !-----------------------------------------------------------------------------
   nder = io%time_derivs+1
   snapshot_words = product(n)*io%ntotal*io%nv*nder
   buffer_words = product(n)*io%ntask
-  call mpi_io%use (file_out)
+  if (io%method == 'snapshot') then
+    call mpi_io%use (files_out(patch%iout))
+  else
+    call mpi_io%use (file_out)
+  end if
   call mpi_io%set (snapshot_words, buffer_words, 99)
   if (.not.associated(parallel_io%buffer)) then
     nder = io%time_derivs+1
@@ -290,7 +326,7 @@ SUBROUTINE output_single (patch, count)
     write(io%output,*) 'WARNING', ip
     ip = max(1,min(ip,io%ntask))
   end if
-  if (io%verbose>0) then
+  if (io%verbose > 0) then
     write(io%output,'(a,6i6,2i12,l3)') &
       ' parallel_io_t%output_single: id, ip, iout, n, snapshot_words, buffer_words =', &
       patch%id, ip, patch%iout, n, snapshot_words, buffer_words, associated(parallel_io%buffer)
@@ -324,6 +360,11 @@ SUBROUTINE output_single (patch, count)
   end if
   deallocate (mem)
   if (count == 0) then
+    if (io%method == 'snapshot') then
+      iout = 0
+    else
+      iout = patch%iout
+    end if
     start = wallclock()
     do ider=1,nder
     do iv=1,io%nv
@@ -333,11 +374,17 @@ SUBROUTINE output_single (patch, count)
       ! out one after the other for one variable, followed by then next var
       !-------------------------------------------------------------------------
       irec = 1 + mpi%rank + mpi%size*(iv-1 + (ider-1)*io%nv)
-      call mpi_io%write (parallel_io%buffer(:,:,:,:,iv,ider), 1+patch%iout, irec)
+      call mpi_io%write (parallel_io%buffer(:,:,:,:,iv,ider), 1+iout, irec)
     end do
     end do
-    write (io%output,'(a,f7.3,1x,a)') &
-      'parallel_io%output_single: MPI_File_write_at I/O', wallclock()-start, 'sec'
+    write (io_unit%mpi,'(a,f7.3,1x,a)') &
+      'parallel_io_t%output_single: MPI_File_write_at I/O', wallclock()-start, 'sec'
+    if (io%method == 'snapshot') then
+      !$omp critical (files_out_cr)
+      call files_out(patch%iout)%request_close ()
+      check_files = .true.
+      !$omp end critical (files_out_cr)
+    end if
   end if
   call trace%end (itimer)
 contains
@@ -345,6 +392,7 @@ contains
   subroutine convert_variables
     integer:: nt1, l(3), u(3)
     !...........................................................................
+    call trace%begin ('output_single::conver_variables')
     if (io%guard_zones) then
       l = patch%mesh%lb
       u = patch%mesh%ub
@@ -353,10 +401,10 @@ contains
       u = patch%mesh%ui
     end if
     nt1 = patch%nt-1
-    if (io%format >= 8 .and. iv==patch%idx%d) then
+    if (io%format >= 12 .and. iv==patch%idx%d) then
       ! --- Convert density to log density ---
       mem = log(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1))
-    else if ((io%format == 6 .or. io%format==8) .and. patch%solver_is('ramses') &
+    else if ((io%format == 10 .or. io%format==12) .and. patch%solver_is('ramses') &
         .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
       ! --- Convert momentum to velocity ---
       mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1) &
@@ -364,6 +412,7 @@ contains
     else
       mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1)
     end if
+    call trace%end
   end subroutine
 END SUBROUTINE output_single
 
@@ -377,16 +426,38 @@ SUBROUTINE input (patch, ok)
   integer(8):: snapshot_words, buffer_words
   integer:: iv, n(3), slot
   real, dimension(:,:,:,:), pointer:: buffer
+  character(len=120):: filename
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (io%format > 9 .and. io%format < 14) then
-    !!omp critical (parallel_in_cr)
-    call input_single (patch, ok)
-    !!omp end critical (parallel_in_cr)
+  call trace%begin ('parallel_io_t%input', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! If the patch is a virtual patch, signal that it should be filled with IC
+  ! data at first -- it will become updated via MPI later
+  !-----------------------------------------------------------------------------
+  if (patch%is_set(bits%virtual)) then
+    ok = .false.
+    call trace%end (itimer)
     return
   end if
   !-----------------------------------------------------------------------------
-  call trace%begin ('parallel_io_t%input', itimer=itimer)
+  ! Open the appropriate input file
+  !-----------------------------------------------------------------------------
+  if (io%method == 'snapshot') then
+    write (filename,'(a,"/",i5.5,"/snapshot.dat")') &
+      trim(io%outputname), io%restart
+  else
+    filename=trim(io%inputdir)//'snapshots.dat'
+  end if
+  allocate (file_in)
+  call file_in%openr (filename)
+  !-----------------------------------------------------------------------------
+  ! Choose input reader
+  !-----------------------------------------------------------------------------
+  if (io%format > 9 .and. io%format < 14) then
+    call input_single (patch, ok)
+    call trace%end (itimer)
+    return
+  end if
   !-----------------------------------------------------------------------------
   ! Set size parameters
   !-----------------------------------------------------------------------------
@@ -401,11 +472,7 @@ SUBROUTINE input (patch, ok)
   !-----------------------------------------------------------------------------
   ! Compute offset size constants for the mpi_io reader
   !-----------------------------------------------------------------------------
-  if (io%format > 9 .and. io%format < 14) then
-    buffer_words = product(n)
-  else
-    buffer_words = product(n)*io%nv
-  end if
+  buffer_words = product(n)*io%nv
   snapshot_words = buffer_words*io%ntotal
   call mpi_io%use (file_in)
   call mpi_io%set (snapshot_words, buffer_words, io%nwrite*(io%time_derivs+1))
@@ -429,11 +496,14 @@ SUBROUTINE input (patch, ok)
               patch%li(2):patch%ui(2), &
               patch%li(3):patch%ui(3),:,patch%it,1) = buffer
   end if
-  if (io%verbose>1) then
+  if (io%verbose > 1) then
     do iv=1,io%nv
       write (io_unit%output,*) 'parallel_io_t%input: id, iv, iout, min, max =', &
         patch%id, iv, patch%iout, patch%fminval(iv), patch%fmaxval(iv)
     end do
+  else if (io%verbose > 0) then
+    write (io_unit%output,*) 'parallel_io_t%input: id, iout =', &
+      patch%id, patch%iout
   end if
   deallocate (buffer)
   do iv=1,io%nv
@@ -467,7 +537,7 @@ contains
       patch%mem(:,:,:,iv,:,1) = exp(patch%mem(:,:,:,iv,:,1))
     end if
     !-----------------------------------------------------------------------------
-    ! Restore to momentum variables for RAMSES snapshots
+    ! Restore to momentum variables for RAMSES snapshots, if format=6,8
     !-----------------------------------------------------------------------------
     if ((io%format == 6 .or. io%format==8) .and. patch%solver_is('ramses') &
         .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
@@ -486,7 +556,7 @@ SUBROUTINE input_single (patch, ok)
   logical:: ok
   !.............................................................................
   integer(8):: snapshot_words, buffer_words
-  integer:: iv, n(3), slot, nder, irec
+  integer:: iv, n(3), slot, nder, irec, ip, iout
   logical, save:: read_failed=.false., first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -515,7 +585,6 @@ SUBROUTINE input_single (patch, ok)
   ! Make sure only the first thread to come here allocates the buffer, if needed
   !-----------------------------------------------------------------------------
   patch%iout = io%restart
-  !$omp critical (parallel_in_cr)
   if (first_time) then
     first_time = .false.
     if (.not.associated(parallel_io%buffer)) then
@@ -527,35 +596,51 @@ SUBROUTINE input_single (patch, ok)
     ! Read via buffer, in case guard zones not included. FIXME: read snapshot
     ! guard zone parameter, to allow it to differ
     !---------------------------------------------------------------------------
+    if (io%method == 'snapshot') then
+      iout = 0
+    else
+      iout = patch%iout
+    end if
     do iv=1,io%nv
       irec = 1 + mpi%rank + mpi%size*(iv-1)
-      call mpi_io%read (parallel_io%buffer(:,:,:,:,iv,1), 1+patch%iout, irec)
+      call mpi_io%read (parallel_io%buffer(:,:,:,:,iv,1), 1+iout, irec)
+      if (mpi_io%err /= 0) then
+        read_failed = .true.
+        write(io%output,*) 'io%snapshot: read failed', io%restart
+        exit
+      else
+        write(io%output,*) 'io%snapshot: read succeeded', io%restart
+      end if
     end do
-    if (mpi_io%err /= 0) then
-      read_failed = .true.
-      write(io%output,*) 'io%parallel_io: read failed', io%restart
-    else
-      write(io%output,*) 'io%parallel_io: read succeeded', io%restart
-    end if
   end if
-  !$omp end critical (parallel_in_cr)
   if (read_failed) then
     ok = .false.
     call trace%end (itimer)
     return
   end if
+  ip = patch%ip
+  flush (io_unit%mpi)
+  if (ip < 1 .or. ip > io%ntask) then
+    write (io_unit%output,*) 'WARNING', ip, io%ntask
+    flush (io_unit%output)
+    ip = max(1,min(ip,io%ntask))
+  end if
   if (io%guard_zones) then
-    patch%mem(:,:,:,:,patch%it,1) = parallel_io%buffer(:,:,:,patch%ip,:,1)
+    patch%mem(:,:,:,:,patch%it,1) = parallel_io%buffer(:,:,:,ip,:,1)
   else
     patch%mem(patch%li(1):patch%ui(1), &
               patch%li(2):patch%ui(2), &
-              patch%li(3):patch%ui(3),:,patch%it,1) = parallel_io%buffer(:,:,:,patch%ip,:,1)
+              patch%li(3):patch%ui(3),:,patch%it,1) = parallel_io%buffer(:,:,:,ip,:,1)
   end if
-  if (io%verbose>1) then
+  if (io%verbose > 1) then
     do iv=1,io%nv
-      write (io_unit%output,*) 'parallel_io_t%input: id, iv, iout, min, max =', &
-        patch%id, iv, patch%iout, patch%fminval(iv), patch%fmaxval(iv)
+      write (io_unit%output,*) &
+        'parallel_io_t%input: id, ip, iv, iout, min, max =', &
+        patch%id, ip, iv, patch%iout, patch%fminval(iv), patch%fmaxval(iv)
     end do
+  else if (io%verbose > 0) then
+    write (io_unit%output,*) 'parallel_io_t%input: id, ip, iout =', &
+      patch%id, ip, patch%iout
   end if
   do iv=1,io%nv
     call convert_variables
@@ -573,6 +658,7 @@ SUBROUTINE input_single (patch, ok)
 contains
   !-----------------------------------------------------------------------------
   subroutine convert_variables
+    call trace%begin('input_single::convert_variables')
     !-----------------------------------------------------------------------------
     ! Using log(d) if io%format==12 or 13
     !-----------------------------------------------------------------------------
@@ -581,13 +667,14 @@ contains
       patch%mem(:,:,:,iv,:,1) = exp(patch%mem(:,:,:,iv,:,1))
     end if
     !-----------------------------------------------------------------------------
-    ! Restore to momentum variables for RAMSES snapshots
+    ! Restore to momentum variables for RAMSES snapshots, if format=10,12
     !-----------------------------------------------------------------------------
     if ((io%format == 10 .or. io%format==12) .and. patch%solver_is('ramses') &
         .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
       ! --- Convert velocity to momentum ---
       patch%mem(:,:,:,iv,:,1) = patch%mem(:,:,:,iv,:,1)*patch%mem(:,:,:,patch%idx%d,:,1)
     end if
+    call trace%end
   end subroutine
 END SUBROUTINE input_single
 

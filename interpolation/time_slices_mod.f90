@@ -27,10 +27,10 @@ CONTAINS
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE init (self, patch)
+SUBROUTINE init (self, nt)
   class(time_slices_t):: self
+  integer:: nt
   !.............................................................................
-  class(patch_t):: patch
   integer:: iostat
   namelist /time_slices_params/ verbose, order, id_debug
   logical:: first_time=.true.
@@ -40,7 +40,7 @@ SUBROUTINE init (self, patch)
     first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, time_slices_params, iostat=iostat)
-    order = min(order,patch%nt-2)
+    order = min(order,nt-2)
     write (io%output, time_slices_params)
     write (io_unit%nml, time_slices_params)
   end if

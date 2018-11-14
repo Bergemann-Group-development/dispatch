@@ -887,7 +887,7 @@ FUNCTION test_recv (self) RESULT (flag)
   now = wallclock()
   flag = .false.
   if (now < self%test_next) return
-  call trace%begin('mesg_t%test_recv', itimer=itimer)
+  call trace%begin('mesg_t%test_recv', 2, itimer=itimer)
   if (mpi%mode == MPI_THREAD_SERIALIZED) then
     !$omp critical (mpi_cr)
     if (wait) then

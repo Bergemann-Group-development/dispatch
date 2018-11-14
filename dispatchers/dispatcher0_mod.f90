@@ -18,6 +18,7 @@ MODULE dispatcher0_mod
   USE experiment_mod
   USE bits_mod
   USE task_list_mod
+  USE data_io_mod
   implicit none
   private
   type, public:: dispatcher0_t
@@ -152,11 +153,16 @@ SUBROUTINE update (self, task_list, test)
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
   call task_list%check_mpi                              ! check incoming MPI
-  call mpi_io%iwrite_list%check                        ! I/O check
+  call mpi_io%iwrite_list%check                         ! I/O check
   !-----------------------------------------------------------------------------
-  ! Pick a task off the queue, in a very brief critical region
+  ! Now is a convenient time to check if a file should be opened or closed.  No
+  ! harm is done if that makes the thread hangs for a while; other threads work
   !-----------------------------------------------------------------------------
+  call data_io%open_and_close ()
   !$omp critical (queue_cr)
+  !-----------------------------------------------------------------------------
+  ! Pick a task off the queue, in what is normally a very brief critical region
+  !-----------------------------------------------------------------------------
   nullify (prev)
   head => task_list%queue                                    ! queue start
   if (associated(head) .and. .not.task_list%syncing) then
@@ -243,15 +249,15 @@ SUBROUTINE update (self, task_list, test)
           !$omp atomic write
           oid = otask%id
           if (omp%master) then
-            write (io_unit%queue,'(f12.6,i6,2f12.6,2i5)') &
-              wallclock(), task%istep, task%time, &
+            write (io_unit%queue,'(f12.6,2i7,2f12.6,2i5)') &
+              wallclock(), task%id, task%istep, task%time, &
               otask%atime, task_list%nq, task_list%nac
             flush (io_unit%queue)
-            end if
+          end if
         else
-            if (omp%master) then
-            write (io_unit%queue,'(f12.6,i6,f12.6,2i5)') &
-              wallclock(), task%istep, task%time, &
+          if (omp%master) then
+            write (io_unit%queue,'(f12.6,2i7,f12.6,2i5)') &
+              wallclock(), task%id, task%istep, task%time, &
               task_list%nq, task_list%nac
             flush (io_unit%queue)
           end if

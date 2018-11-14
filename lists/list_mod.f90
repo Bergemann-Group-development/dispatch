@@ -345,12 +345,15 @@ SUBROUTINE resend_bdry (self)
   class(list_t):: self
   class(link_t), pointer:: link
   !.............................................................................
+  call trace%begin ('list_t%resend_bdry')
   link => self%head
   do while (associated(link))
     if (link%task%is_set (bits%boundary)) then
       call link%send_to_vnbors
     end if
+    link => link%next
   end do
+  call trace%end
 END SUBROUTINE resend_bdry
 
 !> =============================================================================

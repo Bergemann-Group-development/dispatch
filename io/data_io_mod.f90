@@ -43,6 +43,7 @@ MODULE data_io_mod
     procedure, nopass:: output_nml
     procedure:: input
     procedure, nopass:: close
+    procedure, nopass:: open_and_close
   end type
   type(data_io_t), public:: data_io
 CONTAINS
@@ -67,6 +68,8 @@ SUBROUTINE init (self, task)
           call parallel_io%init (task)
         else if (io%method=='parallel') then
           call parallel_io%init (task)
+        else if (io%method=='snapshot') then
+          call parallel_io%init (task)
         end if
       end select
     end if
@@ -75,7 +78,7 @@ SUBROUTINE init (self, task)
     if (io%master) print *,'data_io_t%init: io%nwrite =', io%nwrite
     call trace%end
   end if
-!$omp end critical (data_io_cr)
+  !$omp end critical (data_io_cr)
   END SUBROUTINE init
 
   !> =============================================================================
@@ -111,7 +114,7 @@ SUBROUTINE output (self, patch, experiment_name)
   character(len=64) filename, logname, experiment_name
   optional:: experiment_name
   !.............................................................................
-  logical, save:: checked=.false.
+  integer, save:: created=-1
   integer, save:: itimer=0
   logical:: append
   integer:: it, count, np
@@ -124,8 +127,8 @@ SUBROUTINE output (self, patch, experiment_name)
   if (patch%t(it) >= patch%out_next) then
     !$omp critical (data_io_cr)
     do while (patch%t(it) >= patch%out_next)
-      if (.not.checked) then
-        checked = .true.
+      if (created < patch%iout) then
+        created = patch%iout
         call os%mkdir (trim(io%outputname))
       end if
       call os%mkdir_no (patch%iout)
@@ -133,7 +136,6 @@ SUBROUTINE output (self, patch, experiment_name)
       count = counters%decrement (patch%iout+1, io%nwrite)
       if (io%verbose > 0) &
         write (io_unit%log,*) 'count, nwrite =', count, io%nwrite
-      if (count==0) call counters%reset (patch%iout+1)
       append = (count < io%nwrite-1)
       !---------------------------------------------------------------------------
       if      (io%method=='direct') then
@@ -150,6 +152,10 @@ SUBROUTINE output (self, patch, experiment_name)
       else if (io%method=='parallel') then
         if (io%format == 0) &
           io%format = 6
+        call parallel_io%output (patch, count)
+      else if (io%method=='snapshot') then
+        if (io%format == 0) &
+          io%format = 10
         call parallel_io%output (patch, count)
       else
         call mpi%abort ('unknown io%method = '//io%method)
@@ -179,6 +185,14 @@ SUBROUTINE output (self, patch, experiment_name)
 END SUBROUTINE output
 
 !> =============================================================================
+SUBROUTINE open_and_close ()
+  !-----------------------------------------------------------------------------
+  if (io%method == 'snapshot') then
+    call parallel_io%open_and_close ()
+  end if
+END SUBROUTINE open_and_close 
+
+!> =============================================================================
 !> Read snapshot from disk
 !> =============================================================================
 SUBROUTINE input (self, patch, ok)
@@ -189,6 +203,7 @@ SUBROUTINE input (self, patch, ok)
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%input')
   call self%init (patch)
+  !$omp critical (data_io_cr)
   ok = .false.
   if (io%restart > 0) then
     if      (io%method=='direct') then
@@ -199,6 +214,9 @@ SUBROUTINE input (self, patch, ok)
       call parallel_io%input (patch, ok)
       call input_nml (patch)
     else if (io%method=='parallel') then
+      call parallel_io%input (patch, ok)
+      call input_nml (patch)
+    else if (io%method=='snapshot') then
       call parallel_io%input (patch, ok)
       call input_nml (patch)
     else
@@ -214,6 +232,7 @@ SUBROUTINE input (self, patch, ok)
     end if
     patch%t(patch%it) = patch%time
   end if
+  !$omp end critical (data_io_cr)
   call trace%end
 END SUBROUTINE input
 
@@ -476,6 +495,8 @@ SUBROUTINE close
   else if (io%method=='pan') then
     call parallel_io%close
   else if (io%method=='parallel') then
+    call parallel_io%close
+  else if (io%method=='snapshot') then
     call parallel_io%close
   end if
   call trace%end

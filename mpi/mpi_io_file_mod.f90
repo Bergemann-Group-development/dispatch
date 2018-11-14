@@ -4,6 +4,7 @@
 MODULE mpi_io_file_mod
   USE mpi_mod, only: mp=>mpi
   USE omp_mod
+  USE omp_timer_mod
   USE io_mod
   USE trace_mod
 #ifdef MPI
@@ -14,9 +15,14 @@ MODULE mpi_io_file_mod
   type, public:: mpi_io_file_t
     integer:: handle = 0
     integer:: comm = 0
+    integer:: mode = 0
     integer:: err = 0
+    logical:: closed=.true.
     character(len=64):: filename
   contains
+    procedure:: request_open
+    procedure:: request_close
+    procedure:: open_and_close
     procedure:: open
     procedure:: openw
     procedure:: openr
@@ -25,6 +31,54 @@ MODULE mpi_io_file_mod
   end type
   integer, save:: verbose=2
 CONTAINS
+
+!> =============================================================================
+!> Request that a file is opened, when convenient
+!> =============================================================================
+SUBROUTINE request_open (self, filename)
+  class(mpi_io_file_t):: self
+  character(len=*) filename
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_file_t%request_open')
+  if (self%closed) then
+    self%mode = MPI_MODE_CREATE + MPI_MODE_RDWR
+    self%filename = filename
+    self%closed = .false.
+  end if
+  call trace%end
+END SUBROUTINE request_open
+
+!> =============================================================================
+!> Request that a file is closed, when convenient
+!> =============================================================================
+SUBROUTINE request_close (self)
+  class(mpi_io_file_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_file_t%request_close')
+  self%closed = .true.
+  call trace%end
+END SUBROUTINE request_close
+
+!> =============================================================================
+!> Make a files actual status match the requested status
+!> =============================================================================
+SUBROUTINE open_and_close (self)
+  class(mpi_io_file_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_file_t%open_and_close',2)
+  if (self%closed .and. self%handle/=0) then
+    call self%close ()
+    write(io_unit%mpi,'(g12.5,i4,2x,a)') wallclock(), omp%thread, &
+      'mpi_io_file_t%open_and_close: closed '//trim(self%filename)
+    flush (io_unit%mpi)
+  else if (.not. self%closed .and. self%handle==0) then
+    call self%openw (self%filename)
+    write(io_unit%mpi,'(g12.5,i4,2x,a)') wallclock(), omp%thread, &
+      'mpi_io_file_t%open_and_close: opened '//trim(self%filename)
+    flush (io_unit%mpi)
+  end if
+  call trace%end
+END SUBROUTINE open_and_close
 
 !> =============================================================================
 !> Open a file with given mode, and given local size self%lsize.  It is not
@@ -59,6 +113,7 @@ SUBROUTINE open (self, filename, mode)
       flush (io_unit%mpi)
     end if
   end if
+  self%closed = .false.
   !$omp end critical (mpi_io_cr)
 #endif
 END SUBROUTINE open
@@ -110,17 +165,21 @@ END SUBROUTINE openr
 SUBROUTINE close (self)
   class(mpi_io_file_t):: self
   !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_file_t%close')
 #ifdef MPI
   !$omp critical (close_cr)
   if (self%handle /= 0) then
-    call MPI_File_closE(self%handle, self%err)
-    if (io%verbose > 0 .and. io%master) then
-      print'(1x,a,2i8)','mpi_io_mod::close: '//trim(self%filename)
+    call MPI_File_close (self%handle, self%err)
+    if (io%verbose > 0) then
+      write (io_unit%mpi,'(1x,a,i8)') &
+        'mpi_io_t%close: '//trim(self%filename)//'  err:', self%err
+      flush (io_unit%mpi)
     end if
     self%handle = 0
   end if
   !$omp end critical (close_cr)
 #endif MPI
+  call trace%end
 END SUBROUTINE close
 
 !> =============================================================================

@@ -147,7 +147,7 @@ SUBROUTINE set (self, rec_words, chunk_words, nwrite)
   integer(8), optional:: rec_words, chunk_words
   integer, optional:: nwrite
   !-----------------------------------------------------------------------------
-  call trace%begin ('mpi_io_t%init')
+  call trace%begin ('mpi_io_t%set')
   if (present(rec_words)) then
     self%rec_words = rec_words
     if (verbose > 2) print *, 'mpi_io_t%init: setting rec_words =', rec_words
@@ -216,6 +216,11 @@ SUBROUTINE write4 (self, f, rec, id)
       ' mpi_io_t%write4: rec, id, words, pos, min/max =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
   !!omp critical (mpi_io_cr)
+  if (verbose > 0) then
+    write(io_unit%mpi,'(g12.5,i4,2x,a)') wallclock(), omp%thread, &
+      'mpi_io_t%write4: writing to '//trim(self%file%filename)
+    flush (io_unit%mpi)
+  end if
   call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                           self%status, self%err)
   !!omp end critical (mpi_io_cr)
@@ -324,7 +329,8 @@ SUBROUTINE read3 (self, f, rec, id)
   call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                          self%status, self%err)
   if (verbose>1) &
-    write(io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%read: rec, id, words, pos =', &
+    write (io_unit%mpi,'(a,3i8,i15,1p,2e14.6)') &
+      ' mpi_io_t%read3: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
   !$omp end critical (mpi_io_cr)
   call trace%end
@@ -349,7 +355,8 @@ SUBROUTINE read4 (self, f, rec, id)
   call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                          self%status, self%err)
   if (verbose>1) &
-    write(io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%read: rec, id, words, pos =', &
+    write (io_unit%mpi,'(a,3i8,i15,1p,2e14.6)') &
+      ' mpi_io_t%read4: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
   !$omp end critical (mpi_io_cr)
   call trace%end

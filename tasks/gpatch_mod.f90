@@ -139,6 +139,13 @@ SUBROUTINE init (self)
       end if
     end if
   else
+    !---------------------------------------------------------------------------
+    ! Make sure the default time for patches with IC values is zero, to ensure 
+    ! boundary tasks are not considered ready for updating until their virtual
+    ! task nbors have been updated.
+    !---------------------------------------------------------------------------
+    restart_time = 0.0
+    self%time = 0.0
     self%mem = 0.0
     ff => self%mem(:,:,:,:,1,1)
     call self%initial%condition (self%mesh, ff, self%idx)
