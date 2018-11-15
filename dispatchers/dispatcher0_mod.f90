@@ -29,8 +29,9 @@ MODULE dispatcher0_mod
     procedure:: execute
     procedure:: update
   end type
+  real(8):: stall_start=0d0, max_stalled=600d0, retry_stalled=30d0
   integer, save:: verbose=0
-  integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
+  integer, save:: stalled=0
   integer, save:: min_nq=2**30
   logical, save:: debug=.false.
   logical, save:: do_delay=.false.
@@ -187,6 +188,14 @@ SUBROUTINE update (self, task_list, test)
       head => task_list%queue
       task => head%task                                   ! head task
     end if
+    !---------------------------------------------------------------------------
+    if (debug) then
+      if (stalled > 0) then
+        write (io_unit%log,*) wallclock(), '  stall ended', stalled
+      end if
+      write (io_unit%log,*) wallclock(), task%id, task%time, 'update start'
+      flush (io_unit%log)
+    end if
     task%atime = task%time
     if (io%verbose > 1) then
       write (io_unit%log,'(f12.6,2x,a,i4,2x,a,i6,2x,a,1p,g16.6,2x,a,i5)') &
@@ -311,32 +320,47 @@ SUBROUTINE update (self, task_list, test)
     !-----------------------------------------------------------------------------
     call task%clear (bits%busy)                         ! clear busy bit (FIXME: check this!)
     if (.not. was_refined) then
-      call task_list%check_nbors (head)                        ! any nbors ready?
+      call task_list%check_nbors (head)                 ! any nbors ready?
       !$omp atomic write
       stalled = 0
       !call mpi_mesg%diagnostics (0)
     end if
-  else if (do_delay) then
-    !$omp critical (delay_cr)
-    stalled = stalled+1
-    if (stalled == retry_stalled) then
-       print *, mpi%rank, 'STALLED check_oldest + check_all + resend_bdry'
-       call task_list%check_oldest
-       call task_list%check_all
-       call task_list%resend_bdry
-    else
-      call mpi_mesg%delay (stalled)
-      call task_list%check_all
+    if (debug) then
+      write (io_unit%log,*) wallclock(), task%id, task%time, 'update end'
+      flush (io_unit%log)
     end if
-    if (stalled == max_stalled/2) then
+  else
+    !$omp critical (stalled_cr)
+    if (stalled == 0) then
+      stall_start = wallclock()
+      if (debug) &
+        write (io_unit%log,*) wallclock(), 'queue stalled', stalled
+    end if
+    stalled = stalled+1
+    if (wallclock()-stall_start > retry_stalled) then
+       !print *, mpi%rank, 'STALLED:'
+       call task_list%check_all
+       if (associated(task_list%queue)) then
+         print *, mpi%rank, 'STALLED revived by check_all'
+       else
+         call task_list%check_oldest
+         if (associated(task_list%queue)) then
+           print *, mpi%rank, 'STALLED revived by check_oldest'
+         else
+           print *, mpi%rank, 'STALLED, revived FAILED'
+           call io%abort ('STALLED, revived FAILED')
+         end if
+       end if
+    else if (do_delay) then
+      call mpi_mesg%delay (stalled)
+    end if
+    if (wallclock()-stall_start > max_stalled) then
       print *, mpi%rank, 'STALLED diagnostics'
       call mpi_mesg%diagnostics (1)
-    end if
-    if (stalled > max_stalled) then
       print *, mpi%rank, 'STALLED bailing out'
       call mpi%abort ('exceeded max_stalled')
     end if
-    !$omp end critical (delay_cr)
+    !$omp end critical (stalled_cr)
   end if
   call trace_end (itimer)
 END SUBROUTINE update

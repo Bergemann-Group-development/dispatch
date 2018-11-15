@@ -301,39 +301,36 @@ END SUBROUTINE check_nbors
 SUBROUTINE check_all (self, repair)
   class(list_t):: self
   logical, optional:: repair
+  !.............................................................................
   class(link_t), pointer:: link
   integer, save:: itimer=0
-  !.............................................................................
+  !-----------------------------------------------------------------------------
   call trace_begin('list_t%check_all', itimer=itimer)
-  write (io_unit%log,*) 'check_all: phase 1', self%nq, associated(self%queue)
-  !$omp critical (list_cr)
+  write (io_unit%mpi,*) 'check_all: phase 1', self%nq, associated(self%queue)
   if (present(repair)) then
     nullify (self%queue)
   end if
   link => self%head
   do while (associated (link))                          ! keep going until end
-    call link%task%clear (bits%ready)
-    call self%check_ready (link)                        ! link ready?
+    if (link%task%is_clear (bits%virtual+bits%external)) then
+      call self%check_ready (link)                      ! link ready?
+    end if
     link => link%next
   end do
-  write (io_unit%log,*) 'check_all: don    ', self%nq, associated(self%queue)
-  !if (.not.associated(self%queue)) then
-  !  write (io_unit%log,*) 'check_all: phase 2'
-  !  link => self%head
-  !  do while (associated (link))                        ! keep going until end
-  !    if (link%task%is_clear (bits%virtual+bits%external)) then
-  !      !if (link%task%is_set (bits%ready)) then
-  !      !  write (io_unit%log,*) 'clearing ready bit on', link%task%id
-  !      !  call link%task%clear (bits%ready)
-  !      !end if
-  !      call self%check_ready (link)                  ! link ready?
-  !    end if
-  !    link => link%next
-  !  end do
-  !end if
-  !$omp end critical (list_cr)
+  write (io_unit%mpi,*) 'check_all: don    ', self%nq, associated(self%queue)
   if (.not.associated(self%queue)) then
-    call self%check_oldest
+    write (io_unit%log,*) 'check_all: phase 2, clearing ready bits'
+    link => self%head
+    do while (associated (link))                        ! keep going until end
+      if (link%task%is_clear (bits%virtual+bits%external)) then
+        if (link%task%is_set (bits%ready)) then
+          write (io_unit%log,*) 'clearing ready bit on', link%task%id
+          call link%task%clear (bits%ready)
+        end if
+        call self%check_ready (link)                    ! link ready?
+      end if
+      link => link%next
+    end do
   end if
   call trace_end (itimer)
 END SUBROUTINE check_all
@@ -346,6 +343,7 @@ SUBROUTINE resend_bdry (self)
   class(link_t), pointer:: link
   !.............................................................................
   call trace%begin ('list_t%resend_bdry')
+  !$omp critical (queue_cr)
   link => self%head
   do while (associated(link))
     if (link%task%is_set (bits%boundary)) then
@@ -353,6 +351,7 @@ SUBROUTINE resend_bdry (self)
     end if
     link => link%next
   end do
+  !$omp end critical (queue_cr)
   call trace%end
 END SUBROUTINE resend_bdry
 
@@ -363,15 +362,16 @@ SUBROUTINE check_oldest (self)
   class(list_t):: self
   class(link_t), pointer:: link, oldest, oldestv, oldestnb
   real(8):: told, toldv
+  integer, save:: phase=1
   !.............................................................................
-  call trace_begin('list_t%check_oldest '//self%name)
-  write (io_unit%log,*) 'check_oldest: phase 1'
+  call trace_begin('list_t%check_oldest ')
+  write (io_unit%mpi,*) 'check_oldest: phase 1', wallclock()
+  flush (io_unit%mpi)
   told = 1d30
   toldv = told
   nullify (oldest)
   nullify (oldestv)
   nullify (oldestnb)
-  !$omp critical (list_cr)
   link => self%head
   do while (associated (link))                        ! keep going until end
     if (link%task%is_set(bits%virtual)) then
@@ -387,54 +387,66 @@ SUBROUTINE check_oldest (self)
     end if
     link => link%next
   end do
-  link => oldest
-  write (io_unit%log,*) 'the oldest active  task is ', oldest%task%id, oldest%task%time
-  flush (io_unit%log)
-  !$omp end critical (list_cr)
-  !
-  if (associated(oldest)) then
-    write (io_unit%log,*) 'check_oldest: phase 2', associated(oldest)
-    write (io_unit%log,1) 'the oldest local task is', oldest%task%id, &
-      'rank', oldest%task%rank, oldest%task%time, &
-      oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
-    told = 1d30
-    link => oldest%nbor
-    do while (associated(link))
-      if (link%task%time < told) then
-        told =link%task%time
-        oldestnb => link
-      end if
-      write (io_unit%log,1) &
-        'nbor', link%task%id, 'rank', link%task%rank, link%task%time, &
-        link%task%is_set(bits%boundary), link%task%is_set (bits%virtual)
-      1 format (1x,a,i9,3x,a,i6,1p,e16.6,2l3)
-      link => link%next
-    end do
-  end if
-  write (io_unit%log,'(f12.6,2(3x,a,i8,i6,f12.6,3x,4l1),3i5)') wallclock(), &
-   'oldest:', oldest%task%id, oldest%task%rank, oldest%task%time, &
-   oldest%task%is_set(bits%internal), oldest%task%is_set(bits%boundary), &
-   oldest%task%is_set(bits%virtual), oldest%task%is_set(bits%external), &
-   'nbor:', oldestnb%task%id, oldestnb%task%rank, oldestnb%task%time, &
-   oldestnb%task%is_set(bits%internal), oldestnb%task%is_set(bits%boundary), &
-   oldestnb%task%is_set(bits%virtual), oldestnb%task%is_set(bits%external), &
-   self%nq, sent_list%n, recv_list%n, unpk_list%n
-  flush (io_unit%log)
+  write (io_unit%mpi,*) 'the oldest active  task is ', oldest%task%id , told
+  flush (io_unit%mpi)
+  write (io_unit%mpi,*) 'it was last unpacked at', oldest%task%unpack_time
+  flush (io_unit%mpi)
+  call oldest%task%clear (bits%ready+bits%busy)
+  call self%queue_by_time (oldest)                  ! add task to queue
+  write (io_unit%mpi,*) 'task queued'
+  flush (io_unit%mpi)
   if (associated(oldestv)) then
-    write (io_unit%log,*) 'the oldest virtual task is ', oldestv%task%id, oldestv%task%time
-    write (io_unit%log,*) 'check_oldest: phase 3', associated(oldestv)
-    write (io_unit%log,1) 'the oldest virtual task is', oldestv%task%id, &
-      'rank', oldestv%task%rank, oldestv%task%time, &
-      oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
-    link => oldestv%nbor
-    do while (associated(link))
-      write (io_unit%log,1) &
-        'nbor', link%task%id, 'rank', link%task%rank, link%task%time, &
-        link%task%is_set(bits%boundary), link%task%is_set (bits%virtual)
-      link => link%next
-    end do
+    write (io_unit%mpi,*) 'the oldest virtual task is ', oldestv%task%id, toldv
+    flush (io_unit%mpi)
   end if
-  flush (io_unit%log)
+  write (io_unit%mpi,*) 'check_oldest: phase 1 done'
+  flush (io_unit%mpi)
+  link => oldest
+  !
+  if (phase > 1) then
+    if (associated(oldest)) then
+      write (io_unit%mpi,*) 'check_oldest: phase 2', associated(oldest)
+      write (io_unit%mpi,1) 'the oldest local task is', oldest%task%id, &
+        'rank', oldest%task%rank, oldest%task%time, &
+        oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
+      told = 1d30
+      link => oldest%nbor
+      do while (associated(link))
+        if (link%task%time < told) then
+          told =link%task%time
+          oldestnb => link
+        end if
+        write (io_unit%mpi,1) &
+          'nbor', link%task%id, 'rank', link%task%rank, link%task%time, &
+          link%task%is_set(bits%boundary), link%task%is_set (bits%virtual)
+        1 format (1x,a,i9,3x,a,i6,1p,e16.6,2l3)
+        link => link%next
+      end do
+    end if
+    write (io_unit%mpi,'(f12.6,2(3x,a,i8,i6,f12.6,3x,4l1),3i5)') wallclock(), &
+     'oldest:', oldest%task%id, oldest%task%rank, oldest%task%time, &
+     oldest%task%is_set(bits%internal), oldest%task%is_set(bits%boundary), &
+     oldest%task%is_set(bits%virtual), oldest%task%is_set(bits%external), &
+     'nbor:', oldestnb%task%id, oldestnb%task%rank, oldestnb%task%time, &
+     oldestnb%task%is_set(bits%internal), oldestnb%task%is_set(bits%boundary), &
+     oldestnb%task%is_set(bits%virtual), oldestnb%task%is_set(bits%external), &
+     self%nq, sent_list%n, recv_list%n, unpk_list%n
+    flush (io_unit%mpi)
+    if (associated(oldestv)) then
+      write (io_unit%mpi,*) 'the oldest virtual task is ', oldestv%task%id, oldestv%task%time
+      write (io_unit%mpi,*) 'check_oldest: phase 3', associated(oldestv)
+      write (io_unit%mpi,1) 'the oldest virtual task is', oldestv%task%id, &
+        'rank', oldestv%task%rank, oldestv%task%time, &
+        oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
+      link => oldestv%nbor
+      do while (associated(link))
+        write (io_unit%mpi,1) &
+          'nbor', link%task%id, 'rank', link%task%rank, link%task%time, &
+          link%task%is_set(bits%boundary), link%task%is_set (bits%virtual)
+        link => link%next
+      end do
+    end if
+  end if
   call trace_end
 END SUBROUTINE check_oldest
 

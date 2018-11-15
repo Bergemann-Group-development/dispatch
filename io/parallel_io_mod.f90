@@ -26,7 +26,7 @@ MODULE parallel_io_mod
     procedure, nopass:: close
     procedure, nopass:: open_and_close
   end type
-  integer, parameter:: verbose=0
+  integer, parameter:: verbose=2
   logical:: check_files=.false.
   type(mpi_io_file_t), pointer:: file_in=>null(), file_out=>null()
   type(mpi_io_file_t), pointer, dimension(:):: files_out=>null()
@@ -99,6 +99,10 @@ SUBROUTINE open_and_close ()
         end do
       end if
       call trace%end
+    end if
+    if (verbose > 1) then
+      write (io_unit%mpi,*) wallclock(), 'parallel_io_t%open_and_close: exiting'
+      flush (io_unit%mpi)
     end if
     !$omp end critical (files_out_cr)
   end if
@@ -261,6 +265,10 @@ SUBROUTINE output_single (patch, count)
   !-----------------------------------------------------------------------------
   ! method='snapshot' => One file per snapshot
   !-----------------------------------------------------------------------------
+  if (verbose > 1) then
+    write (io_unit%mpi,*) wallclock(), patch%id, patch%time, '  begin'
+    flush (io_unit%mpi)
+  end if
   if (io%method == 'snapshot') then
     if (.not. associated(files_out)) then
       io0 = patch%iout
@@ -283,8 +291,8 @@ SUBROUTINE output_single (patch, count)
       opened = patch%iout+1
       write (filename,'(a,"/",i5.5,"/snapshot.dat")') trim(io%outputname), opened
       !$omp critical (files_out_cr)
-      write (io_unit%log,*) wallclock(), patch%id, patch%time, '  request_open'
-      flush (io_unit%log)
+      write (io_unit%mpi,*) wallclock(), patch%id, patch%time, '  request_open'
+      flush (io_unit%mpi)
       call files_out(opened)%request_open (filename)
       !$omp atomic write
       check_files = .true.
@@ -295,6 +303,10 @@ SUBROUTINE output_single (patch, count)
   ! Set size parameters; a buffer is all variables in the patch, and the
   ! snspshot offset is that times the number of patches per snapshot.
   !-----------------------------------------------------------------------------
+  if (verbose > 1) then
+    write (io_unit%mpi,*) wallclock(), patch%id, patch%time, '  set size'
+    flush (io_unit%mpi)
+  end if
   if (io%guard_zones) then
     n = patch%gn
   else
@@ -303,6 +315,10 @@ SUBROUTINE output_single (patch, count)
   !-----------------------------------------------------------------------------
   ! Slots in the file are ordered (id,iv,iout).
   !-----------------------------------------------------------------------------
+  if (verbose > 1) then
+    write (io_unit%mpi,*) wallclock(), patch%id, patch%time, '  call mpi_io'
+    flush (io_unit%mpi)
+  end if
   nder = io%time_derivs+1
   snapshot_words = product(n)*io%ntotal*io%nv*nder
   buffer_words = product(n)*io%ntask
@@ -338,10 +354,18 @@ SUBROUTINE output_single (patch, count)
       patch%id, ip, patch%iout, n, snapshot_words, buffer_words, associated(parallel_io%buffer)
     flush (io%output)
   end if
+  if (verbose > 1) then
+    write (io_unit%mpi,*) wallclock(), patch%id, patch%time, '  allocate mem'
+    flush (io_unit%mpi)
+  end if
   allocate (mem(n(1),n(2),n(3),patch%nt-1))
   !-----------------------------------------------------------------------------
   ! Time interpolation to exaxt out_next
   !-----------------------------------------------------------------------------
+  if (verbose > 1) then
+    write (io_unit%mpi,*) wallclock(), patch%id, patch%time, '  convert var, interpolate'
+    flush (io_unit%mpi)
+  end if
   do iv=1,io%nv
     call convert_variables
     buffer => parallel_io%buffer(:,:,:,ip,iv,1)
@@ -365,8 +389,10 @@ SUBROUTINE output_single (patch, count)
     end if
   end if
   deallocate (mem)
-  write (io_unit%log,*) wallclock(), patch%id, patch%time, count, ' buffer'
-  flush (io_unit%log)
+  if (verbose > 0) then
+    write (io_unit%mpi,*) wallclock(), patch%id, patch%time, count, ' buffer'
+    flush (io_unit%mpi)
+  end if
   if (count == 0) then
     if (io%method == 'snapshot') then
       iout = 0
@@ -375,8 +401,8 @@ SUBROUTINE output_single (patch, count)
     end if
     start = wallclock()
     if (verbose > 0) then
-      write (io_unit%log,*) wallclock(), patch%id, patch%time, '  start:'//trim(files_out(patch%iout)%filename)
-      flush (io_unit%log)
+      write (io_unit%mpi,*) wallclock(), patch%id, patch%time, '  start:'//trim(files_out(patch%iout)%filename)
+      flush (io_unit%mpi)
     end if
     do ider=1,nder
     do iv=1,io%nv
@@ -390,8 +416,8 @@ SUBROUTINE output_single (patch, count)
     end do
     end do
     if (verbose > 0) then
-      write (io_unit%log,*) wallclock(), patch%id, patch%time, '    end:'//trim(files_out(patch%iout)%filename)
-      flush (io_unit%log)
+      write (io_unit%mpi,*) wallclock(), patch%id, patch%time, '    end:'//trim(files_out(patch%iout)%filename)
+      flush (io_unit%mpi)
     end if
     write (io_unit%log,'(a,f7.3,1x,a)') &
       'parallel_io_t%output_single: MPI_File_write_at I/O', wallclock()-start, 'sec'
@@ -406,6 +432,10 @@ SUBROUTINE output_single (patch, count)
         check_files = .true.
       end if
     end if
+  end if
+  if (verbose > 1) then
+    write (io_unit%mpi,*) wallclock(), patch%id, patch%time, ' END'
+    flush (io_unit%mpi)
   end if
   call trace%end (itimer)
 contains
