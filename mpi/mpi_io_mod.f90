@@ -189,10 +189,8 @@ SUBROUTINE write3 (self, f, rec, id)
   if (verbose>1) &
     write (io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write3: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
-  !!omp critical (mpi_io_cr)
   call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                           self%status, self%err)
-  !!omp end critical (mpi_io_cr)
   call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
   call trace%end
 #endif
@@ -215,7 +213,6 @@ SUBROUTINE write4 (self, f, rec, id)
     write (io_unit%mpi, '(a,2i6,i12,i15,1p,2e14.6)') &
       ' mpi_io_t%write4: rec, id, words, pos, min/max =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
-  !!omp critical (mpi_io_cr)
   if (verbose > 0) then
     write(io_unit%mpi,'(g12.5,i4,2x,a)') wallclock(), omp%thread, &
       'mpi_io_t%write4: writing to '//trim(self%file%filename)
@@ -223,7 +220,6 @@ SUBROUTINE write4 (self, f, rec, id)
   end if
   call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                           self%status, self%err)
-  !!omp end critical (mpi_io_cr)
   call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
   call trace%end
 #endif
@@ -325,14 +321,12 @@ SUBROUTINE read3 (self, f, rec, id)
   call trace%begin ('mpi_io_t%read3')
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
-  !$omp critical (mpi_io_cr)
   call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                          self%status, self%err)
   if (verbose>1) &
     write (io_unit%mpi,'(a,3i8,i15,1p,2e14.6)') &
       ' mpi_io_t%read3: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
-  !$omp end critical (mpi_io_cr)
   call trace%end
 #endif
 END SUBROUTINE read3
@@ -351,14 +345,12 @@ SUBROUTINE read4 (self, f, rec, id)
   call trace%begin ('mpi_io_t%read4')
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
-  !$omp critical (mpi_io_cr)
   call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                          self%status, self%err)
   if (verbose>1) &
     write (io_unit%mpi,'(a,3i8,i15,1p,2e14.6)') &
       ' mpi_io_t%read4: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
-  !$omp end critical (mpi_io_cr)
   call trace%end
 #endif
 END SUBROUTINE read4
@@ -399,6 +391,8 @@ SUBROUTINE check (self)
   !-----------------------------------------------------------------------------
   ! Most threads will exit immediately here
   !-----------------------------------------------------------------------------
+  if (.not. io%do_output) &
+    return
   if (self%n < mpi_io%nwrite .or. self%thread >=0) then
     if (verbose > 1 .and. self%thread >= 0) &
       write(io%output,'(f12.6,i5,2x,a,i7,i4)') &

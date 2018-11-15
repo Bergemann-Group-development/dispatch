@@ -621,7 +621,7 @@ SUBROUTINE send_to_vnbors (self)
     nbor => nbor%next                                           ! next nbor
   end do
   if (io%verbose>1) &
-    write (io_unit%mpi,*) 'sent patch',task%id,' to',nsend,' other ranks'
+    write (io_unit%mpi,*) 'sent patch', self%task%id,' to',nsend,' other ranks'
   !-----------------------------------------------------------------------------
   ! Add the message to mesg%sent_list, if it was sent, and clear the swap bit
   !-----------------------------------------------------------------------------

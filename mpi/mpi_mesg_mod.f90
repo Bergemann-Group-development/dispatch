@@ -126,11 +126,6 @@ SUBROUTINE send (self, rank, tag)
     !$omp critical (mpi_cr)
     call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, ltag, &
       mpi%comm, req, ierr)
-    if (mpi_mesg%debug) then
-      write (io_unit%log,'(f12.6,i5,2x,a,i5,z12)') &
-        wallclock(), omp%thread, 'ISEND', rank, req
-      flush (io_unit%log)
-    end if
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
     !$omp end critical (mpi_cr)
@@ -139,6 +134,11 @@ SUBROUTINE send (self, rank, tag)
       mpi%comm, req, ierr)
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
+  end if
+  if (verbose > 1) then
+    write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
+       wallclock(), 'mesg_t%send:', self%id, rank, req
+    flush (io_unit%log)
   end if
 #else
   !$omp critical (mpi_cr)
@@ -863,9 +863,14 @@ SUBROUTINE irecv (self, rank, tag)
   else
     call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, rank, tag, mpi%comm, self%req, ierr)
   end if
+  !-----------------------------------------------------------------------------
+  if (verbose > 1) then
+    write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
+      wallclock(), 'mesg_t%irecv: ', self%id, rank, self%req
+    flush (io_unit%log)
+  end if
   if (mpi_mesg%debug) then
-    write (io_unit%log,'(f12.6,i5,2x,a,i5,z12)') &
-      wallclock(), omp%thread, 'IRECV', rank, self%req
+    write (io_unit%log,*) wallclock(), 'recv task', self%id
     flush (io_unit%log)
   end if
 #endif
@@ -914,6 +919,10 @@ FUNCTION test_recv (self) RESULT (flag)
   if (flag) then
     self%id = stat(MPI_TAG)
     self%req = 0
+    if (mpi_mesg%debug) then
+      write (io_unit%log,*) wallclock(), 'recv task', self%id
+      flush (io_unit%log)
+    end if
   end if
   !$omp atomic write
   self%test_next = now + test_time

@@ -32,6 +32,7 @@ MODULE dispatcher0_mod
   integer, save:: verbose=0
   integer, save:: stalled=0, max_stalled=10000, retry_stalled=100
   integer, save:: min_nq=2**30
+  logical, save:: debug=.false.
   logical, save:: do_delay=.false.
   logical, save:: track_active=.false.
   type(dispatcher0_t), save:: virtual_list
@@ -51,7 +52,7 @@ SUBROUTINE init (self, name)
   logical:: queue_unpack, send_priv, recv_active, recv_priv
   integer:: iostat
   namelist /dispatcher0_params/ verbose, max_stalled, retry_stalled, do_delay, &
-    queue_unpack, send_priv, recv_active, recv_priv
+    queue_unpack, send_priv, recv_active, recv_priv, debug
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -275,6 +276,10 @@ SUBROUTINE update (self, task_list, test)
       task_list%syncing = .true.
       write (io_unit%mpi,*) task%id,omp%thread, &
         ' is triggering a sync at t =', task_list%sync_next
+    end if
+    if (debug) then
+      write (io_unit%log,*) wallclock(), 'leave queue_cr, task', task%id
+      flush (io_unit%log)
     end if
   else
     if (verbose > 0) &

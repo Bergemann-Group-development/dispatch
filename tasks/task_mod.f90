@@ -51,6 +51,7 @@ MODULE task_mod
     real(8):: ds(3)                     ! convenience
     real(8):: box(3)=1d0                ! the periodic wrapping size
     real(8):: wallclock
+    real(8):: unpack_time=0d0
     real(4):: quality = 0.0
     integer, dimension(:), pointer:: iit
     real(8), dimension(:), pointer:: t

@@ -32,6 +32,7 @@ MODULE parallel_io_mod
   type(mpi_io_file_t), pointer, dimension(:):: files_out=>null()
   type(parallel_io_t), public:: parallel_io
   integer, save:: io0, io1
+  integer, save:: opened=-1, closed=-1
 CONTAINS
 
 !> =============================================================================
@@ -89,6 +90,7 @@ SUBROUTINE open_and_close ()
   if (check_files) then
     !$omp critical (files_out_cr)
     if (check_files) then
+      !$omp atomic write
       check_files = .false.
       call trace%begin ('parallel_io_t%open_and_close')
       if (associated(files_out)) then
@@ -253,7 +255,6 @@ SUBROUTINE output_single (patch, count)
   real(8):: start
   logical:: first_time=.true.
   character(len=120):: filename
-  integer, save:: opened=-1
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%output_single', itimer=itimer)
@@ -264,6 +265,7 @@ SUBROUTINE output_single (patch, count)
     if (.not. associated(files_out)) then
       io0 = patch%iout
       io1 = io0 + nint((io%end_time-patch%out_next)/io%out_time) + 1
+      closed = io0-1
       if (omp%master) &
         write (io_unit%mpi,'(a,i4," -- ",i4)') &
           'parallel_io_t%output: initializing for snapshots', io0, io1
@@ -277,10 +279,14 @@ SUBROUTINE output_single (patch, count)
     ! If new snapshot number, open a new file
     !---------------------------------------------------------------------------
     if (patch%iout+1 > opened) then
+      !$omp atomic write
       opened = patch%iout+1
       write (filename,'(a,"/",i5.5,"/snapshot.dat")') trim(io%outputname), opened
       !$omp critical (files_out_cr)
+      write (io_unit%log,*) wallclock(), patch%id, patch%time, '  request_open'
+      flush (io_unit%log)
       call files_out(opened)%request_open (filename)
+      !$omp atomic write
       check_files = .true.
       !$omp end critical (files_out_cr)
     end if
@@ -359,6 +365,8 @@ SUBROUTINE output_single (patch, count)
     end if
   end if
   deallocate (mem)
+  write (io_unit%log,*) wallclock(), patch%id, patch%time, count, ' buffer'
+  flush (io_unit%log)
   if (count == 0) then
     if (io%method == 'snapshot') then
       iout = 0
@@ -366,6 +374,10 @@ SUBROUTINE output_single (patch, count)
       iout = patch%iout
     end if
     start = wallclock()
+    if (verbose > 0) then
+      write (io_unit%log,*) wallclock(), patch%id, patch%time, '  start:'//trim(files_out(patch%iout)%filename)
+      flush (io_unit%log)
+    end if
     do ider=1,nder
     do iv=1,io%nv
       !-------------------------------------------------------------------------
@@ -377,13 +389,22 @@ SUBROUTINE output_single (patch, count)
       call mpi_io%write (parallel_io%buffer(:,:,:,:,iv,ider), 1+iout, irec)
     end do
     end do
-    write (io_unit%mpi,'(a,f7.3,1x,a)') &
+    if (verbose > 0) then
+      write (io_unit%log,*) wallclock(), patch%id, patch%time, '    end:'//trim(files_out(patch%iout)%filename)
+      flush (io_unit%log)
+    end if
+    write (io_unit%log,'(a,f7.3,1x,a)') &
       'parallel_io_t%output_single: MPI_File_write_at I/O', wallclock()-start, 'sec'
     if (io%method == 'snapshot') then
-      !$omp critical (files_out_cr)
-      call files_out(patch%iout)%request_close ()
-      check_files = .true.
-      !$omp end critical (files_out_cr)
+      if (verbose > 0) &
+        write (io_unit%log,*) wallclock(), patch%id, patch%time, '  request_close'
+      if (patch%iout-1 > closed) then
+        !$omp atomic write
+        closed = patch%iout-1
+        call files_out(closed)%request_close ()
+        !$omp atomic write
+        check_files = .true.
+      end if
     end if
   end if
   call trace%end (itimer)

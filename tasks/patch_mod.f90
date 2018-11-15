@@ -1149,6 +1149,7 @@ SUBROUTINE unpack (self, mesg)
   ! Compute size of buffer
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%unpack', itimer=itimer)
+  self%unpack_time = wallclock()
   buffer => mesg%buffer
   n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
   if (kind(self%mem)==8) &
