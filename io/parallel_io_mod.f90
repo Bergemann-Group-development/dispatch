@@ -396,12 +396,13 @@ SUBROUTINE output_single (patch, count)
   if (count == 0) then
     if (io%method == 'snapshot') then
       iout = 0
+      file_out => files_out(patch%iout)
     else
       iout = patch%iout
     end if
     start = wallclock()
     if (verbose > 0) then
-      write (io_unit%mpi,*) wallclock(), patch%id, patch%time, '  start:'//trim(files_out(patch%iout)%filename)
+      write (io_unit%mpi,*) wallclock(), patch%id, patch%time, '  start:'//trim(file_out%filename)
       flush (io_unit%mpi)
     end if
     do ider=1,nder
@@ -416,7 +417,7 @@ SUBROUTINE output_single (patch, count)
     end do
     end do
     if (verbose > 0) then
-      write (io_unit%mpi,*) wallclock(), patch%id, patch%time, '    end:'//trim(files_out(patch%iout)%filename)
+      write (io_unit%mpi,*) wallclock(), patch%id, patch%time, '    end:'//trim(file_out%filename)
       flush (io_unit%mpi)
     end if
     write (io_unit%log,'(a,f7.3,1x,a)') &
