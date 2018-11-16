@@ -38,7 +38,7 @@ MODULE mpi_io_mod
   USE mpi_io_file_mod
   USE dll_mod
 #ifdef MPI
-  USE mpi, only: MPI_OFFSET_KIND, MPI_REAL, MPI_STATUS_SIZE
+  USE mpi, only: MPI_OFFSET_KIND, MPI_REAL, MPI_STATUS_SIZE, MPI_THREAD_MULTIPLE
 #endif MPI
   implicit none
   private
@@ -189,8 +189,15 @@ SUBROUTINE write3 (self, f, rec, id)
   if (verbose>1) &
     write (io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write3: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
-  call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
-                          self%status, self%err)
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
+                            self%status, self%err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
+                            self%status, self%err)
+    !$omp end critical (mpi_cr)
+  end if
   call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
   call trace%end
 #endif
@@ -218,8 +225,15 @@ SUBROUTINE write4 (self, f, rec, id)
       'mpi_io_t%write4: writing to '//trim(self%file%filename)
     flush (io_unit%mpi)
   end if
-  call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
-                          self%status, self%err)
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
+                            self%status, self%err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
+                            self%status, self%err)
+    !$omp end critical (mpi_cr)
+  end if
   call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
   call trace%end
 #endif
@@ -321,8 +335,15 @@ SUBROUTINE read3 (self, f, rec, id)
   call trace%begin ('mpi_io_t%read3')
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
-  call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
-                         self%status, self%err)
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
+                           self%status, self%err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
+                           self%status, self%err)
+    !$omp end critical (mpi_cr)
+  end if
   if (verbose>1) &
     write (io_unit%mpi,'(a,3i8,i15,1p,2e14.6)') &
       ' mpi_io_t%read3: rec, id, words, pos =', &
@@ -345,8 +366,15 @@ SUBROUTINE read4 (self, f, rec, id)
   call trace%begin ('mpi_io_t%read4')
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
-  call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
                          self%status, self%err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_File_read_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
+                         self%status, self%err)
+    !$omp end critical (mpi_cr)
+  end if
   if (verbose>1) &
     write (io_unit%mpi,'(a,3i8,i15,1p,2e14.6)') &
       ' mpi_io_t%read4: rec, id, words, pos =', &
@@ -434,14 +462,28 @@ SUBROUTINE check (self)
             write (io_unit%direct, rec=rec) item%buffer
             deallocate (item%buffer)
           else if (associated(item%buffer3)) then
-            call MPI_File_write_at (item%handle, item%pos, item%buffer3, &
-                                    item%words, MPI_REAL, status, err)
+            if (mp%mode == MPI_THREAD_MULTIPLE) then
+              call MPI_File_write_at (item%handle, item%pos, item%buffer3, &
+                                      item%words, MPI_REAL, status, err)
+            else
+              !$omp critical (mpi_cr)
+              call MPI_File_write_at (item%handle, item%pos, item%buffer3, &
+                                      item%words, MPI_REAL, status, err)
+              !$omp end critical (mpi_cr)
+            end if
             call io%assert (err==0, 'MPI_File_write_at: error code non-zero')
             deallocate (item%buffer3)
             nullify (item%buffer3)
           else
-            call MPI_File_write_at (item%handle, item%pos, item%buffer, &
-                                    item%words, MPI_REAL, status, err)
+            if (mp%mode == MPI_THREAD_MULTIPLE) then
+              call MPI_File_write_at (item%handle, item%pos, item%buffer, &
+                                      item%words, MPI_REAL, status, err)
+            else
+              !$omp critical (mpi_cr)
+              call MPI_File_write_at (item%handle, item%pos, item%buffer, &
+                                      item%words, MPI_REAL, status, err)
+              !$omp end critical (mpi_cr)
+            end if
             call io%assert (err==0, 'MPI_File_write_at: error code non-zero')
             deallocate (item%buffer)
           end if

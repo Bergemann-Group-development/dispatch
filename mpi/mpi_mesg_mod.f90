@@ -57,6 +57,7 @@ MODULE mpi_mesg_mod
   !
   type, public:: mpi_mesg_t
     logical:: initialized=.false.
+    logical:: log_sent=.false.
     type(mesg_list_t):: sent_list, recv_list
     integer:: n_check=0
     integer:: n_ready=0
@@ -85,6 +86,7 @@ MODULE mpi_mesg_mod
     procedure:: delay
     procedure:: diagnostics
     procedure:: test
+    procedure:: log_files
   end type
   type(mpi_mesg_t), public:: mpi_mesg
   type(mesg_list_t), save, public:: unpk_list, sent_list, recv_list
@@ -122,18 +124,18 @@ SUBROUTINE send (self, rank, tag)
     flush (io_unit%log)
   end if
 #ifdef MPI
-  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, ltag, &
+      mpi%comm, req, ierr)
+    self%nreq = self%nreq+1                                 ! count reqs
+    self%reqs(self%nreq) = req                              ! collect reqs
+  else
     !$omp critical (mpi_cr)
     call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, ltag, &
       mpi%comm, req, ierr)
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
     !$omp end critical (mpi_cr)
-  else
-    call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, ltag, &
-      mpi%comm, req, ierr)
-    self%nreq = self%nreq+1                                 ! count reqs
-    self%reqs(self%nreq) = req                              ! collect reqs
   end if
   if (verbose > 1) then
     write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
@@ -337,12 +339,12 @@ SUBROUTINE test_all (self, flag)
     return
   end if
 #ifdef MPI
-  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
+  else
     !$omp critical (mpi_cr)
     call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
     !$omp end critical (mpi_cr)
-  else
-    call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
   end if
 #else
   flag = .true.
@@ -365,7 +367,7 @@ SUBROUTINE wait_all (self)
   call trace%begin ('mesg_t%wait_all', itimer=itimer)
   if (verbose >= 0) wc = wallclock()
 #ifdef MPI
-  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
     !$omp critical (mpi_cr)
     call MPI_WAITALL (self%nreq, self%reqs, MPI_STATUSES_IGNORE, ierr)
     !$omp end critical (mpi_cr)
@@ -527,11 +529,12 @@ SUBROUTINE init (self)
   logical, save:: recv_active
   logical, save:: send_priv
   logical, save:: queue_unpack
+  logical, save:: log_sent=.false.
   real, save:: check_ms=10.
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, wait, send_wait, send_priv, &
                              recv_active, recv_priv, queue_unpack, test_time, debug, &
-                             check_ms, verbose
+                             check_ms, verbose, log_sent
   integer:: iostat
   !-----------------------------------------------------------------------------
   ! Prevent initializing more than once
@@ -557,6 +560,7 @@ SUBROUTINE init (self)
   self%max_recv = max_recv
   self%max_probe = max_probe
   self%check_ms = check_ms
+  self%log_sent = log_sent
   self%wait = wait
   !-----------------------------------------------------------------------------
   ! Default values from dispatcher possible changed here
@@ -579,6 +583,31 @@ SUBROUTINE init (self)
   !call self%test
   call trace%end
 END SUBROUTINE init
+
+!> =============================================================================
+!> Close and reopen the sent_rrrrr_tttt_x.log files once per minute, so the last
+!> 1-2 minutes of logging is always available
+!> =============================================================================
+SUBROUTINE log_files (self)
+  class(mpi_mesg_t):: self
+  character(len=120):: filename
+  integer:: one_two
+  integer, save:: previous=-1
+  !$omp threadprivate (previous)
+  !-----------------------------------------------------------------------------
+  if (self%log_sent) then
+    one_two = wallclock()/60.
+    one_two = mod(one_two,2) + 1
+    if (one_two /= previous) then
+      if (previous > 0) &
+        close (previous)
+      write (filename,'(a,"/sent_",i5.5,"_",i4.4,"_",i1,".log")') &
+        trim(io%outputname), mpi%rank, sent_list%id, one_two
+      open (io_unit%sent,file=filename, form='formatted', status='unknown')
+      previous = one_two
+    end if
+  end if
+END SUBROUTINE log_files
 
 !> =============================================================================
 !> Test the components
@@ -677,12 +706,12 @@ SUBROUTINE get (self, mesg)
   ! Probe for incoming messages
   !-----------------------------------------------------------------------------
 #ifdef MPI
-  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call probe_for
+  else
     !$omp critical (mpi_cr)
     call probe_for
     !$omp end critical (mpi_cr)
-  else
-    call probe_for
   end if
 #endif
   call trace%end (itimer)
@@ -788,12 +817,12 @@ FUNCTION is_complete (self)
   ! Check for completion
   !-----------------------------------------------------------------------------
 #ifdef MPI
-  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call check_recv
+  else
     !$omp critical (complete_cr)
     call check_recv
     !$omp end critical (complete_cr)
-  else
-    call check_recv
   end if
 #endif
   call trace%end (itimer)
@@ -817,12 +846,12 @@ contains
         flush (io_unit%log)
       end if
 #ifdef MPI
-      if (mpi%mode == MPI_THREAD_SERIALIZED) then
+      if (mpi%mode == MPI_THREAD_MULTIPLE) then
+        call MPI_WAIT (self%req, stat, ierr)
+      else
         !$omp critical (mpi_cr)
         call MPI_WAIT (self%req, stat, ierr)
         !$omp end critical (mpi_cr)
-      else
-        call MPI_WAIT (self%req, stat, ierr)
       end if
 #endif
       if (verbose>1) then
@@ -833,12 +862,12 @@ contains
       is_complete = .true.
 #ifdef MPI
     else
-      if (mpi%mode == MPI_THREAD_SERIALIZED) then
+      if (mpi%mode == MPI_THREAD_MULTIPLE) then
+        call MPI_TEST (self%req, is_complete, stat, ierr)
+      else
         !$omp critical (mpi_cr)
         call MPI_TEST (self%req, is_complete, stat, ierr)
         !$omp end critical (mpi_cr)
-      else
-        call MPI_TEST (self%req, is_complete, stat, ierr)
       end if
 #endif
     end if
@@ -856,12 +885,12 @@ SUBROUTINE irecv (self, rank, tag)
   !.............................................................................
   self%sender = rank
 #ifdef MPI
-  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, rank, tag, mpi%comm, self%req, ierr)
+  else
     !$omp critical (mpi_cr)
     call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, rank, tag, mpi%comm, self%req, ierr)
     !$omp end critical (mpi_cr)
-  else
-    call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, rank, tag, mpi%comm, self%req, ierr)
   end if
   !-----------------------------------------------------------------------------
   if (verbose > 1) then
@@ -887,23 +916,14 @@ FUNCTION test_recv (self) RESULT (flag)
 #ifdef MPI
   integer:: stat(MPI_STATUS_SIZE)
   real(8):: now, wc, dwc
+  real, parameter:: max_test=0.1
   integer, save:: itimer=0
   !.............................................................................
   now = wallclock()
   flag = .false.
   if (now < self%test_next) return
   call trace%begin('mesg_t%test_recv', 2, itimer=itimer)
-  if (mpi%mode == MPI_THREAD_SERIALIZED) then
-    !$omp critical (mpi_cr)
-    if (wait) then
-      call MPI_WAIT (self%req, stat, ierr)
-      flag = .true.
-      now = wallclock()
-    else
-      call MPI_TEST (self%req, flag, stat, ierr)
-    end if
-    !$omp end critical (mpi_cr)
-  else
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
     if (wait) then
       call MPI_WAIT (self%req, stat, ierr)
       flag = .true.
@@ -912,9 +932,23 @@ FUNCTION test_recv (self) RESULT (flag)
       wc = wallclock()
       call MPI_TEST (self%req, flag, stat, ierr)
       dwc = wallclock()-wc
-      if (dwc > 0.1) &
+      if (dwc > max_test) &
         write(io%output,'(f12.6,2x,a,f12.6)') wc, 'WARNING: MPI_Test time =', dwc
     end if
+  else
+    !$omp critical (mpi_cr)
+    if (wait) then
+      call MPI_WAIT (self%req, stat, ierr)
+      flag = .true.
+      now = wallclock()
+    else
+      wc = wallclock()
+      call MPI_TEST (self%req, flag, stat, ierr)
+      dwc = wallclock()-wc
+      if (dwc > max_test) &
+        write(io%output,'(f12.6,2x,a,f12.6)') wc, 'WARNING: MPI_Test time =', dwc
+    end if
+    !$omp end critical (mpi_cr)
   end if
   if (flag) then
     self%id = stat(MPI_TAG)
@@ -951,12 +985,12 @@ SUBROUTINE wait_for_completion (self)
   call trace%begin ('mesg_t%wait_for_completion', itimer=itimer)
   if (verbose>=0) wc=wallclock()
 #ifdef MPI
-  if (mpi%mode == MPI_THREAD_SERIALIZED) then
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_WAIT (self%req, stat, ierr)
+  else
     !$omp critical (mpi_cr)
     call MPI_WAIT (self%req, stat, ierr)
     !$omp end critical (mpi_cr)
-  else
-    call MPI_WAIT (self%req, stat, ierr)
   end if
 #endif
   if (verbose >= 0) then

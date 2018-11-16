@@ -99,8 +99,15 @@ SUBROUTINE open (self, filename, mode)
   !$omp critical (mpi_io_cr)
   if (self%handle == 0) then
     self%filename = filename
-    call MPI_Comm_dup (mp%comm, self%comm, self%err)
-    call MPI_File_open (self%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
+    if (mp%mode == MPI_THREAD_MULTIPLE) then
+      call MPI_Comm_dup (mp%comm, self%comm, self%err)
+      call MPI_File_open (self%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
+    else
+      !$omp critical (mpi_cr)
+      call MPI_Comm_dup (mp%comm, self%comm, self%err)
+      call MPI_File_open (self%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
+      !$omp end critical (mpi_cr)
+    end if
     if (io%verbose > 0) then
       write(io_unit%mpi,'(a," status:",i4)') &
         ' MPI_File_open: file='//trim(filename)//'  mode='// &
@@ -169,7 +176,13 @@ SUBROUTINE close (self)
 #ifdef MPI
   !$omp critical (close_cr)
   if (self%handle /= 0) then
-    call MPI_File_close (self%handle, self%err)
+    if (mp%mode == MPI_THREAD_MULTIPLE) then
+      call MPI_File_close (self%handle, self%err)
+    else
+      !$omp critical (mpi_cr)
+      call MPI_File_close (self%handle, self%err)
+      !$omp end critical (mpi_cr)
+    end if
     if (io%verbose > 0) then
       write (io_unit%mpi,'(1x,a,i8)') &
         'mpi_io_t%close: '//trim(self%filename)//'  err:', self%err

@@ -28,8 +28,15 @@ SUBROUTINE send (self, rank, tag)
   integer:: rank, tag
   !-----------------------------------------------------------------------------
 #ifdef MPI
-  call MPI_Isend (self%buffer, size(self%buffer), MPI_INTEGER, rank, tag, &
-                  mp%comm, self%req, self%ierr)
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_Isend (self%buffer, size(self%buffer), MPI_INTEGER, rank, tag, &
+                    mp%comm, self%req, self%ierr)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_Isend (self%buffer, size(self%buffer), MPI_INTEGER, rank, tag, &
+                    mp%comm, self%req, self%ierr)
+    !$omp end critical (mpi_cr)
+  end if
 #endif MPI
 END SUBROUTINE send
 
@@ -43,7 +50,13 @@ FUNCTION sent (self)
   !............................................................................
   integer:: stat(MPI_STATUS_SIZE)
   !-----------------------------------------------------------------------------
-  call MPI_TEST (self%req, sent, stat, self%ierr)
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_TEST (self%req, sent, stat, self%ierr)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_TEST (self%req, sent, stat, self%ierr)
+    !$omp end critical (mpi_cr)
+  end if
 #else
   sent = .false.
 #endif
@@ -65,11 +78,21 @@ FUNCTION recv (self, rank, tag)
   !............................................................................
   integer:: stat(MPI_STATUS_SIZE)
   !-----------------------------------------------------------------------------
-  if (self%req==0) then
-    call MPI_Irecv (self%buffer, size(self%buffer), MPI_INTEGER, rank, tag, &
-                    mp%comm, self%req, self%ierr)
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    if (self%req==0) then
+      call MPI_Irecv (self%buffer, size(self%buffer), MPI_INTEGER, rank, tag, &
+                      mp%comm, self%req, self%ierr)
+      call MPI_TEST (self%req, recv, stat, self%ierr)
+    end if
+  else
+    !$omp critical (mpi_cr)
+    if (self%req==0) then
+      call MPI_Irecv (self%buffer, size(self%buffer), MPI_INTEGER, rank, tag, &
+                      mp%comm, self%req, self%ierr)
+      call MPI_TEST (self%req, recv, stat, self%ierr)
+    end if
+    !$omp end critical (mpi_cr)
   end if
-  call MPI_TEST (self%req, recv, stat, self%ierr)
 #else
   recv = .false.
 #endif
