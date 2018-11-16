@@ -1,6 +1,6 @@
 !> =============================================================================
 !> Use MPI parallel I/O to write everythin to a single file.  No critical regions
-!> are needed here; all thread protection is one inside mpi_io_file_mod and
+!> are needed here; all thread protection is one inside mpi_file_mod and
 !> mpi_io_mod.
 !> =============================================================================
 MODULE parallel_io_mod
@@ -11,7 +11,7 @@ MODULE parallel_io_mod
   USE omp_timer_mod
   USE mpi_mod
   USE mpi_io_mod
-  USE mpi_io_file_mod
+  USE mpi_file_mod
   USE trace_mod
   USE time_slices_mod
   USE bits_mod
@@ -28,8 +28,8 @@ MODULE parallel_io_mod
   end type
   integer, parameter:: verbose=2
   logical:: check_files=.false.
-  type(mpi_io_file_t), pointer:: file_in=>null(), file_out=>null()
-  type(mpi_io_file_t), pointer, dimension(:):: files_out=>null()
+  type(mpi_file_t), pointer:: file_in=>null(), file_out=>null()
+  type(mpi_file_t), pointer, dimension(:):: files_out=>null()
   type(parallel_io_t), public:: parallel_io
   integer, save:: io0, io1
   integer, save:: opened=-1, closed=-1

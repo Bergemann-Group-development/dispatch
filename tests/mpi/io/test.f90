@@ -14,7 +14,7 @@ PROGRAM test_mpi_io
   USE timer_mod
   implicit none
   include 'mpif.h'
-  type(mpi_io_file_t):: file1, file2
+  type(mpi_file_t):: file1, file2
   type(mpi_io_t), save:: io_f, io_h, io_1
   integer:: nrec=10
   integer, parameter:: n_patch=16

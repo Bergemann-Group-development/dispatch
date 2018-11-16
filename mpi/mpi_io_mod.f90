@@ -12,7 +12,7 @@
 !>
 !> Typical multi-threaded use:
 !>
-!>   type(mpi_io_file_t):: file                         ! holds file info
+!>   type(mpi_file_t):: file                         ! holds file info
 !>   type(mpi_io_t):: thread_io                         ! holds thread info
 !>   !$omp threadprivate (thread_io)                    ! threadprivate data type
 !>   ...
@@ -35,7 +35,7 @@ MODULE mpi_io_mod
   USE omp_timer_mod
   USE trace_mod
   USE mpi_mod, only: mp=>mpi
-  USE mpi_io_file_mod
+  USE mpi_file_mod
   USE dll_mod
 #ifdef MPI
   USE mpi, only: MPI_OFFSET_KIND, MPI_REAL, MPI_STATUS_SIZE, MPI_THREAD_MULTIPLE
@@ -64,7 +64,7 @@ MODULE mpi_io_mod
   ! MPI I/O data type
   !-----------------------------------------------------------------------------
   type, public:: mpi_io_t
-    type(mpi_io_file_t):: file
+    type(mpi_file_t):: file
     integer:: req, nwrite=-1
     integer(8):: rec_words
     integer:: chunk_words
@@ -103,7 +103,7 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE use (self, file)
   class(mpi_io_t):: self
-  class(mpi_io_file_t):: file
+  class(mpi_file_t):: file
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%use')
   self%file = file
