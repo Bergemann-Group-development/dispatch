@@ -577,6 +577,14 @@ SUBROUTINE set_stagger (m, h, iv)
     do i=1,3
       h(i) = m(i)%h(iv)
     end do
+  type is (cylindrical_mesh)
+    do i=1,3
+      h(i) = m(i)%h(iv)
+    end do
+  type is (spherical_mesh)
+    do i=1,3
+      h(i) = m(i)%h(iv)
+    end do
   class default
     call mpi%abort ('boundaries_mod::set_stagger: staggering h undefined')
   end select
