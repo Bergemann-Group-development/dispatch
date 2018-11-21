@@ -179,7 +179,7 @@ SUBROUTINE output (patch, count)
   !-----------------------------------------------------------------------------
   allocate (buffer(n(1),n(2),n(3),io%nv))
   do iv=1,io%nv
-    call convert_variables
+    call convert_variables ! copy `patch%mem` into `mem`, converting if desired
     call time_slices%interpolate (patch, mem, buffer(:,:,:,iv))
   end do
   call io_write ((io%time_derivs+1)*patch%iout, 0)
@@ -189,14 +189,14 @@ SUBROUTINE output (patch, count)
   if (io%time_derivs>0) then
     allocate (buffer(n(1),n(2),n(3),io%nv))
     do iv=1,io%nv
-      call convert_variables
+      call convert_variables ! copy `patch%mem` into `mem`, converting if desired
       call time_slices%derivative1 (patch, mem, buffer(:,:,:,iv))
     end do
     call io_write ((io%time_derivs+1)*patch%iout, 1)
     if (io%time_derivs==2) then
       allocate (buffer(n(1),n(2),n(3),io%nv))
       do iv=1,io%nv
-        call convert_variables
+        call convert_variables ! copy `patch%mem` into `mem`, converting if desired
         call time_slices%derivative2 (patch, mem, buffer(:,:,:,iv))
       end do
       call io_write ((io%time_derivs+1)*patch%iout, 2)
@@ -205,6 +205,9 @@ SUBROUTINE output (patch, count)
   deallocate (mem)
   call trace%end (itimer)
 contains
+  !-----------------------------------------------------------------------------
+  ! Copy variables from `patch%mem` to `mem` array, converting variables based
+  ! on the I/O format parameter.
   !-----------------------------------------------------------------------------
   subroutine convert_variables
     !...........................................................................
@@ -367,7 +370,7 @@ SUBROUTINE output_single (patch, count)
     flush (io_unit%mpi)
   end if
   do iv=1,io%nv
-    call convert_variables
+    call convert_variables ! copy `patch%mem` into `mem`, converting if desired
     buffer => parallel_io%buffer(:,:,:,ip,iv,1)
     call time_slices%interpolate (patch, mem, buffer)
   end do
@@ -376,13 +379,13 @@ SUBROUTINE output_single (patch, count)
   !-----------------------------------------------------------------------------
   if (io%time_derivs>0) then
     do iv=1,io%nv
-      call convert_variables
+      call convert_variables ! copy `patch%mem` into `mem`, converting if desired
       buffer => parallel_io%buffer(:,:,:,ip,iv,2)
       call time_slices%derivative1 (patch, mem, buffer)
     end do
     if (io%time_derivs==2) then
       do iv=1,io%nv
-        call convert_variables
+        call convert_variables ! copy `patch%mem` into `mem`, converting if desired
         buffer => parallel_io%buffer(:,:,:,ip,iv,3)
         call time_slices%derivative2 (patch, mem, buffer)
       end do
@@ -440,6 +443,9 @@ SUBROUTINE output_single (patch, count)
   end if
   call trace%end (itimer)
 contains
+  !-----------------------------------------------------------------------------
+  ! Copy variables from `patch%mem` to `mem` array, converting variables based
+  ! on the I/O format parameter.
   !-----------------------------------------------------------------------------
   subroutine convert_variables
     integer:: nt1, l(3), u(3)
@@ -559,7 +565,7 @@ SUBROUTINE input (patch, ok)
   end if
   deallocate (buffer)
   do iv=1,io%nv
-    call convert_variables
+    call convert_variables ! copy `patch%mem` into `mem`, converting if desired
   end do
   !-----------------------------------------------------------------------------
   ! Make sure all time slots have the correct time set
@@ -579,6 +585,9 @@ SUBROUTINE input (patch, ok)
     patch%iout, n, snapshot_words, buffer_words
   call trace%end (itimer)
 contains
+  !-----------------------------------------------------------------------------
+  ! Copy variables from `patch%mem` to `mem` array, converting variables based
+  ! on the I/O format parameter.
   !-----------------------------------------------------------------------------
   subroutine convert_variables
     !-----------------------------------------------------------------------------
@@ -695,7 +704,7 @@ SUBROUTINE input_single (patch, ok)
       patch%id, ip, patch%iout
   end if
   do iv=1,io%nv
-    call convert_variables
+    call convert_variables ! copy `patch%mem` into `mem`, converting if desired
   end do
   !-----------------------------------------------------------------------------
   ! Make sure all time slots have the correct time set
@@ -708,6 +717,9 @@ SUBROUTINE input_single (patch, ok)
   ok = .true.
   call trace%end (itimer)
 contains
+  !-----------------------------------------------------------------------------
+  ! Copy variables from `patch%mem` to `mem` array, converting variables based
+  ! on the I/O format parameter.
   !-----------------------------------------------------------------------------
   subroutine convert_variables
     call trace%begin('input_single::convert_variables')
