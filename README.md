@@ -32,3 +32,4 @@ When committing changes to this repository, please use the following three-lette
 * SYN: typos and misspellings (including simple syntax error fixes)
 * WIP: snapshot/work in progress
 * CLN: tidying of the code, including removal of obsolete features, experiements, etc.
+* DOC: Changes or additions to the documentation
