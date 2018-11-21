@@ -228,7 +228,6 @@ SUBROUTINE accrete (self)
   class (sinkparticles_t):: self
   !.............................................................................
   real, dimension(:,:,:), pointer:: d, px, py, pz
-  real, dimension(:,:,:), allocatable:: prf
   real, dimension(:,:,:), allocatable:: u2
   real:: v2_kepler
   integer:: ix, iy, iz
@@ -236,7 +235,6 @@ SUBROUTINE accrete (self)
   real(8):: p, q, dm
   !-----------------------------------------------------------------------------
   call trace%begin ('sinkparticles_t%accrete')
-  allocate (prf(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn))
   allocate (u2 (self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn))
   !-----------------------------------------------------------------------------
   ! Short hand
