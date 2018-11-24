@@ -592,7 +592,6 @@ SUBROUTINE log_files (self)
   integer, save:: previous=-1
   !-----------------------------------------------------------------------------
   if (io%log_sent) then
-    !$omp critical (log_files_cr)
     one_two = wallclock()/60.
     one_two = mod(one_two,2) + 1
     if (one_two /= previous) then
@@ -603,7 +602,6 @@ SUBROUTINE log_files (self)
       open (io_unit%sent,file=filename, form='formatted', status='unknown')
       previous = one_two
     end if
-    !$omp end critical (log_files_cr)
   end if
 END SUBROUTINE log_files
 

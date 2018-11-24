@@ -258,8 +258,11 @@ SUBROUTINE update (self, head, test, was_refined)
   end if
   call task%info (self%nq, self%na)                   ! print info on stdout
   if (io%log_sent) then
-    write (io_unit%sent,*) wallclock(), omp%thread, 'upd', task%id, task%time, task%is_set(bits%boundary)
+    !$omp critical (log_sent_cr)
+    call mpi_mesg%log_files ()
+    write (io_unit%sent,'(f16.6,i4,2x,a,i6,f16.6,l4)') wallclock(), omp%thread, 'upd', task%id, task%time, task%is_set(bits%boundary)
     flush (io_unit%sent)
+    !$omp end critical (log_sent_cr)
   end if
   !-----------------------------------------------------------------------------
   ! Tasks that have finished are subtracted from the task list count but are

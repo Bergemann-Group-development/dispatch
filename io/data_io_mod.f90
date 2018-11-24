@@ -367,18 +367,13 @@ SUBROUTINE output_nml (patch, append)
   if (mpi%master .and. .not.append) then
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
     if (filename /= filename1) then
-      if (filename1 /= '') close (io_unit%nml1)
-      if (io%log_sent) then
-        write(io_unit%sent,'(a,i5,2x,2a)') &
-         ' thread', omp%thread, 'opening ', trim(filename)
-        flush (io_unit%sent)
-      end if
+      write(io_unit%log,'(a,i5,2x,2a)') &
+       ' thread', omp%thread, 'opening ', trim(filename)
+      flush (io_unit%log)
       open  (io_unit%nml1, file=trim(filename), form='formatted', status='unknown')
-      if (io%log_sent) then
-        write(io_unit%sent,'(a,i5,2x,2a)') &
-         ' thread', omp%thread, 'opened  ', trim(filename)
-        flush (io_unit%sent)
-      end if
+      write(io_unit%log,'(a,i5,2x,2a)') &
+       ' thread', omp%thread, 'opened  ', trim(filename)
+      flush (io_unit%log)
       filename1 = filename
     end if
     write (io_unit%nml1, io_nml)
@@ -396,18 +391,14 @@ SUBROUTINE output_nml (patch, append)
          trim(io%outputname), patch%iout, mpi%rank
   if (filename /= filename2) then
     if (filename2 /= '') close (io_unit%nml2)
-    if (io%log_sent) then
-      write(io_unit%sent,'(a,i5,2x,2a)') &
-       ' thread', omp%thread, 'opening ', trim(filename)
-      flush (io_unit%sent)
-    end if
+    write(io_unit%log,'(a,i5,2x,2a)') &
+     ' thread', omp%thread, 'opening ', trim(filename)
+    flush (io_unit%log)
     open  (io_unit%nml2, file=trim(filename), form='formatted', status='unknown', &
          access=trim(merge('append    ','sequential',append)))
-    if (io%log_sent) then
-      write(io_unit%sent,'(a,i5,2x,2a)') &
-       ' thread', omp%thread, 'opened  ', trim(filename)
-      flush (io_unit%sent)
-    end if
+    write(io_unit%log,'(a,i5,2x,2a)') &
+     ' thread', omp%thread, 'opened  ', trim(filename)
+    flush (io_unit%log)
     filename2 = filename
   end if
   !-----------------------------------------------------------------------------

@@ -626,9 +626,11 @@ SUBROUTINE send_to_vnbors (self)
     nbor => nbor%next                                           ! next nbor
   end do
   if (io%log_sent) then
-    write (io_unit%sent,*) wallclock(), omp%thread, 'snt', self%task%id, &
-      self%task%time, ranks(1:nsend)
+    !$omp critical (log_sent_cr)
+    write (io_unit%sent,'(f16.6,i4,2x,a,i6,f16.6,8i5)') wallclock(), omp%thread, 'snt', self%task%id, &
+      self%task%time, nsend, ranks(1:nsend)
     flush (io_unit%sent)
+    !$omp end critical (log_sent_cr)
   end if
   if (io%verbose>1) &
     write (io_unit%mpi,*) 'sent patch', self%task%id,' to',nsend,' other ranks'

@@ -275,7 +275,7 @@ SUBROUTINE unpack (self, mesg, link)
     call load_balance%unpack (mesg%buffer)
     return
   end if
-  !$omp critical (unpack_cr)
+  !!omp critical (unpack_cr)
   if (present(link)) then
     link1 => link
   else
@@ -324,9 +324,11 @@ SUBROUTINE unpack (self, mesg, link)
   id = task%id
   call task%unpack (mesg)
   if (io%log_sent) then
+    !$omp critical (log_sent_cr)
     call mpi_mesg%log_files()
-    write (io_unit%sent,*) wallclock(), omp%thread, 'unp', task%id, task%time
+    write (io_unit%sent,'(f16.6,i4,a,2x,i6,f16.6,8i5)') wallclock(), omp%thread, 'unp', task%id, task%time, task%rank
     flush (io_unit%sent)
+    !$omp end critical (log_sent_cr)
   end if
   if (mpi_mesg%debug .or. id==io%id_debug) then
     !$omp critical (debug_cr)
@@ -381,7 +383,7 @@ SUBROUTINE unpack (self, mesg, link)
       call self%count_status
     end if
   end if
-  !$omp end critical (unpack_cr)
+  !!omp end critical (unpack_cr)
   !-----------------------------------------------------------------------------
   ! As the task has now been updated, we need to check if any of the neighbors
   ! have become ready to update. If the task has just been swapped into being
@@ -530,6 +532,11 @@ SUBROUTINE check_virtual (self)
     task => link%task
     select type (task)
     class is (patch_t)
+    if (io%log_sent) then
+      !$omp critical (log_sent_cr)
+      write (io_unit%sent,'(f16.6,i4,2x,a,i6,i4)') wallclock(), omp%thread, 'chk', task%id, task%rank
+      !$omp end critical (log_sent_cr)
+    end if
     if (task%mesg%test_recv()) then
       if (verbose > 0) &
         write (io_unit%log,*) wallclock(),' task_mesg_t%unpack: check_virtual hit ', task%id

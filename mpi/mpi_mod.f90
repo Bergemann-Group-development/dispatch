@@ -36,7 +36,6 @@ MODULE mpi_mod
   logical:: mpi_master          ! true on MPI master (rank 0)
   logical:: mpi_trace=.false.   ! debug trace option
   logical:: master=.true.       ! true on OMP master thread on MPI master process
-  integer:: mpi_comm            ! short hand for mpi_comm_world
   integer:: mpi_size            ! number of MPI processes
   integer:: mpi_rank            ! process number (zero-based)
   integer:: output=2
@@ -81,16 +80,15 @@ SUBROUTINE init (self, mpi_dims, dims)
     call omp%init
     if (mpi_rank==0) call detect_cores
 #ifdef MPI
-    call MPI_Bcast (omp%ncores, 1, MPI_INTEGER, 0, mpi_comm_world, mpi_err)
+    call MPI_Bcast (omp%ncores, 1, MPI_INTEGER, 0, self%comm, mpi_err)
     call omp_timer%get (offset)
-    call MPI_Bcast (offset, 1, MPI_REAL8, 0, mpi_comm_world, mpi_err)
+    call MPI_Bcast (offset, 1, MPI_REAL8, 0, self%comm, mpi_err)
     call omp_timer%set (offset)
 #endif
   end if
 #ifdef MPI
   mpi%size   = mpi_size
   mpi%rank   = mpi_rank
-  mpi%comm   = mpi_comm_world
   mpi%master = mpi_rank==0
 #else
   mpi%size   = 1
@@ -153,9 +151,9 @@ SUBROUTINE init_mpi (self)
 #ifdef MPI
   call MPI_INIT_THREAD (MPI_THREAD_MULTIPLE, mpi_provided, mpi_err)
   self%mode = mpi_provided
-  mpi_comm = mpi_comm_world
-  call MPI_Comm_size (mpi_comm_world, mpi_size, mpi_err)
-  call MPI_Comm_rank (mpi_comm_world, mpi_rank, mpi_err)
+  call MPI_Comm_dup (mpi_comm_world, self%comm, mpi_err)
+  call MPI_Comm_size (self%comm, mpi_size, mpi_err)
+  call MPI_Comm_rank (self%comm, mpi_rank, mpi_err)
   mpi_master = (mpi_rank == 0)
   master = mpi_master
   if (master) then
