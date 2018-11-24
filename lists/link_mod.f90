@@ -7,12 +7,15 @@
 !> *****************************************************************************
 MODULE link_mod
   USE io_mod
+  USE io_unit_mod
+  USE omp_mod
   USE mpi_mod
   USE mpi_mesg_mod
   USE trace_mod
   USE bits_mod
   USE task_mod
   USE omp_timer_mod
+  USE mpi_mesg_mod
   implicit none
   private
 
@@ -572,6 +575,7 @@ SUBROUTINE send_to_vnbors (self)
   class(mesg_t), pointer:: mesg
   logical:: flag
   integer:: ierr, rank, nsend
+  integer, dimension(:), allocatable:: ranks
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('link_mod::send_to_vnbors', itimer=itimer)
@@ -587,6 +591,7 @@ SUBROUTINE send_to_vnbors (self)
   nbor => self%nbor                                             ! first nbor
   flag = .false.
   nsend = 0
+  allocate (ranks(mpi%size))
   do while (associated(nbor))                                   ! until end
     task => nbor%task
     if (self%task%id == io%id_debug) &
@@ -617,9 +622,15 @@ SUBROUTINE send_to_vnbors (self)
           self%task%is_set (bits%swap_request)
         flush (io_unit%log)
       end if
+      ranks(nsend) = rank
     end if
     nbor => nbor%next                                           ! next nbor
   end do
+  if (mpi_mesg%log_sent) then
+    write (io_unit%sent,*) wallclock(), omp%thread, 'snt', self%task%id, &
+      self%task%time, ranks(1:nsend)
+    flush (io_unit%sent)
+  end if
   if (io%verbose>1) &
     write (io_unit%mpi,*) 'sent patch', self%task%id,' to',nsend,' other ranks'
   !-----------------------------------------------------------------------------

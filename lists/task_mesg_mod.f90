@@ -4,6 +4,7 @@
 !> =============================================================================
 MODULE task_mesg_mod
   USE io_mod
+  USE io_unit_mod
   USE trace_mod
   USE omp_mod
   USE omp_timer_mod
@@ -322,6 +323,11 @@ SUBROUTINE unpack (self, mesg, link)
   !---------------------------------------------------------------------------
   id = task%id
   call task%unpack (mesg)
+  if (mpi_mesg%log_sent) then
+    call mpi_mesg%log_files()
+    write (io_unit%sent,*) wallclock(), omp%thread, 'unp', task%id, task%time
+    flush (io_unit%sent)
+  end if
   if (mpi_mesg%debug .or. id==io%id_debug) then
     !$omp critical (debug_cr)
     write (io_unit%log,'(f12.6,2x,a,2i9,z12,2x,5l1)') wallclock(), &

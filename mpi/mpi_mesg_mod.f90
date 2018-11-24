@@ -593,19 +593,20 @@ SUBROUTINE log_files (self)
   character(len=120):: filename
   integer:: one_two
   integer, save:: previous=-1
-  !$omp threadprivate (previous)
   !-----------------------------------------------------------------------------
   if (self%log_sent) then
+    !$omp critical (log_files_cr)
     one_two = wallclock()/60.
     one_two = mod(one_two,2) + 1
     if (one_two /= previous) then
       if (previous > 0) &
         close (previous)
-      write (filename,'(a,"/sent_",i5.5,"_",i4.4,"_",i1,".log")') &
-        trim(io%outputname), mpi%rank, sent_list%id, one_two
+      write (filename,'(a,"/sent_",i5.5,"_",i1,".log")') &
+        trim(io%outputname), mpi%rank, one_two
       open (io_unit%sent,file=filename, form='formatted', status='unknown')
       previous = one_two
     end if
+    !$omp end critical (log_files_cr)
   end if
 END SUBROUTINE log_files
 

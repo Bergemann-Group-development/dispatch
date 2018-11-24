@@ -322,12 +322,7 @@ SUBROUTINE output_nml (patch, append)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%output_nml')
-  ms = wallclock()
   !$omp critical (output_cr)
-  ms = 1e3*(wallclock()-ms)
-  if (ms > 10.) &
-    write(io%output,'(a,i5,2x,a,f7.2,a)') &
-      ' thread', omp%thread, 'waited for I/O', ms, ' ms'
   !-----------------------------------------------------------------------------
   ! Write snapshot_nml to the file "data/run/NNNNN/snapshot.nml"
   !-----------------------------------------------------------------------------

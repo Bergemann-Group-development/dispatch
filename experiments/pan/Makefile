@@ -7,11 +7,11 @@ OPTS = optimized
 # Default target and methods
 #PATCH           = dispatchers
 UPD             = adams_bashforth
-#SOLVER          = ramses/hydro
+SOLVER          = ramses/hydro
 #EXEC            = dispatch_hllc.x
 #SOLVER          = ramses/mhd
 #EXEC            = dispatch_hlld.x
-SOLVER          = stagger2/e
+#SOLVER          = stagger2/e
 EXEC            = dispatch_stagger2e.x
 EXEC            = dispatch.x
 TOP             = ../..
