@@ -57,7 +57,6 @@ MODULE mpi_mesg_mod
   !
   type, public:: mpi_mesg_t
     logical:: initialized=.false.
-    logical:: log_sent=.false.
     type(mesg_list_t):: sent_list, recv_list
     integer:: n_check=0
     integer:: n_ready=0
@@ -529,12 +528,11 @@ SUBROUTINE init (self)
   logical, save:: recv_active
   logical, save:: send_priv
   logical, save:: queue_unpack
-  logical, save:: log_sent=.false.
   real, save:: check_ms=10.
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, wait, send_wait, send_priv, &
                              recv_active, recv_priv, queue_unpack, test_time, debug, &
-                             check_ms, verbose, log_sent
+                             check_ms, verbose
   integer:: iostat
   !-----------------------------------------------------------------------------
   ! Prevent initializing more than once
@@ -560,7 +558,6 @@ SUBROUTINE init (self)
   self%max_recv = max_recv
   self%max_probe = max_probe
   self%check_ms = check_ms
-  self%log_sent = log_sent
   self%wait = wait
   !-----------------------------------------------------------------------------
   ! Default values from dispatcher possible changed here
@@ -594,7 +591,7 @@ SUBROUTINE log_files (self)
   integer:: one_two
   integer, save:: previous=-1
   !-----------------------------------------------------------------------------
-  if (self%log_sent) then
+  if (io%log_sent) then
     !$omp critical (log_files_cr)
     one_two = wallclock()/60.
     one_two = mod(one_two,2) + 1

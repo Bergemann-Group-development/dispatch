@@ -15,7 +15,6 @@ MODULE link_mod
   USE bits_mod
   USE task_mod
   USE omp_timer_mod
-  USE mpi_mesg_mod
   implicit none
   private
 
@@ -626,7 +625,7 @@ SUBROUTINE send_to_vnbors (self)
     end if
     nbor => nbor%next                                           ! next nbor
   end do
-  if (mpi_mesg%log_sent) then
+  if (io%log_sent) then
     write (io_unit%sent,*) wallclock(), omp%thread, 'snt', self%task%id, &
       self%task%time, ranks(1:nsend)
     flush (io_unit%sent)

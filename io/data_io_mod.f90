@@ -301,7 +301,6 @@ SUBROUTINE output_nml (patch, append)
   !.............................................................................
   character(len=128)   :: filename
   character(len=128), save:: filename1='', filename2=''
-  logical, save        :: open1=.false., open2=.false.
   integer              :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
                           nw, ntotal, format
   integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
@@ -368,11 +367,19 @@ SUBROUTINE output_nml (patch, append)
   if (mpi%master .and. .not.append) then
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
     if (filename /= filename1) then
-      if (open1) close (io_unit%nml1)
+      if (filename1 /= '') close (io_unit%nml1)
+      if (io%log_sent) then
+        write(io_unit%sent,'(a,i5,2x,2a)') &
+         ' thread', omp%thread, 'opening ', trim(filename)
+        flush (io_unit%sent)
+      end if
       open  (io_unit%nml1, file=trim(filename), form='formatted', status='unknown')
-      !write(io%output,'(a,i5,2x,2a)') ' thread', omp%thread, 'opened ', trim(filename)
+      if (io%log_sent) then
+        write(io_unit%sent,'(a,i5,2x,2a)') &
+         ' thread', omp%thread, 'opened  ', trim(filename)
+        flush (io_unit%sent)
+      end if
       filename1 = filename
-      open1 = .true.
     end if
     write (io_unit%nml1, io_nml)
     write (io_unit%nml1, snapshot_nml)
@@ -388,13 +395,20 @@ SUBROUTINE output_nml (patch, append)
   write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
          trim(io%outputname), patch%iout, mpi%rank
   if (filename /= filename2) then
-    if (open2) close (io_unit%nml2)
+    if (filename2 /= '') close (io_unit%nml2)
+    if (io%log_sent) then
+      write(io_unit%sent,'(a,i5,2x,2a)') &
+       ' thread', omp%thread, 'opening ', trim(filename)
+      flush (io_unit%sent)
+    end if
     open  (io_unit%nml2, file=trim(filename), form='formatted', status='unknown', &
          access=trim(merge('append    ','sequential',append)))
-    !write(io%output,'(a,i5,2x,2a)') &
-    !  ' thread', omp%thread, 'opened ', trim(filename)
+    if (io%log_sent) then
+      write(io_unit%sent,'(a,i5,2x,2a)') &
+       ' thread', omp%thread, 'opened  ', trim(filename)
+      flush (io_unit%sent)
+    end if
     filename2 = filename
-    open2 = .true.
   end if
   !-----------------------------------------------------------------------------
   ! Write the namelist info, including a leading idx_nml

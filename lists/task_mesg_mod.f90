@@ -323,7 +323,7 @@ SUBROUTINE unpack (self, mesg, link)
   !---------------------------------------------------------------------------
   id = task%id
   call task%unpack (mesg)
-  if (mpi_mesg%log_sent) then
+  if (io%log_sent) then
     call mpi_mesg%log_files()
     write (io_unit%sent,*) wallclock(), omp%thread, 'unp', task%id, task%time
     flush (io_unit%sent)

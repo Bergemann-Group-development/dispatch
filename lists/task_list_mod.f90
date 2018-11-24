@@ -257,7 +257,7 @@ SUBROUTINE update (self, head, test, was_refined)
     call task%rotate
   end if
   call task%info (self%nq, self%na)                   ! print info on stdout
-  if (mpi_mesg%log_sent) then
+  if (io%log_sent) then
     write (io_unit%sent,*) wallclock(), omp%thread, 'upd', task%id, task%time, task%is_set(bits%boundary)
     flush (io_unit%sent)
   end if
