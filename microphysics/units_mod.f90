@@ -4,6 +4,8 @@
 MODULE units_mod
   USE io_unit_mod
   USE math_mod
+  USE omp_mod
+  USE trace_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -107,11 +109,17 @@ SUBROUTINE output (self)
   real(kind=8):: l, t, m
   namelist /units_nml/ system, l, t, m
   !----------------------------------------------------------------------------
+  call trace%begin ('units_t%init')
   system = self%system
   l      = self%l
   t      = self%t
   m      = self%m
-  write (io_unit%nml, units_nml)
+  if (omp%master) then
+    !$omp critical (write_nml_cr)
+    write (io_unit%nml, units_nml)
+    !$omp end critical (write_nml_cr)
+  end if
+  call trace%end
 END SUBROUTINE output
 
 END MODULE units_mod

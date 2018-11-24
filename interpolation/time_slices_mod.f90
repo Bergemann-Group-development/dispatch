@@ -2,7 +2,7 @@
 !> Compute time derivative from a sequence of time slices, using Lagrange
 !> interpolation
 !> =============================================================================
-MODULE time_slices_mod
+  MODULE time_slices_mod
   USE io_mod
   USE io_unit_mod
   USE trace_mod
@@ -33,8 +33,9 @@ SUBROUTINE init (self, nt)
   !.............................................................................
   integer:: iostat
   namelist /time_slices_params/ verbose, order, id_debug
-  logical:: first_time=.true.
+  logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
+  call trace%begin ('time_slices_t%init')
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -42,12 +43,18 @@ SUBROUTINE init (self, nt)
     read (io_unit%input, time_slices_params, iostat=iostat)
     order = min(order,nt-2)
     write (io%output, time_slices_params)
-    write (io_unit%nml, time_slices_params)
+    if (io%master) then
+      !$omp critical (write_nml_cr)
+      write (io_unit%nml, time_slices_params)
+      flush (io_unit%nml)
+      !$omp end critical (write_nml_cr)
+    end if
   end if
   !$omp end critical (input_cr)
   self%order = order
   if (io%master) &
     call lagrange%test
+  call trace%end
 END SUBROUTINE init
 
 !> =============================================================================
