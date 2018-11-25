@@ -625,7 +625,7 @@ SUBROUTINE send_to_vnbors (self)
     end if
     nbor => nbor%next                                           ! next nbor
   end do
-  if (io%log_sent) then
+  if (io%log_sent > 0) then
     !$omp critical (log_sent_cr)
     write (io_unit%sent,'(f16.6,i4,2x,a,i6,f16.6,8i5)') wallclock(), omp%thread, 'snt', self%task%id, &
       self%task%time, nsend, ranks(1:nsend)

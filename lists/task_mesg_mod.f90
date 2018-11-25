@@ -257,8 +257,6 @@ END FUNCTION find_task
 !> =============================================================================
 !> Unpack a message, where the MPI tag is the task id.  Use that to search
 !> for the task, apply its unpack method, and check if any nbors become ready.
-!> This entire operation should be threadsafe, since no other thread should be
-!> working on the same message and the same patch.
 !> =============================================================================
 SUBROUTINE unpack (self, mesg, link)
   class(task_mesg_t):: self
@@ -275,6 +273,11 @@ SUBROUTINE unpack (self, mesg, link)
     call load_balance%unpack (mesg%buffer)
     return
   end if
+  !-----------------------------------------------------------------------------
+  ! This entire operation should be threadsafe, since no other thread should be
+  ! working on the same message and the same patch. And find_task uses only the
+  ! static links in the task list -- not the dynamic next_time links.
+  !-----------------------------------------------------------------------------
   !!omp critical (unpack_cr)
   if (present(link)) then
     link1 => link
@@ -323,10 +326,10 @@ SUBROUTINE unpack (self, mesg, link)
   !---------------------------------------------------------------------------
   id = task%id
   call task%unpack (mesg)
-  if (io%log_sent) then
+  if (io%log_sent > 0) then
     !$omp critical (log_sent_cr)
     call mpi_mesg%log_files()
-    write (io_unit%sent,'(f16.6,i4,a,2x,i6,f16.6,8i5)') wallclock(), omp%thread, 'unp', task%id, task%time, task%rank
+    write (io_unit%sent,'(f16.6,i4,2x,a,i6,f16.6,8i5)') wallclock(), omp%thread, 'unp', task%id, task%time, task%rank
     flush (io_unit%sent)
     !$omp end critical (log_sent_cr)
   end if
@@ -532,7 +535,7 @@ SUBROUTINE check_virtual (self)
     task => link%task
     select type (task)
     class is (patch_t)
-    if (io%log_sent) then
+    if (io%log_sent > 1) then
       !$omp critical (log_sent_cr)
       write (io_unit%sent,'(f16.6,i4,2x,a,i6,i4)') wallclock(), omp%thread, 'chk', task%id, task%rank
       !$omp end critical (log_sent_cr)
