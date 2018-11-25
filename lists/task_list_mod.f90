@@ -98,7 +98,21 @@ SUBROUTINE startup (self)
   !call self%reset_status
   call self%info
   !-----------------------------------------------------------------------------
-  ! Check the ready status of all tasks
+  ! When restarting, the virtual tasks need to be received and unpacked before
+  ! the first guard zone downloads.  We therefore trigger a send of all bndry
+  ! patches, initialize the recv mechanism, and check for corresponding incoming
+  ! messages.
+  !-----------------------------------------------------------------------------
+  if (io%restart >= 0) then
+    call self%resend_bdry ()
+    if (mpi_mesg%recv_active .and. mpi_mesg%recv_priv) &
+      call self%init_virtual ()
+    call self%check_mpi ()
+  end if
+  !-----------------------------------------------------------------------------
+  ! Check the ready status of all tasks.  At this point, virtual patches that
+  ! have not been received yet should have negative initial times, so should
+  ! prevent boundary tasks from trying to update.
   !-----------------------------------------------------------------------------
   link => self%head
   do while (associated(link))

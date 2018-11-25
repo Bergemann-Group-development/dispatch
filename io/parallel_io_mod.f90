@@ -1,7 +1,39 @@
 !> =============================================================================
-!> Use MPI parallel I/O to write everythin to a single file.  No critical regions
-!> are needed here; all thread protection is one inside mpi_file_mod and
+!> Use MPI parallel I/O to write everything to a single file.  No critical regions
+!> should be needed here; all thread protection is done inside mpi_file_mod and
 !> mpi_io_mod.
+!>
+!> There are two pairs of procedures; output/input and output_single/input_single.
+!> The latter group supports writing each snapshot in a separate file, but only
+!> for MPI libraries that support multiple thread, simultenous MPI calls.
+!>
+!> In each of the pairs, the io%format value chooses between an older storage
+!> pattern, where the position of a patch in the disk image is always the same,
+!> and independent of MPI configuration, and one where each rank writes a
+!> contiguous part in the file, allowing a much faster output, and also a much
+!> faster reading from IDL and Python.
+!>
+!> A compromise storage pattern would be one where the data is both stored in an
+!> MPI-independent way, but still can be read in large chunks. A good arrangement
+!> would have all patches in a variable in a contiguous disk space, arranged in
+!> an order that does not depend on the MPI-configuration, nor depends on the
+!> order of writing (there should be no need to get the order of writes from the
+!> order of patches in the patch_rrrrr.nml files, for example).
+!>
+!> In the current task-ID scheme, task IDs are guaranteed to be unique, without
+!> requiring MPI-communication when getting a new ID (which would have to be
+!> arranged via MPI-RMA -- with indications of not being reliable). Hence, in
+!> the current scheme, task-IDs are already MPI-dependent, and needs to be
+!> regenerated when restarting with a different MPI-configuration.  It would
+!> thus be best if the position of a patch in the file only depende on the
+!> position of the patch in space, and in such a way that a consequence was to
+!> have most (if not all) patches written from a single rank written to the
+!> same part of the file.
+!>
+!> A better approach, much easier to implement, is that the reader uses the
+!> meta-data saved with the snapshot to deduce the arrangement in the file,
+!> and reads the data based on that.  It is then free to choose the pattern to
+!> write data with based only on efficiency of writing, and speed of reading.
 !> =============================================================================
 MODULE parallel_io_mod
   USE patch_mod
@@ -209,7 +241,8 @@ SUBROUTINE output (patch, count)
 contains
   !-----------------------------------------------------------------------------
   ! Copy variables from `patch%mem` to `mem` array, converting variables based
-  ! on the I/O format parameter.
+  ! on the I/O format parameter.  This procedure is internal to the 'output'
+  ! procedure, and as such only supports io%format in the range 6-9.
   !-----------------------------------------------------------------------------
   subroutine convert_variables
     !...........................................................................
@@ -472,7 +505,8 @@ SUBROUTINE output_single (patch, count)
 contains
   !-----------------------------------------------------------------------------
   ! Copy variables from `patch%mem` to `mem` array, converting variables based
-  ! on the I/O format parameter.
+  ! on the I/O format parameter.  This procedure is internal to the 'output_single'
+  ! procedure, and as such only supports io%format in the range 10-13.
   !-----------------------------------------------------------------------------
   subroutine convert_variables
     integer:: nt1, l(3), u(3)
