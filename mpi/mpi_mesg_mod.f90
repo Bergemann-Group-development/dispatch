@@ -591,7 +591,7 @@ SUBROUTINE log_files (self)
   integer:: one_two
   integer, save:: previous=-1
   !-----------------------------------------------------------------------------
-  if (io%log_sent) then
+  if (io%log_sent > 0) then
     one_two = wallclock()/60.
     one_two = mod(one_two,2) + 1
     if (one_two /= previous) then
