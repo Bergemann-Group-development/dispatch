@@ -13,7 +13,6 @@ MODULE setup_mod
   USE components_mod
   USE parameters_mod
   USE scaling_mod
-  USE rubiks_mod
   implicit none
   private
 
@@ -40,7 +39,6 @@ SUBROUTINE init_setup (self)
   class(experiment_t), pointer :: task
   class(list_t), pointer :: task_list
   type(annulus_t), pointer :: annulus
-  type(rubiks_t), pointer:: nested_grids
   class(task_t), pointer :: rootpatch
   logical, save :: first_time = .true.
   logical :: ramp_mass
@@ -96,19 +94,6 @@ SUBROUTINE init_setup (self)
   ! the planet is not a task, but rather a global data structure.
   !-----------------------------------------------------------------------------
   call planet%init()
-
-  !-----------------------------------------------------------------------------
-  ! Set-up a series of "Rubik's cube"-like wedges centred on the planetesimal
-  ! position
-  !-----------------------------------------------------------------------------
-  rootpatch => annulus%task_list%head%task
-  allocate (nested_grids)
-  nested_grids%rotating = annulus%rotating
-  call nested_grids%init_hierarchy(1,rootlvl=rootpatch%level)
-  if (associated(nested_grids%task_list)) then
-    task_list => nested_grids%task_list
-    call self%task_list%append_list(task_list)
-  end if
 
   !-----------------------------------------------------------------------------
   ! Done. Perform final list initialisations.
