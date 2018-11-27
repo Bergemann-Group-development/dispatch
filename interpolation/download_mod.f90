@@ -539,7 +539,7 @@ END SUBROUTINE dnload_range
 !> =============================================================================
 SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
   class(patch_t), pointer :: target, source
-  integer(int8), dimension(:,:,:,:):: filled
+  integer(int8), dimension(:,:,:,:), allocatable:: filled
   logical, optional       :: all_cells, all_times
   integer, optional       :: only
   !.............................................................................
@@ -765,7 +765,7 @@ END SUBROUTINE same_linear
 !> =============================================================================
 SUBROUTINE same_lagrange (target, source, filled, all_cells, only, all_times)
   class(patch_t), pointer :: target, source
-  integer(int8), dimension(:,:,:,:):: filled
+  integer(int8), dimension(:,:,:,:), allocatable:: filled
   logical, optional       :: all_cells, all_times
   integer, optional       :: only
   !.............................................................................
