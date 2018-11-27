@@ -221,7 +221,7 @@ SUBROUTINE remove_link (self, link)
   deallocate (link)                         ! free to remove link
   self%n = self%n-1
   call trace_end
-END SUBROUTINE
+END SUBROUTINE remove_link
 
 !> =============================================================================
 !> Remove the head link
@@ -487,9 +487,12 @@ SUBROUTINE check_ready (self, link)
     end if
     nbor => nbor%next                                   ! next nbor
   end do
-  if (debug) &
+  if (debug) then
     write (io_unit%output,'("list_t%check_ready:",i5,f10.6,a)') &
       task%id, task%time, ' succeded'
+    write (io_unit%log,'("list_t%check_ready:",i5,f10.6,a)') &
+      task%id, task%time, ' succeded'
+  end if
   call self%queue_by_time (link)                        ! add task to queue
 END SUBROUTINE check_ready
 
