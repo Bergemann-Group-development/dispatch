@@ -31,12 +31,13 @@ size=1,1,1 dims=04,04,04 mpi_dims=1,1,1                !  1 process    1 node   
 &initial_params         type='turbulence' /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 /
+&IC_turbulence_params   b0=0.1 /
 &selfgravity_params     selfgravity=f /
 
 !---------------------------------
 ! Solver specific parameters
 !---------------------------------
-&ramses_params          courant_factor=0.250 isothermal=t gamma=1.0 slope_type=2 smallr=1e-4 smallc=5e-1 riemann='hllc' detailed_timer=f /
+&ramses_params          courant_factor=0.250 isothermal=t gamma=1.0 slope_type=2 smallr=1e-4 smallc=5e-1 /
 &stagger_params         gamma=1.0 nu=0.30,0.0,1.0,0.1,1.0,1.0 /
 &timestep_params        /
 &refine_params          do_refine=f check_interval=2 /
