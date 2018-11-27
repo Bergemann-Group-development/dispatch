@@ -48,6 +48,7 @@ MODULE parallel_io_mod
   USE trace_mod
   USE time_slices_mod
   USE bits_mod
+  USE kinds_mod
   implicit none
   private
   type, public:: parallel_io_t
@@ -69,7 +70,7 @@ MODULE parallel_io_mod
 CONTAINS
 
 !> =============================================================================
-!> Initialize for MPI paraallel I/O.  This is an MPI collective operation, and
+!> Initialize for MPI parallel I/O.  This is an MPI collective operation, and
 !> needs to be done at the start of the run.
 !> =============================================================================
 SUBROUTINE init (patch)
@@ -152,7 +153,8 @@ SUBROUTINE output (patch, count)
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
   integer:: iv, n(3), jt(2), iw, nw
-  real, dimension(:,:,:,:), pointer:: buffer, mem
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
+  real(kind=4), dimension(:,:,:,:), pointer:: buffer
   character(len=120):: filename
   real:: pt(2)
   logical, save:: first_time=.true.
@@ -310,8 +312,8 @@ SUBROUTINE output_single (patch, count)
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
   integer:: iv, n(3), jt(2), iw, nw, nder, irec, ider, ip, i, iout
-  real, dimension(:,:,:,:), pointer:: mem
-  real, dimension(:,:,:), pointer:: buffer
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
+  real(kind=4), dimension(:,:,:), pointer:: buffer
   real:: pt(2)
   real(8):: start
   logical:: first_time=.true.

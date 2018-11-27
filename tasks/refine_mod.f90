@@ -751,7 +751,7 @@ FUNCTION check_sinkparticle (self, task_list, link)
   class(patch_t), pointer:: p
   class(link_t), pointer:: new_link, nbor
   class(sinkparticles_t), pointer:: new_sink
-  real, dimension(:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
   integer:: m(3)
   logical:: do_trace
   !-----------------------------------------------------------------------------

@@ -64,7 +64,7 @@ SUBROUTINE interpolate (patch, mem, buffer)
   class(patch_t):: patch
   integer:: iv
   real(kind=KindScalarVar), dimension(:,:,:,:):: mem
-  real(kind=KindScalarVar), dimension(:,:,:):: buffer
+  real(kind=4), dimension(:,:,:):: buffer
   !.............................................................................
   real(8):: times(patch%nt-1)
   real(8), dimension(order+1):: w
@@ -83,7 +83,7 @@ SUBROUTINE derivative1 (patch, mem, buffer)
   class(patch_t):: patch
   integer:: iv
   real(kind=KindScalarVar), dimension(:,:,:,:):: mem
-  real(kind=KindScalarVar), dimension(:,:,:):: buffer
+  real(kind=4), dimension(:,:,:):: buffer
   !.............................................................................
   real(8):: times(patch%nt-1)
   real(8), dimension(order+1):: w
@@ -102,7 +102,7 @@ SUBROUTINE derivative2 (patch, mem, buffer)
   class(patch_t):: patch
   integer:: iv
   real(kind=KindScalarVar), dimension(:,:,:,:):: mem
-  real(kind=KindScalarVar), dimension(:,:,:):: buffer
+  real(kind=4), dimension(:,:,:):: buffer
   !.............................................................................
   real(8):: times(patch%nt-1)
   real(8), dimension(order+1):: w
@@ -122,7 +122,7 @@ SUBROUTINE weighted_sum (patch, times, w, i1, i2, mem, buffer)
   real(8), dimension(:):: times, w
   integer:: i1, i2
   real(kind=KindScalarVar), dimension(:,:,:,:):: mem
-  real(kind=KindScalarVar), dimension(:,:,:):: buffer
+  real(kind=4), dimension(:,:,:):: buffer
   !.............................................................................
   integer:: i
   !-----------------------------------------------------------------------------

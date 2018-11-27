@@ -23,6 +23,7 @@ MODULE sinkparticles_mod
   USE list_mod
   USE bits_mod
   USE scaling_mod
+  USE kinds_mod
   implicit none
   private
   type, public, extends (patch_t):: sinkparticles_t
@@ -125,7 +126,7 @@ SUBROUTINE create (self, patch)
   class(patch_t), target:: patch
   !.............................................................................
   class(link_t), pointer:: nbor, prev
-  real, dimension(:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
   real(8), dimension(:), pointer:: r
   integer:: i, l(3), u(3), m(3), ix, iy, iz
   real:: r2, dmin
@@ -227,8 +228,8 @@ END SUBROUTINE update
 SUBROUTINE accrete (self)
   class (sinkparticles_t):: self
   !.............................................................................
-  real, dimension(:,:,:), pointer:: d, px, py, pz
-  real, dimension(:,:,:), allocatable:: u2
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, px, py, pz
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: u2
   real:: v2_kepler
   integer:: ix, iy, iz
   real:: omega, dv
