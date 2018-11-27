@@ -219,8 +219,8 @@ SUBROUTINE init_zeus (self)
   class(mhd_t):: self
   integer:: i
   logical, save :: first_time=.true.
-
-  namelist / zeus_params /  gamma   , qcon    , qlin    , nghst   &
+  real, save:: courant=0.5
+  namelist / zeus_params /  gamma   , qcon    , qlin    , nghst   , courant &
                           , iord    , iords   , istp    , itote   , iscydf  &
                           , iscyqq  , ix1x2x3 , nuscalar, isetemf , trnvrsn &
                           , cadvs   , cadvc   , cadvt   , uordq   , avordw  &
@@ -257,6 +257,7 @@ SUBROUTINE init_zeus (self)
     diffc2  = 0.0d0
     dtinit  = huge
     rewind (io%input); read (io%input, zeus_params)
+    if (io%master) write (*, zeus_params)
 
     ! ---- Fool-proofing ----
     if (itote .ne. 0) itote = 1
@@ -309,6 +310,7 @@ SUBROUTINE init_zeus (self)
   self%gamma = gamma
   gamma_z = gamma
   self%ng = nghst
+  self%courant = courant
 
   self%kind = 'zeus_mhd_patch'
   ! don't store the time derivatives, only the MHD quantities;
@@ -317,9 +319,9 @@ SUBROUTINE init_zeus (self)
   self%idx%d=1   ; self%idx%e=2 ; self%idx%et=3
   self%idx%px=4  ; self%idx%py=5; self%idx%pz=6
   self%idx%bx=7  ; self%idx%by=8; self%idx%bz=9
-  self%idx%phi=10
   self%idx%tt=-1 ; self%idx%s=-1; self%idx%dphi=-1
   call self%gpatch_t%init()
+  self%idx%phi=10 ! ZEUS always has a slot for the grav. pot. included (even if not used).
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5 ! momentum/velocity components
     self%mesh(i)%h(self%idx%bx+i-1) = -0.5 ! mag. field components
