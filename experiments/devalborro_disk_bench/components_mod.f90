@@ -58,7 +58,11 @@ SUBROUTINE init_annulus (self, params)
     n_patch = [1, 1, 1]
     rotating = .true.
     rewind (io%input); read (io%input, annulus_params)
-    if (io%master) write (*, annulus_params)
+    if (io%master) then
+      write (*, annulus_params)
+      write (io_unit%nml, annulus_params)
+      flush (io_unit%nml)
+    end if
     ! the phi extent is given in units of pi
     extent(3) = extent(3) * pi
   end if
@@ -135,6 +139,7 @@ SUBROUTINE init_annulus (self, params)
         end select
         call patch%set(bits%static) ! for the time being (should be okay)
         call patch%clear(bits%root_grid)
+        call patch%set(bits%internal)
         call self%task_list%append(patch)
         ! update offset for next patch
         if (n_patch(1) > 1) curr_zoff = curr_zoff + zextent
@@ -143,6 +148,8 @@ SUBROUTINE init_annulus (self, params)
     end do
     if (n_patch(3) > 1) curr_phioff = curr_phioff + phiextent
   end do
+
+  self%task_list%n_tasks = product(n_patch)
 
   call trace_end
 END SUBROUTINE init_annulus

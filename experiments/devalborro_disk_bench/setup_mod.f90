@@ -48,9 +48,7 @@ SUBROUTINE init_setup (self)
                               kill_rmax, aspect_rat, ramp_mass, phiplanet
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
-
-  call io%init (self%experiment_name)
-  call scaling%init()
+  call io%header('begin setup_t%init')
 
   ! read input params
   if (first_time) then
@@ -66,7 +64,11 @@ SUBROUTINE init_setup (self)
     ramp_mass = experiment_params%ramp_mass
     phiplanet = experiment_params%phiplanet
     rewind (io%input); read (io%input, initial_params)
-    if (io%master) write (*, initial_params)
+    if (io%master) then
+      write (*, initial_params)
+      write (io_unit%nml, initial_params)
+      flush (io_unit%nml)
+    end if
     experiment_params%mtotal = mtotal
     experiment_params%aplanet = aplanet
     experiment_params%mplanet = mplanet
@@ -99,7 +101,15 @@ SUBROUTINE init_setup (self)
   ! Done. Perform final list initialisations.
   !-----------------------------------------------------------------------------
   call self%task_list%init(trim(self%experiment_name)//' task list')
+  call self%task_list%reset_status
+  call self%task_list%count_status
+  call self%task_list%init_bdries
+  io%ntotal = self%task_list%n
+  io%ntask  = self%task_list%na
+  io%nwrite = io%ntask
   call self%task_list%init_all_nbors
+  call self%task_list%print_tasks
+
   call trace_end
 END SUBROUTINE init_setup
 

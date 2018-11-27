@@ -7,11 +7,18 @@ PROGRAM dispatch
   USE setup_mod
   USE mpi_mod
   USE io_mod
+  USE scaling_mod
+  USE download_mod
+  USE dispatcher_mod
   implicit none
   !.............................................................................
   call mpi%init
+  call io%init ('de Val-Borro benchmark')
+  call scaling%init
+  call download%init
+  call dispatcher%init
   call setup%init
-  call setup%task_list%execute
+  call dispatcher%execute(setup%task_list)
   call mpi%end
   print*,'All tasks finished. Goodbye.'
 !> =============================================================================

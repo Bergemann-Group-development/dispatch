@@ -21,9 +21,10 @@ CONTAINS
 !> =============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
+  real, optional:: gamma
 END SUBROUTINE init
 
 SUBROUTINE condition (self, m, ff, idx)
