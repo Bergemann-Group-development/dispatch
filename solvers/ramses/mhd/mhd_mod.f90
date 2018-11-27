@@ -375,7 +375,7 @@ SUBROUTINE update (self)
     deallocate (fluxambdiff,emfambdiff)
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dq2,self%bf,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
-              self%Ex,self%Ey,self%Ez)
+              self%Ex,self%Ey,self%Ez,self%ff)
   deallocate (dflux_x, dflux_y, dflux_z, Bleft, Bright)
   call trace%end (itimer)
 END SUBROUTINE update
