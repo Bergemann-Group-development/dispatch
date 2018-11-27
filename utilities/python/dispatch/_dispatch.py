@@ -154,6 +154,15 @@ class _patch():
             if hasattr(snap,'units'):
                 self.units=snap.units
         self.var=_var(self,snap.datafiled)
+        # modify `mesh_type` from integer to string for readability
+        if hasattr(self,'mesh_type'):
+            if self.mesh_type == 1:
+                self.mesh_type = "Cartesian"
+            elif self.mesh_type == 2:
+                self.mesh_type = "spherical"
+            elif self.mesh_type == 3:
+                self.mesh_type = "cylindrical"
+
     def _h(self):
         idx=self.idx
         h=np.zeros((3,self.nv))
