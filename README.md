@@ -24,12 +24,12 @@ When committing changes to this repository, please use the following three-lette
 
 * DEV: code development (incl. additions and deletions)
 * ORG: organisational, no changes to functionality
-* BUG: bug with significant impact on previous work -- grepping should give restricted list
-* FIX: fixes that occur during development, which have essentially no impact on previous work
+* BUG: bug with significant impact on previous work -- `grep`-ing should give restricted list
+* FIX: fixes that occur during development, but which have essentially no impact on previous work
 * VIS: visualisation
 * OPT: optimisation
 * DBG: debugging
 * SYN: typos and misspellings (including simple syntax error fixes)
 * WIP: snapshot/work in progress
-* CLN: tidying of the code, including removal of obsolete features, experiements, etc.
+* CLN: tidying of the code, including removal of obsolete features, experiments, etc.
 * DOC: Changes or additions to the documentation
