@@ -338,6 +338,14 @@ SUBROUTINE output_nml (patch, append)
   l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
   u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
   ncell        = u-l+1
+  ! Special consideration for ZEUS solvers because the include one extra cell
+  ! for staggered quantities (all other variables should be zero in the extra
+  ! cell).
+  if (patch%kind(1:4) == 'zeus') then
+    where (patch%n > 1)
+      ncell = ncell + 1
+    end where
+  endif
   id           = patch%id
   istep        = patch%istep
   mesh_type    = patch%mesh_type
