@@ -133,7 +133,7 @@ SUBROUTINE weighted_sum (patch, times, w, i1, i2, mem, buffer)
   end if
   buffer = 0.0
   do i=i1,i2
-    buffer = buffer + w(1+i-i1)*mem(:,:,:,i)
+    buffer = buffer + w(1+i-i1)*mem(:,:,:,patch%iit(i))
   end do
 END SUBROUTINE weighted_sum
 
