@@ -280,8 +280,7 @@ contains
   end subroutine
   !-----------------------------------------------------------------------------
   subroutine io_write (slot, ider)
-    integer:: slot, ider, iv, islot, m(4)
-    real, dimension(:,:,:), pointer:: buf
+    integer:: slot, ider
     !---------------------------------------------------------------------------
     ! This ordering has the derivative order added to the snapshot number, which
     ! is incremented by (io%time_derivs+1), with patch%id starting with 1, and
