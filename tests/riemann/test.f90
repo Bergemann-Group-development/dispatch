@@ -170,6 +170,6 @@ contains
       total = total + (omp_get_wtime() - start)
       deallocate (fa, ga)
     end do
-    print *, n, nit, total*1e9/n**3/nit
+    print '(2i5,f6.1," ns/cell")', n, nit, total*1e9/n**3/nit
   end subroutinE cost
 END PROGRAM test
