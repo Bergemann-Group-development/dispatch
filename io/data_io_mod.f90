@@ -205,7 +205,7 @@ SUBROUTINE input (self, patch, ok)
   call self%init (patch)
   !$omp critical (data_io_cr)
   ok = .false.
-  if (io%restart > 0) then
+  if (io%restart >= 0) then
     if      (io%method=='direct') then
       call direct_io%input (patch, ok)
     else if (io%method=='legacy') then

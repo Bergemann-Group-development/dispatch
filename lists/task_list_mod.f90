@@ -103,11 +103,10 @@ SUBROUTINE startup (self)
   ! patches, initialize the recv mechanism, and check for corresponding incoming
   ! messages.
   !-----------------------------------------------------------------------------
+  if (mpi_mesg%recv_active .and. mpi_mesg%recv_priv) &
+    call self%init_virtual ()
   if (io%restart >= 0) then
     call self%resend_bdry ()
-    if (mpi_mesg%recv_active .and. mpi_mesg%recv_priv) &
-      call self%init_virtual ()
-    call self%check_mpi ()
   end if
   !-----------------------------------------------------------------------------
   ! Check the ready status of all tasks.  At this point, virtual patches that
@@ -117,14 +116,14 @@ SUBROUTINE startup (self)
   link => self%head
   do while (associated(link))
     call link%task%clear(bits%ready)
-    if (link%task%is_set(bits%virtual)) link%task%wc_last = wallclock()
-    call self%check_ready (link)
+    if (link%task%is_set(bits%virtual)) &
+      link%task%wc_last = wallclock()
+    if (link%task%is_set(bits%virtual)) &
+      call self%check_ready (link)
     if (self%sync_time > 0.0) &
       link%task%sync_time = link%task%time + self%sync_time
     link => link%next
   end do
-  if (mpi_mesg%recv_active .and. mpi_mesg%recv_priv) &
-    call self%init_virtual
   !-----------------------------------------------------------------------------
   ! Initialize the data I/O, and start timer
   !-----------------------------------------------------------------------------

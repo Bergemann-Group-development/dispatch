@@ -56,6 +56,7 @@ MODULE mpi_io_mod
   !-----------------------------------------------------------------------------
   type, public, extends(dll_t):: iwrite_list_t
     logical:: first_time=.true.
+    logical:: active=.false.
     integer:: thread=-1
   contains
     procedure:: check
@@ -271,6 +272,7 @@ SUBROUTINE iwrite3 (self, f, rec, id)
   !$omp critical (iwrite_cr)
   node => item
   call self%iwrite_list%append (node)
+  self%iwrite_list%active = .true.
   n = self%iwrite_list%n
   !$omp end critical (iwrite_cr)
   if (verbose>1) &
@@ -312,6 +314,7 @@ SUBROUTINE iwrite4 (self, f, rec, id)
   !$omp critical (iwrite_cr)
   node => item
   call self%iwrite_list%append (node)
+  self%iwrite_list%active = .true.
   n = self%iwrite_list%n
   !$omp end critical (iwrite_cr)
   if (verbose>1) &
@@ -419,7 +422,7 @@ SUBROUTINE check (self)
   !-----------------------------------------------------------------------------
   ! Most threads will exit immediately here
   !-----------------------------------------------------------------------------
-  if (.not. io%do_output) &
+  if (.not.io%do_output .or. .not.self%active) &
     return
   if (self%n < mpi_io%nwrite .or. self%thread >=0) then
     if (verbose > 1 .and. self%thread >= 0) &

@@ -469,7 +469,7 @@ SUBROUTINE output_single (patch, count)
       !-------------------------------------------------------------------------
       ! Each "record" is product(n)*io%ntasks words long, and contains values
       ! for one variable, for all the patches in a rank.  The ranks are written
-      ! out one after the other for one variable, followed by then next var
+      ! out one after the other for one variable, followed by the next var
       !-------------------------------------------------------------------------
       irec = 1 + mpi%rank + mpi%size*(iv-1 + (ider-1)*io%nv)
       call mpi_io%write (parallel_io%buffer(:,:,:,:,iv,ider), 1+iout, irec)
@@ -551,10 +551,12 @@ SUBROUTINE input (patch, ok)
   call trace%begin ('parallel_io_t%input', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! If the patch is a virtual patch, signal that it should be filled with IC
-  ! data at first -- it will become updated via MPI later
+  ! data at first -- it will become updated via MPI later. By setting time < 0
+  ! we allow restarting from the IC snapshot, for tests
   !-----------------------------------------------------------------------------
   if (patch%is_set(bits%virtual)) then
     ok = .false.
+    patch%time = -1d0
     call trace%end (itimer)
     return
   end if
@@ -684,6 +686,17 @@ SUBROUTINE input_single (patch, ok)
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%input_single', itimer=itimer)
   !-----------------------------------------------------------------------------
+  ! If the patch is a virtual patch, read nothing, but return ok=.true. never-
+  ! theless, relying on the negative time to force nbor tasks to wait for the
+  ! first MPI refresh of the task.
+  !-----------------------------------------------------------------------------
+  if (patch%is_set(bits%virtual)) then
+    ok = .true.
+    patch%time = -1.0
+    call trace%end (itimer)
+    return
+  end if
+  !-----------------------------------------------------------------------------
   ! Set size parameters
   !-----------------------------------------------------------------------------
   if (file_in%handle==0) then
@@ -728,17 +741,17 @@ SUBROUTINE input_single (patch, ok)
       call mpi_io%read (parallel_io%buffer(:,:,:,:,iv,1), 1+iout, irec)
       if (mpi_io%err /= 0) then
         read_failed = .true.
-        write(io%output,*) 'io%snapshot: read failed', io%restart
+        write(io%output,*) 'io%input_single: read failed', io%restart
         exit
-      else
-        write(io%output,*) 'io%snapshot: read succeeded', io%restart
       end if
     end do
-  end if
-  if (read_failed) then
-    ok = .false.
-    call trace%end (itimer)
-    return
+    if (read_failed) then
+      ok = .false.
+      call trace%end (itimer)
+      return
+    else if (io%master) then
+      write(io%output,*) 'io%input_single: read succeeded, snapshot', io%restart
+    end if
   end if
   ip = patch%ip
   if (ip < 1 .or. ip > io%ntask) then

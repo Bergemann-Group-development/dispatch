@@ -1506,7 +1506,9 @@ SUBROUTINE print_tasks (self, label)
   link => self%head
   do while (associated(link))
     if (io%verbose < 3) then
-      write (io_unit%log,'(i8,g15.6,l5)') link%task%id, link%task%time, link%task%is_set(bits%ready)
+      write (io_unit%log,'(i8,g15.6,3x,3l1)') link%task%id, link%task%time, &
+        link%task%is_set(bits%ready), link%task%is_set(bits%boundary), &
+        link%task%is_set(bits%virtual)
     else
       call link%print_nbors
     end if
