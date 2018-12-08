@@ -50,6 +50,7 @@ MODULE mhd_mod
     procedure:: gas_pressure
   end type
   logical:: first_time=.true.
+  logical:: detailed_timer=.false.
   integer:: verbose=0
   character(len=16):: eqn='mhd'
   real(kind=8):: courant_number=0.2
@@ -62,7 +63,7 @@ SUBROUTINE init (self)
   character(len=10):: riemann='hlld'
   integer:: i
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, isothermal, csound, verbose
+    smallc, isothermal, csound, verbose, detailed_timer
 !...............................................................................
   call trace%begin('mhd_mod%init')
 
@@ -390,7 +391,7 @@ subroutine check_small (self)
   integer, save:: itimer=0
   associate(uu=>self%uin)
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%check_small',itimer=itimer)
+  call trace%begin('mhd_t%check_small',itimer=itimer, detailed_timer=detailed_timer)
   n_smalld = 0
   n_smallp = 0
   lo = self%mesh%lb
@@ -434,7 +435,7 @@ subroutine check_small (self)
     write (io_unit%log,*) 'small: id,nr,np', self%id,n_smalld,n_smallp
   end if
   end associate
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine check_small
 
 !> =============================================================================
@@ -450,7 +451,7 @@ subroutine ctoprim(self)
   integer:: i,j,k
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%ctoprim',itimer=itimer)
+  call trace%begin('mhd_t%ctoprim',itimer=itimer, detailed_timer=detailed_timer)
   if (isothermal) then
     entho = one
   else
@@ -497,7 +498,7 @@ subroutine ctoprim(self)
                           + c + abs(q(:,:,:,3)) &
                           + c + abs(q(:,:,:,4)))/3.
   end associate
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine ctoprim
 
 !> =============================================================================
@@ -520,7 +521,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
   real(dp)::vmin,vmax,dfx,dfy,dfz,dff,idff
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%uslope', itimer=itimer)
+  call trace%begin ('mhd_t%uslope', itimer=itimer, detailed_timer=detailed_timer)
   !
   islope_type = int(rslope_type)
   l = self%mesh%lb+1
@@ -780,7 +781,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
      write(*,*)'Unknown slope type'
      stop
   endif
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine uslope
 
 !> =============================================================================
@@ -818,8 +819,7 @@ SUBROUTINE trace3d(self)
     Ux=>self%q(:,:,:,2),Uy=>self%q(:,:,:,3),Uz=>self%q(:,:,:,4), &
     Ex=>self%Ex,Ey=>self%Ey,Ez=>self%Ez)
   !
-  !call trace%begin ('mhd_t%trace3d(1)', itimer=itimer(1))
-  call trace%begin ('mhd_t%trace3d', itimer=itimer(1))
+  call trace%begin ('mhd_t%trace3d', itimer=itimer(1), detailed_timer=detailed_timer)
   su0=0.0_dp; sv0=0.0_dp; sw0=0.0_dp
   !
   dtdx = self%dtime/self%ds(1)
@@ -1284,7 +1284,7 @@ SUBROUTINE trace3d(self)
   end do
   end do
   !call trace%end (itimer(3))
-  call trace%end (itimer(1))
+  call trace%end (itimer(1), detailed_timer=detailed_timer)
   end associate
 contains
   FUNCTION xdn(a) RESULT (b)
@@ -1341,7 +1341,7 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   integer:: n
   associate (qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%cmpflxm',itimer=itimer)
+  call trace%begin ('mhd_t%cmpflxm',itimer=itimer, detailed_timer=detailed_timer)
   lb = self%mesh%lb+2
   ub = self%mesh%ub-1
   xdim = ln-1
@@ -1466,7 +1466,7 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   endif
 
   end associate
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine cmpflxm
 
 !> =============================================================================
@@ -1487,7 +1487,7 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
   real(dp):: smallp
   integer, save:: itimer=0
   !associate (qRT=>self%qRT,qLT=>self%qLT,qRB=>self%qRB,qLB=>self%qLB)
-  call trace%begin ('mhd_t%cmp_mag_flx',itimer=itimer)
+  call trace%begin ('mhd_t%cmp_mag_flx',itimer=itimer, detailed_timer=detailed_timer)
   !-----------------------------------------------------------------------------
 
   xdim = lor - 1
@@ -1637,7 +1637,7 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
       end do
     end do
   endif
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 !  end associate
 END SUBROUTINE cmp_mag_flx
 

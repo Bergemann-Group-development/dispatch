@@ -37,18 +37,28 @@ PUBLIC trace_begin, trace_tag, trace_end
 CONTAINS
 
 !> =============================================================================
-!> Start a new trace level, and a new timer epoch.
+!> Start a new trace level, and a new timer epoch.  A call that has a
+!> detailed_timer logical present will call the timer level only if that
+!> logical is true, while call that doesn't have that optional argument
+!> will call the timer if and only if the itimer argument is present.
 !> =============================================================================
-SUBROUTINE trace_begin (id, set_verbose, itimer)
+SUBROUTINE trace_begin (id, set_verbose, itimer, detailed_timer)
   implicit none
   integer, optional:: set_verbose, itimer
+  logical, optional:: detailed_timer
   character(len=*) id
   character(len=mch):: fmt
   integer:: verbose
   real(8):: wc
   !-----------------------------------------------------------------------------
   if (present(itimer)) then
-    call timer%begin (id, itimer)
+    if (present(detailed_timer)) then
+      if (detailed_timer) then
+        call timer%begin (id, itimer)
+      end if
+    else
+      call timer%begin (id, itimer)
+    end if
   end if
   if (.not.io%do_trace) return
   tracing(level) = trim(id)
@@ -109,16 +119,23 @@ END SUBROUTINE trace_tag
 !> =============================================================================
 !> End a trace level.
 !> =============================================================================
-SUBROUTINE trace_end (itimer)
+SUBROUTINE trace_end (itimer, detailed_timer)
   implicit none
   integer, optional:: itimer
+  logical, optional:: detailed_timer
   integer i
   character(len=mch):: fmt
   integer:: verbose
   real(8):: wc
   !-----------------------------------------------------------------------------
   if (present(itimer)) then
-    call timer%end(itimer)
+    if (present(detailed_timer)) then
+      if (detailed_timer) then
+        call timer%end(itimer)
+      end if
+    else
+      call timer%end(itimer)
+    end if
   end if
   if (.not.io%do_trace) return
   level  = max(level-1,1)

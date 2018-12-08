@@ -17,12 +17,13 @@ module riemann_mod
 contains
 
 !> =============================================================================
-SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub)
+SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub,detailed_timer)
   ! HLLD Riemann solver (Miyoshi & Kusano, 2005, JCP, 208, 315)
   IMPLICIT NONE
   REAL(dp),DIMENSION(:,:), target ::qleft,qright
   REAL(dp),DIMENSION(:,:)         ::fgdnv
   INTEGER ::ivar,i,lb,ub
+  LOGICAL, OPTIONAL:: detailed_timer
   REAL(dp),DIMENSION(ub-lb+1)::SL,SR,SAL,SAR,A,sgnm
   REAL(dp)::entho
   REAL(dp),DIMENSION(:), pointer ::rl,pl,ul,vl,wl,cl,bl
@@ -38,7 +39,7 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub)
   REAL(dp),DIMENSION(ub-lb+1)::lim,emago
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('riemann_mod::hlld_vec', 2, itimer=itimer)
+  call trace%begin('riemann_mod::hlld_vec', 2, itimer=itimer, detailed_timer=detailed_timer)
   !
   if (isothermal) then
     entho = one
@@ -224,7 +225,7 @@ SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub)
      endwhere
   end do
   !
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 contains
 
 SUBROUTINE find_speed_fast_vec(qvar,vel_info,lb,ub)
@@ -251,9 +252,10 @@ END SUBROUTINE hlld_vec
 
 !> =============================================================================
 !> =============================================================================
-subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
+subroutine hlld (qleft,qright,fgdnv,ngrid,nvar,detailed_timer)
   integer::ngrid,nvar
   real(dp),dimension(:,:)::qleft,qright,fgdnv
+  LOGICAL, OPTIONAL:: detailed_timer
   REAL(dp)::SL,SR
   REAL(dp)::entho,lim
   REAL(dp)::rl,pl,ul,ecinl,etotl,ptotl,Bl,Cl,wstarl,vtotBl,emagl,SAL,sqrrstarl,vl,wl
@@ -273,7 +275,7 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
   logical:: flag
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin('riemann_mod::hlld', 2, itimer=itimer)
+  call trace%begin('riemann_mod::hlld', 2, itimer=itimer, detailed_timer=detailed_timer)
   !
   ! constants
   if (isothermal) then
@@ -482,7 +484,7 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar)
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
   end do
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 contains
 SUBROUTINE find_speed_fast(qvar,vel_info)
   !! calculate the fast magnetosonic velocity
@@ -506,10 +508,11 @@ end subroutine hlld
 !> =============================================================================
 !> HLLD 2D fluxes
 !> =============================================================================
-SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar,xdim)
+SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar,xdim,detailed_timer)
   INTEGER, INTENT(IN) :: j,k,ngrid,nvar,xdim
   REAL(dp),DIMENSION(:,:),INTENT(IN)::qLL,qRL,qLR,qRR
   REAL(dp),DIMENSION(:,:,:):: emf
+  LOGICAL, OPTIONAL:: detailed_timer
   ! local variables
   INTEGER:: l
   REAL(dp) :: E,ELL,ERL,ELR,ERR,S,SL,SR,SB,ST,SAL,SAR,SAT,SAB
@@ -529,7 +532,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar,xdim)
   !integer, save:: itimer(10)=0
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('riemann_mod::hlld_2d', 2, itimer=itimer)
+  call trace%begin ('riemann_mod::hlld_2d', 2, itimer=itimer, detailed_timer=detailed_timer)
   do l=2,ngrid
     !call trace%begin ('hlld_2d find_fast_speed', itimer=itimer(1))
     rLL=qLL(l,1); pLL=qLL(l,2); uLL=qLL(l,3); vLL=qLL(l,4); ALL=qLL(l,6); BLL=qLL(l,7) ; CLL=qLL(l,8)
@@ -907,7 +910,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar,xdim)
     endif
 
   end do
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 contains
 
 SUBROUTINE find_speed_fast(qvar,vel_info)
