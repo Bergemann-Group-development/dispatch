@@ -22,6 +22,7 @@ MODULE io_mod
     integer:: format=0
     integer:: restart=-1
     integer:: nwrite=0, ntask=0, ntotal=0
+    integer:: dims(3)=0, mpi_dims(3), mpi_odims(3)=1
     character(len=64):: inputname, outputname, datadir='data', top
     character(len=64):: rundir='data', inputdir='data'
     character(len=1):: sep = '/'

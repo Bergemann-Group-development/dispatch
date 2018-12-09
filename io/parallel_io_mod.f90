@@ -42,6 +42,7 @@ MODULE parallel_io_mod
   USE omp_mod
   USE omp_timer_mod
   USE mpi_mod
+  USE mpi_coords_mod
   USE mpi_io_mod
   USE mpi_file_mod
   USE trace_mod
@@ -680,9 +681,11 @@ SUBROUTINE input_single (patch, ok)
   logical:: ok
   !.............................................................................
   integer(8):: snapshot_words, buffer_words
-  integer:: iv, n(3), slot, nder, irec, ip, iout
+  integer:: iv, n(3), slot, nder, irec, ip, iout, rank, nrank
   logical, save:: read_failed=.false., first_time=.true.
   integer, save:: itimer=0
+  real, allocatable:: buffer(:,:,:)
+  logical:: single_patch
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%input_single', itimer=itimer)
   !-----------------------------------------------------------------------------
@@ -708,63 +711,94 @@ SUBROUTINE input_single (patch, ok)
     n = patch%n
   end if
   !-----------------------------------------------------------------------------
+  ! Catch reading from a snapshot with different mpi_size
+  !-----------------------------------------------------------------------------
+  single_patch = any(io%mpi_odims/=io%mpi_dims)
+  !-----------------------------------------------------------------------------
   ! Slots in the file are ordered (ip,rank,iv,iout), so all patches for one
   ! variable that belong to this rank may be read at once
   !-----------------------------------------------------------------------------
   nder = io%time_derivs+1
   snapshot_words = product(n)*io%ntotal*io%nv*nder
-  buffer_words = product(n)*io%ntask
+  if (single_patch) then
+    buffer_words = product(n)
+  else
+    buffer_words = product(n)*io%ntask
+  end if
   call mpi_io%use (file_in)
   call mpi_io%set (snapshot_words, buffer_words, 99)
   !-----------------------------------------------------------------------------
   ! Make sure only the first thread to come here allocates the buffer, if needed
   !-----------------------------------------------------------------------------
   patch%iout = io%restart
-  if (first_time) then
-    first_time = .false.
-    if (.not.associated(parallel_io%buffer)) then
-      nder = io%time_derivs+1
-      allocate (parallel_io%buffer(n(1),n(2),n(3),io%ntask,io%nv,nder))
-      write (io%output,*) 'shape io%buffer =', shape(parallel_io%buffer)
-    end if
-    !---------------------------------------------------------------------------
-    ! Read via buffer, in case guard zones not included. FIXME: read snapshot
-    ! guard zone parameter, to allow it to differ
-    !---------------------------------------------------------------------------
-    if (io%method == 'snapshot') then
-      iout = 0
-    else
-      iout = patch%iout
+  ip = patch%ip
+  if (single_patch) then
+    allocate (buffer(n(1),n(2),n(3)))
+    nrank = product(io%mpi_odims)
+    rank = mpi_coords%coords_to_rank (patch%ipos/(io%dims/io%mpi_odims))
+    if (verbose > 0) then
+      !$omp critical (write_mpi_cr)
+      write (io_unit%mpi,*) 'single_patch:', ip, patch%id, rank, io%dims/io%mpi_odims
+      !$omp end critical (write_mpi_cr)
     end if
     do iv=1,io%nv
-      irec = 1 + mpi%rank + mpi%size*(iv-1)
-      call mpi_io%read (parallel_io%buffer(:,:,:,:,iv,1), 1+iout, irec)
-      if (mpi_io%err /= 0) then
-        read_failed = .true.
-        write(io%output,*) 'io%input_single: read failed', io%restart
-        exit
+      irec = rank + nrank*(iv-1)
+      call mpi_io%read (buffer, 1+iout, 1+irec)
+      if (io%guard_zones) then
+        patch%mem(:,:,:,iv,patch%it,1) = buffer
+      else
+        patch%mem(patch%li(1):patch%ui(1), &
+                  patch%li(2):patch%ui(2), &
+                  patch%li(3):patch%ui(3),iv,patch%it,1) = buffer
       end if
     end do
-    if (read_failed) then
-      ok = .false.
-      call trace%end (itimer)
-      return
-    else if (io%master) then
-      write(io%output,*) 'io%input_single: read succeeded, snapshot', io%restart
-    end if
-  end if
-  ip = patch%ip
-  if (ip < 1 .or. ip > io%ntask) then
-    write (io_unit%output,*) 'WARNING', ip, io%ntask
-    flush (io_unit%output)
-    ip = max(1,min(ip,io%ntask))
-  end if
-  if (io%guard_zones) then
-    patch%mem(:,:,:,:,patch%it,1) = parallel_io%buffer(:,:,:,ip,:,1)
+    deallocate (buffer)
   else
-    patch%mem(patch%li(1):patch%ui(1), &
-              patch%li(2):patch%ui(2), &
-              patch%li(3):patch%ui(3),:,patch%it,1) = parallel_io%buffer(:,:,:,ip,:,1)
+    if (first_time) then
+      first_time = .false.
+      if (.not.associated(parallel_io%buffer)) then
+        nder = io%time_derivs+1
+        allocate (parallel_io%buffer(n(1),n(2),n(3),io%ntask,io%nv,nder))
+        write (io%output,*) 'shape io%buffer =', shape(parallel_io%buffer)
+      end if
+      !---------------------------------------------------------------------------
+      ! Read via buffer, in case guard zones not included. FIXME: read snapshot
+      ! guard zone parameter, to allow it to differ
+      !---------------------------------------------------------------------------
+      if (io%method == 'snapshot') then
+        iout = 0
+      else
+        iout = patch%iout
+      end if
+      do iv=1,io%nv
+        irec = 1 + mpi%rank + mpi%size*(iv-1)
+        call mpi_io%read (parallel_io%buffer(:,:,:,:,iv,1), 1+iout, irec)
+        if (mpi_io%err /= 0) then
+          read_failed = .true.
+          write(io%output,*) 'io%input_single: read failed', io%restart
+          exit
+        end if
+      end do
+      if (read_failed) then
+        ok = .false.
+        call trace%end (itimer)
+        return
+      else if (io%master) then
+        write(io%output,*) 'io%input_single: read succeeded, snapshot', io%restart
+      end if
+    end if
+    if (ip < 1 .or. ip > io%ntask) then
+      write (io_unit%output,*) 'WARNING', ip, io%ntask
+      flush (io_unit%output)
+      ip = max(1,min(ip,io%ntask))
+    end if
+    if (io%guard_zones) then
+      patch%mem(:,:,:,:,patch%it,1) = parallel_io%buffer(:,:,:,ip,:,1)
+    else
+      patch%mem(patch%li(1):patch%ui(1), &
+                patch%li(2):patch%ui(2), &
+                patch%li(3):patch%ui(3),:,patch%it,1) = parallel_io%buffer(:,:,:,ip,:,1)
+    end if
   end if
   if (io%verbose > 1) then
     do iv=1,io%nv

@@ -211,14 +211,14 @@ SUBROUTINE input (self, patch, ok)
     else if (io%method=='legacy') then
       call legacy_io%input (patch, ok)
     else if (io%method=='pan') then
-      call parallel_io%input (patch, ok)
       call input_nml (patch)
+      call parallel_io%input (patch, ok)
     else if (io%method=='parallel') then
-      call parallel_io%input (patch, ok)
       call input_nml (patch)
+      call parallel_io%input (patch, ok)
     else if (io%method=='snapshot') then
-      call parallel_io%input (patch, ok)
       call input_nml (patch)
+      call parallel_io%input (patch, ok)
     else
       call mpi%abort ('unknown io%method = '//io%method)
     end if
@@ -434,10 +434,17 @@ SUBROUTINE input_nml (patch)
   integer, save        :: time_derivs
   logical, save        :: guard_zones, no_mans_land, periodic(3)
   character(len=16)    :: kind, eos, opacity, method
+  integer              :: iostat
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
     no_mans_land
+  !-----------------------------------------------------------------------------
+  real(8), save        :: origin(3)
+  integer, save        :: dims(3), mpi_dims(3), per_rank(3)
+  logical, save        :: face_nbors, fast_nbors, omp_init
+  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
+    fast_nbors, omp_init
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   ! Read info from namelist
@@ -449,8 +456,10 @@ SUBROUTINE input_nml (patch)
     patch%iout = io%restart
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%inputdir), patch%iout
     open  (unit=io_unit%nml1, file=filename, form='formatted', status='old')
-    read  (io_unit%nml1, snapshot_nml)
+    read  (io_unit%nml1, snapshot_nml, iostat=iostat)
+    read  (io_unit%nml1, cartesian_params, iostat=iostat)
     close (io_unit%nml1)
+    io%mpi_odims = mpi_dims
   end if
   patch%t     = time
   patch%dt    = 0d0

@@ -51,6 +51,7 @@ MODULE mpi_coords_mod
   type, public, extends(mpi_t):: mpi_coords_t
     integer:: coords(3)
     integer:: dims(3)
+    integer:: odims(3)
     integer:: npatch(3)
     integer:: plane(3)
     integer:: beam(3)

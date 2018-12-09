@@ -66,13 +66,10 @@ SUBROUTINE init (self, label)
     where (per_rank/=0) dims=per_rank*mpi_dims
   end if
   per_rank = dims/mpi_dims
-  if (io%master) then
-    write (*, cartesian_params)
-    write (io_unit%nml, cartesian_params)
-    flush (io_unit%nml)
-  end if
   self%dims = dims
   self%size = size
+  io%dims     = dims
+  io%mpi_dims = mpi_dims
   !-----------------------------------------------------------------------------
   ! Generate a (periodic) MPI geometry, with dims specified in the input file,
   ! or assigned automatically by mpi_coords%init.
@@ -104,6 +101,7 @@ SUBROUTINE init (self, label)
   call self%task_list%init ('Cartesian')
   self%task_list%size = self%size
   self%task_list%dims = self%dims
+  io%dims = self%dims
   self%task_list%n_tasks = product(self%dims)
   self%task_list%face_nbors = face_nbors
   do dim=1,3
@@ -190,6 +188,11 @@ SUBROUTINE init (self, label)
     !$omp end parallel
   else
     call init_exp (self, origin)
+  end if
+  if (io%master) then
+    write (*, cartesian_params)
+    write (io_unit%nml, cartesian_params)
+    flush (io_unit%nml)
   end if
   !-----------------------------------------------------------------------------
   ! Use the links to generate nbor lists -- faster than using init_all_nbors
