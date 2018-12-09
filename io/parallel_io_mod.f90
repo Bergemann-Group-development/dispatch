@@ -208,10 +208,10 @@ SUBROUTINE output (patch, count)
   if (io%verbose>1) write(io%output,'(a,4i6,2i12)') &
     ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
     patch%iout, n, snapshot_words, buffer_words
-  allocate (mem(patch%gn(1),patch%gn(2),patch%gn(3),patch%nt))
   !-----------------------------------------------------------------------------
   ! Time interpolation to exaxt out_next
   !-----------------------------------------------------------------------------
+  allocate (mem(n(1),n(2),n(3),patch%nt))
   allocate (buffer(n(1),n(2),n(3),io%nv))
   do iv=1,io%nv
     call convert_variables ! copy `patch%mem` into `mem`, converting if desired
@@ -246,17 +246,29 @@ contains
   ! procedure, and as such only supports io%format in the range 6-9.
   !-----------------------------------------------------------------------------
   subroutine convert_variables
+    integer:: nt1, l(3), u(3)
     !...........................................................................
+    call trace%begin ('parallel_io-t%output::convert_variables')
+    if (io%guard_zones) then
+      l = patch%mesh%lb
+      u = patch%mesh%ub
+    else
+      l = patch%mesh%li
+      u = patch%mesh%ui
+    end if
+    nt1 = patch%nt-1
     if (io%format >= 8 .and. iv==patch%idx%d) then
       ! --- Convert density to log density ---
-      mem = log(patch%mem(:,:,:,iv,:,1))
+      mem = log(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1))
     else if ((io%format == 6 .or. io%format==8) .and. patch%solver_is('ramses') &
         .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
       ! --- Convert momentum to velocity ---
-      mem = patch%mem(:,:,:,iv,:,1)/patch%mem(:,:,:,patch%idx%d,:,1)
+      mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1) &
+          / patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%iit(1:nt1),1)
     else
-      mem = patch%mem(:,:,:,iv,:,1)
+      mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1)
     end if
+    call trace%end
   end subroutine
   !-----------------------------------------------------------------------------
   subroutine io_write (slot, ider)
@@ -512,7 +524,7 @@ contains
   subroutine convert_variables
     integer:: nt1, l(3), u(3)
     !...........................................................................
-    call trace%begin ('output_single::conver_variables')
+    call trace%begin ('parallel_io-t%output_single::convert_variables')
     if (io%guard_zones) then
       l = patch%mesh%lb
       u = patch%mesh%ub
