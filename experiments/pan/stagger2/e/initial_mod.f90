@@ -5,6 +5,7 @@
 MODULE initial_mod
   !USE const
   USE io_mod
+  USE mpi_mod
   USE trace_mod
   USE mesh_mod
   USE random_mod
@@ -401,9 +402,21 @@ SUBROUTINE turbulence (self, m, ff, idx)
   real, dimension(:,:,:,:):: ff
   real :: d, p
   !.............................................................................
+  real, save            :: b0(3)=[0.,0.,0.1]
   integer, save         :: itimer=0
+  logical, save         :: first_time=.true.
+  namelist /IC_turbulence_params/ b0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t%turbulence', itimer=itimer)
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, IC_turbulence_params)
+    write (io%output, IC_turbulence_params)
+  end if
+  !$omp end critical (input_cr)
+  self%mhd = .true.
   d = 1.0
   ff(:,:,:,idx%d        ) = d
   if (self%gamma==1.0) then
@@ -412,6 +425,9 @@ SUBROUTINE turbulence (self, m, ff, idx)
     ff(:,:,:,idx%e        ) = d*csound**2/(self%gamma-1.)
   end if
   ff(:,:,:,idx%px:idx%pz) = 0.0
+  ff(:,:,:,idx%bx       ) = b0(1)
+  ff(:,:,:,idx%by       ) = b0(2)
+  ff(:,:,:,idx%bz       ) = b0(3)
   call trace_end (itimer)
 END SUBROUTINE turbulence
 

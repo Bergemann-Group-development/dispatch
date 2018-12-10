@@ -48,10 +48,11 @@ MODULE mhd_mod
     procedure:: update
     procedure:: gas_pressure
   end type
-  real,save:: csound=1.
-  logical:: debug=.false.
-  logical:: first_time=.true.
-  logical:: detailed_timer=.false.
+  real, save:: csound=1.
+  logical, save:: debug=.false.
+  logical, save:: first_time=.true.
+  logical, save:: detailed_timer=.false.
+  logical, save:: unsigned=.true.
   character(len=16):: eqn='mhd'
 CONTAINS
 
@@ -61,7 +62,7 @@ SUBROUTINE init (self)
   character(len=10):: riemann='hllc'
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, isothermal, csound, detailed_timer, debug
+    smallc, isothermal, csound, detailed_timer, unsigned, debug
   type(index_t):: idx
 !...............................................................................
   call trace%begin('mhd_mod%init')
@@ -88,9 +89,12 @@ SUBROUTINE init (self)
   do i=1,3
     self%mesh(i)%h = 0d0
   end do
-!  self%unsigned(idx%d) = .true.
-!  self%unsigned(idx%e) = .true.
   call self%force%init (self%kind, self%id, self%mesh)
+  self%unsigned(self%idx%d) = unsigned
+  self%unsigned(self%idx%e) = unsigned
+  self%pervolume(self%idx%px) = unsigned
+  self%pervolume(self%idx%py) = unsigned
+  self%pervolume(self%idx%pz) = unsigned
   call trace%end
 END SUBROUTINE init
 

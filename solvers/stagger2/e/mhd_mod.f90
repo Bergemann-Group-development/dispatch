@@ -66,7 +66,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    do_smooth, verbose
+    mhd, do_smooth, verbose
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -93,7 +93,8 @@ SUBROUTINE init (self)
   ! called again, from gpatch_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
   self%initial%mhd = self%mhd
-  call self%idx%init (5, self%mhd)
+  print *,'mhd, nv =', self%mhd, self%nv
+  call self%idx%init (self%nv, self%mhd)
   call self%initial%init (self%kind, real(self%gamma))
   self%mhd = self%initial%mhd
   if (self%mhd) then

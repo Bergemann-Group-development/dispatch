@@ -65,10 +65,11 @@ SUBROUTINE init (self)
   integer:: i, iv
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
   real(8), save:: gamma=1.4_8
+  logical, save:: mhd=.false.
   logical, save:: first_time=.true.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    do_smooth, verbose, test_p, d_floor
+                            mhd, do_smooth, verbose, test_p, d_floor
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -84,6 +85,7 @@ SUBROUTINE init (self)
     if (timestep%time_order <= 0) call mpi%abort("The Stagger solvers require `time_order` > 0. Abort!")
   end if
   !$omp end critical (input_cr)
+  self%mhd = mhd
   self%eos = eos
   self%nu = nu
   self%gamma = gamma
