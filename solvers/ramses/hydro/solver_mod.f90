@@ -9,28 +9,21 @@ MODULE solver_mod
   USE trace_mod
   USE patch_mod
   USE kinds_mod
-  USE mhd_mod
+  USE hd_mod
   implicit none
   private
-  type, public, extends(mhd_t):: solver_t
+  type, public, extends(hd_t):: solver_t
   contains
     procedure:: p2U
     procedure:: U2p
     procedure:: e2E_th
     procedure:: E_th2e
-    procedure:: e2s
-    procedure:: s2e
-    procedure:: e2ss
-    procedure:: ss2e
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure_ngz
-    procedure:: cell_gas_pressure
     procedure:: gas_temperature
     procedure:: gas_temperature_ngz
-    procedure:: cell_gas_temperature
     procedure:: velocity_magnitude => void
-    procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
     procedure:: apply_heating
     procedure:: gas_velocity_vector
@@ -89,9 +82,8 @@ SUBROUTINE e2E_th(self, E_th, it)
   real:: g1
   !---------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            s => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  E_th = d**g1*exp(s*g1/d)/g1
+            e => self%mem(:,:,:,self%idx%e,it,1))
+  E_th = e/d
   end associate
 END SUBROUTINE e2E_th
 
@@ -106,79 +98,19 @@ SUBROUTINE E_th2e(self, E_th, it)
   real:: g1
   !---------------------------------------------------------------------
   associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            s => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  s = d*log(E_th*g1/d**g1)/g1
+            e => self%mem(:,:,:,self%idx%e,it,1))
+  e = d*E_th
   end associate
 END SUBROUTINE E_th2e
 
-!> =====================================================================
-!> Get entropy per unit volume from energy per unit volume
-!> =====================================================================
-SUBROUTINE e2s(self, s, it)
-  class(solver_t) :: self
-  integer:: it
-  !.....................................................................
-  real, dimension(:,:,:):: s
-  real:: g1
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  s = d*log(e*g1/d**self%gamma)/g1
-  end associate
-END SUBROUTINE e2s
-
-!> =====================================================================
-!> Get entropy per unit mass from energy per unit volume
-!> =====================================================================
-SUBROUTINE e2ss(self, ss, it)
-  class(solver_t) :: self
-  integer:: it
-  !.....................................................................
-  real, dimension(:,:,:):: ss
-  real:: g1
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  ss = log(e*g1/d**self%gamma)/g1
-  end associate
-END SUBROUTINE e2ss
-
-!> =====================================================================
-!> Get thermal energy per unit volume from entropy per unit volume
-!> =====================================================================
-SUBROUTINE s2e(self, s, it)
-  class(solver_t) :: self
-  integer:: it
-  !.....................................................................
-  real, dimension(:,:,:):: s
-  real:: g1
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  e = d**self%gamma*exp(s/d*g1)/g1
-  end associate
-END SUBROUTINE S2e
-
-!> =====================================================================
-!> Get thermal energy per unit volume from entropy per unit mass
-!> =====================================================================
-SUBROUTINE ss2e(self, ss, it)
-  class(solver_t) :: self
-  integer:: it
-  !.....................................................................
-  real, dimension(:,:,:):: ss
-  real:: g1
-  !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
-            e => self%mem(:,:,:,self%idx%s,it,1))
-  g1 = self%gamma-1.0
-  e = d**self%gamma*exp(ss/d*g1)/g1
-  end associate
-END SUBROUTINE ss2e
+!> =============================================================================
+FUNCTION up(f,i) RESULT (g)
+  real, dimension(:,:,:), intent(in):: f
+  real, dimension(size(f,1),size(f,2),size(f,3)):: g
+  integer:: i
+  !.............................................................................
+  g = 0.5*(cshift(f,1,i)+f)
+END FUNCTION
 
 !> =============================================================================
 FUNCTION gas_pressure_ngz (self) RESULT (pg)
@@ -187,31 +119,23 @@ FUNCTION gas_pressure_ngz (self) RESULT (pg)
   integer :: l(3), u(3)
   !-----------------------------------------------------------------------------
   l = self%li; u = self%ui
-  associate (d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3), 1,self%it,1), &
-             s => self%mem(l(1):u(1),l(2):u(2),l(3):u(3), 2,self%it,1))
+  associate (d  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d ,self%it,1), &
+             px => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%px,self%it,1), &
+             py => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%py,self%it,1), &
+             pz => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%pz,self%it,1), &
+             e  => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%e ,self%it,1))
   if (self%gamma==1.0) then
-    pg = d
+    pg = d(l(1):u(1),l(2):u(2),l(3):u(3))
   else
-    pg = d**self%gamma*exp(s/d*(self%gamma-1))
+    pg = (self%gamma-1.0) &
+       *(e(l(1):u(1),l(2):u(2),l(3):u(3)) -0.5*( &
+           (px(l(1):u(1),l(2):u(2),l(3):u(3))**2 + &
+            py(l(1):u(1),l(2):u(2),l(3):u(3))**2 + &
+            pz(l(1):u(1),l(2):u(2),l(3):u(3))**2) &
+             /d(l(1):u(1),l(2):u(2),l(3):u(3))))
   end if
   end associate
 END FUNCTION gas_pressure_ngz
-
-!> =============================================================================
-FUNCTION cell_gas_pressure(self, c) RESULT (pg)
-  class(solver_t) :: self
-  real :: pg
-  integer :: c(3)
-  !---------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3), 1,self%it,1), &
-             s => self%mem(c(1),c(2),c(3), 2,self%it,1))
-  if (self%gamma==1.0) then
-    pg = d
-  else
-    pg = d**self%gamma*exp(s/d*(self%gamma-1))
-  end if
-  end associate
-END FUNCTION cell_gas_pressure
 
 !> =============================================================================
 !> temperature from ideal gas law, taking into account that the temperature is
@@ -250,16 +174,6 @@ FUNCTION gas_temperature_ngz (self) RESULT (tmp)
   end associate
 END FUNCTION gas_temperature_ngz
 
-FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
-  class(solver_t):: self
-  real :: tmp
-  integer :: c(3)
-  !-----------------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3),  1,self%it,1))
-  tmp = cell_gas_pressure(self,c)/d
-  end associate
-END FUNCTION cell_gas_temperature
-
 !> =============================================================================
 SUBROUTINE log_density (self, v)
   class(solver_t):: self
@@ -288,21 +202,6 @@ SUBROUTINE velocity_magnitude (self, v)
   v = 0.0
   do i=1,3
     v(:,:,:) = v(:,:,:) + (p(:,:,:,i)/d)**2
-  end do
-  v = sqrt(v)
-END SUBROUTINE
-
-!> =============================================================================
-SUBROUTINE magnetic_field_magnitude (self, v)
-  class (solver_t):: self
-  real, dimension(:,:,:), pointer:: v
-  real, dimension(:,:,:,:), pointer:: b
-  integer:: i
-  !-----------------------------------------------------------------------------
-  b => self%mem(:,:,:,self%idx%bx:self%idx%bx,self%it,1)
-  v = 0.0
-  do i=1,3
-    v(:,:,:) = v(:,:,:) + b(:,:,:,i)**2
   end do
   v = sqrt(v)
 END SUBROUTINE

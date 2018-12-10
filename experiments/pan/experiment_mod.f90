@@ -1,6 +1,6 @@
 !> =============================================================================
 !> This module contains all experiment specific information.  The experiment_t
-!> object extends the generic MHD object mhd_t, which is again an extension of
+!> object extends the generic MHD object solver_t, which is again an extension of
 !> the basic patch_t object for tasks (object task_t) with meshes.
 !>
 !> The MHD object is chosen with the SOLVER macro in the Makefile in the curren
@@ -44,9 +44,6 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call self%solver_t%init
   self%d0 = self%initial%d0
-  if (self%kind(1:9) == 'stagger2_') then
-    call self%e2s (self%mem(:,:,:,self%idx%e,self%it,1), self%it)
-  end if
   call self%set (bits%static)
   if (self%initial%time > 0d0) then
     self%time = self%initial%time
@@ -60,9 +57,9 @@ END SUBROUTINE init
 
 !> =============================================================================
 !> The update procedure calls a (generic name) MHD update procedure, whose
-!> actual implementation is in $(TOP)/solvers/$(SOLVER)/mhd_mod.f90.  It then
+!> actual implementation is in $(TOP)/solvers/$(SOLVER)/solver_mod.f90.  It then
 !> calls a courant_condition procedure, which if not overloaded is the one in
-!> the patch_t object (but one can replace it at the mhd_t or experiment_t
+!> the patch_t object (but one can replace it at the solver_t or experiment_t
 !> level, by simply adding a courant_condition procedure there).
 !> =============================================================================
 SUBROUTINE update (self)
@@ -79,7 +76,7 @@ SUBROUTINE update (self)
     end if
     !$omp end critical (cleanup_cr)
   end if
-  call self%mhd_t%update
+  call self%solver_t%update
   call trace_end
 END SUBROUTINE update
 

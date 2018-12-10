@@ -14,7 +14,7 @@
 !> ctoprim (which calculates an up-to-date self%u_max), and before trace3d,
 !> which needs the new self%dtime
 !> =============================================================================
-MODULE mhd_mod
+MODULE hd_mod
   !.............................................................................
   USE const
   USE io_unit_mod
@@ -30,7 +30,7 @@ MODULE mhd_mod
   USE index_mod
   implicit none
   PRIVATE
-  type, public, extends(gpatch_t):: mhd_t
+  type, public, extends(gpatch_t):: hd_t
     logical:: mhd=.false.
     integer:: idim=3
     character(len=10):: riemann='hllc'
@@ -58,14 +58,14 @@ CONTAINS
 
 !> =============================================================================
 SUBROUTINE init (self)
-  class(mhd_t):: self
+  class(hd_t):: self
   character(len=10):: riemann='hllc'
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
     smallc, isothermal, csound, detailed_timer, unsigned, debug
   type(index_t):: idx
 !...............................................................................
-  call trace%begin('mhd_mod%init')
+  call trace%begin('hd_mod%init')
 
   self%mhd = .false.
   self%nw = 1
@@ -79,7 +79,7 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, ramses_params)
-    if (io_unit%master) write (*, ramses_params)
+    write (io_unit%output, ramses_params)
   end if
   !$omp end critical (input_cr)
   self%riemann = riemann
@@ -101,7 +101,7 @@ END SUBROUTINE init
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE update (self)
-  class(mhd_t):: self
+  class(hd_t):: self
   integer:: n(3), m, i, l(3), u(3)
   integer, save:: itimer=0
   real, dimension(:,:,:,:), pointer:: p
@@ -109,7 +109,7 @@ SUBROUTINE update (self)
   real, dimension(:,:,:), pointer:: tmp
   real:: error
   !----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%update', itimer=itimer)
+  call trace%begin ('hd_t%update', itimer=itimer)
 
   call self%gravity
   !-----------------------------------------------------------------------------
@@ -167,7 +167,7 @@ SUBROUTINE update (self)
   if (isothermal .or. gamma==1d0) &
     self%mem(:,:,:,self%idx%e,self%new,1) = &
     self%mem(:,:,:,self%idx%d,self%new,1)*csound**2
-  if (detailed_timer) call trace_begin ('mhd_t%update', itimer=itimer)
+  if (detailed_timer) call trace_begin ('hd_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
@@ -193,7 +193,7 @@ END SUBROUTINE update
 !> Get velocities from momentum
 !> =====================================================================
 SUBROUTINE p2U(self, U, it)
-  class(mhd_t) :: self
+  class(hd_t) :: self
   real, dimension(:,:,:,:), pointer:: U
   integer:: it
   !.....................................................................
@@ -211,7 +211,7 @@ END SUBROUTINE p2U
 !> Put velocities to momentum
 !> =====================================================================
 SUBROUTINE U2p(self, U, it)
-  class(mhd_t) :: self
+  class(hd_t) :: self
   real, dimension(:,:,:,:), pointer:: U
   integer:: it
   !.....................................................................
@@ -229,7 +229,7 @@ END SUBROUTINE U2p
 !> Get thermal energy from total/specific energy
 !> =====================================================================
 SUBROUTINE e2E_th(self, E_th, it)
-  class(mhd_t) :: self
+  class(hd_t) :: self
   real, dimension(:,:,:), pointer:: E_th
   integer:: it
   !.....................................................................
@@ -254,7 +254,7 @@ END SUBROUTINE e2E_th
 !> Get etropy per unit mass from total energy
 !> =====================================================================
 SUBROUTINE e2S(self, s, it)
-  class(mhd_t) :: self
+  class(hd_t) :: self
   real, dimension(:,:,:), pointer:: s
   integer:: it
   !.....................................................................
@@ -279,7 +279,7 @@ END SUBROUTINE e2S
 !> Put etropy per unit mass to total energy
 !> =====================================================================
 SUBROUTINE S2e (self, s, it)
-  class(mhd_t) :: self
+  class(hd_t) :: self
   real, dimension(:,:,:), pointer:: s
   integer:: it
   !.....................................................................
@@ -304,7 +304,7 @@ END SUBROUTINE S2e
 !> Put thermal energy to total/specific energy
 !> =====================================================================
 SUBROUTINE E_th2e(self, E_th, it)
-  class(mhd_t) :: self
+  class(hd_t) :: self
   integer:: it
   real, dimension(:,:,:), pointer:: E_th
   !.....................................................................
@@ -327,7 +327,7 @@ END SUBROUTINE E_th2e
 
 !> =============================================================================
 subroutine godunov (self)
-  class(mhd_t)::self
+  class(hd_t)::self
   !-----------------------------------------------------------------------------
   ! This routine accesses the conserved variables in self. It then calls
   ! the Godunov solver that computes fluxes. These fluxes are zeroed at
@@ -342,7 +342,7 @@ subroutine godunov (self)
   !-----------------------------------------------------------------------------
   ! Compute flux using second-order Godunov method
   !-----------------------------------------------------------------------------
-  if (.not.detailed_timer) call trace%begin ('mhd_t%godunov')
+  if (.not.detailed_timer) call trace%begin ('hd_t%godunov')
   li = self%mesh%li
   ui = self%mesh%ui
   call check_small (self, uin)
@@ -350,7 +350,7 @@ subroutine godunov (self)
   !-----------------------------------------------------------------------------
   ! Conservative update, looping over internal cells only
   !-----------------------------------------------------------------------------
-  if (detailed_timer) call trace%begin ('mhd_t%godunov', itimer=itimer)
+  if (detailed_timer) call trace%begin ('hd_t%godunov', itimer=itimer)
   unew = uin
   do ivar=1,self%nv
     do idim=1,self%ndim
@@ -380,14 +380,14 @@ end subroutine godunov
 !> =============================================================================
 !> =============================================================================
 subroutine check_small (self, uu)
-  class(mhd_t):: self
+  class(hd_t):: self
   real, dimension(:,:,:,:):: uu
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
   real(dp):: c,d,u,v,w,p,ekin
   integer, save:: nprint=10
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (detailed_timer) call trace%begin ('mhd_t%check_small', itimer=itimer)
+  if (detailed_timer) call trace%begin ('hd_t%check_small', itimer=itimer)
   n_smalld = 0
   n_smallp = 0
   lo = self%mesh%lb
@@ -433,10 +433,10 @@ end subroutine check_small
 !>              polytropic gas dynamics using MUSCL-HANCOCK
 !> =============================================================================
 subroutine unsplit(self)
-  class(mhd_t):: self
+  class(hd_t):: self
   real(dp):: dtds(3)
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%unsplit')
+  call trace%begin ('hd_t%unsplit')
   call ctoprim(self)                  ! Primitive variables, sound speeds
   call self%courant_condition (detailed_timer)
   call uslope(self)                   ! TVD slopes
@@ -450,16 +450,16 @@ end subroutine unsplit
 !> 1:d, 2:u, 3:v, 4:w, 5:p
 !> =============================================================================
 subroutine ctoprim (self)
-  class(mhd_t):: self
+  class(hd_t):: self
   real(dp):: smallp, dtxhalf
   integer,save:: itimer=0
   real, dimension(:,:,:), pointer:: d, e, pg
   associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
-    call trace%begin ('mhd_mod::ctoprim', itimer=itimer)
+    call trace%begin ('hd_mod::ctoprim', itimer=itimer)
   else
-    call trace%begin ('mhd_mod::ctoprim')
+    call trace%begin ('hd_mod::ctoprim')
   end if
   smallp = smallr*smallc**2/gamma
   q(:,:,:,1) = max(uin(:,:,:,self%idx%d),smallr)
@@ -502,7 +502,7 @@ end subroutine ctoprim
 !> Slope limiters
 !> =============================================================================
 subroutine uslope(self)
-  class(mhd_t):: self
+  class(hd_t):: self
   integer::ngrid
   integer::i, j, k, n, l(3), u(3), islope_type
   real(dp)::dsgn, dlim, dcen, dlft, drgt, slop, c1, c2
@@ -515,9 +515,9 @@ subroutine uslope(self)
   associate (q=>self%q, dq=>self%dq)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
-    call trace%begin ('mhd_mod::uslope', itimer=itimer)
+    call trace%begin ('hd_mod::uslope', itimer=itimer)
   else
-    call trace%begin ('mhd_mod::uslope')
+    call trace%begin ('hd_mod::uslope')
   end if
   !
   islope_type = int(slope_type)
@@ -763,7 +763,7 @@ end subroutine uslope
 !> Predictor step, using primitive variables
 !> =============================================================================
 subroutine trace3d(self)
-  class(mhd_t):: self
+  class(hd_t):: self
   integer ::i, j, k, lb(3), ub(3)
   integer ::ir=1, iu=2, iv=3, iw=4, ip=5
   real(dp)::dtdx, dtdy, dtdz
@@ -776,9 +776,9 @@ subroutine trace3d(self)
   associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
-    call trace%begin ('mhd_mod::trace3d', itimer=itimer)
+    call trace%begin ('hd_mod::trace3d', itimer=itimer)
   else
-    call trace%begin ('mhd_mod::trace3d')
+    call trace%begin ('hd_mod::trace3d')
   end if
   dtdx = self%dtime/self%mesh(1)%d
   dtdy = self%dtime/self%mesh(2)%d
@@ -884,7 +884,7 @@ end subroutine trace3d
 !> Compute fluxes
 !> =============================================================================
 subroutine cmpflxm(self)
-  class(mhd_t):: self
+  class(hd_t):: self
   ! local variables
   integer:: i, j, k, lb(3), ub(3)
   real(dp), dimension(self%mesh(1)%gn,self%nv):: qleft, qright, fgdnv
@@ -894,9 +894,9 @@ subroutine cmpflxm(self)
   associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
-    call trace%begin ('mhd_mod::cmpflxm', itimer=itimer)
+    call trace%begin ('hd_mod::cmpflxm', itimer=itimer)
   else
-    call trace%begin ('mhd_mod::cmpflxm')
+    call trace%begin ('hd_mod::cmpflxm')
   end if
   error = .false.
   dtds = self%dtime/self%mesh%d
@@ -914,7 +914,7 @@ subroutine cmpflxm(self)
       end do
       if (detailed_timer) call trace_end (itimer)
       call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv,error,detailed_timer)
-      if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
+      if (detailed_timer) call trace_begin ('hd_mod::cmpflxm', itimer=itimer)
       if (error) call error_handler('x', j, k, lb(1), ub(1))
       do i = lb(1),ub(1)
         fl(i,j,k,self%idx%d ,1) = fgdnv(i,1)*dtds(1)
@@ -940,7 +940,7 @@ subroutine cmpflxm(self)
         end do
         if (detailed_timer) call trace_end (itimer)
         call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv,error,detailed_timer)
-        if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
+        if (detailed_timer) call trace_begin ('hd_mod::cmpflxm', itimer=itimer)
         if (error) call error_handler('y', i, k, lb(2), ub(2))
         do j = lb(2),ub(2)
           fl(i,j,k,self%idx%d ,2) = fgdnv(j,1)*dtds(2)
@@ -962,7 +962,7 @@ subroutine cmpflxm(self)
         end do
         if (detailed_timer) call trace_end (itimer)
         call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv,error,detailed_timer)
-        if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
+        if (detailed_timer) call trace_begin ('hd_mod::cmpflxm', itimer=itimer)
         if (error) call error_handler('z', i, j, lb(3), ub(3))
         do k = lb(3),ub(3)
           fl(i,j,k,self%idx%d ,3) = fgdnv(k,1)*dtds(3)
@@ -1001,7 +1001,7 @@ contains
       if (detailed_timer) call trace_end (itimer)
       call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('y', i, k, lb(2), ub(2))
-      if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
+      if (detailed_timer) call trace_begin ('hd_mod::cmpflxm', itimer=itimer)
       fl(i,:,k,self%idx%d ,2) = fgdnv(:,1)*dtds(2)
       fl(i,:,k,self%idx%py,2) = fgdnv(:,2)*dtds(2)
       fl(i,:,k,self%idx%e ,2) = fgdnv(:,3)*dtds(2)
@@ -1032,7 +1032,7 @@ contains
       if (detailed_timer) call trace_end (itimer)
       call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('z', i, j, lb(3), ub(3))
-      if (detailed_timer) call trace_begin ('mhd_mod::cmpflxm', itimer=itimer)
+      if (detailed_timer) call trace_begin ('hd_mod::cmpflxm', itimer=itimer)
       fl(i,j,:,self%idx%d ,3) = fgdnv(:,1)*dtds(3)
       fl(i,j,:,self%idx%pz,3) = fgdnv(:,2)*dtds(3)
       fl(i,j,:,self%idx%e ,3) = fgdnv(:,3)*dtds(3)
@@ -1083,7 +1083,7 @@ end subroutine cmpflxm
 !> Selection of 1-D solvers
 !> =============================================================================
 subroutine solver (self,ngrid,qleft,qright,fgdnv,error,detailed_timer)
-  class(mhd_t):: self
+  class(hd_t):: self
   integer:: ngrid
   real(dp),dimension(:,:):: qleft,qright,fgdnv
   logical:: error, detailed_timer
@@ -1111,7 +1111,7 @@ end subroutine solver
 !> =============================================================================
 !> =============================================================================
 FUNCTION gas_pressure (self)
-  class(mhd_t):: self
+  class(hd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: gas_pressure
   gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(gamma-1.0)
 END FUNCTION gas_pressure
@@ -1119,7 +1119,7 @@ END FUNCTION gas_pressure
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE gravitational_force (self)
-  class(mhd_t):: self
+  class(hd_t):: self
   real, dimension(:,:,:), pointer:: phi, d, et, gradphi1, gradphi2, gradphi3
   real, dimension(:,:,:,:), pointer:: p
   integer:: i,j,k
