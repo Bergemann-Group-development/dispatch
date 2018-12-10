@@ -26,11 +26,11 @@ MODULE solver_mod
     procedure:: ss2e
     procedure:: log_density => void
     procedure:: log_pressure => void
-    procedure:: gas_pressure_ngz
-    procedure:: cell_gas_pressure
+    !procedure:: gas_pressure_ngz
+    !procedure:: cell_gas_pressure
     procedure:: gas_temperature
-    procedure:: gas_temperature_ngz
-    procedure:: cell_gas_temperature
+    !procedure:: gas_temperature_ngz
+    !procedure:: cell_gas_temperature
     procedure:: velocity_magnitude => void
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
@@ -183,39 +183,6 @@ SUBROUTINE ss2e(self, ss, it)
 END SUBROUTINE ss2e
 
 !> =============================================================================
-FUNCTION gas_pressure_ngz (self) RESULT (pg)
-  class(solver_t):: self
-  real, dimension(self%n(1),self%n(2),self%n(3)):: pg
-  integer :: l(3), u(3)
-  !-----------------------------------------------------------------------------
-  l = self%li; u = self%ui
-  associate (d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3), 1,self%it,1), &
-             s => self%mem(l(1):u(1),l(2):u(2),l(3):u(3), 2,self%it,1))
-  if (self%gamma==1.0) then
-    pg = d
-  else
-    pg = d**self%gamma*exp(s/d*(self%gamma-1))
-  end if
-  end associate
-END FUNCTION gas_pressure_ngz
-
-!> =============================================================================
-FUNCTION cell_gas_pressure(self, c) RESULT (pg)
-  class(solver_t) :: self
-  real :: pg
-  integer :: c(3)
-  !---------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3), 1,self%it,1), &
-             s => self%mem(c(1),c(2),c(3), 2,self%it,1))
-  if (self%gamma==1.0) then
-    pg = d
-  else
-    pg = d**self%gamma*exp(s/d*(self%gamma-1))
-  end if
-  end associate
-END FUNCTION cell_gas_pressure
-
-!> =============================================================================
 !> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
 !> =============================================================================
@@ -233,34 +200,6 @@ FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
   end if
   end associate
 END FUNCTION gas_temperature
-
-!> =============================================================================
-FUNCTION gas_temperature_ngz (self) RESULT (tmp)
-  class(solver_t):: self
-  real, dimension(self%n(1),self%n(2),self%n(3)):: tmp
-  integer :: l(3), u(3)
-  !---------------------------------------------------------------------
-  l = self%li; u = self%ui
-  associate (d => self%mem(l(1):u(1),l(2):u(2),l(3):u(3),  1,self%it,1))
-  tmp = self%gas_pressure_ngz()/d
-
-  if (io%verbose > 2) then
-    if (any(tmp<0)) then
-      error stop "solver_t%gas_temperature: T<0"
-    end if
-  end if
-  end associate
-END FUNCTION gas_temperature_ngz
-
-FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
-  class(solver_t):: self
-  real :: tmp
-  integer :: c(3)
-  !-----------------------------------------------------------------------------
-  associate (d => self%mem(c(1),c(2),c(3),  1,self%it,1))
-  tmp = cell_gas_pressure(self,c)/d
-  end associate
-END FUNCTION cell_gas_temperature
 
 !> =============================================================================
 SUBROUTINE log_density (self, v)
