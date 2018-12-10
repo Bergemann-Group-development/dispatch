@@ -49,9 +49,10 @@ MODULE mhd_mod
     procedure:: update
     procedure:: gas_pressure
   end type
-  logical:: first_time=.true.
-  logical:: detailed_timer=.false.
-  integer:: verbose=0
+  logical, save:: first_time=.true.
+  logical, save:: detailed_timer=.false.
+  logical, save:: unsigned=.true.
+  integer, save:: verbose=0
   character(len=16):: eqn='mhd'
   real(kind=8):: courant_number=0.2
   real:: csound=1.
@@ -61,9 +62,9 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hlld'
-  integer:: i
+  integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, isothermal, csound, verbose, detailed_timer
+    smallc, isothermal, csound, verbose, detailed_timer, unsigned
 !...............................................................................
   call trace%begin('mhd_mod%init')
 
@@ -88,7 +89,7 @@ SUBROUTINE init (self)
     ! The HLLD solver throws a divide fault if gamma==1, hence this workaround:
     !---------------------------------------------------------------------------
     if (isothermal) gamma=1.000001d0
-    if (io_unit%master) write (*, ramses_params)
+    if (mpi%master) write (*, ramses_params)
   end if
   !$omp end critical (pde)
   self%riemann = riemann
@@ -97,10 +98,15 @@ SUBROUTINE init (self)
   self%staggered = .false.
   do i=1,3
     self%mesh(i)%h = 0d0
+    self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
   call self%force%init (self%kind, self%id, self%mesh)
   call non_ideal%init  
-
+  self%unsigned(self%idx%d) = unsigned
+  self%unsigned(self%idx%e) = unsigned
+  self%pervolume(self%idx%px) = unsigned
+  self%pervolume(self%idx%py) = unsigned
+  self%pervolume(self%idx%pz) = unsigned
   call trace%end
 END SUBROUTINE init
 
@@ -391,7 +397,7 @@ subroutine check_small (self)
   integer, save:: itimer=0
   associate(uu=>self%uin)
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%check_small',itimer=itimer, detailed_timer=detailed_timer)
+  call trace%begin('mhd_t%check_small', itimer=itimer, detailed_timer=detailed_timer)
   n_smalld = 0
   n_smallp = 0
   lo = self%mesh%lb
@@ -451,7 +457,7 @@ subroutine ctoprim(self)
   integer:: i,j,k
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
-  call trace%begin('mhd_t%ctoprim',itimer=itimer, detailed_timer=detailed_timer)
+  call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
   if (isothermal) then
     entho = one
   else
@@ -1341,7 +1347,7 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   integer:: n
   associate (qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%cmpflxm',itimer=itimer, detailed_timer=detailed_timer)
+  call trace%begin ('mhd_t%cmpflxm', itimer=itimer, detailed_timer=detailed_timer)
   lb = self%mesh%lb+2
   ub = self%mesh%ub-1
   xdim = ln-1
@@ -1487,7 +1493,7 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
   real(dp):: smallp
   integer, save:: itimer=0
   !associate (qRT=>self%qRT,qLT=>self%qLT,qRB=>self%qRB,qLB=>self%qLB)
-  call trace%begin ('mhd_t%cmp_mag_flx',itimer=itimer, detailed_timer=detailed_timer)
+  call trace%begin ('mhd_t%cmp_mag_flx', itimer=itimer, detailed_timer=detailed_timer)
   !-----------------------------------------------------------------------------
 
   xdim = lor - 1
