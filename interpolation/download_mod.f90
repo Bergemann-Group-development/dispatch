@@ -734,7 +734,9 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
               end do
               if (check_filled) then
                 do ix=l(1),u(1)
-                  filled(ix,iy,iz,iv) = source%level
+                  ii = [ix,iy,iz]
+                  filled(ix,iy,iz,iv) = merge(filled(ix,iy,iz,iv),int(source%id,kind=int8),&
+                                              all((ii>=li).and.(ii<=ui)))
                 end do
               end if
             end do
