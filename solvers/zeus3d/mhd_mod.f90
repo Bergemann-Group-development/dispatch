@@ -309,7 +309,6 @@ SUBROUTINE init_zeus (self)
   self%nv = 10
   self%gamma = gamma
   gamma_z = gamma
-  self%ng = nghst
   self%courant = courant
 
   self%kind = 'zeus_mhd_patch'
