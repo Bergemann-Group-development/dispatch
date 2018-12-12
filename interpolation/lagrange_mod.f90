@@ -284,8 +284,8 @@ SUBROUTINE interval4 (self, x0, x, i0, i2, o, order)
   end do
   ! All points are equal to x(1)
   if (x(i1)==x(1)) then
-    i0 = n
-    i2 = n
+    i0 = 1
+    i2 = 1
     o = 0
     return
   ! Only the last point is not equal to x(1)
@@ -352,8 +352,8 @@ SUBROUTINE interval8 (self, x0, x, i0, i2, o, order)
   end do
   ! All points are equal to x(1)
   if (x(i1)==x(1)) then
-    i0 = n
-    i2 = n
+    i0 = 1
+    i2 = 1
     o = 0
     return
   ! Only the last point is not equal to x(1)

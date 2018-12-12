@@ -246,7 +246,7 @@ contains
   ! procedure, and as such only supports io%format in the range 6-9.
   !-----------------------------------------------------------------------------
   subroutine convert_variables
-    integer:: nt1, l(3), u(3)
+    integer:: nt1, l(3), u(3), i, j, k
     !...........................................................................
     call trace%begin ('parallel_io-t%output::convert_variables')
     if (io%guard_zones) then
@@ -259,12 +259,18 @@ contains
     nt1 = patch%nt-1
     if (io%format >= 8 .and. iv==patch%idx%d) then
       ! --- Convert density to log density ---
-      mem = log(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1))
+      do k=l(3),u(3); do j=l(2),u(2); do i=l(1),u(1)
+        mem(i-l(1)+1,j-l(2)+1,k-l(3)+1,1:nt1) &
+        = log(patch%mem(i,j,k,iv,patch%iit(1:nt1),1))
+      end do; end do; end do
     else if ((io%format == 6 .or. io%format==8) .and. patch%solver_is('ramses') &
         .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
       ! --- Convert momentum to velocity ---
-      mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1) &
-          / patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%iit(1:nt1),1)
+      do k=l(3),u(3); do j=l(2),u(2); do i=l(1),u(1)
+        mem(i-l(1)+1,j-l(2)+1,k-l(3)+1,1:nt1) &
+          = patch%mem(i,j,k,iv,patch%iit(1:nt1),1) &
+          / patch%mem(i,j,k,patch%idx%d,patch%iit(1:nt1),1)
+      end do; end do; end do
     else
       mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1)
     end if
@@ -522,7 +528,7 @@ contains
   ! procedure, and as such only supports io%format in the range 10-13.
   !-----------------------------------------------------------------------------
   subroutine convert_variables
-    integer:: nt1, l(3), u(3)
+    integer:: nt1, l(3), u(3), i, j, k
     !...........................................................................
     call trace%begin ('parallel_io-t%output_single::convert_variables')
     if (io%guard_zones) then
@@ -535,12 +541,18 @@ contains
     nt1 = patch%nt-1
     if (io%format >= 12 .and. iv==patch%idx%d) then
       ! --- Convert density to log density ---
-      mem = log(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1))
+      do k=l(3),u(3); do j=l(2),u(2); do i=l(1),u(1)
+        mem(i-l(1)+1,j-l(2)+1,k-l(3)+1,1:nt1) &
+        = log(patch%mem(i,j,k,iv,patch%iit(1:nt1),1))
+      end do; end do; end do
     else if ((io%format == 10 .or. io%format==12) .and. patch%solver_is('ramses') &
         .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
       ! --- Convert momentum to velocity ---
-      mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1) &
-          / patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%iit(1:nt1),1)
+      do k=l(3),u(3); do j=l(2),u(2); do i=l(1),u(1)
+        mem(i-l(1)+1,j-l(2)+1,k-l(3)+1,1:nt1) &
+          = patch%mem(i,j,k,iv,patch%iit(1:nt1),1) &
+          / patch%mem(i,j,k,patch%idx%d,patch%iit(1:nt1),1)
+      end do; end do; end do
     else
       mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1)
     end if
