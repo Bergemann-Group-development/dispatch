@@ -275,7 +275,7 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar,detailed_timer)
   logical:: flag
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin('riemann_t%hlld',  itimer=itimer, detailed_timer=detailed_timer)
+  !call trace%begin('riemann_t%hlld',  itimer=itimer, detailed_timer=detailed_timer)
   !
   ! constants
   if (isothermal) then
@@ -484,7 +484,7 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar,detailed_timer)
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
   end do
-  call trace%end (itimer, detailed_timer=detailed_timer)
+  !call trace%end (itimer, detailed_timer=detailed_timer)
 contains
 SUBROUTINE find_speed_fast(qvar,vel_info)
   !! calculate the fast magnetosonic velocity
@@ -532,7 +532,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
   !integer, save:: itimer(10)=0
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('riemann_t%hlld_2d', itimer=itimer, detailed_timer=detailed_timer)
+  !call trace%begin ('riemann_t%hlld_2d', itimer=itimer, detailed_timer=detailed_timer)
   do l=l0,l1
     !call trace%begin ('hlld_2d find_fast_speed', itimer=itimer(1))
     rLL=qLL(l,1); pLL=qLL(l,2); uLL=qLL(l,3); vLL=qLL(l,4); ALL=qLL(l,6); BLL=qLL(l,7) ; CLL=qLL(l,8)
@@ -910,7 +910,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     endif
 
   end do
-  call trace%end (itimer, detailed_timer=detailed_timer)
+  !call trace%end (itimer, detailed_timer=detailed_timer)
 contains
 
 SUBROUTINE find_speed_fast(qvar,vel_info)
@@ -922,7 +922,7 @@ SUBROUTINE find_speed_fast(qvar,vel_info)
   REAL(dp) :: d,P,u,v,w,A,B,C,B2,c2,d2,cf
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('riemann_t%find_speed_fast', itimer=itimer, detailed_timer=detailed_timer)
+  !call trace%begin ('riemann_t%find_speed_fast', itimer=itimer, detailed_timer=detailed_timer)
   !
   d=qvar(1); P=qvar(2); u=qvar(3); A=qvar(4)
   v=qvar(5); B=qvar(6); w=qvar(7); C=qvar(8)
@@ -934,7 +934,7 @@ SUBROUTINE find_speed_fast(qvar,vel_info)
   cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
   vel_info = cf
   !
-  call trace%end (itimer, detailed_timer=detailed_timer)
+  !call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE find_speed_fast
 
 END SUBROUTINE hlld_2d

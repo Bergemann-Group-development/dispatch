@@ -2,20 +2,15 @@
 !> =============================================================================
 !> RAMSES Godunov solvers
 !>
-!> The rulers below show where variables are valid after each step:
-!>
 !> godunov
 !>   unsplit              1   2   3      ui  uo  ub
-!>     ctoprim            +---+---+......+---+---+          d, ..., bz
-!>     uslope:dq              +---+......+---+              dq
-!>     trace3d:qp               +---+..+---+
-!>     trace3d:qm               +---+..+---+
+!>     ctoprim            +---+---+......+---+---+
+!>     uslope:dq              +---+......+---+
+!>     trace3d:qp             +---+......+---+
+!>     trace3d:qm                 +......+---+---+
 !>     cmpflxm                    +......+---+
-!>       hlld
-!>     ctoprim:bx       +---+---+-........-+---+            bx
-!>     uslop:dbf            +---+---+......+                dbf
-!>     cmp_mag_flx
-!>       hlld_2d
+!>       cmp_mag_flx
+!>         cmp_mag_flx_hlld
 !> =============================================================================
 MODULE mhd_mod
   !.............................................................................
@@ -187,20 +182,17 @@ SUBROUTINE update (self)
   !call check_small (self)
   call ctoprim(self)                                    ! Primitive variables
   !self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
-  !self%dq(:,:,1,:,:) = 0d0 ; self%dq2(:,:,1,:,:) = 0d0 ; self%dbf(:,:,1,:,:) = 0d0
-  !self%dq(:,1,:,:,:) = 0d0 ; self%dq2(:,1,:,:,:) = 0d0 ; self%dbf(:,1,:,:,:) = 0d0
-  !self%dq(1,:,:,:,:) = 0d0 ; self%dq2(1,:,:,:,:) = 0d0 ; self%dbf(1,:,:,:,:) = 0d0
   call uslope(self,self%bf,self%q,self%dq,self%dbf,slope_type)   ! TVD slopes
   if (verbose>0) print *, 'uslope', self%id, minval(self%dbf), maxval(self%dbf)
   !-----------------------------------------------------------------------------
   ! For slope types in the interval 3-4, use the conservative 3.0 for corners
   ! (cf. RAMSES/CPH)
   !-----------------------------------------------------------------------------
-  !if (slope_type <= 3.0) then
-    self%dq2 = self%dq
-  !else
-    !call uslope(self,self%bf,self%q,self%dq2,self%dbf,3.0)       ! TVD slopes
-  !endif
+  if (slope_type <= 3.0) then
+    self%dq2=self%dq
+  else
+    call uslope(self,self%bf,self%q,self%dq2,self%dbf,3.0)       ! TVD slopes
+  endif
 
   if (verbose>0) print *, 'uslope', self%id, minval(self%dq), maxval(self%dq)
   if (verbose>0) print *, 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
@@ -850,16 +842,6 @@ SUBROUTINE trace3d(self)
   rho_t(:,:,:) = q(:,:,:,ir)
   p_t(:,:,:)   = q(:,:,:,ip)
 
-  !do k=1,self%gn(3),self%gn(3)-1
-  !  qRT(:,:,k,:,:) = 0.0; qRB(:,:,k,:,:) = 0.0; qLT(:,:,k,:,:) = 0.0; qLB(:,:,k,:,:) = 0.0
-  !end do
-  !do j=1,self%gn(2),self%gn(2)-1
-  !  qRT(:,j,:,:,:) = 0.0; qRB(:,j,:,:,:) = 0.0; qLT(:,j,:,:,:) = 0.0; qLB(:,j,:,:,:) = 0.0
-  !end do
-  !do i=1,self%gn(1),self%gn(1)-1
-  !  qRT(i,:,:,:,:) = 0.0; qRB(i,:,:,:,:) = 0.0; qLT(i,:,:,:,:) = 0.0; qLB(i,:,:,:,:) = 0.0
-  !end do
-
   !
   !call trace%end (itimer(1))
   !call trace%begin ('mhd_t%trace3d(2)', itimer=itimer(2))
@@ -1314,8 +1296,6 @@ contains
   FUNCTION xdn(a) RESULT (b)
     real, dimension(:,:,:):: a
     real, dimension(size(a,1),size(a,2),size(a,3)):: b
-    integer, save:: itimer=0
-    call trace%begin ('mhd_t%xdn',itimer=itimer,detailed_timer=detailed_timer)
     do k=1,size(a,3)
     do j=1,size(a,2)
     do i=2,size(a,1)
@@ -1324,13 +1304,10 @@ contains
     end do
     end do
     b(1,:,:) = a(1,:,:)
-    call trace%end (itimer,detailed_timer=detailed_timer)
   END FUNCTION
   FUNCTION ydn(a) RESULT (b)
     real, dimension(:,:,:):: a
     real, dimension(size(a,1),size(a,2),size(a,3)):: b
-    integer, save:: itimer=0
-    call trace%begin ('mhd_t%ydn',itimer=itimer,detailed_timer=detailed_timer)
     do k=1,size(a,3)
     do j=2,size(a,2)
     do i=1,size(a,1)
@@ -1339,13 +1316,10 @@ contains
     end do
     end do
     b(:,1,:) = a(:,1,:)
-    call trace%end (itimer,detailed_timer=detailed_timer)
   END FUNCTION
   FUNCTION zdn(a) RESULT (b)
     real, dimension(:,:,:):: a
     real, dimension(size(a,1),size(a,2),size(a,3)):: b
-    integer, save:: itimer=0
-    call trace%begin ('mhd_t%zdn',itimer=itimer,detailed_timer=detailed_timer)
     do k=2,size(a,3)
     do j=1,size(a,2)
     do i=1,size(a,1)
@@ -1354,7 +1328,6 @@ contains
     end do
     end do
     b(:,:,1) = a(:,:,1)
-    call trace%end (itimer,detailed_timer=detailed_timer)
   END FUNCTION
 END SUBROUTINE trace3d
 
@@ -1522,21 +1495,20 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
   !associate (qRT=>self%qRT,qLT=>self%qLT,qRB=>self%qRB,qLB=>self%qLB)
   call trace%begin ('mhd_t%cmp_mag_flx', itimer=itimer, detailed_timer=detailed_timer)
   !-----------------------------------------------------------------------------
-
   xdim = lor - 1
 !  if (xdim == 3 .or. xdim == 1) then
 !    associate (qRT=>self%qRT,qLT=>self%qLT,qRB=>self%qRB,qLB=>self%qLB)
 !  else if (xdim == 2) then
 !    associate (qRT=>self%qRT,qLT=>self%qRB,qRB=>self%qLT,qLB=>self%qLB) 
 !  endif 
-
+  !
   smallp = smallr*smallc**2
   !
   qLL = 0d0
   qRL = 0d0
   qLR = 0d0
   qRR = 0d0
-
+  !
   if (xdim == 3) then
     iRT = 1; jRT = 1; kRT = 0
     iRB = 1; jRB = 0; kRB = 0
@@ -1553,7 +1525,7 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
     iLT = 0; jLT = 0; kLT = 1
     iLB = 0; jLB = 0; kLB = 0
   endif 
-
+  !
   if (xdim == 1) then
     do k = self%mesh(3)%li,self%mesh(3)%ui
       do j = self%mesh(2)%li,self%mesh(2)%ui
@@ -1699,7 +1671,7 @@ subroutine solver (self,qleft,qright,fgdnv,ub,nvar)
   integer :: lb, ub, nvar
   !.............................................................................
   if (self%riemann.eq.'hlld')then
-    call rieman%hlld(qleft,qright,fgdnv,ub,nvar,detailed_timer=detailed_timer)
+    call rieman%hlld(qleft,qright,fgdnv,ub,nvar)
   else
     write(*,*)'unknown Riemann solver'
     stop
