@@ -35,7 +35,7 @@ SUBROUTINE conditions (self, patch, cit)
   integer, intent(in):: cit
   real(8) :: r
   real(8) :: sigma0, p0, vkep, rmin, rmax, tau_in, tau_out, rbnd, rkill, tau, &
-             dt, skep
+             dt, vphi, sphi
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: q
   !-----------------------------------------------------------------------------
   call trace_begin('boundary_t%conditions')
@@ -64,7 +64,8 @@ SUBROUTINE conditions (self, patch, cit)
         do i2=m2%li,m2%ui
           r = m2%centre_nat + patch%mesh(2)%r(i2)
           vkep = sqrt(experiment_params%mstar * scaling%grav / r)
-          skep = sigma0 * vkep * m1%h31c(i1) * m2%h32c(i2)
+          vphi = vkep * sqrt(1.0 - experiment_params%aspect_rat**2)
+          sphi = sigma0 * vphi * m1%h31c(i1) * m2%h32c(i2)
           p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0 / (patch%gamma - 1.0)
           if ( r <= experiment_params%kill_rmin ) then
             rkill = experiment_params%kill_rmin
@@ -86,42 +87,45 @@ SUBROUTINE conditions (self, patch, cit)
           q(i1,i2,i3,patch%idx%py) = q(i1,i2,i3,patch%idx%py) &
                                  + dt * wave_killing(q(i1,i2,i3,patch%idx%py), 0.0d0, tau, rkill, rbnd, r) 
           q(i1,i2,i3,patch%idx%pz) = q(i1,i2,i3,patch%idx%pz) &
-                                 + dt * wave_killing(q(i1,i2,i3,patch%idx%pz), skep, tau, rkill, rbnd, r)
+                                 + dt * wave_killing(q(i1,i2,i3,patch%idx%pz), sphi, tau, rkill, rbnd, r)
         end do
         if (m2%llc_nat <= experiment_params%roffset ) then
           ! reset ghost zones to initial values, except for s2, which is anti-symmetric.
           do i2=m2%lb,m2%lo
             r = m2%centre_nat + patch%mesh(2)%r(i2)
             vkep = sqrt(experiment_params%mstar * scaling%grav / r)
-            skep = sigma0 * vkep * m1%h31c(i1) * m2%h32c(i2)
+            vphi = vkep * sqrt(1.0 - experiment_params%aspect_rat**2)
+            sphi = sigma0 * vphi * m1%h31c(i1) * m2%h32c(i2)
             p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0 / (patch%gamma - 1.0)
             q(i1,i2,i3,patch%idx%d)  = sigma0
             q(i1,i2,i3,patch%idx%e)  = p0
             q(i1,i2,i3,patch%idx%px) = 0.0d0
             jay2 = 2*m2%lo + 1 - i2
             q(i1,i2,i3,patch%idx%py) = -q(i1,jay2,i3,patch%idx%py)
-            q(i1,i2,i3,patch%idx%pz) = skep
+            q(i1,i2,i3,patch%idx%pz) = sphi
           end do
         end if
-        if ((m2%llc_nat + m2%s) >= (experiment_params%roffset + patch%box(2))) then
+        if ((m2%llc_nat + m2%s + m2%d) >= (experiment_params%roffset + patch%box(2))) then
           do i2=m2%uo,m2%ub
             r = m2%centre_nat + patch%mesh(2)%r(i2)
             vkep = sqrt(experiment_params%mstar * scaling%grav / r)
-            skep = sigma0 * vkep * m1%h31c(i1) * m2%h32c(i2)
+            vphi = vkep * sqrt(1.0 - experiment_params%aspect_rat**2)
+            sphi = sigma0 * vphi * m1%h31c(i1) * m2%h32c(i2)
             p0 = (experiment_params%aspect_rat * vkep)**2 * sigma0 / (patch%gamma - 1.0)
             q(i1,i2,i3,patch%idx%d)  = sigma0
             q(i1,i2,i3,patch%idx%e)  = p0
             q(i1,i2,i3,patch%idx%px) = 0.0d0
             jay2 = 2*m2%uo - 1 - i2
             q(i1,i2,i3,patch%idx%py) = -q(i1,jay2,i3,patch%idx%py)
-            q(i1,i2,i3,patch%idx%pz) = skep
+            q(i1,i2,i3,patch%idx%pz) = sphi
           end do
         end if
       end do
     end do
   end if
 
-  ! periodic in phi (is this necessary? yes!)
+  ! periodic in phi (is this necessary? yes! if you have only one patch in the
+  ! phi-direction!)
   if (patch%n(3) > 1 .and. patch%size(3) >= patch%box(3)) then
     ! inner phi boundary
     do i3=m3%lb,m3%lo

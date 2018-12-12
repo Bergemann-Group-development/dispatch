@@ -100,7 +100,7 @@ SUBROUTINE initial_conditions (patch)
         end if
         q(i1,i2,i3,idx%px) = 0.0
         q(i1,i2,i3,idx%py) = 0.0
-        q(i1,i2,i3,idx%pz) = vkep(i2) * sigma0
+        q(i1,i2,i3,idx%pz) = vkep(i2) * sqrt(1.0 - experiment_params%aspect_rat**2) * sigma0
         if (size(patch%mem,4) > idx%bx) then
           q(i1,i2,i3,idx%bx) = 0.0
           q(i1,i2,i3,idx%by) = 0.0
@@ -108,7 +108,8 @@ SUBROUTINE initial_conditions (patch)
         end if
         ! initialise total energy
         if (patch%kind(1:14) == 'zeus_mhd_patch' .or. patch%kind(1:6) == 'ramses') then
-          q(i1,i2,i3,idx%et) = eint + 0.5 * 0.25 * (vkep(i2)+vkep(i2+1))**2 * sigma0
+          q(i1,i2,i3,idx%et) = eint + 0.5 * 0.25 * sigma0 &
+                                    * (q(i1,i2,i3,idx%pz)+q(i1,i2+1,i3,idx%px))**2
         end if
         ! the ZEUS module stores the angular momentum rather than the linear momentum
         if (patch%kind(1:14) == 'zeus_mhd_patch') then
