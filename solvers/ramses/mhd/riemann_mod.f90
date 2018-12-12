@@ -508,8 +508,8 @@ end subroutine hlld
 !> =============================================================================
 !> HLLD 2D fluxes
 !> =============================================================================
-SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar,xdim,detailed_timer)
-  INTEGER, INTENT(IN) :: j,k,ngrid,nvar,xdim
+SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
+  INTEGER, INTENT(IN) :: j,k,l0,l1,nvar,xdim
   REAL(dp),DIMENSION(:,:),INTENT(IN)::qLL,qRL,qLR,qRR
   REAL(dp),DIMENSION(:,:,:):: emf
   LOGICAL, OPTIONAL:: detailed_timer
@@ -533,7 +533,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar,xdim,detailed_timer)
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('riemann_t%hlld_2d', itimer=itimer, detailed_timer=detailed_timer)
-  do l=2,ngrid
+  do l=l0,l1
     !call trace%begin ('hlld_2d find_fast_speed', itimer=itimer(1))
     rLL=qLL(l,1); pLL=qLL(l,2); uLL=qLL(l,3); vLL=qLL(l,4); ALL=qLL(l,6); BLL=qLL(l,7) ; CLL=qLL(l,8)
     rLR=qLR(l,1); pLR=qLR(l,2); uLR=qLR(l,3); vLR=qLR(l,4); ALR=qLR(l,6); BLR=qLR(l,7) ; CLR=qLR(l,8)
