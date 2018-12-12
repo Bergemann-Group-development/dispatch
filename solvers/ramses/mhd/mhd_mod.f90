@@ -148,21 +148,21 @@ SUBROUTINE update (self)
   self%unew => self%mem(:,:,:,:,self%new,1)
 
   n = self%mesh%gn
-  allocate (self%c  (n(1),n(2),n(3)))                           ; self%c   = 0_dp
-  allocate (self%Ex (n(1),n(2),n(3)))                           ; self%Ex  = 0_dp
-  allocate (self%Ey (n(1),n(2),n(3)))                           ; self%Ey  = 0_dp
-  allocate (self%Ez (n(1),n(2),n(3)))                           ; self%Ez  = 0_dp
-  allocate (self%q  (n(1),n(2),n(3),self%nv))                   ; self%q   = 0_dp
-  allocate (self%qp (n(1),n(2),n(3),self%nv,ndim))              ; self%qp  = 0_dp
-  allocate (self%qm (n(1),n(2),n(3),self%nv,ndim))              ; self%qm  = 0_dp
-  allocate (self%dq (n(1),n(2),n(3),self%nv,ndim))              ; self%dq  = 0_dp
-  allocate (self%dq2(n(1),n(2),n(3),self%nv,ndim))              ; self%dq2 = 0_dp
-  allocate (self%bf (n(1),n(2),n(3),3))                         ; self%bf  = 0_dp
-  allocate (self%dbf(n(1),n(2),n(3),3,2))                       ; self%dbf = 0_dp
-  allocate (self%qLB(n(1),n(2),n(3),self%nv,ndim))              ; self%qLB = 0_dp
-  allocate (self%qLT(n(1),n(2),n(3),self%nv,ndim))              ; self%qLT = 0_dp
-  allocate (self%qRB(n(1),n(2),n(3),self%nv,ndim))              ; self%qRB = 0_dp
-  allocate (self%qRT(n(1),n(2),n(3),self%nv,ndim))              ; self%qRT = 0_dp
+  allocate (self%c  (n(1),n(2),n(3)))                           ! self%c   = 0_dp
+  allocate (self%Ex (n(1),n(2),n(3)))                           ! self%Ex  = 0_dp
+  allocate (self%Ey (n(1),n(2),n(3)))                           ! self%Ey  = 0_dp
+  allocate (self%Ez (n(1),n(2),n(3)))                           ! self%Ez  = 0_dp
+  allocate (self%q  (n(1),n(2),n(3),self%nv))                   ! self%q   = 0_dp
+  allocate (self%qp (n(1),n(2),n(3),self%nv,ndim))              ! self%qp  = 0_dp
+  allocate (self%qm (n(1),n(2),n(3),self%nv,ndim))              ! self%qm  = 0_dp
+  allocate (self%dq (n(1),n(2),n(3),self%nv,ndim))              ! self%dq  = 0_dp
+  allocate (self%dq2(n(1),n(2),n(3),self%nv,ndim))              ! self%dq2 = 0_dp
+  allocate (self%bf (n(1),n(2),n(3),3))                         ! self%bf  = 0_dp
+  allocate (self%dbf(n(1),n(2),n(3),3,2))                       ! self%dbf = 0_dp
+  allocate (self%qLB(n(1),n(2),n(3),self%nv,ndim))              ! self%qLB = 0_dp
+  allocate (self%qLT(n(1),n(2),n(3),self%nv,ndim))              ! self%qLT = 0_dp
+  allocate (self%qRB(n(1),n(2),n(3),self%nv,ndim))              ! self%qRB = 0_dp
+  allocate (self%qRT(n(1),n(2),n(3),self%nv,ndim))              ! self%qRT = 0_dp
   d => self%mem(:,:,:,          self%idx%d ,self%it,1)
   e => self%mem(:,:,:,          self%idx%e ,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
@@ -181,18 +181,21 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   !call check_small (self)
   call ctoprim(self)                                    ! Primitive variables
-  self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
+  !self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
+  !self%dq(:,:,1,:,:) = 0d0 ; self%dq2(:,:,1,:,:) = 0d0 ; self%dbf(:,:,1,:,:) = 0d0
+  !self%dq(:,1,:,:,:) = 0d0 ; self%dq2(:,1,:,:,:) = 0d0 ; self%dbf(:,1,:,:,:) = 0d0
+  !self%dq(1,:,:,:,:) = 0d0 ; self%dq2(1,:,:,:,:) = 0d0 ; self%dbf(1,:,:,:,:) = 0d0
   call uslope(self,self%bf,self%q,self%dq,self%dbf,slope_type)   ! TVD slopes
   if (verbose>0) print *, 'uslope', self%id, minval(self%dbf), maxval(self%dbf)
   !-----------------------------------------------------------------------------
   ! For slope types in the interval 3-4, use the conservative 3.0 for corners
   ! (cf. RAMSES/CPH)
   !-----------------------------------------------------------------------------
-  if (slope_type <= 3.0) then
-    self%dq2=self%dq
-  else
-    call uslope(self,self%bf,self%q,self%dq2,self%dbf,3.0)       ! TVD slopes
-  endif
+  !if (slope_type <= 3.0) then
+    self%dq2 = self%dq
+  !else
+    !call uslope(self,self%bf,self%q,self%dq2,self%dbf,3.0)       ! TVD slopes
+  !endif
 
   if (verbose>0) print *, 'uslope', self%id, minval(self%dq), maxval(self%dq)
   if (verbose>0) print *, 'uslope', self%id, minval(self%dq2), maxval(self%dq2)
@@ -842,6 +845,16 @@ SUBROUTINE trace3d(self)
   rho_t(:,:,:) = q(:,:,:,ir)
   p_t(:,:,:)   = q(:,:,:,ip)
 
+  !do k=1,self%gn(3),self%gn(3)-1
+  !  qRT(:,:,k,:,:) = 0.0; qRB(:,:,k,:,:) = 0.0; qLT(:,:,k,:,:) = 0.0; qLB(:,:,k,:,:) = 0.0
+  !end do
+  !do j=1,self%gn(2),self%gn(2)-1
+  !  qRT(:,j,:,:,:) = 0.0; qRB(:,j,:,:,:) = 0.0; qLT(:,j,:,:,:) = 0.0; qLB(:,j,:,:,:) = 0.0
+  !end do
+  !do i=1,self%gn(1),self%gn(1)-1
+  !  qRT(i,:,:,:,:) = 0.0; qRB(i,:,:,:,:) = 0.0; qLT(i,:,:,:,:) = 0.0; qLB(i,:,:,:,:) = 0.0
+  !end do
+
   !
   !call trace%end (itimer(1))
   !call trace%begin ('mhd_t%trace3d(2)', itimer=itimer(2))
@@ -1296,6 +1309,8 @@ contains
   FUNCTION xdn(a) RESULT (b)
     real, dimension(:,:,:):: a
     real, dimension(size(a,1),size(a,2),size(a,3)):: b
+    integer, save:: itimer=0
+    call trace%begin ('mhd_t%xdn',itimer=itimer,detailed_timer=detailed_timer)
     do k=1,size(a,3)
     do j=1,size(a,2)
     do i=2,size(a,1)
@@ -1304,10 +1319,13 @@ contains
     end do
     end do
     b(1,:,:) = a(1,:,:)
+    call trace%end (itimer,detailed_timer=detailed_timer)
   END FUNCTION
   FUNCTION ydn(a) RESULT (b)
     real, dimension(:,:,:):: a
     real, dimension(size(a,1),size(a,2),size(a,3)):: b
+    integer, save:: itimer=0
+    call trace%begin ('mhd_t%ydn',itimer=itimer,detailed_timer=detailed_timer)
     do k=1,size(a,3)
     do j=2,size(a,2)
     do i=1,size(a,1)
@@ -1316,10 +1334,13 @@ contains
     end do
     end do
     b(:,1,:) = a(:,1,:)
+    call trace%end (itimer,detailed_timer=detailed_timer)
   END FUNCTION
   FUNCTION zdn(a) RESULT (b)
     real, dimension(:,:,:):: a
     real, dimension(size(a,1),size(a,2),size(a,3)):: b
+    integer, save:: itimer=0
+    call trace%begin ('mhd_t%zdn',itimer=itimer,detailed_timer=detailed_timer)
     do k=2,size(a,3)
     do j=1,size(a,2)
     do i=1,size(a,1)
@@ -1328,6 +1349,7 @@ contains
     end do
     end do
     b(:,:,1) = a(:,:,1)
+    call trace%end (itimer,detailed_timer=detailed_timer)
   END FUNCTION
 END SUBROUTINE trace3d
 
@@ -1528,8 +1550,8 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
   endif 
 
   if (xdim == 1) then
-    do k = 2,self%mesh(3)%uo
-      do j = 2,self%mesh(2)%uo
+    do k = self%mesh(3)%lo,self%mesh(3)%uo
+      do j = self%mesh(2)%lo,self%mesh(2)%uo
         qLL (2:ngrid,1) = max(qRT(2-iRT:ngrid-iRT, j-jRT, k-kRT, 1, xdim), smallr)
         qRL (2:ngrid,1) = max(qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, 1, xdim), smallr)
         qLR (2:ngrid,1) = max(qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, 1, xdim), smallr)
@@ -1562,13 +1584,13 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
         qRL (2:ngrid,8) = qLT(2-iLT:ngrid-iLT, j-jLT, k-kLT, bor, xdim)
         qLR (2:ngrid,8) = qRB(2-iRB:ngrid-iRB, j-jRB, k-kRB, bor, xdim)
         qRR (2:ngrid,8) = qLB(2-iLB:ngrid-iLB, j-jLB, k-kLB, bor, xdim)
-        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar,xdim)
+        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,ngrid,nvar,xdim,detailed_timer=detailed_timer)
       end do
     end do
   
   else if (xdim == 2) then
-    do i = 2,self%mesh(1)%uo
-      do k = 2,self%mesh(3)%uo
+    do i = self%mesh(1)%lo,self%mesh(1)%uo
+      do k = self%mesh(3)%lo,self%mesh(3)%uo
         qLL (2:ngrid,1) = max(qRT(i-iRT, 2-jRT:ngrid-jRT, k-kRT, 1, xdim), smallr)
         qRL (2:ngrid,1) = max(qLT(i-iLT, 2-jLT:ngrid-jLT, k-kLT, 1, xdim), smallr)
         qLR (2:ngrid,1) = max(qRB(i-iRB, 2-jRB:ngrid-jRB, k-kRB, 1, xdim), smallr)
@@ -1601,12 +1623,12 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
         qRL (2:ngrid,8) = qLT(i-iLT, 2-jLT:ngrid-jLT, k-kLT, bor, xdim)
         qLR (2:ngrid,8) = qRB(i-iRB, 2-jRB:ngrid-jRB, k-kRB, bor, xdim)
         qRR (2:ngrid,8) = qLB(i-iLB, 2-jLB:ngrid-jLB, k-kLB, bor, xdim)
-        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,k,i,ngrid,nvar,xdim)
+        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,k,i,ngrid,nvar,xdim,detailed_timer=detailed_timer)
       end do
     end do
   else if (xdim == 3) then    
-    do j = 2,self%mesh(2)%uo
-      do i = 2,self%mesh(1)%uo
+    do j = self%mesh(2)%lo,self%mesh(2)%uo
+      do i = self%mesh(1)%lo,self%mesh(1)%uo
         qLL (2:ngrid,1) = max(qRT(i-iRT, j-jRT, 2-kRT:ngrid-kRT, 1, xdim), smallr)
         qRL (2:ngrid,1) = max(qLT(i-iLT, j-jLT, 2-kLT:ngrid-kLT, 1, xdim), smallr)
         qLR (2:ngrid,1) = max(qRB(i-iRB, j-jRB, 2-kRB:ngrid-kRB, 1, xdim), smallr)
@@ -1639,7 +1661,7 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
         qRL (2:ngrid,8) = qLT(i-iLT, j-jLT, 2-kLT:ngrid-kLT, bor, xdim)
         qLR (2:ngrid,8) = qRB(i-iRB, j-jRB, 2-kRB:ngrid-kRB, bor, xdim)
         qRR (2:ngrid,8) = qLB(i-iLB, j-jLB, 2-kLB:ngrid-kLB, bor, xdim)
-        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,i,j,ngrid,nvar,xdim)
+        call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,i,j,ngrid,nvar,xdim,detailed_timer=detailed_timer)
       end do
     end do
   endif
@@ -1657,7 +1679,7 @@ subroutine solver (self,qleft,qright,fgdnv,ub,nvar)
   integer :: lb, ub, nvar
   !.............................................................................
   if (self%riemann.eq.'hlld')then
-    call rieman%hlld(qleft,qright,fgdnv,ub,nvar)
+    call rieman%hlld(qleft,qright,fgdnv,ub,nvar,detailed_timer=detailed_timer)
   else
     write(*,*)'unknown Riemann solver'
     stop
