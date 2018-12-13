@@ -1,6 +1,6 @@
 # This dependency file was created automatically by bin/deps.pl.
 # Do not edit manually -- instead run 'make deps' !
-
+DISPATCH = true
 celloperations.o        : params.o species.o
 debug.o                 : params.o
 deposit_fields_3d.o     : species.o grid.o params.o
@@ -20,16 +20,16 @@ load_balance.o          : params.o grid.o units.o species.o
 main.o                  : params.o
 math.o                  : grid.o params.o
 maxwell_sources.o       : grid.o dump.o debug.o species.o units.o params.o
-maxwell_solver_$(STAGGER).o    : maxwell_sources.o
+maxwell_solver_$(STAGGER_ORDER).o    : maxwell_sources.o
 mesh_sources.o          : grid.o dump.o debug.o species.o units.o params.o
 move_particles.o        : params.o species.o debug.o units.o grid.o
-mpi.o                   : grid.o textio.o species.o debug.o params.o stat.o
+$(PPMPI).o                : grid.o textio.o species.o debug.o params.o stat.o
 omp.o                   : params.o
 particleoperations.o    : grid.o distributions.o species.o debug.o units.o params.o
 periodic.o              : grid.o
 picmhd.o                : params.o
 random.o                : params.o grid.o
-pic_stagger_$(STAGGER).o : params.o grid.o units.o
+pic_stagger_$(STAGGER_ORDER).o : params.o grid.o units.o
 set_dt.o                : species.o dump.o debug.o units.o grid.o maxwell_sources.o params.o textio.o
 sort.o                  : grid.o debug.o species.o params.o
 species.o               : params.o units.o grid.o header.o
