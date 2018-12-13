@@ -50,6 +50,7 @@ MODULE mhd_mod
     procedure:: gas_pressure
   end type
   logical, save:: do_smooth=.false.
+  logical, save:: do_maxwell = .true.
   integer, save:: verbose=0
 CONTAINS
 
@@ -66,7 +67,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    mhd, do_smooth, verbose
+  mhd, do_smooth, verbose, do_maxwell
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -262,9 +263,16 @@ SUBROUTINE pde (self)
     pp = pg + pa + pb                                                           ! mhd: 1 0 0
     ! Total diagonal stress
     du = (dsmax*self%nu(1))*(cs + 2.*uu)                                        ! mhd: 0 2 0
-    fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
-    fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
-    fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
+    !either use Maxwell stress tensor or Lorentz force
+    if (do_maxwell) then
+      fxx = pp + d*(fxx - du*Txx) - Ex                                          ! mhd: 1 0 0
+      fyy = pp + d*(fyy - du*Tyy) - Ey                                          ! mhd: 1 0 0
+      fzz = pp + d*(fzz - du*Tzz) - Ez                                          ! mhd: 1 0 0
+    else
+      fxx = pp + d*(fxx - du*Txx)                                               ! mhd: 2 2 0
+      fyy = pp + d*(fyy - du*Tyy)                                               ! mhd: 2 2 0
+      fzz = pp + d*(fzz - du*Tzz)                                               ! mhd: 2 2 0
+    end if
   else
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
@@ -332,7 +340,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Off-diagonal Maxwell stress
   !-----------------------------------------------------------------------------
-  if (self%mhd) then
+  if (self%mhd.and.do_maxwell) then
     fxy = fxy - ydn(Bx)*xdn(By)                                                 ! mhd: 1 1 0
     fyz = fyz - zdn(By)*ydn(Bz)                                                 ! mhd: 1 1 0
     fzx = fzx - xdn(Bz)*zdn(Bx)                                                 ! mhd: 1 1 0
@@ -404,6 +412,14 @@ SUBROUTINE pde (self)
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))                     ! mhd: 2 3 0
     if (self%gamma/=1.0) &
       dedt = dedt + Q                                                           ! mhd: 1 0 0
+    !---------------------------------------------------------------------------
+    ! Lorentz force, used instead of Maxwell stress.
+    !---------------------------------------------------------------------------
+    if (.not.do_maxwell) then
+      dpdtx = dpdtx + zup(jy)*xdn(zup(Bz)) - yup(jz)*xdn(yup(By))
+      dpdty = dpdty + xup(jz)*ydn(xup(Bx)) - zup(jx)*ydn(zup(Bz))
+      dpdtz = dpdtz + yup(jx)*zdn(yup(By)) - xup(jy)*zdn(xup(Bx))
+    end if
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
     !---------------------------------------------------------------------------
