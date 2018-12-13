@@ -54,6 +54,7 @@ MODULE mhd_mod
   logical, save:: flop_count=.false.
   logical, save:: do_2nd_div=.true.
   logical, save:: do_smooth=.false.
+  logical, save:: do_maxwell=.true.
 CONTAINS
 
 !> =============================================================================
@@ -68,7 +69,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    do_smooth, do_2nd_div, flop_count, verbose
+    do_smooth, do_2nd_div, flop_count, verbose, do_maxwell
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
