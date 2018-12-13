@@ -430,9 +430,14 @@ SUBROUTINE pde (self)
     ! dpdtz(i,j,k+½) = zup(xdn(jx(i+½,j,k)))*xdn(By(i+½,j,k+½)) - jy(i,j+½,k)*Bx(i,j+½,k+½)
     !---------------------------------------------------------------------------
     if (.not.do_maxwell) then
-      dpdtx = dpdtx + xup(ydn(jy))*(ydn(Bz)) - xup(zdn(jz))*(zdn(By))
-      dpdty = dpdty + yup(zdn(jz))*(zdn(Bx)) - yup(xdn(jx))*(xdn(Bz))
-      dpdtz = dpdtz + zup(xdn(jx))*(xdn(By)) - zup(ydn(jy))*(ydn(Bx))
+    !borrowing fxyz for scratch to store cell-centered J values
+      ! jx -> fxx, jy -> fyy, jz -> fzz
+      fxx = xdn(jx)
+      fyy = ydn(jy)
+      fzz = zdn(jz)
+      dpdtx = dpdtx + xup(fyy)*(ydn(Bz)) - xup(fzz)*(zdn(By))
+      dpdty = dpdty + yup(fzz)*(zdn(Bx)) - yup(fxx)*(xdn(Bz))
+      dpdtz = dpdtz + zup(fxx)*(xdn(By)) - zup(fyy)*(ydn(Bx))
     end if
     !---------------------------------------------------------------------------
     ! Advective electric field on cell FACES

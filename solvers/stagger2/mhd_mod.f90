@@ -539,9 +539,14 @@ SUBROUTINE pde (self)
     ! Lorentz force, used instead of Maxwell stress.
     !---------------------------------------------------------------------------
     if (.not.do_maxwell) then
-      dpdtx = dpdtx + zup(jy)*xdn(zup(Bz)) - yup(jz)*xdn(yup(By))
-      dpdty = dpdty + xup(jz)*ydn(xup(Bx)) - zup(jx)*ydn(zup(Bz))
-      dpdtz = dpdtz + yup(jx)*zdn(yup(By)) - xup(jy)*zdn(xup(Bx))
+      !borrowing fxyz for scratch to store cell-centered B values
+      ! Bx -> fxx, By -> fyy, Bz -> fzz
+      fxx = xup(Bx)
+      fyy = yup(By)
+      fzz = zup(Bz)
+      dpdtx = dpdtx + zup(jy)*xdn(fzz) - yup(jz)*xdn(fyy)
+      dpdty = dpdty + xup(jz)*ydn(fxx) - zup(jx)*ydn(fzz)
+      dpdtz = dpdtz + yup(jx)*zdn(fyy) - xup(jy)*zdn(fxx)
     end if
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
