@@ -375,9 +375,16 @@ SUBROUTINE pde (self)
     ! Total diagonal stress
     !du = (dsmax*self%nu(1))*cs + (dsmax*self%nu(7))*uu                          ! ops: 0 1 0
     du = (dsmax*self%nu(1))*(cs + 2.*uu)                                        ! ops: 0 1 0
-    fxx = pp + d*(fxx - du*Txx) - Ex                                            ! mhd: 1 0 0
-    fyy = pp + d*(fyy - du*Tyy) - Ey                                            ! mhd: 1 0 0
-    fzz = pp + d*(fzz - du*Tzz) - Ez                                            ! mhd: 1 0 0
+    !either use Maxwell stress tensor or Lorentz force
+    if (do_maxwell) then
+      fxx = pp + d*(fxx - du*Txx) - Ex                                          ! mhd: 1 0 0
+      fyy = pp + d*(fyy - du*Tyy) - Ey                                          ! mhd: 1 0 0
+      fzz = pp + d*(fzz - du*Tzz) - Ez                                          ! mhd: 1 0 0
+    else
+      fxx = pp + d*(fxx - du*Txx)                                               ! mhd: 2 2 0
+      fyy = pp + d*(fyy - du*Tyy)                                               ! mhd: 2 2 0
+      fzz = pp + d*(fzz - du*Tzz)                                               ! mhd: 2 2 0
+    end if
   !-----------------------------------------------------------------------------
   ! HD stress diagonal
   !-----------------------------------------------------------------------------
@@ -454,7 +461,7 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   ! Off-diagonal Maxwell stress
   !-----------------------------------------------------------------------------
-  if (self%mhd) then
+  if (self%mhd.and.do_maxwell) then
     fxy = fxy - ydn(Bx)*xdn(By)                                                 ! mhd: 1 1 0
     fyz = fyz - zdn(By)*ydn(Bz)                                                 ! mhd: 1 1 0
     fzx = fzx - xdn(Bz)*zdn(Bx)                                                 ! mhd: 1 1 0
@@ -528,6 +535,14 @@ SUBROUTINE pde (self)
     J = curl_dn(ds,B)
     emf = self%nu(6)*edge(du)*J                                                 ! mhd: 0 6 0
     Q = yup(zup(Jx*Ex)) + zup(xup(Jy*Ey)) + xup(yup(Jz*Ez))                     ! mhd: 2 3 0
+    !---------------------------------------------------------------------------
+    ! Lorentz force, used instead of Maxwell stress.
+    !---------------------------------------------------------------------------
+    if (.not.do_maxwell) then
+      dpdtx = dpdtx + zup(jy)*xdn(zup(Bz)) - yup(jz)*xdn(yup(By))
+      dpdty = dpdty + xup(jz)*ydn(xup(Bx)) - zup(jx)*ydn(zup(Bz))
+      dpdtz = dpdtz + yup(jx)*zdn(yup(By)) - xup(jy)*zdn(xup(Bx))
+    end if
     !---------------------------------------------------------------------------
     ! Advective electric field on cell edges
     !---------------------------------------------------------------------------
