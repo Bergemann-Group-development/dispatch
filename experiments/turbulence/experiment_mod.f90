@@ -40,9 +40,6 @@ SUBROUTINE init (self)
   call trace%begin('experiment_t%init')
   call self%solver_t%init
   self%d0 = self%initial%d0
-  if (self%kind(1:9) == 'stagger2_') then
-    call self%e2s (self%mem(:,:,:,self%idx%e,self%it,1), self%it)
-  end if
   call self%set (bits%static)
   if (self%initial%time > 0d0) then
     self%time = self%initial%time

@@ -135,6 +135,12 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     end do
   end do
   end associate
+
+  if (self%solver(1:9) == 'stagger2_') then
+    associate (e=>ff(:,:,:,idx%e), d=>ff(:,:,:,idx%d))
+    call e2s(e, d, self%gamma)
+    end associate
+  end if
   call trace_end
 END SUBROUTINE single_solenoidal
 
@@ -174,6 +180,12 @@ SUBROUTINE single_compressive (self, m, ff, idx)
     end do
   end do
   end associate
+
+  if (self%solver(1:9) == 'stagger2_') then
+    associate (e=>ff(:,:,:,idx%e), d=>ff(:,:,:,idx%d))
+    call e2s(e, d, self%gamma)
+    end associate
+  end if
   call trace_end
 END SUBROUTINE single_compressive
 
@@ -213,6 +225,12 @@ SUBROUTINE single_advection (self, m, ff, idx)
     end do
   end do
   end associate
+
+  if (self%solver(1:9) == 'stagger2_') then
+    associate (e=>ff(:,:,:,idx%e), d=>ff(:,:,:,idx%d))
+    call e2s(e, d, self%gamma)
+    end associate
+  end if
   call trace_end
 END SUBROUTINE single_advection
 
@@ -264,6 +282,12 @@ SUBROUTINE exa256 (self, m, ff, idx)
     print *,'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
+
+  if (self%solver(1:9) == 'stagger2_') then
+    associate (e=>ff(:,:,:,idx%e), d=>ff(:,:,:,idx%d))
+    call e2s(e, d, self%gamma)
+    end associate
+  end if
   call trace_end
 END SUBROUTINE exa256
 
@@ -321,6 +345,12 @@ SUBROUTINE raw (self, m, ff, idx)
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
       maxval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1))
   !$omp end critical (raw_cr)
+
+  if (self%solver(1:9) == 'stagger2_') then
+    associate (e=>ff(:,:,:,idx%e), d=>ff(:,:,:,idx%d))
+    call e2s(e, d, self%gamma)
+    end associate
+  end if
   call trace_end
 END SUBROUTINE raw
 
@@ -328,5 +358,19 @@ END SUBROUTINE raw
 SUBROUTINE cleanup
   if (associated(buffer)) deallocate(buffer)
 END SUBROUTINE cleanup
+
+!> =====================================================================
+!> Get entropy per unit volume from energy per unit volume
+!> Note that energy and entropy are assumed to occupy the same memory
+!> =====================================================================
+SUBROUTINE e2s(s, d, gamma)
+  real(8):: gamma
+  !.....................................................................
+  real, dimension(:,:,:):: s, d
+  real:: g1
+  !---------------------------------------------------------------------
+  g1 = gamma-1.0
+  s = d*log(s*g1/d**gamma)/g1
+END SUBROUTINE e2s
 
 END MODULE
