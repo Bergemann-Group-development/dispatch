@@ -12,7 +12,7 @@ PROGRAM dispatch
   call lagrange%test                            ! Test time interpolation
   call dispatcher%init                          ! Initialize the dispatcher
   call cartesian%init                           ! Initialize the patch list
-  call dispatcher%method (cartesian%task_list)  ! Run the dispatcher
+  call dispatcher%execute (cartesian%task_list) ! Run the dispatcher
   call setup%end                                ! End setup
 !> =============================================================================
 END PROGRAM dispatch
