@@ -75,7 +75,7 @@ SUBROUTINE update (self)
     end if
     !$omp end critical (cleanup_cr)
   end if
-  call self%mhd_t%update
+  call self%solver_t%update
   call trace%end
 END SUBROUTINE update
 
