@@ -27,7 +27,7 @@
 /
 
 &annulus_params
-  rotating=t
+  rotating=f
   n_patch=1,5,9
   n_per_patch=1,32,55
 /
