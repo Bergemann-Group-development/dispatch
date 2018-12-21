@@ -253,7 +253,7 @@ contains
     call trace%begin ('parallel_io-t%output::convert_variables')
     if (io%guard_zones) then
       l = patch%mesh%lb
-      u = patch%mesh%ub
+      u = max(patch%mesh%ub,patch%mesh%gn)
     else
       l = patch%mesh%li
       u = patch%mesh%ui
