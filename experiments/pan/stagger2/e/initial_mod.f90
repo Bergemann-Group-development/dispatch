@@ -416,7 +416,11 @@ SUBROUTINE turbulence (self, m, ff, idx)
     write (io%output, IC_turbulence_params)
   end if
   !$omp end critical (input_cr)
-  self%mhd = .true.
+  if (any(b0 /= 0.0)) then
+    self%mhd = .true.
+  else
+    self%mhd = .false.
+  end if
   d = 1.0
   ff(:,:,:,idx%d        ) = d
   if (self%gamma==1.0) then

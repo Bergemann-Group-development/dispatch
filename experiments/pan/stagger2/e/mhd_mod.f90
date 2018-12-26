@@ -51,6 +51,7 @@ MODULE mhd_mod
   end type
   real, save:: d_floor=1e-4
   logical, save:: test_p=.false.
+  logical, save:: unsigned=.false.
   logical, save:: do_smooth=.false.
   integer, save:: verbose=0
 CONTAINS
@@ -69,7 +70,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-                            mhd, do_smooth, verbose, test_p, d_floor
+                            mhd, do_smooth, verbose, test_p, d_floor, unsigned
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -130,8 +131,8 @@ SUBROUTINE init (self)
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  self%unsigned(self%idx%d)  = .true.
-  self%pervolume(self%idx%s) = .true.
+  self%unsigned(self%idx%d)  = unsigned
+  self%pervolume(self%idx%s) = unsigned
   call self%force%init (self%kind, self%id, self%mesh)
  call trace%end
 END SUBROUTINE init

@@ -49,6 +49,7 @@ MODULE mhd_mod
     procedure:: output
     procedure:: gas_pressure
   end type
+  logical, save:: unsigned=.true.
   logical, save:: do_smooth=.false.
   logical, save:: do_maxwell = .true.
   integer, save:: verbose=0
@@ -67,7 +68,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-  do_smooth, verbose, do_maxwell
+    mhd, do_smooth, unsigned, do_maxwell, verbose
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -128,8 +129,8 @@ SUBROUTINE init (self)
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  self%unsigned(self%idx%d)  = .true.
-  self%pervolume(self%idx%s) = .true.
+  self%unsigned(self%idx%d)  = unsigned
+  self%pervolume(self%idx%s) = unsigned
   call self%force%init (self%kind, self%id, self%mesh)
  call trace%end
 END SUBROUTINE init
