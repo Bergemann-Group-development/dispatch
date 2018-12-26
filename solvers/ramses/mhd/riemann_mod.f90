@@ -543,86 +543,86 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     ! Compute 4 fast magnetosonic velocity relative to x direction
     qtmp(1)=qLL(l,1); qtmp(2)=qLL(l,2); qtmp(7)=qLL(l,5); qtmp(8)=qLL(l,8)
     qtmp(3)=qLL(l,3); qtmp(4)=qLL(l,6); qtmp(5)=qLL(l,4); qtmp(6)=qLL(l,7)
-    call find_speed_fast(qtmp,cfastLLx)
+    !call find_speed_fast(qtmp,cfastLLx)
 
-    !B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    !d1 = 1./qtmp(1)
-    !c2 = gamma*qtmp(2)*d1
-    !d2 = half*(B2*d1+c2)
-    !cfastLLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
+    d1 = 1./qtmp(1)
+    c2 = gamma*qtmp(2)*d1
+    d2 = half*(B2*d1+c2)
+    cfastLLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
 
     qtmp(1)=qLR(l,1); qtmp(2)=qLR(l,2); qtmp(7)=qLR(l,5); qtmp(8)=qLR(l,8)
     qtmp(3)=qLR(l,3); qtmp(4)=qLR(l,6); qtmp(5)=qLR(l,4); qtmp(6)=qLR(l,7)
-    call find_speed_fast(qtmp,cfastLRx)
+    !call find_speed_fast(qtmp,cfastLRx)
 
-    !B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    !d1 = 1./qtmp(1)
-    !c2 = gamma*qtmp(2)*d1
-    !d2 = half*(B2*d1+c2)
-    !cfastLRx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
+    d1 = 1./qtmp(1)
+    c2 = gamma*qtmp(2)*d1
+    d2 = half*(B2*d1+c2)
+    cfastLRx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
 
     qtmp(1)=qRL(l,1); qtmp(2)=qRL(l,2); qtmp(7)=qRL(l,5); qtmp(8)=qRL(l,8)
     qtmp(3)=qRL(l,3); qtmp(4)=qRL(l,6); qtmp(5)=qRL(l,4); qtmp(6)=qRL(l,7)
-    call find_speed_fast(qtmp,cfastRLx)
+    !call find_speed_fast(qtmp,cfastRLx)
 
-    !B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    !d1 = 1./qtmp(1)
-    !c2 = gamma*qtmp(2)*d1
-    !d2 = half*(B2*d1+c2)
+    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
+    d1 = 1./qtmp(1)
+    c2 = gamma*qtmp(2)*d1
+    d2 = half*(B2*d1+c2)
 !    print*,'qtmp(4),qtmp(6),qtmp(8)',qtmp(4),qtmp(6),qtmp(8)
-    !cfastRLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    cfastRLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
 
     qtmp(1)=qRR(l,1); qtmp(2)=qRR(l,2); qtmp(7)=qRR(l,5); qtmp(8)=qRR(l,8)
     qtmp(3)=qRR(l,3); qtmp(4)=qRR(l,6); qtmp(5)=qRR(l,4); qtmp(6)=qRR(l,7)
     qtmp(1)=max(qtmp(1),smallr)
-    call find_speed_fast(qtmp,cfastRRx)
+    !call find_speed_fast(qtmp,cfastRRx)
 
-    !B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    !d1 = 1./qtmp(1)
-    !c2 = gamma*qtmp(2)*d1
-    !d2 = half*(B2*d1+c2)
-    !cfastRRx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
+    d1 = 1./qtmp(1)
+    c2 = gamma*qtmp(2)*d1
+    d2 = half*(B2*d1+c2)
+    cfastRRx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
 
     ! Compute 4 fast magnetosonic velocity relative to y direction
     qtmp(1)=qLL(l,1); qtmp(2)=qLL(l,2); qtmp(7)=qLL(l,5); qtmp(8)=qLL(l,8)
     qtmp(3)=qLL(l,4); qtmp(4)=qLL(l,7); qtmp(5)=qLL(l,3); qtmp(6)=qLL(l,6)
-    call find_speed_fast(qtmp,cfastLLy)
+    !call find_speed_fast(qtmp,cfastLLy)
 
-    !B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    !d1 = 1./qtmp(1)
-    !c2 = gamma*qtmp(2)*d1
-    !d2 = half*(B2*d1+c2)
-    !cfastLLy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
+    d1 = 1./qtmp(1)
+    c2 = gamma*qtmp(2)*d1
+    d2 = half*(B2*d1+c2)
+    cfastLLy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
 
     qtmp(1)=qLR(l,1); qtmp(2)=qLR(l,2); qtmp(7)=qLR(l,5); qtmp(8)=qLR(l,8)
     qtmp(3)=qLR(l,4); qtmp(4)=qLR(l,7); qtmp(5)=qLR(l,3); qtmp(6)=qLR(l,6)
-    call find_speed_fast(qtmp,cfastLRy)
+    !call find_speed_fast(qtmp,cfastLRy)
 
-    !B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    !d1 = 1./qtmp(1)
-    !c2 = gamma*qtmp(2)*d1
-    !d2 = half*(B2*d1+c2)
-    !cfastLRy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
+    d1 = 1./qtmp(1)
+    c2 = gamma*qtmp(2)*d1
+    d2 = half*(B2*d1+c2)
+    cfastLRy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
 
     qtmp(1)=qRL(l,1); qtmp(2)=qRL(l,2); qtmp(7)=qRL(l,5); qtmp(8)=qRL(l,8)
     qtmp(3)=qRL(l,4); qtmp(4)=qRL(l,7); qtmp(5)=qRL(l,3); qtmp(6)=qRL(l,6)
-    call find_speed_fast(qtmp,cfastRLy)
+    !call find_speed_fast(qtmp,cfastRLy)
 
-    !B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    !d1 = 1./qtmp(1)
-    !c2 = gamma*qtmp(2)*d1
-    !d2 = half*(B2*d1+c2)
-    !cfastRLy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
+    d1 = 1./qtmp(1)
+    c2 = gamma*qtmp(2)*d1
+    d2 = half*(B2*d1+c2)
+    cfastRLy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
 
     qtmp(1)=qRR(l,1); qtmp(2)=qRR(l,2); qtmp(7)=qRR(l,5); qtmp(8)=qRR(l,8)
     qtmp(3)=qRR(l,4); qtmp(4)=qRR(l,7); qtmp(5)=qRR(l,3); qtmp(6)=qRR(l,6)
-    call find_speed_fast(qtmp,cfastRRy)
+    !call find_speed_fast(qtmp,cfastRRy)
 
-    !B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    !d1 = 1./qtmp(1)
-    !c2 = gamma*qtmp(2)*d1
-    !d2 = half*(B2*d1+c2)
-    !cfastRRy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
+    d1 = 1./qtmp(1)
+    c2 = gamma*qtmp(2)*d1
+    d2 = half*(B2*d1+c2)
+    cfastRRy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
 
     SL=min(uLL,uLR,uRL,uRR)-max(cfastLLx,cfastLRx,cfastRLx,cfastRRx)
     SR=max(uLL,uLR,uRL,uRR)+max(cfastLLx,cfastLRx,cfastRLx,cfastRRx)
