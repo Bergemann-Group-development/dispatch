@@ -244,8 +244,7 @@ SUBROUTINE real_print ()
   n_recv = max(timer%n_recv,1)
   if (mpi%master) &
     call write_to (io_unit%output)
-  if (io_unit%verbose > 0) &
-    call write_to (io_unit%mpi)
+  call write_to (io_unit%mpi)
   !$omp atomic write
   timer%n_lines = 1
   timer%bytes_recv = 0.0_8
