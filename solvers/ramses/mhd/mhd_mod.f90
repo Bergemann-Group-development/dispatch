@@ -118,7 +118,6 @@ SUBROUTINE update (self)
   real, allocatable, dimension(:,:,:,:):: em
   real, allocatable, dimension(:,:,:,:,:):: fl
   real, allocatable, dimension(:,:,:,:)::fluxambdiff,emfambdiff
-  real, allocatable, dimension(:,:,:):: dflux_x, dflux_y, dflux_z, Bleft, Bright
   real, pointer, dimension(:,:,:):: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real(dp):: dtdx, dtdy, dtdz
   integer:: n(3), nv3, i
@@ -127,11 +126,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%update', itimer=itimer)
   n = self%mesh%ui-self%mesh%li+1
-  allocate (dflux_x(n(1),n(2),n(3)))
-  allocate (dflux_y(n(1),n(2),n(3)))
-  allocate (dflux_z(n(1),n(2),n(3)))
-  allocate (Bleft  (n(1),n(2),n(3)))
-  allocate (Bright (n(1),n(2),n(3)))
   
   call self%gravity
   !----------------------------------------------------------------------------
@@ -248,7 +242,7 @@ SUBROUTINE update (self)
   unew = uin
   nv3 = 5
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
-   uin(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,1) - &
     fl(i0+1:i1+1,j0  :j1  ,k0  :k1  ,1:nv3,1) + &
     fl(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3,2) - &
@@ -267,91 +261,32 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Update Bx 
   !-----------------------------------------------------------------------------
-  
-  ! left 
-  dflux_x=( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
-            em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2) ) - &
-          ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
-            em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) )
-
-  Bleft =                                          &
-            0.5 *                                ( &
-            unew(i0-1:i1-1,j0  :j1  ,k0  :k1  ,6) + &
-            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) ) &
-            + dflux_x
-  ! right
-  dflux_x=( em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2)   - &
-            em(i0+1:i1+1,j0  :j1  ,k0+1:k1+1,2) ) - &
-          ( em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3)   - &
-            em(i0+1:i1+1,j0+1:j1+1,k0  :k1  ,3) )
-
-  Bright =                                         &
-            0.5 *                                ( &
-            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
-            unew(i0+1:i1+1,j0  :j1  ,k0  :k1  ,6) ) &
-            + dflux_x
-
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) = 0.5 * (Bleft + Bright)
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) =  &
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
+      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2) ) - &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
+      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) )
 
   !-----------------------------------------------------------------------------
   ! Update By 
   !-----------------------------------------------------------------------------
-
-  ! left 
-  dflux_y=( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
-            em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3) ) - &
-          ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
-            em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) )
-
-  Bleft =                                          &
-            0.5 *                                ( &
-            unew(i0  :i1  ,j0-1:j1-1,k0  :k1  ,7) + &
-            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) ) &
-            + dflux_y
-
-  ! right
-  dflux_y=( em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3)   - &
-            em(i0+1:i1+1,j0+1:j1+1,k0  :k1  ,3) ) - &
-          ( em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1)   - &
-            em(i0  :i1  ,j0+1:j1+1,k0+1:k1+1,1) )
-
-  Bright =                                         &
-            0.5 *                                ( &
-            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
-            unew(i0  :i1  ,j0+1:j1+1,k0  :k1  ,7) ) &
-            + dflux_y
-
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = 0.5 * (Bleft + Bright)
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = &
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
+      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3) ) - &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
+      em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) )
 
   !-----------------------------------------------------------------------------
   ! Update Bz 
   !-----------------------------------------------------------------------------
-
-  ! left 
-  dflux_z=( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
-            em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
-          ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
-            em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) )
-
-  Bleft =                                          &
-            0.5 *                                ( &
-            unew(i0  :i1  ,j0  :j1  ,k0-1:k1-1,8) + &
-            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) ) &
-            + dflux_z
-
-  ! right
-  dflux_z=( em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1)   - &
-            em(i0  :i1  ,j0+1:j1+1,k0+1:k1+1,1) ) - &
-          ( em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2)   - &
-            em(i0+1:i1+1,j0  :j1  ,k0+1:k1+1,2) )
-
-  Bright =                                         &
-            0.5 *                                ( &
-            unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
-            unew(i0  :i1  ,j0  :j1  ,k0+1:k1+1,8) ) &
-            + dflux_z
-
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = 0.5 * (Bleft + Bright)
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = &
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
+      em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
+    ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
+      em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) )
 
   if (verbose>0) print *, 'unew', self%id, minval(unew), maxval(unew)
   end associate
@@ -383,7 +318,6 @@ SUBROUTINE update (self)
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dq2,self%bf,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
               self%Ex,self%Ey,self%Ez,self%ff)
-  deallocate (dflux_x, dflux_y, dflux_z, Bleft, Bright)
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -419,9 +353,9 @@ subroutine check_small (self)
     v =  uu(i,j,k,3)*c
     w =  uu(i,j,k,4)*c
     ekin = 0.5*d*(u**2+v**2+w**2)
-    B1=  uu(i,j,k,6)
-    B2=  uu(i,j,k,7)
-    B3=  uu(i,j,k,8)
+    B1 = 0.5*(uu(i,j,k,6)+uu(i+1,j,k,6))
+    B2 = 0.5*(uu(i,j,k,7)+uu(i,j+1,k,7))
+    B3 = 0.5*(uu(i,j,k,8)+uu(i,j,k+1,8))
     emag = 0.5*(B1**2+B2**2+B3**2)
     if (isothermal) then
       p = d*csound**2
@@ -452,7 +386,7 @@ subroutine ctoprim(self)
   class(mhd_t):: self
   integer::n(4)
   real(dp):: smallp, c, entho
-  real(dp):: eken, emag, etot, eint
+  real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
   integer:: i,j,k
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
@@ -474,20 +408,20 @@ subroutine ctoprim(self)
   q(:,:,:,6) = uin(:,:,:,6)                                     ! Bx
   q(:,:,:,7) = uin(:,:,:,7)                                     ! By
   q(:,:,:,8) = uin(:,:,:,8)                                     ! Bz
-  bf(1:n(1),:,:,1) = (uin(1:n(1),:,:,6)+uin(2:,:,:,6))*half      
-  bf(:,1:n(2),:,2) = (uin(:,1:n(2),:,7)+uin(:,2:,:,7))*half      
-  bf(:,:,1:n(3),3) = (uin(:,:,1:n(3),8)+uin(:,:,2:,8))*half      
-  bf(n(1)+1,:,:,1) = 0.0
-  bf(:,n(2)+1,:,2) = 0.0
-  bf(:,:,n(3)+1,3) = 0.0
+  bf(:,:,:,1) = uin(:,:,:,6)
+  bf(:,:,:,2) = uin(:,:,:,7)
+  bf(:,:,:,3) = uin(:,:,:,8)
   if (verbose>0) print *,  'ctoprim:rh', self%id, minval(q(:,:,:,1)), maxval(q(:,:,:,1))
   if (verbose>0) print *,  'ctoprim:bf', self%id, minval(bf), maxval(bf)
 
-  do k=1,self%gn(3)
-  do j=1,self%gn(2)
-  do i=1,self%gn(1)
+  do k=1,self%gn(3)-1
+  do j=1,self%gn(2)-1
+  do i=1,self%gn(1)-1
     eken = half*( q(i,j,k,2)**2 + q(i,j,k,3)**2 + q(i,j,k,4)**2)
-    emag = half*( q(i,j,k,6)**2 + q(i,j,k,7)**2 + q(i,j,k,8)**2)
+    B1 = half*(q(i,j,k,6)+q(i+1,j,k,6))
+    B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
+    B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
+    emag = half*(B1**2 + B2**2 + B3**2)
     etot = uin(i,j,k,5) - emag
     eint = etot/uin(i,j,k,1) - eken
     q(i,j,k,5) = MAX((self%gamma-one)*q(i,j,k,1)*eint,smallp)    !
