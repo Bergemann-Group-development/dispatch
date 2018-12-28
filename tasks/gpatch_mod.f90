@@ -262,6 +262,7 @@ SUBROUTINE update_tmp (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%update')
+  !$omp atomic
   timer%n_update = timer%n_update + product(self%n)
   if (selfgravity) then
     if (self%poisson_time == self%time) then
@@ -289,6 +290,7 @@ SUBROUTINE update (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%update')
+  !$omp atomic
   timer%n_update = timer%n_update + product(self%n)
   call trace%end
 END SUBROUTINE update
