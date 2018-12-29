@@ -46,7 +46,9 @@ END SUBROUTINE init
 SUBROUTINE end (self)
   class(setup_t):: self
   !.............................................................................
+  call trace%begin ('setup_t%end')
   call mpi%end
+  call trace%end
 END SUBROUTINE end
  
 END MODULE setup_mod

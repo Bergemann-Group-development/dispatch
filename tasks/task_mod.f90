@@ -37,6 +37,7 @@ MODULE task_mod
     integer:: parentid=0
     integer:: thread=-1
     integer:: mem_thread=-1
+    integer:: ip                        ! rank local task id
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
     real(8):: out_next = 0d0
@@ -270,6 +271,17 @@ SUBROUTINE rotate (self)
       write (io_unit%mpi,*) 'task_t%rotate:: turning off syncing for now', self%id
   else
     time = self%time + self%dtime
+  end if
+  !-----------------------------------------------------------------------------
+  ! Keep track of the shortest times step between updates of the first local
+  ! task.  Use this task in patch%info, rather than the one with ip==1.
+  !-----------------------------------------------------------------------------
+  if (self%id == io%id) then
+    io%dtime = huge(1d0)
+  end if
+  if (self%dtime < io%dtime) then
+    io%id = self%id
+    io%dtime = self%dtime
   end if
   !-----------------------------------------------------------------------------
   ! Time slot rotation.  Note that self%time should be the LAST of these

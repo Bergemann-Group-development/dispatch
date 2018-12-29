@@ -110,9 +110,13 @@ SUBROUTINE execute (self, task_list, test)
   call timer%print
   call mpi_mesg%diagnostics(1)
   call toc ('wall time', timer%n_update, time=sec)
+  write (io_unit%mpi,*) 'at mpi%barrier'
+  flush (io_unit%mpi)
   call mpi%barrier ('end')
   write (io%output,*) "task list finished, min_nq =", min_nq
   call trace%end (itimer)
+  write (io_unit%mpi,*) 'end dispatcher0_t%execute'
+  flush (io_unit%mpi)
 END SUBROUTINE execute
 
 !> =============================================================================

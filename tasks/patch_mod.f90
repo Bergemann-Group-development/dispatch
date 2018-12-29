@@ -63,7 +63,6 @@ MODULE patch_mod
     integer:: n(3)=0, ng(3)=0           ! defaults, to detect unchanged values
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
     integer:: ncell(3)                  ! number of cells per patch
-    integer:: ip                        ! integer position, 1D
     integer:: ipos(3)                   ! integer position, 3D
     real(8):: offset(3)                 ! this is used to compute indices, locations
     real(8):: llc_cart(3)=0d0           ! the lower left corner of the patch in *Cartesian* coords.
@@ -349,7 +348,7 @@ SUBROUTINE init_default (self)
   ! the calling code -- typically in experiment_mod.f90
   !-----------------------------------------------------------------------------
   !$omp critical (input_cr)
-    if (first_time) then
+  if (first_time) then
     ! -- if values have been imposed from above, FI show them as default
     if (any(self%n  /= 0)) n  = self%n          ! patch dimensions
     if (any(self%ng /= 0)) ng = self%ng         ! patch guard zones
@@ -1304,8 +1303,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       ! Print a one-liner if verbose==1 and id==1, or verbose>1, while
       ! accumulating counters also when not printing
       !-------------------------------------------------------------------------
-      if (io%verbose>0 .or. self%track) then
-        if (io%master) &
+      if (io%verbose>0 .or. self%id==io%id) then
+        if (omp%master) &
           counts = counts + &
             [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
              mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &

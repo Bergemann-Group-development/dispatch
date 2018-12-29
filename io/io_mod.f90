@@ -40,9 +40,11 @@ MODULE io_mod
     integer:: id_debug=0
     integer:: id_track=0
     integer:: nv=0
+    integer:: id=1              ! the task to print a one-liner for
     real(8):: end_time=1d30
     real(8):: out_time=1d0
     real(8):: print_time=0d0
+    real(8):: dtime=huge(1d0)   ! the shortest time step
     real:: flag_time=1.
     real:: flag_max=10.
     real:: ampl=0.0

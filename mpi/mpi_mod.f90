@@ -199,7 +199,11 @@ SUBROUTINE end_mpi (self, label)
     end if
   end if
 #ifdef MPI
+  write (io_unit%mpi,*) 'calling MPI_Finalize'
+  flush (io_unit%mpi)
   call MPI_Finalize (mpi_err)
+  write (io_unit%mpi,*) 'returned from MPI_Finalize'
+  flush (io_unit%mpi)
 #endif
   !call exit        ! avoid "stop" which may produce one output line per process
 END SUBROUTINE
