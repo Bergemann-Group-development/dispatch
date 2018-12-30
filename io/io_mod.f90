@@ -45,11 +45,12 @@ MODULE io_mod
     real(8):: out_time=1d0
     real(8):: print_time=0d0
     real(8):: dtime=huge(1d0)   ! the shortest time step
+    real(8):: gb=0.0
+    real(8):: job_seconds=1d30
     real:: flag_time=1.
     real:: flag_max=10.
     real:: ampl=0.0
-    real(8):: gb=0.0
-    real(8):: job_seconds=1d30
+    real:: grace=0.0
   contains
     procedure:: init
     procedure:: debug
@@ -336,6 +337,12 @@ SUBROUTINE check_flags (self)
   end if
   call timer%end (itimer)
   !$omp end master
+  !-----------------------------------------------------------------------------
+  ! Implement setting of per-patch parameters here
+  !-----------------------------------------------------------------------------
+  if (processing > 0d0) then
+    if (io%grace > 0.0) self%grace = io%grace
+  end if
 contains
 
   !-----------------------------------------------------------------------------
@@ -372,6 +379,7 @@ contains
     call check ('flag_time.flag'      , remove, rvalue=self%flag_time)
     call check ('flag_max.flag'       , remove, rvalue=self%flag_max)
     call check ('ampl.flag'           , remove, rvalue=self%ampl)
+    call check ('grace.flag   '       , remove, rvalue=self%grace)
     ! double prec
     call check ('out_time.flag'       , remove, dvalue=self%out_time)
     call check ('print_time.flag'     , remove, dvalue=self%print_time)
