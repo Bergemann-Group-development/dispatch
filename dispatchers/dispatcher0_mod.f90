@@ -197,9 +197,9 @@ SUBROUTINE update (self, task_list, test)
       if (stalled > 0) then
         write (io_unit%log,*) wallclock(), '  stall ended', stalled
       end if
-      write (io_unit%log,*) wallclock(), task%id, task%time, 'update start'
-      flush (io_unit%log)
     end if
+    stalled = 0
+    !---------------------------------------------------------------------------
     task%atime = task%time
     if (io%verbose > 1) then
       write (io_unit%log,'(f12.6,2x,a,i4,2x,a,i6,2x,a,1p,g16.6,2x,a,i5)') &
@@ -290,10 +290,6 @@ SUBROUTINE update (self, task_list, test)
       write (io_unit%mpi,*) task%id,omp%thread, &
         ' is triggering a sync at t =', task_list%sync_next
     end if
-    if (debug) then
-      write (io_unit%log,*) wallclock(), 'leave queue_cr, task', task%id
-      flush (io_unit%log)
-    end if
   else
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,i6,2x,a)') wallclock(), task_list%na, 'no queue'
@@ -325,31 +321,29 @@ SUBROUTINE update (self, task_list, test)
     call task%clear (bits%busy)                         ! clear busy bit (FIXME: check this!)
     if (.not. was_refined) then
       call task_list%check_nbors (head)                 ! any nbors ready?
-      !$omp atomic write
-      stalled = 0
       !call mpi_mesg%diagnostics (0)
     end if
-    if (debug) then
-      write (io_unit%log,*) wallclock(), task%id, task%time, 'update end'
-      flush (io_unit%log)
-    end if
   else
-    !$omp critical (stalled_cr)
+    !$omp critical (queue_cr)
     if (stalled == 0) then
       stall_start = wallclock()
       if (debug) &
         write (io_unit%log,*) wallclock(), 'queue stalled', stalled
     end if
     stalled = stalled+1
+    !$omp end critical (queue_cr)
+    !$omp critical (stalled_cr)
     if (wallclock()-stall_start > retry_stalled) then
        !print *, mpi%rank, 'STALLED:'
        call task_list%check_all
        if (associated(task_list%queue)) then
          print *, mpi%rank, 'STALLED revived by check_all'
+         stall_start = wallclock()
        else
          call task_list%check_oldest
          if (associated(task_list%queue)) then
            print *, mpi%rank, 'STALLED revived by check_oldest'
+           stall_start = wallclock()
          else
            print *, mpi%rank, 'STALLED, revived FAILED'
            call io%abort ('STALLED, revived FAILED')
