@@ -196,6 +196,8 @@ SUBROUTINE init (self, name)
     open (io_unit%queue, file=filename, form='formatted', status='unknown')
     write (filename,'(a,"rank_",i5.5,".log")') trim(self%outputname), mpi%rank
     open (io_unit%mpi, file=filename, form='formatted', status='unknown')
+    write (filename,'(a,"rank_",i5.5,"_dbg.dat")') trim(self%outputname), mpi%rank
+    open (io_unit%dbg, file=filename, form='unformatted', status='unknown')
     write (filename,'(a,"rank_",i5.5,".disp")') trim(self%outputname), mpi%rank
     open (io_unit%dispatcher, file=filename, form='formatted', status='unknown')
     log_unit = io_unit%log
@@ -408,10 +410,10 @@ contains
       if (present(lvalue).and.iostat==0) read (io_unit%flag,*,iostat=iostat) lvalue
       if (iostat/=0) lvalue = .not.lvalue
       close (io_unit%flag)
-      if (present(lvalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', lvalue
-      if (present(ivalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', ivalue
-      if (present(rvalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', rvalue
-      if (present(dvalue)) write (*,*) 'flag: ', file(1:index(file,'.')-1), ' =', dvalue
+      if (present(lvalue)) write (io_unit%output,*) 'flag: ', file(1:index(file,'.')-1), ' =', lvalue
+      if (present(ivalue)) write (io_unit%output,*) 'flag: ', file(1:index(file,'.')-1), ' =', ivalue
+      if (present(rvalue)) write (io_unit%output,*) 'flag: ', file(1:index(file,'.')-1), ' =', rvalue
+      if (present(dvalue)) write (io_unit%output,*) 'flag: ', file(1:index(file,'.')-1), ' =', dvalue
     end if
   end if
   end subroutine

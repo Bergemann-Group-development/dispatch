@@ -47,6 +47,7 @@ MODULE patch_mod
     logical:: staggered=.true.
     logical:: no_mans_land=.false.
     logical:: use_data_hub=.false.
+    logical:: get_umax_location=.false.
     logical, dimension(:), pointer:: unsigned  => null()
     logical, dimension(:), pointer:: pervolume => null()
     class(link_t), pointer:: link       ! this could be useful
@@ -56,6 +57,7 @@ MODULE patch_mod
     integer:: file_offset(4)
     type(index_t):: idx
     real(8):: poisson_time=-1.0
+    real:: safety_factor=1.0
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
@@ -1493,17 +1495,34 @@ SUBROUTINE courant_condition (self, detailed_timer)
     dtime = self%courant*minval(ds)/self%u_fixed
     courant = self%courant
   else
-    dtime = self%courant*minval(ds)/self%u_max
+    dtime = self%courant*minval(ds)/self%u_max*self%safety_factor
     courant = self%courant
   endif
   !$omp atomic write
   self%dtime = dtime
   if (self%nt>1) then
-    if (io%verbose>2 .or. (self%istep>3 .and. &
-        dtime < 0.5*self%dt(self%iit(self%nt-2)) .and. self%dt_fixed < 0.0)) &
-      write(io%output,'(i6,a,i3,1p,2(3g11.2,2x),8g11.2)') self%id, &
-        ' courant: it, dtm, cdt, u_max, dt, post =', &
-        self%it, dtime, courant, self%u_max, self%position, self%dt(self%iit)
+    if (dtime < 0.5*self%dt(self%iit(self%nt-2)) .and. self%dt_fixed < 0.0) then
+      self%safety_factor = 0.5
+    end if
+    if (self%safety_factor < 0.6) then
+      !$omp critical (fort88_cr)
+      if (self%safety_factor == 0.5) then
+        write (io_unit%dbg) self%id, self%gn, self%ipos
+        write (io_unit%dbg) self%t(self%nt-3), self%mem(:,:,:,:,self%iit(self%nt-3),1)
+        write (io_unit%dbg) self%id, self%gn, self%ipos
+        write (io_unit%dbg) self%t(self%nt-2), self%mem(:,:,:,:,self%iit(self%nt-2),1)
+      end if
+      write (io_unit%dbg) self%id, self%gn, self%ipos
+      write (io_unit%dbg) self%time, self%mem(:,:,:,:,self%it,1)
+      flush (io_unit%dbg)
+      if (io%verbose>2 .or. (self%istep>3)) &
+        write(io%output,'(a,i6,i3,f12.6,1p,3g11.2,0p,1x,3f12.6,1x,1p,7g12.3)') &
+          ' courant: ', self%id, self%it, &
+          self%time, dtime, courant, self%u_max, self%position, self%dt(self%iit)
+      !$omp end critical (fort88_cr)
+    end if
+    self%safety_factor = self%safety_factor**0.99
+    self%get_umax_location = (self%safety_factor < 0.9)
   end if
   !-----------------------------------------------------------------------------
   ! Force the time step to give exactly sync_time if within reach
