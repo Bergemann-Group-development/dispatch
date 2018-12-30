@@ -105,7 +105,7 @@ if ($wt > 0) echo "waited $wt seconds"				# info
 @ s = 120							# process restar
 @ retrymax = 18000						# 5h
 
-#( cd data/$2; jobhelper >& jobhelper.log </dev/null & )		# start jobhelper
+( cd data/$2; jobhelper >& jobhelper.log </dev/null & )		# start jobhelper
 if (-e jobhelper.flag) \rm jobhelper.flag			# remove any initial flag
 
 restart:
@@ -135,8 +135,8 @@ if (-e restart.flag) then					# should we attempt to restart?
   endif
   if (-e data/$2/jobhelper.flag) then				# new jobhelper flag?
     killall jobhelper						# kill any of ours
-    #( cd data/$2; jobhelper >& jobhelper.log </dev/null & )	# start jobhelper
-    \rm -f data/$2/jobhelper.flag					# clear flag
+    ( cd data/$2; jobhelper >& jobhelper.log </dev/null & )	# start jobhelper
+    \rm -f data/$2/jobhelper.flag				# clear flag
   endif
   if (-e wait.flag) then					# allow change
     @ s = `cat wait.flag`					# new wait time
