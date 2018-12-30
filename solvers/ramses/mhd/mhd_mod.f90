@@ -388,7 +388,7 @@ subroutine ctoprim(self)
   real(dp):: smallp, c, entho
   real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
-  integer:: i,j,k
+  integer:: i, j, k, loc(3), l(3), u(3)
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
@@ -425,6 +425,8 @@ subroutine ctoprim(self)
     etot = uin(i,j,k,5) - emag
     eint = etot/uin(i,j,k,1) - eken
     q(i,j,k,5) = MAX((self%gamma-one)*q(i,j,k,1)*eint,smallp)    !
+    c(i,j,k) = sqrt((q(i,j,k,5)*gamma + 2.0*emag)/q(i,j,k,1)) + &
+      max( abs(q(i,j,k,2)), abs(q(i,j,k,3)), abs(q(i,j,k,4)))
   end do
   end do
   end do
@@ -433,10 +435,20 @@ subroutine ctoprim(self)
   end if
   ! Gravity predictor step
   !q(:,:,:,2:4) = q(:,:,:,idim+1) + Grho*gravin(:,:,:,1:3)*dt*half
-  c = sqrt((q(:,:,:,5)*self%gamma+q(:,:,:,6)**2+q(:,:,:,7)**2+q(:,:,:,8)**2)/q(:,:,:,1))
-  self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &
-                          + c + abs(q(:,:,:,3)) &
-                          + c + abs(q(:,:,:,4)))/3.
+  l = self%mesh%lo
+  u = self%mesh%uo
+  self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
+  if (self%get_umax_location) then
+    loc = maxloc(c(l(1):u(1),l(2):u(2),l(3):u(3))) + l-1
+    write (io_unit%log,'(a,i6,f12.6,2(2x,3i4),3f10.4,2(a,1p,4g11.3))') 'u_max loc:', &
+      self%id, self%time, self%ipos, loc, &
+      (self%mesh(1)%p + self%mesh(1)%r(loc(1))-self%mesh(2)%llc_cart)/self%mesh(1)%b, &
+      (self%mesh(2)%p + self%mesh(2)%r(loc(2))-self%mesh(2)%llc_cart)/self%mesh(2)%b, &
+      (self%mesh(3)%p + self%mesh(3)%r(loc(3))-self%mesh(2)%llc_cart)/self%mesh(3)%b, &
+      'P, b:', q(loc(1),loc(2),loc(3),5:8), &
+      'D, u:', q(loc(1),loc(2),loc(3),1:4)
+    flush (io_unit%log)
+  end if
   end associate
   call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine ctoprim
