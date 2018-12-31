@@ -1521,7 +1521,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
           self%time, dtime, courant, self%u_max, self%position, self%dt(self%iit)
       !$omp end critical (fort88_cr)
     end if
-    self%safety_factor = self%safety_factor**0.99
+    self%safety_factor = self%safety_factor**0.9
     self%get_umax_location = (self%safety_factor < 0.9)
   end if
   !-----------------------------------------------------------------------------
