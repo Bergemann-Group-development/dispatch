@@ -64,7 +64,7 @@ SUBROUTINE init (self)
   character(len=10):: riemann='hlld'
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, isothermal, csound, verbose, detailed_timer, unsigned
+    smallc, isothermal, csound, verbose, detailed_timer, unsigned, courant_type
 !...............................................................................
   call trace%begin('mhd_mod%init')
 
@@ -173,7 +173,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
-  !call check_small (self)
+  call check_small (self)                               ! Check smallr, smallp
   call ctoprim(self)                                    ! Primitive variables
   !self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
   call uslope(self,self%bf,self%q,self%dq,self%dbf,slope_type)   ! TVD slopes
@@ -425,11 +425,18 @@ subroutine ctoprim(self)
     etot = uin(i,j,k,5) - emag
     eint = etot/uin(i,j,k,1) - eken
     q(i,j,k,5) = MAX((self%gamma-one)*q(i,j,k,1)*eint,smallp)    !
-    c(i,j,k) = sqrt((q(i,j,k,5)*gamma + 2.0*emag)/q(i,j,k,1)) + &
-      max( abs(q(i,j,k,2)), abs(q(i,j,k,3)), abs(q(i,j,k,4)))
+    c(i,j,k) = sqrt((q(i,j,k,5)*gamma + 2.0*emag)/q(i,j,k,1))
   end do
   end do
   end do
+  !-----------------------------------------------------------------------------
+  ! Alternative Courant condition formulations
+  !-----------------------------------------------------------------------------
+  if (courant_type==1) then
+    c(:,:,:) = c(:,:,:) + max( abs(q(:,:,:,2)), abs(q(:,:,:,3)), abs(q(:,:,:,4)))
+  else
+    c(:,:,:) = c(:,:,:) + (abs(q(:,:,:,2)) + abs(q(:,:,:,3)) + abs(q(:,:,:,4)))/3.0
+  end if
   if (isothermal) then
     q(:,:,:,5) = q(:,:,:,1)*csound**2
   end if
@@ -440,13 +447,13 @@ subroutine ctoprim(self)
   self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
   if (self%get_umax_location) then
     loc = maxloc(c(l(1):u(1),l(2):u(2),l(3):u(3))) + l-1
-    write (io_unit%log,'(a,i6,f12.6,2(2x,3i4),3f10.4,2(a,1p,4g11.3))') 'u_max loc:', &
+    write (io_unit%log,'(a,i6,f12.6,2(1x,3i4),3f9.4,2(1x,a,1p,4g10.2))') 'u_max:', &
       self%id, self%time, self%ipos, loc, &
       (self%mesh(1)%p + self%mesh(1)%r(loc(1))-self%mesh(2)%llc_cart)/self%mesh(1)%b, &
       (self%mesh(2)%p + self%mesh(2)%r(loc(2))-self%mesh(2)%llc_cart)/self%mesh(2)%b, &
       (self%mesh(3)%p + self%mesh(3)%r(loc(3))-self%mesh(2)%llc_cart)/self%mesh(3)%b, &
-      'P, b:', q(loc(1),loc(2),loc(3),5:8), &
-      'D, u:', q(loc(1),loc(2),loc(3),1:4)
+      'P,B:', q(loc(1),loc(2),loc(3),5:8), &
+      'D,U:', q(loc(1),loc(2),loc(3),1:4)
     flush (io_unit%log)
   end if
   end associate
@@ -1326,8 +1333,7 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
         qright(1:n,6) = qp(lb(1):ub(1),j,k,bt1,xdim) ! Tangential magnetic field 1
         qright(1:n,7) = qp(lb(1):ub(1),j,k,lt2,xdim) ! Tangential velocity 2
         qright(1:n,8) = qp(lb(1):ub(1),j,k,bt2,xdim) ! Tangential magnetic field 2
-        call solver (self,qleft,qright,fgdnv,n,8)
-  !      call solver (self,qleft,qright,fgdnv,l(1),ub(1))
+        call solver (self,qleft,qright,fgdnv,n)
         ! Output fluxes
         fl(lb(1):ub(1),j,k,1  ) = fgdnv(1:n,1)  ! Mass density
         fl(lb(1):ub(1),j,k,5  ) = fgdnv(1:n,2)  ! Total energy
@@ -1363,9 +1369,7 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
         qright(1:n,6) = qp(i,lb(2):ub(2),k,bt1,xdim) ! Tangential magnetic field 1
         qright(1:n,7) = qp(i,lb(2):ub(2),k,lt2,xdim) ! Tangential velocity 2
         qright(1:n,8) = qp(i,lb(2):ub(2),k,bt2,xdim) ! Tangential magnetic field 2
-        call solver (self,qleft,qright,fgdnv,n,8)
-        !call solver (self,qleft,qright,fgdnv,ub(2)-lb(2)+1,8)
-    !    call solver (self,qleft,qright,fgdnv,l(1),ub(1))
+        call solver (self,qleft,qright,fgdnv,n)
         ! Output fluxes
         fl(i,lb(2):ub(2),k,1  ) = fgdnv(1:n,1)  ! Mass density
         fl(i,lb(2):ub(2),k,5  ) = fgdnv(1:n,2)  ! Total energy
@@ -1401,8 +1405,7 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
         qright(1:n,6) = qp(i,j,lb(3):ub(3),bt1,xdim) ! Tangential magnetic field 1
         qright(1:n,7) = qp(i,j,lb(3):ub(3),lt2,xdim) ! Tangential velocity 2
         qright(1:n,8) = qp(i,j,lb(3):ub(3),bt2,xdim) ! Tangential magnetic field 2
-        call solver (self,qleft,qright,fgdnv,n,8)
-    !    call solver (self,qleft,qright,fgdnv,l(1),ub(1))
+        call solver (self,qleft,qright,fgdnv,n)
         ! Output fluxes
         fl(i,j,lb(3):ub(3),1  ) = fgdnv(1:n,1)  ! Mass density
         fl(i,j,lb(3):ub(3),5  ) = fgdnv(1:n,2)  ! Total energy
@@ -1424,7 +1427,7 @@ end subroutine cmpflxm
 !> =============================================================================
 !> 2D solver for EMF
 !> =============================================================================
-subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor, emf, ngrid, nvar)
+SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor, emf, ngrid, nvar)
   class(mhd_t):: self
   ! 2D Riemann solver to compute EMF at cell edges
   ! indices of the 2 planar velocity lp1 and lp2 and the orthogonal one,
@@ -1442,11 +1445,6 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
   call trace%begin ('mhd_t%cmp_mag_flx', itimer=itimer, detailed_timer=detailed_timer)
   !-----------------------------------------------------------------------------
   xdim = lor - 1
-!  if (xdim == 3 .or. xdim == 1) then
-!    associate (qRT=>self%qRT,qLT=>self%qLT,qRB=>self%qRB,qLB=>self%qLB)
-!  else if (xdim == 2) then
-!    associate (qRT=>self%qRT,qLT=>self%qRB,qRB=>self%qLT,qLB=>self%qLB) 
-!  endif 
   !
   smallp = smallr*smallc**2
   !
@@ -1511,10 +1509,9 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
         qLR (i,8) = qRB(i-iRB, j-jRB, k-kRB, bor, xdim)
         qRR (i,8) = qLB(i-iLB, j-jLB, k-kLB, bor, xdim)
        end do
-       call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer=detailed_timer)
+       call solver_2d (self,qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer=detailed_timer)
       end do
     end do
-  
   else if (xdim == 2) then
     do i = self%mesh(1)%li,self%mesh(1)%uo
       do k = self%mesh(3)%li,self%mesh(3)%uo
@@ -1554,7 +1551,7 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
         qLR (j,8) = qRB(i-iRB, j-jRB, k-kRB, bor, xdim)
         qRR (j,8) = qLB(i-iLB, j-jLB, k-kLB, bor, xdim)
        end do
-       call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,k,i,l,u,nvar,xdim,detailed_timer=detailed_timer)
+       call solver_2d (self,qLL,qRL,qLR,qRR,emf,k,i,l,u,nvar,xdim,detailed_timer=detailed_timer)
       end do
     end do
   else if (xdim == 3) then    
@@ -1596,7 +1593,7 @@ subroutine cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
         qLR (k,8) = qRB(i-iRB, j-jRB, k-kRB, bor, xdim)
         qRR (k,8) = qLB(i-iLB, j-jLB, k-kLB, bor, xdim)
        end do
-       call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,i,j,l,u,nvar,xdim,detailed_timer=detailed_timer)
+       call solver_2d (self,qLL,qRL,qLR,qRR,emf,i,j,l,u,nvar,xdim,detailed_timer=detailed_timer)
       end do
     end do
   endif
@@ -1607,19 +1604,40 @@ END SUBROUTINE cmp_mag_flx
 !> =============================================================================
 !> Selection of 1-D solvers
 !> =============================================================================
-subroutine solver (self,qleft,qright,fgdnv,ub,nvar)
-!subroutine solver (self,qleft,qright,fgdnv,lb,ub)
+SUBROUTINE solver (self, qleft, qright, fgdnv, ub)
   class(mhd_t):: self
   real(dp),dimension(:,:):: qleft,qright,fgdnv
-  integer :: lb, ub, nvar
+  integer :: lb, ub
   !.............................................................................
-  if (self%riemann.eq.'hlld')then
-    call rieman%hlld(qleft,qright,fgdnv,ub,nvar)
+  if (self%riemann == 'hlld') then
+    call rieman%hlld (qleft, qright, fgdnv, ub)
+  else if (self%riemann == 'llf')then
+    call rieman%llf (qleft, qright, fgdnv, ub)
   else
     write(*,*)'unknown Riemann solver'
     stop
   end if
-end subroutine solver
+END SUBROUTINE solver
+
+!> =============================================================================
+!> Selection of 2-D solvers
+!> =============================================================================
+SUBROUTINE solver_2d (self,qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer)
+  class(mhd_t):: self
+  real(DP),dimension(:,:),intent(in):: qLL,qRL,qLR,qRR
+  real(DP),dimension(:,:,:):: emf
+  integer, intent(in):: j,k,l,u,nvar,xdim
+  logical, optional:: detailed_timer
+  !.............................................................................
+  if (self%riemann == 'hlld') then
+    call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer=detailed_timer)
+  else if (self%riemann == 'llf')then
+    call rieman%llf_2d (qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer=detailed_timer)
+  else
+    write(*,*)'unknown Riemann 2D solver'
+    stop
+  end if
+END SUBROUTINE solver_2d
 
 !> =============================================================================
 !> =============================================================================

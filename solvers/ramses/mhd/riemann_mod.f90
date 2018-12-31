@@ -10,250 +10,17 @@ module riemann_mod
   type riemann_t
   contains
     procedure, nopass:: hlld
-    procedure, nopass:: hlld_vec
     procedure, nopass:: hlld_2d
+    procedure, nopass:: llf
+    procedure, nopass:: llf_2d
   end type
   type(riemann_t), public:: rieman
 contains
 
 !> =============================================================================
-SUBROUTINE hlld_vec(qleft,qright,fgdnv,lb,ub,detailed_timer)
-  ! HLLD Riemann solver (Miyoshi & Kusano, 2005, JCP, 208, 315)
-  IMPLICIT NONE
-  REAL(dp),DIMENSION(:,:), target ::qleft,qright
-  REAL(dp),DIMENSION(:,:)         ::fgdnv
-  INTEGER ::ivar,i,lb,ub
-  LOGICAL, OPTIONAL:: detailed_timer
-  REAL(dp),DIMENSION(ub-lb+1)::SL,SR,SAL,SAR,A,sgnm
-  REAL(dp)::entho
-  REAL(dp),DIMENSION(:), pointer ::rl,pl,ul,vl,wl,cl,bl
-  REAL(dp),DIMENSION(:), pointer ::rr,pr,ur,vr,wr,cr,br
-  REAL(dp),DIMENSION(ub-lb+1)::ecinl,emagl,etotl,ptotl,vdotbl,el
-  REAL(dp),DIMENSION(ub-lb+1)::ecinr,emagr,etotr,ptotr,vdotbr,er
-  REAL(dp),DIMENSION(ub-lb+1)::cfastl,calfvenl,rcl,rstarl,vstarl,wstarl,bstarl,cstarl,vdotbstarl
-  REAL(dp),DIMENSION(ub-lb+1)::cfastr,calfvenr,rcr,rstarr,vstarr,wstarr,bstarr,cstarr,vdotbstarr
-  REAL(dp),DIMENSION(ub-lb+1)::sqrrstarl,etotstarl,etotstarstarl
-  REAL(dp),DIMENSION(ub-lb+1)::sqrrstarr,etotstarr,etotstarstarr
-  REAL(dp),DIMENSION(ub-lb+1)::ustar,ptotstar,estar,vstarstar,wstarstar,bstarstar,cstarstar,vdotbstarstar
-  REAL(dp),DIMENSION(ub-lb+1)::ro,uo,vo,wo,bo,co,ptoto,etoto,vdotbo
-  REAL(dp),DIMENSION(ub-lb+1)::lim,emago
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin('riemann_t%hlld_vec', itimer=itimer, detailed_timer=detailed_timer)
-  !
-  if (isothermal) then
-    entho = one
-  else
-    entho = one/max(gamma-one,1e-6)
-  end if
-  !
-  ! Enforce continuity of normal component
-  A=half*(qleft(lb:ub,4)+qright(lb:ub,4))
-  sgnm=sign(one,A)
-  qleft(lb:ub,4)=A; qright(lb:ub,4)=A
-  !
-  ! Left variables
-  rl=>qleft(lb:ub,1); Pl=>qleft(lb:ub,2); ul=>qleft(lb:ub,3)
-  vl=>qleft(lb:ub,5); Bl=>qleft(lb:ub,6); wl=>qleft(lb:ub,7); Cl=>qleft(lb:ub,8)
-  ecinl = half*(ul*ul+vl*vl+wl*wl)*rl
-  emagl = half*(A*A+Bl*Bl+Cl*Cl)
-  etotl = Pl*entho+ecinl+emagl
-  Ptotl = Pl + emagl
-  vdotBl= ul*A+vl*Bl+wl*cl
-  !
-  ! Right variables
-  rr=>qright(lb:ub,1); Pr=>qright(lb:ub,2); ur=>qright(lb:ub,3)
-  vr=>qright(lb:ub,5); Br=>qright(lb:ub,6); wr=>qright(lb:ub,7); Cr=>qright(lb:ub,8)
-  ecinr = half*(ur*ur+vr*vr+wr*wr)*rr
-  emagr = half*(A*A+Br*Br+Cr*Cr)
-  etotr = Pr*entho+ecinr+emagr
-  Ptotr = Pr + emagr
-  vdotBr= ur*A+vr*Br+wr*Cr
-  !
-  ! Find the largest eigenvalues in the normal direction to the interface
-  CALL find_speed_fast_vec(qleft ,cfastl,lb,ub)
-  CALL find_speed_fast_vec(qright,cfastr,lb,ub)
-  !
-  ! Compute HLL wave speed
-  SL=min(ul,ur)-max(cfastl,cfastr)
-  SR=max(ul,ur)+max(cfastl,cfastr)
-  !
-  lim = 1.0_dp
-  !
-  ! Compute lagrangian sound speed
-  rcl=rl*(ul-SL)
-  rcr=rr*(SR-ur)
-  !
-  ! Compute acoustic star state
-  ustar   =(rcr*ur   +rcl*ul   +  (Ptotl-Ptotr))/(rcr+rcl)
-  Ptotstar=(rcr*Ptotl+rcl*Ptotr+rcl*rcr*(ul-ur))/(rcr+rcl)
-  !
-  ! Left star region variables
-  rstarl=rl*(SL-ul)/(SL-ustar)
-  estar =rl*(SL-ul)*(SL-ustar)-A**2
-  el    =rl*(SL-ul)*(SL-ul   )-A**2
-  where(abs(estar) < 1d-4*A**2)
-     vstarl=vl
-     Bstarl=Bl
-     wstarl=wl
-     Cstarl=Cl
-  elsewhere
-     vstarl=vl-A*Bl*(ustar-ul)/estar
-     Bstarl=Bl*el/estar
-     wstarl=wl-A*Cl*(ustar-ul)/estar
-     Cstarl=Cl*el/estar
-  endwhere
-  vdotBstarl=ustar*A+vstarl*Bstarl+wstarl*Cstarl
-  etotstarl=((SL-ul)*etotl-Ptotl*ul+Ptotstar*ustar+A*(vdotBl-vdotBstarl))/(SL-ustar)
-  sqrrstarl=sqrt(rstarl)
-  calfvenl=abs(A)/sqrrstarl
-  SAL=ustar-calfvenl
-  !
-  ! Right star region variables
-  rstarr=rr*(SR-ur)/(SR-ustar)
-  estar =rr*(SR-ur)*(SR-ustar)-A**2
-  er    =rr*(SR-ur)*(SR-ur   )-A**2
-  where(abs(estar) < 1d-4*A**2)
-     vstarr=vr
-     Bstarr=Br
-     wstarr=wr
-     Cstarr=Cr
-  elsewhere
-     vstarr=vr-A*Br*(ustar-ur)/estar
-     Bstarr=Br*er/estar
-     wstarr=wr-A*Cr*(ustar-ur)/estar
-     Cstarr=Cr*er/estar
-  endwhere
-  vdotBstarr=ustar*A+vstarr*Bstarr+wstarr*Cstarr
-  etotstarr=((SR-ur)*etotr-Ptotr*ur+Ptotstar*ustar+A*(vdotBr-vdotBstarr))/(SR-ustar)
-  sqrrstarr=sqrt(rstarr)
-  calfvenr=abs(A)/sqrrstarr
-  SAR=ustar+calfvenr
-  !
-  ! Double star region variables
-  vstarstar=(sqrrstarl*vstarl+sqrrstarr*vstarr+sgnm*(Bstarr-Bstarl))/(sqrrstarl+sqrrstarr)
-  wstarstar=(sqrrstarl*wstarl+sqrrstarr*wstarr+sgnm*(Cstarr-Cstarl))/(sqrrstarl+sqrrstarr)
-  Bstarstar=(sqrrstarl*Bstarr+sqrrstarr*Bstarl+sgnm*sqrrstarl*sqrrstarr*(vstarr-vstarl))/(sqrrstarl+sqrrstarr)
-  Cstarstar=(sqrrstarl*Cstarr+sqrrstarr*Cstarl+sgnm*sqrrstarl*sqrrstarr*(wstarr-wstarl))/(sqrrstarl+sqrrstarr)
-  vdotBstarstar=ustar*A+vstarstar*Bstarstar+wstarstar*Cstarstar
-  etotstarstarl=etotstarl-sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)
-  etotstarstarr=etotstarr+sgnm*sqrrstarr*(vdotBstarr-vdotBstarstar)
-  !
-  ! Sample the solution at x/t=0
-  do i=1,ub-lb+1
-    if(SL(i)>zero)then
-       ro(i)=rl(i)
-       uo(i)=ul(i)
-       vo(i)=vl(i)
-       wo(i)=wl(i)
-       Bo(i)=Bl(i)
-       Co(i)=Cl(i)
-       Ptoto(i)=Ptotl(i)
-       etoto(i)=etotl(i)
-       vdotBo(i)=vdotBl(i)
-    else if(SAL(i)>zero)then
-       ro(i)=rstarl(i)
-       uo(i)=ustar(i)
-       vo(i)=vstarl(i)
-       wo(i)=wstarl(i)
-       Bo(i)=Bstarl(i)
-       Co(i)=Cstarl(i)
-       Ptoto(i)=Ptotstar(i)
-       etoto(i)=etotstarl(i)
-       vdotBo(i)=vdotBstarl(i)
-    else if(ustar(i)>zero)then
-       ro(i)=rstarl(i)
-       uo(i)=ustar(i)
-       vo(i)=vstarstar(i)
-       wo(i)=wstarstar(i)
-       Bo(i)=Bstarstar(i)
-       Co(i)=Cstarstar(i)
-       Ptoto(i)=Ptotstar(i)
-       etoto(i)=etotstarstarl(i)
-       vdotBo(i)=vdotBstarstar(i)
-    else if(SAR(i)>zero)then
-       ro(i)=rstarr(i)
-       uo(i)=ustar(i)
-       vo(i)=vstarstar(i)
-       wo(i)=wstarstar(i)
-       Bo(i)=Bstarstar(i)
-       Co(i)=Cstarstar(i)
-       Ptoto(i)=Ptotstar(i)
-       etoto(i)=etotstarstarr(i)
-       vdotBo(i)=vdotBstarstar(i)
-    else if (SR(i)>zero)then
-       ro(i)=rstarr(i)
-       uo(i)=ustar(i)
-       vo(i)=vstarr(i)
-       wo(i)=wstarr(i)
-       Bo(i)=Bstarr(i)
-       Co(i)=Cstarr(i)
-       Ptoto(i)=Ptotstar(i)
-       etoto(i)=etotstarr(i)
-       vdotBo(i)=vdotBstarr(i)
-    else
-       ro(i)=rr(i)
-       uo(i)=ur(i)
-       vo(i)=vr(i)
-       wo(i)=wr(i)
-       Bo(i)=Br(i)
-       Co(i)=Cr(i)
-       Ptoto(i)=Ptotr(i)
-       etoto(i)=etotr(i)
-       vdotBo(i)=vdotBr(i)
-    end if
-  end do
-  !
-  emago=half*(A*A+Bo*Bo+Co*Co)
-  !
-  ! Compute the Godunov flux
-  fgdnv(:,:)          = 0d0
-
-  fgdnv(lb:ub,1) = ro*uo
-  fgdnv(lb:ub,2) = (etoto+Ptoto)*uo-A*vdotBo
-  fgdnv(lb:ub,3) = ro*uo*uo+Ptoto+emago*(lim-1.0_dp)-A*A*lim
-  fgdnv(lb:ub,4) = zero
-  fgdnv(lb:ub,5) = ro*uo*vo-A*Bo*lim
-  fgdnv(lb:ub,6) = Bo*uo-A*vo
-  fgdnv(lb:ub,7) = ro*uo*wo-A*Co*lim
-  fgdnv(lb:ub,8) = Co*uo-A*wo
-  do ivar = 9,nvar
-     where(fgdnv(:,1)>0)
-        fgdnv(:,ivar) = fgdnv(:,1)*qleft (:,ivar)
-     elsewhere
-        fgdnv(:,ivar) = fgdnv(:,1)*qright(:,ivar)
-     endwhere
-  end do
-  !
-  call trace%end (itimer, detailed_timer=detailed_timer)
-contains
-
-SUBROUTINE find_speed_fast_vec(qvar,vel_info,lb,ub)
-  !! calculate the fast magnetosonic velocity
-  !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal,
-  !! Vtransverse1,Btransverse1,Vtransverse2,Btransverse2
-  IMPLICIT NONE
-  integer :: lb, ub
-  REAL(dp), DIMENSION(:,:), target:: qvar
-  REAL(dp), DIMENSION(:)  :: vel_info
-  REAL(dp), DIMENSION(:), pointer :: d,P,u,v,w,A,B,C
-  REAL(dp), DIMENSION(ub-lb+1)  :: B2,c2,d2,cf
-  !-----------------------------------------------------------------------------
-  d=>qvar(lb:ub,1); P=>qvar(lb:ub,2); u=>qvar(lb:ub,3); A=>qvar(lb:ub,4)
-  v=>qvar(lb:ub,5); B=>qvar(lb:ub,6); w=>qvar(lb:ub,7); C=>qvar(lb:ub,8)
-  B2 = A*A+B*B+C*C
-  c2 = gamma*P/d
-  d2 = half*(B2/d+c2)
-  cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
-  vel_info = cf
-END SUBROUTINE find_speed_fast_vec
-
-END SUBROUTINE hlld_vec
-
 !> =============================================================================
-!> =============================================================================
-subroutine hlld (qleft,qright,fgdnv,ngrid,nvar,detailed_timer)
-  integer::ngrid,nvar
+subroutine hlld (qleft, qright, fgdnv, ngrid, detailed_timer)
+  integer:: ngrid
   real(dp),dimension(:,:)::qleft,qright,fgdnv
   LOGICAL, OPTIONAL:: detailed_timer
   REAL(dp)::SL,SR
@@ -485,24 +252,6 @@ subroutine hlld (qleft,qright,fgdnv,ngrid,nvar,detailed_timer)
     fgdnv(i,8) = Co*uo-A*wo
   end do
   !call trace%end (itimer, detailed_timer=detailed_timer)
-contains
-SUBROUTINE find_speed_fast(qvar,vel_info)
-  !! calculate the fast magnetosonic velocity
-  !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal,
-  !! Vtransverse1,Btransverse1,Vtransverse2,Btransverse2
-  INTEGER :: i ,ib, iv
-  REAL(dp),DIMENSION(1:nvar):: qvar
-  REAL(dp) :: vel_info
-  REAL(dp) :: d,P,u,v,w,A,B,C,B2,c2,d2,cf
-
-  d=qvar(1); P=qvar(2); u=qvar(3); A=qvar(4)
-  v=qvar(5); B=qvar(6); w=qvar(7); C=qvar(8)
-  B2 = A*A+B*B+C*C
-  c2 = gamma*P/d
-  d2 = half*(B2/d+c2)
-  cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
-  vel_info = cf
-END SUBROUTINE find_speed_fast
 end subroutine hlld
 
 !> =============================================================================
@@ -510,8 +259,8 @@ end subroutine hlld
 !> =============================================================================
 SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
   INTEGER, INTENT(IN) :: j,k,l0,l1,nvar,xdim
-  REAL(dp),DIMENSION(:,:),INTENT(IN)::qLL,qRL,qLR,qRR
-  REAL(dp),DIMENSION(:,:,:):: emf
+  REAL(dp), DIMENSION(:,:),INTENT(IN)::qLL,qRL,qLR,qRR
+  REAL(dp), DIMENSION(:,:,:):: emf
   LOGICAL, OPTIONAL:: detailed_timer
   ! local variables
   INTEGER:: l
@@ -527,7 +276,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
 
   REAL(dp) :: rLL,rLR,rRL,rRR,pLL,pLR,pRL,pRR,uLL,uLR,uRL,uRR,vLL,vLR,vRL,vRR, &
                        ALL,ALR,ARL,ARR,BLL,BLR,BRL,BRR,CLL,CLR,CRL,CRR
-  REAL(dp),DIMENSION(1:nvar) :: qtmp
+  REAL(dp), DIMENSION(1:nvar) :: qtmp
   REAL(dp) :: B2, c2, d2, d1
   !integer, save:: itimer(10)=0
   integer, save:: itimer=0
@@ -908,11 +657,204 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     else if (xdim == 3) then
        emf(j,k,l) = E
     endif
-
   end do
   !call trace%end (itimer, detailed_timer=detailed_timer)
-contains
+END SUBROUTINE hlld_2d
 
+!> =============================================================================
+!> LLF 2D fluxes
+!> =============================================================================
+SUBROUTINE llf_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
+  INTEGER, INTENT(IN) :: j,k,l0,l1,nvar,xdim
+  REAL(dp), DIMENSION(:,:),INTENT(IN)::qLL,qRL,qLR,qRR
+  REAL(dp), DIMENSION(:,:,:):: emf
+  LOGICAL, OPTIONAL:: detailed_timer
+  ! local variables
+  INTEGER:: l
+  REAL(dp) :: E, EV, ELL, ERL, ELR, ERR, qleft(8), qright(8), fmean_x(8), fmean_y(8)
+  integer, save:: itimer=0
+  !.............................................................................
+  !call trace%begin ('riemann_t%hlld_2d', itimer=itimer, detailed_timer=detailed_timer)
+  !
+  do l=l0,l1
+    ! vx*by - vy*bx at the four edge centers
+    ELL = qLL(l,3)*qLL(l,7) - qLL(l,4)*qLL(l,6)
+    ERL = qRL(l,3)*qRL(l,7) - qRL(l,4)*qRL(l,6)
+    ELR = qLR(l,3)*qLR(l,7) - qLR(l,4)*qLR(l,6)  
+    ERR = qRR(l,3)*qRR(l,7) - qRR(l,4)*qRR(l,6) 
+    !
+    ! find the average value of E
+    Ev = forth*(ELL+ERL+ELR+ERR)
+    !
+    ! call the first solver in the x direction
+    ! density
+    qleft (1) = half*(qLL(l,1)+qLR(l,1))
+    qright(1) = half*(qRR(l,1)+qRL(l,1))
+    !
+    ! pressure
+    qleft (2) = half*(qLL(l,2)+qLR(l,2))
+    qright(2) = half*(qRR(l,2)+qRL(l,2))
+    !
+    ! vt1 becomes normal velocity
+    qleft (3) = half*(qLL(l,3)+qLR(l,3))
+    qright(3) = half*(qRR(l,3)+qRL(l,3))
+    !
+    ! bt1 becomes normal magnetic field
+    qleft (4) = half*(qLL(l,6)+qLR(l,6))
+    qright(4) = half*(qRR(l,6)+qRL(l,6))
+    !
+    ! vt2 becomes transverse velocity field
+    qleft (5) = half*(qLL(l,4)+qLR(l,4))
+    qright(5) = half*(qRR(l,4)+qRL(l,4))
+    !
+    ! bt2 becomes transverse magnetic field 
+    qleft (6) = half*(qLL(l,7)+qLR(l,7))
+    qright(6) = half*(qRR(l,7)+qRL(l,7))
+    !
+    ! velocity component perp. to the plane is now transverse
+    qleft (7) = half*(qLL(l,5)+qLR(l,5))
+    qright(7) = half*(qRR(l,5)+qRL(l,5))
+    !
+    ! magnetic field component perp. to the plane is now transverse
+    qleft (8) = half*(qLL(l,8)+qLR(l,8))
+    qright(8) = half*(qRR(l,8)+qRL(l,8))
+    !
+    CALL lax_friedrich(qleft,qright,fmean_x)
+    !
+    ! call the second solver in the y direction
+    ! density
+    qleft (1) = half*(qLL(l,1)+qRL(l,1))
+    qright(1) = half*(qRR(l,1)+qLR(l,1))
+    !
+    ! pressure
+    qleft (2) = half*(qLL(l,2)+qRL(l,2))
+    qright(2) = half*(qRR(l,2)+qLR(l,2))
+    !
+    ! vt2 becomes normal velocity
+    qleft (3) = half*(qLL(l,4)+qRL(l,4))
+    qright(3) = half*(qRR(l,4)+qLR(l,4))
+    !
+    ! bt2 becomes normal magnetic field
+    qleft (4) = half*(qLL(l,7)+qRL(l,7))
+    qright(4) = half*(qRR(l,7)+qLR(l,7))
+    !
+    ! vt1 becomes transverse velocity field 
+    qleft (5) = half*(qLL(l,3)+qRL(l,3))
+    qright(5) = half*(qRR(l,3)+qLR(l,3))
+    !
+    ! bt1 becomes transverse magnetic field 
+    qleft (6) = half*(qLL(l,6)+qRL(l,6))
+    qright(6) = half*(qRR(l,6)+qLR(l,6))
+    !
+    ! velocity component perp. to the plane is now transverse
+    qleft (7) = half*(qLL(l,5)+qRL(l,5))
+    qright(7) = half*(qRR(l,5)+qLR(l,5))
+    !
+    ! magnetic field component perp. to the plane is now transverse
+    qleft (8) = half*(qLL(l,8)+qRL(l,8))
+    qright(8) = half*(qRR(l,8)+qLR(l,8))
+    !
+    CALL lax_friedrich(qleft,qright,fmean_y)
+    !
+    E = Ev + (fmean_x(6) - fmean_y(6))
+    if (xdim == 1) then
+      emf(l,j,k) = E
+    else if (xdim == 2) then
+      emf(k,l,j) = E
+    else if (xdim == 3) then
+      emf(j,k,l) = E
+    endif
+  end do
+  !call trace%end (itimer, detailed_timer=detailed_timer)
+END SUBROUTINE llf_2d
+
+!> =============================================================================
+!> LLF
+!> =============================================================================
+SUBROUTINE llf (qleft, qright, fgdnv, ngrid,  detailed_timer)
+  real(DP), dimension(:,:):: qleft, qright, fgdnv
+  integer:: ngrid, l
+  logical, optional:: detailed_timer
+  !-----------------------------------------------------------------------------
+  do l=1,ngrid
+    call lax_friedrich (qleft(l,:), qright(l,:), fgdnv(l,:))
+  end do
+END SUBROUTINE llf
+
+!> =============================================================================
+!> 1D local Lax-Friedrich Riemann solver
+!> =============================================================================
+SUBROUTINE lax_friedrich (qleft, qright, fgdnv)
+  REAL(dp), DIMENSION(:):: qleft, qright, fgdnv
+  REAL(dp), DIMENSION(size(qleft)):: fleft, fright, fmean
+  REAL(dp), DIMENSION(size(qleft)):: uleft ,uright, udiff
+  REAL(dp):: vleft, vright, bx_mean
+  !-----------------------------------------------------------------------------
+  ! Enforce continuity of normal component
+  bx_mean = half*(qleft(4)+qright(4))
+  qleft (4) = bx_mean
+  qright(4) = bx_mean
+  !
+  CALL find_mhd_flux (qleft ,uleft ,fleft )
+  CALL find_mhd_flux (qright,uright,fright) 
+  !
+  ! find the mean flux
+  fmean =  half * ( fright + fleft )
+  !
+  ! find the largest eigenvalue in the normal direction to the interface
+  CALL find_speed_info (qleft ,vleft )
+  CALL find_speed_info (qright,vright)
+  !
+  ! difference between the 2 states
+  udiff = half * ( uright - uleft )
+  !
+  ! the local Lax-Friedrich flux
+  fgdnv = fmean - MAX(vleft,vright) * udiff
+END SUBROUTINE lax_friedrich
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE find_mhd_flux (qvar, cvar, ff) 
+  !! compute the 1D MHD fluxes from the conservative variables
+  !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal, 
+  !! Vtransverse1, Btransverse1, Vtransverse2, Btransverse2
+  IMPLICIT NONE
+  INTEGER :: i , ivar, ib
+  REAL(dp), DIMENSION(:):: qvar, cvar, ff
+  REAL(dp):: ecin,emag,etot,d,u,v,w,A,B,C,P,Ptot,entho
+  !-----------------------------------------------------------------------------
+  ! Local variables
+  entho = one/(gamma-one)
+  d=qvar(1); P=qvar(2); u=qvar(3); A=qvar(4)
+  v=qvar(5); B=qvar(6); w=qvar(7); C=qvar(8)
+  ecin = half*(u*u+v*v+w*w)*d
+  emag = half*(A*A+B*B+C*C)
+  etot = P*entho+ecin+emag
+  Ptot = P + emag
+  !
+  ! Compute conservative variables
+  cvar(1) = d
+  cvar(2) = etot
+  cvar(3) = d*u
+  cvar(4) = A
+  cvar(5) = d*v
+  cvar(6) = B
+  cvar(7) = d*w
+  cvar(8) = C
+  !
+  ! Compute fluxes
+  ff(1) = d*u
+  ff(2) = (etot+Ptot)*u-A*(A*u+B*v+C*w)
+  ff(3) = d*u*u+Ptot-A*A
+  ff(4) = zero
+  ff(5) = d*u*v-A*B
+  ff(6) = B*u-A*v
+  ff(7) = d*u*w-A*C
+  ff(8) = C*u-A*w
+END SUBROUTINE find_mhd_flux
+
+!> =============================================================================
+!> =============================================================================
 SUBROUTINE find_speed_fast(qvar,vel_info)
   !! calculate the fast magnetosonic velocity
   !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal,
@@ -922,8 +864,6 @@ SUBROUTINE find_speed_fast(qvar,vel_info)
   REAL(dp) :: d,P,u,v,w,A,B,C,B2,c2,d2,cf
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  !call trace%begin ('riemann_t%find_speed_fast', itimer=itimer, detailed_timer=detailed_timer)
-  !
   d=qvar(1); P=qvar(2); u=qvar(3); A=qvar(4)
   v=qvar(5); B=qvar(6); w=qvar(7); C=qvar(8)
   d=max(d,smallr)
@@ -933,10 +873,27 @@ SUBROUTINE find_speed_fast(qvar,vel_info)
   d2 = half*(B2/d+c2)
   cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
   vel_info = cf
-  !
-  !call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE find_speed_fast
 
-END SUBROUTINE hlld_2d
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE find_speed_info (qvar, vel_info)
+  !! calculate the fastest velocity at which information is exchanged 
+  !! at the interface
+  !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal, 
+  !! Vtransverse1,Btransverse1,Vtransverse2,Btransverse2
+  IMPLICIT NONE
+  REAL(dp), DIMENSION(:):: qvar  
+  REAL(dp):: vel_info
+  REAL(dp):: d, P, u, v, w, A, B, C, B2, c2, d2, cf
+  !-----------------------------------------------------------------------------
+  d=qvar(1); P=qvar(2); u=qvar(3); A=qvar(4)
+  v=qvar(5); B=qvar(6); w=qvar(7); C=qvar(8)
+  B2 = A*A+B*B+C*C
+  c2 = gamma*P/d
+  d2 = half*(B2/d+c2)
+  cf = sqrt( d2 + sqrt(d2**2-c2*A*A/d) )
+  vel_info = cf+abs(u)
+END SUBROUTINE find_speed_info
 
 END MODULE riemann_mod
