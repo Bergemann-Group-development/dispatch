@@ -864,10 +864,10 @@ SUBROUTINE trace3d(self)
     dALz = half * dbf(i  ,j  ,k  ,1,2)
     dARz = half * dbf(i+1,j  ,k  ,1,2)
 
-    dBLx = half * dbf(i  ,j  ,k  ,2,1)
-    dBRx = half * dbf(i  ,j+1,k  ,2,1)
-    dBLz = half * dbf(i  ,j  ,k  ,2,2)
-    dBRz = half * dbf(i  ,j+1,k  ,2,2)
+    dBLz = half * dbf(i  ,j  ,k  ,2,1)
+    dBRz = half * dbf(i  ,j+1,k  ,2,1)
+    dBLx = half * dbf(i  ,j  ,k  ,2,2)
+    dBRx = half * dbf(i  ,j+1,k  ,2,2)
 
     dCLx = half * dbf(i  ,j  ,k  ,3,1)
     dCRx = half * dbf(i  ,j  ,k+1,3,1)
@@ -878,8 +878,8 @@ SUBROUTINE trace3d(self)
     ! Face-centered predicted states
     sAL0 = +(GLR-GLL)*dtdy*half -(FLR-FLL)*dtdz*half
     sAR0 = +(GRR-GRL)*dtdy*half -(FRR-FRL)*dtdz*half
-    sBL0 = -(GRL-GLL)*dtdx*half +(ELR-ELL)*dtdz*half
-    sBR0 = -(GRR-GLR)*dtdx*half +(ERR-ERL)*dtdz*half
+    sBL0 = +(ELR-ELL)*dtdz*half -(GRL-GLL)*dtdx*half
+    sBR0 = +(ERR-ERL)*dtdz*half -(GRR-GLR)*dtdx*half
     sCL0 = +(FRL-FLL)*dtdx*half -(ERL-ELL)*dtdy*half
     sCR0 = +(FRR-FLR)*dtdx*half -(ERR-ELR)*dtdy*half
     !
