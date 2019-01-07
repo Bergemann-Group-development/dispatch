@@ -678,7 +678,11 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
             end do
             if (check_filled) then
               do ix=l(1),u(1)
-                filled(ix,iy,iz,iv) = source%level
+                if (filled(ix,iy,iz,iv) >= 0) then
+                  print *,'WARNING: attempted overwrite', target%id, source%id, ix,iy,iz,o,iv
+                else
+                  filled(ix,iy,iz,iv) = source%level
+                end if
               end do
             end if
           end do
@@ -702,7 +706,11 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
               end do
               if (check_filled) then
                 do ix=l(1),u(1)
-                  filled(ix,iy,iz,iv) = source%level
+                  if (filled(ix,iy,iz,iv) >= 0) then
+                    print *,'WARNING: attempted overwrite', target%id, source%id, ix,iy,iz,o,iv
+                  else
+                    filled(ix,iy,iz,iv) = source%level
+                  end if
                 end do
               end if
             end do

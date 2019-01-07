@@ -53,6 +53,8 @@ MODULE mhd_mod
   logical, save:: detailed_timer=.false.
   logical, save:: unsigned=.true.
   integer, save:: verbose=0
+  integer, save:: b_slope_type=-1
+  integer, save:: u_slope_type=-1
   character(len=16):: eqn='mhd'
   real(kind=8):: courant_number=0.2
   real:: csound=1.
@@ -63,8 +65,9 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hlld'
   integer:: i, iv
-  namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, isothermal, csound, verbose, detailed_timer, unsigned, courant_type
+  namelist /ramses_params/ gamma, riemann, slope_type, b_slope_type, &
+    u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
+    verbose, detailed_timer, unsigned
 !...............................................................................
   call trace%begin('mhd_mod%init')
 
@@ -470,7 +473,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
   real, dimension(:,:,:,:,:):: dq
   real, dimension(:,:,:,:,:):: dbf
   real:: rslope_type
-  integer::nv, islope_type
+  integer::nv, islope_type, slope
   integer::i, j, k, n, l(3), u(3)
   real(dp)::dsgn, dlim, dcen, dlft, drgt, slop, xslope_type
   real(dp)::dfll,dflm,dflr,dfml,dfmm,dfmr,dfrl,dfrm,dfrr
@@ -486,8 +489,13 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
   l = self%mesh%lb+1
   u = self%mesh%ub-1
   nv=self%nv
-  if(slope_type==-1)then
-    do n = 1, nv
+  do n = 1, nv
+    if (u_slope_type/=0 .and. n>=2 .and. n<=4) then
+      slope = u_slope_type
+    else
+      slope = islope_type
+    end if
+    if(slope==-1)then
       do k = l(3),u(3)
         do j = l(2),u(2)
           do i = l(1),u(1)
@@ -497,12 +505,9 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           end do
         end do
       end do
-    end do
-  else if(islope_type==0)then
-     dq=0.0_dp
-     return
-  else if (islope_type==1) then  ! minmod
-    do n = 1, nv
+    else if(slope==0)then
+      dq(:,:,:,n,:) = 0.0_dp
+    else if (slope==1) then  ! minmod
       do k = l(3),u(3)
         do j = l(2),u(2)
           do i = l(1),u(1)
@@ -521,10 +526,8 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           end do
         end do
       end do
-    end do
-  else if (islope_type==2) then ! moncen
-    xslope_type= 2 !MIN(slope_type,2)
-    do n = 1, nv
+    else if (slope==2) then ! moncen
+      xslope_type= 2 !MIN(slope_type,2)
       do k = l(3),u(3)
         do j = l(2),u(2)
           do i = l(1),u(1)
@@ -554,68 +557,8 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           end do
         end do
       end do
-    end do
-
-    do k = l(3),u(3)
-      do j = l(2),u(2)
-        do i = l(1),u(1)
-          ! Bx
-          dlft = (bf(i,j  ,k,1) - bf(i,j-1,k,1))
-          drgt = (bf(i,j+1,k,1) - bf(i,j  ,k,1))
-          dcen = half*(dlft+drgt)
-          dsgn = sign(one, dcen)
-          slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
-          dbf(i,j,k,1,1) = dsgn*min(slop,abs(dcen))
-          ! slopes in second coordinate direction
-          dlft = (bf(i,j,k  ,1) - bf(i,j,k-1,1))
-          drgt = (bf(i,j,k+1,1) - bf(i,j,k  ,1))
-          dcen = half*(dlft+drgt)
-          dsgn = sign(one, dcen)
-          slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
-          dbf(i,j,k,1,2) = dsgn*min(slop,abs(dcen))
-          ! By
-          ! slopes in first coordinate direction
-          dlft = (bf(i  ,j,k,2) - bf(i-1,j,k,2))
-          drgt = (bf(i+1,j,k,2) - bf(i  ,j,k,2))
-          dcen = half*(dlft+drgt)
-          dsgn = sign(one, dcen)
-          slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
-          dbf(i,j,k,2,1) = dsgn*min(slop,abs(dcen))
-          ! slopes in second coordinate direction
-          dlft = (bf(i,j,k  ,2) - bf(i,j,k-1,2))
-          drgt = (bf(i,j,k+1,2) - bf(i,j,k  ,2))
-          dcen = half*(dlft+drgt)
-          dsgn = sign(one, dcen)
-          slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
-          dbf(i,j,k,2,2) = dsgn*min(slop,abs(dcen))
-          ! Bz
-          ! slopes in first coordinate direction
-          dlft = (bf(i  ,j,k,3) - bf(i-1,j,k,3))
-          drgt = (bf(i+1,j,k,3) - bf(i  ,j,k,3))
-          dcen = half*(dlft+drgt)
-          dsgn = sign(one, dcen)
-          slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
-          dbf(i,j,k,3,1) = dsgn*min(slop,abs(dcen))
-          ! slopes in second coordinate direction
-          dlft = (bf(i,j  ,k,3) - bf(i,j-1,k,3))
-          drgt = (bf(i,j+1,k,3) - bf(i,j  ,k,3))
-          dcen = half*(dlft+drgt)
-          dsgn = sign(one, dcen)
-          slop = xslope_type*min(abs(dlft),abs(drgt))
-          slop = merge(slop,zero,(dlft*drgt)>zero)
-          dbf(i,j,k,3,2) = dsgn*min(slop,abs(dcen))
-        end do
-      end do
-    end do
-
-  else if (islope_type==3) then ! positivity preserving 3d unsplit slope
-    xslope_type = real(slope_type - 2_dp,kind=dp)
-    do n = 1, nv
+    else if (slope==3) then ! positivity preserving 3d unsplit slope
+      xslope_type = real(slope_type - 2_dp,kind=dp)
       do k = l(3),u(3)
         do j = l(2),u(2)
           do i = l(1),u(1)
@@ -678,70 +621,175 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           end do
         end do
       end do
-    end do
-      do k = l(3),u(3)
-        do j = l(2),u(2)
-          do i = l(1),u(1)
-            ! Bx
-            dlft = (bf(i,j  ,k,1) - bf(i,j-1,k,1))
-            drgt = (bf(i,j+1,k,1) - bf(i,j  ,k,1))
-            dcen = half*(dlft+drgt)
-            dsgn = sign(one, dcen)
-            slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
-            dbf(i,j,k,1,1) = dsgn*min(slop,abs(dcen))
-            ! slopes in second coordinate direction
-            dlft = (bf(i,j,k  ,1) - bf(i,j,k-1,1))
-            drgt = (bf(i,j,k+1,1) - bf(i,j,k  ,1))
-            dcen = half*(dlft+drgt)
-            dsgn = sign(one, dcen)
-            slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
-            dbf(i,j,k,1,2) = dsgn*min(slop,abs(dcen))
-            !By
-            ! slopes in first coordinate direction
-            dlft = (bf(i  ,j,k,2) - bf(i-1,j,k,2))
-            drgt = (bf(i+1,j,k,2) - bf(i  ,j,k,2))
-            dcen = half*(dlft+drgt)
-            dsgn = sign(one, dcen)
-            slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
-            dbf(i,j,k,2,1) = dsgn*min(slop,abs(dcen))
-            ! slopes in second coordinate direction
-            dlft = (bf(i,j,k  ,2) - bf(i,j,k-1,2))
-            drgt = (bf(i,j,k+1,2) - bf(i,j,k  ,2))
-            dcen = half*(dlft+drgt)
-            dsgn = sign(one, dcen)
-            slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
-            dbf(i,j,k,2,2) = dsgn*min(slop,abs(dcen))
-            ! Bz
-            ! slopes in first coordinate direction
-            dlft = (bf(i  ,j,k,3) - bf(i-1,j,k,3))
-            drgt = (bf(i+1,j,k,3) - bf(i  ,j,k,3))
-            dcen = half*(dlft+drgt)
-            dsgn = sign(one, dcen)
-            slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
-            dbf(i,j,k,3,1) = dsgn*min(slop,abs(dcen))
-            ! slopes in second coordinate direction
-            dlft = (bf(i,j  ,k,3) - bf(i,j-1,k,3))
-            drgt = (bf(i,j+1,k,3) - bf(i,j  ,k,3))
-            dcen = half*(dlft+drgt)
-            dsgn = sign(one, dcen)
-            slop = xslope_type*min(abs(dlft),abs(drgt))
-            slop = merge(slop,zero,(dlft*drgt)>zero)
-            dbf(i,j,k,3,2) = dsgn*min(slop,abs(dcen))
-          end do
-        end do
-     end do
-
+    else
+      write(*,*)'Unknown slope type'
+      stop
+    endif
+  end do
+  !-----------------------------------------------------------------------------
+  ! If b_slope_type=0 fall back to previous behavior, and else use the value
+  !-----------------------------------------------------------------------------
+  if (b_slope_type==0) then
+    slope = islope_type
   else
-     write(*,*)'Unknown slope type'
-     stop
-  endif
+    slope = b_slope_type
+  end if
+  if (slope == -1) then
+    dbf(l(1):u(1),l(2):u(2),l(3):u(3),1,1) = half*(bf(l(1):u(1),l(2)+1:u(2)+1,l(3):u(3),1) - bf(l(1):u(1),l(2)-1:u(2)-1,l(3):u(3),1))
+    dbf(l(1):u(1),l(2):u(2),l(3):u(3),1,2) = half*(bf(l(1):u(1),l(2):u(2),l(3)+1:u(3)+1,1) - bf(l(1):u(1),l(2):u(2),l(3)-1:u(3)-1,1))
+    dbf(l(1):u(1),l(2):u(2),l(3):u(3),2,1) = half*(bf(l(1):u(1),l(2):u(2),l(3)+1:u(3)+1,2) - bf(l(1):u(1),l(2):u(2),l(3)-1:u(3)-1,2))
+    dbf(l(1):u(1),l(2):u(2),l(3):u(3),2,2) = half*(bf(l(1)+1:u(1)+1,l(2):u(2),l(3):u(3),2) - bf(l(1)-1:u(1)-1,l(2):u(2),l(3):u(3),2))
+    dbf(l(1):u(1),l(2):u(2),l(3):u(3),3,1) = half*(bf(l(1)+1:u(1)+1,l(2):u(2),l(3):u(3),3) - bf(l(1)-1:u(1)-1,l(2):u(2),l(3):u(3),3))
+    dbf(l(1):u(1),l(2):u(2),l(3):u(3),3,2) = half*(bf(l(1):u(1),l(2)+1:u(2)+1,l(3):u(3),3) - bf(l(1):u(1),l(2)-1:u(2)-1,l(3):u(3),3))
+  else if (slope == 1) then
+    do k = l(3),u(3)
+      do j = l(2),u(2)
+        do i = l(1),u(1)
+          ! slopes in first coordinate direction
+          dlft = bf(i  ,j,k,2) - bf(i-1,j,k,2)
+          drgt = bf(i+1,j,k,2) - bf(i  ,j,k,2)
+          dbf(i,j,k,2,2) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+          dlft = bf(i  ,j,k,3) - bf(i-1,j,k,3)
+          drgt = bf(i+1,j,k,3) - bf(i  ,j,k,3)
+          dbf(i,j,k,3,1) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+          ! slopes in second coordinate direction
+          dlft = bf(i,j  ,k,1) - bf(i,j-1,k,1)
+          drgt = bf(i,j+1,k,1) - bf(i,j  ,k,1)
+          dbf(i,j,k,1,1) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+          dlft = bf(i,j  ,k,3) - bf(i,j-1,k,3)
+          drgt = bf(i,j+1,k,3) - bf(i,j  ,k,3)
+          dbf(i,j,k,3,2) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+          ! slopes in third coordinate direction
+          dlft = bf(i,j,k  ,1) - bf(i,j,k-1,1)
+          drgt = bf(i,j,k+1,1) - bf(i,j,k  ,1)
+          dbf(i,j,k,1,2) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+          dlft = bf(i,j,k  ,2) - bf(i,j,k-1,2)
+          drgt = bf(i,j,k+1,2) - bf(i,j,k  ,2)
+          dbf(i,j,k,2,1) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+        end do
+      end do
+    end do
+  else if (slope == 2) then
+    xslope_type = 1
+    do k = l(3),u(3)
+      do j = l(2),u(2)
+        do i = l(1),u(1)
+          ! Bx
+          ! slopes in first coordinate direction (y)
+          dlft = (bf(i,j  ,k,1) - bf(i,j-1,k,1))
+          drgt = (bf(i,j+1,k,1) - bf(i,j  ,k,1))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,1,1) = dsgn*min(slop,abs(dcen))
+          ! slopes in second coordinate direction (z)
+          dlft = (bf(i,j,k  ,1) - bf(i,j,k-1,1))
+          drgt = (bf(i,j,k+1,1) - bf(i,j,k  ,1))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,1,2) = dsgn*min(slop,abs(dcen))
+          ! By
+          ! slopes in first coordinate direction (z)
+          dlft = (bf(i,j,k  ,2) - bf(i,j,k-1,2))
+          drgt = (bf(i,j,k+1,2) - bf(i,j,k  ,2))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,2,1) = dsgn*min(slop,abs(dcen))
+          ! slopes in second coordinate direction (x)
+          dlft = (bf(i  ,j,k,2) - bf(i-1,j,k,2))
+          drgt = (bf(i+1,j,k,2) - bf(i  ,j,k,2))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,2,2) = dsgn*min(slop,abs(dcen))
+          ! Bz
+          ! slopes in first coordinate direction (x)
+          dlft = (bf(i  ,j,k,3) - bf(i-1,j,k,3))
+          drgt = (bf(i+1,j,k,3) - bf(i  ,j,k,3))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,3,1) = dsgn*min(slop,abs(dcen))
+          ! slopes in second coordinate direction (y)
+          dlft = (bf(i,j  ,k,3) - bf(i,j-1,k,3))
+          drgt = (bf(i,j+1,k,3) - bf(i,j  ,k,3))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,3,2) = dsgn*min(slop,abs(dcen))
+        end do
+      end do
+    end do
+  else if (slope == 3) then
+    xslope_type = rslope_type - 2d0
+    do k = l(3),u(3)
+      do j = l(2),u(2)
+        do i = l(1),u(1)
+          ! Bx
+          ! slopes in first coordinate direction (y)
+          dlft = (bf(i,j  ,k,1) - bf(i,j-1,k,1))
+          drgt = (bf(i,j+1,k,1) - bf(i,j  ,k,1))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,1,1) = dsgn*min(slop,abs(dcen))
+          ! slopes in second coordinate direction (z)
+          dlft = (bf(i,j,k  ,1) - bf(i,j,k-1,1))
+          drgt = (bf(i,j,k+1,1) - bf(i,j,k  ,1))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,1,2) = dsgn*min(slop,abs(dcen))
+          !By
+          ! slopes in first coordinate direction (z)
+          dlft = (bf(i,j,k  ,2) - bf(i,j,k-1,2))
+          drgt = (bf(i,j,k+1,2) - bf(i,j,k  ,2))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,2,1) = dsgn*min(slop,abs(dcen))
+          ! slopes in second coordinate direction (x)
+          dlft = (bf(i  ,j,k,2) - bf(i-1,j,k,2))
+          drgt = (bf(i+1,j,k,2) - bf(i  ,j,k,2))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,2,2) = dsgn*min(slop,abs(dcen))
+          ! Bz
+          ! slopes in first coordinate direction (x)
+          dlft = (bf(i  ,j,k,3) - bf(i-1,j,k,3))
+          drgt = (bf(i+1,j,k,3) - bf(i  ,j,k,3))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,3,1) = dsgn*min(slop,abs(dcen))
+          ! slopes in second coordinate direction (y)
+          dlft = (bf(i,j  ,k,3) - bf(i,j-1,k,3))
+          drgt = (bf(i,j+1,k,3) - bf(i,j  ,k,3))
+          dcen = half*(dlft+drgt)
+          dsgn = sign(one, dcen)
+          slop = xslope_type*min(abs(dlft),abs(drgt))
+          slop = merge(slop,zero,(dlft*drgt)>zero)
+          dbf(i,j,k,3,2) = dsgn*min(slop,abs(dcen))
+        end do
+      end do
+    end do
+  end if
   call trace%end (itimer, detailed_timer=detailed_timer)
-end subroutine uslope
+END SUBROUTINE uslope
 
 !> =============================================================================
 !> Predictor step
@@ -871,10 +919,10 @@ SUBROUTINE trace3d(self)
     dALz = half * dbf(i  ,j  ,k  ,1,2)
     dARz = half * dbf(i+1,j  ,k  ,1,2)
 
-    dBLx = half * dbf(i  ,j  ,k  ,2,1)
-    dBRx = half * dbf(i  ,j+1,k  ,2,1)
-    dBLz = half * dbf(i  ,j  ,k  ,2,2)
-    dBRz = half * dbf(i  ,j+1,k  ,2,2)
+    dBLz = half * dbf(i  ,j  ,k  ,2,1)
+    dBRz = half * dbf(i  ,j+1,k  ,2,1)
+    dBLx = half * dbf(i  ,j  ,k  ,2,2)
+    dBRx = half * dbf(i  ,j+1,k  ,2,2)
 
     dCLx = half * dbf(i  ,j  ,k  ,3,1)
     dCRx = half * dbf(i  ,j  ,k+1,3,1)
@@ -885,8 +933,8 @@ SUBROUTINE trace3d(self)
     ! Face-centered predicted states
     sAL0 = +(GLR-GLL)*dtdy*half -(FLR-FLL)*dtdz*half
     sAR0 = +(GRR-GRL)*dtdy*half -(FRR-FRL)*dtdz*half
-    sBL0 = -(GRL-GLL)*dtdx*half +(ELR-ELL)*dtdz*half
-    sBR0 = -(GRR-GLR)*dtdx*half +(ERR-ERL)*dtdz*half
+    sBL0 = +(ELR-ELL)*dtdz*half -(GRL-GLL)*dtdx*half
+    sBR0 = +(ERR-ERL)*dtdz*half -(GRR-GLR)*dtdx*half
     sCL0 = +(FRL-FLL)*dtdx*half -(ERL-ELL)*dtdy*half
     sCR0 = +(FRR-FLR)*dtdx*half -(ERR-ELR)*dtdy*half
     !

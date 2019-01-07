@@ -9,7 +9,6 @@ OPTS = optimized
 UPD             = adams_bashforth
 #SOLVER          = ramses/hydro
 SOLVER          = ramses/mhd
-#SOLVER          = ramses/mhd
 #SOLVER          = stagger2/e
 EXEC            = dispatch.x
 TOP             = ../..

@@ -401,10 +401,10 @@ SUBROUTINE turbulence (self, m, ff, idx)
   !$omp end critical (input_cr)
   ff(:,:,:,idx%d        ) = 1.0
   ff(:,:,:,idx%e        ) = 1.0
-  if (self%gamma==1.0) then
+  if (gamma==1.0) then
     ff(:,:,:,idx%e        ) = 1.0 + 0.5*(b0(1)**2+b0(2)**2+b0(3)**2)
   else
-    ff(:,:,:,idx%e        ) = 1.0/(self%gamma-1.) + 0.5*(b0(1)**2+b0(2)**2+b0(3)**2)
+    ff(:,:,:,idx%e        ) = 1.0/(gamma-1.) + 0.5*(b0(1)**2+b0(2)**2+b0(3)**2)
   end if
   ff(:,:,:,idx%px:idx%pz) = 0.0
   ff(:,:,:,idx%bx       ) = b0(1)
