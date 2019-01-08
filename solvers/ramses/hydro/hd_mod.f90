@@ -17,6 +17,7 @@
 MODULE hd_mod
   !.............................................................................
   USE const
+  USE io_mod
   USE io_unit_mod
   USE gpatch_mod
   USE link_mod
@@ -79,7 +80,7 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, ramses_params)
-    write (io_unit%output, ramses_params)
+    if (io%master) write (io_unit%output, ramses_params)
   end if
   !$omp end critical (input_cr)
   self%riemann = riemann
@@ -385,17 +386,21 @@ subroutine check_small (self, uu)
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
   real(dp):: c,d,u,v,w,p,ekin
   integer, save:: nprint=10
-  integer,save:: itimer=0
+  integer, save:: itimer=0
+  integer:: it, jt, iw
+  logical:: panic
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('hd_t%check_small', itimer=itimer)
   n_smalld = 0
   n_smallp = 0
+  panic = .false.
   lo = self%mesh%lb
   uo = self%mesh%ub
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   do i=lo(1),uo(1)
     if (uu(i,j,k,self%idx%d) < smallr) then
+      panic = .true.
       if (nprint>0) then
         nprint = nprint-1
         write (io_unit%log,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,self%idx%d),smallr
@@ -424,6 +429,20 @@ subroutine check_small (self, uu)
   end do
   if (n_smalld+n_smallp > 0) then
     write (io_unit%log,*) 'small: id,nr,np', self%id,n_smalld,n_smallp
+  end if
+  if (panic .and. self%n_dump > 0) then
+    !$omp critical (panic_cr)
+    self%n_dump = self%n_dump-1
+    write (io_unit%dump) self%id, self%gn, self%nv, self%nt, self%nw, self%istep
+    write (io_unit%dump) self%time, self%dtime
+    do iw=1,self%nw
+    do it=1,self%nt
+      jt = self%iit(it)
+      write (io_unit%dump) self%mem(:,:,:,:,jt,iw)
+    end do
+    end do
+    write (io_unit%mpi,*) 'density < SMALLR, dumped', self%id, self%time
+    !$omp end critical (panic_cr)
   end if
   if (detailed_timer) call trace%end (itimer)
 end subroutine check_small
