@@ -248,7 +248,13 @@ SUBROUTINE rotate (self)
   integer, save:: itimer=0
   real(8), pointer:: rptr
   integer, pointer:: iptr
-  !.............................................................................
+  !-----------------------------------------------------------------------------
+  ! Implement setting of per-patch parameters here
+  !-----------------------------------------------------------------------------
+  if (io%processing > 0d0) then
+    if (io%out_next > 0.0) self%out_next = io%out_next
+    if (io%grace    > 0.0) self%grace    = io%grace
+  end if
   if (self%rotated) return
   call trace_begin ('task_mod::rotate',itimer=itimer)
   !-----------------------------------------------------------------------------

@@ -43,10 +43,12 @@ MODULE io_mod
     integer:: id=1              ! the task to print a one-liner for
     real(8):: end_time=1d30
     real(8):: out_time=1d0
+    real(8):: out_next=1d0
     real(8):: print_time=0d0
     real(8):: dtime=huge(1d0)   ! the shortest time step
     real(8):: gb=0.0
     real(8):: job_seconds=1d30
+    real(8):: processing=0d0
     real:: flag_time=1.
     real:: flag_max=10.
     real:: ampl=0.0
@@ -308,7 +310,7 @@ END SUBROUTINE gb_print
 SUBROUTINE check_flags (self)
   class (io_t)      :: self
   real(8), save     :: last_checked=0d0
-  real(8)           :: flag_time, processing=0d0
+  real(8)           :: flag_time
   logical           :: exists
   character(len=80) :: file
   integer, save     :: itimer=0
@@ -319,7 +321,7 @@ SUBROUTINE check_flags (self)
   !------------------------------------------------------------------------------
   ! If ready to detect flag files, try.
   !------------------------------------------------------------------------------
-  if (processing==0d0) then
+  if (io%processing==0d0) then
     if (wallclock() > last_checked+flag_time) then
       last_checked = wallclock()
       call check_all (.false.)
@@ -327,22 +329,16 @@ SUBROUTINE check_flags (self)
   !-----------------------------------------------------------------------------
   ! After processing for 10 sec, all ranks turn off processing
   !-----------------------------------------------------------------------------
-  else if (wallclock() > processing+10d0) then
-    processing = 0d0
+  else if (wallclock() > io%processing+10d0) then
+    io%processing = 0d0
   !-----------------------------------------------------------------------------
   ! After 5 sec, the master thread on the master rank removes the flag files
   !-----------------------------------------------------------------------------
-  else if (wallclock() > processing+5d0) then
+  else if (wallclock() > io%processing+5d0) then
     if (io%master) call check_all (.true.)
   end if
   call timer%end (itimer)
   !$omp end master
-  !-----------------------------------------------------------------------------
-  ! Implement setting of per-patch parameters here
-  !-----------------------------------------------------------------------------
-  if (processing > 0d0) then
-    if (io%grace > 0.0) self%grace = io%grace
-  end if
 contains
 
   !-----------------------------------------------------------------------------
@@ -358,7 +354,7 @@ contains
     !---------------------------------------------------------------------------
     ! If a flag file is detected, start the processing
     !---------------------------------------------------------------------------
-    processing = last_checked + flag_time
+    io%processing = last_checked + flag_time
     open (io_unit%flag, file=trim(file), form='formatted', status='old')
     if (remove) then
       close (io_unit%flag, status='delete')
@@ -382,6 +378,7 @@ contains
     call check ('grace.flag   '       , remove, rvalue=self%grace)
     ! double prec
     call check ('out_time.flag'       , remove, dvalue=self%out_time)
+    call check ('out_next.flag'       , remove, dvalue=self%out_next)
     call check ('print_time.flag'     , remove, dvalue=self%print_time)
     call check ('end_time.flag'       , remove, dvalue=self%end_time)
     call check ('sec_per_report.flag' , remove, dvalue=timer%sec_per_report)
