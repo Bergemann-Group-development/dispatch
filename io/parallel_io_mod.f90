@@ -840,7 +840,6 @@ SUBROUTINE input_single (patch, ok)
   !-----------------------------------------------------------------------------
   ! Make sure all time slots have the correct time set
   !-----------------------------------------------------------------------------
-  patch%time = io%restart*io%out_time
   patch%t(patch%iit) = patch%time
   !-----------------------------------------------------------------------------
   ! Signal success

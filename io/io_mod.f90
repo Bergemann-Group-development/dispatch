@@ -141,6 +141,7 @@ SUBROUTINE init (self, name)
       self%rundir = trim(datadir)//self%sep                     ! data/
     end if
     self%outputname = self%rundir                               ! compatibility
+    print *, 'mkdir '//trim(self%rundir), omp%thread
     call os%mkdir (trim(self%rundir))
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
@@ -178,14 +179,17 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     io_unit%do_validate = do_validate
     write (filename,'(a,i5.5,"/")') trim(io%outputname), 0
+    print *, trim(filename), omp%thread
     call os%mkdir (trim(filename))
     if (omp_trace .and. omp%nthreads>1) then
       io_unit%log = 110+omp%mythread()
       write (filename,'(a,"thread_",i5.5,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%thread
-      open (io_unit%log, file=filename, form='formatted', status='unknown')
+      open (unit=io_unit%log, file=filename, form='formatted', status='unknown')
     else
       io_unit%log = io_unit%mpi
     end if
+    !$omp end critical (open_cr)
+    !$omp end parallel
     !---------------------------------------------------------------------------
     ! Log-file names:
     ! -- io_unit%output     : stdout on rank 0, same as io_unit%mpi on rank 1-n
@@ -194,17 +198,15 @@ SUBROUTINE init (self, name)
     ! -- io_unit%dispatcher : data/run/rank_rrrrr.disp
     ! -- io_unit%log        : data/run/thread_rrrrr_ttt.log
     !---------------------------------------------------------------------------
-    call open_rank_file (io_unit%queue     , ".nq"   )
-    call open_rank_file (io_unit%mpi       , ".log"  )
-    call open_rank_file (io_unit%dbg       , ".dbg"  )
-    call open_rank_file (io_unit%dump      , ".dump" )
-    call open_rank_file (io_unit%dispatcher, ".disp" )
+    call open_rank_file (io_unit%queue     , ".nq"   , 'formatted')
+    call open_rank_file (io_unit%mpi       , ".log"  , 'formatted')
+    call open_rank_file (io_unit%dbg       , ".dbg"  , 'unformatted')
+    call open_rank_file (io_unit%dump      , ".dump" , 'unformatted')
+    call open_rank_file (io_unit%dispatcher, ".disp" , 'formatted')
     log_unit = io_unit%log
     write (io_unit%log,'(a,i4,2l4)') &
       'io_mod::init io_unit%log, io_unit%master, io_unit%verbose:', &
       io_unit%log, io_unit%master, io_unit%verbose
-    !$omp end critical (open_cr)
-    !$omp end parallel
     self%log_unit = io_unit%log
     write(io%output,*) 'logfile:', filename
     write(io%output,*) '======================================================================='
@@ -244,11 +246,15 @@ contains
     l = len(trim(s))
     if (s(l:l) /= '/') s(l+1:l+1)='/'
   end subroutine
-  subroutine open_rank_file (unit, ext)
+  subroutine open_rank_file (unit, ext, form)
     integer:: unit
-    character(len=*):: ext
+    character(len=*):: ext, form
+    !-----------------------------------------------------------------------------
     write (filename,'(a,"rank_",i5.5,a)') trim(self%outputname), mpi%rank, ext
-    open (io_unit%queue, file=filename, form='formatted', status='unknown')
+    open (unit=unit, file=trim(filename), form=form, status='unknown')
+    if (io%master) then
+      print *, omp%thread, ' unit', unit, ' file:', filename
+    end if
   end subroutine
 END SUBROUTINE init
 
