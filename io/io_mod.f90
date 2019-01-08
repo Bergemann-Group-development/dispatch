@@ -143,7 +143,6 @@ SUBROUTINE init (self, name)
     self%outputname = self%rundir                               ! compatibility
     call os%mkdir (trim(self%rundir))
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
-    open (io_unit%dump, file=trim(self%rundir)//'dump.dat', form='unformatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
     !---------------------------------------------------------------------------
     ! Read io_params namelist
@@ -195,14 +194,11 @@ SUBROUTINE init (self, name)
     ! -- io_unit%dispatcher : data/run/rank_rrrrr.disp
     ! -- io_unit%log        : data/run/thread_rrrrr_ttt.log
     !---------------------------------------------------------------------------
-    write (filename,'(a,"rank_",i5.5,".nq")') trim(self%outputname), mpi%rank
-    open (io_unit%queue, file=filename, form='formatted', status='unknown')
-    write (filename,'(a,"rank_",i5.5,".log")') trim(self%outputname), mpi%rank
-    open (io_unit%mpi, file=filename, form='formatted', status='unknown')
-    write (filename,'(a,"rank_",i5.5,"_dbg.dat")') trim(self%outputname), mpi%rank
-    open (io_unit%dbg, file=filename, form='unformatted', status='unknown')
-    write (filename,'(a,"rank_",i5.5,".disp")') trim(self%outputname), mpi%rank
-    open (io_unit%dispatcher, file=filename, form='formatted', status='unknown')
+    call open_rank_file (io_unit%queue     , ".nq"   )
+    call open_rank_file (io_unit%mpi       , ".log"  )
+    call open_rank_file (io_unit%dbg       , ".dbg"  )
+    call open_rank_file (io_unit%dump      , ".dump" )
+    call open_rank_file (io_unit%dispatcher, ".disp" )
     log_unit = io_unit%log
     write (io_unit%log,'(a,i4,2l4)') &
       'io_mod::init io_unit%log, io_unit%master, io_unit%verbose:', &
@@ -247,6 +243,12 @@ contains
     integer:: l
     l = len(trim(s))
     if (s(l:l) /= '/') s(l+1:l+1)='/'
+  end subroutine
+  subroutine open_rank_file (unit, ext)
+    integer:: unit
+    character(len=*):: ext
+    write (filename,'(a,"rank_",i5.5,a)') trim(self%outputname), mpi%rank, ext
+    open (io_unit%queue, file=filename, form='formatted', status='unknown')
   end subroutine
 END SUBROUTINE init
 
