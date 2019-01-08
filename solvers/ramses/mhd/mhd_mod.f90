@@ -332,17 +332,21 @@ subroutine check_small (self)
   real(dp):: c,d,u,v,w,p,ekin,B1,B2,B3,emag
   integer, save:: nprint=10
   integer, save:: itimer=0
+  integer:: it, jt, iw
+  logical:: panic
   associate(uu=>self%uin)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%check_small', itimer=itimer, detailed_timer=detailed_timer)
   n_smalld = 0
   n_smallp = 0
+  panic = .false.
   lo = self%mesh%lb
   uo = self%mesh%ub
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   do i=lo(1),uo(1)
     if (uu(i,j,k,1) < smallr) then
+      panic = .true.
       if (nprint>0) then
         nprint = nprint-1
         write (io_unit%log,'(i7,3i5,1p,2e12.3)') self%id,i,j,k,uu(i,j,k,1),smallr
@@ -378,6 +382,20 @@ subroutine check_small (self)
     write (io_unit%log,*) 'small: id,nr,np', self%id,n_smalld,n_smallp
   end if
   end associate
+  if (panic .and. self%n_dump > 0) then
+    !$omp critical (panic_cr)
+    self%n_dump = self%n_dump-1
+    write (io_unit%dump) self%id, self%gn, self%nv, self%nt, self%nw, self%istep
+    write (io_unit%dump) self%time, self%dtime
+    do iw=1,self%nw
+    do it=1,self%nt
+      jt = self%iit(it)
+      write (io_unit%dump) self%mem(:,:,:,:,jt,iw)
+    end do
+    end do
+    write (io_unit%mpi,*) 'density < SMALLR, dumped', self%id, self%time
+    !$omp end critical (panic_cr)
+  end if
   call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine check_small
 
