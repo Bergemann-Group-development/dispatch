@@ -320,7 +320,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   integer, save:: itimer=0
   integer(kind=int8), dimension(:,:,:,:), allocatable:: filled
   real(8):: wc(0:4)
-  character(len=32):: info
+  character(len=64):: info
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link', itimer=itimer)
   target => task2patch(link%task)
@@ -355,7 +355,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   do while (associated(nbor))
    wc(0) = wallclock()
    source => task2patch(nbor%task)
-   write (info,'(i6,i4,i6)') source%id, omp%thread, source%istep
+   write (info,'(3i6,i4,i6)') target%id, target%istep, source%id, omp%thread, source%istep
    call source%lock%set ('download'//trim(info))
    wc(1) = wc(1) + wallclock() - wc(0)
    if (verbose > 1) &
@@ -694,11 +694,11 @@ SUBROUTINE same_linear (target, source, filled, all_cells, only, all_times)
               do ix=l(1),u(1)
                 ii = [ix,iy,iz]
                 !!!if (filled(ix,iy,iz,iv) > source%level) cycle
-                !if (iv==1 .and. source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) < 0) then
-                !  print *,'www',source%id, ix+o(1),iy+o(2),iz+o(3),jt(1),source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)
+                !if (iv==1 .and. source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) <= 0) then
+                  !write(io_unit%log,*) 'zzz',source%id, ix+o(1),iy+o(2),iz+o(3),jt(1),source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)
                 !end if
-                !if (iv==1 .and. source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1) < 0) then
-                !  print *,'www',source%id, ix+o(1),iy+o(2),iz+o(3),jt(2),source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
+                !if (iv==1 .and. source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1) <= 0) then
+                  !write(io_unit%log,*) 'zzz',source%id, ix+o(1),iy+o(2),iz+o(3),jt(2),source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
                 !end if
                 target%mem(ix,iy,iz,iv,target%it,1) = &
                   merge(target%mem(ix,iy,iz,iv,target%it,1), &

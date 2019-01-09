@@ -70,7 +70,7 @@ SUBROUTINE set (self, label)
   self%thread = thread
   wc = wallclock()
   if (wc < lock_verbose .and. present(label)) &
-    write (io_unit%log,'(f10.6,i4,a,i6,a)') wc, thread, ' lock id', self%id, ' set at '//label
+    write (io_unit%log,'(f10.6,i4,a,i6,a)') wc, thread, ' lock id', self%id, '   set at '//label
   !print *, thread, ' set end id, thread', self%id, self%thread
   !call trace%end()
 END SUBROUTINE set
