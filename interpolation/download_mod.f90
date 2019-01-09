@@ -320,6 +320,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   integer, save:: itimer=0
   integer(kind=int8), dimension(:,:,:,:), allocatable:: filled
   real(8):: wc(0:4)
+  character(len=32):: info
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link', itimer=itimer)
   target => task2patch(link%task)
@@ -354,7 +355,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   do while (associated(nbor))
    wc(0) = wallclock()
    source => task2patch(nbor%task)
-   call source%lock%set
+   write (info,'(i6,i4,i6)') source%id, omp%thread, source%istep
+   call source%lock%set ('download'//trim(info))
    wc(1) = wc(1) + wallclock() - wc(0)
    if (verbose > 1) &
      write(io_unit%log,*) target%id, 'download_t%download_link: source, download =', &
@@ -401,7 +403,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     end if
    end if
    wc(2) = wc(2) + wallclock() - wc(0)
-   call source%lock%unset
+   call source%lock%unset ('download'//trim(info))
    wc(3) = wc(3) + wallclock() - wc(0)
    wc(4) = wc(4) + 1d0
    nbor => nbor%next

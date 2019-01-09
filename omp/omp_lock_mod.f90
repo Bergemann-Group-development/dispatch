@@ -1,7 +1,9 @@
 ! $Id$
 !> =============================================================================
 MODULE omp_lock_mod
+  USE io_unit_mod
   USE omp_mod
+  USE omp_timer_mod
   USE omp_lib
 !  USE trace_mod
   implicit none
@@ -19,6 +21,7 @@ MODULE omp_lock_mod
     procedure:: destroy
   end type
   type(lock_t), public:: lock
+  real(8):: lock_verbose = 60d0
   integer, save:: id_save=-1
 CONTAINS
 
@@ -55,16 +58,19 @@ SUBROUTINE set (self, label)
   character(len=*), optional:: label
   character(len=32):: filename
   integer:: thread
+  real(8):: wc
   !-----------------------------------------------------------------------------
   !call trace%begin('dispatcher6::set')
   thread = omp_get_thread_num()
   !print *, thread, ' set begin id, thread', self%id, self%thread
   if (.not. self%test()) then
     call omp_set_lock (self%lock)
-    self%thread = thread
-    !print *, thread, ' set has lock id', self%id, self%thread
-    !$omp flush
   end if
+  !$omp flush
+  self%thread = thread
+  wc = wallclock()
+  if (wc < lock_verbose .and. present(label)) &
+    write (io_unit%log,'(f10.6,i4,a,i6,a)') wc, thread, ' lock id', self%id, ' set at '//label
   !print *, thread, ' set end id, thread', self%id, self%thread
   !call trace%end()
 END SUBROUTINE set
@@ -106,6 +112,7 @@ SUBROUTINE unset (self, label)
   class(lock_t):: self
   character(len=*), optional:: label
   integer:: thread
+  real(8):: wc
   !-----------------------------------------------------------------------------
   !call trace%begin('dispatcher6::unset')
   thread = omp_get_thread_num()
@@ -114,6 +121,9 @@ SUBROUTINE unset (self, label)
     !print *, self%thread, ' releases lock id', self%id
     self%thread = -1
     call omp_unset_lock (self%lock)
+    wc = wallclock()
+    if (wc < lock_verbose .and. present(label)) &
+      write (io_unit%log,'(f10.6,i4,a,i6,a)') wc, thread, ' lock id', self%id, ' unset at '//label
   else if (self%thread == -1) then
     print *, thread, 'ERROR: trying to release unlocked lock id', self%id
   else

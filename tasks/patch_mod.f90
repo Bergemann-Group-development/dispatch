@@ -2081,7 +2081,15 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
   else
     t = self%t(self%iit)
     j = 1
-    n = merge(self%nt-1, self%nt-2, present(all))    
+    !n = merge(self%nt-1, self%nt-2, present(all))
+    n = self%nt-2
+    !-------------------------------------------------------------------
+    ! Seach and set the j index to the last point that has t(j)<time.
+    ! Note that this does NOT guarantee that t(j+1) >= time.  In cases
+    ! where both t(nt-2) < time and t(n-1) < time, extrapolation in time
+    ! will result.  What should NOT happen is that a memory slot that
+    ! has not yet received an update is chosen.
+    !-------------------------------------------------------------------
     do i=1,n
       if (t(i) < time) j=i
     end do

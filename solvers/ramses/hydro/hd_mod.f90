@@ -80,7 +80,7 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, ramses_params)
-    if (io%master) write (io_unit%output, ramses_params)
+    if (mpi%rank==0) write (*, ramses_params)
   end if
   !$omp end critical (input_cr)
   self%riemann = riemann
