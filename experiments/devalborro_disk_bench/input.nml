@@ -28,8 +28,9 @@
 
 &annulus_params
   rotating=f
-  n_patch=1,5,9
-  n_per_patch=1,32,55
+  n_patch=1,10,18
+  !n_per_patch=1,32,55
+  n_per_patch=1,16,27
 /
 
 &zeus_params
@@ -51,7 +52,11 @@
 /
 
 &patch_params
-  periodic=f
+  periodic=3*f
   no_mans_land=f
   grace=0.01
+/
+
+&download_params
+  check_filled=f
 /
