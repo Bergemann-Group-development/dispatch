@@ -174,3 +174,47 @@ def speed (p, varidx, gf):
     # FIXME: technically incorrect for ZEUS and STAGGER data, which should be
     # averaged to zone-centre first.
     return np.sqrt(v1**2 + v2**2 + v3**2)
+
+def gradient_scalar (p, varidx, gf, idir=0):
+    """
+    Calculate the gradient of a scalar (zone-centred).
+    The result is a staggered, 2nd-order difference.
+
+    """
+
+    na = np.newaxis
+    n1, n2, n3 = p.gn
+    if n1 > 1: ione = 1
+    else: ione = 0
+    if n2 > 1: jone = 1
+    else: jone = 0
+    if n3 > 1: kone = 1
+    else: kone = 0
+
+    cvar = p.data[:,:,:,varidx]
+    if idir == 1:
+        g = np.empty_like(cvar)
+        for i in xrange(1,n1):
+            g[i,:,:] = (cvar[i,:,:] - cvar[i-ione,:,:]) / gf['dx1c'][i]
+        return g
+    elif idir == 2:
+        g = np.empty_like(cvar)
+        for j in xrange(1,n2):
+            g[:,j,:] = (cvar[:,j,:] - cvar[:,j-jone,:]) / gf['dx2c'][j] / gf['h2c']
+        return g
+    elif idir == 3:
+        g = np.empty_like(cvar)
+        for k in xrange(1,n3):
+            g[:,:,k] = (cvar[:,:,k] - cvar[:,:,k-kone]) / gf['dx3c'][k] / gf['h31c'] / gf['h32c']
+        return g
+    else:
+        g1 = np.empty_like(cvar)
+        for i in xrange(1,n1):
+            g1[i,:,:] = (cvar[i,:,:] - cvar[i-ione,:,:]) / gf['dx1c'][i]
+        g2 = np.empty_like(cvar)
+        for j in xrange(1,n2):
+            g2[:,j,:] = (cvar[:,j,:] - cvar[:,j-jone,:]) / gf['dx2c'][j] / gf['h2c']
+        g3 = np.empty_like(cvar)
+        for k in xrange(1,n3):
+            g3[:,:,k] = (cvar[:,:,k] - cvar[:,:,k-kone]) / gf['dx3c'][k] / gf['h31c'] / gf['h32c']
+        return (g1,g2,g3)
