@@ -14,7 +14,7 @@ run      = '.'
 verbose  = False
 advect   = True
 analytic = True
-regime   = 'quadratic'
+regime   = 'third_order'	    # 'linear', 'quadratic', 'power', 'third_order', or 'mixed'
 gamma    = 1.4                      # Value of adiabatic exponent
 K        = 1.0
 a        = 0.5
@@ -22,7 +22,7 @@ t_step   = 0.01                     # Time step size to be plotted
 t_end    = 0.1                      # End time to be plotted
 t        = np.arange(0.0,t_end,t_step)
 npatches = 5                        # Number of patches in output data
-nv       = 6                        # Number of variables per component in this particular case
+nv       = 5                        # Number of variables per component in this particular case
 nvs      = 13                       # Number of variables per component in generic case
 
 
@@ -65,7 +65,7 @@ for j in range(nplots):
     ymax    = 0
     qidx    = -1
     first_time = True
-    pl.xlabel(r'$t$ in code units')
+    pl.xlabel(r'$t$ in code units',fontsize=16)
     for i in range(np.int(t_end/t_step)):
         p  = du.patch(id=1,iout=i,run=run,data=datadir)
         li = p.li[0] - 1
@@ -75,65 +75,65 @@ for j in range(nplots):
             c2     = ( plparams[j] >= nvs )
             pldata = p.data[0,0,0,0+nv*c2]
             qidx   = 0
-            pl.ylabel(r'$\rho$ in code units')
+            unit = r'$\rho$ in code units'
         elif plparams[j]==1 or plparams[j]==1+nvs:
             c2     = ( plparams[j] >= nvs )
             pldata = p.data[0,0,0,1+nv*c2]
             qidx   = 1
-            pl.ylabel(r'$s$ in code units')
+            unit = (r'$s$ in code units')
         elif plparams[j]==2 or plparams[j]==2+nvs:
             c2     = ( plparams[j] >= nvs )
             pldata = p.data[0,0,0,2+nv*c2]
             qidx   = 2
-            pl.ylabel(r'$p_x$ in code units')
+            unit = (r'$p_x$ in code units')
         elif plparams[j]==3 or plparams[j]==3+nvs:
             c2     = ( plparams[j] >= nvs )
             pldata = p.data[0,0,0,3+nv*c2]
-            pl.ylabel(r'$p_y$ in code units')
+            unit = (r'$p_y$ in code units')
         elif plparams[j]==4 or plparams[j]==4+nvs:
             c2     = ( plparams[j] >= nvs )
             pldata = p.data[0,0,0,4+nv*c2]
-            pl.ylabel(r'$p_z$ in code units')
+            unit = (r'$p_z$ in code units')
         elif plparams[j]==5 or plparams[j]==5+nvs:
             c2     = ( plparams[j] >= nvs )
-            pldata = p.data[0,0,0,5+nv*c2]
+            pldata = p.data[0,0,0,10+nv*c2]
             if advect:
-                pl.ylabel(r'$\rho_{tracer}$ in code units')
+                unit = (r'$\rho_{tracer}$ in code units')
                 qidx = 5
             else:
-                pl.ylabel(r'$B_x$ in code units')
+                unit = (r'$B_x$ in code units')
         elif plparams[j]==6 or plparams[j]==6+nvs:
             c2     = ( plparams[j] >= nvs )
             pldata = p.data[0,0,0,6+nv*c2]
-            pl.ylabel(r'$B_y$ in code units')
+            unit = (r'$B_y$ in code units')
         elif plparams[j]==7 or plparams[j]==7+nvs:
             c2     = ( plparams[j] >= nvs )
             pldata = p.data[0,0,0,7+nv*c2]
-            pl.ylabel(r'$B_z$ in code units')
+            unit = (r'$B_z$ in code units')
         elif plparams[j]==8 or plparams[j]==8+nvs:
             c2     = ( plparams[j] >= nvs )
             pldata = p.data[0,0,0,8+nv*c2]
-            pl.ylabel(r'$\rho_{tracer}$ in code units')
+            unit = (r'$\rho_{tracer}$ in code units')
             qidx = 5
         elif plparams[j]==9 or plparams[j]==9+nvs:
             c2     = ( plparams[j] >= nvs )
             pldata = np.exp( p.data[0,0,0,1+nv*c2]*(gamma-1.0)/p.data[0,0,0,0+nv*c2] + np.log(p.data[0,0,0,0+nv*c2])*gamma ) \
                      * ( np.sum(abs(p.data[0,0,0,1+nv*c2])) > 0.0 )
             qidx   = 3
-            pl.ylabel(r'$P$ in code units')
+            unit = (r'$P$ in code units')
         elif plparams[j]==10 or plparams[j]==10+nvs:
             c2     = ( plparams[j] >= nvs )
             pldata = p.data[0,0,0,2+nv*c2]/p.data[0,0,0,0+nv*c2]
             qidx   = 4
-            pl.ylabel(r'$v_x$ in code units')
+            unit = (r'$v_x$ in code units')
         elif plparams[j]==11 or plparams[j]==11+nvs:
             c2     = ( plparams[j] >= nvs )
             pldata = p.data[0,0,0,3+nv*c2]/p.data[0,0,0,0+nv*c2]
-            pl.ylabel(r'$v_y$ in code units')
+            unit = (r'$v_y$ in code units')
         elif plparams[j]==12 or plparams[j]==12+nvs:
             c2     = ( plparams[j] >= nvs )
             pldata = p.data[0,0,0,4+nv*c2]/p.data[0,0,0,0+nv*c2]
-            pl.ylabel(r'$v_z$ in code units')
+            unit = (r'$v_z$ in code units')
         else:
             pldata = p.data[0,0,0,0]
         
@@ -151,6 +151,7 @@ for j in range(nplots):
             rho0_dust  = p.data[0,0,0,0+nv]
             vx0_gas    = p.data[0,0,0,2]/p.data[0,0,0,0]
             vx0_dust   = p.data[0,0,0,2+nv]/p.data[0,0,0,0+nv]
+	    pl.ylabel(unit,fontsize=16)
             first_time = False
         else:
             pl.plot( t[i] , pldata , 'rx' )
