@@ -21,7 +21,7 @@ MODULE omp_lock_mod
     procedure:: destroy
   end type
   type(lock_t), public:: lock
-  real(8):: lock_verbose = 60d0
+  real(8):: lock_verbose = 30d0
   integer, save:: id_save=-1
 CONTAINS
 

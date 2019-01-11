@@ -111,6 +111,8 @@ SUBROUTINE update (self)
   real:: error
   !----------------------------------------------------------------------------
   call trace%begin ('hd_t%update', itimer=itimer)
+  if (io%courant /= 0.0) self%courant = io%courant
+  if (io%smallr  /= 0.0) self%smallr  = io%smallr
 
   call self%gravity
   !-----------------------------------------------------------------------------

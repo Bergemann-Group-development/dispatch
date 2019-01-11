@@ -53,6 +53,8 @@ MODULE io_mod
     real:: flag_max=10.
     real:: ampl=0.0
     real:: grace=0.0
+    real:: smallr=0.0
+    real:: courant=0.0
   contains
     procedure:: init
     procedure:: debug
@@ -141,7 +143,6 @@ SUBROUTINE init (self, name)
       self%rundir = trim(datadir)//self%sep                     ! data/
     end if
     self%outputname = self%rundir                               ! compatibility
-    print *, 'mkdir '//trim(self%rundir), omp%thread
     call os%mkdir (trim(self%rundir))
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
@@ -179,7 +180,6 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     io_unit%do_validate = do_validate
     write (filename,'(a,i5.5,"/")') trim(io%outputname), 0
-    print *, trim(filename), omp%thread
     call os%mkdir (trim(filename))
     if (omp_trace .and. omp%nthreads>1) then
       io_unit%log = 110+omp%mythread()
@@ -384,6 +384,8 @@ contains
     call check ('flag_max.flag'       , remove, rvalue=self%flag_max)
     call check ('ampl.flag'           , remove, rvalue=self%ampl)
     call check ('grace.flag   '       , remove, rvalue=self%grace)
+    call check ('smallr.flag  '       , remove, rvalue=self%smallr)
+    call check ('courant.flag  '      , remove, rvalue=self%courant)
     ! double prec
     call check ('out_time.flag'       , remove, dvalue=self%out_time)
     call check ('out_next.flag'       , remove, dvalue=self%out_next)

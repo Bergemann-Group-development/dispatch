@@ -129,6 +129,8 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%update', itimer=itimer)
   n = self%mesh%ui-self%mesh%li+1
+  if (io%smallr > 0) smallr = io%smallr
+  if (io%courant > 0) self%courant = io%courant
   
   call self%gravity
   !----------------------------------------------------------------------------
