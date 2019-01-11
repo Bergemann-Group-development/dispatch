@@ -260,7 +260,7 @@ SUBROUTINE output_txt (patch, append)
   if (io%format > 2) then
      write (filename,'(a,i5.5,"/rank_",i5.5,".txt")') trim(io%outputname), patch%iout, mpi%rank
   else
-     write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), patch%iout, patch%id
+     write (filename,'(a,i5.5,"/",i5.5,".info")') trim(io%outputname), patch%iout, patch%id
   end if
   if (io%debug(2)) &
     write(io%output,'(a,3x,"time:",2f13.6)') &

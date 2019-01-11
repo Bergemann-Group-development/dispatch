@@ -32,14 +32,14 @@ class Task(object):
 class Patch(Task):
     """A derived class for patches."""
     __metaclass__ = ABCMeta
-    def __init__(self, filename, read_derivs=False, overlap=0.01, verbose=False, fd=None):
+    def __init__(self, filename, suffix='.txt', read_derivs=False, overlap=0.01, verbose=False, fd=None):
         self.filename = filename
         self.__data = None
         self.offset=0
         if fd:
             fp=fd
         else:
-            fp = open(filename+'.txt','r')
+            fp = open(filename+suffix,'r')
         legacy_reader.single_patch (self, fp, verbose=False, fd=fd)
         self.active_corners[1] = self.active_corners[1] + self.ds*overlap
         self.corners[1]        = self.corners[1]        + self.ds*overlap
@@ -388,6 +388,8 @@ class Snapshot:
             dir=data+'/'+run+'/{:05d}/'.format(iout)
         self.directory=dir
         self.rankfiles=[dir+f.replace('.txt','') for f in os.listdir(dir) if f.endswith('.rank.txt')]
+        if (verbose):
+            print(self.directory, self.rankfiles)
         # If .rank.txt files were found, add patches listed there
         if np.size(self.rankfiles)>0:
             self.patches=[]
@@ -402,9 +404,15 @@ class Snapshot:
         # If not, list .txt files, and add one patch from each file
         else:
             self.patches = []
-            self.files=[dir+f.replace('.txt','') for f in os.listdir(dir) if f.endswith('.txt')]
+            # ioformat <= 2
+            suffix = '.info'
+            self.files=[dir+f.replace(suffix,'') for f in os.listdir(dir) if f.endswith(suffix)]
+            if len(self.files) == 0:
+                # ioformat > 2
+                suffix = '.txt'
+                self.files=[dir+f.replace(suffix,'') for f in os.listdir(dir) if f.endswith(suffix)]
             for file in self.files:
-                self.patches.append (Patch(file,overlap=overlap))
+                self.patches.append (Patch(file,suffix=suffix,overlap=overlap))
         if verbose:
             print('{} snapshot.patches ({:.2f} s)'.format(np.size(self.patches),time()-start))
 
