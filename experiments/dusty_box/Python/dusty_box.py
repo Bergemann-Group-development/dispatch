@@ -4,7 +4,13 @@ def dusty_box( regime , t_end , vx_gas , vx_dust , rho_gas , rho_dust , K , a ):
 
     dv0 = vx_gas - vx_dust
     rhoi = rho_gas**(-1) + rho_dust**(-1)
-    t   = np.linspace(0.0,t_end,200)
+    if t_end > 0.0:
+        # calculate results for a range of times
+        t = np.linspace(0.0,t_end,200)
+    else:
+        # by choosing a negative `t_end`, one can calculate the solution at
+        # a single time given by `abs(t_end)`.
+        t = abs(t_end)
 
     vs  = (rho_gas*vx_gas+rho_dust*vx_dust)/(rho_gas+rho_dust)
 
