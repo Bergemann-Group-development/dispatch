@@ -3,7 +3,7 @@
 # Run name: this & the job-name are the only things that need to be changed, but
 # note that the input &io_params namelist must contain a line "datadir='./data'
 run=$1
-#run=1024m16_hllc
+run=1024m16_hllc
 
 # -------------------------------- do not edit --------------------------------------------
 # The lines below are used to create a track of job input files, executables, and log files
@@ -38,10 +38,7 @@ export KMP_STACKSIZE="30m"
 echo "KMP_AFFINITY=$KMP_AFFINITY"
 echo "threads=$OMP_NUM_THREADS"
 #srun --label --distribution=block:block $dir/dispatch_$time $in
-srun --distribution=block:block $dir/dispatch_$time $in
-
-# ad hoc
-#export OMP_NUM_THREADS=20
-#srun -n 64 -c 20 --distribution=block:block $dir/dispatch_$time $in
+export OMP_NUM_THREADS=20
+srun -n 64 -c 20 --distribution=block:block $dir/dispatch_$time $in
 mv $dir ${dir}_$time
 # -------------------------------- do not edit --------------------------------------------
