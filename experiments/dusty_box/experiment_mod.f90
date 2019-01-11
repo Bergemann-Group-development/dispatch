@@ -54,7 +54,10 @@ SUBROUTINE init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, experiment_params)
-    if (io%master) write (*,experiment_params)
+    if (io%master) then
+      write (*,experiment_params)
+      write (io_unit%nml, experiment_params)
+    end if
     first_time = .false.
   end if
 

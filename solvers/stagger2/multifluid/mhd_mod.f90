@@ -65,7 +65,10 @@ SUBROUTINE init (self)
     eos = self%eos
     rewind (io%input)
     read (io%input, stagger_params)
-    if (io%master) write (*, stagger_params)
+    if (io%master) then
+      write (*, stagger_params)
+      write (io_unit%nml, stagger_params)
+    end if
     call non_ideal%init
     call timestep%init
   end if

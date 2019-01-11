@@ -49,7 +49,10 @@ SUBROUTINE init (self, solver)
      first_time = .false.
      rewind (io%input)
      read (io%input, force_params)
-     if (io%master) write (*, force_params)
+     if (io%master) then
+       write (*, force_params)
+       write (io_unit%nml, force_params)
+     end if
    end if
    !$omp end critical (input_cr)
    self%solver = trim(solver)
