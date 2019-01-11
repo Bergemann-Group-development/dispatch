@@ -13,7 +13,6 @@ MODULE force_mod
   implicit none
   private
   type, public:: force_t
-    integer:: seed=-11
     integer:: i_gas, i_dust, nc, i=1
     real::    K, d_int, a, gamma, csound, b, sigma, tmin
     real::    pi=4.0*atan(1.0)
@@ -32,10 +31,11 @@ CONTAINS
 !> options are: linear (default), quadratic, Epstein (see Kwon (1975) or
 !> Laibe & Price (2012b)), power law, third-order expansion, and mixed
 !> =============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, id, mesh)
    class(force_t):: self
+   class(mesh_t), pointer:: mesh(:)
    character(len=64):: solver
-   integer, save:: seed=-11, iostat
+   integer:: id, iostat
    integer, save:: i_gas=1, i_dust=2, nc=2
    real, save:: K=0.5, d_int=3.0, sigma=1.589e-8, a=0.3, csound=1.0, gamma=1.0, b=0.5
    logical, save:: first_time = .true.
@@ -57,7 +57,6 @@ SUBROUTINE init (self, solver)
    !$omp end critical (input_cr)
    self%solver = trim(solver)
    self%drag   = trim(drag)
-   self%seed   = seed
    self%i_gas  = i_gas
    self%i_dust = i_dust
    self%K      = K

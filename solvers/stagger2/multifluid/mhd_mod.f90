@@ -107,7 +107,7 @@ SUBROUTINE init (self)
     self%unsigned(idx%d+ic)  = .true.
     self%pervolume(idx%s+ic) = .true.
   end do
-  call self%force%init(self%kind)
+  call self%force%init(self%kind, self%id, self%mesh)
   call self%viscosity%init(self%kind)
   call trace%end
 END SUBROUTINE init
