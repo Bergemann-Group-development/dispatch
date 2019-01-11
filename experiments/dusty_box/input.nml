@@ -12,18 +12,7 @@
  vy2    =  0d0
  rhotr  =  0.5
 /
-&ramses_params
- detailed_timer=f
- courant_factor=0.8
- gamma=1.66666
- slope_type=2
- !slope_type=-1
- smallr=1e-4
- smallc=5e-1
- riemann='hllc'
- do_isothermal=f
-/
-&mhd_params              ! defaults are visible in the log file
+&stagger_params              ! defaults are visible in the log file
  !nu=    0.2, 0., 0.1, 1., 0.1, 0.
  !nu=    0.1, 1., 0., 2., 0., 0.
  !nu=    0.2, 0., 0.5, 1., 1., 0.       !Personal best; pa, ofd and mas are pretty effective at bringing down ringing. Keep cs low!
@@ -60,7 +49,6 @@
  out_time = 0.01
  end_time = 0.11 !2.1
  print_time = 0.01
- guard_zones=f
 /
 &cartesian_params
  size=1,1,1
@@ -79,6 +67,8 @@
  verbose=1              ! =1 for output file messages
  do_output=t
  do_debug=f
+ guard_zones=f
+ do_legacy=t
 /
 &initial_params
 /

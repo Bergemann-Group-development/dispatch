@@ -51,11 +51,11 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   integer:: i, k, ic                                                                    ! ADDED INTEGER FOR LOOPS OVER ALL COMPONENTS
   real, allocatable, save:: nu(:)
-  real, save:: gamma=1.0, csound=1.0, cdtd=0.5
+  real, save:: gamma=1.0, csound=1.0, cdtd=0.5, courant=0.2
   logical, save:: first_time=.true., tracer=.false., force_coupled=.false.              ! ADDED tracer = false AS DEFAULT
   character(len=16), save:: eos
-  namelist /mhd_params/ nu, gamma, csound, cdtd, eos, tracer, & 
-                        force_coupled                                                   ! ADDED tracer AND alpha TO THE NAMELIST
+  namelist /stagger_params/ nu, gamma, csound, cdtd, eos, tracer, & 
+                        force_coupled, courant                                          ! ADDED tracer AND alpha TO THE NAMELIST
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
@@ -64,8 +64,8 @@ SUBROUTINE init (self)
     first_time = .false.
     eos = self%eos
     rewind (io%input)
-    read (io%input, mhd_params)
-    if (io%master) write (*, mhd_params)
+    read (io%input, stagger_params)
+    if (io%master) write (*, stagger_params)
     call non_ideal%init
     call timestep%init
   end if
@@ -73,33 +73,30 @@ SUBROUTINE init (self)
   self%eos           = eos
   self%gamma         = gamma
   self%csound        = csound
+  self%courant       = courant
   self%cdtd          = cdtd
   self%force_coupled = force_coupled
   allocate(self%nu(6*self%nc))
   self%nu = nu
   allocate(self%no_pressure(1))
   self%no_pressure = 0
+  call self%idx%init(5, self%mhd)
   if (self%mhd) then
     self%kind = 'stagger2_mhd_patch'
-    self%idx%bx = self%nv - 2                               ! MAKE THE LAST VARIABLES CONTAIN THE MAGNETIC FIELD
-    self%idx%by = self%nv - 1
-    self%idx%bz = self%nv
   else
     self%kind = 'stagger2_hd_patch'
-    self%idx%bx = -1
-    self%idx%by = -1
-    self%idx%bz = -1
   end if
   if (tracer) then
-    self%tracer  = tracer                                    ! ADDED TRACER TRUTH STATEMENT TO self
-    self%nv      = self%nv+1                                 ! INCREASE NUMBER OF VARIABLES TO MAKE ROOM FOR PASSIVE TRACER
-    self%idx%dtr = self%nv                                   ! ADDED INDEX FOR TRACER DENSITY. CURRENTLY, ONLY THE FIRST FLUID MAY BE ASSIGNED A TRACER,
-  end if                                                    ! SO THAT ADDITIONAL FLUIDS ALWAYS HAVE 5 COMPONENTS ONLY
+    self%tracer  = tracer                         ! ADDED TRACER TRUTH STATEMENT TO self
+    self%nv      = self%nv+1                      ! INCREASE NUMBER OF VARIABLES TO MAKE ROOM FOR PASSIVE TRACER
+    self%idx%dtr = self%nv                        ! ADDED INDEX FOR TRACER DENSITY. CURRENTLY, ONLY THE FIRST 
+  end if                                          ! FLUID MAY BE ASSIGNED A TRACER, AND THUS ADDITIONAL FLUIDS
+                                                  ! ALWAYS HAVE 5 COMPONENTS ONLY
   if (force_coupled) self%force_coupled = force_coupled
   call self%gpatch_t%init
   self%type = 'mhd_t'
-  do k=1,self%nc                                            ! LOOP OVER ALL COMPONENTS
-    ic = 5*(k-1)                                            ! ADDED INDEX TO CYCLE TO NEXT FLUID
+  do k=1,self%nc                                  ! LOOP OVER ALL COMPONENTS
+    ic = 5*(k-1)                                  ! ADDED INDEX TO CYCLE TO NEXT FLUID
     do i=1,3
         self%mesh(i)%h(self%idx%px-1+i+ic) = -0.5
         if (self%mhd) self%mesh(i)%h(self%idx%bx-1+i) = -0.5

@@ -98,14 +98,14 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   call trace_begin('force_t%dust_gas_interaction')
   gn(1)=size(mem(:,1,1,1)); gn(2)=size(mem(1,:,1,1)); gn(3)=size(mem(1,1,:,1))
   nv = size(mem(1,1,1,:))
-  !--------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Start calculation of drag force if the current fluid component is the
   ! first of the coupled pair of fluids
-  !--------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (self%i==min(self%i_gas,self%i_dust)) then
-    !----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Allocate vector and scalar pointers
-    !----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     call allocate_scalars(gn, d_gas, d_dust, lnd, pg, s, cs, t_stop, v_therm, K)
     call allocate_scalars(gn, dU2, mu, nu, R, cd)
     call allocate_vectors(gn, p, ld, dd, U_gas, U_dust, KK)
