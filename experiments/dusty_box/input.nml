@@ -42,7 +42,7 @@
 &out_params
  out_time = 0.1
  end_time = 2.01
- print_time = 0.01
+ print_time = 0.1
 /
 &cartesian_params
  size=1,1,1

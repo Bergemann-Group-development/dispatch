@@ -1,6 +1,6 @@
 import numpy as np
 
-def dusty_box( regime , t_end , vx_gas , vx_dust , rho_gas , rho_dust , K , a ):
+def dusty_box(regime, t_end, vx_gas, vx_dust, rho_gas, rho_dust, K, a):
 
     dv0 = vx_gas - vx_dust
     rhoi = rho_gas**(-1) + rho_dust**(-1)
