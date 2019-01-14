@@ -408,19 +408,14 @@ end subroutine check_small
 subroutine ctoprim(self)
   class(mhd_t):: self
   integer::n(4)
-  real(dp):: smallp, c, entho
+  real(dp):: smallp, c
   real(dp):: eken, emag, etot, eint, B1, B2, B3
   integer, save:: itimer=0
   integer:: i, j, k, loc(3), l(3), u(3)
   associate(uin=>self%uin,q=>self%q,bf=>self%bf,dt=>self%dtime,c=>self%c)
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%ctoprim', itimer=itimer, detailed_timer=detailed_timer)
-  if (isothermal) then
-    entho = one
-  else
-    entho = one/max(gamma-one,1e-6)
-  end if
-  smallp = smallr*smallc**2/self%gamma
+  smallp = smallr*smallc**2/gamma
   n = shape(uin)-1
   !
   !self%bf => uin(:,:,:,6:8)                                     ! Left  face centered B
@@ -445,9 +440,8 @@ subroutine ctoprim(self)
     B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
     B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
     emag = half*(B1**2 + B2**2 + B3**2)
-    etot = uin(i,j,k,5) - emag
-    eint = etot/uin(i,j,k,1) - eken
-    q(i,j,k,5) = MAX((self%gamma-one)*q(i,j,k,1)*eint,smallp)    !
+    q(i,j,k,5) = uin(i,j,k,5) - emag - eken*q(i,j,k,1)
+    q(i,j,k,5) = merge(q(i,j,k,1)*csound**2, q(i,j,k,5), isothermal)
     c(i,j,k) = sqrt((q(i,j,k,5)*gamma + 2.0*emag)/q(i,j,k,1))
   end do
   end do
@@ -456,12 +450,9 @@ subroutine ctoprim(self)
   ! Alternative Courant condition formulations
   !-----------------------------------------------------------------------------
   if (courant_type==1) then
-    c(:,:,:) = c(:,:,:) + max( abs(q(:,:,:,2)), abs(q(:,:,:,3)), abs(q(:,:,:,4)))
+    c(:,:,:) = c(:,:,:) + max(abs(q(:,:,:,2)),  abs(q(:,:,:,3)),  abs(q(:,:,:,4)))
   else
-    c(:,:,:) = c(:,:,:) + (abs(q(:,:,:,2)) + abs(q(:,:,:,3)) + abs(q(:,:,:,4)))/3.0
-  end if
-  if (isothermal) then
-    q(:,:,:,5) = q(:,:,:,1)*csound**2
+    c(:,:,:) = c(:,:,:) +    (abs(q(:,:,:,2)) + abs(q(:,:,:,3)) + abs(q(:,:,:,4)))/3.0
   end if
   ! Gravity predictor step
   !q(:,:,:,2:4) = q(:,:,:,idim+1) + Grho*gravin(:,:,:,1:3)*dt*half
@@ -852,7 +843,7 @@ SUBROUTINE trace3d(self)
   dtdx = self%dtime/self%ds(1)
   dtdy = self%dtime/self%ds(2)
   dtdz = self%dtime/self%ds(3)
-  smallp = smallr*smallc**2/self%gamma
+  smallp = smallr*smallc**2/gamma
   !
   ! E = - UxB = BxU
   Ex = ydn(zdn(Uy))*ydn(Bz) - zdn(ydn(Uz))*zdn(By) 
@@ -866,7 +857,7 @@ SUBROUTINE trace3d(self)
   !
   !call trace%end (itimer(1))
   !call trace%begin ('mhd_t%trace3d(2)', itimer=itimer(2))
-  eff_gamma = self%gamma
+  eff_gamma = gamma
   do k=2,self%gn(3)-1
   do j=2,self%gn(2)-1
   !!dir! simd
@@ -1715,7 +1706,7 @@ FUNCTION gas_pressure (self)
   if (isothermal) then
     gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*csound**2
   else
-    gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(self%gamma-1.0)
+    gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(gamma-1.0)
   end if
 END FUNCTION gas_pressure
 
