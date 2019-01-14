@@ -19,4 +19,5 @@ pipelines:
             - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -x experiments/turbulence
             - echo "Check running experiments in validation_list.txt"
             - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v -m experiments/turbulence
+            - cd $BITBUCKET_CLONE_DIR; utilities/scripts/validate -v experiments/dusty_box
             - echo "Everything is awesome!"
