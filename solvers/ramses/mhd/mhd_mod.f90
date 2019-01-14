@@ -67,7 +67,7 @@ SUBROUTINE init (self)
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, b_slope_type, &
     u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
-    verbose, detailed_timer, unsigned
+    verbose, detailed_timer, unsigned, courant_type
 !...............................................................................
   call trace%begin('mhd_mod%init')
 

@@ -1,9 +1,10 @@
 !> =============================================================================
 !> =============================================================================
 MODULE os_mod
+  USE io_unit_mod
   USE omp_mod
   USE mpi_mod
-  USE io_unit_mod
+  USE omp_timer_mod
   implicit none
   private
   type, public:: os_t
@@ -12,13 +13,33 @@ MODULE os_mod
     procedure, nopass:: mkdir_no
   end type
   type(os_t), public:: os
-
+  real, parameter:: ms=100.
 CONTAINS
+
+SUBROUTINE mkdir (dir)
+  character(len=*):: dir
+  real(8):: start
+  logical:: exists
+  !.............................................................................
+  if (mpi%rank==0) then
+    call mkdir_real (dir)
+  else
+    start = wallclock()
+    do while (wallclock()-start < 10.0)
+      inquire (directory=dir, exist=exists)
+      if (exists) exit
+      call mpi%delay (ms=ms)
+    end do
+    if (.not.exists) then
+      write (io_unit%output,*) 'WARNING: rank',mpi%rank,' cannot see',dir
+    end if
+  end if
+END SUBROUTINE mkdir
 
 !> =============================================================================
 !> Utility to create a new directory
 !> =============================================================================
-SUBROUTINE mkdir (dir)
+SUBROUTINE mkdir_real (dir)
 #ifdef __INTEL_COMPILER
   USE ifport
 #else
@@ -35,7 +56,6 @@ SUBROUTINE mkdir (dir)
 #endif
   character(len=*):: dir
   logical:: exists
-  real, parameter:: ms=100.
   !.............................................................................
 #ifdef __INTEL_COMPILER
   inquire (directory=dir, exist=exists)
@@ -79,7 +99,7 @@ SUBROUTINE mkdir (dir)
   end if
   !$omp end critical (system_cr)
 #endif
-END SUBROUTINE mkdir
+END SUBROUTINE mkdir_real
 
 !> =============================================================================
 !> Make sure the next directory is created ahead of time

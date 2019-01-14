@@ -251,6 +251,9 @@ contains
     character(len=*):: ext, form
     !-----------------------------------------------------------------------------
     write (filename,'(a,"rank_",i5.5,a)') trim(self%outputname), mpi%rank, ext
+    !$omp master
+    print *,mpi%rank,unit,filename
+    !$omp end master
     open (unit=unit, file=trim(filename), form=form, status='unknown')
     if (io%master) then
       print *, omp%thread, ' unit', unit, ' file:', filename
