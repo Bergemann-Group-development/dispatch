@@ -12,6 +12,7 @@ DEFS = -D$(PREC)
 SOLVER  ?= VOID
 PREC    ?= SINGLE
 RT_PREC ?= RT_SINGLE
+BUILD=build
 
 #############################################################################
 # Check for options
@@ -40,7 +41,7 @@ sinclude $(CONFIG)/compiler/$(COMPILER)/$(HOST)/$(OPTS).mkf
 ifeq ($(OPTS),phi)
   EXEC := $(EXEC).mic
 endif
-default: $(EXEC)
+default: build $(EXEC)
 
 #############################################################################
 # Sources directories are searched in this exact order (VPATH inside Makefile)
@@ -71,7 +72,7 @@ ifdef PATCH
   VPATH := $(TOP)/patch/$(PATCH):$(VPATH)
   sinclude $(TOP)/patch/$(PATCH)/Makefile
 endif
-VPATH := ./:$(VPATH)
+VPATH := ./:$(VPATH):$(BUILD)
 sinclude $(CONFIG)/Makefile.dep
 
 #############################################################################
@@ -90,22 +91,22 @@ $(shell mkdir -p $(DEPDIR) >/dev/null)
 # Pattern rules
 %.o: %.f90 $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
-	$(E)$(F90) $(FFLAGS) $(DEFS) $(DEPFLAGS) -c $< -o $@
+	$(E)$(F90) $(FFLAGS) $(DEFS) $(DEPFLAGS) -c $< -o $(BUILD)/$@
 	$(E)$(POSTCOMPILE)
 	$(eval OBJS+=$@)
 %.o: %.f $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
-	$(E)$(F90) $(FFLAGS) $(DEFS) $(DEPFLAGS) -c $< -o $@
+	$(E)$(F90) $(FFLAGS) $(DEFS) $(DEPFLAGS) -c $< -o $(BUILD)/$@
 	$(E)$(POSTCOMPILE)
 	$(eval OBJS+=$@)
 %.x: %.f90
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
 	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
-	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJS)) -o $@ $(LIBS)
+	$(E)$(LD) $(LDFLAGS) $< $(sort $(patsubst %,$(BUILD)/%,$(OBJS))) -I$(BUILD) -o $@ $(LIBS)
 %.x.mic: %.f90
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
 	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
-	$(E)$(LD) $(LDFLAGS) $< $(sort $(OBJS)) -o $@ $(LIBS)
+	$(E)$(LD) $(LDFLAGS) $< $(sort $(patsubst %,$(BUILD)/%,$(OBJS))) -I$(BUILD) -o $@ $(LIBS)
 %.w: %.f90
 	@echo $<
 %.w: %.f
@@ -114,7 +115,10 @@ $(DEPDIR)/%.d: ;
 
 # Prevent deletion of dependency files after successful compilation
 .PRECIOUS: $(DEPDIR)/%.d
-.PHONY: showopt clean cleanlog cleandata clean-deps cleaner cleanest info
+.PHONY: $(BUILD) showopt clean cleanlog cleandata clean-deps cleaner cleanest info
+
+$(BUILD):
+	@mkdir -p $(BUILD)
 
 showopt:
 	@echo "FC = $(F90) $(FFLAGS) $(DEFS)"
@@ -122,14 +126,16 @@ showopt:
 
 #############################################################################
 ## Clean up
+CLEANDIRS = {.,$(BUILD)}
+
 clean:: clean-deps
-	rm -f *.o *.$(MOD) *.stackdump
+	rm -f $(CLEANDIRS)/*.o $(CLEANDIRS)/*.$(MOD) *$(CLEANDIRS)/.stackdump
 cleanlog:
 	rm -f *.log log*
 cleandata:
 	rm -f *.dat fort.*
 cleandirs:
-	rm -rf data .d
+	rm -rf data .d $(BUILD)
 clean-deps:
 	rm -f .d/*.*d
 cleaner: clean cleandata

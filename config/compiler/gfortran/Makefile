@@ -10,9 +10,9 @@ POSTCOMPILE = mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
 
 # Depending on MPI use mpif90 or not
 ifeq ($(strip $(MPI)),mpi)
-  FC  = mpifort
+  FC  = mpifort -I${BUILD} -J${BUILD}
 else
-  FC  = gfortran
+  FC  = gfortran -I${BUILD} -J${BUILD}
 endif
 F90 = $(FC) -x f95-cpp-input -ffree-line-length-0 $(W)
 LD  = $(FC)
