@@ -26,7 +26,11 @@ SUBROUTINE mkdir (dir)
   else
     start = wallclock()
     do while (wallclock()-start < 10.0)
+#ifdef __INTEL_COMPILER
       inquire (directory=dir, exist=exists)
+#else
+      inquire (file=dir, exist=exists)
+#endif
       if (exists) exit
       call mpi%delay (ms=ms)
     end do
