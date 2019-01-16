@@ -825,6 +825,11 @@ SUBROUTINE find_mhd_flux (qvar, cvar, ff)
   !-----------------------------------------------------------------------------
   ! Local variables
   entho = one/(gamma-one)
+  if (isothermal) then
+    entho = one
+  else
+    entho = one/max(gamma-one,1e-6)
+  end if
   d=qvar(1); P=qvar(2); u=qvar(3); A=qvar(4)
   v=qvar(5); B=qvar(6); w=qvar(7); C=qvar(8)
   ecin = half*(u*u+v*v+w*w)*d

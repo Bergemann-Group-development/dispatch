@@ -56,7 +56,6 @@ MODULE mhd_mod
   integer, save:: b_slope_type=-1
   integer, save:: u_slope_type=-1
   character(len=16):: eqn='mhd'
-  real(kind=8):: courant_number=0.2
   real:: csound=1.
 CONTAINS
 
@@ -91,7 +90,7 @@ SUBROUTINE init (self)
     !---------------------------------------------------------------------------
     ! The HLLD solver throws a divide fault if gamma==1, hence this workaround:
     !---------------------------------------------------------------------------
-    if (isothermal) gamma=1.000001d0
+    if (isothermal) gamma=1.0d0
     if (mpi%master) write (*, ramses_params)
   end if
   !$omp end critical (pde)
@@ -132,7 +131,7 @@ SUBROUTINE update (self)
   if (io%smallr > 0) smallr = io%smallr
   if (io%courant > 0) self%courant = io%courant
   
-  call self%gravity
+  !call self%gravity
   !----------------------------------------------------------------------------
   ! Checks whether to do output
   !----------------------------------------------------------------------------
@@ -441,7 +440,7 @@ subroutine ctoprim(self)
     B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
     emag = half*(B1**2 + B2**2 + B3**2)
     q(i,j,k,5) = uin(i,j,k,5) - emag - eken*q(i,j,k,1)
-    q(i,j,k,5) = merge(q(i,j,k,1)*csound**2, q(i,j,k,5), isothermal)
+    q(i,j,k,5) = merge(q(i,j,k,1)*csound**2, q(i,j,k,5)*(gamma-1d0), isothermal)
     c(i,j,k) = sqrt((q(i,j,k,5)*gamma + 2.0*emag)/q(i,j,k,1))
   end do
   end do
@@ -549,7 +548,8 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
             dsgn = sign(one, dcen)                        ! sign(slope)
             slop = xslope_type*min(abs(dlft),abs(drgt))   ! slope_type=1: slope=dq, slope_type=2: slope=2*dq 
             slop = merge(slop,zero,(dlft*drgt)>zero)      ! if both are non-zero, use the smaller one, or times 2
-            dq(i,j,k,n,1) = dsgn*min(slop,abs(dcen))      ! the smaller of the twice the smaller slope, and the central one            ! slopes in second coordinate direction
+            dq(i,j,k,n,1) = dsgn*min(slop,abs(dcen))      ! the smaller of the twice the smaller slope, and the central one
+            ! slopes in second coordinate direction
             dlft = (q(i,j  ,k,n) - q(i,j-1,k,n))
             drgt = (q(i,j+1,k,n) - q(i,j  ,k,n))
             dcen = half*(dlft+drgt)
@@ -1704,7 +1704,7 @@ FUNCTION gas_pressure (self)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: gas_pressure
   if (isothermal) then
-    gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*csound**2
+    gas_pressure = self%mem(:,:,:,self%idx%d,self%it,1)*csound**2
   else
     gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(gamma-1.0)
   end if
