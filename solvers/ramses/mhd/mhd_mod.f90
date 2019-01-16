@@ -546,7 +546,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
         end do
       end do
     else if (slope==2) then ! moncen
-      xslope_type= 2 !MIN(slope_type,2)
+      xslope_type= rslope_type - 1.0
       do k = l(3),u(3)
         do j = l(2),u(2)
           do i = l(1),u(1)
@@ -690,7 +690,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
       end do
     end do
   else if (slope == 2) then
-    xslope_type = 1
+    xslope_type = rslope_type - 1.0
     do k = l(3),u(3)
       do j = l(2),u(2)
         do i = l(1),u(1)
