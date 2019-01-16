@@ -500,6 +500,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
   real(dp)::dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm,dfrrm
   real(dp)::dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr,dfrrr
   real(dp)::vmin,vmax,dfx,dfy,dfz,dff,idff
+  real, dimension(:), allocatable:: slft, srgt, sabs
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%uslope', itimer=itimer, detailed_timer=detailed_timer)
@@ -641,6 +642,49 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
           end do
         end do
       end do
+    else if (slope==7) then  ! minmod
+      allocate (slft(l(1):u(1)), srgt(l(1):u(1)), sabs(l(1):u(1)))
+      do k = l(3),u(3)
+        do j = l(2),u(2)
+          slft = q(l(1):u(1),j,k,n)-q(l(1)-1:u(1)-1,j,k,n)
+          srgt = q(l(1)+1:u(1)+1,j,k,n)-q(l(1):u(1),j,k,n)
+          sabs = abs(2.0*slft*srgt)
+          where (sabs /= 0.0)
+            dq(l(1):u(1),j,k,n,1) = 0.5*(slft+srgt)*sabs/(slft**2+srgt**2)
+          else where
+            dq(l(1):u(1),j,k,n,1) = 0.0
+          end where
+        end do
+      end do
+      deallocate (slft, srgt, sabs)
+      allocate (slft(l(2):u(2)), srgt(l(2):u(2)), sabs(l(2):u(2)))
+      do k = l(3),u(3)
+        do i = l(1),u(1)
+          slft = q(i,l(2):u(2),k,n)-q(i,l(2)-1:u(2)-1,k,n)
+          srgt = q(i,l(2)+1:u(2)+1,k,n)-q(i,l(2):u(2),k,n)
+          sabs = abs(2.0*slft*srgt)
+          where (sabs /= 0.0)
+            dq(i,l(2):u(2),k,n,2) = 0.5*(slft+srgt)*sabs/(slft**2+srgt**2)
+          else where
+            dq(i,l(2):u(2),k,n,2) = 0.0
+          end where
+        end do
+      end do
+      deallocate (slft, srgt, sabs)
+      allocate (slft(l(3):u(3)), srgt(l(3):u(3)), sabs(l(3):u(3)))
+      do j = l(2),u(2)
+        do i = l(1),u(1)
+          slft = q(i,j,l(3):u(3),n)-q(i,j,l(3)-1:u(3)-1,n)
+          srgt = q(i,j,l(3)+1:u(3)+1,n)-q(i,j,l(3):u(3),n)
+          sabs = abs(2.0*slft*srgt)
+          where (sabs /= 0.0)
+            dq(i,j,l(3):u(3),n,3) = 0.5*(slft+srgt)*sabs/(slft**2+srgt**2)
+          else where
+            dq(i,j,l(3):u(3),n,3) = 0.0
+          end where
+        end do
+      end do
+      deallocate (slft, srgt, sabs)
     else
       write(*,*)'Unknown slope type'
       stop
