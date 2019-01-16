@@ -78,7 +78,7 @@ SUBROUTINE init (self, mpi_dims, dims)
     first_time = .false.
     call init_mpi (self)
     call omp%init
-    if (mpi_rank==0) call detect_cores
+    call detect_cores
 #ifdef MPI
     call MPI_Bcast (omp%ncores, 1, MPI_INTEGER, 0, self%comm, mpi_err)
     call omp_timer%get (offset)
