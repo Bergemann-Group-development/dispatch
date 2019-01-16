@@ -10,6 +10,7 @@ run=$1
 cd $SLURM_SUBMIT_DIR
 dir=data/$run
 mkdir -p $dir
+ln -sf $dir run
 time=`date +%y%m%d_%H%M`
 log=$dir/log_$time
 in=$run.nml
