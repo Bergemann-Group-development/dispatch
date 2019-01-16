@@ -63,10 +63,11 @@ CONTAINS
 SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hlld'
+  real, save:: max_dlogd=20.
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, b_slope_type, &
     u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
-    verbose, detailed_timer, unsigned, courant_type
+    verbose, detailed_timer, unsigned, courant_type, max_dlogd
 !...............................................................................
   call trace%begin('mhd_mod%init')
 
@@ -94,6 +95,7 @@ SUBROUTINE init (self)
     if (mpi%master) write (*, ramses_params)
   end if
   !$omp end critical (pde)
+  rieman%max_dlogd = max_dlogd
   self%riemann = riemann
   self%courant = courant_factor
   self%gamma = gamma
@@ -323,6 +325,13 @@ SUBROUTINE update (self)
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
               self%Ex,self%Ey,self%Ez,self%ff)
   call trace%end (itimer)
+  if (rieman%ndiff > 0) then
+    write(io_unit%mpi,*) 'id,ndiff', self%id, rieman%ndiff, rieman%nsolu
+    !$omp atomic write
+    rieman%ndiff = 0
+    !$omp atomic write
+    rieman%nsolu = 0
+  end if
 END SUBROUTINE update
 
 !> =============================================================================

@@ -8,8 +8,10 @@ module riemann_mod
   implicit none
   private
   type riemann_t
+    integer(8):: ndiff=0, nsolu=0
+    real:: max_dlogd=10.
   contains
-    procedure, nopass:: hlld
+    procedure:: hlld
     procedure, nopass:: hlld_2d
     procedure, nopass:: llf
     procedure, nopass:: llf_2d
@@ -19,7 +21,8 @@ contains
 
 !> =============================================================================
 !> =============================================================================
-subroutine hlld (qleft, qright, fgdnv, ngrid, detailed_timer)
+subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
+  class(riemann_t):: self
   integer:: ngrid
   real(dp),dimension(:,:)::qleft,qright,fgdnv
   LOGICAL, OPTIONAL:: detailed_timer
@@ -38,7 +41,7 @@ subroutine hlld (qleft, qright, fgdnv, ngrid, detailed_timer)
 #ifdef INLINE
   REAL(dp)::d,P,u,v,w,B,C,B2,c2,d2,cf
 #endif
-  INTEGER ::ivar,i,icase
+  INTEGER ::ivar,i,icase, ndiff
   logical:: flag
   integer, save:: itimer=0
   !.............................................................................
@@ -52,6 +55,7 @@ subroutine hlld (qleft, qright, fgdnv, ngrid, detailed_timer)
   end if
   !
   fgdnv      = 0d0
+  ndiff = 0
   do i=1,ngrid
     !print '(i3,1p,8e10.2,2x,8e10.2)',i,qleft(i,:),qright(i,:)
     !
@@ -240,6 +244,10 @@ subroutine hlld (qleft, qright, fgdnv, ngrid, detailed_timer)
        vdotBo=vdotBr
        emago=emagr
     end if
+    ! add a diffusive flux in the down grad(ln(rho)) direction, if |u| > 1
+    ustar = merge(0.0, alog(rl/rr), min(rl,rr) < 10.*smallr)
+    ndiff = ndiff + merge(1,0,abs(ustar)>self%max_dlogd)
+    uo = uo + cf*(min(ustar+self%max_dlogd,0.0) + max(ustar-self%max_dlogd,0.0))
     !
     ! Compute the Godunov flux
     fgdnv(i,1) = ro*uo
@@ -251,6 +259,10 @@ subroutine hlld (qleft, qright, fgdnv, ngrid, detailed_timer)
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
   end do
+  !$omp atomic
+  self%ndiff = self%ndiff + ndiff
+  !$omp atomic
+  self%nsolu = self%nsolu + ngrid
   !call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine hlld
 
@@ -680,8 +692,8 @@ SUBROUTINE llf_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     ! vx*by - vy*bx at the four edge centers
     ELL = qLL(l,3)*qLL(l,7) - qLL(l,4)*qLL(l,6)
     ERL = qRL(l,3)*qRL(l,7) - qRL(l,4)*qRL(l,6)
-    ELR = qLR(l,3)*qLR(l,7) - qLR(l,4)*qLR(l,6)  
-    ERR = qRR(l,3)*qRR(l,7) - qRR(l,4)*qRR(l,6) 
+    ELR = qLR(l,3)*qLR(l,7) - qLR(l,4)*qLR(l,6)
+    ERR = qRR(l,3)*qRR(l,7) - qRR(l,4)*qRR(l,6)
     !
     ! find the average value of E
     Ev = forth*(ELL+ERL+ELR+ERR)
@@ -707,7 +719,7 @@ SUBROUTINE llf_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     qleft (5) = half*(qLL(l,4)+qLR(l,4))
     qright(5) = half*(qRR(l,4)+qRL(l,4))
     !
-    ! bt2 becomes transverse magnetic field 
+    ! bt2 becomes transverse magnetic field
     qleft (6) = half*(qLL(l,7)+qLR(l,7))
     qright(6) = half*(qRR(l,7)+qRL(l,7))
     !
@@ -738,11 +750,11 @@ SUBROUTINE llf_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     qleft (4) = half*(qLL(l,7)+qRL(l,7))
     qright(4) = half*(qRR(l,7)+qLR(l,7))
     !
-    ! vt1 becomes transverse velocity field 
+    ! vt1 becomes transverse velocity field
     qleft (5) = half*(qLL(l,3)+qRL(l,3))
     qright(5) = half*(qRR(l,3)+qLR(l,3))
     !
-    ! bt1 becomes transverse magnetic field 
+    ! bt1 becomes transverse magnetic field
     qleft (6) = half*(qLL(l,6)+qRL(l,6))
     qright(6) = half*(qRR(l,6)+qLR(l,6))
     !
@@ -796,7 +808,7 @@ SUBROUTINE lax_friedrich (qleft, qright, fgdnv)
   qright(4) = bx_mean
   !
   CALL find_mhd_flux (qleft ,uleft ,fleft )
-  CALL find_mhd_flux (qright,uright,fright) 
+  CALL find_mhd_flux (qright,uright,fright)
   !
   ! find the mean flux
   fmean =  half * ( fright + fleft )
@@ -814,9 +826,9 @@ END SUBROUTINE lax_friedrich
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE find_mhd_flux (qvar, cvar, ff) 
+SUBROUTINE find_mhd_flux (qvar, cvar, ff)
   !! compute the 1D MHD fluxes from the conservative variables
-  !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal, 
+  !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal,
   !! Vtransverse1, Btransverse1, Vtransverse2, Btransverse2
   IMPLICIT NONE
   INTEGER :: i , ivar, ib
@@ -883,12 +895,12 @@ END SUBROUTINE find_speed_fast
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE find_speed_info (qvar, vel_info)
-  !! calculate the fastest velocity at which information is exchanged 
+  !! calculate the fastest velocity at which information is exchanged
   !! at the interface
-  !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal, 
+  !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal,
   !! Vtransverse1,Btransverse1,Vtransverse2,Btransverse2
   IMPLICIT NONE
-  REAL(dp), DIMENSION(:):: qvar  
+  REAL(dp), DIMENSION(:):: qvar
   REAL(dp):: vel_info
   REAL(dp):: d, P, u, v, w, A, B, C, B2, c2, d2, cf
   !-----------------------------------------------------------------------------
