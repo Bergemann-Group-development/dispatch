@@ -1265,6 +1265,10 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     fmt = '(a,i8,2i4,i3,1p,2e12.5,     0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,2i4,l3,l1,o12)'
   end if
   if (io%verbose>=0) then
+    !$omp atomic
+    io%dmin = min(io%dmin, self%fminval(self%mem(:,:,:,self%idx%d,self%it,1)))
+    !$omp atomic
+    io%dmax = max(io%dmax, self%fmaxval(self%mem(:,:,:,self%idx%d,self%it,1)))
     if (self%time>=self%print_next) then
       if (io%print_time > 0) &
         self%print_next = (nint(self%time/io%print_time)+1)*io%print_time
@@ -1329,14 +1333,17 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           write(io%output,fmt) &
             'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
             self%dtime, log10(max(self%u_max,1e-30)), &
-            self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-            self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
+            io%dmin, io%dmax, &
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
             real(timer%n_update), ntask, nq, counts, &
             mpi_mesg%nq_send, mpi_mesg%nq_recv, &
             self%is_set(bits%boundary), self%is_set(bits%virtual)
         end do
+        !$omp atomic write
+        io%dmin = huge(1.)
+        !$omp atomic write
+        io%dmax = tiny(1.)
         counts(:) = 0
         !-----------------------------------------------------------------------
         ! Reset the message counters after every timestep, if relevant

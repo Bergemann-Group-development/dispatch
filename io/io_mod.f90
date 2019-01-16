@@ -55,6 +55,8 @@ MODULE io_mod
     real:: grace=0.0
     real:: smallr=0.0
     real:: courant=0.0
+    real:: dmin=1.0
+    real:: dmax=1.0
   contains
     procedure:: init
     procedure:: debug
