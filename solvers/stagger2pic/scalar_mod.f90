@@ -1,1 +1,1 @@
-../stagger2/scalar_mod.f90
+../scalar_mod.f90
