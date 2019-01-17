@@ -448,8 +448,8 @@ subroutine ctoprim(self)
     B2 = half*(q(i,j,k,7)+q(i,j+1,k,7))
     B3 = half*(q(i,j,k,8)+q(i,j,k+1,8))
     emag = half*(B1**2 + B2**2 + B3**2)
-    q(i,j,k,5) = uin(i,j,k,5) - emag - eken*q(i,j,k,1)
-    q(i,j,k,5) = merge(q(i,j,k,1)*csound**2, q(i,j,k,5)*(gamma-1d0), isothermal)
+    q(i,j,k,5) = (uin(i,j,k,5) - emag - eken*q(i,j,k,1))*(gamma-1d0)
+    q(i,j,k,5) = merge(q(i,j,k,1)*csound**2, max(q(i,j,k,5),smallp), isothermal)
     c(i,j,k) = sqrt((q(i,j,k,5)*gamma + 2.0*emag)/q(i,j,k,1))
   end do
   end do
