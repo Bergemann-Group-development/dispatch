@@ -45,6 +45,7 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:):: c
     real, pointer, dimension(:,:,:,:):: ff        ! external force
     type(force_t):: force
+    integer:: n_dump = 20                         ! max 20 dumps per patch
   contains
     procedure:: init
     procedure:: update
@@ -54,8 +55,8 @@ MODULE mhd_mod
   logical, save:: detailed_timer=.false.
   logical, save:: unsigned=.true.
   integer, save:: verbose=0
-  integer, save:: b_slope_type=-1
-  integer, save:: u_slope_type=-1
+  integer, save:: b_slope_type=0
+  integer, save:: u_slope_type=0
   character(len=16):: eqn='mhd'
   real:: csound=1.
 CONTAINS
@@ -65,10 +66,11 @@ SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hlld'
   real, save:: max_dlogd=20.
+  integer, save:: n_dump=0
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, b_slope_type, &
     u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
-    verbose, detailed_timer, unsigned, courant_type, max_dlogd
+    verbose, detailed_timer, unsigned, courant_type, max_dlogd, n_dump
 !...............................................................................
   call trace%begin('mhd_mod%init')
 
@@ -97,6 +99,7 @@ SUBROUTINE init (self)
   end if
   !$omp end critical (pde)
   rieman%max_dlogd = max_dlogd
+  self%n_dump = n_dump
   self%riemann = riemann
   self%courant = courant_factor
   self%gamma = gamma

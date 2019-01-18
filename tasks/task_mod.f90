@@ -38,7 +38,6 @@ MODULE task_mod
     integer:: thread=-1
     integer:: mem_thread=-1
     integer:: ip                        ! rank local task id
-    integer:: n_dump = 1000             ! max 1000 dumps per patch
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
     real(8):: out_next = 0d0
