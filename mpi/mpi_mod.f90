@@ -312,6 +312,7 @@ SUBROUTINE detect_cores
     close (io_unit%os)
     wc = wallclock()-wc
     if (wc > 5) print '(a)','############################################################'
+    if (mpi%master) &
     print '(a,f6.1,a)',     'reading /proc/cpuinfo:', wc, ' sec'
     if (wc > 5) print '(a)','############################################################'
   end if
