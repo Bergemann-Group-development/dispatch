@@ -6,28 +6,26 @@ MODULE mpi_rma_mod
   USE mpi_mod
   implicit none
   include "mpif.h"
-  integer, private:: mpi_err
-  interface win_get
-    module procedure get_int, get_real
-  end interface
   type, extends(mpi_t):: mpi_rma_t
+    integer:: window
+    integer:: nr, ni
+    real, dimension(:), pointer:: r
+    integer, dimension(:), pointer:: i
   contains
-    procedure:: create_int
-    procedure:: create_real
+    procedure:: create
     procedure:: free
     procedure:: lock
     procedure:: lock_x
     procedure:: unlock
     procedure:: fence
     procedure:: sync
+    procedure:: flush
     procedure:: create_dynamic
     procedure:: attach
     procedure:: detach
-    procedure:: add_int
-    procedure:: put_int
-    procedure:: put_real
-    procedure:: get_int
-    procedure:: get_real
+    procedure:: accumulate
+    procedure:: put
+    procedure:: get
   end type
 PUBLIC
 CONTAINS
@@ -35,148 +33,144 @@ CONTAINS
 !> =============================================================================
 !> Create an MPI window of size "nb" bytes
 !> =============================================================================
-SUBROUTINE create_int (self, win, b, nw)
-  implicit none
+SUBROUTINE create (self, ni, nr)
   class(mpi_rma_t):: self
-  integer:: win, nw, flag, mode, mpi_err
-  integer, dimension(nw):: b
+  integer, optional:: ni, nr
+  !.............................................................................
+  integer:: nw, flag, mode, mpi_err
   integer(kind=MPI_ADDRESS_KIND):: nbytes
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   ! Create MPI remote memory window, of size nb bytes.
   !----------------------------------------------------------------------------
-  nbytes = nw*4
-  call MPI_Win_create (b, nbytes, 1, MPI_INFO_NULL, MPI_COMM_WORLD, win, mpi_err)
-  call self%assert ('MPI_Win_create', mpi_err)
-#ifndef __GFORTRAN__
-  if (master .and. first_time) then
-    first_time = .false.
-    !call MPI_Win_get_attr (win, MPI_WIN_MODEL, mode, flag, mpi_err)
-    !call self%assert ('MPI_Win_get_attr', mpi_err)
-    !if (mode==MPI_WIN_UNIFIED)  print *,'MPI_WIN_MODEL is MPI_WIN_UNIFIED'
-    !if (mode==MPI_WIN_SEPARATE) print *,'MPI_WIN_MODEL is MPI_WIN_SEPARATE'
+  if (present(nr)) then
+    if (nr>0) then
+      self%nr = nr
+      self%ni = 0
+      allocate (self%r(nr))
+      nbytes = nr*4
+      call MPI_Win_create (self%r, nbytes, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &
+                           self%window, mpi_err)
+    end if
+  else if (present(ni)) then
+    if (ni>0) then
+      self%ni = ni
+      self%nr = 0
+      allocate (self%i(ni))
+      nbytes = ni*4
+      call MPI_Win_create (self%i, nbytes, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &
+                           self%window, mpi_err)
+    end if
   end if
-#endif
-END SUBROUTINE create_int
-
-!> =============================================================================
-!> Create an MPI window of size "nb" bytes
-!> =============================================================================
-SUBROUTINE create_real (self, win, b, nw)
-  implicit none
-  class(mpi_rma_t):: self
-  integer:: win, nw, flag, mode, mpi_err
-  real(4), dimension(nw):: b
-  integer(kind=MPI_ADDRESS_KIND):: nbytes
-  logical, save:: first_time=.true.
-  !----------------------------------------------------------------------------
-  ! Create MPI remote memory window, of size nw words.
-  !----------------------------------------------------------------------------
-  nbytes = nw
-  call MPI_Win_create (b, nbytes, 4, MPI_INFO_NULL, MPI_COMM_WORLD, win, mpi_err)
   call self%assert ('MPI_Win_create', mpi_err)
-END SUBROUTINE create_real
+END SUBROUTINE create
 
 !> =============================================================================
 !> Free a window opened with create or create_dynamic
 !> =============================================================================
-SUBROUTINE free (self, win)
-  implicit none
+SUBROUTINE free (self)
   class(mpi_rma_t):: self
-  integer:: win
-  !----------------------------------------------------------------------------
+  integer:: mpi_err
+  !-----------------------------------------------------------------------------
   ! Assert there is no more window activity, and free the window
-  !----------------------------------------------------------------------------
-  call MPI_Win_fence (MPI_MODE_NOSUCCEED, win, mpi_err)
-  call MPI_Win_free (win, mpi_err)
+  !-----------------------------------------------------------------------------
+  call MPI_Win_fence (MPI_MODE_NOSUCCEED, self%window, mpi_err)
+  call MPI_Win_free (self%window, mpi_err)
   call self%assert ('MPI_Win_free', mpi_err)
 END SUBROUTINE free
 
 !> =============================================================================
-!> Lock a window, preparing for access from rank
+!> Lock a window, preparing for shared access from ranks
 !> =============================================================================
-SUBROUTINE lock (self, win, rank)
-  implicit none
+SUBROUTINE lock (self, rank)
   class(mpi_rma_t):: self
-  integer:: win, nw, offset, rank
-  integer(kind=MPI_ADDRESS_KIND):: offset2
+  integer:: rank
+  integer:: mpi_err
   !----------------------------------------------------------------------------
   ! Lock the access, to allow us to use MPI_Win_get safely
   !----------------------------------------------------------------------------
-  call MPI_Win_lock (MPI_LOCK_SHARED, rank, 0, win, mpi_err)
+  call MPI_Win_lock (MPI_LOCK_SHARED, rank, 0, self%window, mpi_err)
   call self%assert ('MPI_Win_lock', mpi_err)
 END SUBROUTINE lock
 
 !> =============================================================================
 !> Lock a window, preparing for exclusive access from rank
 !> =============================================================================
-SUBROUTINE lock_x (self, win, rank)
-  implicit none
+SUBROUTINE lock_x (self, rank)
   class(mpi_rma_t):: self
-  integer:: win, nw, offset, rank
-  integer(kind=MPI_ADDRESS_KIND):: offset2
+  integer:: rank
+  integer:: mpi_err
   !----------------------------------------------------------------------------
   ! Lock the access, to allow us to use MPI_Win_get safely
   !----------------------------------------------------------------------------
-  call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, rank, 0, win, mpi_err)
+  call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, rank, 0, self%window, mpi_err)
   call self%assert ('MPI_Win_lock', mpi_err)
 END SUBROUTINE lock_x
 
 !> =============================================================================
 !> Remove a lock
 !> =============================================================================
-SUBROUTINE unlock (self, win, rank)
-  implicit none
+SUBROUTINE unlock (self, rank)
   class(mpi_rma_t):: self
-  integer:: win, nw, offset, rank
-  integer(kind=MPI_ADDRESS_KIND):: offset2
+  integer:: rank
+  integer:: mpi_err
   !----------------------------------------------------------------------------
   ! Unlock the access to the window
   !----------------------------------------------------------------------------
-  call MPI_Win_unlock (rank, win, mpi_err)
+  call MPI_Win_unlock (rank, self%window, mpi_err)
   call self%assert ('MPI_Win_unlock', mpi_err)
 END SUBROUTINE unlock
 
 !> =============================================================================
 !> Synchronize the operations on MPI open windows
 !> =============================================================================
-SUBROUTINE fence (self, win)
-  implicit none
+SUBROUTINE fence (self)
   class(mpi_rma_t):: self
-  integer:: win
+  integer:: mpi_err
   !----------------------------------------------------------------------------
   ! Sync windows
   !----------------------------------------------------------------------------
-  call MPI_Win_fence (0, win, mpi_err)
+  call MPI_Win_fence (0, self%window, mpi_err)
   call self%assert ('MPI_Win_fence', mpi_err)
 END SUBROUTINE fence
 
 !> =============================================================================
 !> Force a sync
 !> =============================================================================
-SUBROUTINE sync (self, win)
-  implicit none
+SUBROUTINE sync (self)
   class(mpi_rma_t):: self
-  integer:: win
+  integer:: mpi_err
   !----------------------------------------------------------------------------
   ! Sync windows
   !----------------------------------------------------------------------------
-  call MPI_Win_sync (win, mpi_err)
+  call MPI_Win_sync (self%window, mpi_err)
   call self%assert ('MPI_Win_sync', mpi_err)
 END SUBROUTINE sync
 
 !> =============================================================================
+!> Flush
+!> =============================================================================
+SUBROUTINE flush (self)
+  class(mpi_rma_t):: self
+  integer:: mpi_err
+  !----------------------------------------------------------------------------
+  ! Flush operations
+  !----------------------------------------------------------------------------
+  call MPI_Win_flush (self%window, mpi_err)
+  call self%assert ('MPI_Win_flush', mpi_err)
+END SUBROUTINE flush
+
+!> =============================================================================
 !> Create a window that can be changed dynamically
 !> =============================================================================
-SUBROUTINE create_dynamic (self, win)
-  implicit none
+SUBROUTINE create_dynamic (self)
   class(mpi_rma_t):: self
-  integer:: win
+  integer:: mpi_err
   !----------------------------------------------------------------------------
   ! Create dynamic MPI remote memory window.
   !----------------------------------------------------------------------------
 #ifndef __GFORTRAN__
-  call MPI_Win_create_dynamic (MPI_INFO_NULL, MPI_COMM_WORLD, win, mpi_err)
+  call MPI_Win_create_dynamic (MPI_INFO_NULL, MPI_COMM_WORLD, self%window, mpi_err)
   call self%assert ('MPI_Win_create', mpi_err)
 #endif
 END SUBROUTINE create_dynamic
@@ -184,37 +178,48 @@ END SUBROUTINE create_dynamic
 !> =============================================================================
 !> Add a value to an integer "hosted" on a certain rank (e.g. 0 = master)
 !> =============================================================================
-SUBROUTINE add_int (self, win, rank, add, val)
-  implicit none
+SUBROUTINE accumulate (self, target, r, i)
   class(mpi_rma_t):: self
-  integer:: win, rank, n=1, val(:), add(:)
+  integer:: target
+  integer, optional:: i(:)
+  real,    optional:: r(:)
+  !.............................................................................
+  integer:: n, mpi_err
   integer(kind=MPI_ADDRESS_KIND):: offset=0
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Note that offset is counted in bytes, while numbers are storage units
-  !----------------------------------------------------------------------------
-  call MPI_Get_accumulate (add, n, MPI_INTEGER, &
-                           val, n, MPI_INTEGER, rank, offset, &
-                                n, MPI_INTEGER, MPI_SUM, win, mpi_err)
+  !-----------------------------------------------------------------------------
+  if (self%nr > 0) then
+    n = size(r)
+    call MPI_Get_accumulate (r, n, MPI_REAL, &
+                        self%r, n, MPI_REAL, target, offset, &
+                                n, MPI_REAL, MPI_SUM, self%window, mpi_err)
+  else if (self%ni > 0) then
+    n = size(i)
+    call MPI_Get_accumulate (i, n, MPI_INT, &
+                        self%i, n, MPI_INT, target, offset, &
+                                n, MPI_INT, MPI_SUM, self%window, mpi_err)
+  end if
   call self%assert ('MPI_Accumulate', mpi_err)
-  call MPI_Win_flush (rank, win, mpi_err)
+  call MPI_Win_flush (target, self%window, mpi_err)
   call self%assert ('MPI_Flush', mpi_err)
-END SUBROUTINE add_int
+END SUBROUTINE accumulate
 
 !> =============================================================================
 !> Define a new range for a window
 !> =============================================================================
-SUBROUTINE attach (self, win, b, nb)
-  implicit none
+SUBROUTINE attach (self, b, nb)
   class(mpi_rma_t):: self
-  integer:: win, nb, mpi_err
+  integer:: nb
   character(len=1), dimension(nb):: b
   integer(kind=MPI_ADDRESS_KIND):: nbytes
+  integer:: mpi_err
   !----------------------------------------------------------------------------
   ! Attach memory to MPI dynamic window, of size nb bytes.
   !----------------------------------------------------------------------------
   nbytes = nb
 #ifndef __GFORTRAN__
-  call MPI_Win_attach (win, b, nbytes, mpi_err)
+  call MPI_Win_attach (self%window, b, nbytes, mpi_err)
 #endif
   call self%assert ('MPI_Win_create', mpi_err)
 END SUBROUTINE attach
@@ -222,89 +227,58 @@ END SUBROUTINE attach
 !> =============================================================================
 !> Cancel a previous attach
 !> =============================================================================
-SUBROUTINE detach (self, win, b)
-  implicit none
+SUBROUTINE detach (self, b)
   class(mpi_rma_t):: self
-  integer:: win, mpi_err
+  integer:: mpi_err
   character(len=1), dimension(1):: b
   integer(kind=MPI_ADDRESS_KIND):: nbytes
   !----------------------------------------------------------------------------
   ! Detach memory from MPI window
   !----------------------------------------------------------------------------
 #ifndef __GFORTRAN__
-  call MPI_Win_detach (win, b, mpi_err)
+  call MPI_Win_detach (self%window, b, mpi_err)
 #endif
   call self%assert ('MPI_Win_create', mpi_err)
 END SUBROUTINE detach
 
 !> =============================================================================
-!> Get ni ints from a window on rank
+!> Get window values from target
 !> =============================================================================
-SUBROUTINE get_int (self, win, rank, i, ni, offset)
-  implicit none
+SUBROUTINE put (self, target)
   class(mpi_rma_t):: self
-  integer:: win, ni, offset, rank, mpi_err
-  integer, dimension(ni):: i
-  integer(kind=MPI_ADDRESS_KIND):: offset2
+  integer:: target, mpi_err
+  integer(kind=MPI_ADDRESS_KIND):: offset
   !----------------------------------------------------------------------------
-  ! Note that offset is counted in bytes, while numbers are storage units
-  !----------------------------------------------------------------------------
-  offset2 = offset
-  call MPI_Get (i, ni, MPI_INT, rank, offset2, ni, MPI_INT, win, mpi_err)
-  !call MPI_Win_sync (win, mpi_err)
-  call self%assert ('MPI_Get (int)', mpi_err)
-END SUBROUTINE get_int
+  offset = 0
+  if (self%ni > 0) then
+    call MPI_Put (self%i, self%ni, MPI_INT,  target, offset, &
+                          self%ni, MPI_INT,  self%window, mpi_err)
+    call self%assert ('MPI_Put', mpi_err)
+  else if (self%nr > 0) then
+    call MPI_Put (self%r, self%nr, MPI_REAL, target, offset, &
+                          self%nr, MPI_REAL, self%window, mpi_err)
+    call self%assert ('MPI_Put', mpi_err)
+  end if
+END SUBROUTINE put
 
 !> =============================================================================
-!> Get ni ints from a window on rank
+!> Get window values from target
 !> =============================================================================
-SUBROUTINE get_real (self, win, rank, r, nr, offset)
-  implicit none
+SUBROUTINE get (self, target)
   class(mpi_rma_t):: self
-  integer:: win, nr, offset, rank, mpi_err
-  real, dimension(nr):: r
-  integer(kind=MPI_ADDRESS_KIND):: offset2
+  integer:: target, mpi_err
+  integer(kind=MPI_ADDRESS_KIND):: offset
   !----------------------------------------------------------------------------
-  ! Note that offset is counted in bytes, while numbers are storage units
-  !----------------------------------------------------------------------------
-  offset2 = offset
-  call MPI_Get (r, nr, MPI_REAL, rank, offset2, nr, MPI_REAL, win, mpi_err)
-  call MPI_Win_sync (win, mpi_err)
-  call self%assert ('MPI_Get (real)', mpi_err)
-END SUBROUTINE get_real
-
-!> =============================================================================
-!> Put nb bytes from a window on rank
-!> =============================================================================
-SUBROUTINE put_int (self, win, rank, i, nw, offset)
-  implicit none
-  class(mpi_rma_t):: self
-  integer:: win, nw, offset, rank, mpi_err
-  integer, dimension(nw):: i
-  integer(kind=MPI_ADDRESS_KIND):: offset2
-  !----------------------------------------------------------------------------
-  ! Note that offset is counted in bytes, while numbers are storage units
-  !----------------------------------------------------------------------------
-  offset2 = offset
-  call MPI_put (i, nw, MPI_INT, rank, offset2, nw, MPI_INT, win, mpi_err)
-  call self%assert ('MPI_Get', mpi_err)
-END SUBROUTINE put_int
-
-!> =============================================================================
-!> Put nb bytes from a window on rank
-!> =============================================================================
-SUBROUTINE put_real (self, win, rank, r, nw, offset)
-  implicit none
-  class(mpi_rma_t):: self
-  integer:: win, nw, offset, rank, mpi_err
-  real(4), dimension(nw):: r
-  integer(kind=MPI_ADDRESS_KIND):: offset2
-  !----------------------------------------------------------------------------
-  ! Note that offset is counted in bytes, while numbers are storage units
-  !----------------------------------------------------------------------------
-  offset2 = offset
-  call MPI_put (r, nw, MPI_REAL, rank, offset2, nw, MPI_REAL, win, mpi_err)
-  call self%assert ('MPI_Get', mpi_err)
-END SUBROUTINE put_real
+  offset = 0
+  if (self%ni > 0) then
+    call MPI_Get (self%i, self%ni, MPI_INT,  target, offset, &
+                          self%ni, MPI_INT,  self%window, mpi_err)
+    call self%assert ('MPI_Get', mpi_err)
+  else if (self%nr > 0) then
+    call MPI_Get (self%r, self%nr, MPI_REAL, target, offset, &
+                          self%nr, MPI_REAL, self%window, mpi_err)
+      call self%assert ('MPI_Get', mpi_err)
+  end if
+END SUBROUTINE get
 
 END MODULE mpi_rma_mod

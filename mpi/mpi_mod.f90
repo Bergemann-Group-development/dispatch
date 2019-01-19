@@ -106,6 +106,11 @@ SUBROUTINE init (self, mpi_dims, dims)
   self%comm   = mpi%comm
   self%master = mpi%master
   self%ok     = mpi%ok
+  !-----------------------------------------------------------------------------
+  ! Make sure output from startup is finished
+  !-----------------------------------------------------------------------------
+  flush (io_unit%output)
+  call self%barrier (delay=0.1)
 END SUBROUTINE init
 
 !> =============================================================================
@@ -165,11 +170,11 @@ SUBROUTINE init_mpi (self)
     case(MPI_THREAD_MULTIPLE)
       print 1, ' MPI implementation provides support for simultaneous MPI calls by different threads'
     case(MPI_THREAD_SINGLE)
-      print 1, ' MPI implementation provides only support for MPI calls outside openmp regions'
+      print 1, ' MPI implementation only provides support for MPI calls outside openmp regions'
     case(MPI_THREAD_FUNNELED)
-      print 1, ' MPI implementation provides only support for MPI calls in master regions'
+      print 1, ' MPI implementation only provides support for MPI calls in master regions'
     case(MPI_THREAD_SERIALIZED)
-      print 1, ' MPI implementation provides only support for serial MPI calls by any thread'
+      print 1, ' MPI implementation only provides support for serial MPI calls by any thread'
     case default
       print 1, ' unknown MPI implementation'
     end select
