@@ -183,6 +183,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
+  call divb_clean (self)
   call check_small (self)                               ! Check smallr, smallp
   call ctoprim(self)                                    ! Primitive variables
   !self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
@@ -337,6 +338,51 @@ SUBROUTINE update (self)
     rieman%nsolu = 0
   end if
 END SUBROUTINE update
+
+!> =============================================================================
+!> Perform a single iteration of a div(B) clean.  The limit of stability is
+!> eps=1./6.  This is intended to prevent build-up of layers of large div(B)
+!> between patches. An exact solution would be to solve an internal Laplace
+!> equation, with boundary conditiosn = the boundary value of div(B), and then
+!> subtract the gradient of the resulting potential.
+!>
+!> The problem can also be greatly reduced by using a higher order time
+!> interpoation scheme, thus making the electric field computed from the
+!> guard zone values of B and U a better match to the neighbors E-fields.
+!> =============================================================================
+SUBROUTINE divb_clean(self)
+  class(mhd_t):: self
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: bx, by, bz
+  real, dimension(:,:,:), allocatable:: divb
+  real, parameter:: eps=0.11
+  !-----------------------------------------------------------------------------
+  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
+  by => self%mem(:,:,:,self%idx%by,self%it,1)
+  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
+  allocate (divb(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn))
+  divb = ddup(bx,1) + ddup(by,2) + ddup(bz,3)
+  bx = bx + eps*dddn(divb,1)
+  by = by + eps*dddn(divb,2)
+  bz = bz + eps*dddn(divb,3)
+  deallocate (divb)
+  return
+contains
+  !-----------------------------------------------------------------------------
+  function ddup(f,i) result (g)
+  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
+  integer:: i
+  !.............................................................................
+  g = cshift(f,1,i) - f
+  end function
+  !-----------------------------------------------------------------------------
+  function dddn(f,i) result (g)
+  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
+  integer:: i
+  !.............................................................................
+  g = f - cshift(f,-1,i)
+  end function
+END SUBROUTINE divb_clean
 
 !> =============================================================================
 !> =============================================================================
