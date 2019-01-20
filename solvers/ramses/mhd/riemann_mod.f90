@@ -244,10 +244,13 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
        vdotBo=vdotBr
        emago=emagr
     end if
-    ! add a diffusive flux in the down grad(ln(rho)) direction, if |u| > 1
-    ustar = merge(0.0, alog(rl/rr), min(rl,rr) < 10.*smallr)
-    ndiff = ndiff + merge(1,0,abs(ustar)>self%max_dlogd)
-    uo = uo + cf*(min(ustar+self%max_dlogd,0.0) + max(ustar-self%max_dlogd,0.0))
+    ! Add a diffusive flux in the down grad(ln(rho)) direction, which is only nonzero when the
+    ! smallest of the left/right density is within a factor 10 from smallr, and which has at most
+    ! magnitude of 0.25 times the largest of the left/right fast mode speeds.
+    ustar = alog(rl/rr)*max(0.0, alog10((10.*smallr)/min(rl,rr)))
+    ustar = 0.25*max(cfastr,cfastl)*min(1.0, max(-1.0, ustar))
+    uo = uo + ustar
+    ndiff = ndiff + merge(1,0,abs(ustar)>0.0)
     !
     ! Compute the Godunov flux
     fgdnv(i,1) = ro*uo
