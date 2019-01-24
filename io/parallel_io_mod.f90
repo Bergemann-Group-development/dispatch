@@ -80,7 +80,10 @@ SUBROUTINE init (patch)
   character(len=120):: filename
   logical:: exists
   integer:: i
+  character(len=120):: id = &
+  '$Id$ io/parallel_io_mod.f90'
   !-----------------------------------------------------------------------------
+  call trace%print_id (id)
   call trace%begin ('parallel_io_t%init')
   io%nwrite = io%ntask
   call mpi_io%init

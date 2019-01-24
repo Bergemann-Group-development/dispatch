@@ -6,7 +6,7 @@ MODULE trace_mod
   USE omp_timer_mod
   USE io_mod
   USE io_unit_mod
-  USE mpi_mod
+  !USE mpi_mod
   USE timer_mod
   implicit none
   private
@@ -180,7 +180,7 @@ SUBROUTINE print_id (id)
     if (id .ne. '') then
       if (io%master) then
         call print_hl
-        print'(1x,a,f12.2)', trim(id), wallclock()
+        print'(1x,a)', trim(id)
       end if
       id = ''
     end if

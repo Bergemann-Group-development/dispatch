@@ -71,9 +71,11 @@ SUBROUTINE init (self)
   namelist /ramses_params/ gamma, riemann, slope_type, b_slope_type, &
     u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
     verbose, detailed_timer, unsigned, courant_type, max_dlogd, n_dump
+  character(len=120):: id = &
+   '$Id$ solvers/ramses/mhd/mhd_mod.f90'
 !...............................................................................
   call trace%begin('mhd_mod%init')
-
+  call trace%print_id (id)
   self%nw = 1
   self%kind = 'ramses_mhd_patch'
   if (self%nv == 0) then

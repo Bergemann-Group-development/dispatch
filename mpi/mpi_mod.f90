@@ -72,7 +72,10 @@ SUBROUTINE init (self, mpi_dims, dims)
   class(mpi_t):: self
   integer, optional, dimension(3):: mpi_dims, dims
   real(8):: offset
-  !.............................................................................
+  character(len=120):: ids = &
+  '$Id$ mpi/mpi_mod.f90'
+  !-----------------------------------------------------------------------------
+  print'(1x,a)', trim(ids)
   if (self%ok) return
   if (first_time) then
     first_time = .false.

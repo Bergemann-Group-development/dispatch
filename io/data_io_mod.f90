@@ -57,7 +57,11 @@ SUBROUTINE init (self, task)
   class(data_io_t):: self
   class(patch_t):: task
   !.............................................................................
+  character(len=120):: id = &
+  '$Id$ io/dat_io_mod.f90'
+  !-----------------------------------------------------------------------------
   if (self%initialized) return
+  call trace%print_id (id)
   call self%lock%init
   call self%lock%set
   if (.not.self%initialized) then

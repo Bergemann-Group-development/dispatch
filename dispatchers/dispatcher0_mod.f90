@@ -54,11 +54,15 @@ SUBROUTINE init (self, name)
   class(link_t), pointer:: link
   logical:: queue_unpack, send_priv, recv_active, recv_priv
   integer:: iostat
-  namelist /dispatcher0_params/ verbose, max_stalled, retry_stalled, do_delay, &
-    queue_unpack, send_priv, recv_active, recv_priv, debug
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
+  namelist /dispatcher0_params/ verbose, max_stalled, retry_stalled, do_delay, &
+    queue_unpack, send_priv, recv_active, recv_priv, debug
+  character(len=120):: ids = &
+  '$Id$ dispatchers/dispatcher0_mod.f90'
+  !-----------------------------------------------------------------------------
+  call trace%print_id (ids)
   call trace%begin('dispatcher0_t%init')
   call mpi_mesg%init
   recv_active  = .true.

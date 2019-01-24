@@ -111,7 +111,10 @@ SUBROUTINE init (self, name)
     namelist_errors
   real:: test
   integer:: iostat
+  character(len=120):: ids = &
+  '$Id$ io/io_mod.f90'
   !.............................................................................
+  if (mpi%master) print'(1x,a)', trim(ids)
   self%master = self%master .and. (mpi%rank==0)
   io%master = self%master
   !$omp parallel

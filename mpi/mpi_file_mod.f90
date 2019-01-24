@@ -38,8 +38,11 @@ CONTAINS
 SUBROUTINE request_open (self, filename)
   class(mpi_file_t):: self
   character(len=*) filename
+  character(len=120):: id = &
+  '$Id$ mpi/mpi_file_mod.f90'
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_file_t%request_open')
+  call trace%print_id (id)
   if (self%closed) then
     self%mode = MPI_MODE_CREATE + MPI_MODE_RDWR
     self%filename = filename
