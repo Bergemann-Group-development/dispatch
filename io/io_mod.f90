@@ -257,9 +257,6 @@ contains
     print *,mpi%rank,unit,filename
     !$omp end master
     open (unit=unit, file=trim(filename), form=form, status='unknown')
-    if (io%master) then
-      print *, omp%thread, ' unit', unit, ' file:', filename
-    end if
   end subroutine
 END SUBROUTINE init
 
