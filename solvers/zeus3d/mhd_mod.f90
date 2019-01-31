@@ -1,6 +1,5 @@
 !> =============================================================================
 !> **ZEUS-3D MHD method/operators module**
-!> Concrete module containing a patch derived from `mhd_patch_t`.
 !> The type defined/extended here is intended for instantiation/invokation/use.
 !> This particular form uses rho, e, \vec{s} = rho * \vec{v}, \vec{B} as the
 !> MHD fluid variables.
@@ -227,7 +226,7 @@ SUBROUTINE init_zeus (self)
                           , voutbc  , diffc1  , diffc2  , dtinit
   !-----------------------------------------------------------------------------
   if (first_time) then
-    call trace_begin ('zeus_mhd_mod%init_zeus')
+    call trace_begin ('mhd_mod%init_zeus')
 
     first_time = .false.
     ! default values for namelist parameters
@@ -494,8 +493,8 @@ SUBROUTINE CopyFromZeus (self)
   call trace_end (itimer)
 
   ! update time step.
-  self%dt(self%new) = dt
-  self%dtime = dtold
+  !$omp atomic write
+  self%dtime = dt
   self%ix1x2x3 = ix1x2x3
 
   nullify (qz)

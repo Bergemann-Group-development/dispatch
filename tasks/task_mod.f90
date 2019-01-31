@@ -301,11 +301,7 @@ SUBROUTINE rotate (self)
   rptr => self%dt(self%it)
   !$omp atomic write
   rptr = self%dtime                                     ! just updated
-  ! ZEUS determines a new time step at the end of its update; this is to
-  ! prevent the clobbering of the updated time step; FIXME!
-  if (trim(self%kind) /= 'zeus_mhd_patch') then
-    self%dt(self%new)= self%dtime                         ! next estimate
-  end if
+  self%dt(self%new)= self%dtime                         ! next estimate
   self%t(self%new) = time                               ! initial time
   new = self%new
   !$omp atomic write
