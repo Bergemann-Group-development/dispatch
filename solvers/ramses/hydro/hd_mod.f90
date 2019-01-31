@@ -34,7 +34,6 @@ MODULE hd_mod
   type, public, extends(gpatch_t):: hd_t
     logical:: mhd=.false.
     integer:: idim=3
-    integer:: n_dump=0
     character(len=10):: riemann='hllc'
     real, pointer, dimension(:,:,:,:):: uin       ! conserved
     real, pointer, dimension(:,:,:,:):: unew      ! new conserved
@@ -115,6 +114,7 @@ SUBROUTINE update (self)
   if (io%smallr  /= 0.0) smallr  = io%smallr
   if (io%courant /= 0.0) self%courant = io%courant
 
+  call self%gravity_solve
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
@@ -184,7 +184,7 @@ SUBROUTINE update (self)
   if (self%selfgravity) then
     call gravitational_force(self)
   end if
-  call self%gpatch_t%update
+  call self%gravity_update
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------

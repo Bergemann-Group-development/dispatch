@@ -137,7 +137,7 @@ SUBROUTINE update (self)
   if (io%smallr > 0) smallr = io%smallr
   if (io%courant > 0) self%courant = io%courant
   
-  !call self%gravity
+  call self%gravity_solve
   !----------------------------------------------------------------------------
   ! Checks whether to do output
   !----------------------------------------------------------------------------
@@ -320,7 +320,7 @@ SUBROUTINE update (self)
   if (self%selfgravity) then
     call gravitational_force(self)
   end if
-  call self%gpatch_t%update
+  call self%gravity_update
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------

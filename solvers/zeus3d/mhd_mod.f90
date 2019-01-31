@@ -340,7 +340,7 @@ SUBROUTINE update_zeus (self)
   real:: error
   !-----------------------------------------------------------------------------
 
-  call self%gravity
+  call self%gravity_solve
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
@@ -357,7 +357,7 @@ SUBROUTINE update_zeus (self)
   !-----------------------------------------------------------------------------
   ! Make a preliminary update of the selfgravity
   !-----------------------------------------------------------------------------
-  call self%gpatch_t%update
+  call self%gravity_update
 
 END SUBROUTINE update_zeus
 
