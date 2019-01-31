@@ -68,7 +68,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    mhd, do_smooth, unsigned, do_maxwell, verbose
+    do_smooth, unsigned, do_maxwell, verbose
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !$omp critical (input_cr)
