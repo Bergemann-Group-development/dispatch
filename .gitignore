@@ -19,3 +19,4 @@ fort.*
 *.o[0-9]*
 *.i
 .DS_Store
+.ipynb_checkpoints
