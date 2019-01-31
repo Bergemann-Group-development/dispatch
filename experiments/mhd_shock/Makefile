@@ -10,6 +10,7 @@ UPD             = adams_bashforth
 #SOLVER          = stagger2/e
 #SOLVER          = ramses/hydro
 SOLVER          = ramses/mhd
+#SOLVER          = zeus3d/zeustw
 EXEC            = dispatch.x
 TOP             = ../..
 sinclude $(TOP)/config/Makefile

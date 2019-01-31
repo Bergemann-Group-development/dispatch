@@ -70,7 +70,7 @@ SUBROUTINE init (self)
   end if
 
   d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  if (self%kind(1:14) == 'zeus_mhd_patch' .or. self%kind(1:10) == 'stagger2e_') then
+  if (self%kind(1:4) == 'zeus' .or. self%kind(1:10) == 'stagger2e_') then
     e1 => self%mem(:,:,:,self%idx%e ,self%it,1)
   end if
   if (self%kind(1:9) == 'stagger2_') then
@@ -103,7 +103,7 @@ SUBROUTINE init (self)
         ! for the moment, only initial discontinuities in the x-direction are supported.
         if (x < xdisc) then
           d (i,j,k) = rho_l
-          if (self%kind(1:14) == 'zeus_mhd_patch' .or. self%kind(1:10) == 'stagger2e_') then
+          if (self%kind(1:4) == 'zeus' .or. self%kind(1:10) == 'stagger2e_') then
             e1(i,j,k) = P_l / (self%gamma - 1.0)
           else if (self%kind(1:9) == 'stagger2_') then
             s (i,j,k) = (log(P_l) - log(rho_l) * self%gamma) * rho_l / (self%gamma - 1.0)
@@ -118,7 +118,7 @@ SUBROUTINE init (self)
           Bz(i,j,k) = Bz_l
         else
           d (i,j,k) = rho_r
-          if (self%kind(1:14) == 'zeus_mhd_patch' .or. self%kind(1:10) == 'stagger2e_') then
+          if (self%kind(1:4) == 'zeus' .or. self%kind(1:10) == 'stagger2e_') then
             e1(i,j,k) = P_r / (self%gamma - 1.0)
           else if (self%kind(1:9) == 'stagger2_') then
             s (i,j,k) = (log(P_r) - log(rho_r) * self%gamma) * rho_r / (self%gamma - 1.0)
@@ -133,15 +133,15 @@ SUBROUTINE init (self)
           Bz(i,j,k) = Bz_r
         end if
         ! correction for staggered momentum
-        if (self%kind(1:14) == 'zeus_mhd_patch' .or. self%kind(1:7) == 'stagger') then
+        if (self%kind(1:4) == 'zeus' .or. self%kind(1:7) == 'stagger') then
           if (x >= xdisc .and. (x - m1%d) < xdisc) then
             px(i,j,k) = (rho_l + rho_r) * (vx_l + vx_r) * 0.25
           end if
         end if
       end do
       ! set total energy; it needs to be done after because it uses the `i+1` values.
-      ! only applies to ZEUS and RAMSES solvers.
-      if (self%kind(1:7) /= 'stagger') then
+      ! only applies to ZEUS3D and RAMSES solvers.
+      if (self%kind(1:7) /= 'stagger' .and. self%kind(1:16) /= 'zeustw_mhd_patch') then
         do i=m1%lb,m1%uo
           if (self%kind(1:14) == 'zeus_mhd_patch') then
             rhov2 = (0.25 * (px(i,j,k) + px(i+1,j,k))**2 + py(i,j,k)**2 + pz(i,j,k)**2) &

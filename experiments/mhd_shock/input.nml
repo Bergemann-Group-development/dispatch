@@ -1,24 +1,28 @@
 &timer_params           /
-&io_params              verbose=0 do_trace=f do_debug=f do_output=t method='parallel' /
-! 32x32x32
-!cartesian_params             size=1,1,1 dims=1,1,1 origin=0.0,0.0,0.0 /
-!patch_params           courant=0.2 n=32,32,32 ng=3*2 nt=5 no_mans_land=t /
-!patch_params           courant=0.2 n=16,16,16 ng=3*3 nt=5 no_mans_land=t periodic=t,t,t /
-! 32x4x4
-&cartesian_params             size=1,0.010,0.010 dims=1,1,1 origin=0.0,0.0,0.0 /
-&patch_params           n=400,4,4 ng=3*3 nt=5 no_mans_land=t /
-!
-&out_params             end_time=0.2001 out_time=0.01 print_time=0.0 guard_zones=f /
-!
-!out_params             end_time=0.451 out_time=0.01 print_time=0.0 guard_zones=f /
-!experiment_params      by_l=0 /
-!experiment_params      bx_l=1 bx_r=1 by_l=0 /
+
+&io_params              verbose=0 do_trace=f do_debug=f do_output=t method='parallel' guard_zones=t /
+
+&cartesian_params       size=1,0.010,0.010 dims=3,1,1 origin=0.0,0.0,0.0 /
+
+&patch_params           n=100,4,4 ng=3*2 nt=5 no_mans_land=f grace=0.01 /
+!!!&patch_params           n=100,1,1 ng=3*3 nt=5 no_mans_land=f grace=0.01 /
+
+&out_params             end_time=0.1001 out_time=0.01 print_time=0.0 /
+
 &experiment_params      /
+
 &timestep_params        time_order=2 /
+
 &refine_params          do_refine=f tol_shock=0.1 tol_contact=0.1 min_dx=0.0025 grad_var='d' tol_grad=0.1 /
-&zeus_params            gamma=1.6666666666667 trnvrsn=0 dtinit=1.0e-5 itote=1 qlin=0.2 qcon=1.0 iord=2 iords=3 istp=2 /
+
+&zeus_params            gamma=1.6666667 trnvrsn=0 dtinit=1.0e-5 itote=0 qlin=0.2 qcon=1.0 iord=2 iords=2 istp=0 /
+
+&zeustw_params  /       iohmic=0 ihall=0 with_ad_1f=f withchem=f gamma=1.6666667 qlin=0.2 qcon=1.0
+
 &ramses_params          courant_factor=0.25 gamma=1.6666667 slope_type=3.5 smallr=1e-4 smallc=5e-1 riemann='hlld' /
                                         !     cs   pa  ofd  mas  kap  eta
-&mhd_params             gamma=1.666667 nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0 /
+&stagger_params         gamma=1.666667 nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0 /
+
 &force_params           /
+
 &initial_params         /
