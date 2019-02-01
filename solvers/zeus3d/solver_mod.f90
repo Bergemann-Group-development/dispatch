@@ -20,6 +20,7 @@ MODULE solver_mod
     procedure:: gas_velocity_vector
     procedure:: gas_velocity_scalar
     generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
+    procedure:: p2U
   end type
   type(solver_t):: solver
   
@@ -44,6 +45,15 @@ SUBROUTINE update (self)
   call self%mhd_t%update
   call self%extras_t%post_update
 END SUBROUTINE update
+
+!> =============================================================================
+SUBROUTINE p2U (self, v, it)
+  class(solver_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: v
+  integer:: it
+  !---------------------------------------------------------------------
+  v = self%gas_velocity_vector()
+END SUBROUTINE p2U
 
 !> =============================================================================
 FUNCTION gas_velocity_vector (self) RESULT (v)
