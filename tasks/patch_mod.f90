@@ -1268,9 +1268,9 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   end if
   if (io%verbose>=0) then
     !$omp atomic
-    io%dmin = min(io%dmin, self%fminval(self%mem(:,:,:,self%idx%d,self%it,1)))
+    io%dmin = min(io%dmin, real(self%fminval(self%mem(:,:,:,self%idx%d,self%it,1)),kind=4))
     !$omp atomic
-    io%dmax = max(io%dmax, self%fmaxval(self%mem(:,:,:,self%idx%d,self%it,1)))
+    io%dmax = max(io%dmax, real(self%fmaxval(self%mem(:,:,:,self%idx%d,self%it,1)),kind=4))
     if (self%time>=self%print_next) then
       if (io%print_time > 0) &
         self%print_next = (nint(self%time/io%print_time)+1)*io%print_time
