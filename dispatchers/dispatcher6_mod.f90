@@ -666,13 +666,13 @@ SUBROUTINE check_all (list)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('dispatcher6::check_all', itimer=itimer)
-  !$omp critical (list_cr)
+  call list%lock%set
   link => list%head
   do while (associated (link))                          ! keep going until end
     call check_ready (list, link)                       ! link ready?
     link => link%next
   end do
-  !$omp end critical (list_cr)
+  call list%lock%unset
   call trace_end (itimer)
 END SUBROUTINE check_all
 

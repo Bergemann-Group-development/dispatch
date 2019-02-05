@@ -17,6 +17,7 @@ MODULE omp_lock_mod
     procedure:: init
     procedure:: set
     procedure:: test
+    procedure:: check
     procedure:: unset
     procedure:: destroy
   end type
@@ -104,6 +105,18 @@ FUNCTION test (self) RESULT (out)
   !$omp flush
   !call trace%end()
 END FUNCTION test
+
+!> =============================================================================
+!> Return true only if we have rightful access to the locked item
+!> =============================================================================
+FUNCTION check (self) RESULT (out)
+  class(lock_t):: self
+  logical:: out
+  integer:: thread
+  !-----------------------------------------------------------------------------
+  thread = omp_get_thread_num()
+  out = (thread == self%thread)
+END FUNCTION check
 
 !> =============================================================================
 !> Unset the associated thread number and relase the lock (in that order!)

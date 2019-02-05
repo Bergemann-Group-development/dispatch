@@ -21,6 +21,7 @@ MODULE load_balance_mod
   USE mpi_mod
   USE mpi_mesg_mod
   USE omp_timer_mod
+  USE omp_lock_mod
   USE task_mod
   USE patch_mod
   USE link_mod
@@ -39,6 +40,7 @@ MODULE load_balance_mod
     real(8):: otime, owall
     type(rank_info_t), pointer:: next => null()
     class(mesg_t), pointer:: mesg
+    type(lock_t):: lock
   contains
     procedure:: imbalance
     procedure:: measure_load
@@ -58,6 +60,7 @@ MODULE load_balance_mod
     type(rank_info_t), pointer:: head => null()
     type(rank_info_t), pointer:: tail => null()
     integer:: n=0
+    type(lock_t):: lock
   contains
     procedure:: append
     procedure:: remove
@@ -77,6 +80,7 @@ MODULE load_balance_mod
   type, public:: load_balance_t
     logical:: on=.false.
     type(random_t):: random
+    type(lock_t):: lock
   contains
     procedure:: init
     procedure:: active
@@ -99,6 +103,7 @@ SUBROUTINE init (self)
     duration, only_initial, q_min, q_max
   integer:: iostat
   !.............................................................................
+  call self%lock%init
   rewind (io%input); read(io%input, load_balance_params, iostat=iostat)
   if (io%master) then
     if (io%master) write (*,load_balance_params)
@@ -237,7 +242,7 @@ SUBROUTINE add (self, rank)
     return
   end if
   found = .false.
-  !$omp critical (rank_info_list_cr)
+  call nbor_info%lock%set
   nbor_info => rank_info_list%head
   do while (associated(nbor_info))
     if (nbor_info%rank == rank) then
@@ -268,7 +273,7 @@ SUBROUTINE add (self, rank)
       write (io_unit%log,*) 'rank_info%add', rank, rank_info_list%n
     end if
   end if
-  !$omp end critical (rank_info_list_cr)
+  call nbor_info%lock%unset
 END SUBROUTINE add
 
 !> =============================================================================
@@ -297,7 +302,7 @@ SUBROUTINE remove (self, this)
   class(rank_info_t), pointer:: this, rank_info, prev
   !.............................................................................
   call trace%begin ('rank_info%remove')
-  !$omp critical (rank_info_list_cr)
+  call self%lock%set
   nullify (prev)
   rank_info => self%head
   do while (associated(rank_info))
@@ -329,7 +334,7 @@ SUBROUTINE remove (self, this)
   ! If this item was not in the list, it is nevertheless quietly deallocated
   !-----------------------------------------------------------------------------
   deallocate (this)
-  !$omp end critical (rank_info_list_cr)
+  call self%lock%unset
   call trace%end
 END SUBROUTINE remove
 
@@ -355,7 +360,7 @@ SUBROUTINE send (self)
   call load_balance%pack (rank_info, mesg)                      ! pack into mesg
   write (io_unit%log,*) 'mk4',rank_info%rank
   write (io_unit%log,*) 'mesg%buffer =', mesg%buffer(1:5)
-  !$omp critical (rank_info_list_cr)
+  call self%lock%set
   nbor_info => self%head                                        ! first rank_info
   do while (associated(nbor_info))                              ! until end
     if (io%verbose>1) then
@@ -369,7 +374,7 @@ SUBROUTINE send (self)
   end do
   call nbor_sent_list%add (mesg)                                ! add to list
   call nbor_sent_list%remove_completed                          ! remove completed
-  !$omp end critical (rank_info_list_cr)
+  call self%lock%unset
   call trace%end
 END SUBROUTINE send
 
@@ -386,7 +391,7 @@ SUBROUTINE recv (self)
   !-----------------------------------------------------------------------------
   ! Send to all ranks in the rank_info list (which is sorted by rank)
   !-----------------------------------------------------------------------------
-  !$omp critical (rank_info_list_cr)
+  call self%lock%set
   nbor_info => self%head                                        ! first rank_info
   do while (associated(nbor_info))                              ! until end
     mesg => nbor_info%mesg
@@ -400,7 +405,7 @@ SUBROUTINE recv (self)
     end if
     nbor_info => nbor_info%next                                 ! next rank_info
   end do
-  !$omp end critical (rank_info_list_cr)
+  call self%lock%unset
   call trace%end
 END SUBROUTINE recv
 
@@ -537,7 +542,7 @@ SUBROUTINE print_lb (self, time)
   real:: load_diff, imbalance
   !.............................................................................
   if (.not.rank_info%ok) return
-  !$omp critical (rank_info_list_cr)
+  call self%lock%set
   nbor_info => rank_info_list%head
   do while (associated(nbor_info))
     load_diff = (rank_info%cost-nbor_info%cost)/rank_info%patch_cost
@@ -552,7 +557,7 @@ SUBROUTINE print_lb (self, time)
       nbor_info%nq, rank_info%nq, nbor_info%n_swap
     nbor_info => nbor_info%next
   end do
-  !$omp end critical (rank_info_list_cr)
+  call self%lock%unset
 END SUBROUTINE print_lb
 
 !> =============================================================================
@@ -583,12 +588,12 @@ FUNCTION check_load (self, head) RESULT (sell)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Only one thread should do load balancing, and that thread should make sure
-  ! to use omp critical (list_cr) whenever it needs to access the task list.
+  ! to set the task list omp lock whenever it needs to access the task list.
   !-----------------------------------------------------------------------------
   sell = .false.
   if (.not.self%on) return
   call trace%begin ('load_balance%check_load', itimer=itimer)
-  !$omp critical (loadb_cr)
+  call self%lock%set
   wc = wallclock()
   patch => task2patch(head%task)
   rank_info%nq = head%task%nq
@@ -678,7 +683,7 @@ FUNCTION check_load (self, head) RESULT (sell)
       nbor => nbor%next
     end do
   end if ! (rank_info%ok .and. wc < duration)
-  !$omp end critical (loadb_cr)
+  call self%lock%unset
   call trace%end
 END FUNCTION check_load
 

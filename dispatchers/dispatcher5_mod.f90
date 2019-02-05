@@ -163,7 +163,7 @@ SUBROUTINE update_list (task_list, test)
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in a very brief critical region
   !-----------------------------------------------------------------------------
-  !$omp critical (queue_cr)
+  call task_list%lock%set
   nullify (prev)
   head => task_list%queue                                    ! queue start
   if (associated(head) .and. .not.task_list%syncing) then
@@ -278,7 +278,7 @@ SUBROUTINE update_list (task_list, test)
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,i6,2x,a)') wallclock(), task_list%na, 'no queue'
   end if
-  !$omp end critical (queue_cr)
+  call task_list%lock%unset
   !-----------------------------------------------------------------------------
   ! As long as we are syncing, skip the update and come back.  The on thread
   ! that hit the sync time last of all threads has set this flag, and will clear
@@ -703,14 +703,14 @@ SUBROUTINE check_all (list)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('dispatcer5::check_all', itimer=itimer)
-  !$omp critical (list_cr)
+  call list%lock%set
   link => list%head
   do while (associated (link))                          ! keep going until end
     call link%task%clear (bits%ready)
     call check_ready (list, link)                       ! link ready?
     link => link%next
   end do
-  !$omp end critical (list_cr)
+  call list%lock%unset
   call trace_end (itimer)
 END SUBROUTINE check_all
 

@@ -202,18 +202,18 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
     !---------------------------------------------------------------------------
     if (refine < 0) then
       print *, patch%id, 'derefine suggested'
-      !$omp critical (queue_cr)
+      call tasklist%lock%set
       call self%remove_patch (tasklist, link)
       call check_level_constraint
-      !$omp end critical  (queue_cr)
+      call tasklist%lock%unset
     !---------------------------------------------------------------------------
     ! A positive refine value indicates that the patch needs to be refined
     !---------------------------------------------------------------------------
     else if (refine > 0) then
-      !$omp critical (queue_cr)
+      call tasklist%lock%set
       call self%split_patch (tasklist, link)
       call check_level_constraint
-      !$omp end critical  (queue_cr)
+      call tasklist%lock%unset
       was_refined = .true.
     end if
   end if

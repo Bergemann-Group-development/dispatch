@@ -14,6 +14,7 @@ MODULE data_io_mod
   USE mpi_mod
   USE omp_mod
   USE omp_timer_mod
+  USE omp_lock_mod
   USE trace_mod
   USE task_mod
   USE patch_mod
@@ -35,6 +36,7 @@ MODULE data_io_mod
   type, public:: data_io_t
     logical:: initialized=.false.
     type(dll_t):: kind_list
+    type(lock_t):: lock
   contains
     procedure:: init
     procedure:: register_kind
@@ -56,7 +58,8 @@ SUBROUTINE init (self, task)
   class(patch_t):: task
   !.............................................................................
   if (self%initialized) return
-  !$omp critical (data_io_cr)
+  call self%lock%init
+  call self%lock%set
   if (.not.self%initialized) then
     call trace%begin('data_io_t%init')
     if (io%do_output) then
@@ -78,7 +81,7 @@ SUBROUTINE init (self, task)
     if (io%master) print *,'data_io_t%init: io%nwrite =', io%nwrite
     call trace%end
   end if
-  !$omp end critical (data_io_cr)
+  call self%lock%unset
   END SUBROUTINE init
 
   !> =============================================================================
@@ -125,7 +128,7 @@ SUBROUTINE output (self, patch, experiment_name)
   np = (time_slices%order+1)/2
   it = patch%iit(patch%nt-np)
   if (patch%t(it) >= patch%out_next) then
-    !$omp critical (data_io_cr)
+    call self%lock%set
     do while (patch%t(it) >= patch%out_next)
       if (created < patch%iout) then
         created = patch%iout
@@ -179,7 +182,7 @@ SUBROUTINE output (self, patch, experiment_name)
       patch%out_next = (nint(patch%out_next/io%out_time)+1)*io%out_time
       call os%mkdir_no (patch%iout)
     end do
-    !$omp end critical (data_io_cr)
+    call self%lock%unset
   end if
   call trace%end (itimer)
 END SUBROUTINE output
@@ -203,7 +206,7 @@ SUBROUTINE input (self, patch, ok)
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%input')
   call self%init (patch)
-  !$omp critical (data_io_cr)
+  call self%lock%set
   ok = .false.
   if (io%restart >= 0) then
     if      (io%method=='direct') then
@@ -232,7 +235,7 @@ SUBROUTINE input (self, patch, ok)
     end if
     patch%t(patch%it) = patch%time
   end if
-  !$omp end critical (data_io_cr)
+  call self%lock%unset
   call trace%end
 END SUBROUTINE input
 

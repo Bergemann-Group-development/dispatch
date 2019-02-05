@@ -19,11 +19,13 @@ MODULE dispatcher0_mod
   USE bits_mod
   USE task_list_mod
   USE data_io_mod
+  USE omp_lock_mod
   implicit none
   private
   type, public:: dispatcher0_t
     integer:: verbose=0
     integer:: n_spawn=0
+    type(lock_t):: lock
   contains
     procedure:: init
     procedure:: execute
@@ -71,6 +73,7 @@ SUBROUTINE init (self, name)
   if (io%master) then
     if (io%master) write (*, dispatcher0_params)
   end if
+  call self%lock%init
   call trace_end
 END SUBROUTINE init
 
@@ -165,7 +168,7 @@ SUBROUTINE update (self, task_list, test)
   ! harm is done if that makes the thread hangs for a while; other threads work
   !-----------------------------------------------------------------------------
   call data_io%open_and_close ()
-  !$omp critical (queue_cr)
+  call task_list%lock%set
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in what is normally a very brief critical region
   !-----------------------------------------------------------------------------
@@ -294,7 +297,7 @@ SUBROUTINE update (self, task_list, test)
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,i6,2x,a)') wallclock(), task_list%na, 'no queue'
   end if
-  !$omp end critical (queue_cr)
+  call task_list%lock%unset
   !-----------------------------------------------------------------------------
   ! As long as we are syncing, skip the update and come back.  The on thread
   ! that hit the sync time last of all threads has set this flag, and will clear
@@ -324,15 +327,15 @@ SUBROUTINE update (self, task_list, test)
       !call mpi_mesg%diagnostics (0)
     end if
   else
-    !$omp critical (queue_cr)
+    call task_list%lock%set
     if (stalled == 0) then
       stall_start = wallclock()
       if (debug) &
         write (io_unit%log,*) wallclock(), 'queue stalled', stalled
     end if
     stalled = stalled+1
-    !$omp end critical (queue_cr)
-    !$omp critical (stalled_cr)
+    call task_list%lock%unset
+    call self%lock%set
     if (wallclock()-stall_start > retry_stalled) then
        !print *, mpi%rank, 'STALLED:'
        call task_list%check_all
@@ -358,7 +361,7 @@ SUBROUTINE update (self, task_list, test)
       print *, mpi%rank, 'STALLED bailing out'
       call mpi%abort ('exceeded max_stalled')
     end if
-    !$omp end critical (stalled_cr)
+    call self%lock%unset
   end if
   call trace_end (itimer)
 END SUBROUTINE update
