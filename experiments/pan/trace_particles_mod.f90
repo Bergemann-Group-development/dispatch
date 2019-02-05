@@ -137,6 +137,7 @@ SUBROUTINE add (self, mesh, t, dt, d, v)
   !-----------------------------------------------------------------------------
   ! Add particles in proportion to the density, relative to the average
   !-----------------------------------------------------------------------------
+  if (.not. self%use_tracers) return
   call trace%begin ('trace_particles_t%add')
   call self%particle_list_t%init ('trace')
   self%id = mesh(1)%id
