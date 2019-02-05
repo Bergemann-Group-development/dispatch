@@ -53,6 +53,7 @@ SUBROUTINE append (self, new)
   class(dll_node_t), pointer:: new
   !.............................................................................
   new%prev => self%tail
+  nullify(new%next)
   if (.not.associated(self%head)) self%head => new
   if (associated(self%tail)) self%tail%next => new
   self%tail => new
@@ -69,6 +70,7 @@ SUBROUTINE prepend (self, new)
   !.............................................................................
   if (.not.associated(self%tail)) self%tail => new
   new%next => self%head
+  nullify (new%prev)
   self%head => new
   !$omp atomic
   self%n = self%n+1
@@ -125,7 +127,7 @@ SUBROUTINE insert_after (self, old, new)
 END SUBROUTINE insert_after
 
 !> =============================================================================
-!> Remove an item from the DLL
+!> Remove an item from the DLL; note that the item is not deallocated!
 !> =============================================================================
 SUBROUTINE remove (self, old)
   class(dll_t):: self

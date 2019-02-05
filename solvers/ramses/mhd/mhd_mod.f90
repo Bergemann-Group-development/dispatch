@@ -401,7 +401,7 @@ subroutine check_small (self)
   n_smallp = 0
   panic = .false.
   lo = self%mesh%lb
-  uo = self%mesh%ub
+  uo = self%mesh%ub-1
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   do i=lo(1),uo(1)
