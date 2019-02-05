@@ -501,7 +501,7 @@ SUBROUTINE update (self)
   real, dimension(:,:,:), pointer:: d
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  !call self%gravity
+  !call self%gravity_solve
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
@@ -530,7 +530,8 @@ SUBROUTINE update (self)
     end do
   end if
   call self%check_density(' after timestep')
-  call self%gpatch_t%update
+  call self%gravity_update
+  call self%counter_update
   call trace%end (itimer)
 END SUBROUTINE update
 

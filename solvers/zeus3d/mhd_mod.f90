@@ -358,7 +358,7 @@ SUBROUTINE update_zeus (self)
   ! Make a preliminary update of the selfgravity
   !-----------------------------------------------------------------------------
   call self%gravity_update
-
+  call self%counter_update
 END SUBROUTINE update_zeus
 
 !> =============================================================================

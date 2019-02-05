@@ -31,11 +31,11 @@ MODULE gpatch_mod
   contains
     procedure:: input
     procedure:: init
-    procedure:: update
     procedure:: output
     procedure:: dnload
     procedure:: gravity_solve
     procedure:: gravity_update
+    procedure:: counter_update
     procedure:: ahead_of
   end type
   real(8), save :: total_mass=0d0, total_volume=0d0
@@ -260,8 +260,6 @@ SUBROUTINE gravity_update (self)
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
   call trace%begin ('gpatch_t%update')
-  !$omp atomic
-  timer%n_update = timer%n_update + product(self%n)
   if (selfgravity) then
     if (self%poisson_time == self%time) then
       !call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
@@ -283,15 +281,17 @@ SUBROUTINE gravity_update (self)
 END SUBROUTINE gravity_update
 
 !> =============================================================================
+!> Increment the cell udpate counter.  This may be overloaded in more complex
+!> solvers, which prefer a different way of counting.
 !> =============================================================================
-SUBROUTINE update (self)
+SUBROUTINE counter_update (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
-  call trace%begin ('gpatch_t%update')
+  call trace%begin ('gpatch_t%counter_update')
   !$omp atomic
   timer%n_update = timer%n_update + product(self%n)
   call trace%end
-END SUBROUTINE update
+END SUBROUTINE counter_update
 
 !> =============================================================================
 !> Compute an approximate, conservative estimate of dphi/dt, which will cause

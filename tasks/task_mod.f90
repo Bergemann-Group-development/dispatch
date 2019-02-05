@@ -37,6 +37,7 @@ MODULE task_mod
     integer:: parentid=0
     integer:: thread=-1
     integer:: mem_thread=-1
+    integer:: n_dump=0                  ! number of dump files
     integer:: ip                        ! rank local task id
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue

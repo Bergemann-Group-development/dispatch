@@ -48,7 +48,7 @@ MODULE stagger_mod
     procedure, nopass:: xyzsm
     procedure, nopass:: stagger_test
   end type
-  type(stagger_t):: stagger
+  type(stagger_t), public:: stagger
 CONTAINS
 
 !> =============================================================================

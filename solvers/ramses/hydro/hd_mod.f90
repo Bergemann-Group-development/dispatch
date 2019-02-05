@@ -185,6 +185,7 @@ SUBROUTINE update (self)
     call gravitational_force(self)
   end if
   call self%gravity_update
+  call self%counter_update
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------

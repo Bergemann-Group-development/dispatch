@@ -349,7 +349,7 @@ SUBROUTINE pde (self)
   uu = sqrt(fxx+fyy+fzz)
   ! Artificial pressure, possibly with 3-point smoothing
   if (do_smooth) then
-    pa = self%nu(2)*d*xyzsm(du)**2
+    pa = self%nu(2)*d*stagger%xyzsm(du)**2
   else
     pa = self%nu(2)*d*du**2                                                     ! ops: 0 3 0
   end if
@@ -593,7 +593,7 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  call self%gravity
+  call self%gravity_solve
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
@@ -609,7 +609,8 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Make a preliminary update of the selfgravity
   !-----------------------------------------------------------------------------
-  !call self%gpatch_t%update
+  call self%counter_update
+  call self%gravity_update
   call trace%end (itimer)
 END SUBROUTINE update
 
