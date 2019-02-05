@@ -1,16 +1,17 @@
 !> =============================================================================
-!> =============================================================================
-!> RAMSES Godunov solvers
+!> RAMSES Godunov solvers, use of guard zones; specifically in HLLD
 !>
 !> godunov
-!>   unsplit              1   2   3      ui  uo  ub
-!>     ctoprim            +---+---+......+---+---+
-!>     uslope:dq              +---+......+---+
-!>     trace3d:qp             +---+......+---+
-!>     trace3d:qm                 +......+---+---+
-!>     cmpflxm                    +......+---+
-!>       cmp_mag_flx
-!>         cmp_mag_flx_hlld
+!>   unsplit              1   2   3   4     ui  uo      ub
+!>     ctoprim:uin        +---+---+---+......+---+---+---+    ! in, with guards
+!>     ctoprim:bx       +---+---+---+......+---+---+---+      ! down-staggered
+!>     ctoprim:q          +---+---+---+......+---+---+        ! up-staggered in b
+!>     uslope:dq              +---+---+......+---+            ! both ends loose
+!>     trace3d:qm           +---+---+......+---+              ! down-staggered
+!>     trace3d:qp               +---+......+---+---+          ! up-shifted
+!>     cmpflxm                  +---+......+---+              ! need qm & qp
+!>       cmp_mag_flx            +---+......+---+              ! is down-staggered
+!>     unew                       +---+......+                ! up-staggered
 !> =============================================================================
 MODULE mhd_mod
   !.............................................................................
