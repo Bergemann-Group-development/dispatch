@@ -21,10 +21,14 @@ MODULE experiment_mod
   USE timer_mod
   USE link_mod
   USE index_mod
+  USE task_mod
+  USE trace_particles_mod
   !USE particle_patch_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
+    type(trace_particles_t):: trace_particles
+    real, allocatable:: v(:,:,:,:)
   contains
     procedure:: init
     procedure:: update
@@ -37,6 +41,8 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
+  real, pointer:: d(:,:,:), p(:,:,:,:)
+  integer:: i
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   !----------------------------------------------------------------------------
@@ -49,7 +55,21 @@ SUBROUTINE init (self)
     self%time = self%initial%time
     self%t(self%it) = self%initial%time
   end if
-  !call self%periodic_grid
+  !----------------------------------------------------------------------------
+  ! Startup support for trace particles
+  !----------------------------------------------------------------------------
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  allocate (self%v(self%gn(1),self%gn(2),self%gn(3),3))
+  do i=1,3
+    self%v(:,:,:,i) = self%mem(:,:,:,self%idx%px+i-1,self%it,1) &
+                    / self%mem(:,:,:,self%idx%d     ,self%it,1)
+  end do
+  call self%trace_particles%init_nt (self%nt)
+  call self%trace_particles%add (self%mesh, self%time, self%dtime, d, p)
+  !----------------------------------------------------------------------------
+  ! Support (disabled for now) for particle patches (carrying sink particles)
+  !----------------------------------------------------------------------------
   !call particle_patch%init
   !call particle_patch%test
   call trace_end
@@ -66,6 +86,11 @@ SUBROUTINE update (self)
   class(experiment_t):: self
   class(link_t), pointer:: link
   logical, save:: first_time=.true.
+  real, pointer:: d(:,:,:)
+  integer:: i
+  type(link_t), pointer:: nbor
+  class(task_t), pointer:: nbtask
+  class(trace_particles_t), pointer:: nbpart
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   if (first_time) then
@@ -77,6 +102,41 @@ SUBROUTINE update (self)
     !$omp end critical (cleanup_cr)
   end if
   call self%solver_t%update
+  !----------------------------------------------------------------------------
+  ! Startup support for trace particles; this could be improved, by reusing
+  ! the velocity from the primitive variables in the solver.  In any case,
+  ! this part is solver specific, so the support should ultimately be moved
+  ! to the solver subdirectories.
+  !----------------------------------------------------------------------------
+  do i=1,3
+    self%v(:,:,:,i) = self%mem(:,:,:,self%idx%px+i-1,self%it,1) &
+                    / self%mem(:,:,:,self%idx%d     ,self%it,1)
+  end do
+  call self%trace_particles%update (self%mesh, self%time, self%dtime, &
+    self%mem(:,:,:,self%idx%d,self%it,1), self%v)
+  !----------------------------------------------------------------------------
+  ! If particles have been acciumlated in the "export" particle list, loop over
+  ! nbors and transfer particles to their "import" particle lists.  This is to
+  ! minimize the need for locking or critical regions.  It should be enough to
+  ! protect the import lists with OMP locks, while they are being updated, and
+  ! while they are being read.
+  !----------------------------------------------------------------------------
+  if (self%trace_particles%export%n > 0) then
+    if (self%trace_particles%verbose > 0) &
+      write (io%output,*) &
+        self%id, self%trace_particles%export%n, ' particles to export'
+    nbor => self%link%nbor
+    do while (associated(nbor))
+      nbtask => nbor%task
+      select type (nbtask)
+      type is (experiment_t)
+      nbpart => nbtask%trace_particles
+      nbpart%offset = nint((mod(self%position-nbtask%position+1.5*self%box,self%box)-0.5*self%box)/self%ds)
+      call self%trace_particles%trade (nbpart)
+      end select
+      nbor => nbor%next
+    end do
+  end if
   call trace_end
 END SUBROUTINE update
 
