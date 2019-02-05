@@ -1003,7 +1003,7 @@ END SUBROUTINE same_lagrange
 !> =============================================================================
 SUBROUTINE same_rt (target, source, filled)
   class(patch_t), pointer :: target, source
-  integer(int8), dimension(:,:,:,:):: filled
+  integer(int8), dimension(:,:,:,:), allocatable:: filled
   !.............................................................................
   integer                 :: l(3), u(3), o(3), ii(3), jt(2), li(3), ui(3)
   real(8)                 :: position(3)
@@ -1021,12 +1021,14 @@ SUBROUTINE same_rt (target, source, filled)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii = [ix,iy,iz]
-          if (filled(ix,iy,iz,iv) > source%level) cycle
+          if (check_filled) then
+            if (filled(ix,iy,iz,iv) > source%level) cycle
+          end if
           if (all((ii>=li).and.(ii<=ui))) cycle
           target%mem(ix,iy,iz,iv,target%it,1) = &
              pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
              pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
-          filled(ix,iy,iz,iv) = source%level
+          if (check_filled) filled(ix,iy,iz,iv) = source%level
         end do
       end do
     end do
@@ -1039,7 +1041,7 @@ END SUBROUTINE same_rt
 !> =============================================================================
 SUBROUTINE different_prolong (target, source, filled, all_cells, only)
   class(patch_t), pointer :: target, source
-  integer(int8), dimension(:,:,:,:):: filled
+  integer(int8), dimension(:,:,:,:), allocatable:: filled
   logical, optional:: all_cells
   integer, optional:: only
   !.............................................................................
@@ -1091,10 +1093,12 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
           if (all_cells_l .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
-            if (filled(ix,iy,iz,iv) > source%level) then
-              if (target%id==io%id_debug .and. io%verbose>1) &
-                print *, target%id, 'different_prolong: skipping', iv,ii, filled(ix,iy,iz,iv)
-              cycle
+            if (check_filled) then
+              if (filled(ix,iy,iz,iv) > source%level) then
+                if (target%id==io%id_debug .and. io%verbose>1) &
+                  print *, target%id, 'different_prolong: skipping', iv,ii, filled(ix,iy,iz,iv)
+                cycle
+              end if
             end if
             if (target%id==io%id_debug .and. io%verbose>1) &
               print *, target%id, 'different_prolong:    using', iv,ii, present(all_cells), (ii-li) < 0
@@ -1111,7 +1115,7 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
               print *,'INTERNAL BREACH!', ii
             end if
             target%mem(ix,iy,iz,iv,target%it,1) = qint
-            filled(ix,iy,iz,iv) = source%level
+            if (check_filled) filled(ix,iy,iz,iv) = source%level
           else
             if (target%id==io%id_debug .and. io%verbose>1) &
               print *, target%id, 'different_prolong: skipping', iv,ii, present(all_cells), (ii-li) < 0
@@ -1135,7 +1139,7 @@ END SUBROUTINE different_prolong
 !> =============================================================================
 SUBROUTINE different_rt (target, source, filled)
   class(patch_t), pointer :: target, source
-  integer(int8), dimension(:,:,:,:):: filled
+  integer(int8), dimension(:,:,:,:), allocatable:: filled
   !.............................................................................
   integer                 :: ix, iy, iz, iv, jt(2)
   integer, dimension(3)   :: l, u, ii, lb, ub, li, ui
@@ -1156,10 +1160,12 @@ SUBROUTINE different_rt (target, source, filled)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
-          if (filled(ix,iy,iz,iv) > source%level) cycle
+          if (check_filled) then
+            if (filled(ix,iy,iz,iv) > source%level) cycle
+          end if
           if (all((ii>=li).and.(ii<=ui))) cycle
           call source%interpolate (target, ii, iv, jt, pt)
-          filled(ix,iy,iz,iv) = source%level
+          if (check_filled) filled(ix,iy,iz,iv) = source%level
         end do
       end do
     end do
@@ -1172,7 +1178,7 @@ END SUBROUTINE different_rt
 !> =============================================================================
 SUBROUTINE different_restrict (target, source, filled, only)
   class(patch_t), pointer :: target, source
-  integer(int8), dimension(:,:,:,:):: filled
+  integer(int8), dimension(:,:,:,:), allocatable:: filled
   integer, optional:: only
   integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, jx, jy, jz
   integer, dimension(3)   :: l, u, ii, li, ui, jj
@@ -1236,8 +1242,10 @@ SUBROUTINE different_restrict (target, source, filled, only)
         do ix=l(1),u(1)
           ii = [ix,iy,iz]
           ! prefer same level for guard zone filling
-          if (filled(ix,iy,iz,iv) == target%level .and. &
-              (any(ii < target%li) .or. any(ii > target%ui))) cycle
+          if (check_filled) then
+            if (filled(ix,iy,iz,iv) == target%level .and. &
+                (any(ii < target%li) .or. any(ii > target%ui))) cycle
+          end if
           target_pos = target%myposition (ii, iv)
           target_lower_edges = target_pos - target%ds * 0.499999_8 ! to 1e-6 tolerance
           target_upper_edges = target_pos + target%ds * 0.499999_8
@@ -1277,7 +1285,7 @@ SUBROUTINE different_restrict (target, source, filled, only)
             target%mem(ix,iy,iz,iv,target%it,1) = accumulate * dWtargeti &
                                                 + target%mem(ix,iy,iz,iv,target%it,1) &
                                                   * (1.0 - filling_total * dWtargeti)
-            filled(ix,iy,iz,iv) = source%level
+            if (check_filled) filled(ix,iy,iz,iv) = source%level
           end if
         end do
       end do
