@@ -33,7 +33,7 @@ size=1,1,1 dims=04,04,04 mpi_dims=1,1,1                !  1 process    1 node   
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 /
 &IC_turbulence_params   b0=0.1 /
 &selfgravity_params     selfgravity=f /
-&trace_particle_params  use_tracers=.true. verbose=1 per_cell=10.0 /
+&trace_particle_params  on=f verbose=0 per_cell=1.0 /
 
 !---------------------------------
 ! Solver specific parameters
@@ -41,8 +41,8 @@ size=1,1,1 dims=04,04,04 mpi_dims=1,1,1                !  1 process    1 node   
 &ramses_params          courant_factor=0.250 isothermal=t gamma=1.0 slope_type=2 smallr=1e-4 smallc=5e-1 /
 &stagger_params         gamma=1.0 nu=0.30,0.0,1.0,0.1,1.0,1.0 /
 &timestep_params        /
-&refine_params          do_refine=f check_interval=2 /
-&sinkparticles_params   do_sink=f rho_limit=1.2 max_sinks=1 verbose=0 /
+&refine_params          on=f check_interval=2 /
+&sinkparticles_params   on=f rho_limit=1.2 max_sinks=1 verbose=0 /
 
 !----------------------------------------------------------------------------------
 ! MPI and loadbalancing parameters

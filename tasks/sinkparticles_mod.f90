@@ -32,7 +32,7 @@ MODULE sinkparticles_mod
     real(8), dimension(:,:)  , allocatable:: p, v, a
     real(4), dimension(:,:,:), allocatable:: r
     logical, dimension(:,:,:), allocatable:: mask
-    logical:: do_sink
+    logical:: on
   contains
     procedure:: init
     procedure:: check
@@ -43,9 +43,9 @@ MODULE sinkparticles_mod
     procedure:: move
   end type
   !-----------------------------------------------------------------------------
-  logical:: do_sink=.false.           ! turn feature on/off
+  logical:: on=.false.                ! turn feature on/off
   logical:: do_translate=.true.       ! make a transformation to the velocity of the sink
-  logical:: do_refine=.true.          ! insist on refining down to levelmax at star
+  logical:: force_refine=.true.       ! insist on refining down to levelmax at star
   logical:: only_high_levels=.true.   ! only accrete at high levels
   integer:: id=0                      ! sink id
   integer:: center_star=0             ! index of star to zoom in to
@@ -77,7 +77,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   integer:: iostat
   namelist /sinkparticles_params/ &
-    do_sink, do_translate, do_refine, only_high_levels, center_star, verbose, &
+    on, do_translate, force_refine, only_high_levels, center_star, verbose, &
     accretion_rate, accretion_efficiency, accretion_fraction, accretion_radius, &
     exclusion_radius, jeans_resolution, rho_limit, rho_limit_factor, rho_cut, &
     max_sinks, softening_length, out_time, file
@@ -91,7 +91,7 @@ SUBROUTINE init (self)
     if (io_unit%master) write (io_unit%output, sinkparticles_params)
   end if
   !$omp end critical (input_cr)
-  self%do_sink = do_sink
+  self%on = on
   call trace%end
 END SUBROUTINE init
 

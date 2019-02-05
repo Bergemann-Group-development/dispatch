@@ -63,7 +63,7 @@ MODULE trace_particles_mod
     !real(8), allocatable:: r(:,:,:), v(:,:,:), w(:)
     real(8), allocatable:: wt(:)
     real(8):: position(3)
-    logical:: use_tracers
+    logical:: on
     type(particle_list_t):: export, import
   contains
     procedure:: init_nt
@@ -83,9 +83,9 @@ SUBROUTINE init_nt (self, nt)
   integer:: nt, iostat, np
   real, save:: per_cell=0.0
   integer, save:: time_order=3, verbose=0
-  logical, save:: use_tracers=.false.
+  logical, save:: on=.false.
   logical, save:: first_time=.true.
-  namelist /trace_particle_params/ use_tracers, verbose, per_cell, time_order
+  namelist /trace_particle_params/ on, verbose, per_cell, time_order
   !-----------------------------------------------------------------------------
   !$omp critical (input_cr)
   if (first_time) then
@@ -97,11 +97,12 @@ SUBROUTINE init_nt (self, nt)
     call random%init
   end if
   !$omp end critical (input_cr)
+  self%on = on
   self%nt = nt
   self%per_cell = per_cell
   self%time_order = time_order
   self%verbose = verbose
-  self%use_tracers = use_tracers
+  if (.not.on) return
   call self%particle_list_t%init
   !-----------------------------------------------------------------------------
   ! Initialize Adams-Bashforth integration; the concept of symplectic integration
@@ -137,7 +138,7 @@ SUBROUTINE add (self, mesh, t, dt, d, v)
   !-----------------------------------------------------------------------------
   ! Add particles in proportion to the density, relative to the average
   !-----------------------------------------------------------------------------
-  if (.not. self%use_tracers) return
+  if (.not. self%on) return
   call trace%begin ('trace_particles_t%add')
   call self%particle_list_t%init ('trace')
   self%id = mesh(1)%id
@@ -197,7 +198,7 @@ SUBROUTINE update (self, mesh, time, dtime, d, v)
   real, pointer:: r(:)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (.not. self%use_tracers) return
+  if (.not. self%on) return
   call trace%begin ('trace_particles_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Import any particles exported by neighbors

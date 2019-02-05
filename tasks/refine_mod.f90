@@ -59,7 +59,7 @@ MODULE refine_mod
   real, dimension(ngradvar):: max_grad=0.0    ! Tolerance values for gradient detector refinement
   real, dimension(ngradvar):: min_grad=0.0    ! Tolerance values for gradient detector derefinement
   character(len=32), dimension(ngradvar):: grad_var=""
-  logical:: do_refine=.false.                 ! Flag to turn the entire process on or off 
+  logical:: on=.false.                        ! Flag to turn the entire process on or off 
   logical:: force_cubical=.false.             ! Force cubical patches
   !
   type(refine_t), public:: refine
@@ -72,7 +72,7 @@ SUBROUTINE init (self)
   class(refine_t):: self
   integer:: iostat
   logical, save:: first_time = .true.
-  namelist /refine_params/ do_refine, levelmax, check_interval, refinement_ratio, &
+  namelist /refine_params/ on, levelmax, check_interval, refinement_ratio, &
     refine_from_t, refine_until_t, min_dx, max_dx, max_jeans, min_jeans, &
     max_shock, min_shock, max_contact, min_contact, max_grad, min_grad, &
     grad_var, region_llc, region_urc, force_cubical
@@ -108,7 +108,7 @@ FUNCTION refine_needed (self, tasklist, link)
   logical:: new_sink
   !----------------------------------------------------------------------------
   refine_needed = .false.
-  if (.not. do_refine) return
+  if (.not. on) return
   call trace%begin('refine_t%needed', itimer=itimer)
   !
   patch => task2patch(link%task)
@@ -188,7 +188,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   integer, save:: itimer=0
   !.............................................................................
   was_refined = .false.
-  if (.not. do_refine) return
+  if (.not. on) return
   if (io%verbose>1) &
     print *, link%task%id, 'MK: refine_t%check_current, at t =', link%task%time, link%task%level, levelmax
   if (link%task%level >= levelmax) return
@@ -802,7 +802,7 @@ FUNCTION check_sinkparticle (self, task_list, link)
   integer:: m(3)
   logical:: do_trace
   !-----------------------------------------------------------------------------
-  if (.not.sinkparticles%do_sink) return
+  if (.not.sinkparticles%on) return
   check_sinkparticle = .false.
   patch => link%task
   select type (patch)
