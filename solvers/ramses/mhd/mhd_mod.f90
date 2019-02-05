@@ -488,6 +488,7 @@ subroutine ctoprim(self)
   q(:,:,:,2) = uin(:,:,:,2)/q(:,:,:,1)                          ! vx
   q(:,:,:,3) = uin(:,:,:,3)/q(:,:,:,1)                          ! vy
   q(:,:,:,4) = uin(:,:,:,4)/q(:,:,:,1)                          ! vz
+  q(:,:,:,5) = 0.0                                              ! p_t; initialised for safety
   q(:,:,:,6) = uin(:,:,:,6)                                     ! Bx
   q(:,:,:,7) = uin(:,:,:,7)                                     ! By
   q(:,:,:,8) = uin(:,:,:,8)                                     ! Bz
