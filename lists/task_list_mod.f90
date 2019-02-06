@@ -28,6 +28,7 @@ MODULE task_list_mod
     real(8):: sync_time=-1.0, sync_next=-1.0
   contains
     procedure:: init
+    procedure:: init_levels
     procedure:: startup
     procedure:: execute
     procedure:: update
@@ -70,6 +71,28 @@ SUBROUTINE init (self, name)
 END SUBROUTINE init
 
 !> =============================================================================
+SUBROUTINE init_levels (self)
+  class(task_list_t):: self
+  type(link_t), pointer:: link
+  integer:: levelmin
+  !-----------------------------------------------------------------------------
+  levelmin = 99
+  link => self%head
+  do while (associated(link))
+    associate (patch => link%task)
+    select type (patch)
+    class is (patch_t)
+    patch%level = minval(nint(log(patch%box/patch%ds)/log(real(refine%ratio))))
+    end select
+    levelmin = min(levelmin,patch%level)
+    link => link%next
+    end associate
+  end do
+  refine%levelmin = max(refine%levelmin, levelmin)
+  write (io%output,*) 'task_list_t%init_levels: levelmin =', levelmin, refine%levelmin
+END SUBROUTINE init_levels
+
+!> =============================================================================
 !> Execute the task list, updating it until it is empty.  With !$omp parallel here,
 !> everything local to self%update is thread private.
 !> =============================================================================
@@ -97,6 +120,7 @@ SUBROUTINE startup (self)
   !call self%init_all_nbors
   !call self%reset_status
   call self%info
+  call self%init_levels
   !-----------------------------------------------------------------------------
   ! When restarting, the virtual tasks need to be received and unpacked before
   ! the first guard zone downloads.  We therefore trigger a send of all bndry

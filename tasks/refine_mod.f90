@@ -24,10 +24,14 @@ MODULE refine_mod
   USE solver_mod
   USE sinkparticles_mod
   USE scene_mod
+  USE download_mod
   implicit none
   private
   !
   type:: refine_t
+    integer:: levelmin=1                      ! Min level of refinment
+    integer:: levelmax=1                      ! Max level of refinment
+    integer:: ratio
   contains
     procedure:: init
     procedure:: refine_needed
@@ -44,9 +48,6 @@ MODULE refine_mod
   end type
   !
   integer:: check_interval=10                 ! Number of steps betwen checks
-  integer:: levelmin=1                        ! Min level of refinment
-  integer:: levelmax=1                        ! Max level of refinment
-  integer:: refinement_ratio=2                ! How does a patch split when it is refined
   real:: min_dx=0.0, max_dx=1e32              ! Min and max grid size
   real:: refine_from_t=0.0                    ! Time limits for occurence of refinement
   real:: refine_until_t=1e30                  ! Time limits for occurence of refinement
@@ -72,8 +73,10 @@ CONTAINS
 SUBROUTINE init (self)
   class(refine_t):: self
   integer:: iostat
+  integer, save:: levelmin, levelmax
+  integer, save:: ratio=2                     ! How does a patch split when it is refined
   logical, save:: first_time = .true.
-  namelist /refine_params/ on, levelmin, levelmax, check_interval, refinement_ratio, &
+  namelist /refine_params/ on, levelmin, levelmax, check_interval, ratio, &
     refine_from_t, refine_until_t, min_dx, max_dx, max_jeans, min_jeans, &
     max_shock, min_shock, max_contact, min_contact, max_grad, min_grad, &
     grad_var, region_llc, region_urc, force_cubical
@@ -82,6 +85,8 @@ SUBROUTINE init (self)
   !$omp critical (refine_cr)
   if (first_time) then
     first_time=.false.
+    levelmin = self%levelmin
+    levelmax = self%levelmax
     rewind (io%input)
     read (io%input, refine_params, iostat=iostat)
     if (io%master) then
@@ -90,6 +95,9 @@ SUBROUTINE init (self)
     end if
   end if
   !$omp end critical (refine_cr)
+  self%levelmin = levelmin
+  self%levelmax = levelmax
+  self%ratio = ratio
   call sinkparticles%init
   call trace%end
 END SUBROUTINE init
@@ -191,8 +199,8 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   was_refined = .false.
   if (.not. on) return
   if (io%verbose>1) &
-    print *, link%task%id, 'MK: refine_t%check_current, at t =', link%task%time, link%task%level, levelmax
-  if (link%task%level >= levelmax) return
+    print *, link%task%id, 'MK: refine_t%check_current, at t =', link%task%time, link%task%level, self%levelmax
+  if (link%task%level >= self%levelmax) return
   call trace%begin('refine_t%check_current', itimer=itimer)
   !
   patch => task2patch(link%task)
@@ -201,7 +209,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
     !---------------------------------------------------------------------------
     ! A negative refine value indicates that the patch is not needed
     !---------------------------------------------------------------------------
-    if (refine < 0 .and. patch%level > levelmin) then
+    if (refine < 0 .and. patch%level > self%levelmin) then
       write (io%output,*) patch%id, 'derefine suggested'
       call tasklist%lock%set
       call self%remove_patch (tasklist, link)
@@ -210,7 +218,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
     !---------------------------------------------------------------------------
     ! A positive refine value indicates that the patch needs to be refined
     !---------------------------------------------------------------------------
-    else if (refine > 0 .and. patch%level < levelmax) then
+    else if (refine > 0 .and. patch%level < self%levelmax) then
       call tasklist%lock%set
       call self%split_patch (tasklist, link)
       call check_level_constraint
@@ -263,8 +271,8 @@ END SUBROUTINE check_current
 !> Create a new patch using an existing "parent" patch.
 !> This procedure is used frequently during refinement.
 !> =============================================================================
-SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
-  USE download_mod
+SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
+  class(refine_t):: self
   class(list_t) :: tlist
   class(link_t), pointer :: parent_link, child_link, child_nbor
   class(patch_t), pointer :: parent, child
@@ -304,7 +312,7 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child%level = parent%level + 1                     ! must be set before init!
   call child%init()                                  ! patch, for a new id
   child%level = parent%level + 1                     ! override possible calculation in `patch_t%init`.
-  child%dt(child%it) = parent%dt(parent%it) / refinement_ratio ! reset the time-step
+  child%dt(child%it) = parent%dt(parent%it) / self%ratio ! reset the time-step
   child%t(child%it) = child%time
   if (child%restart <= 0) then
     child%out_next = child%time                        ! force output now
@@ -371,7 +379,7 @@ SUBROUTINE split_patch (self, tlist, this)
   if (this_patch%msplit>0) then
     nsplit = this_patch%msplit
   else
-    nsplit = refinement_ratio
+    nsplit = self%ratio
   end if
   !
   where (this_patch%size==0 .or. this_patch%n==1)
@@ -386,7 +394,7 @@ SUBROUTINE split_patch (self, tlist, this)
       do iz=1,nsplit(3)
         rpos(3) = (iz-(nsplit(3)+1)*0.5) * split_size(3)
         pos = rpos + this_patch%position
-        call make_child_patch(tlist, this, this_patch, pos, split_size)
+        call make_child_patch(self, tlist, this, this_patch, pos, split_size)
       end do
     end do
   end do
