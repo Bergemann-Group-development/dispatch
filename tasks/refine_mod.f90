@@ -44,6 +44,7 @@ MODULE refine_mod
   end type
   !
   integer:: check_interval=10                 ! Number of steps betwen checks
+  integer:: levelmin=1                        ! Min level of refinment
   integer:: levelmax=1                        ! Max level of refinment
   integer:: refinement_ratio=2                ! How does a patch split when it is refined
   real:: min_dx=0.0, max_dx=1e32              ! Min and max grid size
@@ -72,7 +73,7 @@ SUBROUTINE init (self)
   class(refine_t):: self
   integer:: iostat
   logical, save:: first_time = .true.
-  namelist /refine_params/ on, levelmax, check_interval, refinement_ratio, &
+  namelist /refine_params/ on, levelmin, levelmax, check_interval, refinement_ratio, &
     refine_from_t, refine_until_t, min_dx, max_dx, max_jeans, min_jeans, &
     max_shock, min_shock, max_contact, min_contact, max_grad, min_grad, &
     grad_var, region_llc, region_urc, force_cubical
@@ -200,8 +201,8 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
     !---------------------------------------------------------------------------
     ! A negative refine value indicates that the patch is not needed
     !---------------------------------------------------------------------------
-    if (refine < 0) then
-      print *, patch%id, 'derefine suggested'
+    if (refine < 0 .and. patch%level > levelmin) then
+      write (io%output,*) patch%id, 'derefine suggested'
       call tasklist%lock%set
       call self%remove_patch (tasklist, link)
       call check_level_constraint
@@ -209,7 +210,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
     !---------------------------------------------------------------------------
     ! A positive refine value indicates that the patch needs to be refined
     !---------------------------------------------------------------------------
-    else if (refine > 0) then
+    else if (refine > 0 .and. patch%level < levelmax) then
       call tasklist%lock%set
       call self%split_patch (tasklist, link)
       call check_level_constraint
