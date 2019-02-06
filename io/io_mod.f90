@@ -35,6 +35,7 @@ MODULE io_mod
     logical:: do_flags=.false.
     logical:: do_stop=.false.
     logical:: guard_zones=.false.
+    logical:: namelist_errors=.false.
     integer:: log_sent=0
     integer:: time_derivs=0
     integer:: id_debug=0
@@ -64,7 +65,7 @@ MODULE io_mod
     procedure:: bits_mem
     procedure:: gb_mem
     procedure:: gb_print
-    procedure, nopass:: namelist_warning
+    procedure:: namelist_warning
     procedure, nopass:: abort
     procedure, nopass:: assert
     procedure, nopass:: header
@@ -103,9 +104,11 @@ SUBROUTINE init (self, name)
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.false., do_flags=.false., do_direct=.false., guard_zones=.false.
+  logical ,save:: namelist_errors=.false.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
     do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, top, &
-    datadir, inputdir, method, restart, format, guard_zones, time_derivs, log_sent
+    datadir, inputdir, method, restart, format, guard_zones, time_derivs, log_sent, &
+    namelist_errors
   real:: test
   integer:: iostat
   !.............................................................................
@@ -235,6 +238,7 @@ SUBROUTINE init (self, name)
   self%inputname = inputname
   self%top       = top
   self%method    = method
+  self%namelist_errors = namelist_errors
   if (do_legacy) self%method = 'legacy'
   if (do_direct) self%method = 'direct'
   io_unit%top    = top
@@ -439,16 +443,27 @@ END SUBROUTINE check_flags
 !> =============================================================================
 !> Issue message for missing namelist in input file
 !> =============================================================================
-SUBROUTINE namelist_warning (namelist)
+SUBROUTINE namelist_warning (self, namelist)
+  class(io_t):: self
   character(len=*):: namelist
   !.............................................................................
   if (io%master) then
-    print *, ''
-    print *, '*************************************************************************************'
-    print *, '*************************************************************************************'
-    print *, '           WARNING: namelist '//trim(namelist)//' had read error'
-    print *, '*************************************************************************************'
-    print *, '*************************************************************************************'
+    if (.not. self%namelist_errors) then
+      print *, ''
+      print *, '*************************************************************************************'
+      print *, '*************************************************************************************'
+      print *, '           WARNING: namelist '//trim(namelist)//' had read error'
+      print *, '*************************************************************************************'
+      print *, '*************************************************************************************'
+    else
+      print *, ''
+      print *, '*************************************************************************************'
+      print *, '*************************************************************************************'
+      print *, '           ERROR!: namelist '//trim(namelist)//' had read error'
+      print *, '*************************************************************************************'
+      print *, '*************************************************************************************'
+      call mpi%abort('Abort!')
+    end if
   end if
 END SUBROUTINE namelist_warning
 
