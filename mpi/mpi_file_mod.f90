@@ -100,12 +100,10 @@ SUBROUTINE open (self, filename, mode)
   if (self%handle == 0) then
     self%filename = filename
     if (mp%mode == MPI_THREAD_MULTIPLE) then
-      call MPI_Comm_dup (mp%comm, self%comm, self%err)
-      call MPI_File_open (self%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
+      call MPI_File_open (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
     else
       !$omp critical (mpi_cr)
-      call MPI_Comm_dup (mp%comm, self%comm, self%err)
-      call MPI_File_open (self%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
+      call MPI_File_open (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
       !$omp end critical (mpi_cr)
     end if
     if (io%verbose > 0) then
