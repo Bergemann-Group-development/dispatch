@@ -46,7 +46,6 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:):: c
     real, pointer, dimension(:,:,:,:):: ff        ! external force
     type(force_t):: force
-    integer:: n_dump = 20                         ! max 20 dumps per patch
   contains
     procedure:: init
     procedure:: update
