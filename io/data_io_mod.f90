@@ -149,7 +149,7 @@ SUBROUTINE output (self, patch, experiment_name)
         call direct_io%output (patch)
       else if (io%method=='legacy') then
         call legacy_io%output (patch)
-        call output_txt (patch, append)
+        !call output_txt (patch, append)
       else if (io%method=='buffered') then
         call buffered_io%output (patch)
       else if (io%method=='pan') then

@@ -112,9 +112,12 @@ def _var(patch,filed,verbose=0):
     for iv in range(patch.nv):
         if patch.ioformat==5:
             offset = (patch.id-1) + iv*patch.ntotal
+            offset += patch.iout*patch.ntotal*patch.nv
         elif patch.ioformat>=6:
             offset = iv + (patch.id-1)*patch.nv
-        offset += patch.iout*patch.ntotal*patch.nv
+            offset += patch.iout*patch.ntotal*patch.nv
+        else:
+            offset = iv
         offset *= bytes
         patch.offset.append(offset)
         if verbose==5:
@@ -162,7 +165,12 @@ class _patch():
                 self.mesh_type = "spherical"
             elif self.mesh_type == 3:
                 self.mesh_type = "cylindrical"
-
+        # support for legacy I/O method filenames
+        if snap.io.method.strip()=='legacy':
+            self.filename=snap.rundir+'/{:05d}/{:05d}.dat'.format(self.iout,self.id)
+            self.var=_var(self,self.filename)
+        else:
+            self.var=_var(self,snap.datafiled)
     def _h(self):
         idx=self.idx
         h=np.zeros((3,self.nv))
@@ -231,6 +239,7 @@ class snapshot():
         rundir=_dir(data,run)
         if datadir=='':
             datadir=_dir(rundir,'{:05d}'.format(iout))
+        self.rundir=rundir
 
         files=[f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
         for f in files:
@@ -259,8 +268,12 @@ class snapshot():
                     self.keys.append(v)
         timer.add('snapshot metadata')
 
-        self.datafile=_file(rundir,'snapshots.dat')
-        self.datafiled=open(self.datafile,'rb')
+        # Ignore a missing snapshots.dat, for methods that don't have it
+        try:
+            self.datafile=_file(rundir,'snapshots.dat')
+            self.datafiled=open(self.datafile,'rb')
+        except:
+            pass
         self.dict=nml_list['snapshot_nml']
 
         # "dress" the patches with attributes from snapshot_nml, where
