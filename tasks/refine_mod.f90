@@ -80,8 +80,11 @@ SUBROUTINE init (self)
     refine_from_t, refine_until_t, min_dx, max_dx, max_jeans, min_jeans, &
     max_shock, min_shock, max_contact, min_contact, max_grad, min_grad, &
     grad_var, region_llc, region_urc, force_cubical
+  character(len=120):: id = &
+    '$Id$ tasks/refine_mod.f90'
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%init')
+  call trace%print_id (id)
   !$omp critical (refine_cr)
   if (first_time) then
     first_time=.false.

@@ -126,8 +126,11 @@ END SUBROUTINE dnload
 !> =============================================================================
 SUBROUTINE init (self)
   class (task_t):: self
-  !.............................................................................
+  character(len=120):: id = &
+    '$Id$ tasks/task_mod.f90'
+  !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init',2)
+  call trace%print_id (id)
   call init_unique (self, keep=.true.)
   call trace_end
 END SUBROUTINE init
