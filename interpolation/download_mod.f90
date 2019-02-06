@@ -1051,8 +1051,9 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
   logical                 :: valid
   integer, save           :: itimer=0
   real                    :: pt(2), pp(3)
-  real(kind=KindScalarVar):: qint
+  real(kind=KindScalarVar):: qint, dint
   logical                 :: all_cells_l
+  real, pointer           :: q1(:,:,:), q2(:,:,:), d1(:,:,:), d2(:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_prolong', itimer=itimer)
   if (io%verbose > 1) &
@@ -1087,7 +1088,18 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
     if (target%id==io%id_debug) &
       print 1, source%id, (source%position-target%position)/target%size, l, u
       1 format("download_t%different_prolong:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
-    associate (q1 => source%mem(:,:,:,:,jt(1),1), q2 => source%mem(:,:,:,:,jt(2),1))
+    d1 => source%mem(:,:,:,source%idx%d,jt(1),1)
+    d2 => source%mem(:,:,:,source%idx%d,jt(2),1)
+    if (source%pervolume(iv)) then
+      associate (m => source%gn)
+      allocate (q1(m(1),m(2),m(3)), q2(m(1),m(2),m(3)))
+      end associate
+      q1 = source%mem(:,:,:,iv,jt(1),1)/d1
+      q2 = source%mem(:,:,:,iv,jt(2),1)/d2
+    else
+      q1 => source%mem(:,:,:,iv,jt(1),1)
+      q2 => source%mem(:,:,:,iv,jt(2),1)
+    end if
     do iz=l(3),u(3)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
@@ -1104,12 +1116,12 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
               print *, target%id, 'different_prolong:    using', iv,ii, present(all_cells), (ii-li) < 0
             pos = target%myposition (ii, iv)
             call source%index_space (pos, iv, jj, pp)
+            qint = interpolator%interpolator (q1, jj(1), jj(2), jj(3), pp) * pt(1) &
+                 + interpolator%interpolator (q2, jj(1), jj(2), jj(3), pp) * pt(2)
             if (source%pervolume(iv)) then
-              qint = interpolator%interpolator_specific (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
-                   + interpolator%interpolator_specific (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
-            else
-              qint = interpolator%interpolator (q1, jj(1), jj(2), jj(3), iv, pp) * pt(1) &
-                   + interpolator%interpolator (q2, jj(1), jj(2), jj(3), iv, pp) * pt(2)
+              dint = interpolator%interpolator (d1, jj(1), jj(2), jj(3), pp) * pt(1) &
+                   + interpolator%interpolator (d2, jj(1), jj(2), jj(3), pp) * pt(2)
+              qint = qint * dint
             end if
             if (all((ii>li.and.ii<ui)) .and. .not. all_cells_l) then
               print *,'INTERNAL BREACH!', ii
@@ -1124,7 +1136,9 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
         end do
       end do
     end do
-    end associate
+    if (source%pervolume(iv)) then
+      deallocate (q1, q2)
+    end if
   end do
   if (io%verbose>2.or.target%id==io%id_debug) &
     print 2, target%id, target%level, source%id, source%level, 'different_prolong picked up', &
