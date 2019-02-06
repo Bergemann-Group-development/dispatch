@@ -410,20 +410,59 @@ SUBROUTINE split_patch (self, tlist, this)
 END SUBROUTINE split_patch
 
 !> =============================================================================
-!> Remove a patch that has been deemed not necessary
+!> Remove a patch that has been deemed not necessary.  At this point, the task
+!> is not in the ready queue, 
 !> =============================================================================
 SUBROUTINE remove_patch (self, tlist, this)
   class(refine_t):: self
   class(list_t):: tlist
-  class(link_t), pointer:: this
-  !-----------------------------------------------------------------------------
-  ! remove the patch from the ready queue
-  ! remove the patch from the task list
-  ! update the nbor list of all nbors to the patch
-  ! deallocate the patch memory
-  ! delete the patch instance
-  ! change the status of the parent patch to leaf
-  ! check the ready status of the parent patch
+  class(link_t), pointer:: this, link, parent
+  !----------------------------------------------------------------------------
+  ! Start processing, blocking (at least for now) all queue-related activity
+  !----------------------------------------------------------------------------
+  call trace%begin ('refine_t%remove_patch')
+  !$omp critical (queue_cr)
+  !----------------------------------------------------------------------------
+  ! Remove the patch from the task list, and update the nbor list of all nbors
+  !----------------------------------------------------------------------------
+  call tlist%remove_link (this)
+  !----------------------------------------------------------------------------
+  ! Send a suicide note to virtual nbors, if this is a boundary patch
+  !----------------------------------------------------------------------------
+  if (this%task%is_set (bits%boundary)) then
+    call this%task%set (bits%remove)
+    call this%send_to_vnbors
+  end if
+  !----------------------------------------------------------------------------
+  ! Update the nbor lists of all nbors
+  !----------------------------------------------------------------------------
+  link => this%nbor
+  do while (associated(link))
+    call tlist%refresh_nbors (link)
+    link => link%next
+  end do
+  !----------------------------------------------------------------------------
+  ! Change the status of the parent patch to leaf
+  !----------------------------------------------------------------------------
+  associate (parent_task => this%task%parent)
+  select type (parent_task)
+  class is (patch_t)
+  parent => parent_task%link
+  end select
+  end associate
+  call parent%task%clear (bits%not_leaf)
+  !----------------------------------------------------------------------------
+  ! Deallocate the patch memory, and deallocate the patch instance
+  !----------------------------------------------------------------------------
+  call this%task%delete()
+  deallocate (this%task)
+  !----------------------------------------------------------------------------
+  ! Check the ready status of the parent patch
+  !----------------------------------------------------------------------------
+  call tlist%check_ready (parent)
+  !----------------------------------------------------------------------------
+  !$omp end critical (queue_cr)
+  call trace%end
 END SUBROUTINE remove_patch
 
 !> =============================================================================

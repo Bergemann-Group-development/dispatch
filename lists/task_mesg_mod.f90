@@ -18,6 +18,7 @@ MODULE task_mesg_mod
   USE experiment_mod
   USE bits_mod
   USE load_balance_mod
+  USE refine_mod
   implicit none
   private
   type, public, extends(list_t):: task_mesg_t
@@ -286,6 +287,14 @@ SUBROUTINE unpack (self, mesg, link)
   end if
   task => link1%task
   failed = .false.
+  !-----------------------------------------------------------------------------
+  ! Check for suicide note
+  !-----------------------------------------------------------------------------
+  if (task%is_set (bits%remove)) then
+    call refine%remove_patch (self, link1)
+    call trace%end (itimer)
+    return
+  end if
   !-----------------------------------------------------------------------------
   ! Guard against lingering extra messages to a swapped patch
   !-----------------------------------------------------------------------------
