@@ -1,0 +1,62 @@
+&io_params
+ verbose=1
+ do_trace=f
+ do_debug=f
+ do_output=t
+ guard_zones=t
+ method='parallel'
+ time_derivs=f
+/
+
+&dispatcher0_params
+  verbose=0
+  debug=f
+/
+
+&out_params
+ end_time=10.0
+ out_time=1.0
+ print_time=0.1
+/
+
+&initial_params
+  with_density_floor=.true.
+  disc_mass=0.01 ! in M_Sun
+/
+
+&experiment_params
+  coord_type='spherical'
+  n_patches=10,5,1
+  n_per_patch=32,42,1
+  extent=9.98,1.0,2.0 !r, theta, phi; angular extents as factor of pi
+  r_offset=0.02 ! in AU
+  theta_offset=0.01 ! in radians
+/
+
+&zeus_params
+  gamma = 1.01
+  trnvrsn = 0
+  dtinit = 1.0e-5
+  itote = 0
+  qlin=0.1
+  qcon=2.0
+  iord=2
+  iords=2
+  istp=0
+  nuscalar=0.0
+  courant=0.5
+/
+
+&timestep_params
+  time_order=0
+/
+
+&patch_params
+  periodic=f
+  no_mans_land=f
+  grace=0.01
+/
+
+&pebble_params
+  do_pebbles=f
+/
