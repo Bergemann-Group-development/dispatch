@@ -110,18 +110,19 @@ SUBROUTINE init (self)
 
   curr_offset(3) = 0.0
   if (n_per_patch(3) == 1) curr_offset(3) = -math%pi
+  if (trim(coord_type) == 'spherical') then
+    curr_offset(1) = self%r_offset
+  else if (trim(coord_type) == 'cylindrical') then
+    curr_offset(1) = 0.0
+  end if
+  if (trim(coord_type) == 'spherical') then
+    curr_offset(2) = self%theta_offset
+  else if (trim(coord_type) == 'cylindrical') then
+    curr_offset(2) = self%r_offset
+  end if
+
   do i3=1,n_patches(3)
-    if (trim(coord_type) == 'spherical') then
-      curr_offset(2) = theta_offset
-    else if (trim(coord_type) == 'cylindrical') then
-      curr_offset(2) = r_offset
-    end if
     do i2=1,n_patches(2)
-      if (trim(coord_type) == 'spherical') then
-        curr_offset(1) = r_offset
-      else if (trim(coord_type) == 'cylindrical') then
-        curr_offset(1) = 0.0
-      end if
       do i1=1,n_patches(1)
         allocate (experiment_t:: patch)
         select type (patch)
@@ -138,24 +139,20 @@ SUBROUTINE init (self)
           patch%llc_nat = curr_offset
           patch%llc_cart = patch%position &
                          + CurrentToCartesian(patch%mesh_type, curr_offset(1), curr_offset(2), curr_offset(3))
-          !!patch%n_patch_total = product(n_patches)
           ! remainder of patch initialization
           call patch%init()
           if (trim(coord_type) == 'spherical') then
-            patch%mesh(:)%origin = [r_offset, theta_offset, 0.0_8]
+            patch%mesh(:)%origin = [self%r_offset, self%theta_offset, 0.0_8]
           else if (trim(coord_type) == 'cylindrical') then
-            patch%mesh(:)%origin = [0.0_8, r_offset, 0.0_8]
+            patch%mesh(:)%origin = [0.0_8, self%r_offset, 0.0_8]
           end if
           patch%origin = patch%mesh%origin
         end select
         call patch%clear(bits%root_grid)
         ! The `list_t%append` procedure only accepts objects of type `task_t`.
         call self%task_list%append(patch)
-        if (n_patches(1) > 1) curr_offset(1) = curr_offset(1) + pextent(1)
       end do
-      if (n_patches(2) > 1) curr_offset(2) = curr_offset(2) + pextent(2)
     end do
-    if (n_patches(3) > 1) curr_offset(3) = curr_offset(3) + pextent(3)
   end do
   self%task_list%n_tasks = product(n_patches)
 

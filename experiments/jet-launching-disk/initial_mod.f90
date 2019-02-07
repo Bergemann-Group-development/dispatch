@@ -173,10 +173,10 @@ SUBROUTINE condition (self, m, ff, idx)
 
         vkep = sqrt(gm_s / r_cyl)
         rho_mid = rho0 * (r_sph / self%disc_r0)**(-self%rpindex) 
-        if (theta < (0.5*math%pi - disk_angle) .or. theta > (0.5*math%pi - disk_angle)) then
+        if (theta < (0.5*math%pi - disk_angle) .or. theta > (0.5*math%pi + disk_angle)) then
           ! in the corona
           ff(i1,i2,i3,idx%d) = rho_mid * self%aspect_ratio**2 * (1.0 + self%rpindex) &
-                             * exp(-0.5 * cos(disk_angle)**2 / self%aspect_ratio**2)
+                             * exp(-0.5 * cos(0.5*math%pi - disk_angle)**2 / self%aspect_ratio**2)
           pgas0 = ff(i1,i2,i3,idx%d) * vkep**2 / (1.0 + self%rpindex)
           ff(i1,i2,i3,idx%e) = pgas0 / (self%gamma - 1.0)
           ff(i1,i2,i3,idx%pz) = 0.0
