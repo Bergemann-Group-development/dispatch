@@ -23,6 +23,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   if (.not.first_time) return
   first_time = .false.
+  call cgs%init
   self%l = 1.0
   self%m = 1.0
   self%d = 1.0
@@ -32,7 +33,7 @@ SUBROUTINE init (self)
   self%e = self%m*self%u**2
   self%mu = 1.0
   self%temp = 1.0
-  self%grav = 1.0
+  self%grav = cgs%grav
   if (io%master) then
     print 1,' CODE UNITS:   (dimensionless):'
     print 1,'     length: ',self%l

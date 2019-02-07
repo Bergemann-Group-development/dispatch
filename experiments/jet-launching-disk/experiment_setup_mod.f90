@@ -12,6 +12,7 @@ MODULE experiment_setup_mod
   USE mpi_mod
   USE bits_mod
   USE mesh_mod, only: mesh_types, CurrentToCartesian
+  USE units_mod
   implicit none
   private
 
@@ -66,9 +67,19 @@ SUBROUTINE init (self)
   end if
   !$omp end critical (input_cr)
 
-  ! the theta and phi extents are given in units of pi
-  extent(2) = extent(2) * math%pi
-  extent(3) = extent(3) * math%pi
+  if (coord_type == 'spherical') then
+    ! the theta and phi extents are given in units of pi
+    extent(2) = extent(2) * math%pi
+    extent(3) = extent(3) * math%pi
+    ! the radial extent is given in units of au
+    extent(1) = extent(1) * cgs%au
+  else if (coord_type == 'cylindrical') then
+    ! the phi extent is given in units of pi
+    extent(3) = extent(3) * math%pi
+    ! the radial and vertical extents are given in units of au
+    extent(1) = extent(1) * cgs%au
+    extent(2) = extent(2) * cgs%au
+  end if
 
   ! fool-proofing
   if (trim(coord_type) /= 'spherical' .and. trim(coord_type) /= 'cylindrical') then
@@ -99,7 +110,7 @@ SUBROUTINE init (self)
   self%n_patches = n_patches
   self%n_per_patch = n_per_patch
   self%extent = extent
-  self%r_offset = r_offset
+  self%r_offset = r_offset * cgs%au ! convert to cgs
   self%theta_offset = theta_offset
   self%coord_type = trim(coord_type)
   pextent = extent / n_patches ! extent of each patch; domain is assumed to be

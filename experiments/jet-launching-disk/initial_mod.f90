@@ -9,6 +9,7 @@ MODULE initial_mod
   USE index_mod
   USE math_mod
   USE scaling_mod
+  USE units_mod
   implicit none
   private
 
@@ -72,14 +73,14 @@ SUBROUTINE init (self, solver, gamma)
 
   self%aspect_ratio = aspect_ratio
   self%opening_angle = opening_angle
-  self%disc_r0 = disc_r0
-  self%disc_rmax = disc_rmax
-  self%disc_mass = disc_mass
+  self%disc_r0 = disc_r0 * cgs%au ! convert to cgs
+  self%disc_rmax = disc_rmax * cgs%au ! convert to cgs
+  self%disc_mass = disc_mass * cgs%m_sun
   self%rpindex = rpindex
   self%pbeta0 = pbeta0
   self%mbend = mbend
   self%gamma = gamma
-  self%star_mass = star_mass
+  self%star_mass = star_mass * cgs%m_sun
   self%density_floor = density_floor
   self%with_density_floor = with_density_floor
 
@@ -101,6 +102,7 @@ SUBROUTINE condition (self, m, ff, idx)
   real(8):: gm_s, vkep, rho_mid, disk_angle, rho0, pgas0, q0, r_sph, r_cyl, bpol0, &
             cot_theta, z, theta, phi, x1, x2
   real(8), dimension(:,:,:), allocatable:: psi ! magnetic flux function
+  logical, save:: first_time = .true.
   !----------------------------------------------------------------------------
   call trace%begin ('initial_t%condition')
 
@@ -120,9 +122,15 @@ SUBROUTINE condition (self, m, ff, idx)
        * (self%disc_rmax**q0 - self%disc_r0**q0) * self%aspect_ratio &
        * erf(1.0/sqrt(2.0)/self%aspect_ratio)
   rho0 = self%disc_mass / rho0
-  ! initial magnetic field strength is set primarily by `pbeta0`.
-  
+
+  if (first_time .and. io%master) then
+    print*,"rho_0 =",rho0
+    print*,"Corona/disk density ratio:",self%aspect_ratio**2 * (1.0 + self%rpindex)
+    first_time = .false.
+  end if
+
   pgas0 = rho0 * (gm_s / self%disc_r0) / (1.0 + self%rpindex)
+  ! initial magnetic field strength is set primarily by `pbeta0`.
   bpol0 = sqrt(2.0 * pgas0 / self%pbeta0)
 
   ! initialise magnetic flux function

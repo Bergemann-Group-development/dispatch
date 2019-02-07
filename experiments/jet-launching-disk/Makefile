@@ -21,7 +21,7 @@ experiment_mod.o:	io_mod.o trace_mod.o solver_mod.o pboundaries_mod.o potential_
 scaling_mod.o:		io_mod.o trace_mod.o
 experiment_setup_mod.o:	io_mod.o trace_mod.o scaling_mod.o task_list_mod.o mesh_mod.o bits_mod.o \
 						experiment_mod.o math_mod.o mpi_mod.o task_mod.o bits_mod.o mesh_mod.o
-initial_mod.o:		io_mod.o trace_mod.o mesh_mod.o kinds_mod.o index_mod.o math_mod.o
+initial_mod.o:		io_mod.o trace_mod.o mesh_mod.o kinds_mod.o index_mod.o math_mod.o units_mod.o
 pboundaries_mod.o:	io_mod.o trace_mod.o mesh_mod.o bits_mod.o index_mod.o kinds_mod.o \
 					boundaries_mod.o mpi_mod.o patch_mod.o
 potential_mod.o:	io_mod.o trace_mod.o mpi_mod.o mesh_mod.o kinds_mod.o index_mod.o scaling_mod.o
