@@ -12,17 +12,18 @@ MODULE initial_mod
   implicit none
   private
 
-  real(8), save:: aspect_ratio = 0.05 ! aspect ratio of the disk (H/R), where H is the scale height
-  real(8), save:: opening_angle = 2.0 ! given as a multiple of `aspectratio`
-  real(8), save:: disc_r0 = 0.02      ! [AU] inner disc radius/scale radius
-  real(8), save:: disc_rmax = 10.0    ! [AU] size of the disc
-  real(8), save:: disc_mass = 0.1     ! [M_Sun] total disc mass
-  real(8), save:: star_mass = 1.0     ! [M_Sun] mass of central star
-  real(8), save:: rpindex = 1.5       ! (negative) radial power index of the disc density
-  real(8), save:: pbeta0 = 0.922e3    ! initial plasma-beta of the field at `r0_disc`
-  real(8), save:: mbend = 0.5         ! initial magnetic field bending parameter
-  real(8), save:: gamma               ! ratio of specific heats; should be overridden; this is here
-                                      ! for convenience!!
+  real(8), save:: aspect_ratio = 0.05     ! aspect ratio of the disk (H/R), where H is the scale height
+  real(8), save:: opening_angle = 2.0     ! given as a multiple of `aspectratio`
+  real(8), save:: disc_r0 = 0.02          ! [AU] inner disc radius/scale radius
+  real(8), save:: disc_rmax = 10.0        ! [AU] size of the disc
+  real(8), save:: disc_mass = 0.1         ! [M_Sun] total disc mass
+  real(8), save:: star_mass = 1.0         ! [M_Sun] mass of central star
+  real(8), save:: rpindex = 1.5           ! (negative) radial power index of the disc density
+  real(8), save:: pbeta0 = 0.922e3        ! initial plasma-beta of the field at `r0_disc`
+  real(8), save:: mbend = 0.5             ! initial magnetic field bending parameter
+  real(8), save:: gamma                   ! ratio of specific heats; should be overridden; this is here
+                                          ! for convenience!!
+  real(8), save:: density_floor = 1.0e-24 ! density floor value
 
   type, public:: initial_t
     logical:: mhd
@@ -36,6 +37,8 @@ MODULE initial_mod
     real(8):: mbend
     real(8):: gamma
     real(8):: star_mass
+    real(8):: density_floor
+    logical:: with_density_floor
   contains
     procedure:: init
     procedure:: condition
@@ -50,9 +53,11 @@ SUBROUTINE init (self, solver, gamma)
   character(len=64):: solver
   real, optional:: gamma
   logical, save:: first_time=.true.
+  logical, save:: with_density_floor=.true.
   integer:: iostat
   namelist /initial_params/ aspect_ratio, opening_angle, disc_r0, rpindex, disc_mass, &
-                            pbeta0, mbend, disc_rmax, star_mass
+                            pbeta0, mbend, disc_rmax, star_mass, with_density_floor, &
+                            density_floor
   !----------------------------------------------------------------------------
   call trace%begin('initial_t%init')
   !$omp critical (input_cr)
@@ -75,6 +80,8 @@ SUBROUTINE init (self, solver, gamma)
   self%mbend = mbend
   self%gamma = gamma
   self%star_mass = star_mass
+  self%density_floor = density_floor
+  self%with_density_floor = with_density_floor
 
   call trace%end
 END SUBROUTINE init
@@ -180,7 +187,12 @@ SUBROUTINE condition (self, m, ff, idx)
           ff(i1,i2,i3,idx%e) = pgas0 / (self%gamma - 1.0)
           ff(i1,i2,i3,idx%pz) = vkep * sqrt(1.0 - (1.0 + self%rpindex) * self%aspect_ratio**2)
         end if
-        
+
+        ! apply density floor (if desired)
+        if (self%with_density_floor) then
+          ff(i1,i2,i3,idx%d) = max(ff(i1,i2,i3,idx%d), density_floor)
+        end if
+
         ff(i1,i2,i3,idx%px) = 0.0
         ff(i1,i2,i3,idx%py) = 0.0
         if (self%mhd) then

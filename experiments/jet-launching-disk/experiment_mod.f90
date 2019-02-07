@@ -8,6 +8,7 @@ MODULE experiment_mod
   USE pboundaries_mod
   !!!USE pebble_patch_mod
   USE potential_mod
+  USE kinds_mod
   implicit none
   private
 
@@ -16,6 +17,7 @@ MODULE experiment_mod
   contains
     procedure:: init => init_experiment
     procedure:: update => update_experiment
+    procedure:: density_floor => enforce_d_floor
   end type
 
 CONTAINS
@@ -37,6 +39,8 @@ SUBROUTINE init_experiment (self)
   ! intialize time-independent gravitational potential of the central star
   call potential%init(self%mesh, self%idx, self%initial%star_mass, self%mem(:,:,:,:,1,1))
   call pboundaries%init_bdries(self%mesh,self%position,self%idx)
+  call self%density_floor(self%it)
+  call self%check_density()
 
   call trace%end
 END SUBROUTINE init_experiment
@@ -52,9 +56,41 @@ SUBROUTINE update_experiment (self)
   call pboundaries%apply(self, self%it)
   call self%solver_t%update()
   call pboundaries%apply(self, self%new)
+  call self%density_floor(self%new)
   !if (self%do_pebbles) call self%pebble_patch_t%update_pebbles
 
   call trace%end
 END SUBROUTINE update_experiment
+
+!> =============================================================================
+!> Apply a density floor to the current patch.
+!> The density floor value is stored in `initial_t`.
+!> =============================================================================
+SUBROUTINE enforce_d_floor (self, cit)
+  class(experiment_t), target :: self
+  integer, intent(in):: cit
+
+  integer:: i1, i2, i3, l(3), u(3)
+  real(8):: dfloor
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
+  !-----------------------------------------------------------------------------
+  call trace%begin('experiment_mod::enforce_d_floor')
+
+  l = self%mesh%lb
+  u = self%mesh%ub
+
+  dfloor = self%initial%density_floor
+  d => self%mem(:,:,:,self%idx%d,cit,1)
+  do i3=l(3),u(3)
+    do i2=l(2),u(2)
+      do i1=l(1),u(1)
+        d(i1,i2,i3) = max(d(i1,i2,i3), dfloor)
+      end do
+    end do
+  end do
+
+  nullify (d)
+  call trace%end
+END SUBROUTINE enforce_d_floor
 
 END MODULE experiment_mod
