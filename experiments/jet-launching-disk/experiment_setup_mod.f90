@@ -24,8 +24,8 @@ MODULE experiment_setup_mod
     real(8), dimension(3):: extent       ! total extent of the domain in each direction
     real(8):: r_offset                   ! radial coordinate offset; should be non-zero when
                                          ! using spherical coords.
-    real(8):: theta_offset               ! theta coordinate offset; can only be used with
-                                         ! spherical coords.
+    real(8):: theta_offset               ! theta coordinate offset given as a factor of pi;
+                                         ! can only be used with spherical coords.
     character(len=16):: coord_type       ! 'spherical' or 'cylindrical'
   contains
     procedure:: init
@@ -111,7 +111,7 @@ SUBROUTINE init (self)
   self%n_per_patch = n_per_patch
   self%extent = extent
   self%r_offset = r_offset * cgs%au ! convert to cgs
-  self%theta_offset = theta_offset
+  self%theta_offset = theta_offset * math%pi ! given as a factor of pi
   self%coord_type = trim(coord_type)
   pextent = extent / n_patches ! extent of each patch; domain is assumed to be
                                ! initially evenly divided

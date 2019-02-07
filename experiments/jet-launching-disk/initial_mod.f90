@@ -126,6 +126,7 @@ SUBROUTINE condition (self, m, ff, idx)
   if (first_time .and. io%master) then
     print*,"rho_0 =",rho0
     print*,"Corona/disk density ratio:",self%aspect_ratio**2 * (1.0 + self%rpindex)
+    print*,"1 Keplerian orbit at 'disc_r0' (in s):",2.0 * math%pi / sqrt(scaling%grav * self%star_mass / self%disc_r0**3)
     first_time = .false.
   end if
 
