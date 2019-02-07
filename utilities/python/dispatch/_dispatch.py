@@ -113,6 +113,9 @@ def _var(patch,filed,verbose=0):
         if patch.ioformat==5:
             offset = (patch.id-1) + iv*patch.ntotal
             offset += patch.iout*patch.ntotal*patch.nv
+        elif patch.ioformat>=10:
+            offset = (patch.id-1) + iv*patch.nv
+            offset += patch.iout*patch.ntotal*patch.nv
         elif patch.ioformat>=6:
             offset = iv + (patch.id-1)*patch.nv
             offset += patch.iout*patch.ntotal*patch.nv
