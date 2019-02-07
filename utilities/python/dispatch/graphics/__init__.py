@@ -30,6 +30,7 @@
 
 from ._graphics import *
 from .demo import demo
+from . import curvilinear_transforms
 
 __all__ = "minloc,maxloc,corners,patch_at,is_inside,indices_and_weights,"\
 +"patches_along,values_in,values_along,power2d,pause"
