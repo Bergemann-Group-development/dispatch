@@ -55,6 +55,7 @@ MODULE mhd_mod
   logical, save:: detailed_timer=.false.
   logical, save:: unsigned=.true.
   integer, save:: verbose=0
+  integer, save:: divb_cleaner=2
   integer, save:: b_slope_type=0
   integer, save:: u_slope_type=0
   character(len=16):: eqn='mhd'
@@ -70,7 +71,8 @@ SUBROUTINE init (self)
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, b_slope_type, &
     u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
-    verbose, detailed_timer, unsigned, courant_type, max_dlogd, n_dump
+    verbose, detailed_timer, unsigned, courant_type, max_dlogd, n_dump, &
+    divb_cleaner
   character(len=120):: id = &
    '$Id$ solvers/ramses/mhd/mhd_mod.f90'
 !...............................................................................
@@ -140,6 +142,15 @@ SUBROUTINE update (self)
   if (io%courant > 0) self%courant = io%courant
   call self%gravity_solve
   !----------------------------------------------------------------------------
+  ! Use one of several methods to clean div(B) from guard zones
+  !----------------------------------------------------------------------------
+  select case (divb_cleaner)
+  case (1)
+  call divb_clean1 (self)
+  case (2)
+  call divb_clean2 (self)
+  end select
+  !----------------------------------------------------------------------------
   ! Checks whether to do output
   !----------------------------------------------------------------------------
   call self%output
@@ -184,7 +195,6 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
-  call divb_clean (self)
   call check_small (self)                               ! Check smallr, smallp
   call ctoprim(self)                                    ! Primitive variables
   !self%dq = 0d0 ; self%dq2 = 0d0 ; self%dbf = 0d0
@@ -352,13 +362,15 @@ END SUBROUTINE update
 !> interpoation scheme, thus making the electric field computed from the
 !> guard zone values of B and U a better match to the neighbors E-fields.
 !> =============================================================================
-SUBROUTINE divb_clean(self)
+SUBROUTINE divb_clean1 (self)
   class(mhd_t):: self
   !.............................................................................
   real, dimension(:,:,:), pointer:: bx, by, bz
   real, dimension(:,:,:), allocatable:: divb
   real, parameter:: eps=0.11
+  integer:: itimer=0
   !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%divb_clean1', itimer=itimer)
   bx => self%mem(:,:,:,self%idx%bx,self%it,1)
   by => self%mem(:,:,:,self%idx%by,self%it,1)
   bz => self%mem(:,:,:,self%idx%bz,self%it,1)
@@ -368,6 +380,7 @@ SUBROUTINE divb_clean(self)
   by = by + eps*dddn(divb,2)
   bz = bz + eps*dddn(divb,3)
   deallocate (divb)
+  call trace%end (itimer)
   return
 contains
   !-----------------------------------------------------------------------------
@@ -384,7 +397,68 @@ contains
   !.............................................................................
   g = f - cshift(f,-1,i)
   end function
-END SUBROUTINE divb_clean
+END SUBROUTINE divb_clean1
+
+!> =============================================================================
+!> Enforce div(B)=0 in the guard zones, by succesively imposing the condition,
+!> layer-by-layer, on the component perpendicular to each of the patch faces.
+!> =============================================================================
+SUBROUTINE divb_clean2 (self)
+  class(mhd_t):: self
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: bx, by, bz
+  real, dimension(:,:,:), allocatable:: divb
+  real, parameter:: eps=0.11
+  integer:: l(3), u(3), ix, iy, iz
+  integer:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%divb_clean2', itimer=itimer)
+  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
+  by => self%mem(:,:,:,self%idx%by,self%it,1)
+  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
+  l = self%mesh%lb
+  u = self%mesh%ub-1
+  !--- x-direction -------------------------------------------------------------
+  do ix=self%mesh(1)%lo,self%mesh(1)%lb,-1
+    bx(ix  ,l(2):u(2),l(3):u(3)) = &
+    bx(ix+1,l(2):u(2),l(3):u(3)) + ( &
+      by(ix,l(2)+1:u(2)+1,l(3)  :u(3)  ) - by(ix,l(2):u(2),l(3):u(3)) + &
+      bz(ix,l(2)  :u(2)  ,l(3)+1:u(3)+1) - bz(ix,l(2):u(2),l(3):u(3)))
+  end do
+  do ix=self%mesh(1)%ui,self%mesh(1)%ub-1
+    bx(ix+1,l(2):u(2),l(3):u(3)) = &
+    bx(ix  ,l(2):u(2),l(3):u(3)) - ( &
+      by(ix,l(2)+1:u(2)+1,l(3)  :u(3)  ) - by(ix,l(2):u(2),l(3):u(3)) + &
+      bz(ix,l(2)  :u(2)  ,l(3)+1:u(3)+1) - bz(ix,l(2):u(2),l(3):u(3)))
+  end do
+  !--- y-direction -------------------------------------------------------------
+  do iy=self%mesh(2)%lo,self%mesh(2)%lb,-1
+    by(l(1):u(1),iy  ,l(3):u(3)) = &
+    by(l(1):u(1),iy+1,l(3):u(3)) + ( &
+      bx(l(1)+1:u(1)+1,iy,l(3)  :u(3)  ) - bx(l(1):u(1),iy,l(3):u(3)) + &
+      bz(l(1)  :u(1)  ,iy,l(3)+1:u(3)+1) - bz(l(1):u(1),iy,l(3):u(3)))
+  end do
+  do iy=self%mesh(2)%ui,self%mesh(2)%ub-1
+    by(l(1):u(1),iy+1,l(3):u(3)) = &
+    by(l(1):u(1),iy  ,l(3):u(3)) - ( &
+      bx(l(1)+1:u(1)+1,iy,l(3)  :u(3)  ) - bx(l(1):u(1),iy,l(3):u(3)) + &
+      bz(l(1)  :u(1)  ,iy,l(3)+1:u(3)+1) - bz(l(1):u(1),iy,l(3):u(3)))
+  end do
+  !--- z-direction -------------------------------------------------------------
+  do iz=self%mesh(3)%lo,self%mesh(3)%lb,-1
+    bz(l(1):u(1),l(2):u(2),iz  ) = &
+    bz(l(1):u(1),l(2):u(2),iz+1) + ( &
+      bx(l(1)+1:u(1)+1,l(2)  :u(2)  ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
+      by(l(1)  :u(1)  ,l(2)+1:u(2)+1,iz) - by(l(1):u(1),l(2):u(2),iz))
+  end do
+  do iz=self%mesh(3)%ui,self%mesh(3)%ub-1
+    bz(l(1):u(1),l(2):u(2),iz+1) = &
+    bz(l(1):u(1),l(2):u(2),iz  ) - ( &
+      bx(l(1)+1:u(1)+1,l(2)  :u(2)  ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
+      by(l(1)  :u(1)  ,l(2)+1:u(2)+1,iz) - by(l(1):u(1),l(2):u(2),iz))
+  end do
+  call trace%end (itimer)
+END SUBROUTINE divb_clean2
 
 !> =============================================================================
 !> =============================================================================
