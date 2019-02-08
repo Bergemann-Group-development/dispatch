@@ -356,6 +356,8 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
       parent%id, parent%level, parent%iout, parent%time, parent%size, parent%position
   end if
 
+  ! increment I/O write counter
+  io%nwrite = io%nwrite + 1
   call tlist%check_ready(child_link)
 
   call trace%end
@@ -468,6 +470,10 @@ SUBROUTINE remove_patch (self, tlist, this)
   !----------------------------------------------------------------------------
   call this%task%delete()
   deallocate (this%task)
+  !----------------------------------------------------------------------------
+  ! Decrement the I/O write counter
+  !----------------------------------------------------------------------------
+  io%nwrite = io%nwrite - 1
   !----------------------------------------------------------------------------
   ! Check the ready status of the parent patch
   !----------------------------------------------------------------------------
