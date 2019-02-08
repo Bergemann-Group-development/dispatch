@@ -159,7 +159,6 @@ class _patch():
         if not hasattr(self,'units'):
             if hasattr(snap,'units'):
                 self.units=snap.units
-        self.var=_var(self,snap.datafiled)
         # modify `mesh_type` from integer to string for readability
         if hasattr(self,'mesh_type'):
             if self.mesh_type == 1:
