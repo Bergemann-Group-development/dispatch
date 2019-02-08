@@ -33,6 +33,7 @@ MODULE download_mod
     procedure:: test
   end type
   integer:: verbose=0
+  integer:: use_different=0
   logical:: check_filled=.false.
   type(download_t), public:: download
 CONTAINS
@@ -46,7 +47,7 @@ SUBROUTINE init (self)
   integer, save:: order_interpolator=-1, order_time=1
   logical, save:: first_time=.true.
   namelist /download_params/ order_interpolator, order_time, check_filled, &
-    verbose
+    use_different, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%init')
   !$omp critical (download_cr)
@@ -366,14 +367,24 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       self%same => same_linear
     if (trim(target%kind)/='rt_solver') then
       if (source%is_clear(bits%no_download)) then
-        if (source%level==target%level) then
+        if (use_different == 2) then
+          call different (target, source, all_cells, only=only)
+        else if (use_different == 1) then
+          call different_prolong (target, source, filled, all_cells, only=only)
+        else if (use_different == -1) then
+          call different_restrict (target, source, filled, only=only)
+        else if (source%level==target%level) then
           call self%same (target, source, filled, all_cells, only=only)
         else if ((source%level-target%level) == -1) then
           call different_prolong (target, source, filled, all_cells, only=only)
         else if (source%level < target%level .and. present(all_cells)) then
           call different_prolong (target, source, filled, all_cells, only=only)
         else if ((source%level-target%level) == 1) then
-          call different_restrict (target, source, filled, only=only)
+          if (use_different == -2) then
+            call different (target, source, all_cells, only=only)
+          else
+            call different_restrict (target, source, filled, only=only)
+          end if
         end if
       end if
       if (target%id==io%id_debug) then
@@ -1035,6 +1046,86 @@ SUBROUTINE same_rt (target, source, filled)
   end do
   call trace%end (itimer)
 END SUBROUTINE same_rt
+
+!> =============================================================================
+!> Interpolate guard zone info from source patch at a different level
+SUBROUTINE different (target, source, all_cells, only)
+  class(patch_t), pointer :: target, source
+  logical, optional:: all_cells
+  integer, optional:: only
+  !.............................................................................
+  integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i
+  integer, dimension(3)   :: l, u, ii, li, ui, jj
+  real(8), dimension(3)   :: pos
+  logical                 :: valid
+  integer, save           :: itimer=0
+  real                    :: pt(2), pp(3)
+  real(kind=KindScalarVar):: qint
+  logical                 :: all_cells_l
+  !-----------------------------------------------------------------------------
+  call trace%begin('download_t%different', itimer=itimer)
+  call source%time_interval (target%time, jt, pt)
+  if (present(only)) then
+    iv1 = only
+    iv2 = only
+  else
+    iv1 = 1
+    iv2 = target%nv
+  end if
+  if (present(all_cells)) then
+    all_cells_l = all_cells
+  else
+    all_cells_l = .false.
+  end if
+  do iv=iv1,iv2
+    call dnload_range (target, source, iv, l, u)
+    !---------------------------------------------------------------------------
+    ! For no-no-mans-land meshes, use guard zone values for the li index, to
+    ! make fluxes up/down symmetric
+    !---------------------------------------------------------------------------
+    li = target%mesh%li
+    ui = target%mesh%ui
+!    do i=1,3
+!      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
+!    end do
+    if (target%id==io%id_debug) &
+      print 1, source%id, (source%position-target%position)/target%size, l, u
+      1 format("DBG download_t%different:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
+    associate (q1 => source%mem(:,:,:,:,jt(1),1), q2 => source%mem(:,:,:,:,jt(2),1))
+    do iz=l(3),u(3)
+      do iy=l(2),u(2)
+        do ix=l(1),u(1)
+          ii=[ix,iy,iz]
+          if (all_cells_l .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
+            if (target%id==io%id_debug .and. io%verbose>1) &
+              print *, target%id, 'DBG interpolate_t%different:    using', iv,ii, present(all_cells), (ii-li) < 0
+            pos = target%myposition (ii, iv)
+            call source%index_space (pos, iv, jj, pp)
+            if (source%pervolume(iv)) then
+              call source%interpolate_specific (target, ii, iv, jt, pt)
+            else
+              call source%interpolate          (target, ii, iv, jt, pt)
+            end if
+            if (all((ii>=li.and.ii<=ui))) then
+              print *,'INTERNAL BREACH!', ii
+            end if
+          else
+            if (target%id==io%id_debug .and. io%verbose>1) &
+              print *, target%id, 'DBG interpolate_t%different: skipping', iv,ii, present(all_cells), (ii-li) < 0
+            cycle
+          end if
+        end do
+      end do
+    end do
+    end associate
+  end do
+  if (io%verbose>2.or.target%id==io%id_debug) &
+    print 2, target%id, target%level, source%id, source%level, 'different picked up', &
+    product(u-l+1), ' values, mind =', &
+    minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), l, u
+  2 format(2(i6,i3),2x,a,i6,a,1p,e12.4,2(2x,3i4))
+  call trace%end (itimer)
+END SUBROUTINE different
 
 !> =============================================================================
 !> Interpolate guard zone info from source patch at a lower level
