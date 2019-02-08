@@ -1144,7 +1144,7 @@ SUBROUTINE different_prolong (target, source, filled, all_cells, only)
   real                    :: pt(2), pp(3)
   real(kind=KindScalarVar):: qint, dint
   logical                 :: all_cells_l
-  real, pointer           :: q1(:,:,:), q2(:,:,:), d1(:,:,:), d2(:,:,:)
+  real(kind=KindScalarVar), pointer:: q1(:,:,:), q2(:,:,:), d1(:,:,:), d2(:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_prolong', itimer=itimer)
   if (io%verbose > 1) &

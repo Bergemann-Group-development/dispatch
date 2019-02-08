@@ -29,7 +29,7 @@ SUBROUTINE output (self, experiment_name)
   logical:: first_time=.true.
   integer:: it1, it2, n(3)
   real:: pt, qt
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: buf
+  real(4), dimension(:,:,:), pointer:: buf
   real(8):: time
  ! integer, save:: iodir=-1
   !-----------------------------------------------------------------------------
@@ -126,7 +126,7 @@ SUBROUTINE check_error (patch, a, label, error)
   character(len=*), optional:: label
   integer, optional:: error(3)
   integer:: loc(3), it, l(3), u(3), n(3), iy
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: a, b
+  real(4), dimension(:,:,:), pointer:: a, b
   integer, save:: nerror=4
   !-----------------------------------------------------------------------------
   if (.not.io%do_debug) return
