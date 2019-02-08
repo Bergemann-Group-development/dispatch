@@ -46,22 +46,22 @@ def plot(f,**kw):
     else:
         pl.plot(f,**kw)
 
-def plot_values_along(pt,pp,**kw):
+def plot_values_along(pp,pt,**kw):
     """ Plot values along direction dir={0,1,2}, through point pt=[x,y,z] """
     kv = {'dir':0, 'verbose':0, 'all':False, 'iv':0, 'var':None}
     kw,kv = _kw_extract(kw,kv)
     plot(ds.values_along(pt,pp,iv=kv['iv'],dir=kv['dir'],all=kv['all']),**kw)
 
-def plot_patch_values_along(pt,pp_in,**kw):
+def plot_patch_values_along(pp_in,pt=[0.5,0.5,0.5],hold=False,**kw):
     """ Plot values along direction dir={0,1,2}, through point pt=[x,y,z] """
     kv = {'dir':0, 'verbose':0, 'all':False, 'iv':0, 'var':None}
     kw,kv = _kw_extract(kw,kv)
-    pp = ds.patches_along(pt,pp_in,dir=kv['dir'],verbose=kv['verbose'])
+    pp = ds.patches_along(pp_in,pt,dir=kv['dir'],verbose=kv['verbose'])
     xmin,xmax = ds.minmax_patches(pp,dir=kv['dir'])
-    pl.xlim(xmin,xmax)
-    pl.hold(True)
+    if not hold:
+        pl.xlim(xmin,xmax)
     for p in pp:
-        plot(ds.values_in(pt,p,**kv),**kw)
+        plot(ds.values_in(p,pt,**kv),**kw)
 
 def _rotate(d,e):
     '''Rotate data and extent to landscape format'''

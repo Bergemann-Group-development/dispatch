@@ -5,6 +5,7 @@ from __future__ import print_function
 
 import numpy as np
 from time import time
+import dispatch
 
 def minloc(a):
     ''' Return the 3-D index with the minimum of array a'''
@@ -16,26 +17,26 @@ def maxloc(a):
     i = a.argmax()
     return np.unravel_index(i,np.shape(a))
 
-def patch_at(point,pp,verbose=0):
+def patch_at(pp,point=[0.5,0.5,0.5],verbose=0):
     ''' Find the patch that contains a given point
     '''
     level=-1
     p1=None
     for p in pp:
-        if is_inside(point,p,verbose):
+        if is_inside(p,point,verbose):
             if p.level>level:
                 p1=p
                 level=p.level
     return p1
 
-def is_inside(point,p,verbose=0):
+def is_inside(p,point=[0.5,0.5,0.5],verbose=0):
     ''' Return True/False depending on if the point is inside the patch
     '''
     left=point>=p.llc_cart
     right=point<=p.llc_cart+p.size
     return left.all() and right.all()
 
-def count_inside(point,p,verbose=0):
+def count_inside(p,point=[0.5,0.5,0.5],verbose=0):
     ''' Return the number of dimension in which point is inside the patch
     '''
     left=point>=p.llc_cart
@@ -46,20 +47,22 @@ def count_inside(point,p,verbose=0):
             count+=1
     return count
 
-def patches_along(point,pp,dir=0,verbose=0):
+def patches_along(pp,point=[0.5,0.5,0.5],dir=0,verbose=0):
     ''' Get the patches along a given direction through a point
     '''
+    if isinstance(pp,dispatch.snapshot):
+        pp=pp.patches
     pt=np.copy(point)
     if verbose>0:
         np.set_printoptions(formatter={'float_kind': '{:6.3f}'.format})
-    p=patch_at(pt,pp)
+    p=patch_at(pp,pt)
     if p:
         p1=p
         while p:
             if verbose>1:
                 print('fwd {:4d} {} {}'.format(p.id,p.position,p.size))
             pt[dir]=p.position[dir]-p.size[dir]*0.6
-            p=patch_at(pt,pp)
+            p=patch_at(pp,pt)
             if p:
                 p1=p
         p=p1
@@ -69,7 +72,7 @@ def patches_along(point,pp,dir=0,verbose=0):
             if verbose>1:
                 print('rev {:4d} {} {}'.format(p.id,p.position,p.size))
             pt[dir]=p.position[dir]+p.size[dir]*0.6
-            p=patch_at(pt,pp)
+            p=patch_at(pp,pt)
         if verbose>0:
             for p in out:
                 print('id: {:4d}        position: {}'.format(p.id,p.position))
@@ -78,19 +81,19 @@ def patches_along(point,pp,dir=0,verbose=0):
     np.set_printoptions(formatter=None)
     return out
 
-def patches_along_x(point,pp,verbose=0):
+def patches_along_x(pp,point=[0.5,0.5,0.5],verbose=0):
     ''' Get the patches along the x direction through a point '''
-    patches_along(point,pp,dir=0,verbose=verbose)
+    patches_along(pp,point,dir=0,verbose=verbose)
 
-def patches_along_y(point,pp,verbose=0):
+def patches_along_y(pp,point=[0.5,0.5,0.5],verbose=0):
     ''' Get the patches along the y direction through a point '''
-    patches_along(point,pp,dir=1,verbose=verbose)
+    patches_along(pp,point,dir=1,verbose=verbose)
 
-def patches_along_z(point,pp,verbose=0):
+def patches_along_z(pp,point=[0.5,0.5,0.5],verbose=0):
     ''' Get the patches along the z direction through a point '''
-    patches_along(point,pp,dir=2,verbose=verbose)
+    patches_along(pp,point,dir=2,verbose=verbose)
 
-def indices_and_weights(point,p,iv=0):
+def indices_and_weights(p,point=[0.5,0.5,0.5],iv=0):
     ''' Return indices and interpolation weights for a point in a patch p
     '''
     x0=p.x[0]
@@ -114,14 +117,14 @@ def indices_and_weights(point,p,iv=0):
     #print(' after:',indices,weights)
     return indices, weights
 
-def values_in(point,p,dir=0,iv=0,var=None,verbose=0,all=0):
+def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,var=None,verbose=0,all=0):
     ''' Return s,f(s) with s the coordinates and f the values in the iv
         slot of data, taken along the direction v -- so far restricted
         to axis values
     '''
     ss=[]
     ff=[]
-    ii,w=indices_and_weights(point,p,iv)
+    ii,w=indices_and_weights(p,point,iv)
     data=p.data[iv] if hasattr(p,'data') else p.var(iv)
     if verbose:
         print('{:3d} {}   {} {:5.1f} {:4.1f} {:4.1f}'.\
@@ -186,16 +189,16 @@ def values_in(point,p,dir=0,iv=0,var=None,verbose=0,all=0):
     ff=np.array(ff)
     return ss,ff
 
-def values_along(point,pp,dir=0,iv=0,var=None,verbose=0,all=0):
+def values_along(pp,point=[0.5,0.5,0.5],dir=0,iv=0,var=None,verbose=0,all=0):
     ''' Return s,f(s) with s the coordinates and f the values in the iv
         slot of data, taken along the direction v -- so far restricted
         to axis values
     '''
-    patches=patches_along(point,pp,dir=dir,verbose=verbose)
+    patches=patches_along(pp,point,dir=dir,verbose=verbose)
     ss=[]
     ff=[]
     for p in patches:
-        ss1,ff1=values_in(point,p,dir=dir,iv=iv,var=var,all=all,verbose=verbose)
+        ss1,ff1=values_in(p,point,dir=dir,iv=iv,var=var,all=all,verbose=verbose)
         for s,f in zip(ss1,ff1):
             ss.append(s)
             ff.append(f)
@@ -234,19 +237,19 @@ def corners(pp,active=1):
         c=_corners(pp,active=active)
     return c
 
-def values_along_x(point,p,iv=0,verbose=0):
+def values_along_x(p,point=[0.5,0.5,0.5],iv=0,verbose=0):
     ''' Get the iv values along the x direction through a point '''
-    s,f=values_along(point,p,dir=0,iv=iv,verbose=verbose)
+    s,f=values_along(p,point,dir=0,iv=iv,verbose=verbose)
     return s,f
 
-def values_along_y(point,p,iv=0,verbose=0):
+def values_along_y(p,point=[0.5,0.5,0.5],iv=0,verbose=0):
     ''' Get the iv values along the y direction through a point '''
-    s,f=values_along(point,p,dir=1,iv=iv,verbose=verbose)
+    s,f=values_along(p,point,dir=1,iv=iv,verbose=verbose)
     return s,f
 
-def values_along_z(point,p,iv=0,verbose=0):
+def values_along_z(p,point=[0.5,0.5,0.5],iv=0,verbose=0):
     ''' Get the iv values along the z direction through a point '''
-    s,f=values_along(point,p,dir=2,iv=iv,verbose=verbose)
+    s,f=values_along(p,point,dir=2,iv=iv,verbose=verbose)
     return s,f
 
 def _corner_radii(p,origin=[0.,0.,0.]):
@@ -260,8 +263,10 @@ def _corner_radii(p,origin=[0.,0.,0.]):
     return np.sqrt(np.array(pt))
 
 class shell_values:
-    def __init__(self,pp,radius=0.25,nds=1,dr=0.05,origin=[0.5,0.5,0.5],verbose=0):
+    def __init__(self,pp,radius=0.25,nds=1,dr=0.05,origin=[0.5,0.5,0.5],iv=0,verbose=0):
         ''' return a dict with shell data '''
+        if isinstance(pp,dispatch.snapshot):
+            pp=pp.patches
         if verbose:
             start=time()
         self.var={}
