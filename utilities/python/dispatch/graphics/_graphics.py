@@ -16,7 +16,7 @@ def _kw_extract(kw,dict):
     return kw,dict
 
 def imshow(f,colorbar=None,origin='lower',interpolation='nearest',
-           cmap='coolwarm',verbose=0,**kw):
+           cmap='coolwarm',verbose=0,hold=False,**kw):
     """
         imshow with default options and updateable colorbar.  Example use:
 
@@ -31,12 +31,17 @@ def imshow(f,colorbar=None,origin='lower',interpolation='nearest',
 
         The second call updates the colorbar from the 1st call
     """
+    if not hold:
+        pl.clf()
     if verbose>0:
         print ('min:',f.min(),' max:',f.max())
     pl.imshow(np.transpose(f),origin=origin,interpolation=interpolation,cmap=cmap,**kw)
-    if type(colorbar)==matplotlib.colorbar.Colorbar:
-        colorbar.set_clim(f.min(),f.max())
-        colorbar.draw_all()
+    if hold:
+        if type(colorbar)==matplotlib.colorbar.Colorbar:
+            colorbar.set_clim(f.min(),f.max())
+            colorbar.draw_all()
+    else:
+        pl.colorbar()
 
 def plot(f,**kw):
     """ plot(f) allows f to be (x,y) tuple """
