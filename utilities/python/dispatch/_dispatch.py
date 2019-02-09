@@ -78,7 +78,7 @@ def _add_nml_list_to(obj,nml_list,verbose=0):
     """
     # Repair strange interpretation of ntotal
     snap_dict=nml_list['snapshot_nml']
-    if snap_dict.has_key('ntotal'):
+    if 'ntotal' in snap_dict:
         if type(snap_dict['ntotal'])==list:
             snap_dict['ntotal']=snap_dict['ntotal'][0]
     for key,nml_dict in nml_list.items():
