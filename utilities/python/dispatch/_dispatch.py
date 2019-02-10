@@ -64,8 +64,8 @@ class _obj(object):
             ba = np.array(b) if isinstance(b, list) else b
             setattr(self, a, _obj(b) if isinstance(b, dict) else ba)
 
-def _add_nml_to(obj,dict,verbose=0):
-    for key,value in dict.items():
+def _add_nml_to(obj,d,verbose=0):
+    for key,value in d.items():
         setattr(obj,key,value)
         if verbose==2:
             print('      adding property '+key+', with value',value)
@@ -204,9 +204,10 @@ object takes both numeric and text key values: Examples:\n\
     d=p.d['d']")
 
 def parse_patches(file='data/00000/rank_00000_patches.nml'):
-    dict={}
+    prop_dict = {}
     class props():
         pass
+
     with open(file,'r') as fd:
         for line in fd:
             # strip commas and equal sign from line and split
@@ -230,8 +231,8 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
                 p.pos=np.array(list(map(float,pos))) 
             elif items[0]=='DTIME':
                 p.dtime=float(items[1])
-                dict[id]=p
-    return dict
+                pdict[id]=p
+    return pdict
 
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
@@ -253,9 +254,9 @@ class snapshot():
             self.nml_list=nml_list
             _add_nml_list_to(self,nml_list,verbose=verbose)
             if 'idx_nml' in nml_list.keys():
-                dict=nml_list['idx_nml']
-                idx=_obj(dict)
-                idx.dict=dict
+                idx_dict = nml_list['idx_nml']
+                idx = _obj(idx_dict)
+                idx.dict = idx_dict
                 # add a dict with (existing) alphabetic variable names
                 idx.vars={}
                 for k,v in idx.dict.items():
@@ -278,7 +279,7 @@ class snapshot():
             pass
         self.dict=nml_list['snapshot_nml']
 
-        # "dress" the patches with attributes from snapshot_nml, where
+        # "dress" the snapshot with attributes from snapshot_nml, where
         # lists are turned into arrays
         for k,v in self.dict.items():
             if isinstance(v,list): 
@@ -288,13 +289,13 @@ class snapshot():
         self.patches=[]
         files=[f for f in os.listdir(datadir) if f.endswith('_patches.nml')]
         for f in files:
-            # add parameter groups from data/run/NNNNN/*snapshot.nml
+            # add parameter groups from data/run/NNNNN/*patches.nml
             file=_file(datadir,f)
             if verbose==1:
                 print ('parsing',file)
-            dict=parse_patches(file)
-            for id in sorted(dict.keys()):
-                p=_patch(id,dict[id].pos,dict[id].dtime,self)
+            patch_dict=parse_patches(file)
+            for id in sorted(patch_dict.keys()):
+                p=_patch(id,patch_dict[id].pos,patch_dict[id].dtime,self)
                 self._add_axes(p)
                 self.patches.append(p)            # Add array of patch instances
 
@@ -340,7 +341,6 @@ class snapshot():
         patch.zs=patch.z-0.5*patch.ds[2]
         patch.xyz=[patch.x,patch.y,patch.z]
 
-
 def snapshots(run='',data='data', verbose=0):
     """ Return a list of all snapshots in the data/run/ directory
     """
@@ -362,8 +362,8 @@ def snapshots(run='',data='data', verbose=0):
 def attributes(patch):
     """ Pretty-print patch attributes """
     print ('id: {:}'.format(patch.id))
-    dict=vars(patch)
-    for k,v in dict.items():
+    d=vars(patch)
+    for k,v in d.items():
         if k != 'data':
             print ('{:>12}:  {}'.format(k,v))
 
