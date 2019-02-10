@@ -82,7 +82,7 @@ SUBROUTINE init_levels (self)
     associate (patch => link%task)
     select type (patch)
     class is (patch_t)
-    patch%level = minval(nint(log(patch%box/patch%ds)/log(real(refine%ratio))))
+      patch%level = minval(nint(log(patch%box/patch%ds)/log(real(refine%ratio))), mask=patch%n > 1)
     end select
     levelmin = min(levelmin,patch%level)
     link => link%next
