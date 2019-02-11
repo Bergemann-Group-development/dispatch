@@ -143,13 +143,13 @@ def _var(patch,filed,verbose=0):
     return var
 
 class _patch():
-    def __init__(self,id,dict,snap):
+    def __init__(self,id,patch_dict,snap):
         self.id=id
         # add general attributes from snapshot_nml
         for k,v in snap.dict.items():
             setattr(self,k,v)
         # add per-patch attributes from parsing
-        for k,v in dict.items():
+        for k,v in patch_dict.items():
             setattr(self,k,v)
         # add idx attribute
         if hasattr(snap,'idx'):
@@ -242,7 +242,7 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
     """ Optimized parsing of patch namelist entries.
         Asssumes that ID is the first item and LEVEL is the last
     """
-    dict={}
+    prop_dict={}
     class props():
         pass
 
@@ -264,8 +264,8 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
                 d['time']=float(items[1])
             elif items[0]=='LEVEL':
                 d['level']=int(items[1])
-                dict[id]=d
-    return dict
+                prop_dict[id]=d
+    return prop_dict
 
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
