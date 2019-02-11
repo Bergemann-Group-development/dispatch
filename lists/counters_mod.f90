@@ -13,6 +13,7 @@
 MODULE counters_mod
   USE io_mod
   USE trace_mod
+  USE omp_lock_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -26,10 +27,13 @@ MODULE counters_mod
     type(counter_t), pointer:: head=>null(), tail=>null()
     integer:: n=0
     integer:: id=0
+    type(lock_t):: lock
   contains
     procedure:: decrement ! (id, start)
-    procedure:: reset     ! (id)
+    procedure:: increment ! (id, start)
+    procedure:: remove    ! (id)
   end type
+  integer:: verbose=1
   type(counters_t), public:: counters
 CONTAINS
 
@@ -46,7 +50,7 @@ FUNCTION decrement (self, id, start) RESULT (count)
   !-----------------------------------------------------------------------------
   ! Search for the counter instance, return a new one if not found
   !-----------------------------------------------------------------------------
-  !$omp critical (counter_cr)
+  call self%lock%set
   counter => find (self, id, start)
   !-----------------------------------------------------------------------------
   ! Decrement to zero
@@ -55,9 +59,37 @@ FUNCTION decrement (self, id, start) RESULT (count)
     counter%count = counter%count-1    
   end if
   count = counter%count
-  !$omp end critical (counter_cr)
+  if (verbose > 0) &
+    write (io_unit%output,*) 'counter_t%decrement: id, count =', counter%id, count
+  call self%lock%unset
   call trace %end
 END FUNCTION decrement
+
+!> =============================================================================
+!> Find the counter instance with a given id and decrement counter.  If a
+!> counter with that id is not in the list, create one, and increment it
+!> =============================================================================
+FUNCTION increment (self, id, start) RESULT (count)
+  integer:: count
+  class(counters_t):: self
+  type(counter_t), pointer:: counter
+  integer:: id, start
+  call trace%begin ('counters_t%increment')
+  !-----------------------------------------------------------------------------
+  ! Search for the counter instance, return a new one if not found
+  !-----------------------------------------------------------------------------
+  call self%lock%set
+  counter => find (self, id, start)
+  !-----------------------------------------------------------------------------
+  ! Increment away from zero
+  !-----------------------------------------------------------------------------
+  counter%count = counter%count+1    
+  count = counter%count
+  if (verbose > 0) &
+    write (io_unit%output,*) 'counter_t%increment: id, count =', counter%id, count
+  call self%lock%unset
+  call trace %end
+END FUNCTION increment
 
 !> =============================================================================
 !> Find a counter with the given id, or create one
@@ -121,13 +153,13 @@ END SUBROUTINE append
 !> =============================================================================
 !> Remove the counter instance from the list
 !> =============================================================================
-SUBROUTINE reset (self, id)
+SUBROUTINE remove (self, id)
   class(counters_t):: self
   integer:: id
   type(counter_t), pointer:: counter
   !-----------------------------------------------------------------------------
   call trace%begin ('counters_t%remove')
-  !$omp critical (counter_cr)
+  call self%lock%set
   counter => find (self, id)
   if (associated(counter%prev)) then
     counter%prev%next => counter%next
@@ -142,8 +174,8 @@ SUBROUTINE reset (self, id)
   deallocate(counter)
   nullify (counter)
   counters%n = counters%n-1
-  !$omp end critical (counter_cr)
+  call self%lock%unset
   call trace%end
-END SUBROUTINE reset
+END SUBROUTINE remove
 
 END MODULE counters_mod

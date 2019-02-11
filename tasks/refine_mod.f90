@@ -25,6 +25,7 @@ MODULE refine_mod
   USE sinkparticles_mod
   USE scene_mod
   USE download_mod
+  USE counters_mod
   implicit none
   private
   !
