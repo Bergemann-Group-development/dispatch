@@ -28,7 +28,7 @@ MODULE experiment_mod
   private
   type, public, extends(solver_t):: experiment_t
     type(trace_particles_t):: trace_particles
-    real, allocatable:: v(:,:,:,:)
+    real, pointer:: v(:,:,:,:) => null()
   contains
     procedure:: init
     procedure:: update

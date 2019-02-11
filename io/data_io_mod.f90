@@ -183,7 +183,11 @@ SUBROUTINE output (self, patch, experiment_name)
       call output_nml (patch, append)
       patch%iout = patch%iout+1
       if (io%out_time==0.0) exit
-      patch%out_next = (nint(patch%out_next/io%out_time)+1)*io%out_time
+      patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
+      !---------------------------------------------------------------------------
+      write (io%output,*) 'io_t%output: id, iout, out_next, count =', &
+        patch%id, patch%iout, patch%out_next, count
+      !---------------------------------------------------------------------------
       call os%mkdir_no (patch%iout)
     end do
     call self%lock%unset
@@ -323,7 +327,7 @@ SUBROUTINE output_nml (patch, append)
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
     no_mans_land
-  namelist /patch_nml/ id, position, dtime
+  namelist /patch_nml/ id, time, dtime, position, size, level
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
@@ -480,7 +484,7 @@ SUBROUTINE input_nml (patch)
   patch%dt    = 0d0
   patch%time  = time
   patch%istep = 0
-  patch%out_next = (int(patch%time/io%out_time)+1)*io%out_time
+  patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
   patch%guard_zones = guard_zones
   patch%time_derivs = time_derivs
   !$omp end critical (output_cr)
