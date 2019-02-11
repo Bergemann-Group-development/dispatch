@@ -64,10 +64,10 @@ MODULE refine_mod
   character(len=32), dimension(ngradvar):: grad_var=""
   logical:: on=.false.                        ! Flag to turn the entire process on or off 
   logical:: force_cubical=.false.             ! Force cubical patches
-  !
+  integer:: verbose=0                         ! Noise level
   type(refine_t), public:: refine
-
 CONTAINS
+
 !> =============================================================================
 !> Initialize refinement parameters
 !> =============================================================================
@@ -80,7 +80,7 @@ SUBROUTINE init (self)
   namelist /refine_params/ on, levelmin, levelmax, check_interval, ratio, &
     refine_from_t, refine_until_t, min_dx, max_dx, max_jeans, min_jeans, &
     max_shock, min_shock, max_contact, min_contact, max_grad, min_grad, &
-    grad_var, region_llc, region_urc, force_cubical
+    grad_var, region_llc, region_urc, force_cubical, verbose
   character(len=120):: id = &
     '$Id$ tasks/refine_mod.f90'
   !-----------------------------------------------------------------------------
@@ -154,31 +154,31 @@ FUNCTION refine_needed (self, tasklist, link)
   !
   ! Ensure consistent, cubical patch size (e.g. after RAMSES startup)
   if (force_cubical) refine_needed = refine_needed .or. self%check_cubical(patch)>0
-  if (io%verbose>1) print *, patch%id, 'refine%needed (patch_n)   =', refine_needed
+  if (verbose>2) print *, patch%id, 'refine%needed (patch_n)   =', refine_needed
   !
   ! Jeans criterion
   if (min_jeans > 0.0) refine_needed = refine_needed .or. self%check_Jeans(patch)>0
-  if (io%verbose>1) print *, patch%id, 'refine%needed (Jeans)   =', refine_needed
+  if (verbose>2) print *, patch%id, 'refine%needed (Jeans)   =', refine_needed
   !
   ! shock and/or contact discontinuity detector
   if (max_shock > 0.0 .or. max_contact > 0.0) &
     refine_needed = refine_needed .or. self%shock_and_cd_detector(patch)>0
-  if (io%verbose>1) print *, patch%id, 'refine%needed (shock)   =', refine_needed
+  if (verbose>2) print *, patch%id, 'refine%needed (shock)   =', refine_needed
   !
   ! gradient detector
   if (any(max_grad > 0.0) ) refine_needed = refine_needed .or. self%gradient_detector(patch)>0
-  if (io%verbose>1) print *, patch%id, 'refine%needed (grad)    =', refine_needed
+  if (verbose>2) print *, patch%id, 'refine%needed (grad)    =', refine_needed
   !
   ! refine on (a) user-specified region(s)
   if (any(region_llc /= 0.0) .and. any(region_urc /= 0.0)) &
     refine_needed = refine_needed .or. self%refine_region(patch)>0
-  if (io%verbose>1) print *, patch%id, 'refine%needed (region)  =', refine_needed
+  if (verbose>2) print *, patch%id, 'refine%needed (region)  =', refine_needed
   !
   ! Check that neighbors of `self` are not more than one level different.
   ! If they are, mark this patch for splitting so that support can be
   ! provided to the neighbors of `patch`.
   refine_needed = refine_needed .or. self%check_nbor_support (tasklist, link)>0
-  if (io%verbose>1) print *, patch%id, 'refine%needed (support) =', refine_needed
+  if (verbose>2) print *, patch%id, 'refine%needed (support) =', refine_needed
   !
   patch%check_refine_next = patch%istep + check_interval
   call trace%end (itimer)
@@ -202,7 +202,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   !.............................................................................
   was_refined = .false.
   if (.not. on) return
-  if (io%verbose>1) &
+  if (verbose>1) &
     print *, link%task%id, 'MK: refine_t%check_current, at t =', link%task%time, link%task%level, self%levelmax
   if (link%task%level >= self%levelmax) return
   call trace%begin('refine_t%check_current', itimer=itimer)
@@ -214,8 +214,9 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
     ! A negative refine value indicates that the patch is not needed
     !---------------------------------------------------------------------------
     if (refine < 0 .and. patch%level > self%levelmin) then
-      write (io%output,*) patch%id, 'derefine suggested'
       call tasklist%lock%set
+      if (verbose > 0) &
+        write (io%output,*) patch%id, 'derefine suggested'
       call self%remove_patch (tasklist, link)
       call check_level_constraint
       call tasklist%lock%unset
@@ -224,6 +225,8 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
     !---------------------------------------------------------------------------
     else if (refine > 0 .and. patch%level < self%levelmax) then
       call tasklist%lock%set
+      if (verbose > 0) &
+        write (io%output,*) patch%id, 'refine suggested'
       call self%split_patch (tasklist, link)
       call check_level_constraint
       call tasklist%lock%unset
@@ -252,7 +255,7 @@ contains
       do while (associated(link))
         if (link%task%is_clear (bits%not_leaf)) then
           if (self%check_nbor_support (tasklist, link) > 0) then
-            if (io%verbose>2) &
+            if (verbose>2) &
               print *, link%task%id, &
               'check_level_constraint: patch needs splitting at level', &
               link%task%level
@@ -264,7 +267,7 @@ contains
         link => link%next
       end do
       iteration = iteration+1
-      if (io%verbose>2) &
+      if (verbose>2) &
         print *, 'check_level_constraint, iteration =', &
         iteration, still_needed
     end do
