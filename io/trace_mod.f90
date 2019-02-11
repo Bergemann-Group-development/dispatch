@@ -21,6 +21,7 @@ MODULE trace_mod
     procedure, nopass:: end   => trace_end
     procedure, nopass:: print_id
     procedure, nopass:: print_hl
+    procedure, nopass:: back
   end type
   type(trace_t), public:: trace
   !-----------------------------------------------------------------------------
@@ -157,6 +158,16 @@ SUBROUTINE trace_end (itimer, detailed_timer)
   end if
   indent = max(indent-3,4)
 END SUBROUTINE trace_end
+
+!> =============================================================================
+!> Write a trace-back to io%output
+!> =============================================================================
+SUBROUTINE back
+  integer:: l
+  do l=level,1,-1
+    write (io%output,*) 'called from', tracing(l)
+  end do
+END SUBROUTINE back
 
 !> =============================================================================
 SUBROUTINE print_hl
