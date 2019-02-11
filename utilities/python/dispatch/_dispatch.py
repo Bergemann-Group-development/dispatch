@@ -3,6 +3,7 @@ from __future__ import print_function
 
 import os
 import sys
+import copy
 import f90nml
 import numpy as np
 from time import time
@@ -142,20 +143,26 @@ def _var(patch,filed,verbose=0):
     return var
 
 class _patch():
-    def __init__(self,id,pos,dtime,snap):
-        # add attributes from snapshot_nml
+    def __init__(self,id,dict,snap):
+        self.id=id
+        # add general attributes from snapshot_nml
         for k,v in snap.dict.items():
             setattr(self,k,v)
-        self.id=id
-        self.position=pos
-        self.dtime=dtime
+        # add per-patch attributes from parsing
+        for k,v in dict.items():
+            setattr(self,k,v)
         # add idx attribute
         if hasattr(snap,'idx'):
             self.idx=snap.idx
             self.idx.h=self._h()
         # reconstruct items pruned from patch_nml
         if hasattr(self,'size') and hasattr(self,'position') :
-            self.llc_cart=self.position-self.size/2.0
+            llc=self.position-self.size/2.0
+            urc=self.position+self.size/2.0
+            self.extent=np.array(((llc[1],urc[1],llc[2],urc[2]),
+                                  (llc[2],urc[2],llc[0],urc[0]),
+                                  (llc[0],urc[0],llc[1],urc[1])))
+            self.llc_cart=llc
         if not hasattr(self,'units'):
             if hasattr(snap,'units'):
                 self.units=snap.units
@@ -203,8 +210,39 @@ object takes both numeric and text key values: Examples:\n\
     d=p.d[0]\n\
     d=p.d['d']")
 
+    def plane(self,x=None,y=None,z=None,iv=0):
+        if self.guard_zones:
+            li=self.li
+            lu=self.lu
+        else:
+            li=np.zeros(3)
+            lu=self.n-1
+        if x:
+            px=np.floor((x-self.x[0])/self.ds[0])
+            ix=np.int(px)
+            px=px-ix
+            return self.var(iv)[ix,li[1]:ui[1],li[2],ui[2]]
+            
+
+def _parse_namelist (items):
+    pos=items[1:]
+    if len(pos)==1:
+        pos[0]=pos[0].replace('3*','')
+        pos=[pos[0],pos[0],pos[0]]
+    elif len(pos)==2:
+        if pos[0].find('2*')>=0:
+            pos[0]=pos[0].replace('2*','')
+            pos=[pos[0],pos[0],pos[1]]
+        if pos[1].find('2*')>=0:
+            pos[1]=pos[1].replace('2*','')
+            pos=[pos[0],pos[1],pos[1]]
+    return np.array(list(map(float,pos))) 
+
 def parse_patches(file='data/00000/rank_00000_patches.nml'):
-    prop_dict = {}
+    """ Optimized parsing of patch namelist entries.
+        Asssumes that ID is the first item and LEVEL is the last
+    """
+    dict={}
     class props():
         pass
 
@@ -215,24 +253,19 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
             items=line.split()
             if items[0]=='ID':
                 id=int(items[1])
-                p=props()
+                d={}
             elif items[0]=='POSITION':
-                pos=items[1:]
-                if len(pos)==1:
-                    pos[0]=pos[0].replace('3*','')
-                    pos=[pos[0],pos[0],pos[0]]
-                elif len(pos)==2:
-                    if pos[0].find('2*')>=0:
-                        pos[0]=pos[0].replace('2*','')
-                        pos=[pos[0],pos[0],pos[1]]
-                    if pos[1].find('2*')>=0:
-                        pos[1]=pos[1].replace('2*','')
-                        pos=[pos[0],pos[1],pos[1]]
-                p.pos=np.array(list(map(float,pos))) 
+                d['position'] = _parse_namelist(items)
+            elif items[0]=='SIZE':
+                d['size'] = _parse_namelist(items)
             elif items[0]=='DTIME':
-                p.dtime=float(items[1])
-                prop_dict[id]=p
-    return prop_dict
+                d['dtime']=float(items[1])
+            elif items[0]=='TIME':
+                d['time']=float(items[1])
+            elif items[0]=='LEVEL':
+                d['level']=int(items[1])
+                dict[id]=d
+    return dict
 
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
@@ -295,9 +328,10 @@ class snapshot():
                 print ('parsing',file)
             patch_dict=parse_patches(file)
             for id in sorted(patch_dict.keys()):
-                p=_patch(id,patch_dict[id].pos,patch_dict[id].dtime,self)
+                p=_patch(id,patch_dict[id],self)
                 self._add_axes(p)
-                self.patches.append(p)            # Add array of patch instances
+                # Append to array of patch instances
+                self.patches.append(p)            
 
                 # verbose info
                 if verbose==2 and hasattr(p,'idx'):
@@ -340,6 +374,16 @@ class snapshot():
         patch.ys=patch.y-0.5*patch.ds[1]
         patch.zs=patch.z-0.5*patch.ds[2]
         patch.xyz=[patch.x,patch.y,patch.z]
+
+    def patches_in (self, x=None, y=None, z=None):
+        pp=self.patches
+        if x:
+            pp=[p for p in pp if x>=p.extent[2,0] and x<p.extent[2,1]]
+        if y:
+            pp=[p for p in pp if y>=p.extent[0,0] and y<p.extent[0,1]]
+        if z:
+            pp=[p for p in pp if z>=p.extent[1,0] and z<p.extent[1,1]]
+        return pp
 
 def snapshots(run='',data='data', verbose=0):
     """ Return a list of all snapshots in the data/run/ directory
