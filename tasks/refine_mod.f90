@@ -691,7 +691,6 @@ END FUNCTION shock_and_cd_detector
 FUNCTION gradient_detector (self, patch) RESULT (refine)
   USE mesh_mod
   USE solver_mod
-
   class(refine_t):: self
   class(patch_t), pointer:: patch
   integer:: refine
@@ -702,22 +701,20 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
   real(kind=KindScalarVar):: dqmax
   real(kind=KindScalarVar), dimension(:,:,:), allocatable:: q, dq1, dq2, dq3
   real, parameter:: rsmall = 1.0e-10
+  logical:: is_unsigned
+  character(len=1):: unsigned(3) = ['d', 'p', 'e']
   !-----------------------------------------------------------------------------
   call trace%begin('refine_t%gradient_detector')
-
   allocate (dq1(patch%gn(1),patch%gn(2),patch%gn(3)), &
             dq2(patch%gn(1),patch%gn(2),patch%gn(3)), &
             dq3(patch%gn(1),patch%gn(2),patch%gn(3)), &
             q  (patch%gn(1),patch%gn(2),patch%gn(3)))
-
   mx => patch%mesh(1)
   my => patch%mesh(2)
   mz => patch%mesh(3)
-
   if (mx%n > 1) ione = 1
   if (my%n > 1) jone = 1
   if (mz%n > 1) kone = 1
-
   refine = 0
   do n=1,size(grad_var)
     if (trim(grad_var(n)) == '') exit
@@ -738,7 +735,13 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
     class default
       call mpi%abort("Unrecognised patch type. Abort!")
     end select
-
+    is_unsigned = .false.
+    do i=1,size(unsigned)
+      if (grad_var(n) == unsigned(i)) then
+        is_unsigned = .true.
+        exit
+      end if
+    end do
     ! calculate the gradient in each direction
     do k=mz%lo,mz%uo
       km1 = k - kone
@@ -746,6 +749,7 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
       do j=my%lo,my%uo
         jm1 = j - jone
         jp1 = j + jone
+        if (is_unsigned) then
         do i=mx%lo,mx%uo
           im1 = i - ione
           ip1 = i + ione
@@ -759,9 +763,17 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
                            / ( max ( q(i,j,kp1), q(i,j,km1) ) &
                              + small )
         end do
+        else
+          do i=mx%lo,mx%uo
+            im1 = i - ione
+            ip1 = i + ione
+            dq1(i,j,k) = abs ( q(ip1,j,k) - q(im1,j,k) )
+            dq2(i,j,k) = abs ( q(i,jp1,k) - q(i,jm1,k) )
+            dq3(i,j,k) = abs ( q(i,j,kp1) - q(i,j,km1) )
+          end do
+        end if
       end do
     end do
-
     ! choose max. gradient; if the max. is greater than the threshold, flag
     ! for refinement
     do k=mz%li+kone,mz%ui-kone
