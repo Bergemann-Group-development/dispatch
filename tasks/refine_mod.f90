@@ -278,19 +278,22 @@ END SUBROUTINE check_current
 !> Create a new patch using an existing "parent" patch.
 !> This procedure is used frequently during refinement.
 !> =============================================================================
-SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
+SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, i)
   class(refine_t):: self
   class(list_t) :: tlist
   class(link_t), pointer :: parent_link, child_link, child_nbor
   class(patch_t), pointer :: parent, child
   real, dimension(3), intent(in) :: pos, child_size
+  integer:: i, count
   !------------------------------------------------------------------------
   call trace%begin('refine_mod::make_child_patch')
   !------------------------------------------------------------------------
   ! Allocate a new task, 1/nsplit the size of original one, and adjust its
   ! position in each direction with "pos", in units of the new size.
-  !
-  ! Using sourced allocation below effectively clones the parent.
+  !------------------------------------------------------------------------
+  ! Using sourced allocation below effectively clones the parent.  This is
+  ! necessary, to pick up properties that may have been set at the experiment
+  ! level, which would otherwise be left undefined, or in inconsistent state
   !------------------------------------------------------------------------
   allocate (child, source=parent)
   child%mem_allocated = .false.
@@ -319,14 +322,26 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   child%level = parent%level + 1                     ! must be set before init!
   call child%init()                                  ! patch, for a new id
   child%level = parent%level + 1                     ! override possible calculation in `patch_t%init`.
-  child%dt(child%it) = parent%dt(parent%it) / self%ratio ! reset the time-step
-  child%t(child%it) = child%time
-  if (child%restart <= 0) then
-    child%out_next = child%time                        ! force output now
-    child%iout = max(0,child%iout - 1)                 ! correct output counter
-  end if
+  child%time  = parent%time
+  child%it    = 1
+  child%iit   = 1
+  child%dt(:) = parent%dt(parent%it) / self%ratio    ! reset the time-step
+  child%t(:) = child%time
   child%parentid = parent%id                         ! for debugging
   child%check_refine_next = 0                        ! allow recursive refine
+  !------------------------------------------------------------------------
+  ! Immediately add output of the new patch to the previous snapshot, for
+  ! debugging purposes.
+  !------------------------------------------------------------------------
+  if (child%restart <= 0) then
+    child%out_next = child%time                      ! force output now
+    child%iout = max(0,child%iout - 1)               ! correct output counter
+  end if
+  !------------------------------------------------------------------------
+  ! Increment I/O write counter, to avoid repeated writing of metadata
+  !------------------------------------------------------------------------
+  io%nwrite = io%nwrite + 1
+  count = counters%increment (parent%iout, io%nwrite)
   !------------------------------------------------------------------------
   ! Append links to the new patch in the patch list, sorted by quality
   ! Neighbour lists are constructed at the end of `split_patch`.
@@ -352,18 +367,15 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   ! call.
   !------------------------------------------------------------------------
   if (parent%time > 0.0 .and. child%restart <= 0) call download%download_link (child_link, all_cells=.true.)
-  if (io%verbose>0) then
+  if (verbose>0) then
+    if (i==0) &
+    print 1,'                           parent, level, iout, time, size(3), position(3) =', &
+      parent%id, parent%level, parent%iout, parent%time, parent%size, parent%position
     1 format(a,3i6,f10.6,2(2x,3f8.4))
     print 1,'refine_t%make_child_patch:  child, level, iout, time, size(3), position(3) =', &
       child%id, child%level, child%iout, child%time, child%size, child%position
-    print 1,'                           parent, level, iout, time, size(3), position(3) =', &
-      parent%id, parent%level, parent%iout, parent%time, parent%size, parent%position
   end if
-
-  ! increment I/O write counter
-  io%nwrite = io%nwrite + 1
   call tlist%check_ready(child_link)
-
   call trace%end
 END SUBROUTINE make_child_patch
 
@@ -378,11 +390,16 @@ SUBROUTINE split_patch (self, tlist, this)
   class(link_t), pointer:: this, link
   class(patch_t), pointer:: this_patch
   integer:: ix, iy, iz
-  integer:: nsplit(3)
+  integer:: nsplit(3), i
   real, dimension(3):: pos, rpos, split_size
+  logical:: do_trace
   !.............................................................................
   if (this%task%is_set(bits%not_leaf)) return
+  do_trace = io%do_trace
+  if (verbose > 1) &
+    io%do_trace=.true.
   call trace%begin('refine_t%split_patch', 1)
+  io%nwrite = self%ratio**3
   !
   this_patch => task2patch(this%task)
   if (this_patch%msplit>0) then
@@ -396,6 +413,7 @@ SUBROUTINE split_patch (self, tlist, this)
   end where
   !
   split_size = this_patch%size / nsplit
+  i = 0
   do ix=1,nsplit(1)
     rpos(1) = (ix-(nsplit(1)+1)*0.5) * split_size(1)
     do iy=1,nsplit(2)
@@ -403,14 +421,21 @@ SUBROUTINE split_patch (self, tlist, this)
       do iz=1,nsplit(3)
         rpos(3) = (iz-(nsplit(3)+1)*0.5) * split_size(3)
         pos = rpos + this_patch%position
-        call make_child_patch(self, tlist, this, this_patch, pos, split_size)
+        call make_child_patch(self, tlist, this, this_patch, pos, split_size, i)
+        i = i+1
       end do
     end do
   end do
   call this_patch%set(bits%not_leaf)
-  !
+  !-----------------------------------------------------------------------------
+  ! For now, ensure consistent nbor lists the expensive way (FIXME)
+  !-----------------------------------------------------------------------------
   call tlist%init_all_nbors
   call tlist%reset_status
+  !
+  !-----------------------------------------------------------------------------
+  ! Also, expensive way to make sure the state of readiness is consistent (FIXME)
+  !-----------------------------------------------------------------------------
   link => tlist%head
   do while (associated(link))
     call link%task%clear(bits%ready)
@@ -422,9 +447,10 @@ SUBROUTINE split_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   call tlist%init_bdries
   !
-  if (io%verbose > 0) call tlist%print_tasks()
+  if (verbose > 0) call tlist%print_tasks()
   !
   call trace%end
+  io%do_trace = do_trace
 END SUBROUTINE split_patch
 
 !> =============================================================================
@@ -435,6 +461,7 @@ SUBROUTINE remove_patch (self, tlist, this)
   class(refine_t):: self
   class(list_t):: tlist
   class(link_t), pointer:: this, link, parent
+  integer:: count
   !----------------------------------------------------------------------------
   ! Start processing, blocking (at least for now) all queue-related activity
   !----------------------------------------------------------------------------
@@ -470,14 +497,15 @@ SUBROUTINE remove_patch (self, tlist, this)
   end associate
   call parent%task%clear (bits%not_leaf)
   !----------------------------------------------------------------------------
+  ! Decrement the I/O write counter
+  !----------------------------------------------------------------------------
+  io%nwrite = io%nwrite - 1
+  count = counters%decrement (this%task%iout+1, io%nwrite)
+  !----------------------------------------------------------------------------
   ! Deallocate the patch memory, and deallocate the patch instance
   !----------------------------------------------------------------------------
   call this%task%delete()
   deallocate (this%task)
-  !----------------------------------------------------------------------------
-  ! Decrement the I/O write counter
-  !----------------------------------------------------------------------------
-  io%nwrite = io%nwrite - 1
   !----------------------------------------------------------------------------
   ! Check the ready status of the parent patch
   !----------------------------------------------------------------------------
@@ -521,10 +549,10 @@ FUNCTION check_nbor_support (self, tlist, link, check_only) RESULT (refine_it)
     npatch => nbor%task
     ! support is defined as having a level difference no greater than one
     if ((npatch%level - this%level) > 1) then
-      if (io%verbose > 0) print "('Patch',i5.1,' at level ',i2.1,' cannot provide support to patches at level',i2.1)",this%id,this%level,npatch%level
+      if (verbose > 0) print "('Patch',i5.1,' at level ',i2.1,' cannot provide support to patches at level',i2.1)",this%id,this%level,npatch%level
       if (split_if_necessary) then
         ! mark this patch for splitting to ensure support for neighbor patches
-        if (io%verbose > 0) print "('Splitting',i5.1,' in order to provide support')",this%id
+        if (verbose > 0) print "('Splitting',i5.1,' in order to provide support')",this%id
         refine_it = 1
         exit
       end if
@@ -583,7 +611,7 @@ FUNCTION check_jeans (self, patch) RESULT(refine_it)
   refine_it = merge(1,0,Jeans_num > max_jeans)
   refine_it = merge(-1,0,Jeans_num < min_jeans)
 
-  if (io%verbose > 0) print*,'Jeans criterion:', patch%id, Jeans_num, min_jeans, refine_it
+  if (verbose > 0) print*,'Jeans criterion:', patch%id, Jeans_num, min_jeans, refine_it
 
   deallocate (c_sound2, pg)
   nullify (d,e)
@@ -678,6 +706,18 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
       end do
     end do
   end do
+  !-----------------------------------------------------------------------------
+  ! Cancel actions that would go outside the interval [levelmin...levelmax]
+  !-----------------------------------------------------------------------------
+  if (patch%level == self%levelmax) refine = min(refine,0)
+  if (patch%level == self%levelmin) refine = max(refine,0)
+  if (verbose > 0) then
+    if (refine > 0) then
+      write (io%output,*) 'shock_and_cd_detector: refine', patch%id, patch%level, self%levelmax
+    else if (refine < 0) then
+      write (io%output,*) 'shock_and_cd_detector: derefine', patch%id, patch%level, self%levelmin
+    end if
+  end if
   !
   nullify (mx, my, mz, d)
   deallocate (pg, v)
@@ -750,19 +790,19 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
         jm1 = j - jone
         jp1 = j + jone
         if (is_unsigned) then
-        do i=mx%lo,mx%uo
-          im1 = i - ione
-          ip1 = i + ione
-          dq1(i,j,k) = abs ( q(ip1,j,k) - q(im1,j,k) ) &
-                           / ( max ( q(ip1,j,k), q(im1,j,k) ) &
-                             + small )
-          dq2(i,j,k) = abs ( q(i,jp1,k) - q(i,jm1,k) ) &
-                           / ( max ( q(i,jp1,k), q(i,jm1,k) ) &
-                             + small )
-          dq3(i,j,k) = abs ( q(i,j,kp1) - q(i,j,km1) ) &
-                           / ( max ( q(i,j,kp1), q(i,j,km1) ) &
-                             + small )
-        end do
+          do i=mx%lo,mx%uo
+            im1 = i - ione
+            ip1 = i + ione
+            dq1(i,j,k) = abs ( q(ip1,j,k) - q(im1,j,k) ) &
+                             / ( max ( q(ip1,j,k), q(im1,j,k) ) &
+                               + small )
+            dq2(i,j,k) = abs ( q(i,jp1,k) - q(i,jm1,k) ) &
+                             / ( max ( q(i,jp1,k), q(i,jm1,k) ) &
+                               + small )
+            dq3(i,j,k) = abs ( q(i,j,kp1) - q(i,j,km1) ) &
+                             / ( max ( q(i,j,kp1), q(i,j,km1) ) &
+                               + small )
+          end do
         else
           do i=mx%lo,mx%uo
             im1 = i - ione
@@ -788,14 +828,19 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
           dqmax = max ( dq1(i,j,k), dq1(ip1,j,k), dq1(im1,j,k) &
                       , dq2(i,j,k), dq2(i,jp1,k), dq2(i,jm1,k) &
                       , dq3(i,j,k), dq3(i,j,kp1), dq3(i,j,km1) )
-          if (dqmax > max_grad(n)) refine = 1
-          if (dqmax < min_grad(n)) refine = -1
+          if (patch%level < self%levelmax .and. dqmax > max_grad(n)) refine = 1
+          if (patch%level > self%levelmin .and. dqmax < min_grad(n)) refine = -1
         end do
       end do
     end do
-
+    if (verbose > 0) then
+      if (refine > 0) then
+        write (io%output,*) 'gradient_detector: refine ', grad_var(n), patch%id
+      else if (refine < 0) then
+        write (io%output,*) 'gradient_detector: derefine ', grad_var(n), patch%id
+      end if
+    end if
   end do
-
   deallocate (dq1, dq2, dq3, q)
   call trace%end
 END FUNCTION gradient_detector
