@@ -231,8 +231,8 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
                 p.pos=np.array(list(map(float,pos))) 
             elif items[0]=='DTIME':
                 p.dtime=float(items[1])
-                pdict[id]=p
-    return pdict
+                prop_dict[id]=p
+    return prop_dict
 
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
