@@ -43,12 +43,8 @@ SUBROUTINE init (self, nt)
     read (io_unit%input, time_slices_params, iostat=iostat)
     order = min(order,nt-2)
     write (io%output, time_slices_params)
-    if (io%master) then
-      !$omp critical (write_nml_cr)
-      write (io_unit%nml, time_slices_params)
-      flush (io_unit%nml)
-      !$omp end critical (write_nml_cr)
-    end if
+    write (io_unit%nml, time_slices_params)
+    flush (io_unit%nml)
   end if
   !$omp end critical (input_cr)
   self%order = order

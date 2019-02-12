@@ -29,13 +29,32 @@ MODULE counters_mod
     integer:: id=0
     type(lock_t):: lock
   contains
+    procedure:: init
     procedure:: decrement ! (id, start)
     procedure:: increment ! (id, start)
     procedure:: remove    ! (id)
   end type
-  integer:: verbose=1
+  integer:: verbose=0
   type(counters_t), public:: counters
 CONTAINS
+
+!> =============================================================================
+!> Allow changing verbosity
+!> =============================================================================
+SUBROUTINE init(self)
+  class(counters_t):: self
+  integer:: iostat
+  namelist /counters_params/ verbose
+  !-----------------------------------------------------------------------------
+  !$omp critical (input_cr)
+  if (self%id == -1) then
+    self%id = 0
+    rewind (io_unit%input)
+    read (io_unit%input, counters_params, iostat=iostat)
+    write (io_unit%output, counters_params)
+  end if
+  !$omp end critical (input_cr)
+END SUBROUTINE init
 
 !> =============================================================================
 !> Find the counter instance with a given id and decrement counter.  If a
@@ -46,7 +65,9 @@ FUNCTION decrement (self, id, start) RESULT (count)
   class(counters_t):: self
   type(counter_t), pointer:: counter
   integer:: id, start
+  !-----------------------------------------------------------------------------
   call trace%begin ('counters_t%decrement')
+  if (self%id == -1) call self%init
   !-----------------------------------------------------------------------------
   ! Search for the counter instance, return a new one if not found
   !-----------------------------------------------------------------------------
@@ -74,7 +95,9 @@ FUNCTION increment (self, id, start) RESULT (count)
   class(counters_t):: self
   type(counter_t), pointer:: counter
   integer:: id, start
+  !-----------------------------------------------------------------------------
   call trace%begin ('counters_t%increment')
+  if (self%id == -1) call self%init
   !-----------------------------------------------------------------------------
   ! Search for the counter instance, return a new one if not found
   !-----------------------------------------------------------------------------

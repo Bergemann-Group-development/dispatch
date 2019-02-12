@@ -333,15 +333,15 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   ! Immediately add output of the new patch to the previous snapshot, for
   ! debugging purposes.
   !------------------------------------------------------------------------
-  if (child%restart <= 0) then
-    child%out_next = child%time                      ! force output now
-    child%iout = max(0,child%iout - 1)               ! correct output counter
-  end if
+  !if (child%restart <= 0) then
+  !  child%out_next = child%time                      ! force output now
+  !  child%iout = max(0,child%iout - 1)               ! correct output counter
+  !end if
   !------------------------------------------------------------------------
   ! Increment I/O write counter, to avoid repeated writing of metadata
   !------------------------------------------------------------------------
   io%nwrite = io%nwrite + 1
-  count = counters%increment (parent%iout, io%nwrite)
+  count = counters%increment (parent%iout+1, io%nwrite)
   !------------------------------------------------------------------------
   ! Append links to the new patch in the patch list, sorted by quality
   ! Neighbour lists are constructed at the end of `split_patch`.
@@ -399,7 +399,6 @@ SUBROUTINE split_patch (self, tlist, this)
   if (verbose > 1) &
     io%do_trace=.true.
   call trace%begin('refine_t%split_patch', 1)
-  io%nwrite = self%ratio**3
   !
   this_patch => task2patch(this%task)
   if (this_patch%msplit>0) then

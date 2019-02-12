@@ -35,6 +35,7 @@ MODULE download_mod
   integer:: verbose=0
   integer:: use_different=0
   logical:: check_filled=.false.
+  logical:: sorted=.false.
   type(download_t), public:: download
 CONTAINS
 
@@ -47,7 +48,7 @@ SUBROUTINE init (self)
   integer, save:: order_interpolator=-1, order_time=1
   logical, save:: first_time=.true.
   namelist /download_params/ order_interpolator, order_time, check_filled, &
-    use_different, verbose
+    use_different, sorted, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%init')
   !$omp critical (download_cr)
@@ -345,14 +346,17 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   end if
   if (target%is_periodic()) call target%periodic_grid
 
-  ! Take the nbor list and produce a list sorted by decreasing distance from `target`.
-  !!!call sort_nbors_by_distance (link,sorted_head)
-
-  ! Walk through the sorted neighbor list
-  !!!nbor => sorted_head
-  !call link%print_nbors ('download')
+  !-----------------------------------------------------------------------------
+  ! Produce an nbor list sorted by decreasing distance from `target`.
+  !-----------------------------------------------------------------------------
+  if (sorted) then
+    nbor => sorted_head
+    call sort_nbors_by_distance (link,sorted_head)
+    !call link%print_nbors ('download')
+  else
+    nbor => link%nbor
+  end if
   wc = 0d0
-  nbor => link%nbor
   do while (associated(nbor))
    wc(0) = wallclock()
    source => task2patch(nbor%task)
@@ -434,13 +438,9 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   end if
   if (check_filled) &
     deallocate (filled)
-  !!!nbor => sorted_head
-  !!!if (associated(nbor)) then
-  !!!  call clean_sorted_nbor_list (sorted_head)
-  !!!else
-  !!!  print *,' sorted_head not associated'
-  !!!end if
-
+  if (sorted) then
+    call clean_sorted_nbor_list (sorted_head)
+  end if
   call trace%end (itimer)
 END SUBROUTINE download_link
 
@@ -1443,7 +1443,7 @@ SUBROUTINE sort_nbors_by_distance (this, head)
     nbor => nbor%next
   end do
 
-  if (io%verbose > 1) then
+  !if (io%verbose > 1) then
     print*, "target: ",this%task%id
     print*, "sorted nbors:"
     xx => head
@@ -1452,7 +1452,7 @@ SUBROUTINE sort_nbors_by_distance (this, head)
       xx => xx%next
     end do
     print*,'----'
-  end if
+  !end if
 END SUBROUTINE sort_nbors_by_distance
 
 !> =============================================================================

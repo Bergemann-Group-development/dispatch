@@ -321,6 +321,7 @@ SUBROUTINE output_nml (patch, append)
                           llc_nat, llc_cart, centre_nat
   integer              :: time_derivs
   logical              :: guard_zones, no_mans_land, periodic(3)
+  integer, save        :: last_snapshot=-1
   character(len=16)    :: kind, eos, opacity, method
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
@@ -383,7 +384,8 @@ SUBROUTINE output_nml (patch, append)
   opacity      = patch%opacity
   no_mans_land = patch%no_mans_land
   periodic     = patch%periodic
-  if (mpi%master .and. .not.append) then
+  if (mpi%master .and. patch%iout > last_snapshot) then
+    last_snapshot = patch%iout
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
     if (filename /= filename1) then
       write(io_unit%log,'(a,i5,2x,2a)') &
