@@ -20,14 +20,18 @@ MODULE gpatch_mod
   USE omp_timer_mod
   USE bits_mod
   USE data_io_mod
+  USE spitzer_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
     type(initial_t)  :: initial
     type(data_hub_t) :: data_hub
     type(poisson_t)  :: poisson
+    type(spitzer_t):: spitzer
     logical:: selfgravity=.false.
     real(8):: d0
+    procedure(void), pointer:: force_per_unit_mass   => null()
+    procedure(void), pointer:: force_per_unit_volume => null()
   contains
     procedure:: input
     procedure:: init
@@ -193,7 +197,7 @@ SUBROUTINE init (self)
     io%iodir = self%iout
     !$omp end master
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================
@@ -210,7 +214,7 @@ SUBROUTINE dnload (self, only)
   else
     call download%download_link (self%link, only=only)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE dnload
 
 !> =============================================================================
@@ -277,7 +281,7 @@ SUBROUTINE gravity_update (self)
         print *, self%id, 'gpatch_t%update updated self%poisson_time to', self%poisson_time
     end if
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE gravity_update
 
 !> =============================================================================
@@ -390,5 +394,12 @@ LOGICAL FUNCTION ahead_of (self, patch)
   end if
   end select
 END FUNCTION ahead_of
+
+FUNCTION void (self) RESULT (out)
+  class(gpatch_t):: self
+  real, dimension(self%gn(1),self%gn(2),self%gn(3),3):: out
+  !-----------------------------------------------------------------------------
+  out = 0.0
+END FUNCTION void
 
 END MODULE gpatch_mod
