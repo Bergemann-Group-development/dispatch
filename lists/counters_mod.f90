@@ -83,7 +83,7 @@ FUNCTION decrement (self, id, start) RESULT (count)
   if (verbose > 0) &
     write (io_unit%output,*) 'counter_t%decrement: id, count =', counter%id, count
   call self%lock%unset
-  call trace %end
+  call trace%end()
 END FUNCTION decrement
 
 !> =============================================================================
@@ -111,7 +111,7 @@ FUNCTION increment (self, id, start) RESULT (count)
   if (verbose > 0) &
     write (io_unit%output,*) 'counter_t%increment: id, count =', counter%id, count
   call self%lock%unset
-  call trace %end
+  call trace%end()
 END FUNCTION increment
 
 !> =============================================================================
@@ -152,7 +152,7 @@ FUNCTION find (self, id, start) RESULT (counter)
     counter%count = start
     call append (self, counter)
   end if
-  call trace%end
+  call trace%end()
 END FUNCTION find
 
 !> =============================================================================
@@ -170,7 +170,7 @@ SUBROUTINE append (self, counter)
   self%tail => counter
   self%n = self%n+1
   if (.not.associated(self%head)) self%head => counter
-  call trace%end
+  call trace%end()
 END SUBROUTINE append
 
 !> =============================================================================

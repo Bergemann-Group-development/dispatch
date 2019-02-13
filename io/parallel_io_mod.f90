@@ -112,7 +112,7 @@ SUBROUTINE close
     call file_out%close
   end if
   call file_in%close
-  call trace%end
+  call trace%end()
 END SUBROUTINE close
 
 !> =============================================================================

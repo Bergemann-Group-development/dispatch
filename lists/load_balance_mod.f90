@@ -165,7 +165,7 @@ SUBROUTINE pack (self, info, mesg)
     flush (io_unit%log)
   end if
   write (io_unit%log,*) 'send buffer =', mesg%buffer(1:5)
-  call trace%end
+  call trace%end()
 END SUBROUTINE pack
 
 !> =============================================================================
@@ -224,7 +224,7 @@ SUBROUTINE unpack (self, buffer)
     write (io_unit%log,'(a,i6,1p,g12.3,i6,2g16.6)') 'rank_info%unpack: rank,load,nq,time,latency =', &
       io_rank_info%rank, io_rank_info%cost, io_rank_info%nq, io_rank_info%time, wc
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE unpack
 
 !> =============================================================================
@@ -291,7 +291,7 @@ SUBROUTINE append (self, rank_info)
   end if
   self%tail => rank_info
   self%n = self%n+1
-  call trace%end
+  call trace%end()
 END SUBROUTINE append
 
 !> =============================================================================
@@ -335,7 +335,7 @@ SUBROUTINE remove (self, this)
   !-----------------------------------------------------------------------------
   deallocate (this)
   call self%lock%unset
-  call trace%end
+  call trace%end()
 END SUBROUTINE remove
 
 !> =============================================================================
@@ -375,7 +375,7 @@ SUBROUTINE send (self)
   call nbor_sent_list%add (mesg)                                ! add to list
   call nbor_sent_list%remove_completed                          ! remove completed
   call self%lock%unset
-  call trace%end
+  call trace%end()
 END SUBROUTINE send
 
 !> =============================================================================
@@ -406,7 +406,7 @@ SUBROUTINE recv (self)
     nbor_info => nbor_info%next                                 ! next rank_info
   end do
   call self%lock%unset
-  call trace%end
+  call trace%end()
 END SUBROUTINE recv
 
 !> =============================================================================
@@ -529,7 +529,7 @@ FUNCTION find (self, rank, debug) RESULT (nbor_info)
       nbor_info => nbor_info%next
     end do
   end if
-  call trace%end
+  call trace%end()
 END FUNCTION find
 
 !> =============================================================================
@@ -684,7 +684,7 @@ FUNCTION check_load (self, head) RESULT (sell)
     end do
   end if ! (rank_info%ok .and. wc < duration)
   call self%lock%unset
-  call trace%end
+  call trace%end()
 END FUNCTION check_load
 
 END MODULE load_balance_mod

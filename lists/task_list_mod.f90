@@ -154,7 +154,7 @@ SUBROUTINE startup (self)
     print '(a,f8.3,a)', ' Memory per process:', io%gb, ' GB'
   call mpi%barrier ('self%execute')
   call tic (time=sec)
-  call timer%print
+  call timer%print()
   self%n_tasks = self%na
   call trace%end (itimer)
 END SUBROUTINE startup
@@ -173,7 +173,7 @@ SUBROUTINE execute (self)
   call trace%begin ('task_list_t%execute', itimer=itimer)
   call self%startup
   call tic (time=sec)
-  call timer%print
+  call timer%print()
   !-----------------------------------------------------------------------------
   ! Loop over tasks
   !-----------------------------------------------------------------------------
@@ -181,7 +181,7 @@ SUBROUTINE execute (self)
   do while (self%na > 0 .and. .not.io%do_stop)
     call self%update (self%head, .false.)
   end do
-  call timer%print
+  call timer%print()
   call mpi_mesg%diagnostics(1)
   write (io_unit%log,*) 'thread',omp%thread,' arrived'
   flush (io_unit%log)
@@ -396,7 +396,7 @@ FUNCTION average (self, idx, time)
     link => link%next
   end do
   average = average/n/product(shape(buffer))
-  call trace%end
+  call trace%end()
 END FUNCTION average
 
 !> =============================================================================
@@ -410,7 +410,7 @@ SUBROUTINE append_task_list (self, task_list)
   call trace%begin ('task_list_t%append_task_list')
   list => task_list
   call self%append_list (list)
-  call trace%end
+  call trace%end()
 END SUBROUTINE append_task_list
 
 !> =============================================================================
@@ -429,7 +429,7 @@ SUBROUTINE print1 (self, label)
     link => link%next
   end do
   call self%print_queue
-  call trace%end
+  call trace%end()
 END SUBROUTINE print1
 
 !> =============================================================================

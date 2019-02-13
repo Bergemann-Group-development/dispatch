@@ -496,7 +496,7 @@ END SUBROUTINE assert
 SUBROUTINE header (message)
   character(len=*):: message
   !.............................................................................
-  call timer%print
+  call timer%print()
   if (io%master) then
     call line('')
     call line(message)

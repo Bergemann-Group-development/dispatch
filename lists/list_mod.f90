@@ -185,7 +185,7 @@ SUBROUTINE append_link (self, link)
     task%link => link
     end select
   else
-    error stop 'append_link: no task associated'
+    call io%abort('append_link: no task associated')
   end if
   call self%lock%unset
   call trace_end
@@ -895,7 +895,7 @@ SUBROUTINE reset_status (self)
       'n_virtual:' , n_virtual
     flush (io_unit%log)
   call self%lock%unset
-  call trace%end
+  call trace%end()
 END SUBROUTINE reset_status
 
 !> =============================================================================
@@ -1057,7 +1057,7 @@ SUBROUTINE queue_by_time (self, this)
     call real_queue_by_time (self, this, error)
     if (error) then
       print *,'ERROR: queue repair failed'
-      error stop
+      call io%abort()
     end if
     io%verbose = verbose
     io%do_trace = .false.
@@ -1257,7 +1257,7 @@ SUBROUTINE remove_active (self, this)
     next => next%next_active
   end do
   !$omp end critical (active_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE remove_active
 
 !> =============================================================================
@@ -1308,7 +1308,7 @@ SUBROUTINE add_by_quality (self, this)
   self%n = self%n+1
 9 continue
   call self%lock%unset
-  call trace_end
+  call trace_end()
 END SUBROUTINE add_by_quality
 
 !> =============================================================================
@@ -1384,7 +1384,7 @@ SUBROUTINE count_status (self)
   write (io%output,'(1x,a,5i6)') 'list_t%count_status: n[ibvea] = ', &
     self%ni, self%nb, self%nv, self%ne, self%na
   call self%lock%unset
-  call trace%end
+  call trace%end()
 END SUBROUTINE count_status
 
 !> =============================================================================
@@ -1518,7 +1518,7 @@ SUBROUTINE print_tasks (self, label)
     link => link%next
   end do
   write (io_unit%log,*) ''
-  call trace%end
+  call trace%end()
 END SUBROUTINE print_tasks
 
 !> =============================================================================

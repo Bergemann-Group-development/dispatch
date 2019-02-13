@@ -33,7 +33,7 @@ SUBROUTINE output (self, experiment_name)
   real(8):: time
  ! integer, save:: iodir=-1
   !-----------------------------------------------------------------------------
-  call trace_begin('patch_t%output')
+  call trace%begin('patch_t%output')
   !$omp critical (output_cr)
   !-----------------------------------------------------------------------------
   ! Check number of patches written and issue a message when all done
@@ -115,7 +115,7 @@ SUBROUTINE output (self, experiment_name)
   end do
   close (io_unit%data)
   !$omp end critical (output_cr)
-  call trace_end
+  call trace%end()
 END SUBROUTINE output
 
 !> =============================================================================
@@ -211,14 +211,14 @@ SUBROUTINE input (self, ok)
       if (ioformat==1 .or. ioformat==2) then
         fmt = '(a)'
         read (io_unit%data,fmt) line
-        if (trim(line) /= trim(self%kind)) error stop 'wrong solver'
+        if (trim(line) /= trim(self%kind)) call io%abort('wrong solver')
         read (io_unit%data,fmt) line
         if (do_print) print '(a,a12)','snapshot      EOS:', trim(line)
         read (io_unit%data,fmt) line
         if (do_print) print '(a,a12)','snapshot       RT:', trim(line)
         read (io_unit%data,*) time
       else
-        error stop 'unsupported ioformat'
+        call io%abort('unsupported ioformat')
       end if
     end if
     do_print = .false.

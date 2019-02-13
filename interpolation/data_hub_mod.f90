@@ -18,9 +18,9 @@ MODULE data_hub_mod
   type, public:: data_hub_t
     class(patch_t), pointer:: target => null()                          ! pointer to a target patch
     class(patch_t), pointer:: source => null()                          ! pointer to a source patch
-    type(data_hub_t), pointer :: head => null()
-    type(data_hub_t), pointer :: next => null()
-    type(data_hub_t), pointer :: prev => null()
+    class(data_hub_t), pointer :: head => null()
+    class(data_hub_t), pointer :: next => null()
+    class(data_hub_t), pointer :: prev => null()
     integer, dimension(:,:), pointer :: t_l => null(), t_u => null()
     integer, dimension(:,:), pointer :: s_l => null(), s_u => null()
     logical :: first_time = .true.                                      ! if first time, hib has to be initialized.
@@ -68,7 +68,7 @@ SUBROUTINE init (self, link, all_cells)
     call self%select_dnloader(link, all_cells)                          ! map the dh-cell shell
     self%first_time = .false.                                           ! should not be repeated again.
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !> =====================================================================
@@ -169,7 +169,7 @@ SUBROUTINE add_hub (self, target, source, hub, all_cells)
       if (associated(prev)) then
         prev%next => hub
       else
-        error stop "data_hub_t::add_hub:: location not found?"
+        call io%abort("data_hub_t::add_hub:: location not found?")
       end if
     end if
   end if
@@ -184,7 +184,7 @@ SUBROUTINE remove_hub (self, id, clear)
   integer, optional :: id
   logical, optional :: clear
   ! ....................................................................
-  type(data_hub_t), pointer :: this, next
+  class(data_hub_t), pointer :: this, next
   logical:: cleared
   ! --------------------------------------------------------------------
   if (present(id)) then
@@ -667,7 +667,7 @@ SUBROUTINE dnload_from_lower (self, only)
             if (.not.found) then
                 print *, iv, cl, pos
                 print *, pos2
-                error stop "data_hub::dnload_lower:: cell not found"    ! very unusual, but a necessary check and a stop.
+                call io%abort("data_hub::dnload_lower:: cell not found")    ! very unusual, but a necessary check and a stop.
             end if
           else
             rt_scr(i,j,k,:) = pt2(1) * mem(cl(1),cl(2),cl(3),:, jt2(1)) + &
@@ -731,7 +731,7 @@ SUBROUTINE dnload_from_lower (self, only)
               if (.not.found) then
                   print *, iv, cl, pos
                   print *, pos2
-                  error stop "data_hub::dnload_lower:: cell not found"    ! very unusual, but a necessary check and a stop.
+                  call io%abort("data_hub::dnload_lower:: cell not found")    ! very unusual, but a necessary check and a stop.
               end if
             else
               if (source%unsigned(iv)) then
@@ -976,7 +976,7 @@ SUBROUTINE update (self, link, all_cells, only)
   logical, optional :: all_cells
   integer, optional :: only
   ! ....................................................................
-  type  (data_hub_t), pointer :: hub
+  class  (data_hub_t), pointer :: hub
   integer, save:: itimer=0
   ! --------------------------------------------------------------------
   !call trace%begin ('data_hub_t%update',itimer=itimer)
@@ -984,7 +984,7 @@ SUBROUTINE update (self, link, all_cells, only)
   !
   hub => self%head
   do while(associated(hub))
-    call hub%dnload (only=only)
+    call hub%dnload(only=only)
     hub => hub%next
   end do
   !call trace%end(itimer)
@@ -998,7 +998,7 @@ SUBROUTINE interpolate (self, src, pt, p, res)
   !---------------------------------------------------------------------
     if (any(p < 0.0).or.any(p>1.0)) then
     print *, p
-    error stop "p negative"
+    call io%abort("p negative")
     end if
     res = &
      pt(1)*((1.-p(3))*((1.-p(2))*((1.-p(1))*src(1,1,1,1)    + &
@@ -1027,7 +1027,7 @@ SUBROUTINE interpolate_unsigned (self, src, pt, p, res)
   !---------------------------------------------------------------------
   if (any(p < 0.0).or.any(p>1.0)) then
     print *, p
-    error stop "p negative"
+    call io%abort("p negative")
     end if
     res = exp ( &
       pt(1)*((1.-p(3))*((1.-p(2))*((1.-p(1))*log(src(1,1,1,1))    + &
@@ -1056,7 +1056,7 @@ SUBROUTINE interpolate_one (self, src, p, res)
   !---------------------------------------------------------------------
     if (any(p < 0.0).or.any(p>1.0)) then
     print *, p
-    error stop "p negative"
+    call io%abort("p negative")
     end if
     res = &
     ((1.-p(3))*((1.-p(2))*((1.-p(1))*src(1,1,1)    + &
@@ -1077,7 +1077,7 @@ SUBROUTINE interpolate_unsigned_one (self, src, p, res)
   !---------------------------------------------------------------------
   if (any(p < 0.0).or.any(p>1.0)) then
     print *, p
-    error stop "p negative"
+    call io%abort("p negative")
     end if
     res = exp &
     ((1.-p(3))*((1.-p(2))*((1.-p(1))*log(src(1,1,1))    + &

@@ -229,7 +229,7 @@ FUNCTION find_task (self, id) RESULT (link)
       if (verbose>1) &
         write (io_unit%log,*) mpi%rank,' task_mesg_t%find_task: match', id, associated(patch%mem)
       flush(io_unit%log)
-      call trace%end
+      call trace%end()
       return
     end if
     link => link%next
@@ -252,7 +252,7 @@ FUNCTION find_task (self, id) RESULT (link)
   !-----------------------------------------------------------------------------
   call task%set (bits%virtual)
   call self%append_link (link)
-  call trace%end
+  call trace%end()
 END FUNCTION find_task
 
 !> =============================================================================
@@ -629,8 +629,8 @@ SUBROUTINE check_active (self)
           if (mpi_mesg%debug) &
             write (io_unit%log,'(f12.6,2x,a,2i9,z12)') wallclock(), &
               'recv: id, sender, req =', task%id, task%rank, task%mesg%req
-          if (task%rank /= task%mesg%sender) error stop 'rank ne sender'
-          if (task%id   /= task%mesg%id)     error stop 'task%id ne mesg%id'
+          if (task%rank /= task%mesg%sender) call io%abort('rank ne sender')
+          if (task%id   /= task%mesg%id)     call io%abort('task%id ne mesg%id')
         end if
       end if
       end select

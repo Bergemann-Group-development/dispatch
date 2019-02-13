@@ -151,7 +151,7 @@ END SUBROUTINE remove
 !> =============================================================================
 FUNCTION pop (self)
   class(dll_t):: self
-  type(dll_node_t), pointer:: pop
+  class(dll_node_t), pointer:: pop
   !.............................................................................
   pop => self%tail
   if (associated(pop%prev)) then
@@ -227,7 +227,7 @@ END SUBROUTINE test
 SUBROUTINE delete (self)
   class(dll_t):: self
   !.............................................................................
-  type (dll_node_t), pointer:: item, next
+  class (dll_node_t), pointer:: item, next
   !-----------------------------------------------------------------------------
   item => self%head
   do while (associated(item))

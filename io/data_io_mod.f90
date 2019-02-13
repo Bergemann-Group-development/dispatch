@@ -83,7 +83,7 @@ SUBROUTINE init (self, task)
     call self%kind_list%init
     self%initialized = .true.
     if (io%master) print *,'data_io_t%init: io%nwrite =', io%nwrite
-    call trace%end
+    call trace%end()
   end if
   call self%lock%unset
   END SUBROUTINE init
@@ -244,7 +244,7 @@ SUBROUTINE input (self, patch, ok)
     patch%t(patch%it) = patch%time
   end if
   call self%lock%unset
-  call trace%end
+  call trace%end()
 END SUBROUTINE input
 
 !> =============================================================================
@@ -297,7 +297,7 @@ SUBROUTINE output_txt (patch, append)
   write (io_unit%data,'(3(1i8.1,1x),i2.1)') patch%id, patch%iout, patch%istep, patch%mesh_type
   close (io_unit%data)
   !$omp end critical (output_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE output_txt
 
 !> =============================================================================
@@ -431,7 +431,7 @@ SUBROUTINE output_nml (patch, append)
   write (io_unit%nml2, patch_nml)
   flush (io_unit%nml2)
   !$omp end critical (output_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE output_nml
 
 !> =============================================================================
@@ -490,7 +490,7 @@ SUBROUTINE input_nml (patch)
   patch%guard_zones = guard_zones
   patch%time_derivs = time_derivs
   !$omp end critical (output_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE input_nml
 
 !> =============================================================================
@@ -529,7 +529,7 @@ SUBROUTINE close
   else if (io%method=='snapshot') then
     call parallel_io%close
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE close
 
 END MODULE data_io_mod
