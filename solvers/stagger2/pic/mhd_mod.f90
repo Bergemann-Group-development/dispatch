@@ -31,6 +31,7 @@ MODULE mhd_mod
     real:: nu(6)
     real:: csound
     real:: cdtd
+    real:: maxJ=0.0
     logical:: mhd=.false.
     logical:: first_time=.true.
     type(force_t):: force
@@ -40,6 +41,7 @@ MODULE mhd_mod
     procedure:: update
     procedure:: output
     procedure:: gas_pressure
+    procedure:: divB_clean => divb_clean1
   end type
   logical, save:: do_smooth=.false.
   logical, save:: do_maxwell=.true.
@@ -421,6 +423,7 @@ SUBROUTINE pde (self)
     ! emf = {Ex,Ey,Ez} is the vector with components Ex, Ey, Ez
     !---------------------------------------------------------------------------
     J = curl_dn(ds,B)
+    self%maxJ=maxval(abs(J))
     emf = self%nu(6)*up(du)*J                                                 ! mhd: 0 6 0  
     Q = xDN(Jx*Ex) + yDN(Jy*Ey) + zDN(Jz*Ez)                                    ! mhd: 2 3 0
     if (self%gamma /= 1.0) dedt = dedt + Q                                      ! mhd: 1 0 0
@@ -492,7 +495,7 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  !call self%gravity
+  call self%gravity_solve
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
@@ -503,15 +506,68 @@ SUBROUTINE update (self)
     self%mem(:,:,:,self%idx%e,self%it,1) = &
     self%mem(:,:,:,self%idx%d,self%it,1)*self%csound**2
   end if
+  call self%divb_clean
   call self%pde
   call self%courant_condition
   if (verbose>2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
-  call self%gpatch_t%update
+  call self%gravity_update
+  call self%counter_update
   call trace%end (itimer)
 END SUBROUTINE update
+
+!> =============================================================================
+!> Perform a single iteration of a div(B) clean.  The limit of stability is
+!> eps=1./6.  This is intended to prevent build-up of layers of large div(B)
+!> between patches. An exact solution would be to solve an internal Laplace
+!> equation, with boundary conditiosn = the boundary value of div(B), and then
+!> subtract the gradient of the resulting potential.
+!>
+!> The problem can also be greatly reduced by using a higher order time
+!> interpoation scheme, thus making the electric field computed from the
+!> guard zone values of B and U a better match to the neighbors E-fields.
+!> =============================================================================
+SUBROUTINE divb_clean1(self)
+  class(mhd_t):: self
+  !.............................................................................
+  real, dimension(:,:,:,:), pointer:: b
+  real, dimension(:,:,:)  , pointer:: bx, by, bz, divb
+  real, dimension(:,:,:,:)  , allocatable:: dndivb
+  real, parameter:: eps=0.11
+  !-----------------------------------------------------------------------------
+  b  => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
+  bx => b(:,:,:,1)
+  by => b(:,:,:,2)
+  bz => b(:,:,:,3)
+  call allocate_scalars (self%gn, divb)
+  call allocate_vectors_a (self%gn, dndivb)
+  divb = ddup(xdn(ydn(zdn(Bx))),1) + &
+         ddup(ydn(zdn(xdn(By))),2) + &
+         ddup(zdn(xdn(ydn(Bz))),3)
+  bx = bx + zup(yup(xup(eps*dddn(divb,1))))
+  by = by + xup(zup(yup(eps*dddn(divb,2))))
+  bz = bz + yup(xup(zup(eps*dddn(divb,3))))
+  call deallocate_vectors_a (dndivb)
+  call deallocate_scalars(divb)
+    return
+contains
+  !-----------------------------------------------------------------------------
+  function ddup(f,i) result (g)
+  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
+  integer:: i
+  !.............................................................................
+  g = cshift(f,1,i) - f
+  end function
+  !-----------------------------------------------------------------------------
+  function dddn(f,i) result (g)
+  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
+  integer:: i
+  !.............................................................................
+  g = f - cshift(f,-1,i)
+  end function
+END SUBROUTINE divb_clean1
 
 !> =============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
