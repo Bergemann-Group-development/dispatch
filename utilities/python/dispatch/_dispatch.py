@@ -3,9 +3,9 @@ from __future__ import print_function
 
 import os
 import sys
-import copy
 import f90nml
 import numpy as np
+import dispatch.graphics as dg
 from time import time
 
 class _timer():
@@ -134,17 +134,22 @@ def _var(patch,filed,verbose=0):
         if verbose==5:
             print (' iv, offset:',iv,patch.iout,patch.ntotal,patch.nv,offset)
     def mem(iv):
+        """ Translage alphabetic variable keys to numeric """
         if type(iv)==type('d'):
             iv=patch.idx.dict[iv]
-        return np.copy(np.memmap(filed, dtype=np.float32, offset=patch.offset[iv],
-                         mode='r', order='F', shape=shape))
+        return np.memmap(filed, dtype=np.float32, offset=patch.offset[iv],
+                         mode='r', order='F', shape=shape)
     def var(iv):
-        if   iv=='u1':
-            return mem('p1')/mem('d')
-        elif iv=='u2':
-            return mem('p2')/mem('d')
-        elif iv=='u3':
-            return mem('p3')/mem('d')
+        """ Implement access to derived variables (expandable) """
+        if patch.kind[0:6]=='ramses':
+            if   iv=='ux':
+                return mem('p1')/mem('d')
+            elif iv=='uy':
+                return mem('p2')/mem('d')
+            elif iv=='uz':
+                return mem('p3')/mem('d')
+            else:
+                return mem(iv)                
         else:
             return mem(iv)
     return var
@@ -158,6 +163,9 @@ class _patch():
         # add per-patch attributes from parsing
         for k,v in patch_dict.items():
             setattr(self,k,v)
+        if not self.guard_zones:
+            self.li[:]=0
+            self.ui[:]=self.n-1
         # add idx attribute
         if hasattr(snap,'idx'):
             self.idx=snap.idx
@@ -217,18 +225,33 @@ object takes both numeric and text key values: Examples:\n\
     d=p.d[0]\n\
     d=p.d['d']")
 
-    def plane(self,x=None,y=None,z=None,iv=0):
-        if self.guard_zones:
-            li=self.li
-            lu=self.lu
-        else:
-            li=np.zeros(3)
-            lu=self.n-1
+    def plane(self,x=None,y=None,z=None,iv=0,verbose=0):
+        li=self.li
+        ui=self.ui+1
         if x:
-            px=np.floor((x-self.x[0])/self.ds[0])
-            ix=np.int(px)
-            px=px-ix
-            return self.var(iv)[ix,li[1]:ui[1],li[2],ui[2]]
+            p=(x-self.x[0])/self.ds[0]
+            i=np.int(p)
+            i=np.minimum(i,ui[0]-2)
+            p=p-i
+            f = self.var(iv)[i  ,li[1]:ui[1],li[2]:ui[2]]*(1.0-p) \
+              + self.var(iv)[i+1,li[1]:ui[1],li[2]:ui[2]]*p
+        if y:
+            p=(y-self.y[0])/self.ds[1]
+            i=np.int(p)
+            i=np.minimum(i,ui[1]-2)
+            p=p-i
+            f = (self.var(iv)[li[0]:ui[0],i  ,li[2]:ui[2]]*(1.0-p) \
+              +  self.var(iv)[li[0]:ui[0],i+1,li[2]:ui[2]]*p).transpose()
+        if z:
+            p=(z-self.z[2])/self.ds[2]
+            i=np.int(p)
+            i=np.minimum(i,ui[2]-2)
+            p=p-i
+            f = self.var(iv)[li[0]:ui[0],li[1]:ui[1],i  ]*(1.0-p) \
+              + self.var(iv)[li[0]:ui[0],li[1]:ui[1],i+1]*p
+        if verbose:
+            print('plane: i, p = {:d} {:.3f}'.format(i,p))
+        return f
             
 
 def _parse_namelist (items):
@@ -391,6 +414,9 @@ class snapshot():
         if z:
             pp=[p for p in pp if z>=p.extent[1,0] and z<p.extent[1,1]]
         return pp
+
+    def plane(self,x=None,y=None,z=None,iv=0,verbose=0):
+        dg.image_plane(self,x=x,y=y,z=z,iv=iv,verbose=1)
 
 def snapshots(run='',data='data', verbose=0):
     """ Return a list of all snapshots in the data/run/ directory

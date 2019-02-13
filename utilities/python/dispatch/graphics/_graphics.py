@@ -109,3 +109,39 @@ def pause(time=1e-6):
     """ replace the normal pause, w/o raising window() """
     pl.draw()
     pl.gcf().canvas.start_event_loop(time)
+
+def image_plane(snap,x=None,y=None,z=None,iv=0,verbose=1):
+    if x: i=0
+    if y: i=1
+    if z: i=2
+    xyz=(x,y,z)
+    sdir=['x','y','z']
+    labels=[('y','z'),('z','x'),('y','z')]
+    pp=snap.patches_in(x=x,y=y,z=z)
+    pl.clf()
+    ll={}
+    p=pp[0]
+    f=p.plane(x=x,y=y,z=z,iv=iv)
+    fmin=f.min()
+    fmax=f.max()
+    e=p.extent[i]
+    emin=np.array((e[0],e[2]))
+    emax=np.array((e[1],e[3]))
+    for p in pp:
+        im=p.plane(x=x,y=y,z=z,iv=iv)
+        fmin=min(fmin,im.min())
+        fmax=max(fmax,im.max())
+        e=p.extent[i]
+        emin=np.minimum(emin,np.array((e[0],e[2])))
+        emax=np.maximum(emax,np.array((e[1],e[3])))
+        ll[p.id]=(im,e,p.level)
+    for id in sorted(ll.keys()):
+        im,e,level=ll[id]
+        print(id,level)
+        imshow(im,extent=e,vmin=fmin,vmax=fmax,hold=True)
+    pl.colorbar()
+    pl.xlim(emin[0],emax[0])
+    pl.ylim(emin[1],emax[1])
+    pl.title('{}={:.3f}'.format(sdir[i],xyz[i]))
+    pl.xlabel(labels[i][0])
+    pl.ylabel(labels[i][1])

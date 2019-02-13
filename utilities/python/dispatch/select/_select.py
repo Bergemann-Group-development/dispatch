@@ -345,3 +345,4 @@ class shell_values:
         ''' return the net average mass flux, weighting each cell by volume '''
         dv=self.var['dv']
         return np.sum(self.var['pr']*dv)/np.sum(dv)
+

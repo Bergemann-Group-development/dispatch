@@ -19,30 +19,44 @@ def parameters(s):
       'domain_dimensions': s.cartesian.dims,
             'periodicity': p.periodic}
 
+tr={'d':'density',
+   'ux':'velocity_x',
+   'uy':'velocity_y',
+   'uz':'velocity_z',
+   'b1':'magnetic_field_x',
+   'b2':'magnetic_field_y',
+   'b3':'magnetic_field_z'}
+
+"""
+    Only give these if also attaching units to the array data:
+             'length_units': p.units.l,
+               'time_units': p.units.t,
+               'mass_units': p.units.m,
+              'unit_system': p.units.system,
+"""
+
 def patch(p):
     p_void=(np.array([]),'code_length')
     dict={      'left_edge': p.llc_cart,
                'right_edge': p.llc_cart+p.size,
                     'level': p.level,
                'dimensions': p.n,
-"""
-    Only give these if also attaching units to the arrau data:
-             'length_units': p.units.l,
-               'time_units': p.units.t,
-               'mass_units': p.units.m,
-              'unit_system': p.units.system,
-"""
       'particle_position_x': p_void,
       'particle_position_y': p_void,
       'particle_position_z': p_void}
     for k,iv in p.idx.dict.items():
+        if p.kind[0:6]=='ramses':
+            k = 'ux' if k=='p1' else k
+            k = 'uy' if k=='p2' else k
+            k = 'uz' if k=='p3' else k
+        key = tr[k] if k in tr.keys() else k
         if iv >= 0:
             if p.guard_zones:
                 l=p.li
                 u=p.ui+1
-                dict[k]=p.var(iv)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
+                dict[key]=p.var(iv)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
             else:
-                dict[k]=p.var(iv)
+                dict[key]=p.var(iv)
     return dict
 
 def patches(s):

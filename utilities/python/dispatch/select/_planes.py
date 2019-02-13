@@ -110,7 +110,7 @@ def unigrid_volume(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
         dirs=[1,0,2]
     else:
         dirs=[2,0,1]
-    f=np.zeros((n[dirs[1]],n[dirs[2],dirs[3]]))
+    f=np.zeros((n[dirs[0]],n[dirs[1],dirs[2]]))
     for p in pp:
         data=p.data[iv] if hasattr(p,'data') else p.var(iv)
         if pp[0].no_mans_land:
