@@ -144,7 +144,7 @@ SUBROUTINE init (self)
     call self%test
   end if
   !$omp end critical (test_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================
@@ -169,7 +169,7 @@ SUBROUTINE test (self)
     print *, 'mhd_t%test not possible with n, no_mans_land =', tmp%n, tmp%no_mans_land
     print *,io%hs
     call tmp%delete
-    call trace%end
+    call trace%end()
     return
   end if
   !-----------------------------------------------------------------------------
@@ -241,11 +241,11 @@ SUBROUTINE test (self)
   else
     print *,'mhd_t%test failed'
     print *,io%hl
-    error stop 'mhd_t%test'
+    call io%abort('mhd_t%test')
   end if
   call tmp%delete
   deallocate (tmp)
-  call trace%end
+  call trace%end()
 END SUBROUTINE test
 
 !> =============================================================================
@@ -639,7 +639,7 @@ SUBROUTINE output (self)
     end if
     !$omp end critical (out_cr)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE output
 
 !> =============================================================================
@@ -647,7 +647,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: d, s
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  integer, save:: nprint=3
+  integer, save:: nprint=3, n(3)
   !-----------------------------------------------------------------------------
   if (trim(self%eos)=='ideal') then
     d => self%mem(:,:,:,self%idx%d,self%it,1)
@@ -661,7 +661,12 @@ FUNCTION gas_pressure (self) RESULT (pg)
       !pg = exp(self%gamma*log(d))*exp(ss*(self%gamma-1.0))
     end if
   else
-    call eos%lookup (shape(d), x=s, y=d, pg=pg)
+    n=shape(d)
+#if defined __PGI
+  call eos%lookup (n, x=s, y=d)
+#else
+  call eos%lookup (n, x=s, y=d, pg=pg)
+#endif
   end if
   if (io%master .and. nprint>0) then
     nprint = nprint - 1
