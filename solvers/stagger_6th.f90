@@ -867,6 +867,8 @@ END FUNCTION
 !> Unit test of 6th/5th order operators
 !> =============================================================================
 SUBROUTINE stagger_test
+  USE mpi_mod
+  ! --------------------------------------------------------------------
   integer       :: n(3)
   real, pointer :: a(:,:,:)
   real, pointer :: b(:,:,:)
@@ -1188,7 +1190,7 @@ SUBROUTINE stagger_test
   else
     print *,'6th/5th order stagger operator test failed!'
     print *,io%hl
-    error stop 'stagger_test'
+    call mpi%abort('stagger_test')
   end if
   !-----------------------------------------------------------------------------
   deallocate (a, b)

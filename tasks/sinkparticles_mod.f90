@@ -92,7 +92,7 @@ SUBROUTINE init (self)
   end if
   !$omp end critical (input_cr)
   self%on = on
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================
@@ -115,7 +115,7 @@ FUNCTION check (self, patch)
     n_sinks = n_sinks+1
     print *,'n_sinks =', n_sinks
   end if
-  call trace%end
+  call trace%end()
 END FUNCTION check
 
 !> =============================================================================
@@ -192,7 +192,7 @@ SUBROUTINE create (self, patch)
   end do
   end do
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE create
 
 !> =============================================================================
@@ -209,7 +209,7 @@ SUBROUTINE dnload (self, only)
   call download%download_link (self%link, all_cells=.true., only=self%idx%px)
   call download%download_link (self%link, all_cells=.true., only=self%idx%py)
   call download%download_link (self%link, all_cells=.true., only=self%idx%pz)
-  call trace%end
+  call trace%end()
 END SUBROUTINE dnload
 
 !> =============================================================================
@@ -220,7 +220,7 @@ SUBROUTINE update (self)
   call self%accrete
   call self%move
   self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 !> =============================================================================
@@ -307,7 +307,7 @@ SUBROUTINE accrete (self)
       'sink: time=', self%time, 'mass=', self%mass, &
       'dmin=',self%fminval(self%idx%d), 'dmax=',self%fmaxval(self%idx%d), &
       'vel=',self%velocity, 'pos=',self%position
-  call trace%end
+  call trace%end()
 END SUBROUTINE accrete
 
 !> =============================================================================
@@ -345,7 +345,7 @@ SUBROUTINE move (self)
   !                     (phi(ix  ,iy+1,iz  )-phi(ix  ,iy-1,iz  ))/(2.*self%ds(2)), &
   !                     (phi(ix  ,iy  ,iz+1)-phi(ix  ,iy  ,iz-1))/(2.*self%ds(3))]
   self%velocity = self%velocity + 0.5d0*self%acceleration*self%dtime
-  call trace%end
+  call trace%end()
 END SUBROUTINE move
 
 END MODULE sinkparticles_mod

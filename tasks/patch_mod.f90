@@ -47,6 +47,7 @@ MODULE patch_mod
     logical:: staggered=.true.
     logical:: no_mans_land=.false.
     logical:: use_data_hub=.false.
+    logical:: manual_refine=.false.
     logical:: get_umax_location=.false.
     logical, dimension(:), pointer:: unsigned  => null()
     logical, dimension(:), pointer:: pervolume => null()
@@ -118,6 +119,7 @@ MODULE patch_mod
     procedure:: courant_condition
     procedure:: check_density
     procedure:: check_nan
+    procedure:: custom_refine
     procedure:: patch_to_header
     procedure:: header_to_patch
     procedure:: local_iit
@@ -300,7 +302,7 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('patch_t%init')
   call self%setup
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================
@@ -393,7 +395,7 @@ SUBROUTINE init_default (self)
   self%use_data_hub = use_data_hub              ! guard zone handling
   self%no_mans_land = no_mans_land              ! mesh centering
   self%print_next  = print_time
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_default
 
 SUBROUTINE init_bdries (self)
@@ -435,7 +437,7 @@ SUBROUTINE init_bdries (self)
       self%mesh(3)%upper_boundary = .true.
     end if
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_bdries
 
 !> =============================================================================
@@ -448,6 +450,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   integer, optional :: n(3), ng(3)
   integer, optional :: nt, nv, nw
   !.............................................................................
+  type(header_t):: header
   integer:: i
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%setup')
@@ -568,21 +571,22 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   self%it = 1                                   ! short-hand (=1 initially)
   self%new = min(2,self%nt)                     ! slot for updates
   self%iit(self%nt) = self%new                  ! first output slot
+  self%new = self%iit(self%nt)                  ! short-hand
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
-  block
-  type(header_t):: header
+  !block
+  
   n_header = storage_size(header)/32             ! 32 bits per word
   if (n_header*4 /= storage_size(header)/8) then
     write(io%output,*) n_header*4, storage_size(header)/8
-    error stop 'n_header is incorrect'
+    call mpi%abort ('n_header is incorrect')
   end if
-  end block
+  !end block
 !  if (all(self%size == self%box)) then
 !    call self%set (bits%root_grid)
 !    if (io%verbose > 1) write(io%output,*) 'set bits%root_grid id =', self%id
 !  end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE setup
 
 !> =============================================================================
@@ -640,7 +644,7 @@ SUBROUTINE rotate (self)
   ! Task time slot rotation
   !-----------------------------------------------------------------------------
   call self%task_t%rotate
-  call trace%end
+  call trace%end()
 END SUBROUTINE rotate
 
 !> =============================================================================
@@ -1377,7 +1381,7 @@ FUNCTION overlaps (self, task)
   class default
     overlaps = self%task_t%overlaps(task)
   end select
-  call trace%end
+  call trace%end()
 END FUNCTION overlaps
 
 !> =============================================================================
@@ -1409,7 +1413,7 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
       'distance: task', task%id, task%position, task%size, task%box, out
     1 format(a,i5,4(3x,3f10.2))
   end if
-  call trace%end
+  call trace%end()
 END FUNCTION distance_curvilinear
 
 !> =============================================================================
@@ -1780,6 +1784,7 @@ SUBROUTINE check_density (self, label)
   mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1))
   if (present(label) .and. io%verbose>1) write (io_unit%log,*) label, self%id, mind
   if (mind <= 0.0) then
+    panic = .true.
     !---------------------------------------------------------------------------
     ! Negative densities appear to develop at a few points in the guard zones,
     ! so this tries to patch up, sampling densitites in the guard zone.
@@ -1971,13 +1976,13 @@ SUBROUTINE MapVectors (self, in, target, ii, jj, out)
       ! no conversion necessary
       out = in
     else
-      error stop 'Not implemented error! patch_t%MapVectors'
+      call mpi%abort('Not implemented error! patch_t%MapVectors')
     end if
   case default ! other; not implemented
-    error stop 'Not implemented error! patch_t%MapVectors'
+    call mpi%abort('Not implemented error! patch_t%MapVectors')
   end select
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE MapVectors
 
 !> =============================================================================
@@ -2443,7 +2448,7 @@ SUBROUTINE update_position (self)
     self%mesh(:)%llc_cart = self%mesh(:)%llc_cart - self%box
     self%centre_cart = self%centre_cart - self%box
   end where
-  call trace%end
+  call trace%end()
 END SUBROUTINE update_position
 
 !> =============================================================================
@@ -2464,5 +2469,12 @@ SUBROUTINE nbors_info (self)
     nbor => nbor%next
   end do
 END SUBROUTINE nbors_info
+
+!> =============================================================================
+SUBROUTINE custom_refine (self)
+  class(patch_t):: self
+  !-----------------------------------------------------------------------------
+  call io%abort ("patch_t:: custom refine is triggered, but none provided. aborting.")
+END SUBROUTINE custom_refine
 
 END MODULE patch_mod

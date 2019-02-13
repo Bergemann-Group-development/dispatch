@@ -36,6 +36,13 @@ class _timer():
                 print(s.format(k,v))
 timer=_timer()
 
+class _units:
+    l=1.0
+    d=1.0
+    e=1.0
+    t=1.0
+    m=1.0
+
 def _p2():
     """ convenience function to check Python version """
     return sys.version_info.major==2

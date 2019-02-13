@@ -103,7 +103,7 @@ SUBROUTINE init (self)
   self%levelmax = levelmax
   self%ratio = ratio
   call sinkparticles%init
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================
@@ -376,7 +376,7 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
       child%id, child%level, child%iout, child%time, child%size, child%position
   end if
   call tlist%check_ready(child_link)
-  call trace%end
+  call trace%end()
 END SUBROUTINE make_child_patch
 
 !> =============================================================================
@@ -448,7 +448,7 @@ SUBROUTINE split_patch (self, tlist, this)
   !
   if (verbose > 0) call tlist%print_tasks()
   !
-  call trace%end
+  call trace%end()
   io%do_trace = do_trace
 END SUBROUTINE split_patch
 
@@ -511,7 +511,7 @@ SUBROUTINE remove_patch (self, tlist, this)
   call tlist%check_ready (parent)
   !----------------------------------------------------------------------------
   !$omp end critical (queue_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE remove_patch
 
 !> =============================================================================
@@ -559,7 +559,7 @@ FUNCTION check_nbor_support (self, tlist, link, check_only) RESULT (refine_it)
     nbor => nbor%next
   end do
 
-  call trace%end
+  call trace%end()
 END FUNCTION check_nbor_support
 
 !> =============================================================================
@@ -615,7 +615,7 @@ FUNCTION check_jeans (self, patch) RESULT(refine_it)
   deallocate (c_sound2, pg)
   nullify (d,e)
   end associate
-  call trace%end
+  call trace%end()
 END FUNCTION check_jeans
 
 !> =============================================================================
@@ -721,7 +721,7 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
   nullify (mx, my, mz, d)
   deallocate (pg, v)
   !
-  call trace%end
+  call trace%end()
 END FUNCTION shock_and_cd_detector
 
 !> =============================================================================
@@ -841,7 +841,7 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
     end if
   end do
   deallocate (dq1, dq2, dq3, q)
-  call trace%end
+  call trace%end()
 END FUNCTION gradient_detector
 
 !> =============================================================================
@@ -881,7 +881,7 @@ FUNCTION refine_region (self, patch) RESULT (refine)
 
   intersect = all((p_urc - b_llc) > 0) .and. all((b_urc - p_llc) > 0)
   if (.not. intersect) then
-    call trace_end
+    call trace%end()
     return
   endif
 
@@ -898,7 +898,7 @@ FUNCTION refine_region (self, patch) RESULT (refine)
     end do
   end do
   refine = merge(1,0,refine_it)
-  call trace%end
+  call trace%end()
 END FUNCTION refine_region
 
 !> =============================================================================

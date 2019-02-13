@@ -85,7 +85,7 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
   integer, save:: itimer=0
   !......................................................................
   call trace_begin ('timestep_t%update', itimer=itimer)
-  if (self%time_order==-1) error stop 'timestep_mod not initialized!'
+  if (self%time_order==-1) call io%abort('timestep_mod not initialized!')
   nt = size(iit)                                ! number of time slots
   l = mesh%lb
   u = mesh%ub

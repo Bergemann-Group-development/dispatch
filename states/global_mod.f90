@@ -44,7 +44,7 @@ SUBROUTINE init (self, label, nMPI, nt, cadence)
   self%v = 0d0
   self%w = 0d0
   self%t = 0d0
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================
@@ -74,7 +74,7 @@ SUBROUTINE update (self, v, w, t)
     self%w(self%nt,mpi%rank) = w
     self%t(self%nt,mpi%rank) = t
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 !> =============================================================================
@@ -95,7 +95,7 @@ SUBROUTINE merge (self, nbor)
     end if
   end do
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE merge
 
 !> =============================================================================
@@ -118,7 +118,7 @@ FUNCTION average (self, t)
     average = average + v*w
   end do
   average = average
-  call trace%end
+  call trace%end()
 END FUNCTION average
 
 END MODULE global_mod
