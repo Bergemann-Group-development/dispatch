@@ -1,27 +1,27 @@
 # Default for PGI
 OPT = -O2
 HW =
-W = -Mpreprocess
-DEBUG =
+W = -Mpreprocess -fast -Mipa=fast,inline -llapack -lblas -tp=haswell-64 -traceback -g -Mcpp=mmd
+#DEBUG = -g -traceback -fpe:0
 
 # Magic strings for dependencies
 DEPFLAGS =
 POSTCOMPILE =
 
 # Depending on MPI use MPI-option or not
-FC  = pgfortran
+FC  = mpifort
 ifeq ($(strip $(MPI)),mpi)
-  MPIOPT = -Mmpi=msmpi
+ MPIOPT = 
 else
-  MPIOPT =
+ MPIOPT = 
 endif
 F90 = $(FC) $(MPIOPT) $(W)
-LD  = $(FC) $(MPIOPT)
+LD  = $(FC) $(MPIOPT) $(W)
 
 # Set openmp compiler flags if needed
 ifdef OMP
 ifeq ($(strip $(OMP)),yes)
-PAR =
+PAR = -omp
 endif
 endif
 

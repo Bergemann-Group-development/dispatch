@@ -54,7 +54,7 @@ SUBROUTINE execute (self, task_list, test)
   call tic (time=start)
   !call self%process%update (task_list)
   !call average_density%init ('density', mpi%size, 5, cadence=0.01)
-  call timer%print
+  call timer%print()
   !$omp parallel private(link,nbor,ready,mytask) default(shared)
   !$omp master
   mytask = .false.
@@ -170,7 +170,7 @@ SUBROUTINE execute (self, task_list, test)
   end do
   !$omp end master
   !$omp end parallel
-  call timer%print
+  call timer%print()
   call mpi_mesg%diagnostics(1)
   call toc ('wall time', timer%n_update, time=start)
 END SUBROUTINE execute

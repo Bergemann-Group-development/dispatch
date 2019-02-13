@@ -90,7 +90,7 @@ SUBROUTINE execute (self, task_list, test)
   call trace%begin ('dispatcher5_t%execute', itimer=itimer)
   call startup (task_list)
   call tic (time=sec)
-  call timer%print
+  call timer%print()
   !-----------------------------------------------------------------------------
   ! Loop over tasks
   !-----------------------------------------------------------------------------
@@ -107,7 +107,7 @@ SUBROUTINE execute (self, task_list, test)
   flush (io_unit%log)
   !$omp barrier
   !$omp end parallel
-  call timer%print
+  call timer%print()
   call mpi_mesg%diagnostics(1)
   call toc ('wall time', timer%n_update, time=sec)
   call mpi%barrier ('end')
@@ -684,13 +684,13 @@ SUBROUTINE startup (task_list)
     call check_ready (task_list, link)
     link => link%next
   end do
-  call timer%print
+  call timer%print()
   task_list%n_tasks = task_list%na
   !-----------------------------------------------------------------------------
   ! This may not be needed, but might avoid initial load balance excursions
   !-----------------------------------------------------------------------------
   call mpi%barrier ('task_list%execute')
-  call trace%end
+  call trace%end()
 END SUBROUTINE startup
 
 !> =============================================================================

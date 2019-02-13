@@ -106,7 +106,7 @@ SUBROUTINE init (self)
     call io%abort ('unknown method in dispatcher_mod')
   end select
   call mpi_mesg%init
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================

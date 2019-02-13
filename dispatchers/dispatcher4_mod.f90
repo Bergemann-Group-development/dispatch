@@ -128,7 +128,7 @@ SUBROUTINE execute (self, task_list, test)
   call task_list%info
   n_state = 0; n_state(0) = io%ntask
   call tic (time=start)
-  call timer%print
+  call timer%print()
   !$omp parallel private(link,nbor,task,mytask) shared(n_state) default(shared)
   !$omp master
   do while (task_list%na>0 .and. wallclock()-start < io%job_seconds)
@@ -192,7 +192,7 @@ SUBROUTINE execute (self, task_list, test)
   end do
   !$omp end master
   !$omp end parallel
-  call timer%print
+  call timer%print()
   call finalize
   call mpi_mesg%diagnostics(1)
   call toc ('wall time', timer%n_update, time=start)

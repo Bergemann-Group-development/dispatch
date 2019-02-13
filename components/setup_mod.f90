@@ -35,7 +35,7 @@ SUBROUTINE init (self)
   call opacity%init                     ! Opacity
   call refine%init                      ! Refinement parameters
   call download%init                    ! Downloading and interpolation parameters
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
  
 !> =============================================================================

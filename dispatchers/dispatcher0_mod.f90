@@ -97,7 +97,7 @@ SUBROUTINE execute (self, task_list, test)
   call trace%begin ('dispatcher0_t%execute', itimer=itimer)
   call task_list%startup
   call tic (time=sec)
-  call timer%print
+  call timer%print()
   !-----------------------------------------------------------------------------
   ! Loop over tasks
   !-----------------------------------------------------------------------------
@@ -114,7 +114,7 @@ SUBROUTINE execute (self, task_list, test)
   flush (io_unit%log)
   !$omp barrier
   !$omp end parallel
-  call timer%print
+  call timer%print()
   call mpi_mesg%diagnostics(1)
   call toc ('wall time', timer%n_update, time=sec)
   write (io_unit%mpi,*) 'at mpi%barrier'

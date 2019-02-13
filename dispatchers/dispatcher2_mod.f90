@@ -78,7 +78,7 @@ SUBROUTINE execute (self, task_list, test)
   !$omp end master
   !$omp end parallel
   call trace_end
-  call timer%print
+  call timer%print()
   call mpi_mesg%diagnostics(1)
   call toc ('wall time', timer%n_update, time=start)
 END SUBROUTINE execute

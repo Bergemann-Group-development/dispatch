@@ -91,7 +91,7 @@ SUBROUTINE update (self, task_list)
     nbor => next
   end do
   first_time = .false.
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 !> =============================================================================
@@ -113,7 +113,7 @@ SUBROUTINE add_by_rank (self, rank)
       nbor => new_nbor (rank)
       nbor%next => this
       self%head => nbor
-      call trace%end
+      call trace%end()
       return
     else
       do while (associated(this))
@@ -128,7 +128,7 @@ SUBROUTINE add_by_rank (self, rank)
             nbor => new_nbor (rank)
             nbor%next => this%next
             this%next => nbor
-            call trace%end
+            call trace%end()
             return
           end if
         !-----------------------------------------------------------------------
@@ -138,11 +138,11 @@ SUBROUTINE add_by_rank (self, rank)
           nbor => new_nbor (rank)
           this%next => nbor
           self%tail => nbor
-          call trace%end
+          call trace%end()
           return
         end if
         this => this%next
-        call trace%end
+        call trace%end()
         return
       end do
     end if
@@ -154,7 +154,7 @@ SUBROUTINE add_by_rank (self, rank)
     self%head => nbor
     self%tail => nbor
   end if
-  call trace%end
+  call trace%end()
 contains
   !-----------------------------------------------------------------------------
   !-----------------------------------------------------------------------------

@@ -101,7 +101,7 @@ SUBROUTINE execute (self, task_list, test)
   call self%init (task_list)
   n_state = 0; n_state(0) = io%ntask
   call tic (time=start)
-  call timer%print
+  call timer%print()
   !$omp parallel private(link,nbor,task,mytask) shared(n_state) default(shared)
   !$omp master
   do while (task_list%na>0 .and. wallclock()-start < io%job_seconds)
@@ -176,7 +176,7 @@ SUBROUTINE execute (self, task_list, test)
   end do
   !$omp end master
   !$omp end parallel
-  call timer%print
+  call timer%print()
   if (omp%master) &
     write(io%output,'(a,i6,4(a,f7.4))') &
       ' dispatcher3_t%finalize: rank =',mpi%rank, &

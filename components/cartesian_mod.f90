@@ -40,7 +40,7 @@ SUBROUTINE init (self, label)
   real:: position(3)
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
-  integer:: i, j, k, i1, j1, k1, rank, nbrank, dim, nn(2,3)
+  integer:: i, j, k, i1, j1, k1, rank, nbrank, dim, nn(2,3), iostat
   !
   type links_t
     type(link_t), pointer:: p
@@ -61,7 +61,7 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   call trace_begin ('cartesian_mod::init')
   call io%header('begin cartesian_t%init: Cartesian patch arrangement')
-  rewind (io%input); read (io%input, cartesian_params)
+  rewind (io%input); read (io%input, cartesian_params,iostat=iostat)
   if (any(per_rank/=0)) then
     where (per_rank/=0) dims=per_rank*mpi_dims
   end if
@@ -246,7 +246,7 @@ SUBROUTINE init (self, label)
   end if
   if (io%verbose > 0) &
     write(io%output,*) 'cartesian_t%init: diagnostics'
-  call self%diagnostics
+  call self%diagnostics()
   write (io_unit%output,'(1x,a,5(i5,1x,a))') 'cartesian_t%init: ', &
     npatch,'patches',nvpatch,'virtual',nbpatch,'boundary',nlpatch,'local'
   if (io%verbose > 0) &
