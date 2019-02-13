@@ -140,7 +140,7 @@ SUBROUTINE randomize (self)
     call random_number (f)
     self%particle(i)%v = f
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE randomize
 
 !> =============================================================================
@@ -180,7 +180,7 @@ SUBROUTINE info (self, time)
     end do
     print '(i6,f10.6,1p,3(2x,3e11.3))', self%id, t, r, v
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE info
 
 !> =============================================================================

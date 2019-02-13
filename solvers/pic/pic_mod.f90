@@ -352,6 +352,12 @@ SUBROUTINE update (self)
   Ex => self%mem(:,:,:,self%idx%ex,self%new,1)            ! pic_mod.f90
   Ey => self%mem(:,:,:,self%idx%ey,self%new,1)            ! pic_mod.f90
   Ez => self%mem(:,:,:,self%idx%ez,self%new,1)            ! pic_mod.f90
+
+  !-----------------------------------------------------------------------------
+  ! Output the state 
+  !-----------------------------------------------------------------------------
+  call self%output
+
   !-----------------------------------------------------------------------------
   ! Do the PIC update, using calls to the PPcode routines
   !-----------------------------------------------------------------------------
@@ -918,7 +924,6 @@ SUBROUTINE custom_refine (self)
   if (self%initial%first_pic) then
       self%initial%pic_needed = .true.
       call self%print_patch_type(self%initial%pic_needed)
-      call self%patch_t%init
       call self%pre_init
       call self%post_init
       self%initial%first_pic = .false.

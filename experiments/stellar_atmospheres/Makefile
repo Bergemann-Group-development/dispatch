@@ -8,6 +8,7 @@
 UPD             = adams_bashforth
 RT_SOLVER       = short_characteristics
 SOLVER          = stagger2/e
+STAGGER         = stagger_2nd.o
 EXEC            = dispatch.x
 TOP             = ../..
 
@@ -35,4 +36,4 @@ experiment_mod.o        : link_mod.o rt_solver_mod.o download_mod.o scaling_mod.
 ic_mod.o                : task_list_mod.o lagrange_mod.o experiment_mod.o
 scaling_mod.o           : io_mod.o trace_mod.o units_mod.o
 #mhd_mod.o               : io_mod.o trace_mod.o scalar_mod.o vector_mod.o force_mod.o patch_mod.o scaling_mod.o units_mod.o download_mod.o \
-#                          stagger_mod.o mesh_mod.o
+#                          $(STAGGER) mesh_mod.o

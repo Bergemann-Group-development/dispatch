@@ -7,7 +7,7 @@ OPTS = optimized
 # Default target and methods
 UPD             = adams_bashforth
 #PDE             = mhd_mod.o
-STAGGER         = stagger_mod.o
+STAGGER         = stagger_2nd.o
 #STAGGER         = stagger_4th.o
 #STAGGER         = stagger_6th.o
 SOLVER          = stagger2/e

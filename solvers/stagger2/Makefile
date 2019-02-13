@@ -2,7 +2,7 @@
 VPATH := $(VPATH):$(TOP)/solvers/stagger2
 
 PDE     ?= mhd_mod.o
-STAGGER ?= stagger_mod.o
+STAGGER ?= stagger_2nd.o
 
 # Dependencies
 vector_ops.o            : $(STAGGER)

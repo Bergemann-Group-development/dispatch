@@ -8,6 +8,7 @@ OPTS = debug
 UPD             = adams_bashforth
 #SOLVER          = stagger2
 SOLVER          = stagger2/e
+STAGGER         = stagger_2nd.o
 #SOLVER          = ramses/mhd
 EXEC            = dispatch.x
 TOP             = ../..
@@ -17,5 +18,5 @@ sinclude $(TOP)/config/Makefile
 $(EXEC): dispatcher_mod.o setup_mod.o cartesian_mod.o
 
 # Dependencies
-experiment_mod.o        : io_mod.o trace_mod.o solver_mod.o mesh_mod.o bits_mod.o stagger_mod.o
+experiment_mod.o        : io_mod.o trace_mod.o solver_mod.o mesh_mod.o bits_mod.o $(STAGGER)
 
