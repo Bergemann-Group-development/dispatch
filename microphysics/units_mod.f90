@@ -13,7 +13,7 @@ MODULE units_mod
   !-----------------------------------------------------------------------------
   type, public:: const_t
     character(len=16):: name='not set'
-    real(kind=8):: m_u
+    real(kind=8):: m_u, m_h, m_he
     real(kind=8):: amu
     real(kind=8):: k_b
     real(kind=8):: h_p
@@ -56,9 +56,11 @@ SUBROUTINE init (self)
   ! CGS units
   !-----------------------------------------------------------------------------
   cgs%name    = 'cgs'
-  cgs%m_u     = 1.6726d-24
+  cgs%m_u     = 1.6726219d-24
+  cgs%m_h     = cgs%m_u
+  cgs%m_he    = 6.65e-24
   cgs%amu     = 1.66054d-24
-  cgs%k_b     = 1.3807d-16
+  cgs%k_b     = 1.380658d-16                                            ! [erg/K]
   cgs%h_p     = 6.6260755d-27
   cgs%c       = 2.999792d10
   cgs%e       = 1.602177e-12

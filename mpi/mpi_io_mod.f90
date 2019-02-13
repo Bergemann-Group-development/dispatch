@@ -104,11 +104,11 @@ CONTAINS
 !> =============================================================================
 SUBROUTINE use (self, file)
   class(mpi_io_t):: self
-  class(mpi_file_t):: file
+  type(mpi_file_t):: file
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%use')
   self%file = file
-  call trace%end
+  call trace%end()
 END SUBROUTINE use
 
 !> =============================================================================
@@ -137,7 +137,7 @@ SUBROUTINE init (self)
       print *, 'mpi_io_t%init done'
   end if
   !$omp end critical (iwrite_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================
@@ -161,7 +161,7 @@ SUBROUTINE set (self, rec_words, chunk_words, nwrite)
     mpi_io%nwrite = nwrite
     if (verbose > 2) print *, 'mpi_io_t%init: setting nwrite =', nwrite
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE set
 
 !> =============================================================================
@@ -200,7 +200,7 @@ SUBROUTINE write3 (self, f, rec, id)
     !$omp end critical (mpi_cr)
   end if
   call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
-  call trace%end
+  call trace%end()
 #endif
 END SUBROUTINE write3
 
@@ -236,7 +236,7 @@ SUBROUTINE write4 (self, f, rec, id)
     !$omp end critical (mpi_cr)
   end if
   call self%assert ('mpi_io_mod::write MPI_File_write_at '//trim(self%file%filename))
-  call trace%end
+  call trace%end()
 #endif
 END SUBROUTINE write4
 
@@ -351,7 +351,7 @@ SUBROUTINE read3 (self, f, rec, id)
     write (io_unit%mpi,'(a,3i8,i15,1p,2e14.6)') &
       ' mpi_io_t%read3: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
-  call trace%end
+  call trace%end()
 #endif
 END SUBROUTINE read3
 
@@ -382,7 +382,7 @@ SUBROUTINE read4 (self, f, rec, id)
     write (io_unit%mpi,'(a,3i8,i15,1p,2e14.6)') &
       ' mpi_io_t%read4: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
-  call trace%end
+  call trace%end()
 #endif
 END SUBROUTINE read4
 

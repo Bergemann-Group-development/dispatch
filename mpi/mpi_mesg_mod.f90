@@ -149,7 +149,7 @@ SUBROUTINE send (self, rank, tag)
 #endif
   !$omp atomic
   mpi_mesg%n_send = mpi_mesg%n_send+1
-  call trace%end
+  call trace%end()
 END SUBROUTINE send
 
 !> =============================================================================
@@ -185,7 +185,7 @@ SUBROUTINE recv (self, rank, tag)
     !$omp end critical (mpi_cr)
   end if
 #endif
-  call trace%end
+  call trace%end()
 END SUBROUTINE recv
 
 !> =============================================================================
@@ -203,7 +203,7 @@ SUBROUTINE remove_completed (self)
       call self%delete (mesg)
     end if
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE remove_completed
 
 !> =============================================================================
@@ -578,7 +578,7 @@ SUBROUTINE init (self)
   sent_list%id = omp_get_thread_num()
   !$omp end parallel
   !call self%test
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================

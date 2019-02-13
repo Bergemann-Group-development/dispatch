@@ -55,12 +55,16 @@ END SUBROUTINE init
 
 #if ! defined (_OPENMP)
 #if ! defined (__xlc__)
+#if ! defined (__PGI)
 !> =============================================================================
 LOGICAL FUNCTION omp_in_parallel()
   omp_in_parallel = .false.
 END FUNCTION
 #endif
 #endif
+#endif
+
+
 
 !> =============================================================================
 INTEGER FUNCTION mythread()

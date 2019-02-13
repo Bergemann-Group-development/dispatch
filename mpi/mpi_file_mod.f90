@@ -145,7 +145,7 @@ SUBROUTINE openw (self, filename, recl)
     open (unit=io_unit%direct, file=filename, access='direct', recl=recl, &
       status='unknown')
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE openw
 
 !> =============================================================================
@@ -161,7 +161,7 @@ SUBROUTINE openr (self, filename)
 #ifdef MPI
   call self%open (filename, MPI_MODE_RDONLY)
 #endif
-  call trace%end
+  call trace%end()
 END SUBROUTINE openr
 
 !> =============================================================================
