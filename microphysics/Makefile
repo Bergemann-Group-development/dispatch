@@ -3,6 +3,7 @@ VPATH := $(VPATH):$(TOP)/microphysics
 
 # Source the EOS and opacity Makefiles
 include $(TOP)/microphysics/eos/Makefile
+include $(TOP)/microphysics/spitzer_conductivity/Makefile
 include $(TOP)/data/opacities/Makefile
 
 # Dependencies
