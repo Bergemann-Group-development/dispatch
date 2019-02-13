@@ -55,8 +55,13 @@ SUBROUTINE p2U(self, U, it)
   associate(d => self%mem(:,:,:,self%idx%d,           it,1), &
             p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   allocate(dd(size(d,1),size(d,2),size(d,3),3))
-  dd=down(log(d))
-  U = p/exp(dd)
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    dd=up(log(d))
+    U = p/exp(dd)
+  else
+    dd=down(log(d))
+    U = p/exp(dd)
+  end if
   deallocate(dd)
   end associate
 END SUBROUTINE p2U
@@ -74,8 +79,13 @@ SUBROUTINE U2p(self, U, it)
   associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
             p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   allocate(dd(size(d,1),size(d,2),size(d,3),3))
-  dd=down(log(d))
-  p = U*exp(dd)
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    dd=up(log(d))
+    p = U*exp(dd)
+  else
+    dd=down(log(d))
+    p = U*exp(dd)
+  end if
   deallocate(dd)
   end associate
 END SUBROUTINE U2p
@@ -195,7 +205,7 @@ FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
   tmp = self%gas_pressure()/d
   if (io%verbose > 2) then
     if (any(tmp<0)) then
-      error stop "solver_t%gas_temperature: T<0"
+      call io%abort ("solver_t%gas_temperature: T<0")
     end if
   end if
   end associate
@@ -224,7 +234,11 @@ SUBROUTINE velocity_magnitude (self, v)
   real, dimension(:,:,:,:), pointer:: p
   !-----------------------------------------------------------------------------
   p => self%mem(:,:,:,self%idx%px:self%idx%px,self%it,1)
-  v = norm(p/exp(down(log(self%mem(:,:,:,self%id,self%it,1)))))
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    v = norm(p/exp(up(log(self%mem(:,:,:,self%id,self%it,1)))))
+  else
+    v = norm(p/exp(down(log(self%mem(:,:,:,self%id,self%it,1)))))
+  end if
 END SUBROUTINE
 
 !> =============================================================================
@@ -265,11 +279,17 @@ FUNCTION gas_velocity_vector (self) RESULT (v)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   call allocate_vectors_a (self%gn, ld, dd)
   call allocate_scalars_a (self%gn, lnd)
-  lnd = log(d)
-  ld = down(lnd)
-  dd = exp(ld)
-  v = p/dd
-
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    lnd = log(d)
+    ld = up(lnd)
+    dd = exp(ld)
+    v = p/dd
+  else
+    lnd = log(d)
+    ld = down(lnd)
+    dd = exp(ld)
+    v = p/dd
+  end if
   call deallocate_vectors_a (ld, dd)
   call deallocate_scalars_a (lnd)
   nullify (d,p)
@@ -287,23 +307,41 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
   d => self%mem(:,:,:,self%idx%d,self%it,1)
   call allocate_scalars_a (self%gn, lnd, ld, dd)
   lnd = log(d)
-  select case (idir)
-  case (1)
-    ld = xdn(lnd)
-    dd = exp(ld)
-    v = self%mem(:,:,:,self%idx%px,self%it,1) / dd
-  case (2)
-    ld = ydn(lnd)
-    dd = exp(ld)
-    v = self%mem(:,:,:,self%idx%py,self%it,1) / dd
-  case (3)
-    ld = zdn(lnd)
-    dd = exp(ld)
-    v = self%mem(:,:,:,self%idx%pz,self%it,1) / dd
-  case default
-    error stop "solver_mod::gas_velocity_scalar:: invalid value of idir"
-  end select
-
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    select case (idir)
+    case (1)
+      ld = xup(lnd)
+      dd = exp(ld)
+      v = self%mem(:,:,:,self%idx%px,self%it,1) / dd
+    case (2)
+      ld = yup(lnd)
+      dd = exp(ld)
+      v = self%mem(:,:,:,self%idx%py,self%it,1) / dd
+    case (3)
+      ld = zup(lnd)
+      dd = exp(ld)
+      v = self%mem(:,:,:,self%idx%pz,self%it,1) / dd
+    case default
+      call io%abort ("solver_mod::gas_velocity_scalar:: invalid value of idir")
+    end select
+  else
+    select case (idir)
+    case (1)
+      ld = xdn(lnd)
+      dd = exp(ld)
+      v = self%mem(:,:,:,self%idx%px,self%it,1) / dd
+    case (2)
+      ld = ydn(lnd)
+      dd = exp(ld)
+      v = self%mem(:,:,:,self%idx%py,self%it,1) / dd
+    case (3)
+      ld = zdn(lnd)
+      dd = exp(ld)
+      v = self%mem(:,:,:,self%idx%pz,self%it,1) / dd
+    case default
+      call io%abort ("solver_mod::gas_velocity_scalar:: invalid value of idir")
+    end select
+  end if
   call deallocate_scalars_a (lnd, ld, dd)
   nullify (d)
 END FUNCTION gas_velocity_scalar
