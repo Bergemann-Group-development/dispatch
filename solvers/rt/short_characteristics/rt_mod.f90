@@ -512,7 +512,8 @@ SUBROUTINE mhd_update (self)
   integer:: it, iv, nt
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  !call self%gravity
+  call self%gravity_update
+  call self%divb_clean
   call self%output
   call self%pde
   call self%courant_condition
@@ -521,7 +522,7 @@ SUBROUTINE mhd_update (self)
   end if
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
-  call self%gpatch_t%update
+  call self%counter_update
   call trace%end (itimer)
 END SUBROUTINE mhd_update
 
