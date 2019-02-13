@@ -59,7 +59,7 @@ SUBROUTINE init (self, mesh, position, radius)
   if (present(position)) self%position =  position
   if (present(radius))   self%radius   =  radius
   self%unset = .false.
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================
@@ -157,7 +157,7 @@ SUBROUTINE condition (self, f, iv, operator, value, select)
     if (self%is_set(bits%yl+bits%yu)) call y_condition
     if (self%is_set(bits%zl+bits%zu)) call z_condition
   end if
-  call trace%end
+  call trace%end()
   return
 contains
   subroutine x_condition
@@ -207,7 +207,7 @@ SUBROUTINE symmetric (self, mem, iv, select)
   if (self%id==io%id_debug) &
     print *, self%id, 'SYMM', iv, self%is_set(bits%yl), self%is_set(bits%yu)
   call self%condition (mem, iv, operator)
-  call trace%end
+  call trace%end()
 END SUBROUTINE symmetric
 
 !> =============================================================================
@@ -224,7 +224,7 @@ SUBROUTINE antisymmetric (self, mem, iv, select)
   call trace%begin ('boundaries_t%antisymmetric')
   print *, self%id, 'ANTI', iv, self%is_set(bits%yl), self%is_set(bits%yu)
   call self%condition (mem, iv, operator)
-  call trace%end
+  call trace%end()
 END SUBROUTINE antisymmetric
 
 !> =============================================================================
@@ -242,7 +242,7 @@ SUBROUTINE extrapolate (self, mem, iv, select)
   if (self%id==io%id_debug) &
     print *, self%id, 'EXTRAP', iv, self%is_set(bits%yl), self%is_set(bits%yu)
   call self%condition (mem, iv, operator)
-  call trace%end
+  call trace%end()
 END SUBROUTINE extrapolate
 
 !> =============================================================================
@@ -258,7 +258,7 @@ SUBROUTINE log_extrapolate (self, mem, iv, select)
   operator => make_log_extrapolated
   call trace%begin ('boundaries_t%extrapolate')
   call self%condition (mem, iv, operator)
-  call trace%end
+  call trace%end()
 END SUBROUTINE log_extrapolate
 
 !> =============================================================================
@@ -275,7 +275,7 @@ SUBROUTINE constant (self, mem, iv, value, select)
   operator => make_constant
   call trace%begin ('boundaries_t%constant')
   call self%condition (mem, iv, operator, value=value)
-  call trace%end
+  call trace%end()
 END SUBROUTINE constant
 
 !> =============================================================================
@@ -858,7 +858,7 @@ SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
     end do
   else
     print *, 'iv passed',iv, 'iv required', idx%d
-    error stop "boundaries_mod::spherical_jagged_d:: invalid memory index iv"
+    call mpi%abort ("boundaries_mod::spherical_jagged_d:: invalid memory index iv")
   end if
   nullify (m1, m2, m3)
   call trace_end
@@ -908,7 +908,7 @@ SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
     end do
   else
     print *, 'iv passed',iv, 'iv required', idx%s
-    error stop "boundaries_mod::spherical_jagged_d:: invalid memory index iv"
+    call mpi%abort ("boundaries_mod::spherical_jagged_d:: invalid memory index iv")
   end if
   nullify (m1, m2, m3)
   call trace_end
@@ -987,7 +987,7 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
     end do
   else
     print *, 'iv passed',iv, 'iv required', idx%px, idx%py, idx%pz
-    error stop "boundaries_mod::spherical_jagged_p:: invalid memory index iv"
+    call mpi%abort ("boundaries_mod::spherical_jagged_p:: invalid memory index iv")
   end if
   nullify (m1, m2, m3)
   call trace_end
