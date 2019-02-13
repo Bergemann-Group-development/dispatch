@@ -22,6 +22,7 @@ MODULE eos_mod
     procedure:: pressure
     procedure:: temperature
     procedure:: lookup
+    procedure:: lookup_table
   end type
   type (eos_t), public:: eos
 CONTAINS
@@ -99,9 +100,9 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamm
     self%gamma = gamma
   end if
   if (present(lnd)) then
-    error stop 'trying to use lnd in eos/ideal/eos_mod.f90'
+    call mpi%abort('trying to use lnd in eos/ideal/eos_mod.f90')
   else if (present(ee)) then
-    error stop 'trying to use ee in eos/ideal/eos_mod.f90'
+    call mpi%abort('trying to use ee in eos/ideal/eos_mod.f90')
   end if
   !-----------------------------------------------------------------------------
   if (present(y)) then
@@ -143,6 +144,78 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamm
   if (present(lny)) deallocate(y_loc)
   call trace%end(itimer)
 END SUBROUTINE lookup
+
+!> =============================================================================
+!> General EOS lookup routine, returning values in optional arguments
+!> =============================================================================
+!> =============================================================================
+!> General EOS lookup routine, returning values in optional arguments
+!> =============================================================================
+SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src, gamma)
+
+  class (eos_t):: self
+  integer:: dim(3)
+  real, optional:: gamma
+  real, dimension(:,:,:), intent(in), pointer, optional :: e, lne, d, lnee, lnd, ee
+  real, dimension(:,:,:),                      optional :: pg, tt, ne
+  real, dimension(:,:,:,:),                    optional :: src, rk
+  real, dimension(:,:,:), pointer :: d_loc, ee_loc
+  integer:: i
+  integer, save:: itimer=0
+  real:: stefan
+  !-----------------------------------------------------------------------------
+  call trace%begin ('eos_t%lookup', itimer=itimer)
+  if (present(gamma)) then
+    self%gamma = gamma
+  end if
+  if (present(lnd)) then
+    call mpi%abort('trying to use lnd in eos/ideal/eos_mod.f90')
+  else if (present(ee)) then
+    call mpi%abort('trying to use ee in eos/ideal/eos_mod.f90')
+  end if
+  !-----------------------------------------------------------------------------
+  if (present(d)) then
+    d_loc => d
+  else if (present(lnd)) then
+    allocate (d_loc(dim(1),dim(2),dim(3)))
+    d_loc = exp(lnd)
+  else
+    call mpi%abort ('eos_t: missing 1st argument')
+  end if
+  !-----------------------------------------------------------------------------
+  if (present(ee)) then
+    ee_loc => ee
+  else if (present(lne)) then
+    allocate (ee_loc(dim(1),dim(2),dim(3)))
+    ee_loc = exp(lne)/d_loc
+  else if (present(e)) then
+    allocate (ee_loc(dim(1),dim(2),dim(3)))
+    ee_loc = e/d_loc
+  else
+    call mpi%abort ('eos_t: missing 2nd argument')
+  end if
+  !-----------------------------------------------------------------------------
+  if (present(tt)) then
+    tt = (self%gamma-1.0)*ee_loc
+  end if
+  if (present(src)) then
+    stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
+    do i=1,size(src,4)
+      src(:,:,:,i) = stefan*real(((self%gamma-1.0)*ee_loc),kind=8)**4
+    end do
+  end if
+  if (present(pg)) then
+    pg = (self%gamma-1.0)*ee_loc*d_loc
+  end if
+  if (present(rk)) then
+    do i=1,size(rk,4)
+      rk(:,:,:,i) = d_loc*self%kappa
+    end do
+  end if
+  if (present(lne).or.present(e).or.present(lnee)) deallocate(ee_loc)
+  if (present(lnd)) deallocate(d_loc)
+  call trace%end(itimer)
+END SUBROUTINE lookup_table
 
 END MODULE eos_mod
 
