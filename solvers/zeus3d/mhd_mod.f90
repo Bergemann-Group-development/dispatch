@@ -365,7 +365,6 @@ SUBROUTINE CopyToZeus (self)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz, force, p
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, Ux, Uy, Uz
   integer, save:: itimer1=0, itimer2=0, itimer3=0, itimer4=0
-  type(index_t):: idx
   external abndyall, bndyflgs, bndyall, get_vel
   ! DISPATCH does not have explicit information about the interface of the ZEUScore
   ! procedure, so let's provide it. This allows for passing pointers to arrays
@@ -454,7 +453,7 @@ SUBROUTINE CopyToZeus (self)
     associate (v1=>self%vgas(:,:,:,1,self%it),v2=>self%vgas(:,:,:,2,self%it),v3=>self%vgas(:,:,:,3,self%it))
     call get_vel (self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, v1, v2, v3)
     end associate
-    self%pressure(:,:,:,self%it) = self%mem(:,:,:,idx%e,self%it,1) * (self%gamma - 1.0)
+    self%pressure(:,:,:,self%it) = self%mem(:,:,:,self%idx%e,self%it,1) * (self%gamma - 1.0)
   end if
 
   courno = self%courant

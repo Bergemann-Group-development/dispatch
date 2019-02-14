@@ -62,5 +62,8 @@
 /
 
 &pebble_params
-  do_pebbles=f
+  do_pebbles=t
+  do_split=f
+  verbose=2
+  ppc=1.0
 /

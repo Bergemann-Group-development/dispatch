@@ -6,14 +6,13 @@ MODULE experiment_mod
   USE trace_mod
   USE solver_mod
   USE pboundaries_mod
-  !!!USE pebble_patch_mod
+  USE pebble_patch_mod
   USE potential_mod
   USE kinds_mod
   implicit none
   private
 
-  !type, public, extends(pebble_patch_t):: experiment_t
-  type, public, extends(solver_t):: experiment_t
+  type, public, extends(pebble_patch_t):: experiment_t
   contains
     procedure:: init => init_experiment
     procedure:: update => update_experiment
@@ -34,8 +33,8 @@ SUBROUTINE init_experiment (self)
   self%mhd = .true.
   self%initial%mhd = .true.
   call self%initial%init(self%kind, real(self%gamma))
-  !call self%pebble_patch_t%init()
   call self%solver_t%init()
+  call self%pebble_patch_t%init()
   ! intialize time-independent gravitational potential of the central star
   call potential%init(self%mesh, self%idx, self%initial%star_mass, self%mem(:,:,:,:,1,1))
   call pboundaries%init_bdries(self%mesh,self%position,self%idx)
@@ -57,7 +56,7 @@ SUBROUTINE update_experiment (self)
   call self%solver_t%update()
   call pboundaries%apply(self, self%new)
   call self%density_floor(self%new)
-  !if (self%do_pebbles) call self%pebble_patch_t%update_pebbles
+  if (self%do_pebbles) call self%pebble_patch_t%update_pebbles
 
   call trace%end
 END SUBROUTINE update_experiment
