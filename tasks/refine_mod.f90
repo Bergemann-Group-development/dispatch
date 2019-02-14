@@ -113,14 +113,13 @@ FUNCTION refine_needed (self, tasklist, link)
   class(refine_t):: self
   class(list_t):: tasklist
   class(link_t), pointer:: link
-  logical:: refine_needed
+  integer:: refine_needed, derefine_needed, check
   !.............................................................................
   class(patch_t), pointer:: patch
   real:: dxmin, dxmax
   integer, save:: itimer=0
   logical:: new_sink
   !----------------------------------------------------------------------------
-  refine_needed = .false.
   if (.not. on) return
   call trace%begin('refine_t%needed', itimer=itimer)
   !
@@ -149,35 +148,58 @@ FUNCTION refine_needed (self, tasklist, link)
   !------------------------------------------------------------------------
   ! Refinement Criteria
   !------------------------------------------------------------------------
+  refine_needed = 0
+  derefine_needed = 0
   ! sink particle creation
   new_sink = self%check_sinkparticle (tasklist, link)
   !
   ! Ensure consistent, cubical patch size (e.g. after RAMSES startup)
-  if (force_cubical) refine_needed = refine_needed .or. self%check_cubical(patch)>0
-  if (verbose>2) print *, patch%id, 'refine%needed (patch_n)   =', refine_needed
+  if (force_cubical) then
+    check = self%check_cubical(patch)
+      refine_needed = merge(1 ,  refine_needed,check > 0)
+    derefine_needed = merge(-1,derefine_needed,check < 0)
+    if (verbose>2) print *, patch%id, 'refine%needed (patch_n)   =', refine_needed
+  end if
   !
   ! Jeans criterion
-  if (min_jeans > 0.0) refine_needed = refine_needed .or. self%check_Jeans(patch)>0
-  if (verbose>2) print *, patch%id, 'refine%needed (Jeans)   =', refine_needed
+  if (min_jeans > 0.0) then
+    check = self%check_Jeans(patch)
+      refine_needed = merge(1 ,  refine_needed,check > 0)
+    derefine_needed = merge(-1,derefine_needed,check < 0)
+    if (verbose>2) print *, patch%id, 'refine%needed (Jeans)   =', refine_needed
+  end if
   !
   ! shock and/or contact discontinuity detector
-  if (max_shock > 0.0 .or. max_contact > 0.0) &
-    refine_needed = refine_needed .or. self%shock_and_cd_detector(patch)>0
-  if (verbose>2) print *, patch%id, 'refine%needed (shock)   =', refine_needed
+  if (max_shock > 0.0 .or. max_contact > 0.0) then 
+    check = self%shock_and_cd_detector(patch)
+      refine_needed = merge(1 ,  refine_needed,check > 0)
+    derefine_needed = merge(-1,derefine_needed,check < 0)
+    if (verbose>2) print *, patch%id, 'refine%needed (shock)   =', refine_needed
+  end if
   !
   ! gradient detector
-  if (any(max_grad > 0.0) ) refine_needed = refine_needed .or. self%gradient_detector(patch)>0
-  if (verbose>2) print *, patch%id, 'refine%needed (grad)    =', refine_needed
+  if (any(max_grad > 0.0) ) then
+    check = self%gradient_detector(patch)
+      refine_needed = merge(1 ,  refine_needed,check > 0)
+    derefine_needed = merge(-1,derefine_needed,check < 0)
+    if (verbose>2) print *, patch%id, 'refine%needed (grad)    =', refine_needed
+  end if
   !
   ! refine on (a) user-specified region(s)
-  if (any(region_llc /= 0.0) .and. any(region_urc /= 0.0)) &
-    refine_needed = refine_needed .or. self%refine_region(patch)>0
-  if (verbose>2) print *, patch%id, 'refine%needed (region)  =', refine_needed
+  if (any(region_llc /= 0.0) .and. any(region_urc /= 0.0)) then
+    check = self%refine_region(patch)
+      refine_needed = merge(1 ,  refine_needed,check > 0)
+    derefine_needed = merge(-1,derefine_needed,check < 0)
+    if (verbose>2) print *, patch%id, 'refine%needed (region)  =', refine_needed
+  end if
   !
   ! Check that neighbors of `self` are not more than one level different.
   ! If they are, mark this patch for splitting so that support can be
   ! provided to the neighbors of `patch`.
-  refine_needed = refine_needed .or. self%check_nbor_support (tasklist, link)>0
+  check = self%check_nbor_support (tasklist, link)
+  refine_needed = merge(1 ,  refine_needed,check > 0)
+  derefine_needed = merge(-1,derefine_needed,check < 0)
+  if ((refine_needed < 1).and.(derefine_needed<0)) refine_needed = -1
   if (verbose>2) print *, patch%id, 'refine%needed (support) =', refine_needed
   !
   patch%check_refine_next = patch%istep + check_interval
@@ -227,8 +249,12 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
       call tasklist%lock%set
       if (verbose > 0) &
         write (io%output,*) patch%id, 'refine suggested'
-      call self%split_patch (tasklist, link)
-      call check_level_constraint
+        if (patch%manual_refine) then
+          call patch%custom_refine
+        else
+          call self%split_patch (tasklist, link)
+          call check_level_constraint
+        end if
       call tasklist%lock%unset
       was_refined = .true.
     end if
