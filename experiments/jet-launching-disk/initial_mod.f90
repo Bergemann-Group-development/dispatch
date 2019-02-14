@@ -132,35 +132,43 @@ SUBROUTINE condition (self, m, ff, idx)
 
   pgas0 = rho0 * (gm_s / self%disc_r0) / (1.0 + self%rpindex)
   ! initial magnetic field strength is set primarily by `pbeta0`.
-  bpol0 = sqrt(2.0 * pgas0 / self%pbeta0)
+  if (self%pbeta0 == 0) then
+    bpol0 = 0.0
+  else
+    bpol0 = sqrt(2.0 * pgas0 / self%pbeta0)
+  end if
 
   ! initialise magnetic flux function
   allocate (psi(m1%gn,m2%gn,m3%gn))
+  if (self%pbeta0 == 0.0) then
+    psi = 0.0
+  else
   ! NOTE!: the flux function should be *edge-centred*!!!
-  do i3=m3%lb,m3%ub
-    phi = m3%centre_nat + m3%r(i3) - 0.5*m3%d
-    do i2=m2%lb,m2%ub
-      x2 = m2%centre_nat + m2%r(i2) - 0.5*m2%d
-      do i1=m1%lb,m1%ub
-        x1 = m1%centre_nat + m1%r(i1) - 0.5*m1%d
-        if (m1%type == 'spherical_mesh') then
-          theta = x2
-          r_sph = abs(x1)
-          z = abs(r_sph * cos(theta))
-          r_cyl = abs(r_sph * sin(theta))
-        else if (m1%type == 'cylindrical_mesh') then
-          z = x1
-          r_cyl = x2
-          r_sph = sqrt(z**2 + r_cyl**2)
-          theta = acos(z / r_cyl)
-        end if
-        cot_theta = 1.0 / tan(theta)
-        psi(i1,i2,i3) = 4.0 * self%disc_r0**2 * bpol0 * (r_cyl / self%disc_r0)**0.75 &
+    do i3=m3%lb,m3%ub
+      phi = m3%centre_nat + m3%r(i3) - 0.5*m3%d
+      do i2=m2%lb,m2%ub
+        x2 = m2%centre_nat + m2%r(i2) - 0.5*m2%d
+        do i1=m1%lb,m1%ub
+          x1 = m1%centre_nat + m1%r(i1) - 0.5*m1%d
+          if (m1%type == 'spherical_mesh') then
+            theta = x2
+            r_sph = abs(x1)
+            z = abs(r_sph * cos(theta))
+            r_cyl = abs(r_sph * sin(theta))
+          else if (m1%type == 'cylindrical_mesh') then
+            z = x1
+            r_cyl = x2
+            r_sph = sqrt(z**2 + r_cyl**2)
+            theta = acos(z / r_cyl)
+          end if
+          cot_theta = 1.0 / tan(theta)
+          psi(i1,i2,i3) = 4.0 * self%disc_r0**2 * bpol0 * (r_cyl / self%disc_r0)**0.75 &
                       * self%mbend**1.25 / 3.0 / (self%mbend**2 + cot_theta**2)**0.625
+        end do
       end do
     end do
-  end do
-  
+  end if
+
   ! intialise field variables
   do i3=m3%lb,m3%ub
     phi = m3%centre_nat + m3%r(i3)
@@ -184,17 +192,18 @@ SUBROUTINE condition (self, m, ff, idx)
         rho_mid = rho0 * (r_sph / self%disc_r0)**(-self%rpindex) 
         if (theta < (0.5*math%pi - disk_angle) .or. theta > (0.5*math%pi + disk_angle)) then
           ! in the corona
-          ff(i1,i2,i3,idx%d) = rho_mid * self%aspect_ratio**2 * (1.0 + self%rpindex) &
+          ff(i1,i2,i3,idx%d ) = rho_mid * self%aspect_ratio**2 * (1.0 + self%rpindex) &
                              * exp(-0.5 * cos(0.5*math%pi - disk_angle)**2 / self%aspect_ratio**2)
           pgas0 = ff(i1,i2,i3,idx%d) * vkep**2 / (1.0 + self%rpindex)
-          ff(i1,i2,i3,idx%e) = pgas0 / (self%gamma - 1.0)
+          ff(i1,i2,i3,idx%e ) = pgas0 / (self%gamma - 1.0)
           ff(i1,i2,i3,idx%pz) = 0.0
         else
           ! in the disk
-          ff(i1,i2,i3,idx%d) = rho_mid * exp(-0.5 * cos(theta)**2 / self%aspect_ratio**2)
+          ff(i1,i2,i3,idx%d ) = rho_mid * exp(-0.5 * cos(theta)**2 / self%aspect_ratio**2)
           pgas0 = ff(i1,i2,i3,idx%d) * vkep**2 * self%aspect_ratio**2
-          ff(i1,i2,i3,idx%e) = pgas0 / (self%gamma - 1.0)
-          ff(i1,i2,i3,idx%pz) = vkep * sqrt(1.0 - (1.0 + self%rpindex) * self%aspect_ratio**2)
+          ff(i1,i2,i3,idx%e ) = pgas0 / (self%gamma - 1.0)
+          ff(i1,i2,i3,idx%pz) = vkep * sqrt(1.0 - (1.0 + self%rpindex) * self%aspect_ratio**2) &
+                              * ff(i1,i2,i3,idx%d )
         end if
 
         ! apply density floor (if desired)
