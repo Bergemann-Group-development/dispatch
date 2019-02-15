@@ -129,7 +129,11 @@ SUBROUTINE output (self, patch, experiment_name)
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
   call self%init (patch)
-  np = (time_slices%order+1)/2
+  if (io%method=='legacy') then
+    np = 1
+  else
+    np = (time_slices%order+1)/2
+  end if
   it = patch%iit(patch%nt-np)
   if (patch%t(it) >= patch%out_next) then
     call self%lock%set
