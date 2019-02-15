@@ -212,6 +212,15 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   if (patch%is_clear(bits%not_leaf)) then
     refine = self%refine_needed (tasklist, link)
     !---------------------------------------------------------------------------
+    ! Optional custom refine
+    !---------------------------------------------------------------------------
+    if (patch%manual_refine) then
+      call tasklist%lock%set
+      call patch%custom_refine
+      call check_level_constraint
+      call tasklist%lock%unset
+    end if
+    !---------------------------------------------------------------------------
     ! A negative refine value indicates that the patch is not needed
     !---------------------------------------------------------------------------
     if (refine < 0 .and. patch%level > self%levelmin) then
@@ -227,13 +236,9 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
     else if (refine > 0 .and. patch%level < self%levelmax) then
       call tasklist%lock%set
       if (verbose > 0) &
-        write (io%output,*) patch%id, 'refine requested'
-      if (patch%manual_refine) then
-        call patch%custom_refine
-      else
-        call self%split_patch (tasklist, link)
-        call check_level_constraint
-      end if
+        write (io%output,*) patch%id, 'refine suggested'
+      call self%split_patch (tasklist, link)
+      call check_level_constraint
       call tasklist%lock%unset
       was_refined = .true.
     end if
