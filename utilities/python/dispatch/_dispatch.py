@@ -225,9 +225,13 @@ object takes both numeric and text key values: Examples:\n\
     d=p.d[0]\n\
     d=p.d['d']")
 
-    def plane(self,x=None,y=None,z=None,iv=0,verbose=0):
-        li=self.li
-        ui=self.ui+1
+    def plane(self,x=None,y=None,z=None,iv=0):
+        if self.guard_zones:
+            li=self.li
+            ui=self.ui
+        else:
+            li=np.zeros(3)
+            ui=self.n-1
         if x:
             p=(x-self.x[0])/self.ds[0]
             i=np.int(p)
