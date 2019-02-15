@@ -228,8 +228,12 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
       call tasklist%lock%set
       if (verbose > 0) &
         write (io%output,*) patch%id, 'refine requested'
-      call self%split_patch (tasklist, link)
-      call check_level_constraint
+      if (patch%manual_refine) then
+        call patch%custom_refine
+      else
+        call self%split_patch (tasklist, link)
+        call check_level_constraint
+      end if
       call tasklist%lock%unset
       was_refined = .true.
     end if
