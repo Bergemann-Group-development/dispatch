@@ -356,13 +356,15 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   end if
   if (self%check_filled) then
     allocate (filled(target%gn(1),target%gn(2),target%gn(3),target%nv))
-    allocate (src(target%gn(1),target%gn(2),target%gn(3)))
+    if (verbose > 0) &
+      allocate (src(target%gn(1),target%gn(2),target%gn(3)))
     l = target%li
     u = target%ui
     filled = -1
     if (.not.all_cells_l) then
       filled(l(1):u(1),l(2):u(2),l(3):u(3),:) = target%level
-      src(l(1):u(1),l(2):u(2),l(3):u(3)) = target%id
+      if (verbose > 0) &
+        src(l(1):u(1),l(2):u(2),l(3):u(3)) = target%id
     end if
   end if
   if (trim(target%kind)/='rt_solver') then
@@ -390,7 +392,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
    wc(0) = wallclock()
    source => task2patch(nbor%task)
    if (use_locks) &
-   call source%lock%set ('download'//trim(info))
+     call source%lock%set ('download'//trim(info))
    write (info,'(3i6,i4,i6)') target%id, target%istep, source%id, omp%thread, source%istep
    wc(1) = wc(1) + wallclock() - wc(0)
    if (verbose > 0) &
@@ -449,7 +451,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
    end if
    wc(2) = wc(2) + wallclock() - wc(0)
    if (use_locks) &
-   call source%lock%unset ('download'//trim(info))
+     call source%lock%unset ('download'//trim(info))
    wc(3) = wc(3) + wallclock() - wc(0)
    wc(4) = wc(4) + 1d0
    nbor => nbor%next
@@ -716,8 +718,12 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
               if (self%check_filled) then
                 do ix=l(1),u(1)
                   filled(ix,iy,iz,iv) = source%level
-                  src(ix,iy,iz) = source%id
                 end do
+                if (verbose > 0) then
+                  do ix=l(1),u(1)
+                    src(ix,iy,iz) = source%id
+                  end do
+                end if
               end if
             end do
           end do
@@ -736,8 +742,14 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
                   ii = [ix,iy,iz]
                   no = all((ii>=li).and.(ii<=ui))
                   filled(ix,iy,iz,iv) = merge(filled(ix,iy,iz,iv), int(source%level,kind=int8), no)
-                  src(ix,iy,iz) = merge(src(ix,iy,iz), source%id, no)
                 end do
+                if (verbose > 0) then
+                  do ix=l(1),u(1)
+                    ii = [ix,iy,iz]
+                    no = all((ii>=li).and.(ii<=ui))
+                    src(ix,iy,iz) = merge(src(ix,iy,iz), source%id, no)
+                  end do
+                end if
               end if
             end do
           end do
@@ -761,7 +773,8 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
                       pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
                       pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
                     filled(ix,iy,iz,iv) = source%level
-                    src(ix,iy,iz) = source%id
+                    if (verbose > 0) &
+                      src(ix,iy,iz) = source%id
                   else
                     write (io_unit%log,*)'WARNING: prevented overwrite', target%id, &
                       source%id, ix,iy,iz,o,iv, filled(ix,iy,iz,iv), src(ix,iy,iz)
@@ -796,8 +809,14 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
                   ii = [ix,iy,iz]
                   no = all((ii>=li).and.(ii<=ui))
                   filled(ix,iy,iz,iv) = merge(filled(ix,iy,iz,iv), int(source%level,kind=int8), no)
-                  src(ix,iy,iz) = merge(src(ix,iy,iz), source%id, no)
                 end do
+                if (verbose > 0) then
+                  do ix=l(1),u(1)
+                    ii = [ix,iy,iz]
+                    no = all((ii>=li).and.(ii<=ui))
+                    src(ix,iy,iz) = merge(src(ix,iy,iz), source%id, no)
+                  end do
+                end if
               end if
             end do
           end do
@@ -824,8 +843,13 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
                       pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
                       no)
                   filled(ix,iy,iz,iv) = merge (filled(ix,iy,iz,iv), int(source%level, kind=int8), no)
-                  src   (ix,iy,iz)    = merge (src   (ix,iy,iz)   , source%id   , no)
                 end do
+                if (verbose > 0) then
+                  do ix=l(1),u(1)
+                    no = filled(ix,iy,iz,iv) > source%level
+                    src(ix,iy,iz) = merge(src(ix,iy,iz), source%id, no)
+                  end do
+                end if
               !-----------------------------------------------------------------
               ! No questions asked
               !-----------------------------------------------------------------
@@ -858,8 +882,14 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
                   no = all((ii>=li).and.(ii<=ui))
                   filled(ix,iy,iz,iv) = &
                     merge (filled(ix,iy,iz,iv), int(source%level,kind=int8), no)
-                  src(ix,iy,iz) = merge (src(ix,iy,iz), source%id, no)
                 end do
+                if (verbose > 0) then
+                  do ix=l(1),u(1)
+                    ii = [ix,iy,iz]
+                    no = all((ii>=li).and.(ii<=ui))
+                    src(ix,iy,iz) = merge(src(ix,iy,iz), source%id, no)
+                  end do
+                end if
               end if
             end do
           end do
@@ -890,8 +920,6 @@ END SUBROUTINE same_linear
 SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
   class(download_t):: self
   class(patch_t), pointer :: target, source
-  !integer(int8), dimension(:,:,:,:), allocatable:: filled
-  !integer, dimension(:,:,:,:), allocatable:: src
   logical, optional       :: all_cells, all_times
   integer, optional       :: only
   !.............................................................................
@@ -1013,9 +1041,11 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
                   end if
                 end do
                 target%mem(ix,iy,iz,iv,target%it,1) = exp(target%mem(ix,iy,iz,iv,target%it,1))
-                if (self%check_filled) &
+                if (self%check_filled) then
                   filled(ix,iy,iz,iv) = source%level
-                  src(ix,iy,iz) = source%id
+                  if (verbose > 0) &
+                    src(ix,iy,iz) = source%id
+                end if
               end if
             end do
           else
@@ -1036,8 +1066,12 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
                 do ix=l(1),u(1)
                   target%mem(ix,iy,iz,iv,target%it,1) = exp(target%mem(ix,iy,iz,iv,target%it,1))
                   filled(ix,iy,iz,iv) = source%level
-                  src(ix,iy,iz) = source%id
                 end do
+                if (verbose > 0) then
+                  do ix=l(1),u(1)
+                    src(ix,iy,iz) = source%id
+                  end do
+                end if
               else
                 do ix=l(1),u(1)
                   target%mem(ix,iy,iz,iv,target%it,1) = exp(target%mem(ix,iy,iz,iv,target%it,1))
@@ -1067,9 +1101,11 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
                       w(1+jt-j0)*(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1))
                   end if
                 end do
-                if (self%check_filled) &
+                if (self%check_filled) then
                   filled(ix,iy,iz,iv) = source%level
-                  src(ix,iy,iz) = source%id
+                  if (verbose > 0) &
+                    src(ix,iy,iz) = source%id
+                end if
               end if
             end do
           else
@@ -1089,8 +1125,12 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
               if (self%check_filled) then
                 do ix=l(1),u(1)
                   filled(ix,iy,iz,iv) = source%level
-                  src(ix,iy,iz) = source%id
                 end do
+                if (verbose > 0) then
+                  do ix=l(1),u(1)
+                    src(ix,iy,iz) = source%id
+                  end do
+                end if
               end if
             end do
           end if
@@ -1143,7 +1183,8 @@ SUBROUTINE same_rt (self, target, source)
              pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
           if (self%check_filled) then
             filled(ix,iy,iz,iv) = source%level
-            src(ix,iy,iz) = source%id
+            if (verbose > 0) &
+              src(ix,iy,iz) = source%id
           end if
         end do
       end do
@@ -1247,8 +1288,6 @@ END SUBROUTINE different
 SUBROUTINE different_prolong (self, target, source, all_cells, only)
   class(download_t):: self
   class(patch_t), pointer :: target, source
-  !integer(int8), dimension(:,:,:,:), allocatable:: filled
-  !integer, dimension(:,:,:,:), allocatable:: src
   logical, optional:: all_cells
   integer, optional:: only
   !.............................................................................
@@ -1381,8 +1420,6 @@ END SUBROUTINE different_prolong
 SUBROUTINE different_rt (self, target, source)
   class(download_t):: self
   class(patch_t), pointer :: target, source
-  !integer(int8), dimension(:,:,:,:), allocatable:: filled
-  !integer, dimension(:,:,:,:), allocatable:: src
   !.............................................................................
   integer                 :: ix, iy, iz, iv, jt(2)
   integer, dimension(3)   :: l, u, ii, lb, ub, li, ui
