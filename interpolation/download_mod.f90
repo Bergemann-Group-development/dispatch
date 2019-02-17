@@ -50,6 +50,7 @@ MODULE download_mod
   integer:: id_debug=0
   integer:: use_different=0
   logical:: sorted=.false.
+  logical:: use_locks=.true.
   type(download_t), public:: download
 CONTAINS
 
@@ -63,7 +64,7 @@ SUBROUTINE init (self)
   logical, save:: check_filled=.false.
   logical, save:: first_time=.true.
   namelist /download_params/ order_interpolator, order_time, check_filled, &
-    use_different, sorted, id_debug, verbose
+    use_different, sorted, use_locks, id_debug, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%init')
   !$omp critical (download_cr)
@@ -388,6 +389,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   do while (associated(nbor))
    wc(0) = wallclock()
    source => task2patch(nbor%task)
+   if (use_locks) &
    call source%lock%set ('download'//trim(info))
    write (info,'(3i6,i4,i6)') target%id, target%istep, source%id, omp%thread, source%istep
    wc(1) = wc(1) + wallclock() - wc(0)
@@ -446,6 +448,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     end if
    end if
    wc(2) = wc(2) + wallclock() - wc(0)
+   if (use_locks) &
    call source%lock%unset ('download'//trim(info))
    wc(3) = wc(3) + wallclock() - wc(0)
    wc(4) = wc(4) + 1d0
