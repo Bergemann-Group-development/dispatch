@@ -62,7 +62,7 @@ SUBROUTINE init (self, task)
   !-----------------------------------------------------------------------------
   if (self%initialized) return
   call trace%print_id (id)
-  call self%lock%init
+  call self%lock%init ('data')
   call self%lock%set
   if (.not.self%initialized) then
     call trace%begin('data_io_t%init')
@@ -189,8 +189,9 @@ SUBROUTINE output (self, patch, experiment_name)
       if (io%out_time==0.0) exit
       patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
       !---------------------------------------------------------------------------
-      write (io%output,*) 'io_t%output: id, iout, out_next, count =', &
-        patch%id, patch%iout, patch%out_next, count
+      if (io%verbose > 0) & 
+        write (io%output,*) 'io_t%output: id, iout, out_next, count =', &
+          patch%id, patch%iout, patch%out_next, count
       !---------------------------------------------------------------------------
       call os%mkdir_no (patch%iout)
     end do

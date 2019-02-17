@@ -103,7 +103,7 @@ SUBROUTINE init (self)
     duration, only_initial, q_min, q_max
   integer:: iostat
   !.............................................................................
-  call self%lock%init
+  call self%lock%init ('load')
   rewind (io%input); read(io%input, load_balance_params, iostat=iostat)
   if (io%master) then
     if (io%master) write (*,load_balance_params)
