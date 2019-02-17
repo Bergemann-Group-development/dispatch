@@ -129,10 +129,19 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   refine = 0
   if (.not. on) return
   call trace%begin('refine_t%needed', itimer=itimer)
-  !
+  !----------------------------------------------------------------------------
   patch => task2patch(link%task)
-  !
-  ! filter out patches which do not match the necessary criteria
+  dxmin = minval(patch%ds)
+  dxmax = maxval(patch%ds)
+  if (verbose > 1) then
+    write (io_unit%output,'(a,i6,2i4,l4,1p,4e11.2)') &
+      'refine_t%refine_needed: id, istep, refine_next =', &
+      patch%id, patch%istep, patch%check_refine_next, &
+      patch%is_set(bits%virtual), min_dx, dxmin, max_dx, dxmax
+  end if
+  !----------------------------------------------------------------------------
+  ! Filter out patches that do not match the necessary criteria
+  !----------------------------------------------------------------------------
   if (patch%is_set(bits%virtual)) then
     call trace%end (itimer)
     return
@@ -141,8 +150,6 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
     call trace%end (itimer)
     return
   end if
-  dxmin = minval(patch%ds)
-  dxmax = maxval(patch%ds)
   if (dxmin < min_dx .or. dxmax >= max_dx) then
     call trace%end (itimer)
     return
@@ -151,7 +158,6 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
     call trace%end (itimer)
     return
   end if
-  !
   !------------------------------------------------------------------------
   ! Refinement Criteria
   !------------------------------------------------------------------------
@@ -163,14 +169,14 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   if (force_cubical) refine = max (refine, self%check_cubical(patch))
   !
   ! Jeans criterion
-  if (min_jeans > 0.0) refine = max (refine, self%check_Jeans(patch))
+  if (max_jeans > 0.0) refine = max (refine, self%check_Jeans(patch))
   !
   ! shock and/or contact discontinuity detector
   if (max_shock > 0.0 .or. max_contact > 0.0) &
     refine = max (refine, self%shock_and_cd_detector(patch))
   !
   ! gradient detector
-  if (any(max_grad > 0.0) ) refine = max (refine, self%gradient_detector(patch))
+  if (any(max_grad > 0.0)) refine = max (refine, self%gradient_detector(patch))
   !
   ! refine on (a) user-specified region(s)
   if (any(region_llc /= 0.0) .and. any(region_urc /= 0.0)) &
@@ -203,8 +209,8 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
   !.............................................................................
   was_refined = .false.
   if (.not. on) return
-  if (verbose>1) &
-    print *, link%task%id, 'MK: refine_t%check_current, at t =', link%task%time, link%task%level, self%levelmax
+  if (verbose > 1) &
+    print *, link%task%id, 'refine_t%check_current, at t =', link%task%time, link%task%level, self%levelmax
   if (link%task%level >= self%levelmax) return
   call trace%begin('refine_t%check_current', itimer=itimer)
   !
@@ -227,6 +233,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
       call tasklist%lock%set
       if (verbose > 0) &
         write (io%output,*) patch%id, 'derefine requested'
+      io%do_trace=.true.
       call self%remove_patch (tasklist, link)
       call check_level_constraint
       call tasklist%lock%unset
@@ -236,7 +243,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
     else if (refine > 0 .and. patch%level < self%levelmax) then
       call tasklist%lock%set
       if (verbose > 0) &
-        write (io%output,*) patch%id, 'refine suggested'
+        write (io%output,*) patch%id, 'refine requested'
       call self%split_patch (tasklist, link)
       call check_level_constraint
       call tasklist%lock%unset
@@ -265,7 +272,7 @@ contains
       do while (associated(link))
         if (link%task%is_clear (bits%not_leaf)) then
           if (self%check_nbor_support (tasklist, link) > 0) then
-            if (verbose>2) &
+            if (verbose > 2) &
               print *, link%task%id, &
               'check_level_constraint: patch needs splitting at level', &
               link%task%level
@@ -277,7 +284,7 @@ contains
         link => link%next
       end do
       iteration = iteration+1
-      if (verbose>2) &
+      if (verbose > 2) &
         print *, 'check_level_constraint, iteration =', &
         iteration, still_needed
     end do
@@ -377,7 +384,7 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   ! call.
   !------------------------------------------------------------------------
   if (parent%time > 0.0 .and. child%restart <= 0) call download%download_link (child_link, all_cells=.true.)
-  if (verbose>0) then
+  if (verbose > 0) then
     if (i==0) &
     print 1,'                           parent, level, iout, time, size(3), position(3) =', &
       parent%id, parent%level, parent%iout, parent%time, parent%size, parent%position
@@ -406,7 +413,7 @@ SUBROUTINE split_patch (self, tlist, this)
   !.............................................................................
   if (this%task%is_set(bits%not_leaf)) return
   do_trace = io%do_trace
-  if (verbose > 1) &
+  if (verbose > 2) &
     io%do_trace=.true.
   call trace%begin('refine_t%split_patch', 1)
   !
@@ -456,7 +463,7 @@ SUBROUTINE split_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   call tlist%init_bdries
   !
-  if (verbose > 0) call tlist%print_tasks()
+  if (verbose > 2) call tlist%print_tasks()
   !
   call trace%end()
   io%do_trace = do_trace
@@ -550,7 +557,7 @@ FUNCTION check_nbor_support (self, tlist, link, check_only) RESULT (refine_it)
   else
     split_if_necessary = .true.
   end if
-  refine_it = 0
+  refine_it = -1
   this => link%task
   nbor => link%nbor
   do while (associated(nbor))
@@ -579,7 +586,7 @@ FUNCTION check_cubical (self, patch) RESULT (refine_it)
   integer:: refine_it
   !.............................................................................
   if (all(patch%n==scene%patch_n)) then
-    refine_it = 0
+    refine_it = -1
   else
     refine_it = 1
     patch%msplit = 1
@@ -589,7 +596,7 @@ END FUNCTION check_cubical
 !> =============================================================================
 !> Calculate the Jeans length and compare it to the patch resolution.
 !> =============================================================================
-FUNCTION check_jeans (self, patch) RESULT(refine_it)
+FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   USE math_mod
   USE scaling_mod
   class(refine_t):: self
@@ -605,7 +612,6 @@ FUNCTION check_jeans (self, patch) RESULT(refine_it)
   e => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,patch%it,1)
   allocate(c_sound2(size(d,1),size(d,2),size(d,3)), &
            pg(patch%gn(1),patch%gn(2),patch%gn(3)))
-
   select type (patch)
   class is (solver_t)
     pg = patch%gas_pressure()
@@ -615,16 +621,18 @@ FUNCTION check_jeans (self, patch) RESULT(refine_it)
   c_sound2 = patch%gamma * pg(l(1):u(1),l(2):u(2),l(3):u(3)) / d
   Jeans_length = minval(sqrt(math%pi * c_sound2 / (d*scaling%grav)))
   Jeans_num = minval(patch%mesh%d) / Jeans_length
-  refine_it = merge(1,0,Jeans_num > max_jeans)
-  refine_it = merge(-1,0,Jeans_num < min_jeans)
-
-  if (verbose > 0) print*,'Jeans criterion:', patch%id, Jeans_num, min_jeans, refine_it
-
+  refine_it = 0
+  if (Jeans_num > max_jeans) refine_it = +1
+  if (Jeans_num < min_jeans) refine_it = -1
+  if (verbose > 0) &
+    write (io_unit%output,'(a,i6,1p,3e9.2,i4)') &
+      'Jeans criterion: id, max, num, min, refine', &
+      patch%id, max_jeans, Jeans_num, min_jeans, refine_it
   deallocate (c_sound2, pg)
   nullify (d,e)
   end associate
   call trace%end()
-END FUNCTION check_jeans
+END FUNCTION check_Jeans
 
 !> =============================================================================
 !> Refine on shocks, with threshold set by tolerance parameter `tol_shock`.

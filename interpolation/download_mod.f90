@@ -487,7 +487,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       end if
     end if
     deallocate (filled)
-    deallocate (src)
+    if (verbose > 0) &
+      deallocate (src)
   end if
   if (sorted) then
     call clean_sorted_nbor_list (sorted_head)
