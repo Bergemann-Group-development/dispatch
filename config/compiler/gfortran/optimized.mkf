@@ -1,4 +1,4 @@
 DEBUG = -fbacktrace
-OPT = -O3 -ftree-vectorize
-HW = -Wline-truncation -Wno-surprising
+OPT = -O2
+HW =
 #LDFLAGS = $(OPT) $(PAR) $(HW)
