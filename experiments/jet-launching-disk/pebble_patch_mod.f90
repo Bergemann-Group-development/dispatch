@@ -41,7 +41,7 @@ MODULE pebble_patch_mod
     procedure(kdk_drag), pointer:: move=>null() ! particle mover
     real:: pebble_rate                          ! pebble arrival rate
     logical:: only_pebbles                      ! freeze the MHD conditions (for tests)
-    real:: point_mass                           ! central point mass (in M_Sun)
+    real(8):: point_mass                           ! central point mass (in M_Sun)
     integer:: n_patch_total                     ! convenience variable to store total no. of patches
   contains
     procedure:: init                            ! initialize the position and size
@@ -102,7 +102,7 @@ SUBROUTINE init (self)
                            solid_density_cgs, size, size_range, it_max, pebble_rate_cgs, &
                            id_dbg, only_pebbles, ppc, trace_every, &
                            detailed_timer, do_trace_output, force_restart, &
-                           do_split, track_level, verbose, point_mass
+                           do_split, track_level, verbose, point_mass, debug
   !-----------------------------------------------------------------------------
   call trace%begin ('pebble_patch_t%init')
 
@@ -152,7 +152,7 @@ SUBROUTINE init (self)
   self%do_pebbles = do_pebbles
   self%only_pebbles = only_pebbles
   self%pebble_rate = pebble_rate_cgs * scaling%t
-  self%point_mass = point_mass
+  self%point_mass = point_mass * cgs%m_sun
 
   !-----------------------------------------------------------------------------
   ! Compute drag coefficient; the inverse stopping time for a 1 cm particle in
@@ -478,8 +478,9 @@ SUBROUTINE kdk_drag (self, p)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: p
   !.............................................................................
-  real:: ar2, ds
-  real(8) :: rad, sp, p1(3), ag(3)
+  real:: ds
+  real(8) :: rad, sp, p1(3), ag(3), ar2
+  real(8), parameter:: small=1.0e-32
   integer, save:: nprint=20
   integer:: warn
   integer, save:: itimer=0
@@ -500,7 +501,7 @@ SUBROUTINE kdk_drag (self, p)
 
   ag = p%ag
   p1 = p%p
-  p%dt = sqrt(sum(p1**2)/sqrt(sum(ag**2)))*self%pebbles%courant
+  p%dt = sqrt(sum(p1**2)/sqrt(sum(ag**2)+small))*self%pebbles%courant
   p%dt = min(p%dt,0.1*io%out_time,minval(self%ds/max(1e-20,abs(p%v))))
   p%dt = min(p%dt,0.51_8*(self%time-p%t))
   !
@@ -534,8 +535,8 @@ SUBROUTINE kdk_drag (self, p)
   end if
   if (warn>0 .and. verbose>3) then
     print *,'  dt',p%dt,1,verbose
-    print *,' dt1',self%pebbles%courant*sqrt(sum(p%v**2)/sum(p%ag**2))
-    print *,' dt2',self%pebbles%courant*sqrt(sum(p%p**2)/sqrt(sum(p%ag**2)))
+    print *,' dt1',self%pebbles%courant*sqrt(sum(p%v**2)/(sum(p%ag**2)+small))
+    print *,' dt2',self%pebbles%courant*sqrt(sum(p%p**2)/sqrt(sum(p%ag**2)+small))
     print *,' dt3',minval(self%ds)/max(1e-20,abs(p%v)),io%out_time
     print'(1x,a,1p,9(3e11.2,2x))', 'dt3', self%ds, abs(p%v), self%ds/max(1e-20,abs(p%v))
     print *,'  ds',self%ds
@@ -565,7 +566,7 @@ SUBROUTINE kdk_drag (self, p)
   call self%compute_drag (p,warn)
   if (warn > 0 .and. verbose > 3) then
     print *,'  dt',p%dt
-    print *,' dt1',self%pebbles%courant * sqrt(sum(p%v**2) / sum(p%ag**2))
+    print *,' dt1',self%pebbles%courant * sqrt(sum(p%v**2) / (sum(p%ag**2)+small))
     print *,' dt2',minval(self%ds / max(1e-20, abs(p%v)))
     print *,' dt3',min(p%dt, minval(self%ds / max(1e-20, abs(p%v))))
     print'(1x,a,1p,9(3e11.2,2x))', 'dt3', self%ds, abs(p%v), self%ds / max(1e-20, abs(p%v))
@@ -597,22 +598,22 @@ SUBROUTINE kdk_drag (self, p)
   first_time = .false.
 CONTAINS
   subroutine gravitational_acceleration
-    if (self%mesh(1)%type == 'spherical') then
-      ar2 = 1.0 / p%p(1)**2
+    if (trim(self%mesh(1)%type) == 'spherical_mesh') then
+      ar2 = 1.0 / (p%p(1)**2 + small)
       p%ag(1) = scaling%grav * self%point_mass * ar2
-    else if (self%mesh(1)%type == 'cylindrical') then
-      ar2 = 1.0 / (p%p(1)**2 + p%p(2)**2)
+    else if (trim(self%mesh(1)%type) == 'cylindrical_mesh') then
+      ar2 = 1.0 / (p%p(1)**2 + p%p(2)**2 + small)
       p%ag(2) = scaling%grav * self%point_mass * ar2
     end if
   end subroutine gravitational_acceleration
 
   subroutine centrifugal_acceleration
-    if (self%mesh(1)%type == 'spherical') then
-      p%ag(1) = p%ag(1) + (p%v(3)**2 + p%v(2)**2) / p%p(1)
-      p%ag(2) = p%ag(2) + p%v(3)**2 * cos(p%p(2)) / (p%p(1) * sin(p%p(2)))
-    else if (self%mesh(1)%type == 'cylindrical') then
+    if (trim(self%mesh(1)%type) == 'spherical_mesh') then
+      p%ag(1) = p%ag(1) + (p%v(3)**2 + p%v(2)**2) / (p%p(1) + small)
+      p%ag(2) = p%ag(2) + p%v(3)**2 * cos(p%p(2)) / (p%p(1) * sin(p%p(2)) + small)
+    else if (trim(self%mesh(1)%type) == 'cylindrical_mesh') then
       !p%ag(1) = p%ag(1) + 0.0
-      p%ag(2) = p%ag(2) + p%v(3)**2 / p%p(2)
+      p%ag(2) = p%ag(2) + p%v(3)**2 / (p%p(2) + small)
     end if
     !p%ag(3) = p%ag(3) + 0.0
   end subroutine centrifugal_acceleration
@@ -1153,8 +1154,8 @@ FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
   w  = self%offset + (modulo(p-self%position+0.5_8*self%box,self%box)-0.5_8*self%box)/self%ds
   ii = w
   w  = w-ii
-  if (any(ii<1 .or. ii>gn-1) .and. verbose>1) then
-    print*,self%id, 'index_r4: warning', ii, w, inside_r4 (self, p)
+  if (any((ii<1 .or. ii>gn-1) .and. gn>1) .and. verbose>1) then
+    print*,self%id, 'index_r4: warning', ii, gn, w, inside_r4 (self, p)
   end if
   ii = max(1,min(ii,gn-1))
   if (debug) then
@@ -1244,9 +1245,8 @@ FUNCTION interpolate_r4 (self, t, field, i, w) RESULT (out)
   q = 1.0-w
   dim = shape(field)-1
   if (any(i < 1 .or. i > dim(1:3))) then
-    if (verbose > 1) then
-      print*,'interpolate_r4: warning', i, w
-      print*, dim(1:3)
+    if (verbose > 2) then
+      print*,'interpolate_r4: warning', i, w, dim(1:3)
     end if
     i = max(1,min(i,dim(1:3)))
   end if
