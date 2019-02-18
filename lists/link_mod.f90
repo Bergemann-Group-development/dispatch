@@ -322,6 +322,8 @@ SUBROUTINE add_nbor_by_rank (self, this)
 END SUBROUTINE add_nbor_by_rank
 
 !> =============================================================================
+!> Remove this from the nbor list, and return the nbor pointer that was pointing
+!> to it
 !> =============================================================================
 FUNCTION remove_nbor (self, this) RESULT (nbor)
   class(link_t):: self
@@ -354,6 +356,7 @@ FUNCTION remove_nbor (self, this) RESULT (nbor)
 END FUNCTION remove_nbor
 
 !> =============================================================================
+!> Remove this task from the nbor lists of the nbors of self
 !> =============================================================================
 SUBROUTINE remove_from_nbors (self, this)
   class(link_t):: self

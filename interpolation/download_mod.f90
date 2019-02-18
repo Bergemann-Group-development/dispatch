@@ -342,17 +342,19 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   logical:: all_cells_l
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link', itimer=itimer)
-  if (target%id == id_debug .or. verbose > 2) then
-    write(io_unit%output,*) 'download_t%download_link: associated(link)', &
-      associated(link)
-    write(io_unit%output,*) 'download_t%download_link: associated(task)', &
-      associated(link%task)
-    write(io_unit%output,*) 'download_t%download_link: associated(nbor)', &
-      associated(link%nbor)
-    write(io_unit%output,*) 'download_t%download_link: id, time =', &
-      link%task%id, link%task%time
+  if (.not.associated(link)) then
+    call io%abort('download_t%download_link: link not associated')
+  else if (.not.associated(link%task)) then
+    call io%abort('download_t%download_link: link%task not associated')
   end if
   target => task2patch(link%task)
+  if (target%id == id_debug .or. verbose > 2) then
+    write(io_unit%output,*) 'download_t%download_link: id, time =', &
+      target%id, target%time
+  end if
+  if (.not.associated(link%nbor)) then
+    call io%abort('download_t%download_link: link%nbor not associated')
+  end if
   !-----------------------------------------------------------------------------
   ! Allocate and initialise array to track filling of cells.
   ! A value of `-1` defines unfilled; all other values denote the *level* of the

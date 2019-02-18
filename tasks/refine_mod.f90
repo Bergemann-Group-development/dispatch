@@ -235,9 +235,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
         write (io%output,*) patch%id, 'derefine requested'
       io%do_trace=.true.
       call self%remove_patch (tasklist, link)
-  print *,'check10'
       call check_level_constraint
-  print *,'check11'
       call tasklist%lock%unset
   print *,'check12'
 !---------------------------------------------------------------------------
@@ -499,17 +497,13 @@ SUBROUTINE remove_patch (self, tlist, this)
   !----------------------------------------------------------------------------
   ! Change the status of the parent patch to leaf
   !----------------------------------------------------------------------------
-  print *,'check1'
   parent => this%parent
-  print *,'check2'
   call parent%task%clear (bits%not_leaf)
-  print *,'check3'
   !----------------------------------------------------------------------------
   ! Decrement the I/O write counter
   !----------------------------------------------------------------------------
   io%nwrite = io%nwrite - 1
   count = counters%decrement (this%task%iout+1, io%nwrite)
-  print *,'check4'
   !----------------------------------------------------------------------------
   io_verbose = io%verbose
   io%verbose = 3
@@ -523,15 +517,12 @@ SUBROUTINE remove_patch (self, tlist, this)
   ! Deallocate the patch memory, and deallocate the patch instance
   !----------------------------------------------------------------------------
   call this%task%delete()
-  print *,'check5'
   deallocate (this%task)
-  print *,'check6'
   !----------------------------------------------------------------------------
   ! Remove the link from the task list, and update the nbor list of all nbors
   !----------------------------------------------------------------------------
   nbor => this%nbor
   call tlist%remove_link (this)
-  print *,'check7'
   !----------------------------------------------------------------------------
   ! Update the nbor lists of all nbors
   ! FIXME: Should deallocate all list%nbor links 
@@ -550,12 +541,11 @@ SUBROUTINE remove_patch (self, tlist, this)
   end if
   call tlist%print_tasks ('after')
   io%verbose = io_verbose
-  print *,'check8'
   !----------------------------------------------------------------------------
   ! Check the ready status of the parent patch
   !----------------------------------------------------------------------------
   call tlist%check_ready (parent)
-  print *,'check9'
+  if (verbose > 1) &
   call download%set_verbose (3)
   !----------------------------------------------------------------------------
   !$omp end critical (queue_cr)
