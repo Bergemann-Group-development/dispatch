@@ -197,17 +197,18 @@ END FUNCTION refine_needed
 !> the head of the queue.  If the task is a leaf task, and the level of refinement
 !> does not appear to be needed, request derefinement.
 !> =============================================================================
-SUBROUTINE check_current (self, tasklist, link, was_refined)
+SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   class(refine_t):: self
   class(list_t):: tasklist
   class(link_t), pointer:: link
   class(patch_t), pointer:: patch
-  logical, intent(out):: was_refined
+  logical, intent(out):: was_refined, was_derefined
   real:: dxmin, dxmax
   integer:: refine
   integer, save:: itimer=0
   !.............................................................................
   was_refined = .false.
+  was_derefined = .false.
   if (.not. on) return
   if (verbose > 1) &
     print *, link%task%id, 'refine_t%check_current, at t =', link%task%time, link%task%level, self%levelmax
@@ -233,10 +234,10 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
       call tasklist%lock%set
       if (verbose > 0) &
         write (io%output,*) patch%id, 'derefine requested'
-      io%do_trace=.true.
       call self%remove_patch (tasklist, link)
       call check_level_constraint
       call tasklist%lock%unset
+      was_derefined = .true.
   print *,'check12'
 !---------------------------------------------------------------------------
     ! A positive refine value indicates that the patch needs to be refined
@@ -505,9 +506,6 @@ SUBROUTINE remove_patch (self, tlist, this)
   io%nwrite = io%nwrite - 1
   count = counters%decrement (this%task%iout+1, io%nwrite)
   !----------------------------------------------------------------------------
-  io_verbose = io%verbose
-  io%verbose = 3
-  print *, 'this%task%id =', this%task%id
   call tlist%print_tasks ('before')
   !----------------------------------------------------------------------------
   ! Remove this task from the nbors nbor lists
@@ -519,34 +517,16 @@ SUBROUTINE remove_patch (self, tlist, this)
   call this%task%delete()
   deallocate (this%task)
   !----------------------------------------------------------------------------
-  ! Remove the link from the task list, and update the nbor list of all nbors
+  ! Remove the link from the task list
   !----------------------------------------------------------------------------
-  nbor => this%nbor
   call tlist%remove_link (this)
-  !----------------------------------------------------------------------------
-  ! Update the nbor lists of all nbors
-  ! FIXME: Should deallocate all list%nbor links 
-  !----------------------------------------------------------------------------
-  if (.false.) then
-  do while (associated(nbor))
-    associate (task => nbor%task)
-    select type (task)
-    class is (patch_t)
-    print *,'init nbors for task', nbor%task%id
-    call tlist%init_nbors (task%link)
-    end select
-    end associate
-    nbor => nbor%next
-  end do
-  end if
   call tlist%print_tasks ('after')
-  io%verbose = io_verbose
   !----------------------------------------------------------------------------
   ! Check the ready status of the parent patch
   !----------------------------------------------------------------------------
   call tlist%check_ready (parent)
   if (verbose > 1) &
-  call download%set_verbose (3)
+    call download%set_verbose (3)
   !----------------------------------------------------------------------------
   !$omp end critical (queue_cr)
   call trace%end()

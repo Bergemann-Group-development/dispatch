@@ -330,7 +330,7 @@ SUBROUTINE update_task (self, head, test, was_refined)
   !.............................................................................
   class(task_t), pointer:: task
   real(8):: wc
-  logical:: refined
+  logical:: refined, derefined
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   ! Check for flag files.  If io%out_time is set, set a new out_next.
@@ -349,7 +349,11 @@ SUBROUTINE update_task (self, head, test, was_refined)
   ! onto the queue, with the same task time; i.e., to the head of the queue.
   ! If the task is virtual, it will not be checked by this rank.
   !-----------------------------------------------------------------------------
-  call refine%check_current(self, head, refined)
+  call refine%check_current(self, head, refined, derefined)
+  if (derefined) then
+    call trace%end (itimer)
+    return
+  end if
   if (present(was_refined)) then
     was_refined = refined
   end if

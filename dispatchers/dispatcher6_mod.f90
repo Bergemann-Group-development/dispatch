@@ -273,7 +273,7 @@ SUBROUTINE update_task (task_list, head, test, was_refined)
   !.............................................................................
   class(task_t), pointer:: task
   real(8):: wc
-  logical:: refined
+  logical:: refined, derefined
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin('dispatcher6::update_task', itimer=itimer)
@@ -283,7 +283,11 @@ SUBROUTINE update_task (task_list, head, test, was_refined)
   ! onto the queue, with the same task time; i.e., to the head of the queue.
   ! If the task is virtual, it will not be checked by this rank.
   !-----------------------------------------------------------------------------
-  call refine%check_current(task_list, head, refined)
+  call refine%check_current(task_list, head, refined, derefined)
+  if (derefined) then
+    call trace%end (itimer)
+    return
+  end if
   if (present(was_refined)) then
     was_refined = refined
   end if
