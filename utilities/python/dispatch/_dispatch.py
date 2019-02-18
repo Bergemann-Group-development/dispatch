@@ -292,12 +292,12 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
                 d['position'] = _parse_namelist(items)
             elif items[0]=='SIZE':
                 d['size'] = _parse_namelist(items)
-            elif items[0]=='DTIME':
-                d['dtime']=float(items[1])
             elif items[0]=='TIME':
                 d['time']=float(items[1])
             elif items[0]=='LEVEL':
                 d['level']=int(items[1])
+            elif items[0]=='DTIME':
+                d['dtime']=float(items[1])
                 prop_dict[id]=d
     return prop_dict
 
