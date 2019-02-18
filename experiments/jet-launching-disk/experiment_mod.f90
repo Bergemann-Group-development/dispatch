@@ -53,10 +53,11 @@ SUBROUTINE update_experiment (self)
   call trace%begin('experiment_t%update')
 
   call pboundaries%apply(self, self%it)
+  call self%pebble_patch_t%output()
   call self%solver_t%update()
   call pboundaries%apply(self, self%new)
   call self%density_floor(self%new)
-  if (self%do_pebbles) call self%pebble_patch_t%update_pebbles
+  if (self%do_pebbles) call self%pebble_patch_t%update_pebbles()
 
   call trace%end
 END SUBROUTINE update_experiment

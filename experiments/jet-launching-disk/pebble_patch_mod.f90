@@ -364,7 +364,6 @@ SUBROUTINE boundary_add (self, n)
     1 format(a,1p,3e11.2)
   end if
 
-  self%pebbles%z_min = 1e30
   do i=1,n_local
     allocate (pebble)
     call pebble%init
@@ -387,7 +386,6 @@ SUBROUTINE boundary_add (self, n)
     pebble%d = self%interpolate_r4 (pebble%t, self%density , ii, w)
     pebble%w = product(self%size) / n_local                             ! probability density
     pebble%w = pebble%w * pebble%d                                      ! normalize by gas density
-    self%pebbles%z_min = min(self%pebbles%z_min, abs(pebble%p(3)))
 
     !---------------------------------------------------------------------------
     ! Select every pebble_trace%every particle for tracing
@@ -647,7 +645,6 @@ SUBROUTINE scatter (self, nbors, not_done)
 
   self%pebbles%dt_min = 1e30
   self%pebbles%dt_max = 0.0
-  self%pebbles%z_min = 1e30
   n = 0
   nullify(not_done%head)
   nullify(not_done%tail)
@@ -676,7 +673,6 @@ SUBROUTINE scatter (self, nbors, not_done)
     else
       call self%move (pebble) ! the actual updating and acceleration of pebbles
     end if
-    self%pebbles%z_min = min(self%pebbles%z_min, abs(pebble%p(3)))
     self%pebbles%dt_min = min(pebble%dt, self%pebbles%dt_min)
     self%pebbles%dt_max = max(pebble%dt, self%pebbles%dt_max)
     if (debug .or. pebble%id==id_dbg) print*, pebble%id, 'scatter: pebble id:', &
@@ -807,10 +803,10 @@ SUBROUTINE scatter (self, nbors, not_done)
   end do
 
   if ((self%track .or. self%level >= track_level) .and. n > 0) then
-    print '(i5,1x,a,7i7,1p,2e12.3)', self%id, &
+    print '(i5,1x,a,7i7)', self%id, &
       'scatter: pebbles, accrete, remove, split, import, export, n', &
       self%pebbles%n, self%pebbles%n_accrete, self%pebbles%n_remove, self%pebbles%n_split, &
-      self%pebbles%n_import, self%pebbles%n_export, n, self%pebbles%z_min
+      self%pebbles%n_import, self%pebbles%n_export, n
     self%pebbles%n_accrete = 0
     self%pebbles%n_import = 0
     self%pebbles%n_export = 0
@@ -937,10 +933,10 @@ SUBROUTINE gather (self, not_done, nbors, verbose)
   not_done%n_update = not_done%n_update + n
   call not_done%check_list ('after gather')
   if ((self%track .or. self%level >= track_level) .and. n > 0) then
-    print '(i5,1x,a,7i7,1p,2e12.3)', self%id, &
+    print '(i5,1x,a,7i7)', self%id, &
       ' gather: pebbles, not_done, accrete, remove, split, import, export, n', &
       self%pebbles%n, not_done%n_accrete, not_done%n_remove, not_done%n_split, &
-      not_done%n_import, not_done%n_export, n, not_done%z_min
+      not_done%n_import, not_done%n_export, n
     self%pebbles%n_accrete = 0
     self%pebbles%n_export = 0
     self%pebbles%n_import = 0
@@ -1285,13 +1281,12 @@ SUBROUTINE output (self)
   !-----------------------------------------------------------------------------
   if (.not.io%do_output .or. self%time < self%out_next) return
 
-  call self%solver_t%output
   call trace%begin ('pebble_patch_t%output', itimer=itimer)
 
   if (self%do_pebbles) then
     !$omp critical (out_cr)
     write (filename,'(a,i5.5,"/",i5.5,".peb")') &
-        trim(io%outputname), self%iout-1, self%id
+        trim(io%outputname), self%iout, self%id
     open  (io%data_unit, file=trim(filename), form='unformatted', status='unknown')
     write (io%data_unit) data_format
 

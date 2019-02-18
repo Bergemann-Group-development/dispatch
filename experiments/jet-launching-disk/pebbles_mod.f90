@@ -36,7 +36,6 @@ MODULE pebbles_mod
     real:: drag_coeff                           ! drag coefficient
     real:: t_min                                ! oldest t
     real:: dt_min, dt_max                       ! dt extrema
-    real:: z_min                                ! smallest positive z
     real:: gamma                                ! gamma for sound speed
     real:: courant=0.1                          ! courant number for motion
     real:: cell_probability
