@@ -235,9 +235,12 @@ SUBROUTINE check_current (self, tasklist, link, was_refined)
         write (io%output,*) patch%id, 'derefine requested'
       io%do_trace=.true.
       call self%remove_patch (tasklist, link)
+  print *,'check10'
       call check_level_constraint
+  print *,'check11'
       call tasklist%lock%unset
-    !---------------------------------------------------------------------------
+  print *,'check12'
+!---------------------------------------------------------------------------
     ! A positive refine value indicates that the patch needs to be refined
     !---------------------------------------------------------------------------
     else if (refine > 0 .and. patch%level < self%levelmax) then
@@ -364,8 +367,10 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   ! Neighbour lists are constructed at the end of `split_patch`.
   !------------------------------------------------------------------------
   allocate (child_link)
-  child_link%task => child
-  child_link%parent => parent_link                   ! link is the link to the new patch
+  child_link%task => child                           ! associate task with link
+  child_link%parent => parent_link                   ! used in remove_patch
+  child%link => child_link                           ! associate link with task
+  child%parent => parent                             ! task relation
   call tlist%append_link (child_link)                ! which is added to the patch list
   io%ntask = tlist%na                                ! update the task count
   !------------------------------------------------------------------------
@@ -476,17 +481,14 @@ END SUBROUTINE split_patch
 SUBROUTINE remove_patch (self, tlist, this)
   class(refine_t):: self
   class(list_t):: tlist
-  class(link_t), pointer:: this, link, parent
-  integer:: count
+  class(link_t), pointer:: this, link, nbor, parent
+  class(task_t), pointer:: task
+  integer:: count, io_verbose
   !----------------------------------------------------------------------------
   ! Start processing, blocking (at least for now) all queue-related activity
   !----------------------------------------------------------------------------
   call trace%begin ('refine_t%remove_patch')
   !$omp critical (queue_cr)
-  !----------------------------------------------------------------------------
-  ! Remove the patch from the task list, and update the nbor list of all nbors
-  !----------------------------------------------------------------------------
-  call tlist%remove_link (this)
   !----------------------------------------------------------------------------
   ! Send a suicide note to virtual nbors, if this is a boundary patch
   !----------------------------------------------------------------------------
@@ -495,37 +497,66 @@ SUBROUTINE remove_patch (self, tlist, this)
     call this%send_to_vnbors
   end if
   !----------------------------------------------------------------------------
-  ! Update the nbor lists of all nbors
-  !----------------------------------------------------------------------------
-  link => this%nbor
-  do while (associated(link))
-    call tlist%refresh_nbors (link)
-    link => link%next
-  end do
-  !----------------------------------------------------------------------------
   ! Change the status of the parent patch to leaf
   !----------------------------------------------------------------------------
-  associate (parent_task => this%task%parent)
-  select type (parent_task)
-  class is (patch_t)
-  parent => parent_task%link
-  end select
-  end associate
+  print *,'check1'
+  parent => this%parent
+  print *,'check2'
   call parent%task%clear (bits%not_leaf)
+  print *,'check3'
   !----------------------------------------------------------------------------
   ! Decrement the I/O write counter
   !----------------------------------------------------------------------------
   io%nwrite = io%nwrite - 1
   count = counters%decrement (this%task%iout+1, io%nwrite)
+  print *,'check4'
+  !----------------------------------------------------------------------------
+  io_verbose = io%verbose
+  io%verbose = 3
+  print *, 'this%task%id =', this%task%id
+  call tlist%print_tasks ('before')
+  !----------------------------------------------------------------------------
+  ! Remove this task from the nbors nbor lists
+  !----------------------------------------------------------------------------
+  call this%remove_from_nbors (this)
   !----------------------------------------------------------------------------
   ! Deallocate the patch memory, and deallocate the patch instance
   !----------------------------------------------------------------------------
   call this%task%delete()
+  print *,'check5'
   deallocate (this%task)
+  print *,'check6'
+  !----------------------------------------------------------------------------
+  ! Remove the link from the task list, and update the nbor list of all nbors
+  !----------------------------------------------------------------------------
+  nbor => this%nbor
+  call tlist%remove_link (this)
+  print *,'check7'
+  !----------------------------------------------------------------------------
+  ! Update the nbor lists of all nbors
+  ! FIXME: Should deallocate all list%nbor links 
+  !----------------------------------------------------------------------------
+  if (.false.) then
+  do while (associated(nbor))
+    associate (task => nbor%task)
+    select type (task)
+    class is (patch_t)
+    print *,'init nbors for task', nbor%task%id
+    call tlist%init_nbors (task%link)
+    end select
+    end associate
+    nbor => nbor%next
+  end do
+  end if
+  call tlist%print_tasks ('after')
+  io%verbose = io_verbose
+  print *,'check8'
   !----------------------------------------------------------------------------
   ! Check the ready status of the parent patch
   !----------------------------------------------------------------------------
   call tlist%check_ready (parent)
+  print *,'check9'
+  call download%set_verbose (3)
   !----------------------------------------------------------------------------
   !$omp end critical (queue_cr)
   call trace%end()
