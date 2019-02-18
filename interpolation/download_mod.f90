@@ -42,6 +42,7 @@ MODULE download_mod
     procedure:: download_link
     procedure:: init
     procedure:: test
+    procedure, nopass:: set_verbose
   end type
   integer(kind=int8), dimension(:,:,:,:), allocatable:: filled
   integer(kind=4), dimension(:,:,:), allocatable:: src
@@ -341,9 +342,17 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   logical:: all_cells_l
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link', itimer=itimer)
+  if (target%id == id_debug .or. verbose > 2) then
+    write(io_unit%output,*) 'download_t%download_link: associated(link)', &
+      associated(link)
+    write(io_unit%output,*) 'download_t%download_link: associated(task)', &
+      associated(link%task)
+    write(io_unit%output,*) 'download_t%download_link: associated(nbor)', &
+      associated(link%nbor)
+    write(io_unit%output,*) 'download_t%download_link: id, time =', &
+      link%task%id, link%task%time
+  end if
   target => task2patch(link%task)
-  if (target%id == id_debug) &
-    write(io_unit%log,*) 'DBG download_t%download_link: time =', target%time
   !-----------------------------------------------------------------------------
   ! Allocate and initialise array to track filling of cells.
   ! A value of `-1` defines unfilled; all other values denote the *level* of the
@@ -1584,18 +1593,23 @@ SUBROUTINE sort_nbors_by_level (this, head)
   class(link_t), pointer:: this, head
   class(link_t), pointer:: nbor, find, prev
   !.............................................................................
+  call trace%begin ('download_mod::sort_nbors_by_level')
   call nbor_print (this, this%nbor)
   !-----------------------------------------------------------------------------
   nullify(head)
   nbor => this%nbor
-  if (.not. associated(nbor)) &
+  if (.not. associated(nbor)) then
+    print *,'download::sort_nbors_by_level WARNING: no nbor list to sort!'
+    call trace%end()
     return
+  end if
   do while (associated(nbor))
     call insert
     nbor => nbor%next
   end do
   !-----------------------------------------------------------------------------
   call nbor_print (this, head)
+  call trace%end()
 contains
   !-----------------------------------------------------------------------------
   ! Find a place to prepend a clone of nbor into chain with decreasing level
@@ -1657,5 +1671,11 @@ SUBROUTINE clean_sorted_nbor_list (head)
     deallocate (prev)
   end do
 END SUBROUTINE clean_sorted_nbor_list
+
+!> =============================================================================
+SUBROUTINE set_verbose (new)
+  integer:: new
+  verbose = new
+END SUBROUTINE set_verbose
 
 END MODULE
