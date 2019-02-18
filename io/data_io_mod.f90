@@ -333,7 +333,7 @@ SUBROUTINE output_nml (patch, append)
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
     no_mans_land
-  namelist /patch_nml/ id, time, dtime, position, size, level
+  namelist /patch_nml/ id, time, position, size, level, dtime
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
