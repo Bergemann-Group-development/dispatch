@@ -134,7 +134,7 @@ FUNCTION test (self) RESULT (out)
     !print *, thread, ' already has lock id', self%id
   else
     !print *, thread, ' omp_test_lock for id', self%id
-    out =  omp_test_lock (self%lock)
+    out =  omp_test_nest_lock (self%lock)
     if (out) then
       self%thread = thread
       self%level = self%level+1
@@ -204,7 +204,7 @@ END SUBROUTINE unset
 SUBROUTINE destroy (self)
   class(lock_t):: self
   !-----------------------------------------------------------------------------
-  call omp_destroy_lock (self%lock)
+  call omp_destroy_nest_lock (self%lock)
   self%thread = -1
 END SUBROUTINE destroy
 
