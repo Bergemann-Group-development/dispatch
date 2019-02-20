@@ -20,14 +20,12 @@ MODULE gpatch_mod
   USE omp_timer_mod
   USE bits_mod
   USE data_io_mod
-  USE spitzer_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
     type(initial_t)  :: initial
     type(data_hub_t) :: data_hub
     type(poisson_t)  :: poisson
-    type(spitzer_t):: spitzer
     logical:: selfgravity=.false.
     real(8):: d0
     procedure(void), pointer:: force_per_unit_mass   => null()
