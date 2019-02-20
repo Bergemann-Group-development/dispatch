@@ -7,6 +7,7 @@ import f90nml
 import numpy as np
 import dispatch.graphics as dg
 from time import time
+from ._dispatch_grid import GeometricFactors
 
 class _timer():
     def __init__(self):
@@ -140,16 +141,29 @@ def _var(patch,filed,verbose=0):
         return np.memmap(filed, dtype=np.float32, offset=patch.offset[iv],
                          mode='r', order='F', shape=shape)
     def var(iv):
-        """ Implement access to derived variables (expandable) """
-        if patch.kind[0:6]=='ramses':
-            if   iv=='ux':
-                return mem('p1')/mem('d')
-            elif iv=='uy':
-                return mem('p2')/mem('d')
-            elif iv=='uz':
-                return mem('p3')/mem('d')
+        """
+        Special logic to calculate velocities from momenta on the fly.
+        If the data is in spherical or cylindrical coords., then it is the angular
+        momentum in the snapshot, and thus the division by metric factors.
+
+        The `np.newaxis` bits are for broadcasting the metric factors to the right shape
+        before multiplying by the data.
+
+        """
+
+        if   iv=='u1' or iv=='ux':
+            return mem('p1')/mem('d')
+        elif iv=='u2' or iv=='uy':
+            if patch.mesh_type != 'Cartesian':
+                return mem('p2')/mem('d')/patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
             else:
-                return mem(iv)                
+                return mem('p2')/mem('d')
+        elif iv=='u3' or iv=='uz':
+            if patch.mesh_type != 'Cartesian':
+                gf = patch.geometric_factors # shorthand
+                return mem('p3')/mem('d')/gf['h31c'][:,np.newaxis,np.newaxis]/gf['h32c'][np.newaxis,:,np.newaxis]
+            else:
+                return mem('p3')/mem('d')
         else:
             return mem(iv)
     return var
@@ -408,6 +422,8 @@ class snapshot():
         patch.ys=patch.y-0.5*patch.ds[1]
         patch.zs=patch.z-0.5*patch.ds[2]
         patch.xyz=[patch.x,patch.y,patch.z]
+        # add geometric factors to patch (important for spherical/cylindrical coords.)
+        patch.geometric_factors = GeometricFactors(patch)
 
     def patches_in (self, x=None, y=None, z=None):
         pp=self.patches
