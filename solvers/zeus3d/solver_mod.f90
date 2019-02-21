@@ -7,6 +7,7 @@ MODULE solver_mod
   USE kinds_mod
   USE variable_mod
   USE mhd_mod
+  USE mesh_mod, only: mesh_types
   implicit none
   private
   type, public, extends(mhd_t):: solver_t
@@ -143,11 +144,25 @@ END FUNCTION Norm_ArrayToArray
 FUNCTION MomToVel_VectorToArray (self) RESULT (out)
   class(solver_t):: self
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: out
+  integer:: i1, i2, i3
   !-----------------------------------------------------------------------------
   associate (d => self%mem(:,:,:,self%idx%d,self%it,1))
   out(:,:,:,1) = self%mem(:,:,:,self%idx%px,self%it,1) / xdn_scalar(d)
   out(:,:,:,2) = self%mem(:,:,:,self%idx%py,self%it,1) / ydn_scalar(d)
   out(:,:,:,3) = self%mem(:,:,:,self%idx%pz,self%it,1) / zdn_scalar(d)
+  ! in curvilinear coords., it is the angular momentum that is stored
+  if (self%mesh_type /= mesh_types%Cartesian) then
+    do i3=self%mesh(3)%lb,self%mesh(3)%ub
+      do i2=self%mesh(2)%lb,self%mesh(2)%ub
+        do i1=self%mesh(1)%lb,self%mesh(1)%ub
+          !out(i1,i2,i3,1) = out(i1,i2,i3)
+          out(i1,i2,i3,2) = out(i1,i2,i3,2) / self%mesh(1)%h2c(i1)
+          out(i1,i2,i3,3) = out(i1,i2,i3,3) / (self%mesh(1)%h31c(i1) * self%mesh(2)%h32c(i2))
+        end do
+      end do
+    end do
+  end if
+
   end associate
 END FUNCTION MomToVel_VectorToArray
 
