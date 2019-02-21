@@ -244,11 +244,11 @@ SUBROUTINE volume_add (self, n)
     m2 => self%mesh(2)
     m3 => self%mesh(3)
     do iz=self%mesh(3)%li,self%mesh(3)%ui
-      p(3) = m3%p + m3%r(iz)
+      p(3) = m3%centre_nat + m3%r(iz)
       do iy=self%mesh(2)%li,self%mesh(2)%ui
-        p(2) = m2%p + m2%r(iy)
+        p(2) = m2%centre_nat + m2%r(iy)
         do ix=self%mesh(1)%li,self%mesh(1)%ui
-          p(1) = m1%p + m1%r(ix)
+          p(1) = m1%centre_nat + m1%r(ix)
           ncell = ncell+1
           !---------------------------------------------------------------------
           ! Probability is uniform, but weight is proportional to local density
