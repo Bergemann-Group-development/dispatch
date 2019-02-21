@@ -25,6 +25,7 @@ MODULE initial_mod
   real(8), save:: gamma                   ! ratio of specific heats; should be overridden; this is here
                                           ! for convenience!!
   real(8), save:: density_floor = 1.0e-24 ! density floor value
+  logical, save:: rotating_disk = .true.  ! switch for turning disk rotation on/off
 
   type, public:: initial_t
     logical:: mhd
@@ -40,6 +41,7 @@ MODULE initial_mod
     real(8):: star_mass
     real(8):: density_floor
     logical:: with_density_floor
+    logical:: rotating_disk
   contains
     procedure:: init
     procedure:: condition
@@ -58,7 +60,7 @@ SUBROUTINE init (self, solver, gamma)
   integer:: iostat
   namelist /initial_params/ aspect_ratio, opening_angle, disc_r0, rpindex, disc_mass, &
                             pbeta0, mbend, disc_rmax, star_mass, with_density_floor, &
-                            density_floor
+                            density_floor, rotating_disk
   !----------------------------------------------------------------------------
   call trace%begin('initial_t%init')
   !$omp critical (input_cr)
@@ -83,6 +85,7 @@ SUBROUTINE init (self, solver, gamma)
   self%star_mass = star_mass * cgs%m_sun
   self%density_floor = density_floor
   self%with_density_floor = with_density_floor
+  self%rotating_disk = rotating_disk
 
   call trace%end
 END SUBROUTINE init
@@ -100,7 +103,7 @@ SUBROUTINE condition (self, m, ff, idx)
   class(mesh_t), pointer:: m1, m2, m3
   integer:: i1, i2, i3, ione, jone
   real(8):: gm_s, vkep, rho_mid, disk_angle, rho0, pgas0, q0, r_sph, r_cyl, bpol0, &
-            cot_theta, z, theta, phi, x1, x2
+            cot_theta, z, theta, phi, x1, x2, switch_rotating, vkeptilde2
   real(8), dimension(:,:,:), allocatable:: psi ! magnetic flux function
   logical, save:: first_time = .true.
   !----------------------------------------------------------------------------
@@ -122,6 +125,8 @@ SUBROUTINE condition (self, m, ff, idx)
        * (self%disc_rmax**q0 - self%disc_r0**q0) * self%aspect_ratio &
        * erf(1.0/sqrt(2.0)/self%aspect_ratio)
   rho0 = self%disc_mass / rho0
+  switch_rotating = 1.0
+  if (.not. self%rotating_disk) switch_rotating = 0.0
 
   if (first_time .and. io%master) then
     print*,"rho_0 =",rho0
@@ -189,21 +194,22 @@ SUBROUTINE condition (self, m, ff, idx)
         end if
 
         vkep = sqrt(gm_s / r_cyl)
+        vkeptilde2 = gm_s / r_sph
         rho_mid = rho0 * (r_sph / self%disc_r0)**(-self%rpindex) 
         if (theta < (0.5*math%pi - disk_angle) .or. theta > (0.5*math%pi + disk_angle)) then
           ! in the corona
           ff(i1,i2,i3,idx%d ) = rho_mid * self%aspect_ratio**2 * (1.0 + self%rpindex) &
                              * exp(-0.5 * cos(0.5*math%pi - disk_angle)**2 / self%aspect_ratio**2)
-          pgas0 = ff(i1,i2,i3,idx%d) * vkep**2 / (1.0 + self%rpindex)
+          pgas0 = ff(i1,i2,i3,idx%d) * vkeptilde2 / (1.0 + self%rpindex)
           ff(i1,i2,i3,idx%e ) = pgas0 / (self%gamma - 1.0)
           ff(i1,i2,i3,idx%pz) = 0.0
         else
           ! in the disk
           ff(i1,i2,i3,idx%d ) = rho_mid * exp(-0.5 * cos(theta)**2 / self%aspect_ratio**2)
-          pgas0 = ff(i1,i2,i3,idx%d) * vkep**2 * self%aspect_ratio**2
+          pgas0 = ff(i1,i2,i3,idx%d) * vkeptilde2 * self%aspect_ratio**2
           ff(i1,i2,i3,idx%e ) = pgas0 / (self%gamma - 1.0)
-          ff(i1,i2,i3,idx%pz) = vkep * sqrt(1.0 - (1.0 + self%rpindex) * self%aspect_ratio**2) &
-                              * ff(i1,i2,i3,idx%d )
+          ff(i1,i2,i3,idx%pz) = switch_rotating * vkep * sqrt(1.0 - (1.0 + self%rpindex) * self%aspect_ratio**2) &
+                              * ff(i1,i2,i3,idx%d ) * m1%h31c(i1) * m2%h32c(i2)
         end if
 
         ! apply density floor (if desired)

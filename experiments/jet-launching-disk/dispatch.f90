@@ -1,6 +1,7 @@
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> Setup a jet launching disk in cylindrical or spherical coords., including a
 !> gravitating point mass for the central star.
+!> Current setup follows Suriano et al. (2017, 2018).
 !> Particles are added on top via "pebble patches".
 !> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 PROGRAM dispatch
