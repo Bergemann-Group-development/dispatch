@@ -19,14 +19,15 @@
 
 &out_params
  end_time=8.925e6 ! 100 orbits at 0.02 au
- out_time=120.0 ! 1 output per half-orbit at 0.02 au
- print_time=10.0
+ out_time=8.925e2 ! 1 output every 0.01 orbit at 0.02 au
+ print_time=100.0
 /
 
 &initial_params
   with_density_floor=.true.
   disc_mass=0.01 ! in M_Sun
   pbeta0=0.0
+  rotating_disk=t
 /
 
 &experiment_params
@@ -41,7 +42,7 @@
 &zeus_params
   gamma = 1.01
   trnvrsn = 0
-  dtinit = 1.0e-5
+  dtinit = 1.0e-2
   itote = 0
   qlin=0.1
   qcon=2.0
@@ -49,7 +50,7 @@
   iords=2
   istp=0
   nuscalar=0.0
-  courant=0.5
+  courant=0.25
 /
 
 &timestep_params
@@ -68,4 +69,5 @@
   verbose=1
   ppc=1.0
   debug=f
+  trace_every=100
 /
