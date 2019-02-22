@@ -232,7 +232,7 @@ SUBROUTINE volume_add (self, n)
       print 1, 'solid density (cgs):', self%pebbles%density*scaling%d
       print 1, '         mass (cgs):', self%pebbles%mass*scaling%m
       print 1, '   model size (cgs):', self%size*scaling%l
-      print 1, '      pebbles added:', self%pebble_rate*self%dtime, self%pebble_rate, self%dtime
+      print 1, 'bndry pebbles added:', self%pebble_rate*self%dtime, self%pebble_rate, self%dtime
       1 format(a,1p,3e11.2)
     end if
     l = self%mesh%li
@@ -311,8 +311,7 @@ SUBROUTINE volume_add (self, n)
       end do
     end do
     if (verbose>0 .and. ncell>0) &
-      print *,self%id, 'ADD: ncell, npart =', ncell, npart, self%pebbles%n, &
-              real(self%size(3)/2.), real(self%position(3))
+      print *,self%id, 'ADD: ncell, npart =', ncell, npart, self%pebbles%n
     if (verbose>2) &
       print '(a,i7,i3,2i6,1p,2e14.6)', 'pebble_patch%volume_add: id, level, n_initial, n_add =', &
         self%id, self%level, n_initial, n_add, xmin, xmax
@@ -478,7 +477,7 @@ SUBROUTINE kdk_drag (self, p)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: p
   !.............................................................................
-  real:: ds
+  real:: ds, p_v_fordt(3)
   real(8) :: rad, sp, p1(3), ag(3), ar2
   real(8), parameter:: small=1.0e-32
   integer, save:: nprint=20
@@ -501,8 +500,24 @@ SUBROUTINE kdk_drag (self, p)
 
   ag = p%ag
   p1 = p%p
-  p%dt = sqrt(sum(p1**2)/sqrt(sum(ag**2)+small))*self%pebbles%courant
-  p%dt = min(p%dt,0.1*io%out_time,minval(self%ds/max(1e-20,abs(p%v))))
+  ! calculate pebble time step
+  ! The code below *assumes* the gravitational point source is located at the coordinate origin,
+  ! which may not always be the case!!
+  select case (self%mesh_type)
+  case (1) ! Cartesian
+    p%dt = sqrt(sum(p1**2)/sqrt(sum(ag**2)+small))*self%pebbles%courant
+  case (2) ! spherical
+    p%dt = sqrt(p1(1)**2/sqrt(ag(1)**2+small))*self%pebbles%courant
+  case (3) ! cylindrical
+    p%dt = sqrt((p1(1)**2+p1(2)**2)/sqrt(ag(1)**2+ag(2)**2+small))*self%pebbles%courant
+  end select
+  ! do not use velocity components in collapsed dimensions for the time step calculation
+  p_v_fordt = 0.0
+  where (self%n > 1)
+    p_v_fordt = p%v
+  end where
+  p%dt = min(p%dt,minval(self%ds/max(1e-20,abs(p_v_fordt))))
+  p%dt = min(p%dt,0.1*io%out_time)
   p%dt = min(p%dt,0.51_8*(self%time-p%t))
   !
   if (p%id == self%pebbles%id_dbg) then
@@ -528,25 +543,27 @@ SUBROUTINE kdk_drag (self, p)
   !---------------------------------------------------------------------------
   p%p = p%p + p%dt * p%v
   p%t = p%t + p%dt
-  call self%compute_drag (p,warn)
+  call self%compute_drag (p, warn)
   if (p%id==self%pebbles%id_dbg) then
     ds = sqrt(sum((p%dt*p%v/self%ds)**2))
     print'("kdkd2",1p,7(3e10.2,1x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t, ds
   end if
   if (warn>0 .and. verbose>3) then
+    print *,'ID:',p%id
     print *,'  dt',p%dt,1,verbose
-    print *,' dt1',self%pebbles%courant*sqrt(sum(p%v**2)/(sum(p%ag**2)+small))
+    print *,' dt1',self%pebbles%courant*sqrt(sum(p%v**2,mask=(self%n>1))/(sum(p%ag**2)+small))
     print *,' dt2',self%pebbles%courant*sqrt(sum(p%p**2)/sqrt(sum(p%ag**2)+small))
     print *,' dt3',minval(self%ds)/max(1e-20,abs(p%v)),io%out_time
     print'(1x,a,1p,9(3e11.2,2x))', 'dt3', self%ds, abs(p%v), self%ds/max(1e-20,abs(p%v))
     print *,'  ds',self%ds
     print *,'v*dt',p%v*p%dt
+    print *,'patch%dt',self%dtime
   end if
   p%p = p%p - p%dt*p%v
   !---------------------------------------------------------------------------
   ! First kick, with drag, v(t) -> v(t+dt)
   !---------------------------------------------------------------------------
-  p%v = p%v + p%dt*(p%ag+p%ad)/(1.+p%c*p%dt)
+  p%v = p%v + p%dt * (p%ag + p%ad) / (1.0 + p%c * p%dt)
   !---------------------------------------------------------------------------
   ! Drift, r -> r+2*dt*v(t+dt*a), with v -> vg(t+dt) if drag dominates
   !---------------------------------------------------------------------------
@@ -594,8 +611,8 @@ SUBROUTINE kdk_drag (self, p)
     call pebble_trace%trace_pebble (p, self%id, self%level)
   end if
   !$omp atomic write
-
   first_time = .false.
+
 CONTAINS
   subroutine gravitational_acceleration
     if (trim(self%mesh(1)%type) == 'spherical_mesh') then

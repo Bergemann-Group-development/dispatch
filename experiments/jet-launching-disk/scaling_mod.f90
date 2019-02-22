@@ -32,7 +32,7 @@ SUBROUTINE init (self)
   self%p = self%d*self%u**2
   self%e = self%m*self%u**2
   self%mu = 1.0
-  self%temp = 1.0
+  self%temp = self%mu * cgs%m_u / cgs%k_b
   self%grav = cgs%grav
   if (io%master) then
     print 1,' CODE UNITS:   (dimensionless):'

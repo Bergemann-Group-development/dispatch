@@ -133,6 +133,8 @@ SUBROUTINE flush_buffer(self)
   if (.not.pebble_trace%do_trace_output) return
   call trace%begin ('pebble_trace_t%flush_buffer', itimer=itimer)
 
+  if (io%verbose>0) &
+    print*,'pebble_trace: filename, record, nsteps'
   do i=1, id
     call self%trace_output (i)
   end do
