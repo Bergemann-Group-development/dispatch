@@ -325,10 +325,10 @@ END SUBROUTINE add_nbor_by_rank
 !> Remove this from the nbor list, and return the nbor pointer that was pointing
 !> to it
 !> =============================================================================
-FUNCTION remove_nbor (self, this) RESULT (nbor)
+SUBROUTINE remove_nbor (self, this)
   class(link_t):: self
   class(link_t), pointer:: this
-  class(link_t), pointer:: nbor, prev
+  class(link_t), pointer:: nbor, prev, next
   !.............................................................................
   call trace_begin ('link_mod::remove_nbor', 2)
   if (io%verbose>1) &
@@ -337,23 +337,25 @@ FUNCTION remove_nbor (self, this) RESULT (nbor)
   nullify (prev)
   nbor => self%nbor
   do while (associated(nbor))
+    next => nbor%next
     if (associated(nbor%task,this%task)) then
       if (associated(prev)) then
         prev%next => nbor%next
       else
         self%nbor => nbor%next
       end if
+      deallocate (nbor)
       self%task%n_nbors = self%task%n_nbors-1
       goto 9
     end if
     prev => nbor
-    nbor => nbor%next
+    nbor => next
   end do
   if (io%verbose>2) &
     write (io_unit%log,*) 'WARNING: remove_nbor could not find task', this%task%id
 9 continue
   call trace_end
-END FUNCTION remove_nbor
+END SUBROUTINE remove_nbor
 
 !> =============================================================================
 !> Remove this task from the nbor lists of the nbors of self
@@ -361,14 +363,13 @@ END FUNCTION remove_nbor
 SUBROUTINE remove_from_nbors (self, this)
   class(link_t):: self
   class(link_t), pointer:: this
-  class(link_t), pointer:: nbor, prev
+  class(link_t), pointer:: nbor
   !.............................................................................
   call trace_begin ('link_mod::remove_from_nbors', 2)
   nbor => self%nbor
   do while (associated(nbor))
-    prev => nbor%link%remove_nbor (this)
+    call nbor%link%remove_nbor (this)
     nbor => nbor%next
-    deallocate (prev)
   end do
   call trace_end
 END SUBROUTINE remove_from_nbors
@@ -410,17 +411,11 @@ SUBROUTINE update_nbor_status (self, link)
       write (io_unit%log,*) 'update_nbor_status:', nbor%task%id, &
       nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual)
     status = nbor%task%status                           ! current status
-    this => nbor%link%remove_nbor (link)                ! remove out-of-order
-    if (associated(this)) then
-      call nbor%link%add_nbor_by_rank (this)            ! add in rank order
-      if (io%verbose>2) &
-        write (io_unit%log,*) nbor%task%id, associated(nbor%link), associated(this%link)
-    else
+    call nbor%link%remove_nbor (link)                   ! remove out-of-order
       allocate (this)                                   ! new nbor link
       this%link => link                                 ! attach task link
       this%task => link%task                            ! attach task
       call nbor%link%add_nbor_by_rank (this)            ! add in rank order
-    end if
     call nbor%link%update_status                        ! new status
     if (nbor%task%is_set (bits%boundary).and.iand(status,bits%boundary)==0) then
       if (io%verbose>0) &
@@ -540,7 +535,8 @@ SUBROUTINE print_nbors (self, label)
   character(len=16):: fmt
   !.............................................................................
   if (present(label)) write (io_unit%output,'(a,$)') label
-  write (io_unit%output, '(i6," nbors:",$)') self%task%id
+  write (io_unit%output, '(i6,l1," nbors:",$)') &
+    self%task%id, self%task%is_set (bits%ready)
   idmax = 0
   nbor => self%nbor
   do while (associated(nbor))
