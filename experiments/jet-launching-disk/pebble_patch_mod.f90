@@ -627,20 +627,21 @@ CONTAINS
   subroutine gravitational_acceleration
     if (trim(self%mesh(1)%type) == 'spherical_mesh') then
       ar2 = 1.0 / (p%p(1)**2 + small)
-      p%ag(1) = scaling%grav * self%point_mass * ar2
+      p%ag(1) = -scaling%grav * self%point_mass * ar2
     else if (trim(self%mesh(1)%type) == 'cylindrical_mesh') then
       ar2 = 1.0 / (p%p(1)**2 + p%p(2)**2 + small)
-      p%ag(2) = scaling%grav * self%point_mass * ar2
+      p%ag(2) = -scaling%grav * self%point_mass * ar2
     end if
   end subroutine gravitational_acceleration
 
   subroutine centrifugal_acceleration
     if (trim(self%mesh(1)%type) == 'spherical_mesh') then
-      p%ag(1) = p%ag(1) + (p%v(3)**2 + p%v(2)**2) / (p%p(1) + small)
-      p%ag(2) = p%ag(2) + p%v(3)**2 * cos(p%p(2)) / (p%p(1) * sin(p%p(2)) + small)
+      p%ag(1) = p%ag(1) + p%v(3)**2 / (abs(p%p(1)) + small) + p%v(2)**2 / (abs(p%p(1)) + small)
+      p%ag(2) = p%ag(2) + p%v(3)**2 * cos(p%p(2)) / (abs(p%p(1)) * abs(sin(p%p(2))) + small)
+      p%ag(2) = p%ag(2) / abs(p%p(1)) ! convert to rad/time**2 (pebbles positions in theta are in radians)
     else if (trim(self%mesh(1)%type) == 'cylindrical_mesh') then
       !p%ag(1) = p%ag(1) + 0.0
-      p%ag(2) = p%ag(2) + p%v(3)**2 / (p%p(2) + small)
+      p%ag(2) = p%ag(2) + p%v(3)**2 / (abs(p%p(2)) + small)
     end if
     !p%ag(3) = p%ag(3) + 0.0
   end subroutine centrifugal_acceleration
