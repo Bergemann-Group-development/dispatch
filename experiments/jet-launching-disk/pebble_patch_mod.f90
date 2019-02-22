@@ -541,7 +541,10 @@ SUBROUTINE kdk_drag (self, p)
   ! Hence we can wait with moving particle until (at least) the time when
   ! p%t < self%t(self%iit(1))
   !---------------------------------------------------------------------------
-  p%p = p%p + p%dt * p%v
+  ! Be careful to only update position components that do not coincide with collapsed dimensions.
+  where (self%n > 1)
+    p%p = p%p + p%dt * p%v
+  end where
   p%t = p%t + p%dt
   call self%compute_drag (p, warn)
   if (p%id==self%pebbles%id_dbg) then
@@ -559,7 +562,9 @@ SUBROUTINE kdk_drag (self, p)
     print *,'v*dt',p%v*p%dt
     print *,'patch%dt',self%dtime
   end if
-  p%p = p%p - p%dt*p%v
+  where (self%n > 1)
+    p%p = p%p - p%dt*p%v
+  end where
   !---------------------------------------------------------------------------
   ! First kick, with drag, v(t) -> v(t+dt)
   !---------------------------------------------------------------------------
@@ -567,7 +572,12 @@ SUBROUTINE kdk_drag (self, p)
   !---------------------------------------------------------------------------
   ! Drift, r -> r+2*dt*v(t+dt*a), with v -> vg(t+dt) if drag dominates
   !---------------------------------------------------------------------------
-  p%p = p%p + 2.*p%dt*p%v
+  ! NOTE: in cylindrical or spherical axisymmetric experiments, we want the
+  ! drag term to affect the azimuthal/toroidal velocity (because it affects
+  ! centrifugal terms), but *not* the position in that direction!
+  where (self%n > 1)
+    p%p = p%p + 2.*p%dt*p%v
+  end where
   p%t = p%t + p%dt
   !---------------------------------------------------------------------------
   ! Get gravitational acceleration from star (again), at p(t+2*dt)
@@ -952,7 +962,7 @@ SUBROUTINE gather (self, not_done, nbors, verbose)
   call not_done%check_list ('after gather')
   if ((self%track .or. self%level >= track_level) .and. n > 0) then
     print '(i5,1x,a,7i7)', self%id, &
-      ' gather: pebbles, not_done, accrete, remove, split, import, export, n', &
+      ' gather: pebbles, accrete, remove, split, import, export, n', &
       self%pebbles%n, not_done%n_accrete, not_done%n_remove, not_done%n_split, &
       not_done%n_import, not_done%n_export, n
     self%pebbles%n_accrete = 0
