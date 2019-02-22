@@ -53,6 +53,7 @@ MODULE link_mod
     procedure:: print_nbors
     procedure:: test_nbor_status
     procedure:: check_level_sort
+    procedure:: delete
   end type
   logical, save:: debug=.false.
 CONTAINS
@@ -412,10 +413,10 @@ SUBROUTINE update_nbor_status (self, link)
       nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual)
     status = nbor%task%status                           ! current status
     call nbor%link%remove_nbor (link)                   ! remove out-of-order
-      allocate (this)                                   ! new nbor link
-      this%link => link                                 ! attach task link
-      this%task => link%task                            ! attach task
-      call nbor%link%add_nbor_by_rank (this)            ! add in rank order
+    allocate (this)                                     ! new nbor link
+    this%link => link                                   ! attach task link
+    this%task => link%task                              ! attach task
+    call nbor%link%add_nbor_by_rank (this)              ! add in rank order
     call nbor%link%update_status                        ! new status
     if (nbor%task%is_set (bits%boundary).and.iand(status,bits%boundary)==0) then
       if (io%verbose>0) &
@@ -640,5 +641,32 @@ SUBROUTINE send_to_vnbors (self)
   call self%task%clear (bits%swap_request)
   call trace_end (itimer)
 END SUBROUTINE send_to_vnbors
+
+!> =============================================================================
+!> Delete a link, and the corresponding task
+!> =============================================================================
+SUBROUTINE delete (self, link)
+  class(link_t):: self
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(link_t), pointer:: nbor, next
+  !-----------------------------------------------------------------------------
+  ! Deallocate the associated task
+  !-----------------------------------------------------------------------------
+  call trace_begin ('link_t%delete_link ')
+  call link%task%delete()
+  deallocate (link%task)
+  !-----------------------------------------------------------------------------
+  ! Deallocate the nbor list and the link itself
+  !-----------------------------------------------------------------------------
+  nbor => link%nbor
+  do while (associated(nbor))
+    next => nbor%next
+    deallocate (nbor)
+    nbor => next
+  end do
+  deallocate (link)
+  call trace_end()
+END SUBROUTINE delete
 
 END MODULE link_mod
