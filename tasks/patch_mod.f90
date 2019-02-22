@@ -87,6 +87,7 @@ MODULE patch_mod
     procedure:: pack                    ! pack patch into buffer
     procedure:: unpack                  ! unpack buffer into patch
     procedure:: info                    ! print info to stdout
+    procedure:: contains                ! patch contains a point
     procedure:: overlaps                ! patch overlaps test
     procedure:: index                   ! compute the index for a single point
     procedure:: nearest                 ! the nearest index that maps to patch point
@@ -1362,6 +1363,15 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   end if
   call trace%end
 END SUBROUTINE info
+
+!> =============================================================================
+!> Return true of a point is inside the patch interior
+!> =============================================================================
+LOGICAL FUNCTION contains (self, point)
+  class(patch_t):: self
+  real(8):: point(3)
+  contains = all(abs(point-self%position) < 0.5_8*self%size)
+END FUNCTION contains
 
 !> =============================================================================
 !> Check if there is overlap, using the size plus an extra cell margin. The
