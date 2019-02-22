@@ -136,7 +136,11 @@ SUBROUTINE output (self, patch, experiment_name)
   end if
   it = patch%iit(patch%nt-np)
   if (patch%t(it) >= patch%out_next) then
+    if (io%verbose > 1) &
+      write (io%output,*) wallclock(),' thread',omp%thread,' waitfor output'
     call self%lock%set
+    if (io%verbose > 1) &
+      write (io%output,*) wallclock(),' thread',omp%thread,' locked output'
     do while (patch%t(it) >= patch%out_next)
       if (created < patch%iout) then
         created = patch%iout
@@ -196,6 +200,8 @@ SUBROUTINE output (self, patch, experiment_name)
       call os%mkdir_no (patch%iout)
     end do
     call self%lock%unset
+    if (io%verbose > 1) &
+      write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'
   end if
   call trace%end (itimer)
 END SUBROUTINE output

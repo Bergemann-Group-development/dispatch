@@ -41,6 +41,7 @@ MODULE list_mod
     integer:: debug=0
     integer:: n_tasks=1
     integer:: dims(3)=0
+    integer:: verbose=0
     type(lock_t):: lock
     character(len=4):: kind='list'
     logical:: face_nbors=.false.
@@ -158,7 +159,11 @@ SUBROUTINE append_link (self, link)
   logical, save:: first_time=.true.
   !.............................................................................
   call trace_begin ('list_t%append_link '//self%name)
+  if (self%verbose > 0) &
+    write (io%output,*) wallclock(),' thread',omp%thread,' wait for tasklist(2)'
   call self%lock%set
+  if (self%verbose > 0) &
+    write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(2)'
   nullify(link%next)
   if (associated(self%tail)) then
     link%prev => self%tail
@@ -188,6 +193,8 @@ SUBROUTINE append_link (self, link)
     call io%abort('append_link: no task associated')
   end if
   call self%lock%unset
+  if (self%verbose > 0) &
+    write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(2)'
   call trace_end
 END SUBROUTINE append_link
 
@@ -1000,7 +1007,11 @@ SUBROUTINE remove_task (self, task)
   class(link_t), pointer:: link, prev
   !.............................................................................
   call trace_begin('list_t%remove_task')
+  if (self%verbose > 0) &
+    write (io%output,*) wallclock(),' thread',omp%thread,' wait for tasklist(3)'
   call self%lock%set
+  if (self%verbose > 0) &
+    write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(3)'
   link => self%head
   nullify (prev)
   do while (associated(link))
@@ -1019,6 +1030,8 @@ SUBROUTINE remove_task (self, task)
   print*,'ERROR: failed to remove from task list, task', task%id
 9 continue
   call self%lock%unset
+  if (self%verbose > 0) &
+    write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(3)'
   call trace_end
 END SUBROUTINE remove_task
 
@@ -1046,7 +1059,11 @@ SUBROUTINE queue_by_time (self, this)
   logical:: error
   integer:: verbose
   !-----------------------------------------------------------------------------
+  if (self%verbose > 0) &
+    write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(4)'
   call self%lock%set
+  if (self%verbose > 0) &
+    write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(4)'
   call real_queue_by_time (self, this, error)
   if (error) then
     io%do_trace = .true.
@@ -1063,6 +1080,8 @@ SUBROUTINE queue_by_time (self, this)
     io%do_trace = .false.
   end if
   call self%lock%unset
+  if (self%verbose > 0) &
+    write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(4)'
 END SUBROUTINE queue_by_time
 
 SUBROUTINE real_queue_by_time (self, this, error)
