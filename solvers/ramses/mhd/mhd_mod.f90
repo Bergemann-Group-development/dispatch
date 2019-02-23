@@ -79,11 +79,9 @@ SUBROUTINE init (self)
   call trace%begin('mhd_mod%init')
   call trace%print_id (id)
   self%nw = 1
+  self%ng = 3
+  self%nv = 8
   self%kind = 'ramses_mhd_patch'
-  if (self%nv == 0) then
-    self%nv = 5
-    if (self%mhd) self%nv = self%nv + 3
-  end if
   call self%idx%init (5, self%mhd)
   call self%gpatch_t%init
   !-----------------------------------------------------------------------------

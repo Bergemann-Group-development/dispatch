@@ -70,9 +70,9 @@ SUBROUTINE init (self)
 
   self%mhd = .false.
   self%nw = 1
+  self%ng = 2
   self%kind = 'ramses_hd_patch'
   if (self%nv == 0) self%nv = 5
-
   call self%idx%init (5, self%mhd)
   call self%gpatch_t%init
   !$omp critical (input_cr)
