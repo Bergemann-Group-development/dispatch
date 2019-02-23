@@ -419,6 +419,19 @@ class snapshot():
             pp=[p for p in pp if z>=p.extent[1,0] and z<p.extent[1,1]]
         return pp
 
+    def hdf5(self,verbose=0):
+        """ Add dict parameters to an HDF5 file """
+        import h5py
+        h5file=self.rundir+'/hdf5.dat'
+        rw = 'r+' if os.path.isfile(h5file) else 'w'
+        with h5py.File(h5file,rw) as f:
+            if verbose>0:
+                print('adding snapshot.dict attributes to '+h5file)
+            for k,v in self.dict.items():
+                f.attrs[k]=v
+                if verbose>1:
+                    print('{:>20}: {}'.format(k,v))
+
     def plane(self,x=None,y=None,z=None,iv=0,verbose=0):
         dg.image_plane(self,x=x,y=y,z=z,iv=iv,verbose=1)
 
@@ -456,3 +469,4 @@ if __name__ == "__main__":
     obj=_param()
     _add_nml_to(obj,s.nml_list['io_nml'])
     _add_nml_list_to(obj,s.nml_list)
+
