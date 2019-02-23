@@ -1259,7 +1259,7 @@ SUBROUTINE different (self, target, source, all_cells, only)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
           if (all_cells_l .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
-            if (verbose > 2 .or. target%id==id_debug) &
+            if (verbose > 1 .and. target%id==id_debug) &
               write (io_unit%log,*) target%id, 'DBG interpolate_t%different:    using', &
                 iv,ii, present(all_cells), (ii-li) < 0
             pos = target%myposition (ii, iv)
@@ -1379,7 +1379,7 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
                 else
                   srcid = -1
                 end if
-                if (verbose > 1 .or. target%id == id_debug) &
+                if (verbose > 1 .and. target%id == id_debug) &
                   write (io_unit%log,'(a,2(i6,i3),i4,2x,3i4,2x,i4,i6)') &
                     'different_prolong: skipping', target%id, target%level, &
                     source%id, source%level, iv,ii, filled(ix,iy,iz,iv), srcid
@@ -1388,7 +1388,7 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
               end if
               end if
             ninter = ninter+1
-            if (verbose > 3 .or. target%id == id_debug) &
+            if (verbose > 1 .and. target%id == id_debug) &
               write (io_unit%log,*) target%id, 'different_prolong:    using', &
                 iv,ii, present(all_cells), (ii-li) < 0
             pos = target%myposition (ii, iv)
@@ -1419,7 +1419,7 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
             if (self%check_filled) filled(ix,iy,iz,iv) = source%level
           else
             nint = nint+1
-            if (verbose > 1 .or. target%id==id_debug) &
+            if (verbose > 1 .and. target%id==id_debug) &
               write (io_unit%log,'(i6,i3,2x,a,i6,i2,i3,2x,3i4,L2,2(1x,3L1))') &
                 target%id, target%level, 'different_prolong: skipping internal', &
                 source%id, source%level, iv, ii, all_cells_l, (ii-li) < 0, (ii-ui) > 0
@@ -1430,9 +1430,10 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
     end do
   end do
   if (verbose > 1 .or. target%id == id_debug) &
-    write (io%output,'(2i6,i4,2x,a,6i6,2x,a,2(2x,3i4),f10.6)') &
+    write (io%output,'(2i6,i4,2x,a,6i6,2x,a,2(2x,3i4),2x,f10.6,f8.3)') &
       target%id, source%id, omp%thread, 'ntot, skip, int, inter, perv, exp =', &
-      ntot, nskip, nint, ninter, nperv, nexp, ' l, u =', l, u, wallclock()-start
+      ntot, nskip, nint, ninter, nperv, nexp, ' l, u =', l, u, wallclock()-start, &
+      1e6*(wallclock()-start)/ninter
   if (verbose > 0 .or. target%id == id_debug) &
     write (io_unit%log,2) target%id, target%level, source%id, source%level, &
       'different_prolong picked up', &

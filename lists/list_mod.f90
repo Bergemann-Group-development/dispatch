@@ -948,12 +948,14 @@ SUBROUTINE reset_status (self)
   self%ni = n_internal
   self%na = n_internal+n_boundary-n_frozen
   self%n  = n_internal+n_boundary+n_virtual
+  if (io%verbose > 0) then
     write (io_unit%log,'(4(a,i7,5x))') &
       'rank:',mpi%rank, &
       'n_internal:', n_internal, &
       'n_boundary:', n_boundary, &
       'n_virtual:' , n_virtual
     flush (io_unit%log)
+  end if
   call self%lock%unset
   call trace%end()
 END SUBROUTINE reset_status

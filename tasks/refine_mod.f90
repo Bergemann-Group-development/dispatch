@@ -625,12 +625,10 @@ SUBROUTINE remove_patch (self, tlist, this)
   ! Remove the link from the task list, update the nbor lists of nbors, then
   ! deallocate this link (and the associated task memory and task)
   !-----------------------------------------------------------------------------
-  call tlist%print_tasks ('before')
   call tlist%remove_link (this)
   call tlist%init_nbor_nbors (this)
   call tlist%check_nbor_nbors (this)
   call this%delete (this)
-  call tlist%print_tasks ('after')
   !-----------------------------------------------------------------------------
   call trace%end()
 END SUBROUTINE remove_patch
