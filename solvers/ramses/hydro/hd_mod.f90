@@ -82,6 +82,10 @@ SUBROUTINE init (self)
     read (io_unit%input, ramses_params)
     if (mpi%rank==0) write (*, ramses_params)
   end if
+  if (gamma == 1d0) &
+    isothermal = .true.
+  if (isothermal) &
+    gamma = 1d0
   !$omp end critical (input_cr)
   self%riemann = riemann
   self%courant = courant_factor
@@ -167,7 +171,7 @@ SUBROUTINE update (self)
   ! Godunov solver
   !-----------------------------------------------------------------------------
   call godunov (self)
-  if (isothermal .or. gamma==1d0) &
+  if (isothermal) &
     self%mem(:,:,:,self%idx%e,self%new,1) = &
     self%mem(:,:,:,self%idx%d,self%new,1)*csound**2
   if (detailed_timer) call trace_begin ('hd_t%update', itimer=itimer)
@@ -265,6 +269,10 @@ SUBROUTINE e2S(self, s, it)
   real, dimension(:,:,:), pointer:: k
   integer :: i
   !---------------------------------------------------------------------
+  if (isothermal) then
+    s = 0.0
+    return
+  end if
   associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
             e => self%mem(:,:,:,self%idx%e           ,it,1), &
             p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
@@ -274,7 +282,7 @@ SUBROUTINE e2S(self, s, it)
     k = k+p(:,:,:,i)**2
   end do
   k = 0.5*k/d
-  s = log((e-k)*(gamma-1.0)/d**gamma)/(gamma-1.0)
+  s = log((e-k)*(gamma-1d0)/d**gamma)/(gamma-1d0)
   deallocate(k)
   end associate
 END SUBROUTINE e2S
@@ -293,13 +301,17 @@ SUBROUTINE S2e (self, s, it)
   associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
             e => self%mem(:,:,:,self%idx%e           ,it,1), &
             p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
+  if (isothermal) then
+    e = d*csound**2
+    return
+  end if
   allocate(k(size(d,1),size(d,2),size(d,3)))
   k = 0.0
   do i=1,size(p,4)
     k = k+p(:,:,:,i)**2
   end do
   k = 0.5*k/d
-  e = d**gamma*exp(s*(gamma-1.0)) + k
+  e = d**gamma*exp(s*(gamma-1d0)) + k
   deallocate(k)
   end associate
 END SUBROUTINE S2e
@@ -417,7 +429,7 @@ subroutine check_small (self, uu)
     v =  uu(i,j,k,self%idx%py)*c
     w =  uu(i,j,k,self%idx%pz)*c
     ekin = 0.5*d*(u**2+v**2+w**2)
-    if (isothermal .or. gamma==1d0) then
+    if (isothermal) then
       uu(i,j,k,self%idx%e) = max(uu(i,j,k,self%idx%e), smallr*smallc**2)
     else
       p = (uu(i,j,k,self%idx%e)-ekin)*(gamma-one)
@@ -497,10 +509,10 @@ subroutine ctoprim (self)
   d => q(:,:,:,1)
   e => s
   pg => q(:,:,:,5)
-  if (isothermal .or. gamma==1d0) then
+  if (isothermal) then
     pg = d*csound**2
   else
-    pg = e*(gamma-1.0)
+    pg = e*(gamma-1d0)
   end if
   !call eos%lookup (shape(e), ee=e, d=d, pg=pg, gamma=gamma)
   !
@@ -1132,10 +1144,21 @@ end subroutine solver
 
 !> =============================================================================
 !> =============================================================================
-FUNCTION gas_pressure (self)
+FUNCTION gas_pressure (self) RESULT (pg)
   class(hd_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: gas_pressure
-  gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(gamma-1.0)
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  !-----------------------------------------------------------------------------
+  associate (d  => self%mem(:,:,:,self%idx%d ,self%it,1), &
+             px => self%mem(:,:,:,self%idx%px,self%it,1), &
+             py => self%mem(:,:,:,self%idx%py,self%it,1), &
+             pz => self%mem(:,:,:,self%idx%pz,self%it,1), &
+             e  => self%mem(:,:,:,self%idx%e ,self%it,1))
+  if (isothermal) then
+    pg = d*csound**2
+  else
+    pg = (gamma-1d0)*(e-0.5*((px**2+py**2+pz**2)/d))
+  end if
+  end associate
 END FUNCTION gas_pressure
 
 !> =============================================================================

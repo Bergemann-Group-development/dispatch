@@ -1801,15 +1801,35 @@ SUBROUTINE solver_2d (self,qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer)
 END SUBROUTINE solver_2d
 
 !> =============================================================================
+FUNCTION up(f,i) RESULT (g)
+  real, dimension(:,:,:), intent(in):: f
+  real, dimension(size(f,1),size(f,2),size(f,3)):: g
+  integer:: i
+  !.............................................................................
+  g = 0.5*(cshift(f,1,i)+f)
+END FUNCTION
+
 !> =============================================================================
-FUNCTION gas_pressure (self)
+FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: gas_pressure
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  integer :: l(3), u(3)
+  !-----------------------------------------------------------------------------
+  associate (d  => self%mem(:,:,:,self%idx%d ,self%it,1), &
+             px => self%mem(:,:,:,self%idx%px,self%it,1), &
+             py => self%mem(:,:,:,self%idx%py,self%it,1), &
+             pz => self%mem(:,:,:,self%idx%pz,self%it,1), &
+             bx => self%mem(:,:,:,self%idx%bx,self%it,1), &
+             by => self%mem(:,:,:,self%idx%by,self%it,1), &
+             bz => self%mem(:,:,:,self%idx%bz,self%it,1), &
+             e  => self%mem(:,:,:,self%idx%e ,self%it,1))
   if (isothermal) then
-    gas_pressure = self%mem(:,:,:,self%idx%d,self%it,1)*csound**2
+    pg = d*csound**2
   else
-    gas_pressure = self%mem(:,:,:,self%idx%e,self%it,1)*(gamma-1.0)
+    pg = (gamma-1d0)* &
+      (e-0.5*(up(bx,1)**2+up(by,2)**2+up(bz,3)**2+(px**2+py**2+pz**2)/d))
   end if
+  end associate
 END FUNCTION gas_pressure
 
 !> =============================================================================
