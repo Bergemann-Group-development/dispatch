@@ -880,7 +880,7 @@ END SUBROUTINE init_all_nbors
 SUBROUTINE reset_status (self)
   class(list_t):: self
   class(link_t), pointer:: link, nbor
-  integer:: n_internal, n_boundary, n_virtual, n_external
+  integer:: n_internal, n_boundary, n_virtual, n_external, n_frozen
   !-----------------------------------------------------------------------------
   ! Clear virtual and boundary bits
   !-----------------------------------------------------------------------------
@@ -890,6 +890,7 @@ SUBROUTINE reset_status (self)
   n_boundary = 0
   n_virtual  = 0
   n_external = 0
+  n_frozen   = 0
   call self%lock%set
   !-----------------------------------------------------------------------------
   ! Set bit
@@ -939,12 +940,13 @@ SUBROUTINE reset_status (self)
     n_boundary = n_boundary + merge(1,0,link%task%is_set(bits%boundary))
     n_virtual  = n_virtual  + merge(1,0,link%task%is_set(bits%virtual ))
     n_external = n_external + merge(1,0,link%task%is_set(bits%external))
+    n_frozen   = n_frozen   + merge(1,0,link%task%is_set(bits%frozen  ))
     link => link%next
   end do
   self%nb = n_boundary
   self%nv = n_virtual
   self%ni = n_internal
-  self%na = n_internal+n_boundary
+  self%na = n_internal+n_boundary-n_frozen
   self%n  = n_internal+n_boundary+n_virtual
     write (io_unit%log,'(4(a,i7,5x))') &
       'rank:',mpi%rank, &
