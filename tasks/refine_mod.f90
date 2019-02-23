@@ -152,7 +152,7 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   patch => task2patch(link%task)
   dxmin = minval(patch%ds)
   dxmax = maxval(patch%ds)
-  if (verbose > 1) then
+  if (verbose > 2) then
     write (io_unit%output,'(a,i6,2i4,l4,1p,4e11.2)') &
       'refine_t%refine_needed: id, istep, refine_next =', &
       patch%id, patch%istep, patch%check_refine_next, &
@@ -229,7 +229,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   was_refined = .false.
   was_derefined = .false.
   if (.not. on) return
-  if (verbose > 1) &
+  if (verbose > 2) &
     print *, link%task%id, 'refine_t%check_current, at t =', &
       link%task%time, link%task%level, self%levelmax
   if (link%task%level >= self%levelmax) return
@@ -237,7 +237,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   !
   patch => task2patch(link%task)
   if (patch%is_clear(bits%not_leaf)) then
-    if (verbose > 1) &
+    if (verbose > 2) &
       tasklist%verbose = verbose
     !---------------------------------------------------------------------------
     ! Setup mask, and check if refinement or derefinement is needed
@@ -257,38 +257,40 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     ! A negative refine value indicates that the patch is not needed
     !---------------------------------------------------------------------------
     if (refine < 0 .and. patch%level > self%levelmin) then
-      if (tasklist%verbose > 0) &
+      if (tasklist%verbose > 2) &
         write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(d)'
       call tasklist%lock%set
-      if (tasklist%verbose > 0) &
+      if (tasklist%verbose > 2) &
         write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(d)'
       if (verbose > 0) &
-        write (io%output,*) patch%id, 'derefine requested'
+        write (io%output,'(a,i6,i3,2x,a)') &
+          'id, level =', patch%id, patch%level, 'derefine'
       call self%remove_patch (tasklist, link)
       call check_level_constraint
       call tasklist%lock%unset
-      if (tasklist%verbose > 0) &
+      if (tasklist%verbose > 2) &
         write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(d)'
       was_derefined = .true.
     !---------------------------------------------------------------------------
     ! A positive refine value indicates that the patch needs to be refined
     !---------------------------------------------------------------------------
     else if (refine > 0 .and. patch%level < self%levelmax) then
-      if (tasklist%verbose > 0) &
+      if (tasklist%verbose > 2) &
         write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(r)'
       call tasklist%lock%set
-      if (tasklist%verbose > 0) &
+      if (tasklist%verbose > 2) &
         write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(r)'
       if (verbose > 0) &
-        write (io%output,*) patch%id, 'refine requested'
+        write (io%output,'(a,i6,i3,2x,a)') &
+          'id, level =', patch%id, patch%level, 'refine'
       call self%split_patch (tasklist, link)
       call check_level_constraint
       call tasklist%lock%unset
-      if (tasklist%verbose > 0) &
+      if (tasklist%verbose > 2) &
         write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(r)'
       was_refined = .true.
     end if
-    if (verbose > 1) &
+    if (verbose > 2) &
       tasklist%verbose = 0
   end if
   !
@@ -315,7 +317,7 @@ contains
       do while (associated(link))
         if (link%task%is_clear (bits%not_leaf)) then
           if (self%check_nbor_support (tasklist, link) > 0) then
-            if (verbose > 2) &
+            if (verbose > 3) &
               print *, link%task%id, &
               'check_level_constraint: patch needs splitting at level', &
               link%task%level
@@ -327,7 +329,7 @@ contains
         link => link%next
       end do
       iteration = iteration+1
-      if (verbose > 2) &
+      if (verbose > 3) &
         print *, 'check_level_constraint, iteration =', &
         iteration, still_needed
     end do
@@ -466,7 +468,7 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   ! call.
   !------------------------------------------------------------------------
   if (parent%time > 0.0 .and. child%restart <= 0) call download%download_link (child_link, all_cells=.true.)
-  if (verbose > 0) then
+  if (verbose > 1) then
     if (i==0) &
     print 1,'                           parent, level, iout, time, size(3), position(3) =', &
       parent%id, parent%level, parent%iout, parent%time, parent%size, parent%position
@@ -494,7 +496,7 @@ SUBROUTINE split_patch (self, tlist, this)
   !.............................................................................
   if (this%task%is_set(bits%not_leaf)) return
   do_trace = io%do_trace
-  if (verbose > 2) &
+  if (verbose > 3) &
     io%do_trace=.true.
   call trace%begin('refine_t%split_patch', 1)
   !-----------------------------------------------------------------------------
@@ -563,7 +565,7 @@ SUBROUTINE split_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   ! Optionally, print children task list info
   !-----------------------------------------------------------------------------
-  if (verbose > 1) then
+  if (verbose > 2) then
     write (io%output,*) 'child tasks:'
     link => tail
     do while (associated(link))
@@ -576,7 +578,7 @@ SUBROUTINE split_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   call tlist%init_bdries
   !
-  if (verbose > 2) call tlist%print_tasks()
+  if (verbose > 3) call tlist%print_tasks()
   !
   call trace%end()
   io%do_trace = do_trace
@@ -671,7 +673,8 @@ FUNCTION check_nbor_support (self, tlist, link, check_only) RESULT (refine_it)
         //",' at level',i2.1)", this%id, this%level, npatch%id, npatch%level
       if (split_if_necessary) then
         ! mark this patch for splitting to ensure support for neighbor patches
-        if (verbose > 0) print "('Splitting',i5.1,' in order to provide support')",this%id
+        if (verbose > 0) &
+          print "('Splitting',i6.1,' to provide support')",this%id
         refine_it = 1
         exit
       end if
@@ -713,7 +716,6 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   call trace%begin ('refine_t%check_check_jeans')
   associate(l => patch%li, u => patch%ui)
   d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
-  e => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,patch%it,1)
   allocate(c_sound2(size(d,1),size(d,2),size(d,3)), &
            pg(patch%gn(1),patch%gn(2),patch%gn(3)))
   select type (patch)
@@ -741,12 +743,12 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   refine_it = 0
   if (Jeans_num > max_jeans) refine_it = +1
   if (Jeans_num < min_jeans) refine_it = -1
-  if (verbose > 1) &
+  if (verbose > 2) &
     write (io_unit%output,'(a,i6,1p,3e9.2,i4)') &
       'Jeans criterion: id, max, num, min, refine', &
       patch%id, max_jeans, Jeans_num, min_jeans, refine_it
   deallocate (c_sound2, pg)
-  nullify (d,e)
+  nullify (d)
   end associate
   call trace%end()
 END FUNCTION check_Jeans
@@ -843,7 +845,7 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
   !-----------------------------------------------------------------------------
   if (patch%level == self%levelmax) refine = min(refine,0)
   if (patch%level == self%levelmin) refine = max(refine,0)
-  if (verbose > 0) then
+  if (verbose > 1) then
     if (refine > 0) then
       write (io%output,*) 'shock_and_cd_detector: refine', patch%id, patch%level, self%levelmax
     else if (refine < 0) then
@@ -965,7 +967,7 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
         end do
       end do
     end do
-    if (verbose > 0) then
+    if (verbose > 1) then
       if (refine > 0) then
         write (io%output,*) 'gradient_detector: refine ', grad_var(n), patch%id
       else if (refine < 0) then
