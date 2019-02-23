@@ -257,8 +257,6 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     ! A negative refine value indicates that the patch is not needed
     !---------------------------------------------------------------------------
     if (refine < 0 .and. patch%level > self%levelmin) then
-      io%omp_trace = .true.
-      io%do_trace = .true.
       if (tasklist%verbose > 0) &
         write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(d)'
       call tasklist%lock%set
@@ -548,7 +546,8 @@ SUBROUTINE split_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   call this_patch%set(bits%not_leaf)
   !-----------------------------------------------------------------------------
-  ! Initialize the nbor lists of the parent patch and all its nbors
+  ! Initialize the nbor lists of the parent patch and all its nbors, based on
+  ! positions, then reset their status based on the nbor lists, and count
   !-----------------------------------------------------------------------------
   call tlist%init_nbor_nbors (this)
   call tlist%reset_status
