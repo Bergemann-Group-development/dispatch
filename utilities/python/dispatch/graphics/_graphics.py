@@ -51,11 +51,11 @@ def plot(f,**kw):
     else:
         pl.plot(f,**kw)
 
-def plot_values_along(pp,pt,**kw):
+def plot_values_along(pp,pt=[0.5,0.5,0.5],**kw):
     """ Plot values along direction dir={0,1,2}, through point pt=[x,y,z] """
     kv = {'dir':0, 'verbose':0, 'all':False, 'iv':0, 'var':None}
     kw,kv = _kw_extract(kw,kv)
-    plot(ds.values_along(pt,pp,iv=kv['iv'],dir=kv['dir'],all=kv['all']),**kw)
+    plot(ds.values_along(pp,pt,iv=kv['iv'],dir=kv['dir'],all=kv['all']),**kw)
 
 def plot_patch_values_along(pp_in,pt=[0.5,0.5,0.5],hold=False,**kw):
     """ Plot values along direction dir={0,1,2}, through point pt=[x,y,z] """
