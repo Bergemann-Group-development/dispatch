@@ -103,7 +103,7 @@ def _add_nml_list_to(obj,nml_list,verbose=0):
             subobj=getattr(obj,name)
             _add_nml_to(subobj,nml_dict,verbose=verbose)
 
-def _var(patch,filed,verbose=0):
+def _var(patch,filed,snap,verbose=0):
     """ Too avoid the "too many file open" problem (Python on steno allows 
         "only" about 800 files, patch.data is defined as a function, which
         return a memmap.  The function takes numeric or alphbetic arguments,
@@ -116,17 +116,21 @@ def _var(patch,filed,verbose=0):
         #print('bytes:',bytes)
     shape=tuple(patch.ncell)
     patch.offset=[]
+    # p.ip is the offset in the file; ranging from 0 to ntotal-1
+    nrank=np.product(snap.cartesian.mpi_dims)
+    ntask=np.product(snap.cartesian.per_rank)
+    patch.ip=(patch.id-1-patch.rank)//nrank + patch.rank*ntask
     if verbose==5:
         print('id:',patch.id)
     for iv in range(patch.nv):
         if patch.ioformat==5:
-            offset = (patch.id-1) + iv*patch.ntotal
+            offset = patch.ip + iv*patch.ntotal
             offset += patch.iout*patch.ntotal*patch.nv
         elif patch.ioformat>=10:
-            offset = (patch.id-1) + iv*patch.ntotal
+            offset = patch.ip + iv*patch.ntotal
             offset += patch.iout*patch.ntotal*patch.nv
         elif patch.ioformat>=6:
-            offset = iv + (patch.id-1)*patch.nv
+            offset = iv + patch.ip*patch.nv
             offset += patch.iout*patch.ntotal*patch.nv
         else:
             offset = iv
@@ -138,8 +142,8 @@ def _var(patch,filed,verbose=0):
         """ Translage alphabetic variable keys to numeric """
         if type(iv)==type('d'):
             iv=patch.idx.dict[iv]
-        return np.memmap(filed, dtype=np.float32, offset=patch.offset[iv],
-                         mode='r', order='F', shape=shape)
+        return np.copy(np.memmap(filed, dtype=np.float32, offset=patch.offset[iv],
+                         mode='r', order='F', shape=shape))
     def var(iv):
         """
         Special logic to calculate velocities from momenta on the fly.
@@ -169,8 +173,9 @@ def _var(patch,filed,verbose=0):
     return var
 
 class _patch():
-    def __init__(self,id,patch_dict,snap):
+    def __init__(self,id,patch_dict,snap,rank):
         self.id=id
+        self.rank=rank
         # add general attributes from snapshot_nml
         for k,v in snap.dict.items():
             setattr(self,k,v)
@@ -206,9 +211,10 @@ class _patch():
         # support for legacy I/O method filenames
         if snap.io.method.strip()=='legacy':
             self.filename=snap.rundir+'/{:05d}/{:05d}.dat'.format(self.iout,self.id)
-            self.var=_var(self,self.filename)
+            self.var=_var(self,self.filename,snap)
         else:
-            self.var=_var(self,snap.datafiled)
+            self.var=_var(self,snap.datafiled,snap)
+
     def _h(self):
         idx=self.idx
         h=np.zeros((3,self.nv))
@@ -370,13 +376,15 @@ class snapshot():
         self.patches=[]
         files=[f for f in os.listdir(datadir) if f.endswith('_patches.nml')]
         for f in files:
+            # split name to get rank number
+            rank=np.int(f.split('_')[1])
             # add parameter groups from data/run/NNNNN/*patches.nml
             file=_file(datadir,f)
             if verbose==1:
                 print ('parsing',file)
             patch_dict=parse_patches(file)
             for id in sorted(patch_dict.keys()):
-                p=_patch(id,patch_dict[id],self)
+                p=_patch(id,patch_dict[id],self,rank)
                 self._add_axes(p)
                 # Append to array of patch instances
                 self.patches.append(p)            
