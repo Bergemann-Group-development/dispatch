@@ -15,4 +15,5 @@ parallel_io_mod.o:      io_mod.o trace_mod.o patch_mod.o mpi_io_mod.o time_slice
 data_io_mod.o:          io_mod.o trace_mod.o patch_mod.o os_mod.o omp_mod.o omp_timer_mod.o mpi_mod.o \
                         direct_io_mod.o parallel_io_mod.o buffered_io_mod.o legacy_io_mod.o dll_mod.o \
                         counters_mod.o time_slices_mod.o omp_lock_mod.o
-hdf5_mod.o:             io_mod.o omp_lock_mod.o
+h5a_mod.o:               omp_lock_mod.o
+h5_mod.o:
