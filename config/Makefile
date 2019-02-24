@@ -12,7 +12,7 @@ DEFS = -D$(PREC) -DDISPATCH
 SOLVER  ?= VOID
 PREC    ?= SINGLE
 RT_PREC ?= RT_SINGLE
-BUILD=build
+BUILD   ?= build
 
 #############################################################################
 # Check for options
@@ -67,6 +67,15 @@ sinclude $(TOP)/states/Makefile
 sinclude $(TOP)/boundaries/Makefile
 
 #############################################################################
+# HDF5 option
+ifneq ($(HDF5),)
+  INCL += -I$(HDF5)/include
+  LIBS += -L$(HDF5)/lib -lhdf5_fortran
+endif
+FFLAGS += $(INCL)
+LDFLAGS += $(INCL)
+
+#############################################################################
 # Optional patches and extra dependencies
 ifdef PATCH
   VPATH := $(TOP)/patch/$(PATCH):$(VPATH)
@@ -89,21 +98,21 @@ $(shell mkdir -p $(DEPDIR) >/dev/null)
 %.o: %.mod
 #############################################################################
 # Pattern rules
-%.o: %.f90 $(DEPDIR)/%.d
+%.o: %.f90 $(BUILD) $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
 	$(E)$(F90) $(FFLAGS) $(DEFS) $(DEPFLAGS) -c $< -o $(BUILD)/$@
 	$(E)$(POSTCOMPILE)
 	$(eval OBJS+=$@)
-%.o: %.f $(DEPDIR)/%.d
+%.o: %.f $(BUILD) $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
 	$(E)$(F90) $(FFLAGS) $(DEFS) $(DEPFLAGS) -c $< -o $(BUILD)/$@
 	$(E)$(POSTCOMPILE)
 	$(eval OBJS+=$@)
-%.x: %.f90
+%.x: %.f90 $(BUILD)
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
 	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
 	$(E)$(LD) $(LDFLAGS) $< $(sort $(patsubst %,$(BUILD)/%,$(OBJS))) -I$(BUILD) -o $@ $(LIBS)
-%.x.mic: %.f90
+%.x.mic: %.f90 $(BUILD)
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
 	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
 	$(E)$(LD) $(LDFLAGS) $< $(sort $(patsubst %,$(BUILD)/%,$(OBJS))) -I$(BUILD) -o $@ $(LIBS)
@@ -115,7 +124,7 @@ $(DEPDIR)/%.d: ;
 
 # Prevent deletion of dependency files after successful compilation
 .PRECIOUS: $(DEPDIR)/%.d
-.PHONY: $(BUILD) showopt clean cleanlog cleandata clean-deps cleaner cleanest info
+.PHONY: showopt clean cleanlog cleandata clean-deps cleaner cleanest info
 
 $(BUILD):
 	@mkdir -p $(BUILD)
