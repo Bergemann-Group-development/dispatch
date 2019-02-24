@@ -70,7 +70,7 @@ sinclude $(TOP)/boundaries/Makefile
 # HDF5 option
 ifneq ($(HDF5),)
   INCL += -I$(HDF5)/include
-  LIBS += -L$(HDF5)/lib -lhdf5_fortran
+  LIBS += -L$(HDF5)/lib $(HDF5)/lib/libhdf5_fortran.a $(HDF5)/lib/libhdf5.a $(HDF5)/lib/libhdf5hl_fortran.a $(HDF5)/lib/libhdf5_hl.a -lz -ldl -lm
 endif
 FFLAGS += $(INCL)
 LDFLAGS += $(INCL)

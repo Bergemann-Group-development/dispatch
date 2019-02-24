@@ -11,6 +11,7 @@ PROGRAM test
   character(len=16):: file
   logical:: exist
   !-----------------------------------------------------------------------------
+  a = 1.0
   call h5open_f (error)
   file='hdf5.dat'
   inquire (file=file, exist=exist)
@@ -22,7 +23,7 @@ PROGRAM test
     print *,'creating '//trim(file)
     call h5fcreate_f (file, H5F_ACC_EXCL_F, file_id, error)
     call h5screate_simple_f (SIZE(SHAPE(a)), SHAPE(a,KIND=HSIZE_T), dspc_id, error)
-    call h5dcreate_f(file_id, 'dispatch', H5T_NATIVE_INTEGER, dspc_id, & dset_id, error)
+    call h5dcreate_f (file_id, 'dispatch', H5T_NATIVE_INTEGER, dspc_id, dset_id, error)
   end if
   call h5dwrite_f (dset_id, H5T_NATIVE_REAL, a, SHAPE(a,KIND=HSIZE_T), error)
   call h5dclose_f (dset_id, error)
