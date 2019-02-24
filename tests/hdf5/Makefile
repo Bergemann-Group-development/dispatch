@@ -12,7 +12,7 @@ default: test.x
 	./test.x $(VERBOSE)
 	ls -l hdf5.dat
 ifneq ($(VERBOSE),0)
-	$(HDF5)/bin/h5ls.exe -lr hdf5.dat
+	$(HDF5)/bin/h5dump.exe hdf5.dat | egrep 'ATTR|DATAS'
 endif
 
 # Common configuration
