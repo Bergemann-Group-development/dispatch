@@ -89,6 +89,7 @@ SUBROUTINE init (self)
   call trace%begin ('gpatch_t%init')
   call self%initial%init (self%kind, real(self%gamma))
   call self%extras_t%init
+  call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Try reading a restart snapshot.
   !-----------------------------------------------------------------------------
