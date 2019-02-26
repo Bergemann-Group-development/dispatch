@@ -61,25 +61,25 @@ SUBROUTINE apply_bcs (self, patch, cit)
   m1 => patch%mesh(1)
 
   if (m1%type == 'cylindrical_mesh' .or. m1%type == 'spherical_mesh') then
-    if (self%is_set(bits%xl)) then
+    if (patch%boundaries%is_set(bits%xl)) then
       ! lower x1-boundary (z or r)
       do iv=1,patch%nv
         q => patch%mem(:,:,:,iv,cit,1)
         call self%outflow(q,iv,select=1)
       end do
-    else if (self%is_set(bits%xu)) then
+    else if (patch%boundaries%is_set(bits%xu)) then
       ! upper x1-boundary (z or r)
       do iv=1,patch%nv
         q => patch%mem(:,:,:,iv,cit,1)
         call self%outflow(q,iv,select=2)
       end do
-    else if (self%is_set(bits%yl)) then
+    else if (patch%boundaries%is_set(bits%yl)) then
       ! lower x2-boundary (r or theta)
       do iv=1,patch%nv
         q => patch%mem(:,:,:,iv,cit,1)
         call self%axis_reflection(q,iv,select=3)
       end do
-    else if (self%is_set(bits%yu)) then
+    else if (patch%boundaries%is_set(bits%yu)) then
       ! upper x2-boundary (r or theta)
       if (m1%type == 'cylindrical_mesh') then
         do iv=1,patch%nv
@@ -92,10 +92,10 @@ SUBROUTINE apply_bcs (self, patch, cit)
           call self%axis_reflection(q,iv,select=4)
         end do
       end if
-    else if (self%is_set(bits%zl)) then
+    else if (patch%boundaries%is_set(bits%zl)) then
       ! should be periodic in phi
       print*,'WARNING! The problem should be periodic in phi! (zl)'
-    else if (self%is_set(bits%zu)) then
+    else if (patch%boundaries%is_set(bits%zu)) then
       ! should be periodic in phi
       print*,'WARNING! The problem should be periodic in phi! (zu)'
     end if
@@ -154,7 +154,7 @@ SUBROUTINE outflow (self, mem, iv, select)
             mem(i,j,k) = max(mem(m1%ui-(i-m1%uo),j,k), 0.0)
           end do
         else
-          do i=m1%lb,m1%lo
+          do i=m1%uo,m1%ub
             mem(i,j,k) = mem(m1%ui-(i-m1%uo),j,k)
           end do
         end if
@@ -238,7 +238,7 @@ SUBROUTINE axis_reflection (self, mem, iv, select)
         end do
         mem(m1%lb:m1%ub,m2%li,k) = 0.0
       else
-        do j=m2%lb,m2%lo
+        do j=m2%uo,m2%ub
           mem(m1%lb:m1%ub,j,k) = mem(m1%lb:m1%ub,m2%ui-(j-m2%uo),k)
         end do
       end if

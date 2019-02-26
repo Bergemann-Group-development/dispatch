@@ -159,6 +159,9 @@ SUBROUTINE init (self)
           end if
           patch%origin = patch%mesh%origin
         end select
+        ! only "periodic" in the collapsed dimension (x3)
+        patch%periodic(1) = .false.
+        patch%periodic(2) = .false.
         call patch%clear(bits%root_grid)
         ! The `list_t%append` procedure only accepts objects of type `task_t`.
         call self%task_list%append(patch)
