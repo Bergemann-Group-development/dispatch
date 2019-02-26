@@ -397,12 +397,12 @@ SUBROUTINE pde (self)
   else if (associated(self%force%selected)) then
    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh) 
   end if
-  if (self%selfgravity) then
-    phi => self%mem(:,:,:,self%idx%phi,self%it,1)
-    dpdtx = dpdtx - dd(:,:,:,1)*ddxdn(ds,phi)
-    dpdty = dpdty - dd(:,:,:,2)*ddydn(ds,phi)
-    dpdtz = dpdtz - dd(:,:,:,3)*ddzdn(ds,phi)
-  end if
+  !if (self%selfgravity) then
+    !phi => self%mem(:,:,:,self%idx%phi,self%it,1)
+    !dpdtx = dpdtx - dd(:,:,:,1)*ddxdn(ds,phi)
+    !dpdty = dpdty - dd(:,:,:,2)*ddydn(ds,phi)
+    !dpdtz = dpdtz - dd(:,:,:,3)*ddzdn(ds,phi)
+  !end if
   !-----------------------------------------------------------------------------
   ! Conservation of energy; reuse the mass flux for the energy flux
   !-----------------------------------------------------------------------------
@@ -500,7 +500,6 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  call self%gravity_solve
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
@@ -519,9 +518,6 @@ SUBROUTINE update (self)
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
   !-----------------------------------------------------------------------------
-  ! Make a preliminary update of the selfgravity
-  !-----------------------------------------------------------------------------
-  call self%gravity_update
   call self%counter_update
   call trace%end (itimer)
 END SUBROUTINE update

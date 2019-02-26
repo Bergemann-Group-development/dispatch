@@ -502,12 +502,12 @@ SUBROUTINE pde (self)
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected) .and. self%do_force) &
    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)! ops: 1 0 0
-  if (self%selfgravity) then
-    phi => self%mem(:,:,:,self%idx%phi,self%it,1)
-    dpdtx = dpdtx - dd(:,:,:,1)*ddxdn(ds,phi)
-    dpdty = dpdty - dd(:,:,:,2)*ddydn(ds,phi)
-    dpdtz = dpdtz - dd(:,:,:,3)*ddzdn(ds,phi)
-  end if
+  !if (self%selfgravity) then
+    !phi => self%mem(:,:,:,self%idx%phi,self%it,1)
+    !dpdtx = dpdtx - dd(:,:,:,1)*ddxdn(ds,phi)
+    !dpdty = dpdty - dd(:,:,:,2)*ddydn(ds,phi)
+    !dpdtz = dpdtz - dd(:,:,:,3)*ddzdn(ds,phi)
+  !end if
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
   ! the diffusive entropy flux directly proportional to the diffusive mass flux,
@@ -593,7 +593,6 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  call self%gravity_solve
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
@@ -607,10 +606,7 @@ SUBROUTINE update (self)
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
   call self%check_density(' after timestep')
   !-----------------------------------------------------------------------------
-  ! Make a preliminary update of the selfgravity
-  !-----------------------------------------------------------------------------
   call self%counter_update
-  call self%gravity_update
   call trace%end (itimer)
 END SUBROUTINE update
 

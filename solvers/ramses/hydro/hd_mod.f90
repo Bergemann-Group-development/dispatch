@@ -118,7 +118,6 @@ SUBROUTINE update (self)
   if (io%smallr  /= 0.0) smallr  = io%smallr
   if (io%courant /= 0.0) self%courant = io%courant
 
-  call self%gravity_solve
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
@@ -185,10 +184,9 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Add gradient of grav. potential as source term (simple, 1st-order approach)
   !-----------------------------------------------------------------------------
-  if (self%selfgravity) then
-    call gravitational_force(self)
-  end if
-  call self%gravity_update
+  !if (self%selfgravity) then
+    !call gravitational_force(self)
+  !end if
   call self%counter_update
   !-----------------------------------------------------------------------------
   ! Deallocate

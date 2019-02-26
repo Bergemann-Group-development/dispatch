@@ -339,9 +339,6 @@ SUBROUTINE update_zeus (self)
   integer, save:: itimer=0
   real:: error
   !-----------------------------------------------------------------------------
-
-  call self%gravity_solve
-  !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
   ! placed at an earlier point in the task handling the call here will have no
@@ -353,11 +350,7 @@ SUBROUTINE update_zeus (self)
   call zeus3d (self%istep)  ! run ZEUS
   call trace_end(itimer)
   call CopyFromZeus (self)
-
   !-----------------------------------------------------------------------------
-  ! Make a preliminary update of the selfgravity
-  !-----------------------------------------------------------------------------
-  call self%gravity_update
   call self%counter_update
 END SUBROUTINE update_zeus
 

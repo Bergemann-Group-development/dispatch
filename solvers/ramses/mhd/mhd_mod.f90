@@ -138,7 +138,6 @@ SUBROUTINE update (self)
   n = self%mesh%ui-self%mesh%li+1
   if (io%smallr > 0) smallr = io%smallr
   if (io%courant > 0) self%courant = io%courant
-  call self%gravity_solve
   !----------------------------------------------------------------------------
   ! Use one of several methods to clean div(B) from guard zones
   !----------------------------------------------------------------------------
@@ -326,11 +325,10 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Add gradient of grav. potential as source term (simple, 1st-order approach)
   !-----------------------------------------------------------------------------
-  if (self%selfgravity) then
-    call gravitational_force(self)
-  end if
+  !if (self%selfgravity) then
+    !call gravitational_force(self)
+  !end if
   call self%counter_update
-  call self%gravity_update
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
