@@ -11,6 +11,7 @@ MODULE solver_mod
   private
   type, public, extends(mhd_t):: solver_t
   contains
+    procedure:: update
     procedure:: log_density
     procedure:: log_pressure
     procedure:: velocity_magnitude
@@ -32,6 +33,17 @@ MODULE solver_mod
     module procedure:: MomToVel_VectorToArray
   end interface
 CONTAINS
+
+!> =====================================================================
+!> Organize calls to the extras and the hydro solver
+!> =====================================================================
+SUBROUTINE update (self)
+  class(solver_t) :: self
+  !.....................................................................
+  call self%extras_t%pre_update
+  call self%mhd_t%update
+  call self%extras_t%post_update
+END SUBROUTINE update
 
 !> =============================================================================
 FUNCTION gas_velocity_vector (self) RESULT (v)

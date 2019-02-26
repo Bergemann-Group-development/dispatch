@@ -20,9 +20,10 @@ MODULE gpatch_mod
   USE omp_timer_mod
   USE bits_mod
   USE data_io_mod
+  USE extras_mod
   implicit none
   private
-  type, public, extends(patch_t):: gpatch_t
+  type, public, extends(extras_t):: gpatch_t
     type(initial_t)  :: initial
     type(data_hub_t) :: data_hub
     type(poisson_t)  :: poisson
@@ -61,10 +62,20 @@ END SUBROUTINE input
 !> =============================================================================
 !> Interface routine to the data_io output procedure
 !> =============================================================================
+SUBROUTINE update (self)
+  class(gpatch_t):: self
+  !-----------------------------------------------------------------------------
+  call data_io%output (self)
+END SUBROUTINE update
+
+!> =============================================================================
+!> Interface routine to the data_io output procedure
+!> =============================================================================
 SUBROUTINE output (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
   call data_io%output (self)
+  call self%extras_t%output
 END SUBROUTINE output
 
 !> =============================================================================
@@ -113,6 +124,7 @@ SUBROUTINE init (self)
   end if
   self%d0 = d0
   call self%initial%init (self%kind, real(self%gamma))
+  call self%extras_t%init
   !$omp critical (poisson_cr)
   if (first_poisson) then
     first_poisson = .false.

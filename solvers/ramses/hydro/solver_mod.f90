@@ -14,6 +14,7 @@ MODULE solver_mod
   private
   type, public, extends(hd_t):: solver_t
   contains
+    procedure:: update
     procedure:: p2U
     procedure:: U2p
     procedure:: e2E_th
@@ -32,6 +33,17 @@ MODULE solver_mod
   end type
   type(solver_t):: solver
 CONTAINS
+
+!> =====================================================================
+!> Organize calls to the extras and the hydro solver
+!> =====================================================================
+SUBROUTINE update (self)
+  class(solver_t) :: self
+  !.....................................................................
+  call self%extras_t%pre_update
+  call self%hd_t%update
+  call self%extras_t%post_update
+END SUBROUTINE update
 
 !> =====================================================================
 !> Get velocities from momenta
