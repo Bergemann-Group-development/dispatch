@@ -134,7 +134,8 @@ SUBROUTINE init (self)
     size = self%size
     if (verbose>1) print*, 'thread', omp_mythread, ' reading namelist'
     rewind (io%input)
-    read (io%input, pebble_params)
+    read (io%input, pebble_params, iostat=iostat)
+    if (iostat/=0) call io%namelist_warning ('pebble_params')
     if (io%master) write(*, pebble_params)
     if (do_pebbles) then
       n = self%n
@@ -477,8 +478,8 @@ SUBROUTINE kdk_drag (self, p)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: p
   !.............................................................................
-  real:: ds, p_v_fordt(3)
-  real(8) :: rad, sp, p1(3), ag(3), ar2
+  real:: ds, g_pebble_v(3)
+  real(8) :: rad, sp, p1(3), ag(3), ar2, geomi(3)
   real(8), parameter:: small=1.0e-32
   integer, save:: nprint=20
   integer:: warn
@@ -512,11 +513,13 @@ SUBROUTINE kdk_drag (self, p)
     p%dt = sqrt((p1(1)**2+p1(2)**2)/sqrt(ag(1)**2+ag(2)**2+small))*self%pebbles%courant
   end select
   ! do not use velocity components in collapsed dimensions for the time step calculation
-  p_v_fordt = 0.0
+  ! multiply by the inverse geometric factors to get units right
+  g_pebble_v = 0.0
+  call inv_geometric_factors
   where (self%n > 1)
-    p_v_fordt = p%v
+    g_pebble_v = p%v * geomi
   end where
-  p%dt = min(p%dt,minval(self%ds/max(1e-20,abs(p_v_fordt))))
+  p%dt = min(p%dt,minval(self%ds/max(1e-20,abs(g_pebble_v))))
   p%dt = min(p%dt,0.1*io%out_time)
   p%dt = min(p%dt,0.51_8*(self%time-p%t))
   !
@@ -542,8 +545,9 @@ SUBROUTINE kdk_drag (self, p)
   ! p%t < self%t(self%iit(1))
   !---------------------------------------------------------------------------
   ! Be careful to only update position components that do not coincide with collapsed dimensions.
+  call inv_geometric_factors
   where (self%n > 1)
-    p%p = p%p + p%dt * p%v
+    p%p = p%p + p%dt * p%v * geomi
   end where
   p%t = p%t + p%dt
   call self%compute_drag (p, warn)
@@ -556,17 +560,21 @@ SUBROUTINE kdk_drag (self, p)
     print *,'  dt',p%dt,1,verbose
     print *,' dt1',self%pebbles%courant*sqrt(sum(p%v**2,mask=(self%n>1))/(sum(p%ag**2)+small))
     print *,' dt2',self%pebbles%courant*sqrt(sum(p%p**2)/sqrt(sum(p%ag**2)+small))
-    print *,' dt3',minval(self%ds)/max(1e-20,abs(p%v)),io%out_time
-    print'(1x,a,1p,9(3e11.2,2x))', 'dt3', self%ds, abs(p%v), self%ds/max(1e-20,abs(p%v))
+    print *,' dt3',minval(self%ds)/max(1e-20,abs(g_pebble_v)),io%out_time
+    print'(1x,a,1p,9(3e11.2,2x))', 'dt3', self%ds, abs(p%v), self%ds/max(1e-20,abs(g_pebble_v))
     print *,'  ds',self%ds
     print *,'v*dt',p%v*p%dt
     print *,'patch%dt',self%dtime
   end if
+  call inv_geometric_factors
   where (self%n > 1)
-    p%p = p%p - p%dt*p%v
+    p%p = p%p - p%dt*p%v * geomi
   end where
   !---------------------------------------------------------------------------
   ! First kick, with drag, v(t) -> v(t+dt)
+  ! In curvilinear coords., the position coordinates could have angular units
+  ! (i.e. radians). Meanwhile, velocities and accelerations are all taken to
+  ! have linear units (i.e. length/time or length/time**2).
   !---------------------------------------------------------------------------
   p%v = p%v + p%dt * (p%ag + p%ad) / (1.0 + p%c * p%dt)
   !---------------------------------------------------------------------------
@@ -575,8 +583,9 @@ SUBROUTINE kdk_drag (self, p)
   ! NOTE: in cylindrical or spherical axisymmetric experiments, we want the
   ! drag term to affect the azimuthal/toroidal velocity (because it affects
   ! centrifugal terms), but *not* the position in that direction!
+  call inv_geometric_factors
   where (self%n > 1)
-    p%p = p%p + 2.*p%dt*p%v
+    p%p = p%p + 2.*p%dt*p%v * geomi
   end where
   p%t = p%t + p%dt
   !---------------------------------------------------------------------------
@@ -595,8 +604,8 @@ SUBROUTINE kdk_drag (self, p)
     print *,'  dt',p%dt
     print *,' dt1',self%pebbles%courant * sqrt(sum(p%v**2) / (sum(p%ag**2)+small))
     print *,' dt2',minval(self%ds / max(1e-20, abs(p%v)))
-    print *,' dt3',min(p%dt, minval(self%ds / max(1e-20, abs(p%v))))
-    print'(1x,a,1p,9(3e11.2,2x))', 'dt3', self%ds, abs(p%v), self%ds / max(1e-20, abs(p%v))
+    print *,' dt3',min(p%dt, minval(self%ds / max(1e-20, abs(g_pebble_v))))
+    print'(1x,a,1p,9(3e11.2,2x))', 'dt3', self%ds, abs(p%v), self%ds / max(1e-20, abs(g_pebble_v))
     print *,'  ds',self%ds
     print *,'v*dt',p%v * p%dt
   end if
@@ -607,7 +616,9 @@ SUBROUTINE kdk_drag (self, p)
     ds = sqrt(sum((p%dt * p%v / self%ds)**2))
     print'("kdkd3",1p,7(3e10.2,1x))', p%p, p%v, p%vg, p%ad, p%c*p%dt, p%dt, p%t, ds
   end if
+
   p%v = p%v + p%dt * (p%ag + p%ad) / (1.0 + p%c * p%dt)
+
   if (p%id == self%pebbles%id_dbg) then
     nprint = nprint-1
     ds = sqrt(sum((p%dt*p%v / self%ds)**2))
@@ -638,13 +649,27 @@ CONTAINS
     if (trim(self%mesh(1)%type) == 'spherical_mesh') then
       p%ag(1) = p%ag(1) + p%v(3)**2 / (abs(p%p(1)) + small) + p%v(2)**2 / (abs(p%p(1)) + small)
       p%ag(2) = p%ag(2) + p%v(3)**2 * cos(p%p(2)) / (abs(p%p(1)) * abs(sin(p%p(2))) + small)
-      p%ag(2) = p%ag(2) / abs(p%p(1)) ! convert to rad/time**2 (pebbles positions in theta are in radians)
     else if (trim(self%mesh(1)%type) == 'cylindrical_mesh') then
       !p%ag(1) = p%ag(1) + 0.0
       p%ag(2) = p%ag(2) + p%v(3)**2 / (abs(p%p(2)) + small)
     end if
     !p%ag(3) = p%ag(3) + 0.0
   end subroutine centrifugal_acceleration
+
+  subroutine inv_geometric_factors
+    select case (self%mesh_type)
+    case (1) ! Cartesian
+      geomi = 1.0
+    case (2) ! spherical
+      geomi(1) = 1.0
+      geomi(2) = 1.0/abs(p%p(1))
+      geomi(3) = 1.0/abs(p%p(1)*sin(p%p(2)))
+    case (3) ! cyindrical
+      geomi(1) = 1.0
+      geomi(2) = 1.0
+      geomi(3) = 1.0/abs(p%p(1))
+    end select
+  end subroutine
 
 END SUBROUTINE kdk_drag
 
@@ -991,7 +1016,7 @@ SUBROUTINE update_pebbles (self)
   class(*), pointer:: link
   class(pebble_t), pointer:: p, rm
   logical, save:: first_time=.true.
-  integer:: n, verbose
+  integer:: n
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.self%do_pebbles) return
@@ -1096,7 +1121,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           end do
         else
           do iv=1,nv
-            print '(a,i8,2i4,i3,f12.5,1p,2e12.4,2x,2(2e14.6,2x),z10,2i6)', &
+            print '(a,i8,2i4,i3,1pe12.4,1p,2e12.4,2x,2(2e14.6,2x),z10,2i6)', &
               'upd', self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
               self%dtime, self%u_max, &
               minval(self%mem(:,:,:,iv,self%it ,1)), &
