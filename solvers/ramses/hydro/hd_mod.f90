@@ -167,6 +167,16 @@ SUBROUTINE update (self)
     self%ff = 0.0
   end if
   !-----------------------------------------------------------------------------
+  ! Add any force stored in patch_t data
+  !-----------------------------------------------------------------------------
+  if (allocated(self%force_per_unit_mass)) then
+    do i=1,3
+      self%ff(:,:,:,i) = self%ff(:,:,:,i) + self%force_per_unit_mass(:,:,:,i)*d
+    end do
+  else if (allocated(self%force_per_unit_volume)) then
+    self%ff = self%ff + self%force_per_unit_volume
+  end if
+  !-----------------------------------------------------------------------------
   ! Godunov solver
   !-----------------------------------------------------------------------------
   call godunov (self)
@@ -178,15 +188,7 @@ SUBROUTINE update (self)
   ! Add external force as source term
   !-----------------------------------------------------------------------------
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  do i=1,3
-    p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%ff(:,:,:,i)*d
-  end do
-  !-----------------------------------------------------------------------------
-  ! Add gradient of grav. potential as source term (simple, 1st-order approach)
-  !-----------------------------------------------------------------------------
-  !if (self%selfgravity) then
-    !call gravitational_force(self)
-  !end if
+  p = p + self%dtime*self%ff
   call self%counter_update
   !-----------------------------------------------------------------------------
   ! Deallocate
@@ -805,6 +807,7 @@ subroutine trace3d(self)
   real(dp)::drz, duz, dvz, dwz, dpz, daz
   real(dp)::sr0, su0, sv0, sw0, sp0, sa0
   integer,save:: itimer=0
+  real, allocatable:: ff(:,:,:,:)
   associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then

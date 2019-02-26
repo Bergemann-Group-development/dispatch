@@ -512,8 +512,7 @@ SUBROUTINE mhd_update (self)
   integer:: it, iv, nt
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  call self%gravity_update
-  call self%divb_clean
+  !call self%divb_clean
   call self%output
   call self%pde
   call self%courant_condition

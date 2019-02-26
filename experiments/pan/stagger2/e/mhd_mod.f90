@@ -407,18 +407,17 @@ SUBROUTINE pde (self)
     dpdtz = - ddxup1(ds,fzx) - ddyup1(ds,fyz) - ddzdn1(ds,fzz)                    ! ops: 2 0 0
   end if
   !-----------------------------------------------------------------------------
-  ! External force, momentarily turned off for the time steps used in snapshots
+  ! External force
   !-----------------------------------------------------------------------------
   if (associated(self%force%selected)) then
     if (abs(self%time-self%out_next) > 4.0*self%dtime) then
-      dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)                                      ! ops: 1 0 0
+      dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)! ops: 1 0 0
     end if
   end if
-  if (self%selfgravity) then
-    phi => self%mem(:,:,:,self%idx%phi,self%it,1)
-    dpdtx = dpdtx - dd(:,:,:,1)*ddxdn(ds,phi)
-    dpdty = dpdty - dd(:,:,:,2)*ddydn(ds,phi)
-    dpdtz = dpdtz - dd(:,:,:,3)*ddzdn(ds,phi)
+  if (allocated(self%force_per_unit_mass)) then
+   dpdt = dpdt + dd*self%force_per_unit_mass                                    ! ops: 3 3 0
+  else if (allocated(self%force_per_unit_volume)) then
+   dpdt = dpdt + self%force_per_unit_volume                                     ! ops: 3 3 0
   end if
   !-----------------------------------------------------------------------------
   ! Conservation of energy; reuse the mass flux for the energy flux
@@ -501,7 +500,6 @@ SUBROUTINE update (self)
   real, dimension(:,:,:), pointer:: d
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%update',itimer=itimer)
-  !call self%gravity_solve
   !-----------------------------------------------------------------------------
   ! Output the state after guard zone downloads, selfgravity, and boundary
   ! conditions. If another call is placed at an earlier point in the task handling
@@ -530,7 +528,6 @@ SUBROUTINE update (self)
     end do
   end if
   call self%check_density(' after timestep')
-  call self%gravity_update
   call self%counter_update
   call trace%end (itimer)
 END SUBROUTINE update

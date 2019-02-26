@@ -16,17 +16,17 @@ MODULE selfgravity_mod
   USE timer_mod
   USE omp_timer_mod
   USE bits_mod
+  USE vector_ops
   implicit none
   private
-  type, public, extends(patch_t):: selfgravity_t
+  type, public:: selfgravity_t
     type(initial_t)  :: initial
-    type(data_hub_t) :: data_hub
     type(poisson_t)  :: poisson
     logical:: selfgravity=.false.
     real(8):: d0
+    real(8):: poisson_time=-1.0
   contains
-    procedure:: init
-    procedure:: output
+    procedure:: init_extras
     procedure:: pre_update
     procedure:: post_update
     procedure:: ahead_of
@@ -48,8 +48,9 @@ CONTAINS
 !> any task that relies on the patch for guard zone values to wait until data
 !> has been recieved with MPI from the owner rank.
 !> =============================================================================
-SUBROUTINE init (self)
+SUBROUTINE init_extras (self, patch)
   class(selfgravity_t):: self
+  class(patch_t):: patch
   real(kind=KindScalarVar), pointer :: ff(:,:,:,:)
   character(len=64)                 :: filename
   logical                           :: ok
@@ -70,24 +71,24 @@ SUBROUTINE init (self)
   !$omp end critical (input_cr)
   if (selfgravity) then
     self%selfgravity = selfgravity
-    if (trim(self%kind) /= 'zeus_mhd_patch') self%nv = self%nv + 1
-    self%idx%phi = self%nv
-    if (self%nw == 1) then
-      self%nv = self%nv + 1
-      self%idx%dphi = self%nv
+    if (trim(patch%kind) /= 'zeus_mhd_patch') patch%nv = patch%nv + 1
+    patch%idx%phi = patch%nv
+    if (patch%nw == 1) then
+      patch%nv = patch%nv + 1
+      patch%idx%dphi = patch%nv
     end if
-    call self%patch_t%init
+    call patch%init
     call self%poisson%init
   else
-    self%idx%phi = -1
-    call self%patch_t%init
+    patch%idx%phi = -1
+    call patch%init
   end if
-  allocate (self%force_per_unit_volume(self%gn(1),self%gn(2),self%gn(3),3))
+  allocate (patch%force_per_unit_volume(patch%gn(1),patch%gn(2),patch%gn(3),3))
   self%d0 = d0
   !$omp critical (poisson_cr)
   if (first_poisson) then
     first_poisson = .false.
-    if (self%use_data_hub) then
+    if (patch%use_data_hub) then
       !call data_hub%test
     else
       call download%test
@@ -99,43 +100,27 @@ SUBROUTINE init (self)
     ! Sum up the total mass and total volume, to get the average density d0.
     ! FIXME: This needs to be modified for MPI
     !-------------------------------------------------------------------------
-    if (self%id==1) then
-      d => self%mem(:,:,:,self%idx%d,self%it,1)
+    if (patch%id==1) then
+      d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
       !$omp atomic
-      total_mass = total_mass + self%fsum(d)*product(self%ds)
+      total_mass = total_mass + patch%fsum(d)*product(patch%ds)
       !$omp atomic
-      total_volume = total_volume + product(self%size)
+      total_volume = total_volume + product(patch%size)
     end if
     !-------------------------------------------------------------------------
     ! Sum up the total mass and total volume, to get the average density d0.
     ! FIXME: This needs to be modified for MPI
     !-------------------------------------------------------------------------
-    if (self%time == 0.0 .and. self%id==1) then
-      d => self%mem(:,:,:,self%idx%d,self%it,1)
+    if (patch%time == 0.0 .and. patch%id==1) then
+      d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
       !$omp atomic
-      total_mass = total_mass + self%fsum(d)*product(self%ds)
+      total_mass = total_mass + patch%fsum(d)*product(patch%ds)
       !$omp atomic
-      total_volume = total_volume + product(self%size)
+      total_volume = total_volume + product(patch%size)
     end if
   end if
   call trace%end()
-END SUBROUTINE init
-
-!> =============================================================================
-!> Interface routine to the data_io output procedure
-!> =============================================================================
-SUBROUTINE update (self)
-  class(selfgravity_t):: self
-  !-----------------------------------------------------------------------------
-END SUBROUTINE update
-
-!> =============================================================================
-!> Interface routine to the data_io output procedure
-!> =============================================================================
-SUBROUTINE output (self)
-  class(selfgravity_t):: self
-  !-----------------------------------------------------------------------------
-END SUBROUTINE output
+END SUBROUTINE init_extras
 
 !> =============================================================================
 !> Prepare the external forces for the pde call, in particular selfgravity. At
@@ -144,8 +129,9 @@ END SUBROUTINE output
 !> be providing only their preliminary potentials in their (nt-1) time slots,
 !> while their older time slots should by now contain the converged potential.
 !> =============================================================================
-SUBROUTINE pre_update (self)
+SUBROUTINE pre_update (self, patch)
   class(selfgravity_t):: self
+  class(patch_t):: patch
   !.............................................................................
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi
   real:: dmin, dmax
@@ -154,21 +140,25 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
   call trace%begin ('selfgravity_t%pre_update', itimer=itimer)
-  d   => self%mem(:,:,:,self%idx%d  ,self%it,1)
-  phi => self%mem(:,:,:,self%idx%phi,self%it,1)
+  d   => patch%mem(:,:,:,patch%idx%d  ,patch%it,1)
+  phi => patch%mem(:,:,:,patch%idx%phi,patch%it,1)
   if (self%d0==-1.0) then
     self%d0 = total_mass/total_volume
-    print *, self%id, 'setting self%d0 =', self%d0, self%faver(d)
+    print *, patch%id, 'setting self%d0 =', self%d0, patch%faver(d)
   end if
-  dmin = self%fminval (d)
-  dmax = self%fmaxval (d)
+  dmin = patch%fminval (d)
+  dmax = patch%fmaxval (d)
   if (dmin==0.0) &
-    print *, self%id, 'WARNING: selfgravity_t%gravity, dmin, dmax, it =', dmin, dmax, self%it
-  call self%poisson%update (self, phi, d, self%d0, detailed_timer)
+    print *, patch%id, 'WARNING: selfgravity_t%gravity, dmin, dmax, it =', dmin, dmax, patch%it
+  call self%poisson%update (patch, phi, d, self%d0, detailed_timer)
+  !-----------------------------------------------------------------------------
+  ! Compute the force per unit volume
+  !-----------------------------------------------------------------------------
+  patch%force_per_unit_volume = grad (patch%ds, phi)
   !-----------------------------------------------------------------------------
   ! compute estimate of dphi/dt
   !-----------------------------------------------------------------------------
-  call time_derivs (self)
+  call time_derivs (patch)
   call trace%end (itimer)
 END SUBROUTINE pre_update
 
@@ -179,26 +169,27 @@ END SUBROUTINE pre_update
 !> better offer.  The poisson_time controls if an update affects the self%time
 !> or the poisson_time; the two are updated alternatingly
 !> =============================================================================
-SUBROUTINE post_update (self)
+SUBROUTINE post_update (self, patch)
   class(selfgravity_t):: self
+  class(patch_t):: patch
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
   call trace%begin ('selfgravity_t%post_update')
   if (selfgravity) then
-    if (self%poisson_time == self%time) then
-      !call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
-      call self%rotate
-      self%rotated = .true.
+    if (self%poisson_time == patch%time) then
+      !call timestep%update(patch%id, patch%iit, patch%dt, patch%mem, patch%mesh)
+      call patch%rotate
+      patch%rotated = .true.
       if (verbose>0) &
-        print *, self%id, 'selfgravity_t%update updated self%time to', self%time
+        print *, patch%id, 'selfgravity_t%update updated patch%time to', patch%time
     else
-      call self%dnload (only=self%idx%d)
-      call self%dnload (only=self%idx%phi)
-      call self%pre_update
-      self%poisson_time = self%time
-      self%rotated = .true.
+      call patch%dnload (only=patch%idx%d)
+      call patch%dnload (only=patch%idx%phi)
+      call self%pre_update (patch)
+      self%poisson_time = patch%time
+      patch%rotated = .true.
       if (verbose>0) &
-        print *, self%id, 'selfgravity_t%update updated self%poisson_time to', self%poisson_time
+        print *, patch%id, 'selfgravity_t%update updated self%poisson_time to', self%poisson_time
     end if
   end if
   call trace%end()
@@ -211,7 +202,7 @@ END SUBROUTINE post_update
 !> practice better at reducing the number of iterations than the 2nd order.
 !> =============================================================================
 SUBROUTINE time_derivs (self)
-  class(selfgravity_t):: self
+  class(patch_t):: self
   integer:: it1, it2, it3, nt, l(3), u(3)
   real(8):: t1, t2, t3
   integer, save:: itimer=0
@@ -257,49 +248,46 @@ SUBROUTINE time_derivs (self)
 END SUBROUTINE time_derivs
 
 !> =============================================================================
-!> This functions checks if self is too much ahead of the nbor 'patch'.  If it
-!> returns .true. it means the 'self' task is not ready to be updated.
+!> This functions checks if 'target' is too much ahead of the nbor 'source'.
+!> If it returns .true. it means the target task is not ready to be updated.
 !> =============================================================================
-LOGICAL FUNCTION ahead_of (self, patch)
+LOGICAL FUNCTION ahead_of (self, target, source)
   class(selfgravity_t):: self
-  class(patch_t):: patch
+  class(patch_t):: target, source
   !-----------------------------------------------------------------------------
   ! Level differences larger than 1 should never happen!
   !-----------------------------------------------------------------------------
-  select type (patch)
-  class is (selfgravity_t)
-  if (abs(self%level-patch%level)>1) then
+  if (abs(target%level-source%level)>1) then
     ahead_of = .false.
     print *,'WARNING: level difference larger than one:', &
-      self%id, self%level, patch%id, patch%level
+      target%id, target%level, source%id, source%level
   !-----------------------------------------------------------------------------
   ! If wee need to solve the Poisson equation, we ignore nbors with higher ot
   ! the same resolution, and require nbords with lower resolution to be in front
   ! with their Poisson solutions.
   !-----------------------------------------------------------------------------
-  else if (self%poisson_time < self%time) then
-    if (self%level <= patch%level) then
+  else if (self%poisson_time < target%time) then
+    if (target%level <= source%level) then
       ahead_of = .false.
     else
-      !ahead_of = self%time > patch%poisson_time + patch%grace*patch%dtime
-      ahead_of = self%time > patch%time + patch%grace*patch%dtime
+      !ahead_of = target%time > source%poisson_time + source%grace*source%dtime
+      ahead_of = target%time > source%time + source%grace*source%dtime
     end if
     if (ahead_of .and. verbose>1) &
-      print 1, self%id, self%level, 'at', self%time, &
-        'cannot update because', patch%id, patch%level, 'has too old Poisson time', &
-        patch%poisson_time + patch%grace*patch%dtime
+      print 1, target%id, target%level, 'at', target%time, &
+        'cannot update because', source%id, source%level, 'has too old Poisson time', &
+        self%poisson_time + source%grace*source%dtime
       1 format(i6,i3,2x,a,g15.6,2x,a,i6,i3,2x,a,g15.6)
   !-----------------------------------------------------------------------------
   ! If we are going to update the dynamic time, we need the nbor to be in front.
   !-----------------------------------------------------------------------------
   else
-    ahead_of = self%time > patch%time + patch%grace*patch%dtime
+    ahead_of = target%time > source%time + source%grace*source%dtime
     if (ahead_of .and. verbose>1) &
-      print 1, self%id, self%level, 'at', self%time, &
-        'cannot update because', patch%id, patch%level, 'has too old dynamic time', &
-        patch%time + patch%grace*patch%dtime
+      print 1, target%id, target%level, 'at', target%time, &
+        'cannot update because', source%id, source%level, 'has too old dynamic time', &
+        source%time + source%grace*source%dtime
   end if
-  end select
 END FUNCTION ahead_of
 
 END MODULE selfgravity_mod

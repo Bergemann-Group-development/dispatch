@@ -190,6 +190,16 @@ SUBROUTINE update (self)
     self%ff = 0.0
   end if
   !-----------------------------------------------------------------------------
+  ! Add any force stored in patch_t data
+  !-----------------------------------------------------------------------------
+  if (allocated(self%force_per_unit_mass)) then
+    do i=1,3
+      self%ff(:,:,:,i) = self%ff(:,:,:,i) + self%force_per_unit_mass(:,:,:,i)*d
+    end do
+  else if (allocated(self%force_per_unit_volume)) then
+    self%ff = self%ff + self%force_per_unit_volume
+  end if
+  !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
   call check_small (self)                               ! Check smallr, smallp
@@ -319,19 +329,11 @@ SUBROUTINE update (self)
   ! Add external force as source term
   !-----------------------------------------------------------------------------
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  do i=1,3
-    p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%ff(:,:,:,i)*d
-  end do
-  !-----------------------------------------------------------------------------
-  ! Add gradient of grav. potential as source term (simple, 1st-order approach)
-  !-----------------------------------------------------------------------------
-  !if (self%selfgravity) then
-    !call gravitational_force(self)
-  !end if
-  call self%counter_update
+  p = p + self%dtime*self%ff
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
+  call self%counter_update
   if (non_ideal%is_used) &
     deallocate (fluxambdiff,emfambdiff)
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dq2,self%bf,self%dbf, &
@@ -923,6 +925,7 @@ SUBROUTINE trace3d(self)
   real(dp), dimension(1:self%gn(1),1:self%gn(2),1:self%gn(3)):: rho_t, p_t
   real(dp) :: eff_gamma, off
   integer, save:: itimer(4)=0
+  real, allocatable:: ff(:,:,:,:)
   !-----------------------------------------------------------------------------
   associate(q=>self%q,bf=>self%bf,dq=>self%dq,dq2=>self%dq2,qm=>self%qm,qp=>self%qp, &
     dbf=>self%dbf,qRT=>self%qRT,qRB=>self%qRB,qLT=>self%qLT,qLB=>self%qLB, &
