@@ -673,12 +673,7 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
       end if
     end if
     if (iv == target%idx%phi) then
-      if (target%poisson_time > source%poisson_time + source%dtime*source%grace) then
-        if (verbose>1) write(io_unit%log,*) target%id, ' not using same level potential from', source%id
-        cycle
-      else
-        if (verbose>1) write(io_unit%log,*) target%id, '     using same level potential from', source%id
-      end if
+      if (verbose>1) write(io_unit%log,*) target%id, '     using same level potential from', source%id
     end if
     if (source%quality > 1000.) then
       if (iv==target%idx%d .or. (iv >= target%idx%px .and. iv <= target%idx%pz)) then
@@ -972,12 +967,7 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
   !write (io_unit%log,*)'same: target, source, iv =', target%id, source%id, iv1, iv2
   do iv=iv1, iv2
     if (iv == target%idx%phi) then
-      if (target%poisson_time > source%poisson_time + source%dtime*source%grace) then
-        if (verbose>1) write(io_unit%log,*) target%id, ' not using same level potential from', source%id
-        cycle
-      else
-        if (verbose>1) write(io_unit%log,*) target%id, '     using same level potential from', source%id
-      end if
+      if (verbose>1) write(io_unit%log,*) target%id, '     using same level potential from', source%id
     end if
     if (source%quality > 1000.) then
       if (iv==target%idx%d .or. (iv >= target%idx%px .and. iv <= target%idx%pz)) then
@@ -1519,11 +1509,6 @@ SUBROUTINE different_restrict (self, target, source, only)
   li = target%mesh%li
   ui = target%mesh%ui
   do iv=iv1,iv2
-    if (iv == target%idx%phi) then
-      if (target%poisson_time > source%poisson_time + source%dtime*source%grace) then
-        cycle
-      end if
-    end if
     if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
     qmask(:) = .true. ! logical mask to track if variable is averaged over a volume or an area
     if (iv == target%idx%bx) then
