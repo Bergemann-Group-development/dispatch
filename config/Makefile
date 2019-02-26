@@ -98,21 +98,21 @@ $(shell mkdir -p $(DEPDIR) >/dev/null)
 %.o: %.mod
 #############################################################################
 # Pattern rules
-%.o: %.f90 $(BUILD) $(DEPDIR)/%.d
+%.o: %.f90 $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
 	$(E)$(F90) $(FFLAGS) $(DEFS) $(DEPFLAGS) -c $< -o $(BUILD)/$@
 	$(E)$(POSTCOMPILE)
 	$(eval OBJS+=$@)
-%.o: %.f $(BUILD) $(DEPDIR)/%.d
+%.o: %.f $(DEPDIR)/%.d
 	@if [ "x$(E)" == "x@" ] ; then echo " [ FC ]" $@ ; fi
 	$(E)$(F90) $(FFLAGS) $(DEFS) $(DEPFLAGS) -c $< -o $(BUILD)/$@
 	$(E)$(POSTCOMPILE)
 	$(eval OBJS+=$@)
-%.x: %.f90 $(BUILD)
+%.x: %.f90
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
 	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
 	$(E)$(LD) $(LDFLAGS) $< $(sort $(patsubst %,$(BUILD)/%,$(OBJS))) -I$(BUILD) -o $@ $(LIBS)
-%.x.mic: %.f90 $(BUILD)
+%.x.mic: %.f90
 	@if [ "x$(E)" == "x@" ] ; then echo " [ LD ]" $@ ; fi
 	$(eval OBJS+=$(subst .d,.o,$(notdir $(wildcard $(DEPDIR)/*.d))))
 	$(E)$(LD) $(LDFLAGS) $< $(sort $(patsubst %,$(BUILD)/%,$(OBJS))) -I$(BUILD) -o $@ $(LIBS)
