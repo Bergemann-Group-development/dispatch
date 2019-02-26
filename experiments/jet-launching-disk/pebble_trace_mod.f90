@@ -63,7 +63,7 @@ SUBROUTINE init (self, trace_every)
   if (trace_every > 0) then
     allocate(pebble_trace%buffer(pebble_trace%nbuffer))
     do i=1,pebble_trace%nbuffer
-      allocate (pebble_trace%buffer(i)%v(14,pebble_trace%npebble))
+      allocate (pebble_trace%buffer(i)%v(21,pebble_trace%npebble))
       allocate (pebble_trace%buffer(i)%ip(pebble_trace%npebble))
       pebble_trace%buffer(i)%n = 0
     end do
@@ -112,6 +112,9 @@ SUBROUTINE trace_pebble (self, pebble, ip, level)
     self%buffer(i)%v(12,n)  = pebble%t
     self%buffer(i)%v(13,n)  = pebble%s
     self%buffer(i)%v(14,n)  = pebble%w
+    self%buffer(i)%v(15:17,n) = pebble%ad
+    self%buffer(i)%v(18:20,n) = pebble%ag
+    self%buffer(i)%v(21,n)  = pebble%dt
     self%buffer(i)%n = n
     if (io%verbose > 1) print *,'Pebble ID:', pebble%id, i, n, pebble%t, pebble%dt
     if (n >= self%npebble) then
@@ -125,16 +128,16 @@ END SUBROUTINE trace_pebble
 !> =============================================================================
 !> Dump trace outputs for all pebbles
 !> =============================================================================
-SUBROUTINE flush_buffer(self)
+SUBROUTINE flush_buffer(self, parent_id)
   class(pebble_trace_t):: self
-  integer :: i
+  integer :: i, parent_id
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not.pebble_trace%do_trace_output) return
   call trace%begin ('pebble_trace_t%flush_buffer', itimer=itimer)
 
   if (io%verbose>0) &
-    print*,'pebble_trace: filename, record, nsteps'
+    print*,'pebble_trace: parent ID:', parent_id
   do i=1, id
     call self%trace_output (i)
   end do
@@ -150,11 +153,13 @@ END SUBROUTINE flush_buffer
 !> v(:,1:n)     (m*n floats, where m=nn, n=record_size)
 !> =============================================================================
 SUBROUTINE trace_output (self, i, close_key)
+  USE os_mod
+
   class(pebble_trace_t):: self
   integer:: i, close_key
   integer, parameter:: key=-1
   optional:: close_key
-  character(len=64):: filename
+  character(len=64):: filename, dirname
   integer:: j, n, unit
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -165,11 +170,13 @@ SUBROUTINE trace_output (self, i, close_key)
   call trace%begin ('pebbles_mod::trace_output', itimer=itimer)
 
   !$omp critical (tr_out_cr)
-  write (filename,'(a,i5.5,".trc")') trim(io%outputname), i
+  write (dirname, '(a,"traces/")') trim(io%outputname)
+  write (filename,'(a,i5.5,".trc")') trim(dirname), i
   if (io%verbose>0) &
-    print*,'pebble_trace: ', trim(filename), self%buffer(i)%record, self%buffer(i)%n
+    print*,'pebble_trace: file, record, n: ', trim(filename), self%buffer(i)%record, self%buffer(i)%n
   unit = io_unit%tmp + omp%thread
   if (self%buffer(i)%record == 0) then
+    call os%mkdir(dirname)
     open (unit, file=trim(filename), form='unformatted', &
       status='unknown')
     close (unit, status='delete')

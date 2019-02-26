@@ -64,6 +64,11 @@ class trace:
             c=[]
             d=[]
             t=[]
+            ad=[]
+            ag=[]
+            s=[]
+            w=[]
+            dt=[]
             nt=0
             try:
                 j=f.readInts()
@@ -97,6 +102,11 @@ class trace:
                                 vg.append(a[i,6:9])
                                 c.append(a[i,9])
                                 d.append(a[i,10])
+                                ad.append(a[i,14:17])
+                                ag.append(a[i,17:20])
+                                s.append(a[i,12])
+                                w.append(a[i,13])
+                                dt.append(a[i,20])
                     else:
                         print 'skipping zero length trace',file
                     ii=f.readInts()
@@ -114,6 +124,11 @@ class trace:
                 self.t=np.array(t)
                 self.v=np.array(v).transpose()
                 self.vg=np.array(vg).transpose()
+                self.ad=np.array(ad).transpose()
+                self.ag=np.array(ag).transpose()
+                self.s=np.array(s).transpose()
+                self.w=np.array(w).transpose()
+                self.dt=np.array(dt).transpose()
             r=np.sqrt(np.sum(p**2,1))
             self.rmin=r.min()
             self.rmax=r.max()
@@ -150,7 +165,7 @@ class traces:
 
         See trace( for more about the contents of the path structure
         '''
-        rundir=data+'/'+run
+        rundir=data+'/'+run+'/traces/'
         filenames = os.listdir(rundir)
         files=[rundir+'/'+f for f in filenames if f.endswith(".trc")]
         self.files=np.sort(files)
