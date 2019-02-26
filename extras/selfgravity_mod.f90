@@ -1,10 +1,7 @@
 !> =============================================================================
-!> The gpatch_t data type extends the patch_t with a generic guard zone dnload
-!> procedure, which covers the need for all simple, Cartesian mesh based
-!> solvers, and eliminates the need for a dnload procedure in each one of them.
-!> It also adds restart functionality when initializing patches.
+!> Add selfgravity to any solver
 !> =============================================================================
-MODULE gpatch_mod
+MODULE selfgravity_mod
   USE io_mod
   USE os_mod
   USE trace_mod
@@ -19,26 +16,19 @@ MODULE gpatch_mod
   USE timer_mod
   USE omp_timer_mod
   USE bits_mod
-  USE data_io_mod
-  USE extras_mod
   implicit none
   private
-  type, public, extends(extras_t):: gpatch_t
+  type, public, extends(patch_t):: selfgravity_t
     type(initial_t)  :: initial
     type(data_hub_t) :: data_hub
     type(poisson_t)  :: poisson
     logical:: selfgravity=.false.
     real(8):: d0
-    procedure(void), pointer:: force_per_unit_mass   => null()
-    procedure(void), pointer:: force_per_unit_volume => null()
   contains
-    procedure:: input
     procedure:: init
     procedure:: output
-    procedure:: dnload
-    procedure:: gravity_solve
-    procedure:: gravity_update
-    procedure:: counter_update
+    procedure:: pre_update
+    procedure:: post_update
     procedure:: ahead_of
   end type
   real(8), save :: total_mass=0d0, total_volume=0d0
@@ -47,36 +37,6 @@ MODULE gpatch_mod
   integer, save :: verbose=0
   integer, save :: order=1
 CONTAINS
-
-!> =============================================================================
-!> Interface routine to the data_io input procedure, signalling if the patch
-!> could be read, or not
-!> =============================================================================
-SUBROUTINE input (self, ok)
-  class(gpatch_t):: self
-  logical:: ok
-  !-----------------------------------------------------------------------------
-  call data_io%input (self, ok)
-END SUBROUTINE input
-
-!> =============================================================================
-!> Interface routine to the data_io output procedure
-!> =============================================================================
-SUBROUTINE update (self)
-  class(gpatch_t):: self
-  !-----------------------------------------------------------------------------
-  call data_io%output (self)
-END SUBROUTINE update
-
-!> =============================================================================
-!> Interface routine to the data_io output procedure
-!> =============================================================================
-SUBROUTINE output (self)
-  class(gpatch_t):: self
-  !-----------------------------------------------------------------------------
-  call data_io%output (self)
-  call self%extras_t%output
-END SUBROUTINE output
 
 !> =============================================================================
 !> Add restart functionality to patch initialization.  This %init routine is
@@ -89,7 +49,7 @@ END SUBROUTINE output
 !> has been recieved with MPI from the owner rank.
 !> =============================================================================
 SUBROUTINE init (self)
-  class(gpatch_t):: self
+  class(selfgravity_t):: self
   real(kind=KindScalarVar), pointer :: ff(:,:,:,:)
   character(len=64)                 :: filename
   logical                           :: ok
@@ -99,7 +59,7 @@ SUBROUTINE init (self)
   real(kind=KindScalarVar), pointer :: d(:,:,:)
   namelist /selfgravity_params/ selfgravity, prediction, order, d0, verbose
   !-----------------------------------------------------------------------------
-  call trace%begin ('gpatch_t%init')
+  call trace%begin ('selfgravity_t%init')
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -122,9 +82,8 @@ SUBROUTINE init (self)
     self%idx%phi = -1
     call self%patch_t%init
   end if
+  allocate (self%force_per_unit_volume(self%gn(1),self%gn(2),self%gn(3),3))
   self%d0 = d0
-  call self%initial%init (self%kind, real(self%gamma))
-  call self%extras_t%init
   !$omp critical (poisson_cr)
   if (first_poisson) then
     first_poisson = .false.
@@ -135,97 +94,48 @@ SUBROUTINE init (self)
     end if
   end if
   !$omp end critical (poisson_cr)
-  !-----------------------------------------------------------------------------
-  ! Try reading a restart snapshot.
-  !-----------------------------------------------------------------------------
-  call self%input (ok)
-  if (ok) then
-    restart_time = self%time
-  !-----------------------------------------------------------------------------
-  ! If the restart parameter is not set, or the file does not exist, initialize
-  ! the patch from scratch, resetting other necessary counters only if positive
-  ! restart_time indicates that restart files were read for previous patches.
-  !-----------------------------------------------------------------------------
-    if (selfgravity) then
-      !-------------------------------------------------------------------------
-      ! Sum up the total mass and total volume, to get the average density d0.
-      ! FIXME: This needs to be modified for MPI
-      !-------------------------------------------------------------------------
-      if (self%id==1) then
-        d => self%mem(:,:,:,self%idx%d,self%it,1)
-        !$omp atomic
-        total_mass = total_mass + self%fsum(d)*product(self%ds)
-        !$omp atomic
-        total_volume = total_volume + product(self%size)
-      end if
+  if (selfgravity) then
+    !-------------------------------------------------------------------------
+    ! Sum up the total mass and total volume, to get the average density d0.
+    ! FIXME: This needs to be modified for MPI
+    !-------------------------------------------------------------------------
+    if (self%id==1) then
+      d => self%mem(:,:,:,self%idx%d,self%it,1)
+      !$omp atomic
+      total_mass = total_mass + self%fsum(d)*product(self%ds)
+      !$omp atomic
+      total_volume = total_volume + product(self%size)
     end if
-  else
-    !---------------------------------------------------------------------------
-    ! Make sure the default time for patches with IC values is zero, to ensure 
-    ! boundary tasks are not considered ready for updating until their virtual
-    ! task nbors have been updated.
-    !---------------------------------------------------------------------------
-    restart_time = 0.0
-    self%time = 0.0
-    self%mem = 0.0
-    ff => self%mem(:,:,:,:,1,1)
-    call self%initial%condition (self%mesh, ff, self%idx)
-    !---------------------------------------------------------------------------
-    ! The first time, all patches that exist also have good GC values, and we
-    ! can freely dnload both densities and potential and then get a first
-    ! solution of the Poisson equation immediately.  The root grid does this
-    ! first, which means subsequent patches from initial refinement get their
-    ! BCs set correctly, for an immediately good startup.
-    !---------------------------------------------------------------------------
-    if (selfgravity) then
-      !-------------------------------------------------------------------------
-      ! Sum up the total mass and total volume, to get the average density d0.
-      ! FIXME: This needs to be modified for MPI
-      !-------------------------------------------------------------------------
-      if (self%time == 0.0 .and. self%id==1) then
-        d => self%mem(:,:,:,self%idx%d,self%it,1)
-        !$omp atomic
-        total_mass = total_mass + self%fsum(d)*product(self%ds)
-        !$omp atomic
-        total_volume = total_volume + product(self%size)
-      end if
+    !-------------------------------------------------------------------------
+    ! Sum up the total mass and total volume, to get the average density d0.
+    ! FIXME: This needs to be modified for MPI
+    !-------------------------------------------------------------------------
+    if (self%time == 0.0 .and. self%id==1) then
+      d => self%mem(:,:,:,self%idx%d,self%it,1)
+      !$omp atomic
+      total_mass = total_mass + self%fsum(d)*product(self%ds)
+      !$omp atomic
+      total_volume = total_volume + product(self%size)
     end if
-  end if
-  !-----------------------------------------------------------------------------
-  ! If restart succeeded for some patch, use it to set time and output cadence.
-  ! FIXME: This may fail in some corner cases when running on multiple MPI ranks,
-  ! if one rank happens to handle only patches that do not exist yet.
-  !-----------------------------------------------------------------------------
-  if (restart_time > 0d0) then
-    self%time = restart_time
-    self%t(self%it) = self%time
-    self%out_next = (int(self%time/io%out_time+1.0e-4)+1)*io%out_time ! add an `eps` to avoid round-off errors
-    self%iout = self%restart+1
-    !$omp master
-    write (filename,'(a,i5.5,"/")') trim(io%outputname), self%iout
-    if (io%iodir/=self%iout) call os%mkdir (trim(filename))
-    io%iodir = self%iout
-    !$omp end master
   end if
   call trace%end()
 END SUBROUTINE init
 
 !> =============================================================================
-!> Add default guard zone download functionality.  This may be overloaded in
-!> experiment_mod, if more specialized guard zone loading is required.
+!> Interface routine to the data_io output procedure
 !> =============================================================================
-SUBROUTINE dnload (self, only)
-  class(gpatch_t):: self
-  integer, optional:: only
+SUBROUTINE update (self)
+  class(selfgravity_t):: self
   !-----------------------------------------------------------------------------
-  call trace%begin ('gpatch_t%dnload')
-  if (self%use_data_hub) then
-    call self%data_hub%update (self%link, only=only)
-  else
-    call download%download_link (self%link, only=only)
-  end if
-  call trace%end()
-END SUBROUTINE dnload
+END SUBROUTINE update
+
+!> =============================================================================
+!> Interface routine to the data_io output procedure
+!> =============================================================================
+SUBROUTINE output (self)
+  class(selfgravity_t):: self
+  !-----------------------------------------------------------------------------
+END SUBROUTINE output
 
 !> =============================================================================
 !> Prepare the external forces for the pde call, in particular selfgravity. At
@@ -234,8 +144,8 @@ END SUBROUTINE dnload
 !> be providing only their preliminary potentials in their (nt-1) time slots,
 !> while their older time slots should by now contain the converged potential.
 !> =============================================================================
-SUBROUTINE gravity_solve (self)
-  class(gpatch_t):: self
+SUBROUTINE pre_update (self)
+  class(selfgravity_t):: self
   !.............................................................................
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, phi
   real:: dmin, dmax
@@ -243,7 +153,7 @@ SUBROUTINE gravity_solve (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
-  call trace%begin ('gpatch_t%gravity', itimer=itimer)
+  call trace%begin ('selfgravity_t%pre_update', itimer=itimer)
   d   => self%mem(:,:,:,self%idx%d  ,self%it,1)
   phi => self%mem(:,:,:,self%idx%phi,self%it,1)
   if (self%d0==-1.0) then
@@ -253,14 +163,14 @@ SUBROUTINE gravity_solve (self)
   dmin = self%fminval (d)
   dmax = self%fmaxval (d)
   if (dmin==0.0) &
-    print *, self%id, 'WARNING: gpatch_t%gravity, dmin, dmax, it =', dmin, dmax, self%it
+    print *, self%id, 'WARNING: selfgravity_t%gravity, dmin, dmax, it =', dmin, dmax, self%it
   call self%poisson%update (self, phi, d, self%d0, detailed_timer)
   !-----------------------------------------------------------------------------
   ! compute estimate of dphi/dt
   !-----------------------------------------------------------------------------
   call time_derivs (self)
   call trace%end (itimer)
-END SUBROUTINE gravity_solve
+END SUBROUTINE pre_update
 
 !> =============================================================================
 !> Having advanced the MHD state to the new time, we make a preliminary
@@ -269,43 +179,30 @@ END SUBROUTINE gravity_solve
 !> better offer.  The poisson_time controls if an update affects the self%time
 !> or the poisson_time; the two are updated alternatingly
 !> =============================================================================
-SUBROUTINE gravity_update (self)
-  class(gpatch_t):: self
+SUBROUTINE post_update (self)
+  class(selfgravity_t):: self
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
-  call trace%begin ('gpatch_t%update')
+  call trace%begin ('selfgravity_t%post_update')
   if (selfgravity) then
     if (self%poisson_time == self%time) then
       !call timestep%update(self%id, self%iit, self%dt, self%mem, self%mesh)
       call self%rotate
       self%rotated = .true.
       if (verbose>0) &
-        print *, self%id, 'gpatch_t%update updated self%time to', self%time
+        print *, self%id, 'selfgravity_t%update updated self%time to', self%time
     else
       call self%dnload (only=self%idx%d)
       call self%dnload (only=self%idx%phi)
-      call self%gravity_solve
+      call self%pre_update
       self%poisson_time = self%time
       self%rotated = .true.
       if (verbose>0) &
-        print *, self%id, 'gpatch_t%update updated self%poisson_time to', self%poisson_time
+        print *, self%id, 'selfgravity_t%update updated self%poisson_time to', self%poisson_time
     end if
   end if
   call trace%end()
-END SUBROUTINE gravity_update
-
-!> =============================================================================
-!> Increment the cell udpate counter.  This may be overloaded in more complex
-!> solvers, which prefer a different way of counting.
-!> =============================================================================
-SUBROUTINE counter_update (self)
-  class(gpatch_t):: self
-  !-----------------------------------------------------------------------------
-  call trace%begin ('gpatch_t%counter_update')
-  !$omp atomic
-  timer%n_update = timer%n_update + product(self%n)
-  call trace%end
-END SUBROUTINE counter_update
+END SUBROUTINE post_update
 
 !> =============================================================================
 !> Compute an approximate, conservative estimate of dphi/dt, which will cause
@@ -314,13 +211,13 @@ END SUBROUTINE counter_update
 !> practice better at reducing the number of iterations than the 2nd order.
 !> =============================================================================
 SUBROUTINE time_derivs (self)
-  class(gpatch_t):: self
+  class(selfgravity_t):: self
   integer:: it1, it2, it3, nt, l(3), u(3)
   real(8):: t1, t2, t3
   integer, save:: itimer=0
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: dphidt
   !-----------------------------------------------------------------------------
-  if (detailed_timer) call trace%begin ('gpatch_t%time_derivs', itimer=itimer)
+  if (detailed_timer) call trace%begin ('selfgravity_t%time_derivs', itimer=itimer)
   if (self%nw == 2) then
     dphidt => self%mem(:,:,:,self%idx%phi,self%it,2)
   else
@@ -364,13 +261,13 @@ END SUBROUTINE time_derivs
 !> returns .true. it means the 'self' task is not ready to be updated.
 !> =============================================================================
 LOGICAL FUNCTION ahead_of (self, patch)
-  class(gpatch_t):: self
+  class(selfgravity_t):: self
   class(patch_t):: patch
   !-----------------------------------------------------------------------------
   ! Level differences larger than 1 should never happen!
   !-----------------------------------------------------------------------------
   select type (patch)
-  class is (gpatch_t)
+  class is (selfgravity_t)
   if (abs(self%level-patch%level)>1) then
     ahead_of = .false.
     print *,'WARNING: level difference larger than one:', &
@@ -405,11 +302,4 @@ LOGICAL FUNCTION ahead_of (self, patch)
   end select
 END FUNCTION ahead_of
 
-FUNCTION void (self) RESULT (out)
-  class(gpatch_t):: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3),3):: out
-  !-----------------------------------------------------------------------------
-  out = 0.0
-END FUNCTION void
-
-END MODULE gpatch_mod
+END MODULE selfgravity_mod

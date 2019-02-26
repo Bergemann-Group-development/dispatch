@@ -29,6 +29,8 @@ MODULE patch_mod
     real(kind=KindScalarVar), dimension(:,:,:,:,:),   pointer:: vgas     => null()
     real(kind=KindScalarVar), dimension(:,:,:,:),     pointer:: density  => null()
     real(kind=KindScalarVar), dimension(:,:,:,:),     pointer:: pressure => null()
+    real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: force_per_unit_mass
+    real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: force_per_unit_volume
     class(mesh_t), dimension(:), pointer:: mesh => null()
     real:: courant                      ! courant number
     real(8):: gamma=1.4                 ! gas gamma
