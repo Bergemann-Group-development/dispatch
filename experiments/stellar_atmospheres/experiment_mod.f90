@@ -71,7 +71,6 @@ SUBROUTINE init (self)
   ! Allocate memory and set default values
   !-----------------------------------------------------------------------------
   call self%rt_solver_t%init
-  self%force_per_unit_mass => force
   self%grav = grav
   self%unsigned = .false.
   !----------------------------------------------------------------------------
@@ -102,6 +101,7 @@ SUBROUTINE update (self)
       call self%boundary_condition
     end if
   end if
+  call force (self)
   call self%rt_solver_t%update
   call trace_end
 END SUBROUTINE update
@@ -228,16 +228,18 @@ END SUBROUTINE boundary_condition
 !> =============================================================================
 !> Stellar atmosphere with gravity pointing in the positive y-direction
 !> =============================================================================
-FUNCTION force (self) RESULT (ff)
+SUBROUTINE force (self)
   class(gpatch_t)   :: self
-  real, dimension(self%gn(1),self%gn(2),self%gn(3),3) :: ff
   !-----------------------------------------------------------------------------
   call trace_begin('experiment_t%force')
-  ff(:,:,:,1) = 0.0
-  ff(:,:,:,2) = 0.0
-  ff(:,:,:,3) = grav
+  if (.not.allocated(self%force_per_unit_mass)) then
+    allocate (self%force_per_unit_mass(self%gn(1),self%gn(2),self%gn(3),3))
+  end if
+  self%force_per_unit_mass(:,:,:,1) = 0.0
+  self%force_per_unit_mass(:,:,:,2) = 0.0
+  self%force_per_unit_mass(:,:,:,3) = grav
   call trace_end
-END FUNCTION force
+END SUBROUTINE force
 
 !> =============================================================================
 !> Check if a task is ready to update, by changing if all nbor task are "ahead

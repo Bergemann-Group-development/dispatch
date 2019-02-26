@@ -366,16 +366,10 @@ SUBROUTINE pde (self)
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (associated(self%force_per_unit_mass)) then
-   dpdt = dpdt + dd*self%force_per_unit_mass ()                                 ! ops: 3 3 0
-  else if (associated(self%force_per_unit_volume)) then
-   dpdt = dpdt + self%force_per_unit_volume ()                                  ! ops: 3 3 0
-  end if
-  if (self%selfgravity) then
-    phi => self%mem(:,:,:,self%idx%phi,self%it,1)
-    dpdtx = dpdtx - dd(:,:,:,1)*ddxdn(ds,phi)
-    dpdty = dpdty - dd(:,:,:,2)*ddydn(ds,phi)
-    dpdtz = dpdtz - dd(:,:,:,3)*ddzdn(ds,phi)
+  if (allocated(self%force_per_unit_mass)) then
+   dpdt = dpdt + dd*self%force_per_unit_mass                                    ! ops: 3 3 0
+  else if (allocated(self%force_per_unit_volume)) then
+   dpdt = dpdt + self%force_per_unit_volume                                     ! ops: 3 3 0
   end if
   !-----------------------------------------------------------------------------
   ! Conservation of energy; reuse the mass flux for the energy flux
