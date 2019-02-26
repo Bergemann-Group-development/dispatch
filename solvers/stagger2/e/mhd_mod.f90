@@ -396,7 +396,8 @@ SUBROUTINE pde (self)
   end if
   if (allocated(self%force_per_unit_mass)) then
    dpdt = dpdt + dd*self%force_per_unit_mass                                    ! ops: 3 3 0
-  else if (allocated(self%force_per_unit_volume)) then
+  end if
+  if (allocated(self%force_per_unit_volume)) then
    dpdt = dpdt + self%force_per_unit_volume                                     ! ops: 3 3 0
   end if
   !-----------------------------------------------------------------------------

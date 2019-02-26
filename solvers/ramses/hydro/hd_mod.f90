@@ -173,7 +173,8 @@ SUBROUTINE update (self)
     do i=1,3
       self%ff(:,:,:,i) = self%ff(:,:,:,i) + self%force_per_unit_mass(:,:,:,i)*d
     end do
-  else if (allocated(self%force_per_unit_volume)) then
+  end if
+  if (allocated(self%force_per_unit_volume)) then
     self%ff = self%ff + self%force_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
