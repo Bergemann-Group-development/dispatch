@@ -5,7 +5,6 @@ MODULE pboundaries_mod
   USE io_mod
   USE trace_mod
   USE kinds_mod
-  USE boundaries_mod
   USE mpi_mod
   USE index_mod
   USE mesh_mod
@@ -13,8 +12,9 @@ MODULE pboundaries_mod
   implicit none
   private
 
-  type, extends(boundaries_t), public:: pboundaries_t
+  type, public:: pboundaries_t
     type(index_t):: idx
+    class(mesh_t), pointer:: m(:)
   contains
     procedure:: init_bdries
     procedure:: outflow
@@ -36,7 +36,7 @@ SUBROUTINE init_bdries (self, mesh, position, indices)
   !-----------------------------------------------------------------------------
   call trace%begin ('pboundaries_t%init')
 
-  call self%boundaries_t%init(mesh, position)
+  self%m => mesh
   ! we need the variable indices to properly set the BCs
   self%idx = indices
 
