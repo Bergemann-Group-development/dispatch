@@ -42,6 +42,8 @@ MODULE extras_mod
   USE omp_timer_mod
   USE mpi_mod
   USE patch_mod
+  USE data_hub_mod
+  USE download_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.  
   !-----------------------------------------------------------------------------
@@ -49,11 +51,13 @@ MODULE extras_mod
   implicit none
   private
   type, public, extends(patch_t):: extras_t
+    type(data_hub_t) :: data_hub
   contains
     procedure:: init
     procedure:: pre_update
     procedure:: post_update
     procedure:: output
+    procedure:: dnload
   end type
   type(extras_t), public:: extras
 CONTAINS
@@ -90,5 +94,22 @@ SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
 END SUBROUTINE output
+
+!> =============================================================================
+!> Add default guard zone download functionality.  This may be overloaded in
+!> experiment_mod, if more specialized guard zone loading is required.
+!> =============================================================================
+SUBROUTINE dnload (self, only)
+  class(extras_t):: self
+  integer, optional:: only
+  !-----------------------------------------------------------------------------
+  call trace%begin ('extras_t%dnload')
+  if (self%use_data_hub) then
+    call self%data_hub%update (self%link, only=only)
+  else
+    call download%download_link (self%link, only=only)
+  end if
+  call trace%end()
+END SUBROUTINE dnload
 
 END MODULE extras_mod

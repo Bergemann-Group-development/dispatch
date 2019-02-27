@@ -49,10 +49,11 @@ END SUBROUTINE update
 !> =====================================================================
 !> Organize calls to the extras and the hydro solver
 !> =====================================================================
-SUBROUTINE dnload (self)
+SUBROUTINE dnload (self, only)
   class(solver_t) :: self
+  integer, optional:: only
   !.....................................................................
-  call self%extras_t%dnload
+  call self%extras_t%dnload (only)
 END SUBROUTINE dnload
 
 !> =====================================================================

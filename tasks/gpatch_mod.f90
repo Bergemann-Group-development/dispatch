@@ -1,18 +1,13 @@
 !> =============================================================================
-!> The gpatch_t data type extends the patch_t with a generic guard zone dnload
-!> procedure, which covers the need for all simple, Cartesian mesh based
-!> solvers, and eliminates the need for a dnload procedure in each one of them.
-!> It also adds restart functionality when initializing patches.
+!> The gpath_t layer now essentially only handles restarts
 !> =============================================================================
 MODULE gpatch_mod
   USE io_mod
   USE os_mod
   USE trace_mod
   USE patch_mod
-  USE download_mod
   USE initial_mod
   USE kinds_mod
-  USE data_hub_mod
   USE mesh_mod
   USE units_mod
   USE timer_mod
@@ -24,13 +19,11 @@ MODULE gpatch_mod
   private
   type, public, extends(extras_t):: gpatch_t
     type(initial_t)  :: initial
-    type(data_hub_t) :: data_hub
     real(8):: d0
   contains
     procedure:: input
     procedure:: init
     procedure:: output
-    procedure:: dnload
     procedure:: counter_update
   end type
   real(8), save :: restart_time = 0d0
@@ -126,23 +119,6 @@ SUBROUTINE init (self)
   end if
   call trace%end()
 END SUBROUTINE init
-
-!> =============================================================================
-!> Add default guard zone download functionality.  This may be overloaded in
-!> experiment_mod, if more specialized guard zone loading is required.
-!> =============================================================================
-SUBROUTINE dnload (self, only)
-  class(gpatch_t):: self
-  integer, optional:: only
-  !-----------------------------------------------------------------------------
-  call trace%begin ('gpatch_t%dnload')
-  if (self%use_data_hub) then
-    call self%data_hub%update (self%link, only=only)
-  else
-    call download%download_link (self%link, only=only)
-  end if
-  call trace%end()
-END SUBROUTINE dnload
 
 !> =============================================================================
 !> Increment the cell udpate counter.  This may be overloaded in more complex
