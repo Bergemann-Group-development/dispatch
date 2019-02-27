@@ -50,6 +50,7 @@ MODULE hd_mod
     procedure:: gas_pressure
   end type
   real, save:: csound=1.
+  integer, save:: courant_type=1
   logical, save:: debug=.false.
   logical, save:: first_time=.true.
   logical, save:: detailed_timer=.false.
@@ -63,7 +64,7 @@ SUBROUTINE init (self)
   character(len=10):: riemann='hllc'
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
-    smallc, isothermal, csound, detailed_timer, unsigned, debug
+    smallc, isothermal, csound, detailed_timer, unsigned, courant_type, debug
   type(index_t):: idx
 !...............................................................................
   call trace%begin('hd_mod%init')
@@ -522,9 +523,15 @@ subroutine ctoprim (self)
     self%pressure(:,:,:,  self%it) = pg
   end if
   c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
-  self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &
-                          + c + abs(q(:,:,:,3)) &
-                          + c + abs(q(:,:,:,4)))/3.
+  if (courant_type==1) then
+    self%u_max = max(self%fmaxval(c + abs(q(:,:,:,2))), &
+                     self%fmaxval(c + abs(q(:,:,:,3))), &
+                     self%fmaxval(c + abs(q(:,:,:,4))))
+  else
+    self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &
+                            + c + abs(q(:,:,:,3)) &
+                            + c + abs(q(:,:,:,4)))/3.
+  end if
   if (detailed_timer) then
     call trace%end (itimer)
   else
