@@ -490,7 +490,8 @@ subroutine ctoprim (self)
   real(dp):: smallp, dtxhalf
   integer,save:: itimer=0
   real, dimension(:,:,:), pointer:: d, e, pg
-  associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s)
+  associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s, &
+             l=>self%mesh%lo, u=>self%mesh%uo)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
     call trace%begin ('hd_mod::ctoprim', itimer=itimer)
@@ -524,14 +525,11 @@ subroutine ctoprim (self)
   end if
   c(:,:,:)=sqrt(gamma*q(:,:,:,5)/q(:,:,:,1))
   if (courant_type==1) then
-    self%u_max = max(self%fmaxval(c + abs(q(:,:,:,2))), &
-                     self%fmaxval(c + abs(q(:,:,:,3))), &
-                     self%fmaxval(c + abs(q(:,:,:,4))))
+    c = c + max(abs(q(:,:,:,2)), abs(q(:,:,:,3)), abs(q(:,:,:,4)))
   else
-    self%u_max = self%fmaxval(c + abs(q(:,:,:,2)) &
-                            + c + abs(q(:,:,:,3)) &
-                            + c + abs(q(:,:,:,4)))/3.
+    c = c + (abs(q(:,:,:,2)) + abs(q(:,:,:,3)) + abs(q(:,:,:,4)))/3.0
   end if
+  self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
   if (detailed_timer) then
     call trace%end (itimer)
   else

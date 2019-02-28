@@ -272,7 +272,7 @@ SUBROUTINE pde (self)
     pb = 0.5*(Ex+Ey+Ez)                                                         ! mhd: 2 1 0
     cs = sqrt((self%gamma*pg+2.0*pb + pa)/d)                                    ! mhd: 1 1 0
     if (verbose>3) then
-      u_max = self%fmaxval(cs)
+      u_max = self%fmaxval(cs,outer=.true.)
       self%u_max = max(self%u_max,u_max)
       print 1, 'u_max(ca)  ', u_max, self%u_max
     1 format(1x,a,1p,2g12.3)
@@ -295,7 +295,7 @@ SUBROUTINE pde (self)
     ! Sound speed + velocity
     cs = sqrt((self%gamma*pg+pa)/d)                                             ! ops: 1 1 1 1 0
     if (verbose>3) then
-      u_max = self%fmaxval(cs)
+      u_max = self%fmaxval(cs,outer=.true.)
       self%u_max = max(self%u_max,u_max)
       print 1, 'u_max(cs)  ', u_max, self%u_max
     end if
@@ -309,7 +309,7 @@ SUBROUTINE pde (self)
     fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
     fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
   end if
-  u_max = self%fmaxval(cs+uu)
+  u_max = self%fmaxval(cs+uu,outer=.true.)
   self%u_max = max(self%u_max,u_max)
   if (verbose>2) print 1, 'u_max(cs+u)', u_max, self%u_max
   !-----------------------------------------------------------------------------
@@ -325,7 +325,7 @@ SUBROUTINE pde (self)
   fd = -(self%nu(4)*dd*down(du))*ddown(ds,lnd)          ! diffusive mass flux   ! ops: 0 9 0
   fm = p+fd                                             ! mass flux             ! ops: 3 0 0
   dddt = -div(ds,fm)                                    ! density derivative
-  u_max = self%cdtd*dsmax*self%fmaxval(abs(dddt/d))                             ! ops: 0 0 1
+  u_max = self%cdtd*dsmax*self%fmaxval(abs(dddt/d),outer=.true.)                ! ops: 0 0 1
   self%u_max = max(self%u_max,u_max)
   if (verbose>2) print 1, 'u_max(dddt)', u_max, self%u_max
   !-----------------------------------------------------------------------------
@@ -460,7 +460,7 @@ SUBROUTINE pde (self)
     qr => self%mem(:,:,:,self%idx%qr,self%new,1)
     dedt = dedt + qr
     if (verbose>2 .or. self%id==io%id_debug) then
-      u_max = self%cdtd*dsmax*self%fmaxval(abs((qr-ee*dddt)/d))
+      u_max = self%cdtd*dsmax*self%fmaxval(abs((qr-ee*dddt)/d),outer=.true.)
       write(io%output,1) self%id, self%time, 'u_max(qrad)', u_max, self%u_max
     end if
   end if
@@ -468,7 +468,7 @@ SUBROUTINE pde (self)
   ! Time step limitation for rate of change dE/dt = (de/dt-(e/d)*dddt)/d
   !-----------------------------------------------------------------------------
   if (self%gamma /= 1d0) then
-     u_max = self%cdtd*dsmax*self%fmaxval(abs((dedt-ee*dddt)/d)) ! ops: 1 1 1
+     u_max = self%cdtd*dsmax*self%fmaxval(abs((dedt-ee*dddt)/d),outer=.true.)   ! ops: 1 1 1
     self%u_max = max(self%u_max,u_max)
     if (verbose>2) print 1, 'u_max(dedt)', u_max, self%u_max
   end if

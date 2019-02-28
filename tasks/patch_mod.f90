@@ -1643,13 +1643,24 @@ FUNCTION fmaxvali (self, iv) RESULT (fmaxval)
   fmaxval = self%fmaxvalvar (self%mem(:,:,:,iv,self%it,1))
 END FUNCTION fmaxvali
 !> =============================================================================
-FUNCTION fmaxval4 (self, f) RESULT (fmaxval)
+FUNCTION fmaxval4 (self, f, outer) RESULT (fmaxval)
   real:: fmaxval
   class(patch_t):: self
   real, dimension(:,:,:), intent(in):: f
+  logical, optional:: outer
+  logical:: outer_l
   !-----------------------------------------------------------------------------
+  if (present(outer)) then
+    outer_l = outer
+  else
+    outer_l = .false.
+  end if
   if (self%boundaries%is_set (bits%spherical)) then
     fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
+  else if (outer_l) then
+    fmaxval = maxval(f(self%mesh(1)%lo:self%mesh(1)%uo, &
+                       self%mesh(2)%lo:self%mesh(2)%uo, &
+                       self%mesh(3)%lo:self%mesh(3)%uo))
   else
     fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
                        self%mesh(2)%li:self%mesh(2)%ui, &
@@ -1671,13 +1682,24 @@ FUNCTION fminval4 (self, f) RESULT(fminval)
   end if
 END FUNCTION fminval4
 !> =============================================================================
-FUNCTION fmaxval8 (self, f) RESULT (fmaxval)
+FUNCTION fmaxval8 (self, f, outer) RESULT (fmaxval)
   real(8):: fmaxval
   class(patch_t):: self
   real(8), dimension(:,:,:), intent(in):: f
+  logical, optional:: outer
+  logical:: outer_l
   !-----------------------------------------------------------------------------
+  if (present(outer)) then
+    outer_l = outer
+  else
+    outer_l = .false.
+  end if
   if (self%boundaries%is_set (bits%spherical)) then
     fmaxval = maxval(f, mask=self%boundaries%mask(self%mesh))
+  else if (outer_l) then
+    fmaxval = maxval(f(self%mesh(1)%lo:self%mesh(1)%uo, &
+                       self%mesh(2)%lo:self%mesh(2)%uo, &
+                       self%mesh(3)%lo:self%mesh(3)%uo))
   else
     fmaxval = maxval(f(self%mesh(1)%li:self%mesh(1)%ui, &
                        self%mesh(2)%li:self%mesh(2)%ui, &
