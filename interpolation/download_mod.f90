@@ -66,8 +66,11 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   namelist /download_params/ order_interpolator, order_time, check_filled, &
     use_different, sorted, use_locks, id_debug, verbose
+  character(len=120):: id = &
+    '$Id$ interpolation/download_mod.f90'
   !-----------------------------------------------------------------------------
   call trace%begin ('download_t%init')
+  call trace%print_id (id)
   !$omp critical (download_cr)
   if (first_time) then
     first_time = .false.

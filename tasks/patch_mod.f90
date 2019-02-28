@@ -301,8 +301,11 @@ END SUBROUTINE header_to_patch
 !> =============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self
-  !.............................................................................
+  character(len=120):: id = &
+    '$Id$ tasks/patch_mod.f90'
+  !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init')
+  call trace%print_id (id)
   call self%setup
   call trace%end()
 END SUBROUTINE init

@@ -75,7 +75,6 @@ SUBROUTINE init (self, mpi_dims, dims)
   character(len=120):: ids = &
   '$Id$ mpi/mpi_mod.f90'
   !-----------------------------------------------------------------------------
-  print'(1x,a)', trim(ids)
   if (self%ok) return
   if (first_time) then
     first_time = .false.
@@ -100,6 +99,8 @@ SUBROUTINE init (self, mpi_dims, dims)
   mpi%master = (mpi_rank==0)
 #endif
   mpi%ok     = .true.
+  if (mpi%master .and. first_time) &
+    print'(1x,a)', trim(ids)
   !-----------------------------------------------------------------------------
   ! For some reason, this must be done element by element.  Turning it around,
   ! and doing mpi = self (which is syntactically correct), values are screwed

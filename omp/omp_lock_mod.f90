@@ -44,6 +44,7 @@ SUBROUTINE init (self, kind, id)
   logical omp_in_parallel
   integer:: iostat
   logical:: set_id
+  logical:: first_time=.true.
   namelist /lock_params/ verbose
   !-----------------------------------------------------------------------------
   if (self%id == -1) then
@@ -52,9 +53,12 @@ SUBROUTINE init (self, kind, id)
 #endif
     !$omp critical (lock_cr)
     if (self%id == -1) then
-      rewind (io_unit%input)
-      read (io_unit%input, lock_params, iostat=iostat)
-      write (io_unit%output, lock_params)
+      if (first_time) then
+        first_time = .false.
+        rewind (io_unit%input)
+        read (io_unit%input, lock_params, iostat=iostat)
+        write (io_unit%output, lock_params)
+      end if
       call omp_init_nest_lock (self%lock)
       if (present(id)) then
         self%id = id

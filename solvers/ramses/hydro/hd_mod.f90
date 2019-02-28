@@ -66,9 +66,11 @@ SUBROUTINE init (self)
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
     smallc, isothermal, csound, detailed_timer, unsigned, courant_type, debug
   type(index_t):: idx
+  character(len=120):: id = &
+   '$Id$ solvers/ramses/hydro/hd_mod.f90'
 !...............................................................................
   call trace%begin('hd_mod%init')
-
+  call trace%print_id (id)
   self%mhd = .false.
   self%nw = 1
   self%ng = 2

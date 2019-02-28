@@ -175,7 +175,7 @@ SUBROUTINE print_hl
     '--------------------------------------------------------------------------------'
   !..............................................................................
   if (io%master) then
-    print'(a)',trim(hl)
+    write (io_unit%output,'(a)') trim(hl)
   end if
 END SUBROUTINE print_hl
 
@@ -189,10 +189,8 @@ SUBROUTINE print_id (id)
   if (id .ne. '') then
     !$omp critical (print_id_cr)
     if (id .ne. '') then
-      if (io%master) then
-        call print_hl
-        print'(1x,a)', trim(id)
-      end if
+      write (io_unit%output,'(a)') hl
+      write (io_unit%output,'(a)') id
       id = ''
     end if
     !$omp end critical (print_id_cr)
