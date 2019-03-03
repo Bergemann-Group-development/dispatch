@@ -210,6 +210,7 @@ SUBROUTINE init (self, name)
     call open_rank_file (io_unit%mpi       , ".log"  , 'formatted')
     call open_rank_file (io_unit%dbg       , ".dbg"  , 'unformatted')
     call open_rank_file (io_unit%dump      , ".dump" , 'unformatted')
+    call open_rank_file (io_unit%validate  , ".val"  , 'unformatted')
     call open_rank_file (io_unit%dispatcher, ".disp" , 'formatted')
     log_unit = io_unit%log
     write (io_unit%log,'(a,i4,2l4)') &

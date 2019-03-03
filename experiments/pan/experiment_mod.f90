@@ -23,6 +23,7 @@ MODULE experiment_mod
   USE index_mod
   USE task_mod
   USE trace_particles_mod
+  USE validate_mod
   !USE particle_patch_mod
   implicit none
   private
@@ -72,6 +73,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   !call particle_patch%init
   !call particle_patch%test
+  call validate%init
   call trace_end
 END SUBROUTINE init
 
@@ -101,7 +103,11 @@ SUBROUTINE update (self)
     end if
     !$omp end critical (cleanup_cr)
   end if
+  associate (d => self%mem(:,:,:,self%idx%d,self%it,1))
+  call validate%dump (self, d, 'before update')
   call self%solver_t%update
+  call validate%dump (self, d, ' after update')
+  end associate
   !----------------------------------------------------------------------------
   ! Startup support for trace particles; this could be improved, by reusing
   ! the velocity from the primitive variables in the solver.  In any case,
