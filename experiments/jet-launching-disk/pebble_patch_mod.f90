@@ -1370,7 +1370,7 @@ SUBROUTINE output (self)
     close (io%data_unit)
     deallocate (buffer,idbuf)
     !$omp end critical (out_cr)
-    if (self%id==2) call pebble_trace%flush_buffer    ! Flush the pebble buffer every now and then
+    call pebble_trace%flush_buffer (self%id)    ! Flush the pebble buffer every now and then
   end if
 
   call trace%end (itimer)

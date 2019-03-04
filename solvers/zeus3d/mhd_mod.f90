@@ -487,6 +487,7 @@ SUBROUTINE CopyFromZeus (self)
   ! update time step.
   !$omp atomic write
   self%dtime = dt
+  self%dtime = min(self%dtime,io%out_time)
   self%ix1x2x3 = ix1x2x3
 
   nullify (qz)
