@@ -20,6 +20,7 @@ MODULE dispatcher0_mod
   USE task_list_mod
   USE data_io_mod
   USE omp_lock_mod
+  USE validate_mod
   implicit none
   private
   type, public:: dispatcher0_t
@@ -121,6 +122,9 @@ SUBROUTINE execute (self, task_list, test)
   flush (io_unit%mpi)
   call mpi%barrier ('end')
   write (io%output,*) "task list finished, min_nq =", min_nq
+  if (validate%state == "compare") then
+    write (io%output,*) "validate%ok =", validate%ok
+  end if
   call trace%end (itimer)
   write (io_unit%mpi,*) 'end dispatcher0_t%execute'
   flush (io_unit%mpi)

@@ -22,13 +22,15 @@ MODULE hd_mod
   USE gpatch_mod
   USE link_mod
   USE riemann_mod
-  use hydro_parameters
+  USE hydro_parameters
   USE trace_mod
   USE mpi_mod
   USE omp_mod
   USE eos_mod
   USE force_mod
   USE index_mod
+  USE patch_mod
+  USE validate_mod
   implicit none
   PRIVATE
   type, public, extends(gpatch_t):: hd_t
@@ -490,6 +492,7 @@ end subroutine unsplit
 subroutine ctoprim (self)
   class(hd_t):: self
   real(dp):: smallp, dtxhalf
+  real:: u_max
   integer,save:: itimer=0
   real, dimension(:,:,:), pointer:: d, e, pg
   associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s, &
@@ -532,6 +535,8 @@ subroutine ctoprim (self)
     c = c + (abs(q(:,:,:,2)) + abs(q(:,:,:,3)) + abs(q(:,:,:,4)))/3.0
   end if
   self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
+  u_max = self%u_max
+  call validate%dump (self%id, u_max, 'u_max')
   if (detailed_timer) then
     call trace%end (itimer)
   else

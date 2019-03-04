@@ -28,6 +28,8 @@ MODULE validate_mod
     integer:: id
     integer:: irec=0
     integer:: iout=0
+    logical:: ok=.true.
+    character(len=8):: state='off'
   contains
     procedure:: init
     procedure:: set
@@ -37,7 +39,6 @@ MODULE validate_mod
     procedure, private:: dump3
     generic, public:: dump => dump0, dump1, dump2, dump3
   end type
-  character(len=8), save:: state='off'
   type(validate_t), public:: validate
 CONTAINS
 
@@ -49,6 +50,7 @@ SUBROUTINE init (self)
   !.............................................................................
   integer:: iostat
   logical, save:: first_time=.true.
+  character(len=8), save:: state='off'
   namelist /validate_params/ state
   !.............................................................................
   call trace%begin ('validate_t%init')
@@ -60,6 +62,7 @@ SUBROUTINE init (self)
     write (io%output, validate_params)
   end if
   !$omp end critical (input_cr)
+  self%state = state
   call trace%end
 END SUBROUTINE init
 
@@ -70,16 +73,15 @@ SUBROUTINE set (self, state1)
   class(validate_t):: self
   character(len=*):: state1
   !.............................................................................
-  state = state1
+  self%state = state1
 END SUBROUTINE set
 
 !> =============================================================================
 !> Switch
 !> =============================================================================
-SUBROUTINE dump0 (self, patch, f1, l, u, label1)
+SUBROUTINE dump0 (self, id1, f1, label1)
   class(validate_t)    :: self
-  class(patch_t)       :: patch
-  integer              :: id1, l, u
+  integer              :: id1
   real                 :: f1
   character(len=*)     :: label1
   !.............................................................................
@@ -88,12 +90,12 @@ SUBROUTINE dump0 (self, patch, f1, l, u, label1)
   integer              :: id0, sz, dims
   real                 :: diff
   !-----------------------------------------------------------------------------
-  if (state=='write') then
+  if (self%state=='write') then
     label0 = label1
-    write (io_unit%validate) patch%id, 0, label0
+    write (io_unit%validate) id1, 0, label0
     write (io_unit%validate) 1
     write (io_unit%validate) f1
-  else if (state=='compare') then
+  else if (self%state=='compare') then
     read (io_unit%validate) id0, sz, label0
     read (io_unit%validate) dims
     read (io_unit%validate) f0
@@ -102,7 +104,7 @@ SUBROUTINE dump0 (self, patch, f1, l, u, label1)
     ! Write out summary of differences
     !---------------------------------------------------------------------------
     write (io_unit%output,1) '    patch ID =',      id0, trim(label0)
-    write (io_unit%output,1) '    patch ID =', patch%id, trim(label1)
+    write (io_unit%output,1) '    patch ID =',      id1, trim(label1)
     write (io_unit%output,2) '       aver1 =',      f0, 'aver2 =', f1
     write (io_unit%output,2) '        diff =',    diff
     1 format(a,i12,3x,a)
@@ -113,25 +115,25 @@ END SUBROUTINE dump0
 !> =============================================================================
 !> Switch
 !> =============================================================================
-SUBROUTINE dump1 (self, patch, f1, l, u, label1)
+SUBROUTINE dump1 (self, patch, f1, label1)
   class(validate_t)    :: self
   class(patch_t)       :: patch
-  integer              :: id1, l(3), u(3)
+  integer              :: id1
   real                 :: f1(:)
   character(len=*)     :: label1
   !.............................................................................
   real, allocatable    :: f0(:), diff1(:)
   logical, allocatable :: inside(:)
   character(len=64)    :: label0
-  integer              :: id0, sz, dims, iz
+  integer              :: id0, sz, dims, iz, l(3), u(3)
   real, dimension(2)   :: aver, averx, avery
   real                 :: di_min, di_max, do_min, do_max, rms, diff
   !-----------------------------------------------------------------------------
-  if (state=='write') then
+  if (self%state=='write') then
     write (io_unit%validate) patch%id, 1, label1
     write (io_unit%validate) shape(f1)
     write (io_unit%validate) f1
-  else if (state=='compare') then
+  else if (self%state=='compare') then
     read (io_unit%validate) id0, sz, label0
     read (io_unit%validate) dims
     allocate (    f0(dims))
@@ -141,6 +143,8 @@ SUBROUTINE dump1 (self, patch, f1, l, u, label1)
     !---------------------------------------------------------------------------
     ! Compute averages and differences
     !---------------------------------------------------------------------------
+    l = patch%mesh%li
+    u = patch%mesh%ui
     aver = 0.0
     do iz=1,dims
       aver(1) = aver(1) + f0(iz)
@@ -173,27 +177,27 @@ END SUBROUTINE dump1
 !> =============================================================================
 !> Switch
 !> =============================================================================
-SUBROUTINE dump2 (self, patch, f1, l, u, label1)
+SUBROUTINE dump2 (self, patch, f1, label1)
   class(validate_t)    :: self
   class(patch_t)       :: patch
-  integer              :: id1, l(3), u(3)
+  integer              :: id1
   real                 :: f1(:,:)
   character(len=*)     :: label1
   !.............................................................................
   real, allocatable    :: f0(:,:), diff1(:), diff2(:,:)
   logical, allocatable :: inside(:,:)
   character(len=64)    :: label0
-  integer              :: id0, sz, dims(2), ix, iy
+  integer              :: id0, sz, dims(2), ix, iy, l(3), u(3)
   real, dimension(2)   :: aver, averx, avery
   real                 :: di_min, di_max, do_min, do_max, rms, diff
   !-----------------------------------------------------------------------------
   call trace%begin ('validate_t%dump3')
-  if (state=='write') then
+  if (self%state=='write') then
     label0 = label1
     write (io_unit%validate) patch%id, 2, label0
     write (io_unit%validate) shape(f1)
     write (io_unit%validate) f1
-  else if (state=='compare') then
+  else if (self%state=='compare') then
     read (io_unit%validate) id0, sz, label0
     read (io_unit%validate) dims
     allocate (    f0(dims(1),dims(2)))
@@ -204,6 +208,8 @@ SUBROUTINE dump2 (self, patch, f1, l, u, label1)
     !---------------------------------------------------------------------------
     ! Compute averages and differences
     !---------------------------------------------------------------------------
+    l = patch%mesh%li
+    u = patch%mesh%ui
     aver = 0.0
     do iy=1,dims(2)
       averx = 0.0
@@ -257,12 +263,12 @@ SUBROUTINE dump3 (self, patch, f1, label1)
   real, dimension(2)   :: aver, averx, avery
   real                 :: di_min, di_max, do_min, do_max, rms, diff
   !-----------------------------------------------------------------------------
-  if (state=='write') then
+  if (self%state=='write') then
     label0 = label1
     write (io_unit%validate) patch%id, 3, label0
     write (io_unit%validate) shape(f1)
     write (io_unit%validate) f1
-  else if (state=='compare') then
+  else if (self%state=='compare') then
     read (io_unit%validate) id0, sz, label0
     read (io_unit%validate) dims
     allocate (    f0(dims(1),dims(2),dims(3)))
@@ -306,12 +312,15 @@ SUBROUTINE dump3 (self, patch, f1, label1)
     !---------------------------------------------------------------------------
     ! Write out summary of differences
     !---------------------------------------------------------------------------
-    write (io_unit%output,1) '    patch ID =',      id0, trim(label0)
-    write (io_unit%output,1) '    patch ID =', patch%id, trim(label1)
-    write (io_unit%output,2) '       aver1 =', aver(1), 'aver2 =', aver(2)
-    write (io_unit%output,2) '        diff =',    diff, '  RMS =', rms
-    write (io_unit%output,2) ' inside: min =',  di_min, '  max =', di_max
-    write (io_unit%output,2) 'outside: min =',  do_min, '  max =', do_max
+    if (rms > 0.0) then
+      write (io_unit%output,1) '    patch ID =',      id0, trim(label0)
+      write (io_unit%output,1) '    patch ID =', patch%id, trim(label1)
+      write (io_unit%output,2) '       aver1 =', aver(1), 'aver2 =', aver(2)
+      write (io_unit%output,2) '        diff =',    diff, '  RMS =', rms
+      write (io_unit%output,2) ' inside: min =',  di_min, '  max =', di_max
+      write (io_unit%output,2) 'outside: min =',  do_min, '  max =', do_max
+      self%ok = .false.
+    end if
     1 format(a,i12,3x,a)
     2 format(a,1pe12.3,3x,a,1pe12.3)
   end if
