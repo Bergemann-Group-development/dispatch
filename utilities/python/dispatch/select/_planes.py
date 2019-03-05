@@ -9,11 +9,20 @@ from __future__ import print_function
 
 import numpy as np
 
-def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
+def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],x=None,y=None,z=None,dir=2,verbose=0):
     """
         assemble a plane from a unigrid experiment, where all
         patches have the same size and resolution
     """
+    if x:
+        dir=0
+        position=[x,0.5,0.5]
+    elif y:
+        dir=1
+        position=[0.5,y,0.5]
+    elif z:
+        dir=2
+        position=[0.5,0.5,z]
     if type(iv)==type('d'):
         if iv=='u1':
             pi=unigrid_plane(snap,iv='p1',position=position,dir=dir,\
