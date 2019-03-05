@@ -35,7 +35,7 @@ tr={'d':'density',
               'unit_system': p.units.system,
 """
 
-def patch(p):
+def patch(p,copy=True):
     p_void=(np.array([]),'code_length')
     dict={      'left_edge': p.llc_cart,
                'right_edge': p.llc_cart+p.size,
@@ -54,21 +54,21 @@ def patch(p):
             if p.guard_zones:
                 l=p.li
                 u=p.ui+1
-                dict[key]=p.var(iv)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
+                dict[key]=p.var(iv,copy=copy)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
             else:
-                dict[key]=p.var(iv)
+                dict[key]=p.var(iv,copy=copy)
     return dict
 
-def patches(s):
+def patches(s,copy=True):
     gg=[]
     for p in s.patches:
-        gg.append(patch(p))
+        gg.append(patch(p,copy=copy))
     return gg
 
 def domain_dimensions(s):
     return (22,22,22)
 
-def open_amr(iout=1,run='.',data='data',verbose=0):
+def open_amr(iout=1,run='.',data='data',verbose=0,copy=True):
     s=dispatch.snapshot(iout,run,data)
     #
     if verbose:
@@ -76,7 +76,7 @@ def open_amr(iout=1,run='.',data='data',verbose=0):
         print('domain_dimesions:',dispatch.yt.domain_dimensions(s))
     #
     parameters=dispatch.yt.parameters(s)
-    ds = yt.load_amr_grids(dispatch.yt.patches(s), **parameters)
+    ds = yt.load_amr_grids(dispatch.yt.patches(s,copy=copy), **parameters)
     return ds
 
 def open_unigrid(iout=1,run='.',data='data',verbose=0):
