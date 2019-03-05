@@ -20,7 +20,7 @@ MODULE trace_mod
     procedure, nopass:: tag   => trace_tag
     procedure, nopass:: end   => trace_end
     procedure, nopass:: print_id
-    procedure, nopass:: print_hl
+    !procedure, nopass:: print_hl
     procedure, nopass:: back
   end type
   type(trace_t), public:: trace

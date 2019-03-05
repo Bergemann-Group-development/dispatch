@@ -69,6 +69,7 @@ MODULE io_mod
     procedure, nopass:: abort
     procedure, nopass:: assert
     procedure, nopass:: header
+    procedure, nopass:: print_hl
   end type
   character(len=64), save:: inputname, outputname
   type(io_t), public:: io
@@ -526,5 +527,15 @@ contains
     print '(a)', buf
   end subroutine
 END SUBROUTINE header
+
+!> =============================================================================
+SUBROUTINE print_hl
+  character(len=120), save:: hl= &
+    '--------------------------------------------------------------------------------'
+  !..............................................................................
+  if (io%master) then
+    write (io_unit%output,'(a)') trim(hl)
+  end if
+END SUBROUTINE print_hl
 
 END MODULE io_mod
