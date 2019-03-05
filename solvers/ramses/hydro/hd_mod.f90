@@ -172,17 +172,6 @@ SUBROUTINE update (self)
     self%ff = 0.0
   end if
   !-----------------------------------------------------------------------------
-  ! Add any force stored in patch_t data
-  !-----------------------------------------------------------------------------
-  if (allocated(self%force_per_unit_mass)) then
-    do i=1,3
-      self%ff(:,:,:,i) = self%ff(:,:,:,i) + self%force_per_unit_mass(:,:,:,i)*d
-    end do
-  end if
-  if (allocated(self%force_per_unit_volume)) then
-    self%ff = self%ff + self%force_per_unit_volume
-  end if
-  !-----------------------------------------------------------------------------
   ! Godunov solver
   !-----------------------------------------------------------------------------
   call godunov (self)
@@ -194,11 +183,13 @@ SUBROUTINE update (self)
   ! Add external force as source term
   !-----------------------------------------------------------------------------
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  p = p + self%dtime*self%ff
-  call self%counter_update
+  do i=1,3
+    p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%ff(:,:,:,i)*d
+  end do
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
+  call self%counter_update
   deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%c,self%s,self%ff)
   call trace%end (itimer)
 END SUBROUTINE update
