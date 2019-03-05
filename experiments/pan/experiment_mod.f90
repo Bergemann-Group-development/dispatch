@@ -104,9 +104,9 @@ SUBROUTINE update (self)
     !$omp end critical (cleanup_cr)
   end if
   associate (d => self%mem(:,:,:,self%idx%d,self%it,1))
-  call validate%dump (self, d, 'before update')
+                                 call validate%check (self, d, 'before update')
   call self%solver_t%update
-  call validate%dump (self, d, ' after update')
+                                 call validate%check (self, d, ' after update')
   end associate
   !----------------------------------------------------------------------------
   ! Startup support for trace particles; this could be improved, by reusing

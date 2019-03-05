@@ -122,7 +122,7 @@ SUBROUTINE execute (self, task_list, test)
   flush (io_unit%mpi)
   call mpi%barrier ('end')
   write (io%output,*) "task list finished, min_nq =", min_nq
-  if (validate%state == "compare") then
+  if (validate%mode == "compare") then
     write (io%output,*) "validate%ok =", validate%ok
   end if
   call trace%end (itimer)

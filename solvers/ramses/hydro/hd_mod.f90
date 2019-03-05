@@ -52,7 +52,7 @@ MODULE hd_mod
     procedure:: gas_pressure
   end type
   real, save:: csound=1.
-  integer, save:: courant_type=1
+  integer, save:: courant_type=0
   logical, save:: debug=.false.
   logical, save:: first_time=.true.
   logical, save:: detailed_timer=.false.
@@ -527,7 +527,7 @@ subroutine ctoprim (self)
   end if
   self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
   u_max = self%u_max
-  call validate%dump (self%id, u_max, 'u_max')
+  call validate%check (self%link, u_max, 'u_max')
   if (detailed_timer) then
     call trace%end (itimer)
   else
