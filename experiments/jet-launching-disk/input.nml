@@ -20,7 +20,7 @@
 &out_params
  end_time=8.925e6 ! 100 orbits at 0.02 au
  out_time=8.925e2 ! 1 output every 0.01 orbit at 0.02 au
- print_time=100.0
+ print_time=400.0
 /
 
 &initial_params
