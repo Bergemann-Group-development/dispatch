@@ -123,14 +123,15 @@ SUBROUTINE check0 (self, patch, f1, label1)
     write (io_unit%output,'(a,i6,2x,i1,20x,f12.6,2x,a)') &
       ' validate:', patch%id, 1, patch%time, label1
   if (self%mode=='write') then
+    id1 = patch%id
     label0 = label1
     write (io_unit%validate) id1, 0, label0
-    id1 = patch%id
-    if (id0 /= id1) write (io_unit%output,*) 'WARNING: id differs', id0, id1
     write (io_unit%validate) 1
     write (io_unit%validate) f1
   else if (self%mode=='compare') then
     read (io_unit%validate) id0, sz, label0
+    id1 = patch%id
+    if (id0 /= id1) write (io_unit%output,*) 'WARNING: id differs', id0, id1
     read (io_unit%validate) dims
     read (io_unit%validate) f0
     diff  = f0-f1
