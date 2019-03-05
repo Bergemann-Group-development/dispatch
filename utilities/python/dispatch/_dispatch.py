@@ -22,9 +22,9 @@ class _timer():
         else:
             self.dict[key]=now-self._start
         self._start=now
-    def print(self,verbose=0):
+    def print(self,verbose=0,timeit=False):
         l=0
-        skip=True
+        skip=not timeit
         for k,v in self.dict.items():
             l=max(l,len(k))
             if v>2.0:
@@ -103,10 +103,42 @@ def _add_nml_list_to(obj,nml_list,verbose=0):
             subobj=getattr(obj,name)
             _add_nml_to(subobj,nml_dict,verbose=verbose)
 
-def _var(patch,filed,snap,verbose=0):
-    """ Too avoid the "too many file open" problem (Python on steno allows 
+import mmap
+
+class memmap2(np.memmap):
+
+    def __new__(subtype, *args, **kwargs):
+        obj = super(memmap2, subtype).__new__(subtype,  *args, **kwargs)
+        obj._saved = {'len':obj._mmap.__len__(),'off':obj.offset,'file':obj.filename}
+        fd=open(obj.filename,'rb+')
+        saved=(fd.fileno(),obj._mmap.__len__(),obj.offset)
+        obj._mmap.close()
+        return obj
+
+    def reopen(self):
+        s=self._saved
+        if self._mmap.closed:
+            print('was closed, reopen')
+            fd=open(s['file'],'rb+')
+            self._mmap=mmap.mmap(fd.fileno(),offset=s['off'],length=s['len'])
+        else:
+            print('was open')
+
+    def __array_prepare__ (subtype, *args, **kwargs):
+        s=subtype._saved
+        if subtype._mmap.closed:
+            print('was closed, reopen')
+            fd=open(s['file'],'rb+')
+            subtype._mmap=mmap.mmap(fd.fileno(),offset=s['off'],length=s['len'])
+        else:
+            print('was open')
+        obj = super(memmap2, subtype).__array_prepare__(subtype, *args, **kwargs)
+        return obj
+
+def _var(patch,filed,snap,verbose=0,copy=None):
+    """ Too avoid the "too many file open" problem (Python on steno allows
         "only" about 800 files, patch.data is defined as a function, which
-        return a memmap.  The function takes numeric or alphbetic arguments,
+        returns a memmap.  The function takes numeric or alphbetic arguments,
         so patch.data(0) and patch.data('d') is typically the density.
     """
     if _p2():
@@ -138,13 +170,23 @@ def _var(patch,filed,snap,verbose=0):
         patch.offset.append(offset)
         if verbose==5:
             print (' iv, offset:',iv,patch.iout,patch.ntotal,patch.nv,offset)
-    def mem(iv):
+
+    def mem(iv,copy=None):
         """ Translage alphabetic variable keys to numeric """
         if type(iv)==type('d'):
             iv=patch.idx.dict[iv]
-        return np.copy(np.memmap(filed, dtype=np.float32, offset=patch.offset[iv],
-                         mode='r', order='F', shape=shape))
-    def var(iv):
+        if copy != None:
+            use_copy=copy
+        else:
+            use_copy=snap.copy
+        if use_copy:
+            return np.copy(np.memmap(filed, dtype=np.float32,
+                offset=patch.offset[iv], mode='r', order='F', shape=shape))
+        else:
+            return memmap2(filed, dtype=np.float32,
+                offset=patch.offset[iv], mode='r', order='F', shape=shape)
+
+    def var(iv,copy=None):
         """
         Special logic to calculate velocities from momenta on the fly.
         If the data is in spherical or cylindrical coords., then it is the angular
@@ -154,22 +196,31 @@ def _var(patch,filed,snap,verbose=0):
         before multiplying by the data.
 
         """
-
-        if   iv=='u1' or iv=='ux':
-            return mem('p1')/mem('d')
-        elif iv=='u2' or iv=='uy':
-            if patch.mesh_type != 'Cartesian':
-                return mem('p2')/mem('d')/patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
+        if patch.kind[0:6]=='ramses':
+            if   iv=='ux':
+                return mem('p1',copy=copy)/mem('d',copy=copy)
+            elif iv=='uy':
+                return mem('p2',copy=copy)/mem('d',copy=copy)
+            elif iv=='uz':
+                return mem('p3',copy=copy)/mem('d',copy=copy)
             else:
-                return mem('p2')/mem('d')
-        elif iv=='u3' or iv=='uz':
-            if patch.mesh_type != 'Cartesian':
-                gf = patch.geometric_factors # shorthand
-                return mem('p3')/mem('d')/gf['h31c'][:,np.newaxis,np.newaxis]/gf['h32c'][np.newaxis,:,np.newaxis]
-            else:
-                return mem('p3')/mem('d')
+                return mem(iv,copy=copy)
         else:
-            return mem(iv)
+            if   iv=='ux':
+                return mem('p1')/mem('d')
+            elif iv=='uy':
+                if patch.mesh_type != 'Cartesian':
+                    return mem('p2')/mem('d')/patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
+                else:
+                    return mem('p2')/mem('d')
+            elif iv=='uz':
+                if patch.mesh_type != 'Cartesian':
+                    gf = patch.geometric_factors # shorthand
+                    return mem('p3')/mem('d')/gf['h31c'][:,np.newaxis,np.newaxis]/gf['h32c'][np.newaxis,:,np.newaxis]
+                else:
+                    return mem('p3')/mem('d')
+            else:
+                return mem(iv,copy=copy)
     return var
 
 class _patch():
@@ -276,7 +327,6 @@ object takes both numeric and text key values: Examples:\n\
         if verbose:
             print('plane: i, p = {:d} {:.3f}'.format(i,p))
         return f
-            
 
 def _parse_namelist (items):
     pos=items[1:]
@@ -290,7 +340,7 @@ def _parse_namelist (items):
         if pos[1].find('2*')>=0:
             pos[1]=pos[1].replace('2*','')
             pos=[pos[0],pos[1],pos[1]]
-    return np.array(list(map(float,pos))) 
+    return np.array(list(map(float,pos)))
 
 def parse_patches(file='data/00000/rank_00000_patches.nml'):
     """ Optimized parsing of patch namelist entries.
@@ -321,10 +371,16 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
                 prop_dict[id]=d
     return prop_dict
 
+import resource
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
     """
-    def __init__(self, iout=0, run='', data='data', datadir='', verbose=0):
+    def __init__(self, iout=0, run='', data='data', datadir='', verbose=0, copy=False, timeit=False):
+        # Set the max number of open files to the hard limit
+        limits=resource.getrlimit(resource.RLIMIT_NOFILE)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (limits[1],limits[1]))
+        self.copy=copy
+        # Start time measurement
         timer.start()
         rundir=_dir(data,run)
         if datadir=='':
@@ -369,7 +425,7 @@ class snapshot():
         # "dress" the snapshot with attributes from snapshot_nml, where
         # lists are turned into arrays
         for k,v in self.dict.items():
-            if isinstance(v,list): 
+            if isinstance(v,list):
                 self.dict[k]=np.array(v)
 
         # add patches as a list of dicts
@@ -387,7 +443,7 @@ class snapshot():
                 p=_patch(id,patch_dict[id],self,rank)
                 self._add_axes(p)
                 # Append to array of patch instances
-                self.patches.append(p)            
+                self.patches.append(p)
 
                 # verbose info
                 if verbose==2 and hasattr(p,'idx'):
@@ -407,7 +463,7 @@ class snapshot():
             if verbose==1:
                 print('  added',len(self.patches),'patches')
         timer.add('_patches')
-        timer.print(verbose=verbose)
+        timer.print(verbose=verbose,timeit=timeit)
 
     def _add_axes(self,patch):
         if patch.no_mans_land:
