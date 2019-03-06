@@ -46,8 +46,8 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   !USE forces_mod                                        ! forces
   !USE trace_particles_mod                               ! trace_particles
-  !USE spitzer_mod
-  !USE gravity_mod
+  !USE spitzer_mod                                       ! spitzer conductivity
+  !USE gravity_mod                                       ! self-gravity
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -83,10 +83,8 @@ SUBROUTINE init (self)
   !allocate (self%trace_particles)                       ! trace_particles
   !self%connect%trace_particles => self%trace_particles  ! trace_particles
   !call self%trace_particles%add (self%link%task)        ! trace_particles
-  !--------- Spitzer conductivity ----------
-  ! call self%spitzer%init(self%link)
-  !--------- gravitational acceleration ----
-  !call self%gravity%init(self%link)
+  !call self%spitzer%init(self%link)                     ! spitzer conductivity
+  !call self%gravity%init(self%link)                     ! self-gravity
 END SUBROUTINE init
 
 !> =============================================================================
@@ -98,7 +96,7 @@ SUBROUTINE pre_update (self)
   !call self%forces%pre_update (self)                    ! forces
   !call self%trace_particles%update (self)               ! trace_particles
   !call self%spitzer%update                              ! spitzer conductivity
-  !call self%gravity%update
+  !call self%gravity%pre_update                          ! self-gravity
 END SUBROUTINE pre_update
 
 !> =============================================================================
@@ -108,6 +106,7 @@ SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
   !call self%trace_particles%post_update (self)          ! trace_particles
+  !call self%gravity%post_update                         ! self-gravity
 END SUBROUTINE post_update
 
 !> =============================================================================

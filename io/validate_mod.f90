@@ -196,6 +196,8 @@ SUBROUTINE check1 (self, patch, f1, label1)
     if (id0 /= id1) write (io_unit%output,*) 'WARNING: id differs', id0, id1
     if (sz  /=   1) write (io_unit%output,*) 'WARNING: sz differs', sz, 1
     read (io_unit%validate) dims
+    if (any(dims /= shape(f1))) &
+      write (io_unit%output,'(1x,a,2(2x,3i4))') 'WARNING: dims differ', dims, shape(f1)
     allocate (    f0(dims))
     allocate (inside(dims))
     allocate ( diff1(dims))
@@ -285,6 +287,8 @@ SUBROUTINE check2 (self, patch, f1, label1)
     if (id0 /= id1) write (io_unit%output,*) 'WARNING: id differs', id0, id1
     if (sz  /=   2) write (io_unit%output,*) 'WARNING: sz differs', sz, 2
     read (io_unit%validate) dims
+    if (any(dims /= shape(f1))) &
+      write (io_unit%output,'(1x,a,2(2x,3i4))') 'WARNING: dims differ', dims, shape(f1)
     allocate (    f0(dims(1),dims(2)))
     allocate (inside(dims(1),dims(2)))
     allocate ( diff2(dims(1),dims(2)))
@@ -483,9 +487,9 @@ SUBROUTINE check4 (self, patch, f1, label1)
     write (io_unit%validate) f1
   else if (self%mode=='compare') then
     read (io_unit%validate) id0, sz, label0
-    if (sz  /=   4) write (io_unit%output,*) 'WARNING: sz differs', sz, 4
     id1 = patch%id
     if (id0 /= id1) write (io_unit%output,*) 'WARNING: id differs', id0, id1
+    if (sz  /=   4) write (io_unit%output,*) 'WARNING: sz differs', sz, 4
     read (io_unit%validate) dims
     if (any(dims /= shape(f1))) &
       write (io_unit%output,'(1x,a,2(2x,4i4))') 'WARNING: dims differ', dims, shape(f1)
