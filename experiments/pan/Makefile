@@ -25,8 +25,6 @@ sinclude $(SOLVER)/Makefile
 
 # List the .o files the main program depends on after the colon:
 $(EXEC)                 : setup_mod.o cartesian_mod.o dispatcher_mod.o io_unit_mod.o
-experiment_mod.o        : io_mod.o trace_mod.o omp_mod.o bits_mod.o solver_mod.o initial_mod.o \
-                          timer_mod.o link_mod.o particle_patch_mod.o trace_particles_mod.o validate_mod.o
+experiment_mod.o        : io_mod.o trace_mod.o solver_mod.o
 scaling_mod.o           : io_mod.o units_mod.o
-particle_list_mod.o     : omp_timer_mod.o dll_mod.o
-trace_particles_mod.o   : io_mod.o trace_mod.o dll_mod.o particle_list_mod.o omp_timer_mod.o random_mod.o mesh_mod.o
+extras_mod.o            : gpatch_mod.o forces_mod.o trace_particles_mod.o connect_mod.o
