@@ -125,7 +125,7 @@ SUBROUTINE execute (self, task_list, test)
   if (validate%mode == "write") then
     call io%print_hl
     write (io%output,'(a)') &
-      ' validate file '//io%outputname//'/rank_00000.val written'
+      ' validate file '//trim(io%outputname)//'/rank_00000.val written'
     call io%print_hl
   else if (validate%mode == "compare") then
     call io%print_hl

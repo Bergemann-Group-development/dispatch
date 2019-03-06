@@ -1,0 +1,2 @@
+OPT = -O2
+DEBUG = -g -traceback -fp-model source -DCHECK_NAN

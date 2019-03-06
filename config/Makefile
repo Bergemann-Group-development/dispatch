@@ -17,6 +17,10 @@ BUILD   ?= build
 #############################################################################
 # Check for options
 CONFIG = $(TOP)/config
+# sinclude files that are likely to change $(COMPILER)
+sinclude options.mkf
+sinclude $(CONFIG)/host/$(HOST)/Makefile
+# check that the $(OPTS) file is present (typo trap)
 ifeq ($(OPTS),)
   target: default
 else
@@ -28,8 +32,7 @@ else
     target: error
   endif
 endif
-sinclude options.mkf
-sinclude $(CONFIG)/host/$(HOST)/Makefile
+# sinclude $(OPTS) and $(HOST) dependent config files
 sinclude $(CONFIG)/compiler/$(COMPILER)/Makefile
 sinclude $(CONFIG)/compiler/$(COMPILER)/$(OPTS).mkf
 sinclude $(CONFIG)/compiler/$(COMPILER)/$(HOST)/Makefile
@@ -125,7 +128,7 @@ $(DEPDIR)/%.d: ;
 
 # Prevent deletion of dependency files after successful compilation
 .PRECIOUS: $(DEPDIR)/%.d
-.PHONY: showopt clean cleanlog cleandata clean-deps cleaner cleanest info
+.PHONY: showopt clean cleanlog cleandata clean-deps cleaner cleanest info bitvalidate
 
 $(BUILD):
 	@mkdir -p $(BUILD)
@@ -159,6 +162,9 @@ SRC   = $(subst .d,.w,$(notdir $(wildcard $(DEPDIR)/*.d)))
 files: $(FILES)
 	@echo $(FILES)
 src: $(SRC)
+bitvalidate:
+	csh $(TOP)/utilities/scripts/bitvalidate.csh $(SOLVER)
+	OMP_NUM_THREADS=1 ./$(EXEC) $(SOLVER)/bitvalidate.nml
 
 # Generate list of dependencies
 deps: files
