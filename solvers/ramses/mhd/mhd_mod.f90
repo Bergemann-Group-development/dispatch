@@ -1050,6 +1050,13 @@ SUBROUTINE trace3d(self)
     sw0 = (-u*dwx+A*dCx*invr)*dtdx + (-v*dwy+B*dCy*invr)*dtdy + (-w*dwz-(dpz+A*dAz+B*dBz)*invr)*dtdz
     sp0 = (-u*dpx-dux*eff_gamma*p)*dtdx + (-v*dpy-dvy*eff_gamma*p)*dtdy + (-w*dpz-dwz*eff_gamma*p)*dtdz
     !
+    ! Add external force
+    associate (ff => self%force_per_unit_mass)
+    su0 = su0 + ff(i,j,k,1)*self%mesh(1)%d
+    sv0 = sv0 + ff(i,j,k,2)*self%mesh(2)%d
+    sw0 = sw0 + ff(i,j,k,3)*self%mesh(3)%d
+    end associate
+    !
     ! Evolve entropy instead of pressure
     !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz
     !
