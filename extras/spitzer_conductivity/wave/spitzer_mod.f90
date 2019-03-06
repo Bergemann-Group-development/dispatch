@@ -14,6 +14,8 @@ MODULE spitzer_mod
   USE vector_mod
   USE vector_ops
   USE scaling_mod
+  USE patch_mod
+  USE link_mod
   implicit none
   private
   logical  :: do_spitzer = .false.
@@ -32,8 +34,8 @@ MODULE spitzer_mod
     real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: fc     => null()      ! conductive flux
     real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: dfc    => null()      ! conductive flux change
     real(kind=KindScalarVar), dimension(:,:,:),   pointer :: sigmac => null()
-    class(mesh_t),            dimension(:),       pointer :: mesh   => null()
-    type(index_t) :: idx   
+    class(patch_t), pointer :: patch 
+    logical:: on = .false.   
     logical:: first_time = .true.
   contains
     procedure:: init
@@ -48,10 +50,9 @@ CONTAINS
 !> =====================================================================
 !> Read parameters
 !> =====================================================================
-SUBROUTINE init (self, m, idx, ff)
+SUBROUTINE init (self, link)
   class (spitzer_t):: self
-  class (mesh_t), dimension(:), pointer:: m
-  type (index_t) :: idx
+  class (link_t), pointer :: link
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: ff
   ! --------------------------------------------------------------------
   integer:: iostat, gn(3)
@@ -66,16 +67,18 @@ SUBROUTINE init (self, m, idx, ff)
   end if
   !$omp end critical (input_cr)
   if (do_spitzer) then
-    gn = m%gn
+    self%patch => task2patch(link%task)
+    gn = self%patch%mesh%gn
     call allocate_vectors(gn,self%fc, self%dfc)
     self%fc  = 0.0
     self%dfc = 0.0
     self%sigma0 = sigma_e / scaling%l/scaling%l/(scaling%e/scaling%t) * amp
     self%csat = csat * scaling%d/(scaling%e/scaling%t)
+    self%on = do_spitzer
+    if (.not.allocated(self%patch%heating_per_unit_volume)) &
+      call allocate_scalars_a(gn,self%patch%heating_per_unit_volume)
+    call self%compute_q(self%patch%mem(:,:,:,:,self%patch%it,1))
   end if
-    self%mesh=> m
-    self%idx = idx
-    call self%compute_q(ff)
 END SUBROUTINE init
 
 !> =====================================================================
@@ -83,9 +86,10 @@ END SUBROUTINE init
 !> =====================================================================
 SUBROUTINE compute_q(self, ff)
   class (spitzer_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: ff
+  real(kind=KindScalarVar), dimension(:,:,:,:), target :: ff
   ! --------------------------------------------------------------------
-  real(kind=KindScalarVar), dimension(:,:,:),   pointer :: d, e, lnd, tg, lntg
+  real(kind=KindScalarVar), dimension(:,:,:),   pointer :: d, e
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable :: tg, lntg
   real(kind=KindScalarVar), dimension(:,:,:),   pointer :: dtx, dty, dtz
   real(kind=KindScalarVar), dimension(:,:,:),   pointer :: bbx, bby, bbz
   real(kind=KindScalarVar), dimension(:,:,:),   pointer :: bmx, bmy, bmz
@@ -95,17 +99,17 @@ SUBROUTINE compute_q(self, ff)
   real(8) :: ds(3)
   integer :: n(3), lb(3), ub(3), i, j, k
   ! ....................................................................
-  if (.not.do_spitzer) return
+  if (.not.self%on) return
   do i=1,3
-    lb(i) = self%mesh(i)%lb
-    ub(i) = self%mesh(i)%ub
-    ds(i) = self%mesh(i)%d
+    lb(i) = self%patch%mesh(i)%lb
+    ub(i) = self%patch%mesh(i)%ub
+    ds(i) = self%patch%mesh(i)%d
   end do  
-  d => ff(:,:,:,self%idx%d)
-  e => ff(:,:,:,self%idx%e)
+  d => ff(:,:,:,self%patch%idx%d)
+  e => ff(:,:,:,self%patch%idx%e)
   n =  shape(d)
   ! allocate scratches
-  call allocate_scalars (n, lntg, tg)
+  call allocate_scalars_a (n, lntg, tg)
   call allocate_vectors (n, dtg, self%bb, self%bm)
   dtx => dtg(:,:,:,1)
   dty => dtg(:,:,:,2)
@@ -142,7 +146,7 @@ SUBROUTINE compute_q(self, ff)
         end do
       end do
     end do
-    call deallocate_scalars(lntg, tg)
+    call deallocate_scalars_a (lntg, tg)
     call deallocate_vectors(dtg, self%bb, self%bm)
 END SUBROUTINE compute_q
   
@@ -150,44 +154,39 @@ END SUBROUTINE compute_q
 !> =====================================================================
 !> Update Spitzer conductivity
 !> =====================================================================
-SUBROUTINE update(self, ff, it, first_dt, dt)
+SUBROUTINE update(self)
   class (spitzer_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:,:,:,:), pointer :: ff
-  real(8) :: dt, first_dt
-  integer :: it
   ! --------------------------------------------------------------------
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: f
-
   real(8) :: ds(3), dtime
-  integer :: i
   ! ....................................................................
-  if (.not.do_spitzer) return
+  if (.not.self%on) return
   !
-  do i=1,3
-    ds(i) = self%mesh(i)%d
-  end do  
+
+  ds = self%patch%ds  
   !
-  if (dt <= 1e-20) then 
-    dtime = first_dt
+  if (self%patch%dtime <= 1d-20) then 
+    dtime = 1d-5
   else
-    dtime = dt
+    dtime = self%patch%dtime
   end if
   ! save conductive flux values from previous timestep
   self%fc(:,:,:,1) = self%fc(:,:,:,1)+self%dfc(:,:,:,1)*dtime
   self%fc(:,:,:,2) = self%fc(:,:,:,2)+self%dfc(:,:,:,2)*dtime
   self%fc(:,:,:,3) = self%fc(:,:,:,3)+self%dfc(:,:,:,3)*dtime
   ! Calculate conductive flux for this timestep
-  f => ff(:,:,:,:,it,1)
+  f => self%patch%mem(:,:,:,:,self%patch%it,1)
   call self%conductive_flux(f,dtime)
   
-  ff(:,:,:,self%idx%e,it,2) = ff(:,:,:,self%idx%e,it,2) - div(ds,down(self%fc))
+  self%patch%heating_per_unit_volume = & 
+  self%patch%heating_per_unit_volume - div(ds,down(self%fc))
 
-  print *, 'max dedt before spitz', maxval(abs(ff(:,:,:,self%idx%e,it,2)))
-  print *, 'max spitz', maxval(abs(div(ds,down(self%fc))))
-  print *, 'max dspitz', maxval(abs(self%dfc))
+  !print *, 'max dedt before spitz', maxval(abs(ff(:,:,:,self%idx%e,it,2)))
+  !print *, 'max spitz', maxval(abs(div(ds,down(self%fc))))
+  !print *, 'max dspitz', maxval(abs(self%dfc))
   ! field aligned flux divergence
   
-  print *, 'max dedt after spitz', maxval(abs(ff(:,:,:,self%idx%e,it,2)))
+  !print *, 'max dedt after spitz', maxval(abs(ff(:,:,:,self%idx%e,it,2)))
   
 END SUBROUTINE update
 
@@ -212,13 +211,12 @@ SUBROUTINE conductive_flux(self, ff, dt)
   integer :: n(3), lb(3), ub(3)
   integer :: i, j, k
   ! ....................................................................
-  do i=1,3
-    lb(i) = self%mesh(i)%lb
-    ub(i) = self%mesh(i)%ub
-    ds(i) = self%mesh(i)%d
-  end do  
-  d => ff(:,:,:,self%idx%d)
-  e => ff(:,:,:,self%idx%e)
+  if (.not. self%on) return
+    lb = self%patch%mesh%lb
+    ub = self%patch%mesh%ub
+    ds = self%patch%mesh%d
+  d => ff(:,:,:,self%patch%idx%d)
+  e => ff(:,:,:,self%patch%idx%e)
   n =  shape(d)
   call allocate_vectors (n, self%bb, self%bm, dtg)
   call allocate_scalars (n,ux, uy, uz)
@@ -228,9 +226,9 @@ SUBROUTINE conductive_flux(self, ff, dt)
   lntg = log(tg)
   ! gas velocities
   lnd = log(d)
-  ux = ff(:,:,:,self%idx%px)/exp(xdn(lnd))
-  uy = ff(:,:,:,self%idx%py)/exp(ydn(lnd))
-  uz = ff(:,:,:,self%idx%pz)/exp(zdn(lnd))
+  ux = ff(:,:,:,self%patch%idx%px)/exp(xdn(lnd))
+  uy = ff(:,:,:,self%patch%idx%py)/exp(ydn(lnd))
+  uz = ff(:,:,:,self%patch%idx%pz)/exp(zdn(lnd))
   dfcx => self%dfc(:,:,:,1)
   dfcy => self%dfc(:,:,:,2)
   dfcz => self%dfc(:,:,:,3)
@@ -242,9 +240,9 @@ SUBROUTINE conductive_flux(self, ff, dt)
   bbz => self%bb(:,:,:,3); bmz => self%bm(:,:,:,3)                      ! convenience
   ! gas velocities
   lnd = log(d)
-  ux = ff(:,:,:,self%idx%px)/exp(xdn(lnd))
-  uy = ff(:,:,:,self%idx%py)/exp(ydn(lnd))
-  uz = ff(:,:,:,self%idx%pz)/exp(zdn(lnd))
+  ux = ff(:,:,:,self%patch%idx%px)/exp(xdn(lnd))
+  uy = ff(:,:,:,self%patch%idx%py)/exp(ydn(lnd))
+  uz = ff(:,:,:,self%patch%idx%pz)/exp(zdn(lnd))
 
   ! magnetic field topology
   call self%compute_b_field_topology(ff)
@@ -289,7 +287,7 @@ END SUBROUTINE conductive_flux
 !> =====================================================================
 SUBROUTINE compute_b_field_topology(self,ff)
   class (spitzer_t):: self
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: ff
+  real(kind=KindScalarVar), dimension(:,:,:,:), target :: ff
   ! --------------------------------------------------------------------
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: bx, by, bz
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: bbx, bby, bbz
@@ -298,18 +296,19 @@ SUBROUTINE compute_b_field_topology(self,ff)
   real(kind=KindScalarVar) :: a
   integer :: i,j,k, n(3), lb(3), ub(3)
   ! --------------------------------------------------------------------
+  if (.not. self%on) return
   call trace%begin("spitzer_t::compute_b_field_topology")
-  bx => ff(:,:,:,self%idx%bx)
-  by => ff(:,:,:,self%idx%by)
-  bz => ff(:,:,:,self%idx%bz)
+  bx => ff(:,:,:,self%patch%idx%bx)
+  by => ff(:,:,:,self%patch%idx%by)
+  bz => ff(:,:,:,self%patch%idx%bz)
   bbx => self%bb(:,:,:,1); bmx => self%bm(:,:,:,1)
   bby => self%bb(:,:,:,2); bmy => self%bm(:,:,:,2)
   bbz => self%bb(:,:,:,3); bmz => self%bm(:,:,:,3)
   n=shape(bx)
   call allocate_scalars(n, scr1, scr2)
   do i=1,3
-    lb(i) = self%mesh(i)%lb
-    ub(i) = self%mesh(i)%ub
+    lb(i) = self%patch%mesh(i)%lb
+    ub(i) = self%patch%mesh(i)%ub
   end do
   !
   scr1=xdn(yup(by))
