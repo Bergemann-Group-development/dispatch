@@ -8,10 +8,12 @@ MODULE solver_mod
   USE variable_mod
   USE mhd_mod
   USE mesh_mod, only: mesh_types
+  USE validate_mod
   implicit none
   private
   type, public, extends(mhd_t):: solver_t
   contains
+    procedure:: init
     procedure:: update
     procedure:: log_density
     procedure:: log_pressure
@@ -37,14 +39,29 @@ MODULE solver_mod
 CONTAINS
 
 !> =====================================================================
-!> Organize calls to the extras and the hydro solver
+!> Organize calls to the extras and the mhd solver init
+!> =====================================================================
+SUBROUTINE init (self)
+  class(solver_t) :: self
+  !.....................................................................
+  call self%mhd_t%init
+  call self%extras_t%init
+  call validate%init
+END SUBROUTINE init
+
+!> =====================================================================
+!> Organize calls to the extras and the mhd solver
 !> =====================================================================
 SUBROUTINE update (self)
   class(solver_t) :: self
+  associate (d=>self%mem(:,:,:,self%idx%d,self%it,1))
   !.....................................................................
   call self%extras_t%pre_update
+  call validate%check (self, d, 'before update')
   call self%mhd_t%update
+  call validate%check (self, d, ' after update')
   call self%extras_t%post_update
+  end associate
 END SUBROUTINE update
 
 !> =============================================================================

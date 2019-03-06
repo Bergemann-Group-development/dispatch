@@ -18,7 +18,7 @@ MODULE mhd_mod
   USE const
   USE io_mod
   USE io_unit_mod
-  USE gpatch_mod
+  USE extras_mod
   USE link_mod
   USE riemann_mod
   use hydro_parameters
@@ -31,7 +31,7 @@ MODULE mhd_mod
   USE omp_timer_mod
   implicit none
   PRIVATE
-  type, public, extends(gpatch_t):: mhd_t
+  type, public, extends(extras_t):: mhd_t
     logical:: mhd=.true.
     integer:: idim=3
     character(len=10):: riemann='hlld'
@@ -44,7 +44,6 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:):: unew      ! new conserved
     real, pointer, dimension(:,:,:):: Ex,Ey,Ez
     real, pointer, dimension(:,:,:):: c
-    real, pointer, dimension(:,:,:,:):: ff        ! external force
     type(force_t):: force
   contains
     procedure:: init
@@ -180,25 +179,13 @@ SUBROUTINE update (self)
   e => self%mem(:,:,:,          self%idx%e ,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   !-----------------------------------------------------------------------------
-  ! External force; note that Ux, Uy, Uz are empty pointers here, so they
-  ! should not and cannot be used in the solver
+  ! The force_per_unit_mass is assumed to exist in trace3d, so make sure it does
   !-----------------------------------------------------------------------------
-  allocate (self%ff(size(d,1),size(d,2),size(d,3),3))
-  if (associated(self%force%selected)) then
-    self%ff = self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
-  else
-    self%ff = 0.0
-  end if
-  !-----------------------------------------------------------------------------
-  ! Add any force stored in patch_t data
-  !-----------------------------------------------------------------------------
-  if (allocated(self%force_per_unit_mass)) then
-    do i=1,3
-      self%ff(:,:,:,i) = self%ff(:,:,:,i) + self%force_per_unit_mass(:,:,:,i)*d
-    end do
-  end if
-  if (allocated(self%force_per_unit_volume)) then
-    self%ff = self%ff + self%force_per_unit_volume
+  if (.not.allocated(self%force_per_unit_mass)) then
+    associate (m => self%gn)
+    allocate (self%force_per_unit_mass(m(1),m(2),m(3),3))
+    end associate
+    self%force_per_unit_mass = 0.0
   end if
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
@@ -330,7 +317,9 @@ SUBROUTINE update (self)
   ! Add external force as source term
   !-----------------------------------------------------------------------------
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  p = p + self%dtime*self%ff
+  do i=1,3
+    p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
+  end do
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
@@ -339,7 +328,7 @@ SUBROUTINE update (self)
     deallocate (fluxambdiff,emfambdiff)
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dq2,self%bf,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
-              self%Ex,self%Ey,self%Ez,self%ff)
+              self%Ex,self%Ey,self%Ez)
   call trace%end (itimer)
   if (rieman%ndiff > 0) then
     write(io_unit%mpi,*) 'id,ndiff', self%id, rieman%ndiff, rieman%nsolu

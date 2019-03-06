@@ -23,8 +23,7 @@ MODULE mhd_mod
   USE vector_mod
   USE vector_ops
   USE stagger_mod
-  USE gpatch_mod
-  USE force_mod
+  USE extras_mod
   USE index_mod
   USE timestep_mod
   USE eos_mod
@@ -32,7 +31,7 @@ MODULE mhd_mod
   USE initial_mod
   implicit none
   private
-  type, extends(gpatch_t), public:: mhd_t
+  type, extends(extras_t), public:: mhd_t
     real, dimension(:,:,:),   pointer    :: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer    :: p, dpdt, B, dBdt
     real, dimension(:,:,:),   pointer    :: lnd, ee, pg
@@ -45,7 +44,7 @@ MODULE mhd_mod
     logical:: mhd=.false.
     logical:: first_time=.true.
     logical:: do_force=.true.
-    type(force_t):: force
+    type(extras_t):: extras
   contains
     procedure:: init
     procedure:: pde
@@ -101,13 +100,13 @@ SUBROUTINE init (self)
   self%cdtd = cdtd
   !-----------------------------------------------------------------------------
   ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
-  ! called again, from gpatch_t%init, when gamma is known and can be passed on.
+  ! called again, from extras_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
   self%initial%mhd = self%mhd
-  print *,'mhd, nv =', self%mhd, self%nv
   call self%idx%init (self%nv, self%mhd)
   call self%initial%init (self%kind, real(self%gamma))
   self%mhd = self%initial%mhd
+  print *,'mhd, nv =', self%mhd, self%nv
   if (self%mhd) then
     self%kind = 'stagger2e_mhd_patch'
   else
@@ -148,7 +147,6 @@ SUBROUTINE init (self)
   !end select
   self%unsigned(self%idx%d)  = unsigned
   self%pervolume(self%idx%s) = unsigned
-  call self%force%init (self%kind, self%id, self%mesh)
  call trace%end
 END SUBROUTINE init
 
@@ -391,14 +389,13 @@ SUBROUTINE pde (self)
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (associated(self%force%selected) .and. self%do_force) then
-    dpdt = dpdt + dd*self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)! ops: 1 0 0
-  end if
-  if (allocated(self%force_per_unit_mass)) then
-   dpdt = dpdt + dd*self%force_per_unit_mass                                    ! ops: 3 3 0
-  end if
-  if (allocated(self%force_per_unit_volume)) then
-   dpdt = dpdt + self%force_per_unit_volume                                     ! ops: 3 3 0
+  if (self%do_force) then
+    if (allocated(self%force_per_unit_mass)) then
+      dpdt = dpdt + dd*self%force_per_unit_mass                                  ! ops: 2 2 0
+    end if
+    if (allocated(self%force_per_unit_volume)) then
+      dpdt = dpdt + self%force_per_unit_volume
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Conservation of energy; reuse the mass flux for the energy flux
@@ -640,7 +637,7 @@ SUBROUTINE output (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%output')
   out_next = self%out_next
-  call self%gpatch_t%output
+  call self%extras_t%output
   if (self%time >= out_next .and. io%do_output .and. io%do_legacy) then
     !$omp critical (out_cr)
     write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &

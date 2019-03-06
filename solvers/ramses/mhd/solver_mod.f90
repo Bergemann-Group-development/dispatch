@@ -10,10 +10,12 @@ MODULE solver_mod
   USE patch_mod
   USE kinds_mod
   USE mhd_mod
+  USE validate_mod
   implicit none
   private
   type, public, extends(mhd_t):: solver_t
   contains
+    procedure:: init
     procedure:: update
     procedure:: p2U
     procedure:: U2p
@@ -44,12 +46,27 @@ CONTAINS
 !> =====================================================================
 !> Organize calls to the extras and the hydro solver
 !> =====================================================================
-SUBROUTINE update (self)
+SUBROUTINE init (self)
   class(solver_t) :: self
   !.....................................................................
+  call self%mhd_t%init
+  call self%extras_t%init
+  call validate%init
+END SUBROUTINE init
+
+!> =====================================================================
+!> Organize calls to the extras and the hydro solver
+!> =====================================================================
+SUBROUTINE update (self)
+  class(solver_t) :: self
+  associate (d=>self%mem(:,:,:,self%idx%d,self%it,1))
+  !.....................................................................
   call self%extras_t%pre_update
+  call validate%check (self, d, 'before update')
   call self%mhd_t%update
+  call validate%check (self, d, ' after update')
   call self%extras_t%post_update
+  end associate
 END SUBROUTINE update
 
 !> =====================================================================

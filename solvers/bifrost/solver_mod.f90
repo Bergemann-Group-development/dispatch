@@ -22,13 +22,14 @@ MODULE solver_mod
     type(bifrost_rt_t):: bifrost_rt
     type(bifrost_mesh_t):: bifrost_mesh
   contains
+    procedure:: init
     procedure:: dnload
     procedure:: get
     procedure:: init
     procedure:: pack
     procedure:: put
     procedure:: unpack
-    procedure:: update => update_solver
+    procedure:: update
     ! ----------------------------
     procedure:: log_density => void
     procedure:: log_pressure => void
@@ -43,6 +44,16 @@ MODULE solver_mod
   character(len=80), save:: id = &
   '$Id$'
 CONTAINS
+
+!> =====================================================================
+!> Organize calls to the extras and the mhd solver init
+!> =====================================================================
+SUBROUTINE init (self)
+  class(solver_t) :: self
+  !.....................................................................
+  call self%mhd_t%init
+  call self%extras_t%init
+END SUBROUTINE init
 
 !> =============================================================================
 !> Initialize the Bifrost patch, including reading in the initial state, which
@@ -125,17 +136,19 @@ END SUBROUTINE dnload
 !> Take one time step, by copying relevant data to BIFROST, calling its update
 !> procedure, and then copying the patch data back from Bifrost.
 !> =============================================================================
-SUBROUTINE update_solver (self)
+SUBROUTINE update (self)
   class(solver_t):: self
   !.............................................................................
   call trace%begin ('solver_t%update')
+  call self%pre_update
   call self%put
   call bifrost%alloc_scratches
   call bifrost%update (self%time, self%dtime)
   call self%get
   call bifrost%dealloc_scratches
+  call self%post_update
   call trace%end
-END SUBROUTINE update_solver
+END SUBROUTINE update
 
 !> =============================================================================
 !> Pack information about a patch into a buffer.  Let the patch_t%pack take

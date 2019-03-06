@@ -5,13 +5,11 @@ MODULE non_ideal_mod
   USE const
   USE io_mod
   USE io_unit_mod
-  USE gpatch_mod
   USE link_mod
   use hydro_parameters
   USE trace_mod
   USE mpi_mod
   USE omp_mod
-  USE force_mod
   USE index_mod
   implicit none
   private

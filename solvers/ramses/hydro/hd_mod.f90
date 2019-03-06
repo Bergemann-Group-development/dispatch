@@ -19,7 +19,7 @@ MODULE hd_mod
   USE const
   USE io_mod
   USE io_unit_mod
-  USE gpatch_mod
+  USE extras_mod
   USE link_mod
   USE riemann_mod
   USE hydro_parameters
@@ -33,7 +33,7 @@ MODULE hd_mod
   USE validate_mod
   implicit none
   PRIVATE
-  type, public, extends(gpatch_t):: hd_t
+  type, public, extends(extras_t):: hd_t
     logical:: mhd=.false.
     integer:: idim=3
     character(len=10):: riemann='hllc'
@@ -44,7 +44,6 @@ MODULE hd_mod
     real, pointer, dimension(:,:,:,:,:):: dq      ! slopes
     real, pointer, dimension(:,:,:,:,:):: fl      ! 3D fluxes
     real, pointer, dimension(:,:,:):: c, s        ! scratch
-    real, pointer, dimension(:,:,:,:):: ff        ! external force
     type(force_t):: force
   contains
     procedure:: init
@@ -162,14 +161,13 @@ SUBROUTINE update (self)
   e => self%mem(:,:,:,          self%idx%e ,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   !-----------------------------------------------------------------------------
-  ! External force; note that Ux, Uy, Uz are empty pointers here, so they
-  ! should not and cannot be used in the solver
+  ! The force_per_unit_mass is assumed to exist in trace3d, so make sure it does
   !-----------------------------------------------------------------------------
-  allocate (self%ff(size(d,1),size(d,2),size(d,3),3))
-  if (associated(self%force%selected)) then
-    self%ff = self%force%selected (self%time, d, p, Ux, Uy, Uz, self%mesh)
-  else
-    self%ff = 0.0
+  if (.not.allocated(self%force_per_unit_mass)) then
+    associate (m => self%gn)
+    allocate (self%force_per_unit_mass(m(1),m(2),m(3),3))
+    end associate
+    self%force_per_unit_mass = 0.0
   end if
   !-----------------------------------------------------------------------------
   ! Godunov solver
@@ -180,17 +178,17 @@ SUBROUTINE update (self)
     self%mem(:,:,:,self%idx%d,self%new,1)*csound**2
   if (detailed_timer) call trace_begin ('hd_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Add external force as source term
+  ! Add the external force per unit mass as a source term
   !-----------------------------------------------------------------------------
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
   do i=1,3
-    p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%ff(:,:,:,i)*d
+    p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
   end do
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
   call self%counter_update
-  deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%c,self%s,self%ff)
+  deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%c,self%s)
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -483,7 +481,6 @@ end subroutine unsplit
 subroutine ctoprim (self)
   class(hd_t):: self
   real(dp):: smallp, dtxhalf
-  real:: u_max
   integer,save:: itimer=0
   real, dimension(:,:,:), pointer:: d, e, pg
   associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s, &
@@ -526,8 +523,7 @@ subroutine ctoprim (self)
     c = c + (abs(q(:,:,:,2)) + abs(q(:,:,:,3)) + abs(q(:,:,:,4)))/3.0
   end if
   self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
-  u_max = self%u_max
-  call validate%check (self%link, u_max, 'u_max')
+                            call validate%check (self%link, self%u_max, 'u_max')
   if (detailed_timer) then
     call trace%end (itimer)
   else
@@ -811,7 +807,6 @@ subroutine trace3d(self)
   real(dp)::drz, duz, dvz, dwz, dpz, daz
   real(dp)::sr0, su0, sv0, sw0, sp0, sa0
   integer,save:: itimer=0
-  real, allocatable:: ff(:,:,:,:)
   associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
@@ -857,9 +852,11 @@ subroutine trace3d(self)
         ! Source terms (including transverse derivatives)
         sr0 = -u*drx-v*dry-w*drz - (dux+dvy+dwz)*r
         sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p
-        su0 = -u*dux-v*duy-w*duz - dpx/r + self%ff(i,j,k,1)*self%mesh(1)%d
-        sv0 = -u*dvx-v*dvy-w*dvz - dpy/r + self%ff(i,j,k,2)*self%mesh(2)%d
-        sw0 = -u*dwx-v*dwy-w*dwz - dpz/r + self%ff(i,j,k,3)*self%mesh(3)%d
+        associate (ff => self%force_per_unit_mass)
+        su0 = -u*dux-v*duy-w*duz - dpx/r + ff(i,j,k,1)*self%mesh(1)%d
+        sv0 = -u*dvx-v*dvy-w*dvz - dpy/r + ff(i,j,k,2)*self%mesh(2)%d
+        sw0 = -u*dwx-v*dwy-w*dwz - dpz/r + ff(i,j,k,3)*self%mesh(3)%d
+        end associate
 
         ! Right state at left interface
         qp(i,j,k,ir,1) = r - half*drx + sr0*dtdx*half
