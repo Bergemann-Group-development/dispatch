@@ -36,8 +36,8 @@ MODULE patch_mod
     !---------------------------------------------------------------------------
     real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: force_per_unit_mass
     real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: force_per_unit_volume
-    real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: heating_per_unit_mass
-    real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: heating_per_unit_volume
+    real(kind=KindScalarVar), dimension(:,:,:),       allocatable:: heating_per_unit_mass
+    real(kind=KindScalarVar), dimension(:,:,:),       allocatable:: heating_per_unit_volume
     !--- anonymous pointer, which may be used to connect extra info to the solvers
     type(connect_t):: connect
     class(mesh_t), dimension(:), pointer:: mesh => null()
