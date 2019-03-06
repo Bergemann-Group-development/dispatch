@@ -22,8 +22,7 @@ MODULE mhd_mod
   USE vector_mod
   USE vector_ops
   USE stagger_mod
-  USE gpatch_mod
-  USE force_mod
+  USE extras_mod
   USE index_mod
   USE timestep_mod
   USE eos_mod
@@ -31,7 +30,7 @@ MODULE mhd_mod
   USE initial_mod
   implicit none
   private
-  type, extends(gpatch_t), public:: mhd_t
+  type, extends(extras_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
     real, dimension(:,:,:),   pointer:: lnd, ee, pg
@@ -40,7 +39,6 @@ MODULE mhd_mod
     real:: cdtd
     logical:: mhd=.false.
     logical:: first_time=.true.
-    type(force_t):: force
   contains
     procedure:: init
     procedure:: pde
@@ -90,7 +88,7 @@ SUBROUTINE init (self)
   self%cdtd = cdtd
   !-----------------------------------------------------------------------------
   ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
-  ! called again, from gpatch_t%init, when gamma is known and can be passed on.
+  ! called again, from extras_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
   self%initial%mhd = self%mhd
   call self%idx%init (5, self%mhd)
@@ -115,7 +113,7 @@ SUBROUTINE init (self)
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
   call self%idx%init (5, self%mhd)
-  call self%gpatch_t%init
+  call self%extras_t%init
   self%type = 'mhd_t'
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
@@ -128,7 +126,6 @@ SUBROUTINE init (self)
   end if
   self%unsigned(self%idx%d)  = .true.
   self%pervolume(self%idx%s) = .true.
-  !call self%force%init
  call trace%end
 END SUBROUTINE init
 
@@ -493,7 +490,7 @@ SUBROUTINE update (self)
   ! end do
   !-----------------------------------------------------------------------------
   call self%check_density(' after timestep')
-  call self%gpatch_t%update
+  call self%extras_t%update
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -524,7 +521,7 @@ SUBROUTINE output (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%output')
   out_next = self%out_next
-  call self%gpatch_t%output
+  call self%extras_t%output
   if (self%time >= out_next .and. io%do_output .and. io%do_legacy) then
     !$omp critical (out_cr)
     write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &

@@ -21,6 +21,7 @@ MODULE patch_mod
   USE boundaries_mod
   USE index_mod
   USE scene_mod
+  USE connect_mod
   implicit none
   private
   integer, parameter:: ndim = 3
@@ -29,8 +30,16 @@ MODULE patch_mod
     real(kind=KindScalarVar), dimension(:,:,:,:,:),   pointer:: vgas     => null()
     real(kind=KindScalarVar), dimension(:,:,:,:),     pointer:: density  => null()
     real(kind=KindScalarVar), dimension(:,:,:,:),     pointer:: pressure => null()
+    !---------------------------------------------------------------------------
+    ! These allocatables are intended to deposite external forces and heating in,
+    ! typically used by methods called from the extras_t data type procedures.
+    !---------------------------------------------------------------------------
     real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: force_per_unit_mass
     real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: force_per_unit_volume
+    real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: heating_per_unit_mass
+    real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: heating_per_unit_volume
+    !--- anonymous pointer, which may be used to connect extra info to the solvers
+    type(connect_t):: connect
     class(mesh_t), dimension(:), pointer:: mesh => null()
     real:: courant                      ! courant number
     real(8):: gamma=1.4                 ! gas gamma

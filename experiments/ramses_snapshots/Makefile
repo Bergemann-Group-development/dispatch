@@ -6,7 +6,7 @@
 
 # Default target and methods
 UPD             = adams_bashforth
-#SOLVER         = stagger
+#SOLVER         = stagger2
 SOLVER          = ramses/mhd
 EXEC            = dispatch.x
 TOP             = ../..

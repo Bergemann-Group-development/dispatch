@@ -41,7 +41,7 @@ MODULE extras_mod
   USE omp_mod
   USE omp_timer_mod
   USE mpi_mod
-  USE patch_mod
+  USE gpatch_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.  
   !-----------------------------------------------------------------------------
@@ -49,7 +49,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   implicit none
   private
-  type, public, extends(patch_t):: extras_t
+  type, public, extends(gpatch_t):: extras_t
     type(selfgravity_t):: selfgravity
   contains
     procedure:: init

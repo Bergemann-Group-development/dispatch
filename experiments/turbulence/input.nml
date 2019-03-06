@@ -14,9 +14,11 @@
 &task_mesg_params       verbose=0 /
 &timer_params           sec_per_report=10 /
 &experiment_params      test=t /
-&io_params              verbose=0 do_trace=f omp_trace=t do_validate=f do_debug=f
+&io_params              verbose=2 do_trace=t omp_trace=f do_validate=f do_debug=f
                         do_output=f
                         method='parallel'
+                        guard_zones=f
+                        timer_derivs=0
                         !method='legacy'
                         !method='direct'
                         !method='buffered'
@@ -36,8 +38,8 @@
  origin=0,0,0
 /
 &patch_params           nt=5 grace=0.3 n=3*24 no_mans_land=t do_check_nan=t use_data_hub=f /
-!out_params             end_time=1.00 out_time=0.00 print_time=0.0 guard_zones=t time_derivs=f /
-&out_params             end_time=0.10 out_time=0.05 print_time=0.0 guard_zones=t time_derivs=f /
+!out_params             end_time=1.00 out_time=0.00 print_time=0.0 /
+&out_params             end_time=0.10 out_time=0.05 print_time=0.0 /
 &timestep_params        /
 &download_params        order_time=1 /
 
@@ -55,6 +57,7 @@
 &force_params               type='single_solenoidal' /
 &force_solenoidal_params    k=1,1,2 a0=10.0,10.2,10.1 t_turn=0.1000 /
 
+&stagger_params         /
 &ramses_params          detailed_timer=f courant_factor=0.266667 slope_type=2 smallr=1e-10 smallc=1e-10
                         isothermal=t  gamma=1.0
 /

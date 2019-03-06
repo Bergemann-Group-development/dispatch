@@ -21,7 +21,7 @@ MODULE experiment_mod
                           ! "wave-killing" boundaries are turned on.
   contains
     procedure :: init
-    procedure :: debug
+    procedure :: debuge
     procedure :: update
     procedure :: output
     procedure :: boundary_conditions
@@ -83,7 +83,7 @@ SUBROUTINE init (self)
   self%mhd = .false.
   self%msplit = 3
   call scaling%init
-  call self%force%init (self%kind, self%id, self%mesh)
+  !call self%force%init (self%kind, self%id, self%mesh)
   self%nv = 5
   self%mhd = .false.
   !----------------------------------------------------------------------------
@@ -143,7 +143,7 @@ SUBROUTINE init (self)
   end if
   nullify (m1, m2, m3)
   call self%boundary_conditions (self%it, self%it)
-  call self%debug ('end init')
+  call self%debuge ('end init')
   !----------------------------------------------------------------------------
   ! Choose interpolation types. The smallest initial glitch (positive) is with
   !
@@ -166,14 +166,14 @@ SUBROUTINE init (self)
   ! Export the patch ids for debugging purposes
   !----------------------------------------------------------------------------
   if (self%id==2) self%track = .true.
-  self%force%id = self%id
+  !self%force%id = self%id
   self%initial%id = self%id
   call trace_end
 END SUBROUTINE init
 
 !> =============================================================================
 !> =============================================================================
-SUBROUTINE debug (self, label, it)
+SUBROUTINE debuge (self, label, it)
   class(experiment_t):: self
   integer, optional:: it
   character(len=*):: label
@@ -200,7 +200,7 @@ SUBROUTINE debug (self, label, it)
         self%mem(2:4,18,18,self%idx%px,it_l,1), trim(label)
     end if
   end if
-END SUBROUTINE debug
+END SUBROUTINE debuge
 
 !> =============================================================================
 !> Choice of update steps for this experiment
@@ -213,7 +213,7 @@ SUBROUTINE update (self)
   integer:: it, iv, nb, i
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call self%debug('start update')
+  call self%debuge('start update')
   call trace_begin('experiment_t%update', itimer=itimer)
   call self%check_density ('before update')
   !-----------------------------------------------------------------------------
@@ -238,7 +238,7 @@ SUBROUTINE update (self)
     ! Update the MHD state
     !--------------------------------------------------------------------------
     call self%output
-    call self%debug ('after BCs')
+    call self%debuge ('after BCs')
     call self%mhd_t%update
     call self%boundary_conditions (self%it,self%new)
   end if
@@ -260,7 +260,7 @@ SUBROUTINE update (self)
   end if
   call self%pebble_patch_t%update_pebbles
   call self%check_nan ('after timestep', always=.true.)
-    call debug (self, 'after update', self%new)
+    call debuge (self, 'after update', self%new)
   call trace_end (itimer)
 END SUBROUTINE update
 

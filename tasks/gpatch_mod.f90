@@ -14,17 +14,20 @@ MODULE gpatch_mod
   USE omp_timer_mod
   USE bits_mod
   USE data_io_mod
-  USE extras_mod
+  USE download_mod
+  USE data_hub_mod
   implicit none
   private
-  type, public, extends(extras_t):: gpatch_t
+  type, public, extends(patch_t):: gpatch_t
     type(initial_t)  :: initial
+    type(data_hub_t) :: data_hub
     real(8):: d0
   contains
     procedure:: input
     procedure:: init
     procedure:: output
     procedure:: counter_update
+    procedure:: dnload
   end type
   real(8), save :: restart_time = 0d0
   logical, save :: detailed_timer=.false.
@@ -59,7 +62,6 @@ SUBROUTINE output (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
   call data_io%output (self)
-  call self%extras_t%output
 END SUBROUTINE output
 
 !> =============================================================================
@@ -81,7 +83,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%init')
   call self%initial%init (self%kind, real(self%gamma))
-  call self%extras_t%init
   call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Try reading a restart snapshot.
@@ -132,5 +133,22 @@ SUBROUTINE counter_update (self)
   timer%n_update = timer%n_update + product(self%n)
   call trace%end
 END SUBROUTINE counter_update
+
+!> =============================================================================
+!> Add default guard zone download functionality.  This may be overloaded in
+!> experiment_mod, if more specialized guard zone loading is required.
+!> =============================================================================
+SUBROUTINE dnload (self, only)
+  class(gpatch_t):: self
+  integer, optional:: only
+  !-----------------------------------------------------------------------------
+  call trace%begin ('extras_t%dnload')
+  if (self%use_data_hub) then
+    call self%data_hub%update (self%link, only=only)
+  else
+    call download%download_link (self%link, only=only)
+  end if
+  call trace%end()
+END SUBROUTINE dnload
 
 END MODULE gpatch_mod

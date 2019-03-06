@@ -424,14 +424,16 @@ SUBROUTINE turbulence (self, m, ff, idx)
   d = 1.0
   ff(:,:,:,idx%d        ) = d
   if (self%gamma==1.0) then
-    ff(:,:,:,idx%e        ) = d*csound**2
+    ff(:,:,:,idx%e      ) = d*csound**2
   else
-    ff(:,:,:,idx%e        ) = d*csound**2/(self%gamma-1.)
+    ff(:,:,:,idx%e      ) = d*csound**2/(self%gamma-1.)
   end if
   ff(:,:,:,idx%px:idx%pz) = 0.0
-  ff(:,:,:,idx%bx       ) = b0(1)
-  ff(:,:,:,idx%by       ) = b0(2)
-  ff(:,:,:,idx%bz       ) = b0(3)
+  if (self%mhd .and. idx%bx > 0) then
+    ff(:,:,:,idx%bx     ) = b0(1)
+    ff(:,:,:,idx%by     ) = b0(2)
+    ff(:,:,:,idx%bz     ) = b0(3)
+  end if
   call trace_end (itimer)
 END SUBROUTINE turbulence
 
