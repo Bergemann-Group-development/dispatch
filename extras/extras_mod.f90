@@ -8,15 +8,15 @@
 !>                    experiment_t
 !>                     solver_t
 !>                       mhd_t
-!>                      gpatch_t
 !>                      extras_t
-!>                        /
-!>                     extras_12_t
+!>                      /    \
 !>                     /      \
 !>                extras_1_t extras_2_t
-!>                       \  /
-!>                      patch_t
-!>                       task_t
+!>                       \    /   |
+!>                      gpatch_t  |
+!>                       patch_t  |
+!>                       /    \   |
+!>                    task_t  connect_t
 !>
 !> The extra modules needed in an experiment should be chosen and coordinated
 !> in this module, and the ones that are "below" (USEd by) this module should
@@ -32,6 +32,7 @@
 !> should instead be USEd from the actual extra modules, to assist in saving
 !> ad hoc results in a standardized format.
 !> =============================================================================
+
 MODULE extras_mod
   !-----------------------------------------------------------------------------
   ! Generic modules, which are always included in the code in any case
@@ -41,23 +42,29 @@ MODULE extras_mod
   USE omp_mod
   USE omp_timer_mod
   USE mpi_mod
-  USE patch_mod
-  USE data_hub_mod
-  USE download_mod
+  USE gpatch_mod
+  USE connect_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.  
   !-----------------------------------------------------------------------------
+  !USE forces_mod                                        ! forces
+  !USE trace_particles_mod                               ! trace_particles
   !-----------------------------------------------------------------------------
   implicit none
   private
-  type, public, extends(patch_t):: extras_t
-    type(data_hub_t) :: data_hub
+  !-----------------------------------------------------------------------------
+  ! Note that modules that contain patch-private data, such as random number
+  ! states, must be accessed via a private instance in the extras_t data type
+  !-----------------------------------------------------------------------------
+  type, public, extends(gpatch_t):: extras_t
+    !type(forces_t):: forces                             ! forces
+    !class(trace_particles_t), pointer:: trace_particles ! trace_particles
+    !real, dimension(:,:,:,:), pointer:: v               ! trace_particles
   contains
     procedure:: init
     procedure:: pre_update
     procedure:: post_update
     procedure:: output
-    procedure:: dnload
   end type
   type(extras_t), public:: extras
 CONTAINS
@@ -68,6 +75,13 @@ CONTAINS
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
+  !call self%forces%init (self)                          ! forces
+  !-----------------------------------------------------------------------------
+  ! Allocate a trace_particles data type, connect a pointer, and initialize
+  !-----------------------------------------------------------------------------
+  !allocate (self%trace_particles)                       ! trace_particles
+  !self%connect%trace_particles => self%trace_particles  ! trace_particles
+  !call self%trace_particles%add (self%link%task)        ! trace_particles
 END SUBROUTINE init
 
 !> =============================================================================
@@ -76,6 +90,8 @@ END SUBROUTINE init
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
+  !call self%forces%pre_update (self)                    ! forces
+  !call self%trace_particles%update (self)               ! trace_particles
 END SUBROUTINE pre_update
 
 !> =============================================================================
@@ -84,32 +100,15 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
+  !call self%trace_particles%post_update (self)          ! trace_particles
 END SUBROUTINE post_update
 
 !> =============================================================================
-!> Call the specific output modules of the extra features, as well as the
-!> generic output
+!> Optionally call specific output modules for the extra features
 !> =============================================================================
 SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
 END SUBROUTINE output
-
-!> =============================================================================
-!> Add default guard zone download functionality.  This may be overloaded in
-!> experiment_mod, if more specialized guard zone loading is required.
-!> =============================================================================
-SUBROUTINE dnload (self, only)
-  class(extras_t):: self
-  integer, optional:: only
-  !-----------------------------------------------------------------------------
-  call trace%begin ('extras_t%dnload')
-  if (self%use_data_hub) then
-    call self%data_hub%update (self%link, only=only)
-  else
-    call download%download_link (self%link, only=only)
-  end if
-  call trace%end()
-END SUBROUTINE dnload
 
 END MODULE extras_mod

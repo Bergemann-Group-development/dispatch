@@ -51,7 +51,9 @@ MODULE trace_particles_mod
   USE particle_list_mod
   USE omp_timer_mod
   USE random_mod
-  USE mesh_mod
+  USE link_mod
+  USE patch_mod
+  USE task_mod
   implicit none
   private
   integer, parameter:: nt=4
@@ -60,33 +62,35 @@ MODULE trace_particles_mod
     real:: lf(3), uf(3)
     integer:: id, it, nt, time_order, n_trade, verbose
     integer:: offset(3)
-    !real(8), allocatable:: r(:,:,:), v(:,:,:), w(:)
+    real, allocatable:: v(:,:,:,:)
     real(8), allocatable:: wt(:)
     real(8):: position(3)
     logical:: on
     type(particle_list_t):: export, import
   contains
-    procedure:: init_nt
     procedure:: add
     procedure:: update
-    procedure:: interpolate
-    procedure:: trade
+    procedure:: post_update
   end type
   type(random_t):: random
 CONTAINS
 
 !> =============================================================================
-!> Initialize trace particles
+!> Add trace particles, if requested by the namelist
 !> =============================================================================
-SUBROUTINE init_nt (self, nt)
+SUBROUTINE add (self, patch)
   class(trace_particles_t):: self
-  integer:: nt, iostat, np
-  real, save:: per_cell=0.0
+  class(task_t), pointer:: patch
+  real, pointer:: d(:,:,:), p(:,:,:,:)
+  integer:: iostat
+  integer:: i, ip, np, ix, iy, iz
   integer, save:: time_order=3, verbose=0
+  real, save:: per_cell=0.0
   logical, save:: on=.false.
   logical, save:: first_time=.true.
   namelist /trace_particle_params/ on, verbose, per_cell, time_order
   !-----------------------------------------------------------------------------
+  call trace%begin ('trace_particles_t%add')
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -97,12 +101,18 @@ SUBROUTINE init_nt (self, nt)
     call random%init
   end if
   !$omp end critical (input_cr)
+  select type (patch)
+  class is (patch_t)
   self%on = on
-  self%nt = nt
+  self%nt = patch%nt
   self%per_cell = per_cell
   self%time_order = time_order
   self%verbose = verbose
   if (.not.on) return
+  !----------------------------------------------------------------------------
+  ! Allocate and initialize
+  !----------------------------------------------------------------------------
+  allocate (self%v(patch%gn(1),patch%gn(2),patch%gn(3),3))
   call self%particle_list_t%init
   !-----------------------------------------------------------------------------
   ! Initialize Adams-Bashforth integration; the concept of symplectic integration
@@ -111,7 +121,7 @@ SUBROUTINE init_nt (self, nt)
   ! accuracy by using the fact that one has both location and velocity history,
   ! but a higher order cell velocity interpolation may be more important.
   !-----------------------------------------------------------------------------
-  time_order = min(time_order,nt)
+  time_order = min(time_order,patch%nt)
   allocate (self%wt(time_order))
   select case (time_order)
   case (2)
@@ -120,33 +130,16 @@ SUBROUTINE init_nt (self, nt)
     self%wt(1:3) = [23./12., -16./12., 5./12.]
   case default
   end select
-END SUBROUTINE init_nt
-
-!> =============================================================================
-!> Add trace particles, in proportion to density, and with velocity histories
-!> intialized to a single time.
-!> =============================================================================
-SUBROUTINE add (self, mesh, t, dt, d, v)
-  class(trace_particles_t):: self
-  class(mesh_t), pointer:: mesh(:)
-  real:: d(:,:,:), v(:,:,:,:)
-  real(8):: t, dt
-  !.............................................................................
-  integer:: ip, np, ix, iy, iz
-  class(particle_t), pointer:: p
-  class(dll_node_t), pointer:: node
   !-----------------------------------------------------------------------------
   ! Add particles in proportion to the density, relative to the average
   !-----------------------------------------------------------------------------
-  if (.not. self%on) return
-  call trace%begin ('trace_particles_t%add')
   call self%particle_list_t%init ('trace')
-  self%id = mesh(1)%id
+  self%id = patch%id
   if (self%per_cell > 0.0) then
     np = ifix(self%per_cell)
-    do iz=mesh(3)%li,mesh(3)%ui
-    do iy=mesh(2)%li,mesh(2)%ui
-    do ix=mesh(3)%li,mesh(1)%ui
+    do iz=patch%mesh(3)%li,patch%mesh(3)%ui
+    do iy=patch%mesh(2)%li,patch%mesh(2)%ui
+    do ix=patch%mesh(3)%li,patch%mesh(1)%ui
       do ip=1,ifix(self%per_cell)
        call add1
       end do
@@ -157,6 +150,7 @@ SUBROUTINE add (self, mesh, t, dt, d, v)
     end do
     end do
   end if
+  end select
   call trace%end
 contains
   !-----------------------------------------------------------------------------
@@ -165,13 +159,15 @@ contains
   end function
   !-----------------------------------------------------------------------------
   subroutine add1
+    class(particle_t), pointer:: p
+    class(dll_node_t), pointer:: node
     integer:: it
     allocate (p)
     call p%init
     do it=1,nt
       p%r(:,it) = [ix+ran(),iy+ran(),iz+ran()]
-      p%dr(:,it) = v(ix,iy,iz,:)*dt
-      p%t(it) = t
+      p%dr(:,it) = self%v(ix,iy,iz,:)*patch%dtime
+      p%t(it) = patch%time
     end do
     node => p
     call self%append (node)
@@ -185,12 +181,12 @@ END SUBROUTINE add
 !> precision, also on disk, where the coordinates just need to be complemented
 !> with the double precision patch position.
 !> =============================================================================
-SUBROUTINE update (self, mesh, time, dtime, d, v)
+SUBROUTINE update (self, patch)
   class(trace_particles_t):: self
-  class(mesh_t), pointer:: mesh(:)
-  real(8):: time, dtime, dt
-  real:: d(:,:,:), v(:,:,:,:)
+  class(patch_t):: patch
   !.............................................................................
+  real(8):: time, dtime, dt
+  real, pointer:: d(:,:,:), pv(:,:,:,:)
   integer:: it, o1, o2, o3, i ,j, nrem
   class(dll_node_t), pointer:: node, next
   class(particle_t), pointer:: p
@@ -200,6 +196,16 @@ SUBROUTINE update (self, mesh, time, dtime, d, v)
   !-----------------------------------------------------------------------------
   if (.not. self%on) return
   call trace%begin ('trace_particles_t%update', itimer=itimer)
+  time = patch%time
+  dtime = patch%dtime
+  !----------------------------------------------------------------------------
+  ! Update velocity
+  !----------------------------------------------------------------------------
+  d => patch%mem(:,:,:,patch%idx%d             ,patch%it,1)
+  pv => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%it,1)
+  do i=1,3
+    self%v(:,:,:,i) = pv(:,:,:,i)/d(:,:,:)
+  end do
   !-----------------------------------------------------------------------------
   ! Import any particles exported by neighbors
   !-----------------------------------------------------------------------------
@@ -218,11 +224,11 @@ SUBROUTINE update (self, mesh, time, dtime, d, v)
   !-----------------------------------------------------------------------------
   ! Direct, non-vectorized update
   !-----------------------------------------------------------------------------
-  self%lf = mesh%li - 0.5
-  self%uf = mesh%ui + 0.5
+  self%lf = patch%mesh%li - 0.5
+  self%uf = patch%mesh%ui + 0.5
   call self%export%init ('export')
   call self%import%init ('import')
-  call self%interpolate (v)
+  call interpolate (self)
   node => self%head
   nrem = 0
   do while (associated(node))
@@ -273,10 +279,9 @@ END SUBROUTINE update
 !> and updates, and to improve precision, while staying with singe precision
 !> in coordinates and velocities.
 !> =============================================================================
-SUBROUTINE interpolate (self, v)
+SUBROUTINE interpolate (self)
   class(trace_particles_t):: self
   integer:: it
-  real:: v(:,:,:,:)
   !.............................................................................
   integer:: sz(4), ip(3), i, j
   real:: p(3), q(3)
@@ -290,7 +295,7 @@ SUBROUTINE interpolate (self, v)
   ! of particles.
   !-----------------------------------------------------------------------------
   call trace%begin ('trace_particles_t%interpolate', itimer=itimer)
-  sz = size(v)
+  sz = size(self%v)
   node => self%head
   do while (associated(node))
     select type (node)
@@ -304,14 +309,14 @@ SUBROUTINE interpolate (self, v)
     p = p-ip
     do j=1,3
       part%dr(j,it) = &
-        q(3)*(q(2)*(q(1)*v(ip(1)  ,ip(2)  ,ip(3)  ,j)   &
-                  + p(1)*v(ip(1)+1,ip(2)  ,ip(3)  ,j))  &
-            + p(2)*(q(1)*v(ip(1)  ,ip(2)+1,ip(3)  ,j)   &
-                  + p(1)*v(ip(1)+1,ip(2)+1,ip(3)  ,j))) &
-      + p(3)*(q(2)*(q(1)*v(ip(1)  ,ip(2)  ,ip(3)+1,j)   &
-                  + p(1)*v(ip(1)+1,ip(2)  ,ip(3)+1,j))  &
-             +p(2)*(q(1)*v(ip(1)  ,ip(2)+1,ip(3)+1,j)   &
-                  + p(1)*v(ip(1)+1,ip(2)+1,ip(3)+1,j)))
+        q(3)*(q(2)*(q(1)*self%v(ip(1)  ,ip(2)  ,ip(3)  ,j)   &
+                  + p(1)*self%v(ip(1)+1,ip(2)  ,ip(3)  ,j))  &
+            + p(2)*(q(1)*self%v(ip(1)  ,ip(2)+1,ip(3)  ,j)   &
+                  + p(1)*self%v(ip(1)+1,ip(2)+1,ip(3)  ,j))) &
+      + p(3)*(q(2)*(q(1)*self%v(ip(1)  ,ip(2)  ,ip(3)+1,j)   &
+                  + p(1)*self%v(ip(1)+1,ip(2)  ,ip(3)+1,j))  &
+             +p(2)*(q(1)*self%v(ip(1)  ,ip(2)+1,ip(3)+1,j)   &
+                  + p(1)*self%v(ip(1)+1,ip(2)+1,ip(3)+1,j)))
     end do
     node => node%next
   end do
@@ -323,7 +328,7 @@ END SUBROUTINE interpolate
 !> =============================================================================
 SUBROUTINE trade (self, nbor)
   class(trace_particles_t):: self
-  class(trace_particles_t), pointer:: nbor
+  class(trace_particles_t):: nbor
   class(dll_node_t), pointer:: node, next
   class(particle_t), pointer:: part
   real:: r(3)
@@ -353,5 +358,44 @@ SUBROUTINE trade (self, nbor)
     node => node%next
   end do
 END SUBROUTINE trade
+
+!> =============================================================================
+!> Trade particles between patches.  
+!> =============================================================================
+SUBROUTINE post_update (self, patch)
+  class(trace_particles_t):: self
+  class(patch_t):: patch
+  integer:: i
+  class(link_t), pointer:: nbor
+  class(task_t), pointer:: nbtask
+  class(*), pointer:: nbpart
+  !----------------------------------------------------------------------------
+  ! If particles have been accumlated in the "export" particle list, loop over
+  ! nbors and transfer particles to their "import" particle lists.  This is to
+  ! minimize the need for locking or critical regions.  It should be enough to
+  ! protect the import lists with OMP locks, while they are being updated, and
+  ! while they are being read.
+  !----------------------------------------------------------------------------
+  if (self%export%n > 0) then
+    if (self%verbose > 0) &
+      write (io%output,*) &
+        patch%id, self%export%n, ' particles to export'
+    nbor => patch%link%nbor
+    do while (associated(nbor))
+      nbtask => nbor%task
+      select type (nbtask)
+      class is (patch_t)
+        nbpart => nbtask%connect%trace_particles
+        select type (nbpart)
+        class is (trace_particles_t)
+          nbpart%offset = nint((mod(patch%position-nbtask%position  + &
+            1.5*patch%box,patch%box)-0.5*patch%box)/patch%ds)
+          call trade (self, nbpart)
+        end select
+      end select
+      nbor => nbor%next
+    end do
+  end if
+END SUBROUTINE post_update
 
 END MODULE trace_particles_mod
