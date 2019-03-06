@@ -47,6 +47,7 @@ MODULE extras_mod
   !USE forces_mod                                        ! forces
   !USE trace_particles_mod                               ! trace_particles
   !USE spitzer_mod
+  !USE gravity_mod
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -57,6 +58,7 @@ MODULE extras_mod
   type, public, extends(gpatch_t):: extras_t
     !type(forces_t):: forces                             ! forces
     !type (spitzer_t) :: spitzer
+    !type(gravity_t) :: gravity
     !class(trace_particles_t), pointer:: trace_particles ! trace_particles
     !real, dimension(:,:,:,:), pointer:: v               ! trace_particles
   contains
@@ -82,7 +84,9 @@ SUBROUTINE init (self)
   !self%connect%trace_particles => self%trace_particles  ! trace_particles
   !call self%trace_particles%add (self%link%task)        ! trace_particles
   !--------- Spitzer conductivity ----------
-  ! call spitzer%init(self%link)
+  ! call self%spitzer%init(self%link)
+  !--------- gravitational acceleration ----
+  !call self%gravity%init(self%link)
 END SUBROUTINE init
 
 !> =============================================================================
@@ -93,7 +97,8 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   !call self%forces%pre_update (self)                    ! forces
   !call self%trace_particles%update (self)               ! trace_particles
-  !call spitzer%update                                   ! spitzer conductivity
+  !call self%spitzer%update                              ! spitzer conductivity
+  !call self%gravity%update
 END SUBROUTINE pre_update
 
 !> =============================================================================
