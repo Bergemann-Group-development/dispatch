@@ -1054,8 +1054,8 @@ FUNCTION check_sinkparticle (self, task_list, link)
   integer:: m(3)
   logical:: do_trace
   !-----------------------------------------------------------------------------
-  if (.not.sinkparticles%on) return
   check_sinkparticle = .false.
+  if (.not.sinkparticles%on) return
   patch => link%task
   select type (patch)
   class is (sinkparticles_t)
