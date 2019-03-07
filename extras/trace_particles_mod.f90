@@ -54,11 +54,13 @@ MODULE trace_particles_mod
   USE link_mod
   USE patch_mod
   USE task_mod
+  USE link_mod
+  USE mpi_buffer_mod
   implicit none
   private
   integer, parameter:: nt=4
   type, public, extends(particle_list_t):: trace_particles_t
-    real:: per_cell
+    real:: per_cell, per_mass
     real:: lf(3), uf(3)
     integer:: id, it, nt, time_order, n_trade, verbose
     integer:: offset(3)
@@ -67,10 +69,15 @@ MODULE trace_particles_mod
     real(8):: position(3)
     logical:: on
     type(particle_list_t):: export, import
+    type(mpi_buffer_t):: mpi_buffer
+    class(patch_t), pointer:: patch
   contains
     procedure:: add
     procedure:: update
     procedure:: post_update
+    procedure:: pack
+    procedure, private:: mpi_append_particles
+    procedure, private:: mpi_read_particles
   end type
   type(random_t):: random
 CONTAINS
@@ -78,19 +85,23 @@ CONTAINS
 !> =============================================================================
 !> Add trace particles, if requested by the namelist
 !> =============================================================================
-SUBROUTINE add (self, patch)
+SUBROUTINE add (self, link)
   class(trace_particles_t):: self
-  class(task_t), pointer:: patch
-  real, pointer:: d(:,:,:), p(:,:,:,:)
+  class(link_t), pointer:: link
+  !.............................................................................
+  real, pointer:: d(:,:,:), pv(:,:,:,:)
   integer:: iostat
-  integer:: i, ip, np, ix, iy, iz
+  integer:: i, ip, np, ix, iy, iz, no
   integer, save:: time_order=3, verbose=0
   real, save:: per_cell=0.0
+  real, save:: per_mass=1.0
   logical, save:: on=.false.
   logical, save:: first_time=.true.
-  namelist /trace_particle_params/ on, verbose, per_cell, time_order
+  namelist /trace_particle_params/ on, verbose, per_cell, per_mass, time_order
   !-----------------------------------------------------------------------------
   call trace%begin ('trace_particles_t%add')
+  self%patch => task2patch (link%task)
+  associate (patch => self%patch)
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -112,7 +123,6 @@ SUBROUTINE add (self, patch)
   !----------------------------------------------------------------------------
   ! Allocate and initialize
   !----------------------------------------------------------------------------
-  allocate (self%v(patch%gn(1),patch%gn(2),patch%gn(3),3))
   call self%particle_list_t%init
   !-----------------------------------------------------------------------------
   ! Initialize Adams-Bashforth integration; the concept of symplectic integration
@@ -130,6 +140,14 @@ SUBROUTINE add (self, patch)
     self%wt(1:3) = [23./12., -16./12., 5./12.]
   case default
   end select
+  !-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  d => patch%mem(:,:,:,patch%idx%d             ,patch%it,1)
+  pv => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%it,1)
+  allocate (self%v(patch%gn(1),patch%gn(2),patch%gn(3),3))
+  do i=1,3
+    self%v(:,:,:,i) = pv(:,:,:,i)/d(:,:,:)
+  end do
   !-----------------------------------------------------------------------------
   ! Add particles in proportion to the density, relative to the average
   !-----------------------------------------------------------------------------
@@ -151,7 +169,9 @@ SUBROUTINE add (self, patch)
     end do
   end if
   end select
+  deallocate (self%v)
   call trace%end
+  end associate
 contains
   !-----------------------------------------------------------------------------
   real function ran()
@@ -162,6 +182,8 @@ contains
     class(particle_t), pointer:: p
     class(dll_node_t), pointer:: node
     integer:: it
+    !---------------------------------------------------------------------------
+    associate (patch => self%patch)
     allocate (p)
     call p%init
     do it=1,nt
@@ -171,6 +193,7 @@ contains
     end do
     node => p
     call self%append (node)
+    end associate
   end subroutine add1
   !-----------------------------------------------------------------------------
 END SUBROUTINE add
@@ -181,9 +204,8 @@ END SUBROUTINE add
 !> precision, also on disk, where the coordinates just need to be complemented
 !> with the double precision patch position.
 !> =============================================================================
-SUBROUTINE update (self, patch)
+SUBROUTINE update (self)
   class(trace_particles_t):: self
-  class(patch_t):: patch
   !.............................................................................
   real(8):: time, dtime, dt
   real, pointer:: d(:,:,:), pv(:,:,:,:)
@@ -196,6 +218,7 @@ SUBROUTINE update (self, patch)
   !-----------------------------------------------------------------------------
   if (.not. self%on) return
   call trace%begin ('trace_particles_t%update', itimer=itimer)
+  associate (patch => self%patch)
   time = patch%time
   dtime = patch%dtime
   !----------------------------------------------------------------------------
@@ -203,6 +226,7 @@ SUBROUTINE update (self, patch)
   !----------------------------------------------------------------------------
   d => patch%mem(:,:,:,patch%idx%d             ,patch%it,1)
   pv => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%it,1)
+  allocate (self%v(patch%gn(1),patch%gn(2),patch%gn(3),3))
   do i=1,3
     self%v(:,:,:,i) = pv(:,:,:,i)/d(:,:,:)
   end do
@@ -222,13 +246,17 @@ SUBROUTINE update (self, patch)
   end if
   self%it = o1
   !-----------------------------------------------------------------------------
-  ! Direct, non-vectorized update
+  ! Export and prepare import
   !-----------------------------------------------------------------------------
   self%lf = patch%mesh%li - 0.5
   self%uf = patch%mesh%ui + 0.5
   call self%export%init ('export')
   call self%import%init ('import')
   call interpolate (self)
+  deallocate (self%v)
+  !-----------------------------------------------------------------------------
+  ! Direct, non-vectorized update
+  !-----------------------------------------------------------------------------
   node => self%head
   nrem = 0
   do while (associated(node))
@@ -271,6 +299,7 @@ SUBROUTINE update (self, patch)
   if (self%verbose > 0 .and. nrem>0) &
     write (io%output,*) self%id, ' has', self%n, ' particles', nrem
   call trace%end (itimer)
+  end associate
 END SUBROUTINE update
 
 !> =============================================================================
@@ -362,9 +391,8 @@ END SUBROUTINE trade
 !> =============================================================================
 !> Trade particles between patches.  
 !> =============================================================================
-SUBROUTINE post_update (self, patch)
+SUBROUTINE post_update (self)
   class(trace_particles_t):: self
-  class(patch_t):: patch
   integer:: i
   class(link_t), pointer:: nbor
   class(task_t), pointer:: nbtask
@@ -376,6 +404,7 @@ SUBROUTINE post_update (self, patch)
   ! protect the import lists with OMP locks, while they are being updated, and
   ! while they are being read.
   !----------------------------------------------------------------------------
+  associate (patch => self%patch)
   if (self%export%n > 0) then
     if (self%verbose > 0) &
       write (io%output,*) &
@@ -396,6 +425,119 @@ SUBROUTINE post_update (self, patch)
       nbor => nbor%next
     end do
   end if
+  end associate
 END SUBROUTINE post_update
+
+!> =============================================================================
+!> Prepare an MPI buffer
+!> =============================================================================
+SUBROUTINE pack (self)
+  class(trace_particles_t):: self
+  integer, pointer:: buffer(:)
+  real, allocatable:: r(:,:,:)
+  class(dll_node_t), pointer:: part
+  integer:: np
+  !-----------------------------------------------------------------------------
+  call trace%begin ('trace_particles_t%pack')
+  !-----------------------------------------------------------------------------
+  ! Prepare an MPI buffer
+  !-----------------------------------------------------------------------------
+  associate (patch => self%patch)
+  np = self%n + self%export%n
+  call self%mpi_buffer%init (np + 10, 'trace_particles_t')
+  call self%mpi_append_particles (self)
+  call self%mpi_append_particles (self%export)
+  call trace%end
+  end associate
+END SUBROUTINE pack
+
+!> =============================================================================
+!> Prepare an MPI buffer
+!> =============================================================================
+SUBROUTINE unpack (self)
+  class(trace_particles_t):: self
+  integer, pointer:: buffer(:)
+  real, allocatable:: r(:,:,:)
+  class(dll_node_t), pointer:: part
+  integer:: np
+  !-----------------------------------------------------------------------------
+  call trace%begin ('trace_particles_t%pack')
+  !-----------------------------------------------------------------------------
+  ! Prepare an MPI buffer
+  !-----------------------------------------------------------------------------
+  associate (patch => self%patch)
+  np = self%n + self%export%n
+  call self%mpi_buffer%init (np + 10, 'trace_particles_t')
+  call self%mpi_read_particles (self)
+  call self%mpi_read_particles (self%export)
+  call trace%end
+  end associate
+END SUBROUTINE unpack
+
+!> =============================================================================
+!> Append particle data to an mpi_buffer
+!> =============================================================================
+SUBROUTINE mpi_append_particles (self, particles)
+  class(trace_particles_t):: self
+  class(particle_list_t):: particles
+  real, allocatable:: r(:,:,:)
+  class(dll_node_t), pointer:: part
+  integer:: i
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_buffer%append_particles')
+  !-----------------------------------------------------------------------------
+  ! Run through the particle list and collect the data in an array
+  !-----------------------------------------------------------------------------
+  allocate (r(3,nt,self%n))
+  i = 0
+  part => self%head
+  do while (associated(part))
+    select type (part)
+    class is (particle_t)
+    i = i+1
+    r(:,:,i) = part%r
+    end select
+    part => part%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Append the buffer and deallocate
+  !-----------------------------------------------------------------------------
+  call self%mpi_buffer%append (r)
+  deallocate (r)
+  call trace%end
+END SUBROUTINE mpi_append_particles
+
+!> =============================================================================
+!> Append particle data to an mpi_buffer
+!> =============================================================================
+SUBROUTINE mpi_read_particles (self, particles)
+  class(trace_particles_t):: self
+  class(particle_list_t):: particles
+  real, allocatable:: r(:,:,:)
+  class(dll_node_t), pointer:: part
+  integer:: i
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_buffer%read_particles')
+  !-----------------------------------------------------------------------------
+  ! Run through the particle list and collect the data in an array
+  !-----------------------------------------------------------------------------
+  allocate (r(3,nt,self%n))
+  call self%mpi_buffer%read (r)
+  i = 0
+  part => self%head
+  do while (associated(part))
+    select type (part)
+    class is (particle_t)
+    i = i+1
+    part%r = r(:,:,i)
+    end select
+    part => part%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Append the buffer and deallocate
+  !-----------------------------------------------------------------------------
+  deallocate (r)
+  call trace%end
+END SUBROUTINE mpi_read_particles
 
 END MODULE trace_particles_mod

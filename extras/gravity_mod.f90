@@ -17,15 +17,14 @@ MODULE gravity_mod
     logical:: on=.false.
   contains
     procedure:: init
-    procedure:: update
+    procedure:: pre_update
   end type
-  real(8), save :: position(3) = 0.0                                             ! centre of gravity
+  real(8), save :: position(3) = 0.0                    ! centre of gravity
   integer, save :: const_axis  = 3
   logical, save :: on          = .false.
   real(kind=KindScalarVar), save:: constant = 0.0
   real(kind=KindScalarVar), save:: mass = -1.0
   real(8),                  save:: minrad = 0.0
-  
 CONTAINS
 
 !> =============================================================================
@@ -62,17 +61,22 @@ SUBROUTINE init (self, link)
     if (.not.allocated(self%patch%force_per_unit_mass)) then
       gn = self%patch%gn
       allocate (self%patch%force_per_unit_mass(gn(1),gn(2),gn(3),3))
+      self%patch%force_per_unit_mass = 0.0
     end if
   end if
   call trace%end()
 END SUBROUTINE init
 
-SUBROUTINE update(self)
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE pre_update(self)
   class(gravity_t) :: self
   ! ----------------------------------------------------------------------------
   call self%grav()
-END SUBROUTINE update
+END SUBROUTINE pre_update
   
+!> =============================================================================
+!> =============================================================================
 SUBROUTINE const_grav(self)
   class(gravity_t) :: self
   ! ----------------------------------------------------------------------------
@@ -80,6 +84,8 @@ SUBROUTINE const_grav(self)
   self%patch%force_per_unit_mass(:,:,:,const_axis) + constant
 END SUBROUTINE const_grav
 
+!> =============================================================================
+!> =============================================================================
 SUBROUTINE var_grav(self)
   class(gravity_t) :: self
   ! ----------------------------------------------------------------------------
@@ -94,40 +100,39 @@ SUBROUTINE var_grav(self)
   do i=1,3
     ds2(i) = m(i)%h(self%patch%idx%px+i-1)  *m(i)%d
   end do
-
   do iz=m(3)%lb,m(3)%ub
-      z = m(3)%p + r3(iz)
-      zp = z  - position(3)
-      zs = zp + ds2(3)
-      do iy=m(2)%lb,m(2)%ub
-        y = m(2)%p + r2(iy)
-        yp = y  - position(2)
-        ys = yp + ds2(2)
-        do ix=m(1)%lb,m(1)%ub
-          x = m(1)%p + r1(ix)
-          xp = x  - position(1)
-          xs = xp + ds2(1)
-          !---------------------------------------------------------------
-          ! The force of gravity is included explicitly, and is oriented
-          ! away from the center.
-          !---------------------------------------------------------------
-          rp = sqrt(xs**2+yp**2+zp**2)
-          rp = max(rp,minrad)
-          self%patch%force_per_unit_mass(ix,iy,iz,1) = &
-          self%patch%force_per_unit_mass(ix,iy,iz,1) - newton*xs/rp**3
-          rp = sqrt(xp**2+ys**2+zp**2)
-          rp = max(rp,minrad)
-          self%patch%force_per_unit_mass(ix,iy,iz,2) = &
-          self%patch%force_per_unit_mass(ix,iy,iz,2) - newton*ys/rp**3
-          rp = sqrt(xp**2+yp**2+zs**2)
-          rp = max(rp,minrad)
-          self%patch%force_per_unit_mass(ix,iy,iz,3) = &
-          self%patch%force_per_unit_mass(ix,iy,iz,3) - newton*zs/rp**3
-        end do
+    z = m(3)%p + r3(iz)
+    zp = z  - position(3)
+    zs = zp + ds2(3)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy)
+      yp = y  - position(2)
+      ys = yp + ds2(2)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix)
+        xp = x  - position(1)
+        xs = xp + ds2(1)
+        !-----------------------------------------------------------------------
+        ! The force of gravity is included explicitly, and is oriented
+        ! away from the center.
+        !-----------------------------------------------------------------------
+        rp = sqrt(xs**2+yp**2+zp**2)
+        rp = max(rp,minrad)
+        self%patch%force_per_unit_mass(ix,iy,iz,1) = &
+        self%patch%force_per_unit_mass(ix,iy,iz,1) - newton*xs/rp**3
+        rp = sqrt(xp**2+ys**2+zp**2)
+        rp = max(rp,minrad)
+        self%patch%force_per_unit_mass(ix,iy,iz,2) = &
+        self%patch%force_per_unit_mass(ix,iy,iz,2) - newton*ys/rp**3
+        rp = sqrt(xp**2+yp**2+zs**2)
+        rp = max(rp,minrad)
+        self%patch%force_per_unit_mass(ix,iy,iz,3) = &
+        self%patch%force_per_unit_mass(ix,iy,iz,3) - newton*zs/rp**3
       end do
     end do
-    end associate
-    end associate
+  end do
+  end associate
+  end associate
 END SUBROUTINE var_grav
 
 END MODULE gravity_mod

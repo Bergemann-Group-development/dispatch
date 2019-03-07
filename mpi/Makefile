@@ -9,3 +9,4 @@ mpi_io_mod.o:      mpi_mod.o io_mod.o io_unit_mod.o trace_mod.o mpi_file_mod.o o
 mpi_comm_mod.o:    mpi_mod.o
 mpi_rma_mod.o:     mpi_mod.o
 mpi_counter_mod.o: mpi_mod.o io_unit_mod.o omp_timer_mod.o trace_mod.o
+mpi_buffer_mod.o:  trace_mod.o
