@@ -482,9 +482,9 @@ subroutine ctoprim (self)
   class(hd_t):: self
   real(dp):: smallp, dtxhalf
   integer,save:: itimer=0
+  integer:: l(3), u(3)
   real, dimension(:,:,:), pointer:: d, e, pg
-  associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s, &
-             l=>self%mesh%lo, u=>self%mesh%uo)
+  associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s)
   !-----------------------------------------------------------------------------
   if (detailed_timer) then
     call trace%begin ('hd_mod::ctoprim', itimer=itimer)
@@ -522,6 +522,8 @@ subroutine ctoprim (self)
   else
     c = c + (abs(q(:,:,:,2)) + abs(q(:,:,:,3)) + abs(q(:,:,:,4)))/3.0
   end if
+  l = self%mesh%lo
+  u = self%mesh%uo
   self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
                             call validate%check (self%link, self%u_max, 'u_max')
   if (detailed_timer) then
