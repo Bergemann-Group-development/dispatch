@@ -13,7 +13,7 @@ MODULE list_mod
   USE task_mod
   USE patch_mod
   USE link_mod
-  USE load_balance_mod
+  !USE load_balance_mod
   USE timer_mod
   implicit none
   private
@@ -729,9 +729,9 @@ SUBROUTINE init_nbors (self, link)
     ! Add ranks that differ from the process rank to the list of load balance
     ! neighbors (each rank is only added once)
     !---------------------------------------------------------------------------
-    if (scan%task%rank /= mpi%rank .and. load_balance%on) then
-      call load_balance%add (scan%task%rank)
-    end if
+    !if (scan%task%rank /= mpi%rank .and. load_balance%on) then
+      !call load_balance%add (scan%task%rank)
+    !end if
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       overlaps = scan%task%overlaps(link%task)
       !-------------------------------------------------------------------------
