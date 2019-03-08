@@ -95,8 +95,8 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   !call self%forces%pre_update (self)                    ! forces
   !call self%trace_particles%update (self)               ! trace_particles
-  !call self%spitzer%update                              ! spitzer conductivity
-  !call self%gravity%pre_update                          ! gravity
+  !call self%spitzer%pre_update()                        ! spitzer conductivity
+  !call self%gravity%pre_update()                        ! gravity
 END SUBROUTINE pre_update
 
 !> =============================================================================

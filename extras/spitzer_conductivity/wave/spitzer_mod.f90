@@ -40,7 +40,7 @@ MODULE spitzer_mod
   contains
     procedure:: init
     procedure:: compute_q
-    procedure:: update
+    procedure:: pre_update
     procedure:: compute_b_field_topology
     procedure:: conductive_flux
   end type
@@ -154,7 +154,7 @@ END SUBROUTINE compute_q
 !> =====================================================================
 !> Update Spitzer conductivity
 !> =====================================================================
-SUBROUTINE update(self)
+SUBROUTINE pre_update(self)
   class (spitzer_t):: self
   ! --------------------------------------------------------------------
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: f
@@ -188,7 +188,7 @@ SUBROUTINE update(self)
   
   !print *, 'max dedt after spitz', maxval(abs(ff(:,:,:,self%idx%e,it,2)))
   
-END SUBROUTINE update
+END SUBROUTINE pre_update
 
 !> =====================================================================
 !>
