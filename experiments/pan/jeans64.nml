@@ -28,7 +28,7 @@ size=1,1,1 dims=04,04,04 mpi_dims=1,1,1                !  1 process    1 node   
 &download_params        verbose=0 use_different=-2 sorted=t check_filled=t id_debug=0 /
 &time_slices_params     order=3 id_debug=1 /
 &counters_params        verbose=0 /
-&refine_params          on=t verbose=1 levelmin=6 levelmax=8
+&refine_params          on=t verbose=1 levelmin=6 levelmax=7
                         max_jeans=0.30 min_jeans=0.12
                         /
 

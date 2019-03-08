@@ -237,7 +237,6 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   if (verbose > 2) &
     print *, link%task%id, 'refine_t%check_current, at t =', &
       link%task%time, link%task%level, self%levelmax
-  if (link%task%level >= self%levelmax) return
   call trace%begin('refine_t%check_current', itimer=itimer)
   !
   patch => task2patch(link%task)
