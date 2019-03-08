@@ -1,15 +1,15 @@
 !> =============================================================================
 !> A sink particle is represented as primarily a particle task, whose position
 !> is updated with a particle solver. The patch is usually much smaller than an
-!> MHD patch, and its values are downloaded from contribution MHD patches. 
+!> MHD patch, and its values are downloaded from contributing MHD patches. 
 !>
 !> A particular quality level indicates to the download_mod that all cells from
 !> the sink particle patch should be downloaded to overlapping patches, thus
 !> communicating back the removal of accreted mass and momentum.
 !>
 !> The procedure is called from refine_t%check_sinkparticle, which handles
-!> creating a task list link, adding an nbor list, and adding the task to task
-!> list.
+!> creating a task list link, adding an nbor list, and adding the task to the
+!> task list.
 !> =============================================================================
 MODULE sinkparticles_mod
   USE io_mod
@@ -24,6 +24,7 @@ MODULE sinkparticles_mod
   USE bits_mod
   USE scaling_mod
   USE kinds_mod
+  USE task_mod
   implicit none
   private
   type, public, extends (patch_t):: sinkparticles_t
@@ -33,14 +34,18 @@ MODULE sinkparticles_mod
     real(4), dimension(:,:,:), allocatable:: r
     logical, dimension(:,:,:), allocatable:: mask
     logical:: on
+    class(list_t), pointer:: task_list => null()
   contains
     procedure:: init
+    procedure:: init_task_list
     procedure:: check
     procedure:: create
     procedure:: dnload
     procedure:: update
     procedure:: accrete
     procedure:: move
+    procedure:: check_refine
+    procedure, private:: refine_check
   end type
   !-----------------------------------------------------------------------------
   logical:: on=.false.                ! turn feature on/off
@@ -72,7 +77,7 @@ CONTAINS
 !> =============================================================================
 !> =============================================================================
 SUBROUTINE init (self)
-  class (sinkparticles_t):: self
+  class(sinkparticles_t):: self
   !.............................................................................
   logical, save:: first_time=.true.
   integer:: iostat
@@ -94,6 +99,15 @@ SUBROUTINE init (self)
   self%on = on
   call trace%end()
 END SUBROUTINE init
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(sinkparticles_t):: self
+  class(list_t), pointer:: task_list
+  !.............................................................................
+  self%task_list => task_list
+END SUBROUTINE init_task_list
 
 !> =============================================================================
 !> Test if a sink particle should be created in a given patch
@@ -347,5 +361,106 @@ SUBROUTINE move (self)
   self%velocity = self%velocity + 0.5d0*self%acceleration*self%dtime
   call trace%end()
 END SUBROUTINE move
+
+!> =============================================================================
+!> =============================================================================
+INTEGER FUNCTION check_refine (self, patch)
+  class(sinkparticles_t):: self
+  class(patch_t), pointer:: patch
+  !.............................................................................
+  check_refine = -1
+  call self%refine_check (patch%link, check_refine)
+END FUNCTION
+
+!> =============================================================================
+!> Test for the need to create a new sink particle, and handle the task list
+!> aspect of that; creating an nbor list, and adding the link to the task list.
+!> =============================================================================
+SUBROUTINE refine_check (self, link, refine)
+  class(sinkparticles_t):: self
+  class(link_t), pointer:: link
+  integer:: refine
+  !.............................................................................
+  logical:: check_sinkparticle
+  type(list_t), pointer:: task_list
+  class(task_t), pointer:: task, patch
+  class(patch_t), pointer:: p
+  class(link_t), pointer:: new_link, nbor
+  class(sinkparticles_t), pointer:: new_sink
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
+  integer:: m(3)
+  logical:: do_trace
+  !-----------------------------------------------------------------------------
+  check_sinkparticle = .false.
+  if (.not.sinkparticles%on) return
+  task_list => self%task_list
+  patch => link%task
+  select type (patch)
+  class is (sinkparticles_t)
+    !---------------------------------------------------------------------------
+    ! Refresh nbor list
+    !---------------------------------------------------------------------------
+    call task_list%refresh_nbors(link)
+  class is (patch_t)
+    p => patch
+    check_sinkparticle = sinkparticles%check (p)
+    if (check_sinkparticle) then
+      do_trace = io%do_trace
+      !io%do_trace = .true.
+      !-------------------------------------------------------------------------
+      ! Allocate a new sinkparticle_t instance, as the task of a new link
+      !-------------------------------------------------------------------------
+      allocate (new_link)
+      allocate (sinkparticles_t:: new_link%task)
+      new_link%parent => link
+      task => new_link%task
+      !-------------------------------------------------------------------------
+      ! Create the new sinkparticle, using data from the MHD patch
+      !-------------------------------------------------------------------------
+      select type (task)
+      class is (sinkparticles_t)
+        task%link => new_link
+        call task%create (p)
+        !-------------------------------------------------------------------------
+        ! Initialize its neighbor list, and add it to the task list
+        !-------------------------------------------------------------------------
+        call task_list%init_nbors (new_link)
+        call task_list%append_link (new_link)
+        nbor => new_link%nbor
+        do while (associated(nbor))
+          print *, 'nbor:', nbor%task%id, real((nbor%task%position-task%position)/task%ds)
+          nbor => nbor%next
+        end do
+        !------------------------------------------------------------------------
+        ! Download variables and accrete
+        !------------------------------------------------------------------------
+        call task%dnload
+        d => task%mem(:,:,:,task%idx%d,task%it,1)
+        d = max(d,task%fminval(d))
+        if (task%id==io%id_debug) then
+          m = nint(task%offset)
+          print *, 'sinkparticles_t%create:  task%pos, d',  task%myposition(m), &
+            task%mem(m(1),m(2),m(3),task%idx%d,task%it,1)
+          print *,'MM', minval(d), task%fminval(task%idx%d), &
+                        maxval(d), task%fmaxval(task%idx%d)
+        end if
+        call task%accrete
+      end select
+      !-------------------------------------------------------------------------
+      ! Refresh the nbor lists of the parent and its nbors; the parent should
+      ! be done after the nbors, to avoid putting the child link on its nbor
+      ! list until the other ones are updated.  All nbors that happen to have
+      ! overlap with the sink particle patch will have it as an nbor
+      !-------------------------------------------------------------------------
+      nbor => link%nbor
+      do while (associated(nbor))
+        call task_list%init_nbors (nbor%link)
+        nbor => nbor%next
+      end do
+      call task_list%init_nbors (link)
+      io%do_trace = do_trace
+    end if
+  end select
+END SUBROUTINE refine_check
 
 END MODULE sinkparticles_mod

@@ -41,11 +41,14 @@ MODULE extras_mod
   USE trace_mod
   USE gpatch_mod
   USE connect_mod
+  USE patch_mod
+  USE list_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.  
   !-----------------------------------------------------------------------------
   USE forces_mod                                        ! forces
   USE trace_particles_mod                               ! tracep
+  USE sinkparticles_mod                                 ! sinkp
   !USE selfgravity_mod                                   ! self-g
   !-----------------------------------------------------------------------------
   implicit none
@@ -56,14 +59,18 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
     type(forces_t):: forces                             ! forces
+    type(sinkparticles_t):: sinkparticles               ! sinkp
     !type(selfgravity_t) :: selfgravity                  ! self-g
     class(trace_particles_t), pointer:: trace_particles ! tracep
     real, dimension(:,:,:,:), pointer:: v               ! tracep
+    class(list_t), pointer:: task_list
   contains
     procedure:: init
+    procedure:: init_task_list
     procedure:: pre_update
     procedure:: post_update
     procedure:: output
+    procedure:: check_refine
   end type
   type(extras_t), public:: extras
 CONTAINS
@@ -79,6 +86,16 @@ SUBROUTINE init (self)
   self%connect%trace_particles => self%trace_particles  ! tracep
   call self%trace_particles%add (self%link)             ! tracep
 END SUBROUTINE init
+
+!> =============================================================================
+!> =============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(extras_t):: self
+  class(list_t), pointer:: task_list
+  !.............................................................................
+  self%task_list => task_list
+  call self%sinkparticles%init_task_list (task_list)    ! sinkp
+END SUBROUTINE init_task_list
 
 !> =============================================================================
 !> The pre_update hierarchy is called before the solver updates
@@ -106,5 +123,17 @@ SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
 END SUBROUTINE output
+
+!> =============================================================================
+!> Interface to refinement
+!> =============================================================================
+INTEGER function check_refine (self, patch)
+  class(extras_t):: self
+  class(patch_t), pointer:: patch
+  !.............................................................................
+  check_refine = -1
+  check_refine = max (check_refine, &
+    sinkparticles%check_refine (patch))                 ! sinkp
+END FUNCTION check_refine
 
 END MODULE extras_mod

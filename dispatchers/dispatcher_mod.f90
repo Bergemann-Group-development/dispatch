@@ -16,6 +16,8 @@ MODULE dispatcher_mod
   USE dispatcher6_mod
   USE mpi_mesg_mod
   USE data_io_mod
+  USE extras_mod
+  USe list_mod
   implicit none
   private
   type, public:: dispatcher_t
@@ -114,6 +116,7 @@ END SUBROUTINE init
 SUBROUTINE execute (self, task_list)
   class(dispatcher_t):: self
   type(task_list_t), pointer:: task_list
+  class(list_t), pointer:: list
   !-----------------------------------------------------------------------------
   task_list%method = method
   task_list%dispatcher = .true.
@@ -126,6 +129,8 @@ SUBROUTINE execute (self, task_list)
       ('ERROR: io%ntotal, which should be the total number of tasks, is zero')
   end if
   if (test) call set_io
+  list => task_list
+  call extras%init_task_list (list)
   call self%method (task_list)
 END SUBROUTINE execute
 

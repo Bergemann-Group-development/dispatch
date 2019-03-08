@@ -39,7 +39,8 @@ MODULE refine_mod
   USE task_mod
   USE patch_mod
   USE solver_mod
-  USE sinkparticles_mod
+  !USE sinkparticles_mod
+  USE extras_mod
   USE scene_mod
   USE download_mod
   USE counters_mod
@@ -64,7 +65,7 @@ MODULE refine_mod
     procedure:: remove_patch
     procedure:: gradient_detector
     procedure:: check_nbor_support
-    procedure:: check_sinkparticle
+    !procedure:: check_sinkparticle
   end type
   !
   integer:: check_interval=10                 ! Number of steps betwen checks
@@ -127,7 +128,7 @@ SUBROUTINE init (self)
   self%levelmin = levelmin
   self%levelmax = levelmax
   self%ratio = ratio
-  call sinkparticles%init
+  !call sinkparticles%init
   call trace%end()
 END SUBROUTINE init
 
@@ -143,7 +144,7 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   class(patch_t), pointer:: patch
   real:: dxmin, dxmax
   integer, save:: itimer=0
-  logical:: new_sink
+  !logical:: new_sink
   !----------------------------------------------------------------------------
   refine = 0
   if (.not. on) return
@@ -178,12 +179,16 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
     return
   end if
   !------------------------------------------------------------------------
-  ! Refinement Criteria
+  ! Refinement criteria, starting with assumed derefinement
   !------------------------------------------------------------------------
-  ! sink particle creation
-  new_sink = self%check_sinkparticle (tasklist, link)
-  !
   refine = -1
+  !
+  ! sink particle creation
+  !new_sink = self%check_sinkparticle (tasklist, link)
+  !
+  ! Extras refinement
+  refine = max(refine, extras%check_refine (patch))
+  !
   ! Ensure consistent, cubical patch size (e.g. after RAMSES startup)
   if (force_cubical) refine = max (refine, self%check_cubical(patch))
   !
@@ -1035,94 +1040,5 @@ FUNCTION refine_region (self, patch) RESULT (refine)
   refine = merge(1,0,refine_it)
   call trace%end()
 END FUNCTION refine_region
-
-!> =============================================================================
-!> Test for the need to create a new sink particle, and handle the task list
-!> aspect of that; creating an nbor list, and adding the link to the task list.
-!> =============================================================================
-FUNCTION check_sinkparticle (self, task_list, link)
-  class(refine_t):: self
-  type(list_t):: task_list
-  class(link_t), pointer:: link
-  logical:: check_sinkparticle
-  !.............................................................................
-  class(task_t), pointer:: task, patch
-  class(patch_t), pointer:: p
-  class(link_t), pointer:: new_link, nbor
-  class(sinkparticles_t), pointer:: new_sink
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
-  integer:: m(3)
-  logical:: do_trace
-  !-----------------------------------------------------------------------------
-  check_sinkparticle = .false.
-  if (.not.sinkparticles%on) return
-  patch => link%task
-  select type (patch)
-  class is (sinkparticles_t)
-    !---------------------------------------------------------------------------
-    ! Refresh nbor list
-    !---------------------------------------------------------------------------
-    call task_list%refresh_nbors(link)
-  class is (patch_t)
-    p => patch
-    check_sinkparticle = sinkparticles%check (p)
-    if (check_sinkparticle) then
-      do_trace = io%do_trace
-      !io%do_trace = .true.
-      !-------------------------------------------------------------------------
-      ! Allocate a new sinkparticle_t instance, as the task of a new link
-      !-------------------------------------------------------------------------
-      allocate (new_link)
-      allocate (sinkparticles_t:: new_link%task)
-      new_link%parent => link
-      task => new_link%task
-      !-------------------------------------------------------------------------
-      ! Create the new sinkparticle, using data from the MHD patch
-      !-------------------------------------------------------------------------
-      select type (task)
-      class is (sinkparticles_t)
-        task%link => new_link
-        call task%create (p)
-        !-------------------------------------------------------------------------
-        ! Initialize its neighbor list, and add it to the task list
-        !-------------------------------------------------------------------------
-        call task_list%init_nbors (new_link)
-        call task_list%append_link (new_link)
-        nbor => new_link%nbor
-        do while (associated(nbor))
-          print *, 'nbor:', nbor%task%id, real((nbor%task%position-task%position)/task%ds)
-          nbor => nbor%next
-        end do
-        !------------------------------------------------------------------------
-        ! Download variables and accrete
-        !------------------------------------------------------------------------
-        call task%dnload
-        d => task%mem(:,:,:,task%idx%d,task%it,1)
-        d = max(d,task%fminval(d))
-        if (task%id==io%id_debug) then
-          m = nint(task%offset)
-          print *, 'sinkparticles_t%create:  task%pos, d',  task%myposition(m), &
-            task%mem(m(1),m(2),m(3),task%idx%d,task%it,1)
-          print *,'MM', minval(d), task%fminval(task%idx%d), &
-                        maxval(d), task%fmaxval(task%idx%d)
-        end if
-        call task%accrete
-      end select
-      !-------------------------------------------------------------------------
-      ! Refresh the nbor lists of the parent and its nbors; the parent should
-      ! be done after the nbors, to avoid putting the child link on its nbor
-      ! list until the other ones are updated.  All nbors that happen to have
-      ! overlap with the sink particle patch will have it as an nbor
-      !-------------------------------------------------------------------------
-      nbor => link%nbor
-      do while (associated(nbor))
-        call task_list%init_nbors (nbor%link)
-        nbor => nbor%next
-      end do
-      call task_list%init_nbors (link)
-      io%do_trace = do_trace
-    end if
-  end select
-END FUNCTION check_sinkparticle
 
 END MODULE refine_mod
