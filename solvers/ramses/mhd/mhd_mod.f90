@@ -1052,9 +1052,9 @@ SUBROUTINE trace3d(self)
     !
     ! Add external force
     associate (ff => self%force_per_unit_mass)
-    su0 = su0 + ff(i,j,k,1)*self%mesh(1)%d
-    sv0 = sv0 + ff(i,j,k,2)*self%mesh(2)%d
-    sw0 = sw0 + ff(i,j,k,3)*self%mesh(3)%d
+    su0 = su0 + ff(i,j,k,1)*half*self%dtime
+    sv0 = sv0 + ff(i,j,k,2)*half*self%dtime
+    sw0 = sw0 + ff(i,j,k,3)*half*self%dtime
     end associate
     !
     ! Evolve entropy instead of pressure
