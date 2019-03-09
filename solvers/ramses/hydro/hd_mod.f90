@@ -30,7 +30,6 @@ MODULE hd_mod
   USE force_mod
   USE index_mod
   USE patch_mod
-  USE validate_mod
   implicit none
   PRIVATE
   type, public, extends(extras_t):: hd_t
@@ -525,7 +524,6 @@ subroutine ctoprim (self)
   l = self%mesh%lo
   u = self%mesh%uo
   self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
-                            call validate%check (self%link, self%u_max, 'u_max')
   if (detailed_timer) then
     call trace%end (itimer)
   else

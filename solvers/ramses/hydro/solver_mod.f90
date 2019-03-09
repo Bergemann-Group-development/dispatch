@@ -10,7 +10,6 @@ MODULE solver_mod
   USE patch_mod
   USE kinds_mod
   USE hd_mod
-  USE validate_mod
   implicit none
   private
   type, public, extends(hd_t):: solver_t
@@ -45,7 +44,6 @@ SUBROUTINE init (self)
   !.............................................................................
   call self%hd_t%init
   call self%extras_t%init
-  call validate%init
 END SUBROUTINE init
 
 !> =============================================================================
@@ -56,9 +54,7 @@ SUBROUTINE update (self)
   associate (d=>self%mem(:,:,:,self%idx%d,self%it,1))
   !.............................................................................
   call self%extras_t%pre_update
-  call validate%check (self, d, 'before update')
   call self%hd_t%update
-  call validate%check (self, d, ' after update')
   call self%extras_t%post_update
   end associate
 END SUBROUTINE update
