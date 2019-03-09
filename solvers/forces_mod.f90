@@ -54,7 +54,6 @@ SUBROUTINE pre_update (self)
   d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%it,1)
   patch%force_per_unit_mass = &
-  patch%force_per_unit_mass + &
   self%force%selected(patch%time, d, p, self%Ux, self%Uy, self%Uz, patch%mesh)
   end associate
 END SUBROUTINE pre_update

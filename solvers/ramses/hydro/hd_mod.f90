@@ -160,15 +160,6 @@ SUBROUTINE update (self)
   e => self%mem(:,:,:,          self%idx%e ,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   !-----------------------------------------------------------------------------
-  ! The force_per_unit_mass is assumed to exist in trace3d, so make sure it does
-  !-----------------------------------------------------------------------------
-  if (.not.allocated(self%force_per_unit_mass)) then
-    associate (m => self%gn)
-    allocate (self%force_per_unit_mass(m(1),m(2),m(3),3))
-    end associate
-    self%force_per_unit_mass = 0.0
-  end if
-  !-----------------------------------------------------------------------------
   ! Godunov solver
   !-----------------------------------------------------------------------------
   call godunov (self)
@@ -180,9 +171,14 @@ SUBROUTINE update (self)
   ! Add the external force per unit mass as a source term
   !-----------------------------------------------------------------------------
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  do i=1,3
-    p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
-  end do
+  if (allocated(self%force_per_unit_mass)) then
+    do i=1,3
+      p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
+    end do
+  end if
+  if (allocated(self%force_per_unit_volume)) then
+    p = p + self%dtime*self%force_per_unit_volume
+  end if
   call validate%check (self%link, p, 'after force')
   !-----------------------------------------------------------------------------
   ! Deallocate
