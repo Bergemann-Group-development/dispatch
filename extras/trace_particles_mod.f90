@@ -119,7 +119,10 @@ SUBROUTINE add (self, link)
   self%per_cell = per_cell
   self%time_order = time_order
   self%verbose = verbose
-  if (.not.on) return
+  if (.not.on) then
+    call trace%end ()
+    return
+  end if
   !----------------------------------------------------------------------------
   ! Allocate and initialize
   !----------------------------------------------------------------------------
@@ -170,7 +173,7 @@ SUBROUTINE add (self, link)
   end if
   end select
   deallocate (self%v)
-  call trace%end
+  call trace%end ()
   end associate
 contains
   !-----------------------------------------------------------------------------
@@ -447,7 +450,7 @@ SUBROUTINE pack (self)
   call self%mpi_buffer%init (np + 10, 'trace_particles_t')
   call self%mpi_append_particles (self)
   call self%mpi_append_particles (self%export)
-  call trace%end
+  call trace%end ()
   end associate
 END SUBROUTINE pack
 
@@ -470,7 +473,7 @@ SUBROUTINE unpack (self)
   call self%mpi_buffer%init (np + 10, 'trace_particles_t')
   call self%mpi_read_particles (self)
   call self%mpi_read_particles (self%export)
-  call trace%end
+  call trace%end ()
   end associate
 END SUBROUTINE unpack
 
@@ -504,7 +507,7 @@ SUBROUTINE mpi_append_particles (self, particles)
   !-----------------------------------------------------------------------------
   call self%mpi_buffer%append (r)
   deallocate (r)
-  call trace%end
+  call trace%end ()
 END SUBROUTINE mpi_append_particles
 
 !> =============================================================================
@@ -537,7 +540,7 @@ SUBROUTINE mpi_read_particles (self, particles)
   ! Append the buffer and deallocate
   !-----------------------------------------------------------------------------
   deallocate (r)
-  call trace%end
+  call trace%end ()
 END SUBROUTINE mpi_read_particles
 
 END MODULE trace_particles_mod
