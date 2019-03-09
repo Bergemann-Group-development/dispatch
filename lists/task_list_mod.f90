@@ -272,10 +272,6 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), 'before update')
     end select
     call task%update                                  ! update the task
-    select type (task)
-    class is (patch_t)
-    call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), ' after update')
-    end select
   end if
   !----------------------------------------------------------------------------
   ! Default delay time = first update time
@@ -301,6 +297,10 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   if (.not.task%rotated) then
     call task%rotate
   end if
+  select type (task)
+  class is (patch_t)
+  call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), ' after update')
+  end select
   call task%info (self%nq, self%na)                   ! print info on stdout
   if (io%log_sent > 0) then
     !$omp critical (log_sent_cr)
