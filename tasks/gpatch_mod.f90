@@ -144,7 +144,7 @@ SUBROUTINE dnload (self, only)
   class(gpatch_t):: self
   integer, optional:: only
   !-----------------------------------------------------------------------------
-  call trace%begin ('extras_t%dnload')
+  call trace%begin ('gpatch_t%dnload')
   if (self%use_data_hub) then
     call self%data_hub%update (self%link, only=only)
   else
@@ -160,8 +160,10 @@ SUBROUTINE courant_condition (self, detailed_timer)
   class(gpatch_t):: self
   logical, optional:: detailed_timer
   !-----------------------------------------------------------------------------
+  call trace%begin ('gpatch_t%courant_condition')
   call validate%check (self%link, self%u_max, 'courant')
   call self%patch_t%courant_condition (detailed_timer)
+  call trace%end()
 END SUBROUTINE courant_condition
 
 END MODULE gpatch_mod
