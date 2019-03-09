@@ -30,6 +30,7 @@ MODULE hd_mod
   USE force_mod
   USE index_mod
   USE patch_mod
+  USE validate_mod
   implicit none
   PRIVATE
   type, public, extends(extras_t):: hd_t
@@ -182,6 +183,7 @@ SUBROUTINE update (self)
   do i=1,3
     p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
   end do
+  call validate%check (self%link, p, 'after force')
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
