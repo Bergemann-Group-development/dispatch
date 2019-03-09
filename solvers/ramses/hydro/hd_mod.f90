@@ -116,11 +116,10 @@ SUBROUTINE update (self)
   real, dimension(:,:,:), pointer:: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real, dimension(:,:,:), pointer:: tmp
   real:: error
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace%begin ('hd_t%update', itimer=itimer)
   if (io%smallr  /= 0.0) smallr  = io%smallr
   if (io%courant /= 0.0) self%courant = io%courant
-
   !-----------------------------------------------------------------------------
   ! The call to output below catches the state after both guard zone downloads
   ! and boundary conditions.  The call here is a fall back; if another call is
@@ -570,8 +569,13 @@ subroutine uslope(self)
       end do
     end do
   else if(islope_type==0)then
-     dq=0.0_dp
-     return
+    dq=0.0_dp
+    if (detailed_timer) then
+      call trace%end (itimer)
+    else
+      call trace%end
+    end if
+    return
   else if (islope_type==1) then  ! minmod
     do n = 1, self%nv
       do k = l(3),u(3)
@@ -852,11 +856,11 @@ subroutine trace3d(self)
         ! Source terms (including transverse derivatives)
         sr0 = -u*drx-v*dry-w*drz - (dux+dvy+dwz)*r
         sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p
-        associate (ff => self%force_per_unit_mass)
-        su0 = -u*dux-v*duy-w*duz - dpx/r + ff(i,j,k,1)*self%mesh(1)%d
-        sv0 = -u*dvx-v*dvy-w*dvz - dpy/r + ff(i,j,k,2)*self%mesh(2)%d
-        sw0 = -u*dwx-v*dwy-w*dwz - dpz/r + ff(i,j,k,3)*self%mesh(3)%d
-        end associate
+        !associate (ff => self%force_per_unit_mass)
+        su0 = -u*dux-v*duy-w*duz - dpx/r !+ ff(i,j,k,1)*self%mesh(1)%d
+        sv0 = -u*dvx-v*dvy-w*dvz - dpy/r !+ ff(i,j,k,2)*self%mesh(2)%d
+        sw0 = -u*dwx-v*dwy-w*dwz - dpz/r !+ ff(i,j,k,3)*self%mesh(3)%d
+        !end associate
 
         ! Right state at left interface
         qp(i,j,k,ir,1) = r - half*drx + sr0*dtdx*half
