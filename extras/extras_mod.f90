@@ -133,6 +133,7 @@ END SUBROUTINE post_update
 SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
+  call self%gpatch_t%output                             ! do NOT remove
 END SUBROUTINE output
 
 !> =============================================================================
