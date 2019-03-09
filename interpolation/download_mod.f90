@@ -30,6 +30,7 @@ MODULE download_mod
   USE scene_mod
   USE interpolate_mod
   USE lagrange_mod
+  USE validate_mod
   implicit none
   private
   type, public:: download_t
@@ -335,6 +336,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   class(link_t), pointer:: link
   logical, optional:: all_cells, all_times
   integer, optional:: only
+  real, dimension(:,:,:), pointer:: d
   !.............................................................................
   class(link_t), pointer:: nbor, sorted_head
   class(patch_t), pointer:: target, source
@@ -351,6 +353,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     call io%abort('download_t%download_link: link%task not associated')
   end if
   target => task2patch(link%task)
+  d => target%mem(:,:,:,target%idx%d,target%it,1)
+  call validate%check (target%link, d, 'before download')
   if (target%id == id_debug .or. verbose > 2) then
     write(io_unit%output,*) 'download_t%download_link: id, time =', &
       target%id, target%time
@@ -507,6 +511,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   if (sorted) then
     call clean_sorted_nbor_list (sorted_head)
   end if
+  call validate%check (target%link, d, ' after download')
   call trace%end (itimer)
 END SUBROUTINE download_link
 
