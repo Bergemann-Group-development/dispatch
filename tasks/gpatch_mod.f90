@@ -16,6 +16,7 @@ MODULE gpatch_mod
   USE data_io_mod
   USE download_mod
   USE data_hub_mod
+  USE validate_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
@@ -28,6 +29,7 @@ MODULE gpatch_mod
     procedure:: output
     procedure:: counter_update
     procedure:: dnload
+    procedure:: courant_condition
   end type
   real(8), save :: restart_time = 0d0
   logical, save :: detailed_timer=.false.
@@ -150,5 +152,16 @@ SUBROUTINE dnload (self, only)
   end if
   call trace%end()
 END SUBROUTINE dnload
+
+!> =============================================================================
+!> Intercept to make validate%check call
+!> =============================================================================
+SUBROUTINE courant_condition (self, detailed_timer)
+  class(gpatch_t):: self
+  logical, optional:: detailed_timer
+  !-----------------------------------------------------------------------------
+  call validate%check (self%link, self%u_max, 'courant')
+  call self%patch_t%courant_condition (detailed_timer)
+END SUBROUTINE courant_condition
 
 END MODULE gpatch_mod

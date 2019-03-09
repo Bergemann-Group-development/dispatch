@@ -20,6 +20,7 @@ MODULE task_list_mod
   USE load_balance_mod
   USE task_mesg_mod
   USE timer_mod
+  USE validate_mod
   implicit none
   private
   type, public, extends(task_mesg_t):: task_list_t
@@ -121,6 +122,7 @@ SUBROUTINE startup (self)
   !call self%reset_status
   call self%info
   call self%init_levels
+  call validate%init
   !-----------------------------------------------------------------------------
   ! When restarting, the virtual tasks need to be received and unpacked before
   ! the first guard zone downloads.  We therefore trigger a send of all bndry
@@ -265,7 +267,15 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   if (test) then
     call task%test_update
   else
+    select type (task)
+    class is (patch_t)
+    call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), 'before update')
+    end select
     call task%update                                  ! update the task
+    select type (task)
+    class is (patch_t)
+    call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), ' after update')
+    end select
   end if
   !----------------------------------------------------------------------------
   ! Default delay time = first update time
