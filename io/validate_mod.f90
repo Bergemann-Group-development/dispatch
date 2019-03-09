@@ -141,11 +141,11 @@ SUBROUTINE check0 (self, patch, f1, label1)
     if (diff /= 0.0 .or. self%verbose > 0) then
       write (io_unit%output,1) '    patch ID =',      id0, trim(label0)
       write (io_unit%output,1) '    patch ID =',      id1, trim(label1)
-      write (io_unit%output,2) '       aver1 =',      f0, 'aver2 =', f1
+      write (io_unit%output,2) '      value1 =',      f0, 'value2 =', f1
       write (io_unit%output,2) '        diff =',    diff
     end if
     1 format(a,i12,3x,a)
-    2 format(a,1pe12.3,3x,a,1pe12.3)
+    2 format(a,1pe12.3,2x,a,1pe12.3)
   end if
 END SUBROUTINE check0
 
