@@ -16,7 +16,7 @@ MODULE dispatcher_mod
   USE dispatcher6_mod
   USE mpi_mesg_mod
   USE data_io_mod
-  USE extras_mod
+  USE gpatch_mod
   USe list_mod
   implicit none
   private
@@ -117,6 +117,7 @@ SUBROUTINE execute (self, task_list)
   class(dispatcher_t):: self
   type(task_list_t), pointer:: task_list
   class(list_t), pointer:: list
+  class(link_t), pointer:: link
   !-----------------------------------------------------------------------------
   task_list%method = method
   task_list%dispatcher = .true.
@@ -129,8 +130,23 @@ SUBROUTINE execute (self, task_list)
       ('ERROR: io%ntotal, which should be the total number of tasks, is zero')
   end if
   if (test) call set_io
+  !-----------------------------------------------------------------------------
+  ! Store a copy of the task list pointer in each task (generically in gpatch_t)
+  !-----------------------------------------------------------------------------
   list => task_list
-  call extras%init_task_list (list)
+  link => task_list%head
+  do while (associated(link))
+    link => link%next
+    associate (task=>link%task)
+    select type (task)
+    class is (gpatch_t)
+    call task%init_task_list (list)
+    end select
+    end associate
+  end do
+  !-----------------------------------------------------------------------------
+  ! Call the selected dispatcher method
+  !-----------------------------------------------------------------------------
   call self%method (task_list)
 END SUBROUTINE execute
 

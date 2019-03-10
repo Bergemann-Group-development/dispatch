@@ -17,16 +17,22 @@ MODULE gpatch_mod
   USE download_mod
   USE data_hub_mod
   USE validate_mod
+  USE list_mod
+  USE task_mod
   implicit none
   private
   type, public, extends(patch_t):: gpatch_t
-    type(initial_t)  :: initial
-    type(data_hub_t) :: data_hub
+    type(initial_t):: initial
+    type(data_hub_t):: data_hub
+    type(list_t), pointer:: task_list
     real(8):: d0
   contains
+    procedure, nopass:: cast2gpatch
+    procedure:: init_task_list
+    procedure:: update
     procedure:: input
-    procedure:: init
     procedure:: output
+    procedure:: init
     procedure:: counter_update
     procedure:: dnload
     procedure:: courant_condition
@@ -35,7 +41,43 @@ MODULE gpatch_mod
   logical, save :: detailed_timer=.false.
   integer, save :: verbose=0
   integer, save :: order=1
+  type(gpatch_t), public:: gpatch
 CONTAINS
+
+!> =============================================================================
+!> Cast a generic task_t to patch_t
+!> =============================================================================
+FUNCTION cast2gpatch (task) RESULT(gpatch)
+  class(task_t), pointer:: task
+  class(gpatch_t), pointer:: gpatch
+  !.............................................................................
+  select type (task)
+  class is (gpatch_t)
+  gpatch => task
+  class default
+  nullify(gpatch)
+  call io%abort ('patch_t%cast: failed to cast a task to patch_t')
+  end select
+END FUNCTION cast2gpatch
+
+!> =============================================================================
+!> Make a copy of the task list pointer
+!> =============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(gpatch_t):: self
+  class(list_t), pointer:: task_list
+  !.............................................................................
+  self%task_list => task_list
+END SUBROUTINE init_task_list
+
+!> =============================================================================
+!> Interface allowing intercept
+!> =============================================================================
+SUBROUTINE update (self)
+  class(gpatch_t):: self
+  !-----------------------------------------------------------------------------
+  call self%patch_t%update
+END SUBROUTINE update
 
 !> =============================================================================
 !> Interface routine to the data_io input procedure, signalling if the patch
@@ -47,15 +89,6 @@ SUBROUTINE input (self, ok)
   !-----------------------------------------------------------------------------
   call data_io%input (self, ok)
 END SUBROUTINE input
-
-!> =============================================================================
-!> Interface routine to the data_io output procedure
-!> =============================================================================
-SUBROUTINE update (self)
-  class(gpatch_t):: self
-  !-----------------------------------------------------------------------------
-  call data_io%output (self)
-END SUBROUTINE update
 
 !> =============================================================================
 !> Interface routine to the data_io output procedure

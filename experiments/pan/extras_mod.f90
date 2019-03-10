@@ -63,7 +63,6 @@ MODULE extras_mod
     !type(selfgravity_t) :: selfgravity                  ! self-g
     class(trace_particles_t), pointer:: trace_particles ! tracep
     real, dimension(:,:,:,:), pointer:: v               ! tracep
-    class(list_t), pointer:: task_list
   contains
     procedure:: init
     procedure:: init_task_list

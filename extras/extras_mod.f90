@@ -1,22 +1,40 @@
 !> =============================================================================
 !> Template version of a module intended for adding extra features, at a level
-!> between the basic patch and the layer of solvers.
+!> between the basic task and patch layer, and the layer of solvers.
 !>
 !> To add extra features to the code, copy this file to experiments/your_dir/,
-!> and add (only) the extra dependencies to the Makefile there.
+!> and add the extra dependencies to the Makefile (only) there.
 !>
-!>                    experiment_t
-!>                     solver_t
-!>                       mhd_t
-!>                      extras_t
-!>                      /    \
-!>                     /      \
-!>                extras_1_t extras_2_t
-!>                       \    /   |
-!>                      gpatch_t  |
-!>                       patch_t  |
-!>                       /    \   |
-!>                    task_t  connect_t
+!> When doing to, the sketch of module dependencies below may be useful.
+!> In particular, it shows that extras underlings, via gpatch_t, may use the
+!> list_t data type (and hence they can access the copy of the task_list
+!> pointer made available there).
+!>
+!> The sketch also illustrates that extras underlings can at most cast as task
+!> point to a gpatch_t pointer, but not to an extras_t pointer (which is why
+!> generic array data needs to be stored in data types below extras_t).
+!>
+!>                               task_list_t
+!>                                / |  |
+!>                    experiment_t  |  |
+!>                     solver_t     |  |
+!>                       mhd_t      |  |
+!>                         | refine_t  |
+!>                         |  /        |
+!>                      extras_t       |
+!>                      /    \         |
+!>                     /      \        |
+!>              extras_1_t extras_2_t  |
+!>                 |     \    /        |
+!>                 |     gpatch_t      |
+!>                 |       |     \     |
+!>                 |       |      list_t
+!>                 |       |     /  |
+!>                 |      patch_t   |
+!>                 |      /   \     |
+!>                 |     /     link_t
+!>                 |    /       |
+!>                connect_t   task_t
 !>
 !> The extra modules needed in an experiment should be chosen and coordinated
 !> in this module, and the ones that are "below" (USEd by) this module should
@@ -28,9 +46,9 @@
 !> pre_upate() procedure, while modules that rely on results from the solver
 !> should be called from the post_update() procedure.
 !>
-!> This module should generally NOT use the h5_mod (HDF5) module itself. It
-!> should instead be USEd from the actual extra modules, to assist in saving
-!> ad hoc results in a standardized format.
+!> This module should generally NOT use the h5_mod (HDF5) module itself. h5_mod
+!> should instead be USEd from the actual extra modules that wish to use it to
+!> save ad hoc results in a standardized format.
 !> =============================================================================
 
 MODULE extras_mod
@@ -44,7 +62,7 @@ MODULE extras_mod
   USE connect_mod
   USE list_mod
   !-----------------------------------------------------------------------------
-  ! Optional modules start here.  
+  ! Optional modules start here.
   !-----------------------------------------------------------------------------
   !USE forces_mod                                        ! forces
   !USE trace_particles_mod                               ! trace_particles
