@@ -10,8 +10,8 @@
 !> list_t data type (and hence they can access the copy of the task_list
 !> pointer made available there).
 !>
-!> The sketch also illustrates that extras underlings can at most cast as task
-!> point to a gpatch_t pointer, but not to an extras_t pointer (which is why
+!> The sketch also illustrates that extras underlings can at most cast a task
+!> pointer to a gpatch_t pointer, but not to an extras_t pointer (which is why
 !> generic array data needs to be stored in data types below extras_t).
 !>
 !>                               task_list_t

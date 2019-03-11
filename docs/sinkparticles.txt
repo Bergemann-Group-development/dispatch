@@ -1,0 +1,121 @@
+A sinkparticle is represented by a task that is primarily an extension of a
+gpatch_t data type, with a patch%mem that only has a few variables (density,
+temperature, velocity), and a limited extend (8 cell radius).
+
+From the point of view of the dispatcher task_list, the task appears as a
+normal patch, but with special case handling which causes all interior 
+values to be downloaded from its nbors, which are normal MHD patches.
+
+Correspondingly, those MHD patches have the sinkparticle in their nbor list,
+if they overlap, and by special handling the accept the changes of values
+that occur when sinkparticle patches give up gas mass and angular momentum
+to their sinkparticles.
+
+The particle aspect of a sinkparticle is stored in a partcle_list_t data
+type, which stores several positions in time for the particle, making it
+possible to interpolate its position to any given time, when computing
+interactions (forces).
+
+The particle_list_t data is updated by an N-body solver, which gets
+access to the sinkparticle histories by being an extension on top of
+the task_list_t data type.
+
+All sinkparticle_t data_types inside an MPI rank will be collected into a
+particle_patch_t data type (which should perhaps be rename to particle_set_t
+or some such).  The purpose of this "container" is to organize the direct
+interaction handling, by keeping an nbor list list of similar containers
+owned by other MPI ranks.
+
+An MPI rank thus "owns" all sinkparticles within a certain Cartesian box,
+or more generally, all sinkparticles that are inside the MHD patches owned
+by that MPI rank.  If load balancing moved an MHD patch to a neighboring
+MPI rank, then the ownership of the sinkparticles that are inside that patch
+should be transferred to the new rank, as well.
+
+All updates of the sinkparticle tasks can be handled by the normal task list,
+and simplicity dictates that this should include the sinkparticle motion.
+Updating the position of a sinkparticle requires access to an nbor list that
+gives the particle histories of not only the sinkparticles inside the current
+MPI rank, but also all of its nbors.  This information should be passed via
+the normal MPI pack/unpack mechanism, but since the sinkparticle patch mem
+(with 3D data) is not needed this information should be maintained by a
+procedure in the particle_set_t data type.
+
+The particle_set_t data type thus needs to maintain an nbor list containing
+the correspondig particle_set_t data types of its MPI nbors.
+
+If/when a sinkparticle exits into the guard zone of a virtual patch, it should be
+added to an "export list" in the post_update procedure of the particle_set_t
+data type, and when its pre_update procedure runs, it should "import" any such
+sinkparticles
+
+In operational terms:  When sinkparticles are included, the pre_update step
+of a normal MHD patch must
+
+1) collect the positions of all sinkparticles what will contribute to the
+   direct summation forces.  These positions will be reused by n**3 cells
+   in a vectorized loop.
+
+2) then it must compute those forces, updating the force_per_unit_mass array.
+   This is done in particle_list_t%force_field.
+
+On the other hand, when a sinkparticle_t data type is to be updated, it too
+needs access to (an even larger) set of particle histories, so it can compute
+the direct summation force from all of them.  This time, the data is only
+reused by a single particle (unless one steps several of them ahead in time
+in sync). Therefore, the update of the position of sinkparticle is more
+costly per "other particle", but on the other hand there are far fewer
+sink particles per MHD patch than there are cells, so this can never become
+a significant cost.
+
+The particle position update method is always going to be one particle at a
+time, since particle updates use variable time steps, which differ from
+particle to particle. So, a particle "update" in the DISPATCH context is
+always going to consist of these steps
+
+1) pre_update: estimate the mid-point position to use, in order to make the
+update time-reflexive
+
+2) compute the forces at some point in time (e.g. the initial time for the
+1st K step in KDK) and update the velocity
+
+3) update the position (e.g. with D step in KDK)
+
+4) compute the forces at some other point in time (e.g. at final time for
+2nd K step in KDK) and update the velocity
+
+So, the "framework" aspect that an N-body solver relies upon is to be able
+to ask for the forces at a certain point in space time
+
+We thus have these players (data types) in the table:
+
+sink_patch_t:  An extenstion of gpatch_t, with access to the task list
+
+particle_solver_t:  An extension of the particle_list_t data type, which
+is a task_t extension that hold particle positions at several times.
+
+We make the particle_solver_t an attribute of sink_patch_t, so the
+hierarchy looks like this:
+
+                               task_list_t
+                                / |  |
+                    experiment_t  |  |
+                     solver_t     |  |
+                       mhd_t      |  |
+                         | refine_t  |
+                         |  /        |
+                      extras_t       |
+                         |           |
+                   sink_patch_t      |
+                  /      |           |
+        paricle_solver_t |           |
+                 |       |           |
+                 |     gpatch_t      |
+                 |    /  |     \     |
+                 |   /   |      list_t
+         particle_list_t |     /  |
+          /      |      patch_t   |
+    particle_t dll_t    /   \     |
+                       /     link_t
+                      /       |
+                connect_t   task_t
