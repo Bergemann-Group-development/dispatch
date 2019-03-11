@@ -48,7 +48,7 @@ MODULE trace_particles_mod
   USE io_mod
   USE trace_mod
   USE dll_mod
-  USE particle_list_mod
+  USE plist_mod
   USE omp_timer_mod
   USE random_mod
   USE link_mod
@@ -59,7 +59,7 @@ MODULE trace_particles_mod
   implicit none
   private
   integer, parameter:: nt=4
-  type, public, extends(particle_list_t):: trace_particles_t
+  type, public, extends(plist_t):: trace_particles_t
     real:: per_cell, per_mass
     real:: lf(3), uf(3)
     integer:: id, it, nt, time_order, n_trade, verbose
@@ -68,7 +68,7 @@ MODULE trace_particles_mod
     real(8), allocatable:: wt(:)
     real(8):: position(3)
     logical:: on
-    type(particle_list_t):: export, import
+    type(plist_t):: export, import
     type(mpi_buffer_t):: mpi_buffer
     class(patch_t), pointer:: patch
   contains
@@ -126,7 +126,7 @@ SUBROUTINE add (self, link)
   !----------------------------------------------------------------------------
   ! Allocate and initialize
   !----------------------------------------------------------------------------
-  call self%particle_list_t%init
+  call self%plist_t%init
   !-----------------------------------------------------------------------------
   ! Initialize Adams-Bashforth integration; the concept of symplectic integration
   ! does not apply when particles are just folling the gas, so there is no point
@@ -154,7 +154,7 @@ SUBROUTINE add (self, link)
   !-----------------------------------------------------------------------------
   ! Add particles in proportion to the density, relative to the average
   !-----------------------------------------------------------------------------
-  call self%particle_list_t%init ('trace')
+  call self%plist_t%init ('trace')
   self%id = patch%id
   if (self%per_cell > 0.0) then
     np = ifix(self%per_cell)
@@ -482,7 +482,7 @@ END SUBROUTINE unpack
 !> =============================================================================
 SUBROUTINE mpi_append_particles (self, particles)
   class(trace_particles_t):: self
-  class(particle_list_t):: particles
+  class(plist_t):: particles
   real, allocatable:: r(:,:,:)
   class(dll_node_t), pointer:: part
   integer:: i
@@ -515,7 +515,7 @@ END SUBROUTINE mpi_append_particles
 !> =============================================================================
 SUBROUTINE mpi_read_particles (self, particles)
   class(trace_particles_t):: self
-  class(particle_list_t):: particles
+  class(plist_t):: particles
   real, allocatable:: r(:,:,:)
   class(dll_node_t), pointer:: part
   integer:: i

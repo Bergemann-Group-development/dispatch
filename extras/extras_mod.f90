@@ -124,11 +124,18 @@ SUBROUTINE init_task_list (self, task_list)
 END SUBROUTINE init_task_list
 
 !> =============================================================================
-!> The pre_update hierarchy is called before the solver updates
+!> The pre_update hierarchy is called before the solver updates. To allow for
+!> a general case, with several force data types adding their contributions,
+!> the generic patch_t%arrays must (if allocated), be set to zero here, so each
+!> force can be added separately, and to prevent these contributions to pile up.
 !> =============================================================================
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
+  if (allocated (self%forces_per_unit_mass)) &          ! always keep this
+    self%forces_per_unit_mass = 0.0                     ! always keep this
+  if (allocated (self%forces_per_unit_volume)) &        ! always keep this
+    self%forces_per_unit_volume = 0.0                   ! always keep this
   !call self%forces%pre_update (self)                    ! forces
   !call self%trace_particles%update (self)               ! trace_particles
   !call self%spitzer%pre_update()                        ! spitzer conductivity

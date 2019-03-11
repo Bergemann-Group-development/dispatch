@@ -165,18 +165,19 @@ END FUNCTION pop
 !> =============================================================================
 !> Run a self test
 !> =============================================================================
-SUBROUTINE test (self)
+SUBROUTINE test (self, n)
   class(dll_t):: self
+  integer:: n
+  !.............................................................................
   class(*), pointer:: car, save
   integer, pointer:: ip
   real, pointer:: rp
   class(dll_node_t), pointer:: prev, next
-  integer:: i, n
+  integer:: i
   !-----------------------------------------------------------------------------
   ! Append five numbers
   !-----------------------------------------------------------------------------
   print *,'===================== Doubly linked list test ======================='
-  n = 5
   print *, 'fill:', n
   do i=1,n
     if (i == 2) then

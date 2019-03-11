@@ -7,7 +7,7 @@
 !> This could be reduced to half, by keeping only two previous positions and
 !> velocities in the data type.
 !> =============================================================================
-MODULE particle_list_mod
+MODULE plist_mod
   USE dll_mod
   USE omp_timer_mod
   implicit none
@@ -25,7 +25,7 @@ MODULE particle_list_mod
     procedure:: init
   end type
   !-----------------------------------------------------------------------------
-  type, public, extends(dll_t):: particle_list_t
+  type, public, extends(dll_t):: plist_t
   contains
     procedure:: test
     procedure:: print
@@ -50,9 +50,11 @@ END SUBROUTINE init
 !> =============================================================================
 !> Initialize a particle list
 !> =============================================================================
-SUBROUTINE test (self)
-  class(particle_list_t):: self
-  integer:: id, n
+SUBROUTINE test (self, n)
+  class(plist_t):: self
+  integer:: n
+  !.............................................................................
+  integer:: id
   class(particle_t), pointer:: p
   class(dll_node_t), pointer :: node, next, new
   real(8)::used
@@ -119,7 +121,7 @@ END SUBROUTINE test
 !> Print a particle list
 !> =============================================================================
 SUBROUTINE print (self)
-  class(particle_list_t):: self
+  class(plist_t):: self
   class(dll_node_t), pointer:: p
   p => self%head
   do while (associated(p))
@@ -131,4 +133,4 @@ SUBROUTINE print (self)
   end do
 END SUBROUTINE print
 
-END MODULE particle_list_mod
+END MODULE plist_mod
