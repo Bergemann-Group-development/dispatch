@@ -165,10 +165,10 @@ END FUNCTION pop
 !> =============================================================================
 !> Run a self test
 !> =============================================================================
-SUBROUTINE test (self, n)
+SUBROUTINE test (self)
   class(dll_t):: self
-  integer:: n
   !.............................................................................
+  integer:: n
   class(*), pointer:: car, save
   integer, pointer:: ip
   real, pointer:: rp

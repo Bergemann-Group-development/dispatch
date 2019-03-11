@@ -48,7 +48,8 @@ MODULE trace_particles_mod
   USE io_mod
   USE trace_mod
   USE dll_mod
-  USE plist_mod
+  USE particle_mod
+  USE particle_list_mod
   USE omp_timer_mod
   USE random_mod
   USE link_mod
@@ -59,16 +60,17 @@ MODULE trace_particles_mod
   implicit none
   private
   integer, parameter:: nt=4
-  type, public, extends(plist_t):: trace_particles_t
+  integer, parameter:: particle_kind=8
+  type, public, extends(particle_list_t):: trace_particles_t
     real:: per_cell, per_mass
     real:: lf(3), uf(3)
-    integer:: id, it, nt, time_order, n_trade, verbose
+    integer:: id, it, time_order, n_trade
     integer:: offset(3)
     real, allocatable:: v(:,:,:,:)
     real(8), allocatable:: wt(:)
     real(8):: position(3)
     logical:: on
-    type(plist_t):: export, import
+    type(particle_list_t):: export, import
     type(mpi_buffer_t):: mpi_buffer
     class(patch_t), pointer:: patch
   contains
@@ -126,7 +128,7 @@ SUBROUTINE add (self, link)
   !----------------------------------------------------------------------------
   ! Allocate and initialize
   !----------------------------------------------------------------------------
-  call self%plist_t%init
+  call self%particle_list_t%init
   !-----------------------------------------------------------------------------
   ! Initialize Adams-Bashforth integration; the concept of symplectic integration
   ! does not apply when particles are just folling the gas, so there is no point
@@ -154,7 +156,7 @@ SUBROUTINE add (self, link)
   !-----------------------------------------------------------------------------
   ! Add particles in proportion to the density, relative to the average
   !-----------------------------------------------------------------------------
-  call self%plist_t%init ('trace')
+  call self%particle_list_t%init ('trace')
   self%id = patch%id
   if (self%per_cell > 0.0) then
     np = ifix(self%per_cell)
@@ -191,7 +193,7 @@ contains
     call p%init
     do it=1,nt
       p%r(:,it) = [ix+ran(),iy+ran(),iz+ran()]
-      p%dr(:,it) = self%v(ix,iy,iz,:)*patch%dtime
+      p%v(:,it) = self%v(ix,iy,iz,:)*patch%dtime
       p%t(it) = patch%time
     end do
     node => p
@@ -216,7 +218,7 @@ SUBROUTINE update (self)
   class(dll_node_t), pointer:: node, next
   class(particle_t), pointer:: p
   class(*), pointer:: car
-  real, pointer:: r(:)
+  real(kind=particle_kind), pointer:: r(:)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. self%on) return
@@ -271,19 +273,19 @@ SUBROUTINE update (self)
     o1 = 1+modulo(it-2,nt)
     o2 = 1+modulo(it-3,nt)
     dt = min(dtime,time-p%t(o1))
-    p%dr(:,o1) = p%dr(:,o1)*dt
+    p%v(:,o1) = p%v(:,o1)*dt
     if (self%time_order == 3) then
       o3 = 1+modulo(it-4,nt)
       p%r(:,it) = &
       p%r(:,o1) + &
-      p%dr(:,o1)*self%wt(1) + &
-      p%dr(:,o2)*self%wt(2) + &
-      p%dr(:,o3)*self%wt(3)
+      p%v(:,o1)*self%wt(1) + &
+      p%v(:,o2)*self%wt(2) + &
+      p%v(:,o3)*self%wt(3)
     else
       p%r(:,it) = &
       p%r(:,o1) + &
-      p%dr(:,o1)*self%wt(1) + &
-      p%dr(:,o2)*self%wt(2)
+      p%v(:,o1)*self%wt(1) + &
+      p%v(:,o2)*self%wt(2)
     end if
     p%it = it
     p%t(it) = time
@@ -340,7 +342,7 @@ SUBROUTINE interpolate (self)
     ip = max(1,min(ip,sz(1:3)))
     p = p-ip
     do j=1,3
-      part%dr(j,it) = &
+      part%v(j,it) = &
         q(3)*(q(2)*(q(1)*self%v(ip(1)  ,ip(2)  ,ip(3)  ,j)   &
                   + p(1)*self%v(ip(1)+1,ip(2)  ,ip(3)  ,j))  &
             + p(2)*(q(1)*self%v(ip(1)  ,ip(2)+1,ip(3)  ,j)   &
@@ -363,7 +365,7 @@ SUBROUTINE trade (self, nbor)
   class(trace_particles_t):: nbor
   class(dll_node_t), pointer:: node, next
   class(particle_t), pointer:: part
-  real:: r(3)
+  real(kind=particle_kind):: r(3)
   !-----------------------------------------------------------------------------
   self%n_trade = 0
   if (self%export%n == 0) return
@@ -482,7 +484,7 @@ END SUBROUTINE unpack
 !> =============================================================================
 SUBROUTINE mpi_append_particles (self, particles)
   class(trace_particles_t):: self
-  class(plist_t):: particles
+  class(particle_list_t):: particles
   real, allocatable:: r(:,:,:)
   class(dll_node_t), pointer:: part
   integer:: i
@@ -515,7 +517,7 @@ END SUBROUTINE mpi_append_particles
 !> =============================================================================
 SUBROUTINE mpi_read_particles (self, particles)
   class(trace_particles_t):: self
-  class(plist_t):: particles
+  class(particle_list_t):: particles
   real, allocatable:: r(:,:,:)
   class(dll_node_t), pointer:: part
   integer:: i

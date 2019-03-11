@@ -27,7 +27,7 @@ MODULE plist_mod
   !-----------------------------------------------------------------------------
   type, public, extends(dll_t):: plist_t
   contains
-    procedure:: test
+    procedure:: test_plist
     procedure:: print
   end type
   !-----------------------------------------------------------------------------
@@ -50,7 +50,7 @@ END SUBROUTINE init
 !> =============================================================================
 !> Initialize a particle list
 !> =============================================================================
-SUBROUTINE test (self, n)
+SUBROUTINE test_plist (self, n)
   class(plist_t):: self
   integer:: n
   !.............................................................................
@@ -64,7 +64,6 @@ SUBROUTINE test (self, n)
   !-----------------------------------------------------------------------------
   ! Make a list with 100000 particles
   !-----------------------------------------------------------------------------
-  n = 100000
   used = wallclock()
   do id=1,n
     allocate (p)
@@ -115,7 +114,7 @@ SUBROUTINE test (self, n)
   end do
   used = wallclock()-used
   print *, 'particle list n =', self%n, used/self%n
-END SUBROUTINE test
+END SUBROUTINE test_plist
 
 !> =============================================================================
 !> Print a particle list

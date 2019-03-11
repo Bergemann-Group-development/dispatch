@@ -101,7 +101,7 @@ END SUBROUTINE force_field
 !> =============================================================================
 !> Test particle list functionality
 !> =============================================================================
-SUBROUTINE test (self, n)
+SUBROUTINE test (self)
   class(particle_list_t):: self
   integer:: id, n
   class(particle_t), pointer:: p
@@ -113,6 +113,7 @@ SUBROUTINE test (self, n)
   !-----------------------------------------------------------------------------
   ! Make a list with 100000 particles
   !-----------------------------------------------------------------------------
+  n = 100000
   used = wallclock()
   do id=1,n
     allocate (p)
