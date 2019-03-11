@@ -48,7 +48,8 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   USE forces_mod                                        ! forces
   USE trace_particles_mod                               ! tracep
-  USE sinkparticles_mod                                 ! sinkp
+  USE sink_patch_mod                                    ! sinkp
+  USE particle_solver_mod                               ! sinkp
   !USE selfgravity_mod                                   ! self-g
   !-----------------------------------------------------------------------------
   implicit none
@@ -59,13 +60,11 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
     type(forces_t):: forces                             ! forces
-    type(sinkparticles_t):: sinkparticles               ! sinkp
-    !type(selfgravity_t) :: selfgravity                  ! self-g
     class(trace_particles_t), pointer:: trace_particles ! tracep
     real, dimension(:,:,:,:), pointer:: v               ! tracep
+    !type(selfgravity_t) :: selfgravity                  ! self-g
   contains
     procedure:: init
-    procedure:: init_task_list
     procedure:: pre_update
     procedure:: post_update
     procedure:: output
@@ -80,21 +79,11 @@ CONTAINS
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
-  call self%forces%init (self%link)                     ! forces
-  allocate (self%trace_particles)                       ! tracep
-  self%connect%trace_particles => self%trace_particles  ! tracep
-  call self%trace_particles%add (self%link)             ! tracep
+  call self%forces%init (self%link)                             ! forces
+  allocate (self%trace_particles)                               ! tracep
+  self%connect%trace_particles => self%trace_particles          ! tracep
+  call self%trace_particles%add (self%link)                     ! tracep
 END SUBROUTINE init
-
-!> =============================================================================
-!> =============================================================================
-SUBROUTINE init_task_list (self, task_list)
-  class(extras_t):: self
-  class(list_t), pointer:: task_list
-  !.............................................................................
-  self%task_list => task_list
-  call self%sinkparticles%init_task_list (task_list)    ! sinkp
-END SUBROUTINE init_task_list
 
 !> =============================================================================
 !> The pre_update hierarchy is called before the solver updates
@@ -102,8 +91,13 @@ END SUBROUTINE init_task_list
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
+  if (allocated (self%force_per_unit_mass)) &          ! always keep this
+    self%force_per_unit_mass = 0.0                     ! always keep this
+  if (allocated (self%force_per_unit_volume)) &        ! always keep this
+    self%force_per_unit_volume = 0.0                   ! always keep this
   call self%forces%pre_update                           ! forces
   call self%trace_particles%update                      ! tracep
+  call particle_solver%force_field (self)               ! sinkp
 END SUBROUTINE pre_update
 
 !> =============================================================================
@@ -125,15 +119,16 @@ SUBROUTINE output (self)
 END SUBROUTINE output
 
 !> =============================================================================
-!> Interface to refinement
+!> Interface to refinement. This uses the static instance of sink_patch, where
+!> the check_refine may cause creation of dynamic sink_patch_t instances.
 !> =============================================================================
 INTEGER function check_refine (self, patch)
   class(extras_t):: self
-  class(patch_t), pointer:: patch
+  class(gpatch_t), pointer:: patch
   !.............................................................................
   check_refine = -1
   check_refine = max (check_refine, &
-    sinkparticles%check_refine (patch))                 ! sinkp
+    sink_patch%check_refine (patch))                 ! sinkp
 END FUNCTION check_refine
 
 END MODULE extras_mod
