@@ -1,6 +1,21 @@
 !> =============================================================================
 !> This is a bare minimum interface to the new extras module, showing how to
 !> interface with a pre-existing force_mod%selected() function.
+!>
+!> In this version, the force_per_unit_mass array is allocated in %init, and its
+!> values are set by a call to the previous standard force_t interface, in order
+!> for the new arrangement to be as non-intrusive as possible, relative to pre-
+!> existing experiments.
+!>
+!> In the future, external forces should NOT use this interface.  Instead, each
+!> type of force should use its own data type (primarily to hold parameters
+!> specific to that force), while the resulting force should be addded to
+!> (not overwrite) the generic patch_t%force_per_unit_mass or _volume arrays.
+!>
+!> To comply with that policy, this interface also adds the force, and thus
+!> assumes that the generic array is set to zero elsewhere, before each timestep.
+!> The proper place to do that is in the extras_t data type, which is where the
+!> user chooses which forces to include and combine.
 !> =============================================================================
 MODULE forces_mod
   USE patch_mod
@@ -33,7 +48,6 @@ SUBROUTINE init (self, link)
   if (.not.allocated(patch%force_per_unit_mass)) then
     associate (m => patch%gn)
     allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
-    patch%force_per_unit_mass = 0.0
     end associate
   end if
   end associate
@@ -54,6 +68,7 @@ SUBROUTINE pre_update (self)
   d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%it,1)
   patch%force_per_unit_mass = &
+  patch%force_per_unit_mass + &
   self%force%selected(patch%time, d, p, self%Ux, self%Uy, self%Uz, patch%mesh)
   end associate
 END SUBROUTINE pre_update

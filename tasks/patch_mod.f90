@@ -87,6 +87,7 @@ MODULE patch_mod
                                         ! units (e.g. rad/s for the phi coord.); for
                                         ! Cartesian coords., equal to `velocity`.
   contains
+    procedure, nopass:: cast2patch
     procedure:: init
     procedure:: init_default
     procedure:: init_bdries
@@ -302,6 +303,32 @@ SUBROUTINE header_to_patch (self, head)
   !$omp atomic
   timer%latency%n    = timer%latency%n+1
 END SUBROUTINE header_to_patch
+
+!> =============================================================================
+!> Cast a generic task_t to patch_t
+!> =============================================================================
+FUNCTION cast2patch (task) RESULT(patch)
+  class(task_t), pointer:: task
+  class(patch_t), pointer:: patch
+  !.............................................................................
+  select type (task)
+  class is (patch_t)
+  patch => task
+  class default
+  nullify(patch)
+  call io%abort ('patch_t%cast: failed to cast a task to patch_t')
+  end select
+END FUNCTION cast2patch
+
+!> =============================================================================
+!> Public function (deprecated)
+!> =============================================================================
+FUNCTION task2patch (task) RESULT (patch)
+  class(task_t), pointer:: task
+  class(patch_t), pointer:: patch
+  !.............................................................................
+  patch => cast2patch (task)
+END FUNCTION task2patch
 
 !> =============================================================================
 !> Initialize the patch memory and patch dimensions.  For this we need to be told the
@@ -1912,19 +1939,6 @@ FUNCTION local_iit (self) RESULT (iit)
   !iit = [(1+mod(it+i,self%nt), i=1,self%nt)]
   iit = self%iit
 END FUNCTION local_iit
-
-!> =============================================================================
-FUNCTION task2patch (task) RESULT (patch)
-  class(task_t), pointer:: task
-  class(patch_t), pointer:: patch
-  select type (task)
-  class is (patch_t)
-  patch => task
-  class default
-  nullify(patch)
-  stop
-  end select
-END FUNCTION
 
 !> =============================================================================
 !> Statistics for all vars in a patch

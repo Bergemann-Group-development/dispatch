@@ -136,13 +136,13 @@ SUBROUTINE execute (self, task_list)
   list => task_list
   link => task_list%head
   do while (associated(link))
-    link => link%next
     associate (task=>link%task)
     select type (task)
     class is (gpatch_t)
     call task%init_task_list (list)
     end select
     end associate
+    link => link%next
   end do
   !-----------------------------------------------------------------------------
   ! Call the selected dispatcher method
