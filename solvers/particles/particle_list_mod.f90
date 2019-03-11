@@ -21,6 +21,7 @@ MODULE particle_list_mod
     integer:: nt=4
   contains
     procedure:: init
+    procedure:: force
     procedure:: force_field
     procedure:: test
     procedure:: print
@@ -38,6 +39,58 @@ SUBROUTINE init (self, name)
   call self%dll_t%init (name)
   call particle%init
 END SUBROUTINE init
+
+!> =============================================================================
+!> Initialize a particle list
+!> =============================================================================
+SUBROUTINE append (self, new)
+  class (particle_list_t):: self
+  class (particle_t), pointer:: new
+  class (dll_node_t), pointer:: new_dll
+  !-----------------------------------------------------------------------------
+  new_dll => new
+  call self%dll_t%append (new_dll)
+END SUBROUTINE append
+
+!> =============================================================================
+!> Compute force from other particles by direct summation
+!> =============================================================================
+FUNCTION force (self, p)
+  class(particle_list_t):: self
+  class(particle_t), pointer:: p
+  real(8):: force(3)
+  !.............................................................................
+  class(dll_node_t), pointer:: o
+  integer:: i, i0, i1, j
+  real(8):: rp(3), pt, qt, r(3), r1, r2, r3
+  !-----------------------------------------------------------------------------
+  force = 0.0_8
+  rp = p%r(:,p%it)
+  o => self%head
+  do while (associated(o))
+    if (.not.associated (o, p)) then
+      select type (o)
+      class is (particle_t)
+      do i=2,self%nt-1
+        i1 = o%iit(i)
+        if (o%t(i1) > p%time) exit
+      end do
+      i0 = o%iit(i-1)
+      pt = (p%time-o%t(i0))/max(o%t(i1)-o%t(i0),tiny(1d0))
+      qt = 1d0-pt
+      r2 = tiny(1d0)
+      do j=1,3
+        r(j) = (qt*o%r(j,i0) + pt*o%r(j,i1)) - rp(j)
+        r2 = r2 + r(j)**2
+      end do
+      r1 = 1.0/sqrt(r2)
+      r3 = r1**3
+      force = force - o%mass*r*r3
+      end select
+    end if
+    o => o%next
+  end do
+END FUNCTION force
 
 !> =============================================================================
 !> =============================================================================

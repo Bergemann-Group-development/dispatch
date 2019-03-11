@@ -64,11 +64,12 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
-  !USE forces_mod                                        ! forces
-  !USE trace_particles_mod                               ! trace_particles
-  !USE spitzer_mod                                       ! spitzer conductivity
-  !USE gravity_mod                                       ! gravity
-  !USE sinkparticles_mod                                 ! sinkp
+  !USE forces_mod                                                ! forces
+  !USE trace_particles_mod                                       ! tracep
+  !USE spitzer_mod                                               ! spitzer
+  !USE gravity_mod                                               ! gravity
+  !USE sink_patch_mod                                            ! sinkp
+  !USE particle_solver_mod                                       ! sinkp
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -77,12 +78,12 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
-    !type(forces_t):: forces                             ! forces
-    !type (spitzer_t):: spitzer                          ! spitzer_conductivity
-    !type(gravity_t):: gravity                           ! gravity
-    !type(sinkparticles_t):: sinkparticles               ! sinkp
-    !class(trace_particles_t), pointer:: trace_particles ! trace_particles
-    !real, dimension(:,:,:,:), pointer:: v               ! trace_particles
+    !type(forces_t):: forces                                     ! forces
+    !type (spitzer_t):: spitzer                                  ! spitzer
+    !type(gravity_t):: gravity                                   ! gravity
+    !type(sinkparticles_t):: sinkparticles                       ! sinkp
+    !class(trace_particles_t), pointer:: trace_particles         ! tracep
+    !real, dimension(:,:,:,:), pointer:: v                       ! tracep
   contains
     procedure:: init
     procedure:: init_task_list
@@ -100,16 +101,16 @@ CONTAINS
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
-  !call self%forces%init (self)                          ! forces
+  !call self%forces%init (self)                                  ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------
-  !allocate (self%trace_particles)                       ! trace_particles
-  !self%connect%trace_particles => self%trace_particles  ! trace_particles
-  !call self%trace_particles%add (self%link%task)        ! trace_particles
-  !call self%spitzer%init(self%link)                     ! spitzer conductivity
-  !call self%gravity%init(self%link)                     ! gravity
-  !call self%sinkparticles%init                          ! sinkp
+  !allocate (self%trace_particles)                               ! tracep
+  !self%connect%trace_particles => self%trace_particles          ! tracep
+  !call self%trace_particles%add (self%link%task)                ! tracep
+  !call self%spitzer%init(self%link)                             ! spitzer
+  !call self%gravity%init(self%link)                             ! gravity
+  !call sink_patch%init                                          ! sinkp
 END SUBROUTINE init
 
 !> =============================================================================
@@ -120,7 +121,6 @@ SUBROUTINE init_task_list (self, task_list)
   class(list_t), pointer:: task_list
   !.............................................................................
   self%task_list => task_list
-  !call self%sinkparticles%init_task_list (task_list)    ! sinkp
 END SUBROUTINE init_task_list
 
 !> =============================================================================
@@ -132,14 +132,15 @@ END SUBROUTINE init_task_list
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
-  if (allocated (self%forces_per_unit_mass)) &          ! always keep this
-    self%forces_per_unit_mass = 0.0                     ! always keep this
-  if (allocated (self%forces_per_unit_volume)) &        ! always keep this
-    self%forces_per_unit_volume = 0.0                   ! always keep this
-  !call self%forces%pre_update (self)                    ! forces
-  !call self%trace_particles%update (self)               ! trace_particles
-  !call self%spitzer%pre_update()                        ! spitzer conductivity
-  !call self%gravity%pre_update()                        ! gravity
+  if (allocated (self%forces_per_unit_mass)) &                  ! keep
+    self%forces_per_unit_mass = 0.0                             ! keep
+  if (allocated (self%forces_per_unit_volume)) &                ! keep
+    self%forces_per_unit_volume = 0.0                           ! keep
+  !call self%forces%pre_update (self)                            ! forces
+  !call self%trace_particles%update (self)                       ! tracep
+  !call self%spitzer%pre_update()                                ! spitzer
+  !call self%gravity%pre_update()                                ! gravity
+  !call particle_solver%force_field (self)                       ! sinkp
 END SUBROUTINE pre_update
 
 !> =============================================================================
@@ -148,8 +149,8 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
-  !call self%trace_particles%post_update (self)          ! trace_particles
-  !call self%gravity%post_update                         ! gravity
+  !call self%trace_particles%post_update (self)                  ! tracep
+  !call self%gravity%post_update                                 ! gravity
 END SUBROUTINE post_update
 
 !> =============================================================================
@@ -158,7 +159,7 @@ END SUBROUTINE post_update
 SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
-  call self%gpatch_t%output                             ! do NOT remove
+  call self%gpatch_t%output                                     ! keep
 END SUBROUTINE output
 
 !> =============================================================================
@@ -170,7 +171,7 @@ INTEGER function check_refine (self, patch)
   !.............................................................................
   check_refine = -1
   !check_refine = max (check_refine, &
-  !  sinkparticles%check_refine (patch))                 ! sinkp
+  !  sinkparticles%check_refine (patch))                         ! sinkp
 END FUNCTION check_refine
 
 END MODULE extras_mod

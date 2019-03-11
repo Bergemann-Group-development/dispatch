@@ -78,6 +78,8 @@ MODULE sink_patch_mod
 CONTAINS
 
 !> =============================================================================
+!> Initialize an instance of the sink_patch_t data type, with parameters for
+!> sink creation read from a sink_patch_params namelist.
 !> =============================================================================
 SUBROUTINE init (self)
   class(sink_patch_t):: self
@@ -105,6 +107,7 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !> =============================================================================
+!> Allows storing a link to a task list in the sink_patch_t data type
 !> =============================================================================
 SUBROUTINE init_task_list (self, task_list)
   class(sink_patch_t):: self
@@ -427,9 +430,9 @@ SUBROUTINE refine_check (self, link, refine)
       select type (task)
       class is (sink_patch_t)
         task%link => new_link
-        task%particle_solver => particle_solver
+        task%particle_solver => self%particle_solver
         task%particle => particle
-        call particle_solver%append (particle)
+        call self%particle_solver%append (particle)
         call task%init_task (gpatch)
         !-------------------------------------------------------------------------
         ! Initialize its neighbor list, and add it to the task list

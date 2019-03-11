@@ -46,11 +46,11 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.  
   !-----------------------------------------------------------------------------
-  USE forces_mod                                        ! forces
-  USE trace_particles_mod                               ! tracep
-  USE sink_patch_mod                                    ! sinkp
-  USE particle_solver_mod                               ! sinkp
-  !USE selfgravity_mod                                   ! self-g
+  USE forces_mod                                                ! forces
+  USE trace_particles_mod                                       ! tracep
+  USE sink_patch_mod                                            ! sinkp
+  USE particle_solver_mod                                       ! sinkp
+  !USE selfgravity_mod                                           ! selfg
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -59,10 +59,10 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
-    type(forces_t):: forces                             ! forces
-    class(trace_particles_t), pointer:: trace_particles ! tracep
-    real, dimension(:,:,:,:), pointer:: v               ! tracep
-    !type(selfgravity_t) :: selfgravity                  ! self-g
+    type(forces_t):: forces                                     ! forces
+    class(trace_particles_t), pointer:: trace_particles         ! tracep
+    real, dimension(:,:,:,:), pointer:: v                       ! tracep
+    !type(selfgravity_t) :: selfgravity                         ! selfg
   contains
     procedure:: init
     procedure:: pre_update
@@ -83,6 +83,7 @@ SUBROUTINE init (self)
   allocate (self%trace_particles)                               ! tracep
   self%connect%trace_particles => self%trace_particles          ! tracep
   call self%trace_particles%add (self%link)                     ! tracep
+  call sink_patch%init                                          ! sinkp
 END SUBROUTINE init
 
 !> =============================================================================
@@ -91,13 +92,13 @@ END SUBROUTINE init
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
-  if (allocated (self%force_per_unit_mass)) &          ! always keep this
-    self%force_per_unit_mass = 0.0                     ! always keep this
-  if (allocated (self%force_per_unit_volume)) &        ! always keep this
-    self%force_per_unit_volume = 0.0                   ! always keep this
-  call self%forces%pre_update                           ! forces
-  call self%trace_particles%update                      ! tracep
-  call particle_solver%force_field (self)               ! sinkp
+  if (allocated (self%force_per_unit_mass)) &                   ! keep
+    self%force_per_unit_mass = 0.0                              ! keep
+  if (allocated (self%force_per_unit_volume)) &                 ! keep
+    self%force_per_unit_volume = 0.0                            ! keep
+  call self%forces%pre_update                                   ! forces
+  call self%trace_particles%update                              ! tracep
+  call particle_solver%force_field (self)                       ! sinkp
 END SUBROUTINE pre_update
 
 !> =============================================================================
@@ -106,7 +107,7 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
-  call self%trace_particles%post_update                 ! tracep
+  call self%trace_particles%post_update                         ! tracep
 END SUBROUTINE post_update
 
 !> =============================================================================
@@ -115,7 +116,7 @@ END SUBROUTINE post_update
 SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
-  call self%gpatch_t%output                             ! do NOT remove
+  call self%gpatch_t%output                                     ! keep
 END SUBROUTINE output
 
 !> =============================================================================
@@ -128,7 +129,7 @@ INTEGER function check_refine (self, patch)
   !.............................................................................
   check_refine = -1
   check_refine = max (check_refine, &
-    sink_patch%check_refine (patch))                 ! sinkp
+    sink_patch%check_refine (patch))                            ! sinkp
 END FUNCTION check_refine
 
 END MODULE extras_mod
