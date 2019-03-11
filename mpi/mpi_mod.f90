@@ -24,6 +24,12 @@
 !> Too see which variables and procedures are inside mpi%, just look below!
 !>
 !> =============================================================================
+#ifdef __GFORTRAN__
+MODULE mpi
+  include 'mpif.h'
+END MODULE mpi
+#endif
+
 MODULE mpi_mod
   USE omp_mod
   USE omp_timer_mod
