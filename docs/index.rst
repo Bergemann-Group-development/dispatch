@@ -11,6 +11,8 @@ Welcome to DISPATCH's documentation!
    :caption: Contents:
 
 
+<a href=doxygen>Doxygen output</a>
+
 
 Indices and tables
 ==================
