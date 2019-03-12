@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> $Id$
 !> Basic MPI calls; initialization, end, barriers, asserts, wallclock, ...
 !>
@@ -23,7 +23,7 @@
 !>
 !> Too see which variables and procedures are inside mpi%, just look below!
 !>
-!> =============================================================================
+!===============================================================================
 MODULE mpi_mod
   USE omp_mod
   USE omp_timer_mod
@@ -62,12 +62,12 @@ PRIVATE
 PUBLIC mpi_t, mpi
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize an object with the most important pieces of information about MPI:
 !> mpi%size = the number of MPI ranks
 !> mpi%rank = the rank of the current MPI process (0-indexed)
 !> mpi%coord = the 3-D position of the rank, if a Cartesian arrangement is used
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, mpi_dims, dims)
   class(mpi_t):: self
   integer, optional, dimension(3):: mpi_dims, dims
@@ -117,16 +117,16 @@ SUBROUTINE init (self, mpi_dims, dims)
   call self%barrier (delay=0.1)
 END SUBROUTINE init
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE print_ (self)
   class(mpi_t):: self
   if (master) print *, 'mpi%size  =', mpi%size
 END SUBROUTINE
-!> =============================================================================
+!===============================================================================
 !> MPI barrier with optional label and delay -- often necessary to arrange serial
 !> printout from all ranks, one at a time
-!> =============================================================================
+!===============================================================================
 SUBROUTINE barrier_ (self, label, delay)
   class(mpi_t):: self
   character(len=*), optional:: label
@@ -147,7 +147,7 @@ SUBROUTINE barrier_ (self, label, delay)
   end if
 END SUBROUTINE barrier_
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_mpi (self)
   implicit none
   class(mpi_t):: self
@@ -196,7 +196,7 @@ SUBROUTINE init_mpi (self)
 #endif
 END SUBROUTINE init_mpi
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE end_mpi (self, label)
   class(mpi_t):: self
   character(len=*), optional:: label
@@ -217,7 +217,7 @@ SUBROUTINE end_mpi (self, label)
   !call exit        ! avoid "stop" which may produce one output line per process
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE abort_mpi (self, reason)
   class(mpi_t):: self
   character(len=*), optional:: reason
@@ -236,7 +236,7 @@ SUBROUTINE abort_mpi (self, reason)
   call exit
 END SUBROUTINE abort_mpi
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE clean_stop
 !...............................................................................
 #ifdef MPI
@@ -245,7 +245,7 @@ SUBROUTINE clean_stop
   call exit
 END SUBROUTINE clean_stop
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE barrier_mpi (self, label)
   class(mpi_t):: self
   character(len=*) label
@@ -260,7 +260,7 @@ SUBROUTINE barrier_mpi (self, label)
 #endif
 END SUBROUTINE barrier_mpi
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE assert (self, message, code)
   class(mpi_t):: self
   character(len=*):: message
@@ -277,12 +277,12 @@ SUBROUTINE assert (self, message, code)
   end if
 END SUBROUTINE assert
 
-!> =============================================================================
+!===============================================================================
 !> Attempt to determine the actual number of cores. If /proc/cpuinfo exists
 !> one has to count the number of sockets, but observing hom many different 
 !> "physical id" there are.  The number of cores per socket is in the field
 !> "cpu cores".
-!> =============================================================================
+!===============================================================================
 SUBROUTINE detect_cores
   character(len=32):: file="/proc/cpuinfo"
   character(len=32):: line
@@ -368,9 +368,9 @@ CONTAINS
   end function
 END SUBROUTINE detect_cores
 
-!> =============================================================================
+!===============================================================================
 !> Delay for about 1 ms, to encourage incoming messages to complete
-!> =============================================================================
+!===============================================================================
 SUBROUTINE delay (ms)
   real:: ms
   real(8):: wc
@@ -382,9 +382,9 @@ END SUBROUTINE delay
 
 END MODULE mpi_mod
 
-!> =============================================================================
+!===============================================================================
 !> Enable copying between any 4-byte arrays, without type checking restrictions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE anonymous_copy (n, a, b)
   integer:: n
   real(4):: a(n), b(n)

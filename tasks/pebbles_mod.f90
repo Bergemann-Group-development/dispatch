@@ -1,7 +1,7 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> A self-contained data type for pebbles, to which one needs to  pass the
 !> density, velocity, and patch information in argument lists
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE pebbles_mod
   USE io_mod
   USE trace_mod
@@ -90,9 +90,9 @@ MODULE pebbles_mod
   integer:: id=0
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Create a number of particles proportional at the left hand side wall
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(pebble_patch_t):: self
   !.............................................................................
@@ -155,10 +155,10 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Create a number of particles proportional at the left hand side wall,
 !> with initially a velocity interpolated from the argument velocity field
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add (self, n)
   class(pebble_patch_t):: self
   integer, intent(in):: n
@@ -210,10 +210,10 @@ SUBROUTINE add (self, n)
   call trace_end
 END SUBROUTINE add
 
-!> =============================================================================
+!===============================================================================
 !> Create a number of particles proportional at the left hand side wall,
 !> with initially a velocity interpolated from the argument velocity field
-!> =============================================================================
+!===============================================================================
 SUBROUTINE delete (self)
   class(pebbles_t):: self
   !.............................................................................
@@ -230,9 +230,9 @@ SUBROUTINE delete (self)
   call trace_end
 END SUBROUTINE delete
 
-!> =============================================================================
+!===============================================================================
 !> Kick step of kick-drift-kick (KDK), with gravity from star and planet
-!> =============================================================================
+!===============================================================================
 SUBROUTINE kdk (self, p)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: p
@@ -274,10 +274,10 @@ SUBROUTINE kdk (self, p)
   end if
 END SUBROUTINE kdk
 
-!> =============================================================================
+!===============================================================================
 !> Look up gas velocity components, given positions, and compute the drag rate
 !> (inverse stopping time)
-!> =============================================================================
+!===============================================================================
 SUBROUTINE drag (self, pebble, warning)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: pebble
@@ -348,9 +348,9 @@ SUBROUTINE drag (self, pebble, warning)
   end if
 END SUBROUTINE drag
 
-!> =============================================================================
+!===============================================================================
 !> Move a pebbles forward one step, with drag
-!> =============================================================================
+!===============================================================================
 SUBROUTINE kdk_drag (self, p)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: p
@@ -440,9 +440,9 @@ SUBROUTINE kdk_drag (self, p)
   end if
 END SUBROUTINE kdk_drag
 
-!> =============================================================================
+!===============================================================================
 !> Append a pebble to the list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE append (self, pebble)
   class(pebbles_t):: self
   class(pebble_t), pointer:: pebble
@@ -455,9 +455,9 @@ SUBROUTINE append (self, pebble)
   self%n = self%n + 1
 END SUBROUTINE append
 
-!> =============================================================================
+!===============================================================================
 !> Remove a pebble from the list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove (self, pebble)
   class(pebbles_t):: self
   class(pebble_t), pointer:: pebble, p
@@ -475,7 +475,7 @@ SUBROUTINE remove (self, pebble)
   self%n = self%n - 1
 END SUBROUTINE remove
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE export (self, pebble, nbor_list)
   class(pebbles_t):: self
   class(pebble_t), pointer:: pebble
@@ -493,11 +493,11 @@ SUBROUTINE export (self, pebble, nbor_list)
   end if
 END SUBROUTINE export
 
-!> =============================================================================
+!===============================================================================
 !> Move the pebbles forward one sweep, and check if still inside our patch.
 !> If not, search our neighbor list, and export to the neighbor pebble list.
 !> Also check if it has hit the planet, and count that as an accretion
-!> =============================================================================
+!===============================================================================
 SUBROUTINE step_pebbles (self, nbors)
   class(pebble_patch_t):: self
   class(link_t), pointer:: nbors
@@ -557,8 +557,8 @@ SUBROUTINE step_pebbles (self, nbors)
   self%pebbles%n_update = self%pebbles%n_update + self%pebbles%n
 END SUBROUTINE step_pebbles
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE scatter (self, pebbles, nbors, not_done)
   class(pebble_patch_t):: self
   class(pebbles_t), pointer:: pebbles
@@ -611,8 +611,8 @@ SUBROUTINE scatter (self, pebbles, nbors, not_done)
   pebbles%n_update = pebbles%n_update + pebbles%n
 END SUBROUTINE scatter
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE gather (self, pebbles, nbors, done)
   class(pebble_patch_t):: self
   class(pebbles_t), pointer:: pebbles
@@ -667,13 +667,13 @@ SUBROUTINE gather (self, pebbles, nbors, done)
   pebbles%n_update = pebbles%n_update + pebbles%n
 END SUBROUTINE gather
 
-!> =============================================================================
+!===============================================================================
 !> Bring all (remaining) pebbles up-to-date with respect to current time, by
 !> running through update update sweeps until all pebbles are up-to-date.  We
 !> first scatter all pebbles to a "not_done" buffer, and then gather them back
 !> to the self%pebbles as they finish (some may be exported to neighbor ranks
 !> in the process).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update_pebbles (self, nbors)
   class (pebble_patch_t):: self
   class (link_t), pointer:: nbors
@@ -694,8 +694,8 @@ SUBROUTINE update_pebbles (self, nbors)
   deallocate (self%not_done)
 END SUBROUTINE update_pebbles
   
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
   class(pebble_patch_t):: self
   real, intent(in):: p(3)
@@ -708,8 +708,8 @@ FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
   w  = w-ii
 END FUNCTION
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION inside_r4 (self, p) RESULT (out)
   class(pebble_patch_t):: self
   real, intent(in):: p(3)
@@ -718,8 +718,8 @@ FUNCTION inside_r4 (self, p) RESULT (out)
   out = all(abs(p) < 0.5*self%size)
 END FUNCTION
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION interpolate_r4 (self, field, i, w) RESULT (out)
   class(pebble_patch_t):: self
   real, dimension(:,:,:,:), intent(in):: field
@@ -744,7 +744,7 @@ FUNCTION interpolate_r4 (self, field, i, w) RESULT (out)
           q(2)*(w(1)*field(i(1),i(2)+1,i(3)+1,it)+q(1)*field(i(1)+1,i(2)+1,i(3)+1,it)))
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 !> Create a number of particles and move them with an artificial gas density
 !> and velocity field.  The calling sequence is
 !> 
@@ -755,7 +755,7 @@ END FUNCTION
 !>     pebble_mod::init
 !>       patch_mod::init
 !>         mesh_mod::init
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test (self, link)
   class(pebble_patch_t):: self
   !.............................................................................

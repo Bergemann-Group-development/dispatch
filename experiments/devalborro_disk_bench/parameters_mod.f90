@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 MODULE parameters_mod
   USE io_mod
   USE trace_mod
@@ -36,7 +36,7 @@ MODULE parameters_mod
   real(8), parameter :: pi = 3.14159265358979323846d0
 
 CONTAINS
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_planet (self)
   class(planet_t) :: self
   !-----------------------------------------------------------------------------
@@ -57,11 +57,11 @@ SUBROUTINE init_planet (self)
   call trace_end
 END SUBROUTINE init_planet
 
-!> =============================================================================
+!===============================================================================
 !> If `ramp_mass` is true, grow the planet mass from zero to `mplanet` over
 !> roughly 100 orbits; this is a standard prescription and taken from
 !> de Val-Borro et al. (2004).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE grow_planet (self, time)
   class(planet_t) :: self
   real(8), intent(in) :: time
@@ -73,11 +73,11 @@ SUBROUTINE grow_planet (self, time)
   end if
 END SUBROUTINE grow_planet
 
-!> =============================================================================
+!===============================================================================
 !> Move the planet in its orbit (assuming it is perfectly circular and it does
 !> not migrate).
 !> This subroutine also (unfortunately) assumes the phi domain is [-pi, pi].
-!> =============================================================================
+!===============================================================================
 SUBROUTINE move_planet (self, dt, omega)
   class(planet_t) :: self
   real(8), intent(in) :: dt, omega

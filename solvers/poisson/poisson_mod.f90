@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Methods for solving the Poisson equation; partially derived from routines
 !> developed by Troels Haugbølle for the course Computational Astrophysics.
-!> =============================================================================
+!===============================================================================
 MODULE poisson_mod
   USE mpi_mod
   USE io_mod
@@ -33,9 +33,9 @@ MODULE poisson_mod
 
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize poisson_params
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   implicit none
   class(poisson_t)  :: self
@@ -70,14 +70,14 @@ SUBROUTINE init (self)
   end select
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Conjugate gradient Poisson solver (Ghysels & Vanroose 2014, Algorithm 1)
 !>   http://www.sciencedirect.com/science/article/pii/S0167819113000719
 !> With the "incomplete Poisson" preconditioner from:
 !> http://www.vis.uni-stuttgart.de/~weiskopf/publications/pdp10.pdf 
 !> or http://ieeexplore.ieee.org/document/5452414/
 !> See also the CG method in RAMSES: `ramses/poisson/phi_fine_cg.f90`.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
   class(poisson_t)       :: self
   class(patch_t)         :: patch
@@ -174,9 +174,9 @@ SUBROUTINE cg (self, patch, phi1, d, d0, detailed_timer)
   deallocate (phi, source, r, p, s, u)
   if (detailed_timer) call trace%end (itimer)
 contains
-  !> =============================================================================
+  !===============================================================================
   !> Set scratch array outer boundary to zero
-  !> =============================================================================
+  !===============================================================================
   subroutine zero_boundaries (f)
     real(8):: f(:,:,:)
     class(mesh_t), pointer:: m(:)
@@ -196,9 +196,9 @@ contains
       f(:,:,m(3)%uo:m(3)%ub) = 0d0
     end if
   end subroutine zero_boundaries
-  !> =============================================================================
+  !===============================================================================
   !> 2nd order Laplace operator
-  !> =============================================================================
+  !===============================================================================
   subroutine laplace_Cartesian (ds, phi, out)
     real(8), intent(in)                   :: ds(3)
     real(8), dimension(:,:,:), intent(in) :: phi
@@ -260,9 +260,9 @@ contains
       end do
     end if
   end subroutine laplace_Cartesian
-  !> =============================================================================
+  !===============================================================================
   !> 2nd order Laplace operator for curvilinear coords.
-  !> =============================================================================
+  !===============================================================================
   subroutine laplace_curvilinear (ds, phi, out)
     real(8), intent(in)                   :: ds(3)
     real(8), dimension(:,:,:), intent(in) :: phi
@@ -309,9 +309,9 @@ contains
       end do
     end if
   end subroutine laplace_curvilinear
-  !> =============================================================================
+  !===============================================================================
   !> Preconditioner for conjugate gradient method
-  !> =============================================================================
+  !===============================================================================
   subroutine precond (res, out)
     real(8), dimension(:,:,:) :: res, out
     !.............................................................................
@@ -370,9 +370,9 @@ contains
   end subroutine precond
 END SUBROUTINE cg
 
-!> =============================================================================
+!===============================================================================
 !> 2nd order successive over relaxation with red-black ordering
-!> =============================================================================
+!===============================================================================
 SUBROUTINE sor (self, patch, phi1, d, d0, detailed_timer)
   class(poisson_t)       :: self
   class(patch_t)         :: patch
@@ -498,9 +498,9 @@ SUBROUTINE sor (self, patch, phi1, d, d0, detailed_timer)
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE sor
 
-!> =============================================================================
+!===============================================================================
 !> 2nd order Laplace operator
-!> =============================================================================
+!===============================================================================
 SUBROUTINE laplace (ds, phi, source, res)
   real(8)                   :: ds(3)
   real, dimension(:,:,:)    :: phi, source, res

@@ -1,4 +1,4 @@
-!> *****************************************************************************
+!*******************************************************************************
 !> Module for handling blocking and non-blocking MPI parallel I/O to a single file.
 !> The module is initialized by specifying the chunk size (which can be 1- or
 !> 3-dimensional). A chunk could be just a patch, or a single chunk of data per
@@ -27,7 +27,7 @@
 !>   !$omp barrier                                      ! all threads must agree
 !>   call file%close                                    ! implicit MPI barrier
 !>
-!> *****************************************************************************
+!*******************************************************************************
 MODULE mpi_io_mod
   USE io_mod
   USE io_unit_mod
@@ -99,9 +99,9 @@ MODULE mpi_io_mod
   type(mpi_io_t), public:: mpi_io
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the local size self%lsize, global size self%gsize
-!> =============================================================================
+!===============================================================================
 SUBROUTINE use (self, file)
   class(mpi_io_t):: self
   type(mpi_file_t):: file
@@ -111,9 +111,9 @@ SUBROUTINE use (self, file)
   call trace%end()
 END SUBROUTINE use
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the local size self%lsize, global size self%gsize
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(mpi_io_t):: self
   integer:: iostat
@@ -140,9 +140,9 @@ SUBROUTINE init (self)
   call trace%end()
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the local size self%lsize, global size self%gsize
-!> =============================================================================
+!===============================================================================
 SUBROUTINE set (self, rec_words, chunk_words, nwrite)
   class(mpi_io_t):: self
   integer(8), optional:: rec_words, chunk_words
@@ -164,9 +164,9 @@ SUBROUTINE set (self, rec_words, chunk_words, nwrite)
   call trace%end()
 END SUBROUTINE set
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the local size self%lsize, global size self%gsize
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_init (self)
   class(mpi_io_t):: self
   !-----------------------------------------------------------------------------
@@ -174,9 +174,9 @@ SUBROUTINE check_init (self)
   call self%assert ('mpi_io_t:chunk_words is not positive', err=self%chunk_words <= 0)
 END SUBROUTINE check_init
 
-!> =============================================================================
+!===============================================================================
 !> Write a chunk (self%lsize) out to the open file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE write3 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:):: f
@@ -204,9 +204,9 @@ SUBROUTINE write3 (self, f, rec, id)
 #endif
 END SUBROUTINE write3
 
-!> =============================================================================
+!===============================================================================
 !> Write a chunk (self%lsize) out to the open file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE write4 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:,:):: f
@@ -240,9 +240,9 @@ SUBROUTINE write4 (self, f, rec, id)
 #endif
 END SUBROUTINE write4
 
-!> =============================================================================
+!===============================================================================
 !> Write a chunk (self%lsize) out to the open file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE iwrite3 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:), pointer:: f
@@ -282,9 +282,9 @@ SUBROUTINE iwrite3 (self, f, rec, id)
 #endif
 END SUBROUTINE iwrite3
 
-!> =============================================================================
+!===============================================================================
 !> Write a chunk (self%lsize) out to the open file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE iwrite4 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:,:), pointer:: f
@@ -324,9 +324,9 @@ SUBROUTINE iwrite4 (self, f, rec, id)
 #endif
 END SUBROUTINE iwrite4
 
-!> =============================================================================
+!===============================================================================
 !> Read a chunk (self%lsize) from the open file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE read3 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:):: f
@@ -355,9 +355,9 @@ SUBROUTINE read3 (self, f, rec, id)
 #endif
 END SUBROUTINE read3
 
-!> =============================================================================
+!===============================================================================
 !> Read a chunk (self%lsize) from the open file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE read4 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:,:):: f
@@ -386,9 +386,9 @@ SUBROUTINE read4 (self, f, rec, id)
 #endif
 END SUBROUTINE read4
 
-!> =============================================================================
+!===============================================================================
 !> Assert no error
-!> =============================================================================
+!===============================================================================
 SUBROUTINE assert (self, label, err)
   class(mpi_io_t):: self
   character(len=*):: label
@@ -404,12 +404,12 @@ SUBROUTINE assert (self, label, err)
   end if
 END SUBROUTINE assert
 
-!> =============================================================================
+!===============================================================================
 !> Check for queued I/O, and do it all with one single thread, to avoid
 !> slowing down the other threads.  Other threads are free to append more
 !> items at the end of the iwrite_list in the mean time -- this does not
 !> disturb the thread doing I/O.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check (self)
   class(iwrite_list_t):: self
   class(dll_node_t), pointer:: node, next

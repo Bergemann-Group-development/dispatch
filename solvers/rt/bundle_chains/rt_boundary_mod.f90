@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> This module describes the boundary conditions for RT
 !> module.
-!> =============================================================================
+!===============================================================================
 MODULE rt_boundary_mod
   USE io_mod
   USE trace_mod
@@ -24,9 +24,9 @@ MODULE rt_boundary_mod
   end type
   type(rt_boundary_t), public :: rt_boundary
 CONTAINS
-!> =============================================================================
+!===============================================================================
 !> Read namelist
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(rt_boundary_t):: self
   character(len=16), save :: obc_treatment ='custom'
@@ -47,7 +47,7 @@ SUBROUTINE init (self)
     call scaling%init()
     select CASE(obc_treatment)
       case('custom')
-!> =====================================================================
+!=======================================================================
 !> Modify only this part and appropriate namelist
 !> ---------------------------------------------------------------------
         obc = 0
@@ -55,7 +55,7 @@ SUBROUTINE init (self)
         read (io%input, custom_bc_params)
         hot_temp = hot_temp/scaling%temp
         cool_temp = cool_temp/scaling%temp
-!> =====================================================================
+!=======================================================================
       case('reflective')
         obc = 1
       case('periodic')
@@ -94,9 +94,9 @@ SUBROUTINE set_obc (self, ppos, ds, i_in)
   class (rt_boundary_t) :: self
   real(kind=8) :: ppos(3), ds(3), c
   real(kind=4), dimension(self%n_wl_bins) :: i_in
-!> =====================================================================
+!=======================================================================
 !> Should be modified only from here on
-!> =====================================================================
+!=======================================================================
   c = cgs%stefan/cgs%pi*scaling%temp**4/scaling%f
   if (ppos(1) <= self%lbox(1)) then
     i_in(:) = c*self%hot_temp**4

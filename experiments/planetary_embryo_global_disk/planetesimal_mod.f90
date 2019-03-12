@@ -1,5 +1,5 @@
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 MODULE planetesimal_mod
   USE io_mod
   USE trace_mod
@@ -30,9 +30,9 @@ MODULE planetesimal_mod
 
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a solid sphere with a given radius and position
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_planetesimal (self)
   class(planetesimal_t) :: self
   !-----------------------------------------------------------------------------
@@ -76,11 +76,11 @@ SUBROUTINE init_planetesimal (self)
   call trace_end
 END SUBROUTINE init_planetesimal
 
-!> =============================================================================
+!===============================================================================
 !> If `ramp_mass` is true, grow the planet mass from zero to `mplanet` over
 !> roughly 100 orbits; this is a standard prescription and taken from
 !> de Val-Borro et al. (2004).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE grow_planetesimal (self, time)
   class(planetesimal_t) :: self
   real(8), intent(in) :: time
@@ -95,11 +95,11 @@ SUBROUTINE grow_planetesimal (self, time)
 
 END SUBROUTINE grow_planetesimal
 
-!> =============================================================================
+!===============================================================================
 !> Move the planet in its orbit (assuming it is perfectly circular and it does
 !> not migrate).
 !> This subroutine also (unfortunately) assumes the phi domain is [-pi, pi].
-!> =============================================================================
+!===============================================================================
 SUBROUTINE move_planetesimal (self, dt, omega)
   class(planetesimal_t) :: self
   real(8), intent(in) :: dt, omega
@@ -116,8 +116,8 @@ SUBROUTINE move_planetesimal (self, dt, omega)
 
 END SUBROUTINE move_planetesimal
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE update_planetesimal (self, time, dt)
   class(planetesimal_t):: self
   real(8), intent(in):: time, dt

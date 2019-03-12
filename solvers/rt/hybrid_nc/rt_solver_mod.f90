@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Module with RT solvers -- for now just an integral solver
-!> =============================================================================
+!===============================================================================
 MODULE rt_solver_mod
   USE io_mod
   USE trace_mod
@@ -22,9 +22,9 @@ MODULE rt_solver_mod
   logical:: detailed_timer=.false.
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Choose RT solver method
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init (self, onoff)
   class (rt_solver_t):: self
   logical:: onoff
@@ -32,9 +32,9 @@ SUBROUTINE init (self, onoff)
   detailed_timer = onoff
 END SUBROUTINE init
 
-!> =====================================================================
+!=======================================================================
 !> Integral reference solution method in forward direction
-!> =====================================================================
+!=======================================================================
 SUBROUTINE integral_forward_ref (self, dtau, ex0, S, q_in, q)
   implicit none
   class (rt_solver_t):: self
@@ -54,9 +54,9 @@ SUBROUTINE integral_forward_ref (self, dtau, ex0, S, q_in, q)
   end do
 END SUBROUTINE integral_forward_ref                                     ! 2d 13m 11a 1e ! 26f + 1e
 
-!> =====================================================================
+!=======================================================================
 !> Integral reference solution method in forward direction
-!> =====================================================================
+!=======================================================================
 SUBROUTINE integral_reverse_ref (self, dtau, ex0, S, q_in, q)
   implicit none
   class (rt_solver_t):: self
@@ -76,10 +76,10 @@ SUBROUTINE integral_reverse_ref (self, dtau, ex0, S, q_in, q)
   end do
 END SUBROUTINE integral_reverse_ref                                     ! 2d 13m 11a 1e ! 26f + 1e
 
-!> =====================================================================
+!=======================================================================
 !> Integral reference solution method in forward direction, assuming a
 !> linear source function in each dtau interval.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE integral_double_ref (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
   implicit none
   class (rt_solver_t):: self
@@ -111,7 +111,7 @@ SUBROUTINE integral_double_ref (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re
   end do
 END SUBROUTINE integral_double_ref                                              ! 2d 13m 11a 1e ! 26f + 1e
 
-!> =====================================================================
+!=======================================================================
 !> Integral solution method in forward direction
 !>  Input: N, dtau(2:n), S(1:n), qfw(1)
 !> Output: Q(1:n-1), qfw(n-1)
@@ -128,7 +128,7 @@ END SUBROUTINE integral_double_ref                                              
 !>
 !> Two additional points for source function are necessary to avoid the
 !> extrapolation of d1s and d2s.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q)
   implicit none
   class (rt_solver_t):: self
@@ -190,7 +190,7 @@ SUBROUTINE integral_forward (self, dtau, ex0, S, q_in, q)
 !  end do
 END SUBROUTINE integral_forward                                         ! 2d 13m 11a 1e ! 26f + 1e
 
-!> =============================================================================
+!===============================================================================
 !> Integral solution method in reverse direction
 !>  Input: N, dtau(2:n), S(1:n), qrv(n)
 !> Output: Q(1:n-1), qrv(2)
@@ -207,7 +207,7 @@ END SUBROUTINE integral_forward                                         ! 2d 13m
 !>
 !> Two additional points for source function are necessary to avoid the
 !> extrapolation of d1s and d2s.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q)
   implicit none
   class (rt_solver_t):: self
@@ -286,7 +286,7 @@ SUBROUTINE integral_reverse (self, dtau, ex0, S, q_in, q)
 !  end do
 END SUBROUTINE integral_reverse                                         ! 2d 13m 11a 1e ! 26f + 1e
 
-!> =====================================================================
+!=======================================================================
 !> Integral solution method in both directions
 !>  Input: N, dtau(2:n), S(1:n), q_in_fw(1), q_in_re(n)
 !> Output: Q(1:n-1), q_fw(2:n), q_re(1:n-1)
@@ -304,7 +304,7 @@ END SUBROUTINE integral_reverse                                         ! 2d 13m
 !>
 !> Two additional points for source function are necessary to avoid the
 !> extrapolation of d1s and d2s.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
   implicit none
   class (rt_solver_t):: self
@@ -379,7 +379,7 @@ SUBROUTINE integral_double (self, dtau, ex0, S, q_in_fw, q_in_re, q_fw, q_re)
 END SUBROUTINE integral_double                                          ! 2d 13m 11a 1e ! 26f + 1e
 
 SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
-!> =====================================================================
+!=======================================================================
 !> Solve the transfer equation, given optical depth and source function.
 !> "Steins trick" is used; storing the sum of the three elements in each
 !> row of the tridiagonal equation system, instead of the diagonal ele-
@@ -416,7 +416,7 @@ SUBROUTINE feautrier (self,dtau,s,q,qfw,qre,doxi)
 !> 12/01/2017 This routine is based on transfer_feautrier_omp from
 !> stagger.
 !
-!> =====================================================================
+!=======================================================================
   class (rt_solver_t):: self
   real(kind=KindRTVar), dimension(:,:,:), pointer :: dtau, s, q
   real(kind=KindRTVar), dimension(:,:), pointer :: qfw, qre

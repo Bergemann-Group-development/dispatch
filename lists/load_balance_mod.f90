@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Keep track of neighbor ranks and their loads, by sending and receiving short
 !> messages, storing the info in a linked list
 !>
@@ -14,7 +14,7 @@
 !> rank that was not on the list before.  If load balancing is handled by one
 !> patch at a time, inside a critical region, then no other critical regaion
 !> shouls be needed.
-!> =============================================================================
+!===============================================================================
 MODULE load_balance_mod
   USE io_mod
   USE trace_mod
@@ -94,8 +94,8 @@ MODULE load_balance_mod
   type(mesg_list_t):: nbor_sent_list
 CONTAINS
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(load_balance_t):: self
   logical, save:: on=.false.
@@ -122,8 +122,8 @@ SUBROUTINE init (self)
 #endif
 END SUBROUTINE init
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE active (self, flag)
   class(load_balance_t):: self
   logical:: flag
@@ -131,9 +131,9 @@ SUBROUTINE active (self, flag)
   self%on = flag
 END SUBROUTINE active
 
-!> =============================================================================
+!===============================================================================
 !> Pack the rank_info into an mpi_mesg_t data type
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pack (self, info, mesg)
   class(load_balance_t):: self
   type(rank_info_t):: info
@@ -168,9 +168,9 @@ SUBROUTINE pack (self, info, mesg)
   call trace%end()
 END SUBROUTINE pack
 
-!> =============================================================================
+!===============================================================================
 !> Unpack an mpi_mesg into a rank_info data type
-!> =============================================================================
+!===============================================================================
 SUBROUTINE unpack (self, buffer)
   class(load_balance_t):: self
   integer, dimension(:), pointer:: buffer
@@ -227,9 +227,9 @@ SUBROUTINE unpack (self, buffer)
   call trace%end()
 END SUBROUTINE unpack
 
-!> =============================================================================
+!===============================================================================
 !> Append to the rank_info_list -- called from init_nbors to initialize list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add (self, rank)
   class(load_balance_t):: self
   class(rank_info_t), pointer:: nbor_info
@@ -276,9 +276,9 @@ SUBROUTINE add (self, rank)
   call nbor_info%lock%unset
 END SUBROUTINE add
 
-!> =============================================================================
+!===============================================================================
 !> Append to the rank_info_list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE append (self, rank_info)
   class(rank_info_list_t):: self
   class(rank_info_t), pointer:: rank_info
@@ -294,9 +294,9 @@ SUBROUTINE append (self, rank_info)
   call trace%end()
 END SUBROUTINE append
 
-!> =============================================================================
+!===============================================================================
 !> Remove an item from the rank_info_list.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove (self, this)
   class(rank_info_list_t):: self
   class(rank_info_t), pointer:: this, rank_info, prev
@@ -338,11 +338,11 @@ SUBROUTINE remove (self, this)
   call trace%end()
 END SUBROUTINE remove
 
-!> =============================================================================
+!===============================================================================
 !> Send a small package with load information to all nbor ranks, adding the
 !> message to a list of sent messages, and checking the list for completed
 !> messages
-!> =============================================================================
+!===============================================================================
 SUBROUTINE send (self)
   class(rank_info_list_t):: self
   class(rank_info_t), pointer:: nbor_info
@@ -378,9 +378,9 @@ SUBROUTINE send (self)
   call trace%end()
 END SUBROUTINE send
 
-!> =============================================================================
+!===============================================================================
 !> Send a small package with load information to all nbor ranks
-!> =============================================================================
+!===============================================================================
 SUBROUTINE recv (self)
   class(rank_info_list_t):: self
   class(rank_info_t), pointer:: nbor_info
@@ -409,7 +409,7 @@ SUBROUTINE recv (self)
   call trace%end()
 END SUBROUTINE recv
 
-!> =============================================================================
+!===============================================================================
 !> Interpolate the local code time to the wall clock time nbor%wall (the latest
 !> known for nbor), and return the difference between that and nbor%time. A
 !> positive value means that nbor is ahead of the local rank.
@@ -417,7 +417,7 @@ END SUBROUTINE recv
 !> two conditions are fulfilled:  1) The nbor queue is getting short, AND 2)
 !> local queue is long enough.  We want the formula to become agressive when
 !> the load imbalance starts to get serious.
-!> =============================================================================
+!===============================================================================
 FUNCTION imbalance (self, nbor) RESULT (diff)
   class(rank_info_t):: self
   class(rank_info_t), pointer:: nbor
@@ -434,10 +434,10 @@ FUNCTION imbalance (self, nbor) RESULT (diff)
   diff = 2.0*(q_min/(q_min+nbor%nq)-q_max/(q_max+self%nq))
 END FUNCTION imbalance
 
-!> =============================================================================
+!===============================================================================
 !> Compute a measure of the task load, which for patches is the number of cells
 !> divided by the time step.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE measure_load (self, head)
   class (rank_info_t):: self
   class (link_t), pointer:: head
@@ -500,9 +500,9 @@ SUBROUTINE measure_load (self, head)
   call trace%end (itimer)
 END SUBROUTINE measure_load
 
-!> =============================================================================
+!===============================================================================
 !> Look up the load for a neighbor rank
-!> =============================================================================
+!===============================================================================
 FUNCTION find (self, rank, debug) RESULT (nbor_info)
   class(rank_info_list_t):: self
   integer:: rank
@@ -532,9 +532,9 @@ FUNCTION find (self, rank, debug) RESULT (nbor_info)
   call trace%end()
 END FUNCTION find
 
-!> =============================================================================
+!===============================================================================
 !> Print a rank_info list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print_lb (self, time)
   class(load_balance_t):: self
   real(8):: time
@@ -560,7 +560,7 @@ SUBROUTINE print_lb (self, time)
   call self%lock%unset
 END SUBROUTINE print_lb
 
-!> =============================================================================
+!===============================================================================
 !> Decide whether to give up ownership of a patch, to increase the load of an
 !> nbor task that needs more load. After a rank passes the critical threshold
 !> below, there is a delay before it's boundary patches are sent to its nbor
@@ -572,7 +572,7 @@ END SUBROUTINE print_lb
 !> The measure of imbalance used below is defined in rank_info_mod::imbalance.
 !> Ideally, it should contain both a measure of the actual load, the time skew,
 !> and the size of the ready queue on the two ranks being compared.
-!> =============================================================================
+!===============================================================================
 FUNCTION check_load (self, head) RESULT (sell)
   class (load_balance_t):: self
   class (link_t), pointer:: head, nbor

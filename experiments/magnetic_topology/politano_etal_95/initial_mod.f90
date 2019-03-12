@@ -1,11 +1,11 @@
-!> =============================================================================
+!===============================================================================
 !> Generate an initial state as per case A of Politano et al (1995), with
 !> additional random components added to the velocity and magnetic field.
 !>
 !> The module uses as little as possible from the general DISPATCH set of
 !> modules, and has the option to use random numbers read from a file
 !> random.dat.
-!> =============================================================================
+!===============================================================================
 MODULE initial_mod
   USE io_mod
   USE trace_mod
@@ -39,9 +39,9 @@ MODULE initial_mod
   type(index_t):: idx
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the initial condition module via namelist parameters
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
@@ -65,9 +65,9 @@ SUBROUTINE init (self, solver, gamma)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Ancient Numerical Recipes code, for transportability
-!> =============================================================================
+!===============================================================================
 FUNCTION ran1()
   real(8):: ran1
   integer:: idum,IA,IM,IQ,IR,NTAB,NDIV
@@ -85,9 +85,9 @@ FUNCTION ran1()
   seed1 = idum
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 !> Generate and save (or read) random numbers
-!> =============================================================================
+!===============================================================================
 FUNCTION rand()
   real(8):: rand
   iran = iran+1
@@ -99,9 +99,9 @@ FUNCTION rand()
   end if
 END FUNCTION rand
 
-!> =============================================================================
+!===============================================================================
 !> Generate 3D random vector in [0,1]
-!> =============================================================================
+!===============================================================================
 FUNCTION rand3()
   real(8):: rand3(3)
   integer:: j
@@ -111,11 +111,11 @@ FUNCTION rand3()
   end do
 END FUNCTION rand3
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase.  The
 !> mesh_t data type contains box sizes m%b(1:3), 3D position m%p(1:3), and cell
 !> coordinates m%r(i), where the index limits are m%lb and m%ub.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE condition (self, m, f)
   class(initial_t)       :: self
   class(mesh_t), pointer :: m(:)

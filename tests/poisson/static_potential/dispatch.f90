@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Generic DISPATCH main program for Cartesian meshes
-!> =============================================================================
+!===============================================================================
 PROGRAM dispatch
   USE setup_mod
   USE cartesian_mod
@@ -10,5 +10,5 @@ PROGRAM dispatch
   call cartesian%init                   ! Initialize the patch list and patches
   call cartesian%task_list%execute      ! Update task list = update all tasks
   call setup%end
-!> =============================================================================
+!===============================================================================
 END PROGRAM dispatch

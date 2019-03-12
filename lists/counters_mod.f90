@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Help keep track of when all patches have passed some counter, by decrementing
 !> a counter, from start to 0.  Typical use:
 !>
@@ -9,7 +9,7 @@
 !>     call counters%remove (id)
 !>   end if
 !> end if
-!> =============================================================================
+!===============================================================================
 MODULE counters_mod
   USE io_mod
   USE trace_mod
@@ -38,9 +38,9 @@ MODULE counters_mod
   type(counters_t), public:: counters
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Allow changing verbosity
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init(self)
   class(counters_t):: self
   integer:: iostat
@@ -57,10 +57,10 @@ SUBROUTINE init(self)
   !$omp end critical (input_cr)
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Find the counter instance with a given id and decrement counter.  If a
 !> counter with that id is not in the list, create one, and decrement it
-!> =============================================================================
+!===============================================================================
 FUNCTION decrement (self, id, start) RESULT (count)
   integer:: count
   class(counters_t):: self
@@ -87,10 +87,10 @@ FUNCTION decrement (self, id, start) RESULT (count)
   call trace%end()
 END FUNCTION decrement
 
-!> =============================================================================
+!===============================================================================
 !> Find the counter instance with a given id and decrement counter.  If a
 !> counter with that id is not in the list, create one, and increment it
-!> =============================================================================
+!===============================================================================
 FUNCTION increment (self, id, start) RESULT (count)
   integer:: count
   class(counters_t):: self
@@ -115,9 +115,9 @@ FUNCTION increment (self, id, start) RESULT (count)
   call trace%end()
 END FUNCTION increment
 
-!> =============================================================================
+!===============================================================================
 !> Find a counter with the given id, or create one
-!> =============================================================================
+!===============================================================================
 FUNCTION find (self, id, start) RESULT (counter)
   class(counters_t):: self
   integer:: id, start
@@ -156,9 +156,9 @@ FUNCTION find (self, id, start) RESULT (counter)
   call trace%end()
 END FUNCTION find
 
-!> =============================================================================
+!===============================================================================
 !> Append a new counter record counter to the list 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE append (self, counter)
   class(counters_t):: self
   type(counter_t), pointer:: counter
@@ -174,9 +174,9 @@ SUBROUTINE append (self, counter)
   call trace%end()
 END SUBROUTINE append
 
-!> =============================================================================
+!===============================================================================
 !> Remove the counter instance from the list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove (self, id)
   class(counters_t):: self
   integer:: id

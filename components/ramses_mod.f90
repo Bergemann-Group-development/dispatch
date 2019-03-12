@@ -1,10 +1,10 @@
-!> =============================================================================
+!===============================================================================
 !> Read a RAMSES snapshot and convert to DISPATCH data structures.
 !>
 !> In this first version, each 2**3 block in turned into 1 DISPATCH
 !> patch.
 !>
-!> =============================================================================
+!===============================================================================
 MODULE ramses_mod
   USE io_mod
   USE trace_mod
@@ -91,9 +91,9 @@ MODULE ramses_mod
   type(ramses_t), public:: ramses
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Facilitate call to `ramses%read`.  All heavy lifting is done there
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, name)
   class(ramses_t):: self
   character(len=*), optional:: name
@@ -183,10 +183,10 @@ SUBROUTINE init (self, name)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Read a RAMSES snapshot (likely split across multiple files), and create a
 !> patch for each "grid".
-!> =============================================================================
+!===============================================================================
 SUBROUTINE read_snapshot (self)
   class(ramses_t):: self
 
@@ -961,10 +961,10 @@ SUBROUTINE read_snapshot (self)
   call trace_end
 END SUBROUTINE read_snapshot
 
-!> =============================================================================
+!===============================================================================
 !> Lifted directly from `amr2cell.f90`/`hilbert3d_qdp` (in the Copenhagen
 !> RAMSES repository).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE hilbert3d(x,y,z,order,bit_length,npoint)
   integer     , intent(in):: bit_length, npoint
   integer     , intent(in), dimension(1:npoint):: x, y, z
@@ -1040,11 +1040,11 @@ SUBROUTINE hilbert3d(x,y,z,order,bit_length,npoint)
   enddo
 END SUBROUTINE hilbert3d
 
-!> =============================================================================
+!===============================================================================
 !> Convenience function to calculate the entropy (because the STAGGER solver in
 !> DISPATCH uses the entropy rather than the internal energy/pressure or total
 !> energy.)
-!> =============================================================================
+!===============================================================================
 FUNCTION energy (self, vars, patch) RESULT (e)
   class(ramses_t):: self
   real(kind=8):: e
@@ -1064,9 +1064,9 @@ FUNCTION energy (self, vars, patch) RESULT (e)
   end if
 END FUNCTION energy
 
-!> =============================================================================
+!===============================================================================
 !> Read sink particle information; the zoom-in sink is the last one, generally
-!> =============================================================================
+!===============================================================================
  SUBROUTINE read_sink (self)
   class(ramses_t):: self
   integer, parameter:: sink_unit=9
@@ -1108,7 +1108,7 @@ END FUNCTION energy
   call trace_end
 END SUBROUTINE read_sink
 
-!> =============================================================================
+!===============================================================================
 !> Attempt to merge 2**3 RAMSES octs into large patches (up to nmax**3 cells).
 !>
 !> - This subroutine is specific to RAMSES data; it does not cover the possibility
@@ -1119,7 +1119,7 @@ END SUBROUTINE read_sink
 !> - Even with `merge_nbor_lists`, the neighbour list will still need to be
 !>   reconstructed at the end of this procedure to ensure the new, merged patches
 !>   are properly accounted for.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE merge_ramses_octs (self, n_max)
   class(ramses_t) :: self
   integer, intent(in) :: n_max
@@ -1281,10 +1281,10 @@ SUBROUTINE merge_ramses_octs (self, n_max)
   call trace_end
 END SUBROUTINE merge_ramses_octs
 
-!> =============================================================================
+!===============================================================================
 !> Perform the actual merger of two patches; does not carry over the neighbour
 !> lists of the two patches.
-!> =============================================================================
+!===============================================================================
 FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
   class(link_t), pointer :: link, nbor
   class(patch_t), pointer :: patch, nbor_patch, merger
@@ -1349,10 +1349,10 @@ FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
 
 END FUNCTION merge_neighbours
 
-!> =============================================================================
+!===============================================================================
 !> Walk through the task list, deallocating tasks which are flagged for removal
 !> (using `bits%remove`) while also removing the associated link in the task list.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE tidy_up (task_list)
   class(task_list_t) :: task_list
   class(task_t), pointer :: task
@@ -1384,9 +1384,9 @@ SUBROUTINE tidy_up (task_list)
   call trace_end
 END SUBROUTINE tidy_up
 
-!> =============================================================================
+!===============================================================================
 !> Evaluate update cost for all patches
-!> =============================================================================
+!===============================================================================
 SUBROUTINE evaluate (self)
   class (ramses_t):: self
   type (link_t), pointer:: link
@@ -1479,9 +1479,9 @@ SUBROUTINE evaluate (self)
   call trace_end
 END SUBROUTINE evaluate
 
-!> =============================================================================
+!===============================================================================
 !> Create a set of DISPATCH patches that cover the initial RAMSES patches
-!> =============================================================================
+!===============================================================================
 SUBROUTINE create_cartesian (self)
   class (ramses_t):: self
   !.............................................................................
@@ -1517,10 +1517,10 @@ contains
   end subroutine
 END SUBROUTINE create_cartesian
 
-!> =============================================================================
+!===============================================================================
 !> Create patches on the given level, at all Cartesian locations where there is
 !> overlap with a RAMSES patch with at least that level
-!> =============================================================================
+!===============================================================================
 SUBROUTINE create_level (self, level)
   class (ramses_t):: self
   integer:: level
@@ -1583,10 +1583,10 @@ contains
   end function overlaps
 END SUBROUTINE create_level
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a minimum amount of patch information in a Cartesian arrangement
 !> This assumes that positions lie btw 0.0 and self%size
-!> =============================================================================
+!===============================================================================
 SUBROUTINE cartesian_init (self, level, ix, iy, iz)
   class (ramses_t):: self
   integer:: level, ix, iy, iz
@@ -1609,9 +1609,9 @@ SUBROUTINE cartesian_init (self, level, ix, iy, iz)
   call trace%end
 END SUBROUTINE cartesian_init
 
-!> =============================================================================
+!===============================================================================
 !> Download values from the RAMSES octs to the DISPATCH patches
-!> =============================================================================
+!===============================================================================
 SUBROUTINE download_values (self)
   class (ramses_t):: self
   !.............................................................................
@@ -1643,11 +1643,11 @@ SUBROUTINE download_values (self)
   call trace%end
 END SUBROUTINE download_values
 
-!> =============================================================================
+!===============================================================================
 !> Remove the initial RAMSES patches, and their links in the task list, and
 !> then renumber the remaining tasks, consistent with the general numbering 
 !> scheme.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove_ramses_patches (self)
   class (ramses_t):: self
   !.............................................................................

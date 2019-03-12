@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Kick-Drift-Kick (KDK) N-body solver
-!> =============================================================================
+!===============================================================================
 MODULE particle_solver_mod
   USE io_unit_mod
   USE trace_mod
@@ -19,9 +19,9 @@ MODULE particle_solver_mod
   type(particle_solver_t), target, public:: particle_solver
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a particle list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, name)
   class(particle_solver_t):: self
   character(len=*), optional:: name
@@ -41,9 +41,9 @@ SUBROUTINE init (self, name)
   end if
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> KDK update
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self, p)
   class(particle_solver_t):: self
   class(particle_t), pointer:: p
@@ -67,12 +67,12 @@ SUBROUTINE update (self, p)
   p%iit(nt) = new
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Courant conditions:  Estimate, as inexpensively as possible, an approximately
 !> reflexive time step. If an estimate of the acceleration results in it not
 !> being important for the timestep size, then choose a fraction of the cell
 !> travel time (whatever that means in this context)
-!> =============================================================================
+!===============================================================================
 FUNCTION courant_time (self, p) RESULT (dt)
   class(particle_solver_t):: self
   class(particle_t), pointer:: p

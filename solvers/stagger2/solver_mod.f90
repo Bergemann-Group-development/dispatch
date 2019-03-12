@@ -1,9 +1,9 @@
-!> =============================================================================
+!===============================================================================
 !> The solver_t data type extends the patch_t with a generic guard zone dnload
 !> procedure, which covers the need for all simple, Cartesian mesh based 
 !> solvers, and eliminates the need for a dnload procedure in each one of them.
 !> It also adds restart functionality when initializing patches.
-!> =============================================================================
+!===============================================================================
 MODULE solver_mod
   USE io_mod
   USE trace_mod
@@ -45,9 +45,9 @@ MODULE solver_mod
   type(solver_t):: solver
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Organize calls to the extras and the hydro solver
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
@@ -56,9 +56,9 @@ SUBROUTINE init (self)
   call validate%init
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Organize calls to the extras and the hydro solver
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(solver_t) :: self
   associate (d=>self%mem(:,:,:,self%idx%d,self%it,1))
@@ -71,9 +71,9 @@ SUBROUTINE update (self)
   end associate
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Get velocities from momenta
-!> =============================================================================
+!===============================================================================
 SUBROUTINE p2U(self, U, it)
   class(solver_t) :: self
   real, dimension(:,:,:,:), pointer:: U
@@ -95,9 +95,9 @@ SUBROUTINE p2U(self, U, it)
   end associate
 END SUBROUTINE p2U
 
-!> =====================================================================
+!=======================================================================
 !> Put velocities to momenta
-!> =====================================================================
+!=======================================================================
 SUBROUTINE U2p(self, U, it)
   class(solver_t) :: self
   real, dimension(:,:,:,:), pointer:: U
@@ -119,9 +119,9 @@ SUBROUTINE U2p(self, U, it)
   end associate
 END SUBROUTINE U2p
 
-!> =============================================================================
+!===============================================================================
 !> Get thermal energy per unit mass from entropy
-!> =============================================================================
+!===============================================================================
 SUBROUTINE e2E_th(self, E_th, it)
   class(solver_t) :: self
   integer:: it
@@ -136,9 +136,9 @@ SUBROUTINE e2E_th(self, E_th, it)
   end associate
 END SUBROUTINE e2E_th
 
-!> =============================================================================
+!===============================================================================
 !> Put thermal energy to entropy per unit volume
-!> =============================================================================
+!===============================================================================
 SUBROUTINE E_th2e(self, E_th, it)
   class(solver_t) :: self
   integer:: it
@@ -153,9 +153,9 @@ SUBROUTINE E_th2e(self, E_th, it)
   end associate
 END SUBROUTINE E_th2e
 
-!> =============================================================================
+!===============================================================================
 !> Get entropy per unit volume from energy per unit volume
-!> =============================================================================
+!===============================================================================
 SUBROUTINE e2s(self, s, it)
   class(solver_t) :: self
   integer:: it
@@ -170,9 +170,9 @@ SUBROUTINE e2s(self, s, it)
   end associate
 END SUBROUTINE e2s
 
-!> =============================================================================
+!===============================================================================
 !> Get entropy per unit mass from energy per unit volume
-!> =============================================================================
+!===============================================================================
 SUBROUTINE e2ss(self, ss, it)
   class(solver_t) :: self
   integer:: it
@@ -187,9 +187,9 @@ SUBROUTINE e2ss(self, ss, it)
   end associate
 END SUBROUTINE e2ss
 
-!> =============================================================================
+!===============================================================================
 !> Get thermal energy per unit volume from entropy per unit volume
-!> =============================================================================
+!===============================================================================
 SUBROUTINE s2e(self, s, it)
   class(solver_t) :: self
   integer:: it
@@ -204,9 +204,9 @@ SUBROUTINE s2e(self, s, it)
   end associate
 END SUBROUTINE S2e
 
-!> =============================================================================
+!===============================================================================
 !> Get thermal energy per unit volume from entropy per unit mass
-!> =============================================================================
+!===============================================================================
 SUBROUTINE ss2e(self, ss, it)
   class(solver_t) :: self
   integer:: it
@@ -221,10 +221,10 @@ SUBROUTINE ss2e(self, ss, it)
   end associate
 END SUBROUTINE ss2e
 
-!> =============================================================================
+!===============================================================================
 !> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
   class(solver_t):: self
   real, dimension(:,:,:), pointer:: lnd, ss
@@ -240,7 +240,7 @@ FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
   end associate
 END FUNCTION gas_temperature
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE log_density (self, v)
   class(solver_t):: self
   real, dimension(:,:,:), pointer:: v
@@ -248,7 +248,7 @@ SUBROUTINE log_density (self, v)
   v = log(self%mem(:,:,:,self%id,self%it,1))
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE log_pressure (self, lnd, ss, v)
   class(solver_t):: self
   real, dimension(:,:,:), pointer:: lnd, ss, v
@@ -256,7 +256,7 @@ SUBROUTINE log_pressure (self, lnd, ss, v)
   v = log(self%gas_pressure())
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE velocity_magnitude (self, v)
   class (solver_t):: self
   real, dimension(:,:,:), pointer:: v
@@ -270,7 +270,7 @@ SUBROUTINE velocity_magnitude (self, v)
   end if
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE magnetic_field_magnitude (self, v)
   class (solver_t):: self
   real, dimension(:,:,:), pointer:: v
@@ -280,7 +280,7 @@ SUBROUTINE magnetic_field_magnitude (self, v)
   v = norm(b)
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE void (self, v)
   class (solver_t):: self
   real, dimension(:,:,:), pointer:: v
@@ -288,13 +288,13 @@ SUBROUTINE void (self, v)
   v = 0.0
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE apply_heating (self, q)
   class (solver_t):: self
   real, dimension(:,:,:):: q
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_velocity_vector (self) RESULT (v)
   USE scalar_mod
   class (solver_t):: self
@@ -324,7 +324,7 @@ FUNCTION gas_velocity_vector (self) RESULT (v)
   nullify (d,p)
 END FUNCTION gas_velocity_vector
 
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
   USE scalar_mod
   class (solver_t):: self

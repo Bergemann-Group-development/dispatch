@@ -1,9 +1,9 @@
-!> =============================================================================
-!> **ZEUS-3D MHD method/operators module**
+!===============================================================================
+!****ZEUS-3D MHD method/operators module**
 !> The type defined/extended here is intended for instantiation/invokation/use.
 !> This particular form uses rho, e, \vec{s} = rho * \vec{v}, \vec{B} as the
 !> MHD fluid variables.
-!> =============================================================================
+!===============================================================================
 MODULE mhd_mod
   USE io_mod
   USE trace_mod
@@ -91,9 +91,9 @@ MODULE mhd_mod
 PUBLIC CopyToZeus, CopyFromZeus
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialise ZEUS module.
-!> =============================================================================
+!===============================================================================
 !---------------------------  NAMELIST PARAMETERS  ---------------------------
 !
 !  qcon      quadratic artificial viscosity (q) constant
@@ -213,7 +213,7 @@ CONTAINS
 !  primitive variables.
 !
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_zeus (self)
   class(mhd_t):: self
   integer:: i
@@ -332,8 +332,8 @@ SUBROUTINE init_zeus (self)
   call trace_end
 END SUBROUTINE init_zeus
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE update_zeus (self)
   class(mhd_t) :: self
   integer, save:: itimer=0
@@ -354,8 +354,8 @@ SUBROUTINE update_zeus (self)
   call self%counter_update
 END SUBROUTINE update_zeus
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE CopyToZeus (self)
   use amnodal
   class(mhd_t) :: self
@@ -466,7 +466,7 @@ SUBROUTINE CopyToZeus (self)
 
 END SUBROUTINE CopyToZeus
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE CopyFromZeus (self)
   class(mhd_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
@@ -494,7 +494,7 @@ SUBROUTINE CopyFromZeus (self)
 
 END SUBROUTINE CopyFromZeus
 
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
@@ -506,7 +506,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   end if
 END FUNCTION gas_pressure
 
-!> =============================================================================
+!===============================================================================
 !> In `download_mod::interpolate_to` at least, this is invoked by the "source"
 !> patch (`self`) and applied to `target`.
 !> In the case of momentum components in spherical and cylindrical coords., it
@@ -514,7 +514,7 @@ END FUNCTION gas_pressure
 !>
 !> target -> use `ii`
 !> source/self -> use `jj`
-!> =============================================================================
+!===============================================================================
 SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   USE patch_mod, only: patch_t
   class(mhd_t):: self
@@ -611,9 +611,9 @@ SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   call trace_end
 CONTAINS
 
-  !> ===========================================================================
+  !=============================================================================
   !> Expected format for `input`: A_x, A_y, A_z
-  !> ===========================================================================
+  !=============================================================================
   FUNCTION VectorCartToSph (input, x, y, z) RESULT (vec)
     real(kind=KindReal), intent(in):: x, y, z
     real(kind=KindScalarVar), dimension(3):: input, vec
@@ -683,9 +683,9 @@ CONTAINS
 
 END SUBROUTINE MapVectors
 
-!> =============================================================================
+!===============================================================================
 !> This subroutine intentionally DOES NOTHING.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE do_nothing (self, detailed_timer)
   class(mhd_t):: self
   logical, optional:: detailed_timer

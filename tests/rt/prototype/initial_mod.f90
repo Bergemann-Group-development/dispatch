@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> This is a start on a module that could become a general turbulence forcing
 !> module, where the standard forcing we have been using in RAMSES is implemented
-!> =============================================================================
+!===============================================================================
 MODULE initial_mod
   USE mpi_mod
   USE io_mod
@@ -27,10 +27,10 @@ MODULE initial_mod
   integer, save:: iread=0, iwrite=1
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup an initial state -- from reading a STAGGER code snapshot, a test case,
 !> or (FIXME) by reading a snapshot from a production run
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, kind)
   class(initial_t):: self
   character(len=*):: kind
@@ -76,14 +76,14 @@ SUBROUTINE init (self, kind)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE cleanup
   if (associated(buffer)) deallocate(buffer)
 END SUBROUTINE cleanup
 
-!> =============================================================================
+!===============================================================================
 !> Initialize from a snapshot file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE snapshot (self, m, ff. idx)
   class(initial_t):: self
   type(index_t):: idx
@@ -109,9 +109,9 @@ SUBROUTINE snapshot (self, m, ff. idx)
   call trace_end
 END SUBROUTINE snapshot
 
-!> =============================================================================
+!===============================================================================
 !> Initialize from a legacy raw data file, with auxciliary grid file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE stagger (self, m, ff, idx)
   class(initial_t):: self
   type(index_t):: idx
@@ -215,9 +215,9 @@ SUBROUTINE stagger (self, m, ff, idx)
   call trace_end
 END SUBROUTINE stagger
 
-!> =============================================================================
+!===============================================================================
 !> Initialize from a raw data file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE raw (self, m, ff, idx)
   class(initial_t):: self
   type(index_t):: idx
@@ -272,9 +272,9 @@ SUBROUTINE raw (self, m, ff, idx)
   call trace_end
 END SUBROUTINE raw
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
-!> =============================================================================
+!===============================================================================
 SUBROUTINE single_solenoidal (self, m, ff, idx)
   class(initial_t)      :: self
   type(index_t):: idx

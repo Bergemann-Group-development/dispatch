@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> $Id$
 !> HD module for the Sedov blast wave exercise
-!> =============================================================================
+!===============================================================================
 MODULE hd_solver_mod
   USE scalar_mod
   USE vector_mod
@@ -28,10 +28,10 @@ MODULE hd_solver_mod
   type(operator_t):: o
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Map variables to the current memory slot and initialize the deriv operators.
 !> hd_t%init is called from timestep_t%init, again called from task_list_t%init.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(hd_t):: self
   logical:: first_time=.true.
@@ -66,9 +66,9 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Evaluates the time derivatives of the hydrodynamic variables
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(hd_t):: self
   type(scalar_t), save:: viscosity, c_sound, log_rho, artificial_pressure, &
@@ -235,9 +235,9 @@ associate (rho=>self%d, s=>self%s, p=>self%p, dd_dt=>self%dddt, ds_dt=>self%dsdt
 end associate
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Compute the log density and other similar things -- for use in refinement
-!> =============================================================================
+!===============================================================================
 SUBROUTINE log_density (self, out)
   class(hd_t):: self
   real, dimension(self%n(1),self%n(2),self%n(3)):: out
@@ -261,26 +261,26 @@ SUBROUTINE log_density (self, out)
                                             self%li(3):self%ui(3), i_d, self%it, 1))
   call trace_end
 END SUBROUTINE log_density
-!> =============================================================================
+!===============================================================================
 SUBROUTINE log_pressure (self, out)
   class(hd_t):: self
   real, dimension(self%n(1),self%n(2),self%n(3)):: out
   !...............................................................................
   out = 0.0
 END SUBROUTINE log_pressure
-!> =============================================================================
+!===============================================================================
 SUBROUTINE velocity_magnitude (self, out)
   class(hd_t):: self
   real, dimension(self%n(1),self%n(2),self%n(3)):: out
   !...............................................................................
   out = 0.0
 END SUBROUTINE velocity_magnitude
-!> =============================================================================
+!===============================================================================
 SUBROUTINE magnetic_field_magnitude (self, out)
   class(hd_t):: self
   real, dimension(self%n(1),self%n(2),self%n(3)):: out
   !...............................................................................
   out = 0.0
 END SUBROUTINE magnetic_field_magnitude
-!> =============================================================================
+!===============================================================================
 END MODULE hd_solver_mod

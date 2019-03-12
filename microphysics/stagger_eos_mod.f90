@@ -1,6 +1,6 @@
-!> =====================================================================
+!=======================================================================
 !> EOS module, reading tabular EOS compatible with STAGGER code
-!> =====================================================================
+!=======================================================================
 MODULE eos_mod
   USE io_mod
   USE io_unit_mod
@@ -41,9 +41,9 @@ MODULE eos_mod
   type (eos_t), public:: eos
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialize EOS module (only once)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init (self, solver)
   class (eos_t):: self
   character(len=8) :: solver
@@ -107,12 +107,12 @@ SUBROUTINE init (self, solver)
   !$omp barrier
 END SUBROUTINE init
 
-!> =====================================================================
+!=======================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> rho - density; s - entropy; pg - gas pressure; tt - gas temperature;
 !> ne - electron pressure; rk - rho*kappa; src - source function;
 !> gam - adiabatic index, csound - sound speed.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE lookup_stagger (self, rho, ee, pg, tt, ne, rk, src, gam, csound)
   class (eos_t):: self
   real, dimension(:,:,:), intent(in) :: rho, ee
@@ -222,10 +222,10 @@ SUBROUTINE lookup_stagger (self, rho, ee, pg, tt, ne, rk, src, gam, csound)
   end do
 END SUBROUTINE lookup_stagger
 
-!> =====================================================================
+!=======================================================================
 !> Same as the previous one, but with extra re-scaling, if EOS table scale
 !> does not match the scaling_mod.f90
-!> =====================================================================
+!=======================================================================
 SUBROUTINE lookup_stagger_scaled (self, rho, ee, pg, tt, ne, rk, src, gam, csound)
   class (eos_t):: self
   real, dimension(:,:,:), intent(in) :: rho, ee
@@ -335,12 +335,12 @@ SUBROUTINE lookup_stagger_scaled (self, rho, ee, pg, tt, ne, rk, src, gam, csoun
   end do
 END SUBROUTINE lookup_stagger_scaled
 
-!> =====================================================================
+!=======================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> rho - density; s - internal energy; pg - gas pressure; tt - gas temperature;
 !> ne - electron pressure; rk - rho*kappa; src - source function;
 !> gam - adiabatic index, csound - sound speed.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE lookup_zeus (self, rho, s, pg, tt, ne, rk, src, gam, csound)
   class (eos_t):: self
   real, dimension(:,:,:), intent(in) :: rho, s
@@ -395,12 +395,12 @@ SUBROUTINE lookup_zeus (self, rho, s, pg, tt, ne, rk, src, gam, csound)
   end if
 END SUBROUTINE lookup_zeus
 
-!> =====================================================================
+!=======================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> rho - density; s - entropy; pg - gas pressure; tt - gas temperature;
 !> ne - electron pressure; rk - rho*kappa; src - source function;
 !> gam - adiabatic index, csound - sound speed.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE lookup_ramses (self, rho, s, pg, tt, ne, rk, src, gam, csound)
   class (eos_t):: self
   real, dimension(:,:,:), intent(in) :: rho, s

@@ -1,6 +1,6 @@
-!> *****************************************************************************
+!*******************************************************************************
 !> $Id$
-!> *****************************************************************************
+!*******************************************************************************
 MODULE force_mod
   USE io_mod
   USE trace_mod
@@ -33,9 +33,9 @@ MODULE force_mod
   integer :: seed = -3
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the force module
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, solver, id, mesh)
   class(force_t):: self
   integer:: id
@@ -71,7 +71,7 @@ SUBROUTINE init (self, solver, id, mesh)
   call self%random%init (seed)
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Calculate a random force, confined to a shell in k-space, at regular intervals
 !> in time.  We assume rho, P, and the sound speed to be near unity.  The velocity
 !> amplitude should be of the order ampl_turb.  The size (scale) of the drivings
@@ -88,7 +88,7 @@ END SUBROUTINE init
 !>
 !>            Restart must be done AFTER t=t_turn.
 !>            ------------------------------------
-!> =============================================================================
+!===============================================================================
 FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
   class(force_t)                             :: self
   real(8)                                    :: time

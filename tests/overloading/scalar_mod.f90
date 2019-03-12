@@ -1,6 +1,6 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE scalar_mod
   USE trace_mod
   implicit none
@@ -66,7 +66,7 @@ MODULE scalar_mod
   end interface
   public init_scalar
 CONTAINS
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_scalar (self, dims, ds, name)
   class(scalar_t):: self
   integer:: dims(3)
@@ -84,7 +84,7 @@ SUBROUTINE init_scalar (self, dims, ds, name)
   call self%allocate
   self%allocated = .true.
 END SUBROUTINE init_scalar
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_scalars (dims, ds, v1, v2, v3, v4, v5, v6, v7, v8, v9)
   integer:: dims(3)
   real:: ds(3)
@@ -100,7 +100,7 @@ SUBROUTINE init_scalars (dims, ds, v1, v2, v3, v4, v5, v6, v7, v8, v9)
   if (present(v8)) call init_scalar (v8, dims, ds)
   if (present(v9)) call init_scalar (v9, dims, ds)
 END SUBROUTINE init_scalars
-!> =============================================================================
+!===============================================================================
 SUBROUTINE deallocate_scalars (v1, v2, v3, v4, v5, v6, v7, v8, v9)
   type(scalar_t), optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9
   !.............................................................................
@@ -114,7 +114,7 @@ SUBROUTINE deallocate_scalars (v1, v2, v3, v4, v5, v6, v7, v8, v9)
   if (present(v8)) call deallocate_scalar (v8)
   if (present(v9)) call deallocate_scalar (v9)
 END SUBROUTINE deallocate_scalars
-!> =============================================================================
+!===============================================================================
 SUBROUTINE scalar_scalar_assign (out, in)
   type(scalar_t), intent(inout):: out
   type(scalar_t), intent(in):: in
@@ -127,25 +127,25 @@ SUBROUTINE scalar_scalar_assign (out, in)
   out%f  = in%f
   call in%tempdealloc ('scalar =')
 END SUBROUTINE scalar_scalar_assign
-!> =============================================================================
+!===============================================================================
 SUBROUTINE scalar_assign_real (out, in)
   type(scalar_t), intent(inout):: out
   real, intent(in):: in
   out%f = in
 END SUBROUTINE scalar_assign_real
-!> =============================================================================
+!===============================================================================
 SUBROUTINE scalar_assign_int (out, in)
   type(scalar_t), intent(inout):: out
   integer, intent(in):: in
   out%f = in
 END SUBROUTINE scalar_assign_int
-!> =============================================================================
+!===============================================================================
 SUBROUTINE scalar_assign (out, in)
   type(scalar_t), intent(inout):: out
   real, dimension(:,:,:), intent(in), pointer:: in
   out%f = in
 END SUBROUTINE scalar_assign
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_minus (in) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in
@@ -153,14 +153,14 @@ FUNCTION scalar_minus (in) RESULT (out)
   out%f = - in%f
   call in%tempdealloc
 END FUNCTION scalar_minus
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_maxval (in) RESULT (out)
   real:: out
   type(scalar_t), intent(in):: in
   out = maxval(in%f)
   call in%tempdealloc
 END FUNCTION scalar_maxval
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_max (in1, in2) RESULT (out)
   type(scalar_t), intent(in):: in1
   real, intent(in):: in2
@@ -169,14 +169,14 @@ FUNCTION scalar_max (in1, in2) RESULT (out)
   out%f = max(in1%f,in2)
   call in1%tempdealloc
 END FUNCTION scalar_max
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_minval (in) RESULT (out)
   real:: out
   type(scalar_t), intent(in):: in
   out = minval(in%f)
   call in%tempdealloc
 END FUNCTION scalar_minval
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_exp (in) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in
@@ -193,7 +193,7 @@ FUNCTION scalar_exp (in) RESULT (out)
   call in%tempdealloc('scalar_exp')
   call trace_end
 END FUNCTION scalar_exp
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_log (in) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in
@@ -201,7 +201,7 @@ FUNCTION scalar_log (in) RESULT (out)
   out%f = log(in%f)
   call in%tempdealloc
 END FUNCTION scalar_log
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_sqrt (in) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in
@@ -210,7 +210,7 @@ FUNCTION scalar_sqrt (in) RESULT (out)
   call in%tempdealloc
 END FUNCTION scalar_sqrt
 
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_real_add (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
@@ -219,7 +219,7 @@ FUNCTION scalar_real_add (in1, in2) RESULT (out)
   out%f = in1%f + in2
   call in1%tempdealloc
 END FUNCTION scalar_real_add
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_int_add (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
@@ -228,7 +228,7 @@ FUNCTION scalar_int_add (in1, in2) RESULT (out)
   out%f = in1%f + in2
   call in1%tempdealloc
 END FUNCTION scalar_int_add
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_scalar_add (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1, in2
@@ -238,7 +238,7 @@ FUNCTION scalar_scalar_add (in1, in2) RESULT (out)
   call in2%tempdealloc ('scalar add')
 END FUNCTION scalar_scalar_add
 
-!> =============================================================================
+!===============================================================================
 FUNCTION real8_scalar_mul (in1, in2) RESULT (out)
   type(scalar_t):: out
   real(8), intent(in):: in1
@@ -247,7 +247,7 @@ FUNCTION real8_scalar_mul (in1, in2) RESULT (out)
   out%f = in1 * in2%f
   call in2%tempdealloc
 END FUNCTION real8_scalar_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION real_scalar_mul (in1, in2) RESULT (out)
   type(scalar_t):: out
   real, intent(in):: in1
@@ -256,7 +256,7 @@ FUNCTION real_scalar_mul (in1, in2) RESULT (out)
   out%f = in1 * in2%f
   call in2%tempdealloc
 END FUNCTION real_scalar_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_real_mul (in1, in2) RESULT (out)
   type(scalar_t):: out
   real, intent(in):: in2
@@ -265,7 +265,7 @@ FUNCTION scalar_real_mul (in1, in2) RESULT (out)
   out%f = in2 * in1%f
   call in1%tempdealloc
 END FUNCTION scalar_real_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_int_mul (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
@@ -274,7 +274,7 @@ FUNCTION scalar_int_mul (in1, in2) RESULT (out)
   out%f = in1%f * in2
   call in1%tempdealloc
 END FUNCTION scalar_int_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_scalar_mul (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1, in2
@@ -283,7 +283,7 @@ FUNCTION scalar_scalar_mul (in1, in2) RESULT (out)
   call in1%tempdealloc
   call in2%tempdealloc
 END FUNCTION scalar_scalar_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_scalar_divide (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1, in2
@@ -293,7 +293,7 @@ FUNCTION scalar_scalar_divide (in1, in2) RESULT (out)
   call in2%tempdealloc
 END FUNCTION scalar_scalar_divide
 
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_power_int (in1, in2) RESULT(out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
@@ -302,7 +302,7 @@ FUNCTION scalar_power_int (in1, in2) RESULT(out)
   out%f = in1%f**in2
   call in1%tempdealloc
 END FUNCTION scalar_power_int
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_power_real (in1, in2) RESULT(out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
@@ -312,7 +312,7 @@ FUNCTION scalar_power_real (in1, in2) RESULT(out)
   call in1%tempdealloc
 END FUNCTION scalar_power_real
 
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_real_sub (in1, in2) RESULT(out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
@@ -321,7 +321,7 @@ FUNCTION scalar_real_sub (in1, in2) RESULT(out)
   out%f = in1%f - in2
   call in1%tempdealloc
 END FUNCTION scalar_real_sub
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_int_sub (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(scalar_t), intent(in):: in1
@@ -330,7 +330,7 @@ FUNCTION scalar_int_sub (in1, in2) RESULT (out)
   out%f = in1%f - in2
   call in1%tempdealloc
 END FUNCTION scalar_int_sub
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_scalar_sub (in1, in2) RESULT (out)
   type(scalar_t), intent(in):: in1, in2
   type(scalar_t):: out
@@ -340,7 +340,7 @@ FUNCTION scalar_scalar_sub (in1, in2) RESULT (out)
   call in2%tempdealloc ('scalar sub')
 END FUNCTION scalar_scalar_sub
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE allocate_scalar (self)
   class(scalar_t):: self
   !.............................................................................
@@ -352,7 +352,7 @@ SUBROUTINE allocate_scalar (self)
   self%f = 1.0
   self%allocated = .true.
 END SUBROUTINE allocate_scalar
-!> =============================================================================
+!===============================================================================
 SUBROUTINE deallocate_scalar (self, label)
   class(scalar_t):: self
   character(len=*), optional:: label
@@ -367,7 +367,7 @@ SUBROUTINE deallocate_scalar (self, label)
   end if
 END SUBROUTINE deallocate_scalar
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE tempalloc (self, in, label)
   class(scalar_t), target:: self
   type(scalar_t):: in
@@ -399,7 +399,7 @@ SUBROUTINE tempalloc (self, in, label)
   tail => node
 END SUBROUTINE tempalloc
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE tempdealloc (self, label)
   class(scalar_t):: self
   character(len=*), optional:: label
@@ -419,7 +419,7 @@ SUBROUTINE tempdealloc (self, label)
   self%temporary = .false.
 END SUBROUTINE tempdealloc
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE cleanup_temp
   type(node_t), pointer:: node, rm
   integer:: save
@@ -438,5 +438,5 @@ SUBROUTINE cleanup_temp
   nullify (head, tail)
 END SUBROUTINE cleanup_temp
 
-!> =============================================================================
+!===============================================================================
 END MODULE scalar_mod

@@ -19,9 +19,9 @@ MODULE kinds_mod
   type(kinds_t), public:: kinds
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Utility function to handle optional logical switches in parameter lists
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION is_set (switch)
   logical, optional:: switch
   if (present(switch)) then

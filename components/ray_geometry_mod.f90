@@ -143,9 +143,9 @@ MODULE ray_geometry_mod
   type(ray_geometry_list_t), public :: ray_geometry
   real(8), public, parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
 CONTAINS
-!> =====================================================================
+!=======================================================================
 !> Initialisation subroutine
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_cartesian(self,li,ui, cell_dims)
   class(ray_geometry_list_t)      :: self
   integer                         :: i, li(3), ui(3)
@@ -193,11 +193,11 @@ SUBROUTINE init_cartesian(self,li,ui, cell_dims)
 END SUBROUTINE init_cartesian
     
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to add axisymmetric rays. It is done separately, because
 !> it is much simpler and therefore faster than with rays with other
 !> angles. Adds stiff ray arrays instantly.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE add_axis(self)
   class(ray_geometry_t)     :: self
   type(ray_list_t), pointer :: ray 
@@ -278,11 +278,11 @@ SUBROUTINE add_axis(self)
   call trace_end
 END SUBROUTINE add_axis
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to add rays (except 0 and 45 degree angles). 
 !> Done using modified "fast voxel traversal" algorithm 
 !> (original, not modified, one is from Amanatides & Woo, 1987)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE add_ray(self, theta)
   class(ray_geometry_t)           :: self
   real                            :: theta, t, phi
@@ -360,7 +360,7 @@ SUBROUTINE add_ray(self, theta)
   call trace_end
 END SUBROUTINE add_ray
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to add diagonal (45 degree) rays. Done separately, because
 !> it is a special case - rays overlap when done from 3 directions.
 !> Otherwise it is still simpler and therefore faster than other angles -
@@ -378,7 +378,7 @@ END SUBROUTINE add_ray
 !> should resemble add_ray, but with strict follow-up of ray directions.
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-!> =====================================================================
+!=======================================================================
 SUBROUTINE add_diag(self)
   class(ray_geometry_t)      :: self
   real                       :: theta, t, phi
@@ -443,13 +443,13 @@ SUBROUTINE add_diag(self)
   call trace_end
 END SUBROUTINE add_diag
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to traverse rays in 2D. Similar to "fast voxel traversal
 !> algorithm" (Amanatides & Woo, 1987) and appendix A in Rijkhorst et al. (2006),
 !> but without their serious drawbacks and is (probably) faster.
 !> input: self, step size inside the cells (dp), nominal direction (a),
 !> ray direction (b), fixed coordinate (fc), starting position (init_step)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE traverse_2d(self, dp, a, b, fc, init_step)
   class(ray_geometry_t)              :: self
   class(ray_point_t), pointer        :: ray
@@ -503,11 +503,11 @@ call trace_begin('traverse_2d_t%traverse_2d')
   call trace_end
 END SUBROUTINE traverse_2D
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to traverse rays in 3D. Similar to "fast voxel traversal
 !> algorithm" (Amanatides & Woo, 1987) and appendix A in Rijkhorst et al. (2006),
 !> but without their serious drawbacks and is faster.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE traverse_3d(self, dp, a, b, c, init_step)
   class(ray_geometry_t)             :: self
   class(ray_point_t),       pointer :: ray
@@ -561,11 +561,11 @@ SUBROUTINE traverse_3d(self, dp, a, b, c, init_step)
   deallocate(t)   
 END SUBROUTINE traverse_3D 
 
-!> =====================================================================
+!=======================================================================
 !> INPUT: self, step size along ray direction (dp), smallest cell coord (li)
 !> highest cell coord (ui), nominal direction (a), ray direction (b), 
 !> fixed coord (fc)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_traverse_2D(self, dp, ui, li, a, b, fc)
   class(traverse_2d_t)  :: self
   integer, dimension(3) :: li, ui
@@ -594,11 +594,11 @@ END SUBROUTINE init_traverse_2D
 
 
 
-!> =====================================================================
+!=======================================================================
 !> INPUT: self, position in nominal direction (ia) and passive direction (ib),
 !> distance to cell walls (init_step), upstream cell position for particular
 !> ray (upstream)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE posit_2D(self, ia, ib, init_step, upstream)
   class (traverse_2d_t) :: self
   real, dimension(3) :: init_step
@@ -676,9 +676,9 @@ SUBROUTINE posit_2D(self, ia, ib, init_step, upstream)
   self%r_trace = 0.                                             ! distance, the ray has traveled
 END SUBROUTINE posit_2D
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine, which handles moving through cells in 2D
-!> =====================================================================
+!=======================================================================
 SUBROUTINE hop_2D (self)
   class (traverse_2d_t) :: self
 ! ......................................................................
@@ -712,8 +712,8 @@ SUBROUTINE hop_2D (self)
   end associate
 END SUBROUTINE hop_2D
 
-!> =====================================================================
-!> =====================================================================
+!=======================================================================
+!=======================================================================
 SUBROUTINE get_downstream_2D (self, downstream)
   class (traverse_2d_t) :: self
   real                  :: r_trace
@@ -753,8 +753,8 @@ SUBROUTINE get_downstream_2D (self, downstream)
   self%r_trace  = r_trace                  ! reset total distance
 END SUBROUTINE get_downstream_2D
 
-!> =====================================================================
-!> =====================================================================
+!=======================================================================
+!=======================================================================
 SUBROUTINE init_traverse_3D(self, dp, ui, li, a, b, c)
   class(traverse_3d_t) :: self
   integer, dimension(3)   :: li, ui
@@ -791,8 +791,8 @@ SUBROUTINE init_traverse_3D(self, dp, ui, li, a, b, c)
   call trace_end
 END SUBROUTINE init_traverse_3D
 
-!> =====================================================================
-!> =====================================================================
+!=======================================================================
+!=======================================================================
 SUBROUTINE posit_3D(self, ia, ib, init_step, upstream)
   class (traverse_3d_t) :: self
   real, dimension(3) :: init_step
@@ -918,9 +918,9 @@ SUBROUTINE posit_3D(self, ia, ib, init_step, upstream)
   self%r_trace = 0.
 END SUBROUTINE posit_3D
 
-!> =====================================================================
+!=======================================================================
 !> Convenience. Sets the lower wall index.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE cw_3d(self, axis, zero)
   class (traverse_3d_t) :: self
   integer               :: axis, c
@@ -945,9 +945,9 @@ SUBROUTINE cw_3d(self, axis, zero)
   end if
 END SUBROUTINE cw_3d
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine, which handles moving through cells in 3D
-!> =====================================================================
+!=======================================================================
 SUBROUTINE hop_3D (self)
   class (traverse_3d_t) :: self
 ! ......................................................................
@@ -1046,9 +1046,9 @@ SUBROUTINE hop_3D (self)
   end associate
 END SUBROUTINE hop_3D
 
-!> =====================================================================
+!=======================================================================
 !> Obtain downstream cell position
-!> =====================================================================
+!=======================================================================
 SUBROUTINE get_downstream_3D (self, downstream)
   class (traverse_3d_t) :: self
   real                  :: r_trace
@@ -1096,11 +1096,11 @@ SUBROUTINE get_downstream_3D (self, downstream)
   self%r_trace  = r_trace
 END SUBROUTINE get_downstream_3D
 
-!> =====================================================================
+!=======================================================================
 !> restart the ray when it hits a side-wall (invoke pseudo-periodic
 !> boundaries). This is for 2D case (less steps needed than in 3D ->
 !> is faster
-!> =====================================================================
+!=======================================================================
 SUBROUTINE restart_2D (self, upstream)
   class(traverse_2d_t) :: self
   real, dimension(3)   :: upstream
@@ -1126,10 +1126,10 @@ SUBROUTINE restart_2D (self, upstream)
   self%lw(self%a)  = -1; self%lw(self%b)  =  0; self%lw(self%fc) =  0   ! save wall data
 END SUBROUTINE restart_2D
 
-!> =====================================================================
+!=======================================================================
 !> restart the ray when it hits a side-wall (invoke pseudo-periodic
 !> boundaries). This is for the general, 3D case.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE restart_3D (self, upstream)
   class(traverse_3d_t) :: self
   real, dimension(3), intent(inout) :: upstream
@@ -1215,11 +1215,11 @@ SUBROUTINE restart_3D (self, upstream)
   self%uw = 0
 END SUBROUTINE restart_3D
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to create linked-list of ray points. Later this list is
 !> redone into a stiff (array) ray.
 !> INPUT: self, cell coordinates where the ray point have moved to (p)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE add_ray_point(self, p)
   class(ray_point_t)          :: self
   class(ray_point_t), pointer :: point
@@ -1242,11 +1242,11 @@ SUBROUTINE add_ray_point(self, p)
   call trace_end
 END SUBROUTINE add_ray_point
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to transform linked-list of ray points into a stiff (array)
 !> ray. Arranging is done based on the walls the ray hits.
 !> INPUT: self, linked list of ray points (ray_point)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE finish_ray(self, ray_point)
   class(single_ray_list_t)           :: self
   class(single_ray_list_t), pointer  :: ray, bundle
@@ -1328,9 +1328,9 @@ SUBROUTINE finish_ray(self, ray_point)
   call trace_end
 END SUBROUTINE finish_ray
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to restructure ray tree into 2D sorted ray tables.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE finish_single_ray_list(self, bundle)
   class(ray_geometry_t)             :: self
   class(single_ray_list_t), pointer :: bundle, prev, next_bundle
@@ -1422,10 +1422,10 @@ SUBROUTINE store_cell_data(self,c,pt,ray,lw,uw)
 END SUBROUTINE store_cell_data
 
 
-!> =====================================================================
+!=======================================================================
 !> Sort through the ray geometry list and select appropriate ray bundles
 !> for particular direction
-!> =====================================================================
+!=======================================================================
 SUBROUTINE get_my_rays (self, bundle, bundle_ID, inv)
   class(ray_geometry_t) :: self
   class(ray_list_t), pointer :: list_dir, list_bundle, bundle

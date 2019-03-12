@@ -19,8 +19,8 @@ module riemann_mod
   type(riemann_t), public:: rieman
 contains
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   class(riemann_t):: self
   integer:: ngrid
@@ -269,9 +269,9 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   !call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine hlld
 
-!> =============================================================================
+!===============================================================================
 !> HLLD 2D fluxes
-!> =============================================================================
+!===============================================================================
 SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
   INTEGER, INTENT(IN) :: j,k,l0,l1,nvar,xdim
   REAL(dp), DIMENSION(:,:),INTENT(IN)::qLL,qRL,qLR,qRR
@@ -676,9 +676,9 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
   !call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE hlld_2d
 
-!> =============================================================================
+!===============================================================================
 !> LLF 2D fluxes
-!> =============================================================================
+!===============================================================================
 SUBROUTINE llf_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
   INTEGER, INTENT(IN) :: j,k,l0,l1,nvar,xdim
   REAL(dp), DIMENSION(:,:),INTENT(IN)::qLL,qRL,qLR,qRR
@@ -783,9 +783,9 @@ SUBROUTINE llf_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
   !call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE llf_2d
 
-!> =============================================================================
+!===============================================================================
 !> LLF
-!> =============================================================================
+!===============================================================================
 SUBROUTINE llf (qleft, qright, fgdnv, ngrid,  detailed_timer)
   real(DP), dimension(:,:):: qleft, qright, fgdnv
   integer:: ngrid, l
@@ -796,9 +796,9 @@ SUBROUTINE llf (qleft, qright, fgdnv, ngrid,  detailed_timer)
   end do
 END SUBROUTINE llf
 
-!> =============================================================================
+!===============================================================================
 !> 1D local Lax-Friedrich Riemann solver
-!> =============================================================================
+!===============================================================================
 SUBROUTINE lax_friedrich (qleft, qright, fgdnv)
   REAL(dp), DIMENSION(:):: qleft, qright, fgdnv
   REAL(dp), DIMENSION(size(qleft)):: fleft, fright, fmean
@@ -827,8 +827,8 @@ SUBROUTINE lax_friedrich (qleft, qright, fgdnv)
   fgdnv = fmean - MAX(vleft,vright) * udiff
 END SUBROUTINE lax_friedrich
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE find_mhd_flux (qvar, cvar, ff)
   !! compute the 1D MHD fluxes from the conservative variables
   !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal,
@@ -873,8 +873,8 @@ SUBROUTINE find_mhd_flux (qvar, cvar, ff)
   ff(8) = C*u-A*w
 END SUBROUTINE find_mhd_flux
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE find_speed_fast(qvar,vel_info)
   !! calculate the fast magnetosonic velocity
   !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal,
@@ -895,8 +895,8 @@ SUBROUTINE find_speed_fast(qvar,vel_info)
   vel_info = cf
 END SUBROUTINE find_speed_fast
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE find_speed_info (qvar, vel_info)
   !! calculate the fastest velocity at which information is exchanged
   !! at the interface

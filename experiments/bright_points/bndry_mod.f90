@@ -31,7 +31,7 @@ MODULE bndry_mod
   end type
 
 CONTAINS
-!> =============================================================================
+!===============================================================================
 SUBROUTINE symmetric_x_lb_center(v,m)
   implicit none
   class(mesh_t), pointer                   :: m(:)

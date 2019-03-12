@@ -1,8 +1,8 @@
-!> =============================================================================
+!===============================================================================
 !> Dispatcher method that relies on all threads maintaining a "ready queue", with
 !> tasks ready for updating.  Each thread picks the task at the head of the queue,
 !> and checks all nbors for tasks that are ready, putting them back in the queue.
-!> =============================================================================
+!===============================================================================
 MODULE dispatcher0_mod
   USE io_mod
   USE trace_mod
@@ -44,10 +44,10 @@ MODULE dispatcher0_mod
   type(dispatcher0_t), public:: dispatcher0
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the task list, by first initializing the list tasks, then making
 !> neighbor lists, and finally checking if they are ready to execute
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, name)
   class(dispatcher0_t):: self
   character(len=*), optional:: name
@@ -82,10 +82,10 @@ SUBROUTINE init (self, name)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Execute the task list, updating it until it is empty.  With !$omp parallel here,
 !> everything local to self%update is thread private.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE execute (self, task_list, test)
   class(dispatcher0_t):: self
   type(task_list_t), pointer:: task_list
@@ -137,7 +137,7 @@ SUBROUTINE execute (self, task_list, test)
   flush (io_unit%mpi)
 END SUBROUTINE execute
 
-!> =============================================================================
+!===============================================================================
 !> Update the state of the task list, taking the steps necessary to update the
 !> head task on the ready_queue, and check for consequences.  Two strategies:
 !>
@@ -156,7 +156,7 @@ END SUBROUTINE execute
 !> 2) The master thread takes care of picking tasks from the queue, starting an
 !>    OMP thread to update it, and checking for nbors that are ready to be
 !>    updated as a consquence
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self, task_list, test)
   class(dispatcher0_t):: self
   type(task_list_t), pointer:: task_list

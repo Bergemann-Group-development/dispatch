@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> This is a start on a module that could become a general turbulence forcing
 !> module, where the standard forcing we have been using in RAMSES is implemented
-!> =============================================================================
+!===============================================================================
 MODULE initial_mod
   USE io_mod
   USE trace_mod
@@ -30,9 +30,9 @@ MODULE initial_mod
   type(lagrange_t):: interp
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup an initial state, with head wind speed and accretion speed
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
    class(initial_t):: self
    logical, save:: first_time=.true.
@@ -48,9 +48,9 @@ SUBROUTINE init (self)
    call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
-!> =============================================================================
+!===============================================================================
 SUBROUTINE planet_atmosphere (self, m, mem, idx)
   class(initial_t) :: self
   type(index_t):: idx
@@ -124,9 +124,9 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
   call trace%end
 END SUBROUTINE planet_atmosphere
 
-!> =============================================================================
+!===============================================================================
 !> Use default Lagrange interpolation
-!> =============================================================================
+!===============================================================================
 FUNCTION interpolate (x0, n, x, y) RESULT(f)
   implicit none
   integer:: n

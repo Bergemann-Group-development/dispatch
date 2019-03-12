@@ -1,9 +1,9 @@
-!> =============================================================================
+!===============================================================================
 !> This index file has slot indices for all solver, all initially equal to zero
 !> It is the responsibility of the solver to set all values it needs to use.
 !> NOTE: The only reference to indices in tasks should be via task%idx, never to
 !> a temporary instance of index_t.
-!> =============================================================================
+!===============================================================================
 MODULE index_mod
   USE io_mod
   implicit none
@@ -20,9 +20,9 @@ MODULE index_mod
   type(index_t), public:: idx
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the indices to default values, possibly to be modified by solvers
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, ie, mhd)
   class(index_t):: self
   integer:: ie
@@ -55,9 +55,9 @@ SUBROUTINE init (self, ie, mhd)
   call self%copy
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the indices to default values, possibly to be modified by solvers
-!> =============================================================================
+!===============================================================================
 SUBROUTINE copy (self)
   class(index_t):: self
   !-----------------------------------------------------------------------------
@@ -75,9 +75,9 @@ SUBROUTINE copy (self)
   !$omp end critical (index_cr)
 END SUBROUTINE copy
 
-!> =============================================================================
+!===============================================================================
 !> Write out index value namelist, for python/dispatch/
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self, unit)
   class(index_t):: self
   integer:: unit
@@ -114,9 +114,9 @@ SUBROUTINE output (self, unit)
   end if
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 !> Write out time derivative index value namelist, for python/dispatch/
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output_time_derivs (self, unit)
   class(index_t):: self
   integer:: unit

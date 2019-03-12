@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Staggered mesh solver using entropy per unit volume as the energy variable.
 !>
 !> Flop counting is enable via annotation at the end of lines. To count flops,
@@ -7,7 +7,7 @@
 !> % grep ops: ../../../solvers/stagger2/mhd_mod.f90 | sed 's/.*ops://' | sumcol 2
 !>
 !> where 'sumcol' is any script that sums up values in column 2
-!> =============================================================================
+!===============================================================================
 MODULE mhd_mod
   USE io_mod
   USE bits_mod
@@ -65,10 +65,10 @@ MODULE mhd_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The construction with a double test on first_time avoids entering a critical
 !> region once the variable has been set.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer:: i
@@ -112,7 +112,7 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pde (self)
   USE scalar_mod
   class(mhd_t):: self
@@ -642,9 +642,9 @@ SUBROUTINE pde (self)
   call trace%end (itimer)
 END SUBROUTINE pde
 
-!> =============================================================================
+!===============================================================================
 !> Courant condition, one way or another
-!> =============================================================================
+!===============================================================================
 SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
   class(mhd_t):: self
   real(8):: dt_AD_inp
@@ -683,10 +683,10 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
   call trace%end
 END SUBROUTINE nonideal_MHD_courant_condition
 
-!> =============================================================================
+!===============================================================================
 !> Take a complete update step.  This can be overloaded in higher levels, e.g.
 !> in experiment_mod.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
   !-----------------------------------------------------------------------------
@@ -704,9 +704,9 @@ SUBROUTINE update (self)
   call self%check_density(' after timestep')
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self, experiment_name)
   class(mhd_t):: self
   character(len=64):: experiment_name, filename
@@ -728,9 +728,9 @@ SUBROUTINE output (self, experiment_name)
   !$omp end critical (out_cr)
 END SUBROUTINE output
 
-!> =====================================================================
+!=======================================================================
 !> Get velocities from momenta
-!> =====================================================================
+!=======================================================================
 SUBROUTINE p2U(self, U, it)
   class(mhd_t) :: self
   real, dimension(:,:,:,:), pointer:: U
@@ -747,9 +747,9 @@ SUBROUTINE p2U(self, U, it)
   end associate
 END SUBROUTINE p2U
 
-!> =====================================================================
+!=======================================================================
 !> Put velocities to momenta
-!> =====================================================================
+!=======================================================================
 SUBROUTINE U2p(self, U, it)
   class(mhd_t) :: self
   real, dimension(:,:,:,:), pointer:: U
@@ -766,9 +766,9 @@ SUBROUTINE U2p(self, U, it)
   end associate
 END SUBROUTINE U2p
 
-!> =====================================================================
+!=======================================================================
 !> Get thermal energy per unit mass from entropy
-!> =====================================================================
+!=======================================================================
 SUBROUTINE e2E_th(self, E_th, it)
   class(mhd_t) :: self
   integer:: it
@@ -783,9 +783,9 @@ SUBROUTINE e2E_th(self, E_th, it)
   end associate
 END SUBROUTINE e2E_th
 
-!> =====================================================================
+!=======================================================================
 !> Put thermal energy to entropy per unit volume
-!> =====================================================================
+!=======================================================================
 SUBROUTINE E_th2e(self, E_th, it)
   class(mhd_t) :: self
   integer:: it
@@ -800,9 +800,9 @@ SUBROUTINE E_th2e(self, E_th, it)
   end associate
 END SUBROUTINE E_th2e
 
-!> =====================================================================
+!=======================================================================
 !> Get thermal energy per unit mass from entropy
-!> =====================================================================
+!=======================================================================
 SUBROUTINE e2S(self, s, it)
   class(mhd_t) :: self
   integer:: it
@@ -817,9 +817,9 @@ SUBROUTINE e2S(self, s, it)
   end associate
 END SUBROUTINE e2S
 
-!> =====================================================================
+!=======================================================================
 !> Get thermal energy per unit mass from entropy
-!> =====================================================================
+!=======================================================================
 SUBROUTINE S2e(self, s, it)
   class(mhd_t) :: self
   integer:: it
@@ -834,7 +834,7 @@ SUBROUTINE S2e(self, s, it)
   end associate
 END SUBROUTINE S2e
 
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: lnd, ss, ee
@@ -887,10 +887,10 @@ FUNCTION cell_gas_pressure(self, c) RESULT (pg)
   end associate
 END FUNCTION cell_gas_pressure
 
-!> =============================================================================
+!===============================================================================
 !> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: lnd, ss
@@ -933,7 +933,7 @@ FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
   end associate
 END FUNCTION cell_gas_temperature
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE log_density (self, v)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: v
@@ -941,7 +941,7 @@ SUBROUTINE log_density (self, v)
   v = log(self%d)
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE log_pressure (self, lnd, ss, v)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: lnd, ss, v
@@ -949,7 +949,7 @@ SUBROUTINE log_pressure (self, lnd, ss, v)
   v = log(self%gas_pressure(lnd,ss))
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE velocity_magnitude (self, v)
   class (mhd_t):: self
   real, dimension(:,:,:), pointer:: v
@@ -957,7 +957,7 @@ SUBROUTINE velocity_magnitude (self, v)
   v = norm(self%p/exp(down(log(self%d))))
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE magnetic_field_magnitude (self, v)
   class (mhd_t):: self
   real, dimension(:,:,:), pointer:: v
@@ -965,7 +965,7 @@ SUBROUTINE magnetic_field_magnitude (self, v)
   v = norm(self%B)
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE void (self, v)
   class (mhd_t):: self
   real, dimension(:,:,:), pointer:: v

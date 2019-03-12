@@ -1,9 +1,9 @@
-!> =============================================================================
+!===============================================================================
 !> Create a nested set of patches, in a hierarchy of Rubik's cubes, where the
 !> innermost patch has a given size, and there are n_levels-1 sets of larger
 !> Rubik's cubes, each three times larger than the previous, with the previous
 !> sets of patches inside the center patch.
-!> =============================================================================
+!===============================================================================
 MODULE rubiks_mod
   USE io_mod
   USE bits_mod
@@ -38,9 +38,9 @@ MODULE rubiks_mod
   public task_list_t                    ! export, to avoid excessive USE
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Distribute patches in a Rubik's cube arrangement around a box
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_hierarchy (self, num, rootlvl, label)
   class(rubiks_t):: self
   character(len=*), optional:: label
@@ -112,9 +112,9 @@ SUBROUTINE init_hierarchy (self, num, rootlvl, label)
   call trace_end
 END SUBROUTINE init_hierarchy
 
-!> =============================================================================
+!===============================================================================
 !> Distribute patches in a Rubik's cube arrangement around a box
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_level (self, level, n_levels, position, size, planet_cylpos)
   class(rubiks_t):: self
   integer, intent(in) :: level, n_levels

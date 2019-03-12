@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> $Id$
 !> MPI calls related to Cartesian MPI coordinate systems
 !>
@@ -27,7 +27,7 @@
 !>
 !> Too see which variables and procedures are inside mpi%, just look below!
 !>
-!> =============================================================================
+!===============================================================================
 MODULE mpi_coords_mod
   USE mpi_mod
   USE timer_mod
@@ -68,9 +68,9 @@ MODULE mpi_coords_mod
   type(mpi_coords_t), public:: mpi_coords
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Set the coordinates from the rank
-!> =============================================================================
+!===============================================================================
 FUNCTION rank_to_coords (self, rank) result (coords)
   class(mpi_coords_t):: self
   integer:: rank, coords(3)
@@ -87,9 +87,9 @@ FUNCTION rank_to_coords (self, rank) result (coords)
 #endif
 END FUNCTION rank_to_coords
 
-!> =============================================================================
+!===============================================================================
 !> Set the rank from the coordinates
-!> =============================================================================
+!===============================================================================
 FUNCTION coords_to_rank (self, coords) result (rank)
   class(mpi_coords_t):: self
   integer:: coords(3), rank
@@ -106,9 +106,9 @@ FUNCTION coords_to_rank (self, coords) result (rank)
 #endif
 END FUNCTION coords_to_rank
 
-!> =============================================================================
+!===============================================================================
 !> Extent the basic MPI object with MPI coordinate info
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, mpi_dims, dims)
   class(mpi_coords_t):: self
   integer, optional:: mpi_dims(3), dims(3)
@@ -141,8 +141,8 @@ SUBROUTINE init (self, mpi_dims, dims)
   end if
 END SUBROUTINE init
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE print (self)
   class(mpi_coords_t):: self
   integer:: rank
@@ -167,13 +167,13 @@ SUBROUTINE print (self)
   end if
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 !> Create a Cartesian arrangement of MPI ranks, with dimension n_mpi(3).  If
 !> dims(3) is non-zero, these are taken as information about the global number
 !> of mesh points, and an attempt is made to distribute the MPI-coordinate
 !> dimension to get product(dims) = mpi%size.  If mpi_dims is present, the
 !> dims(3) information is ignored, even if present.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE cart_create_mpi (self, mpi_dims, dims)
   implicit none
   class(mpi_coords_t):: self
@@ -295,8 +295,8 @@ SUBROUTINE cart_create_mpi (self, mpi_dims, dims)
     end subroutine
 END SUBROUTINE cart_create_mpi
 !
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE finalize (self)
   implicit none
   class(mpi_coords_t):: self

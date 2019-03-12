@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Particle list, extending a doubly-linked list.  Each particle maintains 
 !> arrays with previous positions, velocities, and times, which are brought
 !> along if/when it changes owner patch or rank.  The memory footprint of a
@@ -6,7 +6,7 @@
 !> time, all together 32 words = 128 bytes (plus a few words for id and weight).
 !> This could be reduced to half, by keeping only two previous positions and
 !> velocities in the data type.
-!> =============================================================================
+!===============================================================================
 MODULE particle_list_mod
   USE io_unit_mod
   USE dll_mod
@@ -29,9 +29,9 @@ MODULE particle_list_mod
   !-----------------------------------------------------------------------------
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a particle list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, name)
   class (particle_list_t):: self
   character(len=*), optional:: name
@@ -40,9 +40,9 @@ SUBROUTINE init (self, name)
   call particle%init
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a particle list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE append (self, new)
   class (particle_list_t):: self
   class (particle_t), pointer:: new
@@ -52,9 +52,9 @@ SUBROUTINE append (self, new)
   call self%dll_t%append (new_dll)
 END SUBROUTINE append
 
-!> =============================================================================
+!===============================================================================
 !> Compute force from other particles by direct summation
-!> =============================================================================
+!===============================================================================
 FUNCTION force (self, p)
   class(particle_list_t):: self
   class(particle_t), pointer:: p
@@ -92,8 +92,8 @@ FUNCTION force (self, p)
   end do
 END FUNCTION force
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE force_field (self, patch)
   class(particle_list_t):: self
   class(patch_t):: patch
@@ -151,9 +151,9 @@ SUBROUTINE force_field (self, patch)
   deallocate (rp)
 END SUBROUTINE force_field
 
-!> =============================================================================
+!===============================================================================
 !> Test particle list functionality
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test (self)
   class(particle_list_t):: self
   integer:: id, n
@@ -220,9 +220,9 @@ SUBROUTINE test (self)
   print *, 'particle list n =', self%n, used/self%n
 END SUBROUTINE test
 
-!> =============================================================================
+!===============================================================================
 !> Print a particle list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print (self)
   class(particle_list_t):: self
   class(dll_node_t), pointer:: p

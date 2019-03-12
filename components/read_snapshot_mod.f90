@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> IC module for reading in legacy Stagger snapshots into existing patches.
 !>
 !> The purpose with this separate module is to avoid having to load the entire
@@ -12,7 +12,7 @@
 !>
 !> The separate reader also saves memory because it operates before the RT solver
 !> has started to run, allocating additional scratch memory.
-!> =============================================================================
+!===============================================================================
 
 MODULE read_snapshot_mod
   USE io_mod
@@ -40,8 +40,8 @@ MODULE read_snapshot_mod
   type(rs_t), public:: read_snapshot
 CONTAINS
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE init (task_list)
   type(task_list_t), pointer:: task_list
   integer:: iostat
@@ -66,9 +66,9 @@ SUBROUTINE init (task_list)
   end if
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Read a legacy Bifrost raw data file, with auxiliary grid file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE read_bifrost_snap (task_list)
   USE kinds_mod
   type(task_list_t), pointer:: task_list
@@ -238,9 +238,9 @@ SUBROUTINE read_bifrost_snap (task_list)
   call trace%end()
 END SUBROUTINE read_bifrost_snap
 
-!> =============================================================================
+!===============================================================================
 !> Read a legacy Stagger raw data file, with auxiliary grid file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE read_stagger_snap (task_list)
   type(task_list_t), pointer:: task_list
   !.............................................................................
@@ -378,9 +378,9 @@ SUBROUTINE read_stagger_snap (task_list)
   call trace_end
 END SUBROUTINE read_stagger_snap
 
-!> =============================================================================
+!===============================================================================
 !> Thread safe interpolation work, where only iv, patch, ff changes in the calls
-!> =============================================================================
+!===============================================================================
 SUBROUTINE interpolate (iv, patch, buffer, mx, my, mz, xm, ym, zm, xmdn, ymdn, zmdn)
   class(patch_t), pointer:: patch
   real, dimension(:,:,:), allocatable:: buffer

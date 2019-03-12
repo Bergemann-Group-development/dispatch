@@ -90,10 +90,10 @@ MODULE rt_mod
   end type
   CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialize rt_t tasks, by first getting a uniq id, and then allocating
 !> the extra arrays needed to handle time slices.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_rt (self)
   class(rt_t) :: self
   !---------------------------------------------------------------------
@@ -105,9 +105,9 @@ SUBROUTINE init_rt (self)
   allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
 END SUBROUTINE init_rt
 
-!> =====================================================================
+!=======================================================================
 !> Initialize pointers to mesh, density and temperature
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_mesh (self, mesh, density, temperature)
   class(rt_t) :: self
   class(mesh_t), pointer :: mesh
@@ -135,11 +135,11 @@ SUBROUTINE set_periodic_BC(self)
   error stop "ERROR: rt_t: set_periodic_BC not implemented yet!"
 END SUBROUTINE set_periodic_BC
 
-!> =====================================================================
+!=======================================================================
 !> Determine of patches 'me' and 'nbor' share the wall(s) indicated by
 !> the triple index 'wall', where e.g. the right and left x-walls are
 !> indicated by wall(1) = +1/-1.
-!> =====================================================================
+!=======================================================================
 LOGICAL FUNCTION the_right_wall (self, nbor, wall)
   class(rt_t) :: self
   class (link_t),        pointer :: nbor
@@ -197,10 +197,10 @@ LOGICAL FUNCTION the_right_wall (self, nbor, wall)
 
 END FUNCTION the_right_wall
 
-!> =====================================================================
+!=======================================================================
 !> Return a linked list starting with nbor_l with upstream walls of the
 !> self rt_t task.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE find_upstream (self, nbor_l, found)
   class(rt_t)  :: self
   class(link_t), pointer :: nbor_l, nul
@@ -255,8 +255,8 @@ SUBROUTINE find_upstream (self, nbor_l, found)
   call trace_end
 END SUBROUTINE find_upstream
 
-!> =====================================================================
-!> =====================================================================
+!=======================================================================
+!=======================================================================
 SUBROUTINE init_obc (self)
   class(rt_t) :: self
 !-----------------------------------------------------------------------
@@ -265,9 +265,9 @@ SUBROUTINE init_obc (self)
   self%my_nb_link%check = .true.
 END SUBROUTINE init_obc
 
-!> =====================================================================
+!=======================================================================
 !> Check if 'nbor' is fully contained inside 'me'
-!> =====================================================================
+!=======================================================================
 FUNCTION nbor_is_my_child (me, nbor) result (out)
   class (mhd_t), pointer :: me, nbor
   real(kind=8) :: me_li, me_ui, nbor_li, nbor_ui
@@ -279,11 +279,11 @@ FUNCTION nbor_is_my_child (me, nbor) result (out)
   out = .true.
 END FUNCTION nbor_is_my_child
 
-!> =====================================================================
+!=======================================================================
 !> Find the absolute position of index 'ray' in ray packet 'rays'.
 !> If the optional bn parameter is present, the answer depends on
 !> the direction, otherwise 'pt' chooses the point along the ray.
-!> =====================================================================
+!=======================================================================
 FUNCTION absolute_point_position (self, rays, ray, pt, bn) result (cell_pos)
   class (rt_t) :: self
   class (ray_t), pointer :: rays
@@ -307,10 +307,10 @@ FUNCTION absolute_point_position (self, rays, ray, pt, bn) result (cell_pos)
   call trace_end
 END FUNCTION absolute_point_position
 
-!> =====================================================================
+!=======================================================================
 !> Return the cell integer coordinates of point 'pt' of index 'ray' in
 !> ray packet 'rays'.
-!> =====================================================================
+!=======================================================================
 FUNCTION ray2cell(self, rays, ray, pt) result (cell)
   class (rt_t) :: self
   class (ray_t), pointer :: rays
@@ -319,9 +319,9 @@ FUNCTION ray2cell(self, rays, ray, pt) result (cell)
   cell = rays%coords(:,pt,ray)
 END FUNCTION ray2cell
 
-!> =====================================================================
+!=======================================================================
 !> Return the absolute position of integer index triple 'cell'
-!> =====================================================================
+!=======================================================================
 FUNCTION cell2pos (self, cell) result(p)
   class(rt_t)  :: self
   real(kind=8) :: p(3)
@@ -330,9 +330,9 @@ FUNCTION cell2pos (self, cell) result(p)
   p = self%position - 0.5_8*self%size + (cell-self%li)*self%cell_ds
 END FUNCTION cell2pos
 
-!> =====================================================================
+!=======================================================================
 !> Convert absolute position to integer index triple 'cell'
-!> =====================================================================
+!=======================================================================
 FUNCTION pos2cell (self, p) result (cell)
   class(rt_t)  :: self
   real(kind=8) :: p(3)
@@ -341,9 +341,9 @@ FUNCTION pos2cell (self, p) result (cell)
   cell = nint((p-self%position+0.5_8*self%size)/self%cell_ds)+self%li
 END FUNCTION pos2cell
 
-!> =====================================================================
+!=======================================================================
 !> Convert absolute position to integer index triple 'cell'
-!> =====================================================================
+!=======================================================================
 FUNCTION ray2pos (self, rays, ray, pt) result (p)
   class(rt_t)  :: self
   class(ray_t), pointer :: rays
@@ -353,9 +353,9 @@ FUNCTION ray2pos (self, rays, ray, pt) result (p)
   p = self%cell2pos(self%ray2cell(rays,ray,pt))
 END FUNCTION ray2pos
 
-!> =====================================================================
+!=======================================================================
 !> Check if an absolute coordinate is inside the index triplet 'cell'
-!> =====================================================================
+!=======================================================================
 FUNCTION point_in_cell (self, pt, cell, ds) result (out)
   class(rt_t)  :: self
   real(kind=8) :: pt(3), cell(3), li(3), ui(3), ds(3)
@@ -367,7 +367,7 @@ FUNCTION point_in_cell (self, pt, cell, ds) result (out)
   if ((all(li < pt)).and.(all(ui > pt))) out = .true.
 END FUNCTION point_in_cell
 
-!> =====================================================================
+!=======================================================================
 !> Update the time of an rt_t task.  Set self%time to the earliest point
 !> in time when the task should next be updated, while setting the time
 !> slot in self%t() to the actual time of the MHD task, so inter- and
@@ -375,7 +375,7 @@ END FUNCTION point_in_cell
 !>
 !> NOTE: This procedure should be called exactly when the physical data
 !> on which the task is based is collected
-!> =====================================================================
+!=======================================================================
 SUBROUTINE update_time(self)
   class(rt_t) :: self
 !-----------------------------------------------------------------------

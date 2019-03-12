@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> $Id$
-!> =============================================================================
+!===============================================================================
 MODULE mpi_mesg_mod
   USE trace_mod
   USE mpi_mod
@@ -103,9 +103,9 @@ MODULE mpi_mesg_mod
   integer, save:: verbose=0
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Send a buffer, already prepared with size and id tag, returning a request id
-!> =============================================================================
+!===============================================================================
 SUBROUTINE send (self, rank, tag)
   class(mesg_t):: self
   integer, optional:: tag
@@ -152,9 +152,9 @@ SUBROUTINE send (self, rank, tag)
   call trace%end()
 END SUBROUTINE send
 
-!> =============================================================================
+!===============================================================================
 !> Recv a buffer, already prepared with size and id tag, returning a request id
-!> =============================================================================
+!===============================================================================
 SUBROUTINE recv (self, rank, tag)
   class(mesg_t):: self
   integer, optional:: tag
@@ -188,9 +188,9 @@ SUBROUTINE recv (self, rank, tag)
   call trace%end()
 END SUBROUTINE recv
 
-!> =============================================================================
+!===============================================================================
 !> Remove and delete completed messages in a message list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove_completed (self)
   class(mesg_list_t):: self
   class(mesg_t), pointer:: mesg
@@ -206,9 +206,9 @@ SUBROUTINE remove_completed (self)
   call trace%end()
 END SUBROUTINE remove_completed
 
-!> =============================================================================
+!===============================================================================
 !> Check messages on a sent_list for completeness
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_sent (self, nq)
   class(mesg_list_t):: self
   integer:: nq
@@ -298,9 +298,9 @@ SUBROUTINE check_sent (self, nq)
   call trace%end (itimer)
 END SUBROUTINE check_sent
 
-!> =============================================================================
+!===============================================================================
 !> Check messages on a sent_list for completeness
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_priv
   class(mesg_t), pointer:: mesg, next
   logical:: flag
@@ -324,9 +324,9 @@ SUBROUTINE check_priv
   call trace%end (itimer)
 END SUBROUTINE check_priv
 
-!> =============================================================================
+!===============================================================================
 !> Test if all requests (sending to several ranks) are complete for this mesg
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test_all (self, flag)
   class(mesg_t):: self
   logical:: flag
@@ -354,9 +354,9 @@ SUBROUTINE test_all (self, flag)
   end if
 END SUBROUTINE test_all
 
-!> =============================================================================
+!===============================================================================
 !> Wait for all requests related to this mesg to complete
-!> =============================================================================
+!===============================================================================
 SUBROUTINE wait_all (self)
   class(mesg_t):: self
   integer:: rank, req, ierr
@@ -388,11 +388,11 @@ SUBROUTINE wait_all (self)
   call trace_end (itimer)
 END SUBROUTINE wait_all
 
-!> =============================================================================
+!===============================================================================
 !> Append a mesg at the end of the message list.  Since adding and removing use
 !> the same critical region to protect the list handling, there is no need for
 !> atomic, but let's keep it for safe measure for now.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add (self, mesg)
   class(mesg_list_t):: self
   class(mesg_t), pointer:: mesg
@@ -414,10 +414,10 @@ SUBROUTINE add (self, mesg)
   end if
 END SUBROUTINE add
 
-!> =============================================================================
+!===============================================================================
 !> Remove a message from a message list. This routine is assumed to be called
 !> from inside a critical region.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove (self, mesg)
   class(mesg_list_t):: self
   class(mesg_t), pointer:: mesg
@@ -440,9 +440,9 @@ SUBROUTINE remove (self, mesg)
   self%n = self%n-1                             ! decrement count
 END SUBROUTINE remove
 
-!> =============================================================================
+!===============================================================================
 !> Deallocate the message buffer and request array, and then the message itself
-!> =============================================================================
+!===============================================================================
 SUBROUTINE delete (self, mesg, send)
   class(mesg_list_t):: self
   class(mesg_t), pointer:: mesg
@@ -467,9 +467,9 @@ SUBROUTINE delete (self, mesg, send)
   end if
 END SUBROUTINE delete
 
-!> =============================================================================
+!===============================================================================
 !> Reset the mesg_list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE reset (self)
   class(mesg_list_t):: self
   !.............................................................................
@@ -478,9 +478,9 @@ SUBROUTINE reset (self)
   self%n = 0
 END SUBROUTINE reset
 
-!> =============================================================================
+!===============================================================================
 !> Print a list of messages
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print_list (self, label)
   class (mesg_list_t):: self
   character(len=*), optional:: label
@@ -496,9 +496,9 @@ SUBROUTINE print_list (self, label)
   end do
 END SUBROUTINE print_list
 
-!> =============================================================================
+!===============================================================================
 !> Count messages, with warning if the %n does not agree with the actual number
-!> =============================================================================
+!===============================================================================
 SUBROUTINE count (self, label)
   class (mesg_list_t):: self
   character(len=*):: label
@@ -517,9 +517,9 @@ SUBROUTINE count (self, label)
   end if
 END SUBROUTINE count
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the three message lists
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(mpi_mesg_t):: self
   !.............................................................................
@@ -581,10 +581,10 @@ SUBROUTINE init (self)
   call trace%end()
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Close and reopen the sent_rrrrr_tttt_x.log files once per minute, so the last
 !> 1-2 minutes of logging is always available
-!> =============================================================================
+!===============================================================================
 SUBROUTINE log_files (self)
   class(mpi_mesg_t):: self
   character(len=120):: filename
@@ -605,9 +605,9 @@ SUBROUTINE log_files (self)
   end if
 END SUBROUTINE log_files
 
-!> =============================================================================
+!===============================================================================
 !> Test the components
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test (self)
   class(mpi_mesg_t):: self
   type (mesg_list_t):: test_list
@@ -637,10 +637,10 @@ SUBROUTINE test (self)
   call test_list%print ('test3')
 END SUBROUTINE test
 
-!> =============================================================================
+!===============================================================================
 !> Add a message to the sent_list, in a critical region, or wait for all sends
 !> in a background task, or use a threadprivate list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE sent (self, mesg)
   class(mpi_mesg_t):: self
   class(mesg_t), pointer:: mesg
@@ -676,14 +676,14 @@ SUBROUTINE sent (self, mesg)
   end if
 END SUBROUTINE sent
 
-!> =============================================================================
+!===============================================================================
 !> Check for new incoming messages.  Note that, ideally, we want to probe for
 !> messages just before doing a task update, and then check afterwards, so that
 !> if the delay doing the work is enough, some probed messages will have arrived.
 !> This procedure returns flag=.true. as long as there are incoming messages,
 !> and returns the message if comlete.   If not, the message is added to the
 !> recv_list, to be check later.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE get (self, mesg)
   class(mpi_mesg_t):: self
   class(mesg_t), pointer:: mesg
@@ -743,9 +743,9 @@ contains
   end subroutine probe_for
 END SUBROUTINE get
 
-!> =============================================================================
+!===============================================================================
 !> Return true or false, depending on if the mesg request is complete or not
-!> =============================================================================
+!===============================================================================
 FUNCTION completed (self) RESULT(flag)
   class(mesg_t):: self
   logical:: flag, ierr
@@ -771,9 +771,9 @@ FUNCTION completed (self) RESULT(flag)
   call trace%end (itimer)
 END FUNCTION completed
 
-!> =============================================================================
+!===============================================================================
 !> Return true or false, depending on if the mesg request is complete or not
-!> =============================================================================
+!===============================================================================
 FUNCTION all_completed (self) RESULT(flag)
   class(mesg_t):: self
   logical:: flag, ierr
@@ -797,9 +797,9 @@ FUNCTION all_completed (self) RESULT(flag)
   call trace%end (itimer)
 END FUNCTION all_completed
 
-!> =============================================================================
+!===============================================================================
 !> Return true or false, depending on if the mesg is complete or not.
-!> =============================================================================
+!===============================================================================
 FUNCTION is_complete (self)
   class(mesg_t):: self
   logical:: is_complete
@@ -872,9 +872,9 @@ contains
   end subroutine check_recv
 END FUNCTION is_complete
 
-!> =============================================================================
+!===============================================================================
 !> Issue a message recieve request from a specific rank
-!> =============================================================================
+!===============================================================================
 SUBROUTINE irecv (self, rank, tag)
   class(mesg_t):: self
   integer:: rank, tag, ierr
@@ -901,10 +901,10 @@ SUBROUTINE irecv (self, rank, tag)
 #endif
 END SUBROUTINE irecv
 
-!> =============================================================================
+!===============================================================================
 !> Test if a message is fully received, taking care not to test too often - at
 !> least "test_time" must have passed since the previous test.
-!> =============================================================================
+!===============================================================================
 FUNCTION test_recv (self) RESULT (flag)
   class(mesg_t):: self
   integer:: ierr
@@ -964,9 +964,9 @@ FUNCTION test_recv (self) RESULT (flag)
 #endif
 END FUNCTION test_recv
 
-!> =============================================================================
+!===============================================================================
 !> Return true or false, depending on if the mesg is complete or not.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE wait_for_completion (self)
   class(mesg_t):: self
   !.............................................................................
@@ -1001,9 +1001,9 @@ SUBROUTINE wait_for_completion (self)
   call trace%end (itimer)
 END SUBROUTINE wait_for_completion
 
-!> =============================================================================
+!===============================================================================
 !> Delay for about 1 ms, to encourage incoming messages to complete
-!> =============================================================================
+!===============================================================================
 SUBROUTINE delay (self, n, ms)
   class(mpi_mesg_t):: self
   integer, optional:: n
@@ -1028,9 +1028,9 @@ SUBROUTINE delay (self, n, ms)
   call trace%end (itimer)
 END SUBROUTINE delay
 
-!> =============================================================================
+!===============================================================================
 !> Diagnostic printout, called when task_list_mod::update stalls
-!> =============================================================================
+!===============================================================================
 SUBROUTINE diagnostics (self, flag)
   class(mpi_mesg_t):: self
   integer:: flag

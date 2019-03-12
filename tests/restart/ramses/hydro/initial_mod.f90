@@ -1,1 +1,189 @@
-../../stagger2/e/initial_mod.f90
+!===============================================================================
+!> This is a start on a module that could become a general turbulence forcing
+!> module, where the standard forcing we have been using in RAMSES is implemented
+!===============================================================================
+MODULE initial_mod
+  USE io_mod
+  USE trace_mod
+  USE mesh_mod
+  USE atmosphere_mod
+  USE planet_mod
+  USE lagrange_mod
+  USE units_mod
+  USE scaling_mod
+  USE index_mod
+  USE dp_reader_mod
+  implicit none
+  private
+  real(8), parameter:: pi2=8d0*atan(1d0)
+  type, public:: initial_t
+    character(len=20) :: initial_condition = 'planet_atmosphere'
+    character(len=20) :: secondary_ic      = 'planet_atmosphere'    
+    real:: b0(3)
+    real:: gamma
+    real:: v_head, v_accrete
+    real:: surface_temperature, surface_pressure
+    real(8):: size(3)
+    logical:: mhd
+    procedure(planet_atmosphere), pointer:: condition => null()
+    procedure(planet_atmosphere), pointer:: second_condition => null()
+  contains
+    procedure init
+  end type
+  public planet_atmosphere
+  type(lagrange_t):: interp
+CONTAINS
+
+!===============================================================================
+!> Setup an initial state, with head wind speed and accretion speed
+!===============================================================================
+SUBROUTINE init (self)
+   class(initial_t):: self
+   logical, save:: first_time=.true.
+   character(len=20), save:: initial_condition = 'planet_atmosphere'
+   character(len=20), save:: secondary_ic = 'planet_atmosphere'
+   namelist /initial_params/ initial_condition, secondary_ic
+   integer :: iostat
+   !----------------------------------------------------------------------------
+   call trace%begin('initial_t%init')
+   call scaling%init
+   if (first_time) then
+     initial_condition = self%initial_condition
+     first_time = .false.
+     rewind (io%input); read (io%input, initial_params, iostat=iostat)
+     if (io%master) write (*, initial_params)
+   end if
+   self%initial_condition = initial_condition
+   self%secondary_ic = secondary_ic
+   select case(trim(self%initial_condition))
+     case('planet_atmosphere')
+       self%condition => planet_atmosphere
+     case('snapshot')
+       call dp_reader%init
+       self%condition => snapshot
+     end select
+   select case(trim(self%secondary_ic))
+     case('planet_atmosphere')
+       self%second_condition => planet_atmosphere
+     case('snapshot')
+       call dp_reader%init
+       self%second_condition => snapshot
+     case default
+       error stop "secondary IC not understood"
+     end select
+   call trace%end
+END SUBROUTINE init
+
+!===============================================================================
+!> Interpolate in a hydrostatic planet atmosphere, computed in atmosphere_mod
+!===============================================================================
+SUBROUTINE planet_atmosphere (self, m, mem, idx, level)
+  class(initial_t) :: self
+  type(index_t):: idx
+  real, dimension(:,:,:,:), pointer  :: mem
+  class(mesh_t), pointer, dimension(:) :: m
+  integer, optional :: level
+  !.............................................................................
+  integer :: ix, iy, iz, nr
+  real(8) :: x, y, z, r, d, d0, p, csound2
+  !-----------------------------------------------------------------------------
+  logical, save:: first_time=.true.
+  real, save:: omega(3)=0.0
+  real, save:: b0(3) = 0.0, gamma=1.4, v_head_cgs=0.0, v_accrete_cgs=0.0
+  namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('initial_t%planet_atmosphere', itimer=itimer)
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    omega = planet%omega*cgs%yr/(2.*cgs%pi*scaling%t)
+    rewind (io%input)
+    read (io%input, planet_atm_params)
+    if (io%master) write (*, planet_atm_params)
+  end if
+  !$omp end critical (input_cr)
+  omega = omega*2.*cgs%pi*scaling%t/cgs%yr
+  self%v_head    =    v_head_cgs/scaling%u
+  self%v_accrete = v_accrete_cgs/scaling%u
+  csound2 = gamma*atmosphere%pg(1)/atmosphere%rho(1)
+  nr = atmosphere%nr
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+    z = m(3)%p + r3(iz) - planet%position(3)
+    do iy=m(2)%lb,m(2)%ub
+      y = m(2)%p + r2(iy) - planet%position(2)
+      do ix=m(1)%lb,m(1)%ub
+        x = m(1)%p + r1(ix) - planet%position(1)
+        r = sqrt(x**2+y**2+z**2)
+        d = interpolate (r, nr ,atmosphere%rr, atmosphere%rho)
+        p = interpolate (r, nr, atmosphere%rr, atmosphere%pg)
+        csound2 = gamma*p/d
+        !-----------------------------------------------------------------------
+        ! Vertical stratification is added by adding Gaussian profile and
+        ! subtracting off the otherwise constant external density
+        !-----------------------------------------------------------------------
+        d0 = d
+        d = d + &
+          atmosphere%external%density*(exp(-(planet%omega(3)**2/csound2*0.5*z**2))-1d0)
+        p = p*(d/d0)
+        mem(ix,iy,iz,idx%d) = d
+        !  mem(ix,iy,iz,2) = d*(log(p)-gamma*log(d))/(gamma-1.0)
+        mem(ix,iy,iz,idx%e) = p/(gamma-1.0)
+        !-----------------------------------------------------------------------
+        ! A rotation profile, where the rotation center is at y=+1 AU, and
+        ! the direction of rotation is +x, so the head wind is in the -x
+        ! direction.  The slower rotation at larger radii means that Ux is
+        ! proportional to +y.  This gives a speed difference of only 130 cm/s
+        ! across the Earth, and plus/minus 0.15 km/s across two Hill radii.
+        ! The effect is not enough to significantly flatten the outer part of
+        ! the Hill sphere, so we will probably only be seeing effects of the
+        ! Coriolis force beyond the Hill radius.
+        !-----------------------------------------------------------------------
+        mem(ix,iy,iz,idx%px) = d*(0.5*planet%omega(3)*y + self%v_head)  ! azimuthal speed
+        mem(ix,iy,iz,idx%py) = d*self%v_accrete                  ! accretion speed
+        mem(ix,iy,iz,idx%pz) = 0.0                               ! vertical speed
+        !mem(ix,iy,iz,idx%bx) = b0(1)
+        !mem(ix,iy,iz,idx%by) = b0(2)
+        !mem(ix,iy,iz,idx%bz) = b0(3)
+      end do
+    end do
+  end do
+  end associate
+  call trace%end (itimer)
+END SUBROUTINE planet_atmosphere
+
+SUBROUTINE snapshot (self, m, mem, idx, level)
+  class(initial_t) :: self
+  type(index_t):: idx
+  real, dimension(:,:,:,:), pointer  :: mem
+  class(mesh_t), pointer, dimension(:) :: m
+  integer, optional :: level
+  logical :: used = .false.
+  ! --------------------------------------------------------------------
+  call dp_reader%snapshot(m, mem, level,used)  
+  if (.not.used) then
+    call self%second_condition(m,mem,level)
+    print *, 'using secondary IC...'
+  end if
+END SUBROUTINE snapshot
+
+!===============================================================================
+!> Use default Lagrange interpolation
+!===============================================================================
+FUNCTION interpolate (x0, n, x, y) RESULT(f)
+  implicit none
+  integer:: n
+  real(kind=8):: x0, x(n), y(n), f
+  !.............................................................................
+  interp%verbose = max(io%verbose-4,0)
+  if (x0 < x(1)) then
+    f = y(1)
+  else if (x0 > x(n)) then
+    f = y(n)
+  else
+    f = interp%sequence (x0, x, y)
+  end if
+END FUNCTION
+
+END MODULE

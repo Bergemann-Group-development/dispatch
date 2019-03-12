@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Staggered mesh solver using entropy per unit volume as the energy variable.
 !>
 !> Flop counting is enable via annotation at the end of lines. To count flops,
@@ -7,7 +7,7 @@
 !> % grep ops: ../../../solvers/stagger2/mhd_mod.f90 | sed 's/.*ops://' | sumcol 2
 !>
 !> where 'sumcol' is any script that sums up values in column 2
-!> =============================================================================
+!===============================================================================
 MODULE mhd_mod
   USE io_mod
   USE bits_mod
@@ -60,10 +60,10 @@ MODULE mhd_mod
   integer, save:: divb_cleaner=2
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The construction with a double test on first_time avoids entering a critical
 !> region once the variable has been set.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
   type(index_t):: idx
@@ -150,7 +150,7 @@ SUBROUTINE init (self)
  call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pde (self)
   USE scalar_mod
   class(mhd_t):: self
@@ -485,10 +485,10 @@ SUBROUTINE pde (self)
   end if
 END SUBROUTINE pde
 
-!> =============================================================================
+!===============================================================================
 !> Take a complete update step.  This can be overloaded in higher levels, e.g.
 !> in experiment_mod, where boundary conditions may be inserted
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
   integer, save:: itimer=0
@@ -516,7 +516,7 @@ SUBROUTINE update (self)
   call trace%end (itimer)
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Perform a single iteration of a div(B) clean.  The limit of stability is
 !> eps=1./6.  This is intended to prevent build-up of layers of large div(B)
 !> between patches. An exact solution would be to solve an internal Laplace
@@ -526,7 +526,7 @@ END SUBROUTINE update
 !> The problem can also be greatly reduced by using a higher order time
 !> interpoation scheme, thus making the electric field computed from the
 !> guard zone values of B and U a better match to the neighbors E-fields.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE divb_clean1(self)
   class(mhd_t):: self
   !.............................................................................
@@ -565,10 +565,10 @@ contains
   end function
 END SUBROUTINE divb_clean1
 
-!> =============================================================================
+!===============================================================================
 !> Enforce div(B)=0 in the guard zones, by succesively imposing the condition,
 !> layer-by-layer, on the component perpendicular to each of the patch faces.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE divb_clean (self)
   class(mhd_t):: self
   !.............................................................................
@@ -626,9 +626,9 @@ SUBROUTINE divb_clean (self)
   call trace%end (itimer)
 END SUBROUTINE divb_clean
 
-!> =============================================================================
+!===============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self)
   class(mhd_t):: self
   character(len=64):: filename
@@ -654,7 +654,7 @@ SUBROUTINE output (self)
   call trace%end
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg

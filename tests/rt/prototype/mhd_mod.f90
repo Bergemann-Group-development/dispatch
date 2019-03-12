@@ -1,5 +1,5 @@
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 MODULE mhd_mod
   USE io_mod
   USE bits_mod
@@ -41,10 +41,10 @@ MODULE mhd_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The construction with a double test on first_time avoids entering a critical
 !> region once the variable has been set.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], gamma=1.0, csound=1.0, cdtd=0.5
@@ -83,7 +83,7 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pde (self)
   class(mhd_t):: self
   !.............................................................................
@@ -342,9 +342,9 @@ SUBROUTINE pde (self)
   call trace%end (itimer)
 END SUBROUTINE pde
 
-!> =============================================================================
+!===============================================================================
 !> Take a complete update step.  This can be overloaded in higher level ud
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
   !.............................................................................
@@ -356,9 +356,9 @@ SUBROUTINE update (self)
   call self%check_density(' after timestep')
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self, experiment_name)
   class(mhd_t):: self
   character(len=64):: experiment_name, filename
@@ -380,7 +380,7 @@ SUBROUTINE output (self, experiment_name)
   !$omp end critical (output_cr)
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE gas_pressure (self, pg)
   class(mhd_t):: self
   !real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
@@ -410,10 +410,10 @@ FUNCTION cell_gas_pressure(self, c) RESULT (pg)
   end associate
 END FUNCTION cell_gas_pressure
 
-!> =============================================================================
+!===============================================================================
 !> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
-!> =============================================================================
+!===============================================================================
 SUBROUTINE gas_temperature (self, tmp)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: tmp, d, e
@@ -424,8 +424,8 @@ SUBROUTINE gas_temperature (self, tmp)
   nullify(d,e)
 END SUBROUTINE gas_temperature
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
   class(mhd_t):: self
   integer :: c(3)
@@ -436,7 +436,7 @@ FUNCTION cell_gas_temperature (self, c) RESULT (tmp)
   end associate
 END FUNCTION cell_gas_temperature
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE log_density (self, v)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: v
@@ -444,7 +444,7 @@ SUBROUTINE log_density (self, v)
   v = log(self%d)
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE log_pressure (self, v)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: v
@@ -453,7 +453,7 @@ SUBROUTINE log_pressure (self, v)
   v = log(v)
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE velocity_magnitude (self, v)
   class (mhd_t):: self
   real, dimension(:,:,:), pointer:: v
@@ -461,7 +461,7 @@ SUBROUTINE velocity_magnitude (self, v)
   v = norm(self%p/exp(down(log(self%d))))
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE magnetic_field_magnitude (self, v)
   class (mhd_t):: self
   real, dimension(:,:,:), pointer:: v
@@ -469,7 +469,7 @@ SUBROUTINE magnetic_field_magnitude (self, v)
   v = norm(self%B)
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE void (self, v)
   class (mhd_t):: self
   real, dimension(:,:,:), pointer:: v

@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Trace particle module.  Two classes of trace particles will be supported
 !> (this is not yet fully implemented):
 !>
@@ -43,7 +43,7 @@
 !> heritage should be accessible, so one can identify exactly where a particle
 !> comes from.  This could be achieved by reserving the lowermost No bits for
 !> their "original" ID.
-!> =============================================================================
+!===============================================================================
 MODULE trace_particles_mod
   USE io_mod
   USE trace_mod
@@ -84,9 +84,9 @@ MODULE trace_particles_mod
   type(random_t):: random
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Add trace particles, if requested by the namelist
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add (self, link)
   class(trace_particles_t):: self
   class(link_t), pointer:: link
@@ -203,12 +203,12 @@ contains
   !-----------------------------------------------------------------------------
 END SUBROUTINE add
 
-!> =============================================================================
+!===============================================================================
 !> Update particle positions.  To optimize, particle positions are already
 !> normalized to floating point array coordinates.  This allows using single
 !> precision, also on disk, where the coordinates just need to be complemented
 !> with the double precision patch position.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(trace_particles_t):: self
   !.............................................................................
@@ -307,12 +307,12 @@ SUBROUTINE update (self)
   end associate
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Tri-linear interpolate in a velocity array.  The particle positions within
 !> a patch are maintained in units of mesh points, both to simplify interpolation
 !> and updates, and to improve precision, while staying with singe precision
 !> in coordinates and velocities.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE interpolate (self)
   class(trace_particles_t):: self
   integer:: it
@@ -357,9 +357,9 @@ SUBROUTINE interpolate (self)
   call trace%end (itimer)
 END SUBROUTINE interpolate
 
-!> =============================================================================
+!===============================================================================
 !> Trade particles between patches.  
-!> =============================================================================
+!===============================================================================
 SUBROUTINE trade (self, nbor)
   class(trace_particles_t):: self
   class(trace_particles_t):: nbor
@@ -393,9 +393,9 @@ SUBROUTINE trade (self, nbor)
   end do
 END SUBROUTINE trade
 
-!> =============================================================================
+!===============================================================================
 !> Trade particles between patches.  
-!> =============================================================================
+!===============================================================================
 SUBROUTINE post_update (self)
   class(trace_particles_t):: self
   integer:: i
@@ -433,9 +433,9 @@ SUBROUTINE post_update (self)
   end associate
 END SUBROUTINE post_update
 
-!> =============================================================================
+!===============================================================================
 !> Prepare an MPI buffer
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pack (self)
   class(trace_particles_t):: self
   integer, pointer:: buffer(:)
@@ -456,9 +456,9 @@ SUBROUTINE pack (self)
   end associate
 END SUBROUTINE pack
 
-!> =============================================================================
+!===============================================================================
 !> Prepare an MPI buffer
-!> =============================================================================
+!===============================================================================
 SUBROUTINE unpack (self)
   class(trace_particles_t):: self
   integer, pointer:: buffer(:)
@@ -479,9 +479,9 @@ SUBROUTINE unpack (self)
   end associate
 END SUBROUTINE unpack
 
-!> =============================================================================
+!===============================================================================
 !> Append particle data to an mpi_buffer
-!> =============================================================================
+!===============================================================================
 SUBROUTINE mpi_append_particles (self, particles)
   class(trace_particles_t):: self
   class(particle_list_t):: particles
@@ -512,9 +512,9 @@ SUBROUTINE mpi_append_particles (self, particles)
   call trace%end ()
 END SUBROUTINE mpi_append_particles
 
-!> =============================================================================
+!===============================================================================
 !> Append particle data to an mpi_buffer
-!> =============================================================================
+!===============================================================================
 SUBROUTINE mpi_read_particles (self, particles)
   class(trace_particles_t):: self
   class(particle_list_t):: particles

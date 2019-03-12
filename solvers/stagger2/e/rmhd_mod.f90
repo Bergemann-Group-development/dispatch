@@ -1,4 +1,4 @@
-!> =====================================================================
+!=======================================================================
 !> This module combines the MHD and RT solver solutions, to produce
 !> time derivatives that include the net radiative cooling
 !>
@@ -12,7 +12,7 @@
 !>       eos_mod                        ! computing opacity and source fn
 !>       rt_bundle_mod                  ! handles bundles of rays
 !>         rt_solver_mod                ! solver the RT equation
-!> =====================================================================
+!=======================================================================
 MODULE rmhd_mod
   USE io_mod
   USE trace_mod
@@ -33,12 +33,12 @@ MODULE rmhd_mod
 ! ----------------------------------------------------------------------
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialization of radiative transfer, preparing for two main tasks:
 !> 1) most of the time, just inter-/extrapolate in the exising RT solutions
 !> 2) on the rt%dtime intervals, solve the RT and add the new net
 !>    heating / cooling in a time slot
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init (self)
   class (rmhd_t) :: self
   !---------------------------------------------------------------------
@@ -55,10 +55,10 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =====================================================================
+!=======================================================================
 !> If RT is on, add the radiative cooling / heating to the entropy time
 !> derivative, before taking the timestep.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE update (self)
   class (rmhd_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: dedt, e, qrad

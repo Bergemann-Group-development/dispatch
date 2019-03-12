@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Use MPI parallel I/O to write everything to a single file.  No critical regions
 !> should be needed here; all thread protection is done inside mpi_file_mod and
 !> mpi_io_mod.
@@ -34,7 +34,7 @@
 !> meta-data saved with the snapshot to deduce the arrangement in the file,
 !> and reads the data based on that.  It is then free to choose the pattern to
 !> write data with based only on efficiency of writing, and speed of reading.
-!> =============================================================================
+!===============================================================================
 MODULE parallel_io_mod
   USE patch_mod
   USE io_mod
@@ -69,10 +69,10 @@ MODULE parallel_io_mod
   integer, save:: opened=-1, closed=-1
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize for MPI parallel I/O.  This is an MPI collective operation, and
 !> needs to be done at the start of the run.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (patch)
   class(patch_t):: patch
   !.............................................................................
@@ -97,9 +97,9 @@ SUBROUTINE init (patch)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Close the data I/O method
-!> =============================================================================
+!===============================================================================
 SUBROUTINE close
   integer:: i
   !.............................................................................
@@ -115,9 +115,9 @@ SUBROUTINE close
   call trace%end()
 END SUBROUTINE close
 
-!> =============================================================================
+!===============================================================================
 !> Adjust the open / closed status of the data I/O files
-!> =============================================================================
+!===============================================================================
 SUBROUTINE open_and_close ()
   integer:: i
   !-----------------------------------------------------------------------------
@@ -147,9 +147,9 @@ SUBROUTINE open_and_close ()
   end if
 END SUBROUTINE open_and_close
 
-!> =============================================================================
+!===============================================================================
 !> Write output in increments of one patch data cube
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (patch, count)
   class(patch_t):: patch
   integer:: count
@@ -305,9 +305,9 @@ contains
   end subroutine
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 !> Write output as one single buffer
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output_single (patch, count)
   class(patch_t):: patch
   integer:: count
@@ -564,9 +564,9 @@ contains
   end subroutine
 END SUBROUTINE output_single
 
-!> =============================================================================
+!===============================================================================
 !> Read input in increments of one variable data cube
-!> =============================================================================
+!===============================================================================
 SUBROUTINE input (patch, ok)
   class(patch_t):: patch
   logical:: ok
@@ -699,10 +699,10 @@ contains
   end subroutine
 END SUBROUTINE input
 
-!> =============================================================================
+!===============================================================================
 !> Read input in just one read per variable, reading all patches for this rank
 !> in one go.  Use the same parallel_io%buffer as for writes.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE input_single (patch, ok)
   class(patch_t):: patch
   logical:: ok

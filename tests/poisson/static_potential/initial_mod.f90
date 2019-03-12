@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 MODULE initial_mod
   USE io_mod
   USE trace_mod
@@ -21,7 +21,7 @@ MODULE initial_mod
 public func_d0, func_phi0
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
@@ -48,7 +48,7 @@ SUBROUTINE init (self, solver, gamma)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Initialise a static potential and correspondiong density given by Guillet &
 !> Teyssier (2011, JCoPh, 230, p. 4756; eqn. 4). There are no dynamics in this
 !> setup, rather it is used to test the accuracy of the Poisson solver.
@@ -58,7 +58,7 @@ END SUBROUTINE init
 !> where r0 controls the concentration of the profile. The density is meanwhile
 !> given by:
 !>   \rho(r) = 4r0^2 / (r^2 + r0^2)^2.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE condition (self, m, f, idx)
   class(initial_t):: self
   type(index_t):: idx
@@ -92,9 +92,9 @@ SUBROUTINE condition (self, m, f, idx)
   call trace%end
 END SUBROUTINE condition
 
-!> =============================================================================
+!===============================================================================
 !> Function to calculate the exact potential (eq. 4 of Guillet & Teyssier)
-!> =============================================================================
+!===============================================================================
 FUNCTION func_phi0 (x, y) result (phi0)
   real, intent(in):: x, y
   real:: r, phi0
@@ -104,9 +104,9 @@ FUNCTION func_phi0 (x, y) result (phi0)
 
 END FUNCTION func_phi0
 
-!> =============================================================================
+!===============================================================================
 !> Function to calculate the density that matches the exact potential
-!> =============================================================================
+!===============================================================================
 FUNCTION func_d0 (x, y) result (d0)
   real, intent(in):: x, y
   real:: r, d0

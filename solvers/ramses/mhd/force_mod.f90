@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> This is a start on a module that could become a general turbulence forcing
 !> module, where the standard forcing we have been using in RAMSES is implemented
-!> =============================================================================
+!===============================================================================
 MODULE force_mod
   USE io_mod
   USE trace_mod
@@ -22,9 +22,9 @@ MODULE force_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Choose type of initial condition
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, solver, id, mesh)
   class(force_t):: self
   character(len=64):: solver
@@ -57,9 +57,9 @@ SUBROUTINE init (self, solver, id, mesh)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
-!> =============================================================================
+!===============================================================================
 FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t)        :: self
   real(8)               :: time

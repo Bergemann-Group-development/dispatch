@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Add the RT tasks to the task_list and queue them
-!> =============================================================================
+!===============================================================================
 SUBROUTINE rt_setup (task_list)
   USE link_mod
   USE task_list_mod
@@ -96,10 +96,10 @@ SUBROUTINE rt_setup (task_list)
 END SUBROUTINE rt_setup
 
 PROGRAM dispatch
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
 !> Setup a set of Cartesian patches on a task list, and update until finished
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
   USE mpi_mod
   USE cartesian_mod
@@ -119,5 +119,5 @@ PROGRAM dispatch
   call rt_setup (cartesian%task_list)   ! add RT tasks to task_list
   call cartesian%task_list%execute      ! execute the list = update member patches
   call mpi%end
-!> =============================================================================
+!===============================================================================
 END PROGRAM dispatch

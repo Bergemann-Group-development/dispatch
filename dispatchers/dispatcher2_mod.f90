@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> A simple task dispatcher, which handles a list of tasks that may be started
 !> as background OpenMP tasks.  A task can be in any of 4 states:
 !>
@@ -19,7 +19,7 @@
 !>       dispatcher%activate
 !>         link%check_mpi
 !>         link%update
-!> =============================================================================
+!===============================================================================
 MODULE dispatcher2_mod
   USE io_mod
   USE io_unit_mod
@@ -47,9 +47,9 @@ MODULE dispatcher2_mod
   type(dispatcher2_t), public:: dispatcher2
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the list, by populating it from a task_list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE execute (self, task_list, test)
   class(dispatcher2_t)    :: self
   type(task_list_t), pointer :: task_list
@@ -83,11 +83,11 @@ SUBROUTINE execute (self, task_list, test)
   call toc ('wall time', timer%n_update, time=start)
 END SUBROUTINE execute
 
-!> =============================================================================
+!===============================================================================
 !> Activate a task pointed to by a link, by starting a task%update as a
 !> background OpenMP task.  Set the state of task to 1 when dormant, 2 when
 !> ready, and 3 when active.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE activate (self, link, test)
   class(dispatcher2_t)    :: self
   class(link_t), pointer :: link
@@ -111,11 +111,11 @@ SUBROUTINE activate (self, link, test)
   end if
 END SUBROUTINE activate
 
-!> =============================================================================
+!===============================================================================
 !> Update the list of running tasks.  For each task on the running list, if it
 !> is no longer busy, check if any of its passive nbors has become executable.
 !> Finally, check the task itself.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self, test)
   class(dispatcher2_t)    :: self
   logical                 :: test

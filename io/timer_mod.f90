@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Each thread uses a private timer data type, with arrays for start time and
 !> total time for each registered procedure.  At begin, it stores the start time,
 !> and at end it increments the call counter and sums the time used into the
@@ -7,7 +7,7 @@
 !> We suspend counting of the active procedure if a new begin occurs, and resume
 !> it again on the next end call.  Each subsequent begin call suspends the
 !> ongoing call, so we need a list of active counters.
-!> =============================================================================
+!===============================================================================
 MODULE timer_mod
   USE mpi_mod
   USE io_unit_mod
@@ -62,8 +62,8 @@ MODULE timer_mod
   public tic, toc
 CONTAINS
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(timer_t):: self
   logical, save:: first_time=.true.
@@ -91,10 +91,10 @@ SUBROUTINE init (self)
   end do
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> If itimer==0, find a suitable value for it, and store the name with it.
 !> The name argument is not needed when itimer has already been assigned a value.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE begin (self, name, itimer)
   class(timer_t):: self
   character(len=*), optional:: name
@@ -143,10 +143,10 @@ SUBROUTINE begin (self, name, itimer)
   timers(thread)%istack = istack
 END SUBROUTINE begin
 
-!> =============================================================================
+!===============================================================================
 !> At end call, increment number of calls and total time for the active timer
 !> and resume any suspended timer
-!> =============================================================================
+!===============================================================================
 SUBROUTINE end (self, itimer)
   class(timer_t):: self
   integer, optional:: itimer
@@ -204,10 +204,10 @@ SUBROUTINE end (self, itimer)
   end if
 END SUBROUTINE end
 
-!> =============================================================================
+!===============================================================================
 !> Printout times used in routines using more than 0.05% of the time, and reset
 !> counters.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print ()
   if (omp%master) call real_print ()
 END SUBROUTINE print
@@ -291,8 +291,8 @@ contains
   end subroutine write_to
 END SUBROUTINE real_print
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE tic (time)
   implicit none
   real(8), optional:: time
@@ -304,8 +304,8 @@ SUBROUTINE tic (time)
   end if
 END SUBROUTINE tic
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE toc_1 (label, time)
   implicit none
   character(len=*):: label
@@ -315,8 +315,8 @@ SUBROUTINE toc_1 (label, time)
   call toc_r (label, 1.0, time)
 END SUBROUTINE toc_1
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE toc_i4 (label, n, time)
   implicit none
   character(len=*):: label
@@ -326,8 +326,8 @@ SUBROUTINE toc_i4 (label, n, time)
   call toc_r (label, real(n), time)
 END SUBROUTINE toc_i4
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE toc_i8 (label, n, time)
   implicit none
   character(len=*):: label
@@ -337,7 +337,7 @@ SUBROUTINE toc_i8 (label, n, time)
   call toc_r (label, real(n), time)
 END SUBROUTINE toc_i8
 
-!> =============================================================================
+!===============================================================================
 FUNCTION str_f4 (t) RESULT (out)
   real(8):: t
   character(len=8):: out
@@ -347,7 +347,7 @@ FUNCTION str_f4 (t) RESULT (out)
   out = trim(out(1:4))
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 FUNCTION time_str (t) RESULT (out)
   real(8):: t
   character(len=8):: out
@@ -378,10 +378,10 @@ FUNCTION time_str (t) RESULT (out)
   end if
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 !> Print the time used per thread.  Overuse is compensated for by the factor f =
 !> the number of threads per core.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE toc_r (label, n, time)
   implicit none
   character(len=*):: label

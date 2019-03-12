@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Execute a task list.  Since only the master thread is calling check_mpi(), we
 !> need to make sure that it handles all send/recv, hence send_priv=.false. and
 !> recv_priv=.false., and we can use the simplest receive mechanism (recv_active
@@ -20,7 +20,7 @@
 !> in each state, by incrementing the count for the new state and decrementing
 !> the count for the old state, whenever the state changes. These counts should
 !> be part of the dispatcher data type.
-!> =============================================================================
+!===============================================================================
 MODULE dispatcher3_mod
   USE io_mod
   USE io_unit_mod
@@ -58,8 +58,8 @@ MODULE dispatcher3_mod
   type(dispatcher3_t), public:: dispatcher3
 CONTAINS
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE init (self, task_list)
   class(dispatcher3_t):: self
   type(task_list_t), pointer:: task_list
@@ -79,11 +79,11 @@ SUBROUTINE init (self, task_list)
   mpi_mesg%queue_unpack = .false.
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Simple dispatcher, which spawns other threads that handle tasks that are
 !> ready. If / when the master thread has spawned a number of tasks that depend
 !> on the implementation, it will participate in execution of the tasks.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE execute (self, task_list, test)
   class(dispatcher3_t):: self
   type(task_list_t), pointer:: task_list
@@ -187,16 +187,16 @@ SUBROUTINE execute (self, task_list, test)
   call trace%end (itimer)
 END SUBROUTINE execute
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE print_state (label)
   character(len=*):: label
   !-----------------------------------------------------------------------------
   call write_state (io_unit%output, label)
 END SUBROUTINE
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE write_state (unit, label)
   integer:: unit
   character(len=*):: label
@@ -222,9 +222,9 @@ SUBROUTINE write_state (unit, label)
   !$omp end critical (set_state_cr)
 END SUBROUTINE write_state
 
-!> =============================================================================
+!===============================================================================
 !> Set a new task state, while keeping track of the number of tasks in each state
-!> =============================================================================
+!===============================================================================
 SUBROUTINE set_state (task, in)
   class(task_t), pointer:: task
   integer:: in, ip
@@ -256,10 +256,10 @@ SUBROUTINE set_state (task, in)
   end if
 END SUBROUTINE set_state
 
-!> =============================================================================
+!===============================================================================
 !> Check if a task is ready to update, by changing if all nbor task are "ahead
 !> of" the task in question
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION is_ready (link)
   class(link_t), pointer:: link, nbor
   integer:: state

@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> A patch will typically contain about 20-30 cells per side.  This means that
 !> a typical ray packet for face diagonal rays (of which there are 6) have a
 !> contain 20-30 rays, while the axis rays contain many more, and the space
@@ -8,7 +8,7 @@
 !> for a ray packet, if these are indexed by some integer?  There will typically
 !> be n_packet ~ 20-30 to search among.  If linear seach in a list is too slow
 !> one can allocate a table, and use binary search in the table to find the index.
-!> =============================================================================
+!===============================================================================
 MODULE test_mod
   implicit none
   public

@@ -1,11 +1,11 @@
-!> =============================================================================
+!===============================================================================
 !> $Id$
 !> Prototype experiment, showing the steps and components needed:
 !> 1) a "create" procedure, which creates tasks and adds them to a task_list
 !> 2) an "init" proc, which will be executed by the task_list%init
 !> 3) an "update" procedure, which will be executed by task_queue%update
 !> 3) an "output" procedure, which does whatever is desired
-!> =============================================================================
+!===============================================================================
 
 MODULE experiment_mod
   USE task_mod

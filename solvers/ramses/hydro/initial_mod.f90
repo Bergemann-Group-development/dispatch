@@ -1,9 +1,9 @@
-!> =============================================================================
+!===============================================================================
 !> Simple initical condition module for tests
 !>
 !> Note that the isothermal and gamma parameters are communicated from the solver
 !> via the hydro_parameters module.
-!> =============================================================================
+!===============================================================================
 MODULE initial_mod
   USE const
   USE io_mod
@@ -30,9 +30,9 @@ MODULE initial_mod
   real, save:: csound=1.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, solver, gamma1)
   class(initial_t):: self
   character(len=64):: solver
@@ -72,14 +72,14 @@ SUBROUTINE init (self, solver, gamma1)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE cleanup
   if (associated(buffer)) deallocate(buffer)
 END SUBROUTINE cleanup
 
-!> =============================================================================
+!===============================================================================
 !> Void initializer
-!> =============================================================================
+!===============================================================================
 SUBROUTINE void (self, m, ff, idx)
   class(initial_t) :: self
   type(index_t):: idx
@@ -87,9 +87,9 @@ SUBROUTINE void (self, m, ff, idx)
   real, dimension(:,:,:,:) :: ff
 END SUBROUTINE void
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a single 3-D wavenumber
-!> =============================================================================
+!===============================================================================
 SUBROUTINE single_solenoidal (self, m, ff, idx)
   class(initial_t) :: self
   class(mesh_t)    :: m(3)
@@ -143,9 +143,9 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   call trace_end (itimer)
 END SUBROUTINE single_solenoidal
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a single 3-D wavenumber, with non-random amplitude and zero phase
-!> =============================================================================
+!===============================================================================
 SUBROUTINE single_compressive (self, m, ff, idx)
   class(initial_t) :: self
   type(index_t):: idx
@@ -198,9 +198,9 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   call trace_end (itimer)
 END SUBROUTINE single_compressive
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a single 3-D wavenumber, with non-random amplitude and phase
-!> =============================================================================
+!===============================================================================
 SUBROUTINE single_advection (self, m, ff, idx)
   class(initial_t) :: self
   type(index_t):: idx
@@ -252,9 +252,9 @@ SUBROUTINE single_advection (self, m, ff, idx)
   call trace_end (itimer)
 END SUBROUTINE single_advection
 
-!> =============================================================================
+!===============================================================================
 !> Initialize from a raw data file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE exa256 (self, m, ff, idx)
   USE io_unit_mod
   class(initial_t):: self
@@ -319,10 +319,10 @@ SUBROUTINE exa256 (self, m, ff, idx)
   call trace_end (itimer)
 END SUBROUTINE exa256
 
-!> =============================================================================
+!===============================================================================
 !> Initialize from a raw data file, assumed to contain isothermal data, in the
 !> order rho, Ux, Uy, Uz
-!> =============================================================================
+!===============================================================================
 SUBROUTINE raw (self, m, ff, idx)
   USE io_unit_mod
   class(initial_t):: self
@@ -380,9 +380,9 @@ SUBROUTINE raw (self, m, ff, idx)
   call trace_end (itimer)
 END SUBROUTINE raw
 
-!> =============================================================================
+!===============================================================================
 !> Calculate total energy
-!> =============================================================================
+!===============================================================================
 SUBROUTINE energy (self, m, idx, ff)
   class(initial_t) :: self
   class(mesh_t):: m(3)

@@ -39,9 +39,9 @@ MODULE dp_reader_mod
   type(dp_reader_t), public:: dp_reader
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> 
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init(self)
   class(dp_reader_t) :: self
   logical, save:: first_time=.true.
@@ -75,9 +75,9 @@ SUBROUTINE init(self)
   
 END SUBROUTINE init
 
-!> =====================================================================
+!=======================================================================
 !> Read in the data from input files
-!> =====================================================================
+!=======================================================================
 SUBROUTINE read_patches(self, pid)
   USE iso_fortran_env, only : real32
   class(dp_reader_t) :: self
@@ -133,9 +133,9 @@ SUBROUTINE read_patches(self, pid)
 100 continue  
 END SUBROUTINE read_patches
 
-!> =====================================================================
+!=======================================================================
 !> Pickup the data from loaded initial data sets
-!> =====================================================================
+!=======================================================================
 SUBROUTINE snapshot (self, mesh, mem, level, used)
   class(dp_reader_t) :: self
   class(mesh_t), pointer, dimension(:) :: mesh
@@ -200,9 +200,9 @@ LOGICAL FUNCTION the_same(m, p, level)
   end do
 END FUNCTION the_same
   
-!> =====================================================================
+!=======================================================================
 !> Remove the linked list of temporary patches
-!> =====================================================================
+!=======================================================================
 SUBROUTINE cleanup (self)
   class(dp_reader_t) :: self
   class(patch_list_t), pointer :: this,  prev

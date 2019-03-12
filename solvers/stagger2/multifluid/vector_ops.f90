@@ -64,7 +64,7 @@ MODULE vector_ops
   end interface
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_scalar_grad (mesh, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -90,14 +90,14 @@ FUNCTION vector_scalar_grad (mesh, in) RESULT (out)
   call trace%end (itimer)
 END FUNCTION vector_scalar_grad
 
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_norm2_scalar (in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
   !-----------------------------------------------------------------------------
   out = in(:,:,:,1)**2 + in(:,:,:,2)**2 + in(:,:,:,3)**2
 END FUNCTION vector_norm2_scalar
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_norm_scalar (in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
@@ -105,7 +105,7 @@ FUNCTION vector_norm_scalar (in) RESULT (out)
   out = sqrt(in(:,:,:,1)**2 + in(:,:,:,2)**2 + in(:,:,:,3)**2)
 END FUNCTION vector_norm_scalar
 
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_edge_vector (in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -117,7 +117,7 @@ FUNCTION scalar_edge_vector (in) RESULT (out)
   out(:,:,:,3) = xdn(ydn(in))
   call trace%end (itimer)
 END FUNCTION scalar_edge_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_down_vector (in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -129,7 +129,7 @@ FUNCTION scalar_down_vector (in) RESULT (out)
   out(:,:,:,3) = zdn (in)
   call trace%end (itimer)
 END FUNCTION scalar_down_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_up_vector (in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -142,7 +142,7 @@ FUNCTION vector_up_vector (in) RESULT (out)
   call trace%end (itimer)
 END FUNCTION vector_up_vector
 
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_ddown_vector (mesh, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -167,7 +167,7 @@ FUNCTION scalar_ddown_vector (mesh, in) RESULT (out)
   out(:,:,:,3) = ddzdn (d3, in)
   call trace%end (itimer)
 END FUNCTION scalar_ddown_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_dup_vector (mesh, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -193,7 +193,7 @@ FUNCTION vector_dup_vector (mesh, in) RESULT (out)
   call trace%end (itimer)
 END FUNCTION vector_dup_vector
 
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_grad_scalar (mesh, in) RESULT(out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -218,7 +218,7 @@ FUNCTION vector_grad_scalar (mesh, in) RESULT(out)
   out(:,:,:,3) = ddzdn (d3, in)
   call trace%end (itimer)
 END FUNCTION vector_grad_scalar
-!> =============================================================================
+!===============================================================================
 SUBROUTINE cache_coeffs (n, mesh, h2c, h2f, h31c, h31f, h32c, h32f, dvol1c, dvol1f, dvol2c, dvol2f, dvol3c, dvol3f)
   class(mesh_t), dimension(:), pointer:: mesh
   class(mesh_t), pointer:: m1, m2 ,m3
@@ -258,7 +258,7 @@ SUBROUTINE cache_coeffs (n, mesh, h2c, h2f, h31c, h31f, h32c, h32f, dvol1c, dvol
   end if
   call trace%end (itimer)
 END SUBROUTINE cache_coeffs
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_div_vector (mesh, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
@@ -311,7 +311,7 @@ FUNCTION scalar_div_vector (mesh, in) RESULT (out)
         + ddzup( d3, n3)
   call trace%end (itimer)
 END FUNCTION scalar_div_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_minusdiv_vector (mesh, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
@@ -339,7 +339,7 @@ FUNCTION scalar_minusdiv_vector (mesh, in) RESULT (out)
         - ddzup( d3, n3*in(:,:,:,3) )
   call trace%end (itimer)
 END FUNCTION scalar_minusdiv_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_curl_dn_vector (mesh, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -375,7 +375,7 @@ FUNCTION vector_curl_dn_vector (mesh, in) RESULT (out)
                  - ddydn( d32,     in(:,:,:,1) )
   call trace%end (itimer)
 END FUNCTION vector_curl_dn_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_curl_up_vector (mesh, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -411,7 +411,7 @@ FUNCTION vector_curl_up_vector (mesh, in) RESULT (out)
                  - ddyup( d32,     in(:,:,:,1) )
   call trace%end (itimer)
 END FUNCTION vector_curl_up_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_laplacian_scalar (mesh, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
@@ -419,7 +419,7 @@ FUNCTION scalar_laplacian_scalar (mesh, in) RESULT (out)
   !-----------------------------------------------------------------------------
   out = div(mesh,grad(mesh,in))
 END FUNCTION scalar_laplacian_scalar
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_laplacian_vector (mesh, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -427,7 +427,7 @@ FUNCTION vector_laplacian_vector (mesh, in) RESULT (out)
  !-----------------------------------------------------------------------------
   out = grad(mesh,div(mesh,in)) - curl_up(mesh,curl_dn(mesh,in))
 END FUNCTION vector_laplacian_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION tensor_grad_vector (mesh, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3,3):: out
@@ -468,7 +468,7 @@ FUNCTION tensor_grad_vector (mesh, in) RESULT (out)
                                                    + yup(in(:,:,:,2))*ddyup(h32c*h2c*d2,h32f)
   call trace%end (itimer)
 END FUNCTION tensor_grad_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_divx_tensor (mesh, in11, in21, in31, in22, in33) RESULT (out)
   real, dimension(:,:,:), intent(in):: in11, in21, in31, in22, in33
   real, dimension(size(in11,1),size(in11,2),size(in11,3)):: out
@@ -527,7 +527,7 @@ FUNCTION vector_divx_tensor (mesh, in11, in21, in31, in22, in33) RESULT (out)
         - ddxdn( d5, n5      ) * in33   !xdn(in33)   !exp(xdn(log(in33)))
   call trace%end (itimer)
 END FUNCTION vector_divx_tensor
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_divy_tensor (mesh, in12, in22, in32, in33) RESULT (out)
   real, dimension(:,:,:), intent(in):: in12, in22, in32, in33
   real, dimension(size(in12,1),size(in12,2),size(in12,3)):: out
@@ -563,7 +563,7 @@ FUNCTION vector_divy_tensor (mesh, in12, in22, in32, in33) RESULT (out)
         - ddydn( d4, n4      ) * in33 !ydn(in33) !exp(ydn(log(in33)))
   call trace%end (itimer)
 END FUNCTION vector_divy_tensor
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_divz_tensor (mesh, in13, in23, in33) RESULT (out)
   real, dimension(:,:,:), intent(in):: in13, in23, in33
   real, dimension(size(in13,1),size(in13,2),size(in13,3)):: out
@@ -596,7 +596,7 @@ FUNCTION vector_divz_tensor (mesh, in13, in23, in33) RESULT (out)
         + ddzdn( d3, n3*in33 )
   call trace%end (itimer)
 END FUNCTION vector_divz_tensor
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_hinv_vector (mesh, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out

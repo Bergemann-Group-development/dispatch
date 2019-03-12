@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Add RT subtasks into the general task_list.  Each subtask is added to the
 !> nbor list of the parent task, and the parent task should be added to the nbor
 !> list of the subtask.
@@ -15,7 +15,7 @@
 !> The nbor lists have special behavior, in that even though the parent RT task
 !> needs to check that the sub-tasks are up-to-date, it does not need to, and
 !> should not, use a standard download_link call visavis the RT sub-tasks
-!> =============================================================================
+!===============================================================================
 SUBROUTINE rt_setup (task_list)
   USE io_mod
   USE io_unit_mod
@@ -215,8 +215,8 @@ SUBROUTINE rt_setup (task_list)
   call trace%end
 contains
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 subroutine prepend_task (nbor, mhd)
   class(link_t), pointer:: nbor
   class(rt_t), pointer:: mhd

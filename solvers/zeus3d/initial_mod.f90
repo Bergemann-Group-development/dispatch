@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> This is a start on a module that could become a general turbulence forcing
 !> module, where the standard forcing we have been using in RAMSES is implemented
-!> =============================================================================
+!===============================================================================
 MODULE initial_mod
   USE io_mod
   USE trace_mod
@@ -26,9 +26,9 @@ MODULE initial_mod
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, solver)
   class(initial_t):: self
   character(len=64):: solver
@@ -64,14 +64,14 @@ SUBROUTINE init (self, solver)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE cleanup
   if (associated(buffer)) deallocate(buffer)
 END SUBROUTINE cleanup
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
-!> =============================================================================
+!===============================================================================
 SUBROUTINE single_solenoidal (self, m, ff, idx)
   class(initial_t):: self
   type(index_t):: idx
@@ -125,9 +125,9 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   call trace_end (itimer)
 END SUBROUTINE single_solenoidal
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a single 3-D wavenumber, with non-random amplitude and zero phase
-!> =============================================================================
+!===============================================================================
 SUBROUTINE single_compressive (self, m, ff, idx)
   class(initial_t):: self
   type(index_t):: idx
@@ -181,9 +181,9 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   call trace_end (itimer)
 END SUBROUTINE single_compressive
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
-!> =============================================================================
+!===============================================================================
 SUBROUTINE single_advection (self, m, ff, idx)
   class(initial_t):: self
   type(index_t):: idx
@@ -236,9 +236,9 @@ SUBROUTINE single_advection (self, m, ff, idx)
   call trace_end (itimer)
 END SUBROUTINE single_advection
 
-!> =============================================================================
+!===============================================================================
 !> Initialize from a raw data file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE exa256 (self, m, ff, idx)
   USE io_unit_mod
   class(initial_t):: self
@@ -300,10 +300,10 @@ SUBROUTINE exa256 (self, m, ff, idx)
   call trace_end (itimer)
 END SUBROUTINE exa256
 
-!> =============================================================================
+!===============================================================================
 !> Initialize from a raw data file, assumed to contain isothermal data, in the
 !> order rho, Ux, Uy, Uz
-!> =============================================================================
+!===============================================================================
 SUBROUTINE raw (self, m, ff, idx)
   USE io_unit_mod
   class(initial_t):: self

@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Execute a task list.  Since only the master thread is calling check_mpi(), we
 !> need to make sure that it handles all send/recv, hence send_priv=.false. and
 !> recv_priv=.false., and we can use the simplest receive mechanism (recv_active
@@ -38,7 +38,7 @@
 !> useful work to do, while other tasks are finishing, so when the master thread
 !> looks at the situation again, there are likely to be a number of new tasks
 !> ready to be updated.
-!> =============================================================================
+!===============================================================================
 MODULE dispatcher4_mod
   USE io_mod
   USE io_unit_mod
@@ -90,8 +90,8 @@ MODULE dispatcher4_mod
   type(dispatcher4_t), public:: dispatcher4
 CONTAINS
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE init (self, task_list)
   class(dispatcher4_t):: self
   type(task_list_t), pointer:: task_list
@@ -104,11 +104,11 @@ SUBROUTINE init (self, task_list)
   self%verbose = verbose
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Simple dispatcher, which in each loop through the task list takes on the
 !> first task that is ready, and then spawns other threads that handle the
 !> remaining tasks that are ready.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE execute (self, task_list, test)
   class(dispatcher4_t):: self
   type(task_list_t), pointer:: task_list
@@ -199,8 +199,8 @@ SUBROUTINE execute (self, task_list, test)
   call trace%end (itimer)
 END SUBROUTINE execute
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE print_state (self, label)
   class(dispatcher4_t):: self
   character(len=*):: label
@@ -208,8 +208,8 @@ SUBROUTINE print_state (self, label)
   call write_state (self, io_unit%output, label)
 END SUBROUTINE
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE write_state (self, unit, label)
   class(dispatcher4_t):: self
   integer:: unit
@@ -236,12 +236,12 @@ SUBROUTINE write_state (self, unit, label)
   !$omp end critical (set_state_cr)
 END SUBROUTINE write_state
 
-!> =============================================================================
+!===============================================================================
 !> A task that is being actively updated is set in state 3, and when finished
 !> it switched to state 4.   We then use the same OMP task to check if any if
 !> the nbors have beome ready to update, switching the state if it has, and
 !> leaving it to the master thread to actually activate the task.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self, task_list, link, test)
   class(dispatcher4_t):: self
   type(task_list_t), pointer:: task_list
@@ -255,9 +255,9 @@ SUBROUTINE update (self, task_list, link, test)
   call self%set_state (link%task, 4)
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Spawn an OpenMP task, for updating a DISPATCH task
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spawn_update (self, task_list, link, test)
   class(dispatcher4_t):: self
   type(task_list_t), pointer:: task_list
@@ -272,9 +272,9 @@ SUBROUTINE spawn_update (self, task_list, link, test)
   !$omp end task
 END SUBROUTINE spawn_update
 
-!> =============================================================================
+!===============================================================================
 !> Set a new task state, while keeping track of the number of tasks in each state
-!> =============================================================================
+!===============================================================================
 SUBROUTINE set_state (self, task, in)
   class(dispatcher4_t):: self
   class(task_t), pointer:: task
@@ -307,10 +307,10 @@ SUBROUTINE set_state (self, task, in)
   end if
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 !> Check if a task is ready to update, by changing if all nbor task are "ahead
 !> of" the task in question
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION is_ready (self, link)
   class(dispatcher4_t):: self
   class(link_t), pointer:: link, nbor
@@ -352,9 +352,9 @@ LOGICAL FUNCTION is_ready (self, link)
   end if
 END FUNCTION is_ready
 
-!> =============================================================================
+!===============================================================================
 !> Print statistics
-!> =============================================================================
+!===============================================================================
 SUBROUTINE finalize
   if (omp%master) &
     write(io%output,'(a,i6,4(a,f7.4))') &
@@ -363,8 +363,8 @@ SUBROUTINE finalize
       ', fraction of dispatcher idle time =', wc_failed/max(1d-10,wallclock()-start)
 END SUBROUTINE finalize
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE diagnostics (self, task_list)
   class(dispatcher4_t):: self
   type(task_list_t), pointer:: task_list

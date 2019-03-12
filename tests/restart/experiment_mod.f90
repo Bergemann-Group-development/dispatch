@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Setup the initial conditions and experiment update
-!> =============================================================================
+!===============================================================================
 MODULE experiment_mod
   USE io_mod
   USE bits_mod
@@ -26,7 +26,7 @@ MODULE experiment_mod
   logical, save:: first_time=.true.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The initialization must be done in the right order.  The rotation speed
 !> omega must be known before the initial%init runs, for example.
 !>
@@ -43,7 +43,7 @@ CONTAINS
 !>         initial_mod::init                    ! selects ICs
 !>         initial_mod::condition              ! computes ICs
 !>         boundaries_mod::condition            ! apply BCs to ICs
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   real, dimension(:,:,:,:), pointer:: ff
@@ -73,9 +73,9 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Choice of update steps for this experiment
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
   !.............................................................................
@@ -178,12 +178,12 @@ SUBROUTINE output (self, experiment_name)
   call self%patch_t%output
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 !> Boundary conditions at the edges of the outermost rubiks cubes; extrapolate
 !> the density and pressure, and enforce vanishing derivative on the perpendicular
 !> velocities. To what extend the boundary conditions are applied in the x,y,z
 !> directions depends on the self%boundary%status bits {xdir,ydir,zdir}.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE edge_boundary_conditions (self)
   class(experiment_t):: self
   real, dimension(:,:,:), pointer:: d, e, p, u

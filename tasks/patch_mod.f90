@@ -1,8 +1,8 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> Template module for patches, which adds pointers to memory and mesh, and
 !> number of dimensions and variables.  The number of dimensions is hardwired
 !> to 3, since we can just choose the actual dimensions to get 2-D and 1-D.
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE patch_mod
   USE io_mod
   USE mpi_mod
@@ -207,9 +207,9 @@ MODULE patch_mod
   public task2patch
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Copy he most important fields to a sequenced header, for communication and I/O
-!> =============================================================================
+!===============================================================================
 SUBROUTINE patch_to_header (self, head)
   class(patch_t):: self
   type(header_t):: head
@@ -245,9 +245,9 @@ SUBROUTINE patch_to_header (self, head)
       mpi_mesg%sent_list%n, mpi_mesg%recv_list%n
 END SUBROUTINE patch_to_header
 
-!> =============================================================================
+!===============================================================================
 !> Copy he most important fields to a sequenced header, for communication and I/O
-!> =============================================================================
+!===============================================================================
 SUBROUTINE header_to_patch (self, head)
   class(patch_t):: self
   type(header_t):: head
@@ -304,9 +304,9 @@ SUBROUTINE header_to_patch (self, head)
   timer%latency%n    = timer%latency%n+1
 END SUBROUTINE header_to_patch
 
-!> =============================================================================
+!===============================================================================
 !> Cast a generic task_t to patch_t
-!> =============================================================================
+!===============================================================================
 FUNCTION cast2patch (task) RESULT(patch)
   class(task_t), pointer:: task
   class(patch_t), pointer:: patch
@@ -320,9 +320,9 @@ FUNCTION cast2patch (task) RESULT(patch)
   end select
 END FUNCTION cast2patch
 
-!> =============================================================================
+!===============================================================================
 !> Public function (deprecated)
-!> =============================================================================
+!===============================================================================
 FUNCTION task2patch (task) RESULT (patch)
   class(task_t), pointer:: task
   class(patch_t), pointer:: patch
@@ -330,11 +330,11 @@ FUNCTION task2patch (task) RESULT (patch)
   patch => cast2patch (task)
 END FUNCTION task2patch
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the patch memory and patch dimensions.  For this we need to be told the
 !> patch dimensions (which include the number of variable and the number of time
 !> slices), the patch position, and the patch size
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(patch_t):: self
   character(len=120):: id = &
@@ -346,7 +346,7 @@ SUBROUTINE init (self)
   call trace%end()
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Initialize default values for the patch memory and patch dimensions. The 
 !> order of setting values is that the calling code, typically experiment_mod,
 !> may set preferred defaults that differ from the ones set here.  The input
@@ -369,7 +369,7 @@ END SUBROUTINE init
 !> given default values here (such as 'periodic'), should use the method:
 !> call init_default + set values + call setup, since otherwise it would have
 !> to rely on the values being set correctly in the input namelist.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_default (self)
   class(patch_t):: self
   !.............................................................................
@@ -481,10 +481,10 @@ SUBROUTINE init_bdries (self)
   call trace%end()
 END SUBROUTINE init_bdries
 
-!> =============================================================================
+!===============================================================================
 !> Setup a patch, possibly with non-standard parameters. First setup with
 !> defaults, then possibly override, then do the actual setup
-!> =============================================================================
+!===============================================================================
 SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   class(patch_t)    :: self
   real(8), optional :: position(3), size(3)
@@ -630,9 +630,9 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   call trace%end()
 END SUBROUTINE setup
 
-!> =============================================================================
+!===============================================================================
 !> Deallocate a patch and its allocated parts
-!> =============================================================================
+!===============================================================================
 SUBROUTINE delete (self)
   class (patch_t):: self
   integer                  :: i
@@ -645,12 +645,12 @@ SUBROUTINE delete (self)
   call trace%end
 END SUBROUTINE delete
 
-!> =============================================================================
+!===============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time
 !> step puts new values in the 'new' slot 2, while saving the time step used in
 !> dt(1). Then the current slot (it) becomes 2, and the new one becomes 3, etc.
 !> This way, there is no need to copy memory btw time steps.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE rotate (self)
   class(patch_t):: self
   integer:: iv, nv, new
@@ -688,10 +688,10 @@ SUBROUTINE rotate (self)
   call trace%end()
 END SUBROUTINE rotate
 
-!> =============================================================================
+!===============================================================================
 !> This function gives the physical position of an index triple (patch point)
 !> in absolute Cartesian coords.
-!> =============================================================================
+!===============================================================================
 FUNCTION myposition (self, ii, iv, pp) RESULT(out)
   class(patch_t)      :: self
   integer, intent(in) :: ii(3)
@@ -721,10 +721,10 @@ FUNCTION myposition (self, ii, iv, pp) RESULT(out)
   out = cellpos ! absolute position
 END FUNCTION myposition
 
-!> =============================================================================
+!===============================================================================
 !> Scalar version of the previous function, but **including staggering factor**.
 !> For the conversion to Cartesian coords., all three indices are required!
-!> =============================================================================
+!===============================================================================
 FUNCTION myposition_staggered (self, ii, idir, h) RESULT(out)
   class(patch_t):: self
   integer, intent(in):: ii(3), idir
@@ -750,7 +750,7 @@ FUNCTION myposition_staggered (self, ii, idir, h) RESULT(out)
 
 END FUNCTION myposition_staggered
 
-!> =============================================================================
+!===============================================================================
 FUNCTION myfloatindex_scalar (self, cpos, idir, h) RESULT(out)
   class(patch_t) :: self
   real(8), intent(in) :: cpos(3)
@@ -776,10 +776,10 @@ FUNCTION myfloatindex_scalar (self, cpos, idir, h) RESULT(out)
 
 END FUNCTION myfloatindex_scalar
 
-!> =============================================================================
+!===============================================================================
 !> Periodic mapping of a grid -- typically the root grid. This is typically 
 !> only used in tests, so does not need to be efficient.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE periodic_grid (self, only)
   class(patch_t):: self
   integer, optional:: only
@@ -844,7 +844,7 @@ SUBROUTINE periodic_grid (self, only)
   call trace_end
 END SUBROUTINE periodic_grid
 
-!> =============================================================================
+!===============================================================================
 FUNCTION is_periodic(self) RESULT(out)
   class(patch_t):: self
   logical:: out
@@ -852,9 +852,9 @@ FUNCTION is_periodic(self) RESULT(out)
   out = any(self%periodic .and. self%size+self%ds > self%box)
 END FUNCTION is_periodic
 
-!> =====================================================================
+!=======================================================================
 !> Optimized periodic boundary enforcer
-!> =====================================================================
+!=======================================================================
 SUBROUTINE make_periodic4 (patch, f)
   class(patch_t):: patch
   class(mesh_t), pointer:: m(:)
@@ -918,9 +918,9 @@ SUBROUTINE make_periodic4 (patch, f)
   end if
 END SUBROUTINE make_periodic4
 
-!> =====================================================================
+!=======================================================================
 !> Optimized periodic boundary enforcer
-!> =====================================================================
+!=======================================================================
 SUBROUTINE make_periodic8 (patch, f)
   class(patch_t):: patch
   class(mesh_t), pointer:: m(:)
@@ -984,11 +984,11 @@ SUBROUTINE make_periodic8 (patch, f)
   end if
 END SUBROUTINE make_periodic8
 
-!> =============================================================================
+!===============================================================================
 !> Time extrapolate guard cell values, to allow using also guard zone values to
 !> get boundary conditions for higher level patches.  This is done before time
 !> slot rotation, so the slot that has just been updated is iit(nt).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE extrapolate_guards (self)
   class(patch_t)        :: self
   !.............................................................................
@@ -1096,9 +1096,9 @@ SUBROUTINE extrapolate_guards (self)
   call trace_end (itimer)
 END SUBROUTINE extrapolate_guards
 
-!> =============================================================================
+!===============================================================================
 !> Pack patch info into a buffer, for MPI communication
-!> =============================================================================
+!===============================================================================
 SUBROUTINE allocate_mesg (self)
   class(patch_t):: self
   !-----------------------------------------------------------------------------
@@ -1111,9 +1111,9 @@ SUBROUTINE allocate_mesg (self)
   call io%bits_mem (storage_size(self%mesg%buffer), product(shape(self%mesg%buffer)))
 END SUBROUTINE allocate_mesg
 
-!> =============================================================================
+!===============================================================================
 !> Pack patch info into a buffer, for MPI communication
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pack (self, mesg)
   class(patch_t):: self
   class(mesg_t), pointer:: mesg
@@ -1182,9 +1182,9 @@ SUBROUTINE pack (self, mesg)
   call trace_end (itimer)
 END SUBROUTINE pack
 
-!> =============================================================================
+!===============================================================================
 !> Unpack patch info from a buffer, for MPI communication
-!> =============================================================================
+!===============================================================================
 SUBROUTINE unpack (self, mesg)
   class(patch_t):: self
   class(mesg_t), pointer:: mesg
@@ -1253,13 +1253,13 @@ SUBROUTINE unpack (self, mesg)
   call trace_end (itimer)
 END SUBROUTINE unpack
 
-!> =============================================================================
+!===============================================================================
 !> Print info to stdout.  If
 !>   verbose==0:        print only id=1 to stdout and io_unit%log
 !>   verbose==1:        print only id=1 to stdout but all to io_unit%log
 !>   verbose==2:        print iv=1 to stdout and io_unit%log for all id
 !>   verbose==3:        print iv=1,nv to stdout and io_unit%log for all id
-!> =============================================================================
+!===============================================================================
 SUBROUTINE info (self, nq, ntask, experiment_name)
   class(patch_t):: self
   integer, optional:: nq, ntask
@@ -1404,21 +1404,21 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   call trace%end
 END SUBROUTINE info
 
-!> =============================================================================
+!===============================================================================
 !> Return true of a point is inside the patch interior
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION contains (self, point)
   class(patch_t):: self
   real(8):: point(3)
   contains = all(abs(point-self%position) < 0.5_8*self%size)
 END FUNCTION contains
 
-!> =============================================================================
+!===============================================================================
 !> Check if there is overlap, using the size plus an extra cell margin. The
 !> definition of overlap MUST be symmetric, since it is being used to define
 !> neighbor relations.  This function overloads task_t%overlaps, in order to
 !> force use of the patch_t%distance function.
-!> =============================================================================
+!===============================================================================
 FUNCTION overlaps (self, task)
   class(patch_t):: self
   class(task_t):: task
@@ -1434,12 +1434,12 @@ FUNCTION overlaps (self, task)
   call trace%end()
 END FUNCTION overlaps
 
-!> =============================================================================
+!===============================================================================
 !> Signed distance between the centers of two tasks in the periodic box
 !> This version is adjusted to account for curvilinear coords. (the position of
 !> a curvilinear patch is set to the coordinate *origin) and requires components
 !> defined in `patch_t`.
-!> =============================================================================
+!===============================================================================
 FUNCTION distance_curvilinear (self, task) RESULT (out)
   class(patch_t):: self
   class(task_t):: task
@@ -1466,14 +1466,14 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
   call trace%end()
 END FUNCTION distance_curvilinear
 
-!> =============================================================================
+!===============================================================================
 !> The nearest smaller index position in the self patch coordinate system.  The
 !> point with index self%mesh%lb is half a cell inside the patch guard size, so the
 !> floating point position is counted relative to that point, and is split into
 !> an integer part and a remainder.  For patches smaller than the box, the index
 !> may become both smaller than self%mesh%lb and larger than self%mesh%ub.  For the root
 !> grid patch, the index is in the range (li-1,ui) inside the interior.
-!> =============================================================================
+!===============================================================================
 FUNCTION index (self, other, oindex, f)
   class(patch_t):: self, other
   real, dimension(3):: position, f, pos, pos_lb
@@ -1487,10 +1487,10 @@ FUNCTION index (self, other, oindex, f)
   f = f - index                                                 ! remainder
 END FUNCTION index
 
-!> =============================================================================
+!===============================================================================
 !> The nearest index position in the self patch of the point in another patch.
 !> The cost of this operation is 4 plus and 2 multiply per direction = 18 flops
-!> =============================================================================
+!===============================================================================
 FUNCTION nearest (self, other, index) RESULT (out)
   class(patch_t):: self, other
   integer, dimension(3):: out, index
@@ -1503,9 +1503,9 @@ FUNCTION nearest (self, other, index) RESULT (out)
   out = nint(f)                                                 ! nearest integer
 END FUNCTION nearest
 
-!> =============================================================================
+!===============================================================================
 !> The lowest index position in the self patch of the point in another patch
-!> =============================================================================
+!===============================================================================
 FUNCTION lowest (self, other, index) RESULT (out)
   class(patch_t):: self, other
   integer, dimension(3):: out, index
@@ -1517,9 +1517,9 @@ FUNCTION lowest (self, other, index) RESULT (out)
   f = self%offset + pos/self%ds                                 ! floating integer
   out = nint(f)                                                 ! lowest integer
 END FUNCTION lowest
-!> =============================================================================
+!===============================================================================
 !> The highest index position in the self patch of the point in another patch
-!> =============================================================================
+!===============================================================================
 FUNCTION highest (self, other, index) RESULT (out)
   class(patch_t):: self, other
   integer, dimension(3):: out, index
@@ -1532,9 +1532,9 @@ FUNCTION highest (self, other, index) RESULT (out)
   out = nint(f)                                                 ! highest integer
 END FUNCTION highest
 
-!> =============================================================================
+!===============================================================================
 !> Courant condition, one way or another
-!> =============================================================================
+!===============================================================================
 SUBROUTINE courant_condition (self, detailed_timer)
   class(patch_t):: self
   logical, optional:: detailed_timer
@@ -1611,7 +1611,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   call trace_end (itimer)
 END SUBROUTINE courant_condition
 
-!> =============================================================================
+!===============================================================================
 FUNCTION fsum4 (self, f) RESULT (out)
   class(patch_t):: self
   real:: out
@@ -1629,7 +1629,7 @@ FUNCTION fsum4 (self, f) RESULT (out)
                      self%mesh(3)%li:self%mesh(3)%ui),kind=8))
   end if
 END FUNCTION fsum4
-!> =============================================================================
+!===============================================================================
 FUNCTION fsum8 (self, f) RESULT (out)
   class(patch_t):: self
   real(8):: out
@@ -1648,7 +1648,7 @@ FUNCTION fsum8 (self, f) RESULT (out)
   end if
 END FUNCTION fsum8
 
-!> =============================================================================
+!===============================================================================
 FUNCTION faver4 (self, f) RESULT (out)
   class(patch_t):: self
   real:: out
@@ -1656,7 +1656,7 @@ FUNCTION faver4 (self, f) RESULT (out)
   !-----------------------------------------------------------------------------
   out = self%fsum4(f)/product(self%ncell)
 END FUNCTION faver4
-!> =============================================================================
+!===============================================================================
 FUNCTION faver8 (self, f) RESULT (out)
   class(patch_t):: self
   real(8):: out
@@ -1665,7 +1665,7 @@ FUNCTION faver8 (self, f) RESULT (out)
   out = self%fsum8(f)/product(self%ncell)
 END FUNCTION faver8
 
-!> =============================================================================
+!===============================================================================
 FUNCTION fminvali (self, iv) RESULT (fminval)
   class(patch_t):: self
   integer:: iv
@@ -1673,7 +1673,7 @@ FUNCTION fminvali (self, iv) RESULT (fminval)
   !-----------------------------------------------------------------------------
   fminval = self%fminvalvar (self%mem(:,:,:,iv,self%it,1))
 END FUNCTION fminvali
-!> =============================================================================
+!===============================================================================
 FUNCTION fmaxvali (self, iv) RESULT (fmaxval)
   class(patch_t):: self
   integer:: iv
@@ -1681,7 +1681,7 @@ FUNCTION fmaxvali (self, iv) RESULT (fmaxval)
   !-----------------------------------------------------------------------------
   fmaxval = self%fmaxvalvar (self%mem(:,:,:,iv,self%it,1))
 END FUNCTION fmaxvali
-!> =============================================================================
+!===============================================================================
 FUNCTION fmaxval4 (self, f, outer) RESULT (fmaxval)
   real:: fmaxval
   class(patch_t):: self
@@ -1706,7 +1706,7 @@ FUNCTION fmaxval4 (self, f, outer) RESULT (fmaxval)
                        self%mesh(3)%li:self%mesh(3)%ui))
   end if
 END FUNCTION fmaxval4
-!> =============================================================================
+!===============================================================================
 FUNCTION fminval4 (self, f) RESULT(fminval)
   real:: fminval
   class(patch_t):: self
@@ -1720,7 +1720,7 @@ FUNCTION fminval4 (self, f) RESULT(fminval)
                        self%mesh(3)%li:self%mesh(3)%ui))
   end if
 END FUNCTION fminval4
-!> =============================================================================
+!===============================================================================
 FUNCTION fmaxval8 (self, f, outer) RESULT (fmaxval)
   real(8):: fmaxval
   class(patch_t):: self
@@ -1745,7 +1745,7 @@ FUNCTION fmaxval8 (self, f, outer) RESULT (fmaxval)
                        self%mesh(3)%li:self%mesh(3)%ui))
   end if
 END FUNCTION fmaxval8
-!> =============================================================================
+!===============================================================================
 FUNCTION fminval8 (self, f) RESULT(fminval)
   real(8):: fminval
   class(patch_t):: self
@@ -1760,9 +1760,9 @@ FUNCTION fminval8 (self, f) RESULT(fminval)
   end if
 END FUNCTION fminval8
 
-!> =============================================================================
+!===============================================================================
 !> Check for NaN
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_nan (self, label, always)
   class(patch_t):: self
   character(len=*), optional:: label
@@ -1834,10 +1834,10 @@ LOGICAL FUNCTION isinf(a)
   isinf = isnan(a) .or. (abs(a) > huge(1.0_KindScalarVar))
 END FUNCTION isinf
 
-!> =============================================================================
+!===============================================================================
 !> Check if the density is negative somewhere, counting points in the interior
 !> and guard zones separately.  Attempt to patch the guard zones, if applicable.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_density (self, label)
   class(patch_t):: self
   character(len=*), optional:: label
@@ -1924,8 +1924,8 @@ SUBROUTINE check_density (self, label)
   call trace%end (itimer)
 END SUBROUTINE check_density
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION local_iit (self) RESULT (iit)
   class(patch_t):: self
   integer:: i, it, iit(self%nt)
@@ -1940,9 +1940,9 @@ FUNCTION local_iit (self) RESULT (iit)
   iit = self%iit
 END FUNCTION local_iit
 
-!> =============================================================================
+!===============================================================================
 !> Statistics for all vars in a patch
-!> =============================================================================
+!===============================================================================
 SUBROUTINE stats_patch (self, label)
   class (patch_t):: self
   character(len=*):: label
@@ -1956,9 +1956,9 @@ SUBROUTINE stats_patch (self, label)
   end do
 END SUBROUTINE stats_patch
 
-!> =============================================================================
+!===============================================================================
 !> Statistics for a scalar field
-!> =============================================================================
+!===============================================================================
 SUBROUTINE stats_scalar (self, var, label)
   class (patch_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: var
@@ -1972,9 +1972,9 @@ SUBROUTINE stats_scalar (self, var, label)
     self%id, trim(label)//' stats: min, aver, rms, max =', si, sb
 END SUBROUTINE stats_scalar
 
-!> =============================================================================
+!===============================================================================
 !> Statistics for a vector field
-!> =============================================================================
+!===============================================================================
 SUBROUTINE stats_vector (self, var, label)
   class (patch_t):: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: var
@@ -1991,8 +1991,8 @@ SUBROUTINE stats_vector (self, var, label)
   end do
 END SUBROUTINE stats_vector
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE scalar_stats (f, l, u, s)
   real(kind=KindScalarVar), dimension(:,:,:):: f
   integer:: l(3), u(3)
@@ -2016,10 +2016,10 @@ SUBROUTINE scalar_stats (f, l, u, s)
   s(3) = sqrt(max(0d0,s(3)/product(u-l+1)-s(2)**2))
 END SUBROUTINE scalar_stats
 
-!> =============================================================================
+!===============================================================================
 !> default version; only supports Cartesian coords.
 !> see the `solvers/zeus3d` version for curvilinear coord. suppport.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   class(patch_t) :: self
   class(patch_t), pointer :: target
@@ -2044,7 +2044,7 @@ SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   call trace%end()
 END SUBROUTINE MapVectors
 
-!> =============================================================================
+!===============================================================================
 FUNCTION beyond_patch_edge (self, idir, position) result (outside)
   class(patch_t) :: self
   integer, intent(in) :: idir
@@ -2106,10 +2106,10 @@ FUNCTION beyond_patch_edge (self, idir, position) result (outside)
   end select
 END FUNCTION beyond_patch_edge
 
-!> =====================================================================
+!=======================================================================
 !> Interpolate -- only in time for now -- from the MHD time slots save in
 !> this module to the time requested from the solve procedure
-!> =====================================================================
+!=======================================================================
 SUBROUTINE log_interpolate (self, time, i, a)
   class (patch_t)                 :: self
   real(8)                         :: time
@@ -2134,10 +2134,10 @@ SUBROUTINE log_interpolate (self, time, i, a)
   call trace%end (itimer)
 END SUBROUTINE log_interpolate
 
-!> =====================================================================
+!=======================================================================
 !> Search for a time interval to interpolate in, and return the time
 !> slot indices and weight factors
-!> =====================================================================
+!=======================================================================
 SUBROUTINE time_interval (self, time, jt, pt, all)
   class (patch_t)                 :: self
   real(8)                         :: time
@@ -2184,8 +2184,8 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
   !call trace%end (itimer)
 END SUBROUTINE time_interval
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION index_stagger (self, iv) RESULT (out)
   class(patch_t) :: self
   integer        :: iv
@@ -2197,7 +2197,7 @@ FUNCTION index_stagger (self, iv) RESULT (out)
   end do
 END FUNCTION index_stagger
 
-!> =============================================================================
+!===============================================================================
 !> Return indices and fractions for 3D interpolation.  Only called from
 !> patch_mod::interpolation, where a possible issue is to ensure the correct
 !> behavior when the source and target points are essentially the same, except
@@ -2205,7 +2205,7 @@ END FUNCTION index_stagger
 !> with fraction vanishing, so there is no possible issue with extrapolations.
 !> Hence we should add a small fraction before taking the floor value, and then
 !> subtract the same.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE index_space (self, pos, iv, i, p)
   class(patch_t):: self
   real(8)           :: pos(3)
@@ -2236,12 +2236,12 @@ SUBROUTINE index_space (self, pos, iv, i, p)
   !call trace%end (itimer)
 END SUBROUTINE index_space
 
-!> =============================================================================
+!===============================================================================
 !> Return only the index in self corresponding to a point in native space.
 !> "pos" is a relative position in target coordinate space, and since we are
 !> not informed about the target grid spacing it must be adjusted for staggering
 !> before the call.
-!> =============================================================================
+!===============================================================================
 FUNCTION index_only (self, pos, roundup) RESULT (ii)
   class(patch_t)      :: self
   real(8), intent(in) :: pos(3)
@@ -2266,7 +2266,7 @@ FUNCTION index_only (self, pos, roundup) RESULT (ii)
   end do
 END FUNCTION index_only
 
-!> =============================================================================
+!===============================================================================
 !> Return indices and fractions for 3D interpolation.  Only called from
 !> patch_mod::interpolation, where a possible issue is to ensure the correct
 !> behavior when the source and target points are essentially the same, except
@@ -2274,7 +2274,7 @@ END FUNCTION index_only
 !> with fraction vanishing, so there is no possible issue with extrapolations.
 !> Hence we should add a small fraction before taking the floor value, and then
 !> subtract the same.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE index_space2 (self, nbor, pos, iv, ii, p)
   class(patch_t):: self
   class(patch_t), pointer :: nbor
@@ -2311,9 +2311,9 @@ SUBROUTINE index_space2 (self, nbor, pos, iv, ii, p)
   !call trace%end (itimer)
 END SUBROUTINE index_space2
 
-!> =============================================================================
+!===============================================================================
 !> Return only the index in self corresponding to a point in native space
-!> =============================================================================
+!===============================================================================
 FUNCTION index_only2 (self, nbor, pos, iv, roundup, closest) RESULT (ii)
   class(patch_t)    :: self
   class(patch_t), pointer :: nbor
@@ -2348,9 +2348,9 @@ FUNCTION index_only2 (self, nbor, pos, iv, roundup, closest) RESULT (ii)
   end do
 END FUNCTION index_only2
 
-!> =============================================================================
+!===============================================================================
 !> How many edges do `self` and its neighbor `source` share?
-!> =============================================================================
+!===============================================================================
 FUNCTION count_edges (self, source) RESULT (out)
   class(patch_t)          :: self
   class(patch_t), pointer :: source
@@ -2364,11 +2364,11 @@ FUNCTION count_edges (self, source) RESULT (out)
   end do
 END FUNCTION count_edges
 
-!> =============================================================================
+!===============================================================================
 !> Interpolate in space and time, for a case where it is safe = the source point
 !> is inside the valid domain (inside a distance of half a cell from the source
 !> patch boundary for non-staggered points)
-!> =============================================================================
+!===============================================================================
 SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
   class(patch_t)           :: self
   class(patch_t), pointer  :: target
@@ -2428,11 +2428,11 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
   !call trace%end (itimer)
 END SUBROUTINE interpolate
 
-!> =============================================================================
+!===============================================================================
 !> Interpolate in space and time, for a case where it is safe = the source point
 !> is inside the valid domain (inside a distance of half a cell from the source
 !> patch boundary for non-staggered points)
-!> =============================================================================
+!===============================================================================
 SUBROUTINE interpolate_specific (self, target, ii, iv, jt, pt)
   class(patch_t)           :: self
   class(patch_t), pointer  :: target
@@ -2510,7 +2510,7 @@ SUBROUTINE update_position (self)
   call trace%end()
 END SUBROUTINE update_position
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE nbors_info (self)
   class(patch_t):: self
   class(link_t), pointer:: nbor
@@ -2529,7 +2529,7 @@ SUBROUTINE nbors_info (self)
   end do
 END SUBROUTINE nbors_info
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE custom_refine (self)
   class(patch_t):: self
   !-----------------------------------------------------------------------------

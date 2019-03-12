@@ -1,4 +1,4 @@
-!> =====================================================================
+!=======================================================================
 !> A module to set up ray geometry. Several different geometries can be
 !> created if needed for different experiment geometries (e.g. cartesian,
 !> spherical, etc.). As an input the module needs the geometry index,
@@ -29,7 +29,7 @@
 !> terminates (fwd_coords/rev_coords, depending on direction), which cells
 !> it crosses (cell_coords), distance it traves through particular cell(ds),
 !> and which cell face it crosses when it enters and leaves the cell (pt_wall)
-!> =====================================================================
+!=======================================================================
 MODULE ray_geometry_v3_mod
   USE io_mod
   USE io_unit_mod
@@ -198,9 +198,9 @@ MODULE ray_geometry_v3_mod
   real(8), public, parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialisation subroutine for ray geometry
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init (self, geometry, n, ng, cell_dims, no_mans_land)
   class(ray_geometry_t) :: self
   class(ray_geometry_t), pointer :: new
@@ -281,7 +281,7 @@ SUBROUTINE get_my_geometry(self, geometry, n, ng, cell_dims, my_geom)
   !call trace_end
 END SUBROUTINE get_my_geometry
 
-!> =====================================================================
+!=======================================================================
 !> Initialisation subroutine for cartesian geometry.
 !> It is important to note, that although rays are created independently
 !> for arbitrary directions (or can be not created, if user doesn't need
@@ -291,7 +291,7 @@ END SUBROUTINE get_my_geometry
 !>   nx, ny, nz     : number of angles relative to x-, y-, z-axis
 !>   xti, yti, zti  : degrees relative to x-, y-, and z-axis
 !>   dx, dy, dz     : ray directionality
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_cartesian(self)
   class(ray_geometry_t) :: self
   integer                         :: i, d45
@@ -383,9 +383,9 @@ SUBROUTINE init_cartesian(self)
   call trace_end
 END SUBROUTINE init_cartesian
 
-!> =====================================================================
+!=======================================================================
 !> Initialisation subroutine for cylindrical geometry
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_cylindrical(self)
   class(ray_geometry_t)      :: self
   integer                         :: i, nz, nR, nPhi
@@ -398,9 +398,9 @@ SUBROUTINE init_cylindrical(self)
 
 END SUBROUTINE init_cylindrical
 
-!> =====================================================================
+!=======================================================================
 !> Initialisation subroutine for spherical geometry
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_spherical(self)
   class(ray_geometry_t)      :: self
   integer                         :: i, nr, ntheta, nphi
@@ -413,11 +413,11 @@ SUBROUTINE init_spherical(self)
 
 END SUBROUTINE init_spherical
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to add axisymmetric rays. It is done separately, because
 !> it is much simpler and therefore faster than with rays with other
 !> angles. Adds stiff ray arrays instantly.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE add_axis(self, dir)
   class(ray_geometry_t) :: self
   class(ray_dirs_t), pointer :: ndir
@@ -524,11 +524,11 @@ SUBROUTINE add_axis(self, dir)
 !  call trace_end
 END SUBROUTINE add_axis
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to add rays (except 0 and 45 degree angles).
 !> Done using modified "fast voxel traversal" algorithm
 !> (original, not modified, one is from Amanatides & Woo, 1987)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE add_ray(self, theta, dir)
   class(ray_geometry_t) :: self
   integer :: dir, nphi, a, b, c, pdir
@@ -587,7 +587,7 @@ SUBROUTINE add_ray(self, theta, dir)
   !call trace_end
 END SUBROUTINE add_ray
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to add diagonal (45 degree) rays. Done separately, because
 !> it is a special case - rays overlap when done from 3 directions.
 !> Otherwise it is still simpler and therefore faster than other angles -
@@ -598,7 +598,7 @@ END SUBROUTINE add_ray
 !> cross cell corners - avoiding diagonal nbor problem. To set rays to go
 !> through cell centers, move ray from cell center to wall and vice-versa
 !> for 3D movement.
-!> =====================================================================
+!=======================================================================
 
 SUBROUTINE add_diag(self, rep, dir)
   class(ray_geometry_t) :: self
@@ -672,11 +672,11 @@ SUBROUTINE add_diag(self, rep, dir)
   !call trace_end
 END SUBROUTINE add_diag
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to traverse rays in 3D. Similar to "fast voxel traversal
 !> algorithm" (Amanatides & Woo, 1987) and appendix A in Rijkhorst et al. (2006),
 !> but without their serious drawbacks and is faster.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE traverse(self, dp, a, b, c, init_step)
   class(ray_geometry_t) :: self
   class(ray_point_t), pointer :: ray
@@ -741,10 +741,10 @@ SUBROUTINE traverse(self, dp, a, b, c, init_step)
   !call trace_end
 END SUBROUTINE traverse
 
-!> =====================================================================
+!=======================================================================
 !> INPUT: self, step size along ray direction (dp), smallest cell coord (li)
 !> highest cell coord (ui), nominal direction (a, b), ray direction (c)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_traverse(self, dp, ui, li, a, b, c)
   class(traverse_t) :: self
   integer :: a, b, c, li(3), ui(3)
@@ -770,11 +770,11 @@ SUBROUTINE init_traverse(self, dp, ui, li, a, b, c)
   !call trace_end
 END SUBROUTINE init_traverse
 
-!> =====================================================================
+!=======================================================================
 !> INPUT: self, position in nominal directions (ia, ib),
 !> distance to cell walls (init_step), upstream cell position for particular
 !> ray (upstream)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE posit(self, ia, ib, init_step)
   class (traverse_t) :: self
   real, dimension(3) :: init_step
@@ -801,10 +801,10 @@ SUBROUTINE posit(self, ia, ib, init_step)
   self%reset(2) = .false.
 END SUBROUTINE posit
 
-!> =====================================================================
+!=======================================================================
 !> restart the ray when it hits a side-wall (invoke pseudo-periodic
 !> boundaries). This is for the general, 3D case.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE restart (self)
   class(traverse_t) :: self
   integer :: x
@@ -844,11 +844,11 @@ SUBROUTINE restart (self)
   self%reset(2) = .false.
 END SUBROUTINE restart
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to create linked-list of ray points. Later this list is
 !> redone into a stiff (array) ray.
 !> INPUT: self, cell coordinates where the ray point have moved to (p)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE add_ray_point(self, p)
   class(ray_point_t)          :: self
   class(ray_point_t), pointer :: point
@@ -871,12 +871,12 @@ SUBROUTINE add_ray_point(self, p)
 
 END SUBROUTINE add_ray_point
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to transform linked-list of ray points into a stiff (array)
 !> ray. Arranging is done based on the walls the ray hits AND the number
 !> of ray points.
 !> INPUT: self, linked list of ray points (ray_point)
-!> =====================================================================
+!=======================================================================
 
 SUBROUTINE fill_single_ray_data(self, ray)
   class(single_ray_t) :: self
@@ -904,10 +904,10 @@ SUBROUTINE fill_single_ray_data(self, ray)
   end do
 END SUBROUTINE fill_single_ray_data
 
-!> =====================================================================
+!=======================================================================
 !> finish a single ray - put it into a packet and a bundle. For the time
 !> being, rays are not merged into arrays.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE finish_ray(self, ray_point, id)
   class(single_ray_bundle_t) :: self
   class(single_ray_bundle_t), pointer :: bundle
@@ -1028,9 +1028,9 @@ SUBROUTINE fill_ray_list_data(self, sray, rid)
   nullify (sray, prev_sray)
 END SUBROUTINE fill_ray_list_data
 
-!> =====================================================================
+!=======================================================================
 !> Subroutine to restructure ray tree into 2D sorted ray tables.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE finish_single_ray_list(self, sbundle)
   class(ray_geometry_t) :: self
   class(ray_dirs_t), pointer :: dir
@@ -1229,10 +1229,10 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
   end if
 END SUBROUTINE finish_single_ray_list
 
-!> =====================================================================
+!=======================================================================
 !> Finish ray direction by sorting ray chains, or, if chains are not done,
 !> by merging all bundles into one
-!> =====================================================================
+!=======================================================================
 SUBROUTINE finish_direction(self, dir)
   class(ray_geometry_t) :: self
   class(ray_dirs_t), pointer :: dir
@@ -1387,9 +1387,9 @@ nullify (bnd1, bnd2, packet1, packet2)
 END SUBROUTINE finish_direction
 
 
-!> =============================================================================
+!===============================================================================
 !> Print summary info for ray_t
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print_ray (self, i)
   class(packet_t) :: self
   integer :: i, j, k
@@ -1409,9 +1409,9 @@ SUBROUTINE print_ray (self, i)
   end do
 END SUBROUTINE print_ray
 
-!> =============================================================================
+!===============================================================================
 !> Print summary info for ray_bndl_t
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print_bundle (self, i)
   class(ray_bndl_t) :: self
   integer :: j,i
@@ -1428,9 +1428,9 @@ SUBROUTINE print_bundle (self, i)
   end do
 END SUBROUTINE print_bundle
 
-!> =============================================================================
+!===============================================================================
 !> Print summary info for ray_dirs_t
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print_dirs (self, i)
   class(ray_dirs_t) :: self
   integer :: i, j
@@ -1443,9 +1443,9 @@ SUBROUTINE print_dirs (self, i)
   end do
 END SUBROUTINE print_dirs
 
-!> =============================================================================
+!===============================================================================
 !> Print summary info for ray_geometry_t
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print_geometry (self)
   class(ray_geometry_t) :: self
   integer :: j

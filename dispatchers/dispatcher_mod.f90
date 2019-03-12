@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Do not use a dispatcher, but call task_list%execute, which relies on threads
 !> handling a ready queue.
-!> =============================================================================
+!===============================================================================
 MODULE dispatcher_mod
   USE io_mod
   USE trace_mod
@@ -39,11 +39,11 @@ MODULE dispatcher_mod
   type(dispatcher_t), public:: dispatcher
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Choose and initialize the dispatcher method.  For full flexibility, default
 !> parameters for mpi_mesg_mod are first set, and may then be overwritten in the
 !> mpi_mesg%init call.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(dispatcher_t):: self
   integer:: iostat
@@ -111,8 +111,8 @@ SUBROUTINE init (self)
   call trace%end()
 END SUBROUTINE init
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE execute (self, task_list)
   class(dispatcher_t):: self
   type(task_list_t), pointer:: task_list
@@ -150,9 +150,9 @@ SUBROUTINE execute (self, task_list)
   call self%method (task_list)
 END SUBROUTINE execute
 
-!> =============================================================================
+!===============================================================================
 !> I/O params for tests
-!> =============================================================================
+!===============================================================================
 SUBROUTINE set_io
   io%do_output = .false.
   io%print_time = 50.
@@ -160,9 +160,9 @@ SUBROUTINE set_io
   io%job_seconds = test_seconds
 END SUBROUTINE set_io
 
-!> =============================================================================
+!===============================================================================
 !> Execute a task list, using the selected dispatcher method
-!> =============================================================================
+!===============================================================================
 SUBROUTINE method0 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------
@@ -171,42 +171,42 @@ SUBROUTINE method0 (task_list)
   call dispatcher0%execute (task_list, test)
 END SUBROUTINE method0
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE method1 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io
   call dispatcher1%execute (task_list, test)
 END SUBROUTINE method1
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE method2 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io
   call dispatcher2%execute (task_list, test)
 END SUBROUTINE method2
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE method3 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io
   call dispatcher3%execute (task_list, test)
 END SUBROUTINE method3
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE method4 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io
   call dispatcher4%execute (task_list, test)
 END SUBROUTINE method4
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE method5 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io
   call dispatcher5%execute (task_list, test)
 END SUBROUTINE method5
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE method6 (task_list)
   type(task_list_t), pointer:: task_list
   if (test) call set_io

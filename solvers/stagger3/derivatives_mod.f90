@@ -1,9 +1,9 @@
-!> =============================================================================
+!===============================================================================
 !> $Id$
 !> A so-called "abstract type definition", in which parameters may be given,
 !> but procedure definitions are "deferred" until another (non-abstract) derived
 !> type (object) is defined as an extension of this one
-!> =============================================================================
+!===============================================================================
 MODULE derivatives_mod
   implicit none
   private

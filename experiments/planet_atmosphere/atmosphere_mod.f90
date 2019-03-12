@@ -1,9 +1,9 @@
-!> =============================================================================
+!===============================================================================
 !> Solve the hydrostatic equilibrium for an extended planet atmosphere, 
 !> stretching from the planet surface to beyond the Hill radius.  The mass
 !> of the atmosphere is neglected, because the Python examples show that most
 !> of the mass is anyway at large radii, where the solution will not be exact.
-!> =============================================================================
+!===============================================================================
 MODULE atmosphere_mod
   USE io_mod
   USE trace_mod
@@ -29,9 +29,9 @@ MODULE atmosphere_mod
   type(atmosphere_t), public:: atmosphere
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Read parameters
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(atmosphere_t):: self
   logical, save:: first_time=.true.
@@ -72,10 +72,10 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Solve the equations for hydrostatic balance, initially neglecting the mass
 !> of the pseudo-atmosphere.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE hydrostatic (self)
   class(atmosphere_t):: self
   logical, save:: first_time=.true.

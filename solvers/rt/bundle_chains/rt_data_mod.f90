@@ -24,12 +24,12 @@ MODULE rt_data_mod
 !-----------------------------------------------------------------------
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialise RT_data tables, which takes required MHD variables and gets
 !> the source function and opacity per cell, mimicking the MHD patch cell
 !> structure. It also stores intensity per direction per cell to communi-
 !> cate it if patches overlap.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_rt_data(self)
   class(rt_data_t) :: self
   integer :: i, j, k, d
@@ -81,9 +81,9 @@ SUBROUTINE init_rt_data(self)
   call trace_end
 END SUBROUTINE init_rt_data
 
-!> =====================================================================
+!=======================================================================
 !> Update RT data task values
-!> =====================================================================
+!=======================================================================
 SUBROUTINE update_rt_data (self)
   class(rt_data_t) :: self
   character(len=16):: stime
@@ -114,9 +114,9 @@ SUBROUTINE update_rt_data (self)
   call trace_end (itimer)
 END SUBROUTINE update_rt_data
 
-!> =============================================================================
+!===============================================================================
 !> Optionally add cosmic ray heating -- generic if applied before 'apply_heating'
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add_cr_heating (self, time)
   class(rt_data_t) :: self
   real(kind=8) :: time
@@ -132,9 +132,9 @@ SUBROUTINE add_cr_heating (self, time)
   call trace%end
 END SUBROUTINE add_cr_heating
 
-!> =====================================================================
+!=======================================================================
 !> Test if rt_data module has any errors
-!> =====================================================================
+!=======================================================================
 SUBROUTINE check_rt_data(self, plc)
   class(rt_data_t) :: self
   integer :: plc
@@ -154,9 +154,9 @@ SUBROUTINE check_rt_data(self, plc)
   end if
 END SUBROUTINE check_rt_data
 
-!> =====================================================================
+!=======================================================================
 !> Store intensity
-!> =====================================================================
+!=======================================================================
 SUBROUTINE store_mean_I (self,I_st,rays,dirw)
   class (rt_data_t) :: self
   class (ray_t), pointer :: rays

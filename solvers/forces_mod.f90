@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> This is a bare minimum interface to the new extras module, showing how to
 !> interface with a pre-existing force_mod%selected() function.
 !>
@@ -16,7 +16,7 @@
 !> assumes that the generic array is set to zero elsewhere, before each timestep.
 !> The proper place to do that is in the extras_t data type, which is where the
 !> user chooses which forces to include and combine.
-!> =============================================================================
+!===============================================================================
 MODULE forces_mod
   USE patch_mod
   USE force_mod
@@ -33,8 +33,8 @@ MODULE forces_mod
   end type
 CONTAINS
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE init (self, link)
   class(forces_t):: self
   class(link_t):: link
@@ -53,9 +53,9 @@ SUBROUTINE init (self, link)
   end associate
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Use the pre-existing force%selected () function to set or add the force
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pre_update (self)
   class(forces_t):: self
   !.............................................................................

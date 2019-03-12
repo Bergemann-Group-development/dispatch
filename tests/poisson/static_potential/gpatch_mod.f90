@@ -1,9 +1,9 @@
-!> =============================================================================
+!===============================================================================
 !> The gpatch_t data type extends the patch_t with a generic guard zone dnload
 !> procedure, which covers the need for all simple, Cartesian mesh based
 !> solvers, and eliminates the need for a dnload procedure in each one of them.
 !> It also adds restart functionality when initializing patches.
-!> =============================================================================
+!===============================================================================
 MODULE gpatch_mod
   USE io_mod
   USE trace_mod
@@ -41,9 +41,9 @@ MODULE gpatch_mod
   integer, save :: order=1
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Add restart functionality to patch initialization
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(gpatch_t):: self
   real(kind=KindScalarVar), pointer :: ff(:,:,:,:)
@@ -149,10 +149,10 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Add default guard zone download functionality.  This may be overloaded in
 !> experiment_mod, if more specialized guard zone loading is required.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE dnload (self, only)
   class(gpatch_t):: self
   integer, optional:: only
@@ -164,13 +164,13 @@ SUBROUTINE dnload (self, only)
   end if
 END SUBROUTINE dnload
 
-!> =============================================================================
+!===============================================================================
 !> Prepare the external forces for the pde call, in particular selfgravity. At
 !> this point the nbors are declared up-to-date with respect to everything,
 !> including their potentials, which we need for guard zones.  They may in fact
 !> be providing only their preliminary potentials in their (nt-1) time slots,
 !> while their older time slots should by now contain the converged potential.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE gravity (self)
   class(gpatch_t):: self
   !.............................................................................
@@ -199,13 +199,13 @@ SUBROUTINE gravity (self)
   call trace%end (itimer)
 END SUBROUTINE gravity
 
-!> =============================================================================
+!===============================================================================
 !> Having advanced the MHD state to the new time, we make a preliminary
 !> call to the Poisson solver, based on extrapolation of the nbor potentials.
 !> We then provide this preliminary potential to nbors, until we have a
 !> better offer.  The poisson_time controls if an update affects the self%time
 !> or the poisson_time; the two are updated alternatingly
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
@@ -230,12 +230,12 @@ SUBROUTINE update (self)
   call trace%end
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Compute an approximate, conservative estimate of dphi/dt, which will cause
 !> the timestep routine to make a good guess at the next phi, at the same time
 !> as it is updating the other variables.  The 1st order prediction is in
 !> practice better at reducing the number of iterations than the 2nd order.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE time_derivs (self)
   class(gpatch_t):: self
   integer:: it1, it2, it3, nt, l(3), u(3)
@@ -282,10 +282,10 @@ SUBROUTINE time_derivs (self)
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE time_derivs
 
-!> =============================================================================
+!===============================================================================
 !> This functions checks if self is too much ahead of the nbor 'patch'.  If it
 !> returns .true. it means the 'self' task is not ready to be updated.
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION ahead_of (self, patch)
   class(gpatch_t):: self
   class(patch_t):: patch

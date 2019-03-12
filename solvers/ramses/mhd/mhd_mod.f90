@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> RAMSES Godunov solvers, use of guard zones; specifically in HLLD
 !>
 !> godunov
@@ -12,7 +12,7 @@
 !>     cmpflxm                  +---+......+---+              ! need qm & qp
 !>       cmp_mag_flx            +---+......+---+              ! is down-staggered
 !>     unew                       +---+......+                ! up-staggered
-!> =============================================================================
+!===============================================================================
 MODULE mhd_mod
   !.............................................................................
   USE const
@@ -61,7 +61,7 @@ MODULE mhd_mod
   real:: csound=1.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
   character(len=10):: riemann='hlld'
@@ -119,8 +119,8 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
   real, pointer, dimension(:,:,:,:):: p
@@ -339,7 +339,7 @@ SUBROUTINE update (self)
   end if
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Perform a single iteration of a div(B) clean.  The limit of stability is
 !> eps=1./6.  This is intended to prevent build-up of layers of large div(B)
 !> between patches. An exact solution would be to solve an internal Laplace
@@ -349,7 +349,7 @@ END SUBROUTINE update
 !> The problem can also be greatly reduced by using a higher order time
 !> interpoation scheme, thus making the electric field computed from the
 !> guard zone values of B and U a better match to the neighbors E-fields.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE divb_clean1 (self)
   class(mhd_t):: self
   !.............................................................................
@@ -387,10 +387,10 @@ contains
   end function
 END SUBROUTINE divb_clean1
 
-!> =============================================================================
+!===============================================================================
 !> Enforce div(B)=0 in the guard zones, by succesively imposing the condition,
 !> layer-by-layer, on the component perpendicular to each of the patch faces.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE divb_clean2 (self)
   class(mhd_t):: self
   !.............................................................................
@@ -448,8 +448,8 @@ SUBROUTINE divb_clean2 (self)
   call trace%end (itimer)
 END SUBROUTINE divb_clean2
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 subroutine check_small (self)
   class(mhd_t):: self
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
@@ -524,10 +524,10 @@ subroutine check_small (self)
   call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine check_small
 
-!> =============================================================================
+!===============================================================================
 !> Conservative to primitive variables.  Using scalar scratch variables reduces
 !> teh need for a large (non-default) OMP_STACKSIZE
-!> =============================================================================
+!===============================================================================
 subroutine ctoprim(self)
   class(mhd_t):: self
   integer::n(4)
@@ -604,9 +604,9 @@ subroutine ctoprim(self)
   call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine ctoprim
 
-!> =============================================================================
+!===============================================================================
 !> Slope limiters
-!> =============================================================================
+!===============================================================================
 subroutine uslope(self,bf,q,dq,dbf,rslope_type)
   class(mhd_t):: self
   real, dimension(:,:,:,:):: q
@@ -887,9 +887,9 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
   call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine uslope
 
-!> =============================================================================
+!===============================================================================
 !> Predictor step
-!> =============================================================================
+!===============================================================================
 SUBROUTINE trace3d(self)
   IMPLICIT NONE
   class(mhd_t):: self
@@ -1436,9 +1436,9 @@ contains
   END FUNCTION
 END SUBROUTINE trace3d
 
-!> =============================================================================
+!===============================================================================
 !> Compute fluxes
-!> =============================================================================
+!===============================================================================
 subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   class(mhd_t):: self
   real(dp), dimension(:,:,:,:):: fl
@@ -1576,9 +1576,9 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   call trace%end (itimer, detailed_timer=detailed_timer)
 end subroutine cmpflxm
 
-!> =============================================================================
+!===============================================================================
 !> 2D solver for EMF
-!> =============================================================================
+!===============================================================================
 SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor, emf, ngrid, nvar)
   class(mhd_t):: self
   ! 2D Riemann solver to compute EMF at cell edges
@@ -1758,9 +1758,9 @@ SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
 !  end associate
 END SUBROUTINE cmp_mag_flx
 
-!> =============================================================================
+!===============================================================================
 !> Selection of 1-D solvers
-!> =============================================================================
+!===============================================================================
 SUBROUTINE solver (self, qleft, qright, fgdnv, ub)
   class(mhd_t):: self
   real(dp),dimension(:,:):: qleft,qright,fgdnv
@@ -1776,9 +1776,9 @@ SUBROUTINE solver (self, qleft, qright, fgdnv, ub)
   end if
 END SUBROUTINE solver
 
-!> =============================================================================
+!===============================================================================
 !> Selection of 2-D solvers
-!> =============================================================================
+!===============================================================================
 SUBROUTINE solver_2d (self,qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer)
   class(mhd_t):: self
   real(DP),dimension(:,:),intent(in):: qLL,qRL,qLR,qRR
@@ -1796,7 +1796,7 @@ SUBROUTINE solver_2d (self,qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer)
   end if
 END SUBROUTINE solver_2d
 
-!> =============================================================================
+!===============================================================================
 FUNCTION up(f,i) RESULT (g)
   real, dimension(:,:,:), intent(in):: f
   real, dimension(size(f,1),size(f,2),size(f,3)):: g
@@ -1805,7 +1805,7 @@ FUNCTION up(f,i) RESULT (g)
   g = 0.5*(cshift(f,1,i)+f)
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
@@ -1828,8 +1828,8 @@ FUNCTION gas_pressure (self) RESULT (pg)
   end associate
 END FUNCTION gas_pressure
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE gravitational_force (self)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: phi, d, et, gradphi1, gradphi2, gradphi3

@@ -1,11 +1,11 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
 !> Generic component module.
 !>
 !> A component has a task list, mass, and position, velocity, and time offsets.
 !> All offsets are to be added on top of higher order components, which they are
 !> members of.
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE component_mod
   USE task_list_mod
   USE task_mod
@@ -20,9 +20,9 @@ MODULE component_mod
     procedure:: init, add
   end type
 contains
-!> =============================================================================
+!===============================================================================
 !> Initialize the task list and its tasks
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, name)
   class(component_t):: self
   character(len=*):: name
@@ -39,11 +39,11 @@ SUBROUTINE init (self, name)
     call self%add (task)
   end do
 END SUBROUTINE init
-!> =============================================================================
+!===============================================================================
 !> Add a task to the task list.  This is generic, but the task specified by the
 !> caller is specific.  From some context, a specific component is being built,
 !> by adding specific tasks to this task list.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add (self, task)
   class(component_t):: self
   class(task_t), pointer:: task

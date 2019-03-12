@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Opacity module for the piece-wise analytic opacities of Bell & Lin
 !> (1994, ApJ, 427, 987).
-!> =============================================================================
+!===============================================================================
 MODULE opacities_mod
   USE trace_mod
   USE mpi_mod
@@ -20,17 +20,17 @@ MODULE opacities_mod
   real(8):: pi = asin(1.0) * 2.0
 
 CONTAINS
-!> =============================================================================
+!===============================================================================
 SUBROUTINE void (self)
   class(opacity_t):: self
   call mpi%abort('opacity_t%solve: NotYetImplemented Error!')
 END SUBROUTINE void
 
-!> =============================================================================
+!===============================================================================
 !> Read the provided opacity data file.
 !> Reference: Draine & Lee (1984), astronomical silicates with grain radius
 !> 0.12 microns and dust bulk density of 3.6 g cm**-3.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_draine_lee (self)
   class(opacity_t):: self
   logical:: lexists
@@ -96,9 +96,9 @@ SUBROUTINE init_draine_lee (self)
   call trace_end
 END SUBROUTINE init_draine_lee
 
-!> =============================================================================
+!===============================================================================
 !> Deallocate memory used for the opacity.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE deallocate_kappa (self)
   class(opacity_t):: self
   deallocate(self%kappa_lamb)

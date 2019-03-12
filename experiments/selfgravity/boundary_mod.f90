@@ -1,8 +1,8 @@
-!> =============================================================================
+!===============================================================================
 !> Module to assist in handling boundaries in the Poisson solver.  If phi is
 !> imposed at and outside some boundary, then the error should be ignored at
 !> the very boundary, s
-!> =============================================================================
+!===============================================================================
 MODULE boundary_mod
   USE trace_mod
   USE patch_mod
@@ -15,9 +15,9 @@ MODULE boundary_mod
   end type
   type(boundary_t), public:: boundary
 CONTAINS
-!> =============================================================================
+!===============================================================================
 !> Enforce constant values outside a radius r=r_BE (not equalt to the BE-radius)
-!> =============================================================================
+!===============================================================================
 SUBROUTINE sphere (self, patch, f, value, extra)
   class(boundary_t):: self
   class(patch_t):: patch

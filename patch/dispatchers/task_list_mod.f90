@@ -1,4 +1,4 @@
-!> ==================-===========================================================
+!====================-===========================================================
 !> $Id$
 !> A task_list_t has the distinction that it must be able to call an initial
 !> condition routine, which only exists in experiment_t tasks.  Procedures in
@@ -10,7 +10,7 @@
 !>    list_t%remove_task  : remove task from list
 !>    list_t%remove_head  : remove head from list
 !>
-!> =============================================================================
+!===============================================================================
 MODULE task_list_mod
   USE io_mod
   USE omp_mod
@@ -59,10 +59,10 @@ MODULE task_list_mod
   !$omp threadprivate (virtual_list)
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the task list, by first initializing the list tasks, then making
 !> neighbor lists, and finally checking if they are ready to execute
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, name)
   class(task_list_t):: self
   character(len=*), optional:: name
@@ -200,11 +200,11 @@ SUBROUTINE updater (self, head)
   call trace%end (itimer)
 END SUBROUTINE updater
 
-!> =============================================================================
+!===============================================================================
 !> Find the link with a specified task id.  If there isn't any, create one!
 !> If the patch already existed, it's nbor list should be OK, but the status
 !> bit of it, and all its nbors, need to updated.
-!> =============================================================================
+!===============================================================================
 FUNCTION find_task (self, id) RESULT (link)
   class(task_list_t):: self
   integer:: id
@@ -247,12 +247,12 @@ FUNCTION find_task (self, id) RESULT (link)
   call trace%end
 END FUNCTION find_task
 
-!> =============================================================================
+!===============================================================================
 !> Unpack a message, where the MPI tag is the task id.  Use that to search
 !> for the task, apply its unpack method, and check if any nbors become ready.
 !> This entire operation should be threadsafe, since no other thread should be
 !> working on the same message and the same patch.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE unpack (self, mesg, link)
   class(task_list_t):: self
   class(mesg_t), pointer:: mesg
@@ -377,9 +377,9 @@ SUBROUTINE unpack (self, mesg, link)
   !call self%check_nbors (link1)
 END SUBROUTINE unpack
 
-!> =============================================================================
+!===============================================================================
 !> Check for and unpack MPI messages.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_mpi (self)
   class(task_list_t):: self
   class(mesg_t), pointer:: mesg, next
@@ -534,10 +534,10 @@ SUBROUTINE check_mpi (self)
   call trace%end (itimer)
 END SUBROUTINE check_mpi
 
-!> =============================================================================
+!===============================================================================
 !> Check for and unpack MPI messages, using threadprivate recv_list and
 !> unpk_list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_priv (self)
   class(task_list_t):: self
   class(mesg_t), pointer:: mesg, next
@@ -587,10 +587,10 @@ SUBROUTINE check_priv (self)
   call trace%end (itimer)
 END SUBROUTINE check_priv
 
-!> =============================================================================
+!===============================================================================
 !> Run through all virtual patches, count them, and create separate threadprivate
 !> lists that together include all of them.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_virtual (self)
   class(task_list_t):: self
   class(link_t), pointer:: link
@@ -645,11 +645,11 @@ SUBROUTINE init_virtual (self)
   call trace%end (itimer)
 END SUBROUTINE init_virtual
 
-!> =============================================================================
+!===============================================================================
 !> Run through all virtual patches, unpack completed receives, and issue new
 !> receive requests.  The virtual_list is threadprivate, so no critical region
 !> is needed.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_virtual (self)
   class(task_list_t):: self
   class(link_t), pointer:: link
@@ -695,11 +695,11 @@ SUBROUTINE check_virtual (self)
   call trace%end (itimer)
 END SUBROUTINE check_virtual
 
-!> =============================================================================
+!===============================================================================
 !> Run through all virtual patches, and allocate message data types if not
 !> allocated.  If an old request exists, test if it has completed.  If yes,
 !> unpack and issue a new request.  If no request exists, issue a request.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_active (self)
   class(task_list_t):: self
   class(link_t), pointer:: link
@@ -772,9 +772,9 @@ SUBROUTINE check_active (self)
   call trace%end (itimer)
 END SUBROUTINE check_active
 
-!> =============================================================================
+!===============================================================================
 !> Print a table with patch id, positions, and all neighbors
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self)
   class (task_list_t):: self
   class(link_t) , pointer:: link, nbor
@@ -788,9 +788,9 @@ SUBROUTINE output (self)
   call trace%end
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 !> Print a table with task id and all neighbors
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print_table (self, label)
   class (task_list_t):: self
   character(len=*), optional:: label

@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> A sink particle is represented as primarily a particle task, whose position
 !> is updated with a particle solver. The patch is usually much smaller than an
 !> MHD patch, and its values are downloaded from contributing MHD patches. 
@@ -10,7 +10,7 @@
 !> The procedure is called from refine_t%extras%check_refine which handles
 !> creating a task list link, adding an nbor list, and adding the task to the
 !> task list.
-!> =============================================================================
+!===============================================================================
 MODULE sink_patch_mod
   USE io_mod
   USE trace_mod
@@ -77,10 +77,10 @@ MODULE sink_patch_mod
   type(sink_patch_t), public:: sink_patch
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize an instance of the sink_patch_t data type, with parameters for
 !> sink creation read from a sink_patch_params namelist.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(sink_patch_t):: self
   !.............................................................................
@@ -106,9 +106,9 @@ SUBROUTINE init (self)
   call trace%end()
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Allows storing a link to a task list in the sink_patch_t data type
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_task_list (self, task_list)
   class(sink_patch_t):: self
   class(list_t), pointer:: task_list
@@ -116,9 +116,9 @@ SUBROUTINE init_task_list (self, task_list)
   self%task_list => task_list
 END SUBROUTINE init_task_list
 
-!> =============================================================================
+!===============================================================================
 !> Test if a sink particle should be created in a given patch
-!> =============================================================================
+!===============================================================================
 FUNCTION check (self, patch)
   class(sink_patch_t):: self
   class(gpatch_t), target:: patch
@@ -139,9 +139,9 @@ FUNCTION check (self, patch)
   call trace%end()
 END FUNCTION check
 
-!> =============================================================================
+!===============================================================================
 !> Create a sink partícle 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_task (self, patch)
   class(sink_patch_t):: self
   class(gpatch_t), target:: patch
@@ -216,11 +216,11 @@ SUBROUTINE init_task (self, patch)
   call trace%end()
 END SUBROUTINE init_task
 
-!> =============================================================================
+!===============================================================================
 !> Download values to all the sinkparticle%patch cells, but only to the 
 !> density and momentum slots.  This relies on that the nbor list is 
 !> comprehensive, including also the parent patch
-!> =============================================================================
+!===============================================================================
 SUBROUTINE dnload (self, only)
   class (sink_patch_t):: self
   integer, optional:: only
@@ -233,8 +233,8 @@ SUBROUTINE dnload (self, only)
   call trace%end()
 END SUBROUTINE dnload
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class (sink_patch_t):: self
   call trace%begin ('sink_patch_t%update')
@@ -245,8 +245,8 @@ SUBROUTINE update (self)
   call trace%end()
 END SUBROUTINE update
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE accrete (self)
   class (sink_patch_t):: self
   !.............................................................................
@@ -332,9 +332,9 @@ SUBROUTINE accrete (self)
   call trace%end()
 END SUBROUTINE accrete
 
-!> =============================================================================
+!===============================================================================
 !> Move the sink particle one time step self%dt, using kidk-drift-kick
-!> =============================================================================
+!===============================================================================
 SUBROUTINE move (self)
   class (sink_patch_t):: self
   real(8):: acceleration(3)
@@ -370,8 +370,8 @@ SUBROUTINE move (self)
   call trace%end()
 END SUBROUTINE move
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 INTEGER FUNCTION check_refine (self, patch)
   class(sink_patch_t):: self
   class(gpatch_t), pointer:: patch
@@ -380,10 +380,10 @@ INTEGER FUNCTION check_refine (self, patch)
   call self%refine_check (patch%link, check_refine)
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 !> Test for the need to create a new sink particle, and handle the task list
 !> aspect of that; creating an nbor list, and adding the link to the task list.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE refine_check (self, link, refine)
   class(sink_patch_t):: self
   class(link_t), pointer:: link

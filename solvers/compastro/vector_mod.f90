@@ -1,6 +1,6 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE vector_mod
   USE io_mod
   USE trace_mod
@@ -58,7 +58,7 @@ MODULE vector_mod
   private:: allocate_vector
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE minus_div (out, in)
   type(vector_t), intent(in):: in
   type(scalar_t), intent(inout):: out
@@ -67,7 +67,7 @@ SUBROUTINE minus_div (out, in)
   !out%f = - in%d%dx(in%x) - in%d%dy(in%y) - in%d%dz(in%z)
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_vector (self, dims, ds, name)
   class(vector_t):: self
   integer:: dims(3)
@@ -81,7 +81,7 @@ SUBROUTINE init_vector (self, dims, ds, name)
   call self%allocate (self)
   call trace_end
 END SUBROUTINE init_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_power_int (in1, in2) RESULT(out)
   type(vector_t):: out
   type(vector_t), intent(in):: in1
@@ -92,7 +92,7 @@ FUNCTION vector_power_int (in1, in2) RESULT(out)
   out%y = in1%y**in2
   out%z = in1%z**in2
 END FUNCTION vector_power_int
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_exp (in) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in
@@ -101,7 +101,7 @@ FUNCTION vector_exp (in) RESULT (out)
   out%y = exp(in%y)
   out%z = exp(in%z)
 END FUNCTION vector_exp
-!> =============================================================================
+!===============================================================================
 SUBROUTINE vector_assign_array (out, in)
   type(vector_t), intent(inout):: out
   real, dimension(:,:,:,:), intent(in), pointer:: in
@@ -110,7 +110,7 @@ SUBROUTINE vector_assign_array (out, in)
   out%y = in(:,:,:,2)
   out%z = in(:,:,:,3)
 END SUBROUTINE vector_assign_array
-!> =============================================================================
+!===============================================================================
 SUBROUTINE vector_assign_scalar (out, in)
   type(vector_t), intent(inout):: out
   type(scalar_t):: in
@@ -119,7 +119,7 @@ SUBROUTINE vector_assign_scalar (out, in)
   out%y = in%f
   out%z = in%f
 END SUBROUTINE vector_assign_scalar
-!> =============================================================================
+!===============================================================================
 SUBROUTINE vector_assign_real_3 (out, in)
   type(vector_t), intent(inout):: out
   real, intent(in):: in(3)
@@ -129,7 +129,7 @@ SUBROUTINE vector_assign_real_3 (out, in)
   out%y = in(2)
   out%z = in(3)
 END SUBROUTINE vector_assign_real_3
-!> =============================================================================
+!===============================================================================
 SUBROUTINE vector_assign_real (out, in)
   type(vector_t), intent(inout):: out
   real, intent(in):: in
@@ -138,7 +138,7 @@ SUBROUTINE vector_assign_real (out, in)
   out%y = in
   out%z = in
 END SUBROUTINE vector_assign_real
-!> =============================================================================
+!===============================================================================
 SUBROUTINE vector_assign_int (out, in)
   type(vector_t), intent(inout):: out
   integer, intent(in):: in
@@ -147,7 +147,7 @@ SUBROUTINE vector_assign_int (out, in)
   out%y = in
   out%z = in
 END SUBROUTINE vector_assign_int
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_real_add (in1, in2) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in1
@@ -157,7 +157,7 @@ FUNCTION vector_real_add (in1, in2) RESULT (out)
   out%y = in1%y + in2
   out%z = in1%z + in2
 END FUNCTION vector_real_add
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_vector_mul (in1, in2) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in1,in2
@@ -166,7 +166,7 @@ FUNCTION vector_vector_mul (in1, in2) RESULT (out)
   out%y = in2%y * in1%y
   out%z = in2%z * in1%z
 END FUNCTION vector_vector_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_vector_dot (in1, in2) RESULT (out)
   type(scalar_t):: out
   type(vector_t), intent(in):: in1,in2
@@ -175,7 +175,7 @@ FUNCTION vector_vector_dot (in1, in2) RESULT (out)
         + in2%y * in1%y &
         + in2%z * in1%z
 END FUNCTION vector_vector_dot
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_scalar_mul (in1, in2) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in1
@@ -186,7 +186,7 @@ FUNCTION vector_scalar_mul (in1, in2) RESULT (out)
   out%y = in1%z * in2%f
   !out%d => in2%d
 END FUNCTION vector_scalar_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION const3_scalar_mul (in2, in1) RESULT (out)
   type(scalar_t):: out
   real, intent(in):: in1(3)
@@ -196,7 +196,7 @@ FUNCTION const3_scalar_mul (in2, in1) RESULT (out)
   out%f = in2%y * in1(2)
   out%f = in2%z * in1(3)
 END FUNCTION const3_scalar_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION const3_vector_mul (in1, in2) RESULT (out)
   type(vector_t):: out
   real, intent(in):: in1(3)
@@ -206,7 +206,7 @@ FUNCTION const3_vector_mul (in1, in2) RESULT (out)
   out%y = in2%y * in1(2)
   out%z = in2%z * in1(3)
 END FUNCTION const3_vector_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION real4_vector_mul (in1, in2) RESULT (out)
   type(vector_t):: out
   real, intent(in):: in1
@@ -216,7 +216,7 @@ FUNCTION real4_vector_mul (in1, in2) RESULT (out)
   out%y = in2%y * in1
   out%z = in2%z * in1
 END FUNCTION real4_vector_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION real8_vector_mul (in1, in2) RESULT (out)
   type(vector_t):: out
   real(8), intent(in):: in1
@@ -226,7 +226,7 @@ FUNCTION real8_vector_mul (in1, in2) RESULT (out)
   out%y = in2%y * in1
   out%z = in2%z * in1
 END FUNCTION real8_vector_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_int_add (in1, in2) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in1
@@ -236,7 +236,7 @@ FUNCTION vector_int_add (in1, in2) RESULT (out)
   out%y = in1%y + in2
   out%z = in1%z + in2
 END FUNCTION vector_int_add
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_vector_add (in1, in2) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in1, in2
@@ -245,7 +245,7 @@ FUNCTION vector_vector_add (in1, in2) RESULT (out)
   out%y = in1%y + in2%y
   out%z = in1%z + in2%z
 END FUNCTION vector_vector_add
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_vector_sub (in1, in2) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in1, in2
@@ -254,7 +254,7 @@ FUNCTION vector_vector_sub (in1, in2) RESULT (out)
   out%y = in1%y - in2%y
   out%z = in1%z - in2%z
 END FUNCTION vector_vector_sub
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_square (in1) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in1
@@ -263,7 +263,7 @@ FUNCTION vector_square (in1) RESULT (out)
   out%y = in1%y * in1%y
   out%z = in1%z * in1%z
 END FUNCTION vector_square
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_minus (in1) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in1
@@ -272,7 +272,7 @@ FUNCTION vector_minus (in1) RESULT (out)
   out%y = -in1%y
   out%z = -in1%z
 END FUNCTION vector_minus
-!> =============================================================================
+!===============================================================================
 
 FUNCTION vector_real_grad (in) RESULT (out)
   type(vector_t):: out
@@ -283,7 +283,7 @@ FUNCTION vector_real_grad (in) RESULT (out)
   out%z = 0.0
   if (io%verbose>3) print*,'v_r_g',out%n
 END FUNCTION vector_real_grad
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_int_grad (in) RESULT (out)
   type(vector_t):: out
   integer, intent(in):: in
@@ -298,7 +298,7 @@ SUBROUTINE check_dims (f, label)
   if (io%verbose>2) &
   print *, 'check_dims: '//label, size(f,dim=1), size(f,dim=2), size(f,dim=3)
 END
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_scalar_grad (in) RESULT (out)
   type(vector_t):: out
   type(scalar_t), intent(inout):: in
@@ -316,7 +316,7 @@ FUNCTION vector_scalar_grad (in) RESULT (out)
   !out%z = out%d%dz (in%f)
   call trace_end
 END FUNCTION vector_scalar_grad
-!> =============================================================================
+!===============================================================================
 FUNCTION grads (in) RESULT(out)
   type(vector_t):: out
   type(scalar_t), intent(in):: in
@@ -331,7 +331,7 @@ FUNCTION grads (in) RESULT(out)
   !out%z = out%d%dz (in%f)
   call trace_end
 END FUNCTION grads
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_vector_divide (in1,in2) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in2
@@ -342,7 +342,7 @@ FUNCTION vector_vector_divide (in1,in2) RESULT (out)
   out%y = in1%y/in2%y
   out%z = in1%z/in2%z
 END FUNCTION vector_vector_divide
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_scalar_divide (in1,in2) RESULT (out)
   type(vector_t):: out
   type(scalar_t), intent(in):: in2
@@ -355,7 +355,7 @@ FUNCTION vector_scalar_divide (in1,in2) RESULT (out)
   out%z = in1%z/in2%f
   call trace_end
 END FUNCTION vector_scalar_divide
-!> =============================================================================
+!===============================================================================
 SUBROUTINE vector_scalar_div (out, in)
   type(scalar_t), intent(inout):: out
   type(vector_t), intent(in):: in
@@ -365,7 +365,7 @@ SUBROUTINE vector_scalar_div (out, in)
 !  out%d => in%d
   call trace_end
 END SUBROUTINE vector_scalar_div
-!> =============================================================================
+!===============================================================================
 SUBROUTINE vector_scalar_minusdiv (out, in)
   type(scalar_t):: out
   type(vector_t), intent(in):: in
@@ -376,7 +376,7 @@ SUBROUTINE vector_scalar_minusdiv (out, in)
   call trace_end
 END SUBROUTINE vector_scalar_minusdiv
 
-!> =============================================================================
+!===============================================================================
 FUNCTION real8_vector_cross (in1, in2) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in2
@@ -387,7 +387,7 @@ FUNCTION real8_vector_cross (in1, in2) RESULT (out)
   out%y = in1(3)*in2%x - in1(1)*in2%z
   out%z = in1(1)*in2%y - in1(2)*in2%x
 END FUNCTION real8_vector_cross
-!> =============================================================================
+!===============================================================================
 FUNCTION real4_vector_cross (in1, in2) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in2
@@ -398,7 +398,7 @@ FUNCTION real4_vector_cross (in1, in2) RESULT (out)
   out%y = in1(3)*in2%x - in1(1)*in2%z
   out%z = in1(1)*in2%y - in1(2)*in2%x
 END FUNCTION real4_vector_cross
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_cross (in1, in2) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in1, in2
@@ -408,7 +408,7 @@ FUNCTION vector_cross (in1, in2) RESULT (out)
   out%y = in1%z*in2%x - in1%x*in2%z
   out%z = in1%x*in2%y - in1%y*in2%x
 END FUNCTION vector_cross
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_curl (in) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in
@@ -418,7 +418,7 @@ FUNCTION vector_curl (in) RESULT (out)
   !out%y = out%d%dz(in%x) - out%d%dx(in%z)
   !out%z = out%d%dx(in%y) - out%d%dy(in%x)
 END FUNCTION vector_curl
-!> =============================================================================
+!===============================================================================
 SUBROUTINE allocate_vector (self, in)
   class(vector_t):: self
   class(scalar_t):: in
@@ -440,5 +440,5 @@ SUBROUTINE allocate_vector (self, in)
   self%allocated = .true.
   call trace_end
 END SUBROUTINE allocate_vector
-!> =============================================================================
+!===============================================================================
 END MODULE vector_mod

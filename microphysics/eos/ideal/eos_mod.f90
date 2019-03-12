@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Equation of state module for any sort of tables, provided by a reader
-!> =============================================================================
+!===============================================================================
 MODULE eos_mod
   USE io_mod
   USE mpi_mod
@@ -27,11 +27,11 @@ MODULE eos_mod
   type (eos_t), public:: eos
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The eos reader is supposed to deliver table date in the eos_reader data
 !> type, with pressure and internal energy in an (nT,nd,2) table, with NT
 !> temperature value T(nT), and nd density values d(nd).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class (eos_t):: self
   integer:: iostat
@@ -80,9 +80,9 @@ FUNCTION temperature (self, d, e) RESULT (tt)
   tt = (self%gamma-1.0)*e
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 !> General EOS lookup routine, returning values in optional arguments
-!> =============================================================================
+!===============================================================================
 SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
@@ -145,12 +145,12 @@ SUBROUTINE lookup (self, dim, lnd, ee, lnx, x, lny, y, pg, tt, ss, rk, src, gamm
   call trace%end(itimer)
 END SUBROUTINE lookup
 
-!> =============================================================================
+!===============================================================================
 !> General EOS lookup routine, returning values in optional arguments
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 !> General EOS lookup routine, returning values in optional arguments
-!> =============================================================================
+!===============================================================================
 SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src, gamma)
 
   class (eos_t):: self

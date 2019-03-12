@@ -1,9 +1,9 @@
 MODULE setup_mod
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
 !> Setup a set a planet at a given position, and a set of Rubik's Cube patches
 !> surrounding it, representing its extended atmosphere.
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
   USE omp_mod
   USE trace_mod
@@ -21,11 +21,11 @@ MODULE setup_mod
   type(setup_t), public:: setup
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup a general Rubik hierarchy: NxNzN patches per level, and zoom factor M
 !> Rubik's cube has N=3, M=3
 !> Rubik's revenge has N=4, M=2
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, label)
   class(setup_t):: self
   character(len=*), optional:: label

@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Equation of state module. Imported from bifrost square_gas_mpi.f90
 !> ---------------------------------------------------------------------
 !> gamma: ratio of specific heats as in cs=sqrt(gamma*p/r)
@@ -37,7 +37,7 @@
 !> NOTES: for now, as tabparam.in is a separate file and not a header in
 !> the tables, remember to add namelist flags (& and /) to the beginning
 !> and the end of the file.
-!> =====================================================================
+!=======================================================================
 MODULE eos_mod
   USE io_mod
   USE trace_mod
@@ -106,9 +106,9 @@ MODULE eos_mod
   type (eos_t), public:: eos
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the EOS tables
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class (eos_t):: self
   integer, save:: nRhoBin = 300
@@ -235,9 +235,9 @@ FUNCTION pressure (self, lnd, lne) RESULT (pg)
   call self%lookup ([size(lnd,1),size(lnd,2),size(lnd,3)], lnd, lne, pg=pg)
 END FUNCTION pressure
 
-!> =============================================================================
+!===============================================================================
 !> General EOS lookup routine, returning values in optional arguments
-!> =============================================================================
+!===============================================================================
 SUBROUTINE lookup (self, dim, lnd, lne, d, ee, pg, tt, ne, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
@@ -259,9 +259,9 @@ SUBROUTINE lookup (self, dim, lnd, lne, d, ee, pg, tt, ne, rk, src, gamma)
   if (present(ee)) deallocate (lne_loc)
 END SUBROUTINE lookup
 
-!> =====================================================================
+!=======================================================================
 !> General EOS lookup routine, returning values in optional arguments
-!> =====================================================================
+!=======================================================================
 SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src, scat, ross,gamma)
   class (eos_t):: self
   integer:: dim(3)

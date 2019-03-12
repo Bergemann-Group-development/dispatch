@@ -24,10 +24,10 @@ MODULE microphysics_factory_mod
   
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Microphysics factory, which spawns microphysics objects. Such objects can 
 !> contain radiative transfer, chemistry, etc. tasks. 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE Microphysics_Factory (self)
   class(list_t)               :: self
   class(microphysics_t), pointer :: mp

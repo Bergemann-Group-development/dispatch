@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Setup the initial conditions and experiment update
-!> =============================================================================
+!===============================================================================
 MODULE experiment_mod
   USE io_mod
   USE bits_mod
@@ -34,7 +34,7 @@ MODULE experiment_mod
   logical, save:: sperical_bc_corners=.false.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The initialization must be done in the right order.  The rotation speed
 !> omega must be known before the initial%init runs, for example.
 !>
@@ -51,7 +51,7 @@ CONTAINS
 !>         initial_mod::init                    ! selects ICs
 !>         initial_mod::condition               ! computes ICs
 !>         boundaries_mod::condition            ! apply BCs to ICs
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   ! ....................................................................
@@ -171,8 +171,8 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE debuge (self, label, it)
   class(experiment_t):: self
   integer, optional:: it
@@ -202,9 +202,9 @@ SUBROUTINE debuge (self, label, it)
   end if
 END SUBROUTINE debuge
 
-!> =============================================================================
+!===============================================================================
 !> Choice of update steps for this experiment
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
   !.............................................................................
@@ -264,9 +264,9 @@ SUBROUTINE update (self)
   call trace_end (itimer)
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Interface to patch_t%output, for debug printout
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self)
   class(experiment_t):: self
   integer:: iv, it, m(3)
@@ -288,9 +288,9 @@ SUBROUTINE output (self)
   call trace_end (itimer)
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 !> Boundary conditions for this experiment
-!> =============================================================================
+!===============================================================================
 SUBROUTINE boundary_conditions (self, it, new)
   class(experiment_t) :: self
   integer             :: it, new
@@ -354,13 +354,13 @@ SUBROUTINE boundary_conditions (self, it, new)
   end if
 END SUBROUTINE boundary_conditions
 
-!> =============================================================================
+!===============================================================================
 !> Boundary conditions at the edges of the outermost rubiks cubes; extrapolate
 !> the density and pressure, and enforce vanishing derivative on the perpendicular
 !> velocities. To what extend the boundary conditions are applied in the x,y,z
 !> directions depends on the self%boundaries%bits bits. Note that the same
 !> condition is applied in all directions that have boundary bits set!
-!> =============================================================================
+!===============================================================================
 SUBROUTINE edge_boundary_conditions (self, it)
   class(experiment_t):: self
   integer:: it
@@ -421,9 +421,9 @@ SUBROUTINE edge_boundary_conditions (self, it)
   call trace%end (itimer)
 END SUBROUTINE edge_boundary_conditions
 
-!> =============================================================================
+!===============================================================================
 !> Constrain the density to follow an anchored Gaussian profile
-!> =============================================================================
+!===============================================================================
 SUBROUTINE density_boundary_condition (self, it)
   class(experiment_t):: self
   integer:: it
@@ -573,11 +573,11 @@ contains
   end subroutine apply_z
 END SUBROUTINE density_boundary_condition
 
-!> =============================================================================
+!===============================================================================
 !> Apply the "wave killing" boundaries of de Val-Borro et al. (2006) to all
 !> variables.
 !> Currently implemented for x-boundaries only.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE apply_sponge_boundaries (self)
   USE units_mod, only: cgs
   class(experiment_t):: self
@@ -670,8 +670,8 @@ SUBROUTINE apply_sponge_boundaries (self)
   call trace%end
 END SUBROUTINE apply_sponge_boundaries
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION is_relevant (self) RESULT (ok)
   class(experiment_t):: self
   logical:: ok

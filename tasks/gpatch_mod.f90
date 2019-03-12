@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> The gpath_t layer now essentially only handles restarts
-!> =============================================================================
+!===============================================================================
 MODULE gpatch_mod
   USE io_mod
   USE os_mod
@@ -44,9 +44,9 @@ MODULE gpatch_mod
   type(gpatch_t), public:: gpatch
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Cast a generic task_t to patch_t
-!> =============================================================================
+!===============================================================================
 FUNCTION cast2gpatch (task) RESULT(gpatch)
   class(task_t), pointer:: task
   class(gpatch_t), pointer:: gpatch
@@ -60,9 +60,9 @@ FUNCTION cast2gpatch (task) RESULT(gpatch)
   end select
 END FUNCTION cast2gpatch
 
-!> =============================================================================
+!===============================================================================
 !> Make a copy of the task list pointer
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_task_list (self, task_list)
   class(gpatch_t):: self
   class(list_t), pointer:: task_list
@@ -70,19 +70,19 @@ SUBROUTINE init_task_list (self, task_list)
   self%task_list => task_list
 END SUBROUTINE init_task_list
 
-!> =============================================================================
+!===============================================================================
 !> Interface allowing intercept
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
   call self%patch_t%update
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Interface routine to the data_io input procedure, signalling if the patch
 !> could be read, or not
-!> =============================================================================
+!===============================================================================
 SUBROUTINE input (self, ok)
   class(gpatch_t):: self
   logical:: ok
@@ -90,16 +90,16 @@ SUBROUTINE input (self, ok)
   call data_io%input (self, ok)
 END SUBROUTINE input
 
-!> =============================================================================
+!===============================================================================
 !> Interface routine to the data_io output procedure
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
   call data_io%output (self)
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 !> Add restart functionality to patch initialization.  This %init routine is
 !> called for both internal and virtual patches, which both can be initialized
 !> fully by the self%ininitial%condition() procedure. When instead calling the
@@ -108,7 +108,7 @@ END SUBROUTINE output
 !> nevertheless return ok=.true., and instead rely on a negative time to force
 !> any task that relies on the patch for guard zone values to wait until data
 !> has been recieved with MPI from the owner rank.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(gpatch_t):: self
   real(kind=KindScalarVar), pointer :: ff(:,:,:,:)
@@ -156,10 +156,10 @@ SUBROUTINE init (self)
   call trace%end()
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Increment the cell udpate counter.  This may be overloaded in more complex
 !> solvers, which prefer a different way of counting.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE counter_update (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
@@ -169,10 +169,10 @@ SUBROUTINE counter_update (self)
   call trace%end
 END SUBROUTINE counter_update
 
-!> =============================================================================
+!===============================================================================
 !> Add default guard zone download functionality.  This may be overloaded in
 !> experiment_mod, if more specialized guard zone loading is required.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE dnload (self, only)
   class(gpatch_t):: self
   integer, optional:: only
@@ -186,9 +186,9 @@ SUBROUTINE dnload (self, only)
   call trace%end()
 END SUBROUTINE dnload
 
-!> =============================================================================
+!===============================================================================
 !> Intercept to make validate%check call
-!> =============================================================================
+!===============================================================================
 SUBROUTINE courant_condition (self, detailed_timer)
   class(gpatch_t):: self
   logical, optional:: detailed_timer

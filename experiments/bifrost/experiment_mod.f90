@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Experiment module that uses the BIFROST solver_t data type
-!> =============================================================================
+!===============================================================================
 MODULE experiment_mod
   USE io_unit_mod
   USE trace_mod
@@ -19,9 +19,9 @@ MODULE experiment_mod
   '$Id$'
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Interface to let the external code initialize a patch
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   !-----------------------------------------------------------------------------
@@ -30,11 +30,11 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Update the external code with one time step.  Note that this requires the
 !> bifrost_update to set the interface_t%u_max value, which is used by the Courant
 !> condition (patch_t%courant_condition); cf. code/dispatch_mod.f90
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
   real, dimension(:,:,:,:), pointer:: mem
@@ -44,10 +44,10 @@ SUBROUTINE update (self)
   call trace%end
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Give the external code a chance to do I/O.  Note that this may not be 
 !> necessary, if calling self%patch_t%output is enough.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self, experiment_name)
   class(experiment_t):: self
   character(len=64), optional:: experiment_name

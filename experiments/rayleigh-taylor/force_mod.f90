@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 MODULE force_mod
   USE io_mod
   USE trace_mod
@@ -18,7 +18,7 @@ MODULE force_mod
  logical, save:: first_time=.true.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, solver)
   class(force_t):: self
   integer:: iostat
@@ -42,7 +42,7 @@ SUBROUTINE init (self, solver)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 FUNCTION vertical_acceleration (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t):: self
   real(8):: time

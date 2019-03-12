@@ -1,6 +1,6 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE scalar_mod
   USE trace_mod
   implicit none
@@ -40,7 +40,7 @@ FUNCTION scalar_exp_scalar(in) RESULT (out)
   end do
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE allocate_scalars_a (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:), allocatable, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
@@ -59,7 +59,7 @@ SUBROUTINE allocate_scalars_a (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   call trace_end
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE allocate_scalars (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
@@ -78,7 +78,7 @@ SUBROUTINE allocate_scalars (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   call trace_end
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE deallocate_scalars_a (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:), allocatable, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
@@ -97,7 +97,7 @@ SUBROUTINE deallocate_scalars_a (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   call trace_end
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE deallocate_scalars (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
@@ -116,7 +116,7 @@ SUBROUTINE deallocate_scalars (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   call trace_end
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE scalar_stats (f, label)
   real, dimension(:,:,:):: f
   character(len=*):: label
@@ -141,5 +141,5 @@ SUBROUTINE scalar_stats (f, label)
   print*,'scalar_stats:', trim(label), ': min, aver, rms, max =', s0, s1, s2, s3
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 END MODULE scalar_mod

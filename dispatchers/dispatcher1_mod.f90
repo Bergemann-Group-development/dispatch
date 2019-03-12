@@ -27,19 +27,19 @@ MODULE dispatcher1_mod
   type(global_t):: average_density
 CONTAINS
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE init (self, task_list)
   class(dispatcher1_t):: self
   type(task_list_t), pointer:: task_list
   !.............................................................................
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Simple dispatcher, which in each loop through the task list takes on the
 !> first task that is ready, and then spawns other threads that handle the
 !> remaining tasks that are ready.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE execute (self, task_list, test)
   class(dispatcher1_t):: self
   type(task_list_t), pointer:: task_list

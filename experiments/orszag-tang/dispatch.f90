@@ -1,8 +1,8 @@
 PROGRAM dispatch
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
 !> Setup a single patch with a density tophat and call the Poisson solver
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE setup_mod
   USE cartesian_mod
   USE dispatcher_mod
@@ -14,5 +14,5 @@ PROGRAM dispatch
   call dispatcher%execute (cartesian%task_list) ! Cáll dispatcher
   call setup%end
   print*,'stopping: all tasks finished'
-!> =============================================================================
+!===============================================================================
 END PROGRAM dispatch

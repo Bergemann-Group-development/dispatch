@@ -1,6 +1,6 @@
-!> =====================================================================
+!=======================================================================
 !> EOS module, assuming an ideal gas law
-!> =====================================================================
+!=======================================================================
 MODULE eos_mod
   USE io_mod
   USE io_unit_mod
@@ -22,9 +22,9 @@ MODULE eos_mod
   type (eos_t), public:: eos
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialize EOS module (only once)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init (self, solver)
   class (eos_t):: self
   character(len=8) :: solver 
@@ -50,12 +50,12 @@ SUBROUTINE init (self, solver)
   !$omp barrier
 END SUBROUTINE init
 
-!> =====================================================================
+!=======================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> rho - density; s - entropy; pg - gas pressure; tt - gas temperature;
 !> ne - electron pressure; rk - rho*kappa; src - source function;
 !> gam - adiabatic index, csound - sound speed.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE lookup_stagger (self, rho, ee, pg, tt, ne, rk, src, gam, csound)
   class (eos_t):: self
   real, dimension(:,:,:), intent(in) :: rho, ee
@@ -128,12 +128,12 @@ if (any(rho<=0)) then
   end if
 END SUBROUTINE lookup_stagger
 
-!> =====================================================================
+!=======================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> rho - density; ie - internal energy; pg - gas pressure; tt - gas temperature;
 !> ne - electron pressure; rk - rho*kappa; src - source function;
 !> gam - adiabatic index, csound - sound speed.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE lookup_zeus (self, rho, ie, pg, tt, ne, rk, src, gam, csound)
   class (eos_t):: self
   real, dimension(:,:,:), intent(in) :: rho, ie
@@ -186,12 +186,12 @@ SUBROUTINE lookup_zeus (self, rho, ie, pg, tt, ne, rk, src, gam, csound)
   end if
 END SUBROUTINE lookup_zeus
 
-!> =====================================================================
+!=======================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !> rho - density; s - entropy; pg - gas pressure; tt - gas temperature;
 !> ne - electron pressure; rk - rho*kappa; src - source function;
 !> gam - adiabatic index, csound - sound speed.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE lookup_ramses (self, rho, s, pg, tt, ne, rk, src, gam, csound)
   class (eos_t):: self
   real, dimension(:,:,:), intent(in) :: rho, s

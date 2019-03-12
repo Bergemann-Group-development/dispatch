@@ -20,8 +20,8 @@ module riemann_mod
   type(riemann_t), public:: rieman
 contains
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
@@ -231,8 +231,8 @@ subroutine approx(qleft,qright,fgdnv,ngrid,nvar)
   end do
 end subroutine approx
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,qgdnv,fgdnv
@@ -371,8 +371,8 @@ subroutine acoustic(qleft,qright,fgdnv,ngrid,nvar)
   end do
 end subroutine acoustic
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 subroutine llf(qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
@@ -456,8 +456,8 @@ subroutine llf(qleft,qright,fgdnv,ngrid,nvar)
   end do
 end subroutine llf
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
@@ -680,8 +680,8 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
   if (detailed_timer) call trace_end (itimer)
 end subroutine hllc
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 subroutine hllc_a (qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
@@ -791,8 +791,8 @@ subroutine hllc_a (qleft,qright,fgdnv,ngrid,nvar)
   end do
 end subroutine hllc_a
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 subroutine hllc_v (qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv
@@ -891,8 +891,8 @@ subroutine hllc_v (qleft,qright,fgdnv,ngrid,nvar)
      end do
 end subroutine hllc_v
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 subroutine hll(qleft,qright,fgdnv,ngrid,nvar)
   integer::ngrid,nvar
   real(dp),dimension(1:ngrid,1:nvar)::qleft,qright,fgdnv

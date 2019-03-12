@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Add selfgravity to any solver
-!> =============================================================================
+!===============================================================================
 MODULE selfgravity_mod
   USE io_mod
   USE os_mod
@@ -38,7 +38,7 @@ MODULE selfgravity_mod
   integer, save :: order=1
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Add restart functionality to patch initialization.  This %init routine is
 !> called for both internal and virtual patches, which both can be initialized
 !> fully by the self%ininitial%condition() procedure. When instead calling the
@@ -47,7 +47,7 @@ CONTAINS
 !> nevertheless return ok=.true., and instead rely on a negative time to force
 !> any task that relies on the patch for guard zone values to wait until data
 !> has been recieved with MPI from the owner rank.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_extras (self, patch)
   class(selfgravity_t):: self
   class(patch_t):: patch
@@ -122,13 +122,13 @@ SUBROUTINE init_extras (self, patch)
   call trace%end()
 END SUBROUTINE init_extras
 
-!> =============================================================================
+!===============================================================================
 !> Prepare the external forces for the pde call, in particular selfgravity. At
 !> this point the nbors are declared up-to-date with respect to everything,
 !> including their potentials, which we need for guard zones.  They may in fact
 !> be providing only their preliminary potentials in their (nt-1) time slots,
 !> while their older time slots should by now contain the converged potential.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pre_update (self, patch)
   class(selfgravity_t):: self
   class(patch_t):: patch
@@ -162,13 +162,13 @@ SUBROUTINE pre_update (self, patch)
   call trace%end (itimer)
 END SUBROUTINE pre_update
 
-!> =============================================================================
+!===============================================================================
 !> Having advanced the MHD state to the new time, we make a preliminary
 !> call to the Poisson solver, based on extrapolation of the nbor potentials.
 !> We then provide this preliminary potential to nbors, until we have a
 !> better offer.  The poisson_time controls if an update affects the self%time
 !> or the poisson_time; the two are updated alternatingly
-!> =============================================================================
+!===============================================================================
 SUBROUTINE post_update (self, patch)
   class(selfgravity_t):: self
   class(patch_t):: patch
@@ -195,12 +195,12 @@ SUBROUTINE post_update (self, patch)
   call trace%end()
 END SUBROUTINE post_update
 
-!> =============================================================================
+!===============================================================================
 !> Compute an approximate, conservative estimate of dphi/dt, which will cause
 !> the timestep routine to make a good guess at the next phi, at the same time
 !> as it is updating the other variables.  The 1st order prediction is in
 !> practice better at reducing the number of iterations than the 2nd order.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE time_derivs (self)
   class(patch_t):: self
   integer:: it1, it2, it3, nt, l(3), u(3)
@@ -247,10 +247,10 @@ SUBROUTINE time_derivs (self)
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE time_derivs
 
-!> =============================================================================
+!===============================================================================
 !> This functions checks if 'target' is too much ahead of the nbor 'source'.
 !> If it returns .true. it means the target task is not ready to be updated.
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION ahead_of (self, target, source)
   class(selfgravity_t):: self
   class(patch_t):: target, source

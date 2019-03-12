@@ -1,4 +1,4 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> A patch extension with pebbles.  There are so many patch properties that the
 !> pebbles need, that it is much simpler to use an extension of an mhd_t, rather
 !> than to pass (or/and recompute) those properties.  The key flag is do_pebbles,
@@ -7,7 +7,7 @@
 !> to the pebble procedures.  To simplify neighbor access, the patch also has
 !> an anonymous pointer to its primary list node, which has the nbor head of the
 !> neighbor list.
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE pebble_patch_mod
   USE io_mod
   USE omp_lock_mod
@@ -63,9 +63,9 @@ MODULE pebble_patch_mod
   real, save:: xmin=1e10, xmax=-1e10
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Create a number of particles proportional at the left hand side wall
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(pebble_patch_t):: self
   !.............................................................................
@@ -147,10 +147,10 @@ SUBROUTINE init (self)
   call trace_end (itimer)
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Create a number of particles distributed randomly, with the velocity initially
 !> equal to the gas velocity
-!> =============================================================================
+!===============================================================================
 SUBROUTINE initial_add (self, n)
   class(pebble_patch_t):: self
   integer, intent(in), optional:: n
@@ -235,13 +235,13 @@ SUBROUTINE initial_add (self, n)
   call trace_end (itimer)
 END SUBROUTINE initial_add
 
-!> =============================================================================
+!===============================================================================
 !> Create a number of particles proportional at the top and bottom walls,
 !> with initially a velocity interpolated from the argument velocity field.
 !> Depending on the call, either add a fixedd number, or a number proportional
 !> to the time step (and hence very much larger in the large, cold, outer
 !> patches.  Building the rate into the weight factor may be a better strategy.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add (self, n)
   class(pebble_patch_t):: self
   integer, intent(in), optional:: n
@@ -320,10 +320,10 @@ SUBROUTINE add (self, n)
   call trace_end (itimer)
 END SUBROUTINE add
 
-!> =============================================================================
+!===============================================================================
 !> Look up gas velocity components, given positions, and compute the drag rate
 !> (inverse stopping time)
-!> =============================================================================
+!===============================================================================
 SUBROUTINE drag (self, pebble, warning)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: pebble
@@ -377,9 +377,9 @@ SUBROUTINE drag (self, pebble, warning)
   end if
 END SUBROUTINE drag
 
-!> =============================================================================
+!===============================================================================
 !> Move a pebbles forward one step, with drag
-!> =============================================================================
+!===============================================================================
 SUBROUTINE kdk_drag (self, p)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: p
@@ -477,8 +477,8 @@ SUBROUTINE kdk_drag (self, p)
   end if
 END SUBROUTINE kdk_drag
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE scatter (self, nbors, not_done)
   class(pebble_patch_t):: self
   class(link_t), pointer:: nbors
@@ -651,8 +651,8 @@ SUBROUTINE scatter (self, nbors, not_done)
   end if
 END SUBROUTINE scatter
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE gather (self, not_done, nbors, verbose)
   class(pebble_patch_t):: self
   class(pebbles_t), pointer:: not_done
@@ -729,13 +729,13 @@ SUBROUTINE gather (self, not_done, nbors, verbose)
   call not_done%check_list ('after gather')
 END SUBROUTINE gather
 
-!> =============================================================================
+!===============================================================================
 !> Bring all (remaining) pebbles up-to-date with respect to current time, by
 !> running through update update sweeps until all pebbles are up-to-date.  We
 !> first scatter all pebbles to a "not_done" buffer, and then gather them back
 !> to the self%pebbles as they finish (some may be exported to neighbor ranks
 !> in the process).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update_pebbles (self)
   class(pebble_patch_t):: self
   !.............................................................................
@@ -826,9 +826,9 @@ SUBROUTINE update_pebbles (self)
   call trace_end
 END SUBROUTINE update_pebbles
 
-!> =============================================================================
+!===============================================================================
 !> Print info to stdout
-!> =============================================================================
+!===============================================================================
 SUBROUTINE info (self, nq, ntask, experiment_name)
   class(pebble_patch_t):: self
   integer, optional:: nq, ntask
@@ -883,8 +883,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   end if
 END SUBROUTINE info
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE interpolate_vg (self, pebble, warn)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: pebble
@@ -911,8 +911,8 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
   end do
 END SUBROUTINE interpolate_vg
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
   class(pebble_patch_t):: self
   real, intent(in):: p(3)
@@ -936,8 +936,8 @@ FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
   end if
 END FUNCTION
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION inside_r4 (self, p) RESULT (out)
   class(pebble_patch_t):: self
   real, intent(in):: p(3)
@@ -946,8 +946,8 @@ FUNCTION inside_r4 (self, p) RESULT (out)
   out = all(abs(self%point_distances(real(p,kind=8),self%position)) < 0.5*self%size)
 END FUNCTION
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION interpolate_r4 (self, field, i, w) RESULT (out)
   class(pebble_patch_t):: self
   real, dimension(:,:,:,:), intent(in):: field
@@ -972,8 +972,8 @@ FUNCTION interpolate_r4 (self, field, i, w) RESULT (out)
           q(2)*(w(1)*field(i(1),i(2)+1,i(3)+1,it)+q(1)*field(i(1)+1,i(2)+1,i(3)+1,it)))
 END FUNCTION
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE output (self, experiment_name)
   class(pebble_patch_t):: self
   character(len=64), optional:: experiment_name

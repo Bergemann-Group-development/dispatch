@@ -1,6 +1,6 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> Template module for tasks.
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE task_mod
   USE io_mod
   USE omp_mod
@@ -106,24 +106,24 @@ MODULE task_mod
   type(dll_t), pointer:: deleted_list
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE void (self)
   class (task_t):: self
   print*, 'ERROR: task_t%void called'
 END SUBROUTINE void
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE dnload (self, only)
   class (task_t):: self
   integer, optional:: only
   call mpi%abort('ERROR: task_t%dnload called')
 END SUBROUTINE dnload
 
-!> =============================================================================
+!===============================================================================
 !> Define unique task id, unless already set before entry.  The task 
 !> IDs must be unique across MPI ranks, and must initially satisfy 
 !> modulo(self%id, mpi%size) == self%rank + 1
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class (task_t):: self
   character(len=120):: id = &
@@ -135,9 +135,9 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Define unique patch ids.  A critical region is OK; this is only done once.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_unique (self, keep)
   class (task_t):: self
   logical, optional:: keep
@@ -203,12 +203,12 @@ SUBROUTINE init_unique (self, keep)
   call trace_end
 END SUBROUTINE init_unique
 
-!> =============================================================================
+!===============================================================================
 !> Reset unique patch ids.  A critical region is OK; this is only done once.
 !> This is done after, for example, `download%test`, which creates test patches.
 !> It is set to one rather than zero because there must have already been a
 !> patch with ID = 1 when `download%test` was called.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_id_reset (self)
   class (task_t):: self
   logical:: first_time=.true.
@@ -220,8 +220,8 @@ SUBROUTINE init_id_reset (self)
   call trace_end
 END SUBROUTINE init_id_reset
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE delete (self)
   class (task_t):: self
   !.............................................................................
@@ -239,12 +239,12 @@ SUBROUTINE delete (self)
   call trace_end
 END SUBROUTINE delete
 
-!> =============================================================================
+!===============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time
 !> step puts new values in the 'new' slot 2, while saving the time step used in
 !> dt(1). Then the current slot (it) becomes 2, and the new one becomes 3, etc.
 !> This way, there is no need to copy memory btw time steps.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE rotate (self)
   class(task_t):: self
   integer:: iv, nv, new, i
@@ -343,9 +343,9 @@ SUBROUTINE rotate (self)
   call trace_end (itimer)
 END SUBROUTINE rotate
 
-!> =============================================================================
+!===============================================================================
 !> Print info to stdout
-!> =============================================================================
+!===============================================================================
 SUBROUTINE info (self, nq, ntask, experiment_name)
   class(task_t):: self
   integer, optional:: nq, ntask
@@ -353,12 +353,12 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !.............................................................................
 END SUBROUTINE info
 
-!> =============================================================================
+!===============================================================================
 !> Check if self (which is a nbor task) is ahead of target (which is the one to
 !> possibly move to the ready queue), using self%dtime*target%grace as the grace
 !> period, since we want to limit the extrapolation in the nbor task to at most
 !> target%grace*self%dtime.
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION is_ahead_of (self, target)
   class (task_t):: self, target
   real(8):: nbtime, nbdtime
@@ -391,9 +391,9 @@ SUBROUTINE print (self)
   class (task_t):: self
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 !> Set status bits
-!> =============================================================================
+!===============================================================================
 SUBROUTINE set (self, bits)
   class (task_t):: self
   integer:: bits
@@ -404,9 +404,9 @@ SUBROUTINE set (self, bits)
 !  call trace_end
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 !> Clear status bits
-!> =============================================================================
+!===============================================================================
 SUBROUTINE clear (self, bits)
   class (task_t):: self
   integer:: bits
@@ -417,9 +417,9 @@ SUBROUTINE clear (self, bits)
 !  call trace_end
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 !> Check if ANY of the bits is set (argument can be sum of bits)
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION is_set (self, bits)
   class (task_t):: self
   integer:: bits, status
@@ -431,9 +431,9 @@ LOGICAL FUNCTION is_set (self, bits)
 !  call trace_end
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 !> Check that ALL bits are clear (argument can be sum of bits)
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION is_clear (self, bits)
   class (task_t):: self
   integer:: bits, status
@@ -445,7 +445,7 @@ LOGICAL FUNCTION is_clear (self, bits)
 !  call trace_end
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION has_finished (self)
   class (task_t):: self
   integer:: bit
@@ -454,7 +454,7 @@ LOGICAL FUNCTION has_finished (self)
     .or. self%is_set(bits%virtual)
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 FUNCTION unique_id (self)
   class (task_t):: self
   integer:: unique_id
@@ -463,7 +463,7 @@ FUNCTION unique_id (self)
   unique_id = id(self%rank)
 END FUNCTION unique_id
 
-!> =============================================================================
+!===============================================================================
 !> The load balancing procedure is part of the negotiation between a patch and
 !> its virtual neighbors.  We use the pro-active approach, where the decision
 !> to migrate to a different rank is taken by the task itself.  It can then be
@@ -492,13 +492,13 @@ END FUNCTION unique_id
 !> simulation time unit.  This can be computed by running through the list of
 !> tasks on the rank, adding for each task its cost in ms/time_unit, and finally
 !> dividing by the number of (real) cores available to work on the tasks.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE load_balance (self)
 class(task_t):: self
 
 END SUBROUTINE load_balance
 
-!> =============================================================================
+!===============================================================================
 !> Check if there is overlap, using the size plus an extra cell margin. The
 !> definition of overlap MUST be symmetric, since it is being used to define
 !> neighbor relations.
@@ -509,7 +509,7 @@ END SUBROUTINE load_balance
 !> NOTE 2: Since overlap and nbors can have a generalized definition it makes
 !> sense that is valid for the whole task_t class.  If needed, the definition
 !> can be overloaded with alternative definitions for particular tasks.
-!> =============================================================================
+!===============================================================================
 FUNCTION overlaps (self, task)
   class(task_t):: self
   class(task_t):: task
@@ -521,13 +521,13 @@ FUNCTION overlaps (self, task)
   call trace%end()
 END FUNCTION overlaps
 
-!> =============================================================================
+!===============================================================================
 !> Signed distance between the centers of two tasks in a possibly periodic box
 !>
 !> NOTE: This function is normally NOT used (but remains so it can be overloaded
 !> or explicitly called), since it is overloaded by the patch_t%distance, which
 !> is patch geometry aware.
-!> =============================================================================
+!===============================================================================
 FUNCTION distance (self, task) RESULT (out)
   class(task_t):: self
   class(task_t):: task
@@ -560,9 +560,9 @@ SUBROUTINE unpack (self, mesg)
   call mpi%abort ('task_t%unpack called')
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 !> Stub, to be overloaded in experiment_mod to drop patches
-!> =============================================================================
+!===============================================================================
 FUNCTION is_relevant (self)
   class(task_t):: self
   logical:: is_relevant
@@ -570,18 +570,18 @@ FUNCTION is_relevant (self)
   is_relevant = .true.
 END FUNCTION is_relevant
 
-!> =============================================================================
+!===============================================================================
 !> Test update procedure for dispatcher tests
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test_update (self)
   class(task_t):: self
   self%dtime = self%random%ran1()
   self%dt(self%it) = self%dtime
 END SUBROUTINE test_update
 
-!> =============================================================================
+!===============================================================================
 !> Test if solver leading characters match a given string
-!> =============================================================================
+!===============================================================================
 FUNCTION solver_is (self, kind)
   class(task_t):: self
   logical solver_is
@@ -589,9 +589,9 @@ FUNCTION solver_is (self, kind)
   solver_is = self%kind(1:len(kind)) == kind
 END FUNCTION solver_is
 
-!> =============================================================================
+!===============================================================================
 !> Turn on debug output at and beyond a given level, and for id_debug task
-!> =============================================================================
+!===============================================================================
 FUNCTION debug (self, level)
   class(task_t):: self
   integer:: level

@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Boundary conditions for a 3-D box self-gravitating box
 !> Assume `phi` = 0 in the boundaries, all other variables outflow.
-!> =============================================================================
+!===============================================================================
 MODULE pboundary_mod
   USE io_mod
   USE trace_mod
@@ -22,7 +22,7 @@ MODULE pboundary_mod
 
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, patch)
   class(pboundary_t):: self
   class(patch_t):: patch
@@ -53,10 +53,10 @@ SUBROUTINE init (self, patch)
 
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Impose boundary conditions.
 !> All conditions are assumed "outflow" (i.e., zero gradient).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE conditions (self, patch, it)
   class(pboundary_t) :: self
   class(patch_t), target :: patch

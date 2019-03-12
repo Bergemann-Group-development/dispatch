@@ -1,9 +1,9 @@
-!> =============================================================================
+!===============================================================================
 !> The data part of the pic_t derived type must contain all patch specific
 !> dynamically  changing data for a patch.  This is on the one hand everything
 !> that is permanently allocated via allocate commands in the PPcode, and on the
 !> other hand scalars and arrays that change with time, or are location specific.
-!> =============================================================================
+!===============================================================================
 MODULE pic_mod
   USE io_mod,          ONLY: io
   USE trace_mod,       ONLY: trace_begin, trace_end
@@ -54,9 +54,9 @@ MODULE pic_mod
   logical, save :: periodic_bcs(3)=.false.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the PIC properties of a patch
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
  implicit none
   class(pic_t):: self
@@ -75,13 +75,13 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Allocate and initialize the memory and paramters belonging to a PIC patch.
 !> This procedure is called once for every patch.  It calls init_species to
 !> initialize everything that belongs to the patch being initialized, and the
 !> dynamically changing part of this info needs to be copied to the patch
 !> data type, to be recovered when a patch is to be updated.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pre_init (self)
  implicit none
   class(pic_t):: self
@@ -225,11 +225,11 @@ SUBROUTINE pre_init (self)
   call trace_end (itimer=itimer)
 END SUBROUTINE pre_init
 
-!> =============================================================================
+!===============================================================================
 !> After allocating PIC-related arrays during initialization, save their
 !> memory locations in the patch data type,  so they can be restored in the
 !> connect procedure
-!> =============================================================================
+!===============================================================================
 SUBROUTINE post_init (self)
   class(pic_t):: self
   call trace_begin ('pic_t%post_init')
@@ -263,11 +263,11 @@ SUBROUTINE post_init (self)
   call trace_end
 END SUBROUTINE post_init
 
-!> =============================================================================
+!===============================================================================
 !> Prepare the state of the PIC patch to take a timestep.  To be able to use the
 !> PIC update procedures on the patch specific data, we need to first point the
 !> dynamically changing part of this info to the PIC patch values.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE connect (self)
   class(pic_t):: self
   !-----------------------------------------------------------------------------
@@ -299,9 +299,9 @@ SUBROUTINE connect (self)
   call trace_end
 END SUBROUTINE connect
 
-!> =============================================================================
+!===============================================================================
 !> Copy scalars back to the patch data type
-!> =============================================================================
+!===============================================================================
 SUBROUTINE copy (self)
   class(pic_t):: self
   !-----------------------------------------------------------------------------
@@ -312,11 +312,11 @@ SUBROUTINE copy (self)
   call trace_end
 END SUBROUTINE copy
 
-!> =============================================================================
+!===============================================================================
 !> Update the state of the PIC patch -- take a timestep.  To be able to use the
 !> PIC update procedures on the patch specific data, we need to first point the
 !> dynamically changing part of this info to the PIC patch values.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(pic_t):: self
   integer:: iv, ix, iy, iz
@@ -391,9 +391,9 @@ SUBROUTINE update (self)
   call deallocate_sources
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Organize disk output.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self)
   class(pic_t):: self
   !-----------------------------------------------------------------------------
@@ -407,9 +407,9 @@ SUBROUTINE output (self)
   call trace_end
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 !> Print information to log output
-!> =============================================================================
+!===============================================================================
 SUBROUTINE info (self, nq, ntask, experiment_name)
   class(pic_t):: self
   integer, optional:: nq, ntask
@@ -424,9 +424,9 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   call trace_end
 END SUBROUTINE info
 
-!> =============================================================================
+!===============================================================================
 !> Convert mhd variables to pic
-!> =============================================================================
+!===============================================================================
 SUBROUTINE mhd_to_pic (self, lb, ub)
   USE pic_stagger,        ONLY: ddxdn, ddydn, ddzdn, ddxdna, ddydna, ddzdna
   USE units,              ONLY: c
@@ -535,9 +535,9 @@ SUBROUTINE mhd_to_pic (self, lb, ub)
   call trace_end (itimer)
 END SUBROUTINE mhd_to_pic
 
-!> =============================================================================
+!===============================================================================
 !> Convert mhd variables to pic
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test_gather (self)
   USE particleoperations, ONLY: make_particles_with_temperature_3d
   implicit none
@@ -590,9 +590,9 @@ SUBROUTINE test_gather (self)
   call trace_end
 END SUBROUTINE test_gather
 
-!> =============================================================================
+!===============================================================================
 !> Convert mhd variables to pic
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test_scatter (self)
   USE particleoperations, ONLY: make_particles_with_temperature_3d
   implicit none
@@ -692,9 +692,9 @@ SUBROUTINE remove_particles (self, l, u)
   if (io%debug(2)) print '(a,4(3i4,2x))', 'minq,maxq', minq,maxq
 END SUBROUTINE remove_particles
 
-!> =============================================================================
+!===============================================================================
 !> Convert pic variables to mhd and store them in the self%new time slot
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pic_to_mhd (self, it)
   implicit none
   integer:: it
@@ -904,7 +904,7 @@ SUBROUTINE impose_particle_boundaries_np(self)
   call trace_end (itimer)
 END SUBROUTINE impose_particle_boundaries_np
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print_patch_type (self, patch_type)
   class(pic_t) :: self
   logical :: patch_type
@@ -917,7 +917,7 @@ SUBROUTINE print_patch_type (self, patch_type)
   print*, '==============================================================================='
 END SUBROUTINE print_patch_type
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE custom_refine (self)
   class(pic_t):: self
   !-----------------------------------------------------------------------------

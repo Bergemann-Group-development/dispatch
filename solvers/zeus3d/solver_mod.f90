@@ -1,5 +1,5 @@
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 MODULE solver_mod
   USE io_mod
   USE trace_mod
@@ -38,9 +38,9 @@ MODULE solver_mod
   end interface
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Organize calls to the extras and the mhd solver init
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init (self)
   class(solver_t) :: self
   !.....................................................................
@@ -49,9 +49,9 @@ SUBROUTINE init (self)
   call validate%init
 END SUBROUTINE init
 
-!> =====================================================================
+!=======================================================================
 !> Organize calls to the extras and the mhd solver
-!> =====================================================================
+!=======================================================================
 SUBROUTINE update (self)
   class(solver_t) :: self
   associate (d=>self%mem(:,:,:,self%idx%d,self%it,1))
@@ -64,7 +64,7 @@ SUBROUTINE update (self)
   end associate
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE p2U (self, v, it)
   class(solver_t):: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: v
@@ -73,7 +73,7 @@ SUBROUTINE p2U (self, v, it)
   v = self%gas_velocity_vector()
 END SUBROUTINE p2U
 
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_velocity_vector (self) RESULT (v)
   class (solver_t):: self
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: v
@@ -81,7 +81,7 @@ FUNCTION gas_velocity_vector (self) RESULT (v)
   v = MomToVel(self)
 END FUNCTION gas_velocity_vector
 
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
   class (solver_t):: self
   integer:: idir
@@ -101,7 +101,7 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
   end associate
 END FUNCTION gas_velocity_scalar
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE log_density (self, v)
   class(solver_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
@@ -109,7 +109,7 @@ SUBROUTINE log_density (self, v)
   v = log(self%mem(:,:,:,self%idx%d,self%it,1))
 END SUBROUTINE log_density
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE log_pressure (self, v)
   class(solver_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
@@ -117,7 +117,7 @@ SUBROUTINE log_pressure (self, v)
   v = log(self%gas_pressure())
 END SUBROUTINE log_pressure
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE velocity_magnitude (self, v)
   class (solver_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
@@ -125,7 +125,7 @@ SUBROUTINE velocity_magnitude (self, v)
   v = norm(MomToVel(self))
 END SUBROUTINE velocity_magnitude
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE magnetic_field_magnitude (self, v)
   class (solver_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
@@ -133,7 +133,7 @@ SUBROUTINE magnetic_field_magnitude (self, v)
   v = norm(self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1))
 END SUBROUTINE magnetic_field_magnitude
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE grav_potential (self, v)
   class (solver_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: v
@@ -141,7 +141,7 @@ SUBROUTINE grav_potential (self, v)
   v = self%mem(:,:,:,self%idx%phi,self%it,1)
 END SUBROUTINE grav_potential
 
-!> =============================================================================
+!===============================================================================
 FUNCTION Norm_VectorToArray (in) RESULT (out)
   type(vector_t), intent(in) :: in
   real(kind=KindScalarVar), dimension(size(in%x%q,1),size(in%x%q,2),size(in%x%q,3)) :: out
@@ -149,7 +149,7 @@ FUNCTION Norm_VectorToArray (in) RESULT (out)
   out = sqrt(in%x%q(:,:,:)**2 + in%y%q(:,:,:)**2 + in%z%q(:,:,:)**2)
 END FUNCTION Norm_VectorToArray
 
-!> =============================================================================
+!===============================================================================
 FUNCTION Norm_ArrayToArray (in) RESULT (out)
   real(kind=KindScalarVar), dimension(:,:,:,:), intent(in) :: in
   real(kind=KindScalarVar), dimension(size(in,1),size(in,2),size(in,3)) :: out
@@ -157,7 +157,7 @@ FUNCTION Norm_ArrayToArray (in) RESULT (out)
   out = sqrt(in(:,:,:,1)**2 + in(:,:,:,2)**2 + in(:,:,:,3)**2)
 END FUNCTION Norm_ArrayToArray
 
-!> =============================================================================
+!===============================================================================
 FUNCTION MomToVel_VectorToArray (self) RESULT (out)
   class(solver_t):: self
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3),3):: out
@@ -183,7 +183,7 @@ FUNCTION MomToVel_VectorToArray (self) RESULT (out)
   end associate
 END FUNCTION MomToVel_VectorToArray
 
-!> =============================================================================
+!===============================================================================
 FUNCTION Down_ScalarToArray (in) RESULT (out)
   type(scalar_t), intent(in):: in
   real(kind=KindScalarVar), dimension(size(in%q,1),size(in%q,2),size(in%q,3),3):: out
@@ -193,7 +193,7 @@ FUNCTION Down_ScalarToArray (in) RESULT (out)
   out(:,:,:,3) = zdn_scalar (in%q)
 END FUNCTION Down_ScalarToArray
 
-!> =============================================================================
+!===============================================================================
 FUNCTION xdn_scalar (a) RESULT (b)
   real(kind=KindScalarVar), dimension(:,:,:):: a
   real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
@@ -224,7 +224,7 @@ FUNCTION xdn_scalar (a) RESULT (b)
   b(n(1),n(2),n(3)) = a(n(1)-ione,n(2)-jone,n(3)-kone)
 END FUNCTION xdn_scalar
 
-!> =============================================================================
+!===============================================================================
 FUNCTION ydn_scalar (a) RESULT (b)
   real(kind=KindScalarVar), dimension(:,:,:):: a
   real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
@@ -254,7 +254,7 @@ FUNCTION ydn_scalar (a) RESULT (b)
   b(n(1),n(2),n(3)) = a(n(1)-ione,n(2)-jone,n(3)-kone)
 END FUNCTION ydn_scalar
 
-!> =============================================================================
+!===============================================================================
 FUNCTION zdn_scalar (a) RESULT (b)
   real(kind=KindScalarVar), dimension(:,:,:):: a
   real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
@@ -284,7 +284,7 @@ FUNCTION zdn_scalar (a) RESULT (b)
   b(n(1),n(2),n(3)) = a(n(1)-ione,n(2)-jone,n(3)-kone)
 END FUNCTION zdn_scalar
 
-!> =============================================================================
+!===============================================================================
 FUNCTION xdn_1vector (a) RESULT (b)
   real(kind=KindScalarVar), dimension(:,:,:):: a
   real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
@@ -308,7 +308,7 @@ FUNCTION xdn_1vector (a) RESULT (b)
   end if
 END FUNCTION xdn_1vector
 
-!> =============================================================================
+!===============================================================================
 FUNCTION ydn_2vector (a) RESULT (b)
   real(kind=KindScalarVar), dimension(:,:,:):: a
   real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
@@ -332,7 +332,7 @@ FUNCTION ydn_2vector (a) RESULT (b)
   end if
 END FUNCTION ydn_2vector
 
-!> =============================================================================
+!===============================================================================
 FUNCTION zdn_3vector (a) RESULT (b)
   real(kind=KindScalarVar), dimension(:,:,:):: a
   real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b

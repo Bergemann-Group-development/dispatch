@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Wrapper module, which seamlessly incorporates RT into the stagger2/ solver.
-!> =============================================================================
+!===============================================================================
 MODULE mhd_rt_mod
   USE io_mod
   USE mhd_mod
@@ -22,9 +22,9 @@ MODULE mhd_rt_mod
   ! ----------------------------------------------------------------------------
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the underlying MHD patch & allocate the extra memory needed for RT
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_rt (self)
   class (mhd_rt_t) :: self
   integer :: nt = 5
@@ -36,9 +36,9 @@ SUBROUTINE init_rt (self)
   call trace%end
 END SUBROUTINE init_rt
 
-!> =============================================================================
+!===============================================================================
 !> Update the MHD state and add the RT head exchange
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class (mhd_rt_t) :: self
   real, dimension(:,:,:), pointer:: q
@@ -54,10 +54,10 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 
-!> =====================================================================
+!=======================================================================
 !> Derived from `patch_t%output_legacy`; extended to output RT quantities
 !> not present in `patch_t%mem`.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE rt_output_legacy (self, experiment_name)
   USE iso_fortran_env, only: real32
   class(mhd_rt_t):: self
@@ -190,7 +190,7 @@ SUBROUTINE rt_output_legacy (self, experiment_name)
   call trace_end
 END SUBROUTINE rt_output_legacy
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE rt_output (self, experiment_name)
   class(mhd_rt_t):: self
   character(len=64) filename, logname, experiment_name

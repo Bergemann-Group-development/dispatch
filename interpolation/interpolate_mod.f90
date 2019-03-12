@@ -1,5 +1,5 @@
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 MODULE interpolate_mod
   USE io_mod
   USE trace_mod
@@ -32,9 +32,9 @@ MODULE interpolate_mod
 PUBLIC SelectInterpolator, interpolator, interpolator_interface, interpolator_unsigned
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Create and return a procedure pointer for an interpolation function.
-!> =============================================================================
+!===============================================================================
 FUNCTION SelectInterpolator (iorder) result(interp)
   procedure(interpolator_interface), pointer :: interp
   integer, intent(in) :: iorder
@@ -59,9 +59,9 @@ FUNCTION SelectInterpolator (iorder) result(interp)
   call trace_end
 END FUNCTION SelectInterpolator
 
-!> =============================================================================
+!===============================================================================
 !> Donor cell (direct injection) interpolation.
-!> =============================================================================
+!===============================================================================
 FUNCTION interpolator_donor_cell (q,i,j,k,w) result(qtilde)
   real(kind=KindScalarVar), intent(in):: q(:,:,:)
   integer, intent(in):: i, j, k
@@ -75,14 +75,14 @@ FUNCTION interpolator_donor_cell (q,i,j,k,w) result(qtilde)
   call trace_end
 END FUNCTION interpolator_donor_cell
 
-!> =============================================================================
+!===============================================================================
 !> Piece-wise monotonic, conservative linear interpolation (PLI; van Leer 1977).
 !> aa, bb, cc are the linear interpolation weights in each direction.
 !> p is the patch we are interpolating *FROM*.
 !>
 !> Note that, for an interpolation in 3-D, three 1-D, linear van Leer
 !> interpolations are *not* guaranteed to be monotonic!
-!> =============================================================================
+!===============================================================================
 FUNCTION interpolator_van_Leer_3d (q,i,j,k,w) result(qtilde)
   real(kind=KindScalarVar), intent(in):: q(:,:,:)
   integer, intent(in):: i, j, k
@@ -163,9 +163,9 @@ FUNCTION interpolator_van_Leer_3d (q,i,j,k,w) result(qtilde)
   call trace_end (itimer)
 END FUNCTION interpolator_van_Leer_3d
 
-!> =============================================================================
+!===============================================================================
 !> Plain, un-limited, trilinear interpolation.
-!> =============================================================================
+!===============================================================================
 FUNCTION interpolator_trilinear (q,i,j,k,w) result(qtilde)
   real(kind=KindScalarVar), intent(in):: q(:,:,:)
   integer, intent(in):: i, j, k
@@ -186,9 +186,9 @@ FUNCTION interpolator_trilinear (q,i,j,k,w) result(qtilde)
   !call trace_end (itimer)
 END FUNCTION interpolator_trilinear
 
-!> =============================================================================
+!===============================================================================
 !> Plain, un-limited, trilinear interpolation.
-!> =============================================================================
+!===============================================================================
 FUNCTION trilinear_log (q,i,j,k,w) result(qtilde)
   real(kind=KindScalarVar), intent(in):: q(:,:,:)
   integer, intent(in):: i, j, k
@@ -209,9 +209,9 @@ FUNCTION trilinear_log (q,i,j,k,w) result(qtilde)
   !call trace_end (itimer)
 END FUNCTION trilinear_log
 
-!> =============================================================================
+!===============================================================================
 !> Plain, un-limited, trilinear interpolation.
-!> =============================================================================
+!===============================================================================
 FUNCTION trilinear_pv (q,d,i,j,k,w) result(qtilde)
   real(kind=KindScalarVar), intent(in):: d(:,:,:), q(:,:,:)
   integer, intent(in):: i, j, k
@@ -236,9 +236,9 @@ FUNCTION trilinear_pv (q,d,i,j,k,w) result(qtilde)
   !call trace_end (itimer)
 END FUNCTION trilinear_pv
 
-!> =============================================================================
+!===============================================================================
 !> Plain, un-limited, trilinear interpolation.
-!> =============================================================================
+!===============================================================================
 FUNCTION interpolator_trilinear_3d (q,i,j,k,w) result(qtilde)
   real(kind=KindScalarVar), intent(in):: q(:,:,:)
   integer, intent(in):: i, j, k
@@ -256,10 +256,10 @@ FUNCTION interpolator_trilinear_3d (q,i,j,k,w) result(qtilde)
   !call trace_end (itimer)
 END FUNCTION interpolator_trilinear_3d
 
-!> =============================================================================
+!===============================================================================
 !> Do the interpolation under the assumption that the variable is
 !> positive-definite (i.e. `patch%unsigned(iv) = .true.`).
-!> =============================================================================
+!===============================================================================
 FUNCTION interpolator_unsigned (q,i,j,k,w) result(qtilde)
   real(kind=KindScalarVar), intent(in):: q(:,:,:)
   integer, intent(in):: i, j, k

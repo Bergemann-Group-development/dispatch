@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Program to test functionality and speed of particles, when using a list of
 !> structures, or temporary arrays.
 !>
@@ -6,7 +6,7 @@
 !> the same, to do a direct loop, which caching the positions and velocities
 !> if/when n decreases, and to deallocate / allocate if the number of points is
 !> larger than the size of the cache arrays.
-!> =============================================================================
+!===============================================================================
 MODULE particles_mod
   USE dll_mod
   USE omp_timer_mod
@@ -24,9 +24,9 @@ MODULE particles_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Update particle positions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self, type)
   class(particles_t):: self
   integer:: type
@@ -96,9 +96,9 @@ SUBROUTINE update (self, type)
   end select
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Tri-linear interpolate in a velocity array
-!> =============================================================================
+!===============================================================================
 SUBROUTINE interpolate (self, v, type)
   class(particles_t):: self
   integer:: type
@@ -175,7 +175,7 @@ END SUBROUTINE interpolate
 
 END MODULE particles_mod
 
-!> =============================================================================
+!===============================================================================
 PROGRAM test
   USE random_mod
   USE particles_mod

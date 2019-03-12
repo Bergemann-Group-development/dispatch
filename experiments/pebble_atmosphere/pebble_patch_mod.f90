@@ -1,4 +1,4 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> A patch extension with pebbles.  There are so many patch properties that the
 !> pebbles need, that it is much simpler to use an extension of an mhd_t, rather
 !> than to pass (or/and recompute) those properties.  The key flag is do_pebbles,
@@ -7,7 +7,7 @@
 !> to the pebble procedures.  To simplify neighbor access, the patch also has
 !> an anonymous pointer to its primary list node, which has the nbor head of the
 !> neighbor list.
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE pebble_patch_mod
   USE io_mod
   USE omp_lock_mod
@@ -77,9 +77,9 @@ MODULE pebble_patch_mod
   logical, save:: do_split=.true.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Create a number of particles proportional at the left hand side wall
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(pebble_patch_t):: self
   !.............................................................................
@@ -193,11 +193,11 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Create a number of particles distributed randomly, with the velocity initially
 !> equal to the gas velocity.  To be able to use single precision particle
 !> coordinates, they are measured relative to the position of the planet.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE volume_add (self, n)
   class(pebble_patch_t):: self
   integer, intent(in), optional:: n
@@ -369,13 +369,13 @@ LOGICAL FUNCTION outside_sph(self, cl)
   if (dst < planet%bondi_radius**2) outside_sph = .false.
 END FUNCTION outside_sph
 
-!> =============================================================================
+!===============================================================================
 !> Create a number of particles proportional at the top and bottom walls,
 !> with initially a velocity interpolated from the argument velocity field.
 !> Depending on the call, either add a fixedd number, or a number proportional
 !> to the time step (and hence very much larger in the large, cold, outer
 !> patches.  Building the rate into the weight factor may be a better strategy.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE boundary_add (self, n)
   class(pebble_patch_t):: self
   integer, intent(in), optional:: n
@@ -460,10 +460,10 @@ SUBROUTINE boundary_add (self, n)
   call trace_end (itimer)
 END SUBROUTINE boundary_add
 
-!> =============================================================================
+!===============================================================================
 !> Look up gas velocity components, given positions, and compute the drag rate
 !> (inverse stopping time)
-!> =============================================================================
+!===============================================================================
 SUBROUTINE drag (self, pebble, warning)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: pebble
@@ -520,9 +520,9 @@ SUBROUTINE drag (self, pebble, warning)
   if (detailed_timer) call trace_end (itimer)
 END SUBROUTINE drag
 
-!> =============================================================================
+!===============================================================================
 !> Move a pebbles forward one step, with drag
-!> =============================================================================
+!===============================================================================
 SUBROUTINE kdk_drag (self, p)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: p
@@ -655,12 +655,12 @@ SUBROUTINE kdk_drag (self, p)
   first_time = .false.
 END SUBROUTINE kdk_drag
 
-!> =============================================================================
+!===============================================================================
 !> Starting from a collection of particles belonging to this patch, kept in the
 !> self%pebbles object, process them one by one.  Those that are not yet behind
 !> the patch time slices are left alone, while other ones are moved one step,
 !> after which it is checked if they should be exported to another patch.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE scatter (self, nbors, not_done)
   class(pebble_patch_t):: self
   class(link_t), pointer:: nbors
@@ -904,8 +904,8 @@ contains
   end subroutine check_nan
 END SUBROUTINE scatter
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE gather (self, not_done, nbors, verbose)
   class(pebble_patch_t):: self
   class(pebbles_t), pointer:: not_done
@@ -1007,13 +1007,13 @@ SUBROUTINE gather (self, not_done, nbors, verbose)
   if (detailed_timer) call trace_end (itimer)
 END SUBROUTINE gather
 
-!> =============================================================================
+!===============================================================================
 !> Bring all (remaining) pebbles up-to-date with respect to current time, by
 !> running through update update sweeps until all pebbles are up-to-date.  We
 !> first scatter all pebbles to a "not_done" buffer, and then gather them back
 !> to the self%pebbles as they finish (some may be exported to neighbor ranks
 !> in the process).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update_pebbles (self)
   class(pebble_patch_t):: self
   !.............................................................................
@@ -1093,9 +1093,9 @@ SUBROUTINE update_pebbles (self)
   call trace_end (itimer)
 END SUBROUTINE update_pebbles
 
-!> =============================================================================
+!===============================================================================
 !> Print info to stdout
-!> =============================================================================
+!===============================================================================
 SUBROUTINE info (self, nq, ntask, experiment_name)
   class(pebble_patch_t):: self
   integer, optional:: nq, ntask
@@ -1150,10 +1150,10 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !end if
 END SUBROUTINE info
 
-!> =============================================================================
+!===============================================================================
 !> Velocity interpolation. By using a 4-D pointer we can treat the velocity
 !> component as a 3D+time array, which can be passed to interpolate_r4.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE interpolate_vg (self, pebble, warn)
   class(pebble_patch_t):: self
   class(pebble_t), pointer:: pebble
@@ -1206,8 +1206,8 @@ SUBROUTINE interpolate_vg (self, pebble, warn)
   if (detailed_timer) call trace_end (itimer)
 END SUBROUTINE interpolate_vg
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
   class(pebble_patch_t):: self
   real, intent(in):: p(3)
@@ -1231,9 +1231,9 @@ FUNCTION index_r4 (self, p, w, gn) RESULT (ii)
   end if
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 !> Decide if a point is inside a patch, taking period wrapping into account
-!> =============================================================================
+!===============================================================================
 FUNCTION inside_r4 (self, p, debug)
   class(pebble_patch_t):: self
   real, intent(in):: p(3)
@@ -1254,8 +1254,8 @@ FUNCTION inside_r4 (self, p, debug)
   if (detailed_timer) call trace_end (itimer)
 END FUNCTION
 
-!> =====================================================================
-!> =====================================================================
+!=======================================================================
+!=======================================================================
 SUBROUTINE time_interval (self, time, jt, pt)
   class (pebble_patch_t)                 :: self
   real(8)                         :: time
@@ -1286,8 +1286,8 @@ SUBROUTINE time_interval (self, time, jt, pt)
   if (detailed_timer) call trace%end (itimer)
 END SUBROUTINE time_interval
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION interpolate_r4 (self, t, field, i, w) RESULT (out)
   class(pebble_patch_t):: self
   real(8):: t
@@ -1322,8 +1322,8 @@ FUNCTION interpolate_r4 (self, t, field, i, w) RESULT (out)
   if (detailed_timer) call trace_end (itimer)
 END FUNCTION
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE output (self)
   class(pebble_patch_t):: self
   !.............................................................................
@@ -1379,9 +1379,9 @@ SUBROUTINE output (self)
   call trace_end (itimer)
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 !> Read .peb file produced by the output procedure above
-!> =============================================================================
+!===============================================================================
 SUBROUTINE input (self, ok)
   class(pebble_patch_t):: self
   logical:: ok

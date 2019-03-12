@@ -1,4 +1,4 @@
-!> =====================================================================
+!=======================================================================
 !> The input to this module is the source function and opacity values
 !> at all grid points, which are computed by the calling procedure, in
 !> the rmhd_mod module.  The current module therefore does not need
@@ -18,7 +18,7 @@
 !> The module is allowed to generate two tasks for each direction, so
 !> the exponential factor only neeas to be computed once, and can be
 !> used in both solutions.
-!> =====================================================================
+!=======================================================================
 MODULE rt_mod
   USE io_mod
   USE trace_mod
@@ -66,14 +66,14 @@ MODULE rt_mod
   real, parameter:: pi4 = 16.*atan(1.)
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> We may or may not need locally allocated arrays.  If the calling
 !> procedure holds the necessary data (which it does, since it computes
 !> them and is picking up the output), it just needs to set the pointers
 !> in this module to point to the existing arrays.  However, the optical
 !> depth increments and the corresponding exp(-dtau) factors are
 !> computed here, so they need array allocation.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init (self)
   class (rt_t) :: self
   integer:: ignore
@@ -120,18 +120,18 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =====================================================================
-!> =====================================================================
+!=======================================================================
+!=======================================================================
 SUBROUTINE dnload (self)
   class (rt_t) :: self
 END SUBROUTINE dnload
 
-!> =====================================================================
+!=======================================================================
 !> Solve the RT problem, by first obtaining the thermodynamics at the
 !> designated RT time, and using them to compute the opacity and source
 !> function values.  Then solve for the net heating rate, storing it in
 !> a slot that rotates with time.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE update (self)
   class (rt_t) :: self
   real, dimension(:,:,:), pointer:: lnd, lne, ne, tt, pg
@@ -174,7 +174,7 @@ SUBROUTINE update (self)
   deallocate (lnd, lne)                                                 ! deallocate scratch
 END SUBROUTINE update
 
-!> =====================================================================
+!=======================================================================
 !> This procedure should loop over all bundle directions, spawning two
 !> tasks for each direction, with solvers running in the forward and
 !> reverse directions.
@@ -193,7 +193,7 @@ END SUBROUTINE update
 !> The tasks that are missing upstream values need to to a taskwait,
 !> and try again later.  However, in the current special case we always
 !> have both boundart values, so there are no waits.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE solve_integral (self)
   class (rt_t) :: self
   !.....................................................................
@@ -314,9 +314,9 @@ SUBROUTINE solve_feautrier (self)
   call trace_end (itimer)
 END SUBROUTINE solve_feautrier
 
-!> =====================================================================
+!=======================================================================
 !> Compute the optical depth along rays
-!> =====================================================================
+!=======================================================================
 SUBROUTINE optical_depth_centered (self, ds, rk, dtau)
   class (rt_t) :: self
   real, dimension(:),     pointer :: ds
@@ -332,10 +332,10 @@ SUBROUTINE optical_depth_centered (self, ds, rk, dtau)
   end do
 END SUBROUTINE optical_depth_centered
 
-!> =====================================================================
+!=======================================================================
 !> Compute the optical depth along rays. Dtau is staggered, therefore it
 !> has only a half value on the lower edge of the patch.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE density_weight_factor (self, ds, dwf)
   class (rt_t) :: self
   real, dimension(:),     pointer :: ds
@@ -350,10 +350,10 @@ SUBROUTINE density_weight_factor (self, ds, dwf)
   end do
 END SUBROUTINE density_weight_factor
 
-!> =====================================================================
+!=======================================================================
 !> Compute the optical depth along rays. Dtau is staggered, therefore it
 !> has only a half value on the lower edge of the patch.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
   class (rt_t) :: self
   real, dimension(:),     pointer :: ds
@@ -375,9 +375,9 @@ SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
   deallocate(dt)
 END SUBROUTINE optical_depth_staggered
 
-!> =====================================================================
+!=======================================================================
 !> Compute the optical depth along rays
-!> =====================================================================
+!=======================================================================
 SUBROUTINE interpolate_rt (self, time)
   class (rt_t) :: self
   real(8):: time
@@ -385,9 +385,9 @@ SUBROUTINE interpolate_rt (self, time)
   !---------------------------------------------------------------------
 END SUBROUTINE interpolate_rt
 
-!> =============================================================================
+!===============================================================================
 !> Apply boundary conditions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE boundary_conditions (self)
   class(rt_t):: self
   !----------------------------------------------------------------------------

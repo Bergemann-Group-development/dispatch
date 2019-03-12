@@ -25,9 +25,9 @@ MODULE mhd_rt_mod
 ! ----------------------------------------------------------------------
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> This is currently a place holder for setting up the RT for one patch
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_rt (self)
   class (mhd_rt_t) :: self
   integer :: nt = 5
@@ -36,12 +36,12 @@ SUBROUTINE init_rt (self)
   !call trace_end
 END SUBROUTINE init_rt
 
-!> =====================================================================
+!=======================================================================
 !> This updates an RMHD patch, by first computing RT data, then starting
 !> the bundle chains that do the actual solutions, then storing the
 !> heating inside the MHD task, which is assumed to adjuste the MHD
 !> update in a method specific way.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE update(self)
   class (mhd_rt_t) :: self
   integer :: itt
@@ -57,13 +57,13 @@ SUBROUTINE update(self)
   call trace_end
 END SUBROUTINE update
 
-!> =====================================================================
+!=======================================================================
 !> This gets called for all patches, but for most of them, which are
 !> not boundary patches, the first_internal pointer is null, so the call
 !> returns immediately.  The remaining cases have a linked list of tasks
 !> that need BCs, and then execute the first task in a chain, which then
 !> executes the next, recursively.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE bundle_chain (self)
   class (mhd_rt_t) :: self
   class (rt_internal_t), pointer :: task
@@ -81,10 +81,10 @@ SUBROUTINE bundle_chain (self)
   call trace_end
 END SUBROUTINE bundle_chain
 
-!> =====================================================================
+!=======================================================================
 !> Derived from `patch_t%output_legacy`; extended to output RT quantities
 !> not present in `patch_t%mem`.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE rt_output_legacy (self, experiment_name)
   USE iso_fortran_env, only: real32
   class(mhd_rt_t):: self
@@ -218,7 +218,7 @@ SUBROUTINE rt_output_legacy (self, experiment_name)
   call trace_end
 END SUBROUTINE rt_output_legacy
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE rt_output (self, experiment_name)
   class(mhd_rt_t):: self
   character(len=64) filename, logname, experiment_name

@@ -1,6 +1,6 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE tensor_mod
   USE io_mod
   USE trace_mod
@@ -40,7 +40,7 @@ MODULE tensor_mod
     module procedure vector_tensor_div
   end interface
 CONTAINS
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_tensor (self, dims, ds, name)
   class(tensor_t):: self
   integer:: dims(3)
@@ -54,7 +54,7 @@ SUBROUTINE init_tensor (self, dims, ds, name)
   call self%allocate (self)
   call trace_end
 END SUBROUTINE init_tensor
-!> =============================================================================
+!===============================================================================
 SUBROUTINE tensor_tensor_assign (out, in)
   type(tensor_t), intent(out):: out
   type(tensor_t), intent(in):: in
@@ -70,7 +70,7 @@ SUBROUTINE tensor_tensor_assign (out, in)
   out%yz = in%yz
   out%zz = in%zz
 END SUBROUTINE tensor_tensor_assign
-!> =============================================================================
+!===============================================================================
 FUNCTION tensor_vector_grad (in) RESULT (out)
   type(tensor_t):: out
   type(vector_t), intent(in):: in
@@ -86,7 +86,7 @@ FUNCTION tensor_vector_grad (in) RESULT (out)
 !  out%yz = out%d%dy (in%z)
 !  out%zz = out%d%dz (in%z)
 END FUNCTION tensor_vector_grad
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_tensor_grad (in) RESULT (out)
   type(tensor_t):: out
   type(vector_t), intent(in):: in
@@ -102,7 +102,7 @@ FUNCTION vector_tensor_grad (in) RESULT (out)
 !  out%yz = out%d%dy (in%z)
 !  out%zz = out%d%dz (in%z)
 END FUNCTION vector_tensor_grad
-!> =============================================================================
+!===============================================================================
 SUBROUTINE vector_tensor_div (out, in)
   type(vector_t), intent(inout):: out
   class(tensor_t), intent(in):: in
@@ -123,7 +123,7 @@ SUBROUTINE vector_tensor_div (out, in)
   end select
   call trace_end
 END SUBROUTINE vector_tensor_div
-!> =============================================================================
+!===============================================================================
 FUNCTION tensor_tensor_add (in1, in2) RESULT (out)
   type(tensor_t):: out
   type(tensor_t), intent(in):: in1, in2
@@ -139,7 +139,7 @@ FUNCTION tensor_tensor_add (in1, in2) RESULT (out)
   out%yz = in1%yz + in2%yz
   out%zz = in1%zz + in2%zz
 END FUNCTION tensor_tensor_add
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_tensor_mul (in1, in2) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in1
@@ -150,7 +150,7 @@ FUNCTION vector_tensor_mul (in1, in2) RESULT (out)
   out%y = in1%y * in2%yx + in1%y * in2%yy + in1%z * in2%yz
   out%z = in1%z * in2%zx + in1%y * in2%zy + in1%z * in2%zz
 END FUNCTION vector_tensor_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_tensor_mul (in1, in2) RESULT (out)
   type(tensor_t):: out
   type(scalar_t), intent(in):: in1
@@ -167,7 +167,7 @@ FUNCTION scalar_tensor_mul (in1, in2) RESULT (out)
   out%yz = in1%f - in2%yz
   out%zz = in1%f - in2%zz
 END FUNCTION scalar_tensor_mul
-!> =============================================================================
+!===============================================================================
 FUNCTION tensor_tensor_sub (in1, in2) RESULT (out)
   type(tensor_t):: out
   type(tensor_t), intent(in):: in1, in2
@@ -184,7 +184,7 @@ FUNCTION tensor_tensor_sub (in1, in2) RESULT (out)
   out%zz = in1%zz - in2%zz
 END FUNCTION tensor_tensor_sub
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE vector_vector_outer (out, in1, in2)
   type(tensor_t), intent(inout):: out
   type(scalar_t), intent(in):: in1
@@ -201,7 +201,7 @@ SUBROUTINE vector_vector_outer (out, in1, in2)
   out%yz = in1%f * in2%y * in2%z
   out%zz = in1%f * in2%z * in2%z
 END SUBROUTINE vector_vector_outer
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_vector_outerf (in1, in2) RESULT(out)
   type(tensor_t):: out
   type(vector_t), intent(in):: in1, in2
@@ -218,7 +218,7 @@ FUNCTION vector_vector_outerf (in1, in2) RESULT(out)
   out%zz = in1%z - in2%z
 END FUNCTION vector_vector_outerf
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE allocate_tensor (self, in)
   class(tensor_t):: self
   class(scalar_t):: in
@@ -239,5 +239,5 @@ SUBROUTINE allocate_tensor (self, in)
   self%allocated = .true.
   call trace_end
 END SUBROUTINE allocate_tensor
-!> =============================================================================
+!===============================================================================
 END MODULE tensor_mod

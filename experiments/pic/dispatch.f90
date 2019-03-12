@@ -1,8 +1,8 @@
 PROGRAM dispatch
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
 !> Setup a set of Cartesian patches on a task list, and update until finished
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
   USE mpi_mod
   USE cartesian_mod
@@ -15,5 +15,5 @@ PROGRAM dispatch
   call cartesian%init                   ! Initialize the patch list and patches
   call cartesian%task_list%execute      ! update the list = update member patches
   call mpi%end                          ! Finalize MPI
-!> =============================================================================
+!===============================================================================
 END PROGRAM dispatch

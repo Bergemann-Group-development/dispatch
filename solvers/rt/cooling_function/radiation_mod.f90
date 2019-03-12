@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Stub for self-contained radiative transfer module
-!> =============================================================================
+!===============================================================================
 MODULE radiation_mod
   USE io_mod
   USE trace_mod
@@ -28,12 +28,12 @@ CONTAINS
   include 'cooling_Casiana.f90'
   include 'cooling_Gnedin.f90'
 
-!> =============================================================================
+!===============================================================================
 !> Do one-time work for each instance of this solver, such as allocating Q.
 !> Make this a zero-filled array in any case, to avoid having to use if's in
 !> the solvers, but allocate a temperature array only if we are going to do
 !> actual radiation
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(radiation_t):: self
   logical, save:: first_time=.true., do_radiation=.false.
@@ -77,9 +77,9 @@ SUBROUTINE init (self)
   end associate
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Compute the cooling, assuming self has valid pointers
-!> =============================================================================
+!===============================================================================
 SUBROUTINE solve (self)
   class(radiation_t):: self
   integer:: ix, iy, iz

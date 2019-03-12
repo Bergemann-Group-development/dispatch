@@ -1,8 +1,8 @@
-!> =============================================================================
+!===============================================================================
 !> Test showing that Fortran pointers are just pointers, not pointers to pointers,
 !> demonstrating that one can allocate on dimensioned class pointers, and showing
 !> that "target, allocatable" is essentially equivalent to "pointer".
-!> =============================================================================
+!===============================================================================
 PROGRAM test_pointers
   type:: a_t
     real:: a

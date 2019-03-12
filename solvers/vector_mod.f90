@@ -1,6 +1,6 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE vector_mod
   USE trace_mod
   implicit none
@@ -29,7 +29,7 @@ MODULE vector_mod
   end interface
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE allocate_vectors_a (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:,:), allocatable, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
@@ -48,7 +48,7 @@ SUBROUTINE allocate_vectors_a (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   call trace_end
 END SUBROUTINE allocate_vectors_a
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE allocate_vectors (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
@@ -67,7 +67,7 @@ SUBROUTINE allocate_vectors (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   call trace_end
 END SUBROUTINE allocate_vectors
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE deallocate_vectors_a (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:,:), allocatable, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
@@ -86,7 +86,7 @@ SUBROUTINE deallocate_vectors_a (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   call trace_end
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE deallocate_vectors (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   integer:: n(3)
   real, dimension(:,:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
@@ -105,7 +105,7 @@ SUBROUTINE deallocate_vectors (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   call trace_end
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE vector_assign_scalar (out, in)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3), intent(inout):: out
@@ -114,7 +114,7 @@ SUBROUTINE vector_assign_scalar (out, in)
   out(:,:,:,3) = in
 END SUBROUTINE vector_assign_scalar
 
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_vector_dot (in, in2) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in,in2
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -123,7 +123,7 @@ FUNCTION vector_vector_dot (in, in2) RESULT (out)
       + in(:,:,:,3)*in2(:,:,:,3)
 END FUNCTION vector_vector_dot
 
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_scalar_mul (in, in2) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(:,:,:), intent(in):: in2
@@ -132,7 +132,7 @@ FUNCTION vector_scalar_mul (in, in2) RESULT (out)
   out(:,:,:,2) = in(:,:,:,2)*in2
   out(:,:,:,3) = in(:,:,:,3)*in2
 END FUNCTION
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_vector_mul (in2, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(:,:,:), intent(in):: in2
@@ -141,7 +141,7 @@ FUNCTION scalar_vector_mul (in2, in) RESULT (out)
   out(:,:,:,2) = in(:,:,:,2)*in2
   out(:,:,:,3) = in(:,:,:,3)*in2
 END FUNCTION
-!> =============================================================================
+!===============================================================================
 FUNCTION const3_vector_mul (in1, in) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -151,7 +151,7 @@ FUNCTION const3_vector_mul (in1, in) RESULT (out)
   out(:,:,:,3) = in(:,:,:,3)*in1(3)
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_scalar_add (in, in2) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(:,:,:), intent(in):: in2
@@ -160,7 +160,7 @@ FUNCTION vector_scalar_add (in, in2) RESULT (out)
   out(:,:,:,2) = in(:,:,:,2)+in2
   out(:,:,:,3) = in(:,:,:,3)+in2
 END FUNCTION
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_scalar_sub (in, in2) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(:,:,:), intent(in):: in2
@@ -169,7 +169,7 @@ FUNCTION vector_scalar_sub (in, in2) RESULT (out)
   out(:,:,:,2) = in(:,:,:,2)-in2
   out(:,:,:,3) = in(:,:,:,3)-in2
 END FUNCTION
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_scalar_divide (in,in2) RESULT (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(:,:,:), intent(in):: in2
@@ -180,7 +180,7 @@ FUNCTION vector_scalar_divide (in,in2) RESULT (out)
   out(:,:,:,3) = in(:,:,:,3)/in2
 END FUNCTION
 
-!> =============================================================================
+!===============================================================================
 FUNCTION real4_cross_vector (in1, in) result (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -190,7 +190,7 @@ FUNCTION real4_cross_vector (in1, in) result (out)
   out(:,:,:,2) = in1(3)*in(:,:,:,1) - in1(1)*in(:,:,:,3)
   out(:,:,:,3) = in1(1)*in(:,:,:,2) - in1(2)*in(:,:,:,1)
 END FUNCTION real4_cross_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_cross_real4 (in, in2) result (out)
   real, dimension(:,:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -200,7 +200,7 @@ FUNCTION vector_cross_real4 (in, in2) result (out)
   out(:,:,:,2) = in2(1)*in(:,:,:,3) - in2(3)*in(:,:,:,1)
   out(:,:,:,3) = in2(2)*in(:,:,:,1) - in2(1)*in(:,:,:,2)
 END FUNCTION vector_cross_real4
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_cross_vector (in, in2) result (out)
   real, dimension(:,:,:,:), intent(in):: in, in2
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -210,5 +210,5 @@ FUNCTION vector_cross_vector (in, in2) result (out)
   out(:,:,:,3) = in(:,:,:,1)*in2(:,:,:,2) - in(:,:,:,2)*in2(:,:,:,1)
 END FUNCTION vector_cross_vector
 
-!> =============================================================================
+!===============================================================================
 END MODULE vector_mod

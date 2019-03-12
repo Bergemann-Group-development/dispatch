@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Module for setting up the radiative transfer, and the relations between the
 !> RT tasks and ray systems.
-!> =============================================================================
+!===============================================================================
 MODULE radiative_transfer_mod
   USE bits_mod
   USE experiment_mod
@@ -28,9 +28,9 @@ MODULE radiative_transfer_mod
   PUBLIC rt_setup, connect_nbors
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The only procedure callable from the outside
-!> =============================================================================
+!===============================================================================
 SUBROUTINE rt_setup (self)
   class(list_t)                :: self
   class(task_list_t),  pointer :: task_list                  ! local task list
@@ -206,12 +206,12 @@ SUBROUTINE rt_setup (self)
   end if
 END SUBROUTINE rt_setup
 
-!> =============================================================================
+!===============================================================================
 !> Finalize the neighbor lists for upstream correction tasks by connecting
 !> them to appropriate up/down nbors.
 !> An rt_internal_t has integer dir_IDs that must match
 !> A task has an double precision position
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add_downstream (self)
   class(list_t):: self
   class(link_t),       pointer :: rt_list
@@ -265,11 +265,11 @@ SUBROUTINE add_downstream (self)
   call trace_end
 END SUBROUTINE add_downstream
 
-!> =============================================================================
+!===============================================================================
 !> Finalize the neighbor lists for internal solution tasks by connecting
 !> them to appropriate higher/lower level nbors.
 !> TO DO: NEEDS LOGICS, to be done: internal alteration, ray cutting, etc
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add_internal_nbors (self)
   class(list_t):: self
   class(link_t),        pointer :: rt_tasks, rt_tasks2
@@ -316,12 +316,12 @@ SUBROUTINE add_internal_nbors (self)
   call trace_end
 END SUBROUTINE add_internal_nbors
 
-!> =====================================================================
+!=======================================================================
 !> My separate nbor connectors. The original one in link_mod does not do
 !> the job right for rt. Second one is for connecting rt_internal and
 !> corresponding corrections. Both checks are deactivated by default. If
 !> task becomes a BC one, it activates itself's link.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE connect_nbors(self, nbor)
   class(link_t), pointer :: self
   class(link_t), pointer :: nbor, link1, link2
@@ -338,10 +338,10 @@ SUBROUTINE connect_nbors(self, nbor)
   call self%add_nbor_by_rank(link2)
 END SUBROUTINE connect_nbors
 
-!> =====================================================================
+!=======================================================================
 !> My separate nbor connectors. This version deactivates both links and
 !> saves the link of the correction task for it to be altered upon need
-!> =====================================================================
+!=======================================================================
 SUBROUTINE connect_corr_nbors(self, nbor, nb_l)
   class(link_t), pointer           :: self
   class(link_t), pointer           :: nbor, link1, link2

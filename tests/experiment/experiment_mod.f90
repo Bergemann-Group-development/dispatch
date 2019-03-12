@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> $Id$
 !> Skeleton experiment, which does nothing, but has the necessary procedures
-!> =============================================================================
+!===============================================================================
 MODULE experiment_mod
   USE list_mod
   USE item_mod
@@ -23,10 +23,10 @@ MODULE experiment_mod
   integer:: resolution = 64                     ! total number of points
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Populate a task_list (complete list of all tasks relevant to this rank --
 !> local tasks and virtual task = copies of tasks from neighbor ranks).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_experiment (task_list)
   type(task_list_t):: task_list
   type(template_t):: template
@@ -51,9 +51,9 @@ SUBROUTINE init_experiment (task_list)
   end do
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 !> Set the initial conditions of a task.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   real, dimension(:,:,:), pointer:: rho
@@ -73,10 +73,10 @@ SUBROUTINE init (self)
   end do
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 !> The Gaussian gets the local task position via the task argument, and thus
 !> returns the proper piece of the IC.
-!> =============================================================================
+!===============================================================================
 FUNCTION gaussion (task) result (f)
   class(experiment_t), pointer:: task
   real, dimension(task%m(1)%gn, task%m(2)%gn, task%m(3)%gn):: f

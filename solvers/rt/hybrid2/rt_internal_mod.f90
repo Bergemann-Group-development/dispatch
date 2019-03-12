@@ -60,9 +60,9 @@ MODULE rt_internal_mod
 !-----------------------------------------------------------------------
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialise tables for internal RT solution
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_rt_internal (self)
   class(rt_internal_t) :: self
   class(ray_bndl_t),    pointer :: bundle
@@ -155,9 +155,9 @@ SUBROUTINE print (self)
   end if
 END SUBROUTINE print
 
-!> =====================================================================
+!=======================================================================
 !> Update internal RT solution
-!> =====================================================================
+!=======================================================================
 SUBROUTINE update_rt_internal (self)
   class(rt_internal_t) :: self
   character(len=16) :: stime
@@ -186,9 +186,9 @@ SUBROUTINE update_rt_internal (self)
   !call trace_end (itimer)
 END SUBROUTINE update_rt_internal
 
-!> =====================================================================
+!=======================================================================
 !> Select appropriate method to get the upstream values
-!> =====================================================================
+!=======================================================================
 SUBROUTINE get_upstream (self)
   class(rt_internal_t) :: self
   logical:: static, local, same
@@ -233,9 +233,9 @@ SUBROUTINE get_upstream (self)
   call trace_end (itimer)
 END SUBROUTINE get_upstream
 
-!> =====================================================================
+!=======================================================================
 !> Upstream data is on same MPI rank and tasks are not moving.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE get_static_legacy (self)
   class(rt_internal_t) :: self
   class(rt_internal_t), pointer :: rt_nb
@@ -356,9 +356,9 @@ SUBROUTINE get_static_legacy (self)
   call trace_end
 END SUBROUTINE get_static_legacy
 
-!> =====================================================================
+!=======================================================================
 !> Upstream data is on same refinement level. Direct lookup
-!> =====================================================================
+!=======================================================================
 SUBROUTINE get_same_static (self)
   class(rt_internal_t) :: self
   class(rt_internal_t), pointer :: rt_nb => null()
@@ -441,9 +441,9 @@ SUBROUTINE get_dynamic_legacy (self)
   error stop "ERROR: local different dynamic not implemented"
 END SUBROUTINE get_dynamic_legacy
 
-!> =====================================================================
+!=======================================================================
 !> Upstream data is from boundary conditions.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE get_correction_from_BC (self)
   class(rt_internal_t) :: self
   integer :: ray, pck
@@ -471,9 +471,9 @@ SUBROUTINE get_correction_from_BC (self)
   call trace_end
 END SUBROUTINE get_correction_from_BC
 
-!> =====================================================================
+!=======================================================================
 !> compute dtau given opacity and step ds along the ray
-!> =====================================================================
+!=======================================================================
 SUBROUTINE dtau (self, opacity, dt)
   class(rt_internal_t) :: self
   real, dimension(:,:,:), pointer :: opacity, dt
@@ -488,10 +488,10 @@ SUBROUTINE dtau (self, opacity, dt)
   call trace_end
 END SUBROUTINE dtau
 
-!> =====================================================================
+!=======================================================================
 !> Solution of RTE using the 1st order Integral formulation. Iwf and Irv
 !> are stored in case of overlapping patches.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE solve_internal_integral_1st (self)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: packet
@@ -579,10 +579,10 @@ SUBROUTINE solve_internal_integral_1st (self)
   call trace_end (itimer(1))
 END SUBROUTINE solve_internal_integral_1st
 
-!> =====================================================================
+!=======================================================================
 !> Solution of RTE using the 2nd order Integral formulation.
 !> Iwf and Irv are stored in case of overlapping patches.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE solve_internal_integral_2nd (self)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: packet => null()
@@ -786,9 +786,9 @@ SUBROUTINE solve_internal_integral_2nd_store_mean_intensity (self)
   call trace_end (itimer)
 END SUBROUTINE solve_internal_integral_2nd_store_mean_intensity
 
-!> =====================================================================
+!=======================================================================
 !> Map cell data onto rays
-!> =====================================================================
+!=======================================================================
 SUBROUTINE ray_vol_map (self, rays, nwb, in, out)
   class(rt_internal_t) :: self
   class(ray_t), pointer :: rays
@@ -831,10 +831,10 @@ SUBROUTINE ray_vol_map (self, rays, nwb, in, out)
   end if
 END SUBROUTINE ray_vol_map
 
-!> =====================================================================
+!=======================================================================
 !> Solution of RTE using the Feautrier formulation. Forward and reverse
 !> incoming radiation is ignored.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE solve_internal_feautrier (self)
   class(rt_Internal_t) :: self
   real, dimension(:,:,:), pointer :: a1, a2, a3, d
@@ -869,9 +869,9 @@ SUBROUTINE update_q (self, rays, q, op)
   call trace_end (itimer)
 END SUBROUTINE update_q
 
-!> =====================================================================
+!=======================================================================
 !> Check if the rays in self match up in the upstream with the rays in other
-!> =====================================================================
+!=======================================================================
 LOGICAL FUNCTION bundle_connects_to (self, other)
   class (rt_internal_t)          :: self
   class (rt_internal_t), pointer :: other
@@ -904,8 +904,8 @@ LOGICAL FUNCTION bundle_connects_to (self, other)
 
 END function bundle_connects_to
 
-!> =====================================================================
-!> =====================================================================
+!=======================================================================
+!=======================================================================
 LOGICAL FUNCTION has_OB (self)
   class (rt_internal_t) :: self
   class (mesh_t), pointer :: m
@@ -937,9 +937,9 @@ LOGICAL FUNCTION has_OB (self)
   end if
 END FUNCTION has_OB
 
-!> =====================================================================
+!=======================================================================
 !> Add a new nbor for a quick lookup of incoming intensities.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE add_upstream(self, ups)
   class(rt_internal_t) :: self
   class(link_t), pointer :: ups, new
@@ -956,9 +956,9 @@ SUBROUTINE add_upstream(self, ups)
   self%n_upstream = self%n_upstream + 1
 END SUBROUTINE add_upstream
 
-!> =====================================================================
+!=======================================================================
 !> Remove  nbor from the quick lookup list.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE remove_upstream(self, ups)
   class(rt_internal_t) :: self
   class(link_t), pointer :: ups, this, prev
@@ -980,9 +980,9 @@ SUBROUTINE remove_upstream(self, ups)
   end do
 END SUBROUTINE remove_upstream
 
-!> =====================================================================
+!=======================================================================
 !> Test if rt_internal module has any errors
-!> =====================================================================
+!=======================================================================
 SUBROUTINE check_rt_internal(self)
   class(rt_internal_t) :: self
   integer :: i

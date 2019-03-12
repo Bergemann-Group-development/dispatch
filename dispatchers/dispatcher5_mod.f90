@@ -1,8 +1,8 @@
-!> =============================================================================
+!===============================================================================
 !> Dispatcher method that relies on all threads maintaining a "ready queue", with
 !> tasks ready for updating.  Each thread picks the task at the head of the queue,
 !> and checks all nbors for tasks that are ready, putting them back in the queue.
-!> =============================================================================
+!===============================================================================
 MODULE dispatcher5_mod
   USE io_mod
   USE trace_mod
@@ -41,10 +41,10 @@ MODULE dispatcher5_mod
   type(dispatcher5_t), public:: dispatcher5
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the task list, by first initializing the list tasks, then making
 !> neighbor lists, and finally checking if they are ready to execute
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, name)
   class(dispatcher5_t):: self
   character(len=*), optional:: name
@@ -74,10 +74,10 @@ SUBROUTINE init (self, name)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Execute the task list, updating it until it is empty.  With !$omp parallel here,
 !> everything local to self%update is thread private.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE execute (self, task_list, test)
   class(dispatcher5_t):: self
   type(task_list_t), pointer:: task_list
@@ -115,7 +115,7 @@ SUBROUTINE execute (self, task_list, test)
   call trace%end (itimer)
 END SUBROUTINE execute
 
-!> =============================================================================
+!===============================================================================
 !> Update the state of the task list, taking the steps necessary to update the
 !> head task on the ready_queue, and check for consequences.  Two strategies:
 !>
@@ -134,7 +134,7 @@ END SUBROUTINE execute
 !> 2) The master thread takes care of picking tasks from the queue, starting an
 !>    OMP thread to update it, and checking for nbors that are ready to be
 !>    updated as a consquence
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update_list (task_list, test)
   type(task_list_t), pointer:: task_list
   logical:: test
@@ -319,9 +319,9 @@ SUBROUTINE update_list (task_list, test)
   call trace_end (itimer)
 END SUBROUTINE update_list
 
-!> =============================================================================
+!===============================================================================
 !> Update the task
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update_task (self, head, test, was_refined)
   class(task_list_t):: self
   class(link_t), pointer:: head
@@ -459,9 +459,9 @@ SUBROUTINE update_task (self, head, test, was_refined)
   call trace%end (itimer)
 END SUBROUTINE update_task
 
-!> =============================================================================
+!===============================================================================
 !> Check if the link task is ready, and if so, add it to the ready_queue
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_ready (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
@@ -521,14 +521,14 @@ SUBROUTINE check_ready (self, link)
   call trace%end (itimer)
 END SUBROUTINE check_ready
 
-!> =============================================================================
+!===============================================================================
 !> Among a task and its neighbor tasks, move local tasks to ready_queue if they
 !> are ready.  If the ready bit is already set it means the patch has already
 !> been put in the ready queue, and should not be checked again.
 !>
 !> The link pointer and everything it points to are private to this task, and
 !> are not at this point in time accessible from the ready queue.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
@@ -550,12 +550,12 @@ SUBROUTINE check_nbors (self, link)
   call trace_end (itimer)
 END SUBROUTINE check_nbors
 
-!> =============================================================================
+!===============================================================================
 !> Unpack a message, where the MPI tag is the task id.  Use that to search
 !> for the task, apply its unpack method, and check if any nbors become ready.
 !> This entire operation should be threadsafe, since no other thread should be
 !> working on the same message and the same patch.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE unpack (self, mesg, link)
   class(task_mesg_t):: self
   class(mesg_t), pointer:: mesg
@@ -657,9 +657,9 @@ SUBROUTINE unpack (self, mesg, link)
   call trace%end (itimer)
 END SUBROUTINE unpack
 
-!> =============================================================================
+!===============================================================================
 !> Start-up preparation; initialize task message, look for updateable tasks
-!> =============================================================================
+!===============================================================================
 SUBROUTINE startup (task_list)
   class(task_list_t):: task_list
   class(link_t), pointer:: link
@@ -697,10 +697,10 @@ SUBROUTINE startup (task_list)
   call trace%end()
 END SUBROUTINE startup
 
-!> =============================================================================
+!===============================================================================
 !> Among a task and its neighbor tasks, move local tasks to ready_queue if they
 !> are ready, and send task data to non-locals.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_all (list)
   class(list_t):: list
   class(link_t), pointer:: link

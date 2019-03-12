@@ -5,7 +5,7 @@ MODULE boundary_wavekill_mod
   
 PUBLIC wave_killing
 CONTAINS
-!> =============================================================================
+!===============================================================================
 !> Following Section 3.2 of de Val-Borro et al. (2006, MNRAS, 370, 529).
 !> These "wave killing" conditions are designed to reduce wave reflection at
 !> solid boundaries.
@@ -27,7 +27,7 @@ CONTAINS
 !> should then be updated along the lines of:
 !>    qold = qnew + dt * wave_killing(qold, q0, tau, xkill, xbndy, x)
 !>
-!> =============================================================================
+!===============================================================================
 FUNCTION wave_killing (q, q0, tau, xkill, xbndy, x) RESULT (rate)
   real(kind=KindScalarVar), intent(in) :: q, q0
   real(8), intent(in) :: tau, x, xkill, xbndy

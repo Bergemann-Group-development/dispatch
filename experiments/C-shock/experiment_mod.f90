@@ -1,7 +1,7 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
 !> Solve the C-shock problem to test ambipolar diffusion
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE experiment_mod
   USE io_mod
   USE bits_mod
@@ -22,9 +22,9 @@ MODULE experiment_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup a patch with a sharp shock front as present in a C-shock
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: i, j, k
@@ -171,7 +171,7 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> The update procedure calls a (generic name) MHD update procedure, whose
 !> actual implementation is in $(TOP)/solvers/$(SOLVER)/mhd_mod.f90.  It then
 !> calls a courant_condition procedure, which if not overloaded is the one in
@@ -180,7 +180,7 @@ END SUBROUTINE init
 !> is to call a timestep%udpate, whose actual implementation is in a file
 !> $(TOP)/timestep/$(UPD)/timestep_mod.f90 -- currently an Adams-Bashforth
 !> method.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
   integer :: iv
@@ -229,5 +229,5 @@ SUBROUTINE update (self)
   call self%check_density('after timestep')
   call trace_end
 END SUBROUTINE update
-!> =============================================================================
+!===============================================================================
 END MODULE experiment_mod

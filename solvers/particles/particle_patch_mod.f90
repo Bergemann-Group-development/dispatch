@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Particle patches are collections (lists) of particles histories, which may
 !> be used for example to compute the forces at other particles at a particular
 !> time.  They may also be evolved, by performing kick-drift-kick on each of its
@@ -13,7 +13,7 @@
 !>  call particle_patch%add_particle_forces_to (owner, p) : forces from all particles
 !>  call particle_patch%add_patch_force_to (owner, p)     : collective force on particle
 !>  call particle_patch%move_past (time)                  : move all particles past time
-!> =============================================================================
+!===============================================================================
 MODULE particle_patch_mod
   USE io_mod
   USE trace_mod
@@ -54,9 +54,9 @@ MODULE particle_patch_mod
   !type (particle_patch_t), pointer:: particle_patches(:)
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a list of particle histories
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class (particle_patch_t)           :: self
   !.............................................................................
@@ -81,9 +81,9 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a list of particle histories
-!> =============================================================================
+!===============================================================================
 SUBROUTINE create (self, n)
   class (particle_patch_t)           :: self
   integer                            :: n
@@ -107,10 +107,10 @@ SUBROUTINE create (self, n)
   call trace%end
 END SUBROUTINE create
 
-!> =============================================================================
+!===============================================================================
 !> Add the force on a particle from particles in the local particle patch, and
 !> those in the list of nbor particle patches
-!> =============================================================================
+!===============================================================================
 SUBROUTINE force_on (self, particle)
   class (particle_patch_t)            :: self
   class (particle_t), pointer         :: particle
@@ -152,9 +152,9 @@ SUBROUTINE force_on (self, particle)
   call trace%end
 END SUBROUTINE force_on
 
-!> =============================================================================
+!===============================================================================
 !> Add the force on a particle from particles in the given particle patch
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add_particle_forces_to (self, owner, particle)
   class (particle_patch_t)    :: self
   class (particle_patch_t)    :: owner
@@ -178,9 +178,9 @@ SUBROUTINE add_particle_forces_to (self, owner, particle)
   end do
 END SUBROUTINE add_particle_forces_to
 
-!> =============================================================================
+!===============================================================================
 !> Add the force from a particle_patch to a particle in the owner patch
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add_patch_force_to (self, owner, particle)
   class (particle_patch_t)    :: self
   class (particle_patch_t)    :: owner
@@ -194,9 +194,9 @@ SUBROUTINE add_patch_force_to (self, owner, particle)
   owner%forces = owner%forces + 1
 END SUBROUTINE add_patch_force_to
 
-!> =============================================================================
+!===============================================================================
 !> Update the positions of all particles, maintaining their histories
-!> =============================================================================
+!===============================================================================
 SUBROUTINE move_past (self, time)
   class (particle_patch_t)    :: self
   real                        :: time
@@ -233,9 +233,9 @@ SUBROUTINE move_past (self, time)
   call trace%end
 END SUBROUTINE move_past
 
-!> =============================================================================
+!===============================================================================
 !> Randomize the particle velocities
-!> =============================================================================
+!===============================================================================
 SUBROUTINE randomize (self)
   class (particle_patch_t)    :: self
   !.............................................................................
@@ -257,9 +257,9 @@ SUBROUTINE randomize (self)
   call trace%end
 END SUBROUTINE randomize
 
-!> =============================================================================
+!===============================================================================
 !> Print information about the particles in the particle patch
-!> =============================================================================
+!===============================================================================
 SUBROUTINE info (self)
   class (particle_patch_t)    :: self
   !.............................................................................
@@ -287,10 +287,10 @@ SUBROUTINE info (self)
   call trace%end
 END SUBROUTINE info
 
-!> =============================================================================
+!===============================================================================
 !> Create n_nbor neighbors and n_other other particle patches, all with n_star
 !> particles in each.  Then move all particles until time>test_time
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test (self)
   class (particle_patch_t)          :: self
   !.............................................................................
@@ -365,7 +365,7 @@ SUBROUTINE test (self)
   !$omp end critical (test_cr)
 END SUBROUTINE test
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE delete_ppatch_list (dll)
   class (dll_t)              :: dll
   !.............................................................................
@@ -388,9 +388,9 @@ SUBROUTINE delete_ppatch_list (dll)
   call dll%init
 END SUBROUTINE delete_ppatch_list
 
-!> =============================================================================
+!===============================================================================
 !> Delete all particle history instances in the linked list self%particles
-!> =============================================================================
+!===============================================================================
 SUBROUTINE delete (self)
   class (particle_patch_t)   :: self
   !.............................................................................

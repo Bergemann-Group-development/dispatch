@@ -1,4 +1,4 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
 !> Solve the Poisson problem in 3-D.  In a refined setting, where a smaller
 !> patch exists inside a large one, we rely on the larger patch to provide
@@ -55,7 +55,7 @@
 !> The two accelerations should be tested separately.  First the addition of
 !> the iterative change from the level above, and then the extrapolation in time
 !> of the local change.
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE ghd_solver_mod
   USE io_mod
   USE omp_timer_mod
@@ -87,9 +87,9 @@ MODULE ghd_solver_mod
   type(operator_t):: o
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup parameters for the Poisson solver
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(ghd_t):: self
   real(kind=8) :: tolerance=1e-4, G=1., omega_sor=0.0
@@ -126,12 +126,12 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Intercept the call from patch_list_mod::update to mhd_t%download, which
 !> normally falls through to patch_t%update.  Instrument an extra flag, which
 !> forces a download from lower levels to higher levels (only) for that mem
 !> slot
-!> =============================================================================
+!===============================================================================
 SUBROUTINE download_to (self, task, special, all_cells)
   class(ghd_t):: self
   class(task_t), pointer:: task
@@ -142,10 +142,10 @@ SUBROUTINE download_to (self, task, special, all_cells)
   call self%task_t%download_to (task, special, all_cells)
 END SUBROUTINE download_to
 
-!> =============================================================================
+!===============================================================================
 !> Compute iteratively the solution to the Poisson equation, stopping when
 !> reaching the tolerance tol
-!> =============================================================================
+!===============================================================================
 SUBROUTINE solve (self)
   class(ghd_t):: self
   !
@@ -205,9 +205,9 @@ end associate
   call trace_end
 END SUBROUTINE solve
 
-!> =============================================================================
+!===============================================================================
 !> Add the gravitional force to the equation of motion
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(ghd_t):: self
   !.............................................................................
@@ -225,7 +225,7 @@ SUBROUTINE update (self)
   call trace_end
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE grav_potential (self, out)
   class(ghd_t):: self
   real, dimension(self%n(1),self%n(2),self%n(3)):: out
@@ -237,5 +237,5 @@ SUBROUTINE grav_potential (self, out)
        self%li(2):self%ui(2), self%li(3):self%ui(3), i_phi, self%it, 1))
   call trace_end
 END SUBROUTINE grav_potential
-!> =============================================================================
+!===============================================================================
 END MODULE ghd_solver_mod

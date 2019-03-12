@@ -4,18 +4,18 @@ MODULE rt_components_mod
   USE ray_geometry_v3_mod
   USE eos_mod
   implicit none
-!> =====================================================================
+!=======================================================================
 !> intensity/heating rate data type is used to store intensities in the outer shell of
 !> the patch as well as quickly retrieve incoming intensities from nbors
-!> =====================================================================
+!=======================================================================
   type, public :: rt_packet
     real, dimension(:,:), pointer :: in  => null()                        ! (wl_bin|time slot) incoming intensity.
   end type
-!> =====================================================================
+!=======================================================================
 !> rt_chain_t is used to make a linked list of chain link. Each rt_task
 !> owns a set of links, related to particular direction. Each link in 
 !> the set is then connected to a downstream nbor. 
-!> =====================================================================
+!=======================================================================
   type, public :: chain_link_t
     class(link_t),         pointer :: link   => null()                  ! link to rt_t task
     class(chain_link_t),   pointer :: head   => null()                  ! pointer to the master chain link
@@ -46,10 +46,10 @@ MODULE rt_components_mod
 
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> to run this, disable the deallocation in finish_chain subroutine and
 !> uncomment the last line there
-!> =====================================================================
+!=======================================================================
 SUBROUTINE check_masters(self)
   class(chain_link_t) :: self
   class(chain_link_t), pointer :: link
@@ -65,11 +65,11 @@ SUBROUTINE check_masters(self)
   end do
 END SUBROUTINE check_masters
 
-!> =====================================================================
+!=======================================================================
 !> Get upstream cell coordinate for a particular ray
 !> Here a modificator should come, which decides the position, depending
 !> whether the no mans land is true or false.
-!> =====================================================================
+!=======================================================================
 FUNCTION get_upstream_coord_same(self, ray) result(coords)
  class(chain_link_t) :: self
  class(patch_t), pointer :: patch
@@ -93,9 +93,9 @@ FUNCTION get_upstream_coord_same(self, ray) result(coords)
  end do
 END FUNCTION get_upstream_coord_same
 
-!> =====================================================================
+!=======================================================================
 !> Get downstream cell coordinate for particular ray
-!> =====================================================================
+!=======================================================================
 FUNCTION get_dnstream_coord(self, ray) result(coords)
  class(chain_link_t) :: self
  integer :: pck, ray, coords(3)
@@ -110,11 +110,11 @@ FUNCTION get_dnstream_coord(self, ray) result(coords)
  end select
 END FUNCTION get_dnstream_coord
 
-!> =====================================================================
+!=======================================================================
 !> Add a pointer to intensity data in an upstream patch. This is different
 !> than just a generic upstrean chain link, since there can be more than
 !> one source of data with varying statistical weights.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE add_upstream(self, ir, ups, iw)
   class(chain_link_t) :: self
   integer :: ir
@@ -138,7 +138,7 @@ SUBROUTINE add_upstream(self, ir, ups, iw)
 
 END SUBROUTINE add_upstream
 
-!> =====================================================================
+!=======================================================================
 !> Connect the links to the appropriate incoming net heating rates from the
 !> right upstreams. 
 !> INPUT: a temporary link, which has all the master link in its chain

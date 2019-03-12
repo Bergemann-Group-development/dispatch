@@ -1,8 +1,8 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> Setup a cylindrical annulus in cylindrical coords. and add a gravitating point
 !> mass that represents a massive planet (but has no real surface). A rotating
 !> coord. system, centred at the planet's orbital radius, is possible.
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 PROGRAM dispatch
   USE setup_mod
   USE mpi_mod
@@ -21,5 +21,5 @@ PROGRAM dispatch
   call dispatcher%execute(setup%task_list)
   call mpi%end
   print*,'All tasks finished. Goodbye.'
-!> =============================================================================
+!===============================================================================
 END PROGRAM dispatch

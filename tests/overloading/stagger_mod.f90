@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> $Id$
-!> =============================================================================
+!===============================================================================
 MODULE stagger_mod
   USE scalar_mod
   USE vector_mod
@@ -69,7 +69,7 @@ MODULE stagger_mod
   end interface
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 FUNCTION ddxdn1 (a) RESULT (b)
   type(scalar_t), intent(in):: a
   type(scalar_t):: b
@@ -699,7 +699,7 @@ SUBROUTINE zup_add (a, b, sign)
   endif
 END SUBROUTINE zup_add
 
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_curl (in) RESULT (out)
   type(vector_t):: out
   type(vector_t), intent(in):: in
@@ -712,7 +712,7 @@ FUNCTION vector_curl (in) RESULT (out)
   out%z = ddxup(in%y) - ddyup(in%x)
   if (verbose>0) print*,'curl_end'
 END FUNCTION vector_curl
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_real_grad (in) RESULT (out)
   type(vector_t):: out
   real, intent(in):: in
@@ -720,7 +720,7 @@ FUNCTION vector_real_grad (in) RESULT (out)
   out%y = 0.0
   out%z = 0.0
 END FUNCTION vector_real_grad
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_int_grad (in) RESULT (out)
   type(vector_t):: out
   integer, intent(in):: in
@@ -728,7 +728,7 @@ FUNCTION vector_int_grad (in) RESULT (out)
   out%y = 0.0
   out%z = 0.0
 END FUNCTION vector_int_grad
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_scalar_grad (in) RESULT (out)
   type(vector_t):: out
   type(scalar_t), intent(inout):: in
@@ -738,7 +738,7 @@ FUNCTION vector_scalar_grad (in) RESULT (out)
   out%z = ddzdn (in)
   call in%tempdealloc
 END FUNCTION vector_scalar_grad
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_norm2_scalar (in) RESULT (out)
   type(vector_t), intent(inout):: in
   type(scalar_t):: out
@@ -749,7 +749,7 @@ FUNCTION vector_norm2_scalar (in) RESULT (out)
   call in%tempdealloc
   call trace_end
 END FUNCTION vector_norm2_scalar
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_edge_vector (in) RESULT (out)
   type(scalar_t), intent(inout):: in
   type(vector_t):: out
@@ -759,7 +759,7 @@ FUNCTION scalar_edge_vector (in) RESULT (out)
   out%z = xdn(ydn(in))
   call in%tempdealloc
 END FUNCTION scalar_edge_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_down_vector (in) RESULT (out)
   type(scalar_t), intent(inout):: in
   type(vector_t):: out
@@ -769,7 +769,7 @@ FUNCTION scalar_down_vector (in) RESULT (out)
   out%z = zdn (in)
   call in%tempdealloc
 END FUNCTION scalar_down_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_up_vector (in) RESULT (out)
   type(scalar_t), intent(inout):: in
   type(vector_t):: out
@@ -779,7 +779,7 @@ FUNCTION scalar_up_vector (in) RESULT (out)
   out%z = zup (in)
   call in%tempdealloc
 END FUNCTION scalar_up_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION scalar_ddown_vector (in) RESULT (out)
   type(scalar_t), intent(inout):: in
   type(vector_t):: out
@@ -789,7 +789,7 @@ FUNCTION scalar_ddown_vector (in) RESULT (out)
   out%z = ddzdn (in)
   call in%tempdealloc
 END FUNCTION scalar_ddown_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_dup_vector (in) RESULT (out)
   type(vector_t), intent(inout):: in
   type(vector_t):: out
@@ -799,7 +799,7 @@ FUNCTION vector_dup_vector (in) RESULT (out)
   out%z = ddzup (in%z)
   call in%tempdealloc
 END FUNCTION vector_dup_vector
-!> =============================================================================
+!===============================================================================
 FUNCTION grads (in) RESULT(out)
   type(vector_t):: out
   type(scalar_t), intent(in):: in
@@ -808,7 +808,7 @@ FUNCTION grads (in) RESULT(out)
   out%y = ddydn (in)
   out%z = ddzdn (in)
 END FUNCTION grads
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_scalar_div (in) RESULT (out)
   type(vector_t), intent(in):: in
   type(scalar_t):: out
@@ -817,7 +817,7 @@ FUNCTION vector_scalar_div (in) RESULT (out)
   out = ddxup(in%x) + ddyup(in%y) + ddzup(in%z)
   !call in%tempdealloc
 END FUNCTION vector_scalar_div
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_scalar_minusdiv (in) RESULT(out)
   type(vector_t), intent(in):: in
   type(scalar_t):: out

@@ -1,6 +1,6 @@
 !===============================================================================
 !> Different iteration methods for solving the Poisson equation
-!> =============================================================================
+!===============================================================================
 MODULE laplace_mod
 USE mpi_mod
 USE io_mod
@@ -23,7 +23,7 @@ USE boundary_mod
   end type
   logical :: first_time = .true.
 CONTAINS
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, patch, solver_name, omega_sor)
   implicit none
   class(laplace_t)  :: self

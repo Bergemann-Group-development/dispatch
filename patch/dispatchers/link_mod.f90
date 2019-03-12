@@ -1,10 +1,10 @@
-!> *****************************************************************************
+!*******************************************************************************
 !> Module with list handling for generic class task_t objects.
 !>
 !> NOTE: The advantages of using the same links to organize a ready queue and
 !> an active queue is that the process is faster and simpler when no new links
 !> have to be created
-!> *****************************************************************************
+!*******************************************************************************
 MODULE link_mod
   USE io_mod
   USE mpi_mod
@@ -53,12 +53,12 @@ MODULE link_mod
   logical, save:: debug=.false.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the nbors chain of a new task (self), by
 !> 1) adding the parent
 !> 2) searching the parent nbors, adding tasks that overlap
 !> Each time it adds an nbor, it should also add itself to that nbor's nbor list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE make_new_nbors (self, selfp, parent)
   class(link_t):: self
   class(link_t), pointer:: selfp, parent, nbor
@@ -78,14 +78,14 @@ SUBROUTINE make_new_nbors (self, selfp, parent)
   call trace_end
 END SUBROUTINE make_new_nbors
 
-!> =============================================================================
+!===============================================================================
 !> Add a link to a new neighbor to my nbors chain, and add myself into that
 !> neighbor's neighbor chain.  An nbor chain link has three pointers: a pointer
 !> to its task, a pointer to the next link in the chain, and a pointer back to
 !> the task list link to the task.  We need to make and add two now nbor chain
 !> links; one for our own nbors chain, and one for that's nbors chain.  Both
 !> are added in quality order
-!> =============================================================================
+!===============================================================================
 SUBROUTINE make_new_nbor (self, selfp, that)
   class(link_t):: self
   class(link_t), pointer:: selfp, that
@@ -107,10 +107,10 @@ SUBROUTINE make_new_nbor (self, selfp, that)
   call trace_end
 END SUBROUTINE make_new_nbor
 
-!> =============================================================================
+!===============================================================================
 !> Add a link node into the nbors list of self, in increasing quality order.
 !> self must be a link whose 'nbors' points to a chain of nbors
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add_nbor_by_quality (self, this)
   class(link_t):: self
   class(link_t), pointer:: this
@@ -153,10 +153,10 @@ SUBROUTINE add_nbor_by_quality (self, this)
   call trace_end
 END SUBROUTINE add_nbor_by_quality
 
-!> =============================================================================
+!===============================================================================
 !> Give a task to another rank, making sure to update the nbor relations on
 !> this rank -- doing the same on the receiver rank is handled when unpacking,
-!> =============================================================================
+!===============================================================================
 SUBROUTINE give_to (self, link, rank)
   class(link_t):: self
   class(link_t), pointer:: link
@@ -180,9 +180,9 @@ SUBROUTINE give_to (self, link, rank)
     call test_nbor_status (link)
 END SUBROUTINE give_to
 
-!> =============================================================================
+!===============================================================================
 !> Check the status of a link and all nbor links
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test_nbor_status (self)
   class(link_t):: self
   class(link_t), pointer:: nbor
@@ -196,9 +196,9 @@ SUBROUTINE test_nbor_status (self)
   end do
 END SUBROUTINE test_nbor_status
 
-!> =============================================================================
+!===============================================================================
 !> Check the status of a link and all nbor links
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_level_sort (self)
   class(link_t):: self
   class(link_t), pointer:: nbor
@@ -221,9 +221,9 @@ SUBROUTINE check_level_sort (self)
   end do
 END SUBROUTINE check_level_sort
 
-!> =============================================================================
+!===============================================================================
 !> Check the status of a link task  with respect to its nbors
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test_status (self)
   class(link_t):: self
   class(link_t), pointer:: nbor
@@ -268,10 +268,10 @@ SUBROUTINE test_status (self)
   end if
 END SUBROUTINE test_status
 
-!> =============================================================================
+!===============================================================================
 !> Add a link node into the nbors list of self, in increasing rank order.
 !> self must be a link whose 'nbors' points to a chain of nbors
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add_nbor_by_rank (self, this)
   class(link_t):: self
   class(link_t), pointer:: this
@@ -317,8 +317,8 @@ SUBROUTINE add_nbor_by_rank (self, this)
   call trace_end
 END SUBROUTINE add_nbor_by_rank
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION remove_nbor (self, this) RESULT (nbor)
   class(link_t):: self
   class(link_t), pointer:: this
@@ -349,8 +349,8 @@ FUNCTION remove_nbor (self, this) RESULT (nbor)
   call trace_end
 END FUNCTION remove_nbor
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE remove_from_nbors (self, this)
   class(link_t):: self
   class(link_t), pointer:: this
@@ -366,9 +366,9 @@ SUBROUTINE remove_from_nbors (self, this)
   call trace_end
 END SUBROUTINE remove_from_nbors
 
-!> =============================================================================
+!===============================================================================
 !> Update the nbor list of self, adding self to the each nbor's nbor list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update_nbors (self)
   class(link_t):: self
   class(link_t), pointer:: nbor, new
@@ -384,11 +384,11 @@ SUBROUTINE update_nbors (self)
   call trace_end
 END SUBROUTINE update_nbors
 
-!> =============================================================================
+!===============================================================================
 !> Update the nbor/vnbor status of a links nbor list, including the self link.
 !> If the boundary bit gets set, send the task to its vnbors.  Before doing so,
 !> the nbor list of the nbors need to be updated, to reflect the new task rank
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update_nbor_status (self, link)
   class(link_t):: self
   class(link_t), pointer:: link, nbor, this
@@ -448,11 +448,11 @@ SUBROUTINE update_nbor_status (self, link)
   call trace_end
 END SUBROUTINE update_nbor_status
 
-!> =============================================================================
+!===============================================================================
 !> Update the nbor/vnbor status of a link.  If self belongs to the local rank
 !> it is either an internal or boundary rank, if not it is virtual or external,
 !> depending on what nbors it has.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update_status (self)
   class(link_t):: self
   class(link_t), pointer:: nbor
@@ -492,9 +492,9 @@ SUBROUTINE update_status (self)
   end if
 END SUBROUTINE update_status
 
-!> =============================================================================
+!===============================================================================
 !> Print a list of nbors
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print_nbors (self, label)
   class (link_t):: self
   character(len=*), optional:: label
@@ -521,7 +521,7 @@ SUBROUTINE print_nbors (self, label)
   write (io_unit%log,*) ''
 END SUBROUTINE print_nbors
 
-!> =============================================================================
+!===============================================================================
 !> Send a package with updated time slice info to neighbor ranks.
 !>
 !> 1) assemble task data into a message
@@ -529,7 +529,7 @@ END SUBROUTINE print_nbors
 !> 4) add the message to a sent_list
 !> 5) check the sent list for completed sends
 !> 6) remove the message from the sent_list and disassemble the message
-!> =============================================================================
+!===============================================================================
 SUBROUTINE send_to_vnbors (self)
   class(link_t):: self
   class(link_t), pointer:: nbor

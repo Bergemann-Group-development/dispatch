@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Simple MPI counter, which allows setting, incrementing,  and decrementing a
 !> counter atomically
-!> =============================================================================
+!===============================================================================
 MODULE mpi_counter_mod
   USE mpi_mod
   implicit none
@@ -21,9 +21,9 @@ MODULE mpi_counter_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Create and initialize a counter to value = n. NOTE: This is COLLECTIVE call!
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init4 (self, n)
   class(mpi_counter_t):: self
   integer:: n
@@ -38,9 +38,9 @@ SUBROUTINE init4 (self, n)
   call mpi%assert ('MPI_Win_create', mpi_err)
 END SUBROUTINE init4
 
-!> =============================================================================
+!===============================================================================
 !> Create and initialize a counter to value = n. NOTE: This is COLLECTIVE call!
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init8 (self, n)
   class(mpi_counter_t):: self
   integer(8):: n
@@ -55,10 +55,10 @@ SUBROUTINE init8 (self, n)
   call mpi%assert ('MPI_Win_create', mpi_err)
 END SUBROUTINE init8
 
-!> =============================================================================
+!===============================================================================
 !> Add a value i to the counter on master.  If the value reaches 0, return 0,
 !> while resetting the counter to n.  Allow both 4-byte and 8-byte arguments.
-!> =============================================================================
+!===============================================================================
 FUNCTION update4 (self, i, n) RESULT (j)
   class(mpi_counter_t):: self
   integer:: i, j
@@ -70,7 +70,7 @@ FUNCTION update4 (self, i, n) RESULT (j)
     j= update8 (self, int(i,kind=8))
   end if
 END FUNCTION update4
-!> =============================================================================
+!===============================================================================
 FUNCTION update8 (self, i, n) RESULT (j)
   class(mpi_counter_t):: self
   integer(8):: i, j

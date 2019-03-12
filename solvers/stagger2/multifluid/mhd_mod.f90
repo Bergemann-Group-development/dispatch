@@ -1,5 +1,5 @@
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 MODULE mhd_mod
   USE io_mod
   USE bits_mod
@@ -43,10 +43,10 @@ MODULE mhd_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The construction with a double test on first_time avoids entering a critical
 !> region once the variable has been set.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer:: i, k, ic                                                                    ! ADDED INTEGER FOR LOOPS OVER ALL COMPONENTS
@@ -112,7 +112,7 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pde (self)
   USE scalar_mod
   class(mhd_t):: self
@@ -544,10 +544,10 @@ SUBROUTINE pde (self)
   call trace%end (itimer)
 END SUBROUTINE pde
 
-!> =============================================================================
+!===============================================================================
 !> Take a complete update step.  This can be overloaded in higher levels, e.g.
 !> in experiment_mod.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
   integer, save:: itimer=0
@@ -571,9 +571,9 @@ SUBROUTINE update (self)
   call trace%end (itimer)
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self)
   class(mhd_t):: self
   character(len=64):: filename
@@ -599,7 +599,7 @@ SUBROUTINE output (self)
   call trace%end (itimer)
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_pressure (self, d_opt, s_opt) RESULT (pg)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: d, s

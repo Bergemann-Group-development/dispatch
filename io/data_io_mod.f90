@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Interface from gpatch_mod to a choice of binary data I/O methods, controlled
 !> by the io%method text string -- optionally (but deprecated) by io%do_legacy
 !> or io%do_direct.
@@ -7,7 +7,7 @@
 !> and it is the responsibility of each sub-module here (e.g. parallel_io_mod)
 !> to introduce critical regions to protect agains simultaneus calls to non-
 !> threadsafe procedures, or if/when accessing modified shared data.
-!> =============================================================================
+!===============================================================================
 MODULE data_io_mod
   USE io_mod
   USE os_mod
@@ -50,9 +50,9 @@ MODULE data_io_mod
   type(data_io_t), public:: data_io
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the I/O method, if not already done
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, task)
   class(data_io_t):: self
   class(patch_t):: task
@@ -88,9 +88,9 @@ SUBROUTINE init (self, task)
   call self%lock%unset
   END SUBROUTINE init
 
-  !> =============================================================================
+  !===============================================================================
   !> Register one type of task, for output into separate file
-  !> =============================================================================
+  !===============================================================================
 SUBROUTINE register_kind (self, patch)
   class(data_io_t):: self
   class(patch_t), pointer:: patch
@@ -111,9 +111,9 @@ SUBROUTINE register_kind (self, patch)
   call self%kind_list%append (item)
 END SUBROUTINE register_kind
 
-!> =============================================================================
+!===============================================================================
 !> Write results to disk
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self, patch, experiment_name)
   class(data_io_t):: self
   class(patch_t):: patch
@@ -206,7 +206,7 @@ SUBROUTINE output (self, patch, experiment_name)
   call trace%end (itimer)
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE open_and_close ()
   !-----------------------------------------------------------------------------
   if (io%method == 'snapshot') then
@@ -214,9 +214,9 @@ SUBROUTINE open_and_close ()
   end if
 END SUBROUTINE open_and_close 
 
-!> =============================================================================
+!===============================================================================
 !> Read snapshot from disk
-!> =============================================================================
+!===============================================================================
 SUBROUTINE input (self, patch, ok)
   class(data_io_t):: self
   class(patch_t):: patch
@@ -258,12 +258,12 @@ SUBROUTINE input (self, patch, ok)
   call trace%end()
 END SUBROUTINE input
 
-!> =============================================================================
+!===============================================================================
 !> Output text with patch info, either to individual files (io%format=1,2) or
 !> to one file per rank (io%format>2).  This is not threadsafe, both because of
 !> the text file I/O, and because snapshot%ibuf is consantly being modified by
 !> other threads (must be protected by the same critical region!).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output_txt (patch, append)
   class(patch_t):: patch
   logical:: append
@@ -311,12 +311,12 @@ SUBROUTINE output_txt (patch, append)
   call trace%end()
 END SUBROUTINE output_txt
 
-!> =============================================================================
+!===============================================================================
 !> Output text with patch info, either to individual files (io%format=1,2) or
 !> to one file per rank (io%format>2).  This is not threadsafe, both because of
 !> the text file I/O, and because snapshot%ibuf is consantly being modified by
 !> other threads (must be protected by the same critical region!).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output_nml (patch, append)
   class(patch_t):: patch
   logical :: append
@@ -445,12 +445,12 @@ SUBROUTINE output_nml (patch, append)
   call trace%end()
 END SUBROUTINE output_nml
 
-!> =============================================================================
+!===============================================================================
 !> Output text with patch info, either to individual files (io%format=1,2) or
 !> to one file per rank (io%format>2).  This is not threadsafe, both because of
 !> the text file I/O, and because snapshot%ibuf is consantly being modified by
 !> other threads (must be protected by the same critical region!).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE input_nml (patch)
   class(patch_t):: patch
   !.............................................................................
@@ -504,9 +504,9 @@ SUBROUTINE input_nml (patch)
   call trace%end()
 END SUBROUTINE input_nml
 
-!> =============================================================================
+!===============================================================================
 !> Copy one text file to another
-!> =============================================================================
+!===============================================================================
 SUBROUTINE file_append (unit1, unit2)
   integer:: unit1, unit2
   character(len=128):: line
@@ -520,9 +520,9 @@ SUBROUTINE file_append (unit1, unit2)
   end do
 END SUBROUTINE file_append
 
-!> =============================================================================
+!===============================================================================
 !> Close the data I/O
-!> =============================================================================
+!===============================================================================
 SUBROUTINE close
   !.............................................................................
   if (.not.io%do_output) return

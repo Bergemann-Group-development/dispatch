@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Staggered mesh solver using entropy per unit volume as the energy variable.
 !>
 !> Flop counting is enable via annotation at the end of lines. To count flops,
@@ -7,7 +7,7 @@
 !> % grep ops: ../../../solvers/stagger2/mhd_mod.f90 | sed 's/.*ops://' | sumcol 2
 !>
 !> where 'sumcol' is any script that sums up values in column 2
-!> =============================================================================
+!===============================================================================
 MODULE mhd_mod
   USE io_mod
   USE bits_mod
@@ -56,10 +56,10 @@ MODULE mhd_mod
   logical, save:: do_maxwell=.true.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The construction with a double test on first_time avoids entering a critical
 !> region once the variable has been set.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer:: i, iv
@@ -145,7 +145,7 @@ SUBROUTINE init (self)
   call trace%end()
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test (self)
   class(mhd_t):: self
   integer      :: ix, iy, iz, m(3), n(3), n0(3), i1
@@ -246,7 +246,7 @@ SUBROUTINE test (self)
   call trace%end()
 END SUBROUTINE test
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pde (self)
   class(mhd_t):: self
   !.............................................................................
@@ -582,10 +582,10 @@ SUBROUTINE pde (self)
   end if
 END SUBROUTINE pde
 
-!> =============================================================================
+!===============================================================================
 !> Take a complete update step.  This can be overloaded in higher levels, e.g.
 !> in experiment_mod, where boundary conditions may be inserted
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(mhd_t):: self
   integer, save:: itimer=0
@@ -608,9 +608,9 @@ SUBROUTINE update (self)
   call trace%end (itimer)
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self)
   class(mhd_t):: self
   character(len=64):: filename
@@ -636,7 +636,7 @@ SUBROUTINE output (self)
   call trace%end()
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: d, s
@@ -668,7 +668,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   end if
 END FUNCTION gas_pressure
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE gas_pressure_sub (self, d, s, ss, pg)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: d, s, pg

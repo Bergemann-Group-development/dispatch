@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Skeleton external code.  To make the external code thread safe (able to run
 !> simultaneously on any number of OMP threads), all dynamic variables -- that
 !> change during a time step -- must be declared "!$omp threadprivate" here.
@@ -8,7 +8,7 @@
 !> DISPATCH) should be entered in the interface_mod.f90 module, and corresponding
 !> pointer assignements should be added in experiment_mod::connect and in 
 !> code_connect here (for more info see the procedure headers).
-!> =============================================================================
+!===============================================================================
 MODULE dispatch_mod
   USE interface_mod
   implicit none
@@ -47,19 +47,19 @@ MODULE dispatch_mod
            code_pack, code_unpack, code_info, code_end
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Start up code
-!> =============================================================================
+!===============================================================================
 SUBROUTINE code_begin
   master = (mpi_rank==0)
   if (master) print *, 'starting up the external code'
   !call whatever_begin
 END SUBROUTINE code_begin
 
-!> =============================================================================
+!===============================================================================
 !> Connect the code variables to the interface arrays and scalars.  The code
 !> scalar variables that need to be connected must have the 'target' attribute.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE code_connect
   d       => interface%mem(:,:,:,1  ,1)
   e       => interface%mem(:,:,:,2  ,1)
@@ -80,10 +80,10 @@ SUBROUTINE code_connect
   interface%input_unit => input_unit
 END SUBROUTINE code_connect
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a patch; this includes generating initial conditions (possible from
 !> previous snapshots), reading namelist parameter files (but only once!), etc
-!> =============================================================================
+!===============================================================================
 SUBROUTINE code_init
   logical, save:: first_time = .true.
   namelist /code_params/ whatever
@@ -100,21 +100,21 @@ SUBROUTINE code_init
   !call whatever_init
 END SUBROUTINE code_init
 
-!> =============================================================================
+!===============================================================================
 !> Take a time step, after first connecting to the patch data.  This may also
 !> include computing the max wave speed in the patch, storing it in a variable
 !> that is connected to the DISPATCH patch_t%u_max variable via pointers (only
 !> relevant when DISPATCH takes care of time stepping.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE code_update
   !call whatever_update
   umax = 1.0
   t = t+dt
 END SUBROUTINE code_update
 
-!> =============================================================================
+!===============================================================================
 !> A chance to do I/O.  May be left empty if generic patch info is enough.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE code_output (out_time)
   real(8):: out_time
   if (t > out_time) then
@@ -122,18 +122,18 @@ SUBROUTINE code_output (out_time)
   end if
 END SUBROUTINE code_output
 
-!> =============================================================================
+!===============================================================================
 !> Print a line to standard out and a thread specific log file.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE code_info
   if (id==1) print *, id, 'code time: ', t
   write (log_unit, *) id, 'code time: ', t
 END SUBROUTINE code_info
 
-!> =============================================================================
+!===============================================================================
 !> Pack code info to send to virtual neighbors. May be left empty if generic patch
 !> data is sufficient.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE code_pack (buffer, nbuffer, ibuffer)
   integer, pointer:: buffer(:)
   integer, pointer:: tmp(:)
@@ -152,10 +152,10 @@ SUBROUTINE code_pack (buffer, nbuffer, ibuffer)
   end if
 END SUBROUTINE code_pack
 
-!> =============================================================================
+!===============================================================================
 !> Unpack code info from virtual neighbors.  May be left empty if generic patch
 !> data is sufficient.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE code_unpack (buffer, nbuffer, ibuffer)
   integer, pointer:: buffer(:)
   integer:: nbuffer, ibuffer, i
@@ -170,9 +170,9 @@ SUBROUTINE code_unpack (buffer, nbuffer, ibuffer)
   end if
 END SUBROUTINE code_unpack
 
-!> =============================================================================
+!===============================================================================
 !> Close down code
-!> =============================================================================
+!===============================================================================
 SUBROUTINE code_end
   !call whatever_shut_down
 END SUBROUTINE code_end

@@ -1,5 +1,5 @@
 SUBROUTINE transfer (n,dtau,s,q,xi,doxi)
-!> =====================================================================
+!=======================================================================
 !> Solve the transfer equation, given optical depth and source function.
 !> "Steins trick" is used; storing the sum of the three elements in each
 !> row of the tridiagonal equation system, instead of the diagonal ele-
@@ -36,7 +36,7 @@ SUBROUTINE transfer (n,dtau,s,q,xi,doxi)
 !> 12/01/2017 This routine is based on transfer_feautrier_omp from
 !> stagger. 
 !
-!> =====================================================================
+!=======================================================================
   implicit none
   integer, intent(in)              :: n
   real, intent(in), dimension(n) :: dtau, s

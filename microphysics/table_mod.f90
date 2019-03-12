@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Module using a table prepared by a Python procedure
-!> =============================================================================
+!===============================================================================
 MODULE table_mod
   USE mpi_mod
   USE io_mod
@@ -22,9 +22,9 @@ MODULE table_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize equation-of-state handling
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, file)
   class(table_t):: self
   character(len=*):: file
@@ -62,14 +62,14 @@ SUBROUTINE init (self, file)
   end if
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !>
 !> Optimized to vectorize where possible.  In gfortran taking a log takes 
 !> about 8 ns/pt, and the address computation takes about 10 ns.  Each 
 !> variable to compute after that takes about 6 ns, and thus the average
 !> for 4 opacities and 4 source functions is about 10/8 + 6 = 7 ns/pt
-!> =============================================================================
+!===============================================================================
 SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   class (table_t):: self
   integer:: dim(3)

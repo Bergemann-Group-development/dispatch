@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> This module contains all experiment specific information.  The experiment_t
 !> object extends the generic MHD object mhd_t, which is again an extension of
 !> the basic patch_t object for tasks (object task_t) with meshes.
@@ -11,7 +11,7 @@
 !> module, which is specified as the patch distributor in the main program
 !> dispatch.f90.   The update procedure here is called by the task_list_mod
 !> update procedure in $(TOP)/lists/task_list_mod.f90.
-!> =============================================================================
+!===============================================================================
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
@@ -44,9 +44,9 @@ MODULE experiment_mod
   type(experiment_t), public:: experiment
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Experiment setup
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
@@ -85,9 +85,9 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Experiment update
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
   class(link_t), pointer:: link
@@ -106,8 +106,8 @@ SUBROUTINE update (self)
   call trace_end
 END SUBROUTINE update
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE dnload (self, only)
   class(experiment_t):: self
   integer, optional:: only
@@ -118,8 +118,8 @@ SUBROUTINE dnload (self, only)
   end if
 END SUBROUTINE dnload
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE boundary_condition (self)
   class(experiment_t):: self
   integer, dimension(3):: lb, lo, li, ui, uo, ub
@@ -225,9 +225,9 @@ SUBROUTINE boundary_condition (self)
   call trace_end
 END SUBROUTINE boundary_condition
 
-!> =============================================================================
+!===============================================================================
 !> Stellar atmosphere with gravity pointing in the positive y-direction
-!> =============================================================================
+!===============================================================================
 SUBROUTINE force (self)
   class(gpatch_t)   :: self
   !-----------------------------------------------------------------------------
@@ -241,10 +241,10 @@ SUBROUTINE force (self)
   call trace_end
 END SUBROUTINE force
 
-!> =============================================================================
+!===============================================================================
 !> Check if a task is ready to update, by changing if all nbor task are "ahead
 !> of" the task in question
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION is_ready (link)
   class(link_t), pointer:: link
   !.............................................................................

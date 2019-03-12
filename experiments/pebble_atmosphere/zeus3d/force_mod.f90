@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> This is a start on a module that could become a general turbulence forcing
 !> module, where the standard forcing we have been using in RAMSES is implemented
-!> =============================================================================
+!===============================================================================
 MODULE force_mod
   USE io_mod
   USE trace_mod
@@ -25,9 +25,9 @@ MODULE force_mod
  logical, save:: first_time=.true.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, default)
    class(force_t):: self
    character(len=*), optional:: default
@@ -59,7 +59,7 @@ SUBROUTINE init (self, default)
    call trace_end
 END SUBROUTINE init
 
-!> =====================================================================
+!=======================================================================
 SUBROUTINE friction(self, time, m, ff)
   class(force_t) :: self
   real(8) :: time
@@ -82,12 +82,12 @@ SUBROUTINE friction2(self, time)
   end if
 END SUBROUTINE friction2
 
-!> =============================================================================
+!===============================================================================
 !> Force of gravity from a star and a planet.  To interprete the local forces,
 !> we choose a position such that the star is in the positive y-direction, and
 !> hence a positive Omega_z corresponds to positive rotation speed in the x-
 !> direction
-!> =============================================================================
+!===============================================================================
 FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
@@ -204,9 +204,9 @@ FUNCTION star_and_planet (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   call trace_end
 END FUNCTION star_and_planet
 
-!> =============================================================================
+!===============================================================================
 !> Force of gravity from a star, in a rotating disk coordinate system
-!> =============================================================================
+!===============================================================================
 FUNCTION disk (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t):: self
   real(8):: time
@@ -272,9 +272,9 @@ FUNCTION disk (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   call trace_end
 END FUNCTION disk
 
-!> =============================================================================
+!===============================================================================
 !> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
-!> =============================================================================
+!===============================================================================
 FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   class(force_t)        :: self
   real(8)               :: time

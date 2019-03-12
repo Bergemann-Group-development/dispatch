@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 MODULE parameters_mod
   USE io_mod
   USE trace_mod
@@ -45,11 +45,11 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Calculate the Keplerian velocity for a given cylindrical radius.
 !> `cylr` should be in units of AU.
 !> The product GM should have units of `scaling%l**3 / scaling%t**2`.
-!> =============================================================================
+!===============================================================================
 FUNCTION Keplerian_speed (cylr) RESULT (vkep)
   real(8), intent(in) :: cylr
   real(8) :: vkep
@@ -57,11 +57,11 @@ FUNCTION Keplerian_speed (cylr) RESULT (vkep)
   vkep = sqrt(experiment_params%mstar * cgs%m_sun / scaling%m * scaling%grav / cylr)
 END FUNCTION Keplerian_speed
 
-!> =============================================================================
+!===============================================================================
 !> Calculate the surface density for the MMSN model, given a cylindrical radius.
 !> Result will have units of `scaling%m / scaling%l**2`.
 !> `cylr` should be in units of AU.
-!> =============================================================================
+!===============================================================================
 FUNCTION MMSN_surface_density (cylr) RESULT (sigma)
   real(8), intent(in) :: cylr
   real(8) :: sigma
@@ -70,12 +70,12 @@ FUNCTION MMSN_surface_density (cylr) RESULT (sigma)
   sigma = 1700.0d0 * cylr**(-1.5d0) / scaling%d
 END FUNCTION MMSN_surface_density
 
-!> =============================================================================
+!===============================================================================
 !> Calculate the locally (i.e., vertically) isothermal temperature for the MMSN
 !> model, given a cylindrical radius.
 !> `cylr` should be in units of AU.
 !> Result will have units of `scaling%temp`.
-!> =============================================================================
+!===============================================================================
 FUNCTION MMSN_temperature (cylr) RESULT (temp)
   real(8), intent(in) :: cylr
   real(8) :: temp

@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Poisson solver module, which can solve a Poisson problem on a patch in a
 !> reasonably small number of iterations.  Larger problems must be solved
 !> separately on each scale, imposing the correction from the larger scale
@@ -36,7 +36,7 @@
 !> the higher resolution part.
 !>
 !> The Rubik's Cube setup is a good test example!
-!> =============================================================================
+!===============================================================================
 MODULE poisson_mod
   USE io_unit_mod
   USE io_mod

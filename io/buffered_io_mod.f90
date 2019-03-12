@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> $Id$
 !> This module handles buffering and output of data to disk.  It receives
 !> call of the type "call output%buffer (id, it, data)", where id is the task
@@ -6,7 +6,7 @@
 !> buffer. The actual content of the buffers has no relevance for this module,
 !> and is left to the procedure that packs the information into the buffer.
 !> For simplicity, the buffer size (ndata) is assumed to remain constant.
-!> =============================================================================
+!===============================================================================
 MODULE buffered_io_mod
   USE io_mod
   USE patch_mod
@@ -53,9 +53,9 @@ MODULE buffered_io_mod
   type(buffered_io_t), public:: buffered_io
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Write results to disk, using the buffered I/O in output_mod
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (patch)
   class(patch_t):: patch
   !.............................................................................
@@ -97,10 +97,10 @@ SUBROUTINE output (patch)
   call trace_end
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 !> Open an index file and a data file.  The first record of the index file starts
 !> with the data format revision number and the buffer size.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE open (self, nwords, iout)
   class(buffered_io_t):: self
   integer:: nwords, iout
@@ -142,9 +142,9 @@ SUBROUTINE open (self, nwords, iout)
   call trace_end
 END SUBROUTINE open
 
-!> =============================================================================
+!===============================================================================
 !> Append a dump instance to a linked list.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE buffer (self, id, iout, time, data)
   class(buffered_io_t):: self
   integer:: id, iout
@@ -172,10 +172,10 @@ SUBROUTINE buffer (self, id, iout, time, data)
   call self%check
 END SUBROUTINE buffer
 
-!> =============================================================================
+!===============================================================================
 !> Check if the number of dumps has reached the maximum => write dumps to disk.
 !> This is done as a task-list independent step by all threads.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check (self)
   class(buffered_io_t):: self
   class(dump_t), pointer:: dump
@@ -185,12 +185,12 @@ SUBROUTINE check (self)
   end if
 END SUBROUTINE check
 
-!> =============================================================================
+!===============================================================================
 !> Write the buffers in the linked list to disk and deallocate the buffers.
 !> The index file records, sequentially, the task id and dump number of each
 !> dump written.  By reading the entire index file one can search very rapidly
 !> for a specific dump, by treating the id+iout combination as an 8 byte integer
-!> =============================================================================
+!===============================================================================
 SUBROUTINE write (self)
   class (buffered_io_t):: self
   class (dump_t), pointer:: dump, old
@@ -236,10 +236,10 @@ SUBROUTINE write (self)
   call trace_end
 END SUBROUTINE write
 
-!> =============================================================================
+!===============================================================================
 !> Close the files, writing out the total number of records in slot 3 of the
 !> index file.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE close (self)
   class (buffered_io_t):: self
   !-----------------------------------------------------------------------------
@@ -250,10 +250,10 @@ SUBROUTINE close (self)
   call trace_end
 END SUBROUTINE close
 
-!> =============================================================================
+!===============================================================================
 !> Find the record that contains the combination of task id and dump number iout.
 !> This will typically be done in Python or IDL; this is just a demo.
-!> =============================================================================
+!===============================================================================
 FUNCTION find (self, id, iout)
   class (buffered_io_t):: self
   integer, optional:: id, iout
@@ -299,10 +299,10 @@ FUNCTION find (self, id, iout)
   call trace_end
 END FUNCTION find
 
-!> =============================================================================
+!===============================================================================
 !> Test the output module, by buffering enough dumps for a self-triggered write,
 !> followed by a write triggered by a close.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test (self)
   class (buffered_io_t):: self
   real(4), dimension(:), pointer:: data

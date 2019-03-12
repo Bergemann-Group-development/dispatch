@@ -1,6 +1,6 @@
-!> *****************************************************************************
+!*******************************************************************************
 !> Module with list handling for generic class task_t objects
-!> *****************************************************************************
+!*******************************************************************************
 MODULE list_mod
   USE io_mod
   USE omp_mod
@@ -72,9 +72,9 @@ MODULE list_mod
   public link_t, task2patch
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, name)
   class(list_t):: self
   character(len=*), optional:: name
@@ -88,17 +88,17 @@ SUBROUTINE init (self, name)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Update simple list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(list_t):: self
 END
 
-!> =============================================================================
+!===============================================================================
 !> Reset list, by deallocating memory used by tasks, and deallocating tasks and
 !> links
-!> =============================================================================
+!===============================================================================
 SUBROUTINE reset (self)
   class(list_t):: self
   class(link_t), pointer:: link, old
@@ -121,8 +121,8 @@ SUBROUTINE reset (self)
   call trace_end
 END SUBROUTINE reset
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE append (self, task, nbor, needed, needs_me)
   class(list_t):: self
   class(link_t), pointer, optional:: nbor
@@ -140,9 +140,9 @@ SUBROUTINE append (self, task, nbor, needed, needs_me)
   call trace_end
 END SUBROUTINE append
 
-!> =============================================================================
+!===============================================================================
 !> Append to the task list, counting active tasks only
-!> =============================================================================
+!===============================================================================
 SUBROUTINE append_link (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
@@ -184,9 +184,9 @@ SUBROUTINE append_link (self, link)
   call trace_end
 END SUBROUTINE append_link
 
-!> =============================================================================
+!===============================================================================
 !> Remove a link from the list, taking special care with the head and tail
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove_link (self, link)
   class(list_t):: self
   class(link_t), pointer:: link, next
@@ -216,9 +216,9 @@ SUBROUTINE remove_link (self, link)
   call trace_end
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 !> Remove the head link
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove_head (self)
   class(list_t):: self
   class(link_t), pointer:: head, link, next
@@ -242,9 +242,9 @@ SUBROUTINE remove_head (self)
   call trace_end
 END SUBROUTINE remove_head
 
-!> =============================================================================
+!===============================================================================
 !> Resend all boundary patches
-!> =============================================================================
+!===============================================================================
 SUBROUTINE resend_bdry (self)
   class(list_t):: self
   class(link_t), pointer:: link
@@ -257,9 +257,9 @@ SUBROUTINE resend_bdry (self)
   end do
 END SUBROUTINE resend_bdry
 
-!> =============================================================================
+!===============================================================================
 !> Find the oldest local and virtual patches
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_oldest (self)
   class(list_t):: self
   class(link_t), pointer:: link, oldest, oldestv
@@ -324,9 +324,9 @@ SUBROUTINE check_oldest (self)
   call trace_end
 END SUBROUTINE check_oldest
 
-!> =============================================================================
+!===============================================================================
 !> Check if the number of nbor tasks is consistent
-!> =============================================================================
+!===============================================================================
 SUBROUTINE consistency (self, link, i)
   class(list_t):: self
   class(link_t), pointer:: link
@@ -356,10 +356,10 @@ SUBROUTINE consistency (self, link, i)
   call trace_end
 END SUBROUTINE consistency
 
-!> =============================================================================
+!===============================================================================
 !> Check if the number of queued tasks is consistent; i.e., of the number of
 !> tasks linked at self%queue is the same as nq
-!> =============================================================================
+!===============================================================================
 SUBROUTINE aconsistency (self, ident)
   class(list_t):: self
   class(link_t), pointer:: link
@@ -414,9 +414,9 @@ SUBROUTINE aconsistency (self, ident)
   call trace_end
 END SUBROUTINE aconsistency
 
-!> =============================================================================
+!===============================================================================
 !> Set non_leaf flag on non-leaf patches
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_nonleaf (self)
   class(list_t):: self
   class(link_t), pointer:: link, scan
@@ -455,10 +455,10 @@ SUBROUTINE init_nonleaf (self)
   call trace_end
 END SUBROUTINE init_nonleaf
 
-!> =============================================================================
+!===============================================================================
 !> The very first initialization of a neighbor list.  After this, it can be
 !> maintained without searching the entire task list on the rank.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link, scan
@@ -515,11 +515,11 @@ SUBROUTINE init_nbors (self, link)
   call trace_end
 END SUBROUTINE init_nbors
 
-!> =============================================================================
+!===============================================================================
 !> The very first initialization of the neighbor lists.  After this, it can be
 !> maintained without a global search.  Distribute the work over available
 !> threads.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_all_nbors (self)
   class(list_t):: self
   class(link_t), pointer:: link
@@ -553,9 +553,9 @@ SUBROUTINE init_all_nbors (self)
   call trace_end (itimer)
 END SUBROUTINE init_all_nbors
 
-!> =============================================================================
+!===============================================================================
 !> Clear and then set the virtual and boundary bits
-!> =============================================================================
+!===============================================================================
 SUBROUTINE reset_status (self)
   class(list_t):: self
   class(link_t), pointer:: link, nbor
@@ -623,9 +623,9 @@ SUBROUTINE reset_status (self)
   !$omp end critical (list_cr)
 END SUBROUTINE reset_status
 
-!> =============================================================================
+!===============================================================================
 !> Remove parent patches, which have higher level patches inside
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove_parents (self)
   class(list_t):: self
   class(link_t), pointer:: link, scan, parent
@@ -660,8 +660,8 @@ SUBROUTINE remove_parents (self)
   call trace_end
 END SUBROUTINE remove_parents
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 FUNCTION intpos (self, task1, task2) RESULT (out)
   class(list_t):: self
   class(task_t), pointer:: task1
@@ -678,8 +678,8 @@ FUNCTION intpos (self, task1, task2) RESULT (out)
   end if
 END FUNCTION intpos
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE statistics (self)
   class(list_t):: self
   write (io_unit%log,'(a,3(5x,a,i6))') 'output_experiment:', &
@@ -688,8 +688,8 @@ SUBROUTINE statistics (self)
     'n_nbor:' , self%n_nbor
 END SUBROUTINE statistics
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE append_list (self, task_list)
   class(list_t):: self
   class(list_t), pointer:: task_list
@@ -718,7 +718,7 @@ SUBROUTINE append_list (self, task_list)
   call trace_end
 END SUBROUTINE append_list
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove_task (self, task)
   class(list_t):: self
   class(task_t), pointer:: task
@@ -747,8 +747,8 @@ SUBROUTINE remove_task (self, task)
   call trace_end
 END SUBROUTINE remove_task
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE queue_active (self, this)
   class(list_t):: self
   class(link_t), pointer:: this
@@ -809,9 +809,9 @@ SUBROUTINE queue_active (self, this)
   call trace_end (itimer)
 END SUBROUTINE queue_active
 
-!> =============================================================================
+!===============================================================================
 !> Remove a task link from the active queue
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove_active (self, this)
   class(list_t):: self
   class(link_t), pointer:: this
@@ -841,9 +841,9 @@ SUBROUTINE remove_active (self, this)
   call trace%end
 END SUBROUTINE remove_active
 
-!> =============================================================================
+!===============================================================================
 !> Add a link node into the task list, in increasing quality order
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add_by_quality (self, this)
   class(list_t):: self
   class(link_t), pointer:: this
@@ -892,9 +892,9 @@ SUBROUTINE add_by_quality (self, this)
   call trace_end
 END SUBROUTINE add_by_quality
 
-!> =============================================================================
+!===============================================================================
 !> Insert 'new' task before 'old' task
-!> =============================================================================
+!===============================================================================
 SUBROUTINE insert (self, old, new)
   class(list_t):: self
   class(link_t), pointer:: old, new
@@ -914,9 +914,9 @@ SUBROUTINE insert (self, old, new)
   call trace_end
 END SUBROUTINE insert
 
-!> =============================================================================
+!===============================================================================
 !> Print a table with task id, positions, and all neighbors
-!> =============================================================================
+!===============================================================================
 SUBROUTINE count_status (self)
   class (list_t):: self
   class(link_t) , pointer:: link, nbor
@@ -942,8 +942,8 @@ SUBROUTINE count_status (self)
     'count_status: n[ibvea] = ', self%ni, self%nb, self%nv, self%ne, self%na
 END SUBROUTINE count_status
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE print_list (self, label)
   class(list_t):: self
   character(len=*), optional:: label
@@ -983,9 +983,9 @@ SUBROUTINE print_list (self, label)
   call trace_end
 END SUBROUTINE print_list
 
-!> =============================================================================
+!===============================================================================
 !> Print a table with task id, positions, and all neighbors
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print_tasks (self, label)
   class (list_t):: self
   character(len=*), optional:: label
@@ -1009,11 +1009,11 @@ SUBROUTINE print_tasks (self, label)
   write (io_unit%log,*) ''
 END SUBROUTINE print_tasks
 
-!> =============================================================================
+!===============================================================================
 !> Initialize boundary bits, which may (optionally) be used to apply boundary
 !> conditions in experiment_t%update() procedures.  This procedure must be called
 !> while each rank still has a list of all patches.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_bdries (self)
   implicit none
   class(list_t):: self

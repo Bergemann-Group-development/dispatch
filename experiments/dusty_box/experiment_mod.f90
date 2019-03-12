@@ -1,7 +1,7 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
 !> Setup the dusty box problem of a gas fluid colliding with a dust fluid
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE experiment_mod
   USE io_mod
   USE bits_mod
@@ -22,9 +22,9 @@ MODULE experiment_mod
 
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup a patch with a uniform gas and dust backgrounds
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: i, j, k, nc!, nvc
@@ -122,7 +122,7 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> The update procedure calls a (generic name) MHD update procedure, whose
 !> actual implementation is in $(TOP)/solvers/$(SOLVER)/mhd_mod.f90.  It then
 !> calls a courant_condition procedure, which if not overloaded is the one in
@@ -131,7 +131,7 @@ END SUBROUTINE init
 !> is to call a timestep%udpate, whose actual implementation is in a file
 !> $(TOP)/timestep/$(UPD)/timestep_mod.f90 -- currently an Adams-Bashforth
 !> method.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
   integer :: iv
@@ -146,5 +146,5 @@ SUBROUTINE update (self)
 
   call trace_end
 END SUBROUTINE update
-!> =============================================================================
+!===============================================================================
 END MODULE experiment_mod

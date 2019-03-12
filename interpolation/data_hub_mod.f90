@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> A communications hub between patches. Three methods are used: download_same,
 !> download_higher and download_lower
-!> =============================================================================
+!===============================================================================
 MODULE data_hub_mod
   USE io_mod
   USE omp_mod
@@ -51,9 +51,9 @@ MODULE data_hub_mod
   end type
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialise the data communication hub.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init (self, link, all_cells)
   class(data_hub_t):: self
   class(link_t), pointer :: link
@@ -71,9 +71,9 @@ SUBROUTINE init (self, link, all_cells)
   call trace%end()
 END SUBROUTINE init
 
-!> =====================================================================
+!=======================================================================
 !> Select the download method for each nbor.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE select_dnloader (self, link, all_cells)
   class(data_hub_t)      :: self
   class(link_t), pointer :: link
@@ -123,12 +123,12 @@ SUBROUTINE select_dnloader (self, link, all_cells)
   end do
 END SUBROUTINE select_dnloader
 
-!> =====================================================================
+!=======================================================================
 !> Add a new data hub, responsible for the source in question. Data hubs
 !> are arranged in the source level of refinement from highest to lowest,
 !> as for levels, lower than the target, additional cells are needed for
 !> interpolation.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE add_hub (self, target, source, hub, all_cells)
   class(data_hub_t)          :: self
   class(patch_t),    pointer :: target, source
@@ -175,10 +175,10 @@ SUBROUTINE add_hub (self, target, source, hub, all_cells)
   end if
 END SUBROUTINE add_hub
 
-!> =====================================================================
+!=======================================================================
 !> Remove a particular data hub. If clear is set to be .true., all hubs
 !> in the list are removed.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE remove_hub (self, id, clear)
   class(data_hub_t) :: self
   integer, optional :: id
@@ -228,12 +228,12 @@ SUBROUTINE remove_hub (self, id, clear)
   end if
 END SUBROUTINE remove_hub
 
-!> =====================================================================
+!=======================================================================
 !> Initialize the method when both the target and the source are of the
 !> same level of refinement. Approach is identical to the dnload_same in
 !> download_mod.
 !> If "no no-mans land" mode is used, m%n has to be changed into (m%n-1)
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_same (self)
   class(data_hub_t) :: self
   ! ....................................................................
@@ -267,11 +267,11 @@ SUBROUTINE init_same (self)
   end do
 END SUBROUTINE init_same
 
-!> =====================================================================
+!=======================================================================
 !> Download guard cell values from the source, which has the same level
 !> of refinement, as the target patch. Download range is pre-determined
 !> by the initialization subroutine above.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE dnload_from_same (self, only)
   class(data_hub_t) :: self
   integer, optional :: only
@@ -311,10 +311,10 @@ SUBROUTINE dnload_from_same (self, only)
   call trace%end(itimer)
 END SUBROUTINE dnload_from_same
 
-!> =====================================================================
+!=======================================================================
 !> Initialize the method when the source is of a higher level of refinement
 !> than the target patch.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_higher (self)
   class(data_hub_t) :: self
   ! ....................................................................
@@ -387,13 +387,13 @@ SUBROUTINE init_higher (self)
   end do
 END SUBROUTINE init_higher
 
-!> =====================================================================
+!=======================================================================
 !> Download guard cell values from the source, which has a larger level
 !> of refinement, than the target patch. A temporary scratch cube is
 !> created and values the right entries in the source memory slots are
 !> copied. Then an interpolation is done. Can be easily extended to
 !> accommodate the van Leer interpolation scheme.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE dnload_from_higher (self, only)
   class(data_hub_t) :: self
   integer, optional :: only
@@ -493,10 +493,10 @@ SUBROUTINE dnload_from_higher (self, only)
   call trace%end(itimer)
 END SUBROUTINE dnload_from_higher
 
-!> =====================================================================
+!=======================================================================
 !> Initialize the method when the source is of a lower level of refinement
 !> than the target patch.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_lower (self)
   class(data_hub_t) :: self
   ! ....................................................................
@@ -589,7 +589,7 @@ SUBROUTINE init_lower (self)
   end do
 END SUBROUTINE init_lower
 
-!> =====================================================================
+!=======================================================================
 !> Download guard cell values from the source, which has a lower level
 !> of refinement, than the target patch. A temporary scratch array is
 !> created and are taken from the source patch. If the needed values lay
@@ -598,7 +598,7 @@ END SUBROUTINE init_lower
 !> neighbors is done. All values are initially interpolated in time to the
 !> target%time and then interpolated in space to get the required quantities.
 !> Can be extended to accommodate the van Leer interpolation scheme.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE dnload_from_lower (self, only)
   class(data_hub_t) :: self
   integer, optional :: only
@@ -788,11 +788,11 @@ SUBROUTINE dnload_from_lower (self, only)
  call trace%end(itimer)
 END SUBROUTINE dnload_from_lower
 
-!> =====================================================================
+!=======================================================================
 !> Some support data is needed, when download_lower is done. Usually it
 !> resides in the target patch. This data is spatially interpolated to
 !> the source resolution and added to the scratch array.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE check_in_target (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   class(data_hub_t)                 :: self
   real(8)                           :: pos(3), time
@@ -856,14 +856,14 @@ SUBROUTINE check_in_target (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   end if
 END SUBROUTINE check_in_target
 
-!> =====================================================================
+!=======================================================================
 !> In some cases, e.g. corners, ends of edges, some support data is located
 !> not in the target patch, but rather in adjacent nbors. They have the
 !> same level of refinement as the target or the source. This data is
 !> spatially interpolated to the source resolution, if needed as well as
 !> interpolated in time to the needed target time. Then it is added
 !> to the scratch array.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   class(data_hub_t)                 :: self
   real(8)                           :: pos(3), time
@@ -967,9 +967,9 @@ SUBROUTINE check_in_nbors (self, pos, iv, time, jt, pt, id, found, scr, rt_scr)
   end do
 END SUBROUTINE check_in_nbors
 
-!> =====================================================================
+!=======================================================================
 !> Update the guard zone values
-!> =====================================================================
+!=======================================================================
 SUBROUTINE update (self, link, all_cells, only)
   class(data_hub_t):: self
   class(link_t), pointer :: link

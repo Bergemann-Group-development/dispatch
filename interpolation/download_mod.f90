@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !>  download_link: takes care of downloads to link%task
 !>           same: called for patches on the same level
 !>         differ: called for patches on different levels
@@ -12,7 +12,7 @@
 !> The "filled" array stores the level of the value stored in the cell, and since
 !> staggering can vary for different variables, there needs to be an array for
 !> each variable.
-!> =============================================================================
+!===============================================================================
 MODULE download_mod
   USE iso_fortran_env, only: int8
   USE io_mod
@@ -56,9 +56,9 @@ MODULE download_mod
   type(download_t), public:: download
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialise downloading and interpolating options.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(download_t):: self
   integer:: iostat
@@ -91,9 +91,9 @@ SUBROUTINE init (self)
   call trace%end()
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Initialise downloading and interpolating options.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test (self)
   class(download_t):: self
   !.............................................................................
@@ -226,9 +226,9 @@ SUBROUTINE test (self)
   self%interpolate => SelectInterpolator(self%order_interpolator)
   call trace%end()
 contains
-!> =============================================================================
+!===============================================================================
 !> Set position systematically
-!> =============================================================================
+!===============================================================================
   subroutine set_position (source, target, j)
     type(patch_t) :: source, target
     integer       :: j
@@ -249,9 +249,9 @@ contains
     source%t = 0d0; source%time=0d0; source%iit=1
     target%t = 0d0; target%time=0d0; target%iit=1
 end subroutine set_position
-!> =============================================================================
+!===============================================================================
 !> Set some values to recover
-!> =============================================================================
+!===============================================================================
 subroutine set_values (patch)
   type(patch_t)          :: patch
   class(mesh_t), pointer :: m1, m2, m3
@@ -276,9 +276,9 @@ subroutine set_values (patch)
     end do
   end do
 end subroutine set_values
-!> =============================================================================
+!===============================================================================
 !> Check values, including in guard zones
-!> =============================================================================
+!===============================================================================
 subroutine check_values (patch, ok)
   type(patch_t)          :: patch
   class(mesh_t), pointer :: m1, m2, m3
@@ -324,13 +324,13 @@ subroutine check_values (patch, ok)
     write (io_unit%log,*)'check_values: n_zero, n_ok, n_nok =', n
   end if
 end subroutine check_values
-!> =============================================================================
+!===============================================================================
 END SUBROUTINE test
 
-!> =============================================================================
+!===============================================================================
 !> Select the best method for each case.  So far, this only supports static
 !> patches at the same level, or static patches one level up or down
-!> =============================================================================
+!===============================================================================
 SUBROUTINE download_link (self, link, all_cells, only, all_times)
   class(download_t):: self
   class(link_t), pointer:: link
@@ -515,7 +515,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   call trace%end (itimer)
 END SUBROUTINE download_link
 
-!> =============================================================================
+!===============================================================================
 !> Find the target index ranges that correspond to the overlap region, for
 !> download from source (source has higher, same, or lower level than target).
 !>
@@ -523,7 +523,7 @@ END SUBROUTINE download_link
 !> is inside the authoritative region; i.e., it must lie to the right of the
 !> source point r(li).
 !> FIXME: To be validated/improved for moving meshes
-!> =============================================================================
+!===============================================================================
 SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   class(patch_t), pointer :: target, source
   integer                 :: iv, l(3), u(3), offset(3), li, ui
@@ -602,10 +602,10 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   end if
   call trace%end()
 contains
-!> =============================================================================
+!===============================================================================
 !> Local function that returns the index in target index space, given a position
 !> p, in relative target coordinates.
-!> =============================================================================
+!===============================================================================
   function target_index (p, roundup, nearest) result (ii)
     real(8)           :: p(3)
     logical, optional :: roundup, nearest
@@ -622,13 +622,13 @@ contains
   end function target_index
 END SUBROUTINE dnload_range
 
-!> =============================================================================
+!===============================================================================
 !> Copy guard zone info from source patch at the same level
 !>
 !> same
 !>   dnload_range
 !>   time_interval
-!> =============================================================================
+!===============================================================================
 SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
   class(download_t):: self
   class(patch_t), pointer :: target, source
@@ -925,13 +925,13 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
   call trace%end (itimer)
 END SUBROUTINE same_linear
 
-!> =============================================================================
+!===============================================================================
 !> Copy guard zone info from source patch at the same level
 !>
 !> same
 !>   dnload_range
 !>   time_interval
-!> =============================================================================
+!===============================================================================
 SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
   class(download_t):: self
   class(patch_t), pointer :: target, source
@@ -1160,9 +1160,9 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
   call trace%end (itimer)
 END SUBROUTINE same_lagrange
 
-!> =============================================================================
+!===============================================================================
 !> Same as above, but for RT_solver type patches
-!> =============================================================================
+!===============================================================================
 SUBROUTINE same_rt (self, target, source)
   class(download_t):: self
   class(patch_t), pointer :: target, source
@@ -1203,9 +1203,9 @@ SUBROUTINE same_rt (self, target, source)
   call trace%end (itimer)
 END SUBROUTINE same_rt
 
-!> =============================================================================
+!===============================================================================
 !> Interpolate guard zone info from source patch at a different level
-!> =============================================================================
+!===============================================================================
 SUBROUTINE different (self, target, source, all_cells, only)
   class(download_t):: self
   class(patch_t), pointer :: target, source
@@ -1292,9 +1292,9 @@ SUBROUTINE different (self, target, source, all_cells, only)
   call trace%end (itimer)
 END SUBROUTINE different
 
-!> =============================================================================
+!===============================================================================
 !> Interpolate guard zone info from source patch at a lower level
-!> =============================================================================
+!===============================================================================
 SUBROUTINE different_prolong (self, target, source, all_cells, only)
   class(download_t):: self
   class(patch_t), pointer :: target, source
@@ -1441,9 +1441,9 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
   call trace%end (itimer)
 END SUBROUTINE different_prolong
 
-!> =============================================================================
+!===============================================================================
 !> Same as above, but for RT_solver type patches
-!> =============================================================================
+!===============================================================================
 SUBROUTINE different_rt (self, target, source)
   class(download_t):: self
   class(patch_t), pointer :: target, source
@@ -1480,9 +1480,9 @@ SUBROUTINE different_rt (self, target, source)
   call trace%end (itimer)
 END SUBROUTINE different_rt
 
-!> =============================================================================
+!===============================================================================
 !> Restrict guard zone info from source patch at a higher level
-!> =============================================================================
+!===============================================================================
 SUBROUTINE different_restrict (self, target, source, only)
   class(download_t):: self
   class(patch_t), pointer :: target, source
@@ -1598,9 +1598,9 @@ SUBROUTINE different_restrict (self, target, source, only)
   call trace%end (itimer)
 END SUBROUTINE different_restrict
 
-!> =============================================================================
+!===============================================================================
 !> Create a temporary nbor list, sorted by decreasing level
-!> =============================================================================
+!===============================================================================
 SUBROUTINE sort_nbors_by_level (this, head)
   class(link_t), pointer:: this, head
   class(link_t), pointer:: nbor, find, prev
@@ -1670,7 +1670,7 @@ contains
   end subroutine nbor_print
 END SUBROUTINE sort_nbors_by_level
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE clean_sorted_nbor_list (head)
   class(link_t), pointer:: head
   class(link_t), pointer:: next, prev
@@ -1684,7 +1684,7 @@ SUBROUTINE clean_sorted_nbor_list (head)
   end do
 END SUBROUTINE clean_sorted_nbor_list
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE set_verbose (new)
   integer:: new
   verbose = new

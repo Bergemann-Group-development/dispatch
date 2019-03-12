@@ -1,8 +1,8 @@
-!> =============================================================================
+!===============================================================================
 !> Demonstrate and test OMP task creation. The program generates a number of
 !> independent task, which are then executed by all threads, including the 
 !> master thread, which created the tasks.
-!> =============================================================================
+!===============================================================================
 MODULE task_mod
   USE omp_lib
   USE omp_mod
@@ -31,9 +31,9 @@ MODULE task_mod
   character(len=64), save:: format='(i10,f12.6,2x,a20,3i5,3x,2f6.2)'
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a task
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, ix, iy)
   class(task_t):: self
   integer, save:: id=0
@@ -48,11 +48,11 @@ SUBROUTINE init (self, ix, iy)
   write (*,format) omp_get_thread_num(),wallclock(),'   init: task', self%id
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 !> Update a task.  Tasks with iy=1 have no nbor, and hence can update at once.
 !> Other tasks have to wait until their nbor (at iy-1) has updated, before they
 !> can update.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(task_t):: self
   integer(8):: i, n, thread
@@ -93,9 +93,9 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 END MODULE task_mod
 
-!> =============================================================================
+!===============================================================================
 !> Test program
-!> =============================================================================
+!===============================================================================
 PROGRAM test
   USE task_mod
   implicit none

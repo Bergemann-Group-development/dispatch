@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Generic DISPATCH main program for Cartesian meshes
-!> =============================================================================
+!===============================================================================
 PROGRAM dispatch
   USE ic_mod
   USE setup_mod
@@ -15,5 +15,5 @@ PROGRAM dispatch
   call rt_setup(cartesian%task_list)            ! Add RT subtasks to task list
   call dispatcher%execute (cartesian%task_list) ! Call dispatcher
   call setup%end
-!> =============================================================================
+!===============================================================================
 END PROGRAM dispatch

@@ -1,8 +1,8 @@
-!> =============================================================================
+!===============================================================================
 !> Task list data type, with methods for startup and updates.  Message handling
 !> is inherited from the task_mesg_t data type.  At this level, task handling
 !> is aware of experiment_t data types, and all data types it has inheritet from.
-!> =============================================================================
+!===============================================================================
 MODULE task_list_mod
   USE io_mod
   USE trace_mod
@@ -41,10 +41,10 @@ MODULE task_list_mod
   public:: task2patch
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the task list, by first initializing the list tasks, then making
 !> neighbor lists, and finally checking if they are ready to execute
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, name)
   class(task_list_t):: self
   character(len=*), optional:: name
@@ -71,7 +71,7 @@ SUBROUTINE init (self, name)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_levels (self)
   class(task_list_t):: self
   type(link_t), pointer:: link
@@ -93,10 +93,10 @@ SUBROUTINE init_levels (self)
   write (io%output,*) 'task_list_t%init_levels: levelmin =', levelmin, refine%levelmin
 END SUBROUTINE init_levels
 
-!> =============================================================================
+!===============================================================================
 !> Execute the task list, updating it until it is empty.  With !$omp parallel here,
 !> everything local to self%update is thread private.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE startup (self)
   class(task_list_t):: self
   !.............................................................................
@@ -161,10 +161,10 @@ SUBROUTINE startup (self)
   call trace%end (itimer)
 END SUBROUTINE startup
 
-!> =============================================================================
+!===============================================================================
 !> Execute the task list, updating it until it is empty.  With !$omp parallel here,
 !> everything local to self%update is thread private.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE execute (self)
   USE omp_timer_mod
   class(task_list_t):: self
@@ -196,9 +196,9 @@ SUBROUTINE execute (self)
   call trace%end (itimer)
 END SUBROUTINE execute
 
-!> =============================================================================
+!===============================================================================
 !> Common part of task list update, used by dispatchers
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self, head, test, was_refined, was_derefined)
   class(task_list_t):: self
   class(link_t), pointer:: head
@@ -365,9 +365,9 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   call trace%end (itimer)
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Average over a variable with index idx
-!> =============================================================================
+!===============================================================================
 FUNCTION average (self, idx, time)
   class (task_list_t):: self
   integer:: idx
@@ -416,9 +416,9 @@ FUNCTION average (self, idx, time)
   call trace%end()
 END FUNCTION average
 
-!> =============================================================================
+!===============================================================================
 !> Append a task list to self
-!> =============================================================================
+!===============================================================================
 SUBROUTINE append_task_list (self, task_list)
   class (task_list_t):: self
   class (task_list_t), pointer:: task_list
@@ -430,9 +430,9 @@ SUBROUTINE append_task_list (self, task_list)
   call trace%end()
 END SUBROUTINE append_task_list
 
-!> =============================================================================
+!===============================================================================
 !> Print a table with task id and all neighbors
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print1 (self, label)
   class (task_list_t):: self
   character(len=*), optional:: label
@@ -449,9 +449,9 @@ SUBROUTINE print1 (self, label)
   call trace%end()
 END SUBROUTINE print1
 
-!> =============================================================================
+!===============================================================================
 !> Dump nbor relations, flags and status bits around io%id_debug
-!> =============================================================================
+!===============================================================================
 SUBROUTINE info (self)
   class(task_list_t):: self
   class(link_t), pointer:: link
@@ -465,9 +465,9 @@ SUBROUTINE info (self)
   end do
 END SUBROUTINE info
 
-!> =============================================================================
+!===============================================================================
 !> Upgrade task pointer to experiment level
-!> =============================================================================
+!===============================================================================
 FUNCTION task2experiment (task) RESULT (exper)
   class(task_t), pointer:: task
   class(experiment_t), pointer:: exper

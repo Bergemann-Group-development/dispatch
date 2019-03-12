@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> This is a start on a module that could become a general turbulence forcing
 !> module, where the standard forcing we have been using in RAMSES is implemented
-!> =============================================================================
+!===============================================================================
 MODULE initial_mod
   USE io_mod
   USE trace_mod
@@ -26,9 +26,9 @@ MODULE initial_mod
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
    class(initial_t):: self
    integer, save:: seed=-33
@@ -72,14 +72,14 @@ SUBROUTINE init (self)
    call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE cleanup
   if (associated(buffer)) deallocate(buffer)
 END SUBROUTINE cleanup
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
-!> =============================================================================
+!===============================================================================
 FUNCTION single_solenoidal (self, m, idx) RESULT (ff)
   class(initial_t)      :: self
   type(index_t)         :: idx
@@ -113,9 +113,9 @@ FUNCTION single_solenoidal (self, m, idx) RESULT (ff)
   call trace_end
 END FUNCTION single_solenoidal
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
-!> =============================================================================
+!===============================================================================
 FUNCTION single_compressive (self, m, idx) RESULT (ff)
   class(initial_t)        :: self
   type(index_t):: idx
@@ -149,9 +149,9 @@ FUNCTION single_compressive (self, m, idx) RESULT (ff)
   call trace_end
 END FUNCTION single_compressive
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
-!> =============================================================================
+!===============================================================================
 FUNCTION single_advection (self, m, idx) RESULT (ff)
   class(initial_t)        :: self
   type(index_t)           :: idx
@@ -184,9 +184,9 @@ FUNCTION single_advection (self, m, idx) RESULT (ff)
   call trace_end
 END FUNCTION single_advection
 
-!> =============================================================================
+!===============================================================================
 !> Initialize from a raw data file
-!> =============================================================================
+!===============================================================================
 FUNCTION raw (self, m, idx) RESULT (ff)
   USE io_unit_mod
   class(initial_t):: self

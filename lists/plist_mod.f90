@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Particle list, extending a doubly-linked list.  Each particle maintains 
 !> arrays with previous positions, velocities, and times, which are brought
 !> along if/when it changes owner patch or rank.  The memory footprint of a
@@ -6,7 +6,7 @@
 !> time, all together 32 words = 128 bytes (plus a few words for id and weight).
 !> This could be reduced to half, by keeping only two previous positions and
 !> velocities in the data type.
-!> =============================================================================
+!===============================================================================
 MODULE plist_mod
   USE dll_mod
   USE omp_timer_mod
@@ -33,9 +33,9 @@ MODULE plist_mod
   !-----------------------------------------------------------------------------
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a particle with a unique ID
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class (particle_t):: self
   !-----------------------------------------------------------------------------
@@ -47,9 +47,9 @@ SUBROUTINE init (self)
   allocate (self%r(3,nt), self%dr(3,nt), self%t(nt))
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a particle list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test_plist (self, n)
   class(plist_t):: self
   integer:: n
@@ -116,9 +116,9 @@ SUBROUTINE test_plist (self, n)
   print *, 'particle list n =', self%n, used/self%n
 END SUBROUTINE test_plist
 
-!> =============================================================================
+!===============================================================================
 !> Print a particle list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print (self)
   class(plist_t):: self
   class(dll_node_t), pointer:: p

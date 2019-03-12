@@ -1,9 +1,9 @@
 MODULE setup_mod
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> $Id$
 !> Setup a blob and set of Rubik's Cube patches
 !> surrounding it. Cast a high temperature radiation from one boundary.
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE io_mod
   USE bits_mod
   USE omp_mod
@@ -23,7 +23,7 @@ MODULE setup_mod
   type(setup_t), public:: setup
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup a general Rubik hierarchy: NxNzN patches per level, and zoom factor M
 !>
 !> Rubik's cube has N=3, M=3
@@ -33,7 +33,7 @@ CONTAINS
 !> which is natural when treating the gravitational influence of the Sun by going
 !> into a comoving and rotating coordinate system.  The basic size unit is the
 !> size of the central patch, which is taken to be 10% larger than the planet.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, label)
   class(setup_t):: self
   character(len=*), optional:: label

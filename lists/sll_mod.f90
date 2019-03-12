@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Singly link list module, carrying any kind of 
-!> =============================================================================
+!===============================================================================
 MODULE sll_mod
   implicit none
   private
@@ -22,7 +22,7 @@ MODULE sll_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE append (self, new)
   class(sll_t):: self
   class(sll_node_t), pointer:: new
@@ -34,7 +34,7 @@ SUBROUTINE append (self, new)
   self%n = self%n+1
 END SUBROUTINE append
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE prepend (self, new)
   class(sll_t):: self
   class(sll_node_t), pointer:: new
@@ -45,7 +45,7 @@ SUBROUTINE prepend (self, new)
   self%n = self%n+1
 END SUBROUTINE prepend
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE find (self, old, prev, next)
   class(sll_t):: self
   class(sll_node_t), pointer:: prev, next
@@ -63,7 +63,7 @@ SUBROUTINE find (self, old, prev, next)
   nullify (prev, next)
 END SUBROUTINE find
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE insert_after (self, old, new)
   class(sll_t):: self
   class(sll_node_t), pointer:: old, new
@@ -74,7 +74,7 @@ SUBROUTINE insert_after (self, old, new)
   self%n = self%n+1
 END SUBROUTINE insert_after
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove (self, prev)
   class(sll_t):: self
   class(sll_node_t), pointer:: prev
@@ -86,7 +86,7 @@ SUBROUTINE remove (self, prev)
   end if
 END SUBROUTINE remove
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE test (self)
   class(sll_t):: self
   class(*), pointer:: car, save

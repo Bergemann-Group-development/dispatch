@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Interface module, with date type procedures that are called from solver_t
 !> procedures and which mainly USE Bifrost side module files
-!> =============================================================================
+!===============================================================================
 MODULE bifrost_mod
   ! Dispatch modules
   USE trace_mod
@@ -46,9 +46,9 @@ MODULE bifrost_mod
   '$Id$'
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize mem storage that fits the Bifrost MHD array sizes.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(bifrost_t):: self
   integer:: n(3)
@@ -62,9 +62,9 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Put patch mem data back to Bifrost MHD variables
-!> =============================================================================
+!===============================================================================
 SUBROUTINE put (self, mem, m, time)
   class(bifrost_t):: self
   real, dimension(:,:,:,:):: mem
@@ -94,9 +94,9 @@ SUBROUTINE put (self, mem, m, time)
   call trace%end
 END SUBROUTINE put
 
-!> =============================================================================
+!===============================================================================
 !> Get patch mem data from Bifrost MHD variables
-!> =============================================================================
+!===============================================================================
 SUBROUTINE get (self, mem, m, time, dtime)
   class(bifrost_t):: self
   class(mesh_t), dimension(:), pointer:: m
@@ -128,9 +128,9 @@ SUBROUTINE get (self, mem, m, time, dtime)
   call trace%end
 END SUBROUTINE get
 
-!> =============================================================================
+!===============================================================================
 !> Download guard zone values
-!> =============================================================================
+!===============================================================================
 SUBROUTINE dnload (self)
   class(bifrost_t):: self
   !-----------------------------------------------------------------------------
@@ -138,11 +138,11 @@ SUBROUTINE dnload (self)
   call trace%end
 END SUBROUTINE dnload
 
-!> =============================================================================
+!===============================================================================
 !> Take one time step, whatever that means.  The patch memory, time and time
 !> step should be updated.  Whether the code does RK updates internally, or
 !> leaves it to bifrost_mod.f90 calling DISPATCH timestep_m.f90 is optional.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update_bifrost (self, time, dtime)
   class(bifrost_t):: self
   real(kind=8):: time, dtime
@@ -247,10 +247,10 @@ SUBROUTINE update_bifrost (self, time, dtime)
   call trace%end
 END SUBROUTINE update_bifrost
 
-!> =============================================================================
+!===============================================================================
 !> Pack information about a patch into a buffer.  Let the patch_t%pack take
 !> care of most of it, and then append whatever more is needed
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pack (self)
   class(bifrost_t):: self
   !-----------------------------------------------------------------------------
@@ -258,11 +258,11 @@ SUBROUTINE pack (self)
   call trace%end
 END SUBROUTINE pack
 
-!> =============================================================================
+!===============================================================================
 !> Unpack an MPI buffer.  The patch_t%unpack takes care of locating the patch,
 !> and unpacking the patch related header, after which remains only to unpack
 !> whatever else we appended
-!> =============================================================================
+!===============================================================================
 SUBROUTINE unpack (self)
   class(bifrost_t):: self
   !-----------------------------------------------------------------------------
@@ -327,7 +327,7 @@ SUBROUTINE dealloc_scratches(self)
   call trace%end
 END SUBROUTINE dealloc_scratches
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE void (self, out)
   class (bifrost_t):: self
   real, dimension(:,:,:):: out

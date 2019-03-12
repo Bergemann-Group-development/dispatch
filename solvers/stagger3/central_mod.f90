@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> $Id$
-!> =============================================================================
+!===============================================================================
 MODULE central_mod
   !USE mpi_send_mod
   !USE mpi_coords_mod
@@ -15,11 +15,11 @@ MODULE central_mod
   logical:: first_time=.true.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Derivatives evaluated with central differences.  When using MPI domain
 !> decomposition, one needs to get a single slice of "ghost cells" on each of
 !> the 6 faces of the local domain.
-!> =============================================================================
+!===============================================================================
 FUNCTION dx (self, f)
   class(central_t):: self
   integer:: m, rank, rq(2), k
@@ -47,7 +47,7 @@ FUNCTION dx (self, f)
   !call mpi_send%waitall (2, rq)
   dx(  m  ,:,:) = (recv      -f(  m-1,:,:))*c  ! remote (1,:,:) slice needed!
 END FUNCTION dx
-!> =============================================================================
+!===============================================================================
 FUNCTION dy (self, f)
   class(central_t):: self
   integer:: n(3), m, rq(2)
@@ -71,7 +71,7 @@ FUNCTION dy (self, f)
   !call mpi_send%waitall (2, rq)
   dy(:,  m  ,:) = (recv      -f(:,  m-1,:))*c  ! remote (:,1,:) slice needed!
 END FUNCTION dy
-!> =============================================================================
+!===============================================================================
 FUNCTION dz (self, f)
   class(central_t):: self
   integer:: n(3), m, rq(2)

@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Boundary conditions for centered variables, which have the physical boundary
 !> in-between mesh points lo and li, or/and in-between mesh points ui and uo.
-!> =============================================================================
+!===============================================================================
 MODULE rt_boundaries_mod
   USE io_mod
   USE trace_mod
@@ -68,9 +68,9 @@ MODULE rt_boundaries_mod
   type(rt_boundaries_t), public :: rt_boundaries
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialize the boundary data type
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init (self, llc, urc)
   class(rt_boundaries_t)              :: self
   real(8):: llc(3), urc(3)
@@ -112,9 +112,9 @@ SUBROUTINE update(self)
   !---------------------------------------------------------------------
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Impose spherical boundary condition, assuming that the sphere is jagged.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical_jagged (self, src, rk, m)
   class(rt_boundaries_t)                   :: self
   real(kind=KindRTVar), dimension(:,:,:,:) :: src, rk
@@ -159,11 +159,11 @@ SUBROUTINE spherical_jagged (self, src, rk, m)
   call trace%end(itimer)
 END SUBROUTINE spherical_jagged
 
-!> =============================================================================
+!===============================================================================
 !> Make the embryo totally opaque, and make sure no light is picked up from any
 !> of the optically thick cells.  This needs to be done well inside the dS/dt=0
 !> boundary, to avoid the spurious cooling / heating at the discontinuity.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical_jagged2 (self, src,rk, m)
   class(rt_boundaries_t)                   :: self
   real(kind=KindRTVar), dimension(:,:,:,:) :: src, rk
@@ -200,9 +200,9 @@ SUBROUTINE spherical_jagged2 (self, src,rk, m)
   call trace_end
 END SUBROUTINE spherical_jagged2
 
-!> =============================================================================
+!===============================================================================
 !> Impose spherical boundary condition, assuming that the sphere is jagged.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical_jagged0 (self, dq, m, v)
   class(rt_boundaries_t)                   :: self
   real(kind=KindRTVar), dimension(:,:,:,:) :: dq
@@ -245,9 +245,9 @@ SUBROUTINE spherical_jagged0 (self, dq, m, v)
   call trace%end(itimer)
 END SUBROUTINE spherical_jagged0
 
-!> =====================================================================
+!=======================================================================
 !> Initialize the outer boundary shells for rt patches
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_outer_bndry (self, n, ndir, mesh)
   class(rt_outer_bndry_t) :: self
   class(mesh_t), pointer, optional :: mesh(:)
@@ -261,9 +261,9 @@ SUBROUTINE init_outer_bndry (self, n, ndir, mesh)
   end if
 END SUBROUTINE init_outer_bndry
 
-!> =============================================================================
+!===============================================================================
 !> Set bits in the status word
-!> =============================================================================
+!===============================================================================
 SUBROUTINE set (self, bits)
   class(rt_outer_bndry_t) :: self
   integer                :: bits
@@ -271,9 +271,9 @@ SUBROUTINE set (self, bits)
   self%bits = ior (self%bits, bits)
 END SUBROUTINE set
 
-!> =============================================================================
+!===============================================================================
 !> Check bits in the status word
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION is_set (self, bits)
   class(rt_outer_bndry_t) :: self
   integer               :: bits
@@ -281,9 +281,9 @@ LOGICAL FUNCTION is_set (self, bits)
   is_set = (iand (self%bits, bits) /=0)
 END FUNCTION is_set
 
-!> =============================================================================
+!===============================================================================
 !> Check bits in the status word
-!> =============================================================================
+!===============================================================================
 LOGICAL FUNCTION is_clear (self, bits)
   class(rt_outer_bndry_t) :: self
   integer               :: bits
@@ -291,9 +291,9 @@ LOGICAL FUNCTION is_clear (self, bits)
   is_clear = (iand (self%bits, bits) ==0)
 END FUNCTION is_clear
 
-!> =====================================================================
+!=======================================================================
 !> Apply a boundary condition
-!> =====================================================================
+!=======================================================================
 SUBROUTINE condition (self, f,src,rk)
   class(rt_outer_bndry_t) :: self
   real(kind=KindRTVar)           :: f(:,:,:,:), src(:,:,:,:), rk(:,:,:,:)

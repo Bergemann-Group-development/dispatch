@@ -1,10 +1,10 @@
-!> =============================================================================
+!===============================================================================
 !> Radiative transfer static protoplanetary disk benchmark
 !> http://adsabs.harvard.edu/abs/2015A&A...574A..81R
 !> See also: Kuiper & Klessen, 2013, A&A, 555, A7;
 !>           Pinte et al., 2009, A&A, 498, 967;
 !>           Pascucci et al., 2004, A&A, 417, 793.
-!> =============================================================================
+!===============================================================================
 MODULE initial_mod
   USE io_mod
   USE trace_mod
@@ -40,9 +40,9 @@ MODULE initial_mod
   real, parameter:: tiny = 1.0e-37
 
 CONTAINS
-!> =============================================================================
+!===============================================================================
 !> Read namelist and perform simple initialisations.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=*):: solver
@@ -87,9 +87,9 @@ SUBROUTINE init (self, solver, gamma)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Set the initial conditions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE initial_conditions (self, mesh, mem, idx)
   class(initial_t) :: self
   type(index_t):: idx
@@ -145,9 +145,9 @@ SUBROUTINE initial_conditions (self, mesh, mem, idx)
   call trace_end
 END SUBROUTINE initial_conditions
 
-!> =============================================================================
+!===============================================================================
 !> Calculate the PPD gas density following Pascucci et al. (2004).
-!> =============================================================================
+!===============================================================================
 FUNCTION pascucci_disk (self, z, r, phi) RESULT (rho)
   class(initial_t):: self
   real, intent(in):: z, r, phi
@@ -159,9 +159,9 @@ FUNCTION pascucci_disk (self, z, r, phi) RESULT (rho)
 
 END FUNCTION pascucci_disk
 
-!> =============================================================================
+!===============================================================================
 !> Calculate the PPD gas density following Pinte et al. (2009).
-!> =============================================================================
+!===============================================================================
 FUNCTION pinte_disk (self, z, r, phi) RESULT (rho)
   class(initial_t):: self
   real, intent(in):: z, r, phi

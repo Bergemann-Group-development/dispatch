@@ -1,4 +1,4 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> A patch extension with pebbles.  There are so many patch properties that the
 !> pebbles need, that it is much simpler to use an extension of an mhd_t, rather
 !> than to pass (or/and recompute) those properties.  The key flag is do_pebbles,
@@ -7,7 +7,7 @@
 !> to the pebble procedures.  To simplify neighbor access, the patch also has
 !> an anonymous pointer to its primary list node, which has the nbor head of the
 !> neighbor list.
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE pebbles_mod
   USE io_mod
   USE omp_lock_mod
@@ -64,9 +64,9 @@ MODULE pebbles_mod
   logical, save:: debug=.false.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Append a pebble to the list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, id)
   class(pebbles_t):: self
   integer:: id
@@ -86,9 +86,9 @@ SUBROUTINE init (self, id)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Append a pebble to the list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE append (self, pebble)
   class(pebbles_t):: self
   class(pebble_t), pointer:: pebble
@@ -117,9 +117,9 @@ SUBROUTINE append (self, pebble)
   call self%lock%unset ('append')
 END SUBROUTINE append
 
-!> =============================================================================
+!===============================================================================
 !> Remove a pebble from the list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove (self, pebble)
   class(pebbles_t):: self
   class(pebble_t), pointer:: pebble, p
@@ -178,9 +178,9 @@ SUBROUTINE remove (self, pebble)
   call self%lock%unset ('remove')
 END SUBROUTINE remove
 
-!> =============================================================================
+!===============================================================================
 !> Freeze a pebble in place, to maintain indices in output files
-!> =============================================================================
+!===============================================================================
 SUBROUTINE freeze (self, pebble)
   class(pebbles_t):: self
   class(pebble_t), pointer:: pebble, p
@@ -189,7 +189,7 @@ SUBROUTINE freeze (self, pebble)
   p%status = ior(p%status, bits%frozen)
 END SUBROUTINE freeze
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE export (self, pebble, nbor_list)
   class(pebbles_t), target:: self
   class(pebble_t), pointer:: pebble
@@ -215,8 +215,8 @@ SUBROUTINE export (self, pebble, nbor_list)
   call nbor_list%check_list ('nbor after export')
 END SUBROUTINE export
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE delete (self)
   class(pebbles_t):: self
   !.............................................................................
@@ -233,9 +233,9 @@ SUBROUTINE delete (self)
   call trace_end
 END SUBROUTINE delete
 
-!> =============================================================================
+!===============================================================================
 !> Check list consistency
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_list (self, label)
   class(pebbles_t):: self
   character(len=*), optional:: label
@@ -276,9 +276,9 @@ SUBROUTINE check_list (self, label)
   end if
 END SUBROUTINE check_list
 
-!> =============================================================================
+!===============================================================================
 !> Print top of list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print_list_n (self, n, label)
   class(pebbles_t):: self
   integer:: n

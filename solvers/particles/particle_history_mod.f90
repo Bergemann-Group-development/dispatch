@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> A particle history is a collection of particles snapshots at differnt times,
 !> and may be used for example to compute the forces at other particles at a
 !> particular time.  Procedures:
@@ -8,7 +8,7 @@
 !>  call particle_history%rotate                  : rotate time slots
 !>  call particle_history%randomize               : for tests only
 !>  call particle_history%print (time)            : print particles at time
-!> =============================================================================
+!===============================================================================
 MODULE particle_history_mod
   USE io_mod
   USE trace_mod
@@ -43,23 +43,23 @@ MODULE particle_history_mod
   integer, save:: id=0
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE kick (self)
   class (particle_t):: self
   self%v = self%v + 0.5*self%dt*self%a
 END SUBROUTINE kick
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE drift (self)
   class (particle_t):: self
   self%p = self%p + self%dt*self%v
   self%t = self%t + self%dt
 END SUBROUTINE drift
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a particle history data type, giving it a unique ID and allocated
 !> space for particle position snapshots
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class (particle_history_t):: self
   integer:: i
@@ -74,9 +74,9 @@ SUBROUTINE init (self)
   self%iit(self%n) = self%new
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Add the force at time particle%t from a particles whose history is in self
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add_particle_force_to (self, particle)
   class (particle_history_t):: self
   class (particle_t), pointer:: particle
@@ -105,9 +105,9 @@ SUBROUTINE add_particle_force_to (self, particle)
   !call trace%end (itimer)
 END SUBROUTINE add_particle_force_to
 
-!> =============================================================================
+!===============================================================================
 !> Rotate the time slots in the particle_history data type
-!> =============================================================================
+!===============================================================================
 SUBROUTINE rotate (self)
   class (particle_history_t):: self
   integer:: i, n, it, new
@@ -125,9 +125,9 @@ SUBROUTINE rotate (self)
   self%iit(n) = new
 END SUBROUTINE rotate
 
-!> =============================================================================
+!===============================================================================
 !> Randomize the positions and velocities -- for tests
-!> =============================================================================
+!===============================================================================
 SUBROUTINE randomize (self)
   class (particle_history_t):: self
   real:: f(3)
@@ -143,9 +143,9 @@ SUBROUTINE randomize (self)
   call trace%end()
 END SUBROUTINE randomize
 
-!> =============================================================================
+!===============================================================================
 !> Print the particle location and velocity at the (optional) particle time
-!> =============================================================================
+!===============================================================================
 SUBROUTINE info (self, time)
   class (particle_history_t):: self
   real, optional:: time
@@ -183,9 +183,9 @@ SUBROUTINE info (self, time)
   call trace%end()
 END SUBROUTINE info
 
-!> =============================================================================
+!===============================================================================
 !> Deallocate the particle history array
-!> =============================================================================
+!===============================================================================
 SUBROUTINE delete (self)
   class (particle_history_t):: self
   !.............................................................................

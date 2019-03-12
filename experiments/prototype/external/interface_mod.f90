@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> A generic interface to an external code, with the data to communicate between
 !> DISPATCH and the code.
 !>
@@ -8,7 +8,7 @@
 !> collisions between global names.  Module name collions, !> if any, can then
 !> be avoided by modifying the make setup, so external files are compiled "in
 !> place", rather than in the DISPATCH experiment directory.
-!> =============================================================================
+!===============================================================================
 MODULE interface_mod
   implicit none
   public

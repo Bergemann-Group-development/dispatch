@@ -1,10 +1,10 @@
-!> =============================================================================
+!===============================================================================
 !>  download_link: takes care of downloads to link%task
 !>    same_static: called for static patches on the same level
 !>  differ_static: called for static patches on different levels
 !> interpolate_to: called for nbors on different levels
 !>      find_time: computes time interpolation parameters
-!> =============================================================================
+!===============================================================================
 MODULE download_mod
   USE io_mod
   USE omp_mod
@@ -29,10 +29,10 @@ SUBROUTINE init(self)
   class(download_t):: self
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Select the best method for each case.  So far, this only supports static
 !> patches at the same level, or static patches one level up or down
-!> =============================================================================
+!===============================================================================
 SUBROUTINE download_link (link, all_cells)
   class(link_t), pointer:: link
   logical, optional:: all_cells
@@ -81,12 +81,12 @@ SUBROUTINE download_link (link, all_cells)
   call trace_end
 END SUBROUTINE download_link
 
-!> =============================================================================
+!===============================================================================
 !> Run through neighbor list and pick up guard cells. A crucial question is if
 !> it is necessary to use OMP locks to pick up the guard zone values. As long as
 !> the iit array is reconstucted from the single value source%it, which is atomic,
 !> there should be no need for locking.  This is in patch_mod::time_interpolate.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE same_static (self)
   class (link_t):: self
   class (link_t),  pointer:: nbor
@@ -215,10 +215,10 @@ SUBROUTINE same_static (self)
   call trace_end(itimer)
 END SUBROUTINE same_static
 
-!> =============================================================================
+!===============================================================================
 !> Scan the available times, and set jt(1),jt(2) to the pair that gives the
 !> smallest interpolation / extrapolation weight pt
-!> =============================================================================
+!===============================================================================
 SUBROUTINE find_time (other, time, jt, pt)
   class(patch_t), pointer:: other
   real(8):: time
@@ -282,8 +282,8 @@ SUBROUTINE find_time (other, time, jt, pt)
     'find_time: ', other%id, time, jt, pt, other%t
 END SUBROUTINE find_time
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE different_static (link)
   class(link_t), pointer:: link
   !.............................................................................
@@ -370,8 +370,8 @@ contains
   end subroutine
 END SUBROUTINE different_static
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
   class(link_t), pointer:: link
   class(patch_t), pointer:: target, source
@@ -453,9 +453,9 @@ SUBROUTINE interpolate_to (link, target, ii, source, jt, pt, idir, old_score)
   !call trace_end
 END SUBROUTINE interpolate_to
 
-!> =============================================================================
+!===============================================================================
 !> Find the best nbor patch overlapping the point with position in link%patch
-!> =============================================================================
+!===============================================================================
 SUBROUTINE find_best_nbor (link, target, position, best, jt, pt, idir, old_score, debug)
   class(link_t), pointer:: link
   class(patch_t), pointer:: target, best

@@ -34,7 +34,7 @@ MODULE pebble_trace_mod
   integer, save:: id=0
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, trace_every)
   class(pebble_trace_t):: self
   integer:: trace_every, i
@@ -51,12 +51,12 @@ SUBROUTINE init (self, trace_every)
   end if
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Add a pebble to the trace buffer, and check for output.  A trace pebble has
 !> a status word where the first 16 bits is a consecutive trace numbre, starting
 !> with 1, and running up to nbuffer.  The 17th and 18th bit are set to mark the
 !> pebble as being traced, and as being launched from the boundary, respectively
-!> =============================================================================
+!===============================================================================
 SUBROUTINE trace_pebble (self, pebble, ip, level)
   class(pebble_trace_t):: self
   class(pebble_t), pointer:: pebble
@@ -99,9 +99,9 @@ SUBROUTINE trace_pebble (self, pebble, ip, level)
   call trace_end
 END SUBROUTINE trace_pebble
 
-!> =============================================================================
+!===============================================================================
 !> Write out a pebble trace buffer
-!> =============================================================================
+!===============================================================================
 SUBROUTINE trace_output (self, i, close_key)
   class(pebble_trace_t):: self
   integer:: i, close_key
@@ -143,9 +143,9 @@ SUBROUTINE trace_output (self, i, close_key)
   call trace_end
 END SUBROUTINE trace_output
 
-!> =============================================================================
+!===============================================================================
 !> Check if this pebble is traced, and if so flush and close its file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check (self, pebble)
   class(pebble_trace_t):: self
   class(pebble_t), pointer:: pebble
@@ -156,9 +156,9 @@ SUBROUTINE check (self, pebble)
   call self%close (i)
 END SUBROUTINE check
 
-!> =============================================================================
+!===============================================================================
 !> Flush and close trace file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE close (self, i)
   class(pebble_trace_t):: self
   integer:: i
@@ -166,9 +166,9 @@ SUBROUTINE close (self, i)
   call self%trace_output (i, 0)
 END SUBROUTINE close
 
-!> =============================================================================
+!===============================================================================
 !> Flush and close all pebble trace buffers
-!> =============================================================================
+!===============================================================================
 SUBROUTINE close_all (self)
   class(pebble_trace_t):: self
   integer:: i

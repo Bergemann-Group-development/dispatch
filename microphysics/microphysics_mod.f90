@@ -25,10 +25,10 @@ MODULE microphysics_mod
   
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a microphysics object, which includes a choice of source function
 !> and opacity, and one or more methods to compute optical depth increments
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(microphysics_t) :: self
   logical :: first_time=.true.                  ! namelist on first invocation
@@ -94,5 +94,5 @@ SUBROUTINE set_wl_bins(self)
   end do
 END SUBROUTINE set_wl_bins
 
-!> =============================================================================
+!===============================================================================
 END MODULE microphysics_mod

@@ -1,8 +1,8 @@
-!> =============================================================================
+!===============================================================================
 !> Setup a simple envelope component, consisting of a Cartesian arrangement of
 !> MHD patches.  The module is an extension of the generic component_t, since it
 !> contains the extra parameters density and n_patch
-!> =============================================================================
+!===============================================================================
 MODULE envelope_mod
   USE task_list_mod
   USE list_mod
@@ -22,10 +22,10 @@ MODULE envelope_mod
   end type
   type(envelope_t), pointer:: envelope
 contains
-!> =============================================================================
+!===============================================================================
 !> The init procedure reads parameters, allocates and adds patches to the task
 !> list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, name)
   class(envelope_t):: self
   character(len=*):: name

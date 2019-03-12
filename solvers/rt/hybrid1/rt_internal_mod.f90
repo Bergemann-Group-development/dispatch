@@ -42,9 +42,9 @@ MODULE rt_internal_mod
 !-----------------------------------------------------------------------
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialise tables for internal RT solution
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_rt_internal (self)
   class(rt_internal_t) :: self
   class(ray_bndl_t),    pointer :: my_rays
@@ -111,9 +111,9 @@ SUBROUTINE init_rt_internal (self)
   call trace_end
 END SUBROUTINE init_rt_internal
 
-!> =====================================================================
+!=======================================================================
 !> Update internal RT solution
-!> =====================================================================
+!=======================================================================
 SUBROUTINE update_rt_internal (self)
   class(rt_internal_t) :: self
   character(len=16) :: stime
@@ -131,9 +131,9 @@ SUBROUTINE update_rt_internal (self)
 
 END SUBROUTINE update_rt_internal
 
-!> =====================================================================
+!=======================================================================
 !> Select appropriate method to get the upstream values
-!> =====================================================================
+!=======================================================================
 SUBROUTINE get_upstream (self)
   class(rt_internal_t) :: self
   logical:: static, local
@@ -180,9 +180,9 @@ SUBROUTINE get_upstream (self)
   call trace_end
 END SUBROUTINE get_upstream
 
-!> =====================================================================
+!=======================================================================
 !> Upstream data is on same MPI rank and tasks are not moving.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE get_local_static (self)
   class(rt_internal_t) :: self
   class(rt_internal_t), pointer :: rt_nb
@@ -298,10 +298,10 @@ SUBROUTINE get_local_static (self)
   call trace_end
 END SUBROUTINE get_local_static
 
-!> =====================================================================
+!=======================================================================
 !> Upstream data is on different MPI rank, but tasks are not moving.
 !> !!! TEMPORARY REMOVED !!!
-!> =====================================================================
+!=======================================================================
 SUBROUTINE get_remote_static (self)
   class(rt_internal_t) :: self
   !---------------------------------------------------------------------
@@ -321,9 +321,9 @@ SUBROUTINE get_remote_dynamic (self)
 END SUBROUTINE get_remote_dynamic
 
 
-!> =====================================================================
+!=======================================================================
 !> Upstream data is from boundary conditions.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE get_correction_from_BC (self)
   class(rt_internal_t) :: self
   integer :: ray, pck
@@ -350,10 +350,10 @@ SUBROUTINE get_correction_from_BC (self)
   call trace_end
 END SUBROUTINE get_correction_from_BC
 
-!> =====================================================================
+!=======================================================================
 !> Solution of RTE using the 1st orderIntegral formulation. Iwf and Irv
 !> are stored in case of overlapping patches.
-!> =====================================================================
+!=======================================================================
 
 SUBROUTINE solve_internal_integral_1st (self)
   class(rt_internal_t) :: self
@@ -433,10 +433,10 @@ SUBROUTINE solve_internal_integral_1st (self)
   call trace_end
 END SUBROUTINE solve_internal_integral_1st
 
-!> =====================================================================
+!=======================================================================
 !> Solution of RTE using the 2nd order Integral formulation.
 !> Iwf and Irv are stored in case of overlapping patches.
-!> =====================================================================
+!=======================================================================
 
 SUBROUTINE solve_internal_integral_2nd (self)
   class(rt_internal_t) :: self
@@ -546,10 +546,10 @@ SUBROUTINE solve_internal_integral_2nd (self)
   call trace_end
 END SUBROUTINE solve_internal_integral_2nd
 
-!> =====================================================================
+!=======================================================================
 !> Solution of RTE using the Feautrier formulation. Forward and reverse
 !> incoming radiation is ignored.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE solve_internal_feautrier (self)
   class(rt_Internal_t) :: self
   real, dimension(:,:,:), pointer :: a1, a2, a3, d
@@ -558,9 +558,9 @@ SUBROUTINE solve_internal_feautrier (self)
 
 END SUBROUTINE solve_internal_feautrier
 
-!> =====================================================================
+!=======================================================================
 !> Test if rt_internal module has any errors
-!> =====================================================================
+!=======================================================================
 SUBROUTINE check_rt_internal(self)
   class(rt_internal_t) :: self
   integer :: i

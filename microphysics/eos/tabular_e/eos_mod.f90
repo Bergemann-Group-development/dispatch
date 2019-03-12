@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Equation of state module for any sort of tables, provided by a reader
-!> =============================================================================
+!===============================================================================
 MODULE eos_mod
   USE io_mod
   USE mpi_mod
@@ -33,11 +33,11 @@ MODULE eos_mod
   type (eos_t), public:: eos
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The eos reader is supposed to deliver table date in the eos_reader data
 !> type, with pressure and internal energy in an (nT,nd,2) table, with NT
 !> temperature value T(nT), and nd density values d(nd).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self,nv)
   class (eos_t):: self
   real, dimension(:), pointer:: x, y
@@ -156,9 +156,9 @@ FUNCTION pressure (self, lnd, lne) RESULT (pg)
   call self%lookup ([size(lnd,1),size(lnd,2),size(lnd,3)], lnd, lne, pg=pg)
 END FUNCTION pressure
 
-!> =============================================================================
+!===============================================================================
 !> General EOS lookup routine, returning values in optional arguments
-!> =============================================================================
+!===============================================================================
 SUBROUTINE lookup (self, dim, lnd, lne, d, ee, pg, tt, ne, rk, src, gamma)
   class (eos_t):: self
   integer:: dim(3)

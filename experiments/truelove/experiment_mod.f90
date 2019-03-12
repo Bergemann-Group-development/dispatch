@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Initializiation and update for the Truelove grav. collapse experiment
-!> =============================================================================
+!===============================================================================
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
@@ -19,10 +19,10 @@ MODULE experiment_mod
 
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialise this experiment.  The experiment can be run both as periodic and
 !> non-periodic, depending on the setting 'fixedbcs' in pboundary_mod.f90
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_experiment (self)
   class(experiment_t) :: self
   !----------------------------------------------------------------------------
@@ -36,10 +36,10 @@ SUBROUTINE init_experiment (self)
   call trace%end
 END SUBROUTINE init_experiment
 
-!> =============================================================================
+!===============================================================================
 !> Update procedure for this experiment. In this case the call falls through to
 !> mhd_t%update, which organizes the preliminary and final selfgravity solutions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update_experiment (self)
   class(experiment_t):: self
   integer:: m

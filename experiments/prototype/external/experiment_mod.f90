@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> A generic interface to an external code, which needs to supply the procedures
 !> exemplified in code/dispatch_mod.f90 -- which is the ONLY new file needed in
 !> the external code. The data to be exchanged is defined in interface_mod.f90
@@ -20,7 +20,7 @@
 !> are only needed for active threads.  The number of patches per thread should
 !> normally be of the order 50, and effectively speaking the scratch memory need
 !> is thus reduced by this factor.
-!> =============================================================================
+!===============================================================================
 MODULE experiment_mod
   USE io_mod
   USE io_unit_mod
@@ -56,7 +56,7 @@ MODULE experiment_mod
   type(experiment_t), public:: experiment
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE begin (self)
   class(experiment_t):: self
   !-----------------------------------------------------------------------------
@@ -65,9 +65,9 @@ SUBROUTINE begin (self)
   call trace%end
 END SUBROUTINE begin
 
-!> =============================================================================
+!===============================================================================
 !> Interface to let the external code initialize a patch
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   !-----------------------------------------------------------------------------
@@ -84,7 +84,7 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Setup connection to the patch values via interface pointers, and copy any
 !> dynamic scalar variables to the interface module, where pointers point to
 !> targets in the external code.
@@ -97,7 +97,7 @@ END SUBROUTINE init
 !> The required order of execution is that dispatch_mod::connect_code must first
 !> set up the pointer connection from the interface to the code values, before
 !> the conndect procedure below can copy values from DISPATCH to the code.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE connect (self)
   class(experiment_t):: self
   !-----------------------------------------------------------------------------
@@ -115,9 +115,9 @@ SUBROUTINE connect (self)
   call trace%end
 END SUBROUTINE connect
 
-!> =============================================================================
+!===============================================================================
 !> Copy back those dynamic variables that have changed
-!> =============================================================================
+!===============================================================================
 SUBROUTINE disconnect (self)
   class(experiment_t):: self
   !-----------------------------------------------------------------------------
@@ -128,9 +128,9 @@ SUBROUTINE disconnect (self)
   call trace%end
 END SUBROUTINE disconnect
 
-!> =============================================================================
+!===============================================================================
 !> Download guard zone values
-!> =============================================================================
+!===============================================================================
 SUBROUTINE dnload (self)
   class(experiment_t):: self
   !-----------------------------------------------------------------------------
@@ -139,11 +139,11 @@ SUBROUTINE dnload (self)
   call trace%end
 END SUBROUTINE dnload
 
-!> =============================================================================
+!===============================================================================
 !> Update the external code with one time step.  Note that this requires the
 !> code_update to set the interface_t%u_max value, which is used by the Courant
 !> condition (patch_t%courant_condition); cf. code/dispatch_mod.f90
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
   real, dimension(:,:,:,:), pointer:: mem
@@ -157,10 +157,10 @@ SUBROUTINE update (self)
   call trace%end
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> Give the external code a chance to do I/O.  Note that this may not be 
 !> necessary, if calling self%patch_t%output is enough.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self, experiment_name)
   class(experiment_t):: self
   character(len=64), optional:: experiment_name
@@ -171,9 +171,9 @@ SUBROUTINE output (self, experiment_name)
   call trace%end
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 !> Let the external code print status info -- typically a line in a log file
-!> =============================================================================
+!===============================================================================
 SUBROUTINE info (self, nq, ntask, experiment_name)
   class(experiment_t):: self
   integer, optional:: nq, ntask
@@ -184,10 +184,10 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   call trace%end
 END SUBROUTINE info
 
-!> =============================================================================
+!===============================================================================
 !> Pack information about a patch into a buffer.  Let the patch_t%pack take 
 !> care of most of it, and then append whatever more is needed
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pack (self, mesg)
   class(experiment_t):: self
   class(mesg_t), pointer:: mesg
@@ -198,11 +198,11 @@ SUBROUTINE pack (self, mesg)
   call trace%end
 END SUBROUTINE pack
 
-!> =============================================================================
+!===============================================================================
 !> Unpack an MPI buffer.  The patch_t%unpack takes care of locating the patch,
 !> and unpacking the patch related header, after which remains only to unpack
 !> whatever else we appended
-!> =============================================================================
+!===============================================================================
 SUBROUTINE unpack (self, mesg)
   class(experiment_t):: self
   class(mesg_t), pointer:: mesg
@@ -214,7 +214,7 @@ SUBROUTINE unpack (self, mesg)
 END SUBROUTINE unpack
 
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE end (self)
   class(experiment_t):: self
   !-----------------------------------------------------------------------------
@@ -223,7 +223,7 @@ SUBROUTINE end (self)
   call trace%end
 END SUBROUTINE end
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE void (self, out)
   class (experiment_t):: self
   real, dimension(:,:,:):: out

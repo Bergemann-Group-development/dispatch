@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Read a snapshot given by Klaus Galsgaard and convert to DISPATCH data structures.
 !> 
-!> =============================================================================
+!===============================================================================
 MODULE initial_mod
   USE io_mod
   USE trace_mod
@@ -24,9 +24,9 @@ MODULE initial_mod
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
 
 CONTAINS
-!> =============================================================================
+!===============================================================================
 !> Facilitate call to `ramses%read`.  All heavy lifting is done there
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(initial_t):: self
   logical:: file_exist
@@ -39,14 +39,14 @@ SUBROUTINE init (self)
   end if
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE cleanup
   if (associated(buffer)) deallocate(buffer)
 END SUBROUTINE cleanup
 
-!> =============================================================================
+!===============================================================================
 !> This routine should give initial conditions when starting from scratch
-!> =============================================================================
+!===============================================================================
 SUBROUTINE initial_conditions (self, m, ff, idx)
   class(initial_t):: self
   type(index_t):: idx
@@ -56,10 +56,10 @@ SUBROUTINE initial_conditions (self, m, ff, idx)
   error stop 'bright_points/initial_mod::initial_conditions, no IC data or IC code'
 END SUBROUTINE initial_conditions
 
-!> =============================================================================
+!===============================================================================
 !> Reads a snapshot from Klaus and store them in Dispatch variables.  No need
 !> to be fancy here; we just hardwire the file dimensions and record size unit.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE read_conditions (self, m, ff)
   class(initial_t):: self
   class(mesh_t), pointer:: m(:)

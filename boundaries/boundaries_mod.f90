@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Boundary conditions for centered variables, which have the physical boundary
 !> in-between mesh points lo and li, or/and in-between mesh points ui and uo.
-!> =============================================================================
+!===============================================================================
 MODULE boundaries_mod
   USE io_mod
   USE trace_mod
@@ -46,9 +46,9 @@ MODULE boundaries_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the boundary data type
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, mesh, position, radius)
   class(boundaries_t)              :: self
   class(mesh_t), pointer, optional :: mesh(:)
@@ -62,9 +62,9 @@ SUBROUTINE init (self, mesh, position, radius)
   call trace%end()
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Set bits in the status word
-!> =============================================================================
+!===============================================================================
 SUBROUTINE set (self, bits)
   class(boundaries_t) :: self
   integer             :: bits
@@ -72,9 +72,9 @@ SUBROUTINE set (self, bits)
   self%bits = ior (self%bits, bits)
 END SUBROUTINE set
 
-!> =============================================================================
+!===============================================================================
 !> Check bits in the status word
-!> =============================================================================
+!===============================================================================
 FUNCTION is_set (self, bits) RESULT (out)
   class(boundaries_t) :: self
   integer             :: bits
@@ -83,9 +83,9 @@ FUNCTION is_set (self, bits) RESULT (out)
   out = (iand (self%bits, bits) /=0)
 END FUNCTION is_set
 
-!> =============================================================================
+!===============================================================================
 !> Check bits in the status word
-!> =============================================================================
+!===============================================================================
 FUNCTION is_clear (self, bits) RESULT (out)
   class(boundaries_t) :: self
   integer             :: bits
@@ -94,9 +94,9 @@ FUNCTION is_clear (self, bits) RESULT (out)
   out = (iand (self%bits, bits) ==0)
 END FUNCTION is_clear
 
-!> =============================================================================
+!===============================================================================
 !> Check bits in the status word
-!> =============================================================================
+!===============================================================================
 FUNCTION mask (self, m) RESULT (out)
   class(boundaries_t)      :: self
   class(mesh_t), pointer   :: m(:)
@@ -126,9 +126,9 @@ FUNCTION mask (self, m) RESULT (out)
   call trace_end
 END FUNCTION mask
 
-!> =============================================================================
+!===============================================================================
 !> Apply a boundary condition, using the procedure pointer "operator"
-!> =============================================================================
+!===============================================================================
 SUBROUTINE condition (self, f, iv, operator, value, select)
   class(boundaries_t)                :: self
   real(kind=KindScalarVar)           :: f(:,:,:)
@@ -192,9 +192,9 @@ contains
   end subroutine z_condition
 END SUBROUTINE condition
 
-!> =============================================================================
+!===============================================================================
 !> Apply symmetric boundary conditions in the directions indicated by status bits
-!> =============================================================================
+!===============================================================================
 SUBROUTINE symmetric (self, mem, iv, select)
   class(boundaries_t)                :: self
   real(kind=KindScalarVar), pointer  :: mem(:,:,:)
@@ -210,9 +210,9 @@ SUBROUTINE symmetric (self, mem, iv, select)
   call trace%end()
 END SUBROUTINE symmetric
 
-!> =============================================================================
+!===============================================================================
 !> Apply antisymmetric boundary conditions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE antisymmetric (self, mem, iv, select)
   class(boundaries_t)                :: self
   real(kind=KindScalarVar), pointer  :: mem(:,:,:)
@@ -227,9 +227,9 @@ SUBROUTINE antisymmetric (self, mem, iv, select)
   call trace%end()
 END SUBROUTINE antisymmetric
 
-!> =============================================================================
+!===============================================================================
 !> Apply extrapolating boundary conditions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE extrapolate (self, mem, iv, select)
   class(boundaries_t)                :: self
   real(kind=KindScalarVar), pointer  :: mem(:,:,:)
@@ -245,9 +245,9 @@ SUBROUTINE extrapolate (self, mem, iv, select)
   call trace%end()
 END SUBROUTINE extrapolate
 
-!> =============================================================================
+!===============================================================================
 !> Apply extrapolating boundary conditions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE log_extrapolate (self, mem, iv, select)
   class(boundaries_t)                :: self
   real(kind=KindScalarVar), pointer  :: mem(:,:,:)
@@ -261,9 +261,9 @@ SUBROUTINE log_extrapolate (self, mem, iv, select)
   call trace%end()
 END SUBROUTINE log_extrapolate
 
-!> =============================================================================
+!===============================================================================
 !> Apply constant boundary conditions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE constant (self, mem, iv, value, select)
   class(boundaries_t)                :: self
   real(kind=KindScalarVar), pointer  :: mem(:,:,:)
@@ -278,13 +278,13 @@ SUBROUTINE constant (self, mem, iv, value, select)
   call trace%end()
 END SUBROUTINE constant
 
-!> =============================================================================
+!===============================================================================
 !> Set indices that define the location of the physical boundary, by determining
 !> how symmtry conditions are applied across boundaries.  lo and uo are the points
 !> in the boundary zones closest to the interior, while li and ui are the neartest
 !> points in the interior, which are being used to construct the boundary zone
 !> values.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE bndry_indices (m, iv, lo, li, ui, uo)
   class(mesh_t), pointer :: m
   integer                :: iv, lo, li, ui, uo
@@ -335,9 +335,9 @@ SUBROUTINE bndry_indices (m, iv, lo, li, ui, uo)
   end if
 END SUBROUTINE bndry_indices
 
-!> =============================================================================
+!===============================================================================
 !> Apply symmtric boundary condition to the 2nd index, looping over the 1st
-!> =============================================================================
+!===============================================================================
 SUBROUTINE make_symmetric (self, f, m1, m2, iv, lower, upper, transpose, value)
   class(boundaries_t)                      :: self
   real(kind=KindScalarVar), dimension(:,:) :: f
@@ -380,9 +380,9 @@ SUBROUTINE make_symmetric (self, f, m1, m2, iv, lower, upper, transpose, value)
   end if
 END SUBROUTINE make_symmetric
 
-!> =============================================================================
+!===============================================================================
 !> Make the solution antisymmetric across the boundary
-!> =============================================================================
+!===============================================================================
 SUBROUTINE make_antisymmetric (self, f, m1, m2, iv, lower, upper, transpose, value)
   class(boundaries_t)                      :: self
   real(kind=KindScalarVar), dimension(:,:) :: f
@@ -425,10 +425,10 @@ SUBROUTINE make_antisymmetric (self, f, m1, m2, iv, lower, upper, transpose, val
   end if
 END SUBROUTINE make_antisymmetric
 
-!> =============================================================================
+!===============================================================================
 !> Make an extrapolated boundary condition, possibly transposing for vector
 !> speedup
-!> =============================================================================
+!===============================================================================
 SUBROUTINE make_extrapolated (self, f, m1, m2, iv, lower, upper, transpose, value)
   class(boundaries_t)                      :: self
   real(kind=KindScalarVar), dimension(:,:) :: f
@@ -471,10 +471,10 @@ SUBROUTINE make_extrapolated (self, f, m1, m2, iv, lower, upper, transpose, valu
   end if
 END SUBROUTINE make_extrapolated
 
-!> =============================================================================
+!===============================================================================
 !> Make an extrapolated boundary condition, possibly transposing for vector
 !> speedup
-!> =============================================================================
+!===============================================================================
 SUBROUTINE make_log_extrapolated (self, f, m1, m2, iv, lower, upper, transpose, value)
   class(boundaries_t)                      :: self
   real(kind=KindScalarVar), dimension(:,:) :: f
@@ -517,10 +517,10 @@ SUBROUTINE make_log_extrapolated (self, f, m1, m2, iv, lower, upper, transpose, 
   end if
 END SUBROUTINE make_log_extrapolated
 
-!> =============================================================================
+!===============================================================================
 !> Make an constant boundary condition, possibly transposing for vector
 !> speedup
-!> =============================================================================
+!===============================================================================
 SUBROUTINE make_constant (self, f, m1, m2, iv, lower, upper, transpose, value)
   class(boundaries_t)                      :: self
   real(kind=KindScalarVar), dimension(:,:) :: f
@@ -563,10 +563,10 @@ SUBROUTINE make_constant (self, f, m1, m2, iv, lower, upper, transpose, value)
   end if
 END SUBROUTINE make_constant
 
-!> =============================================================================
+!===============================================================================
 !> Compute stagger offsets, taking care with buggy compilers, which may need
 !> help from specific mesh information.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE set_stagger (m, h, iv)
   class(mesh_t), pointer :: m(:)
   real(8)                :: h(3)
@@ -590,9 +590,9 @@ SUBROUTINE set_stagger (m, h, iv)
   end select
 END SUBROUTINE set_stagger
 
-!> =============================================================================
+!===============================================================================
 !> Impose fixed boundary condition; scalar values
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem
@@ -624,10 +624,10 @@ SUBROUTINE spherical0 (self, mem, v, m, iv, maxfill)
   call trace_end
 END SUBROUTINE spherical0
 
-!> =============================================================================
+!===============================================================================
 !> Impose vanishing mass flux on any face that is inside the radius; this
 !> automatically makes density and entropy well behaved there also
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical_p_ns (self, p, m, position, radius)
   class(boundaries_t)                          :: self
   real(kind=KindScalarVar), pointer            :: p(:,:,:,:)
@@ -660,9 +660,9 @@ SUBROUTINE spherical_p_ns (self, p, m, position, radius)
   call trace_end
 END SUBROUTINE spherical_p_ns
 
-!> =============================================================================
+!===============================================================================
 !> Impose no-slip boundary condition; scalar values
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem
@@ -814,9 +814,9 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
   call trace_end
 END SUBROUTINE spherical_ns
 
-!> =============================================================================
+!===============================================================================
 !> Impose spherical density boundary condition, assuming that the sphere is jagged.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
   class(boundaries_t)                          :: self
   real(kind=KindScalarVar), dimension(:,:,:,:) :: mem
@@ -864,9 +864,9 @@ SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
   call trace_end
 END SUBROUTINE spherical_jagged_d
 
-!> =============================================================================
+!===============================================================================
 !> Impose spherical density boundary condition, assuming that the sphere is jagged.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem
@@ -914,9 +914,9 @@ SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
   call trace_end
 END SUBROUTINE spherical_jagged_s
 
-!> =============================================================================
+!===============================================================================
 !> Same as above, but for momentum
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical_jagged_p (self, mem, m, iv)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem
@@ -993,9 +993,9 @@ SUBROUTINE spherical_jagged_p (self, mem, m, iv)
   call trace_end
 END SUBROUTINE spherical_jagged_p
 
-!> =====================================================================
+!=======================================================================
 !> Linear antisymmetric extrapolation
-!> =====================================================================
+!=======================================================================
 FUNCTION extrapolate_antisym(ip, op, bp, yop) result(out)
   real(8) :: ip, op, bp
   real(kind=KindScalarVar):: yop, out
@@ -1003,9 +1003,9 @@ FUNCTION extrapolate_antisym(ip, op, bp, yop) result(out)
   out = yop+(ip-op)/(bp-op)*(-yop)
 END FUNCTION extrapolate_antisym
 
-!> =============================================================================
+!===============================================================================
 !> Impose fixed boundary condition; array values
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem, v
@@ -1054,10 +1054,10 @@ SUBROUTINE spherical3 (self, mem, v, m, iv, maxfill)
   call trace_end
 END SUBROUTINE spherical3
 
-!> =============================================================================
+!===============================================================================
 !> Extrapolate values across a spherical boundary, sampling values 4 mesh points
 !> from the boundary, and at the boundary, to establish a stable slope
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical_extrapolate (self, mem, m, iv)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem
@@ -1121,9 +1121,9 @@ SUBROUTINE spherical_extrapolate (self, mem, m, iv)
   call trace_end
 END SUBROUTINE spherical_extrapolate
 
-!> =============================================================================
+!===============================================================================
 !> Set constant entropy inside the boundary radius (included)
-!> =============================================================================
+!===============================================================================
 SUBROUTINE spherical_constant_entropy (self, d, e, m, s, gamma)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: d, e

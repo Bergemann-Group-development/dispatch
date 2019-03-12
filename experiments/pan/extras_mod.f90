@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Template version of a module intended for adding extra features, at a level
 !> between the basic patch and the layer of solvers.
 !>
@@ -31,7 +31,7 @@
 !> This module should generally NOT use the h5_mod (HDF5) module itself. It
 !> should instead be USEd from the actual extra modules, to assist in saving
 !> ad hoc results in a standardized format.
-!> =============================================================================
+!===============================================================================
 
 MODULE extras_mod
   !-----------------------------------------------------------------------------
@@ -73,9 +73,9 @@ MODULE extras_mod
   type(extras_t), public:: extras
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the modules that are to be included and used
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
@@ -86,9 +86,9 @@ SUBROUTINE init (self)
   call sink_patch%init                                          ! sinkp
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> The pre_update hierarchy is called before the solver updates
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
@@ -101,28 +101,28 @@ SUBROUTINE pre_update (self)
   call particle_solver%force_field (self)                       ! sinkp
 END SUBROUTINE pre_update
 
-!> =============================================================================
+!===============================================================================
 !> The post_update hierarchy is called after the solver updates
-!> =============================================================================
+!===============================================================================
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
   call self%trace_particles%post_update                         ! tracep
 END SUBROUTINE post_update
 
-!> =============================================================================
+!===============================================================================
 !> Optionally call specific output modules for the extra features
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
   call self%gpatch_t%output                                     ! keep
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 !> Interface to refinement. This uses the static instance of sink_patch, where
 !> the check_refine may cause creation of dynamic sink_patch_t instances.
-!> =============================================================================
+!===============================================================================
 INTEGER function check_refine (self, patch)
   class(extras_t):: self
   class(gpatch_t), pointer:: patch

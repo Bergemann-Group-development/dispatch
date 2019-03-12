@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Given a direction Omega, which may align mainly with the x-. y-, or z-axis,
 !> solve the integral form of the RT on short characteristics, extending across
 !> only three layers perpendicular to the main direction.
@@ -6,7 +6,7 @@
 !> This is done by transposing the incoming problem, defined by rk, src, and q,
 !> in connection with doing bilinear interpolation in the planes perpendicular
 !> to the main RT axis. 
-!> =============================================================================
+!===============================================================================
 MODULE rt_integral_mod
   USE io_mod
   USE trace_mod
@@ -30,9 +30,9 @@ MODULE rt_integral_mod
   type(rt_integral_t), public:: rt_integral
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Solve the radiative transfer for all bins, along the closest axis direction
-!> =============================================================================
+!===============================================================================
 SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
   class(rt_integral_t):: self
   real, dimension(:,:,:,:), pointer:: k, s, q
@@ -107,11 +107,11 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
   call trace%end (itimer)
 END SUBROUTINE solve
 
-!> =============================================================================
+!===============================================================================
 !> Prepare three layers; one centered on the mesh points, one before and one
 !> after, in the RT direction.  The indices in the layers are (i1,i2,ib,1:3), 
 !> where i1-i3 are 3D coords, ib is bin index, and the last is layer index
-!> =============================================================================
+!===============================================================================
 SUBROUTINE prepare_layers (self, mu, dir, mesh, in, out, i, i3)
   class(rt_integral_t):: self
   real:: mu(3)
@@ -149,9 +149,9 @@ SUBROUTINE prepare_layers (self, mu, dir, mesh, in, out, i, i3)
   call trc_end (itimer)
 END SUBROUTINE prepare_layers
 
-!> =============================================================================
+!===============================================================================
 !> Calculate perpendicular index offsets from one layer to the next
-!> =============================================================================
+!===============================================================================
 SUBROUTINE calculate_offsets (self, mu, dir, mesh, o, p)
   class(rt_integral_t):: self
   class(mesh_t), pointer:: mesh(:)
@@ -188,9 +188,9 @@ SUBROUTINE calculate_offsets (self, mu, dir, mesh, o, p)
   call trc_end
 END SUBROUTINE calculate_offsets
 
-!> =============================================================================
+!===============================================================================
 !> Bilinear interpolation in a plane
-!> =============================================================================
+!===============================================================================
 SUBROUTINE bilinear (self, in, out, o, p, l, u)
   class(rt_integral_t):: self
   real, dimension(:,:,:), intent(in)  :: in
@@ -275,14 +275,14 @@ SUBROUTINE bilinear (self, in, out, o, p, l, u)
   call trc_end (itimer)
 END SUBROUTINE bilinear
 
-!> =============================================================================
+!===============================================================================
 !> Integral solver for one layer.  The exact integral solution Q=I-S for a 2nd
 !> order polynomial has coefficient for the upstream Q, and for the 1st and 2nd
 !> derivative of S.  However, if one is doing a solution both forwards and 
 !> backward, the term in the 1st derivative cancels.
 !>
 !> The order of indices is in general permuted in the call, with 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u)
   class(rt_integral_t):: self
   real, dimension(:,:,:,:) :: k, s, qin
@@ -348,7 +348,7 @@ SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u)
   call trc_end (itimer)
 END SUBROUTINE solve1
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE diagnostics (label)
   character(len=*):: label
   real:: f
@@ -357,7 +357,7 @@ SUBROUTINE diagnostics (label)
     trim(label), n_cases*f
 END SUBROUTINE diagnostics 
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE trc_begin (label, idebug, itimer)
   character(len=*):: label
   integer, optional:: idebug
@@ -369,7 +369,7 @@ SUBROUTINE trc_begin (label, idebug, itimer)
   end if
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE trc_end (itimer)
   integer, optional:: itimer
   if (detailed_timer) then

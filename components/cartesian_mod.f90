@@ -26,9 +26,9 @@ MODULE cartesian_mod
   public task_list_t                    ! export, to avoid excessive USE
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Distribute patches in a Cartesian arrangement in a box
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, label)
   class(cartesian_t):: self
   character(len=*), optional:: label
@@ -318,9 +318,9 @@ SUBROUTINE init_exp (self, origin)
   end do
 END SUBROUTINE init_exp
 
-!> =============================================================================
+!===============================================================================
 !> Diagnostics: Number of patches and GB of mem
-!> =============================================================================
+!===============================================================================
 SUBROUTINE diagnostics
   if (mpi%master) then
     print '(a,i8)',     ' Patches per process:', np

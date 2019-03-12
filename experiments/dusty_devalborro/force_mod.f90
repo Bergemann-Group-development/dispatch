@@ -1,9 +1,9 @@
-!> =============================================================================
+!===============================================================================
 !> This is a start on a module that could become a general coupling force
 !> between dust and gas fluids when using the stagger2_multifluid solver.
 !> This force also contains the direct gravity from a central star at origin,
 !> as well as a combined coupling and gravity force.
-!> =============================================================================
+!===============================================================================
 MODULE force_mod
   USE io_mod
   USE trace_mod
@@ -36,11 +36,11 @@ MODULE force_mod
  logical, save:: first_time=.true.
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup initial values and decide what kind of drag regime to be used. The
 !> options are: linear (default), quadratic, Epstein (see Kwon (1975) or
 !> Laibe & Price (2012b)), power law, third-order expansion, and mixed
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, solver)
    class(force_t):: self
    character(len=64):: solver
@@ -89,9 +89,9 @@ SUBROUTINE init (self, solver)
    call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Coupling force between dust and gas fluids
-!> =============================================================================
+!===============================================================================
 FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   USE scalar_mod
   class(force_t):: self
@@ -254,7 +254,7 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   call trace_end
 END FUNCTION dust_gas_interaction
 
-!> =============================================================================
+!===============================================================================
 !> Calculate turbulent pressure for dust
 !>  ============================================================================
 FUNCTION turbulent_pressure(self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
@@ -312,9 +312,9 @@ FUNCTION turbulent_pressure(self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   call trace_end
 END FUNCTION turbulent_pressure
 
-!> =============================================================================
+!===============================================================================
 !> Implement both gravity from central star and planet, and dust-gas interaction
-!> =============================================================================
+!===============================================================================
 FUNCTION star_and_planet (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
   USE scalar_mod
   class(force_t):: self

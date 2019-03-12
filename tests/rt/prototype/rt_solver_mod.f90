@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Module with RT solvers -- for now just an integral solver
-!> =============================================================================
+!===============================================================================
 MODULE rt_solver_mod
   USE io_mod
   USE trace_mod
@@ -21,9 +21,9 @@ MODULE rt_solver_mod
   type (rt_solver_t), public:: rt_solver
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Choose RT solver method
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class (rt_solver_t):: self
   self%forward  => integral_forward
@@ -31,9 +31,9 @@ SUBROUTINE init (self)
   self%transfer => transfer2
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Integral solution method
-!> =============================================================================
+!===============================================================================
 SUBROUTINE integral_forward (self, dtau, exp0, S, qfw0, qfw, qfw1)
   implicit none
   class (rt_solver_t):: self
@@ -94,9 +94,9 @@ SUBROUTINE integral_forward (self, dtau, exp0, S, qfw0, qfw, qfw1)
   qfw = qfw*dtau
 END SUBROUTINE integral_forward                         ! 2d 13m 11a 1e ! 26f + 1e
 
-!> =============================================================================
+!===============================================================================
 !> Integral solution method
-!> =============================================================================
+!===============================================================================
 SUBROUTINE integral_reverse (self, dtau, exp0, S, qrv1, qrv, qrv0)
   implicit none
   class (rt_solver_t):: self
@@ -353,7 +353,7 @@ class (rt_solver_t):: self
 END SUBROUTINE transfer2
 
 SUBROUTINE feautrier_stag (self,dtau,s,q,xi,doxi)
-!> =====================================================================
+!=======================================================================
 !> Solve the transfer equation, given optical depth and source function.
 !> "Steins trick" is used; storing the sum of the three elements in each
 !> row of the tridiagonal equation system, instead of the diagonal ele-
@@ -390,7 +390,7 @@ SUBROUTINE feautrier_stag (self,dtau,s,q,xi,doxi)
 !> 12/01/2017 This routine is based on transfer_feautrier_omp from
 !> stagger. 
 !
-!> =====================================================================
+!=======================================================================
   class (rt_solver_t):: self
   real, dimension(:,:), pointer :: dtau, s, q
   real, dimension(:,:), pointer :: sp1, sp2, sp3

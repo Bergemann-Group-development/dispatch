@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Generic DISPATCH main program for Cartesian meshes.  Note that this level
 !> of the code is NOT code specific; it would / could be the same for any 
 !> DISPATCH experiment.  Calls to the external code are ONLY made in experiment_t.
@@ -24,7 +24,7 @@
 !>     code_end                 ! external code shut down
 !>   mpi%end                    ! close down MPI
 !>
-!> =============================================================================
+!===============================================================================
 PROGRAM dispatch
   USE setup_mod
   USE dispatcher_mod
@@ -36,5 +36,5 @@ PROGRAM dispatch
   call cartesian%init                           ! Initialize the patch list
   call dispatcher%method (cartesian%task_list)  ! Run the dispatcher
   call setup%end
-!> =============================================================================
+!===============================================================================
 END PROGRAM dispatch

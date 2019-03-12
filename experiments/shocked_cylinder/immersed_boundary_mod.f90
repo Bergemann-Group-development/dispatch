@@ -1,7 +1,7 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> Module for an immersed boundary patch: a set of cells interior to a domain
 !> which act as a physical boundary.
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE immersed_boundary_mod
   USE io_mod
   USE trace_mod
@@ -60,9 +60,9 @@ SUBROUTINE init_immersed_boundary (self)
   call trace_end
 END SUBROUTINE init_immersed_boundary
 
-!> =============================================================================
+!===============================================================================
 !> Set the type for an immersed boundary patch (incl. the boundary type)
-!> =============================================================================
+!===============================================================================
 SUBROUTINE set_immersed_boundary_type (self, bndy_type)
   class(immersed_boundary_t) :: self
   character(len=64), optional :: bndy_type
@@ -77,8 +77,8 @@ SUBROUTINE set_immersed_boundary_type (self, bndy_type)
   call trace_end
 END SUBROUTINE set_immersed_boundary_type
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE update_immersed_boundary (self)
   class(immersed_boundary_t) :: self
   !-----------------------------------------------------------------------------
@@ -91,9 +91,9 @@ SUBROUTINE update_immersed_boundary (self)
   call trace_end
 END SUBROUTINE update_immersed_boundary
 
-!> =============================================================================
+!===============================================================================
 !> Apply the appropriate boundary conditions to the input patch.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE slip_boundary_conditions (self, patch, ii, it)
   class(immersed_boundary_t) :: self
   class(patch_t), target :: patch
@@ -160,9 +160,9 @@ SUBROUTINE slip_boundary_conditions (self, patch, ii, it)
   call trace_end
 END SUBROUTINE slip_boundary_conditions
 
-!> =============================================================================
+!===============================================================================
 !> Write results to disk; preserve the format relative to `patch_mod::output_legacy`
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self, experiment_name)
   class(immersed_boundary_t):: self
   character(len=64) filename, logname, experiment_name

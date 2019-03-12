@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Do not use a dispatcher, but call task_list%execute, which relies on threads
 !> handling a ready queue.
-!> =============================================================================
+!===============================================================================
 MODULE dispatcher_mod
   USE io_mod
   USE trace_mod
@@ -24,9 +24,9 @@ MODULE dispatcher_mod
   type(dispatcher_t), public:: dispatcher
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Execute a task list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(dispatcher_t):: self
   integer:: iostat
@@ -46,14 +46,14 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Execute a task list.  Since only the master thread is call check_mpi(), we
 !> need to make sure that it handles all send/recv, hence send_priv=.false. and
 !> recv_priv=.false., and we can use the simplest receive mechanism (recv_active
 !> =.true.), with no buffering needed (queue_unpack=.false.).  These values are
 !> imposed after the input namelists are read, to make sure the choices are
 !> correct.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE method1 (task_list)
   type(task_list_t), pointer:: task_list
   !-----------------------------------------------------------------------------

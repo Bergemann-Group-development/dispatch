@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Message handling for task lists.  Some of the methods are only used by
 !> dispatcher0_t, so should perhaps be moved over to that file.
-!> =============================================================================
+!===============================================================================
 MODULE task_mesg_mod
   USE io_mod
   USE io_unit_mod
@@ -37,9 +37,9 @@ MODULE task_mesg_mod
   type(task_mesg_t), public:: task_mesg
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Check for and unpack MPI messages.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, name)
   class(task_mesg_t):: self
   character(len=*), optional:: name
@@ -51,9 +51,9 @@ SUBROUTINE init (self, name)
   if (io%master) write (io%output, task_mesg_params)
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Check for and unpack MPI messages.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_mpi (self)
   class(task_mesg_t):: self
   class(mesg_t), pointer:: mesg, next
@@ -208,11 +208,11 @@ SUBROUTINE check_mpi (self)
   call trace%end (itimer)
 END SUBROUTINE check_mpi
 
-!> =============================================================================
+!===============================================================================
 !> Find the link with a specified task id.  If there isn't any, create one!
 !> If the patch already existed, it's nbor list should be OK, but the status
 !> bit of it, and all its nbors, need to updated.
-!> =============================================================================
+!===============================================================================
 FUNCTION find_task (self, id) RESULT (link)
   class(task_mesg_t):: self
   integer:: id
@@ -255,10 +255,10 @@ FUNCTION find_task (self, id) RESULT (link)
   call trace%end()
 END FUNCTION find_task
 
-!> =============================================================================
+!===============================================================================
 !> Unpack a message, where the MPI tag is the task id.  Use that to search
 !> for the task, apply its unpack method, and check if any nbors become ready.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE unpack (self, mesg, link)
   class(task_mesg_t):: self
   class(mesg_t), pointer:: mesg
@@ -408,10 +408,10 @@ SUBROUTINE unpack (self, mesg, link)
   call trace%end (itimer)
 END SUBROUTINE unpack
 
-!> =============================================================================
+!===============================================================================
 !> Check for and unpack MPI messages, using threadprivate recv_list and
 !> unpk_list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_priv (self)
   class(task_mesg_t):: self
   class(mesg_t), pointer:: mesg, next
@@ -461,10 +461,10 @@ SUBROUTINE check_priv (self)
   call trace%end (itimer)
 END SUBROUTINE check_priv
 
-!> =============================================================================
+!===============================================================================
 !> Run through all virtual patches, count them, and create separate threadprivate
 !> lists that together include all of them.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_virtual (self)
   class(task_mesg_t):: self
   class(link_t), pointer:: link
@@ -520,11 +520,11 @@ SUBROUTINE init_virtual (self)
   call trace%end (itimer)
 END SUBROUTINE init_virtual
 
-!> =============================================================================
+!===============================================================================
 !> Run through all virtual patches, unpack completed receives, and issue new
 !> receive requests.  The virtual_list is threadprivate, so no critical region
 !> is needed.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_virtual (self)
   class(task_mesg_t):: self
   class(link_t), pointer:: link
@@ -575,11 +575,11 @@ SUBROUTINE check_virtual (self)
   call trace%end (itimer)
 END SUBROUTINE check_virtual
 
-!> =============================================================================
+!===============================================================================
 !> Run through all virtual patches, and allocate message data types if not
 !> allocated.  If an old request exists, test if it has completed.  If yes,
 !> unpack and issue a new request.  If no request exists, issue a request.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_active (self)
   class(task_mesg_t):: self
   class(link_t), pointer:: link

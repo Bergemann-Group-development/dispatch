@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> This test demonstrates a module hierarchy, where the rt_*_t tasks are 
 !> able to access data in the mhd_t task, while at the same time the mhd_rt_t
 !> task can access data in both mhd_t and rt_*_t tasks.  Each of the modules
@@ -24,7 +24,7 @@
 !>                   \      ||
 !>                    task_list_t
 !>
-!> =============================================================================
+!===============================================================================
 
 !> -----------------------------------------------------------------------------
 !> The task_t object holds generic task information, such as task id and time.

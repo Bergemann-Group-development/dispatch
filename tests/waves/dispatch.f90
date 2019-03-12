@@ -9,5 +9,5 @@ PROGRAM dispatch
   call cartesian%init                           ! Initialize the patch list and patches
   call dispatcher%execute (cartesian%task_list) ! Cáll dispatcher
   call setup%end
-!> =============================================================================
+!===============================================================================
 END PROGRAM dispatch

@@ -1,9 +1,9 @@
-!> =============================================================================
-!> **ZEUS-TW MHD method/operators module**
+!===============================================================================
+!****ZEUS-TW MHD method/operators module**
 !> The type defined/extended here is intended for instantiation/invokation/use.
 !> This particular form uses rho, e, \vec{s} = rho * \vec{v}, \vec{B} as the
 !> MHD fluid variables.
-!> =============================================================================
+!===============================================================================
 MODULE mhd_mod
   USE io_mod
   USE trace_mod
@@ -47,9 +47,9 @@ MODULE mhd_mod
 PUBLIC CopyToZeusTW, CopyFromZeusTW
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialise ZEUS-TW module.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_zeusTW (self)
   use zeus_variables_shared
   use zeus_initial
@@ -118,8 +118,8 @@ SUBROUTINE init_zeusTW (self)
   call trace_end
 END SUBROUTINE init_zeusTW
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE update_zeusTW (self)
   use zeus_main
 
@@ -140,8 +140,8 @@ SUBROUTINE update_zeusTW (self)
   call CopyFromZeusTW (self)
 END SUBROUTINE update_zeusTW
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 SUBROUTINE CopyToZeusTW (self)
   USE zeus_variables_shared
   USE zeus_grid
@@ -254,7 +254,7 @@ SUBROUTINE CopyToZeusTW (self)
 
 END SUBROUTINE CopyToZeusTW
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE CopyFromZeusTW (self)
   use zeus_main
 
@@ -283,7 +283,7 @@ SUBROUTINE CopyFromZeusTW (self)
 
 END SUBROUTINE CopyFromZeusTW
 
-!> =============================================================================
+!===============================================================================
 FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real(kind=KindScalarVar), dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
@@ -295,7 +295,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
   end if
 END FUNCTION gas_pressure
 
-!> =============================================================================
+!===============================================================================
 !> In `download_mod::interpolate_to` at least, this is invoked by the "source"
 !> patch (`self`) and applied to `target`.
 !> In the case of momentum components in spherical and cylindrical coords., it
@@ -303,7 +303,7 @@ END FUNCTION gas_pressure
 !>
 !> target -> use `ii`
 !> source/self -> use `jj`
-!> =============================================================================
+!===============================================================================
 SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   USE patch_mod, only: patch_t
   class(mhd_t):: self
@@ -400,9 +400,9 @@ SUBROUTINE MapVectors (self, in, target, ii, jj, out)
   call trace_end
 CONTAINS
 
-  !> ===========================================================================
+  !=============================================================================
   !> Expected format for `input`: A_x, A_y, A_z
-  !> ===========================================================================
+  !=============================================================================
   FUNCTION VectorCartToSph (input, x, y, z) RESULT (vec)
     real(kind=KindReal), intent(in):: x, y, z
     real(kind=KindScalarVar), dimension(3):: input, vec
@@ -472,9 +472,9 @@ CONTAINS
 
 END SUBROUTINE MapVectors
 
-!> =============================================================================
+!===============================================================================
 !> This subroutine intentionally DOES NOTHING.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE do_nothing (self, detailed_timer)
   class(mhd_t):: self
   logical, optional:: detailed_timer

@@ -1,9 +1,9 @@
-!> =============================================================================
+!===============================================================================
 !> Test program for MPI parallel I/O.  gsize3 is the global size of the array,
 !> lsize3 is the rank-thread-local size of the array. Each thread handles a
 !> separate array f, with an offset (in this test) that increases with MPI rank
 !> in the y-direction and with OMP thread in the z-direction
-!> =============================================================================
+!===============================================================================
 PROGRAM test_mpi_io
   USE io_mod
   USE io_unit_mod
@@ -35,10 +35,10 @@ PROGRAM test_mpi_io
   call check_files
 contains
 
-!> =============================================================================
+!===============================================================================
 !> This subroutine is called by each thread, so variable declared here become
 !> private
-!> =============================================================================
+!===============================================================================
 subroutine test_single_thread
   integer:: rec
   integer, dimension(1):: gsize1, lsize1
@@ -137,8 +137,8 @@ subroutine test_single_thread
   call file2%close
 end subroutine
 
-!> =============================================================================
-!> =============================================================================
+!===============================================================================
+!===============================================================================
 subroutine check_files
   real, dimension(:,:,:), allocatable:: tmp
   integer:: rec, recl

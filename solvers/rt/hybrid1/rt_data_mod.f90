@@ -39,12 +39,12 @@ MODULE rt_data_mod
 !----------------------------------------------------------------------- 
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialise RT_data tables, which takes required MHD variables and gets
 !> the source function and opacity per cell, mimicking the MHD patch cell
 !> structure. It also stores intensity per direction per cell to communi-
 !> cate it if patches overlap.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_rt_data(self)
   class(rt_data_t) :: self
   !---------------------------------------------------------------------
@@ -85,9 +85,9 @@ SUBROUTINE init_rt_data(self)
   call trace_end  
 END SUBROUTINE init_rt_data
 
-!> =====================================================================
+!=======================================================================
 !> Update RT data task values
-!> =====================================================================
+!=======================================================================
 SUBROUTINE update_rt_data (self)
   class(rt_data_t) :: self
   character(len=16):: stime
@@ -123,9 +123,9 @@ SUBROUTINE update_rt_data (self)
   call trace_end (itimer)
 END SUBROUTINE update_rt_data
 
-!> =====================================================================
+!=======================================================================
 !> Store intensity
-!> =====================================================================
+!=======================================================================
 SUBROUTINE I_store (self,I_st,rays,dir_ID, rt_type)
   class (rt_data_t) :: self
   class (ray_t), pointer :: rays
@@ -223,9 +223,9 @@ SUBROUTINE I_store_old (self,I_st,c,pt,ray,dir,lw,uw)
   call trace_end
 END SUBROUTINE I_store_old
 
-!> =====================================================================
+!=======================================================================
 !> Retrieve intensity by cell
-!> =====================================================================
+!=======================================================================
 FUNCTION I_retrv (self,c,dir,lw,uw) result (I_st)
   class (rt_data_t) :: self
   type (int_data_t), pointer :: this
@@ -250,9 +250,9 @@ FUNCTION I_retrv (self,c,dir,lw,uw) result (I_st)
   call trace_end
 END FUNCTION I_retrv
 
-!> =====================================================================
+!=======================================================================
 !> Retrieve intensity by rays
-!> =====================================================================
+!=======================================================================
 FUNCTION I_retrv_ray (self,ray,pt,dir) result (I_st)
   class (rt_data_t) :: self
   type (int_data_t), pointer :: this
@@ -277,9 +277,9 @@ FUNCTION I_retrv_ray (self,ray,pt,dir) result (I_st)
   call trace_end
 END FUNCTION I_retrv_ray
 
-!> =====================================================================
+!=======================================================================
 !> Initialize intensity storage for this cell
-!> =====================================================================
+!=======================================================================
 SUBROUTINE int_data_init(self,ray,pt,lw,uw)
   class (int_data_t) :: self
   type  (int_data_t), pointer :: new
@@ -305,9 +305,9 @@ SUBROUTINE int_data_init(self,ray,pt,lw,uw)
   call trace_end
 END SUBROUTINE int_data_init
 
-!> =====================================================================
+!=======================================================================
 !> Test if rt_data module has any errors
-!> =====================================================================
+!=======================================================================
 SUBROUTINE check_rt_data(self, plc)
   class(rt_data_t) :: self
   integer :: plc

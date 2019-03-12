@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Boundary conditions for a 2-D box
-!> =============================================================================
+!===============================================================================
 MODULE pboundary_mod
   USE io_mod
   USE trace_mod
@@ -25,10 +25,10 @@ MODULE pboundary_mod
 
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Impose boundary conditions, taking staggering into account.
 !> Only for use with Cartesian patches.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE conditions (self, patch, cit)
   class(pboundary_t) :: self
   class(patch_t), target :: patch
@@ -225,7 +225,7 @@ SUBROUTINE conditions (self, patch, cit)
   call trace_end
 END SUBROUTINE conditions
 
-!> =============================================================================
+!===============================================================================
 FUNCTION wave_kill (x, x0, tau, rkill, rbnd, r) RESULT (rate)
   real(kind=KindScalarVar), intent(in):: x
   real(8), intent(in) :: x0, tau, rkill, rbnd

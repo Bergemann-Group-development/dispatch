@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Stub for self-contained radiative transfer module
-!> =============================================================================
+!===============================================================================
 MODULE radiation_mod
   USE io_mod
   USE trace_mod
@@ -20,12 +20,12 @@ MODULE radiation_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Do one-time work for each instance of this solver, such as allocating Q.
 !> Make this a zero-filled array in any case, to avoid having to use if's in
 !> the solvers, but allocate a temperature array only if we are going to do
 !> actual radiation
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(radiation_t):: self
   logical, save:: first_call=.true., do_radiation=.false.
@@ -51,10 +51,10 @@ SUBROUTINE init (self)
   end associate
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Solve for the cooling / heating, assuming self has pointers to whatever is
 !> relevant (mesh, density, temperature)
-!> =============================================================================
+!===============================================================================
 SUBROUTINE solve (self)
   class(radiation_t):: self
   !.............................................................................

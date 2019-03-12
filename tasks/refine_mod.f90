@@ -1,4 +1,4 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> This module handles checking max change between neighboring points.  Each
 !> instance of it needs an index to the variable, whether to take the log, and
 !> a value for the max allowed change.  It might be applied to log density, log
@@ -24,7 +24,7 @@
 !>   check_level_constraints
 !>   tasklist%lock%unset
 !>   ...
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE refine_mod
   USE io_mod
   USE trace_mod
@@ -85,9 +85,9 @@ MODULE refine_mod
   type(refine_t), public:: refine
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize refinement parameters
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(refine_t):: self
   integer:: iostat
@@ -128,9 +128,9 @@ SUBROUTINE init (self)
   call trace%end()
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Check if refinement is desired and needed for the current task
-!> =============================================================================
+!===============================================================================
 FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   class(refine_t):: self
   class(list_t):: tasklist
@@ -208,12 +208,12 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   call trace%end (itimer)
 END FUNCTION refine_needed
 
-!> =============================================================================
+!===============================================================================
 !> Check if refinement is desired and needed for the current task; if so, push
 !> new tasks onto the (ready) queue with the same time as the parent, i.e., to
 !> the head of the queue.  If the task is a leaf task, and the level of refinement
 !> does not appear to be needed, request derefinement.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   class(refine_t):: self
   class(list_t):: tasklist
@@ -295,12 +295,12 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     deallocate (self%mask)
   call trace%end (itimer)
 contains
-  !> ===========================================================================
+  !=============================================================================
   !> Iteratively check the nbor level constraint, splitting patches until the
   !> there are no more violations.  Since this inserts new patches in the patch
   !> list, and modifies the queue, it must be done in a critical region, blocking
   !> other updates to the patch list.
-  !> ===========================================================================
+  !=============================================================================
   subroutine check_level_constraint
     class(link_t), pointer:: link
     integer:: iteration
@@ -333,10 +333,10 @@ contains
   end subroutine check_level_constraint
 END SUBROUTINE check_current
 
-!> =============================================================================
+!===============================================================================
 !> Setup a mask with false values where a higher level patch overlaps this patch.
 !> FIXME: Currently ignores overlapping patches with centers outside this patch.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE setup_mask (self, patch)
   class(refine_t):: self
   class(gpatch_t), pointer:: patch
@@ -370,10 +370,10 @@ SUBROUTINE setup_mask (self, patch)
   end do
 END SUBROUTINE setup_mask
 
-!> =============================================================================
+!===============================================================================
 !> Create a new patch using an existing "parent" patch.
 !> This procedure is used frequently during refinement.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, i)
   class(refine_t):: self
   class(list_t) :: tlist
@@ -476,11 +476,11 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   call trace%end()
 END SUBROUTINE make_child_patch
 
-!> =============================================================================
+!===============================================================================
 !> Split a patch into two (parameter) in each direction, merging the new patches
 !> into the list.  Note that the link to the original patch is kept, with a "leaf"
 !> flag being cleared, indicating it is not longer a "leaf" patch.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE split_patch (self, tlist, this)
   class(refine_t):: self
   class(list_t):: tlist
@@ -581,7 +581,7 @@ SUBROUTINE split_patch (self, tlist, this)
   io%do_trace = do_trace
 END SUBROUTINE split_patch
 
-!> =============================================================================
+!===============================================================================
 !> Remove a patch that has been deemed not necessary.  At this point, the task
 !> is not in the ready queue, but is still in the task list.  The proper order
 !> of removal is then:
@@ -592,7 +592,7 @@ END SUBROUTINE split_patch
 !>   * deallocate the task
 !>   * deallocate the nbor list
 !>   * deallocate the task link
-!> =============================================================================
+!===============================================================================
 SUBROUTINE remove_patch (self, tlist, this)
   class(refine_t):: self
   class(list_t):: tlist
@@ -632,14 +632,14 @@ SUBROUTINE remove_patch (self, tlist, this)
   call trace%end()
 END SUBROUTINE remove_patch
 
-!> =============================================================================
+!===============================================================================
 !> Check the neighbors of the task associated with `link` to see if they can
 !> provide support to newly refined patches made from `link`.
 !> The current definition of "support" is a difference in levels of one or less.
 !>
 !> In the absence of the optional argument, `check_only`, neighbour patches will
 !> be split as needed.
-!> =============================================================================
+!===============================================================================
 FUNCTION check_nbor_support (self, tlist, link, check_only) RESULT (refine_it)
   USE task_mod
   class(refine_t):: self
@@ -681,9 +681,9 @@ FUNCTION check_nbor_support (self, tlist, link, check_only) RESULT (refine_it)
   call trace%end()
 END FUNCTION check_nbor_support
 
-!> =============================================================================
+!===============================================================================
 !> Check that the patch dimensions are the desired cubical ones
-!> =============================================================================
+!===============================================================================
 FUNCTION check_cubical (self, patch) RESULT (refine_it)
   class(refine_t):: self
   class(gpatch_t), pointer:: patch
@@ -697,9 +697,9 @@ FUNCTION check_cubical (self, patch) RESULT (refine_it)
   end if
 END FUNCTION check_cubical
 
-!> =============================================================================
+!===============================================================================
 !> Calculate the Jeans length and compare it to the patch resolution.
-!> =============================================================================
+!===============================================================================
 FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   USE math_mod
   USE scaling_mod
@@ -750,9 +750,9 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   call trace%end()
 END FUNCTION check_Jeans
 
-!> =============================================================================
+!===============================================================================
 !> Refine on shocks, with threshold set by tolerance parameter `tol_shock`.
-!> =============================================================================
+!===============================================================================
 FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
   USE mesh_mod
   class(refine_t):: self
@@ -856,9 +856,9 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
   call trace%end()
 END FUNCTION shock_and_cd_detector
 
-!> =============================================================================
+!===============================================================================
 !> Refine on shocks, with threshold set by tolerance parameter `max_shock`.
-!> =============================================================================
+!===============================================================================
 FUNCTION gradient_detector (self, patch) RESULT (refine)
   USE mesh_mod
   USE solver_mod
@@ -976,11 +976,11 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
   call trace%end()
 END FUNCTION gradient_detector
 
-!> =============================================================================
+!===============================================================================
 !> Given a box defined by its lower and upper corners, flag a patch for refinement
 !> if it lies inside this box, up to a maximum level.
 !> This particular criteria is primarily used for testing and debugging.
-!> =============================================================================
+!===============================================================================
 FUNCTION refine_region (self, patch) RESULT (refine)
   USE mesh_mod
   class(refine_t) :: self

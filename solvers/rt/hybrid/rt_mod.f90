@@ -16,13 +16,13 @@ MODULE rt_mod
   USE units_mod
   implicit none
   private 
-!> =====================================================================
+!=======================================================================
 !> rt_t is the main task. 
 !> every task has a set of chain links, belonging to this patch. Every
 !> item in the set is then connected to appropriate upstream/downstream
 !> nbors. Also, any patch might end up being the chain head for some
 !> bundle. In that case, it nudges it's own link.
-!> =====================================================================
+!=======================================================================
   type, extends(patch_t), public :: rt_t
     class(chain_link_t), dimension(:), pointer :: my_links => null()     ! list of link, which belongs to me
     logical, dimension(:), pointer :: updated => null()                 ! list of flags, indicates if particular direction has been updated
@@ -79,14 +79,14 @@ MODULE rt_mod
   
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> The rt_patch initialization subroutine. The patch is responsible for
 !> all the directions and their bundles. Al this is stored in chain links.
 !> FLOW:
 !> 1) read the namelist
 !> 2) initialize the patch, set bits
 !> 3) set 
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_rt (self)
   class (rt_t) :: self
   !.....................................................................
@@ -169,10 +169,10 @@ SUBROUTINE init_rt (self)
   call trace_end
 END SUBROUTINE init_rt
 
-!> =====================================================================
+!=======================================================================
 !> Set up all the links, belonging to this patch. Every link represents
 !> a separate bundle. One rt patch manages all the directions.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_chain(self, nd)
   class(rt_t) :: self
   integer :: nd
@@ -212,10 +212,10 @@ SUBROUTINE init_chain(self, nd)
   nullify(ray_dir, ray_bnd)
 END SUBROUTINE init_chain
 
-!> =====================================================================
+!=======================================================================
 !> Set up all the links, belonging to this patch. Every link represents
 !> a separate bundle. One rt patch manages all the directions.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_no_chain(self)
   class(rt_t) :: self
   ! ....................................................................
@@ -253,17 +253,17 @@ SUBROUTINE init_no_chain(self)
   nullify(ray_dir, ray_bnd)
 END SUBROUTINE init_no_chain
 
-!> =====================================================================
-!> =====================================================================
+!=======================================================================
+!=======================================================================
 SUBROUTINE dnload (self)
   class (rt_t) :: self
   call download%download_link (self%link, all_cells=.false.)
 END SUBROUTINE dnload
 
-!> =====================================================================
+!=======================================================================
 !> This subroutine maps the incoming heating rates to the outer boundary
 !> conditions
-!> =====================================================================
+!=======================================================================
 SUBROUTINE map_bndry(self, link)
   class(rt_t) :: self
   class(chain_link_t) :: link
@@ -283,10 +283,10 @@ SUBROUTINE map_bndry(self, link)
   end do  
 END SUBROUTINE map_bndry
 
-!> =====================================================================
+!=======================================================================
 !> This subroutine maps the incoming heating rates to the outer boundary
 !> conditions
-!> =====================================================================
+!=======================================================================
 SUBROUTINE get_bndry(self, link, q_fw, q_re)
   class(rt_t) :: self
   class(chain_link_t) :: link
@@ -370,11 +370,11 @@ SUBROUTINE cell2shell(self, c_coord, s_coord, wall)
   end if
 END SUBROUTINE cell2shell
 
-!> =====================================================================
+!=======================================================================
 !> Solve the RT problem, by first obtaining the thermodynamics at the
 !> designated RT time, and using them to compute the opacity and source
 !> function values. Then nudge the chain heads.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE update_rt (self)
   class (rt_t) :: self
   class(task_t),  pointer:: task
@@ -450,11 +450,11 @@ SUBROUTINE update_rt (self)
   end if
 END SUBROUTINE update_rt 
 
-!> =====================================================================
+!=======================================================================
 !> Nudge the chain heads. If all patches in the chain become ready, then
 !> solve for the net heating rate, storing it in a slot that rotates
 !> with time for each patch in the chain.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE nudge (self)
   class(rt_t) :: self
   !.....................................................................
@@ -497,9 +497,9 @@ SUBROUTINE nudge (self)
   end do
 END SUBROUTINE nudge
 
-!> =====================================================================
+!=======================================================================
 !> Loop through all links in the chain and solve the actual rt
-!> =====================================================================
+!=======================================================================
 SUBROUTINE execute_chain (self)
   class(chain_link_t), pointer :: self
   !.....................................................................
@@ -564,9 +564,9 @@ SUBROUTINE execute_chain (self)
   call trace%end(itimer)
 END SUBROUTINE execute_chain
 
-!> =====================================================================
+!=======================================================================
 !> Loop through all links in the chain and solve the actual rt
-!> =====================================================================
+!=======================================================================
 SUBROUTINE execute_no_chain (self)
   class(rt_t) :: self
   ! ....................................................................
@@ -586,7 +586,7 @@ SUBROUTINE execute_no_chain (self)
   call self%finish
 END SUBROUTINE execute_no_chain
 
-!> =====================================================================
+!=======================================================================
 !> Check if the rays in self match up in the downstream with the rays in other
 !> INPUT: self and nbor are rt_patches. mine is my link i am testing
 !>   against nbor's link other. logical connects - true if chain can be 
@@ -610,7 +610,7 @@ END SUBROUTINE execute_no_chain
 !> 5) the last point is taken from other link and the upstream position
 !>   is taken from me. if the points coincide via cell2pos and pos2cell,
 !>   there is a connection.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE link_connects_to (self, nbor, mine, other, connects, is_upstream)
   class (rt_t) :: self
   class (rt_t), pointer :: nbor
@@ -786,11 +786,11 @@ SUBROUTINE link_connects_to (self, nbor, mine, other, connects, is_upstream)
   
 END SUBROUTINE link_connects_to
 
-!> =====================================================================
+!=======================================================================
 !> Find the absolute position of index 'ray' in ray packet 'rays'.
 !> If the optional bn parameter is present, the answer depends on
 !> the direction, otherwise 'pt' chooses the point along the ray.
-!> =====================================================================
+!=======================================================================
 FUNCTION absolute_point_position (self, link, packet, ray, pt, bn) result (cell_pos)
   class (rt_t) :: self
   class (chain_link_t), pointer :: link
@@ -867,7 +867,7 @@ SUBROUTINE finish(self)
   deallocate (self%d, self%e_th, self%rk, self%src)                     ! deallocate scratch
 END SUBROUTINE finish
 
-!> =====================================================================
+!=======================================================================
 !> This procedure should loop over all bundle directions, spawning two
 !> tasks for each direction, with solvers running in the forward and
 !> reverse directions.
@@ -886,7 +886,7 @@ END SUBROUTINE finish
 !> The tasks that are missing upstream values need to to a taskwait,
 !> and try again later.  However, in the current special case we always
 !> have both boundart values, so there are no waits.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re)
   class (rt_t) :: self
   class(chain_link_t), pointer  :: link
@@ -978,9 +978,9 @@ SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re)
   !call trace_end (itimer)
 END SUBROUTINE solve_integral
 
-!> =====================================================================
+!=======================================================================
 !> Same as solve_integral, but for the Feautrier formulation
-!> =====================================================================
+!=======================================================================
 SUBROUTINE solve_feautrier (self, link, i_in, i_in2)
   class (rt_t) :: self
   class(chain_link_t), pointer  :: link
@@ -1024,9 +1024,9 @@ SUBROUTINE solve_feautrier (self, link, i_in, i_in2)
   call trace_end (itimer)
 END SUBROUTINE solve_feautrier
 
-!> =====================================================================
+!=======================================================================
 !> Map cell data onto rays
-!> =====================================================================
+!=======================================================================
 SUBROUTINE ray_vol_map4 (self, packet, in, out)
   class(rt_t) :: self
   class(packet_t), pointer :: packet
@@ -1079,9 +1079,9 @@ END SUBROUTINE ray_vol_map4
 
 
 
-!> =====================================================================
+!=======================================================================
 !> Map cell data onto rays. In this case, it is wavelenght independent.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE ray_vol_map3 (self, packet, in, out)
   class(rt_t) :: self
   class(packet_t), pointer :: packet
@@ -1162,9 +1162,9 @@ SUBROUTINE update_q (self, packet, dwf, ib, q_fw, q_re)
   !call trace_end (itimer)
 END SUBROUTINE update_q
 
-!> =====================================================================
+!=======================================================================
 !> Compute the optical depth along rays
-!> =====================================================================
+!=======================================================================
 SUBROUTINE optical_depth_centered (self, ds, rk, dtau)
   class (rt_t) :: self
   real(kind=8) :: ds
@@ -1180,10 +1180,10 @@ SUBROUTINE optical_depth_centered (self, ds, rk, dtau)
 END SUBROUTINE optical_depth_centered
 
 
-!> =====================================================================
+!=======================================================================
 !> Compute the optical depth along rays. Dtau is staggered, therefore it
 !> has only a half value on the lower edge of the patch.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
   class (rt_t) :: self
   real(kind=8) :: ds
@@ -1203,10 +1203,10 @@ SUBROUTINE optical_depth_staggered (self, ds, rk, dtau)
   deallocate(dt)
 END SUBROUTINE optical_depth_staggered
 
-!> =====================================================================
+!=======================================================================
 !> Compute the optical depth along rays. Dtau is staggered, therefore it
 !> has only a half value on the lower edge of the patch.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE density_weight_factor (self, ds, dwf)
   class (rt_t) :: self
   real(kind=8) :: ds
@@ -1221,10 +1221,10 @@ SUBROUTINE density_weight_factor (self, ds, dwf)
   end do
 END SUBROUTINE density_weight_factor
 
-!> =====================================================================
+!=======================================================================
 !> Get heating rates for given time in terms of internal energy. Heating
 !> rates are interpolated in time. 
-!> =====================================================================
+!=======================================================================
 SUBROUTINE get_q (self, time, de)
   class (rt_t) :: self
   real(8):: time
@@ -1243,9 +1243,9 @@ SUBROUTINE get_q (self, time, de)
   call trace%end (itimer)
 END SUBROUTINE get_q
 
-!> =====================================================================
+!=======================================================================
 !> Return the absolute position of integer index triple 'cell'
-!> =====================================================================
+!=======================================================================
 FUNCTION cell2pos (self, cell) result(p)
   class(rt_t)  :: self
   real(kind=8) :: p(3)
@@ -1254,9 +1254,9 @@ FUNCTION cell2pos (self, cell) result(p)
   p = self%position - 0.5_8*self%size + (cell-self%li+1)*self%ds
 END FUNCTION cell2pos
 
-!> =====================================================================
+!=======================================================================
 !> Convert absolute position to integer index triple 'cell'
-!> =====================================================================
+!=======================================================================
 FUNCTION pos2cell (self, p) result (cell)
   class(rt_t)  :: self
   real(kind=8) :: p(3)
@@ -1268,11 +1268,11 @@ FUNCTION pos2cell (self, p) result (cell)
   
 END FUNCTION pos2cell
 
-!> =====================================================================
+!=======================================================================
 !> Convert absolute position to integer index triple 'cell'
 !> currently simple spatial interpolation is used and should be sufficient.
 !> if it is not accurate enough, it should be changed to something else.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE pos2cell_interp (self, p, fc, cell, iw)
   class(rt_t)  :: self
   real(kind=8) :: p(3), pp(3)
@@ -1290,9 +1290,9 @@ SUBROUTINE pos2cell_interp (self, p, fc, cell, iw)
   end if  
 END SUBROUTINE pos2cell_interp
 
-!> =====================================================================
+!=======================================================================
 !> Apply boundary conditions
-!> =====================================================================
+!=======================================================================
 SUBROUTINE boundary_conditions (self)
   class(rt_t):: self
   !---------------------------------------------------------------------
@@ -1311,9 +1311,9 @@ SUBROUTINE get_ds(self, packet, ds)
   
 END SUBROUTINE get_ds
 
-!> =====================================================================
+!=======================================================================
 !> Write results to disk
-!> =====================================================================
+!=======================================================================
 SUBROUTINE output_legacy_rt (self, experiment_name)
   USE iso_fortran_env, only : real32
   class(rt_t):: self

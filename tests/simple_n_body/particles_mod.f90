@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Particle patches are collections (lists) of particles histories, which may
 !> be used for example to compute the forces at other particles at a particular
 !> time.  They may also be evolved, by performing kick-drift-kick on each of its
@@ -7,7 +7,7 @@
 !> Each particle patch has a pointer to list of nbor, whose particles are also
 !> treated explicitly, and also a pointer to a list with all the other particle
 !> patches, which are added as a collective force
-!> =============================================================================
+!===============================================================================
 MODULE particles_mod
   USE particle_mod
   USE particle_history_mod
@@ -31,9 +31,9 @@ MODULE particles_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a list of particle histories
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, n)
   class (particles_t)                :: self
   integer                            :: n
@@ -54,10 +54,10 @@ SUBROUTINE init (self, n)
   end do
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Add the force on a particle from particles in the local particle patch, and
 !> those in the list of nbor particle patches
-!> =============================================================================
+!===============================================================================
 SUBROUTINE force_on (self, particle)
   class (particles_t)                :: self
   class (particle_t), pointer        :: particle
@@ -101,9 +101,9 @@ SUBROUTINE force_on (self, particle)
   end do
 END SUBROUTINE force_on
 
-!> =============================================================================
+!===============================================================================
 !> Update the positions of all particles, maintaining their histories
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add_patch_force_to (self, other, particle)
   class (particles_t)          :: self
   class (particles_t), pointer :: other
@@ -115,9 +115,9 @@ SUBROUTINE add_patch_force_to (self, other, particle)
   particle%a = particle%a - (self%mass*ri3)*r
 END SUBROUTINE add_patch_force_to
 
-!> =============================================================================
+!===============================================================================
 !> Update the positions of all particles, maintaining their histories
-!> =============================================================================
+!===============================================================================
 SUBROUTINE move_past (self, time)
   class (particles_t)       :: self
   real                               :: time
@@ -148,9 +148,9 @@ SUBROUTINE move_past (self, time)
   end do
 END SUBROUTINE move_past
 
-!> =============================================================================
+!===============================================================================
 !> Randomize the particle velocities
-!> =============================================================================
+!===============================================================================
 SUBROUTINE randomize (self)
   class (particles_t)                :: self
   type (particle_history_t), pointer :: history
@@ -162,9 +162,9 @@ SUBROUTINE randomize (self)
   end do
 END SUBROUTINE randomize
 
-!> =============================================================================
+!===============================================================================
 !> Print information about the particles in the particle patch
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print (self)
   class (particles_t)                :: self
   type (particle_history_t), pointer :: history

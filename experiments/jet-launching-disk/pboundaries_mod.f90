@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Physical boundary conditions module for a jet launching disk
-!> =============================================================================
+!===============================================================================
 MODULE pboundaries_mod
   USE io_mod
   USE trace_mod
@@ -25,9 +25,9 @@ MODULE pboundaries_mod
 
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialise physical boundary condition data type
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_bdries (self, mesh, position, indices)
   class(pboundaries_t)              :: self
   class(mesh_t), pointer, optional :: mesh(:)
@@ -43,9 +43,9 @@ SUBROUTINE init_bdries (self, mesh, position, indices)
   call trace%end
 END SUBROUTINE init_bdries
 
-!> =============================================================================
+!===============================================================================
 !> Apply physical boundary conditions to current patch if applicable
-!> =============================================================================
+!===============================================================================
 SUBROUTINE apply_bcs (self, patch, cit)
   USE bits_mod
   class(pboundaries_t) :: self
@@ -106,11 +106,11 @@ SUBROUTINE apply_bcs (self, patch, cit)
   call trace%end
 END SUBROUTINE apply_bcs
 
-!> =============================================================================
+!===============================================================================
 !> Standard outflow conditions
 !> Apply zero gradient boundary conditions to all variables, with the exception
 !> that the velocity component normal to boundary does not result in inflow.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE outflow (self, mem, iv, select)
   class(pboundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: mem(:,:,:)
@@ -190,10 +190,10 @@ SUBROUTINE outflow (self, mem, iv, select)
   call trace%end
 END SUBROUTINE outflow
 
-!> =============================================================================
+!===============================================================================
 !> Reflection at a coordinate axis boundary conditions
 !> Most variables are symmetric, but certain vectors are antisymmetric.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE axis_reflection (self, mem, iv, select)
   class(pboundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: mem(:,:,:)

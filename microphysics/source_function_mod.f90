@@ -24,9 +24,9 @@ MODULE source_function_mod
   !  -------------------------------------------------------------------
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize a source function object, which includes a choice of source function
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, source)
   class(source_function_t) :: self
   character(len=16) :: source
@@ -62,10 +62,10 @@ SUBROUTINE init (self, source)
   call trace_end
 END SUBROUTINE init
 
-!> =====================================================================
+!=======================================================================
 !> Source function is looked up from the EOS table. Suitable for Stagger
 !> solver.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE source_eos_lookup (self, rho, entr, wl, src)
   class(source_function_t) :: self
   real, dimension(:,:,:) :: rho
@@ -78,13 +78,13 @@ SUBROUTINE source_eos_lookup (self, rho, entr, wl, src)
   call trace_end
 END SUBROUTINE source_eos_lookup
 
-!> =====================================================================
+!=======================================================================
 !> Simplest source function. The integrated Planck function is proportional
 !> to Stefan's constant times the fourth power of the temperature, divided by pi.
 !> This is the relevant source function when the opacity is constant as a
 !> function of wavelength, so one can integrate over wavelength before solving
 !> the radiative transfer equation.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE source_Stefan (self, temp, dummy, wl, src)
   class(source_function_t) :: self
   real, dimension(:,:,:) :: temp
@@ -104,13 +104,13 @@ SUBROUTINE source_Stefan (self, temp, dummy, wl, src)
 END SUBROUTINE source_Stefan
 
 
-!> =============================================================================
+!===============================================================================
 !> Set the source function equal to a Planck function lookup table. Linear
 !> interpolation in linear wavelength, for maximum speed.  To handle
 !> uncommon cases where some x are below xmin a test is made on x, before
 !> choosing how to interpolate.  This is only slightly slower than if one knows
 !> everything is in range.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE source_Planck (self, temp, dummy, wl, src)
   class(source_function_t) :: self
   real, dimension(:,:,:)   :: temp
@@ -167,12 +167,12 @@ FUNCTION flook(self,k) result (pp)
 END FUNCTION flook
 
 !> OUTDATED:
-!> =============================================================================
+!===============================================================================
 !> The planck function, normalized to give radiation per unit \ln\lambda,  for
 !> a given temperature and wavelength. Input and output are in code units, but
 !> we use lambda in micrometers, to avoid underflow and divide fault in the
 !> expression when computing lambda**4.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE source_Pl_fn (self, n, lambda, temperature, source)
   class(source_function_t):: self
   integer:: n(2)

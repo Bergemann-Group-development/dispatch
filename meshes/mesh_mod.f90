@@ -1,6 +1,6 @@
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> Template module for mesh
-!> |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE mesh_mod
   USE trace_mod
   USE io_mod
@@ -216,11 +216,11 @@ PUBLIC MeshFactory, MeshRecycler, &
        CurrentToCartesian, CartesianToCurrent, round
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Create a mesh collection.
 !> This method creates three orthogonal meshes to form an 3-dimensional grid.
 !> It is possible for up to 2 of the meshes to have extent one.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, llc_native, nml)
   class(mesh_t), dimension(:), pointer :: collection
   integer, intent(in) :: meshtype
@@ -297,9 +297,9 @@ SUBROUTINE MeshFactory (meshtype, collection, n, ng, s, p, llc_native, nml)
 
 END SUBROUTINE MeshFactory
 
-!> =============================================================================
+!===============================================================================
 !> A means to entirely deallocate a collection of meshes
-!> =============================================================================
+!===============================================================================
 SUBROUTINE MeshRecycler (collection)
   class(mesh_t), dimension(:), pointer :: collection
   integer :: i
@@ -311,11 +311,11 @@ SUBROUTINE MeshRecycler (collection)
   nullify (collection)
 END SUBROUTINE MeshRecycler
 
-!> =============================================================================
+!===============================================================================
 !> The integer mesh is defined by specifying the number of points `n` and the
 !> number of guard cells `ng`.  The real mesh is then fully specified by giving
 !> the size `s`. The center of the mesh, `p` can also be supplied.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   class(mesh_t) :: self
   integer :: i
@@ -383,9 +383,9 @@ SUBROUTINE init_mesh (self, n, ng, s, p, llc_native)
   call trace_end
 END SUBROUTINE init_mesh
 
-!> =============================================================================
+!===============================================================================
 !> deallocates the position coordinate of a mesh
-!> =============================================================================
+!===============================================================================
 SUBROUTINE deallocate_coord (self)
   class(mesh_t) :: self
   !.............................................................................
@@ -395,9 +395,9 @@ SUBROUTINE deallocate_coord (self)
   if (associated(self%dup)) deallocate (self%dup)
 END SUBROUTINE deallocate_coord
 
-!> =============================================================================
+!===============================================================================
 !> print mesh information to the stdout
-!> =============================================================================
+!===============================================================================
 SUBROUTINE print_mesh (self)
   class(mesh_t):: self
   integer:: i
@@ -428,10 +428,10 @@ SUBROUTINE print_mesh (self)
   print*,'----------'
 END SUBROUTINE print_mesh
 
-!> =============================================================================
+!===============================================================================
 !> Dummy initialise for a Cartesian mesh: All scale factors are one and all
 !> volume elements are equal to dx.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_Cartesian_geometry (self, idir, origin)
   class(Cartesian_mesh) :: self
   integer, intent(in) :: idir
@@ -471,10 +471,10 @@ SUBROUTINE init_Cartesian_geometry (self, idir, origin)
 
 END SUBROUTINE init_Cartesian_geometry
 
-!> =============================================================================
+!===============================================================================
 !> Initalise the geometric factors for a cylindrical mesh.
 !> A cylindrical mesh is defined as having the form (z,R,\phi).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_cylindrical_geometry (self, idir, origin)
   class(cylindrical_mesh) :: self
   integer, intent(in) :: idir
@@ -514,10 +514,10 @@ SUBROUTINE init_cylindrical_geometry (self, idir, origin)
 
 END SUBROUTINE init_cylindrical_geometry
 
-!> =============================================================================
+!===============================================================================
 !> Initalise the geometry factors for a spherical mesh.
 !> A spherical mesh is defined as having the form (r,\theta,\phi).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_spherical_geometry (self, idir, origin)
   class(spherical_mesh) :: self
   integer, intent(in) :: idir
@@ -562,9 +562,9 @@ SUBROUTINE init_spherical_geometry (self, idir, origin)
 
 END SUBROUTINE init_spherical_geometry
 
-!> =============================================================================
+!===============================================================================
 !> Collection of functions used to calculate geometric factors.
-!> =============================================================================
+!===============================================================================
 FUNCTION func_one (self, i) RESULT(one)
   class(mesh_t) :: self
   integer, intent(in) :: i
@@ -637,13 +637,13 @@ FUNCTION func_sintheta_f (self, j) RESULT(sintf)
 
 END FUNCTION func_sintheta_f
 
-!> =============================================================================
+!===============================================================================
 !> Differential volume elements for non-Cartesian grids.
-!> **Note** that the 'f' and 'c' subscripts still denote the centring of a given
+!****Note** that the 'f' and 'c' subscripts still denote the centring of a given
 !> quantity, rather than the centring of the quantities that go into the
 !> calculation. This is in contrast to ZEUS where the subscript ('a' or 'b') is
 !> is determined by the centring of the inputs.
-!> =============================================================================
+!===============================================================================
 FUNCTION func_dr2_c (self, j) RESULT(dvol2c)
   class(mesh_t) :: self
   integer, intent(in) :: j
@@ -701,9 +701,9 @@ FUNCTION func_dcostheta_f (self, j) RESULT(dvol2f)
   dvol2f = -cos(func_position_c(self,j)) + cos(func_position_c(self,j-1))
 END FUNCTION func_dcostheta_f
 
-!> =============================================================================
+!===============================================================================
 !> Secondary area factors; primarily used with operators.
-!> =============================================================================
+!===============================================================================
 FUNCTION func_dar1_c (self, i) RESULT(dar1c)
   class(mesh_t) :: self
   integer, intent(in) :: i
@@ -776,10 +776,10 @@ FUNCTION func_dar32_f (self, j) RESULT(dar32f)
 
 END FUNCTION func_dar32_f
 
-!> =============================================================================
+!===============================================================================
 !> Mapping/transformation procedures.
 !> `OCart` is the origin of the *target* coord. system in *Cartesian* coords.
-!> =============================================================================
+!===============================================================================
 FUNCTION CartesianToCylindrical4 (x, y, z, OCart) result (vec)
   real(4), intent(in) :: x, y, z
   real(4), dimension(3), optional:: OCart
@@ -960,7 +960,7 @@ FUNCTION CylindricalToSpherical8 (Z, R, Phi, OCart) result (vec)
 
 END FUNCTION CylindricalToSpherical8
 
-!> =============================================================================
+!===============================================================================
 FUNCTION CurrentToCartesian4 (mtype, x1, x2, x3) result (vec)
   integer, intent(in) :: mtype
   real(4), intent(in) :: x1, x2, x3
@@ -1033,10 +1033,10 @@ FUNCTION CartesianToCurrent8 (mtype, x1, x2, x3) result (vec)
 
 END FUNCTION CartesianToCurrent8
 
-!> =============================================================================
+!===============================================================================
 !> Calculate the volume centroid of `mesh`.
 !> Assumes the mesh type, mesh%idir and mesh%s are already set.
-!> =============================================================================
+!===============================================================================
 FUNCTION VolumeCentroid (mesh) result (centre)
   class(mesh_t) :: mesh
   real(4) :: centre
@@ -1079,9 +1079,9 @@ FUNCTION VolumeCentroid (mesh) result (centre)
   call trace_end
 END FUNCTION VolumeCentroid
 
-!> =============================================================================
+!===============================================================================
 !> Round a single-precision floating point number to `digit` sig. figs.
-!> =============================================================================
+!===============================================================================
 FUNCTION round4(a,digit) result (b)
   real(4) :: a, b, rof, q1, q2, q3
   integer :: digit
@@ -1106,9 +1106,9 @@ FUNCTION round4(a,digit) result (b)
 
 END FUNCTION round4
 
-!> =============================================================================
+!===============================================================================
 !> Round a double-precision floating point number to `digit` sig. figs.
-!> =============================================================================
+!===============================================================================
 FUNCTION round8(a,digit) result (b)
   real(8) :: a, b, rof, q1, q2,q3
   integer :: digit

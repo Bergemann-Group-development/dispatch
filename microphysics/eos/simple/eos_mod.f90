@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Equation of state module for any sort of tables, provided by a reader
-!> =============================================================================
+!===============================================================================
 MODULE eos_mod
   USE io_mod
   USE mpi_mod
@@ -32,11 +32,11 @@ MODULE eos_mod
   type (eos_t), public:: eos
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The eos reader is supposed to deliver table date in the eos_reader data
 !> type, with pressure and internal energy in an (nT,nd,2) table, with NT
 !> temperature value T(nT), and nd density values d(nd).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self,nv)
   class (eos_t):: self
   integer,optional :: nv
@@ -195,9 +195,9 @@ SUBROUTINE init (self,nv)
   end associate
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Accurate interpolation, used only to generate the working table
-!> =============================================================================
+!===============================================================================
 FUNCTION interpolate (x, y, x0) RESULT (out)
   real(8), dimension(:):: x, y
   real(8):: x0, out, p
@@ -206,9 +206,9 @@ FUNCTION interpolate (x, y, x0) RESULT (out)
   out = lagrange%sequence (x0, x, y)
 END FUNCTION interpolate
 
-!> =============================================================================
+!===============================================================================
 !> Accurate interpolation, used only to generate the working table
-!> =============================================================================
+!===============================================================================
 FUNCTION interpolate4 (x, y, x0) RESULT (out)
   real, dimension(:):: x, y
   real:: x0, out, p
@@ -217,9 +217,9 @@ FUNCTION interpolate4 (x, y, x0) RESULT (out)
   out = lagrange%sequence (x0, x, y)
 END FUNCTION interpolate4
 
-!> =============================================================================
+!===============================================================================
 !> By convention, there should be a pressure (lnd, lne) function
-!> =============================================================================
+!===============================================================================
 FUNCTION pressure (self, lnd, lne) RESULT (pg)
   class (eos_t):: self
   real, dimension(:,:,:), pointer:: lnd, lne
@@ -228,9 +228,9 @@ FUNCTION pressure (self, lnd, lne) RESULT (pg)
   call self%lookup ([size(lnd,1),size(lnd,2),size(lnd,3)], lnd, lne, pg=pg)
 END FUNCTION pressure
 
-!> =============================================================================
+!===============================================================================
 !> General EOS lookup routine, returning values in optional arguments
-!> =============================================================================
+!===============================================================================
 SUBROUTINE lookup (self, dim, lnd, lne, d, ee, pg, tt, iskip)
   class (eos_t):: self
   integer:: dim(3)

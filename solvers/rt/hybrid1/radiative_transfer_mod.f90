@@ -158,12 +158,12 @@ SUBROUTINE rt_setup (self)
   !$omp end critical (rt_cr)
 END SUBROUTINE rt_setup
 
-!> =====================================================================
+!=======================================================================
 !> My separate nbor connectors. The original one in link_mod does not do
 !> the job right for rt. Second one is for connecting rt_internal and 
 !> corresponding corrections. Both checks are deactivated by default. If
 !> task becomes a BC one, it activates itself's link.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE connect_nbors(self, nbor)
   class(link_t), pointer :: self
   class(link_t), pointer :: nbor, link1, link2
@@ -180,10 +180,10 @@ SUBROUTINE connect_nbors(self, nbor)
   call self%add_nbor_by_rank(link2)
 END SUBROUTINE connect_nbors
 
-!> =====================================================================
+!=======================================================================
 !> My separate nbor connectors. This version deactivates both links and
 !> saves the link of the correction task for it to be altered upon need
-!> =====================================================================
+!=======================================================================
 SUBROUTINE connect_corr_nbors(self, nbor, nb_l)
   class(link_t), pointer           :: self
   class(link_t), pointer           :: nbor, link1, link2
@@ -204,10 +204,10 @@ SUBROUTINE connect_corr_nbors(self, nbor, nb_l)
   
 END SUBROUTINE connect_corr_nbors
 
-!> =============================================================================
+!===============================================================================
 !> Finalize the neighbor lists for upstream correction tasks by connecting 
 !> them to appropriate up/down nbors.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add_upstream_nbors (self)
   class(list_t):: self
   class(link_t),       pointer :: rt_list, my_mhd_nbor, nb_mhd
@@ -268,11 +268,11 @@ SUBROUTINE add_upstream_nbors (self)
 END SUBROUTINE add_upstream_nbors
 
 
-!> =============================================================================
+!===============================================================================
 !> Finalize the neighbor lists for internal solution tasks by connecting 
 !> them to appropriate higher/lower level nbors.
 !> TO DO: NEEDS LOGICS, to be done: internal alteration, ray cutting, etc
-!> =============================================================================
+!===============================================================================
 SUBROUTINE add_internal_nbors (self)
   class(list_t):: self
   class(link_t),        pointer :: rt_tasks, rt_tasks2

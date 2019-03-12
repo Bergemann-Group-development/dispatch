@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Opacity module for the piece-wise analytic opacities of Bell & Lin
 !> (1994, ApJ, 427, 987).
-!> =============================================================================
+!===============================================================================
 MODULE opacities_mod
   USE trace_mod
   USE scaling_mod
@@ -32,7 +32,7 @@ SUBROUTINE init_bell_lin(self)
   call trace_end
 END SUBROUTINE init_bell_lin
 
-!> =============================================================================
+!===============================================================================
 !> Calculate a temperature and density dependent opacity following the piece-wise
 !> analytic functions of Bell & Lin (1994, ApJ, 427, 987).
 !> Near the location of transitions between pieces, the opacity is smoothed with
@@ -46,7 +46,7 @@ END SUBROUTINE init_bell_lin
 !> - The smoothing procedure is specific to these opacities.  If a different
 !>   opacity formula is used, the smoothing will need to be re-derived.  See JPR's
 !>   notes titled "Lin & Papaloizou analytic opacity function" from April 2013.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE BellLinOpacity (self,rho0, temp0, nwb, kappa)
   class(opacity_t) :: self
   real(4), dimension(:,:,:), pointer :: rho0, temp0

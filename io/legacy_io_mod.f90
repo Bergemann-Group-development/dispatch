@@ -14,11 +14,11 @@ MODULE legacy_io_mod
   type(legacy_io_t), public:: legacy_io
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Write results to disk, placing the files belonging to each snapshot in a
 !> separate directory, to avoid the slowdown sometimes associated with having
 !> many files in the same directory.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self, experiment_name)
   class(patch_t):: self
   character(len=64) filename, logname, experiment_name
@@ -118,9 +118,9 @@ SUBROUTINE output (self, experiment_name)
   call trace%end()
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 !> Check for y-redundancy
-!> =============================================================================
+!===============================================================================
 SUBROUTINE check_error (patch, a, label, error)
   class(patch_t):: patch
   character(len=*), optional:: label
@@ -167,9 +167,9 @@ SUBROUTINE check_error (patch, a, label, error)
   deallocate(b)
 END SUBROUTINE check_error
 
-!> =============================================================================
+!===============================================================================
 !> Read snapshot from disk
-!> =============================================================================
+!===============================================================================
 SUBROUTINE input (self, ok)
   class(patch_t):: self
   logical:: ok

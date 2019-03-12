@@ -1,9 +1,9 @@
-!> =============================================================================
+!===============================================================================
 !> HD module for the Sedov blast wave exercise. This implements the hydrodynamic
 !> equations in conservative form on a staggered mesh, where density and entropy
 !> are centered at cell-centers, linear momenta are centered on cell faces (walls),
 !> and momentum fluxes are centered on cell edges.
-!> =============================================================================
+!===============================================================================
 MODULE initial_mod
   USE mpi_mod
   USE io_mod
@@ -31,9 +31,9 @@ MODULE initial_mod
   real, dimension(:,:,:),   pointer, save:: d, s
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Generic initial conditions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, solver)
   class(initial_t):: self
   character(len=64):: solver
@@ -41,17 +41,17 @@ SUBROUTINE init (self, solver)
   self%solver = solver
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Generic initial conditions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE cleanup (self)
   class(initial_t):: self
   !.............................................................................
 END SUBROUTINE cleanup
 
-!> =============================================================================
+!===============================================================================
 !> Generic initial conditions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE conditions (self, mesh, mem, idx)
   class(initial_t):: self
   type(index_t):: idx
@@ -90,9 +90,9 @@ SUBROUTINE conditions (self, mesh, mem, idx)
   call trace%end
 END SUBROUTINE conditions
 
-!> =============================================================================
+!===============================================================================
 !> Sedov blast wave initial conditions
-!> =============================================================================
+!===============================================================================
 SUBROUTINE sedov (self, mesh, mem, idx)
   class(initial_t):: self
   type(index_t):: idx
@@ -148,10 +148,10 @@ SUBROUTINE sedov (self, mesh, mem, idx)
   call trace%end
 END SUBROUTINE sedov
 
-!> =============================================================================
+!===============================================================================
 !> Map variables to the current memory slot and initialize the deriv operators.
 !> mhd_t%init is called from timestep_t%init, again called from task_list_t%init.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE advection (self, mesh, mem, idx)
   class(initial_t):: self
   type(index_t):: idx

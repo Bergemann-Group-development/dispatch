@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Set up potentially nested set of spherical patches centred on a sphere.
 !> The minimum number of patches is six, which is designed to cover 4*pi with
 !> uniform-mesh patches and a minimum of overlap.
@@ -8,7 +8,7 @@
 !> nsplit: Starting with the six base patches, split each patch into nsplit**3
 !>         additional patches.
 !>
-!> =============================================================================
+!===============================================================================
 MODULE volleyball_mod
   USE io_mod
   USE bits_mod
@@ -33,7 +33,7 @@ MODULE volleyball_mod
   real(8), parameter :: pi = asin(1.0) * 2.0
 
 CONTAINS
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, label)
   class(volleyball_t):: self
   character(len=*), optional:: label
@@ -75,7 +75,7 @@ SUBROUTINE init (self, label)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE make_patch (self, ibase, cr, ctheta, cphi, extent, ispl, npp)
   class(volleyball_t):: self
   integer, intent(in):: ispl, ibase

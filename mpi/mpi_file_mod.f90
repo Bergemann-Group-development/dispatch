@@ -1,6 +1,6 @@
-!> *****************************************************************************
+!*******************************************************************************
 !> Module for handling blocking and non-blocking MPI parallel I/O to a single file.
-!> *****************************************************************************
+!*******************************************************************************
 MODULE mpi_file_mod
   USE mpi_mod, only: mp=>mpi
   USE omp_mod
@@ -32,9 +32,9 @@ MODULE mpi_file_mod
   integer, save:: verbose=2
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Request that a file is opened, when convenient
-!> =============================================================================
+!===============================================================================
 SUBROUTINE request_open (self, filename)
   class(mpi_file_t):: self
   character(len=*) filename
@@ -51,9 +51,9 @@ SUBROUTINE request_open (self, filename)
   call trace%end
 END SUBROUTINE request_open
 
-!> =============================================================================
+!===============================================================================
 !> Request that a file is closed, when convenient
-!> =============================================================================
+!===============================================================================
 SUBROUTINE request_close (self)
   class(mpi_file_t):: self
   !-----------------------------------------------------------------------------
@@ -62,9 +62,9 @@ SUBROUTINE request_close (self)
   call trace%end
 END SUBROUTINE request_close
 
-!> =============================================================================
+!===============================================================================
 !> Make a files actual status match the requested status
-!> =============================================================================
+!===============================================================================
 SUBROUTINE open_and_close (self)
   class(mpi_file_t):: self
   !-----------------------------------------------------------------------------
@@ -83,11 +83,11 @@ SUBROUTINE open_and_close (self)
   call trace%end
 END SUBROUTINE open_and_close
 
-!> =============================================================================
+!===============================================================================
 !> Open a file with given mode, and given local size self%lsize.  It is not
 !> necessary that all threads execute this code, but at least one thread must
 !> do it, before other threads can use the file.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE open (self, filename, mode)
   class(mpi_file_t):: self
   character(len=*) filename
@@ -126,10 +126,10 @@ SUBROUTINE open (self, filename, mode)
 #endif
 END SUBROUTINE open
 
-!> =============================================================================
+!===============================================================================
 !> Open a file for writing, relieving the user from having to remember (and
 !> having access to) the appropriate mode integers
-!> =============================================================================
+!===============================================================================
 SUBROUTINE openw (self, filename, recl)
   class(mpi_file_t):: self
   character(len=*) filename
@@ -148,10 +148,10 @@ SUBROUTINE openw (self, filename, recl)
   call trace%end()
 END SUBROUTINE openw
 
-!> =============================================================================
+!===============================================================================
 !> Open a file for reading, releaving the user from having to remember (and
 !> having access to) the appropriate mode integers
-!> =============================================================================
+!===============================================================================
 SUBROUTINE openr (self, filename)
   class(mpi_file_t):: self
   character(len=*) filename
@@ -164,12 +164,12 @@ SUBROUTINE openr (self, filename)
   call trace%end()
 END SUBROUTINE openr
 
-!> =============================================================================
+!===============================================================================
 !> Close a file that is open for MPI parallel I/O.  It is not necessary that all
 !> threads execute this code, but all threads must have finalized I/O before one
 !> thread closes the file here. This may require an !$omp barrier in the calling
 !> code.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE close (self)
   class(mpi_file_t):: self
   !-----------------------------------------------------------------------------
@@ -196,9 +196,9 @@ SUBROUTINE close (self)
   call trace%end
 END SUBROUTINE close
 
-!> =============================================================================
+!===============================================================================
 !> Assert no error
-!> =============================================================================
+!===============================================================================
 SUBROUTINE assert (self, label, err)
   class(mpi_file_t):: self
   character(len=*):: label

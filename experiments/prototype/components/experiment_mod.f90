@@ -1,8 +1,8 @@
-!> =============================================================================
+!===============================================================================
 !> The duty of the experiment_mod module is to define a generic experiment_t
 !> object, which has an init procedure and a task list.  The tasks can be of
 !> any type belonging to the task class.
-!> =============================================================================
+!===============================================================================
 MODULE experiment_mod
   USE envelope_mod
   USE planets_mod
@@ -20,10 +20,10 @@ MODULE experiment_mod
   end type
 contains
 
-!> =============================================================================
+!===============================================================================
 !> The init procedure just splices together the relevant task lists.  The
 !> specific behavior of each component is described in its respective module
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   type(star_t), pointer:: star

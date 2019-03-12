@@ -1,13 +1,13 @@
-!> =============================================================================
+!===============================================================================
 !> The duty of the `experiment_mod` module is to define a generic (or specific)
 !> `experiment_t` object, which has an initialisation procedure and a task list.
 !> The tasks can be of any type belonging to the task class.
-!> =============================================================================
+!===============================================================================
 !> This particular `experiment_mod` sets up a rigid sphere within a cylindrical
 !> annulus that is rotating at the Keplerian speed of its radial centre. The
 !> sphere also moves with the local Keplerian speed, but the gas is slightly
 !> sub-Keplerian, resulting in a headwind.
-!> =============================================================================
+!===============================================================================
 MODULE setup_mod
   USE io_mod
   USE trace_mod
@@ -37,10 +37,10 @@ MODULE setup_mod
 
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The init procedure just splices together the relevant task lists.  The
 !> specific behavior of each component is described in its respective module
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_setup (self)
   class(setup_t) :: self
   class(task_t), pointer :: rootpatch

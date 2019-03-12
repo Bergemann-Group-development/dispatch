@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> $Id$
-!> =============================================================================
+!===============================================================================
 MODULE stagger_mod
   USE trace_mod
   USE omp_timer_mod
@@ -50,7 +50,7 @@ MODULE stagger_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 FUNCTION ddxdn1 (mesh, a) RESULT (b)
   real, dimension(:,:,:):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
@@ -668,7 +668,7 @@ FUNCTION h2c (mesh, in) RESULT (out)
     end do
   end do
 END FUNCTION h2c
-!> =============================================================================
+!===============================================================================
 FUNCTION h2f (mesh, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
@@ -684,7 +684,7 @@ FUNCTION h2f (mesh, in) RESULT (out)
     end do
   end do
 END FUNCTION h2f
-!> =============================================================================
+!===============================================================================
 FUNCTION h31c (mesh, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
@@ -700,7 +700,7 @@ FUNCTION h31c (mesh, in) RESULT (out)
     end do
   end do
 END FUNCTION h31c
-!> =============================================================================
+!===============================================================================
 FUNCTION h31f (mesh, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
@@ -716,7 +716,7 @@ FUNCTION h31f (mesh, in) RESULT (out)
     end do
   end do
 END FUNCTION h31f
-!> =============================================================================
+!===============================================================================
 FUNCTION h32c (mesh, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
@@ -732,7 +732,7 @@ FUNCTION h32c (mesh, in) RESULT (out)
     end do
   end do
 END FUNCTION h32c
-!> =============================================================================
+!===============================================================================
 FUNCTION h32f (mesh, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out
@@ -748,7 +748,7 @@ FUNCTION h32f (mesh, in) RESULT (out)
     end do
   end do
 END FUNCTION h32f
-!> =============================================================================
+!===============================================================================
 FUNCTION h3c (mesh, in) RESULT (out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3)):: out

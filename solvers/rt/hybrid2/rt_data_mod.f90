@@ -22,12 +22,12 @@ MODULE rt_data_mod
 !-----------------------------------------------------------------------
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialise RT_data tables, which takes required MHD variables and gets
 !> the source function and opacity per cell, mimicking the MHD patch cell
 !> structure. It also stores intensity per direction per cell to communi-
 !> cate it if patches overlap.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init_rt_data(self)
   class(rt_data_t) :: self
   integer :: i, j, k, d
@@ -72,9 +72,9 @@ SUBROUTINE init_rt_data(self)
   call trace_end
 END SUBROUTINE init_rt_data
 
-!> =====================================================================
+!=======================================================================
 !> Update RT data task values
-!> =====================================================================
+!=======================================================================
 SUBROUTINE update_rt_data (self)
   class(rt_data_t) :: self
   character(len=16):: stime
@@ -108,9 +108,9 @@ END SUBROUTINE update_rt_data
 
 
 
-!> =====================================================================
+!=======================================================================
 !> Test if rt_data module has any errors
-!> =====================================================================
+!=======================================================================
 SUBROUTINE check_rt_data(self, plc)
   class(rt_data_t) :: self
   integer :: plc

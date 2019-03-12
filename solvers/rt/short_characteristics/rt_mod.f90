@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Module to set up angles and bins for an RT patch with only absorption.
 !> This means that the only extra memory with time slot that is needed is
 !> one slot for the net radiation heating, \Sum_bins \Sum_angles Q_bin_angle
@@ -31,7 +31,7 @@
 !> Initially, we wish that only the MHD states are ready to update, and we set
 !> things up so the only thing they do is compute the EOS for the RT solvers.
 !> So, we need self%time < omega%time, and self%eos_time < self%rt_time < 0.
-!> =============================================================================
+!===============================================================================
 MODULE rt_mod
   USE io_mod
   USE trace_mod
@@ -104,9 +104,9 @@ MODULE rt_mod
   type(rt_t), public:: rt
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Read parameters
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class (rt_t):: self
   real(8):: rt_time=0.01_8
@@ -283,7 +283,7 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Run through all angular solvers and attempt to update them.  Solvers that
 !> lack upstream info (based on internal criteria) will do nothing, while
 !> solvers that have enough information will be updated.  The angular solvers
@@ -295,7 +295,7 @@ END SUBROUTINE init
 !>
 !> The update step computes the current RT patch time, based on the current
 !> time in the attached RT solvers for each angle
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self)
   class (rt_t):: self
   integer:: i_omega, i_bin, n_solve, count, id, i3, l(3), u(3), jt(2), loc(3), iv
@@ -502,10 +502,10 @@ SUBROUTINE update (self)
   call trace%end (itimer)
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 !> This replaces mhd_t%update, and is identical, except for the extra limit on
 !> the timestep
-!> =============================================================================
+!===============================================================================
 SUBROUTINE mhd_update (self)
   class(rt_t):: self
   integer, save:: itimer=0
@@ -525,7 +525,7 @@ SUBROUTINE mhd_update (self)
   call trace%end (itimer)
 END SUBROUTINE mhd_update
 
-!> =============================================================================
+!===============================================================================
 !> Add upstream and downstream tasks to an nbor list.  The upstream nbors should
 !> have the settings needed=T, needs_me=F, download=T, while the downstream 
 !> tasks should have needed=F, needs_me=T, download=F.
@@ -541,7 +541,7 @@ END SUBROUTINE mhd_update
 !> 2) be added with needed=T, needs_me=F, download=T, or
 !> 3) be added with needed=F, needs_me=t, download=F
 !>
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_nbors (self)
   class (rt_t):: self
   !.............................................................................
@@ -612,11 +612,11 @@ SUBROUTINE init_nbors (self)
   call trace%end
 END SUBROUTINE init_nbors
 
-!> =============================================================================
+!===============================================================================
 !> Compute the RT EOS quantities for the patch, using self%eos_time to guard
 !> againts duplicate calculations when multi-threading.  Check both before and
 !> after entering a critical region, so most threads never hit the critical region.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE rt_eos (self, time)
   class (rt_t):: self
   real(8):: time
@@ -670,9 +670,9 @@ SUBROUTINE rt_eos (self, time)
   call trace%end (itimer)
 END SUBROUTINE rt_eos
 
-!> =============================================================================
+!===============================================================================
 !> Call integral short characteristics RT solver.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE solve (self)
   class(rt_t):: self
   integer:: i3, ib
@@ -686,11 +686,11 @@ SUBROUTINE solve (self)
   call trace%end (itimer)
 END SUBROUTINE solve
 
-!> =============================================================================
+!===============================================================================
 !> Vertical boundary conditions; here we explicitly assume the vertical direction
 !> to be downwards, so the lower boundary index-wise is the top physical boundary,
 !> where I=0 => Q=-S.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE boundary_conditions (self)
   class (rt_t):: self
   real:: h_scale, tau
@@ -720,11 +720,11 @@ SUBROUTINE boundary_conditions (self)
   call trace%end
 END SUBROUTINE boundary_conditions
 
-!> =============================================================================
+!===============================================================================
 !> Determine if a task is needed (is upstream).  We are being presented with
 !> the nbors of the MHD task, so there is no task above the top-most task, but
 !> there may well be tasks below the rt_bottom, which are not needed as RT nbors
-!> =============================================================================
+!===============================================================================
 FUNCTION needs (self, omega, task)
   logical:: needs
   class(rt_t):: self, omega
@@ -799,9 +799,9 @@ FUNCTION needs (self, omega, task)
     omega%id, rt_task%omega(i)%id, ds1, ds2, is1, is2, needs
 END FUNCTION needs
 
-!> =============================================================================
+!===============================================================================
 !> self is the source task
-!> =============================================================================
+!===============================================================================
 FUNCTION is_ahead_of (self, target)
   logical:: is_ahead_of
   class(rt_t):: self
@@ -834,10 +834,10 @@ FUNCTION is_ahead_of (self, target)
   call trace%end
 END FUNCTION is_ahead_of
 
-!> =============================================================================
+!===============================================================================
 !> Return true if the patch is the horizontally closest to a give position, or
 !> if the patch ID equals io%id_debug, unless level is less than verbose.
-!> =============================================================================
+!===============================================================================
 FUNCTION debug (self, level) RESULT (yes)
   class(rt_t):: self
   integer:: level
@@ -855,9 +855,9 @@ FUNCTION debug (self, level) RESULT (yes)
   yes = yes .and. (verbose >= level)
 END FUNCTION debug
 
-!> =============================================================================
+!===============================================================================
 !> Upgrade task pointer to experiment level
-!> =============================================================================
+!===============================================================================
 FUNCTION task2rt (task) RESULT (rt)
   class(task_t), pointer:: task
   class(rt_t), pointer:: rt
@@ -868,7 +868,7 @@ FUNCTION task2rt (task) RESULT (rt)
   end select
 END FUNCTION task2rt
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE nbors_info (self)
   class(rt_t):: self
   integer:: i_omega
@@ -882,7 +882,7 @@ SUBROUTINE nbors_info (self)
   !end do
 END SUBROUTINE nbors_info
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE nbor_info (link)
   class(link_t), pointer:: link, nbor
   class(rt_t), pointer:: task

@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Set up initial conditions for the Truelove grav. collapse problem.
-!> =============================================================================
+!===============================================================================
 MODULE initial_mod
   USE io_mod
   USE trace_mod
@@ -24,9 +24,9 @@ MODULE initial_mod
   real(8), parameter:: pi = asin(1.0) * 2.0
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
   character(len=64):: solver
@@ -40,7 +40,7 @@ SUBROUTINE init (self, solver, gamma)
   end if
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Set up a uniform cloud configurations as described in Truelove et al. (1998,
 !> ApJ, 495, 821) for self-gravitational collapse.
 !> This set up assumes pure or near isothermality (eg., gamma = 1.001). Lastly,
@@ -93,7 +93,7 @@ END SUBROUTINE init
 !>    c2           matching constant for ambient potential
 !>    c3           matching constant for ambient potential
 !>
-!> =============================================================================
+!===============================================================================
 SUBROUTINE condition (self, m, f, idx)
   class(initial_t):: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: f

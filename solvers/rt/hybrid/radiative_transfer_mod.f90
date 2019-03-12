@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> Module for setting up the radiative transfer, and the relations between the
 !> RT tasks and ray systems.
-!> =============================================================================
+!===============================================================================
 MODULE radiative_transfer_mod
   USE bits_mod
   USE experiment_mod
@@ -25,9 +25,9 @@ MODULE radiative_transfer_mod
   PUBLIC rt_setup, connect_nbors
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The only procedure callable from the outside
-!> =============================================================================
+!===============================================================================
 SUBROUTINE rt_setup (self)
   class(task_list_t)     :: self
   !.....................................................................
@@ -162,7 +162,7 @@ SUBROUTINE rt_setup (self)
 END SUBROUTINE rt_setup
 
 
-!> =====================================================================
+!=======================================================================
 !> Finalize the bundle chains by connecting them to the appropriate
 !> upstream and downstream.
 !> INPUT: rt_task_list
@@ -203,7 +203,7 @@ END SUBROUTINE rt_setup
 !>   their incoming intensity locations to where they are supposed to
 !>   point, see rt_mod::rt_chain_t%finish_chain for more details.
 !> 8) After (7) is complete, this subroutine has done it's job.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE make_chains (self)
   class(list_t) :: self
   !.....................................................................
@@ -342,10 +342,10 @@ SUBROUTINE make_chains (self)
   call trace_end
 END SUBROUTINE make_chains
 
-!> =====================================================================
+!=======================================================================
 !> My separate nbor connectors. The original one in link_mod does not do
 !> the job right for rt.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE connect_nbors(self, nbor)
   class(link_t), pointer :: self
   class(link_t), pointer :: nbor, link1, link2
@@ -365,11 +365,11 @@ SUBROUTINE connect_nbors(self, nbor)
   call self%add_nbor_by_rank(link2)
 END SUBROUTINE connect_nbors
 
-!> =====================================================================
+!=======================================================================
 !> Go through the rt_task list, find the nboring rt tasks ant make them
 !> nbors. Original init_nbors subroutine is not suitable, because all
 !> rt_patches already have a nbor - the rmhd_patch.
-!> =====================================================================
+!=======================================================================
 SUBROUTINE find_rt_nbors (self)
   class(list_t):: self
   class(link_t), pointer:: link1, link2

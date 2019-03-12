@@ -1,13 +1,13 @@
-!> =============================================================================
+!===============================================================================
 !> The duty of the `experiment_mod` module is to define a generic (or specific)
 !> `experiment_t` object, which has an initialisation procedure and a task list.
 !> The tasks can be of any type belonging to the task class.
-!> =============================================================================
+!===============================================================================
 !> This particular `experiment_mod` sets up a rigid cylinder and a shock that
 !> subsequently passes, and is deflected by, the rigid cylinder.  The Newton-Euler
 !> eqns. are used to describe the motion of the cylinder, such that the shock
 !> can actually impulsively move the cylinder.
-!> =============================================================================
+!===============================================================================
 MODULE setup_mod
   USE io_mod
   USE trace_mod
@@ -33,10 +33,10 @@ MODULE setup_mod
 
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> The init procedure just splices together the relevant task lists.  The
 !> specific behavior of each component is described in its respective module
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_setup (self)
   class(setup_t) :: self
   class(experiment_t), pointer :: task

@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> $Id$
 !> Adams-Bashforth time stepping, with constant time step assumed (for now)
 !>
@@ -10,7 +10,7 @@
 !> The experiment_t%update procedure thus writes new time derivatives
 !> there, and it is the task of this timestep procedure to update the values
 !> there, using them time derivatives and the previous values.
-!> =============================================================================
+!===============================================================================
 MODULE timestep_mod
   USE io_mod
   USE trace_mod
@@ -31,9 +31,9 @@ MODULE timestep_mod
   type(timestep_t), save, public:: timestep
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize coefficients for Adams-Bashforth time stepping
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(timestep_t):: self
   integer, save:: verbose=0, time_order=-1
@@ -68,12 +68,12 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Adams-Bashforth linear multi-step update.  We consider it to be linear
 !> multi-step in time index space, which may be just as good -- or better --
 !> than attempting to map into linear time space.  The time slot derivative
 !> values have already been multiplied with the individual time steps dt.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update (self, id, iit, dt, mem, mesh)
   class(timestep_t):: self
   class(mesh_t):: mesh(:)
@@ -137,7 +137,7 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
   call trace_end (itimer)
 END SUBROUTINE update
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update_single (self, id, iit, dt, mem, dmem, mesh, time_order)
   class(timestep_t):: self
   class(mesh_t):: mesh(:)

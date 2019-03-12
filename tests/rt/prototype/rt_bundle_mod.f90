@@ -1,4 +1,4 @@
-!> =====================================================================
+!=======================================================================
 !> The inputs to this module are the opacities and source functions at
 !> the points belonging to the bundle, and the net radiative intensity
 !> self%qin at the upstream face of the bundle.
@@ -14,7 +14,7 @@
 !>
 !> Rather than copy the input values to scratch arrays, the calling
 !> procedure just points to the values, which are part of its data.
-!> =====================================================================
+!=======================================================================
 MODULE rt_bundle_mod
   USE io_mod
   USE trace_mod
@@ -37,9 +37,9 @@ MODULE rt_bundle_mod
 ! ----------------------------------------------------------------------
 CONTAINS
 
-!> =====================================================================
+!=======================================================================
 !> Initialize the solver, which chooses the solver type
-!> =====================================================================
+!=======================================================================
 SUBROUTINE init (self)
   implicit none
   class (rt_bundle_t) :: self
@@ -49,9 +49,9 @@ SUBROUTINE init (self)
   call trace%end
 END SUBROUTINE init
 
-!> =====================================================================
+!=======================================================================
 !> Solve the radiative transfer equation with rt_solver%transfer
-!> =====================================================================
+!=======================================================================
 SUBROUTINE forward (dtau, exp0, s, qin, q, qout)
   implicit none
   real, dimension(:,:,:), pointer :: dtau, exp0, s, q
@@ -74,9 +74,9 @@ SUBROUTINE forward (dtau, exp0, s, qin, q, qout)
   call trace%end
 END SUBROUTINE forward
 
-!> =====================================================================
+!=======================================================================
 !> Solve the radiative transfer equation with rt_solver%transfer
-!> =====================================================================
+!=======================================================================
 SUBROUTINE reverse (dtau, exp0, s, qin, q, qout)
   implicit none
   real, dimension(:,:,:), pointer :: dtau, exp0, s, q
@@ -99,9 +99,9 @@ SUBROUTINE reverse (dtau, exp0, s, qin, q, qout)
   call trace%end
 END SUBROUTINE reverse
 
-!> =====================================================================
+!=======================================================================
 !> Solve the radiative transfer equation with rt_solver%transfer
-!> =====================================================================
+!=======================================================================
 SUBROUTINE transfer (dtau, s, Ifw0, Ifw1, q, Irv1, Irv0)
   implicit none
   real, dimension(:,:,:), pointer :: dtau, s, q

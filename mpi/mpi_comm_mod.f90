@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Simple module for sending / receiving packages to / from other ranks
-!> =============================================================================
+!===============================================================================
 MODULE mpi_comm_mod
 #ifdef MPI
   USE mpi
@@ -20,9 +20,9 @@ MODULE mpi_comm_mod
   end type
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Send a buffer to a rank, with a given tag, and ignore the request
-!> =============================================================================
+!===============================================================================
 SUBROUTINE send (self, rank, tag)
   class(mpi_comm_t):: self
   integer:: rank, tag
@@ -40,9 +40,9 @@ SUBROUTINE send (self, rank, tag)
 #endif MPI
 END SUBROUTINE send
 
-!> =============================================================================
+!===============================================================================
 !> If not send request is active, start a send.  When finished, clear request.
-!> =============================================================================
+!===============================================================================
 FUNCTION sent (self)
   logical:: sent
   class(mpi_comm_t):: self
@@ -63,13 +63,13 @@ FUNCTION sent (self)
   if (sent) self%req = 0
 END FUNCTION sent
 
-!> =============================================================================
+!===============================================================================
 !> If no request is active, issue an MPI_Irecv.  If a request is active, clear
 !> the request if it has finished.  In this way, we can receive a stream of
 !> messages that we know are being sent from a specific rank.  The buffer is
 !> assumed to be permanent, but we are only allowed to access the content when
 !> a recv call results in a cleared request.
-!> =============================================================================
+!===============================================================================
 FUNCTION recv (self, rank, tag)
   logical:: recv
   class(mpi_comm_t):: self

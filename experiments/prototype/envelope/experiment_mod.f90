@@ -1,7 +1,7 @@
-!> =============================================================================
+!===============================================================================
 !> The duty of the experiment_mod module is to define a generic experiment_t
 !> object, which has an init procedure that populates a task list.
-!> =============================================================================
+!===============================================================================
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
@@ -19,10 +19,10 @@ MODULE experiment_mod
   end type
 contains
 
-!> =============================================================================
+!===============================================================================
 !> The init procedure reads parameters, allocates and adds patches to the task
 !> list
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
   class(task_t), pointer:: patch
@@ -59,7 +59,7 @@ SUBROUTINE init (self)
   call trace_end
 END SUBROUTINE
 
-!> =============================================================================
+!===============================================================================
 SUBROUTINE end (self)
   class(experiment_t):: self
 END SUBROUTINE

@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Initializiation and update of each ZEUS patch
-!> =============================================================================
+!===============================================================================
 MODULE experiment_mod
   USE io_mod
   USE trace_mod
@@ -22,9 +22,9 @@ MODULE experiment_mod
 
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialise this experiment.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_experiment (self)
   class(experiment_t) :: self
   !----------------------------------------------------------------------------
@@ -42,9 +42,9 @@ SUBROUTINE init_experiment (self)
   call trace_end
 END SUBROUTINE init_experiment
 
-!> =============================================================================
+!===============================================================================
 !> Update procedure for this experiment.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE update_experiment (self)
   class(experiment_t):: self
   !----------------------------------------------------------------------------
@@ -57,7 +57,7 @@ SUBROUTINE update_experiment (self)
   call trace_end
 END SUBROUTINE update_experiment
 
-!> =============================================================================
+!===============================================================================
 !> Initialise a spherical region with a specific radius wherein the MHD
 !> variables differ from the remainder of the domain.
 !> This experiment should be able to generate the initial conditions for Sedov
@@ -76,7 +76,7 @@ END SUBROUTINE update_experiment
 !>  by0: the y-mag. field " "     "    [by0(1)]  "     "       "    [by0(2)]
 !>  bz0: the z-mag. field " "     "    [bz0(1)]  "     "       "    [bz0(2)]
 !>
-!> =============================================================================
+!===============================================================================
 SUBROUTINE initial_conditions (patch)
   class(experiment_t), target:: patch
   class(mesh_t), pointer:: m1, m2, m3
