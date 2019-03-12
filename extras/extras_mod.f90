@@ -1,4 +1,4 @@
-!> =============================================================================
+!===============================================================================
 !> Template version of a module intended for adding extra features, at a level
 !> between the basic task and patch layer, and the layer of solvers.
 !>
@@ -49,7 +49,7 @@
 !> This module should generally NOT use the h5_mod (HDF5) module itself. h5_mod
 !> should instead be USEd from the actual extra modules that wish to use it to
 !> save ad hoc results in a standardized format.
-!> =============================================================================
+!===============================================================================
 
 MODULE extras_mod
   !-----------------------------------------------------------------------------
@@ -95,9 +95,9 @@ MODULE extras_mod
   type(extras_t), public:: extras
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialize the modules that are to be included and used
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
@@ -113,9 +113,9 @@ SUBROUTINE init (self)
   !call sink_patch%init                                          ! sinkp
 END SUBROUTINE init
 
-!> =============================================================================
+!===============================================================================
 !> Save a pointer to the task list, for use in underlings that need it
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_task_list (self, task_list)
   class(sinkparticles_t):: self
   class(list_t), pointer:: task_list
@@ -123,12 +123,12 @@ SUBROUTINE init_task_list (self, task_list)
   self%task_list => task_list
 END SUBROUTINE init_task_list
 
-!> =============================================================================
+!===============================================================================
 !> The pre_update hierarchy is called before the solver updates. To allow for
 !> a general case, with several force data types adding their contributions,
 !> the generic patch_t%arrays must (if allocated), be set to zero here, so each
 !> force can be added separately, and to prevent these contributions to pile up.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
@@ -143,9 +143,9 @@ SUBROUTINE pre_update (self)
   !call particle_solver%force_field (self)                       ! sinkp
 END SUBROUTINE pre_update
 
-!> =============================================================================
+!===============================================================================
 !> The post_update hierarchy is called after the solver updates
-!> =============================================================================
+!===============================================================================
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
@@ -153,18 +153,18 @@ SUBROUTINE post_update (self)
   !call self%gravity%post_update                                 ! gravity
 END SUBROUTINE post_update
 
-!> =============================================================================
+!===============================================================================
 !> Optionally call specific output modules for the extra features
-!> =============================================================================
+!===============================================================================
 SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
   call self%gpatch_t%output                                     ! keep
 END SUBROUTINE output
 
-!> =============================================================================
+!===============================================================================
 !> Interface to refinement
-!> =============================================================================
+!===============================================================================
 INTEGER function check_refine (self, patch)
   class(extras_t):: self
   class(patch_t), pointer:: patch
