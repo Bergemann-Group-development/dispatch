@@ -504,7 +504,7 @@ SUBROUTINE split_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   ! Decide how to split
   !-----------------------------------------------------------------------------
-  this_patch => gpatch%cast2gpatch (link%task)
+  this_patch => gpatch%cast2gpatch (this%task)
   if (this_patch%msplit>0) then
     nsplit = this_patch%msplit
   else
