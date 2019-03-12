@@ -3,7 +3,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to DISPATCH's documentation!
+DISPATCH documentation
 ====================================
 
 .. toctree::
@@ -11,11 +11,10 @@ Welcome to DISPATCH's documentation!
    :caption: Contents:
 
 
-<a href=doxygen>Doxygen output</a>
-
-
 Indices and tables
 ==================
+
+* :ref:`doxygen`
 
 * :ref:`genindex`
 * :ref:`modindex`
