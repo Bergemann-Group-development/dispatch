@@ -813,6 +813,7 @@ EXCLUDE_PATTERNS       = */data/* \
                          */.git \
                          */.d \
                          */tests/* \
+                         */experiments/* \
                          */build/*
 
 # The EXCLUDE_SYMBOLS tag can be used to specify one or more symbol names
