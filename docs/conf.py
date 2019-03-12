@@ -73,7 +73,7 @@ pygments_style = None
 
 
 # -- Options for HTML output -------------------------------------------------
-html_extra_path = ['_build/html']
+html_extra_path = ['_doxy/html']
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
@@ -186,3 +186,4 @@ todo_include_todos = True
 
 import subprocess
 subprocess.call('doxygen', shell=True)
+subprocess.call('ls -R', shell=True)
