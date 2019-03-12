@@ -11,7 +11,5 @@ DISPATCH documentation
    :maxdepth: 3
    :caption: Contents:
 
-   Principles
-   Doxygen
-   Google
+   Documentation
  
