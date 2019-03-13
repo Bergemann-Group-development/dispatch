@@ -117,7 +117,7 @@ END SUBROUTINE init
 !> Save a pointer to the task list, for use in underlings that need it
 !===============================================================================
 SUBROUTINE init_task_list (self, task_list)
-  class(sinkparticles_t):: self
+  class(extras_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
   self%task_list => task_list
@@ -132,12 +132,12 @@ END SUBROUTINE init_task_list
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
-  if (allocated (self%forces_per_unit_mass)) &                  ! keep
-    self%forces_per_unit_mass = 0.0                             ! keep
-  if (allocated (self%forces_per_unit_volume)) &                ! keep
-    self%forces_per_unit_volume = 0.0                           ! keep
-  !call self%forces%pre_update (self)                            ! forces
-  !call self%trace_particles%update (self)                       ! tracep
+  if (allocated (self%force_per_unit_mass)) &                   ! keep
+    self%force_per_unit_mass = 0.0                              ! keep
+  if (allocated (self%force_per_unit_volume)) &                 ! keep
+    self%force_per_unit_volume = 0.0                            ! keep
+  !call self%forces%pre_update                                   ! forces
+  !call self%trace_particles%update                              ! tracep
   !call self%spitzer%pre_update()                                ! spitzer
   !call self%gravity%pre_update()                                ! gravity
   !call particle_solver%force_field (self)                       ! sinkp
@@ -167,7 +167,7 @@ END SUBROUTINE output
 !===============================================================================
 INTEGER function check_refine (self, patch)
   class(extras_t):: self
-  class(patch_t), pointer:: patch
+  class(gpatch_t), pointer:: patch
   !.............................................................................
   check_refine = -1
   !check_refine = max (check_refine, &
