@@ -224,9 +224,12 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   !-----------------------------------------------------------------------------
   ! Check if refinement is needed on the task; if so this will push new tasks
   ! onto the queue, with the same task time; i.e., to the head of the queue.
-  ! If the task is virtual, it will not be checked by this rank.
+  ! If the task is virtual, it will not be checked by this rank. Note that this
+  ! call may cause the task, or its parent task, to become locked, and of the
+  ! current task is a child patch, it will have to wait for a long on the parent.
   !-----------------------------------------------------------------------------
   call refine%check_current(self, head, refined, derefined)
+  !---------------------------------------------------------------------------
   if (present(was_refined)) then
     was_refined = refined
   end if

@@ -33,6 +33,7 @@ MODULE dispatcher0_mod
     procedure:: update
   end type
   real(8):: stall_start=0d0, max_stalled=600d0, retry_stalled=30d0
+  type(lock_t), save:: stall_lock
   integer, save:: verbose=0
   integer, save:: stalled=0
   integer, save:: min_nq=2**30
@@ -96,6 +97,7 @@ SUBROUTINE execute (self, task_list, test)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher0_t%execute', itimer=itimer)
+  call stall_lock%init
   call task_list%startup
   call tic (time=sec)
   call timer%print()
@@ -185,7 +187,7 @@ SUBROUTINE update (self, task_list, test)
   call data_io%open_and_close ()
   if (task_list%verbose > 0) &
     write (io%output,*) wallclock(),' thread',omp%thread,' waiting for tasklist(1)'
-  call task_list%lock%set
+  call task_list%lock%set ('dispatch0_t%update 1')
   if (task_list%verbose > 0) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(1)'
   !-----------------------------------------------------------------------------
@@ -316,7 +318,7 @@ SUBROUTINE update (self, task_list, test)
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,i6,2x,a)') wallclock(), task_list%na, 'no queue'
   end if
-  call task_list%lock%unset
+  call task_list%lock%unset ('dispatch0_t%update 1')
   if (task_list%verbose > 0) &
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(1)'
   !-----------------------------------------------------------------------------
@@ -350,15 +352,15 @@ SUBROUTINE update (self, task_list, test)
       end if
     end if
   else
-    call task_list%lock%set
+    call stall_lock%set ('dispatch0_t%stall 1')
     if (stalled == 0) then
       stall_start = wallclock()
       if (debug) &
         write (io_unit%log,*) wallclock(), 'queue stalled', stalled
     end if
     stalled = stalled+1
-    call task_list%lock%unset
-    call self%lock%set
+    call stall_lock%unset ('dispatch0_t%stall 1')
+    call self%lock%set ('dispatch0_t%stall 2')
     if (wallclock()-stall_start > retry_stalled) then
        !print *, mpi%rank, 'STALLED:'
        call task_list%check_all
@@ -384,7 +386,7 @@ SUBROUTINE update (self, task_list, test)
       print *, mpi%rank, 'STALLED bailing out'
       call mpi%abort ('exceeded max_stalled')
     end if
-    call self%lock%unset
+    call self%lock%unset  ('dispatch0_t%stall 2')
   end if
   call trace_end (itimer)
 END SUBROUTINE update

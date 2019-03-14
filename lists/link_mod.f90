@@ -15,6 +15,7 @@ MODULE link_mod
   USE bits_mod
   USE task_mod
   USE omp_timer_mod
+  USE omp_lock_mod
   implicit none
   private
 
@@ -27,6 +28,8 @@ MODULE link_mod
     class(link_t), pointer :: parent => null()       ! parent task link
     class(link_t), pointer :: next_time => null()    ! next link in time order
     class(link_t), pointer :: next_active => null()  ! next link to an active process, in time order
+    type(lock_t):: lock
+    logical:: initialized = .false.
     logical:: check = .true.
     !---------------------------------------------------------------------------
     ! Flags making it possible to distinguish between nbors needed for link%task,
@@ -38,6 +41,7 @@ MODULE link_mod
     logical:: needs_me  = .true.    ! marks nbors included in check_ready()
     logical:: download = .true.     ! marks nbors included in download_link()
   contains
+    procedure:: init
     procedure:: add_nbor_by_quality
     procedure:: add_nbor_by_rank
     procedure:: remove_nbor
@@ -59,6 +63,21 @@ MODULE link_mod
 CONTAINS
 
 !===============================================================================
+!> If link is not already initialized, initialize its lock, and use the lock to
+!> mark it as initialized.
+!===============================================================================
+SUBROUTINE init (self)
+  class(link_t):: self
+  !............................................................................
+  if (.not.self%initialized) then
+    call self%lock%init ('link')
+    call self%lock%set ('link_t%init')
+    self%initialized = .true.
+    call self%lock%unset ('link_t%init')
+  end if
+END SUBROUTINE init
+
+!===============================================================================
 !> Initialize the nbors chain of a new task (self), by
 !> 1) adding the parent
 !> 2) searching the parent nbors, adding tasks that overlap
@@ -72,6 +91,7 @@ SUBROUTINE make_new_nbors (self, selfp, parent)
   call trace_begin('list_t%make_new_nbors', 1)
   t1 => self%task
   call self%make_new_nbor (selfp, parent)       ! make me a neighbor of my parent
+  call parent%lock%set ('make_new_nbors')
   nbor => parent%nbor                           ! start on parent's nbors chain
   do while (associated(nbor))
     t2 => nbor%task
@@ -80,6 +100,7 @@ SUBROUTINE make_new_nbors (self, selfp, parent)
       call self%make_new_nbor (selfp, nbor%nbor)! make a neighbor (and make me one)
     nbor => nbor%next                           ! continue on parents nbors chain
   end do
+  call parent%lock%unset ('make_new_nbors')
   call trace_end
 END SUBROUTINE make_new_nbors
 
@@ -122,6 +143,7 @@ SUBROUTINE add_nbor_by_quality (self, this)
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_quality')
+  call self%lock%set ('add_nbor_by_quality')
   nullify (prev)
   next => self%nbor
   do while (associated(next))
@@ -155,6 +177,7 @@ SUBROUTINE add_nbor_by_quality (self, this)
   end if
   self%task%n_nbors = self%task%n_nbors+1
 9 continue
+  call self%lock%unset ('add_nbor_by_quality')
   call trace_end
 END SUBROUTINE add_nbor_by_quality
 
@@ -283,6 +306,7 @@ SUBROUTINE add_nbor_by_rank (self, this)
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_rank', 3)
+  call self%lock%set ('add_nbor_by_rank')
   if (io%verbose>2) &
   write (io_unit%log,*) '  adding task', this%task%id, &
     this%task%is_set(bits%boundary), this%task%is_set(bits%virtual), &
@@ -319,6 +343,7 @@ SUBROUTINE add_nbor_by_rank (self, this)
   end if
   self%task%n_nbors = self%task%n_nbors+1
 9 continue
+  call self%lock%unset ('add_nbor_by_rank')
   call trace_end
 END SUBROUTINE add_nbor_by_rank
 
@@ -332,6 +357,7 @@ SUBROUTINE remove_nbor (self, this)
   class(link_t), pointer:: nbor, prev, next
   !.............................................................................
   call trace_begin ('link_mod::remove_nbor', 2)
+  call self%lock%set ('remove_nbor')
   if (io%verbose>1) &
     write (io_unit%log,*) 'removing task', this%task%id,associated(this%link), &
       ' from nbor list of', self%task%id
@@ -355,6 +381,7 @@ SUBROUTINE remove_nbor (self, this)
   if (io%verbose>2) &
     write (io_unit%log,*) 'WARNING: remove_nbor could not find task', this%task%id
 9 continue
+  call self%lock%unset ('remove_nbor')
   call trace_end
 END SUBROUTINE remove_nbor
 
@@ -367,11 +394,13 @@ SUBROUTINE remove_from_nbors (self, this)
   class(link_t), pointer:: nbor
   !.............................................................................
   call trace_begin ('link_mod::remove_from_nbors', 2)
+  call self%lock%set ('remove_from_nbors')
   nbor => self%nbor
   do while (associated(nbor))
     call nbor%link%remove_nbor (this)
     nbor => nbor%next
   end do
+  call self%lock%unset ('remove_from_nbors')
   call trace_end
 END SUBROUTINE remove_from_nbors
 
@@ -405,6 +434,7 @@ SUBROUTINE update_nbor_status (self, link)
   integer:: status
   !-----------------------------------------------------------------------------
   call trace_begin ('link_mod::update_nbor_status')
+  call self%lock%set ('update_nbor_status')
   !
   nbor => self%nbor                                     ! then help others
   do while (associated(nbor))
@@ -449,6 +479,7 @@ SUBROUTINE update_nbor_status (self, link)
     call self%send_to_vnbors                            ! need to send ...
     call nbor%task%clear (bits%swap_request)
   end if
+  call self%lock%unset ('update_nbor_status')
   call trace_end
 END SUBROUTINE update_nbor_status
 
@@ -461,6 +492,7 @@ SUBROUTINE update_status (self)
   class(link_t):: self
   class(link_t), pointer:: nbor
   !-----------------------------------------------------------------------------
+  call self%lock%set ('update_status')
   nbor => self%nbor
   if      (self%task%rank == mpi%rank) then
     do while (associated(nbor))
@@ -494,6 +526,7 @@ SUBROUTINE update_status (self)
     if (io%verbose>0) &
       write (io_unit%log,*) '    set to external id =', self%task%id
   end if
+  call self%lock%unset ('update_status')
 END SUBROUTINE update_status
 
 !===============================================================================
@@ -578,6 +611,7 @@ SUBROUTINE send_to_vnbors (self)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('link_mod::send_to_vnbors', itimer=itimer)
+  call self%lock%set ('send_to_vnbors')
   if (self%task%id == io%id_debug) &
     write(io%output,*) 'DBG link_t%send_to_vnbors: id, rank =', &
       self%task%id, mpi%rank
@@ -640,10 +674,14 @@ SUBROUTINE send_to_vnbors (self)
   if (flag) call mpi_mesg%sent (mesg)                           ! add to sent_list
   call self%task%clear (bits%swap_request)
   call trace_end (itimer)
+  call self%lock%unset ('send_to_vnbors')
 END SUBROUTINE send_to_vnbors
 
 !===============================================================================
-!> Delete a link, and the corresponding task
+!> Delete a link, and the corresponding task.  First make sure to lock the link
+!> and unset any remaining nested locks.  Then delete the task, deallocate the
+!> task itself, the link nbor list.  Finally release the lock and delete the
+!> link.
 !===============================================================================
 SUBROUTINE delete (self, link)
   class(link_t):: self
@@ -651,21 +689,26 @@ SUBROUTINE delete (self, link)
   !.............................................................................
   class(link_t), pointer:: nbor, next
   !-----------------------------------------------------------------------------
-  ! Deallocate the associated task
-  !-----------------------------------------------------------------------------
   call trace_begin ('link_t%delete_link ')
+  !-----------------------------------------------------------------------------
+  call link%lock%set ('link_t%delete')
+  do while (link%lock%level > 1)
+    write (io_unit%output,*) 'delete_link unlocking lock level', link%lock%level
+    call link%lock%unset
+  end do
+  !-----------------------------------------------------------------------------
   call link%task%delete()
   deallocate (link%task)
-  !-----------------------------------------------------------------------------
-  ! Deallocate the nbor list and the link itself
-  !-----------------------------------------------------------------------------
   nbor => link%nbor
   do while (associated(nbor))
     next => nbor%next
     deallocate (nbor)
     nbor => next
   end do
+  !-----------------------------------------------------------------------------
+  call link%lock%unset ('link_t%delete')
   deallocate (link)
+  !-----------------------------------------------------------------------------
   call trace_end()
 END SUBROUTINE delete
 

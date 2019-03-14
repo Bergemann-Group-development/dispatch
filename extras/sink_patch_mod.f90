@@ -34,7 +34,6 @@ MODULE sink_patch_mod
     real(8):: acceleration(3)=0d0
     real(8), dimension(:,:)  , allocatable:: p, v, a
     real(4), dimension(:,:,:), allocatable:: r
-    logical, dimension(:,:,:), allocatable:: mask
     class(particle_solver_t), pointer:: particle_solver
     class(dll_node_t), pointer:: particle
     logical:: on

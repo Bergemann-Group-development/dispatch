@@ -6,30 +6,54 @@
 !>
 !> task_list_t%update
 !>   refine_t%check_current
-!>     refine_t%refine_needed
-!>       refine_t%check_Jeans
+!>     if (associated(task%parent)) &
+!>       task%parent%lock%set ('parent')               + parent locked
+!>     task%lock%set ('task')                          | + child locked
+!>     refine_t%refine_needed                          | !
+!>       refine_t%check_Jeans                          | |
+!>     ...                                             | |
+!>     tasklist%lock%set ('split_patch')               | | + tasklist locked
+!>     split_patch                                     | | |
+!>       ...                                           | | |
+!>       tasklist%init_all_nbors                       | | |
+!>       tasklist%reset_status                         | | |
+!>       child%print_nbors                             | | |
+!>       ...                                           | | |
+!>     check_level_constraints                         | | |
+!>     tasklist%lock%unset ('split_patch')             | | - tasklist unlocked
+!>     ...                                             | |
+!>     tasklist%lock%set ('remove_patch')              | | + tasklist locked
+!>     remove_patch                                    | | |
+!>       tasklist%remove_link (this)                   | | |
+!>       tasklist%init_nbor_nbors (this)               | | |
+!>       tasklist%check_nbor_nbors (this)              | | |
+!>     check_level_constraints                         | | !
+!>     tasklist%lock%unset ('remove_patch')            | | - tasklist unloccked
+!>     ...                                             | |
+!>     if (associated(task%parent)) &                  | |
+!>     task%lock%unset ('task')                        ! - child locked
+!>       task%parent%lock%unset ('parent')             - parent locked
 !>   ...
-!>   tasklist%lock%set
-!>   split_patch
-!>     ...
-!>     tasklist%init_all_nbors
-!>     tasklist%reset_status
-!>     child%print_nbors
-!>     ...
-!>   check_level_constraints
-!>   tasklist%lock%unset
-!>   ...
-!>   tasklist%lock%set
-!>   remove_patch
-!>   check_level_constraints
-!>   tasklist%lock%unset
-!>   ...
+!>
+!> How can locking prevent a download from finding that a patch has disappeared?
+!> If download causes a lock on the target link, that is enough to prevent any
+!> nbor from refining, if and only if refining and derefining requires a lock on
+!> all nbors of the affected patch.
+!>
+!> Special attention is required for the parent task, which must not be allowed
+!> to download from interior patches that have disappeared in the mean time.
+!> Hence a download to the parent patch must be prevented from even starting,
+!> while some child patch is being refined or derefined
+!>
+!> If a download to the parent patch has started, then it is locked by that
+!> thread, and therefore nothing should be able to change.
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE refine_mod
   USE io_mod
   USE trace_mod
   USE omp_mod
   USE omp_timer_mod
+  USE omp_lock_mod
   USE mpi_mod
   USE bits_mod
   USE kinds_mod
@@ -49,7 +73,6 @@ MODULE refine_mod
     integer:: levelmin=1                      ! Min level of refinment
     integer:: levelmax=1                      ! Max level of refinment
     integer:: ratio
-    logical, allocatable:: mask(:,:,:)
   contains
     procedure:: init
     procedure:: refine_needed
@@ -217,11 +240,11 @@ END FUNCTION refine_needed
 SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   class(refine_t):: self
   class(list_t):: tasklist
-  class(link_t), pointer:: link
+  class(link_t), pointer:: link, nbor, first_nbor
   class(gpatch_t), pointer:: patch
   logical, intent(out):: was_refined, was_derefined
   real:: dxmin, dxmax
-  integer:: refine
+  integer:: refine, id
   integer, save:: itimer=0
   !.............................................................................
   was_refined = .false.
@@ -230,25 +253,57 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   if (verbose > 2) &
     print *, link%task%id, 'refine_t%check_current, at t =', &
       link%task%time, link%task%level, self%levelmax
-  !-----------------------------------------------------------------------------
+  !---------------------------------------------------------------------------
   call trace%begin('refine_t%check_current', itimer=itimer)
   patch => gpatch%cast2gpatch (link%task)
+  id = patch%id
+  !---------------------------------------------------------------------------
+  ! Lock the task, and its parent task, if any, for check_refine. This prevents
+  ! the parent and child from considering refine/derefine simultaneously.  If
+  ! the thread working on the parent gets a lock on it, then the child will
+  ! have to wait, and in the mean time it should not be locked, to allow for
+  ! example download access to the child while it is waiting. 
+  !
+  ! If the thread working on the parent gets a lock on it, this forces any
+  ! thread that works on a child patch to wait here, until it can get a lock
+  ! on the parent link.
+  !
+  ! Note that the thread that comes here does NOT (yet) have a lock on the task
+  ! list, so it should safely be able to put a lock on its own task.
+  !
+  ! To prevent confusion, a thread calling download_t%download_link should
+  ! check if any source task has a parent, and if so acquire a lock on it, to
+  ! before proceeding to go through the nbor list.  This should prevent the
+  ! confusion that would arise if the nbor list was modified during the
+  ! download.
+  !---------------------------------------------------------------------------
+  !if (associated(patch%parent)) then
+  !  associate (parent => patch%parent)
+  !  select type (parent)
+  !  class is (gpatch_t)
+  !  call parent%link%lock%set ('parent')
+  !  end select
+  !  end associate
+  !end if
+  !call patch%link%lock%set ('check_current')
+  !-----------------------------------------------------------------------------
   if (patch%is_clear(bits%not_leaf)) then
     if (verbose > 2) &
       tasklist%verbose = verbose
     !---------------------------------------------------------------------------
     ! Setup mask, and check if refinement or derefinement is needed
     !---------------------------------------------------------------------------
-    call self%setup_mask (patch)
+    if (patch%level < self%levelmax) & 
+      call self%setup_mask (patch)
     refine = self%refine_needed (tasklist, link)
+    if (allocated(patch%mask)) &
+      deallocate (patch%mask)
     !---------------------------------------------------------------------------
     ! Optional custom refine
     !---------------------------------------------------------------------------
     if (patch%manual_refine) then
-      call tasklist%lock%set
       call patch%custom_refine
       call check_level_constraint
-      call tasklist%lock%unset
     end if
     !---------------------------------------------------------------------------
     ! A negative refine value indicates that the patch is not needed
@@ -256,15 +311,49 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     if (refine < 0 .and. patch%level > self%levelmin) then
       if (tasklist%verbose > 2) &
         write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(d)'
-      call tasklist%lock%set
       if (tasklist%verbose > 2) &
         write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(d)'
       if (verbose > 0) &
         write (io%output,'(a,i6,i3,2x,a)') &
           'id, level =', patch%id, patch%level, 'derefine'
+      !-------------------------------------------------------------------------
+      ! The task_list must be locked while the patch is removed, and while the
+      ! question of consistent support is considered.  The nbors of the task
+      ! must also be locked, to prevent downloads from happening, until the
+      ! new nbor lists are in place.  There is no need to lock the link itself,
+      ! since it, and the parent link, are already locked.
+      !-------------------------------------------------------------------------
+      !$omp critical (refine_nbor_cr)
+      first_nbor => link%nbor
+      nbor => first_nbor
+      call link%lock%set ('refine_t%split_patch link tasks')
+      do while (associated(nbor))
+        call nbor%link%lock%set ('refine_t remove_patch parent nbor tasks')
+        nbor => nbor%next
+      end do
+      !-------------------------------------------------------------------------
+      call tasklist%lock%set ('refine_t remove_patch tasklist')
       call self%remove_patch (tasklist, link)
       call check_level_constraint
-      call tasklist%lock%unset
+      call tasklist%lock%unset ('refine_t remove_patch tasklist')
+      !-------------------------------------------------------------------------
+      ! The nbor lists are now different, in that they lack the removed task
+      ! (their locks are unlocked before removal), but the ones that remain
+      ! need to be unlocked
+      !-------------------------------------------------------------------------
+      nbor => first_nbor
+      do while (associated(nbor))
+        !write (io_unit%output,'(a,2i6,i3,i4)') &
+        !  'unlock link: task, lock, level, thread =', &
+        !  nbor%task%id, nbor%link%lock%id, nbor%link%lock%level, omp%thread
+        !flush (io_unit%output)
+        call nbor%link%lock%unset ('refine_t remove_patch parent nbor tasks')
+        nbor => nbor%next
+      end do
+      if (associated(link)) &
+        call link%lock%unset ('refine_t%split_patch link tasks')
+      !$omp end critical (refine_nbor_cr)
+      !-------------------------------------------------------------------------
       if (tasklist%verbose > 2) &
         write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(d)'
       was_derefined = .true.
@@ -274,15 +363,43 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     else if (refine > 0 .and. patch%level < self%levelmax) then
       if (tasklist%verbose > 2) &
         write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(r)'
-      call tasklist%lock%set
       if (tasklist%verbose > 2) &
         write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(r)'
       if (verbose > 0) &
         write (io%output,'(a,i6,i3,2x,a)') &
           'id, level =', patch%id, patch%level, 'refine'
+      !-------------------------------------------------------------------------
+      ! The task_list must be locked while the patch is removed, and while the
+      ! question of consistent support is considered.  Also, the current links
+      ! all nbor links must be locked during refine (the current link itself is
+      ! already locked). Such a lock of all nbors must be completed before the
+      ! next thread is allowed to try the same, in case they have competing
+      ! interests.
+      !-------------------------------------------------------------------------
+      !$omp critical (refine_nbor_cr)
+      nbor => link%nbor
+      call link%lock%set ('refine_t%split_patch link tasks')
+      do while (associated(nbor))
+        call nbor%link%lock%set ('refine_t%split_patch nbor tasks')
+        nbor => nbor%next
+      end do
+      !-------------------------------------------------------------------------
+      call tasklist%lock%set ('refine_t split_patch tasklist')
       call self%split_patch (tasklist, link)
       call check_level_constraint
-      call tasklist%lock%unset
+      call tasklist%lock%unset ('refine_t split_patch tasklist')
+      !-------------------------------------------------------------------------
+      ! The nbor list now also contains the new child links, which should be
+      ! locked when created.  All nbor links are unlocked here.
+      !-------------------------------------------------------------------------
+      nbor => link%nbor
+      do while (associated(nbor))
+        call nbor%link%lock%unset ('refine_t%split_patch nbor tasks')
+        nbor => nbor%next
+      end do
+      call link%lock%unset ('refine_t%split_patch link tasks')
+      !$omp end critical (refine_nbor_cr)
+      !-------------------------------------------------------------------------
       if (tasklist%verbose > 2) &
         write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(r)'
       was_refined = .true.
@@ -291,8 +408,20 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       tasklist%verbose = 0
   end if
   !
-  if (allocated(self%mask)) &
-    deallocate (self%mask)
+  !---------------------------------------------------------------------------
+  ! Unlock first the parent task, and then the task, if it still exists
+  !---------------------------------------------------------------------------
+  if (associated(link)) then
+  !  call link%lock%unset ('check_current')
+  !  if (associated(link%task%parent)) then
+  !    associate (parent => link%task%parent)
+  !    select type (parent)
+  !    class is (gpatch_t)
+  !    call parent%link%lock%unset ('parent')
+  !    end select
+  !    end associate
+  !  end if
+  end if
   call trace%end (itimer)
 contains
   !=============================================================================
@@ -349,11 +478,11 @@ SUBROUTINE setup_mask (self, patch)
   nbor => patch%link%nbor
   do while (associated(nbor))
     if (patch%contains(nbor%task%position)) then
-      if (.not.allocated(self%mask)) then
+      if (.not.allocated(patch%mask)) then
         l = patch%mesh%li
         u = patch%mesh%ui
-        allocate (self%mask(l(1):u(1),l(2):u(2),l(3):u(3)))
-        self%mask = .true.
+        allocate (patch%mask(l(1):u(1),l(2):u(2),l(3):u(3)))
+        patch%mask = .true.
       end if
       associate (nbpatch => nbor%task)
       select type (nbpatch)
@@ -364,7 +493,7 @@ SUBROUTINE setup_mask (self, patch)
       u = min(u,patch%mesh%ui)
       end select
       end associate
-      self%mask(l(1):u(1),l(2):u(2),l(3):u(3)) = .false.
+      patch%mask(l(1):u(1),l(2):u(2),l(3):u(3)) = .false.
     end if
     nbor => nbor%next
   end do
@@ -443,6 +572,8 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   ! Neighbour lists are constructed at the end of `split_patch`.
   !------------------------------------------------------------------------
   allocate (child_link)
+  call child_link%init                               ! initialise the lock
+  call child_link%lock%set ('child init')            ! immediately lock it
   child_link%task => child                           ! associate task with link
   child_link%parent => parent_link                   ! used in remove_patch
   child%link => child_link                           ! associate link with task
@@ -526,9 +657,9 @@ SUBROUTINE split_patch (self, tlist, this)
         rpos(3) = (iz-(nsplit(3)+1)*0.5) * split_size(3)
         pos = rpos + this_patch%position
         j = this_patch%index_only(pos)
-        if (allocated(self%mask) .and. &
+        if (allocated(this_patch%mask) .and. &
          all(j >= this_patch%mesh%li .and. j <= this_patch%mesh%ui)) then
-          if (self%mask(j(1),j(2),j(3))) then
+          if (this_patch%mask(j(1),j(2),j(3))) then
             call make_child_patch(self, tlist, this, this_patch, pos, split_size, i)
             i = i+1
           end if
@@ -627,7 +758,9 @@ SUBROUTINE remove_patch (self, tlist, this)
   call tlist%remove_link (this)
   call tlist%init_nbor_nbors (this)
   call tlist%check_nbor_nbors (this)
+  call this%lock%unset ('delete')
   call this%delete (this)
+  nullify (this)
   !-----------------------------------------------------------------------------
   call trace%end()
 END SUBROUTINE remove_patch
@@ -729,9 +862,9 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
     Jeans_num = min_jeans
   else
     c_sound2 = patch%gamma * pg(l(1):u(1),l(2):u(2),l(3):u(3)) / d
-    if (allocated(self%mask)) then
+    if (allocated(patch%mask)) then
       Jeans_length = minval(sqrt(math%pi * c_sound2 / (d*scaling%grav)), &
-        mask=self%mask)
+        mask=patch%mask)
     else
       Jeans_length = minval(sqrt(math%pi * c_sound2 / (d*scaling%grav)))
     end if

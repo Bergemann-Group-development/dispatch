@@ -21,6 +21,7 @@ MODULE omp_lock_mod
     integer:: thread=-1
     character(len=4):: kind = 'void'
     integer:: level=0
+    real:: verbose=0.0
   contains
     procedure:: init
     procedure:: set
@@ -30,7 +31,6 @@ MODULE omp_lock_mod
     procedure:: destroy
   end type
   type(lock_t), public:: lock
-  real:: verbose = 0.0
   integer, save:: id_save=-1
 CONTAINS
 
@@ -44,6 +44,7 @@ SUBROUTINE init (self, kind, id)
   logical omp_in_parallel
   integer:: iostat
   logical:: set_id
+  real, save:: verbose=0.0
   logical:: first_time=.true.
   namelist /lock_params/ verbose
   !-----------------------------------------------------------------------------
@@ -71,13 +72,15 @@ SUBROUTINE init (self, kind, id)
       end if
       if (present(kind)) self%kind = kind
       if (verbose > 0.0) &
-        print *, omp_get_thread_num(), 'initialized lock kind, id ', &
+        write(io_unit%output,*) omp_get_thread_num(), 'initialized lock kind, id ', &
           self%kind, self%id, set_id
+      lock%verbose = verbose
     end if
     !$omp end critical (lock_cr)
 #ifdef TRACE 
     call trace%end()
 #endif
+  self%verbose = verbose
   end if
 END SUBROUTINE init
 
@@ -96,21 +99,27 @@ SUBROUTINE set (self, label)
   call trace%begin('lock_t%set')
 #endif
   thread = omp_get_thread_num()
+  wc = wallclock()
+  if (wc < lock%verbose) then
+    if (present(label)) then
+      write (io_unit%output,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
+        ' lock kind, id, level, thread = ', self%kind, self%id, &
+        self%level, thread, '   get at '//label
+    else
+      write (io_unit%output,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
+        ' lock kind, id, level, thread = ', self%kind, self%id, &
+        self%level, thread, '   get'
+    end if
+  end if
   call omp_set_nest_lock (self%lock)
   self%thread = thread
   self%level = self%level+1
-  !write(io_unit%output,*) &
-  !  'lock%  set: kind, id, thread, level = ', self%kind, self%id, self%thread, self%level
-  !$omp flush
   wc = wallclock()
-  if (wc < verbose) then
-    if (present(label)) then
-      write (io_unit%output,'(f10.6,i4,a,a4,i6,i3,a)') wc, thread, &
-        ' lock kind, id, level = ', self%kind, self%id, self%level, '   set at '//label
-    else
-      write (io_unit%output,'(f10.6,i4,a,a4,i6,i3,a)') wc, thread, &
-        ' lock kind, id, level = ', self%kind, self%id, self%level, '   set'
-    end if
+  !$omp flush
+  if (wc < lock%verbose) then
+    write (io_unit%output,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
+      ' lock kind, id, level, thread = ', self%kind, self%id, &
+      self%level, thread, '   set'
   end if
 #ifdef TRACE 
   call trace%end()
@@ -143,7 +152,7 @@ FUNCTION test (self) RESULT (out)
       self%thread = thread
       self%level = self%level+1
       wc = wallclock()
-      if (wc < verbose) &
+      if (wc < lock%verbose) &
         write (io_unit%log,'(f10.6,i4,a,i6,i3,a)') wc, thread, ' lock id', self%id, self%level, '  test'
       !print *, thread, ' test has lock id', self%id, self%thread
     else
@@ -190,13 +199,13 @@ SUBROUTINE unset (self, label)
   !write(io_unit%output,*) &
   !  'lock%unset: kind, id, thread, level = ', self%kind, self%id, self%thread, self%level
   wc = wallclock()
-  if (wc < verbose) then
+  if (wc < lock%verbose) then
     if (present(label)) then
-      write (io_unit%output,'(f10.6,i4,a,a4,i6,i3,a)') wc, thread, &
-        ' lock kind, id, level = ', self%kind, self%id, self%level, ' unset at '//label
+      write (io_unit%output,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
+        ' lock kind, id, level, thread = ', self%kind, self%id, self%level, thread, ' unset at '//label
     else
-      write (io_unit%output,'(f10.6,i4,a,a4,i6,i3,a)') wc, thread, &
-        ' lock kind, id, level = ', self%kind, self%id, self%level, ' unset'
+      write (io_unit%output,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
+        ' lock kind, id, level, thread = ', self%kind, self%id, self%level, thread, ' unset'
     end if
   end if
 #ifdef TRACE 

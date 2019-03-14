@@ -72,7 +72,7 @@ FUNCTION decrement (self, id, start) RESULT (count)
   !-----------------------------------------------------------------------------
   ! Search for the counter instance, return a new one if not found
   !-----------------------------------------------------------------------------
-  call self%lock%set
+  call self%lock%set ('counters_t%decrement')
   counter => find (self, id, start)
   !-----------------------------------------------------------------------------
   ! Decrement to zero
@@ -83,7 +83,7 @@ FUNCTION decrement (self, id, start) RESULT (count)
   count = counter%count
   if (verbose > 0) &
     write (io_unit%output,*) 'counter_t%decrement: id, count =', counter%id, count
-  call self%lock%unset
+  call self%lock%unset ('counters_t%decrement')
   call trace%end()
 END FUNCTION decrement
 
@@ -102,7 +102,7 @@ FUNCTION increment (self, id, start) RESULT (count)
   !-----------------------------------------------------------------------------
   ! Search for the counter instance, return a new one if not found
   !-----------------------------------------------------------------------------
-  call self%lock%set
+  call self%lock%set ('counters_t%increment')
   counter => find (self, id, start)
   !-----------------------------------------------------------------------------
   ! Increment away from zero
@@ -111,7 +111,7 @@ FUNCTION increment (self, id, start) RESULT (count)
   count = counter%count
   if (verbose > 0) &
     write (io_unit%output,*) 'counter_t%increment: id, count =', counter%id, count
-  call self%lock%unset
+  call self%lock%unset ('counters_t%increment')
   call trace%end()
 END FUNCTION increment
 
@@ -183,7 +183,7 @@ SUBROUTINE remove (self, id)
   type(counter_t), pointer:: counter
   !-----------------------------------------------------------------------------
   call trace%begin ('counters_t%remove')
-  call self%lock%set
+  call self%lock%set ('counters_t%remove')
   counter => find (self, id)
   if (associated(counter%prev)) then
     counter%prev%next => counter%next
@@ -198,7 +198,7 @@ SUBROUTINE remove (self, id)
   deallocate(counter)
   nullify (counter)
   counters%n = counters%n-1
-  call self%lock%unset
+  call self%lock%unset ('counters_t%remove')
   call trace%end
 END SUBROUTINE remove
 

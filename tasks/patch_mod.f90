@@ -69,6 +69,7 @@ MODULE patch_mod
     integer:: file_offset(4)
     type(index_t):: idx
     real:: safety_factor=1.0
+    logical, allocatable:: mask(:,:,:)
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------

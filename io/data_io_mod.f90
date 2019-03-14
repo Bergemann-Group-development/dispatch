@@ -138,7 +138,7 @@ SUBROUTINE output (self, patch, experiment_name)
   if (patch%t(it) >= patch%out_next) then
     if (io%verbose > 1) &
       write (io%output,*) wallclock(),' thread',omp%thread,' waitfor output'
-    call self%lock%set
+    call self%lock%set ('data_io_t%output')
     if (io%verbose > 1) &
       write (io%output,*) wallclock(),' thread',omp%thread,' locked output'
     do while (patch%t(it) >= patch%out_next)
@@ -199,7 +199,7 @@ SUBROUTINE output (self, patch, experiment_name)
       !---------------------------------------------------------------------------
       call os%mkdir_no (patch%iout)
     end do
-    call self%lock%unset
+    call self%lock%unset ('data_io_t%output')
     if (io%verbose > 1) &
       write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'
   end if
@@ -225,7 +225,7 @@ SUBROUTINE input (self, patch, ok)
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%input')
   call self%init (patch)
-  call self%lock%set
+  call self%lock%set ('data_io_t%input')
   ok = .false.
   if (io%restart >= 0) then
     if      (io%method=='direct') then
@@ -254,7 +254,7 @@ SUBROUTINE input (self, patch, ok)
     end if
     patch%t(patch%it) = patch%time
   end if
-  call self%lock%unset
+  call self%lock%unset ('data_io_t%input')
   call trace%end()
 END SUBROUTINE input
 

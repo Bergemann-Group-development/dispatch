@@ -31,6 +31,7 @@ MODULE download_mod
   USE interpolate_mod
   USE lagrange_mod
   USE validate_mod
+  USE omp_lock_mod
   implicit none
   private
   type, public:: download_t
@@ -390,6 +391,19 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   end if
   if (target%is_periodic()) call target%periodic_grid
   !-----------------------------------------------------------------------------
+  ! Lock all tasks on the nbor list
+  !-----------------------------------------------------------------------------
+  if (use_locks) then
+    write (info,'(2i6,i4)') target%id, target%istep, omp%thread
+    call target%link%lock%set ('download link'//trim(info))
+    !nbor => link%nbor
+    !do while (associated(nbor))
+    !  write (info,'(2i6,i4)') nbor%link%task%id, nbor%link%task%istep, omp%thread
+    !  call nbor%link%lock%set ('download_link nbor'//trim(info))
+    !  nbor => nbor%next
+    !end do
+  end if
+  !-----------------------------------------------------------------------------
   ! Optionally, produce an nbor list sorted by increasing level.  In this mode,
   ! we expect to actually store lower level values, and then overwrite with
   ! better values from higher levels, when available
@@ -407,73 +421,81 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   end if
   wc = 0d0
   do while (associated(nbor))
-   wc(0) = wallclock()
-   source => task2patch(nbor%task)
-   if (use_locks) &
-     call source%lock%set ('download'//trim(info))
-   write (info,'(3i6,i4,i6)') target%id, target%istep, source%id, omp%thread, source%istep
-   wc(1) = wc(1) + wallclock() - wc(0)
-   if (verbose > 0) &
-     write(io_unit%log,*) target%id, 'download_t%download_link: source, download =', &
-       source%id, nbor%download
-   if (nbor%download) then
-    if (source%nt == 1) &
-      self%same => same_linear
-    if (trim(target%kind)/='rt_solver') then
-      if (source%is_clear(bits%no_download)) then
-        if (use_different == 2) then
-          call different (self, target, source, all_cells, only=only)
-        else if (use_different == 1) then
-          call different_prolong (self, target, source, all_cells, only=only)
-        else if (use_different == -1) then
-          call different_restrict (self, target, source, only=only)
-        else if (source%level==target%level) then
-          call self%same (target, source, all_cells, only=only)
-        else if ((source%level-target%level) == -1) then
-          call different_prolong (self, target, source, all_cells, only=only)
-        else if (source%level < target%level .and. present(all_cells)) then
-          call different_prolong (self, target, source, all_cells, only=only)
-        else if ((source%level-target%level) == 1) then
-          if (use_different == -2) then
-            call different (self, target, source, all_cells, only=only)
-          else
-            call different_restrict (self, target, source, only=only)
-          end if
-        end if
-      end if
-      if (target%id==id_debug) then
-        write(io_unit%log,'(a,i6,1p,4e12.5)') 'source: id,min,max,fmin,fmaxval:', &
-                 source%id, &
-                 minval(source%mem(:,:,:,source%idx%d,source%it,1)), &
-                 maxval(source%mem(:,:,:,source%idx%d,source%it,1)), &
-                 source%fminval(source%idx%d), &
-                 source%fmaxval(source%idx%d)
-        write(io_unit%log,'(a,i6,1p,4e12.5)') 'target: id,min,max,fmin,fmaxval:', &
-                 target%id, &
-                 minval(target%mem(:,:,:,target%idx%d,target%it,1)), &
-                 maxval(target%mem(:,:,:,target%idx%d,target%it,1)), &
-                 target%fminval(target%idx%d), &
-                 target%fmaxval(target%idx%d)
-      end if
-    else
-      if (trim(source%kind)=='rt_solver') then
-        if (abs(source%level-target%level) < 2) then
-          if (source%level==target%level) then
-            call same_rt (self, target, source)
-          else
-            call different_rt (self, target, source)
-          end if
-        end if
-      end if
+    wc(0) = wallclock()
+    source => task2patch(nbor%task)
+    wc(1) = wc(1) + wallclock() - wc(0)
+    if (verbose > 0) &
+      write(io_unit%log,*) target%id, 'download_t%download_link: source, download =', &
+        source%id, nbor%download
+    if (nbor%download) then
+     if (source%nt == 1) &
+       self%same => same_linear
+     if (trim(target%kind)/='rt_solver') then
+       if (source%is_clear(bits%no_download)) then
+         if (use_different == 2) then
+           call different (self, target, source, all_cells, only=only)
+         else if (use_different == 1) then
+           call different_prolong (self, target, source, all_cells, only=only)
+         else if (use_different == -1) then
+           call different_restrict (self, target, source, only=only)
+         else if (source%level==target%level) then
+           call self%same (target, source, all_cells, only=only)
+         else if ((source%level-target%level) == -1) then
+           call different_prolong (self, target, source, all_cells, only=only)
+         else if (source%level < target%level .and. present(all_cells)) then
+           call different_prolong (self, target, source, all_cells, only=only)
+         else if ((source%level-target%level) == 1) then
+           if (use_different == -2) then
+             call different (self, target, source, all_cells, only=only)
+           else
+             call different_restrict (self, target, source, only=only)
+           end if
+         end if
+       end if
+       if (target%id==id_debug) then
+         write(io_unit%log,'(a,i6,1p,4e12.5)') 'source: id,min,max,fmin,fmaxval:', &
+                  source%id, &
+                  minval(source%mem(:,:,:,source%idx%d,source%it,1)), &
+                  maxval(source%mem(:,:,:,source%idx%d,source%it,1)), &
+                  source%fminval(source%idx%d), &
+                  source%fmaxval(source%idx%d)
+         write(io_unit%log,'(a,i6,1p,4e12.5)') 'target: id,min,max,fmin,fmaxval:', &
+                  target%id, &
+                  minval(target%mem(:,:,:,target%idx%d,target%it,1)), &
+                  maxval(target%mem(:,:,:,target%idx%d,target%it,1)), &
+                  target%fminval(target%idx%d), &
+                  target%fmaxval(target%idx%d)
+       end if
+     else
+       if (trim(source%kind)=='rt_solver') then
+         if (abs(source%level-target%level) < 2) then
+           if (source%level==target%level) then
+             call same_rt (self, target, source)
+           else
+             call different_rt (self, target, source)
+           end if
+         end if
+       end if
+     end if
     end if
-   end if
-   wc(2) = wc(2) + wallclock() - wc(0)
-   if (use_locks) &
-     call source%lock%unset ('download'//trim(info))
-   wc(3) = wc(3) + wallclock() - wc(0)
-   wc(4) = wc(4) + 1d0
-   nbor => nbor%next
+    wc(2) = wc(2) + wallclock() - wc(0)
+    wc(3) = wc(3) + wallclock() - wc(0)
+    wc(4) = wc(4) + 1d0
+    nbor => nbor%next
   end do
+  !-----------------------------------------------------------------------------
+  ! Unlock all tasks on the nbor list
+  !-----------------------------------------------------------------------------
+  if (use_locks) then
+    !nbor => link%nbor
+    !do while (associated(nbor))
+    !  write (info,'(2i6,i4)') nbor%link%task%id, nbor%link%task%istep, omp%thread
+    !  call nbor%link%lock%unset ('download_link nbor'//trim(info))
+    !  nbor => nbor%next
+    !end do
+    write (info,'(2i6,i4)') target%id, target%istep, omp%thread
+    call target%link%lock%unset ('download link'//trim(info))
+  end if
   if (verbose > 0) then
     wc(3) = wc(3)-wc(2)
     wc(2) = wc(2)-wc(1)

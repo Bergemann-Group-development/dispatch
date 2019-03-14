@@ -142,6 +142,7 @@ SUBROUTINE append (self, task, nbor, needed, needs_me)
   !.............................................................................
   call trace_begin ('list_t%append '//self%name)
   allocate (link)
+  call link%init
   link%task => task
   if (present(nbor))     link%nbor     => nbor
   if (present(needed))   link%needed   = needed
@@ -161,9 +162,10 @@ SUBROUTINE append_link (self, link)
   logical, save:: first_time=.true.
   !.............................................................................
   call trace_begin ('list_t%append_link '//self%name)
+  call link%init
   if (self%verbose > 0) &
     write (io%output,*) wallclock(),' thread',omp%thread,' wait for tasklist(2)'
-  call self%lock%set
+  call self%lock%set ('list_t%append_link')
   if (self%verbose > 0) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(2)'
   nullify(link%next)
@@ -194,7 +196,7 @@ SUBROUTINE append_link (self, link)
   else
     call io%abort('append_link: no task associated')
   end if
-  call self%lock%unset
+  call self%lock%unset ('list_t%append_link')
   if (self%verbose > 0) &
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(2)'
   call trace_end
@@ -532,7 +534,7 @@ SUBROUTINE consistency (self, link, i)
   !.............................................................................
   if (self%debug < 2) return
   call trace_begin ('list_t%consistency',1)
-  call self%lock%set
+  call self%lock%set ('list_t%consistency')
   n = 0
   task => link%task
   nbor => link%nbor                                   ! start on nbor list
@@ -548,7 +550,7 @@ SUBROUTINE consistency (self, link, i)
   else
 !    write (io_unit%log,*) task%id, 'consistent', id1, id2, i
   end if
-  call self%lock%unset
+  call self%lock%unset ('list_t%consistency')
   call trace_end
 END SUBROUTINE consistency
 
@@ -678,7 +680,7 @@ SUBROUTINE init_nonleaf (self)
   !.............................................................................
   return
   call trace_begin('list_t%init_nonleaf ')
-  call self%lock%set
+  call self%lock%set ('list_t%init_nonleaf')
   !-----------------------------------------------------------------------------
   ! First find and mark all non-leaf patches; these are patches that the link
   ! patch is fully contained inside -- we *assume* that finer level patches
@@ -704,7 +706,7 @@ SUBROUTINE init_nonleaf (self)
     end do
     link => link%next                                   ! continue list
   end do
-  call self%lock%unset
+  call self%lock%unset ('list_t%init_nonleaf')
   call trace_end
 END SUBROUTINE init_nonleaf
 
@@ -751,6 +753,7 @@ SUBROUTINE init_nbors (self, link)
         !-----------------------------------------------------------------------
         if (scan%task%is_clear(bits%virtual).or.link%task%is_clear(bits%virtual)) then
           allocate (nbor)
+          call nbor%init
           nbor%task => scan%task
           nbor%link => scan
           call link%add_nbor_by_rank (nbor)
@@ -777,14 +780,29 @@ SUBROUTINE init_nbor_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
   !.............................................................................
-  class(link_t), pointer:: nbor
+  class(link_t), pointer:: nbor, nbor2
+  logical:: ok
   !-----------------------------------------------------------------------------
   call self%init_nbors (link)
+  ok = .true.
   nbor => link%nbor
   do while (associated(nbor))
     call self%init_nbors (nbor%link)
+    if (associated(nbor%link%task,link%task)) &
+      ok = .false.
+    if (associated(nbor%task,link%task)) &
+      ok = .false.
+    nbor2 => nbor%link%nbor
+    do while (associated(nbor2))
+      if (associated(nbor2%link%task,link%task)) &
+        ok = .false.
+      if (associated(nbor2%task,link%task)) &
+        ok = .false.
+      nbor2 => nbor2%next
+    end do
     nbor => nbor%next
   end do
+  !print *, 'init_nbor_nbors:', link%task%id, ok
 END SUBROUTINE init_nbor_nbors
 
 !===============================================================================
@@ -891,7 +909,7 @@ SUBROUTINE reset_status (self)
   n_virtual  = 0
   n_external = 0
   n_frozen   = 0
-  call self%lock%set
+  call self%lock%set ('reset_status')
   !-----------------------------------------------------------------------------
   ! Set bit
   !-----------------------------------------------------------------------------
@@ -956,7 +974,7 @@ SUBROUTINE reset_status (self)
       'n_virtual:' , n_virtual
     flush (io_unit%log)
   end if
-  call self%lock%unset
+  call self%lock%unset ('reset_status')
   call trace%end()
 END SUBROUTINE reset_status
 
@@ -968,7 +986,7 @@ SUBROUTINE remove_parents (self)
   class(link_t), pointer:: link, scan, parent
   !.............................................................................
   call trace_begin('list_t%remove_parents')
-  call self%lock%set
+  call self%lock%set ('remove_parent')
   link => self%head                                     ! start checking links
   do while (associated(link))
     scan => self%head                                   ! scan all links (FIXME)
@@ -993,7 +1011,7 @@ SUBROUTINE remove_parents (self)
     end do
     link => link%next                                   ! continue list
   end do
-  call self%lock%unset
+  call self%lock%unset ('remove_parent')
   call trace_end
 END SUBROUTINE remove_parents
 
@@ -1064,7 +1082,7 @@ SUBROUTINE remove_task (self, task)
   call trace_begin('list_t%remove_task')
   if (self%verbose > 0) &
     write (io%output,*) wallclock(),' thread',omp%thread,' wait for tasklist(3)'
-  call self%lock%set
+  call self%lock%set ('remove_task')
   if (self%verbose > 0) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(3)'
   link => self%head
@@ -1084,7 +1102,7 @@ SUBROUTINE remove_task (self, task)
   end do
   print*,'ERROR: failed to remove from task list, task', task%id
 9 continue
-  call self%lock%unset
+  call self%lock%unset ('remove_task')
   if (self%verbose > 0) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(3)'
   call trace_end
@@ -1116,7 +1134,7 @@ SUBROUTINE queue_by_time (self, this)
   !-----------------------------------------------------------------------------
   if (self%verbose > 0) &
     write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(4)'
-  call self%lock%set
+  call self%lock%set ('queue_by_time')
   if (self%verbose > 0) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(4)'
   call real_queue_by_time (self, this, error)
@@ -1134,7 +1152,7 @@ SUBROUTINE queue_by_time (self, this)
     io%verbose = verbose
     io%do_trace = .false.
   end if
-  call self%lock%unset
+  call self%lock%unset ('queue_by_time')
   if (self%verbose > 0) &
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(4)'
 END SUBROUTINE queue_by_time
@@ -1343,7 +1361,7 @@ SUBROUTINE add_by_quality (self, this)
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_by_quality')
-  call self%lock%set
+  call self%lock%set ('add_by_quality')
   nullify (prev)
   next => self%head
   do while (associated(next))
@@ -1381,7 +1399,7 @@ SUBROUTINE add_by_quality (self, this)
   self%tail => this
   self%n = self%n+1
 9 continue
-  call self%lock%unset
+  call self%lock%unset ('add_by_quality')
   call trace_end()
 END SUBROUTINE add_by_quality
 
@@ -1394,7 +1412,7 @@ SUBROUTINE check_queue (self)
   real:: previous
   integer:: nq
   !.............................................................................
-  call self%lock%set
+  call self%lock%set ('check_queue')
   link => self%queue
   previous = -1.0
   nq = 0
@@ -1407,7 +1425,7 @@ SUBROUTINE check_queue (self)
     nq = nq+1
   end do
   if (nq /= self%nq) write (io_unit%log,*)'ERROR: inconsistent number of tasks in queue', nq, self%nq
-  call self%lock%unset
+  call self%lock%unset ('check_queue')
 END SUBROUTINE check_queue
 
 !===============================================================================
@@ -1418,7 +1436,7 @@ SUBROUTINE insert (self, old, new)
   class(link_t), pointer:: old, new
   !.............................................................................
   call trace_begin ('list_t%insert '//self%name)
-  call self%lock%set
+  call self%lock%set ('insert')
   if (associated(old%prev)) then
     new%prev => old%prev
     new%prev%next => new
@@ -1428,7 +1446,7 @@ SUBROUTINE insert (self, old, new)
   new%next => old
   new%next%prev => new
   self%n = self%n + 1
-  call self%lock%unset
+  call self%lock%unset ('insert')
   call trace_end
 END SUBROUTINE insert
 
@@ -1441,7 +1459,7 @@ SUBROUTINE count_status (self)
   integer:: nf
   !.............................................................................
   call trace%begin ('list_t%count_status')
-  call self%lock%set
+  call self%lock%set ('count_status')
   self%nb=0; self%nv=0; self%ni=0; self%ne=0; self%n = 0
   nf = 0
   link => self%head
@@ -1457,7 +1475,7 @@ SUBROUTINE count_status (self)
   self%na = self%ni+self%nb-nf
   write (io%output,'(1x,a,5i6)') 'list_t%count_status: n[ibvea] = ', &
     self%ni, self%nb, self%nv, self%ne, self%na
-  call self%lock%unset
+  call self%lock%unset ('count_status')
   call trace%end()
 END SUBROUTINE count_status
 
@@ -1469,14 +1487,14 @@ SUBROUTINE print_queue (self)
   class(link_t) , pointer:: link, nbor
   !.............................................................................
   if (io%verbose < 1) return
-  call self%lock%set
+  call self%lock%set ('print_queue')
   link => self%queue
   write (io_unit%log,'(a,2i4,":",$)') 'ready_queue', self%nq, self%n
   do while (associated(link))
     write (io_unit%log,'(i4,$)') link%task%id
     link => link%next_time
   end do
-  call self%lock%unset
+  call self%lock%unset ('print_queue')
   if (io%master) write (io_unit%log,*)''
 END SUBROUTINE print_queue
 
@@ -1488,7 +1506,7 @@ SUBROUTINE print_queue_until (self, task)
   class(task_t):: task
   class(link_t) , pointer:: link, nbor
   !.............................................................................
-  call self%lock%set
+  call self%lock%set ('print_queue_until')
   link => self%queue
   if (io%master) write (io_unit%log,*)'print_queue_until:'
   do while (associated(link))
@@ -1497,7 +1515,7 @@ SUBROUTINE print_queue_until (self, task)
     if (link%task%id==task%id) exit
     link => link%next_time
   end do
-  call self%lock%unset
+  call self%lock%unset ('print_queue_until')
 END SUBROUTINE print_queue_until
 
 !===============================================================================
@@ -1508,7 +1526,7 @@ SUBROUTINE print_queue_times (self, label)
   character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
   !.............................................................................
-  call self%lock%set
+  call self%lock%set ('print_queue_times')
   link => self%queue
   if (present(label)) then
      write (io_unit%log,*)'print_queue_times: '//trim(label)
@@ -1520,7 +1538,7 @@ SUBROUTINE print_queue_times (self, label)
       link%task%is_set(bits%ready)
     link => link%next_time
   end do
-  call self%lock%unset
+  call self%lock%unset ('print_queue_times')
   write (io_unit%log,*)'done'
 END SUBROUTINE print_queue_times
 
@@ -1536,7 +1554,7 @@ SUBROUTINE print_list (self, label)
   call trace_begin ('list_t%print')
   if (io%verbose>0) &
     write (io_unit%log,*) 'list_t%print: ',trim(self%name), self%n
-  call self%lock%set
+  call self%lock%set ('print_list')
   link => self%head
   do while (associated(link))
     task => link%task
@@ -1561,7 +1579,7 @@ SUBROUTINE print_list (self, label)
         task%n_nbors, associated(link%nbor), type
     link => link%next
   end do
-  call self%lock%unset
+  call self%lock%unset ('print_list')
   call trace_end
 END SUBROUTINE print_list
 
