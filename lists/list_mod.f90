@@ -288,7 +288,6 @@ SUBROUTINE check_nbors (self, link)
   call trace_begin('list_t%check_nbors', itimer=itimer)
   if (io%verbose > 1) &
     write (io_unit%log,*) 'checking nbors of',link%task%id,associated(link%nbor)
-  !.... critical (queue_cr)
   task => link%task                                   ! main task
   nbor => link%nbor                                   ! first nbor
   do while (associated (nbor))                        ! keep going until end
@@ -311,7 +310,6 @@ SUBROUTINE check_nbors (self, link)
   if (task%is_clear (bits%virtual+bits%external)) then
     call self%check_ready (link)                      ! finally check link task
   end if
-  !.... end critical (queue_cr)
   call trace_end (itimer)
 END SUBROUTINE check_nbors
 
@@ -887,8 +885,9 @@ SUBROUTINE init_all_nbors (self)
     if (link%task%is_set(bits%virtual)) nv = nv+1
     link => link%next                                   ! continue list
   end do
-  write (io%output,'(1x,a,3i6)') &
-    'list_t%init_all_nbors: n, nb, nv =', n, nb, nv
+  if (io%verbose > 0) & 
+    write (io%output,'(1x,a,3i6)') &
+      'list_t%init_all_nbors: n, nb, nv =', n, nb, nv
   call trace_end (itimer)
 END SUBROUTINE init_all_nbors
 
