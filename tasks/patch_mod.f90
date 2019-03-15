@@ -4,6 +4,7 @@
 !> to 3, since we can just choose the actual dimensions to get 2-D and 1-D.
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE patch_mod
+  USE iso_fortran_env, only: int8
   USE io_mod
   USE mpi_mod
   USE omp_mod
@@ -69,7 +70,8 @@ MODULE patch_mod
     integer:: file_offset(4)
     type(index_t):: idx
     real:: safety_factor=1.0
-    logical, allocatable:: mask(:,:,:)
+    logical, pointer:: mask(:,:,:)
+    integer(int8), pointer:: irefine(:,:,:)
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------

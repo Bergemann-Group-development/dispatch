@@ -349,8 +349,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link', itimer=itimer)
   if (.not.associated(link)) then
+    print *, link%task%id
     call io%abort('download_t%download_link: link not associated')
   else if (.not.associated(link%task)) then
+    print *, link%task%id
     call io%abort('download_t%download_link: link%task not associated')
   end if
   target => task2patch(link%task)
@@ -361,7 +363,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       target%id, target%time
   end if
   if (.not.associated(link%nbor)) then
-    call io%abort('download_t%download_link: link%nbor not associated')
+    sorted = .false.
   end if
   !-----------------------------------------------------------------------------
   ! Allocate and initialise array to track filling of cells.
