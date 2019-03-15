@@ -2253,7 +2253,7 @@ FUNCTION index_only (self, pos, roundup) RESULT (ii)
   real(8)             :: p(3)
   !-----------------------------------------------------------------------------
   do i=1,3
-    p(i) = pos(i)                                               ! relative position
+    p(i) = pos(i) - self%position(i)                            ! relative position
     if (self%periodic(i)) then
       p(i) = modulo(p(i)+0.5_8*self%mesh(i)%b,self%mesh(i)%b) & ! wrap
                         -0.5_8*self%mesh(i)%b

@@ -509,7 +509,7 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   class(link_t), pointer :: parent_link, child_link, child_nbor
   class(gpatch_t), pointer :: parent, child
   real(8), dimension(3), intent(in) :: pos, child_size
-  integer:: i, count
+  integer:: i, j, count, l(3), u(3)
   !------------------------------------------------------------------------
   call trace%begin('refine_mod::make_child_patch')
   !------------------------------------------------------------------------
@@ -597,12 +597,16 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   !------------------------------------------------------------------------
   if (parent%time > 0.0 .and. child%restart <= 0) call download%download_link (child_link, all_cells=.true.)
   if (verbose > 1) then
+    l(:) = parent%mesh(:)%li
+    u(:) = parent%mesh(:)%ui
     if (i==0) &
-    print 1,'                           parent, level, iout, time, size(3), position(3) =', &
-      parent%id, parent%level, parent%iout, parent%time, parent%size, parent%position
-    1 format(a,3i6,f10.6,2(2x,3f8.4))
-    print 1,'refine_t%make_child_patch:  child, level, iout, time, size(3), position(3) =', &
-      child%id, child%level, child%iout, child%time, child%size, child%position
+    print 1,'refine_t%make_child_patch: parent, level, iout, time, size(3), position(3) =', &
+      parent%id, parent%level, parent%iout, parent%time, parent%size, parent%position , &
+      maxval(parent%mem(l(1):u(1),l(2):u(2),l(3):u(3),parent%idx%d,parent%it,1))
+    1 format(a,3i6,f10.6,2(2x,3f8.4),1pe12.2)
+    print 1,'                            child, level, iout, time, size(3), position(3) =', &
+      child%id, child%level, child%iout, child%time, child%size, child%position , &
+      maxval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1))
   end if
   call trace%end()
 END SUBROUTINE make_child_patch
@@ -616,9 +620,9 @@ SUBROUTINE split_patch (self, tlist, this)
   class(refine_t):: self
   class(list_t):: tlist
   class(link_t), pointer:: this, link, tail
-  class(gpatch_t), pointer:: this_patch
+  class(gpatch_t), pointer:: patch
   integer:: ix, iy, iz
-  integer:: nsplit(3), i, j(3)
+  integer:: nsplit(3), i, j(3), j1(3), j2(3)
   real(8), dimension(3):: pos, rpos, split_size
   logical:: do_trace
   !.............................................................................
@@ -635,19 +639,19 @@ SUBROUTINE split_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   ! Decide how to split
   !-----------------------------------------------------------------------------
-  this_patch => gpatch%cast2gpatch (this%task)
-  if (this_patch%msplit>0) then
-    nsplit = this_patch%msplit
+  patch => gpatch%cast2gpatch (this%task)
+  if (patch%msplit>0) then
+    nsplit = patch%msplit
   else
     nsplit = self%ratio
   end if
-  where (this_patch%size==0 .or. this_patch%n==1)
+  where (patch%size==0 .or. patch%n==1)
     nsplit = 1
   end where
   !-----------------------------------------------------------------------------
   ! Perform the split
   !-----------------------------------------------------------------------------
-  split_size = this_patch%size / nsplit
+  split_size = patch%size / nsplit
   i = 0
   do ix=1,nsplit(1)
     rpos(1) = (ix-(nsplit(1)+1)*0.5) * split_size(1)
@@ -655,26 +659,33 @@ SUBROUTINE split_patch (self, tlist, this)
       rpos(2) = (iy-(nsplit(2)+1)*0.5) * split_size(2)
       do iz=1,nsplit(3)
         rpos(3) = (iz-(nsplit(3)+1)*0.5) * split_size(3)
-        pos = rpos + this_patch%position
-        j = this_patch%index_only(pos)
-        if (allocated(this_patch%mask) .and. &
-         all(j >= this_patch%mesh%li .and. j <= this_patch%mesh%ui)) then
-          if (this_patch%mask(j(1),j(2),j(3))) then
-            call make_child_patch(self, tlist, this, this_patch, pos, split_size, i)
+        pos = rpos + patch%position
+        j = patch%index_only(pos)
+        j1 = j - patch%mesh%n/2
+        j2 = j1 + patch%mesh%n - 1
+        write (io_unit%output,'(a,i6,1p2g16.5,3(2x,3f10.4),2x,3(i4,":",i2))') 'xxx', &
+          patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
+          maxval(patch%mem(j1(1):j2(1),j1(2):j2(2),j1(3):j2(3),patch%idx%d,patch%it,1)), &
+          rpos, pos, patch%position, &
+          j1(1), j2(1), j1(2), j2(2), j1(3), j2(3)
+        if (allocated(patch%mask) .and. &
+         all(j >= patch%mesh%li .and. j <= patch%mesh%ui)) then
+          if (patch%mask(j(1),j(2),j(3))) then
+            call make_child_patch(self, tlist, this, patch, pos, split_size, i)
             i = i+1
           end if
         else
-          call make_child_patch(self, tlist, this, this_patch, pos, split_size, i)
+          call make_child_patch(self, tlist, this, patch, pos, split_size, i)
           i = i+1
         end if
       end do
     end do
   end do
   !-----------------------------------------------------------------------------
-  ! At this point this_patch is (possibly again) not a leaf patch, although that
+  ! At this point patch is (possibly again) not a leaf patch, although that
   ! may change after the next derefine opportunity
   !-----------------------------------------------------------------------------
-  call this_patch%set(bits%not_leaf)
+  call patch%set(bits%not_leaf)
   !-----------------------------------------------------------------------------
   ! Initialize the nbor lists of the parent patch and all its nbors, based on
   ! positions, then reset their status based on the nbor lists, and count
@@ -838,13 +849,14 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   USE scaling_mod
   class(refine_t):: self
   class(gpatch_t), pointer:: patch
-  integer:: refine_it, imin(3)
+  integer:: refine_it, imin(3), l(3), u(3)
   real:: Jeans_length, Jeans_num, dmin
   real, dimension(:,:,:), allocatable:: c_sound2, pg
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
   !.............................................................................
   call trace%begin ('refine_t%check_check_jeans')
-  associate(l => patch%li, u => patch%ui)
+  l = patch%mesh%lb
+  u = patch%mesh%ub
   d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
   allocate(c_sound2(size(d,1),size(d,2),size(d,3)), &
            pg(patch%gn(1),patch%gn(2),patch%gn(3)))
@@ -866,7 +878,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
       Jeans_length = minval(sqrt(math%pi * c_sound2 / (d*scaling%grav)), &
         mask=patch%mask)
     else
-      Jeans_length = minval(sqrt(math%pi * c_sound2 / (d*scaling%grav)))
+      Jeans_length = patch%fminval(sqrt(math%pi * c_sound2 / (d*scaling%grav)))
     end if
     Jeans_num = minval(patch%mesh%d) / Jeans_length
   end if
@@ -879,7 +891,6 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
       patch%id, max_jeans, Jeans_num, min_jeans, refine_it
   deallocate (c_sound2, pg)
   nullify (d)
-  end associate
   call trace%end()
 END FUNCTION check_Jeans
 
