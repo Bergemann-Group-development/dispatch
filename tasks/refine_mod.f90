@@ -271,13 +271,6 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     if (associated(patch%mask)) &
       deallocate (patch%mask)
     !---------------------------------------------------------------------------
-    ! Optional custom refine
-    !---------------------------------------------------------------------------
-    if (patch%manual_refine) then
-      call patch%custom_refine
-      call check_level_constraint
-    end if
-    !---------------------------------------------------------------------------
     ! A negative refine value indicates that the patch is not needed
     !---------------------------------------------------------------------------
     if (refine < 0 .and. patch%level > self%levelmin) then
