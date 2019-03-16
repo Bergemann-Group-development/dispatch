@@ -290,12 +290,8 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       !-------------------------------------------------------------------------
       !$omp critical (refine_nbor_cr)
       first_nbor => link%nbor
-      nbor => first_nbor
-      call link%lock%set ('refine_t%split_patch link tasks')
-      do while (associated(nbor))
-        call nbor%link%lock%set ('refine_t remove_patch parent nbor tasks')
-        nbor => nbor%next
-      end do
+      call link%lock%set ('refine_t%split_patch remove_patch')
+      call lock_nbors (link%nbor, 'remove_patch')
       !-------------------------------------------------------------------------
       call tasklist%lock%set ('refine_t remove_patch tasklist')
       call self%remove_patch (tasklist, link)
@@ -305,15 +301,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       ! (their locks are unlocked before removal), but the ones that remain
       ! need to be unlocked
       !-------------------------------------------------------------------------
-      nbor => first_nbor
-      do while (associated(nbor))
-        !write (io_unit%output,'(a,2i6,i3,i4)') &
-        !  'unlock link: task, lock, level, thread =', &
-        !  nbor%task%id, nbor%link%lock%id, nbor%link%lock%level, omp%thread
-        !flush (io_unit%output)
-        call nbor%link%lock%unset ('refine_t remove_patch parent nbor tasks')
-        nbor => nbor%next
-      end do
+      call unlock_nbors (first_nbor, 'remove_patch')
       if (associated(link)) &
         call link%lock%unset ('refine_t%split_patch link tasks')
       !$omp end critical (refine_nbor_cr)
@@ -341,12 +329,8 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       ! interests.
       !-------------------------------------------------------------------------
       !$omp critical (refine_nbor_cr)
-      nbor => link%nbor
-      call link%lock%set ('refine_t%split_patch link tasks')
-      do while (associated(nbor))
-        call nbor%link%lock%set ('refine_t%split_patch nbor tasks')
-        nbor => nbor%next
-      end do
+      call link%lock%set ('refine_t%split_patch split_patch')
+      call lock_nbors (link%nbor, 'split_patch')
       !-------------------------------------------------------------------------
       call tasklist%lock%set ('refine_t split_patch tasklist')
       call self%split_patch (tasklist, link)
@@ -355,12 +339,8 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       ! The nbor list now also contains the new child links, which should be
       ! locked when created.  All nbor links are unlocked here.
       !-------------------------------------------------------------------------
-      nbor => link%nbor
-      do while (associated(nbor))
-        call nbor%link%lock%unset ('refine_t%split_patch nbor tasks')
-        nbor => nbor%next
-      end do
-      call link%lock%unset ('refine_t%split_patch link tasks')
+      call unlock_nbors (link%nbor, 'remove_patch')
+      call link%lock%unset ('refine_t%split_patch split_patch')
       !$omp end critical (refine_nbor_cr)
       !-------------------------------------------------------------------------
       if (tasklist%verbose > 2) &
@@ -409,6 +389,32 @@ contains
     end do
   end subroutine check_level_constraint
 END SUBROUTINE check_current
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE lock_nbors (first_nbor, label)
+  class(link_t), pointer:: first_nbor, nbor
+  character(len=*):: label
+  !-----------------------------------------------------------------------------
+  nbor => first_nbor
+  do while (associated(nbor))
+    call nbor%link%lock%set ('refine_t%lock_nbors '//label)
+    nbor => nbor%next
+  end do
+END SUBROUTINE lock_nbors
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE unlock_nbors (first_nbor, label)
+  class(link_t), pointer:: first_nbor, nbor
+  character(len=*):: label
+  !-----------------------------------------------------------------------------
+  nbor => first_nbor
+  do while (associated(nbor))
+    call nbor%link%lock%unset ('refine_t%lock_nbors '//label)
+    nbor => nbor%next
+  end do
+END SUBROUTINE unlock_nbors
 
 !===============================================================================
 !> A task having support, as measured by nbor levels and containment, means
