@@ -60,6 +60,7 @@ MODULE refine_mod
   USE link_mod
   USE list_mod
   USE task_mod
+  USE patch_mod
   USE gpatch_mod
   USE solver_mod
   USE extras_mod
@@ -85,7 +86,7 @@ MODULE refine_mod
     procedure:: split_patch
     procedure:: remove_patch
     procedure:: gradient_detector
-    procedure:: check_nbor_support
+    procedure:: check_support
   end type
   !
   integer:: check_interval=10                 ! Number of steps betwen checks
@@ -225,7 +226,7 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   ! Check that neighbors of `self` are not more than one level different.
   ! If they are, mark this patch for splitting so that support can be
   ! provided to the neighbors of `patch`.
-  refine = max (refine ,self%check_nbor_support (tasklist, link))
+  refine = max (refine ,self%check_support (tasklist, link))
   !
   patch%check_refine_next = patch%istep + check_interval
   call trace%end (itimer)
@@ -257,35 +258,6 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   call trace%begin('refine_t%check_current', itimer=itimer)
   patch => gpatch%cast2gpatch (link%task)
   id = patch%id
-  !---------------------------------------------------------------------------
-  ! Lock the task, and its parent task, if any, for check_refine. This prevents
-  ! the parent and child from considering refine/derefine simultaneously.  If
-  ! the thread working on the parent gets a lock on it, then the child will
-  ! have to wait, and in the mean time it should not be locked, to allow for
-  ! example download access to the child while it is waiting. 
-  !
-  ! If the thread working on the parent gets a lock on it, this forces any
-  ! thread that works on a child patch to wait here, until it can get a lock
-  ! on the parent link.
-  !
-  ! Note that the thread that comes here does NOT (yet) have a lock on the task
-  ! list, so it should safely be able to put a lock on its own task.
-  !
-  ! To prevent confusion, a thread calling download_t%download_link should
-  ! check if any source task has a parent, and if so acquire a lock on it, to
-  ! before proceeding to go through the nbor list.  This should prevent the
-  ! confusion that would arise if the nbor list was modified during the
-  ! download.
-  !---------------------------------------------------------------------------
-  !if (associated(patch%parent)) then
-  !  associate (parent => patch%parent)
-  !  select type (parent)
-  !  class is (gpatch_t)
-  !  call parent%link%lock%set ('parent')
-  !  end select
-  !  end associate
-  !end if
-  !call patch%link%lock%set ('check_current')
   !-----------------------------------------------------------------------------
   if (patch%is_clear(bits%not_leaf)) then
     if (verbose > 2) &
@@ -334,7 +306,6 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       !-------------------------------------------------------------------------
       call tasklist%lock%set ('refine_t remove_patch tasklist')
       call self%remove_patch (tasklist, link)
-      call check_level_constraint
       call tasklist%lock%unset ('refine_t remove_patch tasklist')
       !-------------------------------------------------------------------------
       ! The nbor lists are now different, in that they lack the removed task
@@ -386,7 +357,6 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       !-------------------------------------------------------------------------
       call tasklist%lock%set ('refine_t split_patch tasklist')
       call self%split_patch (tasklist, link)
-      call check_level_constraint
       call tasklist%lock%unset ('refine_t split_patch tasklist')
       !-------------------------------------------------------------------------
       ! The nbor list now also contains the new child links, which should be
@@ -406,21 +376,6 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     end if
     if (verbose > 2) &
       tasklist%verbose = 0
-  end if
-  !
-  !---------------------------------------------------------------------------
-  ! Unlock first the parent task, and then the task, if it still exists
-  !---------------------------------------------------------------------------
-  if (associated(link)) then
-  !  call link%lock%unset ('check_current')
-  !  if (associated(link%task%parent)) then
-  !    associate (parent => link%task%parent)
-  !    select type (parent)
-  !    class is (gpatch_t)
-  !    call parent%link%lock%unset ('parent')
-  !    end select
-  !    end associate
-  !  end if
   end if
   call trace%end (itimer)
 contains
@@ -442,7 +397,7 @@ contains
       link => tasklist%head
       do while (associated(link))
         if (link%task%is_clear (bits%not_leaf)) then
-          if (self%check_nbor_support (tasklist, link) > 0) then
+          if (self%check_support (tasklist, link) > 0) then
             if (verbose > 3) &
               print *, link%task%id, &
               'check_level_constraint: patch needs splitting at level', &
@@ -461,6 +416,145 @@ contains
     end do
   end subroutine check_level_constraint
 END SUBROUTINE check_current
+
+!===============================================================================
+!> A task having support, as measured by nbor levels and containment, means
+!> that none of it nbors at level+1 has an nbor at level+2 that both overlaps
+!> with the current task, and is not "covered" by an nbor at level+1.
+!>
+!> We assume here that nbor lists are by construction such that they contain at
+!> most one level differences.  Hence we must potentially check all nbors of
+!> nbors, but only the ones that have level==l+2 could potentiall lack support,
+!> and of those also only the ones that overlapt with link%task
+!>
+!> The ones that need to be checked must, if they are fully contained in level==l,
+!> also be fully contained in a level==l+1.  If they only overlap, then they must
+!> also overlap with a level==l+1 immediate nbor.
+!===============================================================================
+FUNCTION check_support (self, tlist, link, check_only) RESULT (refine)
+  USE task_mod
+  class(refine_t):: self
+  class(list_t):: tlist
+  class(link_t), pointer:: link
+  logical, optional:: check_only
+  integer:: refine
+  !.............................................................................
+  class(link_t), pointer:: nbor, next, nbor1, nbor2, nbor1a
+  integer:: n(4)
+  logical:: ok
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('refine_t%check_support', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Optimize, by creating a temporary nbor list that contains only level==l+1
+  ! tasks.  We are only concerned with nbor-nbors at level==l+2, and these
+  ! can only occur in the nbor lists of level==l+1 tasks.
+  !-----------------------------------------------------------------------------
+  ok = .true.
+  nullify (nbor)                        ! temporary nbor head
+  n = 0
+  nbor1 => link%nbor
+  do while (associated(nbor1))
+    if (nbor1%task%level == link%task%level+1) then
+      allocate (next)
+      next%task => nbor1%task           ! connect level+1 task
+      next%link => nbor1%link           ! connect to link
+      next%next => nbor                 ! point to the previous 1st nbor
+      nbor => next                      ! insert as 1st nbor
+      n(1) = n(1)+1
+    end if
+    nbor1 => nbor1%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Assume initially that there is no nbor at level > linkt%task%level + 1, and
+  ! if that turns out to be false, then increase refine to at leat 0
+  !-----------------------------------------------------------------------------
+  refine = -1
+  nbor1 => nbor
+  do while (associated(nbor1))
+    if (nbor1%task%level > link%task%level) then
+      refine = max(0,refine)
+    end if
+    nbor2 => nbor1%link%nbor
+    do while (associated(nbor2))
+      if (nbor2%task%level == link%task%level+2) then
+        n(2) = n(2)+1
+        !--------------------------------------------------------------------
+        ! If a task at level+2 is fully contained in link%task, then it must
+        ! also be fully contained in a level+1 task, which must be on the
+        ! nbor1 list
+        !--------------------------------------------------------------------
+        associate (task=>link%task, task2=>nbor2%task)
+        select type (task)
+        class is (patch_t)
+        select type (task2)
+        class is (patch_t)
+        if (task%contains(task2)) then
+          ok = .false.
+          nbor1a => nbor
+          do while (associated(nbor1a))
+            associate (task1a=>nbor1a%task)
+            select type (task1a)
+            class is (patch_t)
+            if (task%contains(task1a)) then
+              ok = .true.
+              n(3) = n(3)+1
+              exit
+            end if
+            nbor1a => nbor1a%next
+            end select
+            end associate
+          end do
+        !--------------------------------------------------------------------
+        ! If a level==l+2 task overlaps, but is not contained in a level==l
+        ! task, then a level==l+1 task that overlaps with it must also exist
+        !--------------------------------------------------------------------
+        else if (task%overlaps(task2)) then
+          ok = .false.
+          nbor1a => nbor
+          do while (associated(nbor1a))
+            associate (task1a=>nbor1a%task)
+            select type (task1a)
+            class is (patch_t)
+            if (task%overlaps(task1a)) then
+              ok = .true.
+              n(4) = n(4)+1
+              exit
+            end if
+            nbor1a => nbor1a%next
+            end select
+            end associate
+          end do
+        end if
+        end select
+        end select
+        end associate
+        if (ok) exit
+      !else
+        ! These cases are not at level==link%task%level+2, so are of no concern
+      end if
+      if (ok) exit
+      nbor2 => nbor2%next
+    end do
+    nbor1 => nbor1%next
+  end do
+  if (.not.ok) refine = 1
+  if (verbose > 0 .and. n(1) > 0) then
+    write (io_unit%output,'(a,i6,i3,2x,5i4)') &
+    'check__support: id, refine, nbors at +1 and +2:', &
+    link%task%id, refine, n
+  end if
+  !-----------------------------------------------------------------------------
+  ! Delete the temorary nbor list
+  !-----------------------------------------------------------------------------
+  nbor1 => nbor
+  do while (associated(nbor1))
+    next => nbor1%next
+    deallocate (nbor1)
+    nbor1 => next
+  end do
+  call trace%end (itimer)
+END FUNCTION check_support
 
 !===============================================================================
 !> Setup a mask with false values where a higher level patch overlaps this patch.
@@ -669,10 +763,12 @@ SUBROUTINE split_patch (self, tlist, this)
         !  maxval(patch%mem(j1(1):j2(1),j1(2):j2(2),j1(3):j2(3),patch%idx%d,patch%it,1)), &
         !  rpos, pos, patch%position, &
         !  j1(1), j2(1), j1(2), j2(2), j1(3), j2(3)
-        write (io_unit%output,'(i4,1p,2g14.4,0p,2x,3(i4,":",i2),2x,a)') &
-          patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
-          maxval(patch%mem(j1(1):j2(1),j1(2):j2(2),j1(3):j2(3),patch%idx%d,patch%it,1)), &
-          j1(1), j2(1), j1(2), j2(2), j1(3), j2(3), 'xxx'
+        if (verbose > 1) then
+          write (io_unit%output,'(i4,1p,2g14.4,0p,2x,3(i4,":",i2),2x,a)') &
+            patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
+            maxval(patch%mem(j1(1):j2(1),j1(2):j2(2),j1(3):j2(3),patch%idx%d,patch%it,1)), &
+            j1(1), j2(1), j1(2), j2(2), j1(3), j2(3), 'xxx'
+        end if
         if (associated(patch%mask) .and. &
          all(j >= patch%mesh%li .and. j <= patch%mesh%ui)) then
           if (patch%mask(j(1),j(2),j(3))) then
@@ -780,55 +876,6 @@ SUBROUTINE remove_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   call trace%end()
 END SUBROUTINE remove_patch
-
-!===============================================================================
-!> Check the neighbors of the task associated with `link` to see if they can
-!> provide support to newly refined patches made from `link`.
-!> The current definition of "support" is a difference in levels of one or less.
-!>
-!> In the absence of the optional argument, `check_only`, neighbour patches will
-!> be split as needed.
-!===============================================================================
-FUNCTION check_nbor_support (self, tlist, link, check_only) RESULT (refine_it)
-  USE task_mod
-  class(refine_t):: self
-  class(list_t):: tlist
-  class(link_t), pointer:: link
-  integer:: refine_it
-  !.............................................................................
-  class(link_t), pointer:: nbor
-  class(task_t), pointer:: this, npatch
-  logical, optional:: check_only
-  logical:: split_if_necessary
-  !-----------------------------------------------------------------------------
-  call trace%begin('refine_t%check_nbor_support')
-  if (present(check_only)) then
-    split_if_necessary = .not. check_only
-  else
-    split_if_necessary = .true.
-  end if
-  refine_it = -1
-  this => link%task
-  nbor => link%nbor
-  do while (associated(nbor))
-    npatch => nbor%task
-    ! support is defined as having a level difference no greater than one
-    if ((npatch%level - this%level) > 1) then
-      if (verbose > 0) print &
-        "('Patch',i5.1,' at level ',i2.1,' cannot provide support to patch',i5.1" &
-        //",' at level',i2.1)", this%id, this%level, npatch%id, npatch%level
-      if (split_if_necessary) then
-        ! mark this patch for splitting to ensure support for neighbor patches
-        if (verbose > 0) &
-          print "('Splitting',i6.1,' to provide support')",this%id
-        refine_it = 1
-        exit
-      end if
-    end if
-    nbor => nbor%next
-  end do
-  call trace%end()
-END FUNCTION check_nbor_support
 
 !===============================================================================
 !> Check that the patch dimensions are the desired cubical ones
