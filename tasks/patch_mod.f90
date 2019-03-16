@@ -101,7 +101,9 @@ MODULE patch_mod
     procedure:: pack                    ! pack patch into buffer
     procedure:: unpack                  ! unpack buffer into patch
     procedure:: info                    ! print info to stdout
-    procedure:: contains                ! patch contains a point
+    procedure, private:: contains1      ! patch contains a point
+    procedure, private:: contains2      ! patch contains a patch
+    generic:: contains => contains1, contains2
     procedure:: overlaps                ! patch overlaps test
     procedure:: index                   ! compute the index for a single point
     procedure:: nearest                 ! the nearest index that maps to patch point
@@ -1410,11 +1412,19 @@ END SUBROUTINE info
 !===============================================================================
 !> Return true of a point is inside the patch interior
 !===============================================================================
-LOGICAL FUNCTION contains (self, point)
+LOGICAL FUNCTION contains1 (self, point)
   class(patch_t):: self
   real(8):: point(3)
-  contains = all(abs(point-self%position) < 0.5_8*self%size)
-END FUNCTION contains
+  contains1 = all(abs(point-self%position) < 0.5_8*self%size)
+END FUNCTION contains1
+
+!===============================================================================
+!> Return true of a point is inside the patch interior
+!===============================================================================
+LOGICAL FUNCTION contains2 (self, other)
+  class(patch_t):: self, other
+  contains2 = contains1 (self, other%position)
+END FUNCTION contains2
 
 !===============================================================================
 !> Check if there is overlap, using the size plus an extra cell margin. The
