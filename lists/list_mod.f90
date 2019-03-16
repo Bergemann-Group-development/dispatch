@@ -286,6 +286,7 @@ SUBROUTINE check_nbors (self, link)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
+  call link%lock%set ('check_nbors')
   if (io%verbose > 1) &
     write (io_unit%log,*) 'checking nbors of',link%task%id,associated(link%nbor)
   task => link%task                                   ! main task
@@ -310,7 +311,9 @@ SUBROUTINE check_nbors (self, link)
   if (task%is_clear (bits%virtual+bits%external)) then
     call self%check_ready (link)                      ! finally check link task
   end if
+  call link%lock%unset ('check_nbors')
   call trace_end (itimer)
+  return
 END SUBROUTINE check_nbors
 
 !===============================================================================

@@ -197,7 +197,8 @@ SUBROUTINE test (self)
           end if
         end if
       else
-        call different_prolong (self, target, src, all_cells=.false.)
+        !call different_prolong (self, target, src, all_cells=.false.)
+        call prolong (self, target, src, all_cells=.false.)
       end if
       call check_values (target, ok)
       allok = allok.and.ok
@@ -349,10 +350,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link', itimer=itimer)
   if (.not.associated(link)) then
-    print *, link%task%id
     call io%abort('download_t%download_link: link not associated')
   else if (.not.associated(link%task)) then
-    print *, link%task%id
     call io%abort('download_t%download_link: link%task not associated')
   end if
   target => task2patch(link%task)
@@ -444,6 +443,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
            call self%same (target, source, all_cells, only=only)
          else if ((source%level-target%level) == -1) then
            call different_prolong (self, target, source, all_cells, only=only)
+           !call prolong (self, target, source, all_cells, only=only)
          else if (source%level < target%level .and. present(all_cells)) then
            call different_prolong (self, target, source, all_cells, only=only)
          else if ((source%level-target%level) == 1) then
@@ -1329,6 +1329,7 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
   integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, n, srcid
   integer, dimension(3)   :: l, u, ii, li, ui, jj
   real(8), dimension(3)   :: pos
+  real(4), dimension(3)   :: ot, os, ratio
   real(8)                 :: start
   logical                 :: valid
   integer, save           :: itimer=0
@@ -1358,6 +1359,11 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
                              'source:', source%id, source%level, source%ds, all_cells_l
   li = target%mesh%li
   ui = target%mesh%ui
+  ot = target%mesh%o
+  os = target%position - source%position
+  os = modulo(os + 0.5_8*target%mesh%b, target%mesh%b) - 0.5_8*target%mesh%b
+  os = source%mesh%o + os/source%mesh%d
+  ratio = 2.0
   ntot = 0
   nint = 0
   nexp = 0
@@ -1415,6 +1421,9 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
                 iv,ii, present(all_cells), (ii-li) < 0
             pos = target%myposition (ii, iv)
             call source%index_space (pos, iv, jj, pp)
+            !pp = (ii-ot)*ratio + os
+            !jj = pp
+            !pp = pp - jj
             if (source%unsigned(iv)) then
               nexp = nexp+1
               qint = exp( &
@@ -1464,6 +1473,223 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
   2 format(2(i6,i3),2x,a,2i6,a,1p,e12.4,2(2x,3i4))
   call trace%end (itimer)
 END SUBROUTINE different_prolong
+
+!> =============================================================================
+!> Interpolate guard zone info from source patch at a lower level
+!> =============================================================================
+SUBROUTINE prolong (self, target, source, all_cells, only)
+  class(download_t):: self
+  class(patch_t), pointer :: target, source
+  logical, optional:: all_cells
+  integer, optional:: only
+  !.............................................................................
+  integer                 :: ntot, nskip, ninter, nint, nperv, nexp
+  integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, m, n, srcid
+  integer, dimension(3)   :: l, u, ii, li, ui, jj, jjmin, jjmax, iimin, iimax
+  real(8), dimension(3)   :: pos
+  real(4), dimension(3)   :: ot, os, ratio
+  real(8)                 :: start
+  logical                 :: valid
+  integer, save           :: itimer=0
+  real                    :: pt(2), pp(3)
+  real(kind=KindScalarVar):: qint, dint
+  logical                 :: all_cells_l
+  real(kind=KindScalarVar), allocatable::  sbuf(:,:,:,:,:),  tbuf(:), pbuf(:,:)
+  real(kind=KindScalarVar), allocatable:: sdbuf(:,:,:,:,:), tdbuf(:)
+  integer                 :: mv(target%nv)
+  !-----------------------------------------------------------------------------
+  call trace%begin('download_t%prolong', itimer=itimer)
+  start = wallclock()
+  call source%time_interval (target%time, jt, pt)
+  if (present(only)) then
+    iv1 = only
+    iv2 = only
+  else
+    iv1 = 1
+    iv2 = target%nv
+  end if
+  if (present(all_cells)) then
+    all_cells_l = all_cells
+  else
+    all_cells_l = .false.
+  end if
+  if (verbose > 0 .or. target%id == id_debug) &
+    write(io_unit%log,'(2(a,i7,i4,1p,3e11.3,4x),l3)') &
+      'DBG different_prolong; target:', target%id, target%level, target%ds, &
+                             'source:', source%id, source%level, source%ds, all_cells_l
+  li = target%mesh%li
+  ui = target%mesh%ui
+  call dnload_range (target, source, target%idx%d, l, u)
+  n = product(u-l+2)
+  allocate ( sbuf(n,2,2,2,2))
+  allocate (sdbuf(n,2,2,2,2))
+  allocate ( pbuf(n,4      ))
+  allocate ( tbuf(n        ))
+  allocate (tdbuf(n        ))
+  ot = target%mesh%o
+  os = source%mesh%o
+  ratio = 2.0
+  ntot = 0
+  nint = 0
+  nexp = 0
+  nskip = 0
+  nperv = 0
+  ninter = 0
+  do iv=iv1,iv2
+    if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
+    call dnload_range (target, source, iv, l, u)
+    !---------------------------------------------------------------------------
+    ! For no-no-mans-land meshes, use guard zone values for the li index, to
+    ! make fluxes up/down symmetric
+    !---------------------------------------------------------------------------
+!    do i=1,3
+!      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
+!    end do
+    if (verbose > 1 .or. target%id==id_debug) &
+      write (io_unit%log,1) source%id, (source%position-target%position)/target%size, l, u
+      1 format("download_t%different_prolong:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
+    all_cells_l = all_cells_l .or. all((l >= li) .and. (u <= ui))
+    n = 0
+    do iz=l(3),u(3)
+      do iy=l(2),u(2)
+        do ix=l(1),u(1)
+          ntot = ntot+1
+          ii=[ix,iy,iz]
+          if (all_cells_l .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
+            !if (self%check_filled) then
+            !  !-----------------------------------------------------------------
+            !  ! If either the cell is already filled with higher level data,
+            !  ! or filled with target level data (which is preferred), cycle.
+            !  !-----------------------------------------------------------------
+            !  if (filled(ix,iy,iz,iv) >  source%level .or. &
+            !      filled(ix,iy,iz,iv) == target%level) then
+            !    if (allocated(src)) then
+            !      srcid = src(ix,iy,iz)
+            !    else
+            !      srcid = -1
+            !    end if
+            !    nskip = nskip+1
+            !    cycle
+            !  end if
+            !end if
+            ninter = ninter+1
+            pos = target%myposition (ii, iv)
+            call source%index_space (pos, iv, jj, pp)
+            !pp = (ii-ot)*ratio + os
+            !jj = pp
+            !pp = pp - jj
+            n = n + 1
+            !if (n==1) then
+            !  iimin = ii
+            !  iimax = ii
+            !  jjmin = jj
+            !  jjmax = jj
+            !else
+            !  iimin = min(ii,iimin)
+            !  iimax = max(ii,iimax)
+            !  jjmin = min(jj,jjmin)
+            !  jjmax = max(jj,jjmax)
+            !end if
+            pbuf(n,1:3) = pp
+            pbuf(n,  4) = pt(1)
+            sbuf(n,:,:,:,:) = source%mem(jj(1):jj(1)+1,jj(2):jj(2)+1,jj(3):jj(3)+1,iv,jt(:),1)
+            !if (self%check_filled) filled(ix,iy,iz,iv) = source%level
+            !if (iv==1) &
+              !write (io_unit%output,'(a,i4,2(3i4,2x),2x,4f7.3)') 'prol', n, ii, jj, pbuf(n,:)
+          else
+            nint = nint+1
+            !if (verbose > 1 .and. target%id==id_debug) &
+              !write (io_unit%output,'(i6,i3,2x,a,i6,i2,i3,2x,3i4,L2,2(1x,3L1))') &
+              !  target%id, target%level, 'prolong: skipping internal', &
+              !  source%id, source%level, iv, ii, all_cells_l, (ii-li) < 0, (ii-ui) > 0
+            cycle
+          end if
+        end do
+      end do
+    end do
+    m = n
+    mv(iv) = m
+    call mem_interp
+    n = 0
+    do iz=l(3),u(3)
+      do iy=l(2),u(2)
+        do ix=l(1),u(1)
+          ntot = ntot+1
+          ii=[ix,iy,iz]
+          if (all_cells_l .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
+            n = n + 1
+            target%mem(ix,iy,iz,iv,target%it,1) = tbuf(n)
+          end if
+        end do
+      end do
+    end do
+  end do
+  !print '(a,2(2x,3i4))', 'prolong: iimin, iimax =', iimin, iimax
+  !print '(a,2(2x,3i4))', 'prolong: jjmin, jjmax =', jjmin, jjmax
+  deallocate (sbuf, pbuf, tbuf, sdbuf, tdbuf)
+  call trace%end (itimer)
+contains
+  subroutine mem_interp 
+    real:: q1, q2, q3, q4
+    integer:: j
+    !print *, iv, m, target%pervolume(iv), target%unsigned(iv)
+    !---------------------------------------------------------------------------
+    ! Save density corner values
+    !---------------------------------------------------------------------------
+    if (iv == 1) then
+      sdbuf = sbuf
+    end if
+    !---------------------------------------------------------------------------
+    ! Use density corner values for per-volume variables
+    !---------------------------------------------------------------------------
+    if (target%pervolume(iv)) then
+      sbuf(1:m,:,:,:,:) = sbuf(1:m,:,:,:,:)/sdbuf(1:m,:,:,:,:)
+    end if
+    !---------------------------------------------------------------------------
+    ! Take log of unsigned variables
+    !---------------------------------------------------------------------------
+    if (target%unsigned(iv)) then
+      sbuf(1:m,:,:,:,:) = log(sbuf(1:m,:,:,:,:))
+    end if
+    !---------------------------------------------------------------------------
+    ! Interpolate, vectorized
+    !---------------------------------------------------------------------------
+    do j=1,m
+      associate (p1=>pbuf(j,1), p2=>pbuf(j,2), p3=>pbuf(j,3), p4=>pbuf(j,4))
+      q1 = 1.0-p1
+      q2 = 1.0-p2
+      q3 = 1.0-p3
+      q4 = 1.0-p4
+      tbuf(j) = q4*(q3*(q2*(q1*sbuf(j,1,1,1,1)+p1*sbuf(j,2,1,1,1))   + &
+                        p2*(q1*sbuf(j,1,2,1,1)+p1*sbuf(j,2,2,1,1)))  + &
+                    p3*(q2*(q1*sbuf(j,1,1,2,1)+p1*sbuf(j,2,1,2,1))   + &
+                        p2*(q1*sbuf(j,1,2,2,1)+p1*sbuf(j,2,2,2,1)))) + &
+                p4*(q3*(q2*(q1*sbuf(j,1,1,1,2)+p1*sbuf(j,2,1,1,2))   + &
+                        p2*(q1*sbuf(j,1,2,1,2)+p1*sbuf(j,2,2,1,2)))  + &
+                    p3*(q2*(q1*sbuf(j,1,1,2,2)+p1*sbuf(j,2,1,2,2))   + &
+                        p2*(q1*sbuf(j,1,2,2,2)+p1*sbuf(j,2,2,2,2))))
+      end associate
+    end do
+    !---------------------------------------------------------------------------
+    ! Take exp of unsigned variables
+    !---------------------------------------------------------------------------
+    if (target%unsigned(iv)) then
+      tbuf(1:m) = exp(tbuf(1:m))
+    end if
+    !---------------------------------------------------------------------------
+    ! Save density values
+    !---------------------------------------------------------------------------
+    if (iv == 1) then
+      tdbuf = tbuf
+    end if
+    !---------------------------------------------------------------------------
+    ! Use density values for per-volume variables
+    !---------------------------------------------------------------------------
+    if (target%pervolume(iv)) then
+      tbuf(1:m) = tbuf(1:m)*tdbuf(1:m)
+    end if
+  end subroutine mem_interp 
+END SUBROUTINE prolong
 
 !===============================================================================
 !> Same as above, but for RT_solver type patches
