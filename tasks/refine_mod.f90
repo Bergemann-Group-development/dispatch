@@ -630,9 +630,7 @@ SUBROUTINE setup_mask (self, patch)
   do while (associated(nbor))
     if (patch%contains(nbor%task%position)) then
       if (.not.associated(patch%mask)) then
-        l = patch%mesh%li
-        u = patch%mesh%ui
-        allocate (patch%mask(l(1):u(1),l(2):u(2),l(3):u(3)))
+        allocate (patch%mask(patch%gn(1),patch%gn(2),patch%gn(3)))
         patch%mask = .true.
       end if
       associate (nbpatch => nbor%task)
@@ -968,8 +966,11 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   logical:: masked
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_check_jeans')
-  d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
-  allocate(pg(patch%gn(1),patch%gn(2),patch%gn(3)))
+  l = 1
+  u = patch%gn
+  d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
+  allocate(c_sound2(size(d,1),size(d,2),size(d,3)), &
+           pg(patch%gn(1),patch%gn(2),patch%gn(3)))
   select type (patch)
   class is (solver_t)
     pg = patch%gas_pressure() + tiny(1.0)

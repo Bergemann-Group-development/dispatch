@@ -70,8 +70,8 @@ MODULE patch_mod
     integer:: file_offset(4)
     type(index_t):: idx
     real:: safety_factor=1.0
-    logical, pointer:: mask(:,:,:)
-    integer(int8), pointer:: irefine(:,:,:)
+    logical, pointer:: mask(:,:,:) => null()
+    integer(int8), pointer:: irefine(:,:,:) => null()
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
