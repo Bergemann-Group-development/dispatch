@@ -266,22 +266,19 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     if (verbose > 3) &
       tasklist%verbose = verbose
     !---------------------------------------------------------------------------
-    ! Setup mask, and check if refinement or derefinement is needed
+    ! Setup mask and refinement map
     !---------------------------------------------------------------------------
+    allocate (patch%mask(patch%gn(1),patch%gn(2),patch%gn(3)))
     call self%setup_mask (patch)
-    !---------------------------------------------------------------------------
-    ! Prepare per-cell refinement array
-    !---------------------------------------------------------------------------
-    if (associated(patch%irefine)) then
-      print *, 'irefine already allocated', patch%id, shape(patch%irefine)
-    else
-      allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
-    end if
+    allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
     patch%irefine = -1
+    !---------------------------------------------------------------------------
+    ! Check all refinement criteria
+    !---------------------------------------------------------------------------
     refine = self%refine_needed (tasklist, link)
     !---------------------------------------------------------------------------
-    ! Where the mask is false, there is overlap with better resolved patches,
-    ! so should not be refined or derefined
+    ! Where the mask is false there is overlap with better resolved patches,
+    ! so this patch should not be refined or derefined
     !---------------------------------------------------------------------------
     where (.not.patch%mask)
       patch%irefine = 0
@@ -291,12 +288,11 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     !-------------------------------------------------------------------------
     if (any(patch%irefine /= 0)) then
       call selective_refine (self, tasklist, patch, was_refined, was_derefined)
-        deallocate (patch%irefine)
-      call trace%end (itimer)
-      return
     end if
-    if (associated(patch%mask)) &
+    if (.not.was_derefined) then
+      deallocate (patch%irefine)
       deallocate (patch%mask)
+    end if
   end if
   call trace%end (itimer)
 END SUBROUTINE check_current
@@ -313,26 +309,40 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
   integer:: i, j, k, i1, i2, j1, j2, k1, k2, n1, n2, n3, ii(3), refine
   real:: rpos(3)
   real(8):: pos(3)
-  logical:: already_refined
+  logical:: not_already_refined
   class(link_t), pointer:: nbor, first_nbor
-  class(link_t), pointer:: link
+  class(link_t), pointer:: link, nbors, tail
   associate (m1=>patch%mesh(1), m2=>patch%mesh(2), m3=>patch%mesh(3))
+  !-----------------------------------------------------------------------------
+  call trace%begin ('refine_t%selective_refine')
+  was_refined = .false.
+  was_derefined = .false.
   !-----------------------------------------------------------------------------
   ! First, consider if the whole patch should be derefined.  This requires that
   ! it has no higher level patch inside (would trigger patch%mask == false there),
   ! and secondly that irefine(:,:,:) indicates that derefine would be OK
   !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%selective_refine')
+  link => patch%link
+  nbors => link%nbor
+  tail => tasklist%tail
   if (patch%level > self%levelmin) then
     if (all(patch%mask)) then
       if (all(patch%irefine < 0)) then
+        print *, 'derefine', patch%id
         !$omp critical (refine_nbor_cr)
-        link => patch%link
         first_nbor => link%nbor
+        !-----------------------------------------------------------------------
+        ! Lock the link here, even if it is to be removed, to prevent nearby
+        ! patches (that have the link in their nbor lists) to refine / derefine 
+        ! at the same time.   Other threads can still manipulate the task list;
+        ! that protocol is handled inside remove_patch.
+        !-----------------------------------------------------------------------
         call link%lock%set ('derefine')
-        call lock_nbors (first_nbor, 'derefine')
+        call lock_nbors ('on',first_nbor, 'derefine')
+        deallocate (patch%irefine)
+        deallocate (patch%mask)
         call remove_patch (self, tasklist, link)
-        call unlock_nbors (first_nbor, 'derefine')
+        call lock_nbors ('off',first_nbor, 'derefine')
         !$omp end critical (refine_nbor_cr)
         was_derefined = .true.
       end if
@@ -363,27 +373,25 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
             rpos(1) = (i-(self%ratio+1)*0.5)*n1*m1%d
             pos = rpos + patch%position
             ii = patch%index_only(pos)
-            !print '(3i3,2x,3i3,3(2x,3f9.4))',i,j,k,ii,pos,patch%position,patch%size
             !-----------------------------------------------------------------------
             ! Is this part refined or not?
             !-----------------------------------------------------------------------
-            already_refined = .not.patch%mask(ii(1),ii(2),ii(3))
-            if (patch%level > self%levelmin) &
-              print *, 'selective_refine:', patch%id, i, j, k, refine, already_refined
-            if (.not.already_refined .and. refine > 0) then
+            not_already_refined = patch%mask(ii(1),ii(2),ii(3))
+            if (not_already_refined .and. refine > 0) then
               !---------------------------------------------------------------------
               ! Create a refined patch here
               !---------------------------------------------------------------------
-              write (io_unit%output,'(a,i6,1p2g16.5,2x,3(i4,":",i2))') 'xxx', &
-                patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
-                     maxval(patch%mem(i1:i2,j1:j2,k1:k2,patch%idx%d,patch%it,1)), &
+              if (verbose > 1) &
+                write (io_unit%output,'(a,i6,1p2g16.5,2x,3(i4,":",i2))') 'xxx', &
+                  patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
+                       maxval(patch%mem(i1:i2,j1:j2,k1:k2,patch%idx%d,patch%it,1)), &
                 i1, i2, j1, j2, k1, k2
               !$omp critical (refine_nbor_cr)
               first_nbor => link%nbor
               call link%lock%set ('derefine')
-              call lock_nbors (first_nbor, 'derefine')
+              call lock_nbors ('on', first_nbor, 'derefine')
               call create_patch (self, tasklist, patch, i, j, k)
-              call unlock_nbors (first_nbor, 'derefine')
+              call lock_nbors ('off', first_nbor, 'derefine')
               call link%lock%unset ('derefine')
               !$omp end critical (refine_nbor_cr)
               was_refined= .true.
@@ -391,39 +399,49 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
           end do
         end do
       end do
+      if (was_refined) then
+        !call tasklist%init_nbor_nbors (link)
+        !call tasklist%init_nbors (link)
+        !call tasklist%init_all_nbors
+        !call tasklist%reset_status
+        !call tasklist%check_all
+      end if
     end if
   end if
   end associate
+  !-----------------------------------------------------------------------------
+  ! Optionally, print children task list info
+  !-----------------------------------------------------------------------------
+  if (verbose > 2) then
+    write (io%output,*) 'child tasks:'
+    link => tail
+    do while (associated(link))
+      call link%print_nbors
+      link => link%next
+    end do
+  end if
   call trace%end
 END SUBROUTINE selective_refine
 
 !===============================================================================
 !===============================================================================
-SUBROUTINE lock_nbors (first_nbor, label)
+SUBROUTINE lock_nbors (key, first_nbor, label)
   class(link_t), pointer:: first_nbor, nbor
-  character(len=*):: label
+  character(len=*):: key, label
   !-----------------------------------------------------------------------------
   nbor => first_nbor
   do while (associated(nbor))
-    call nbor%link%lock%set ('refine_t%lock_nbors '//label)
+    if (key == 'on') then
+      call nbor%link%lock%set ('refine_t%lock_nbors '//label)
+    else
+      call nbor%link%lock%unset ('refine_t%lock_nbors '//label)
+    end if
     nbor => nbor%next
   end do
 END SUBROUTINE lock_nbors
 
 !===============================================================================
-!===============================================================================
-SUBROUTINE unlock_nbors (first_nbor, label)
-  class(link_t), pointer:: first_nbor, nbor
-  character(len=*):: label
-  !-----------------------------------------------------------------------------
-  nbor => first_nbor
-  do while (associated(nbor))
-    call nbor%link%lock%unset ('refine_t%lock_nbors '//label)
-    nbor => nbor%next
-  end do
-END SUBROUTINE unlock_nbors
-
-!===============================================================================
+! Create a new patch, and reset the task list
 !===============================================================================
 SUBROUTINE create_patch (self, tasklist, patch, ix, iy, iz)
   class(refine_t):: self
@@ -434,45 +452,40 @@ SUBROUTINE create_patch (self, tasklist, patch, ix, iy, iz)
   class(link_t), pointer:: link
   real(8), dimension(3):: pos, split_size
   !-----------------------------------------------------------------------------
-  ! Lock the task list, and compute the position of the new patch
-  !-----------------------------------------------------------------------------
+  call trace%begin ('refine_t%create_patch')
   split_size = patch%size/self%ratio
   pos = patch%position + ([ix,iy,iz] - (self%ratio+1)*0.5) * split_size
   call make_child_patch(self, tasklist, patch%link, patch, pos, split_size, 0)
-  !-----------------------------------------------------------------------------
-  ! At this point the patch is (possibly again) not a leaf patch
-  !-----------------------------------------------------------------------------
-  call patch%set(bits%not_leaf)
-  !-----------------------------------------------------------------------------
-  ! Reset the task list
-  !-----------------------------------------------------------------------------
-  call reset_task_list (self, tasklist, patch%link)
+  call trace%end
 END SUBROUTINE create_patch
 
-!===============================================================================
-!===============================================================================
-SUBROUTINE reset_task_list (self, tasklist, patch_link)
-  class(refine_t):: self
-  class(list_t):: tasklist
-  class(link_t), pointer:: patch_link, link
-  !-----------------------------------------------------------------------------
-  ! Reset the status based on the nbor lists, and count
-  !-----------------------------------------------------------------------------
-  !call tasklist%init_nbor_nbors (patch_link)
-  call tasklist%init_all_nbors
-  call tasklist%reset_status
-  !-----------------------------------------------------------------------------
-  ! Expensive way to make sure the state of readiness is consistent (FIXME)
-  !-----------------------------------------------------------------------------
-  link => tasklist%head
-  do while (associated(link))
-    call link%task%clear(bits%ready)
-    call tasklist%check_ready (link)
-    link => link%next
-  end do
-  call tasklist%init_bdries
-  !-----------------------------------------------------------------------------
-END SUBROUTINE reset_task_list
+! !===============================================================================
+! ! Make sure (conservatively at first) that the task list is consistent
+! !===============================================================================
+! SUBROUTINE reset_task_list (self, tasklist, link)
+  ! class(refine_t):: self
+  ! class(list_t):: tasklist
+  ! class(link_t), pointer:: patch_link, link
+  ! !-----------------------------------------------------------------------------
+  ! ! Reset the status based on the nbor lists, and count
+  ! !-----------------------------------------------------------------------------
+  ! call trace%begin ('refine_t%reset_task_list')
+  ! call tasklist%init_nbor_nbors (link)
+  ! !call tasklist%init_all_nbors
+  ! call tasklist%reset_status
+  ! !-----------------------------------------------------------------------------
+  ! ! Expensive way to make sure the state of readiness is consistent (FIXME)
+  ! !-----------------------------------------------------------------------------
+  ! call tasklist%check_nbor_nbors (link)
+  ! !link => tasklist%head
+  ! !do while (associated(link))
+  ! !  call link%task%clear(bits%ready)
+  ! !  call tasklist%check_ready (link)
+  ! !  link => link%next
+  ! !end do
+  ! !call tasklist%init_bdries
+  ! call trace%end
+! END SUBROUTINE reset_task_list
 
 !===============================================================================
 !> A task having support, as measured by nbor levels and containment, means
@@ -622,26 +635,20 @@ SUBROUTINE setup_mask (self, patch)
   class(gpatch_t), pointer:: patch
   !.............................................................................
   class(link_t), pointer:: nbor
-  integer, dimension(3):: m, l, u
+  class(gpatch_t), pointer:: nbpatch
+  integer, dimension(3):: l, u
   !-----------------------------------------------------------------------------
   ! Check for higher level patches inside this
   !-----------------------------------------------------------------------------
   nbor => patch%link%nbor
   do while (associated(nbor))
-    if (patch%contains(nbor%task%position)) then
-      if (.not.associated(patch%mask)) then
-        allocate (patch%mask(patch%gn(1),patch%gn(2),patch%gn(3)))
-        patch%mask = .true.
-      end if
-      associate (nbpatch => nbor%task)
-      select type (nbpatch)
-      class is (gpatch_t)
+    nbpatch => gpatch%cast2gpatch(nbor%task)
+    if (patch%contains(nbpatch%position) .and. &
+        patch%level == nbpatch%level+1) then
       l = patch%index_only (nbpatch%position + nbpatch%mesh%lf)
       u = patch%index_only (nbpatch%position + nbpatch%mesh%uf)
       l = max(l,patch%mesh%li)
       u = min(u,patch%mesh%ui)
-      end select
-      end associate
       patch%mask(l(1):u(1),l(2):u(2),l(3):u(3)) = .false.
     end if
     nbor => nbor%next
@@ -722,7 +729,7 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   !------------------------------------------------------------------------
   allocate (child_link)
   call child_link%init                               ! initialise the lock
-  call child_link%lock%set ('child init')            ! immediately lock it
+  !call child_link%lock%set ('child init')            ! immediately lock it
   child_link%task => child                           ! associate task with link
   child_link%parent => parent_link                   ! used in remove_patch
   child%link => child_link                           ! associate link with task
@@ -746,6 +753,12 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   !------------------------------------------------------------------------
   if (parent%time > 0.0 .and. child%restart <= 0) &
     call download%download_link (child_link, all_cells=.true.)
+  deallocate (child_nbor)
+  call tlist%lock%set ('make_child')
+  call tlist%init_nbor_nbors (parent_link)
+  call tlist%reset_status()
+  call tlist%check_nbor_nbors (parent_link)
+  call tlist%lock%unset ('make_child')
   if (verbose > 1) then
     l(:) = parent%mesh(:)%li
     u(:) = parent%mesh(:)%ui
@@ -894,7 +907,7 @@ END SUBROUTINE split_patch
 SUBROUTINE remove_patch (self, tlist, this)
   class(refine_t):: self
   class(list_t):: tlist
-  class(link_t), pointer:: this, link, nbor, parent
+  class(link_t), pointer:: this, link, nbor, parent, nbors
   class(task_t), pointer:: task
   integer:: count, io_verbose
   !-----------------------------------------------------------------------------
@@ -909,7 +922,7 @@ SUBROUTINE remove_patch (self, tlist, this)
     call this%send_to_vnbors
   end if
   !-----------------------------------------------------------------------------
-  ! Change the status of the parent patch to leaf
+  ! Make sure the status of the parent patch is leaf
   !-----------------------------------------------------------------------------
   parent => this%parent
   call parent%task%clear (bits%not_leaf)
@@ -920,14 +933,17 @@ SUBROUTINE remove_patch (self, tlist, this)
   count = counters%decrement (this%task%iout+1, io%nwrite)
   !-----------------------------------------------------------------------------
   ! Remove the link from the task list, update the nbor lists of nbors, then
-  ! deallocate this link (and the associated task memory and task)
+  ! deallocate this link (and the associated task memory and task).  The task
+  ! list is modified, so it needs to be locked here.
   !-----------------------------------------------------------------------------
-  call tlist%remove_link (this)
-  call tlist%init_nbor_nbors (this)
-  call tlist%check_nbor_nbors (this)
-  call this%lock%unset ('delete')
-  call this%delete (this)
-  nullify (this)
+  call tlist%lock%set ('remove_patch')
+  call tlist%remove_link (this)             ! remove this from task list
+  call tlist%init_nbor_nbors (this)         ! new nbor lists, w/o this
+  call tlist%reset_status()                 ! set task status bits
+  call tlist%check_nbor_nbors (this)        ! check / send to ready queue
+  call this%delete (this)                   ! finally, delete that task & link
+  nullify (this)                            ! make sure it is null
+  call tlist%lock%unset ('remove_patch')    ! release the task list aga
   !-----------------------------------------------------------------------------
   call trace%end()
 END SUBROUTINE remove_patch
