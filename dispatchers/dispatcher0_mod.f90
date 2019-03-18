@@ -246,7 +246,7 @@ SUBROUTINE update (self, task_list, test)
     ! the task from the queue is done in a critical region, and removing a
     ! task can only be done once.
     !
-    ! A task generats a critical region three times: 1) when taken off the queue,
+    ! A task generates a critical region three times: 1) when taken off the queue,
     ! 2) when its time info is updated, 3) when it is added back to the queue.
     !
     ! To ensure 100% consistency, the task time information should not be
@@ -345,11 +345,8 @@ SUBROUTINE update (self, task_list, test)
     ! bit will prevent it being checked, but its nbors still need to be checked
     !-----------------------------------------------------------------------------
     if (.not. was_derefined) then
-      call task%clear (bits%busy)           ! clear busy bit (FIXME: check this!)
-      if (.not. was_refined) then
-        call task_list%check_nbors (head)   ! any nbors ready?
-        !call mpi_mesg%diagnostics (0)
-      end if
+      call task%clear (bits%busy)
+      call task_list%check_nbors (head)   ! any nbors ready?
     end if
   else
     call stall_lock%set ('dispatch0_t%stall 1')
