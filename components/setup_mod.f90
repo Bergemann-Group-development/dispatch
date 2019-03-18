@@ -8,6 +8,7 @@ MODULE setup_mod
   USE opacity_mod
   USE scaling_mod
   USE refine_mod
+  USE timer_mod
   USE download_mod
   implicit none
   private
@@ -35,6 +36,13 @@ SUBROUTINE init (self)
   call opacity%init                     ! Opacity
   call refine%init                      ! Refinement parameters
   call download%init                    ! Downloading and interpolation parameters
+  !-----------------------------------------------------------------------------
+  ! Initialíze cost counters for AMR
+  !-----------------------------------------------------------------------------
+  allocate (timer%levelcost(refine%levelmin:refine%levelmax))
+  timer%levelmin = refine%levelmin
+  timer%levelmax = refine%levelmax
+  timer%levelcost = 0d0
   call trace%end()
 END SUBROUTINE init
  

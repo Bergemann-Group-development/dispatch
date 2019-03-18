@@ -36,11 +36,13 @@ MODULE timer_mod
     integer:: nq_recv_max=0
     integer:: n_lines=0
     type(latency_t):: latency
+    real(8), allocatable:: levelcost(:)
+    integer:: levelmin, levelmax
   contains
     procedure:: init
     procedure:: begin
     procedure:: end
-    procedure, nopass:: print
+    procedure:: print
     procedure, nopass:: tic
     procedure, nopass:: toc_1
     procedure, nopass:: toc_i4
@@ -197,7 +199,7 @@ SUBROUTINE end (self, itimer)
   if (wc > next_report_sec) then
     !$omp critical (timer_print_cr)
     if (wc > next_report_sec) then
-      call real_print()
+      call real_print (self)
       next_report_sec = (nint(wc/self%sec_per_report)+1)*self%sec_per_report
     end if
     !$omp end critical (timer_print_cr)
@@ -208,10 +210,12 @@ END SUBROUTINE end
 !> Printout times used in routines using more than 0.05% of the time, and reset
 !> counters.
 !===============================================================================
-SUBROUTINE print ()
-  if (omp%master) call real_print ()
+SUBROUTINE print (self)
+  class(timer_t):: self
+  if (omp%master) call real_print (self)
 END SUBROUTINE print
-SUBROUTINE real_print ()
+SUBROUTINE real_print (self)
+  class(timer_t):: self
   real(8):: total, proc(maxproc), ncalls(maxproc)
   real(8):: updates, musppt, calls
   real(8), save:: n_previous=0
@@ -264,7 +268,7 @@ SUBROUTINE real_print ()
   return
 contains
   subroutine write_to (unit)
-    integer:: unit
+    integer:: unit, level
     write (unit,'(23x,a,7x,a,10x,a,7x,a,5x,a)') 'procedure', 'calls', 'time', 'percent', 'time/call'
     if (unit==io_unit%output) then
       !$omp atomic write
@@ -286,6 +290,15 @@ contains
         " nq_recv_max",2f8.3," max, aver latency",i8, " n_test")') &
         timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
         timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, timer%n_test
+    end if
+    !---------------------------------------------------------------------------
+    ! Output AMR level costs
+    !---------------------------------------------------------------------------
+    if (timer%levelmax > timer%levelmin) then
+      do level=timer%levelmin,timer%levelmax
+        write(unit,'(34x,a,i3,g12.3)') 'level, cost =', level, timer%levelcost(level)
+      end do
+      timer%levelcost = 0d0
     end if
     flush (unit)
   end subroutine write_to

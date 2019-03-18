@@ -21,6 +21,7 @@ MODULE dispatcher0_mod
   USE data_io_mod
   USE omp_lock_mod
   USE validate_mod
+  USE refine_mod
   implicit none
   private
   type, public:: dispatcher0_t
@@ -168,7 +169,7 @@ SUBROUTINE update (self, task_list, test)
   class(task_t), pointer:: task, otask
   class(mesg_t), pointer:: mesg
   logical:: already_busy, was_refined, was_derefined
-  real(8):: wc
+  real(8):: levelstart
   real(8), save:: time, otime=0d0
   integer, save:: oid=0
   integer:: id
@@ -196,6 +197,7 @@ SUBROUTINE update (self, task_list, test)
   nullify (prev)
   head => task_list%queue                                    ! queue start
   if (associated(head) .and. .not.task_list%syncing) then
+    levelstart = wallclock()
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,2x,a,i6,i7)') wallclock(), &
         'dispather0::update: na, id =',task_list%na, head%task%id
@@ -347,6 +349,9 @@ SUBROUTINE update (self, task_list, test)
     if (.not. was_derefined) then
       call task%clear (bits%busy)
       call task_list%check_nbors (head)   ! any nbors ready?
+      !$omp atomic
+      timer%levelcost(task%level) = &
+      timer%levelcost(task%level) + (wallclock() - levelstart)
     end if
   else
     call stall_lock%set ('dispatch0_t%stall 1')
