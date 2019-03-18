@@ -328,7 +328,8 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
   if (patch%level > self%levelmin) then
     if (all(patch%mask)) then
       if (all(patch%irefine < 0)) then
-        print *, 'derefine', patch%id
+        if (verbose > 0) &
+          write (io_unit%output,*) 'derefine', patch%id
         !$omp critical (refine_nbor_cr)
         first_nbor => link%nbor
         !-----------------------------------------------------------------------
@@ -936,14 +937,15 @@ SUBROUTINE remove_patch (self, tlist, this)
   ! deallocate this link (and the associated task memory and task).  The task
   ! list is modified, so it needs to be locked here.
   !-----------------------------------------------------------------------------
-  call tlist%lock%set ('remove_patch')
+  call tlist%lock%set ('remove_patch')      ! lock task list while changing
   call tlist%remove_link (this)             ! remove this from task list
   call tlist%init_nbor_nbors (this)         ! new nbor lists, w/o this
+  call this%lock%unset                      ! undo lock from caller
   call tlist%reset_status()                 ! set task status bits
   call tlist%check_nbor_nbors (this)        ! check / send to ready queue
   call this%delete (this)                   ! finally, delete that task & link
   nullify (this)                            ! make sure it is null
-  call tlist%lock%unset ('remove_patch')    ! release the task list aga
+  call tlist%lock%unset ('remove_patch')    ! release the task list
   !-----------------------------------------------------------------------------
   call trace%end()
 END SUBROUTINE remove_patch
