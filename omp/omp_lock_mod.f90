@@ -32,6 +32,7 @@ MODULE omp_lock_mod
   end type
   type(lock_t), public:: lock
   integer, save:: id_save=-1
+  logical, save:: on = .true.
 CONTAINS
 
 !===============================================================================
@@ -46,8 +47,9 @@ SUBROUTINE init (self, kind, id)
   logical:: set_id
   real, save:: verbose=0.0
   logical:: first_time=.true.
-  namelist /lock_params/ verbose
+  namelist /lock_params/ on, verbose
   !-----------------------------------------------------------------------------
+  if (.not.on) return
   if (self%id == -1) then
 #ifdef TRACE 
     call trace%begin('lock_t%init')
@@ -94,6 +96,7 @@ SUBROUTINE set (self, label)
   integer:: thread, othread, level
   real(8):: wc
   !-----------------------------------------------------------------------------
+  if (.not.on) return
   call self%init
 #ifdef TRACE 
   call trace%begin('lock_t%set')
@@ -135,6 +138,7 @@ FUNCTION test (self) RESULT (out)
   integer:: thread
   real(8):: wc
   !-----------------------------------------------------------------------------
+  if (.not.on) return
 #ifdef TRACE 
   call trace%begin('lock_t%test')
 #endif
@@ -186,6 +190,7 @@ SUBROUTINE unset (self, label)
   integer:: thread
   real(8):: wc
   !-----------------------------------------------------------------------------
+  if (.not.on) return
 #ifdef TRACE 
   call trace%begin('lock_t%unset')
 #endif
@@ -217,6 +222,7 @@ END SUBROUTINE unset
 SUBROUTINE destroy (self)
   class(lock_t):: self
   !-----------------------------------------------------------------------------
+  if (.not.on) return
   call omp_destroy_nest_lock (self%lock)
   self%thread = -1
 END SUBROUTINE destroy
