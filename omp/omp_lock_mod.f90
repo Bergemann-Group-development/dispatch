@@ -50,40 +50,38 @@ SUBROUTINE init (self, kind, id)
   namelist /lock_params/ on, verbose
   !-----------------------------------------------------------------------------
   if (.not.on) return
-  if (self%id == -1) then
 #ifdef TRACE 
-    call trace%begin('lock_t%init')
+  call trace%begin('lock_t%init')
 #endif
-    !$omp critical (lock_cr)
-    if (self%id == -1) then
-      if (first_time) then
-        first_time = .false.
-        rewind (io_unit%input)
-        read (io_unit%input, lock_params, iostat=iostat)
-        write (io_unit%output, lock_params)
-      end if
-      call omp_init_nest_lock (self%lock)
-      if (present(id)) then
-        self%id = id
-        id_save = max(id_save,id)
-        set_id = .true.
-      else
-        id_save = id_save+1
-        self%id = id_save
-        set_id = .false.
-      end if
-      if (present(kind)) self%kind = kind
-      if (verbose > 0.0) &
-        write(io_unit%output,*) omp_get_thread_num(), 'initialized lock kind, id ', &
-          self%kind, self%id, set_id
-      lock%verbose = verbose
+  !$omp critical (lock_cr)
+  if (self%id == -1) then
+    if (first_time) then
+      first_time = .false.
+      rewind (io_unit%input)
+      read (io_unit%input, lock_params, iostat=iostat)
+      write (io_unit%output, lock_params)
     end if
-    !$omp end critical (lock_cr)
+    call omp_init_nest_lock (self%lock)
+    if (present(id)) then
+      self%id = id
+      id_save = max(id_save,id)
+      set_id = .true.
+    else
+      id_save = id_save+1
+      self%id = id_save
+      set_id = .false.
+    end if
+    if (present(kind)) self%kind = kind
+    if (verbose > 0.0) &
+      write(io_unit%output,*) omp_get_thread_num(), 'initialized lock kind, id ', &
+        self%kind, self%id, set_id
+    lock%verbose = verbose
+  end if
+  !$omp end critical (lock_cr)
 #ifdef TRACE 
-    call trace%end()
+  call trace%end()
 #endif
   self%verbose = verbose
-  end if
 END SUBROUTINE init
 
 !===============================================================================
@@ -97,7 +95,7 @@ SUBROUTINE set (self, label)
   real(8):: wc
   !-----------------------------------------------------------------------------
   if (.not.on) return
-  call self%init
+  if (self%id == -1) call self%init
 #ifdef TRACE 
   call trace%begin('lock_t%set')
 #endif
