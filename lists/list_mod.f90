@@ -786,29 +786,22 @@ SUBROUTINE init_nbor_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
   !.............................................................................
-  class(link_t), pointer:: nbor, nbor2
-  logical:: ok
+  class(link_t), pointer:: nbor
   !-----------------------------------------------------------------------------
+  ! First refresh the nbor lists of all current nbors.  Then update that nbor
+  ! list, and refresh once again.
+  !-----------------------------------------------------------------------------
+  call init_current_nbors()
   call self%init_nbors (link)
-  ok = .true.
-  nbor => link%nbor
-  do while (associated(nbor))
-    call self%init_nbors (nbor%link)
-    if (associated(nbor%link%task,link%task)) &
-      ok = .false.
-    if (associated(nbor%task,link%task)) &
-      ok = .false.
-    nbor2 => nbor%link%nbor
-    do while (associated(nbor2))
-      if (associated(nbor2%link%task,link%task)) &
-        ok = .false.
-      if (associated(nbor2%task,link%task)) &
-        ok = .false.
-      nbor2 => nbor2%next
+  call init_current_nbors()
+contains
+  subroutine init_current_nbors
+    nbor => link%nbor
+    do while (associated(nbor))
+      call self%init_nbors (nbor%link)
+      nbor => nbor%next
     end do
-    nbor => nbor%next
-  end do
-  !print *, 'init_nbor_nbors:', link%task%id, ok
+  end subroutine init_current_nbors
 END SUBROUTINE init_nbor_nbors
 
 !===============================================================================
