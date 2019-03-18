@@ -277,6 +277,9 @@ END SUBROUTINE remove_head
 !>
 !> The link pointer and everything it points to are private to this task, and
 !> are not at this point in time accessible from the ready queue.
+!>
+!> To prevent AMR from changing the nbor lists while they are being accessed,
+!> it is necessary (and sufficient) to lock the current link
 !===============================================================================
 SUBROUTINE check_nbors (self, link)
   class(list_t):: self
@@ -410,7 +413,8 @@ SUBROUTINE check_oldest (self)
     end if
     link => link%next
   end do
-  write (io_unit%mpi,*) 'the oldest active  task is ', oldest%task%id , told
+  write (io_unit%mpi,*) 'oldest active is ', oldest%task%id , told, &
+    oldest%task%is_set(bits%ready), oldest%task%is_set(bits%busy) 
   flush (io_unit%mpi)
   write (io_unit%mpi,*) 'it was last unpacked at', oldest%task%unpack_time
   flush (io_unit%mpi)
@@ -487,7 +491,7 @@ SUBROUTINE check_ready (self, link)
   ! be checked, we first check if any bits are set indicating this to be the case
   !-----------------------------------------------------------------------------
   task => link%task
-  if (self%verbose > 0 .and. task%is_set(bits%hands_off)) & 
+  if (self%verbose > 0 .and. task%is_set(bits%hands_off)) &     ! ready+busy+frozen+...
     write (io_unit%log,*) 'list_t%check_ready:', task%id, &
     task%is_set(bits%ready), task%is_set(bits%busy), task%is_set(bits%frozen)
   if (task%is_set (bits%hands_off)) return              ! ready+busy+frozen+..
@@ -736,7 +740,8 @@ SUBROUTINE init_nbors (self, link)
       !call load_balance%add (scan%task%rank)
     !end if
     if (.not.associated(scan,link) .and. associated(scan%task)) then
-      overlaps = scan%task%overlaps(link%task)
+      overlaps = scan%task%overlaps(link%task) &
+        .and. abs(scan%task%level-link%task%level) < 2
       !-------------------------------------------------------------------------
       ! Potential nbors are other patches that overlap
       !-------------------------------------------------------------------------
@@ -1172,7 +1177,6 @@ SUBROUTINE real_queue_by_time (self, this, error)
   !-----------------------------------------------------------------------------
   error=.false.
   task => this%task
-!  if (task%is_set (bits%hands_off)) return
   call trace_begin ('list_t%queue_by_time ', itimer=itimer)
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
