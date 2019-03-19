@@ -610,7 +610,7 @@ FUNCTION check_support (self, tlist, link, check_only) RESULT (refine)
     nbor1 => nbor1%next
   end do
   if (.not.ok) refine = 1
-  if (verbose > 0 .and. n(1) > 0) then
+  if (verbose > 1 .and. n(1) > 0 .or. verbose > 0 .and. n(2) > 0) then
     write (io_unit%output,'(a,i6,i3,2x,5i4)') &
     'check__support: id, refine, nbors at +1 and +2:', &
     link%task%id, refine, n
@@ -760,6 +760,8 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   call tlist%reset_status()
   call tlist%check_nbor_nbors (parent_link)
   call tlist%lock%unset ('make_child')
+  if (verbose > 0) &
+    write (io_unit%output,*) '  refine', parent%id, 'to', child%id, child%level
   if (verbose > 1) then
     l(:) = parent%mesh(:)%li
     u(:) = parent%mesh(:)%ui

@@ -318,6 +318,9 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   ! other ranks).  They are, however, not added back onto the ready queue.
   !-----------------------------------------------------------------------------
   if (task%has_finished()) then                       ! finished:
+    if (timer%dead_mans_hand == 0.0) then
+      timer%dead_mans_hand = wallclock()              ! cf. dispatcher
+    end if
     call task%set (bits%frozen)
     call load_balance%active (.false.)                ! turn off load balancing
     !$omp atomic

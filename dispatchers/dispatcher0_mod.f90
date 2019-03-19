@@ -108,10 +108,14 @@ SUBROUTINE execute (self, task_list, test)
   !$omp parallel
   do while (task_list%na > 0 .and. wallclock() < io%job_seconds)
     call self%update (task_list, test)
-    if (io%do_stop) call mpi%abort ('stop flag')
     if (task_list%na == task_list%n_tasks) then
       !$omp atomic
       min_nq = min(min_nq,task_list%nq)
+    end if
+    if (io%do_stop) call mpi%abort ('stop flag')
+    if (timer%dead_mans_hand > 0.0) then
+      if (wallclock() > timer%dead_mans_hand + 30.0) &
+        call mpi_abort('dead mans hand')
     end if
   end do
   write (io_unit%log,*) 'thread',omp%thread,' arrived'

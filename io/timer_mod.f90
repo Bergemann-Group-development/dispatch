@@ -38,6 +38,7 @@ MODULE timer_mod
     type(latency_t):: latency
     real(8), allocatable:: levelcost(:)
     integer:: levelmin, levelmax
+    real:: dead_mans_hand=0.0
   contains
     procedure:: init
     procedure:: begin
