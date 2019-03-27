@@ -18,6 +18,7 @@
 !> user chooses which forces to include and combine.
 !===============================================================================
 MODULE forces_mod
+  USE io_mod
   USE patch_mod
   USE force_mod
   USE link_mod
@@ -29,7 +30,9 @@ MODULE forces_mod
     real, dimension(:,:,:), pointer:: Ux=>null(), Uy=>null(), Uz=>null()
   contains
     procedure:: init
+    procedure:: dealloc
     procedure:: pre_update
+    procedure:: post_update
   end type
 CONTAINS
 
@@ -40,18 +43,18 @@ SUBROUTINE init (self, link)
   class(link_t):: link
   !.............................................................................
   self%patch => task2patch (link%task)
-  associate (patch => self%patch)
-  call self%force%init (patch%kind, patch%id, patch%mesh)
-  !-----------------------------------------------------------------------------
-  ! Make sure the LHS is allocated
-  !-----------------------------------------------------------------------------
-  if (.not.allocated(patch%force_per_unit_mass)) then
-    associate (m => patch%gn)
-    allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
-    end associate
-  end if
-  end associate
+  call self%force%init (self%patch%kind, self%patch%id, self%patch%mesh)
 END SUBROUTINE init
+
+!===============================================================================
+!> Deallocate
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(forces_t):: self
+  !.............................................................................
+  call self%post_update
+  call self%force%dealloc
+END SUBROUTINE dealloc
 
 !===============================================================================
 !> Use the pre-existing force%selected () function to set or add the force
@@ -64,13 +67,30 @@ SUBROUTINE pre_update (self)
   !-----------------------------------------------------------------------------
   ! Use existing function call
   !-----------------------------------------------------------------------------
-  associate (patch => self%patch)
+  associate (patch => self%patch, m => self%patch%gn)
   d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
   p => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%it,1)
+  if (.not.allocated(patch%force_per_unit_mass)) then
+    allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
+    call io%bits_mem (storage_size(patch%force_per_unit_mass), &
+                     product(shape(patch%force_per_unit_mass)), 'fpm')
+  end if
   patch%force_per_unit_mass = &
-  patch%force_per_unit_mass + &
   self%force%selected(patch%time, d, p, self%Ux, self%Uy, self%Uz, patch%mesh)
   end associate
 END SUBROUTINE pre_update
+
+!===============================================================================
+!> Save on node memory, by deallocating
+!===============================================================================
+SUBROUTINE post_update (self)
+  class(forces_t):: self
+  !-----------------------------------------------------------------------------
+  if (allocated(self%patch%force_per_unit_mass)) then
+    call io%bits_mem (-storage_size(self%patch%force_per_unit_mass), &
+                      product(shape(self%patch%force_per_unit_mass)), '-fpm')
+    deallocate (self%patch%force_per_unit_mass)
+  end if
+END SUBROUTINE post_update
 
 END MODULE forces_mod

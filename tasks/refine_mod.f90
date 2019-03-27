@@ -268,9 +268,14 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     !---------------------------------------------------------------------------
     ! Setup mask and refinement map
     !---------------------------------------------------------------------------
-    allocate (patch%mask(patch%gn(1),patch%gn(2),patch%gn(3)))
+    if (.not.allocated (patch%mask)) then
+      allocate (patch%mask(patch%gn(1),patch%gn(2),patch%gn(3)))
+    end if
+    patch%mask = .true.
     call self%setup_mask (patch)
-    allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
+    if (.not.allocated (patch%refine)) then
+      allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
+    end if
     patch%irefine = -1
     !---------------------------------------------------------------------------
     ! Check all refinement criteria

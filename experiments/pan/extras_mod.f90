@@ -60,8 +60,8 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
     type(forces_t):: forces                                     ! forces
-    class(trace_particles_t), pointer:: trace_particles         ! tracep
-    real, dimension(:,:,:,:), pointer:: v                       ! tracep
+    !class(trace_particles_t), pointer:: trace_particles         ! tracep
+    !real, dimension(:,:,:,:), pointer:: v                       ! tracep
     !type(selfgravity_t) :: selfgravity                         ! selfg
   contains
     procedure:: init
@@ -80,10 +80,10 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call self%forces%init (self%link)                             ! forces
-  allocate (self%trace_particles)                               ! tracep
-  self%connect%trace_particles => self%trace_particles          ! tracep
-  call self%trace_particles%add (self%link)                     ! tracep
-  call sink_patch%init                                          ! sinkp
+  !allocate (self%trace_particles)                               ! tracep
+  !self%connect%trace_particles => self%trace_particles          ! tracep
+  !call self%trace_particles%add (self%link)                     ! tracep
+  !call sink_patch%init                                          ! sinkp
 END SUBROUTINE init
 
 !===============================================================================
@@ -92,13 +92,9 @@ END SUBROUTINE init
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
-  if (allocated (self%force_per_unit_mass)) &                   ! keep
-    self%force_per_unit_mass = 0.0                              ! keep
-  if (allocated (self%force_per_unit_volume)) &                 ! keep
-    self%force_per_unit_volume = 0.0                            ! keep
   call self%forces%pre_update                                   ! forces
-  call self%trace_particles%update                              ! tracep
-  call particle_solver%force_field (self)                       ! sinkp
+  !call self%trace_particles%update                              ! tracep
+  !call particle_solver%force_field (self)                       ! sinkp
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -107,7 +103,8 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
-  call self%trace_particles%post_update                         ! tracep
+  call self%forces%post_update
+  !call self%trace_particles%post_update                         ! tracep
 END SUBROUTINE post_update
 
 !===============================================================================
