@@ -273,7 +273,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     end if
     patch%mask = .true.
     call self%setup_mask (patch)
-    if (.not.allocated (patch%refine)) then
+    if (.not.allocated (patch%irefine)) then
       allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
     end if
     patch%irefine = -1
@@ -845,7 +845,7 @@ SUBROUTINE split_patch (self, tlist, this)
             maxval(patch%mem(j1(1):j2(1),j1(2):j2(2),j1(3):j2(3),patch%idx%d,patch%it,1)), &
             j1(1), j2(1), j1(2), j2(2), j1(3), j2(3), 'xxx'
         end if
-        if (associated(patch%mask) .and. &
+        if (allocated(patch%mask) .and. &
          all(j >= patch%mesh%li .and. j <= patch%mesh%ui)) then
           if (patch%mask(j(1),j(2),j(3))) then
             call make_child_patch(self, tlist, this, patch, pos, split_size, i)
@@ -1012,7 +1012,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
     allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
     c =  minval(patch%mesh%d)*sqrt(scaling%grav/(math%pi*patch%gamma))
     test = c*d/sqrt(pg)
-    if (associated(patch%mask)) then
+    if (allocated(patch%mask)) then
       Jeans_num = maxval(test, mask=patch%mask)
     else
       Jeans_num = patch%fmaxval(test)
@@ -1047,7 +1047,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
     if (verbose > 2 .or. &
        (verbose > 1 .and. patch%level < self%levelmax .and. refine_it > 0) .or. &
        (verbose > 1 .and. patch%level > self%levelmin .and. refine_it < 0)) then
-      if (associated(patch%mask)) then
+      if (allocated(patch%mask)) then
         masked = .not.all(patch%mask)
       else
         masked = .false.
