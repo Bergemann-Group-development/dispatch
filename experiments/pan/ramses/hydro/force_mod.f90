@@ -83,8 +83,10 @@ SUBROUTINE dealloc (self)
   class(force_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('force_t%dealloc')
-  deallocate (self%fran)
-  call io%bits_mem (-storage_size(self%fran), product(shape(self%fran)), '-fran')
+  if (allocated(self%fran)) then
+    call io%bits_mem (-storage_size(self%fran), product(shape(self%fran)), '-fran')
+    deallocate (self%fran)
+  end if
   call trace%end
 END SUBROUTINE dealloc
 

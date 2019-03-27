@@ -683,6 +683,15 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   ! level, which would otherwise be left undefined, or in inconsistent state
   !------------------------------------------------------------------------
   allocate (child, source=parent)
+  if (allocated(child%mask)) then
+    deallocate (child%mask)
+  end if
+  if (allocated(child%irefine)) then
+    deallocate (child%irefine)
+  end if
+  if (allocated(child%force_per_unit_mass)) then
+    deallocate (child%force_per_unit_mass)
+  end if
   child%mem_allocated = .false.
   nullify (child%mem)
   nullify (child%mesh)
