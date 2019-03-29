@@ -1579,7 +1579,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   !$omp atomic write
   self%dtime = dtime
   if (self%nt>1) then
-    if (dtime < 0.5*self%dt(self%iit(self%nt-2)) .and. self%dt_fixed < 0.0) then
+    if (dtime < 0.5*self%dt(self%iit(self%nt-1)) .and. self%dt_fixed < 0.0) then
       self%safety_factor = 0.5
     end if
     if (self%safety_factor < 0.6) then
@@ -1593,7 +1593,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
       write (io_unit%dbg) self%id, self%gn, self%ipos
       write (io_unit%dbg) self%time, self%mem(:,:,:,:,self%it,1)
       flush (io_unit%dbg)
-      if (io%verbose>2 .or. (self%istep>3)) &
+      if (io%verbose>2 .or. (self%istep>5)) &
         write(io%output,'(a,i6,i3,f12.6,1p,3g11.2,0p,1x,3f12.6,1x,1p,7g12.3)') &
           ' courant: ', self%id, self%it, &
           self%time, dtime, courant, self%u_max, self%position, self%dt(self%iit)
