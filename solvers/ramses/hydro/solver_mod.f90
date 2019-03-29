@@ -8,6 +8,7 @@ MODULE solver_mod
   USE io_mod
   USE trace_mod
   USE patch_mod
+  USE task_mod
   USE kinds_mod
   USE hd_mod
   implicit none
@@ -15,6 +16,7 @@ MODULE solver_mod
   type, public, extends(hd_t):: solver_t
   contains
     procedure:: init
+    procedure, nopass:: cast2solver
     procedure:: update
     procedure:: dnload
     procedure:: p2U
@@ -33,7 +35,7 @@ MODULE solver_mod
     procedure:: gas_velocity_scalar
     generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
   end type
-  type(solver_t):: solver
+  type(solver_t), public:: solver
 CONTAINS
 
 !===============================================================================
@@ -42,9 +44,27 @@ CONTAINS
 SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
+  call trace%begin ('solver_t%init')
   call self%hd_t%init
   call self%extras_t%init
+  call trace%end
 END SUBROUTINE init
+
+!===============================================================================
+!> Cast a generic task_t to patch_t
+!===============================================================================
+FUNCTION cast2solver (task) RESULT(solver)
+  class(task_t), pointer:: task
+  class(solver_t), pointer:: solver
+  !.............................................................................
+  select type (task)
+  class is (solver_t)
+  solver => task
+  class default
+  nullify(solver)
+  call io%abort ('patch_t%cast: failed to cast a task to patch_t')
+  end select
+END FUNCTION cast2solver
 
 !===============================================================================
 !> Organize calls to the extras and the hydro solver

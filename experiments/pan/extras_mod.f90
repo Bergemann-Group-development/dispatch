@@ -79,11 +79,13 @@ CONTAINS
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
+  call trace%begin ('extras_t%init')
   call self%forces%init (self%link)                             ! forces
   !allocate (self%trace_particles)                               ! tracep
   !self%connect%trace_particles => self%trace_particles          ! tracep
   !call self%trace_particles%add (self%link)                     ! tracep
   !call sink_patch%init                                          ! sinkp
+  call trace%end
 END SUBROUTINE init
 
 !===============================================================================
@@ -122,11 +124,13 @@ END SUBROUTINE output
 !===============================================================================
 INTEGER function check_refine (self, patch)
   class(extras_t):: self
-  class(gpatch_t), pointer:: patch
+  class(extras_t), pointer:: patch
+  class(gpatch_t), pointer:: gpatch
   !.............................................................................
+  gpatch => patch
   check_refine = -1
   check_refine = max (check_refine, &
-    sink_patch%check_refine (patch))                            ! sinkp
+    sink_patch%check_refine (gpatch))                            ! sinkp
 END FUNCTION check_refine
 
 END MODULE extras_mod

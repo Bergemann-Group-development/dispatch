@@ -61,7 +61,6 @@ MODULE refine_mod
   USE list_mod
   USE task_mod
   USE patch_mod
-  USE gpatch_mod
   USE solver_mod
   USE extras_mod
   USE scene_mod
@@ -161,16 +160,16 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   class(link_t), pointer:: link
   integer:: refine
   !.............................................................................
-  class(gpatch_t), pointer:: patch
+  class(solver_t), pointer:: patch
+  class(extras_t), pointer:: extras
   real:: dxmin, dxmax
   integer, save:: itimer=0
-  !logical:: new_sink
   !----------------------------------------------------------------------------
   refine = 0
   if (.not. on) return
   call trace%begin('refine_t%needed', itimer=itimer)
   !----------------------------------------------------------------------------
-  patch => gpatch%cast2gpatch (link%task)
+  patch => solver%cast2solver (link%task)
   dxmin = minval(patch%ds)
   dxmax = maxval(patch%ds)
   if (verbose > 2) then
@@ -204,7 +203,8 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   refine = -1
   !
   ! Extras refinement
-  refine = max(refine, extras%check_refine (patch))
+  extras => patch
+  refine = max(refine, extras%check_refine (extras))
   !
   ! Ensure consistent, cubical patch size (e.g. after RAMSES startup)
   if (force_cubical) refine = max (refine, self%check_cubical(patch))
@@ -242,7 +242,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   class(refine_t):: self
   class(list_t):: tasklist
   class(link_t), pointer:: link, nbor, first_nbor
-  class(gpatch_t), pointer:: patch
+  class(solver_t), pointer:: patch
   logical, intent(out):: was_refined, was_derefined
   real:: dxmin, dxmax
   integer:: refine, id
@@ -257,7 +257,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       link%task%time, link%task%level, self%levelmax
   !---------------------------------------------------------------------------
   call trace%begin('refine_t%check_current', itimer=itimer)
-  patch => gpatch%cast2gpatch (link%task)
+  patch => solver%cast2solver (link%task)
   id = patch%id
   !---------------------------------------------------------------------------
   ! Only check leaf patches
@@ -310,7 +310,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
   class(refine_t):: self
   class(list_t):: tasklist
   logical:: was_refined, was_derefined
-  class(gpatch_t), pointer:: patch, nbpatch
+  class(solver_t), pointer:: patch, nbpatch
   integer:: i, j, k, i1, i2, j1, j2, k1, k2, n1, n2, n3, ii(3), refine
   real:: rpos(3)
   real(8):: pos(3)
@@ -384,6 +384,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
             !-----------------------------------------------------------------------
             not_already_refined = patch%mask(ii(1),ii(2),ii(3))
             if (not_already_refined .and. refine > 0) then
+              !io%do_trace = .true.
               !---------------------------------------------------------------------
               ! Create a refined patch here
               !---------------------------------------------------------------------
@@ -452,7 +453,7 @@ END SUBROUTINE lock_nbors
 SUBROUTINE create_patch (self, tasklist, patch, ix, iy, iz)
   class(refine_t):: self
   class(list_t):: tasklist
-  class(gpatch_t), pointer:: patch
+  class(solver_t), pointer:: patch
   integer:: ix, iy, iz
   !.............................................................................
   class(link_t), pointer:: link
@@ -638,17 +639,17 @@ END FUNCTION check_support
 !===============================================================================
 SUBROUTINE setup_mask (self, patch)
   class(refine_t):: self
-  class(gpatch_t), pointer:: patch
+  class(solver_t), pointer:: patch
   !.............................................................................
   class(link_t), pointer:: nbor
-  class(gpatch_t), pointer:: nbpatch
+  class(solver_t), pointer:: nbpatch
   integer, dimension(3):: l, u
   !-----------------------------------------------------------------------------
   ! Check for higher level patches inside this
   !-----------------------------------------------------------------------------
   nbor => patch%link%nbor
   do while (associated(nbor))
-    nbpatch => gpatch%cast2gpatch(nbor%task)
+    nbpatch => solver%cast2solver(nbor%task)
     if (patch%contains(nbpatch%position) .and. &
         patch%level == nbpatch%level+1) then
       l = patch%index_only (nbpatch%position + nbpatch%mesh%lf)
@@ -669,7 +670,7 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   class(refine_t):: self
   class(list_t) :: tlist
   class(link_t), pointer :: parent_link, child_link, child_nbor
-  class(gpatch_t), pointer :: parent, child
+  class(solver_t), pointer :: parent, child
   real(8), dimension(3), intent(in) :: pos, child_size
   integer:: i, j, count, l(3), u(3)
   !------------------------------------------------------------------------
@@ -800,7 +801,7 @@ SUBROUTINE split_patch (self, tlist, this)
   class(refine_t):: self
   class(list_t):: tlist
   class(link_t), pointer:: this, link, tail
-  class(gpatch_t), pointer:: patch
+  class(solver_t), pointer:: patch
   integer:: ix, iy, iz
   integer:: nsplit(3), i, j(3), j1(3), j2(3)
   real(8), dimension(3):: pos, rpos, split_size
@@ -819,7 +820,7 @@ SUBROUTINE split_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   ! Decide how to split
   !-----------------------------------------------------------------------------
-  patch => gpatch%cast2gpatch (this%task)
+  patch => solver%cast2solver (this%task)
   if (patch%msplit>0) then
     nsplit = patch%msplit
   else
@@ -971,7 +972,7 @@ END SUBROUTINE remove_patch
 !===============================================================================
 FUNCTION check_cubical (self, patch) RESULT (refine_it)
   class(refine_t):: self
-  class(gpatch_t), pointer:: patch
+  class(solver_t), pointer:: patch
   integer:: refine_it
   !.............................................................................
   if (all(patch%n==scene%patch_n)) then
@@ -989,7 +990,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   USE math_mod
   USE scaling_mod
   class(refine_t):: self
-  class(gpatch_t), pointer:: patch
+  class(solver_t), pointer:: patch
   integer:: refine_it
   !.............................................................................
   integer:: imin(3), l(3), u(3)
@@ -1077,7 +1078,7 @@ END FUNCTION check_Jeans
 FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
   USE mesh_mod
   class(refine_t):: self
-  class(gpatch_t), pointer:: patch
+  class(solver_t), pointer:: patch
   integer:: refine
   !.............................................................................
   class(mesh_t), pointer:: mx, my, mz
@@ -1184,7 +1185,7 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
   USE mesh_mod
   USE solver_mod
   class(refine_t):: self
-  class(gpatch_t), pointer:: patch
+  class(solver_t), pointer:: patch
   integer:: refine
   !.............................................................................
   class(mesh_t), pointer:: mx, my, mz
@@ -1305,7 +1306,7 @@ END FUNCTION gradient_detector
 FUNCTION refine_region (self, patch) RESULT (refine)
   USE mesh_mod
   class(refine_t) :: self
-  class(gpatch_t), pointer :: patch
+  class(solver_t), pointer :: patch
   integer:: refine
   class(mesh_t), pointer:: m1, m2, m3, m(:)
   logical :: intersect
