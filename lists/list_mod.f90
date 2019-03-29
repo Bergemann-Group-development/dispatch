@@ -289,7 +289,7 @@ SUBROUTINE check_nbors (self, link)
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
-  call link%lock%set ('check_nbors')
+  call check_lock%set ('check_nbors')
   if (io%verbose > 1) &
     write (io_unit%log,*) 'checking nbors of',link%task%id,associated(link%nbor)
   task => link%task                                   ! main task
@@ -314,7 +314,7 @@ SUBROUTINE check_nbors (self, link)
   if (task%is_clear (bits%virtual+bits%external)) then
     call self%check_ready (link)                      ! finally check link task
   end if
-  call link%lock%unset ('check_nbors')
+  call check_lock%unset ('check_nbors')
   call trace_end (itimer)
   return
 END SUBROUTINE check_nbors
@@ -723,10 +723,11 @@ SUBROUTINE init_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link, scan
   class(link_t), pointer:: nbor
+  !.............................................................................
   integer:: n_add
   logical:: overlaps
   integer, save:: itimer=0
-  !.............................................................................
+  !-----------------------------------------------------------------------------
   call trace_begin('list_t%init_nbors ', itimer=itimer)
   nullify (link%nbor)                                 ! initially no nbor
   n_add = 0
@@ -787,20 +788,11 @@ SUBROUTINE init_nbor_nbors (self, link)
   !.............................................................................
   class(link_t), pointer:: nbor
   !-----------------------------------------------------------------------------
-  ! First refresh the nbor lists of all current nbors.  Then update that nbor
-  ! list, and refresh once again.
-  !-----------------------------------------------------------------------------
-  call init_current_nbors()
-  call self%init_nbors (link)
-  call init_current_nbors()
-contains
-  subroutine init_current_nbors
-    nbor => link%nbor
-    do while (associated(nbor))
-      call self%init_nbors (nbor%link)
-      nbor => nbor%next
-    end do
-  end subroutine init_current_nbors
+  nbor => link%nbor
+  do while (associated(nbor))
+    call self%init_nbors (nbor%link)
+    nbor => nbor%next
+  end do
 END SUBROUTINE init_nbor_nbors
 
 !===============================================================================

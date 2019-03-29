@@ -126,7 +126,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%init')
   call trace%print_id (id)
-  !$omp critical (refine_cr)
+  !$omp critical (input_cr)
   if (first_time) then
     first_time=.false.
     levelmin = self%levelmin
@@ -144,7 +144,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   if (levelmax > levelmin) &
     download%check_filled = .true.
-  !$omp end critical (refine_cr)
+  !$omp end critical (input_cr)
   self%levelmin = levelmin
   self%levelmax = levelmax
   self%ratio = ratio
@@ -298,13 +298,24 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       deallocate (patch%irefine)
       deallocate (patch%mask)
     end if
+    !-------------------------------------------------------------------------
+    ! Update next refinement step counter
+    !-------------------------------------------------------------------------
+    patch%check_refine_next = patch%istep + check_interval
   end if
   call trace%end (itimer)
 END SUBROUTINE check_current
 
 !===============================================================================
-! Loop over the ratio x ratio x ratio positions and determine whether to refine
-! or derefine
+!> Loop over the ratio x ratio x ratio positions and determine whether to refine
+!> or derefine.  This is not done every timestep, so the impact on running tasks
+!> does not need to be given excessive weight. A simple and robust approach,
+!> which only requires two OMP lock calls, is to share one lock with check_nbors,
+!> and another one with download_link.  After acquiring both locks one can do
+!> refine and derefine modifications of nbor list, w/o risking that the nbor
+!> lists are being used at the same time.  Using two separate locks prevents
+!> the significant impact that would be the result of locking out check_nbors
+!> and download_link from occuring at the same time.
 !===============================================================================
 SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
   class(refine_t):: self
@@ -322,41 +333,13 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
   call trace%begin ('refine_t%selective_refine')
   was_refined = .false.
   was_derefined = .false.
-  !-----------------------------------------------------------------------------
-  ! First, consider if the whole patch should be derefined.  This requires that
-  ! it has no higher level patch inside (would trigger patch%mask == false there),
-  ! and secondly that irefine(:,:,:) indicates that derefine would be OK
-  !-----------------------------------------------------------------------------
   link => patch%link
   nbors => link%nbor
   tail => tasklist%tail
-  if (patch%level > self%levelmin) then
-    if (all(patch%mask)) then
-      if (all(patch%irefine < 0)) then
-        if (verbose > 0) &
-          write (io_unit%output,*) 'derefine', patch%id
-        !$omp critical (refine_nbor_cr)
-        first_nbor => link%nbor
-        !-----------------------------------------------------------------------
-        ! Lock the link here, even if it is to be removed, to prevent nearby
-        ! patches (that have the link in their nbor lists) to refine / derefine 
-        ! at the same time.   Other threads can still manipulate the task list;
-        ! that protocol is handled inside remove_patch.
-        !-----------------------------------------------------------------------
-        call link%lock%set ('derefine')
-        call lock_nbors ('on',first_nbor, 'derefine')
-        deallocate (patch%irefine)
-        deallocate (patch%mask)
-        call remove_patch (self, tasklist, link)
-        call lock_nbors ('off',first_nbor, 'derefine')
-        !$omp end critical (refine_nbor_cr)
-        was_derefined = .true.
-      end if
-    end if
   !-----------------------------------------------------------------------------
-  ! Now consider if any part should be refined
+  ! First, consider if any part should be refined
   !-----------------------------------------------------------------------------
-  else if (patch%level < self%levelmax) then
+  if (patch%level < self%levelmax) then
     if (any(patch%irefine > 0)) then
       n1 = m1%n/self%ratio
       n2 = m2%n/self%ratio
@@ -389,29 +372,49 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
               ! Create a refined patch here
               !---------------------------------------------------------------------
               if (verbose > 1) &
-                write (io_unit%output,'(a,i6,1p2g16.5,2x,3(i4,":",i2))') 'xxx', &
+                write (io_unit%output,'(a,i6,1p2g16.5,2x,3(i4,":",i2))') 'refine', &
                   patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
                        maxval(patch%mem(i1:i2,j1:j2,k1:k2,patch%idx%d,patch%it,1)), &
                 i1, i2, j1, j2, k1, k2
-              !$omp critical (refine_nbor_cr)
+              call download_lock%set ('refine')
+              call check_lock%set ('refine')
               first_nbor => link%nbor
-              call link%lock%set ('derefine')
-              call lock_nbors ('on', first_nbor, 'derefine')
               call create_patch (self, tasklist, patch, i, j, k)
-              call lock_nbors ('off', first_nbor, 'derefine')
-              call link%lock%unset ('derefine')
-              !$omp end critical (refine_nbor_cr)
+              call check_lock%unset ('refine')
+              call download_lock%unset ('refine')
               was_refined= .true.
             end if
           end do
         end do
       end do
-      if (was_refined) then
-        !call tasklist%init_nbor_nbors (link)
-        !call tasklist%init_nbors (link)
-        !call tasklist%init_all_nbors
-        !call tasklist%reset_status
-        !call tasklist%check_all
+    end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! Then, consider if the whole patch should be derefined.  This requires that
+  ! it has no higher level patch inside (would trigger patch%mask == false there),
+  ! and secondly that irefine(:,:,:) indicates that derefine would be OK
+  !-----------------------------------------------------------------------------
+  if (verbose > 1) write (io_unit%output,*) &
+    'derefine: level, next, was_refined, all(mask), all(irefine) =', &
+    patch%level > self%levelmin, .not.was_refined, &
+    all(patch%mask), all(patch%irefine < 0), patch%check_refine_next
+  if (patch%level > self%levelmin .and. &               ! any chance?
+      patch%check_refine_next > 0 .and. &               ! not immediately!
+      .not.was_refined) then                            ! not after a refine!
+    if (all(patch%mask)) then                           ! no child patch inside
+      if (all(patch%irefine < 0)) then                  ! all criteria in favor
+        if (verbose > 0) &
+          write (io_unit%output,*) 'derefine', patch%id
+        call download_lock%set ('derefine')
+        call check_lock%set ('derefine')
+        first_nbor => link%nbor
+        !-----------------------------------------------------------------------
+        deallocate (patch%irefine)
+        deallocate (patch%mask)
+        call remove_patch (self, tasklist, link)
+        call check_lock%unset ('derefine')
+        call download_lock%unset ('derefine')
+        was_derefined = .true.
       end if
     end if
   end if
@@ -431,6 +434,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
 END SUBROUTINE selective_refine
 
 !===============================================================================
+!> FIXME: This is probably redundant
 !===============================================================================
 SUBROUTINE lock_nbors (key, first_nbor, label)
   class(link_t), pointer:: first_nbor, nbor
@@ -719,12 +723,10 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   !------------------------------------------------------------------------
   allocate (child_link)
   call child_link%init                               ! initialise the lock
-  !call child_link%lock%set ('child init')            ! immediately lock it
   child_link%task => child                           ! associate task with link
   child_link%parent => parent_link                   ! used in remove_patch
   child%link => child_link                           ! associate link with task
   child%parent => parent                             ! task relation
-  call tlist%append_link (child_link)                ! which is added to the patch list
   !------------------------------------------------------------------------
   ! Initialise the new patch
   !------------------------------------------------------------------------
@@ -738,14 +740,6 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   child%t(:) = child%time
   child%parentid = parent%id                         ! for debugging
   child%check_refine_next = 0                        ! allow recursive refine
-  !------------------------------------------------------------------------
-  ! Immediately add output of the new patch to the previous snapshot, for
-  ! debugging purposes.
-  !------------------------------------------------------------------------
-  !if (child%restart <= 0) then
-  !  child%out_next = child%time                      ! force output now
-  !  child%iout = max(0,child%iout - 1)               ! correct output counter
-  !end if
   !------------------------------------------------------------------------
   ! Increment I/O write counter, to avoid repeated writing of metadata
   !------------------------------------------------------------------------
@@ -771,22 +765,29 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
     call download%download_link (child_link, all_cells=.true.)
   deallocate (child_nbor)
   call tlist%lock%set ('make_child')
-  call tlist%init_nbor_nbors (parent_link)
+  call tlist%append_link (child_link)
+  call tlist%init_nbors (child_link)
+  call tlist%init_nbor_nbors (child_link)
   call tlist%reset_status()
-  call tlist%check_nbor_nbors (parent_link)
+  call tlist%check_nbors (child_link)
+  call tlist%check_nbor_nbors (child_link)
   call tlist%lock%unset ('make_child')
   if (verbose > 0) &
     write (io_unit%output,*) '  refine', parent%id, 'to', child%id, child%level
   if (verbose > 1) then
+    l = parent%index_only (child%position + child%mesh%lf)
+    u = parent%index_only (child%position + child%mesh%uf)
+    l = max(l,parent%mesh%li)
+    u = min(u,parent%mesh%ui)
+    print 1,'make_child_patch: parent, level, iout, time, size(3), position(3) =', &
+      parent%id, parent%level, parent%time, parent%size, parent%position , &
+      maxval(parent%mem(l(1):u(1),l(2):u(2),l(3):u(3),parent%idx%d,parent%it,1)), &
+      l, u, parent%contains(child)
+    1 format(a,i6,i3,f9.6,2(1x,3f8.4),1pe12.2,2(1x,3i3),l2)
     l(:) = parent%mesh(:)%li
     u(:) = parent%mesh(:)%ui
-    if (i==0) &
-    print 1,'refine_t%make_child_patch: parent, level, iout, time, size(3), position(3) =', &
-      parent%id, parent%level, parent%iout, parent%time, parent%size, parent%position , &
-      maxval(parent%mem(l(1):u(1),l(2):u(2),l(3):u(3),parent%idx%d,parent%it,1))
-    1 format(a,3i6,f10.6,2(2x,3f8.4),1pe12.2)
-    print 1,'                            child, level, iout, time, size(3), position(3) =', &
-      child%id, child%level, child%iout, child%time, child%size, child%position , &
+    print 1,'                   child, level, iout, time, size(3), position(3) =', &
+      child%id, child%level, child%time, child%size, child%position , &
       maxval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1))
   end if
   call trace%end()
@@ -957,7 +958,6 @@ SUBROUTINE remove_patch (self, tlist, this)
   call tlist%lock%set ('remove_patch')      ! lock task list while changing
   call tlist%remove_link (this)             ! remove this from task list
   call tlist%init_nbor_nbors (this)         ! new nbor lists, w/o this
-  call this%lock%unset                      ! undo lock from caller
   call tlist%reset_status()                 ! set task status bits
   call tlist%check_nbor_nbors (this)        ! check / send to ready queue
   call this%delete (this)                   ! finally, delete that task & link

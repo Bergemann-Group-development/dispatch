@@ -396,7 +396,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   if (use_locks) then
     write (info,'(2i6,i4)') target%id, target%istep, omp%thread
-    call target%link%lock%set ('download link'//trim(info))
+    call download_lock%set ('download')
     !nbor => link%nbor
     !do while (associated(nbor))
     !  write (info,'(2i6,i4)') nbor%link%task%id, nbor%link%task%istep, omp%thread
@@ -496,7 +496,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     !  nbor => nbor%next
     !end do
     write (info,'(2i6,i4)') target%id, target%istep, omp%thread
-    call target%link%lock%unset ('download link'//trim(info))
+    call download_lock%unset ('download')
   end if
   if (verbose > 0) then
     wc(3) = wc(3)-wc(2)
