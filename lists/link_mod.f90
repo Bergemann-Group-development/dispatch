@@ -46,6 +46,7 @@ MODULE link_mod
     procedure:: add_nbor_by_rank
     procedure:: remove_nbor
     procedure:: remove_from_nbors
+    procedure:: remove_nbor_list
     procedure:: make_new_nbors
     procedure:: make_new_nbor
     !procedure:: update_nbors
@@ -404,6 +405,22 @@ SUBROUTINE remove_from_nbors (self, this)
 END SUBROUTINE remove_from_nbors
 
 !===============================================================================
+!> Remove, deallocate, and nullify an existing nbor list
+!===============================================================================
+SUBROUTINE remove_nbor_list (self)
+  class(link_t):: self
+  class(link_t), pointer:: nbor, next
+  !-----------------------------------------------------------------------------
+  nbor => self%nbor
+  do while (associated(nbor))
+    next => nbor%next
+    deallocate (nbor)
+    nbor => next
+  end do
+  nullify (self%nbor)
+END SUBROUTINE remove_nbor_list
+
+!===============================================================================
 !> Update the nbor list of self, adding self to the each nbor's nbor list
 !===============================================================================
 ! SUBROUTINE update_nbors (self)
@@ -698,12 +715,7 @@ SUBROUTINE delete (self, link)
   !-----------------------------------------------------------------------------
   call link%task%delete()
   deallocate (link%task)
-  nbor => link%nbor
-  do while (associated(nbor))
-    next => nbor%next
-    deallocate (nbor)
-    nbor => next
-  end do
+  call remove_nbor_list (link%nbor)
   !-----------------------------------------------------------------------------
   call link%lock%unset ('link_t%delete')
   deallocate (link)

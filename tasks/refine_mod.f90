@@ -782,7 +782,6 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   !------------------------------------------------------------------------
   if (parent%time > 0.0 .and. child%restart <= 0) &
     call download%download_link (child_link, all_cells=.true.)
-  deallocate (child_nbor)
   call tlist%lock%set ('make_child')
   call tlist%append_link (child_link)
   call tlist%init_nbors (child_link)

@@ -729,7 +729,7 @@ SUBROUTINE init_nbors (self, link)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('list_t%init_nbors ', itimer=itimer)
-  nullify (link%nbor)                                 ! initially no nbor
+  call link%remove_nbor_list                          ! recover nbor list mem
   n_add = 0
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
