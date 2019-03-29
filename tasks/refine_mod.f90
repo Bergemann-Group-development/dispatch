@@ -185,10 +185,6 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
     call trace%end (itimer)
     return
   end if
-  if (patch%istep < patch%check_refine_next) then
-    call trace%end (itimer)
-    return
-  end if
   if (dxmin < min_dx .or. dxmax >= max_dx) then
     call trace%end (itimer)
     return
@@ -205,30 +201,43 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   ! Extras refinement
   extras => patch
   refine = max(refine, extras%check_refine (extras))
+  if (verbose > 1) write (io_unit%output,*) &
+    patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'extras'
   !
   ! Ensure consistent, cubical patch size (e.g. after RAMSES startup)
   if (force_cubical) refine = max (refine, self%check_cubical(patch))
+  if (verbose > 1) write (io_unit%output,*) &
+    patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'cubical'
   !
   ! Jeans criterion
   if (max_jeans > 0.0) refine = max (refine, self%check_Jeans(patch))
+  if (verbose > 1) write (io_unit%output,*) &
+    patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'Jeans'
   !
   ! shock and/or contact discontinuity detector
   if (max_shock > 0.0 .or. max_contact > 0.0) &
     refine = max (refine, self%shock_and_cd_detector(patch))
+  if (verbose > 1) write (io_unit%output,*) &
+    patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'shock'
   !
   ! gradient detector
   if (any(max_grad > 0.0)) refine = max (refine, self%gradient_detector(patch))
+  if (verbose > 1) write (io_unit%output,*) &
+    patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'gradient'
   !
   ! refine on (a) user-specified region(s)
   if (any(region_llc /= 0.0) .and. any(region_urc /= 0.0)) &
     refine = max (refine, self%refine_region(patch))
+  if (verbose > 1) write (io_unit%output,*) &
+    patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'user'
   !
   ! Check that neighbors of `self` are not more than one level different.
   ! If they are, mark this patch for splitting so that support can be
   ! provided to the neighbors of `patch`.
   refine = max (refine ,self%check_support (tasklist, link))
+  if (verbose > 1) write (io_unit%output,*) &
+    patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'support'
   !
-  patch%check_refine_next = patch%istep + check_interval
   call trace%end (itimer)
 END FUNCTION refine_needed
 
@@ -262,7 +271,8 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   !---------------------------------------------------------------------------
   ! Only check leaf patches
   !-----------------------------------------------------------------------------
-  if (patch%is_clear(bits%not_leaf)) then
+  if (patch%is_clear(bits%not_leaf) .and. &
+      patch%istep >= patch%check_refine_next) then
     if (verbose > 3) &
       tasklist%verbose = verbose
     !---------------------------------------------------------------------------
@@ -288,6 +298,8 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     where (.not.patch%mask)
       patch%irefine = 0
     end where
+    if (verbose > 1) write (io_unit%output,*) &
+      patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'mask'
     !-------------------------------------------------------------------------
     ! Apply refinement criteria on potential child patch parts
     !-------------------------------------------------------------------------
@@ -452,7 +464,7 @@ SUBROUTINE lock_nbors (key, first_nbor, label)
 END SUBROUTINE lock_nbors
 
 !===============================================================================
-! Create a new patch, and reset the task list
+!> Create a new patch, and reset the task list.  FIXME: merge with make_child
 !===============================================================================
 SUBROUTINE create_patch (self, tasklist, patch, ix, iy, iz)
   class(refine_t):: self
@@ -655,12 +667,16 @@ SUBROUTINE setup_mask (self, patch)
   do while (associated(nbor))
     nbpatch => solver%cast2solver(nbor%task)
     if (patch%contains(nbpatch%position) .and. &
-        patch%level == nbpatch%level+1) then
+        patch%level == nbpatch%level-1) then
       l = patch%index_only (nbpatch%position + nbpatch%mesh%lf)
       u = patch%index_only (nbpatch%position + nbpatch%mesh%uf)
       l = max(l,patch%mesh%li)
       u = min(u,patch%mesh%ui)
       patch%mask(l(1):u(1),l(2):u(2),l(3):u(3)) = .false.
+      if (verbose > 1) then
+        write (io_unit%output,'(a,i6,a,i6,2(3x,3i4))') &
+          'setup_mask: patch', patch%id, ' contains', nbpatch%id, l, u
+      end if
     end if
     nbor => nbor%next
   end do
@@ -688,6 +704,9 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   ! level, which would otherwise be left undefined, or in inconsistent state
   !------------------------------------------------------------------------
   allocate (child, source=parent)
+  !------------------------------------------------------------------------
+  ! FIXME: These deallocate are redundant
+  !------------------------------------------------------------------------
   if (allocated(child%mask)) then
     deallocate (child%mask)
   end if
