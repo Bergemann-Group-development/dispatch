@@ -63,17 +63,16 @@ MODULE link_mod
 CONTAINS
 
 !===============================================================================
-!> If link is not already initialized, initialize its lock, and use the lock to
-!> mark it as initialized.
+!> If link is not already initialized, initialize its lock.  If an init is at
+!> all made (not done for nbor links), it is done by the thread that allocated
+!> the link, so there should be no need for a crtical region.
 !===============================================================================
 SUBROUTINE init (self)
   class(link_t):: self
-  !............................................................................
+  !.............................................................................
   if (.not.self%initialized) then
-    call self%lock%init ('link')
-    call self%lock%set ('link_t%init')
     self%initialized = .true.
-    call self%lock%unset ('link_t%init')
+    call self%lock%init ('link')
   end if
 END SUBROUTINE init
 

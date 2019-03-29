@@ -759,7 +759,6 @@ SUBROUTINE init_nbors (self, link)
         !-----------------------------------------------------------------------
         if (scan%task%is_clear(bits%virtual).or.link%task%is_clear(bits%virtual)) then
           allocate (nbor)
-          call nbor%init
           nbor%task => scan%task
           nbor%link => scan
           call link%add_nbor_by_rank (nbor)
