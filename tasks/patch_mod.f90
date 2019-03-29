@@ -43,7 +43,7 @@ MODULE patch_mod
     class(mesh_t), dimension(:), pointer:: mesh => null()
     real:: courant                      ! courant number
     real(8):: gamma=1.4                 ! gas gamma
-    real(8):: dt_fixed = -1d0           ! for fixed time step Courant condition
+    real(8):: dt_fixed                  ! for fixed time step Courant condition
     real:: u_fixed, u_max               ! for fixed time step Courant condition
     integer:: ndim = ndim               ! number of dimensions
     integer:: nv=0                      ! number of variables
@@ -74,10 +74,10 @@ MODULE patch_mod
     !---------------------------------------------------------------------------
     real:: grav                         ! gravitational consant (code units)
     integer:: n(3)=0, ng(3)=0           ! defaults, to detect unchanged values
-    integer:: li(3)=0, ui(3)=0, gn(3)=0 ! convenience -- avoid patch%mesg%li etc
-    integer:: ncell(3)=0                ! number of cells per patch
+    integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc
+    integer:: ncell(3)                  ! number of cells per patch
     integer:: ipos(3)                   ! integer position, 3D
-    real(8):: offset(3) = 0d0           ! this is used to compute indices, locations
+    real(8):: offset(3)                 ! this is used to compute indices, locations
     real(8):: llc_cart(3)=0d0           ! the lower left corner of the patch in *Cartesian* coords.
     real(8):: llc_nat(3)=0d0            ! the lower left corner of the patch in its *own* coords.
     real(8):: centre_cart(3)=0d0        ! the geometric centre of the patch in *Cartesian* coords.
@@ -88,7 +88,6 @@ MODULE patch_mod
                                         ! Cartesian coords., equal to `velocity`.
   contains
     procedure, nopass:: cast2patch
-    procedure:: copy
     procedure:: init
     procedure:: init_default
     procedure:: init_bdries
@@ -630,127 +629,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
 !  end if
   call trace%end()
 END SUBROUTINE setup
-
-!===============================================================================
-!> Make an exact copy of itself without allocating any allocatables or copying
-!> the pointer locations. Nbor info is not copied.
-!===============================================================================
-SUBROUTINE copy (self, target, alloc)
-  class(patch_t):: self
-  class(task_t), pointer :: target
-  logical, optional :: alloc
-  ! ............................................................................
-  class(patch_t), pointer:: patch
-  logical :: alc = .false.
-  integer :: i
-  ! ----------------------------------------------------------------------------
-  patch => task2patch(target)
-  if (present(alloc)) alc = alloc
-  call self%task_t%copy(target)
-  !
-  if (any(patch%n  == 0))     patch%n  = self%n
-  if (any(patch%ng == 0))     patch%ng = self%ng
-  if (    patch%nv == 0 )     patch%nv = self%nv           
-  if (    patch%nt == 0 )     patch%nt = self%nt   
-  if (    patch%nw == 2 )     patch%nw = self%nw             
-  if (patch%dt_fixed == -1d0) patch%dt_fixed = self%dt_fixed
-  patch%restart = self%restart
-  patch%u_fixed = self%u_fixed
-  patch%max_files = self%max_files
-  patch%use_data_hub = self%use_data_hub
-  patch%no_mans_land = self%no_mans_land
-  patch%mesh_type    = self%mesh_type
-  !-----------------------------------------------------------------------------
-  ! Detect root grid
-  !-----------------------------------------------------------------------------
-  if (all(patch%size==patch%box)) then
-    call patch%set(bits%root_grid)
-  end if
-  !-----------------------------------------------------------------------------
-  ! Special handling of collapsed dimensions
-  !-----------------------------------------------------------------------------
-  where (patch%n==1)                             ! for collapsed dimensions
-    patch%ng = 0                                 ! no guard zones
-    patch%box = 1                                ! make sure it is non-zero
-  end where
-  patch%llc_cart = patch%position - 0.5_8 * patch%size
-  if (patch%mesh_type == mesh_types%Cartesian) then
-    patch%llc_nat    = patch%llc_cart
-    patch%centre_nat = patch%position
-  end if
-  !-----------------------------------------------------------------------------
-  ! Initialize and allocate the meshes, afterwards imposing the external values
-  ! box size and position
-  !-----------------------------------------------------------------------------
-  call omp%set_stacksize (patch%nv)
-  if (.not.(associated(patch%mesh)).and.alc) then
-    call MeshFactory(patch%mesh_type, patch%mesh, n=patch%n, ng=patch%ng, &
-                   s=patch%size, p=patch%position, llc_native=patch%llc_nat, &
-                   nml=patch%no_mans_land)
-  end if
-  ! intialise staggering indices; it is the responsibility of the *solver* to
-  ! assign non-zero values to this variable (if any).
-  if (alc) then
-    do i=1,3
-      if (.not.associated(patch%mesh(i)%h)) then
-        allocate(patch%mesh(i)%h(patch%nv))
-        patch%mesh(i)%h = 0.0
-      end if
-      if (patch%kind == 'zeus_mhd_patch' .and. &
-          patch%staggered .and. patch%n(i) /= 1) patch%mesh(i)%gn = patch%mesh(i)%gn + 1
-      if (patch%kind == 'zeustw_mhd_patch' .and. &
-          patch%staggered .and. patch%n(i) /= 1) patch%mesh(i)%gn = patch%mesh(i)%gn + 1
-    end do
-    patch%ds      = patch%mesh%d
-    patch%ncell   = patch%mesh%nc
-    patch%mesh%id = patch%id
-    patch%mesh%b  = patch%box
-    patch%mesh%llc_cart = patch%llc_cart
-    patch%centre_nat = [patch%mesh(1)%centre_nat,patch%mesh(2)%centre_nat,patch%mesh(3)%centre_nat]
-    patch%centre_cart = CurrentToCartesian(patch%mesh_type, &
-                         patch%centre_nat(1), patch%centre_nat(2), patch%centre_nat(3))
-    patch%gn = patch%mesh%gn
-    patch%li = patch%mesh%li
-    patch%ui = patch%mesh%ui
-  else
-    patch%ds = self%ds
-    if (all((patch%ncell == 0)))        patch%ncell      = self%ncell
-    if (all((patch%centre_nat == 0d0))) patch%centre_nat = self%centre_nat
-    if (all((patch%centre_cart == 0d0)))patch%centre_cart= self%centre_cart
-    if (all((patch%gn == 0)))           patch%gn         = self%gn
-    if (all((patch%li == 0)))           patch%li         = self%li
-    if (all((patch%ui == 0)))           patch%ui         = self%ui
-  end if
-  patch%gsize = (patch%size*patch%gn/patch%n)
-  if (alc) then
-    patch%offset = (patch%mesh%lb+patch%mesh%ub)/2.0 ! mid point index offset
-  else
-    if (all(patch%offset == 0d0)) patch%offset = self%offset
-  end if
-  
-  !-----------------------------------------------------------------------------
-  ! Allocate memory, if not already allocated
-  !-----------------------------------------------------------------------------
-  if (alc.and..not.patch%mem_allocated) then
-    allocate (patch%t(patch%nt), patch%dt(patch%nt), patch%iit(patch%nt))
-    allocate (patch%mem(patch%mesh(1)%gn, &
-                         patch%mesh(2)%gn, &
-                         patch%mesh(3)%gn, &
-                         patch%nv,patch%nt,patch%nw))
-    patch%mem_allocated = .true.               ! mark
-    call io%bits_mem (storage_size(patch%mem), product(shape(patch%mem)), 'mem')
-    allocate (patch%unsigned (patch%nv))
-    allocate (patch%pervolume(patch%nv))
-    patch%unsigned (:) = .false.
-    patch%pervolume(:) = .false.
-  end if
-  patch%dt  = self%dt
-  patch%t   = self%t
-  patch%iit = self%iit
-  patch%it  = self%it
-  patch%new = self%new
-  patch%wallclock = wallclock()
-END SUBROUTINE copy
 
 !===============================================================================
 !> Deallocate a patch and its allocated parts

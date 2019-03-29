@@ -76,7 +76,6 @@ MODULE task_mod
     procedure:: init
     procedure:: init_unique
     procedure:: init_id_reset
-    procedure:: copy
     procedure:: delete
     procedure:: dnload
     procedure:: update => void
@@ -135,56 +134,6 @@ SUBROUTINE init (self)
   call init_unique (self, keep=.true.)
   call trace_end
 END SUBROUTINE init
-
-!===============================================================================
-!> Make an exact copy of itself without any allocatables or the pointer locations.
-!> Any pre-changed values will nod be overwritten. Nbor info is not copied.
-!===============================================================================
-SUBROUTINE copy (self, target, alloc)
-  class (task_t) :: self
-  class (task_t), pointer :: target
-  logical, optional :: alloc
-  ! ----------------------------------------------------------------------------
-  call init_unique (target, keep=.true.)
-  if (target%status     ==  0)     target%status      = self%status
-  if (target%rank       ==  0)     target%rank        = self%rank
-  if (target%istep      ==  0)     target%istep       = self%istep
-  if (target%iout       ==  0)     target%iout        = self%iout
-  if (target%level      ==  0)     target%level       = self%level
-  if (target%nt         ==  0)     target%nt          = self%nt
-  if (target%it         ==  1)     target%it          = self%it
-  if (target%new        ==  2)     target%new         = self%new
-  if (target%verbose    ==  1)     target%verbose     = self%verbose
-  if (target%restart    == -9)     target%restart     = self%restart
-  if (target%parentid   ==  0)     target%parentid    = self%parentid
-  if (target%thread     == -1)     target%thread      = self%thread
-  if (target%mem_thread == -1)     target%mem_thread  = self%mem_thread
-  if (target%n_dump     ==  0)     target%n_dump      = self%n_dump
-  target%ip          = self%ip
-  if (target%time       ==  0d0)   target%time        = self%time
-  if (target%atime      ==  0d0)   target%atime       = self%atime
-  if (target%out_next   ==  0d0)   target%out_next    = self%out_next
-  if (target%print_next ==  0d0)     target%print_next  = self%print_next
-  if (target%dtime      ==  0d0)   target%dtime       = self%dtime
-  if (target%grace      ==  0.0)   target%grace       = self%grace
-  if (all(target%position == 0d0)) target%position    = self%position
-  if (all(target%origin   == 0d0)) target%origin      = self%origin
-  if (all(target%velocity == 0d0)) target%velocity    = self%velocity
-  if (all(target%size == 0.9999d0))target%size        = self%size
-  target%ds          = self%ds
-  if (all(target%box == 1d0))      target%box         = self%box
-  target%unpack_time = self%unpack_time
-  target%quality     = self%quality
-  target%kind        = self%kind
-  target%type        = self%type
-  target%latency     = self%latency
-  target%wc_last     = self%wc_last
-  target%sync_time   = self%sync_time
-  target%syncing     = self%syncing
-  target%track       = self%track
-  target%periodic    = self%periodic
-  target%rotated     = self%rotated
-END SUBROUTINE copy
 
 !===============================================================================
 !> Define unique patch ids.  A critical region is OK; this is only done once.
