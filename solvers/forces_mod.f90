@@ -86,11 +86,11 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(forces_t):: self
   !-----------------------------------------------------------------------------
-  !if (allocated(self%patch%force_per_unit_mass)) then
-  !  call io%bits_mem (-storage_size(self%patch%force_per_unit_mass), &
-  !                    product(shape(self%patch%force_per_unit_mass)), '-fpm')
-  !  deallocate (self%patch%force_per_unit_mass)
-  !end if
+  if (allocated(self%patch%force_per_unit_mass)) then
+    call io%bits_mem (-storage_size(self%patch%force_per_unit_mass), &
+                      product(shape(self%patch%force_per_unit_mass)), '-fpm')
+    deallocate (self%patch%force_per_unit_mass)
+  end if
 END SUBROUTINE post_update
 
 END MODULE forces_mod
