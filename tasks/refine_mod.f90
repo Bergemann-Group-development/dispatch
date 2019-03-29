@@ -5,48 +5,54 @@
 !> pressure, log opacity, velocity amplitude, magnetic field amplitude, etc.
 !>
 !> task_list_t%update
-!>   refine_t%check_current
-!>     if (associated(task%parent)) &
-!>       task%parent%lock%set ('parent')               + parent locked
-!>     task%lock%set ('task')                          | + child locked
-!>     refine_t%refine_needed                          | !
-!>       refine_t%check_Jeans                          | |
-!>     ...                                             | |
-!>     tasklist%lock%set ('split_patch')               | | + tasklist locked
-!>     split_patch                                     | | |
-!>       ...                                           | | |
-!>       tasklist%init_all_nbors                       | | |
-!>       tasklist%reset_status                         | | |
-!>       child%print_nbors                             | | |
-!>       ...                                           | | |
-!>     check_level_constraints                         | | |
-!>     tasklist%lock%unset ('split_patch')             | | - tasklist unlocked
-!>     ...                                             | |
-!>     tasklist%lock%set ('remove_patch')              | | + tasklist locked
-!>     remove_patch                                    | | |
-!>       tasklist%remove_link (this)                   | | |
-!>       tasklist%init_nbor_nbors (this)               | | |
-!>       tasklist%check_nbor_nbors (this)              | | |
-!>     check_level_constraints                         | | !
-!>     tasklist%lock%unset ('remove_patch')            | | - tasklist unloccked
-!>     ...                                             | |
-!>     if (associated(task%parent)) &                  | |
-!>     task%lock%unset ('task')                        ! - child locked
-!>       task%parent%lock%unset ('parent')             - parent locked
+!>   check_current
+!>     refine_needed
+!>     selective_refine
+!>       if ... refine
+!>         download_lock%set
+!>         check_lock%set
+!>         make_child_patch
+!>           tasklist%lock%set
+!>           init_nbors ...
+!>           check_nbors ...
+!>           tasklist%lock%unset
+!>         check_lock%unset
+!>         download_lock%unset
+!>       if ... derefine
+!>         download_lock%set
+!>         check_lock%set
+!>         remove_patch
+!>           tasklist%lock%set
+!>           init_nbors ...
+!>           check_nbors ...
+!>           tasklist%lock%unset
+!>         check_lock%unset
+!>         download_lock%unset
+!>   download_link
+!>   update
 !>   ...
 !>
-!> How can locking prevent a download from finding that a patch has disappeared?
-!> If download causes a lock on the target link, that is enough to prevent any
-!> nbor from refining, if and only if refining and derefining requires a lock on
-!> all nbors of the affected patch.
+!> OpenMP synchronization is implemented with two (nested) OMP locks; one
+!> (check_lock) responsible for synchronizing calls to list_t%check_nbors,
+!> and one (download_lock) responsible for synchronizing filling of guard
+!> zones (as well as restrict and prolong operations).
 !>
-!> Special attention is required for the parent task, which must not be allowed
-!> to download from interior patches that have disappeared in the mean time.
-!> Hence a download to the parent patch must be prevented from even starting,
-!> while some child patch is being refined or derefined
+!> When this module decides to refine or derefine a task, it acquires both
+!> locks, and hence blocks check_nbors and download_link() calls while the
+!> operation is on-going.  Since no time advance is involved in the refine
+!> / derefine, the blocking cannot cause a hang.
 !>
-!> If a download to the parent patch has started, then it is locked by that
-!> thread, and therefore nothing should be able to change.
+!> Since refine/derefine is not done every timestep, the impact on running
+!> tasks from the locking is not severe, and since two different locks are
+!> used, one avoids the significant impact that would be the result of
+!> locking out check_nbors and download_link from occuring at the same time.
+!>
+!> The impact on download_link could be entirely removed by always using
+!> the sorted nbor list, and by collecting patches to be removed on a GC
+!> list, removing them a few AMR cycles later.
+!>
+!> FIXME:  Care should be extended also to updates over MPI.
+!> FIXME:  Use of the deprecated scene_mod should be removed
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE refine_mod
   USE io_mod
@@ -78,12 +84,11 @@ MODULE refine_mod
     procedure:: refine_needed
     procedure:: check_current
     procedure:: setup_mask
+    procedure:: remove_patch
     procedure:: check_cubical
     procedure:: check_jeans
     procedure:: shock_and_cd_detector
     procedure:: refine_region
-    procedure:: split_patch
-    procedure:: remove_patch
     procedure:: gradient_detector
     procedure:: check_support
   end type
@@ -169,33 +174,9 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   if (.not. on) return
   call trace%begin('refine_t%needed', itimer=itimer)
   !----------------------------------------------------------------------------
-  patch => solver%cast2solver (link%task)
-  dxmin = minval(patch%ds)
-  dxmax = maxval(patch%ds)
-  if (verbose > 2) then
-    write (io_unit%output,'(a,i6,2i4,l4,1p,4e11.2)') &
-      'refine_t%refine_needed: id, istep, refine_next =', &
-      patch%id, patch%istep, patch%check_refine_next, &
-      patch%is_set(bits%virtual), min_dx, dxmin, max_dx, dxmax
-  end if
-  !----------------------------------------------------------------------------
-  ! Filter out patches that do not match the necessary criteria
-  !----------------------------------------------------------------------------
-  if (patch%is_set(bits%virtual)) then
-    call trace%end (itimer)
-    return
-  end if
-  if (dxmin < min_dx .or. dxmax >= max_dx) then
-    call trace%end (itimer)
-    return
-  end if
-  if (patch%time < refine_from_t .or. patch%time > refine_until_t) then
-    call trace%end (itimer)
-    return
-  end if
-  !------------------------------------------------------------------------
   ! Refinement criteria, starting with assumed derefinement
   !------------------------------------------------------------------------
+  patch => solver%cast2solver (link%task)
   refine = -1
   !
   ! Extras refinement
@@ -250,7 +231,7 @@ END FUNCTION refine_needed
 SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   class(refine_t):: self
   class(list_t):: tasklist
-  class(link_t), pointer:: link, nbor, first_nbor
+  class(link_t), pointer:: link, nbor
   class(solver_t), pointer:: patch
   logical, intent(out):: was_refined, was_derefined
   real:: dxmin, dxmax
@@ -268,10 +249,24 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   call trace%begin('refine_t%check_current', itimer=itimer)
   patch => solver%cast2solver (link%task)
   id = patch%id
-  !---------------------------------------------------------------------------
-  ! Only check leaf patches
-  !-----------------------------------------------------------------------------
+  !----------------------------------------------------------------------------
+  dxmin = minval(patch%ds)
+  dxmax = maxval(patch%ds)
+  if (verbose > 2) then
+    write (io_unit%output,'(a,i6,2i4,l4,1p,4e11.2)') &
+      'refine_t%refine_needed: id, istep, refine_next =', &
+      patch%id, patch%istep, patch%check_refine_next, &
+      patch%is_set(bits%virtual), min_dx, dxmin, max_dx, dxmax
+  end if
+  !----------------------------------------------------------------------------
+  ! Filter out patches that do not match the necessary criteria
+  !----------------------------------------------------------------------------
   if (patch%is_clear(bits%not_leaf) .and. &
+      patch%is_clear(bits%virtual)  .and. &
+      dxmin >  min_dx               .and. &
+      dxmax <= max_dx               .and. &
+      patch%time >= refine_from_t   .and. &
+      patch%time <  refine_until_t  .and. &
       patch%istep >= patch%check_refine_next) then
     if (verbose > 3) &
       tasklist%verbose = verbose
@@ -320,27 +315,22 @@ END SUBROUTINE check_current
 
 !===============================================================================
 !> Loop over the ratio x ratio x ratio positions and determine whether to refine
-!> or derefine.  This is not done every timestep, so the impact on running tasks
-!> does not need to be given excessive weight. A simple and robust approach,
-!> which only requires two OMP lock calls, is to share one lock with check_nbors,
-!> and another one with download_link.  After acquiring both locks one can do
-!> refine and derefine modifications of nbor list, w/o risking that the nbor
-!> lists are being used at the same time.  Using two separate locks prevents
-!> the significant impact that would be the result of locking out check_nbors
-!> and download_link from occuring at the same time.
+!> or derefine.
 !===============================================================================
 SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
   class(refine_t):: self
   class(list_t):: tasklist
+  class(solver_t), pointer:: patch
   logical:: was_refined, was_derefined
-  class(solver_t), pointer:: patch, nbpatch
-  integer:: i, j, k, i1, i2, j1, j2, k1, k2, n1, n2, n3, ii(3), refine
-  real:: rpos(3)
-  real(8):: pos(3)
-  logical:: not_already_refined
-  class(link_t), pointer:: nbor, first_nbor
+  !.............................................................................
+  class(link_t), pointer:: nbor
   class(link_t), pointer:: link, nbors, tail
-  associate (m1=>patch%mesh(1), m2=>patch%mesh(2), m3=>patch%mesh(3))
+  !.............................................................................
+  integer:: i, j, k
+  integer, dimension(3):: l, u, n, ii
+  real(8), dimension(3):: size, pos
+  logical:: not_already_refined
+  integer:: refine_it
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%selective_refine')
   was_refined = .false.
@@ -353,45 +343,41 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
   !-----------------------------------------------------------------------------
   if (patch%level < self%levelmax) then
     if (any(patch%irefine > 0)) then
-      n1 = m1%n/self%ratio
-      n2 = m2%n/self%ratio
-      n3 = m3%n/self%ratio
       do k=1,self%ratio
-        k1 = m3%li + (k-1)*n3
-        k2 = k1 + n3 - 1
-        rpos(3) = (k-(self%ratio+1)*0.5)*n3*m3%d
         do j=1,self%ratio
-          j1 = m2%li + (j-1)*n2
-          j2 = j1 + n2 - 1
-          rpos(2) = (j-(self%ratio+1)*0.5)*n2*m2%d
           do i=1,self%ratio
-            i1 = m1%li + (i-1)*n1
-            i2 = i1 + n1 - 1
-            !-----------------------------------------------------------------------
+            !-------------------------------------------------------------------
+            ! Size and position
+            !-------------------------------------------------------------------
+            size = patch%size/self%ratio
+            pos = patch%position + ([i,j,k]-(self%ratio+1)*0.5)*size
+            !-------------------------------------------------------------------
+            ! Lower and upper index in parent patch
+            !-------------------------------------------------------------------
+            n = patch%mesh%n/self%ratio
+            l = patch%mesh%li + ([i,j,k]-1)*n
+            u = l + n - 1
+            !-------------------------------------------------------------------
             ! Should this part be refined or not?
-            !-----------------------------------------------------------------------
-            refine = maxval (patch%irefine(i1:i2,j1:j2,k1:k2))
-            rpos(1) = (i-(self%ratio+1)*0.5)*n1*m1%d
-            pos = rpos + patch%position
-            ii = patch%index_only(pos)
-            !-----------------------------------------------------------------------
-            ! Is this part refined or not?
-            !-----------------------------------------------------------------------
+            !-------------------------------------------------------------------
+            refine_it = maxval (patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)))
+            !-------------------------------------------------------------------
+            ! Is this part refined before, or should it be now?
+            !-------------------------------------------------------------------
+            ii = (l+u)/2
             not_already_refined = patch%mask(ii(1),ii(2),ii(3))
-            if (not_already_refined .and. refine > 0) then
-              !io%do_trace = .true.
+            if (not_already_refined .and. refine_it > 0) then
               !---------------------------------------------------------------------
               ! Create a refined patch here
               !---------------------------------------------------------------------
               if (verbose > 1) &
                 write (io_unit%output,'(a,i6,1p2g16.5,2x,3(i4,":",i2))') 'refine', &
                   patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
-                       maxval(patch%mem(i1:i2,j1:j2,k1:k2,patch%idx%d,patch%it,1)), &
-                i1, i2, j1, j2, k1, k2
+                  maxval(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)), &
+                  l, u
               call download_lock%set ('refine')
               call check_lock%set ('refine')
-              first_nbor => link%nbor
-              call create_patch (self, tasklist, patch, i, j, k)
+              call make_child_patch (self, tasklist, patch%link, patch, pos, size)
               call check_lock%unset ('refine')
               call download_lock%unset ('refine')
               was_refined= .true.
@@ -419,7 +405,6 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
           write (io_unit%output,*) 'derefine', patch%id
         call download_lock%set ('derefine')
         call check_lock%set ('derefine')
-        first_nbor => link%nbor
         !-----------------------------------------------------------------------
         deallocate (patch%irefine)
         deallocate (patch%mask)
@@ -430,7 +415,6 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
       end if
     end if
   end if
-  end associate
   !-----------------------------------------------------------------------------
   ! Optionally, print children task list info
   !-----------------------------------------------------------------------------
@@ -444,71 +428,6 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
   end if
   call trace%end
 END SUBROUTINE selective_refine
-
-!===============================================================================
-!> FIXME: This is probably redundant
-!===============================================================================
-SUBROUTINE lock_nbors (key, first_nbor, label)
-  class(link_t), pointer:: first_nbor, nbor
-  character(len=*):: key, label
-  !-----------------------------------------------------------------------------
-  nbor => first_nbor
-  do while (associated(nbor))
-    if (key == 'on') then
-      call nbor%link%lock%set ('refine_t%lock_nbors '//label)
-    else
-      call nbor%link%lock%unset ('refine_t%lock_nbors '//label)
-    end if
-    nbor => nbor%next
-  end do
-END SUBROUTINE lock_nbors
-
-!===============================================================================
-!> Create a new patch, and reset the task list.  FIXME: merge with make_child
-!===============================================================================
-SUBROUTINE create_patch (self, tasklist, patch, ix, iy, iz)
-  class(refine_t):: self
-  class(list_t):: tasklist
-  class(solver_t), pointer:: patch
-  integer:: ix, iy, iz
-  !.............................................................................
-  class(link_t), pointer:: link
-  real(8), dimension(3):: pos, split_size
-  !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%create_patch')
-  split_size = patch%size/self%ratio
-  pos = patch%position + ([ix,iy,iz] - (self%ratio+1)*0.5) * split_size
-  call make_child_patch(self, tasklist, patch%link, patch, pos, split_size, 0)
-  call trace%end
-END SUBROUTINE create_patch
-
-! !===============================================================================
-! ! Make sure (conservatively at first) that the task list is consistent
-! !===============================================================================
-! SUBROUTINE reset_task_list (self, tasklist, link)
-  ! class(refine_t):: self
-  ! class(list_t):: tasklist
-  ! class(link_t), pointer:: patch_link, link
-  ! !-----------------------------------------------------------------------------
-  ! ! Reset the status based on the nbor lists, and count
-  ! !-----------------------------------------------------------------------------
-  ! call trace%begin ('refine_t%reset_task_list')
-  ! call tasklist%init_nbor_nbors (link)
-  ! !call tasklist%init_all_nbors
-  ! call tasklist%reset_status
-  ! !-----------------------------------------------------------------------------
-  ! ! Expensive way to make sure the state of readiness is consistent (FIXME)
-  ! !-----------------------------------------------------------------------------
-  ! call tasklist%check_nbor_nbors (link)
-  ! !link => tasklist%head
-  ! !do while (associated(link))
-  ! !  call link%task%clear(bits%ready)
-  ! !  call tasklist%check_ready (link)
-  ! !  link => link%next
-  ! !end do
-  ! !call tasklist%init_bdries
-  ! call trace%end
-! END SUBROUTINE reset_task_list
 
 !===============================================================================
 !> A task having support, as measured by nbor levels and containment, means
@@ -686,13 +605,13 @@ END SUBROUTINE setup_mask
 !> Create a new patch using an existing "parent" patch.
 !> This procedure is used frequently during refinement.
 !===============================================================================
-SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, i)
+SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   class(refine_t):: self
   class(list_t) :: tlist
   class(link_t), pointer :: parent_link, child_link, child_nbor
   class(solver_t), pointer :: parent, child
   real(8), dimension(3), intent(in) :: pos, child_size
-  integer:: i, j, count, l(3), u(3)
+  integer:: j, count, l(3), u(3)
   !------------------------------------------------------------------------
   call trace%begin('refine_mod::make_child_patch')
   !------------------------------------------------------------------------
@@ -705,24 +624,14 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   !------------------------------------------------------------------------
   allocate (child, source=parent)
   !------------------------------------------------------------------------
-  ! FIXME: These deallocate are redundant
-  !------------------------------------------------------------------------
-  if (allocated(child%mask)) then
-    deallocate (child%mask)
-  end if
-  if (allocated(child%irefine)) then
-    deallocate (child%irefine)
-  end if
-  if (allocated(child%force_per_unit_mass)) then
-    deallocate (child%force_per_unit_mass)
-  end if
-  child%mem_allocated = .false.
-  nullify (child%mem)
-  nullify (child%mesh)
-  child%id = 0                                       ! to ensure it gets its own ID
+  child%mem_allocated = .false.                      ! make sure to get ..
+  nullify (child%mem)                                ! .. new mem
+  nullify (child%mesh)                               ! .. new mesh
+  child%id = 0                                       ! ensure a new ID
   child%size = child_size                            ! new size
   child%position = pos                               ! patch position
-  child%llc_cart = child%position - merge(0.5,0.0,child%n>1) * child%size  ! lower left corner
+  child%llc_cart = child%position - &                ! mid point position
+    merge(0.5,0.0,child%n>1) * child%size            ! lower left corner
   child%llc_nat = child%llc_cart                     ! FIXME!: this form only applies for Cartesian coords.
   !------------------------------------------------------------------------
   ! Force consistent resolution in new patches, overriding the resolution
@@ -730,7 +639,7 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   !------------------------------------------------------------------------
   child%n = scene%patch_n
   !------------------------------------------------------------------------
-  ! Reset flags (FIXME: Would it be better to just reset `status` to zero?)
+  ! Reset flags -- showing which ones are relevant
   !------------------------------------------------------------------------
   call child%clear(bits%root_grid)
   call child%clear(bits%ready)
@@ -751,12 +660,12 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   !------------------------------------------------------------------------
   child%level = parent%level + 1                     ! must be set before init!
   call child%init()                                  ! patch, for a new id
-  child%level = parent%level + 1                     ! override possible calculation in `patch_t%init`.
-  child%time  = parent%time
-  child%it    = 1
-  child%iit   = 1
+  child%level = parent%level + 1                     ! override patch_t%init
+  child%time  = parent%time                          ! same time
+  child%it    = 1                                    ! time index
+  child%iit   = 1                                    ! single time slice
   child%dt(:) = parent%dt(parent%it) / self%ratio    ! reset the time-step
-  child%t(:) = child%time
+  child%t(:) = child%time                            ! sinle time
   child%parentid = parent%id                         ! for debugging
   child%check_refine_next = 0                        ! allow recursive refine
   !------------------------------------------------------------------------
@@ -766,9 +675,9 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   count = counters%increment (parent%iout+1, io%nwrite)
   io%ntask = tlist%na                                ! update the task count
   !------------------------------------------------------------------------
-  ! Make parent a neighbour of new child patch.
-  ! This will be overwritten in `init_nbor_nbors` but is necessary here to permit
-  ! interpolation of values from parent to child.
+  ! Make parent a neighbor of new child patch.  This will be overwritten
+  ! in `init_nbor_nbors` but is necessary here to permit interpolation of
+  ! values from parent to child.
   !------------------------------------------------------------------------
   allocate (child_nbor)
   child_nbor%link => parent_link
@@ -776,9 +685,8 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   child_link%nbor => child_nbor
   !------------------------------------------------------------------------
   ! Download values from parent and neighbors, except at time = 0, to allow
-  ! recursive refinement there.
-  ! If time = 0, patch should have been filled with values during `child%init()`
-  ! call.
+  ! recursive refinement there. If time = 0, patch should have been filled
+  ! with values during `child%init()` call.
   !------------------------------------------------------------------------
   if (parent%time > 0.0 .and. child%restart <= 0) &
     call download%download_link (child_link, all_cells=.true.)
@@ -810,124 +718,6 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   end if
   call trace%end()
 END SUBROUTINE make_child_patch
-
-!===============================================================================
-!> Split a patch into two (parameter) in each direction, merging the new patches
-!> into the list.  Note that the link to the original patch is kept, with a "leaf"
-!> flag being cleared, indicating it is not longer a "leaf" patch.
-!===============================================================================
-SUBROUTINE split_patch (self, tlist, this)
-  class(refine_t):: self
-  class(list_t):: tlist
-  class(link_t), pointer:: this, link, tail
-  class(solver_t), pointer:: patch
-  integer:: ix, iy, iz
-  integer:: nsplit(3), i, j(3), j1(3), j2(3)
-  real(8), dimension(3):: pos, rpos, split_size
-  logical:: do_trace
-  !.............................................................................
-  if (this%task%is_set(bits%not_leaf)) return
-  do_trace = io%do_trace
-  if (verbose > 3) &
-    io%do_trace=.true.
-  call trace%begin('refine_t%split_patch', 1)
-  !-----------------------------------------------------------------------------
-  ! Save the current task list tail, which is where the child tasks will be 
-  ! appended
-  !-----------------------------------------------------------------------------
-  tail => tlist%tail
-  !-----------------------------------------------------------------------------
-  ! Decide how to split
-  !-----------------------------------------------------------------------------
-  patch => solver%cast2solver (this%task)
-  if (patch%msplit>0) then
-    nsplit = patch%msplit
-  else
-    nsplit = self%ratio
-  end if
-  where (patch%size==0 .or. patch%n==1)
-    nsplit = 1
-  end where
-  !-----------------------------------------------------------------------------
-  ! Perform the split
-  !-----------------------------------------------------------------------------
-  split_size = patch%size / nsplit
-  i = 0
-  do ix=1,nsplit(1)
-    rpos(1) = (ix-(nsplit(1)+1)*0.5) * split_size(1)
-    do iy=1,nsplit(2)
-      rpos(2) = (iy-(nsplit(2)+1)*0.5) * split_size(2)
-      do iz=1,nsplit(3)
-        rpos(3) = (iz-(nsplit(3)+1)*0.5) * split_size(3)
-        pos = rpos + patch%position
-        j = patch%index_only(pos)
-        j1 = j - patch%mesh%n/4 + 1
-        j2 = j1 + patch%mesh%n/2 - 1
-        !write (io_unit%output,'(a,i6,1p,2g15.4,0p,3(2x,3f9.4),2x,3(i4,":",i2))') 'xxx', &
-        !  patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
-        !  maxval(patch%mem(j1(1):j2(1),j1(2):j2(2),j1(3):j2(3),patch%idx%d,patch%it,1)), &
-        !  rpos, pos, patch%position, &
-        !  j1(1), j2(1), j1(2), j2(2), j1(3), j2(3)
-        if (verbose > 1) then
-          write (io_unit%output,'(i4,1p,2g14.4,0p,2x,3(i4,":",i2),2x,a)') &
-            patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
-            maxval(patch%mem(j1(1):j2(1),j1(2):j2(2),j1(3):j2(3),patch%idx%d,patch%it,1)), &
-            j1(1), j2(1), j1(2), j2(2), j1(3), j2(3), 'xxx'
-        end if
-        if (allocated(patch%mask) .and. &
-         all(j >= patch%mesh%li .and. j <= patch%mesh%ui)) then
-          if (patch%mask(j(1),j(2),j(3))) then
-            call make_child_patch(self, tlist, this, patch, pos, split_size, i)
-            i = i+1
-          end if
-        else
-          call make_child_patch(self, tlist, this, patch, pos, split_size, i)
-          i = i+1
-        end if
-      end do
-    end do
-  end do
-  !-----------------------------------------------------------------------------
-  ! At this point patch is (possibly again) not a leaf patch, although that
-  ! may change after the next derefine opportunity
-  !-----------------------------------------------------------------------------
-  call patch%set(bits%not_leaf)
-  !-----------------------------------------------------------------------------
-  ! Initialize the nbor lists of the parent patch and all its nbors, based on
-  ! positions, then reset their status based on the nbor lists, and count
-  !-----------------------------------------------------------------------------
-  call tlist%init_nbor_nbors (this)
-  call tlist%reset_status
-  !-----------------------------------------------------------------------------
-  ! Also, expensive way to make sure the state of readiness is consistent (FIXME)
-  !-----------------------------------------------------------------------------
-  link => tlist%head
-  do while (associated(link))
-    call link%task%clear(bits%ready)
-    call tlist%check_ready (link)
-    link => link%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! Optionally, print children task list info
-  !-----------------------------------------------------------------------------
-  if (verbose > 2) then
-    write (io%output,*) 'child tasks:'
-    link => tail
-    do while (associated(link))
-      call link%print_nbors
-      link => link%next
-    end do
-  end if
-  !-----------------------------------------------------------------------------
-  ! FIXME: special care may be needed in multi-rank context
-  !-----------------------------------------------------------------------------
-  call tlist%init_bdries
-  !
-  if (verbose > 3) call tlist%print_tasks()
-  !
-  call trace%end()
-  io%do_trace = do_trace
-END SUBROUTINE split_patch
 
 !===============================================================================
 !> Remove a patch that has been deemed not necessary.  At this point, the task
@@ -1109,15 +899,12 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
   logical:: derefine(3)
   !-----------------------------------------------------------------------------
   call trace%begin('refine_t%shocks_and_cd_detector')
-
   mx => patch%mesh(1)
   my => patch%mesh(2)
   mz => patch%mesh(3)
-
   if (mx%n > 1) ione = 1
   if (my%n > 1) jone = 1
   if (mz%n > 1) kone = 1
-
   allocate(pg(patch%mesh(1)%gn,patch%mesh(2)%gn,patch%mesh(3)%gn), &
            v(patch%mesh(1)%gn,patch%mesh(2)%gn,patch%mesh(3)%gn,3))
   ! we need the gas pressure, density and velocity
@@ -1334,13 +1121,11 @@ FUNCTION refine_region (self, patch) RESULT (refine)
   real, dimension(3) :: p_llc, p_urc, b_llc, b_urc
   !.............................................................................
   call trace%begin('refine_t%refine_on_box')
-
   refine_it = .false.
   m1 => patch%mesh(1)
   m2 => patch%mesh(2)
   m3 => patch%mesh(3)
   m => patch%mesh(:)
-
   ! check if the patch (as a whole) intersects the box-shaped region of interest
   do ix=1,3
     associate (mr => patch%mesh(ix)%r)
@@ -1350,13 +1135,11 @@ FUNCTION refine_region (self, patch) RESULT (refine)
   end do
   b_llc = region_llc
   b_urc = region_urc
-
   intersect = all((p_urc - b_llc) > 0) .and. all((b_urc - p_llc) > 0)
   if (.not. intersect) then
     call trace_end
     return
   endif
-
   do iz=m3%li,m3%ui
     z = m3%p + m3%r(iz)
     do iy=m2%li,m2%ui
