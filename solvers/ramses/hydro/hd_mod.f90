@@ -27,7 +27,6 @@ MODULE hd_mod
   USE mpi_mod
   USE omp_mod
   USE eos_mod
-  USE force_mod
   USE index_mod
   USE patch_mod
   USE validate_mod
@@ -44,7 +43,6 @@ MODULE hd_mod
     real, pointer, dimension(:,:,:,:,:):: dq      ! slopes
     real, pointer, dimension(:,:,:,:,:):: fl      ! 3D fluxes
     real, pointer, dimension(:,:,:):: c, s        ! scratch
-    type(force_t):: force
   contains
     procedure:: init
     procedure:: update
@@ -98,7 +96,6 @@ SUBROUTINE init (self)
   do i=1,3
     self%mesh(i)%h = 0d0
   end do
-  call self%force%init (self%kind, self%id, self%mesh)
   self%unsigned(self%idx%d) = unsigned
   self%unsigned(self%idx%e) = unsigned
   self%pervolume(self%idx%px) = unsigned
