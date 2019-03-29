@@ -851,11 +851,11 @@ subroutine trace3d(self)
         ! Source terms (including transverse derivatives)
         sr0 = -u*drx-v*dry-w*drz - (dux+dvy+dwz)*r
         sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p
-        !associate (ff => self%force_per_unit_mass)
-        su0 = -u*dux-v*duy-w*duz - dpx/r !+ ff(i,j,k,1)*self%mesh(1)%d
-        sv0 = -u*dvx-v*dvy-w*dvz - dpy/r !+ ff(i,j,k,2)*self%mesh(2)%d
-        sw0 = -u*dwx-v*dwy-w*dwz - dpz/r !+ ff(i,j,k,3)*self%mesh(3)%d
-        !end associate
+        associate (ff => self%force_per_unit_mass)
+        su0 = -u*dux-v*duy-w*duz - dpx/r + ff(i,j,k,1)*self%mesh(1)%d
+        sv0 = -u*dvx-v*dvy-w*dvz - dpy/r + ff(i,j,k,2)*self%mesh(2)%d
+        sw0 = -u*dwx-v*dwy-w*dwz - dpz/r + ff(i,j,k,3)*self%mesh(3)%d
+        end associate
 
         ! Right state at left interface
         qp(i,j,k,ir,1) = r - half*drx + sr0*dtdx*half

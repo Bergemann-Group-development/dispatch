@@ -25,7 +25,6 @@ MODULE mhd_mod
   USE trace_mod
   USE mpi_mod
   USE omp_mod
-  USE force_mod
   USE index_mod
   USE non_ideal_mod
   USE omp_timer_mod
@@ -44,7 +43,6 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:):: unew      ! new conserved
     real, pointer, dimension(:,:,:):: Ex,Ey,Ez
     real, pointer, dimension(:,:,:):: c
-    type(force_t):: force
   contains
     procedure:: init
     procedure:: update
@@ -109,7 +107,6 @@ SUBROUTINE init (self)
     self%mesh(i)%h = 0d0
     self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
-  call self%force%init (self%kind, self%id, self%mesh)
   call non_ideal%init  
   self%unsigned(self%idx%d) = unsigned
   self%unsigned(self%idx%e) = unsigned
@@ -178,15 +175,6 @@ SUBROUTINE update (self)
   d => self%mem(:,:,:,          self%idx%d ,self%it,1)
   e => self%mem(:,:,:,          self%idx%e ,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
-  !-----------------------------------------------------------------------------
-  ! The force_per_unit_mass is assumed to exist in trace3d, so make sure it does
-  !-----------------------------------------------------------------------------
-  if (.not.allocated(self%force_per_unit_mass)) then
-    associate (m => self%gn)
-    allocate (self%force_per_unit_mass(m(1),m(2),m(3),3))
-    end associate
-    self%force_per_unit_mass = 0.0
-  end if
   !-----------------------------------------------------------------------------
   ! Compute update using second-order Godunov method
   !-----------------------------------------------------------------------------
@@ -316,10 +304,12 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Add external force as source term
   !-----------------------------------------------------------------------------
-  p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  do i=1,3
-    p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
-  end do
+  if (allocated(self%force_per_unit_mass)) then
+    p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+    do i=1,3
+      p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
+    end do
+  end if
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
@@ -1829,6 +1819,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
 END FUNCTION gas_pressure
 
 !===============================================================================
+!> Add gradient of phi gravitational force.  FIXME: This should be in extras
 !===============================================================================
 SUBROUTINE gravitational_force (self)
   class(mhd_t):: self
