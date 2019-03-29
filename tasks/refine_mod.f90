@@ -713,6 +713,18 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   call child%clear(bits%busy)
   child%boundaries%bits = 0
   !------------------------------------------------------------------------
+  ! Append links to the new patch in the patch list, sorted by quality
+  ! Neighbour lists are constructed at the end of `split_patch`.
+  !------------------------------------------------------------------------
+  allocate (child_link)
+  call child_link%init                               ! initialise the lock
+  !call child_link%lock%set ('child init')            ! immediately lock it
+  child_link%task => child                           ! associate task with link
+  child_link%parent => parent_link                   ! used in remove_patch
+  child%link => child_link                           ! associate link with task
+  child%parent => parent                             ! task relation
+  call tlist%append_link (child_link)                ! which is added to the patch list
+  !------------------------------------------------------------------------
   ! Initialise the new patch
   !------------------------------------------------------------------------
   child%level = parent%level + 1                     ! must be set before init!
@@ -738,18 +750,6 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size, 
   !------------------------------------------------------------------------
   io%nwrite = io%nwrite + 1
   count = counters%increment (parent%iout+1, io%nwrite)
-  !------------------------------------------------------------------------
-  ! Append links to the new patch in the patch list, sorted by quality
-  ! Neighbour lists are constructed at the end of `split_patch`.
-  !------------------------------------------------------------------------
-  allocate (child_link)
-  call child_link%init                               ! initialise the lock
-  !call child_link%lock%set ('child init')            ! immediately lock it
-  child_link%task => child                           ! associate task with link
-  child_link%parent => parent_link                   ! used in remove_patch
-  child%link => child_link                           ! associate link with task
-  child%parent => parent                             ! task relation
-  call tlist%append_link (child_link)                ! which is added to the patch list
   io%ntask = tlist%na                                ! update the task count
   !------------------------------------------------------------------------
   ! Make parent a neighbour of new child patch.
