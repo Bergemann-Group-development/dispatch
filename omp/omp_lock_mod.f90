@@ -30,7 +30,7 @@ MODULE omp_lock_mod
     procedure:: unset
     procedure:: destroy
   end type
-  type(lock_t), public:: lock
+  type(lock_t), public:: lock, check_lock, download_lock
   integer, save:: id_save=-1
   logical, save:: on = .true.
 CONTAINS
