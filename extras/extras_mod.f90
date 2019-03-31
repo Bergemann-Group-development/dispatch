@@ -132,10 +132,6 @@ END SUBROUTINE init_task_list
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
-  if (allocated (self%force_per_unit_mass)) &                   ! keep
-    self%force_per_unit_mass = 0.0                              ! keep
-  if (allocated (self%force_per_unit_volume)) &                 ! keep
-    self%force_per_unit_volume = 0.0                            ! keep
   !call self%forces%pre_update                                   ! forces
   !call self%trace_particles%update                              ! tracep
   !call self%spitzer%pre_update()                                ! spitzer
@@ -149,6 +145,7 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
+  !call self%forces%post_update                                  ! forces
   !call self%trace_particles%post_update (self)                  ! tracep
   !call self%gravity%post_update                                 ! gravity
 END SUBROUTINE post_update
