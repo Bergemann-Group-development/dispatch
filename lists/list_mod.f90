@@ -721,15 +721,16 @@ END SUBROUTINE init_nonleaf
 !===============================================================================
 SUBROUTINE init_nbors (self, link)
   class(list_t):: self
-  class(link_t), pointer:: link, scan
-  class(link_t), pointer:: nbor
+  class(link_t), pointer:: link
   !.............................................................................
+  class(link_t), pointer:: nbor, scan, new_head, old_head
   integer:: n_add
   logical:: overlaps
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('list_t%init_nbors ', itimer=itimer)
-  call link%remove_nbor_list                          ! recover nbor list mem
+  old_head => link%nbor
+  nullify (new_head)
   n_add = 0
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
@@ -760,9 +761,10 @@ SUBROUTINE init_nbors (self, link)
         !-----------------------------------------------------------------------
         if (scan%task%is_clear(bits%virtual).or.link%task%is_clear(bits%virtual)) then
           allocate (nbor)
-          nbor%task => scan%task
-          nbor%link => scan
-          call link%add_nbor_by_rank (nbor)
+          nbor%task => scan%task                      ! pointer to task
+          nbor%link => scan                           ! pointer to task link
+          nbor%next => new_head                       ! prepend to list
+          new_head => nbor                            ! new list head
           n_add = n_add+1
           !if (nbor%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk is nbor:', link%task%id
           !if (link%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk has nbor:', nbor%task%id
@@ -771,6 +773,10 @@ SUBROUTINE init_nbors (self, link)
     end if
     scan => scan%next                                 ! continue search
   end do
+  call link%lock%set ('init_nbors')
+  link%nbor => new_head                               ! switch nbor list
+  call link%lock%unset ('init_nbors')
+  call link%remove_nbor_list (old_head)               ! recover nbor list mem
   link%task%n_nbors = n_add                           ! remember n_nbors
   if (io%verbose>1) write (io_unit%log,*) &
     'added ', n_add, ' neighbors to', link%task%id, &
@@ -1162,6 +1168,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
   error=.false.
   task => this%task
   call trace_begin ('list_t%queue_by_time ', itimer=itimer)
+  call this%sort_nbors_by_level (this%nbor, this%nbors_by_level)
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
   !-----------------------------------------------------------------------------
