@@ -409,19 +409,16 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   ! we expect to actually store lower level values, and then overwrite with
   ! better values from higher levels, when available
   !-----------------------------------------------------------------------------
-  if (sorted) then
-    call sort_nbors_by_level (link, sorted_head)
-    nbor => sorted_head
+  nbor => link%nbors_by_level
   !-----------------------------------------------------------------------------
   ! The default action is to insert a value if "filled" indicates one is missing.
   ! This is fastest if the nbor list is sorted in decreasing level order, since
   ! then values are only computed where actually needed
   !-----------------------------------------------------------------------------
-  else
-    nbor => link%nbor
-  end if
   wc = 0d0
   do while (associated(nbor))
+    !print *, 'target, source, level, needed =', target%id, nbor%task%id, &
+    !  nbor%task%level, nbor%task%n_needed
     wc(0) = wallclock()
     source => task2patch(nbor%task)
     wc(1) = wc(1) + wallclock() - wc(0)
@@ -532,9 +529,11 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     if (verbose > 0) &
       deallocate (src)
   end if
-  if (sorted) then
-    call clean_sorted_nbor_list (sorted_head)
-  end if
+  !-----------------------------------------------------------------------------
+  ! Decrement n_needed counters, and remove the sorted nbor list
+  !-----------------------------------------------------------------------------
+  call link%decrement_needed
+  call link%remove_nbor_list (link%nbors_by_level)
   call validate%check (target%link, d, ' after download')
   call trace%end (itimer)
 END SUBROUTINE download_link
@@ -1847,92 +1846,6 @@ SUBROUTINE different_restrict (self, target, source, only)
   end do
   call trace%end (itimer)
 END SUBROUTINE different_restrict
-
-!===============================================================================
-!> Create a temporary nbor list, sorted by decreasing level
-!===============================================================================
-SUBROUTINE sort_nbors_by_level (this, head)
-  class(link_t), pointer:: this, head
-  class(link_t), pointer:: nbor, find, prev
-  !.............................................................................
-  call trace%begin ('download_mod::sort_nbors_by_level')
-  call nbor_print (this, this%nbor)
-  !-----------------------------------------------------------------------------
-  nullify(head)
-  nbor => this%nbor
-  if (.not. associated(nbor)) then
-    print *,'download::sort_nbors_by_level WARNING: no nbor list to sort!'
-    call trace%end()
-    return
-  end if
-  do while (associated(nbor))
-    call insert
-    nbor => nbor%next
-  end do
-  !-----------------------------------------------------------------------------
-  call nbor_print (this, head)
-  call trace%end()
-contains
-  !-----------------------------------------------------------------------------
-  ! Find a place to prepend a clone of nbor into chain with decreasing level
-  !-----------------------------------------------------------------------------
-  subroutine insert
-    nullify(prev)
-    find => head
-    do while (associated(find))
-      if (find%task%level <= nbor%task%level) then
-        call prepend
-        return
-      end if
-      prev => find
-      find => find%next
-    end do
-    call prepend
-  end subroutine insert
-  !-----------------------------------------------------------------------------
-  ! Clone nbor and insert after prev, or as head
-  !-----------------------------------------------------------------------------
-  subroutine prepend
-    class(link_t), pointer:: new
-    allocate (new)
-    new%task => nbor%task
-    new%next => find
-    if (associated(prev)) then
-      prev%next => new
-    else
-      head => new
-    end if
-  end subroutine prepend
-  !-----------------------------------------------------------------------------
-  ! Print nbor list
-  !-----------------------------------------------------------------------------
-  subroutine nbor_print (this, start)
-    class(link_t), pointer:: this, start, nbor
-    if (verbose > 2 .or. this%task%id == id_debug) then
-      write(io_unit%log,*) 'target: ', this%task%id
-      write(io_unit%log,*) 'sorted nbors:'
-      nbor => start
-      do while (associated(nbor))
-        write (io_unit%log,*) nbor%task%id, nbor%task%level
-        nbor => nbor%next
-      end do
-    end if
-  end subroutine nbor_print
-END SUBROUTINE sort_nbors_by_level
-
-!===============================================================================
-SUBROUTINE clean_sorted_nbor_list (head)
-  class(link_t), pointer:: head
-  class(link_t), pointer:: next, prev
-  !.............................................................................
-  next => head%next
-  deallocate (head)
-  do while(associated(next))
-    prev => next
-    next => next%next
-    deallocate (prev)
-  end do
-END SUBROUTINE clean_sorted_nbor_list
 
 !===============================================================================
 SUBROUTINE set_verbose (new)

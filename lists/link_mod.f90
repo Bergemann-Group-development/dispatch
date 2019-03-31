@@ -28,6 +28,7 @@ MODULE link_mod
     class(link_t), pointer :: parent => null()       ! parent task link
     class(link_t), pointer :: next_time => null()    ! next link in time order
     class(link_t), pointer :: next_active => null()  ! next link to an active process, in time order
+    class(link_t), pointer :: nbors_by_level => null()! decreasing level sorted list
     type(lock_t):: lock
     logical:: initialized = .false.
     logical:: check = .true.
@@ -59,6 +60,7 @@ MODULE link_mod
     procedure:: test_nbor_status
     procedure:: check_level_sort
     procedure:: delete
+    procedure:: sort_nbors_by_level
   end type
   logical, save:: debug=.false.
 CONTAINS
@@ -407,17 +409,17 @@ END SUBROUTINE remove_from_nbors
 !===============================================================================
 !> Remove, deallocate, and nullify an existing nbor list
 !===============================================================================
-SUBROUTINE remove_nbor_list (self)
+SUBROUTINE remove_nbor_list (self, nbors)
   class(link_t):: self
-  class(link_t), pointer:: nbor, next
+  class(link_t), pointer:: nbors, nbor, next
   !-----------------------------------------------------------------------------
-  nbor => self%nbor
+  nbor => nbors
   do while (associated(nbor))
     next => nbor%next
     deallocate (nbor)
     nbor => next
   end do
-  nullify (self%nbor)
+  nullify (nbors)
 END SUBROUTINE remove_nbor_list
 
 !===============================================================================
@@ -713,14 +715,98 @@ SUBROUTINE delete (self, link)
     call link%lock%unset
   end do
   !-----------------------------------------------------------------------------
+  ! Remove the sorted nbors before deleting the task
+  !-----------------------------------------------------------------------------
+  call link%remove_nbor_list (link%nbor)
   call link%task%delete()
   deallocate (link%task)
-  call remove_nbor_list (link%nbor)
   !-----------------------------------------------------------------------------
   call link%lock%unset ('link_t%delete')
   deallocate (link)
+  nullify (link)
   !-----------------------------------------------------------------------------
   call trace_end()
 END SUBROUTINE delete
+
+!===============================================================================
+!> Create a temporary nbor list, sorted by decreasing level
+!===============================================================================
+SUBROUTINE sort_nbors_by_level (self, old_head, new_head)
+  class(link_t):: self
+  class(link_t), pointer:: old_head, new_head
+  !.............................................................................
+  class(link_t), pointer:: nbor, head, prev, find
+  !-----------------------------------------------------------------------------
+  call trace%begin ('link_t%sort_nbors_by_level')
+  call nbor_print (self, old_head)
+  nullify(head)
+  nbor => old_head
+  if (.not. associated(nbor)) then
+    print *,'link_t%sort_nbors_by_level WARNING: no nbor list to sort!'
+    call trace%end()
+    return
+  end if
+  do while (associated(nbor))
+    call insert
+    nbor => nbor%next
+  end do
+  call self%lock%set ('sort_nbors')
+  new_head => head
+  call self%lock%unset ('sort_nbors')
+  !-----------------------------------------------------------------------------
+  call nbor_print (self, head)
+  call trace%end()
+contains
+  !-----------------------------------------------------------------------------
+  ! Find a place to prepend a clone of nbor into chain with decreasing level
+  !-----------------------------------------------------------------------------
+  subroutine insert
+    nullify(prev)
+    find => head
+    do while (associated(find))
+      if (find%task%level <= nbor%task%level) then
+        call prepend
+        return
+      end if
+      prev => find
+      find => find%next
+    end do
+    call prepend
+    return
+  end subroutine insert
+  !-----------------------------------------------------------------------------
+  ! Clone nbor and insert after prev, or as head
+  !-----------------------------------------------------------------------------
+  subroutine prepend
+    class(link_t), pointer:: new
+    allocate (new, source=nbor)
+    !$omp atomic update
+    new%task%n_needed = new%task%n_needed + 1
+    if (new%task%id==29) &
+      print *,'n_needed increment', self%task%id, new%task%id, new%task%n_needed
+    new%next => find
+    if (associated(prev)) then
+      prev%next => new
+    else
+      head => new
+    end if
+  end subroutine prepend
+  !-----------------------------------------------------------------------------
+  ! Print nbor list
+  !-----------------------------------------------------------------------------
+  subroutine nbor_print (self, head)
+    class(link_t):: self
+    class(link_t), pointer:: head, nbor
+    if (io%verbose > 0) then
+      write(io_unit%log,*) 'target: ', self%task%id
+      write(io_unit%log,*) 'sorted nbors:'
+      nbor => head
+      do while (associated(nbor))
+        write (io_unit%log,*) nbor%task%id, nbor%task%level
+        nbor => nbor%next
+      end do
+    end if
+  end subroutine nbor_print
+END SUBROUTINE sort_nbors_by_level
 
 END MODULE link_mod
