@@ -51,6 +51,87 @@
 !> the sorted nbor list, and by collecting patches to be removed on a GC
 !> list, removing them a few AMR cycles later.
 !>
+!> The absolute minimum amount of synchronization would be to just make sure
+!> that an nbor list 1) can never change exactly when it is accessed, 2) to
+!> immediately make a copy of it, 3) to make sure no to remove any task on the
+!> nbor list while it is being used, and 4) to make sure that rotating the 
+!> memory slots will not invalidate using the nbor list, as is.
+!>
+!> An nbor list relevant for a particular task update is accessed in the
+!> following order:
+!>
+!> 1) During a link_t%check_nbors() call, made after an nbor of the task in
+!>    question has been updated, link_t%check_ready() is called, and runs
+!>    through the tasks nbor list, comparing task%time values, finding that
+!>    all nbors of the task are advanced enough to provide boundary zone data,
+!>    or other data that the task needs.  The task is then added to the ready
+!>    queue.  The comparisons of times requires only that task_t%time is updated
+!>    atomically. These updates happen in task_t%rotate, which also manipulates
+!>    the task_t%iit(:) array, which holds the indices to the memory slots.
+!>
+!> 2) After a thread picks that task off the head of the ready queue, the first
+!>    action (in task_list_t%update) is to check if the task should be refined
+!>    or derefined.  The test itself does not use the nbor lists, but if either
+!>    the current thread, or a thread working on an nbor decides to refine or
+!>    derefine, then the nbor list of the task may become modified.
+!>
+!>    a) If it is refined, the data upon which the decision to use it as a 
+!>    source of guard zone data still exists (in the parent task), and the
+!>    refined data in the child task(s) is initially just a prolongation of the
+!>    parent data, so does not yet provide any improvement.  Therefore, there
+!>    is no problem, and the insertion of the new nbor list should be delayed
+!>    until it is entirely complete, at which point the insertion can be done
+!>    using a very brief locking of the link, while changeing task%link%nbor to 
+!>    point to the new first nbor.
+!>
+!>    b) If it is derefined, one just has to leave the nbor list and the task
+!>    there until after they have been used, in guard zone download, or in
+!>    check_ready().
+!>
+!> 3) The next step is download of data, which relies on data from all source
+!>    tasks, one of which could possible be in the process of being derefined.
+!>    To minimize the acess time needed, the download procedure should copy the
+!>    nbor list, a step that is anyway needed to sort the list into level order.
+!>    Then, to guarantee existence of the derefined patch, it has to either be
+!>    prevented from going away by locking, or else it must be put in a garbage
+!>    collector, which only removes patches when they are no longer needed.
+!>
+!>    The latter option is the easier one, since it avoid  messy synchronization.
+!>    A sync would require that derefinement is prevented in the interval btw
+!>    the task has been put in the ready queue, and until all nbors that might
+!>    possibly need it has done their downloads; a tall order.
+!>
+!> As part of putting the task in the ready queue, a copy of the nbor list
+!> should be made -- this could be exactly the sorted copy that will be needed 
+!> in the download step in any case.
+!>
+!> Keeping track of "no longer needed" can be done with an atomically updated
+!> counter in the task, which starts out with a value of one, and is incremented
+!> when a task is put on a sorted, temporary nbor list, pending use in download.
+!> When used as a source in download, the counter is decremented, endingg up on
+!> one again, unless the task has been derefined away in the meantime, in which
+!> case the counter ends on zero, and the task is then deallocated / deleted.
+!>
+!> Updating an nbor list with list_t%init_nbors() should be done in two steps:
+!> first the head of the list is allocated, without linking it to link%nbor,
+!> and the rest of the tasks are appended (or prepended).  Then, in an lock
+!> protected assignment, link%nbor is pointed to the head of the new nbor list.  
+!> Before that, a link is saved to the head of the existing nbor list, and after
+!> the atomic reassignment, the old list is deleted.
+!>
+!> A derefined task is immediately removed from the task list, and hence can no
+!> longer be added to re-initialized nbor lists.  It thus ceases to be needed
+!> when the last task that still has it on its nbor list copy deallocates its
+!> nbor list, after using it in dowload_link().
+!>
+!> Summary:  A sorted copy of the nbor list is created in connection with the
+!> queue_by_time() call in check_ready().  At the same time a counter task_t%
+!> n_needed is incremented for all tasks in the temporary nbor list.  When the
+!> task is used as a source in download_link() the counter is decremented 
+!> (atomically), and if the task is derefined the counter is decremented there
+!> as well, leading to a zero cound when the task is no longer on an nbor list
+!> copy.  Then, and only then, the task may be deleted.
+!>
 !> FIXME:  Care should be extended also to updates over MPI.
 !> FIXME:  Use of the deprecated scene_mod should be removed
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -109,6 +190,7 @@ MODULE refine_mod
   character(len=32), dimension(ngradvar):: grad_var=""
   logical:: on=.false.                        ! Flag to turn the entire process on or off 
   logical:: force_cubical=.false.             ! Force cubical patches
+  integer:: n_locks=1                         ! number of locks to use
   integer:: verbose=0                         ! Noise level
   type(refine_t), public:: refine
 CONTAINS
@@ -125,7 +207,7 @@ SUBROUTINE init (self)
   namelist /refine_params/ on, levelmin, levelmax, check_interval, ratio, &
     refine_from_t, refine_until_t, min_dx, max_dx, max_jeans, min_jeans, &
     max_shock, min_shock, max_contact, min_contact, max_grad, min_grad, &
-    grad_var, region_llc, region_urc, force_cubical, verbose
+    grad_var, region_llc, region_urc, force_cubical, n_locks, verbose
   character(len=120):: id = &
     '$Id$ tasks/refine_mod.f90'
   !-----------------------------------------------------------------------------
@@ -182,41 +264,41 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   ! Extras refinement
   extras => patch
   refine = max(refine, extras%check_refine (extras))
-  if (verbose > 1) write (io_unit%output,*) &
+  if (verbose > 2) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'extras'
   !
   ! Ensure consistent, cubical patch size (e.g. after RAMSES startup)
   if (force_cubical) refine = max (refine, self%check_cubical(patch))
-  if (verbose > 1) write (io_unit%output,*) &
+  if (verbose > 2) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'cubical'
   !
   ! Jeans criterion
   if (max_jeans > 0.0) refine = max (refine, self%check_Jeans(patch))
-  if (verbose > 1) write (io_unit%output,*) &
+  if (verbose > 2) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'Jeans'
   !
   ! shock and/or contact discontinuity detector
   if (max_shock > 0.0 .or. max_contact > 0.0) &
     refine = max (refine, self%shock_and_cd_detector(patch))
-  if (verbose > 1) write (io_unit%output,*) &
+  if (verbose > 2) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'shock'
   !
   ! gradient detector
   if (any(max_grad > 0.0)) refine = max (refine, self%gradient_detector(patch))
-  if (verbose > 1) write (io_unit%output,*) &
+  if (verbose > 2) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'gradient'
   !
   ! refine on (a) user-specified region(s)
   if (any(region_llc /= 0.0) .and. any(region_urc /= 0.0)) &
     refine = max (refine, self%refine_region(patch))
-  if (verbose > 1) write (io_unit%output,*) &
+  if (verbose > 2) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'user'
   !
   ! Check that neighbors of `self` are not more than one level different.
   ! If they are, mark this patch for splitting so that support can be
   ! provided to the neighbors of `patch`.
   refine = max (refine ,self%check_support (tasklist, link))
-  if (verbose > 1) write (io_unit%output,*) &
+  if (verbose > 2) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'support'
   !
   call trace%end (itimer)
@@ -252,7 +334,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   !----------------------------------------------------------------------------
   dxmin = minval(patch%ds)
   dxmax = maxval(patch%ds)
-  if (verbose > 2) then
+  if (verbose > 3) then
     write (io_unit%output,'(a,i6,2i4,l4,1p,4e11.2)') &
       'refine_t%refine_needed: id, istep, refine_next =', &
       patch%id, patch%istep, patch%check_refine_next, &
@@ -293,7 +375,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     where (.not.patch%mask)
       patch%irefine = 0
     end where
-    if (verbose > 1) write (io_unit%output,*) &
+    if (verbose > 2) write (io_unit%output,*) &
       patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'mask'
     !-------------------------------------------------------------------------
     ! Apply refinement criteria on potential child patch parts
@@ -367,6 +449,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
             ii = (l+u)/2
             not_already_refined = patch%mask(ii(1),ii(2),ii(3))
             if (not_already_refined .and. refine_it > 0) then
+              !io%do_trace = .true.
               !---------------------------------------------------------------------
               ! Create a refined patch here
               !---------------------------------------------------------------------
@@ -375,11 +458,15 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
                   patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
                   maxval(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)), &
                   l, u
-              call download_lock%set ('refine')
-              call check_lock%set ('refine')
+              if (n_locks > 2) &
+                call download_lock%set ('refine')
+              if (n_locks > 0) &
+                call check_lock%set ('refine')
               call make_child_patch (self, tasklist, patch%link, patch, pos, size)
-              call check_lock%unset ('refine')
-              call download_lock%unset ('refine')
+              if (n_locks > 0) &
+                call check_lock%unset ('refine')
+              if (n_locks > 2) &
+                call download_lock%unset ('refine')
               was_refined= .true.
             end if
           end do
@@ -392,7 +479,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
   ! it has no higher level patch inside (would trigger patch%mask == false there),
   ! and secondly that irefine(:,:,:) indicates that derefine would be OK
   !-----------------------------------------------------------------------------
-  if (verbose > 1) write (io_unit%output,*) &
+  if (verbose > 3) write (io_unit%output,*) &
     'derefine: level, next, was_refined, all(mask), all(irefine) =', &
     patch%level > self%levelmin, .not.was_refined, &
     all(patch%mask), all(patch%irefine < 0), patch%check_refine_next
@@ -403,28 +490,21 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
       if (all(patch%irefine < 0)) then                  ! all criteria in favor
         if (verbose > 0) &
           write (io_unit%output,*) 'derefine', patch%id
-        call download_lock%set ('derefine')
-        call check_lock%set ('derefine')
+        if (n_locks > 1) &
+          call download_lock%set ('derefine')
+        if (n_locks > 0) &
+          call check_lock%set ('derefine')
         !-----------------------------------------------------------------------
         deallocate (patch%irefine)
         deallocate (patch%mask)
         call remove_patch (self, tasklist, link)
-        call check_lock%unset ('derefine')
-        call download_lock%unset ('derefine')
+        if (n_locks > 0) &
+          call check_lock%unset ('derefine')
+        if (n_locks > 1) &
+          call download_lock%unset ('derefine')
         was_derefined = .true.
       end if
     end if
-  end if
-  !-----------------------------------------------------------------------------
-  ! Optionally, print children task list info
-  !-----------------------------------------------------------------------------
-  if (verbose > 2) then
-    write (io%output,*) 'child tasks:'
-    link => tail
-    do while (associated(link))
-      call link%print_nbors
-      link => link%next
-    end do
   end if
   call trace%end
 END SUBROUTINE selective_refine
@@ -633,6 +713,7 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   child%llc_cart = child%position - &                ! mid point position
     merge(0.5,0.0,child%n>1) * child%size            ! lower left corner
   child%llc_nat = child%llc_cart                     ! FIXME!: this form only applies for Cartesian coords.
+  child%n_needed = 1                                 ! reset to initial
   !------------------------------------------------------------------------
   ! Force consistent resolution in new patches, overriding the resolution
   ! inherited from the parent patch.
@@ -682,7 +763,8 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   allocate (child_nbor)
   child_nbor%link => parent_link
   child_nbor%task => parent
-  child_link%nbor => child_nbor
+  nullify (child_link%nbor)
+  child_link%nbors_by_level => child_nbor
   !------------------------------------------------------------------------
   ! Download values from parent and neighbors, except at time = 0, to allow
   ! recursive refinement there. If time = 0, patch should have been filled
@@ -690,14 +772,18 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   !------------------------------------------------------------------------
   if (parent%time > 0.0 .and. child%restart <= 0) &
     call download%download_link (child_link, all_cells=.true.)
-  call tlist%lock%set ('make_child')
+  call tlist%lock%set ('refine')
   call tlist%append_link (child_link)
+  if (n_locks == 0) &
+    call check_lock%set ('refine')
   call tlist%init_nbors (child_link)
   call tlist%init_nbor_nbors (child_link)
+  if (n_locks == 0) &
+    call check_lock%unset ('refine')
   call tlist%reset_status()
   call tlist%check_nbors (child_link)
   call tlist%check_nbor_nbors (child_link)
-  call tlist%lock%unset ('make_child')
+  call tlist%lock%unset ('refine')
   if (verbose > 0) &
     write (io_unit%output,*) '  refine', parent%id, 'to', child%id, child%level
   if (verbose > 1) then
@@ -765,11 +851,14 @@ SUBROUTINE remove_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   call tlist%lock%set ('remove_patch')      ! lock task list while changing
   call tlist%remove_link (this)             ! remove this from task list
+  if (n_locks == 0) &
+    call check_lock%set ('refine')
   call tlist%init_nbor_nbors (this)         ! new nbor lists, w/o this
+  if (n_locks == 0) &
+    call check_lock%unset ('refine')
   call tlist%reset_status()                 ! set task status bits
   call tlist%check_nbor_nbors (this)        ! check / send to ready queue
-  call this%delete (this)                   ! finally, delete that task & link
-  nullify (this)                            ! make sure it is null
+  call this%garbage_collect (this)          ! add to garbage bin
   call tlist%lock%unset ('remove_patch')    ! release the task list
   !-----------------------------------------------------------------------------
   call trace%end()

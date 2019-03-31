@@ -20,14 +20,14 @@ MODULE link_mod
   private
 
   type, public:: link_t
-    class(task_t), pointer :: task => null()         ! task
-    class(link_t), pointer :: nbor => null()         ! next nbor; wouldn't `nbor_head` be a better name?
-    class(link_t), pointer :: link => null()         ! pointer from nbor link to task list link (can be useful)
-    class(link_t), pointer :: next => null()         ! next link in task list
-    class(link_t), pointer :: prev => null()         ! previous link in task list
-    class(link_t), pointer :: parent => null()       ! parent task link
-    class(link_t), pointer :: next_time => null()    ! next link in time order
-    class(link_t), pointer :: next_active => null()  ! next link to an active process, in time order
+    class(task_t), pointer :: task => null()          ! task
+    class(link_t), pointer :: nbor => null()          ! next nbor; wouldn't `nbor_head` be a better name?
+    class(link_t), pointer :: link => null()          ! pointer from nbor link to task list link (can be useful)
+    class(link_t), pointer :: next => null()          ! next link in task list
+    class(link_t), pointer :: prev => null()          ! previous link in task list
+    class(link_t), pointer :: parent => null()        ! parent task link
+    class(link_t), pointer :: next_time => null()     ! next link in time order
+    class(link_t), pointer :: next_active => null()   ! next link to an active process, in time order
     class(link_t), pointer :: nbors_by_level => null()! decreasing level sorted list
     type(lock_t):: lock
     logical:: initialized = .false.
@@ -59,9 +59,14 @@ MODULE link_mod
     procedure:: print_nbors
     procedure:: test_nbor_status
     procedure:: check_level_sort
+    procedure, nopass:: garbage_collect
+    procedure, nopass:: garbage_remove
+    procedure:: decrement_needed
     procedure:: delete
     procedure:: sort_nbors_by_level
   end type
+  type(link_t), target:: garbage
+  integer:: garbage_n=0
   logical, save:: debug=.false.
 CONTAINS
 
@@ -302,9 +307,9 @@ END SUBROUTINE test_status
 !> Add a link node into the nbors list of self, in increasing rank order.
 !> self must be a link whose 'nbors' points to a chain of nbors
 !===============================================================================
-SUBROUTINE add_nbor_by_rank (self, this)
+SUBROUTINE add_nbor_by_rank (self, nbors, this)
   class(link_t):: self
-  class(link_t), pointer:: this
+  class(link_t), pointer:: nbors, this
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_rank', 3)
@@ -314,7 +319,7 @@ SUBROUTINE add_nbor_by_rank (self, this)
     this%task%is_set(bits%boundary), this%task%is_set(bits%virtual), &
     ' to nbor list of', self%task%id
   nullify (prev)
-  next => self%nbor
+  next => nbors
   do while (associated(next))
     if (.not.associated(next%task,this%task)) then
       if (next%task%rank >= this%task%rank) then
@@ -325,7 +330,7 @@ SUBROUTINE add_nbor_by_rank (self, this)
         if (associated(prev)) then
           prev%next => this
         else
-          self%nbor => this
+          nbors => this
         end if
         self%task%n_nbors = self%task%n_nbors+1
         goto 9
@@ -341,7 +346,7 @@ SUBROUTINE add_nbor_by_rank (self, this)
     prev%next => this
     nullify (this%next)
   else
-    self%nbor => this
+    nbors => this
   end if
   self%task%n_nbors = self%task%n_nbors+1
 9 continue
@@ -435,7 +440,7 @@ END SUBROUTINE remove_nbor_list
     ! allocate (new)                                      ! new link for nbor's nbor list
     ! new%task => self%task                               ! its task is the link task
     ! new%link => self%task%link                          ! add also the link pointer
-    ! call nbor%add_nbor_by_rank (new)                    ! add a new nbor link
+    ! call nbor%add_nbor_by_rank (self%nbor, new)         ! add a new nbor link
     ! nbor => nbor%next                                   ! continue on nbor list
   ! end do
   ! call trace_end
@@ -464,7 +469,7 @@ SUBROUTINE update_nbor_status (self, link)
     allocate (this)                                     ! new nbor link
     this%link => link                                   ! attach task link
     this%task => link%task                              ! attach task
-    call nbor%link%add_nbor_by_rank (this)              ! add in rank order
+    call nbor%link%add_nbor_by_rank (self%nbor, this)   ! add in rank order
     call nbor%link%update_status                        ! new status
     if (nbor%task%is_set (bits%boundary).and.iand(status,bits%boundary)==0) then
       if (io%verbose>0) &
@@ -696,6 +701,93 @@ SUBROUTINE send_to_vnbors (self)
 END SUBROUTINE send_to_vnbors
 
 !===============================================================================
+!> Collect garbage, and check if there is garbage to remove.  This needs to be
+!> done under lock protection, since many threads may be utilizing the GC at the
+!> same time.
+!===============================================================================
+SUBROUTINE garbage_collect (link)
+  class(link_t), pointer:: link, nbor
+  !.............................................................................
+  !$omp atomic update
+  link%task%n_needed = link%task%n_needed - 1   ! because linked task derefined
+  call link%decrement_needed                    ! also decrement need for nbors
+  if (link%task%n_needed <= 0) then
+    if (io%verbose > 2) then
+      write (io_unit%output,*) link%task%id, ' immediately deleted'
+    end if
+    !---------------------------------------------------------------------------
+    ! Remove sorted nbors, decrement n_needed counters, and check consequences
+    ! for nbor tasks, before actually removing the task and task link
+    !---------------------------------------------------------------------------
+    call link%remove_nbor_list (link%nbors_by_level)
+    call garbage%lock%set ('garbage')
+    call garbage_remove                       ! check consequences for nbors
+    call garbage%lock%unset ('garbage')
+    call link%delete (link)
+  else
+    call garbage%lock%set ('garbage')
+    garbage_n = garbage_n+1
+    link%next => garbage%next
+    garbage%next => link
+    if (io%verbose > 0) then
+      write (io_unit%output,*) link%task%id, ' added to garbage', garbage_n, &
+        link%task%n_needed
+    end if
+    !---------------------------------------------------------------------------
+    !> The tasks in the nbor list of the task pending deletion are no longer
+    !> needed by this task, so their n_needed counters should be decremented
+    !---------------------------------------------------------------------------
+    call garbage_remove
+    call garbage%lock%unset ('garbage')
+  end if
+END SUBROUTINE garbage_collect
+
+!===============================================================================
+!> Check if there are links that may be deleted.  The GC list with one member 
+!> looks like so: garbage%next -> link, link%next -> null()
+!===============================================================================
+SUBROUTINE garbage_remove
+  class(link_t), pointer:: link, next, prev
+  !.............................................................................
+  link => garbage%next
+  prev => garbage                             ! in case we remove the 1st link
+  do while (associated(link))
+    next => link%next
+    !print *, 'GC', link%task%id, link%task%n_needed
+    if (link%task%n_needed <= 0) then
+      garbage_n = garbage_n-1
+      if (io%verbose > 0) then
+        write (io_unit%output,*) link%task%id, ' deleted from garbage', garbage_n
+      end if
+      !-------------------------------------------------------------------------
+      ! n_needed counters have already been decremented, so just remove the list
+      !-------------------------------------------------------------------------
+      call link%remove_nbor_list (link%nbors_by_level)
+      call link%delete (link)                 ! deallocate & delete task + link
+      prev%next => next                       ! remove from GC list
+    else
+      prev => link                            ! advance prev if not removed
+    end if
+    link => next
+  end do
+END SUBROUTINE garbage_remove
+
+!===============================================================================
+!> Decrement the n_needed counters of the nbor tasks
+!===============================================================================
+SUBROUTINE decrement_needed (self)
+  class(link_t):: self
+  class(link_t), pointer:: nbor
+  !.............................................................................
+  nbor => self%nbors_by_level
+  do while (associated(nbor))
+    !$omp atomic update
+    nbor%task%n_needed = nbor%task%n_needed - 1
+    nbor => nbor%next
+  end do
+END SUBROUTINE decrement_needed
+
+!===============================================================================
 !> Delete a link, and the corresponding task.  First make sure to lock the link
 !> and unset any remaining nested locks.  Then delete the task, deallocate the
 !> task itself, the link nbor list.  Finally release the lock and delete the
@@ -782,8 +874,6 @@ contains
     allocate (new, source=nbor)
     !$omp atomic update
     new%task%n_needed = new%task%n_needed + 1
-    if (new%task%id==29) &
-      print *,'n_needed increment', self%task%id, new%task%id, new%task%n_needed
     new%next => find
     if (associated(prev)) then
       prev%next => new

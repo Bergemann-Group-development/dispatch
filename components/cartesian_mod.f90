@@ -219,7 +219,7 @@ SUBROUTINE init (self, label)
         nbor%link => links(ipos(1),ipos(2),ipos(3))%p
         nbor%task => nbor%link%task
         ! -- add rank sorted
-        call link%add_nbor_by_rank (nbor)
+        call link%add_nbor_by_rank (link%nbor, nbor)
       end do
       end do
       end do

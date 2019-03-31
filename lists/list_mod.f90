@@ -763,8 +763,7 @@ SUBROUTINE init_nbors (self, link)
           allocate (nbor)
           nbor%task => scan%task                      ! pointer to task
           nbor%link => scan                           ! pointer to task link
-          nbor%next => new_head                       ! prepend to list
-          new_head => nbor                            ! new list head
+          call link%add_nbor_by_rank (new_head, nbor) ! add in rank order
           n_add = n_add+1
           !if (nbor%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk is nbor:', link%task%id
           !if (link%task%id==io%id_debug) write (io_unit%log,*) io%id_debug, 'mk has nbor:', nbor%task%id
