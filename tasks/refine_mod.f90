@@ -357,11 +357,15 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     !---------------------------------------------------------------------------
     if (.not.allocated (patch%mask)) then
       allocate (patch%mask(patch%gn(1),patch%gn(2),patch%gn(3)))
+      call io%bits_mem (storage_size(patch%mask), &
+                       product(shape(patch%mask)), 'mask')
     end if
     patch%mask = .true.
     call self%setup_mask (patch)
     if (.not.allocated (patch%irefine)) then
       allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
+      call io%bits_mem (storage_size(patch%irefine), &
+                       product(shape(patch%irefine)), 'irefine')
     end if
     patch%irefine = -1
     !---------------------------------------------------------------------------
@@ -384,7 +388,11 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       call selective_refine (self, tasklist, patch, was_refined, was_derefined)
     end if
     if (.not.was_derefined) then
+      call io%bits_mem (-storage_size(patch%irefine), &
+                        product(shape(patch%irefine)), '-irefine')
       deallocate (patch%irefine)
+      call io%bits_mem (-storage_size(patch%mask), &
+                        product(shape(patch%mask)), '-mask')
       deallocate (patch%mask)
     end if
     !-------------------------------------------------------------------------
@@ -495,7 +503,11 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
         if (n_locks > 0) &
           call check_lock%set ('derefine')
         !-----------------------------------------------------------------------
+        call io%bits_mem (-storage_size(patch%irefine), &
+                          product(shape(patch%irefine)), '-irefine')
         deallocate (patch%irefine)
+        call io%bits_mem (-storage_size(patch%mask), &
+                          product(shape(patch%mask)), '-mask')
         deallocate (patch%mask)
         call remove_patch (self, tasklist, link)
         if (n_locks > 0) &
@@ -703,7 +715,8 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   ! level, which would otherwise be left undefined, or in inconsistent state
   !------------------------------------------------------------------------
   allocate (child, source=parent)
-  !------------------------------------------------------------------------
+  call child%clone_mem_accounting
+ !------------------------------------------------------------------------
   child%mem_allocated = .false.                      ! make sure to get ..
   nullify (child%mem)                                ! .. new mem
   nullify (child%mesh)                               ! .. new mesh

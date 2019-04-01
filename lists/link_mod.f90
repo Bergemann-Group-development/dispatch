@@ -810,7 +810,7 @@ SUBROUTINE delete (self, link)
   ! Remove the sorted nbors before deleting the task
   !-----------------------------------------------------------------------------
   call link%remove_nbor_list (link%nbor)
-  call link%task%delete()
+  call link%task%dealloc()
   deallocate (link%task)
   !-----------------------------------------------------------------------------
   call link%lock%unset ('link_t%delete')

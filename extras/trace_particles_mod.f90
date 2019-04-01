@@ -74,6 +74,8 @@ MODULE trace_particles_mod
     type(mpi_buffer_t):: mpi_buffer
     class(patch_t), pointer:: patch
   contains
+    procedure:: init
+    procedure:: dealloc
     procedure:: add
     procedure:: update
     procedure:: post_update
@@ -83,6 +85,32 @@ MODULE trace_particles_mod
   end type
   type(random_t):: random
 CONTAINS
+
+!===============================================================================
+!> Initialize trace particles
+!===============================================================================
+SUBROUTINE init (self, name)
+  class (trace_particles_t):: self
+  character(len=*), optional:: name
+  !-----------------------------------------------------------------------------
+  call trace%begin ('trace_particles_t%init')
+  call trace%end
+END SUBROUTINE init
+
+!===============================================================================
+!> Deallocate
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(trace_particles_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('trace_particles_t%dealloc')
+  if (allocated(self%v)) then
+    call io%bits_mem (-storage_size(self%v), &
+                      product(shape(self%v)), '-tracep%v')
+    deallocate (self%v)
+  end if
+  call trace%end
+END SUBROUTINE dealloc
 
 !===============================================================================
 !> Add trace particles, if requested by the namelist
@@ -150,6 +178,8 @@ SUBROUTINE add (self, link)
   d => patch%mem(:,:,:,patch%idx%d             ,patch%it,1)
   pv => patch%mem(:,:,:,patch%idx%px:patch%idx%pz,patch%it,1)
   allocate (self%v(patch%gn(1),patch%gn(2),patch%gn(3),3))
+  call io%bits_mem (storage_size(self%v), &
+                   product(shape(self%v)), 'tracep%v')
   do i=1,3
     self%v(:,:,:,i) = pv(:,:,:,i)/d(:,:,:)
   end do
@@ -174,6 +204,8 @@ SUBROUTINE add (self, link)
     end do
   end if
   end select
+  call io%bits_mem (-storage_size(self%v), &
+                    product(shape(self%v)), '-tracep%v')
   deallocate (self%v)
   call trace%end ()
   end associate
@@ -258,6 +290,8 @@ SUBROUTINE update (self)
   call self%export%init ('export')
   call self%import%init ('import')
   call interpolate (self)
+  call io%bits_mem (-storage_size(self%v), &
+                    product(shape(self%v)), '-tracep%v')
   deallocate (self%v)
   !-----------------------------------------------------------------------------
   ! Direct, non-vectorized update

@@ -65,6 +65,7 @@ MODULE extras_mod
     !type(selfgravity_t) :: selfgravity                         ! selfg
   contains
     procedure:: init
+    procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
     procedure:: output
@@ -87,6 +88,21 @@ SUBROUTINE init (self)
   call sink_patch%init                                          ! sinkp
   call trace%end
 END SUBROUTINE init
+
+!===============================================================================
+!> Deallocate allocated arrays
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(extras_t):: self
+  !.............................................................................
+  call trace%begin ('extras_t%dealloc')
+  call self%forces%dealloc                                      ! forces
+  call self%trace_particles%dealloc                             ! sinkp
+  deallocate (self%trace_particles)                             ! tracep
+  call sink_patch%dealloc                                       ! sinkp
+  call self%gpatch_t%dealloc
+  call trace%end
+END SUBROUTINE dealloc
 
 !===============================================================================
 !> The pre_update hierarchy is called before the solver updates

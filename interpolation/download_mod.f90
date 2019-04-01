@@ -219,9 +219,9 @@ SUBROUTINE test (self)
   ! Clean up
   !-----------------------------------------------------------------------------
   deallocate (filled)
-  call target%delete
+  call target%dealloc
   do i=1,3
-    call source(i)%delete
+    call source(i)%dealloc
   end do
   call target%init_id_reset
   deallocate (target, source)

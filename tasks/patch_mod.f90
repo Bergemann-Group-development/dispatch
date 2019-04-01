@@ -95,7 +95,8 @@ MODULE patch_mod
     procedure:: init_default
     procedure:: init_bdries
     procedure:: setup
-    procedure:: delete
+    procedure:: dealloc
+    procedure:: clone_mem_accounting
     procedure:: rotate
     procedure:: allocate_mesg           ! allocate a mesg buffer
     procedure:: pack                    ! pack patch into buffer
@@ -638,17 +639,86 @@ END SUBROUTINE setup
 !===============================================================================
 !> Deallocate a patch and its allocated parts
 !===============================================================================
-SUBROUTINE delete (self)
+SUBROUTINE dealloc (self)
   class (patch_t):: self
   integer                  :: i
   !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%delete')
+  call trace%begin ('patch_t%dealloc')
   call MeshRecycler (self%mesh)
+  call io%bits_mem (-storage_size(self%mem), product(shape(self%mem)),'-mem')
   if (associated(self%mem)) deallocate (self%mem)
   nullify (self%mem)
   self%mem_allocated = .false.
+  if (allocated(self%force_per_unit_mass)) then
+    call io%bits_mem (-storage_size(self%force_per_unit_mass), &
+                      product(shape(self%force_per_unit_mass)),'-fpm')
+    deallocate (self%force_per_unit_mass)
+  end if
+  if (allocated(self%force_per_unit_volume)) then
+    call io%bits_mem (-storage_size(self%force_per_unit_volume), &
+                      product(shape(self%force_per_unit_volume)),'-fpv')
+    deallocate (self%force_per_unit_volume)
+  end if
+  if (allocated(self%heating_per_unit_mass)) then
+    call io%bits_mem (-storage_size(self%heating_per_unit_mass), &
+                      product(shape(self%heating_per_unit_mass)),'-qpm')
+    deallocate (self%heating_per_unit_mass)
+  end if
+  if (allocated(self%heating_per_unit_volume)) then
+    call io%bits_mem (-storage_size(self%heating_per_unit_volume), &
+                      product(shape(self%heating_per_unit_volume)),'-qpv')
+    deallocate (self%heating_per_unit_volume)
+  end if
+  if (associated(self%vgas)) then
+    call io%bits_mem (-storage_size(self%vgas), &
+                      product(shape(self%vgas)),'-vgas')
+    deallocate (self%vgas)
+  end if
+  if (associated(self%density)) then
+    call io%bits_mem (-storage_size(self%density), &
+                      product(shape(self%density)),'-density')
+    deallocate (self%density)
+  end if
+  if (associated(self%pressure)) then
+    call io%bits_mem (-storage_size(self%pressure), &
+                      product(shape(self%pressure)),'-pressure')
+    deallocate (self%pressure)
+  end if
+  if (allocated(self%irefine)) then
+    call io%bits_mem (-storage_size(self%irefine), &
+                      product(shape(self%irefine)), '-irefine')
+    deallocate (self%irefine)
+  end if
+  if (allocated(self%mask)) then
+    call io%bits_mem (-storage_size(self%mask   ), &
+                      product(shape(self%mask   )), '-mask'  )
+    deallocate (self%mask)
+  end if
+  call self%task_t%dealloc
   call trace%end
-END SUBROUTINE delete
+END SUBROUTINE dealloc
+
+SUBROUTINE clone_mem_accounting (self)
+  class(patch_t):: self
+  if (allocated(self%irefine)) &
+    call io%bits_mem (storage_size(self%irefine), &
+                     product(shape(self%irefine)), 'irefine')
+  if (allocated(self%mask)) &
+    call io%bits_mem (storage_size(self%mask), &
+                     product(shape(self%mask)), 'mask')
+  if (allocated(self%force_per_unit_mass)) &
+    call io%bits_mem (storage_size(self%force_per_unit_mass), &
+                     product(shape(self%force_per_unit_mass)),'fpm')
+  if (allocated(self%force_per_unit_volume)) &
+    call io%bits_mem (storage_size(self%force_per_unit_volume), &
+                     product(shape(self%force_per_unit_volume)),'fpv')
+  if (allocated(self%heating_per_unit_mass)) &
+    call io%bits_mem (storage_size(self%heating_per_unit_mass), &
+                     product(shape(self%heating_per_unit_mass)),'qpm')
+  if (allocated(self%heating_per_unit_volume)) &
+    call io%bits_mem (storage_size(self%heating_per_unit_volume), &
+                     product(shape(self%heating_per_unit_volume)),'qpv')
+END SUBROUTINE clone_mem_accounting
 
 !===============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time

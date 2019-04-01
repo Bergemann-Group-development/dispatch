@@ -45,6 +45,7 @@ MODULE hd_mod
     real, pointer, dimension(:,:,:):: c, s        ! scratch
   contains
     procedure:: init
+    procedure:: dealloc
     procedure:: update
     procedure:: gas_pressure
   end type
@@ -57,6 +58,8 @@ MODULE hd_mod
   character(len=16):: eqn='mhd'
 CONTAINS
 
+!===============================================================================
+!> Initialize the HD solver
 !===============================================================================
 SUBROUTINE init (self)
   class(hd_t):: self
@@ -103,6 +106,17 @@ SUBROUTINE init (self)
   self%pervolume(self%idx%pz) = unsigned
   call trace%end
 END SUBROUTINE init
+
+!===============================================================================
+!> Deallocate permanently allocated arrays
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(hd_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('hd_t%dealloc')
+  call self%extras_t%dealloc
+  call trace%end
+END SUBROUTINE dealloc
 
 !===============================================================================
 !===============================================================================

@@ -77,7 +77,7 @@ MODULE task_mod
     procedure:: init
     procedure:: init_unique
     procedure:: init_id_reset
-    procedure:: delete
+    procedure:: dealloc
     procedure:: dnload
     procedure:: update => void
     procedure:: rotate
@@ -222,14 +222,28 @@ SUBROUTINE init_id_reset (self)
 END SUBROUTINE init_id_reset
 
 !===============================================================================
+!> Deallocate permanent arrays
 !===============================================================================
-SUBROUTINE delete (self)
+SUBROUTINE dealloc (self)
+  class (task_t):: self
+  !.............................................................................
+  call trace_begin ('task_t%dealloc')
+  if (associated(self%t  )) deallocate (self%t  )
+  if (associated(self%dt )) deallocate (self%dt )
+  if (associated(self%iit)) deallocate (self%iit)
+  call trace_end
+END SUBROUTINE dealloc
+
+!===============================================================================
+!> Save the id of a deleted task, for resuse
+!===============================================================================
+SUBROUTINE save_id (self)
   class (task_t):: self
   !.............................................................................
   class(dll_node_t), pointer:: node
   integer, pointer:: id
   !-----------------------------------------------------------------------------
-  call trace_begin ('task_t%delete')
+  call trace_begin ('task_t%save_id')
   if (.not.associated(deleted_list%head)) then
     call deleted_list%init
   end if
@@ -238,7 +252,7 @@ SUBROUTINE delete (self)
   node%car => id
   call deleted_list%append (node)
   call trace_end
-END SUBROUTINE delete
+END SUBROUTINE save_id
 
 !===============================================================================
 !> Rotate time slots.  The initial conditions are in slot 1, and the first time

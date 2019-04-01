@@ -16,6 +16,7 @@ MODULE solver_mod
   type, public, extends(hd_t):: solver_t
   contains
     procedure:: init
+    procedure:: dealloc
     procedure, nopass:: cast2solver
     procedure:: update
     procedure:: dnload
@@ -49,6 +50,18 @@ SUBROUTINE init (self)
   call self%extras_t%init
   call trace%end
 END SUBROUTINE init
+
+!===============================================================================
+!> Call a hiearchy of %dealloc procedures, which should deallocate everything
+!> allocated in the task
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(solver_t) :: self
+  !.............................................................................
+  call trace%begin ('solver_t%dealloc')
+  call self%hd_t%dealloc
+  call trace%end
+END SUBROUTINE dealloc
 
 !===============================================================================
 !> Cast a generic task_t to patch_t

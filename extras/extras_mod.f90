@@ -86,6 +86,7 @@ MODULE extras_mod
     !real, dimension(:,:,:,:), pointer:: v                       ! tracep
   contains
     procedure:: init
+    procedure:: dealloc
     procedure:: init_task_list
     procedure:: pre_update
     procedure:: post_update
@@ -101,6 +102,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
+  call trace%begin ('extras_t%init')
   !call self%forces%init (self)                                  ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
@@ -111,6 +113,7 @@ SUBROUTINE init (self)
   !call self%spitzer%init(self%link)                             ! spitzer
   !call self%gravity%init(self%link)                             ! gravity
   !call sink_patch%init                                          ! sinkp
+  call trace%end
 END SUBROUTINE init
 
 !===============================================================================
@@ -122,6 +125,20 @@ SUBROUTINE init_task_list (self, task_list)
   !.............................................................................
   self%task_list => task_list
 END SUBROUTINE init_task_list
+
+!===============================================================================
+!> Deallocate allocated arrays
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(extras_t):: self
+  !.............................................................................
+  call trace%begin ('extras_t%dealloc')
+  !call self%forces%dealloc                                      ! forces
+  !call trace_particles%dealloc                                  ! sinkp
+  !deallocate (self%trace_particles)                             ! tracep
+  !call sink_patch%dealloc                                       ! sinkp
+  call trace%end
+END SUBROUTINE dealloc
 
 !===============================================================================
 !> The pre_update hierarchy is called before the solver updates. To allow for

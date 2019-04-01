@@ -39,6 +39,7 @@ MODULE sink_patch_mod
     logical:: on
   contains
     procedure:: init
+    procedure:: dealloc
     procedure:: init_task_list
     procedure:: check
     procedure:: init_task
@@ -106,6 +107,32 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
+!> Deallocate permanent allocatables
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(sink_patch_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sink_patch_t%dealloc')
+  if (allocated(self%r)) then
+    call io%bits_mem (-storage_size(self%r), product(shape(self%r)), '-sink%r')
+    deallocate (self%r)
+  end if
+  if (allocated(self%p)) then
+    call io%bits_mem (-storage_size(self%p), product(shape(self%p)), '-sink%p')
+    deallocate (self%p)
+  end if
+  if (allocated(self%v)) then
+    call io%bits_mem (-storage_size(self%v), product(shape(self%v)), '-sink%v')
+    deallocate (self%v)
+  end if
+  if (allocated(self%a)) then
+    call io%bits_mem (-storage_size(self%a), product(shape(self%a)), '-sink%a')
+    deallocate (self%a)
+  end if
+  call trace%end()
+END SUBROUTINE dealloc
+
+!===============================================================================
 !> Allows storing a link to a task list in the sink_patch_t data type
 !===============================================================================
 SUBROUTINE init_task_list (self, task_list)
@@ -155,6 +182,9 @@ SUBROUTINE init_task (self, patch)
   allocate (self%p(3,self%nt))
   allocate (self%v(3,self%nt))
   allocate (self%a(3,self%nt))
+  call io%bits_mem (storage_size(self%p), product(shape(self%p)), 'sink%p')
+  call io%bits_mem (storage_size(self%v), product(shape(self%v)), 'sink%v')
+  call io%bits_mem (storage_size(self%a), product(shape(self%a)), 'sink%a')
   l = patch%mesh%li
   u = patch%mesh%ui
   d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
@@ -201,6 +231,8 @@ SUBROUTINE init_task (self, patch)
   !-----------------------------------------------------------------------------
   allocate (self%mask(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn))
   allocate (self%r   (self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn))
+  call io%bits_mem (storage_size(self%r   ), product(shape(self%r   )), 'sink%r')
+  call io%bits_mem (storage_size(self%mask), product(shape(self%mask)), 'sink%mask')
   do iz=1,self%mesh(3)%gn
   do iy=1,self%mesh(2)%gn
   do ix=1,self%mesh(1)%gn
@@ -269,6 +301,7 @@ SUBROUTINE accrete (self)
   u2 = (py/d)**2 + u2
   u2 = (px/d)**2 + u2
   self%u_max = sqrt(self%fmaxval(u2))
+  deallocate (u2)
   call self%courant_condition
   dm = 0d0
   dv = product(self%ds)
