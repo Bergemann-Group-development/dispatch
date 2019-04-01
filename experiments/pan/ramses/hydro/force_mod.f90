@@ -157,16 +157,16 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
         enddo
       enddo
     enddo
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Normalized acceleration factor
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     accel  = ampl_turb/t_turn/sqrt(float(nrand)/8.)    ! rms=1./8. per comp.
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! To obtain a Kolmogorov slope of the driving alone, one should have amplitudes
     ! a(k) that drop with k^(-11./6.), to have a(k)^2*k^2 = k^(-5./3.).  This ASSUMES
     ! that the amplitudes are proportional to the driving.  But the energy drain may
     ! be rather inversely proportional to the turnover time, which goes as k^(2./3.)
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     fpow = 0.
     do jx=-kmax,kmax
       kx = cmplx (0., jx*2.*pi/mesh(1)%b)
@@ -179,6 +179,11 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
             fxx = cexp(cmplx(0., 2.*pi*self%random%ran1()))/fk**pk
             fyy = cexp(cmplx(0., 2.*pi*self%random%ran1()))/fk**pk
             fzz = cexp(cmplx(0., 2.*pi*self%random%ran1()))/fk**pk
+            !-------------------------------------------------------------------
+            ! After refinement, fast-forward to the last two force calculations
+            !-------------------------------------------------------------------
+            if (self%t_turb <= time - 2.0*t_turn) &
+              cycle
             !------------------
             ! solenoidal field:
             !------------------
