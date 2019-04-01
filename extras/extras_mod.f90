@@ -181,11 +181,13 @@ END SUBROUTINE output
 !===============================================================================
 INTEGER function check_refine (self, patch)
   class(extras_t):: self
-  class(gpatch_t), pointer:: patch
+  class(extras_t), pointer:: patch
+  class(gpatch_t), pointer:: gpatch
   !.............................................................................
+  gpatch => patch
   check_refine = -1
   !check_refine = max (check_refine, &
-  !  sinkparticles%check_refine (patch))                         ! sinkp
+  !  sinkparticles%check_refine (gpatch))                        ! sinkp
 END FUNCTION check_refine
 
 END MODULE extras_mod
