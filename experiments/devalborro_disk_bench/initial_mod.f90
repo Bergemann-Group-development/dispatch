@@ -11,6 +11,7 @@ MODULE initial_mod
   private
 
   type, public:: initial_t
+    logical:: mhd=.false.
   contains
     procedure:: init
     procedure:: condition

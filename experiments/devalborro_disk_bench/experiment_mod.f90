@@ -33,7 +33,7 @@ SUBROUTINE init_experiment (self)
   call trace_begin('experiment_t%init')
 
   self%periodic(2) = .false.
-  call self%mhd_t%init()
+  call self%solver_t%init()
   call initial_conditions(self)
   call potential%init()
   call pboundaries%conditions(self, self%it)
@@ -53,7 +53,7 @@ SUBROUTINE update_experiment (self)
   ! update the potential (for a growing or moving planet)
   potential%omega = self%grid_vel(3)
   self%mem(:,:,:,self%idx%phi,self%it,1) = potential%selected(self%mesh, self%time, self%dtime)
-  call self%mhd_t%update()
+  call self%solver_t%update()
   call pboundaries%conditions(self, self%new)
 
   call trace_end

@@ -30,8 +30,8 @@ CONTAINS
 !===============================================================================
 FUNCTION wave_killing (q, q0, tau, xkill, xbndy, x) RESULT (rate)
   real(kind=KindScalarVar), intent(in) :: q, q0
-  real(8), intent(in) :: tau, x, xkill, xbndy
-  real(8) :: rate, quadfunc
+  real(kind=KindScalarVar), intent(in) :: tau, x, xkill, xbndy
+  real(kind=KindScalarVar) :: rate, quadfunc
   !-----------------------------------------------------------------------------
 
   quadfunc = ((x - xkill) / (xbndy - xkill))**2

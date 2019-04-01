@@ -8,7 +8,7 @@ MODULE components_mod
   USE parameters_mod
   USE task_mod
   USE task_list_mod
-  USE mhd_mod
+  USE solver_mod
   USE experiment_mod
   USE mesh_mod
   USE bits_mod
@@ -93,7 +93,7 @@ SUBROUTINE init_annulus (self, params)
       do ix=1,self%n_patch(1)
         allocate(experiment_t :: patch)
         select type (patch)
-        class is (mhd_t)
+        class is (solver_t)
           ! in this experiment, the root grid is in cylindrical coords., so we can
           ! set the position (which is usually in Cartesian coords.) directly.
           patch%size = [zextent, rextent, phiextent]
@@ -119,24 +119,6 @@ SUBROUTINE init_annulus (self, params)
           call patch%init()
           patch%mesh(:)%origin = [0.0d0, roffset, phioffset]
           patch%origin = patch%mesh%origin
-          if (patch%kind == 'zeus_mhd_patch') then
-            patch%staggered = .true.
-            if (phiextent .ge. 2.0*pi) then
-              patch%btypes%ikb = 5 ! periodic
-              patch%btypes%okb = 5
-            else
-              patch%btypes%ikb = 6 ! self-computing (but see `boundary%conditions`)
-              patch%btypes%okb = 6
-            end if
-            patch%btypes%ijb = 6
-            if (curr_roff .le. roffset) then
-              patch%btypes%ijb = 2
-            end if
-            patch%btypes%ojb = 6
-            if (curr_roff+rextent .ge. extent(2)) then
-              patch%btypes%ojb = 2
-            end if
-          end if
         end select
         call patch%set(bits%static) ! for the time being (should be okay)
         call patch%clear(bits%root_grid)

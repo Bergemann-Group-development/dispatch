@@ -7,7 +7,7 @@ MODULE pboundary_mod
   USE kinds_mod
   USE scaling_mod
   USE mesh_mod
-  USE mhd_mod
+  USE solver_mod
   USE parameters_mod
   USE boundary_wavekill_mod
   implicit none
@@ -29,12 +29,12 @@ CONTAINS
 !===============================================================================
 SUBROUTINE conditions (self, patch, cit)
   class(pboundary_t) :: self
-  class(mhd_t), target :: patch
+  class(solver_t), target :: patch
   class(mesh_t), pointer :: m1, m2, m3
   integer :: i1, i2, i3, jay3, jay2
   integer, intent(in):: cit
-  real(8) :: r
-  real(8) :: sigma0, p0, vkep, rmin, rmax, tau_in, tau_out, rbnd, rkill, tau, &
+  real(kind=KindScalarVar) :: r
+  real(kind=KindScalarVar) :: sigma0, p0, vkep, rmin, rmax, tau_in, tau_out, rbnd, rkill, tau, &
              dt, vphi, sphi
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: q
   !-----------------------------------------------------------------------------
@@ -83,9 +83,9 @@ SUBROUTINE conditions (self, patch, cit)
           q(i1,i2,i3,patch%idx%e)  = q(i1,i2,i3,patch%idx%e) &
                                  + dt * wave_killing(q(i1,i2,i3,patch%idx%e), p0, tau, rkill, rbnd, r)
           q(i1,i2,i3,patch%idx%px) = q(i1,i2,i3,patch%idx%px) &
-                                 + dt * wave_killing(q(i1,i2,i3,patch%idx%px), 0.0d0, tau, rkill, rbnd, r)
+                                 + dt * wave_killing(q(i1,i2,i3,patch%idx%px), 0.0_KindScalarVar, tau, rkill, rbnd, r)
           q(i1,i2,i3,patch%idx%py) = q(i1,i2,i3,patch%idx%py) &
-                                 + dt * wave_killing(q(i1,i2,i3,patch%idx%py), 0.0d0, tau, rkill, rbnd, r) 
+                                 + dt * wave_killing(q(i1,i2,i3,patch%idx%py), 0.0_KindScalarVar, tau, rkill, rbnd, r) 
           q(i1,i2,i3,patch%idx%pz) = q(i1,i2,i3,patch%idx%pz) &
                                  + dt * wave_killing(q(i1,i2,i3,patch%idx%pz), sphi, tau, rkill, rbnd, r)
         end do
