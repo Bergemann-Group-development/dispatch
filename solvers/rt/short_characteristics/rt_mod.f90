@@ -586,7 +586,7 @@ SUBROUTINE init_nbors (self)
             new%needs_me = .false.
             new%download = .true.
             ! -- add to the sub-tasks nbor list, in MPI rank order
-            call omega%link%add_nbor_by_rank (new)
+            call omega%link%add_nbor_by_rank (omega%link%nbor, new)
             !-------------------------------------------------------------------
             ! Create a "downstrean type" nbor node pointing back to omega
             !-------------------------------------------------------------------
@@ -597,7 +597,7 @@ SUBROUTINE init_nbors (self)
             new%needs_me = .true.
             new%download = .false.
             !! -- add it to the nbor's nbor chain, in rank order
-            call raytask%link%add_nbor_by_rank (new)
+            call raytask%link%add_nbor_by_rank (omega%link%nbor, new)
             end select
           end if
         end select

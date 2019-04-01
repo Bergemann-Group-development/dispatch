@@ -99,7 +99,7 @@ SUBROUTINE rt_setup (task_list)
           new%needed   = .true.
           new%needs_me = .true.
           new%download = .false.
-          call link%add_nbor_by_rank(new)
+          call link%add_nbor_by_rank (link%nbor, new)
           !-------------------------------------------------------------------
           ! Add a link to the MHD task to the sub-task nbor list
           !-------------------------------------------------------------------
@@ -109,7 +109,7 @@ SUBROUTINE rt_setup (task_list)
           new%needed   = .true.
           new%needs_me = .true.
           new%download = .false.
-          call omega%link%add_nbor_by_rank(new)
+          call omega%link%add_nbor_by_rank (link%nbor, new)
           !-------------------------------------------------------------------
           ! Add the sub-task to the RT task list
           !-------------------------------------------------------------------
