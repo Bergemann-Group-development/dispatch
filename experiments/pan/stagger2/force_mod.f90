@@ -18,6 +18,7 @@ MODULE force_mod
     type(random_t):: random
   contains
     procedure :: init
+    procedure :: dealloc
   end type
   real :: ampl_turb = 0.1
   real :: a_helmh=1.
@@ -70,6 +71,20 @@ SUBROUTINE init (self, solver, id, mesh)
   self%selected => turbulence
   call self%random%init (seed)
 END SUBROUTINE init
+
+!===============================================================================
+!> Deallocate force update arrays
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(force_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('force_t%dealloc')
+  if (allocated(self%fran)) then
+    call io%bits_mem (-storage_size(self%fran), product(shape(self%fran)), '-fran')
+    deallocate (self%fran)
+  end if
+  call trace%end
+END SUBROUTINE dealloc
 
 !===============================================================================
 !> Calculate a random force, confined to a shell in k-space, at regular intervals

@@ -166,7 +166,7 @@ SUBROUTINE test (self)
     print *,io%hs
     print *, 'mhd_t%test not possible with n, no_mans_land =', tmp%n, tmp%no_mans_land
     print *,io%hs
-    call tmp%delete
+    call tmp%dealloc
     call trace%end()
     return
   end if
@@ -241,7 +241,7 @@ SUBROUTINE test (self)
     print *,io%hl
     call io%abort('mhd_t%test')
   end if
-  call tmp%delete
+  call tmp%dealloc
   deallocate (tmp)
   call trace%end()
 END SUBROUTINE test
