@@ -49,7 +49,6 @@ MODULE hd_mod
     procedure:: update
     procedure:: gas_pressure
   end type
-  real, save:: csound=1.
   integer, save:: courant_type=0
   logical, save:: debug=.false.
   logical, save:: first_time=.true.
@@ -64,6 +63,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(hd_t):: self
   character(len=10):: riemann='hllc'
+  real, save:: csound=1.
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
     smallc, isothermal, csound, detailed_timer, unsigned, courant_type, debug
@@ -95,6 +95,7 @@ SUBROUTINE init (self)
   self%riemann = riemann
   self%courant = courant_factor
   self%gamma = gamma
+  self%csound = csound
   self%staggered = .false.
   do i=1,3
     self%mesh(i)%h = 0d0
@@ -176,7 +177,7 @@ SUBROUTINE update (self)
   call godunov (self)
   if (isothermal) &
     self%mem(:,:,:,self%idx%e,self%new,1) = &
-    self%mem(:,:,:,self%idx%d,self%new,1)*csound**2
+    self%mem(:,:,:,self%idx%d,self%new,1)*self%csound**2
   if (detailed_timer) call trace_begin ('hd_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Add the external force per unit mass as a source term
@@ -304,7 +305,7 @@ SUBROUTINE S2e (self, s, it)
             e => self%mem(:,:,:,self%idx%e           ,it,1), &
             p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
   if (isothermal) then
-    e = d*csound**2
+    e = d*self%csound**2
     return
   end if
   allocate(k(size(d,1),size(d,2),size(d,3)))
@@ -513,7 +514,7 @@ subroutine ctoprim (self)
   e => s
   pg => q(:,:,:,5)
   if (isothermal) then
-    pg = d*csound**2
+    pg = d*self%csound**2
   else
     pg = e*(gamma-1d0)
   end if
@@ -1169,7 +1170,7 @@ FUNCTION gas_pressure (self) RESULT (pg)
              pz => self%mem(:,:,:,self%idx%pz,self%it,1), &
              e  => self%mem(:,:,:,self%idx%e ,self%it,1))
   if (isothermal) then
-    pg = d*csound**2
+    pg = d*self%csound**2
   else
     pg = (gamma-1d0)*(e-0.5*((px**2+py**2+pz**2)/d))
   end if

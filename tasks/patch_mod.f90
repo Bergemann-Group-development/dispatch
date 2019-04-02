@@ -75,6 +75,8 @@ MODULE patch_mod
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
+    real(8):: phi                       ! initial angle at t=0.0
+    real:: csound                       ! isothermal sound speed, for tests
     real:: grav                         ! gravitational consant (code units)
     integer:: n(3)=0, ng(3)=0           ! defaults, to detect unchanged values
     integer:: li(3), ui(3), gn(3)       ! convenience -- avoid patch%mesg%li etc

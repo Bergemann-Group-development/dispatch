@@ -33,7 +33,6 @@ MODULE mhd_mod
   type, extends(extras_t), public:: mhd_t
     real, dimension(:,:,:),   pointer:: d, dddt, s, dsdt, pg
     real, dimension(:,:,:,:), pointer:: p, dpdt, B, dBdt
-    real:: csound
     real:: nu(6)
     real:: cdtd
     logical:: mhd=.false.

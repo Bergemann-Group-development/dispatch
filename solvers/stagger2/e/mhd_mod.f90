@@ -38,7 +38,6 @@ MODULE mhd_mod
     real, dimension(:,:,:),   allocatable:: qrad
     !procedure(divB_clean1),   pointer    :: divB_clean => divb_clean2
     real:: nu(6)
-    real:: csound
     real:: cdtd
     real:: maxJ=0.0
     logical:: mhd=.false.
