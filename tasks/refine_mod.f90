@@ -160,7 +160,7 @@ MODULE refine_mod
   type:: refine_t
     integer:: levelmin=1                      ! Min level of refinment
     integer:: levelmax=1                      ! Max level of refinment
-    integer:: ratio
+    integer:: ratio=2                         ! default
   contains
     procedure:: init
     procedure:: refine_needed

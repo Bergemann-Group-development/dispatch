@@ -57,12 +57,12 @@ endif
 sinclude $(TOP)/io/Makefile
 #sinclude $(TOP)/operators/Makefile
 sinclude $(TOP)/solvers/Makefile
+sinclude $(TOP)/extras/Makefile
 sinclude $(TOP)/components/Makefile
 sinclude $(TOP)/dispatchers/Makefile
 sinclude $(TOP)/lists/Makefile
 sinclude $(TOP)/interpolation/Makefile
 sinclude $(TOP)/tasks/Makefile
-sinclude $(TOP)/extras/Makefile
 sinclude $(TOP)/meshes/Makefile
 sinclude $(TOP)/microphysics/Makefile
 sinclude $(TOP)/timestep/$(UPD)/Makefile

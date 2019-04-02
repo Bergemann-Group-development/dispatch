@@ -30,6 +30,7 @@ MODULE task_list_mod
     real(8):: sync_time=-1.0, sync_next=-1.0
   contains
     procedure:: init
+    procedure:: initialize
     procedure:: init_levels
     procedure:: startup
     procedure:: execute
@@ -72,6 +73,21 @@ SUBROUTINE init (self, name)
   call load_balance%init
   call trace_end
 END SUBROUTINE init
+
+!===============================================================================
+!> Initialize the task list, so it is ready to execute
+!===============================================================================
+SUBROUTINE initialize (self)
+  class(task_list_t):: self
+  !-----------------------------------------------------------------------------
+  call self%init_bdries         ! initialize boundaries, based on position
+  call self%init_all_nbors      ! make nbor lists, based on position
+  call self%reset_status        ! set status buts, based on nbor lists
+  call self%count_status        ! count number of different tasks
+  io%ntask = self%na
+  io%ntotal = self%n
+  io%nwrite = self%na
+END SUBROUTINE initialize
 
 !===============================================================================
 SUBROUTINE init_levels (self)

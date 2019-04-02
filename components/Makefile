@@ -17,3 +17,4 @@ volleyball_mod.o        : io_mod.o trace_mod.o bits_mod.o mesh_mod.o task_mod.o 
 process_mod.o           : trace_mod.o link_mod.o task_list_mod.o mpi_comm_mod.o
 ramses_mod.o            : io_mod.o trace_mod.o scaling_mod.o mhd_mod.o force_mod.o initial_mod.o units_mod.o \
                           experiment_mod.o star_mod.o task_list_mod.o
+cylinder_mod.o          : io_mod.o io_unit_mod.o trace_mod.o task_list_mod.o solver_mod.o cpatch_mod.o

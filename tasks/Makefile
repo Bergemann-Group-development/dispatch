@@ -13,3 +13,4 @@ refine_mod.o:           io_mod.o trace_mod.o bits_mod.o list_mod.o link_mod.o ki
 random_mod.o:           io_mod.o trace_mod.o
 radiation_mod.o:        io_mod.o trace_mod.o mesh_mod.o link_mod.o
 index_mod.o:            io_mod.o
+cpatch_mod.o:           io_mod.o trace_mod.o solver_mod.o

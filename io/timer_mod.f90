@@ -270,7 +270,8 @@ SUBROUTINE real_print (self)
   return
 contains
   subroutine write_to (unit)
-    integer:: unit, level
+    integer:: unit, level, popu
+    real:: cost
     write (unit,'(23x,a,7x,a,10x,a,7x,a,5x,a)') 'procedure', 'calls', 'time', 'percent', 'time/call'
     if (unit==io_unit%output) then
       !$omp atomic write
@@ -298,9 +299,12 @@ contains
     !---------------------------------------------------------------------------
     if (allocated(timer%levelcost)) then
       do level=timer%levelmin,timer%levelmax
+        !$omp atomic read
+        cost = timer%levelcost(level)
+        !$omp atomic read
+        popu = timer%levelpop(level)
         write(unit,'(22x,a,i3,g12.3,i7)') &
-          'level, cost, population =', level, &
-          timer%levelcost(level), timer%levelpop(level)
+          'level, cost, population =', level, cost, popu
       end do
       do level=timer%levelmin,timer%levelmax
         !$omp atomic write
