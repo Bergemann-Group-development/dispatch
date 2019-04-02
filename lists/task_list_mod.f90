@@ -21,6 +21,7 @@ MODULE task_list_mod
   USE task_mesg_mod
   USE timer_mod
   USE validate_mod
+  USE download_mod
   implicit none
   private
   type, public, extends(task_mesg_t):: task_list_t
@@ -37,6 +38,7 @@ MODULE task_list_mod
     procedure:: append_task_list
     procedure:: print => print1
     procedure:: info
+    procedure:: init_levelstats
   end type
   public:: task2patch
 CONTAINS
@@ -75,9 +77,9 @@ END SUBROUTINE init
 SUBROUTINE init_levels (self)
   class(task_list_t):: self
   type(link_t), pointer:: link
-  integer:: levelmin
   !-----------------------------------------------------------------------------
-  levelmin = 99
+  call trace%begin ('task_list_t%init_levels')
+  call refine%init                      ! Refinement parameters
   link => self%head
   do while (associated(link))
     associate (patch => link%task)
@@ -85,12 +87,17 @@ SUBROUTINE init_levels (self)
     class is (patch_t)
       patch%level = minval(nint(log(patch%box/patch%ds)/log(real(refine%ratio))), mask=patch%n > 1)
     end select
-    levelmin = min(levelmin,patch%level)
+    refine%levelmin = min(refine%levelmin,patch%level)
+    refine%levelmax = max(refine%levelmax,patch%level)
     link => link%next
     end associate
   end do
-  refine%levelmin = max(refine%levelmin, levelmin)
-  write (io%output,*) 'task_list_t%init_levels: levelmin =', levelmin, refine%levelmin
+  if (refine%levelmax > refine%levelmin) &
+    download%check_filled = .true.
+  write (io%output,*) &
+    'task_list_t%init_levels: levelmin,max =', refine%levelmin, refine%levelmax
+  call self%init_levelstats
+  call trace%end
 END SUBROUTINE init_levels
 
 !===============================================================================
@@ -482,5 +489,39 @@ FUNCTION task2experiment (task) RESULT (exper)
   exper => task
   end select
 END FUNCTION task2experiment
+
+!===============================================================================
+!> Initialize level statistics, making sure to unly do it once.  Note that, by
+!> placing the allocation of levelcost last, threads are encouraged to get
+!> caught on this critical region until everything is ready.
+!===============================================================================
+SUBROUTINE init_levelstats (self)
+  class(task_list_t):: self
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%init_levelstats')
+  !$omp critical (levelstat_cr)
+  if (.not. allocated(timer%levelcost)) then
+    allocate (timer%levelpop  (refine%levelmin:refine%levelmax))
+    timer%levelmin = refine%levelmin
+    timer%levelmax = refine%levelmax
+    timer%levelpop = 0
+    link => self%head
+    do while (associated(link))
+      !$omp atomic update
+      timer%levelpop(link%task%level) = &
+      timer%levelpop(link%task%level) + 1
+      link => link%next
+    end do
+    allocate (timer%levelcost(refine%levelmin:refine%levelmax))
+    timer%levelcost = 0d0
+    if (io%verbose > 1) &
+      write (io_unit%output,*) &
+        'init_levelstats: levelpop =', &
+        refine%levelmin, refine%levelmax, timer%levelpop
+  end if
+  !$omp end critical (levelstat_cr)
+  call trace%end
+END SUBROUTINE init_levelstats
 
 END MODULE task_list_mod

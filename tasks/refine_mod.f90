@@ -153,6 +153,7 @@ MODULE refine_mod
   USE scene_mod
   USE download_mod
   USE counters_mod
+  USE timer_mod
   implicit none
   private
   !
@@ -201,7 +202,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(refine_t):: self
   integer:: iostat
-  integer, save:: levelmin, levelmax
+  integer, save:: levelmin=99, levelmax=1
   integer, save:: ratio=2                     ! How does a patch split when it is refined
   logical, save:: first_time = .true.
   namelist /refine_params/ on, levelmin, levelmax, check_interval, ratio, &
@@ -216,8 +217,6 @@ SUBROUTINE init (self)
   !$omp critical (input_cr)
   if (first_time) then
     first_time=.false.
-    levelmin = self%levelmin
-    levelmax = self%levelmax
     rewind (io%input)
     read (io%input, refine_params, iostat=iostat)
     if (io%master) then
@@ -229,8 +228,6 @@ SUBROUTINE init (self)
   ! If AMR is active, we must use check_filled, since nbor levels are in
   ! decreasing order, to save computing time
   !-----------------------------------------------------------------------------
-  if (levelmax > levelmin) &
-    download%check_filled = .true.
   !$omp end critical (input_cr)
   self%levelmin = levelmin
   self%levelmax = levelmax
@@ -264,41 +261,41 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   ! Extras refinement
   extras => patch
   refine = max(refine, extras%check_refine (extras))
-  if (verbose > 2) write (io_unit%output,*) &
+  if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'extras'
   !
   ! Ensure consistent, cubical patch size (e.g. after RAMSES startup)
   if (force_cubical) refine = max (refine, self%check_cubical(patch))
-  if (verbose > 2) write (io_unit%output,*) &
+  if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'cubical'
   !
   ! Jeans criterion
   if (max_jeans > 0.0) refine = max (refine, self%check_Jeans(patch))
-  if (verbose > 2) write (io_unit%output,*) &
+  if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'Jeans'
   !
   ! shock and/or contact discontinuity detector
   if (max_shock > 0.0 .or. max_contact > 0.0) &
     refine = max (refine, self%shock_and_cd_detector(patch))
-  if (verbose > 2) write (io_unit%output,*) &
+  if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'shock'
   !
   ! gradient detector
   if (any(max_grad > 0.0)) refine = max (refine, self%gradient_detector(patch))
-  if (verbose > 2) write (io_unit%output,*) &
+  if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'gradient'
   !
   ! refine on (a) user-specified region(s)
   if (any(region_llc /= 0.0) .and. any(region_urc /= 0.0)) &
     refine = max (refine, self%refine_region(patch))
-  if (verbose > 2) write (io_unit%output,*) &
+  if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'user'
   !
   ! Check that neighbors of `self` are not more than one level different.
   ! If they are, mark this patch for splitting so that support can be
   ! provided to the neighbors of `patch`.
   refine = max (refine ,self%check_support (tasklist, link))
-  if (verbose > 2) write (io_unit%output,*) &
+  if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'support'
   !
   call trace%end (itimer)
@@ -379,7 +376,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     where (.not.patch%mask)
       patch%irefine = 0
     end where
-    if (verbose > 2) write (io_unit%output,*) &
+    if (verbose > 3) write (io_unit%output,*) &
       patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'mask'
     !-------------------------------------------------------------------------
     ! Apply refinement criteria on potential child patch parts
@@ -815,6 +812,9 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
       child%id, child%level, child%time, child%size, child%position , &
       maxval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1))
   end if
+  !$omp atomic update
+  timer%levelpop (child%level) = &          ! increment level population count
+  timer%levelpop (child%level) + 1
   call trace%end()
 END SUBROUTINE make_child_patch
 
@@ -864,6 +864,9 @@ SUBROUTINE remove_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   call tlist%lock%set ('remove_patch')      ! lock task list while changing
   call tlist%remove_link (this)             ! remove this from task list
+  !$omp atomic update
+  timer%levelpop (this%task%level) = &      ! decrement level population count
+  timer%levelpop (this%task%level) - 1
   if (n_locks == 0) &
     call check_lock%set ('refine')
   call tlist%init_nbor_nbors (this)         ! new nbor lists, w/o this

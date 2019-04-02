@@ -37,6 +37,7 @@ MODULE timer_mod
     integer:: n_lines=0
     type(latency_t):: latency
     real(8), allocatable:: levelcost(:)
+    integer(8), allocatable:: levelpop(:)
     integer:: levelmin, levelmax
     real:: dead_mans_hand=0.0
   contains
@@ -295,11 +296,16 @@ contains
     !---------------------------------------------------------------------------
     ! Output AMR level costs
     !---------------------------------------------------------------------------
-    if (timer%levelmax > timer%levelmin) then
+    if (allocated(timer%levelcost)) then
       do level=timer%levelmin,timer%levelmax
-        write(unit,'(34x,a,i3,g12.3)') 'level, cost =', level, timer%levelcost(level)
+        write(unit,'(22x,a,i3,g12.3,i7)') &
+          'level, cost, population =', level, &
+          timer%levelcost(level), timer%levelpop(level)
       end do
-      timer%levelcost = 0d0
+      do level=timer%levelmin,timer%levelmax
+        !$omp atomic write
+        timer%levelcost(level) = 0d0
+      end do
     end if
     flush (unit)
   end subroutine write_to

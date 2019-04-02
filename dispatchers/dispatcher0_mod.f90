@@ -344,15 +344,18 @@ SUBROUTINE update (self, task_list, test)
       return
     end if
     call task_list%update (head, test, was_refined, was_derefined)
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the
     ! queue, and its neighbors should also be checked for return to the queue.
     ! If the task was turned into a virtual task by the load balance, its virtual
     ! bit will prevent it being checked, but its nbors still need to be checked
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     if (.not. was_derefined) then
       call task%clear (bits%busy)
       call task_list%check_nbors (head)   ! any nbors ready?
+      !-------------------------------------------------------------------------
+      ! Cost counter for AMR
+      !-------------------------------------------------------------------------
       !$omp atomic
       timer%levelcost(task%level) = &
       timer%levelcost(task%level) + (wallclock() - levelstart)
