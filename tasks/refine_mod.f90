@@ -340,8 +340,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   !----------------------------------------------------------------------------
   ! Filter out patches that do not match the necessary criteria
   !----------------------------------------------------------------------------
-  if (patch%is_clear(bits%not_leaf) .and. &
-      patch%is_clear(bits%virtual)  .and. &
+  if (patch%is_clear(bits%virtual)  .and. &
       dxmin >  min_dx               .and. &
       dxmax <= max_dx               .and. &
       patch%time >= refine_from_t   .and. &
@@ -833,7 +832,7 @@ END SUBROUTINE make_child_patch
 SUBROUTINE remove_patch (self, tlist, this)
   class(refine_t):: self
   class(list_t):: tlist
-  class(link_t), pointer:: this, link, nbor, parent, nbors
+  class(link_t), pointer:: this, link, nbor, nbors
   class(task_t), pointer:: task
   integer:: count, io_verbose
   !-----------------------------------------------------------------------------
@@ -847,11 +846,6 @@ SUBROUTINE remove_patch (self, tlist, this)
     call this%task%set (bits%remove)
     call this%send_to_vnbors
   end if
-  !-----------------------------------------------------------------------------
-  ! Make sure the status of the parent patch is leaf
-  !-----------------------------------------------------------------------------
-  parent => this%parent
-  call parent%task%clear (bits%not_leaf)
   !-----------------------------------------------------------------------------
   ! Decrement the I/O write counter
   !-----------------------------------------------------------------------------
