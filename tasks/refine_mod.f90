@@ -710,7 +710,9 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   ! necessary, to pick up properties that may have been set at the experiment
   ! level, which would otherwise be left undefined, or in inconsistent state
   !------------------------------------------------------------------------
+  call parent%lock%set
   allocate (child, source=parent)
+  call parent%lock%unset
   call child%clone_mem_accounting
  !------------------------------------------------------------------------
   child%mem_allocated = .false.                      ! make sure to get ..

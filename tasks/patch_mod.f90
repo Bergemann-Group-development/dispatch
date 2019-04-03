@@ -2235,6 +2235,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
   !call trace%begin ('patch_t%time_interval', 2, itimer=itimer)
+  call self%lock%set ('time interval')
   if (self%nt==1) then
     jt = 1
     pt(2) = 0.0
@@ -2266,6 +2267,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
     write(io%output,'(a,1p,3e12.4,2i5,0p,2f8.4)') &
       'time_interval: times  =', t(j), time, t(j+1), jt, pt
   end if
+  call self%lock%unset ('time interval')
   !call trace%end (itimer)
 END SUBROUTINE time_interval
 

@@ -378,6 +378,8 @@ LOGICAL FUNCTION is_ahead_of (self, target)
   class (task_t):: self, target
   real(8):: nbtime, nbdtime
   !.............................................................................
+  call self%lock%set ('is_ahead_of')
+  call target%lock%set ('is_ahead_of')
   !$omp atomic read
   nbtime = self%time
   !$omp atomic read
@@ -400,6 +402,8 @@ LOGICAL FUNCTION is_ahead_of (self, target)
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &
     target%id, self%time, self%dtime*target%grace, target%time, is_ahead_of
   end if
+  call target%lock%unset ('is_ahead_of')
+  call self%lock%unset ('is_ahead_of')
 END FUNCTION
 
 SUBROUTINE print (self)
