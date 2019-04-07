@@ -155,9 +155,10 @@ PROGRAM test
   end type
   type(task_t):: task
   type(link_t), target:: head
+  type(lock_t):: tail_lock
   type(link_t), pointer:: link, next, link2, tail
-  integer:: ntask=100, it, nit=0
-  real(8):: total, thread_total, max_total=1d9, average, wait, start, now
+  integer:: ntask=100, it, nit=0, use_lock
+  real(8):: total, thread_total, max_total=1d8, average, wait, start, now
   !-----------------------------------------------------------------------------
   ! Demonstrate retrieving memory slot indices from task%slots()
   !-----------------------------------------------------------------------------
@@ -166,78 +167,95 @@ PROGRAM test
     print *, it, task%slots()
     call task%update
   end do
-  !-----------------------------------------------------------------------------
-  ! Create a task list with length ntask
-  !-----------------------------------------------------------------------------
-  link => head
-  do it=1,ntask
-    allocate (next)
-    allocate (next%task)
-    call next%task%init
-    next%task%id = it
-    link%next => next
-    link => next
-  end do
-  tail => next
-  !-----------------------------------------------------------------------------
-  ! Loop over the list, and do whatever -- including deleting the tasks
-  !-----------------------------------------------------------------------------
-  start = wallclock()
-  wait = 0d0
-  total = 0d0
-  !$omp parallel private(thread_total, link, link2, next, average)
-  do while (total < max_total)
-    !---------------------------------------------------------------------------
-    ! Lock the list and pop the first task
-    !---------------------------------------------------------------------------
-    call head%lock%set
-      link => head%next
-      head%next => head%next%next
-      nit = nit+1
-    call head%lock%unset
-    !---------------------------------------------------------------------------
-    ! Each thread computes the sum of the averages of the thread times. In the
-    ! mean time, task are being popped from the list, and appended at the end.
-    ! Hence %next should in principle be guaranteed to exist.  No link is
-    ! removed in the parallel loop, so the only possible problem is that the
-    ! tail%next value might be under change while being accessed.
-    !---------------------------------------------------------------------------
-    call link%task%update
-    thread_total = link%task%average
-    link2 => head%next
-    do while (associated(link2))
-      call tail%lock%set
-      next => link2%next
-      call tail%lock%unset
-      !call head%lock%unset
-      !$omp atomic read
-      average = link%task%average
-      thread_total = thread_total + average
-      link2 => next
+  do use_lock=0,1
+    !-----------------------------------------------------------------------------
+    ! Create a task list with length ntask
+    !-----------------------------------------------------------------------------
+    link => head
+    do it=1,ntask
+      allocate (next)
+      allocate (next%task)
+      call next%task%init
+      next%task%id = it
+      link%next => next
+      link => next
     end do
-    !$omp atomic update
-    total = total + thread_total
-    !---------------------------------------------------------------------------
-    ! Append the task at the end
-    !---------------------------------------------------------------------------
-    call tail%lock%set
-    tail%next => link
-    tail => link
-    nullify (tail%next)
-    call tail%lock%unset
-    !---------------------------------------------------------------------------
+    tail => next
+    !-----------------------------------------------------------------------------
+    ! Loop over the list, and do whatever -- including deleting the tasks
+    !-----------------------------------------------------------------------------
+    start = wallclock()
+    wait = 0d0
+    total = 0d0
+    nit = 0
+    !$omp parallel private(thread_total, link, link2, next, average)
+    do while (total < max_total)
+      !---------------------------------------------------------------------------
+      ! Lock the list and pop the first task
+      !---------------------------------------------------------------------------
+      now = wallclock()
+      call head%lock%set
+        wait = wait + (wallclock()-now)
+        link => head%next
+        head%next => head%next%next
+        nit = nit+1
+      call head%lock%unset
+      !---------------------------------------------------------------------------
+      ! Each thread computes the sum of the averages of the thread times. In the
+      ! mean time, task are being popped from the list, and appended at the end.
+      ! Hence %next should in principle be guaranteed to exist.  No link is
+      ! removed in the parallel loop, so the only possible problem is that the
+      ! tail%next value might be under change while being accessed.  However, this
+      ! seems to never give a real problem, and using a lock here slows down the
+      ! process very significantly
+      !---------------------------------------------------------------------------
+      call link%task%update
+      thread_total = link%task%average
+      link2 => head%next
+      do while (associated(link2))
+        if (use_lock > 0) then
+          now = wallclock()
+          call tail_lock%set
+          wait = wait + (wallclock()-now)
+        end if
+        next => link2%next
+        if (use_lock > 0) then
+          call tail_lock%unset
+        end if
+        !$omp atomic read
+        average = link%task%average
+        thread_total = thread_total + average
+        link2 => next
+      end do
+      !$omp atomic update
+      total = total + thread_total
+      !---------------------------------------------------------------------------
+      ! Append the task at the end.  This needs to protected by a lock, to ensure
+      ! that two threads don't modify tail at the same time, but the lock does not
+      ! need to be the same that is used at the head of the list.
+      !---------------------------------------------------------------------------
+      now = wallclock()
+      call tail_lock%set
+        wait = wait + (wallclock()-now)
+        nullify (link%next)                 ! make sure list always has an end
+        tail%next => link                   ! this appends the link task
+        tail => link                        ! redefine tail, for the next append
+      call tail_lock%unset
+      !---------------------------------------------------------------------------
+    end do
+    !$omp end parallel
+    !-----------------------------------------------------------------------------
+    ! Loop over the list, deleting the tasks
+    !-----------------------------------------------------------------------------
+    link => head%next
+    do while (associated(link))
+      !print *, link%task%id, link%task%nit, link%task%average
+      next => link%next
+      deallocate (link%task)
+      !deallocate (link)
+      link => next
+    end do
+    print *,nit, wait, wallclock()-start, &
+      ' seconds '//merge('with','w/o ',use_lock>0)//' access lock'
   end do
-  !$omp end parallel
-  !-----------------------------------------------------------------------------
-  ! Loop over the list, deleting the tasks
-  !-----------------------------------------------------------------------------
-  link => head%next
-  do while (associated(link))
-    print *, link%task%id, link%task%nit, link%task%average
-    next => link%next
-    deallocate (link%task)
-    deallocate (link)
-    link => next
-  end do
-  print *,nit, wait, wallclock()-start
 END PROGRAM test
