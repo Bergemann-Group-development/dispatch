@@ -85,6 +85,7 @@ MODULE extras_mod
     !class(trace_particles_t), pointer:: trace_particles         ! tracep
     !real, dimension(:,:,:,:), pointer:: v                       ! tracep
   contains
+    procedure, nopass:: cast2extras
     procedure:: init
     procedure:: dealloc
     procedure:: init_task_list
@@ -189,5 +190,21 @@ INTEGER function check_refine (self, patch)
   !check_refine = max (check_refine, &
   !  sinkparticles%check_refine (gpatch))                        ! sinkp
 END FUNCTION check_refine
+
+!===============================================================================
+!> Cast a generic task_t to patch_t
+!===============================================================================
+FUNCTION cast2extras (task) RESULT(extras)
+  class(task_t), pointer:: task
+  class(extras_t), pointer:: extras
+  !.............................................................................
+  select type (task)
+  class is (extras_t)
+  extras => task
+  class default
+  nullify(extras)
+  call io%abort ('extras_t%cast: failed to cast a task to extras_t')
+  end select
+END FUNCTION cast2extras
 
 END MODULE extras_mod
