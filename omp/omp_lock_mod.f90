@@ -29,10 +29,14 @@ MODULE omp_lock_mod
     procedure:: check
     procedure:: unset
     procedure:: destroy
+    procedure, nopass:: info
   end type
-  type(lock_t), public:: lock, check_lock, download_lock
+  type(lock_t), public:: lock
   integer, save:: id_save=-1
   logical, save:: on = .true.
+  character(len=6):: log='output'
+  integer:: unit
+  real(8):: wait_time=0d0
 CONTAINS
 
 !===============================================================================
@@ -47,7 +51,7 @@ SUBROUTINE init (self, kind, id)
   logical:: set_id
   real, save:: verbose=0.0
   logical:: first_time=.true.
-  namelist /lock_params/ on, verbose
+  namelist /lock_params/ on, verbose, log
   !-----------------------------------------------------------------------------
   if (.not.on) return
 #ifdef TRACE 
@@ -60,6 +64,11 @@ SUBROUTINE init (self, kind, id)
       rewind (io_unit%input)
       read (io_unit%input, lock_params, iostat=iostat)
       write (io_unit%output, lock_params)
+      if (trim(log)=='queue') then
+        unit = io_unit%queue
+      else
+        unit = io_unit%output
+      end if
     end if
     call omp_init_nest_lock (self%lock)
     if (present(id)) then
@@ -73,7 +82,7 @@ SUBROUTINE init (self, kind, id)
     end if
     if (present(kind)) self%kind = kind
     if (verbose > 0.0) &
-      write(io_unit%output,*) omp_get_thread_num(), 'initialized lock kind, id ', &
+      write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
         self%kind, self%id, set_id
     lock%verbose = verbose
   end if
@@ -103,22 +112,25 @@ SUBROUTINE set (self, label)
   wc = wallclock()
   if (wc < lock%verbose) then
     if (present(label)) then
-      write (io_unit%output,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
+      write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, &
         self%level, thread, '   get at '//label
     else
-      write (io_unit%output,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
+      write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, &
         self%level, thread, '   get'
     end if
   end if
+  wc = wallclock()
   call omp_set_nest_lock (self%lock)
+  !$omp atomic update
+  wait_time = wait_time + (wallclock() - wc)
   self%thread = thread
   self%level = self%level+1
   wc = wallclock()
   !$omp flush
   if (wc < lock%verbose) then
-    write (io_unit%output,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
+    write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
       ' lock kind, id, level, thread = ', self%kind, self%id, &
       self%level, thread, '   set'
   end if
@@ -199,15 +211,15 @@ SUBROUTINE unset (self, label)
   end if
   !$omp flush
   call omp_unset_nest_lock (self%lock)
-  !write(io_unit%output,*) &
+  !write(unit,*) &
   !  'lock%unset: kind, id, thread, level = ', self%kind, self%id, self%thread, self%level
   wc = wallclock()
   if (wc < lock%verbose) then
     if (present(label)) then
-      write (io_unit%output,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
+      write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, self%level, thread, ' unset at '//label
     else
-      write (io_unit%output,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
+      write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, self%level, thread, ' unset'
     end if
   end if
@@ -224,6 +236,12 @@ SUBROUTINE destroy (self)
   call omp_destroy_nest_lock (self%lock)
   self%thread = -1
 END SUBROUTINE destroy
+
+!===============================================================================
+SUBROUTINE info
+  !-----------------------------------------------------------------------------
+  write (io_unit%output,*) 'total lock waiting time =', wait_time
+END SUBROUTINE info
 
 !===============================================================================
 END MODULE omp_lock_mod
