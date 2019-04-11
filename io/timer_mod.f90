@@ -110,15 +110,17 @@ SUBROUTINE begin (self, name, itimer)
   thread = omp_get_thread_num()
   if (itimer==0) then
     !$omp critical (timer_cr)
-    ok = .true.
-    do i=1,ntimer
-      ok = ok .and. trim(names(i)) /= trim(name)
-    end do
-    if (ok) then
-      ntimer = ntimer+1
-      if (ntimer > maxproc) call mpi%abort ('timer_mod: increase maxproc')
-      itimer = ntimer
-      names(itimer) = name
+    if (itimer==0) then
+      ok = .true.
+      do i=1,ntimer
+        ok = ok .and. trim(names(i)) /= trim(name)
+      end do
+      if (ok) then
+        ntimer = ntimer+1
+        if (ntimer > maxproc) call mpi%abort ('timer_mod: increase maxproc')
+        itimer = ntimer
+        names(itimer) = name
+      end if
     end if
     !$omp end critical (timer_cr)
     !---------------------------------------------------------------------------
@@ -222,7 +224,7 @@ SUBROUTINE real_print (self)
   real(8):: updates, musppt, calls
   real(8), save:: n_previous=0
   real(8):: wc, sec
-  integer:: i, n_recv
+  integer:: i, n_recv, lntimer
   !.............................................................................
   if (io_unit%do_validate) return
   !-----------------------------------------------------------------------------
@@ -232,7 +234,9 @@ SUBROUTINE real_print (self)
   sec = wc - prev2
   total = 0d0
   calls = 0d0
-  do i=1,ntimer
+  !$omp atomic read
+  lntimer = ntimer
+  do i=1,lntimer
     proc(i) = sum(timers(:)%total(i))
     ncalls(i) = sum(timers(:)%calls(i))
     total = total + proc(i)
