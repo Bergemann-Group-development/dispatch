@@ -306,7 +306,9 @@ SUBROUTINE rotate (self)
     io%dtime = huge(1d0)
   end if
   if (self%dtime < io%dtime) then
+    !$omp atomic write
     io%id = self%id
+    !$omp atomic write
     io%dtime = self%dtime
   end if
   !-----------------------------------------------------------------------------
