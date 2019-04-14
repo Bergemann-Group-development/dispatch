@@ -158,6 +158,7 @@ MODULE refine_mod
   private
   !
   type:: refine_t
+    logical:: on                              ! allow external access
     integer:: levelmin=1                      ! Min level of refinment
     integer:: levelmax=1                      ! Max level of refinment
     integer:: ratio=2                         ! default
@@ -232,6 +233,7 @@ SUBROUTINE init (self)
   self%levelmin = levelmin
   self%levelmax = levelmax
   self%ratio = ratio
+  self%on = on
   call trace%end()
 END SUBROUTINE init
 
@@ -493,11 +495,8 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
     if (all(patch%mask)) then                           ! no child patch inside
       if (all(patch%irefine < 0)) then                  ! all criteria in favor
         if (verbose > 0) &
-          write (io_unit%output,*) 'derefine', patch%id
-        if (n_locks > 1) &
-          call download_lock%set ('derefine')
-        if (n_locks > 0) &
-          call check_lock%set ('derefine')
+          write (io_unit%output,*) 'derefine', patch%id, patch%istep, &
+            patch%is_set (bits%boundary)
         !-----------------------------------------------------------------------
         call io%bits_mem (-storage_size(patch%irefine), &
                           product(shape(patch%irefine)), '-irefine')
@@ -800,7 +799,8 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   call tlist%check_nbor_nbors (child_link)
   call tlist%lock%unset ('refine')
   if (verbose > 0) &
-    write (io_unit%output,*) '  refine', parent%id, 'to', child%id, child%level
+    write (io_unit%output,*) '  refine', parent%id, 'to', child%id, child%level, &
+      child%is_set (bits%boundary)
   if (verbose > 1) then
     l = parent%index_only (child%position + child%mesh%lf)
     u = parent%index_only (child%position + child%mesh%uf)
