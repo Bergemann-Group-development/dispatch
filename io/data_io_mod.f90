@@ -231,6 +231,7 @@ SUBROUTINE input (self, patch, ok)
     if      (io%method=='direct') then
       call direct_io%input (patch, ok)
     else if (io%method=='legacy') then
+      call input_nml (patch)
       call legacy_io%input (patch, ok)
     else if (io%method=='pan') then
       call input_nml (patch)
@@ -446,10 +447,7 @@ SUBROUTINE output_nml (patch, append)
 END SUBROUTINE output_nml
 
 !===============================================================================
-!> Output text with patch info, either to individual files (io%format=1,2) or
-!> to one file per rank (io%format>2).  This is not threadsafe, both because of
-!> the text file I/O, and because snapshot%ibuf is consantly being modified by
-!> other threads (must be protected by the same critical region!).
+!> Read in the basic, common meta-data from the snapshot.nml file.
 !===============================================================================
 SUBROUTINE input_nml (patch)
   class(patch_t):: patch

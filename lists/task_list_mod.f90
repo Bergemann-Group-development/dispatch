@@ -42,6 +42,7 @@ MODULE task_list_mod
     procedure:: init_levelstats
   end type
   public:: task2patch
+  type(task_list_t), target:: task_list
 CONTAINS
 
 !===============================================================================

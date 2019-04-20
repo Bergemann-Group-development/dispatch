@@ -1845,6 +1845,110 @@ SUBROUTINE different_restrict (self, target, source, only)
 END SUBROUTINE different_restrict
 
 !===============================================================================
+!> Restrict guard zone info from source patch at a higher level
+!===============================================================================
+SUBROUTINE restrict_centered (self, target, source, only)
+  class(download_t):: self
+  class(patch_t), pointer :: target, source
+  !integer(int8), dimension(:,:,:,:), allocatable:: filled
+  integer, optional:: only
+  integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, jx, jy, jz
+  integer, dimension(3)   :: l, u, ii, li, ui, jj
+  real(8), dimension(3)   :: target_pos, source_pos, target_upper_edges, target_lower_edges, &
+                             source_upper_edges, source_lower_edges, le, ue
+  logical                 :: valid
+  integer, save           :: itimer=0
+  real                    :: pt(2), pp(3)
+  real(kind=KindScalarVar):: qint
+  logical                 :: qmask(3)
+  real(8):: rratio(3), dVsource, dVtarget, dWsource, dWtarget, filling_factor, &
+            accumulate(target%nv), filling_total, dWtargeti
+  integer:: ilook(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin('download_t%different_restrict', itimer=itimer)
+  call source%time_interval (target%time, jt, pt)
+  rratio = target%ds / source%ds
+  ilook = merge(floor(rratio)/2 + 1, 0, source%n>1)
+  dVsource = product(source%ds) ! only valid for Cartesian
+  dVtarget = product(target%ds) ! onlt valid for Cartesian
+  if (present(only)) then
+    iv1 = only
+    iv2 = only
+  else
+    iv1 = 1
+    iv2 = target%nv
+  end if
+  li = target%mesh%li
+  ui = target%mesh%ui
+    dWsource = dVsource
+    dWtarget = dVtarget
+    dWtargeti = 1.0 / dWtarget
+    call dnload_range (target, source, 1, l, u)
+    associate (q1 => source%mem(:,:,:,:,jt(1),1), q2 => source%mem(:,:,:,:,jt(2),1))
+    do iz=l(3),u(3)
+      do iy=l(2),u(2)
+        do ix=l(1),u(1)
+          ii = [ix,iy,iz]
+          ! prefer same level for guard zone filling
+          if (self%check_filled) then
+            if (filled(ix,iy,iz,iv) == target%level .and. &
+                (any(ii < target%li) .or. any(ii > target%ui))) cycle
+          end if
+          target_pos = target%myposition (ii, iv)
+          target_lower_edges = target_pos - target%ds * 0.499999_8 ! to 1e-6 tolerance
+          target_upper_edges = target_pos + target%ds * 0.499999_8
+          ! skip cells that are not *entirely* covered by the finer patch
+          if (any(target_lower_edges < source%llc_nat)) cycle
+          if (any(target_upper_edges > (source%llc_nat+source%size))) cycle
+          call source%index_space (target_pos, iv, jj, pp)
+          accumulate = 0.0
+          filling_total = 0.0
+          do jz=jj(3)-ilook(3),jj(3)+ilook(3)
+            do jy=jj(2)-ilook(2),jj(2)+ilook(2)
+              do jx=jj(1)-ilook(1),jj(1)+ilook(1)
+                ! skip ghost cells of source
+                if (any([jx,jy,jz] < source%li .or. [jx,jy,jz] > source%ui)) cycle
+                ! find intersection between source and target cells
+                source_pos = source%myposition([jx,jy,jz],iv)
+                source_lower_edges = source_pos - source%ds * 0.499999_8 ! to 1e-6 tolerance
+                source_upper_edges = source_pos + source%ds * 0.499999_8
+                ue = min(source_upper_edges, target_upper_edges)
+                le = max(source_lower_edges, target_lower_edges)
+                ! filling factor; if zero, then no overlap.
+                ! the logical mask is used to produce an area filling factor for
+                ! mag. fields (but a volume filling factor otherwise)
+                filling_factor = product(max(ue - le, 0.0),mask=qmask) ! to ~1.2e-5 tolerance
+                filling_total = filling_total + filling_factor
+                ! one might note that `accumulate` should be multipled by `dWsource`.
+                ! but `filling_factor` should be divided by `dWsource`, so they cancel.
+                if (filling_factor > 0.0) then
+                  do iv=iv1,iv2
+                    accumulate(iv) = accumulate(iv) &
+                             + (q1(jx,jy,jz,iv) * pt(1) + q2(jx,jy,jz,iv) * pt(2)) * filling_factor
+                  end do
+                end if
+              end do
+            end do
+          end do
+          ! replace a portion of the current cell with values from the finer patch
+          if (filling_total > 0.0) then
+            do iv=iv1,iv2
+              target%mem(ix,iy,iz,iv,target%it,1) = accumulate(iv) * dWtargeti &
+                                                  + target%mem(ix,iy,iz,iv,target%it,1) &
+                                                    * (1.0 - filling_total * dWtargeti)
+            end do
+            if (self%check_filled) then
+              filled(ix,iy,iz,iv) = source%level
+            end if
+          end if
+        end do
+      end do
+    end do
+    end associate
+  call trace%end (itimer)
+END SUBROUTINE restrict_centered
+
+!===============================================================================
 SUBROUTINE set_verbose (new)
   integer:: new
   verbose = new
