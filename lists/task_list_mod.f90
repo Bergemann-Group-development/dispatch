@@ -262,16 +262,10 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     return
   end if
   !---------------------------------------------------------------------------
-  ! If the task is frozen (e.g. because it has finished), return
+  ! If the task is frozen, make sure it is marked "not ready", and then return
   !---------------------------------------------------------------------------
   if (task%is_set (bits%frozen)) then
-    !if (task%iout == 0) call task%output(self%name)
-    ! if a frozen task is set to ready, make it not ready
-    if (task%is_set(bits%ready)) then
-      call task%clear (bits%ready)
-      !$omp atomic
-      self%na = self%na - 1
-    end if
+    call task%clear (bits%ready)
     call trace%end (itimer)
     return
   end if
@@ -338,13 +332,12 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   !-----------------------------------------------------------------------------
   ! Tasks that have finished are subtracted from the task list count but are
   ! not removed, since their data may be needed by other tasks (including on
-  ! other ranks).  They are, however, not added back onto the ready queue.
+  ! other ranks).
   !-----------------------------------------------------------------------------
   if (task%has_finished()) then                       ! finished:
     if (timer%dead_mans_hand == 0.0) then
       timer%dead_mans_hand = wallclock()              ! cf. dispatcher
     end if
-    call task%set (bits%frozen)
     call load_balance%active (.false.)                ! turn off load balancing
     !$omp atomic
     self%na = self%na-1
