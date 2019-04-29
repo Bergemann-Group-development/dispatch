@@ -975,8 +975,7 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   ! Compute weights for Lagrange interpolation
   !-----------------------------------------------------------------------------
-  iit = source%iit(1:source%nt-1)
-  times = source%t(iit)
+  call source%timeslots (iit, times)
   call lagrange%sequence_weights (target%time, times, j0, j1, w, order)
   if (verbose > 2) &
     write(io_unit%log,'(a,2i4,1p,10e14.6)') 'same_lagrange: j0, j1, time, times, w:', &
