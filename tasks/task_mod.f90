@@ -82,6 +82,7 @@ MODULE task_mod
     procedure:: update => void
     procedure:: rotate
     procedure:: info
+    procedure:: timeslots
     procedure:: is_ahead_of
     procedure:: set
     procedure:: clear
@@ -283,7 +284,6 @@ SUBROUTINE rotate (self)
     write (io_unit%log,'(a,7i10)')   'task_mod::rotate iit =', self%iit
     flush (io_unit%log)
   end if
-  !!omp critical (queue_cr)
   call self%lock%set ('rotate')
   !-----------------------------------------------------------------------------
   ! If this task has self%syncing set, then the time step has been set so as to
@@ -325,7 +325,11 @@ SUBROUTINE rotate (self)
   new = self%new
   !$omp atomic write
   self%it = new                                         ! update time slot, new
-  self%new = mod(self%new,self%nt)+1                    ! increment / rotate
+  new = mod(new,self%nt)+1                              ! increment / rotate
+  associate (snew=>self%new)
+  !$omp atomic write
+  snew = new
+  end associate
   do i=1,self%nt-1
     iptr => self%iit(i)
     !$omp atomic write
@@ -346,14 +350,6 @@ SUBROUTINE rotate (self)
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
   nullify (rptr, iptr)
   self%rotated = .true.
-  ! if (self%nt==5) then
-    ! print '(i6,1x,a,i4,2x,5i3,2(2x,5f8.4))', self%id, 'rotate5', &
-    ! self%it, self%iit, self%dt, self%t
-  ! else
-    ! print '(i6,1x,a,i4,2x,4i3,2(2x,4f8.4))', self%id, 'rotate4', &
-    ! self%it, self%iit, self%dt, self%t
-  ! end if
-  !!omp end critical (queue_cr)
   call self%lock%unset ('rotate')
   call trace_end (itimer)
 END SUBROUTINE rotate
@@ -367,6 +363,32 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   character(len=64), optional:: experiment_name
   !.............................................................................
 END SUBROUTINE info
+
+!===============================================================================
+!> Get timeslot info atomically.  Note that, while the thread updating the task
+!> set the time and dtime of slot (nt) which, in terms of the indices retrieved
+!> here is outside the range of concern, in rare cases it may be updated again,
+!> in which case it will access the current slot (1) the next time, then (2)
+!> and so on; therefore, it is prudent to use a task lock shared with rotate
+!===============================================================================
+SUBROUTINE timeslots (self, slots, times)
+  class(task_t):: self
+  real(8):: times(self%nt-1)
+  integer:: slots(self%nt-1)
+  integer:: i, j
+  !-----------------------------------------------------------------------------
+  call self%lock%set ('timeslots')
+  do j=1,self%nt-1
+    i = 1 + mod(j+self%it,self%nt)
+    if (j < self%nt-self%istep) then
+      i = 1
+    end if
+    slots(j) = i
+    !$omp atomic read
+    times(j)  = self%t(i)
+  end do
+  call self%lock%unset ('timeslots')
+END SUBROUTINE timeslots
 
 !===============================================================================
 !> Check if self (which is a nbor task) is ahead of target (which is the one to
