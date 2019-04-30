@@ -1072,7 +1072,7 @@ SUBROUTINE extrapolate_guards (self)
   integer, dimension(3) :: lb, lo, li, ub, uo, ui, i
   integer               :: iv
   integer, save         :: itimer=0
-  real(8)               :: t(sel%nt)
+  real(8)               :: t(self%nt)
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%extrapolate_guards', 3, itimer=itimer)
   nt = self%nt
