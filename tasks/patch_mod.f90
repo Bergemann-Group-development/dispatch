@@ -142,7 +142,6 @@ MODULE patch_mod
     procedure:: custom_refine
     procedure:: patch_to_header
     procedure:: header_to_patch
-    procedure:: local_iit
     procedure, private:: stats_patch
     procedure, private:: stats_scalar
     procedure, private:: stats_vector
@@ -1073,10 +1072,11 @@ SUBROUTINE extrapolate_guards (self)
   integer, dimension(3) :: lb, lo, li, ub, uo, ui, i
   integer               :: iv
   integer, save         :: itimer=0
+  real(8)               :: t(sel%nt)
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%extrapolate_guards', 3, itimer=itimer)
   nt = self%nt
-  iit = self%local_iit()
+  call self%timeslots (iit, t)
   it0 = iit(nt)                                         ! current time slot
   it1 = iit(nt-1)                                       ! previous time slot
   it2 = iit(nt-2)                                       ! the one before that
@@ -2009,27 +2009,6 @@ SUBROUTINE check_density (self, label)
   end if
   call trace%end (itimer)
 END SUBROUTINE check_density
-
-!===============================================================================
-!===============================================================================
-FUNCTION local_iit (self) RESULT (iit)
-  class(patch_t):: self
-  integer:: i, j, it, iit(self%nt)
-  !-----------------------------------------------------------------------------
-  ! Make a consistent local copy of self%iit, based on self%it, which is
-  ! written and read in atomic operations.  The array iit is such that its last
-  ! value, iit(self%nt) is equal to self%new.
-  !-----------------------------------------------------------------------------
-  !$omp atomic read
-  it = self%it
-  do j=1,self%nt
-    i = 1 + mod(j+it,self%nt)
-    if (j < self%nt-self%istep) then
-      i = 1
-    end if
-    iit(j) = i
-  end do
-END FUNCTION local_iit
 
 !===============================================================================
 !> Statistics for all vars in a patch
