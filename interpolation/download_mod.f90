@@ -392,34 +392,30 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   end if
   if (target%is_periodic()) call target%periodic_grid
   !-----------------------------------------------------------------------------
-  ! Lock all tasks on the nbor list
+  ! Use an nbor list sorted by decreasing level, recording in each cell the
+  ! level that supplied values, and skipping nbor contributions from lower levels
   !-----------------------------------------------------------------------------
-  if (use_locks) then
-    write (info,'(2i6,i4)') target%id, target%istep, omp%thread
-    !nbor => link%nbor
-    !do while (associated(nbor))
-    !  write (info,'(2i6,i4)') nbor%link%task%id, nbor%link%task%istep, omp%thread
-    !  call nbor%link%lock%set ('download_link nbor'//trim(info))
-    !  nbor => nbor%next
-    !end do
-  end if
-  !-----------------------------------------------------------------------------
-  ! Optionally, produce an nbor list sorted by increasing level.  In this mode,
-  ! we expect to actually store lower level values, and then overwrite with
-  ! better values from higher levels, when available
-  !-----------------------------------------------------------------------------
+  call link%lock%set ('download_link')
   nbor => link%nbors_by_level
   !-----------------------------------------------------------------------------
-  ! The default action is to insert a value if "filled" indicates one is missing.
-  ! This is fastest if the nbor list is sorted in decreasing level order, since
-  ! then values are only computed where actually needed
+  ! Insert a value only if "filled" indicates that one is missing.  With the 
+  ! nbor list sorted in decreasing level order, values are only computed where
+  ! actually needed
   !-----------------------------------------------------------------------------
   wc = 0d0
   do while (associated(nbor))
-    !print *, 'target, source, level, needed =', target%id, nbor%task%id, &
-    !  nbor%task%level, nbor%task%n_needed
-    wc(0) = wallclock()
+    if (.not.associated(nbor%task)) then
+      write (io_unit%output,*) 'WARNING: nbor task not associated'
+      flush (io_unit%output)
+      cycle
+    end if
+    !write(io_unit%output,'(f12.6,2x,a,2(i6,i3),i4)') &
+    !  wallclock(), 'target, source, level, needed =', &
+    !  target%id, target%level, nbor%task%id, nbor%task%level, nbor%task%n_needed
+    !flush (io_unit%output)
     source => task2patch(nbor%task)
+    wc(0) = wallclock()
+    !call source%lock%set ('download_link')
     wc(1) = wc(1) + wallclock() - wc(0)
     if (verbose > 0) &
       write(io_unit%log,*) target%id, 'download_t%download_link: source, download =', &
@@ -476,23 +472,13 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
        end if
      end if
     end if
+    !call source%lock%unset ('download_link')
     wc(2) = wc(2) + wallclock() - wc(0)
     wc(3) = wc(3) + wallclock() - wc(0)
     wc(4) = wc(4) + 1d0
     nbor => nbor%next
   end do
-  !-----------------------------------------------------------------------------
-  ! Unlock all tasks on the nbor list
-  !-----------------------------------------------------------------------------
-  if (use_locks) then
-    !nbor => link%nbor
-    !do while (associated(nbor))
-    !  write (info,'(2i6,i4)') nbor%link%task%id, nbor%link%task%istep, omp%thread
-    !  call nbor%link%lock%unset ('download_link nbor'//trim(info))
-    !  nbor => nbor%next
-    !end do
-    write (info,'(2i6,i4)') target%id, target%istep, omp%thread
-  end if
+  call link%lock%unset ('download_link')
   if (verbose > 0) then
     wc(3) = wc(3)-wc(2)
     wc(2) = wc(2)-wc(1)
@@ -530,8 +516,6 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   ! Decrement n_needed counters, and remove the sorted nbor list
   !-----------------------------------------------------------------------------
-  call link%decrement_needed
-  call link%remove_nbor_list (link%nbors_by_level)
   call validate%check (target%link, d, ' after download')
   call trace%end (itimer)
 END SUBROUTINE download_link
