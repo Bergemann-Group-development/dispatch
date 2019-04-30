@@ -9,25 +9,17 @@
 !>     refine_needed
 !>     selective_refine
 !>       if ... refine
-!>         download_lock%set
-!>         check_lock%set
 !>         make_child_patch
 !>           tasklist%lock%set
 !>           init_nbors ...
 !>           check_nbors ...
 !>           tasklist%lock%unset
-!>         check_lock%unset
-!>         download_lock%unset
 !>       if ... derefine
-!>         download_lock%set
-!>         check_lock%set
 !>         remove_patch
 !>           tasklist%lock%set
 !>           init_nbors ...
 !>           check_nbors ...
 !>           tasklist%lock%unset
-!>         check_lock%unset
-!>         download_lock%unset
 !>   download_link
 !>   update
 !>   ...
@@ -134,6 +126,12 @@
 !>
 !> FIXME:  Care should be extended also to updates over MPI.
 !> FIXME:  Use of the deprecated scene_mod should be removed
+!>
+!> MPI specific handling:  Boundary patches are always send to vnbors, and if
+!> they are new on the recieving rank, new nbor lists are generated, so no new
+!> actions should be needed there.   If a boundary task is removed, the vnbors
+!> are send a copy with the "remove" bit set, and they should react correspond-
+!> ingly, by doing essentially what remove_patch does.
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE refine_mod
   USE io_mod
@@ -296,9 +294,9 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   ! Check that neighbors of `self` are not more than one level different.
   ! If they are, mark this patch for splitting so that support can be
   ! provided to the neighbors of `patch`.
-  !refine = max (refine ,self%check_support (tasklist, link))
-  !if (verbose > 3) write (io_unit%output,*) &
-  !  patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'support'
+  refine = max (refine ,self%check_support (tasklist, link))
+  if (verbose > 3) write (io_unit%output,*) &
+    patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'support'
   !
   call trace%end (itimer)
 END FUNCTION refine_needed
@@ -464,15 +462,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
                   patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
                   maxval(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)), &
                   l, u
-              if (n_locks > 2) &
-                call download_lock%set ('refine')
-              if (n_locks > 0) &
-                call check_lock%set ('refine')
               call make_child_patch (self, tasklist, patch%link, patch, pos, size)
-              if (n_locks > 0) &
-                call check_lock%unset ('refine')
-              if (n_locks > 2) &
-                call download_lock%unset ('refine')
               was_refined= .true.
             end if
           end do
@@ -505,10 +495,6 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
                           product(shape(patch%mask)), '-mask')
         deallocate (patch%mask)
         call remove_patch (self, tasklist, link)
-        if (n_locks > 0) &
-          call check_lock%unset ('derefine')
-        if (n_locks > 1) &
-          call download_lock%unset ('derefine')
         was_derefined = .true.
       end if
     end if
@@ -541,6 +527,7 @@ FUNCTION check_support (self, tlist, link, check_only) RESULT (refine)
   class(link_t), pointer:: nbor, next, nbor1, nbor2, nbor1a
   integer:: n(4)
   logical:: ok
+  logical, save:: two_levels=.false.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('refine_t%check_support', itimer=itimer)
@@ -574,67 +561,69 @@ FUNCTION check_support (self, tlist, link, check_only) RESULT (refine)
     if (nbor1%task%level > link%task%level) then
       refine = max(0,refine)
     end if
-    nbor2 => nbor1%link%nbor
-    do while (associated(nbor2))
-      if (nbor2%task%level == link%task%level+2) then
-        n(2) = n(2)+1
-        !--------------------------------------------------------------------
-        ! If a task at level+2 is fully contained in link%task, then it must
-        ! also be fully contained in a level+1 task, which must be on the
-        ! nbor1 list
-        !--------------------------------------------------------------------
-        associate (task=>link%task, task2=>nbor2%task)
-        select type (task)
-        class is (patch_t)
-        select type (task2)
-        class is (patch_t)
-        if (task%contains(task2)) then
-          ok = .false.
-          nbor1a => nbor
-          do while (associated(nbor1a))
-            associate (task1a=>nbor1a%task)
-            select type (task1a)
-            class is (patch_t)
-            if (task%contains(task1a)) then
-              ok = .true.
-              n(3) = n(3)+1
-              exit
-            end if
-            nbor1a => nbor1a%next
-            end select
-            end associate
-          end do
-        !--------------------------------------------------------------------
-        ! If a level==l+2 task overlaps, but is not contained in a level==l
-        ! task, then a level==l+1 task that overlaps with it must also exist
-        !--------------------------------------------------------------------
-        else if (task%overlaps(task2)) then
-          ok = .false.
-          nbor1a => nbor
-          do while (associated(nbor1a))
-            associate (task1a=>nbor1a%task)
-            select type (task1a)
-            class is (patch_t)
-            if (task%overlaps(task1a)) then
-              ok = .true.
-              n(4) = n(4)+1
-              exit
-            end if
-            nbor1a => nbor1a%next
-            end select
-            end associate
-          end do
+    if (two_levels) then
+      nbor2 => nbor1%link%nbor
+      do while (associated(nbor2))
+        if (nbor2%task%level == link%task%level+2) then
+          n(2) = n(2)+1
+          !---------------------------------------------------------------------
+          ! If a task at level+2 is fully contained in link%task, then it must
+          ! also be fully contained in a level+1 task, which must be on the
+          ! nbor1 list
+          !---------------------------------------------------------------------
+          associate (task=>link%task, task2=>nbor2%task)
+          select type (task)
+          class is (patch_t)
+          select type (task2)
+          class is (patch_t)
+          if (task%contains(task2)) then
+            ok = .false.
+            nbor1a => nbor
+            do while (associated(nbor1a))
+              associate (task1a=>nbor1a%task)
+              select type (task1a)
+              class is (patch_t)
+              if (task%contains(task1a)) then
+                ok = .true.
+                n(3) = n(3)+1
+                exit
+              end if
+              nbor1a => nbor1a%next
+              end select
+              end associate
+            end do
+          !---------------------------------------------------------------------
+          ! If a level==l+2 task overlaps, but is not contained in a level==l
+          ! task, then a level==l+1 task that overlaps with it must also exist
+          !---------------------------------------------------------------------
+          else if (task%overlaps(task2)) then
+            ok = .false.
+            nbor1a => nbor
+            do while (associated(nbor1a))
+              associate (task1a=>nbor1a%task)
+              select type (task1a)
+              class is (patch_t)
+              if (task%overlaps(task1a)) then
+                ok = .true.
+                n(4) = n(4)+1
+                exit
+              end if
+              nbor1a => nbor1a%next
+              end select
+              end associate
+            end do
+          end if
+          end select
+          end select
+          end associate
+          if (ok) exit
+        !else
+          ! These cases are not at level==link%task%level+2, so are of no concern
         end if
-        end select
-        end select
-        end associate
         if (ok) exit
-      !else
-        ! These cases are not at level==link%task%level+2, so are of no concern
-      end if
-      if (ok) exit
-      nbor2 => nbor2%next
-    end do
+        nbor2 => nbor2%next
+      end do
+    end if
     nbor1 => nbor1%next
   end do
   if (.not.ok) then 
@@ -648,7 +637,7 @@ FUNCTION check_support (self, tlist, link, check_only) RESULT (refine)
     link%task%id, refine, n
   end if
   !-----------------------------------------------------------------------------
-  ! Delete the temorary nbor list
+  ! Delete the temporary nbor list
   !-----------------------------------------------------------------------------
   nbor1 => nbor
   do while (associated(nbor1))
@@ -759,7 +748,9 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   child%level = parent%level + 1                     ! override patch_t%init
   child%time  = parent%time                          ! same time
   child%it    = 1                                    ! time index
+  child%new   = 2                                    ! new time slot
   child%iit   = 1                                    ! single time slice
+  child%iit(child%nt) = child%new                    ! new slot
   child%dt(:) = parent%dt(parent%it) / self%ratio    ! reset the time-step
   child%t(:) = child%time                            ! sinle time
   child%parentid = parent%id                         ! for debugging
@@ -780,6 +771,8 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   child_nbor%task => parent
   nullify (child_link%nbor)
   child_link%nbors_by_level => child_nbor
+  !$omp atomic update
+  parent%n_needed = parent%n_needed + 1
   !------------------------------------------------------------------------
   ! Download values from parent and neighbors, except at time = 0, to allow
   ! recursive refinement there. If time = 0, patch should have been filled
@@ -789,12 +782,8 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
     call download%download_link (child_link, all_cells=.true.)
   call tlist%lock%set ('refine')
   call tlist%append_link (child_link)
-  if (n_locks == 0) &
-    call check_lock%set ('refine')
   call tlist%init_nbors (child_link)
   call tlist%init_nbor_nbors (child_link)
-  if (n_locks == 0) &
-    call check_lock%unset ('refine')
   call tlist%reset_status()
   call tlist%check_nbors (child_link)
   call tlist%check_nbor_nbors (child_link)
@@ -868,16 +857,14 @@ SUBROUTINE remove_patch (self, tlist, this)
   !$omp atomic update
   timer%levelpop (this%task%level) = &      ! decrement level population count
   timer%levelpop (this%task%level) - 1
-  if (n_locks == 0) &
-    call check_lock%set ('refine')
   call tlist%init_nbor_nbors (this)         ! new nbor lists, w/o this
-  if (n_locks == 0) &
-    call check_lock%unset ('refine')
   call tlist%reset_status()                 ! set task status bits
   call tlist%check_nbor_nbors (this)        ! check / send to ready queue
   call this%garbage_collect (this)          ! add to garbage bin
   call tlist%lock%unset ('remove_patch')    ! release the task list
   !-----------------------------------------------------------------------------
+  !$omp atomic write
+  io%dtime = huge(1d0)
   call trace%end()
 END SUBROUTINE remove_patch
 
