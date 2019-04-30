@@ -284,29 +284,38 @@ END SUBROUTINE remove_head
 SUBROUTINE check_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
-  class(link_t), pointer:: nbor
+  class(link_t), pointer:: nbor, nbors
   class(task_t), pointer:: task
   integer, save:: itimer=0
   !.............................................................................
   call trace_begin('list_t%check_nbors', itimer=itimer)
-  call check_lock%set ('check_nbors')
   if (io%verbose > 1) &
     write (io_unit%log,*) 'checking nbors of',link%task%id,associated(link%nbor)
-  task => link%task                                   ! main task
-  nbor => link%nbor                                   ! first nbor
-  do while (associated (nbor))                        ! keep going until end
+  task => link%task                                     ! main task
+  !-----------------------------------------------------------------------------
+  ! Keeping a lock on link, while also locking/unlocking its nbors, creates the
+  ! possibility of a dead-lock.  To avoid that, we make a copy of the nbor list
+  !-----------------------------------------------------------------------------
+  call link%lock%set ('check_nbors')
+  call link%copy_nbor_list (link%nbor, nbors)           ! temporary nbor list
+  call link%increment_needed (nbors)
+  call link%lock%unset ('check_nbors')
+  nbor => nbors                                         ! first nbor
+  do while (associated (nbor))                          ! keep going until end
     if (nbor%task%id==io%id_debug) print *, &
       'task', task%id,' needs task ', nbor%task%id, nbor%needs_me
-    if (nbor%needs_me) then                           ! needs checking?
+    if (nbor%needs_me) then                             ! needs checking?
       if (io%verbose > 1) &
         write (io_unit%log,*) 'check nbor', nbor%task%id
-      call self%check_ready (nbor%link)               ! pointer back
+      call self%check_ready (nbor%link)                 ! pointer back
     else
       if (io%verbose > 1) &
         write (io_unit%log,*) 'no need to', nbor%task%id
     end if
-    nbor => nbor%next                                 ! next nbor
+    nbor => nbor%next                                   ! next nbor
   end do
+  call link%decrement_needed (nbors)
+  call link%remove_nbor_list (nbors)                    ! remove nbor list copy
   !-----------------------------------------------------------------------------
   ! Since we may be called upon to check nbors of a patch that should not itself
   ! be checked, we check if any bits are set indicating this to be the case
@@ -314,7 +323,6 @@ SUBROUTINE check_nbors (self, link)
   if (task%is_clear (bits%virtual+bits%external)) then
     call self%check_ready (link)                      ! finally check link task
   end if
-  call check_lock%unset ('check_nbors')
   call trace_end (itimer)
   return
 END SUBROUTINE check_nbors
@@ -496,7 +504,13 @@ SUBROUTINE check_ready (self, link)
     task%is_set(bits%ready), task%is_set(bits%busy), task%is_set(bits%frozen)
   if (task%is_set (bits%hands_off)) return              ! ready+busy+frozen+..
   debug = io%verbose > 1 .or. task%id==io%id_debug
-  nbor => link%nbor                                     ! start on nbor list
+  !-----------------------------------------------------------------------------
+  ! If the cached nbor list does not exist, we need to use the normal nbor list,
+  ! and then it has to remain locked until the test has been carried out.  If not,
+  ! the lock can be released immediately
+  !-----------------------------------------------------------------------------
+  call link%lock%set ('check_ready')
+  nbor => link%nbor                                     ! use original nbor list
   do while (associated (nbor))                          ! keep going until end
     debug1 = nbor%task%id==io%id_debug
     if (debug1 .or. self%verbose > 1) &
@@ -513,11 +527,13 @@ SUBROUTINE check_ready (self, link)
           write (io_unit%log,'("list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
             task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
             nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
+        call link%lock%unset ('check_ready')
         return
       end if
     end if
     nbor => nbor%next                                   ! next nbor
   end do
+  call link%lock%unset ('check_ready')
   if (debug .or. self%verbose > 0) then
     write (io_unit%output,'("list_t%check_ready:",i5,f10.6,a)') &
       task%id, task%time, ' succeded'
@@ -723,7 +739,7 @@ SUBROUTINE init_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
   !.............................................................................
-  class(link_t), pointer:: nbor, scan, new_head, old_head
+  class(link_t), pointer:: nbor, scan, new_head, old_head, nbors
   integer:: n_add
   logical:: overlaps
   integer, save:: itimer=0
@@ -732,6 +748,7 @@ SUBROUTINE init_nbors (self, link)
   old_head => link%nbor
   nullify (new_head)
   n_add = 0
+  call self%lock%set ('init_nbors')
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
     !---------------------------------------------------------------------------
@@ -772,9 +789,25 @@ SUBROUTINE init_nbors (self, link)
     end if
     scan => scan%next                                 ! continue search
   end do
+  call self%lock%unset ('init_nbors')
+  !-----------------------------------------------------------------------------
+  ! The link only needs to be locked the brief moment while it changes the
+  ! nbor pointer.
+  !-----------------------------------------------------------------------------
   call link%lock%set ('init_nbors')
   link%nbor => new_head                               ! switch nbor list
+  call link%copy_nbor_list (link%nbors_by_level, nbors)
+  call link%remove_nbor_list (link%nbors_by_level)
+  call link%sort_nbors_by_level (link%nbor, link%nbors_by_level)
+  call link%increment_needed (link%nbors_by_level)
+  call link%decrement_needed (nbors)
+  call link%remove_nbor_list (nbors)
   call link%lock%unset ('init_nbors')
+  !-----------------------------------------------------------------------------
+  ! The old nbor list cannot possible be used by another thread at this time,
+  ! since it was only used for one thing, namely to generate the cached nbor
+  ! list, and during that time the link was locked.
+  !-----------------------------------------------------------------------------
   call link%remove_nbor_list (old_head)               ! recover nbor list mem
   link%task%n_nbors = n_add                           ! remember n_nbors
   if (io%verbose>1) write (io_unit%log,*) &
@@ -785,19 +818,28 @@ END SUBROUTINE init_nbors
 
 !===============================================================================
 !> Initialize the nbor lists of all nbors of link.  Note that the nbor list of
-!> an nbor starts at nbor%link%nbor.
+!> an nbor starts at nbor%link%nbor.   To prevent other threads from modifying
+!> nbor list we need to loop over, we lock the link in the meantime, and to 
+!> avoid a possible deadlock caused by having more than one lock active, we use
+!> a copy of the nbor list (cf. check_nbors())  
 !===============================================================================
 SUBROUTINE init_nbor_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
   !.............................................................................
-  class(link_t), pointer:: nbor
+  class(link_t), pointer:: nbor, nbors
   !-----------------------------------------------------------------------------
-  nbor => link%nbor
+  call trace%begin('list_t%init_nbor_nbors')
+  call link%lock%set ('remove_patch')         ! lock the link while modifying
+  call link%copy_nbor_list (link%nbor, nbors) ! copy to temporary nbor list
+  call link%lock%unset ('remove_patch')       ! unlock the link
+  nbor => nbors                               ! loop over temporary list
   do while (associated(nbor))
     call self%init_nbors (nbor%link)
     nbor => nbor%next
   end do
+  call link%remove_nbor_list (nbors)          ! remove the nbor list copy
+  call trace%end
 END SUBROUTINE init_nbor_nbors
 
 !===============================================================================
@@ -911,10 +953,12 @@ SUBROUTINE reset_status (self)
   !-----------------------------------------------------------------------------
   link => self%head
   do while (associated(link))
-    write(io_unit%log,*) 'id, rank, IBV =', link%task%id, link%task%rank, &
-      link%task%is_set(bits%internal), &
-      link%task%is_set(bits%boundary), &
-      link%task%is_set(bits%virtual)
+    if (io%verbose > 1) &
+      write(io_unit%log,*) &
+        'reset_status: id, rank, IBV =', link%task%id, link%task%rank, &
+        link%task%is_set(bits%internal), &
+        link%task%is_set(bits%boundary), &
+        link%task%is_set(bits%virtual)
     if (link%task%rank == mpi%rank) then
       nbor => link%nbor
       call link%task%set(bits%internal)
@@ -1167,7 +1211,6 @@ SUBROUTINE real_queue_by_time (self, this, error)
   error=.false.
   task => this%task
   call trace_begin ('list_t%queue_by_time ', itimer=itimer)
-  call this%sort_nbors_by_level (this%nbor, this%nbors_by_level)
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
   !-----------------------------------------------------------------------------
