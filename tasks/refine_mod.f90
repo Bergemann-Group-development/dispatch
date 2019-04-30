@@ -728,6 +728,7 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
     merge(0.5,0.0,child%n>1) * child%size            ! lower left corner
   child%llc_nat = child%llc_cart                     ! FIXME!: this form only applies for Cartesian coords.
   child%n_needed = 1                                 ! reset to initial
+  child%istep = 0                                    ! for diagnostics
   !------------------------------------------------------------------------
   ! Force consistent resolution in new patches, overriding the resolution
   ! inherited from the parent patch.

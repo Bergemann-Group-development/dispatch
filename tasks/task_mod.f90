@@ -175,10 +175,9 @@ SUBROUTINE init_unique (self, keep)
     if (self%id > 0) then
       if (mod(self%id-1,mpi%size) == self%rank) then
         id(self%rank) = max(id(self%rank),self%id)
-      else
+      else if (io%verbose > 1) then
         print '("enforced ID =",i7," not consistent with MPI rank/size",2i6)', &
           self%id, self%rank, mpi%size
-        call mpi%abort
       end if
       !print *, self%rank, 'IDDBG present(keep) 1, id =', id(self%rank)
     else
@@ -284,7 +283,7 @@ SUBROUTINE rotate (self)
     write (io_unit%log,'(a,7i10)')   'task_mod::rotate iit =', self%iit
     flush (io_unit%log)
   end if
-  call self%lock%set ('rotate')
+  !call self%lock%set ('rotate')
   !-----------------------------------------------------------------------------
   ! If this task has self%syncing set, then the time step has been set so as to
   ! arrive exactly ast sync_time.  To precent problems with round-off we set the
@@ -352,7 +351,7 @@ SUBROUTINE rotate (self)
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
   nullify (rptr, iptr)
   self%rotated = .true.
-  call self%lock%unset ('rotate')
+  !call self%lock%unset ('rotate')
   call trace_end (itimer)
 END SUBROUTINE rotate
 
@@ -377,11 +376,12 @@ SUBROUTINE timeslots (self, slots, times)
   class(task_t):: self
   real(8):: times(self%nt-1)
   integer:: slots(self%nt-1)
-  integer:: i, j
+  integer:: i, j, it
   !-----------------------------------------------------------------------------
-  call self%lock%set ('timeslots')
+  !$omp atomic read
+  it = self%it
   do j=1,self%nt-1
-    i = 1 + mod(j+self%it,self%nt)
+    i = 1 + mod(j+it,self%nt)
     if (j < self%nt-self%istep) then
       i = 1
     end if
@@ -389,7 +389,6 @@ SUBROUTINE timeslots (self, slots, times)
     !$omp atomic read
     times(j)  = self%t(i)
   end do
-  call self%lock%unset ('timeslots')
 END SUBROUTINE timeslots
 
 !===============================================================================
@@ -402,8 +401,6 @@ LOGICAL FUNCTION is_ahead_of (self, target)
   class (task_t):: self, target
   real(8):: nbtime, nbdtime
   !.............................................................................
-  call self%lock%set ('is_ahead_of')
-  call target%lock%set ('is_ahead_of')
   !$omp atomic read
   nbtime = self%time
   !$omp atomic read
@@ -426,8 +423,6 @@ LOGICAL FUNCTION is_ahead_of (self, target)
     print'(i6,i4,2x,a,i6,3f9.5,l3)', self%id, omp_mythread, 'mk is_ahead_of: ', &
     target%id, self%time, self%dtime*target%grace, target%time, is_ahead_of
   end if
-  call target%lock%unset ('is_ahead_of')
-  call self%lock%unset ('is_ahead_of')
 END FUNCTION
 
 SUBROUTINE print (self)

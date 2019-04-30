@@ -125,6 +125,7 @@ SUBROUTINE init (self)
   call self%input (ok)
   if (ok) then
     restart_time = self%time
+    self%istep = 0
   else 
     !---------------------------------------------------------------------------
     ! Make sure the default time for patches with IC values is zero, to ensure 
