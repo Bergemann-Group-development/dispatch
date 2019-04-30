@@ -1999,6 +1999,7 @@ SUBROUTINE check_density (self, label)
     write (io_unit%dump) self%time, self%dtime
     do iw=1,self%nw
     do it=1,self%nt
+      !$omp atomic read
       jt = self%iit(it)
       write (io_unit%dump) self%mem(:,:,:,:,jt,iw)
     end do
@@ -2013,16 +2014,21 @@ END SUBROUTINE check_density
 !===============================================================================
 FUNCTION local_iit (self) RESULT (iit)
   class(patch_t):: self
-  integer:: i, it, iit(self%nt)
+  integer:: i, j, it, iit(self%nt)
   !-----------------------------------------------------------------------------
   ! Make a consistent local copy of self%iit, based on self%it, which is
   ! written and read in atomic operations.  The array iit is such that its last
   ! value, iit(self%nt) is equal to self%new.
   !-----------------------------------------------------------------------------
-  !!$omp atomic read
-  !it = self%it
-  !iit = [(1+mod(it+i,self%nt), i=1,self%nt)]
-  iit = self%iit
+  !$omp atomic read
+  it = self%it
+  do j=1,self%nt
+    i = 1 + mod(j+it,self%nt)
+    if (j < self%nt-self%istep) then
+      i = 1
+    end if
+    iit(j) = i
+  end do
 END FUNCTION local_iit
 
 !===============================================================================
@@ -2239,11 +2245,8 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
     jt = 1
     pt(2) = 0.0
   else
-    call self%lock%set ('time_interval')
     call self%timeslots (iit, t)
-    call self%lock%unset ('time_interval')
     j = 1
-    !n = merge(self%nt-1, self%nt-2, present(all))
     n = self%nt-2
     !-------------------------------------------------------------------
     ! Seach and set the j index to the last point that has t(j)<time.
