@@ -294,9 +294,9 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   ! Check that neighbors of `self` are not more than one level different.
   ! If they are, mark this patch for splitting so that support can be
   ! provided to the neighbors of `patch`.
-  refine = max (refine ,self%check_support (tasklist, link))
-  if (verbose > 3) write (io_unit%output,*) &
-    patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'support'
+  !refine = max (refine ,self%check_support (tasklist, link))
+  !if (verbose > 3) write (io_unit%output,*) &
+  !  patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'support'
   !
   call trace%end (itimer)
 END FUNCTION refine_needed
@@ -638,10 +638,14 @@ FUNCTION check_support (self, tlist, link, check_only) RESULT (refine)
     end do
     nbor1 => nbor1%next
   end do
-  if (.not.ok) refine = 1
+  if (.not.ok) then 
+    refine = 1
+    if (verbose > 0) &
+      write (io_unit%output,*) link%task%id, ' requests refine to add support'
+  end if
   if (verbose > 1 .and. n(1) > 0 .or. verbose > 0 .and. n(2) > 0) then
     write (io_unit%output,'(a,i6,i3,2x,5i4)') &
-    'check__support: id, refine, nbors at +1 and +2:', &
+    'check_support: id, refine, nbors at +1 and +2:', &
     link%task%id, refine, n
   end if
   !-----------------------------------------------------------------------------
