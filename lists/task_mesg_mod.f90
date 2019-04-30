@@ -1,6 +1,16 @@
 !===============================================================================
 !> Message handling for task lists.  Some of the methods are only used by
 !> dispatcher0_t, so should perhaps be moved over to that file.
+!>
+!> Depending on switches, incoming MPU messages are handled by one of four
+!> procedures (the values of the recv_active and recv_priv switches are shown
+!> after the colon).  Only the ones with recv_active==.false. can (FIXME) be
+!> used in AMR runs.
+!>
+!> check_virtual:TT specifically checks (only) for msgs to known virtual tasks
+!> check_active :TF ditto, but not split up into thread-private lists
+!> check_priv   :FT puts messages in recv_list and/or unpk_list
+!> check_mpi    :FF original method, also uses progressive list handling
 !===============================================================================
 MODULE task_mesg_mod
   USE io_mod
@@ -28,7 +38,6 @@ MODULE task_mesg_mod
     procedure:: check_mpi
     procedure:: unpack
     procedure:: init_virtual
-    procedure:: find_task
   end type
   integer, save:: verbose=0
   type(task_mesg_t), save:: virtual_list
@@ -206,6 +215,7 @@ SUBROUTINE check_mpi (self)
 9 continue
   !write (io_unit%log, '(a,6f10.4)') 'check_mpi times:', wc(1:i)-wc(0:i-1)
   call trace%end (itimer)
+  return
 END SUBROUTINE check_mpi
 
 !===============================================================================
@@ -213,14 +223,16 @@ END SUBROUTINE check_mpi
 !> If the patch already existed, it's nbor list should be OK, but the status
 !> bit of it, and all its nbors, need to updated.
 !===============================================================================
-FUNCTION find_task (self, id) RESULT (link)
+FUNCTION find_task (self, id, new) RESULT (link)
   class(task_mesg_t):: self
   integer:: id
+  logical:: new
   class(link_t), pointer:: link
   class(patch_t), pointer:: patch
   class(experiment_t), pointer:: task
   !.............................................................................
   call trace%begin ('task_mesg_t%find_task')
+  new = .false.
   link => self%head
   do while (associated(link))
 !write (io_unit%log,*) mpi%rank,' find task: id, link%id, virtual =', id, link%task%id, link%task%is_set(bits%virtual)
@@ -237,21 +249,31 @@ FUNCTION find_task (self, id) RESULT (link)
   !-----------------------------------------------------------------------------
   ! No task found, which means it's a new virtual task that needs to be created
   !-----------------------------------------------------------------------------
+  new = .true.
   allocate (link)
   allocate (task)
   link%task => task
+  task%link => link
   task%id = id
   task%box = self%size
-  call task%patch_t%init
+  !-----------------------------------------------------------------------------
+  ! The virtual task needs to have all of the capabilities and procedures of the
+  ! original boundary task, since it may need to play a role in extras features.
+  !-----------------------------------------------------------------------------
+  call task%init
   if (verbose>1) &
     write (io_unit%log,*) mpi%rank,' task_mesg_t%find_task: new task', id, associated(task%mem)
   flush(io_unit%log)
   !-----------------------------------------------------------------------------
-  ! Append to the task_list.  The calling procedure must create an nbor list,
-  ! and must also update the nbor list of the nbors
+  ! Append to the task_list.  Since we don't yet know the position of the task,
+  ! we can't update the nbor list yet; the calling procedure must do that, and
+  ! we need to notify it when to do it, so it's not done every time a virtual
+  ! task that already exists is updated.
   !-----------------------------------------------------------------------------
   call task%set (bits%virtual)
+  call self%lock%set ('find_task')
   call self%append_link (link)
+  call self%lock%unset ('find_task')
   call trace%end()
 END FUNCTION find_task
 
@@ -265,7 +287,7 @@ SUBROUTINE unpack (self, mesg, link)
   class(link_t), pointer, optional:: link
   class(link_t), pointer:: link1, link2
   class(task_t), pointer:: task
-  logical:: found, failed
+  logical:: found, failed, new
   integer:: id
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -280,20 +302,26 @@ SUBROUTINE unpack (self, mesg, link)
   ! static links in the task list -- not the dynamic next_time links.
   !-----------------------------------------------------------------------------
   !!omp critical (unpack_cr)
+  new = .false.
   if (present(link)) then
     link1 => link
+    write (io_unit%log,*) &
+      'unpack: link present, id =', mesg%id, link1%task%id
   else
-    link1 => find_task (self, mesg%id)
+    link1 => find_task (self, mesg%id, new)
+    write (io_unit%log,*) &
+      'unpack: find_task, id =', mesg%id, link1%task%id, new
   end if
   task => link1%task
   failed = .false.
   !-----------------------------------------------------------------------------
-  ! Check for suicide note
-  !-----------------------------------------------------------------------------
-  if (task%is_set (bits%remove)) then
-    call refine%remove_patch (self, link1)
-    call trace%end (itimer)
-    return
+  if (associated(link1%task)) then
+    write (io_unit%log,'(a,i6,2x,5l1)') 'unpack: id, bits BVRES =', mesg%id, &
+      task%is_set (bits%boundary), &
+      task%is_set (bits%virtual), &
+      task%is_set (bits%ready), &
+      task%is_set (bits%remove), &
+      task%is_set (bits%swap_request)
   end if
   !-----------------------------------------------------------------------------
   ! Guard against lingering extra messages to a swapped patch
@@ -335,6 +363,21 @@ SUBROUTINE unpack (self, mesg, link)
   !---------------------------------------------------------------------------
   id = task%id
   call task%unpack (mesg)
+  write (io_unit%log,'(a,i6,2x,5l1)') 'unpack: after task%unpack BVRES =', &
+    mesg%id, &
+    task%is_set (bits%boundary), &
+    task%is_set (bits%virtual), &
+    task%is_set (bits%ready), &
+    task%is_set (bits%remove), &
+    task%is_set (bits%swap_request)
+  !-----------------------------------------------------------------------------
+  ! Check for suicide note
+  !-----------------------------------------------------------------------------
+  if (task%is_set (bits%remove)) then
+    call refine%remove_patch (self, link1)
+    call trace%end (itimer)
+    return
+  end if
   if (io%log_sent > 0) then
     !$omp critical (log_sent_cr)
     call mpi_mesg%log_files()
@@ -387,13 +430,23 @@ SUBROUTINE unpack (self, mesg, link)
     !else if (.not.associated(link%nbor)) then
     else if (task%is_set(bits%swap_request) .and. task%is_set(bits%virtual)) then
       if (verbose>0) &
-        write (io_unit%log,*) 'task_mesg_t%unpack: new virtal patch:', task%id
+        write (io_unit%log,*) 'task_mesg_t%unpack: new virtual patch:', task%id
       self%nv = self%nv+1
       call self%init_nbors (link1)
       call task%clear (bits%swap_request+bits%ready)
       call link1%update_nbor_status (link1)
       call self%count_status
     end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! If a virtual task was just created it, it and its nbors need new nbor lists
+  !-----------------------------------------------------------------------------
+  if (new) then
+    write (io_unit%log,*) 'unpack: init_nbors, id =', task%id
+    call self%lock%set ('unpack')
+    call self%init_nbors (link1)
+    call self%init_nbor_nbors (link1)
+    call self%lock%unset ('unpack')
   end if
   !!omp end critical (unpack_cr)
   !-----------------------------------------------------------------------------
@@ -403,8 +456,10 @@ SUBROUTINE unpack (self, mesg, link)
   !-----------------------------------------------------------------------------
   !if (verbose>1) &
   !  call link1%test_nbor_status
-  if (self%method==0) &
+  if (self%method==0) then
+    write (io_unit%log,*) 'unpack: check_nbors, id =', task%id
     call self%check_nbors (link1)
+  end if
   call trace%end (itimer)
 END SUBROUTINE unpack
 
@@ -426,12 +481,14 @@ SUBROUTINE check_priv (self)
   call mpi_mesg%get (mesg)
   n = 0
   do while (associated(mesg))
+    n = n+1
     if (mesg%is_complete()) then
+      write (io_unit%log,*) 'adding mesg to unpk_list', mesg%id, n
       call unpk_list%add (mesg)
     else
+      write (io_unit%log,*) 'adding mesg to recv_list', mesg%id, n
       call recv_list%add (mesg)
     end if
-    n = n+1
     if (n > mpi_mesg%max_probe) exit
     call mpi_mesg%get (mesg)
   end do
@@ -442,6 +499,7 @@ SUBROUTINE check_priv (self)
   do while (associated(mesg))
     next => mesg%next
     if (mesg%is_complete()) then
+      write (io_unit%log,*) 'moving mesg to unpk_list', mesg%id
       call recv_list%remove (mesg)
       call unpk_list%add (mesg)
     end if
@@ -452,6 +510,7 @@ SUBROUTINE check_priv (self)
   !-----------------------------------------------------------------------------
   mesg => unpk_list%head
   do while (associated(mesg))
+    write (io_unit%log,*) 'unpacking mesg in unpk_list', mesg%id
     next => mesg%next
     call unpack (self, mesg)
     call unpk_list%remove (mesg)
