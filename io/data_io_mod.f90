@@ -125,6 +125,7 @@ SUBROUTINE output (self, patch, experiment_name)
   integer, save:: itimer=0
   logical:: append
   integer:: it, count, np
+  real(8):: t
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
@@ -134,11 +135,22 @@ SUBROUTINE output (self, patch, experiment_name)
   else
     np = (time_slices%order+1)/2
   end if
+  !$omp atomic read
   it = patch%iit(patch%nt-np)
-  if (patch%t(it) >= patch%out_next) then
+  !$omp atomic read
+  t = patch%t(it)
+  if (t >= patch%out_next) then
     if (io%verbose > 1) &
       write (io%output,*) wallclock(),' thread',omp%thread,' waitfor output'
-    call self%lock%set ('data_io_t%output')
+    !---------------------------------------------------------------------------
+    ! The data io refers to task_t%iit(:) and task_t%t(:), and either all of
+    ! these places need to be protected wuth omp atomic read, or (simpler) the
+    ! occasional visit here to do I/O need to block other accesses (mainly in
+    ! download_mod) vi the task lock.  Certain types of output (but not for 
+    ! example legacy_io) may need to be protected by critical regions or a lock
+    ! on data_io), but (FIXME) for now this is neglected.
+    !---------------------------------------------------------------------------
+    call patch%lock%set ('data_io_t%output')
     if (io%verbose > 1) &
       write (io%output,*) wallclock(),' thread',omp%thread,' locked output'
     do while (patch%t(it) >= patch%out_next)
@@ -199,7 +211,7 @@ SUBROUTINE output (self, patch, experiment_name)
       !---------------------------------------------------------------------------
       call os%mkdir_no (patch%iout)
     end do
-    call self%lock%unset ('data_io_t%output')
+    call patch%lock%unset ('data_io_t%output')
     if (io%verbose > 1) &
       write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'
   end if

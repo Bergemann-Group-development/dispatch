@@ -30,10 +30,10 @@ SUBROUTINE output (self, experiment_name)
   integer:: it1, it2, n(3)
   real:: pt, qt
   real(4), dimension(:,:,:), pointer:: buf
-  real(8):: time
+  real(8):: time, t1, t2
  ! integer, save:: iodir=-1
   !-----------------------------------------------------------------------------
-  call trace%begin('patch_t%output')
+  call trace%begin('legacy_io%output')
   !$omp critical (output_cr)
   !-----------------------------------------------------------------------------
   ! Check number of patches written and issue a message when all done
@@ -60,10 +60,13 @@ SUBROUTINE output (self, experiment_name)
     no = 1
   end if
   if (io%out_time==0.0) then
+    !$omp atomic read
     time = self%time
   else if (io%time_derivs>0) then
+    !$omp atomic read
     time = self%t(self%nt-2)
   else
+    !$omp atomic read
     time = self%out_next
   end if
   !-----------------------------------------------------------------------------
@@ -88,7 +91,9 @@ SUBROUTINE output (self, experiment_name)
       ! If we write out time derivatives we want a pair of consistent values
       ! and time derivatives, which we have at iit(nt-2); time will select that.
       !-------------------------------------------------------------------------
+      !$omp atomic read
       it1 = self%iit(self%nt-2)
+      !$omp atomic read
       it2 = self%iit(self%nt-1)
       if (io%out_time == 0.0) then
         buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
@@ -98,8 +103,12 @@ SUBROUTINE output (self, experiment_name)
       ! after this point
       !-------------------------------------------------------------------------
       else
-        pt = (time-self%t(it1))/max(self%t(it2)-self%t(it1),1d-30)
-        if (self%t(it2)==self%t(it1)) pt=0.0
+        !$omp atomic read
+        t1 = self%t(it1)
+        !$omp atomic read
+        t2 = self%t(it2)
+        pt = (time-t1)/max(t2-t1,1d-30)
+        if (t2==t1) pt=0.0
         qt = 1.0-pt
         buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it1,jo)*qt &
             + self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it2,jo)*pt
@@ -144,11 +153,11 @@ SUBROUTINE check_error (patch, a, label, error)
   end do
   if (any(b /= 0.0)) then
     loc = maxloc(abs(b)) + l-1
-    if (present(label)) print*,'patch_t::error ', label
-    print*,'patch_t::error loc        :', loc
-    print*,'patch_t::error it,new,iit :', patch%it, patch%new, patch%iit
+    if (present(label)) print*,'legacy_io::error ', label
+    print*,'legacy_io::error loc        :', loc
+    print*,'legacy_io::error it,new,iit :', patch%it, patch%new, patch%iit
     do iy=l(2),u(2)
-      print*,'patch_t::error iy, a:', iy, a(loc(1),iy,loc(3))
+      print*,'legacy_io::error iy, a:', iy, a(loc(1),iy,loc(3))
     end do
     if (present(error)) then
       error=loc
@@ -159,9 +168,9 @@ SUBROUTINE check_error (patch, a, label, error)
     end if
   else
     if (present(label)) then
-      print*,'patch_t::check_error maxval ', label, maxval(abs(a))
+      print*,'legacy_io::check_error maxval ', label, maxval(abs(a))
     else
-      print*,'patch_t::check_error maxval', maxval(abs(a))
+      print*,'legacy_io::check_error maxval', maxval(abs(a))
     end if
   end if
   deallocate(b)
@@ -244,7 +253,7 @@ SUBROUTINE input (self, ok)
         read (io_unit%data,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
       end do
       if (io%master .and. io%verbose>0 .or. self%track) &
-        print*, 'patch_t%input_legacy: ', trim(filename), time
+        print*, 'legacy_io%input_legacy: ', trim(filename), time
       close (io_unit%data)
       if (self%id==io%id_debug) &
         print *,'MK input_legacy', self%id, ok, self%mem(18,18,36,1,self%it,1)

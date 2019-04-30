@@ -305,7 +305,7 @@ SUBROUTINE gb_mem (self, gb)
       if (abs(lgb - gb_next) > 1.0) then
         do while (abs(lgb - gb_next) > 1.0)
           call self%gb_print(lgb)
-          gb_next = gb_next + sign(1d0,lgb - gb_next)
+          gb_next = gb_next + sign(1.0,lgb - gb_next)
         end do
       end if
       !$omp end critical (gb_cr)
