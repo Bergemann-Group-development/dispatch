@@ -143,6 +143,7 @@ SUBROUTINE init (self)
   ! if one rank happens to handle only patches that do not exist yet.
   !-----------------------------------------------------------------------------
   if (restart_time > 0d0) then
+    call self%lock%set ('gpatch_t')
     self%time = restart_time
     self%t(self%it) = self%time
     self%out_next = (int(self%time/io%out_time+1.0e-4)+1)*io%out_time ! add an `eps` to avoid round-off errors
@@ -152,6 +153,7 @@ SUBROUTINE init (self)
     if (io%iodir/=self%iout) call os%mkdir (trim(filename))
     io%iodir = self%iout
     !$omp end master
+    call self%lock%unset ('gpatch_t')
   end if
   call trace%end()
 END SUBROUTINE init

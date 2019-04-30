@@ -455,6 +455,7 @@ subroutine check_small (self, uu)
     write (io_unit%dump) self%time, self%dtime
     do iw=1,self%nw
     do it=1,self%nt
+      !$omp atomic read
       jt = self%iit(it)
       write (io_unit%dump) self%mem(:,:,:,:,jt,iw)
     end do
