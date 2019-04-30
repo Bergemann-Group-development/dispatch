@@ -2230,17 +2230,18 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
   real                            :: pt(2)
   logical, optional               :: all
   !.....................................................................
-  integer                         :: i, j, n
-  real(8)                         :: t(self%nt), dt
+  integer                         :: i, j, n, iit(self%nt-1)
+  real(8)                         :: t(self%nt-1), dt
   integer, save                   :: itimer=0
   ! --------------------------------------------------------------------
   !call trace%begin ('patch_t%time_interval', 2, itimer=itimer)
-  call self%lock%set ('time interval')
   if (self%nt==1) then
     jt = 1
     pt(2) = 0.0
   else
-    t = self%t(self%iit)
+    call self%lock%set ('time_interval')
+    call self%timeslots (iit, t)
+    call self%lock%unset ('time_interval')
     j = 1
     !n = merge(self%nt-1, self%nt-2, present(all))
     n = self%nt-2
@@ -2254,7 +2255,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
     do i=1,n
       if (t(i) < time) j=i
     end do
-    jt = self%iit(j:j+1)
+    jt = iit(j:j+1)
     dt = t(j+1)-t(j)
     if (dt==0.0) then
       pt(2) = 0.0
@@ -2264,10 +2265,9 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
   end if
   pt(1) = 1.-pt(2)
   if ((io%verbose>3 .or. io_unit%do_validate) .and. pt(2)>0.0) then
-    write(io%output,'(a,1p,3e12.4,2i5,0p,2f8.4)') &
-      'time_interval: times  =', t(j), time, t(j+1), jt, pt
+    write(io%output,'(a,i6,i6,1p,e14.6,i3,0p,2f8.4,2x,1p,7e14.6)') &
+      'time_interval: times  =', self%id, self%istep, time, j, pt, t
   end if
-  call self%lock%unset ('time interval')
   !call trace%end (itimer)
 END SUBROUTINE time_interval
 
