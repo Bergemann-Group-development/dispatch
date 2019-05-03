@@ -227,14 +227,12 @@ SUBROUTINE output (patch, count)
   ! On-the-fly time derivatives output
   !-----------------------------------------------------------------------------
   if (io%time_derivs>0) then
-    allocate (buffer(n(1),n(2),n(3),io%nv))
     do iv=1,io%nv
       call convert_variables ! copy `patch%mem` into `mem`, converting if desired
       call time_slices%derivative1 (patch, mem, buffer(:,:,:,iv))
     end do
     call io_write ((io%time_derivs+1)*patch%iout, 1)
     if (io%time_derivs==2) then
-      allocate (buffer(n(1),n(2),n(3),io%nv))
       do iv=1,io%nv
         call convert_variables ! copy `patch%mem` into `mem`, converting if desired
         call time_slices%derivative2 (patch, mem, buffer(:,:,:,iv))
@@ -242,6 +240,11 @@ SUBROUTINE output (patch, count)
       call io_write ((io%time_derivs+1)*patch%iout, 2)
     end if
   end if
+  !-----------------------------------------------------------------------------
+  ! Deallocate mem, but do NOT deallocate buffer.  Since io_write uses non-
+  ! blocking MPI_File_iwrite calls, the buffer must remain allocated, until a
+  ! later call to check_io finds that it is no longer needed, and deallocates it
+  !-----------------------------------------------------------------------------
   deallocate (mem)
   call trace%end (itimer)
 contains
@@ -400,11 +403,13 @@ SUBROUTINE output_single (patch, count)
     call mpi_io%use (file_out)
   end if
   call mpi_io%set (snapshot_words, buffer_words, 99)
+  !$omp critical (allocate_cr)
   if (.not.associated(parallel_io%buffer)) then
     nder = io%time_derivs+1
     allocate (parallel_io%buffer(n(1),n(2),n(3),io%ntask,io%nv,nder))
     write (io%output,*) 'shape io%buffer =', shape(parallel_io%buffer)
   end if
+  !$omp end critical (allocate_cr)
   !-----------------------------------------------------------------------------
   ! Info
   !-----------------------------------------------------------------------------
