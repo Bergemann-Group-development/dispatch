@@ -11,13 +11,16 @@ MODULE force_mod
   type, public:: force_t
     integer :: id = 0
     integer :: seed
+    integer :: verbose
     real :: t_turb = 0.0
+    real :: t_damp = 0.0
     real, allocatable, dimension(:,:,:,:,:)   :: fran
     procedure(turbulence), pointer :: selected=>null()
     class(mesh_t), dimension(:), pointer  :: mesh
     type(random_t):: random
   contains
     procedure :: init
+    procedure :: dealloc
   end type
   real :: ampl_turb = 0.1
   real :: a_helmh=1.
@@ -26,6 +29,7 @@ MODULE force_mod
   real :: pk=7./6.
   real :: t_turn = 0.1
   real :: t_turb = 0.0
+  real :: t_damp = 3e-4
   real :: pi=3.14159365
   logical :: do_force = .true.
   logical :: do_helmh = .true.
@@ -45,7 +49,7 @@ SUBROUTINE init (self, solver, id, mesh)
   integer :: mx, my, mz
   real    :: rhoav, xav, yav, zav
   namelist /turbulence_params/ do_force, do_helmh, a_helmh, k1, k2, pk, &
-                               ampl_turb, t_turn, t_turb, seed
+                               ampl_turb, t_turn, t_turb, seed, t_damp, verbose
   logical, save:: first_time = .true.
   !---------------------------------------------------------------------------
   !$omp critical (init_cr)
@@ -60,6 +64,8 @@ SUBROUTINE init (self, solver, id, mesh)
   self%id     = id
   self%seed   = seed
   self%t_turb = t_turb
+  self%t_damp = t_damp
+  self%verbose= verbose
   self%mesh   => mesh
   mx = self%mesh(1)%gn
   my = self%mesh(2)%gn
@@ -70,6 +76,20 @@ SUBROUTINE init (self, solver, id, mesh)
   self%selected => turbulence
   call self%random%init (seed)
 END SUBROUTINE init
+
+!===============================================================================
+!> Deallocate force update arrays
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(force_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('force_t%dealloc')
+  if (allocated(self%fran)) then
+    call io%bits_mem (-storage_size(self%fran), product(shape(self%fran)), '-fran')
+    deallocate (self%fran)
+  end if
+  call trace%end
+END SUBROUTINE dealloc
 
 !===============================================================================
 !> Calculate a random force, confined to a shell in k-space, at regular intervals

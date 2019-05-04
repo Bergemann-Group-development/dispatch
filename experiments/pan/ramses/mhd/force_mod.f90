@@ -11,7 +11,9 @@ MODULE force_mod
   type, public:: force_t
     integer :: id = 0
     integer :: seed
+    integer :: verbose
     real :: t_turb = 0.0
+    real :: t_damp
     real, allocatable, dimension(:,:,:,:,:)   :: fran
     procedure(turbulence), pointer :: selected=>null()
     class(mesh_t), dimension(:), pointer  :: mesh
@@ -27,6 +29,7 @@ MODULE force_mod
   real :: pk=7./6.
   real :: t_turn = 0.1
   real :: t_turb = 0.0
+  real :: t_damp = 3e-4
   real :: pi=3.14159365
   logical :: do_force = .true.
   logical :: do_helmh = .true.
@@ -46,9 +49,10 @@ SUBROUTINE init (self, solver, id, mesh)
   integer :: mx, my, mz
   real    :: rhoav, xav, yav, zav
   namelist /turbulence_params/ do_force, do_helmh, a_helmh, k1, k2, pk, &
-                               ampl_turb, t_turn, t_turb, seed
+                               ampl_turb, t_turn, t_turb, seed, t_damp, verbose
   logical, save:: first_time = .true.
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  call trace%begin ('force_t%init')
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -60,18 +64,21 @@ SUBROUTINE init (self, solver, id, mesh)
   self%id     = id
   self%seed   = seed
   self%t_turb = t_turb
+  self%t_damp = t_damp
+  self%verbose = verbose
   self%mesh   => mesh
   mx = self%mesh(1)%gn
   my = self%mesh(2)%gn
   mz = self%mesh(3)%gn
   if (.not.allocated(self%fran)) then
     allocate (self%fran(mx,my,mz,3,2))
-    call io%gb_mem (storage_size(self%fran)*(product(shape(self%fran))/(8.*1024.**3)))
-    self%fran = 0.0
+    call io%bits_mem (storage_size(self%fran), product(shape(self%fran)), 'fran')
   end if
+  self%fran = 0.0
   self%selected => turbulence
   call self%random%init (seed)
   !$omp end critical (input_cr)
+  call trace%end
 END SUBROUTINE init
 
 !===============================================================================
@@ -155,16 +162,16 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
         enddo
       enddo
     enddo
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Normalized acceleration factor
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     accel  = ampl_turb/t_turn/sqrt(float(nrand)/8.)    ! rms=1./8. per comp.
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! To obtain a Kolmogorov slope of the driving alone, one should have amplitudes
     ! a(k) that drop with k^(-11./6.), to have a(k)^2*k^2 = k^(-5./3.).  This ASSUMES
     ! that the amplitudes are proportional to the driving.  But the energy drain may
     ! be rather inversely proportional to the turnover time, which goes as k^(2./3.)
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     fpow = 0.
     do jx=-kmax,kmax
       kx = cmplx (0., jx*2.*pi/mesh(1)%b)
@@ -177,6 +184,11 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
             fxx = cexp(cmplx(0., 2.*pi*self%random%ran1()))/fk**pk
             fyy = cexp(cmplx(0., 2.*pi*self%random%ran1()))/fk**pk
             fzz = cexp(cmplx(0., 2.*pi*self%random%ran1()))/fk**pk
+            !-------------------------------------------------------------------
+            ! After refinement, fast-forward to the last two force calculations
+            !-------------------------------------------------------------------
+            if (self%t_turb <= time - 2.0*t_turn) &
+              cycle
             !------------------
             ! solenoidal field:
             !------------------

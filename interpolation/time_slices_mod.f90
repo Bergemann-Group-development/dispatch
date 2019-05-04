@@ -63,11 +63,12 @@ SUBROUTINE interpolate (patch, mem, buffer)
   real(kind=4), dimension(:,:,:):: buffer
   !.............................................................................
   real(8):: times(patch%nt-1)
+  integer:: iit(patch%nt-1)
   real(8), dimension(order+1):: w
   integer:: i1, i2
   !-----------------------------------------------------------------------------
   if (verbose > 0) write(io_unit%log,*) patch%id, 'time_slices_t%interpolate'
-  times = patch%t(patch%iit(1:patch%nt-1))
+  call patch%timeslots (iit, times)
   call lagrange%sequence_weights (patch%out_next, times, i1, i2, w, order)
   call weighted_sum (patch, times, w, i1, i2, mem, buffer)
 END SUBROUTINE interpolate

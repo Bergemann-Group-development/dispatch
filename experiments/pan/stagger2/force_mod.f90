@@ -11,7 +11,9 @@ MODULE force_mod
   type, public:: force_t
     integer :: id = 0
     integer :: seed
+    integer :: verbose
     real :: t_turb = 0.0
+    real :: t_damp = 0.0
     real, allocatable, dimension(:,:,:,:,:)   :: fran
     procedure(turbulence), pointer :: selected=>null()
     class(mesh_t), dimension(:), pointer  :: mesh
@@ -27,6 +29,7 @@ MODULE force_mod
   real :: pk=7./6.
   real :: t_turn = 0.1
   real :: t_turb = 0.0
+  real :: t_damp = 3e-4
   real :: pi=3.14159365
   logical :: do_force = .true.
   logical :: do_helmh = .true.
@@ -46,7 +49,7 @@ SUBROUTINE init (self, solver, id, mesh)
   integer :: mx, my, mz
   real    :: rhoav, xav, yav, zav
   namelist /turbulence_params/ do_force, do_helmh, a_helmh, k1, k2, pk, &
-                               ampl_turb, t_turn, t_turb, seed
+                               ampl_turb, t_turn, t_turb, seed, t_damp, verbose
   logical, save:: first_time = .true.
   !---------------------------------------------------------------------------
   !$omp critical (init_cr)
@@ -61,6 +64,8 @@ SUBROUTINE init (self, solver, id, mesh)
   self%id     = id
   self%seed   = seed
   self%t_turb = t_turb
+  self%t_damp = t_damp
+  self%verbose= verbose
   self%mesh   => mesh
   mx = self%mesh(1)%gn
   my = self%mesh(2)%gn
@@ -185,9 +190,9 @@ FUNCTION turbulence (self, time, d, p, Ux, Uy, Uz, mesh) RESULT (ff)
             endif
             !------------------
             fact=1.
-            if (jx > 0) fact=fact*0.5
-            if (jy > 0) fact=fact*0.5
-            if (jz > 0) fact=fact*0.5
+            if (jx /= 0) fact=fact*0.5
+            if (jy /= 0) fact=fact*0.5
+            if (jz /= 0) fact=fact*0.5
             fpow = fpow+fact*(cabs(fxx)**2+cabs(fyy)**2+cabs(fzz)**2)
             dx = mesh(1)%d
             dy = mesh(2)%d

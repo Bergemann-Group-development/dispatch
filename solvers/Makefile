@@ -14,4 +14,4 @@ vector_mod.o            : io_mod.o trace_mod.o scalar_mod.o
 stagger_4th.o           : io_mod.o trace_mod.o scalar_mod.o vector_mod.o
 stagger_6th.o           : io_mod.o trace_mod.o scalar_mod.o vector_mod.o
 vector_ops.o            : $(STAGGER)
-forces_mod.o            : io_mod.o trace_mod.o patch_mod.o force_mod.o link_mod.o
+forces_mod.o            : io_mod.o trace_mod.o patch_mod.o force_mod.o link_mod.o mpi_global_mod.o

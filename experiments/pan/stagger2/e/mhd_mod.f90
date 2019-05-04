@@ -37,7 +37,6 @@ MODULE mhd_mod
     real, dimension(:,:,:),   pointer:: lnd, ee, pg
     real, dimension(:,:,:), allocatable:: qrad
     real:: nu(6)
-    real:: csound
     real:: cdtd
     logical:: mhd=.false.
     logical:: first_time=.true.
