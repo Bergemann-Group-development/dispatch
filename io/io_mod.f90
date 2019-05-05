@@ -122,12 +122,6 @@ SUBROUTINE init (self, name)
   io_unit%master = io_unit%master.and.self%master
   !$omp end parallel
   !-----------------------------------------------------------------------------
-  ! For non-master MPI ranks, redirect log file output to rundir/rank_rrrrr.log
-  !-----------------------------------------------------------------------------
-  if (mpi%rank > 0) then
-    io_unit%output = io_unit%mpi
-  end if
-  !-----------------------------------------------------------------------------
   ! I/O unit numbers, for convenience and backwards compatibility.  All other
   ! unit numbers should be taken directly from io_unit_mod
   !-----------------------------------------------------------------------------
@@ -213,6 +207,13 @@ SUBROUTINE init (self, name)
     call open_rank_file (io_unit%dump      , ".dump" , 'unformatted')
     call open_rank_file (io_unit%validate  , ".val"  , 'unformatted')
     call open_rank_file (io_unit%dispatcher, ".disp" , 'formatted')
+    !---------------------------------------------------------------------------
+    ! For non-master MPI ranks, redirect log file output to rundir/rank_rrrrr.log
+    !---------------------------------------------------------------------------
+    if (mpi%rank > 0) then
+      io_unit%output = io_unit%mpi
+    end if
+    io%output = io_unit%output
     log_unit = io_unit%log
     write (io_unit%log,'(a,i4,2l4)') &
       'io_mod::init io_unit%log, io_unit%master, io_unit%verbose:', &
