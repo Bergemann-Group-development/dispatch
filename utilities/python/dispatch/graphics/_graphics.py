@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as pl
 
+import dispatch as di
 import dispatch.select   as ds
 
 def _kw_extract(kw,dict):
@@ -145,3 +146,24 @@ def image_plane(snap,x=None,y=None,z=None,iv=0,verbose=1):
     pl.title('{}={:.3f}'.format(sdir[i],xyz[i]))
     pl.xlabel(labels[i][0])
     pl.ylabel(labels[i][1])
+
+def pdf(iout,run='',data='data',nbin=100,xlim=[-4,3],lnd=False):
+    """ Plot the PDF of the density """
+    s = di.snapshot(iout,run=run,data=data)
+    n = nbin
+    bins = np.linspace(xlim[0],xlim[1],n+1)
+    htot = 0.0
+    i = 0
+    for p in s.patches:
+        i += 1
+        if i%1000==0:
+            print('{:.0f%}'.format(i/len(s.patches)*100.0))
+        d = p.var('d')
+        if lnd:
+            logd = d/np.log(10.)
+        else:
+            logd = np.log10(d)
+        h,e = np.histogram(logd,bins=bins)
+        htot += h
+    pl.hist(bins[0:n],bins=bins,weights=htot,log=True,density=True)
+    return bins,htot
