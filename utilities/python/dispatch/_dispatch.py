@@ -186,6 +186,42 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             return memmap2(filed, dtype=np.float32,
                 offset=patch.offset[iv], mode='r', order='F', shape=shape)
 
+    def average_down(iv, axis=0):
+        q = mem(iv)
+        n = 2 # 2-point average (equivalent to average over i-1 and i)
+        x = np.cumsum(q,axis=axis,dtype=np.float)
+        if axis == 0 and q.shape[0] > 1:
+            x[n:,:,:] = x[n:,:,:] - x[:-n,:,:]
+            x[n - 1:,:,:] = x[n - 1:,:,:] / n
+            x[-1,:,:] = q[-2,:,:] # first and last element of average are copied from original
+        elif axis == 1 and q.shape[1] > 1:
+            x[:,n:,:] = x[:,n:,:] - x[:,:-n,:]
+            x[:,n - 1:,:] = x[:,n - 1:,:] / n
+            x[:,-1,:] = q[:,-2,:]
+        elif axis == 2 and q.shape[2] > 1:
+            x[:,:,n:] = x[:,:,n:] - x[:,:,:-n]
+            x[:,:,n - 1:] = x[:,:,n - 1:] / n
+            x[:,:,-1] = q[:,:,-2]
+        else:
+            x = q.copy()
+        return x
+
+    def xdown(iv):
+        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
+            return average_down(iv, axis=0)
+        else:
+            return mem(iv)
+    def ydown(iv):
+        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
+            return average_down(iv, axis=1)
+        else:
+            return mem(iv)
+    def zdown(iv):
+        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
+            return average_down(iv, axis=2)
+        else:
+            return mem(iv)
+
     def var(iv,copy=None):
         """
         Special logic to calculate velocities from momenta on the fly.
@@ -196,6 +232,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         before multiplying by the data.
 
         """
+
         if patch.kind[0:6]=='ramses':
             if   iv=='ux':
                 return mem('p1',copy=copy)/mem('d',copy=copy)
@@ -207,18 +244,18 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                 return mem(iv,copy=copy)
         else:
             if   iv=='u1' or iv=='ux':
-                return mem('p1')/mem('d')
+                return mem('p1')/xdown('d')
             elif iv=='u2' or iv=='uy':
                 if patch.mesh_type != 'Cartesian':
-                    return mem('p2')/mem('d')/patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
+                    return mem('p2')/ydown('d')/patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
                 else:
-                    return mem('p2')/mem('d')
+                    return mem('p2')/ydown('d')
             elif iv=='u3' or iv=='uz':
                 if patch.mesh_type != 'Cartesian':
                     gf = patch.geometric_factors # shorthand
-                    return mem('p3')/mem('d')/gf['h31c'][:,np.newaxis,np.newaxis]/gf['h32c'][np.newaxis,:,np.newaxis]
+                    return mem('p3')/zdown('d')/gf['h31c'][:,np.newaxis,np.newaxis]/gf['h32c'][np.newaxis,:,np.newaxis]
                 else:
-                    return mem('p3')/mem('d')
+                    return mem('p3')/zdown('d')
             else:
                 return mem(iv,copy=copy)
     return var
