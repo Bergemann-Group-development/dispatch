@@ -47,7 +47,7 @@ SUBROUTINE init (self)
   real(8), save:: theta_offset = 0.0
   character(len=16), save:: coord_type = 'spherical'
   namelist /experiment_params/ n_patches, n_per_patch, extent, r_offset, &
-                               theta_offset, coord_type
+                               coord_type
 
   integer:: i1, i2, i3
   integer:: iostat
@@ -68,10 +68,19 @@ SUBROUTINE init (self)
   !$omp end critical (input_cr)
 
   if (coord_type == 'spherical') then
+    if (extent(2) == 1.0) then
+      ! even in "no-no-mans-land", we want symmetry axes to be cospatial with
+      ! cell faces, not cell centres (and thus the corrections below)!
+      extent(2) = extent(2) * (1.0d0 - 0.9999d0 / (n_per_patch(2)-1) / n_patches(2))
+      theta_offset = 0.5d0 * extent(2) / (n_per_patch(2)-1) / n_patches(2)
+      print*,'A:',extent(2),theta_offset,extent(2)*math%pi,theta_offset*math%pi
+    end if
     ! the theta and phi extents are given in units of pi
     extent(2) = extent(2) * math%pi
     extent(3) = extent(3) * math%pi
     ! the radial extent is given in units of au
+    extent(1) = extent(1) * (1.0d0 - 0.5d0 / (n_per_patch(1)-1) / n_patches(1))
+    r_offset = r_offset + 0.5d0 * extent(1) / (n_per_patch(1)-1) / n_patches(1)
     extent(1) = extent(1) * cgs%au
   else if (coord_type == 'cylindrical') then
     ! the phi extent is given in units of pi
