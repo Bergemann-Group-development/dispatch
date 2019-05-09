@@ -42,6 +42,7 @@ MODULE initial_mod
     real(8):: density_floor
     logical:: with_density_floor
     logical:: rotating_disk
+    character(len=64):: solver
   contains
     procedure:: init
     procedure:: condition
@@ -86,6 +87,7 @@ SUBROUTINE init (self, solver, gamma)
   self%density_floor = density_floor
   self%with_density_floor = with_density_floor
   self%rotating_disk = rotating_disk
+  self%solver = trim(solver)
 
   call trace%end
 END SUBROUTINE init
@@ -103,7 +105,7 @@ SUBROUTINE condition (self, m, ff, idx)
   class(mesh_t), pointer:: m1, m2, m3
   integer:: i1, i2, i3, ione, jone
   real(8):: gm_s, vkep, rho_mid, disk_angle, rho0, pgas0, q0, r_sph, r_cyl, bpol0, &
-            cot_theta, z, theta, phi, x1, x2, switch_rotating, vkeptilde2
+            cot_theta, z, theta, x1, x2, switch_rotating, vkeptilde2
   real(8), dimension(:,:,:), allocatable:: psi ! magnetic flux function
   logical, save:: first_time = .true.
   !----------------------------------------------------------------------------
@@ -128,20 +130,21 @@ SUBROUTINE condition (self, m, ff, idx)
   switch_rotating = 1.0
   if (.not. self%rotating_disk) switch_rotating = 0.0
 
-  if (first_time .and. io%master) then
-    print*,"rho_0 =",rho0
-    print*,"Corona/disk density ratio:",self%aspect_ratio**2 * (1.0 + self%rpindex)
-    print*,"1 Keplerian orbit at 'disc_r0' (in s):",2.0 * math%pi / sqrt(scaling%grav * self%star_mass / self%disc_r0**3)
-    print*,"1 Keplerian orbit at 'disc_rmax' (in s):",2.0 * math%pi / sqrt(scaling%grav * self%star_mass / self%disc_rmax**3)
-    first_time = .false.
-  end if
-
   pgas0 = rho0 * (gm_s / self%disc_r0) / (1.0 + self%rpindex)
   ! initial magnetic field strength is set primarily by `pbeta0`.
   if (self%pbeta0 == 0) then
     bpol0 = 0.0
   else
     bpol0 = sqrt(2.0 * pgas0 / self%pbeta0)
+  end if
+
+  if (first_time .and. io%master) then
+    print*,"rho_0 =",rho0
+    print*,"Corona/disk density ratio:",self%aspect_ratio**2 * (1.0 + self%rpindex)
+    print*,"1 Keplerian orbit at 'disc_r0' (in s):",2.0 * math%pi / sqrt(scaling%grav * self%star_mass / self%disc_r0**3)
+    print*,"1 Keplerian orbit at 'disc_rmax' (in s):",2.0 * math%pi / sqrt(scaling%grav * self%star_mass / self%disc_rmax**3)
+    print*,"Initial field strength at the midplane and r = r_0:",bpol0
+    first_time = .false.
   end if
 
   ! initialise magnetic flux function
@@ -189,11 +192,10 @@ SUBROUTINE condition (self, m, ff, idx)
 
   ! intialise field variables
   do i3=m3%lb,m3%ub
-    phi = m3%centre_nat + m3%r(i3)
     do i2=m2%lb,m2%ub
-      x2 = m2%centre_nat + m2%r(i2)
+      x2 = m2%centre_nat + m2%r(i2) ! cell-centred
       do i1=m1%lb,m1%ub
-        x1 = m1%centre_nat + m1%r(i1)
+        x1 = m1%centre_nat + m1%r(i1) ! cell-centred
         if (m1%type == 'spherical_mesh') then
           theta = x2
           r_sph = abs(x1)
