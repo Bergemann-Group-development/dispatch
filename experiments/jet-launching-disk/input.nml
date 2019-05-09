@@ -5,7 +5,7 @@
  do_output=t
  guard_zones=t
  method='parallel'
- time_derivs=f
+ restart=250
 /
 
 &dispatcher0_params
@@ -18,25 +18,25 @@
 /
 
 &out_params
- end_time=8.925e6 ! 100 orbits at 0.02 au
- out_time=8.925e2 ! 1 output every 0.01 orbit at 0.02 au
- print_time=400.0
+ end_time=1.7850e8 ! 2000 orbits at 0.02 au
+ out_time=4.4625e2 ! 1 output every 0.01 orbit at 0.02 au
+ print_time=100.0
 /
 
 &initial_params
   with_density_floor=.true.
   disc_mass=0.01 ! in M_Sun
-  pbeta0=0.0
+  pbeta0=0.922e3
   rotating_disk=t
+  opening_angle=3.0
 /
 
 &experiment_params
   coord_type='spherical'
-  n_patches=10,5,1
-  n_per_patch=32,42,1
-  extent=9.98,0.98,2.0 !r, theta, phi; angular extents as factor of pi
-  r_offset=0.02 ! in AU
-  theta_offset=0.01 ! given as a factor of pi
+  n_patches=18,7,1
+  n_per_patch=40,42,1
+  extent=9.95,1.0,2.0 ! r, theta, phi; angular extents as factor of pi
+  r_offset=0.05 ! in AU
 /
 
 &zeus_params
