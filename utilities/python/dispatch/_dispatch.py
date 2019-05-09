@@ -206,14 +206,14 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             else:
                 return mem(iv,copy=copy)
         else:
-            if   iv=='ux':
+            if   iv=='u1' or iv=='ux':
                 return mem('p1')/mem('d')
-            elif iv=='uy':
+            elif iv=='u2' or iv=='uy':
                 if patch.mesh_type != 'Cartesian':
                     return mem('p2')/mem('d')/patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
                 else:
                     return mem('p2')/mem('d')
-            elif iv=='uz':
+            elif iv=='u3' or iv=='uz':
                 if patch.mesh_type != 'Cartesian':
                     gf = patch.geometric_factors # shorthand
                     return mem('p3')/mem('d')/gf['h31c'][:,np.newaxis,np.newaxis]/gf['h32c'][np.newaxis,:,np.newaxis]
@@ -327,6 +327,7 @@ object takes both numeric and text key values: Examples:\n\
         if verbose:
             print('plane: i, p = {:d} {:.3f}'.format(i,p))
         return f
+            
 
 def _parse_namelist (items):
     pos=items[1:]
@@ -340,7 +341,13 @@ def _parse_namelist (items):
         if pos[1].find('2*')>=0:
             pos[1]=pos[1].replace('2*','')
             pos=[pos[0],pos[1],pos[1]]
-    return np.array(list(map(float,pos)))
+    # choose right data type for the resulting array
+    try:
+        pos = [int(p) for p in pos]
+    except:
+        pos = [float(p) for p in pos]
+
+    return np.array(pos)
 
 def parse_patches(file='data/00000/rank_00000_patches.nml'):
     """ Optimized parsing of patch namelist entries.
@@ -351,13 +358,16 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
         pass
 
     with open(file,'r') as fd:
+        watch_block = False
         for line in fd:
             # strip commas and equal sign from line and split
-            line=line.replace('=','').replace(',','')
+            line=line.replace('=','').replace(',','').replace('"',' ')
             items=line.split()
-            if items[0]=='ID':
-                id=int(items[1])
+            if items[0] == "&PATCH_NML":
                 d={}
+                watch_block = True
+            elif items[0]=='ID':
+                id=int(items[1])
             elif items[0]=='POSITION':
                 d['position'] = _parse_namelist(items)
             elif items[0]=='SIZE':
@@ -368,7 +378,24 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
                 d['level']=int(items[1])
             elif items[0]=='DTIME':
                 d['dtime']=float(items[1])
+            elif items[0]=='ISTEP':
+                d['istep']=int(items[1])
+            elif items[0]=='DS':
+                d['ds'] = _parse_namelist(items)
+            elif items[0]=='MESH_TYPE':
+                d['mesh_type'] = int(items[1])
+            elif items[0]=='NCELL':
+                d['ncell'] = _parse_namelist(items)
+            elif items[0]=='NG':
+                d['ng'] = _parse_namelist(items)
+            elif items[0]=='BOX':
+                d['box'] = _parse_namelist(items)
+            elif items[0]=='KIND':
+                d['kind']=items[1]
+            elif items[0]=='/' and watch_block: # the final entry of a namelist is always "/"
                 prop_dict[id]=d
+                watch_block = False
+
     return prop_dict
 
 import resource
