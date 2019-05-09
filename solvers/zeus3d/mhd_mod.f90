@@ -422,6 +422,14 @@ SUBROUTINE CopyToZeus (self)
   prtime = self%time
   ix1x2x3 = self%ix1x2x3
 
+  ! copy physical boundary logical flags
+  lx1ipb = self%mesh(1)%lower_boundary
+  lx1opb = self%mesh(1)%upper_boundary
+  lx2ipb = self%mesh(2)%lower_boundary
+  lx2opb = self%mesh(2)%upper_boundary
+  lx3ipb = self%mesh(3)%lower_boundary
+  lx3opb = self%mesh(3)%upper_boundary
+
   if (associated(self%force%selected)) deallocate (force)
   nullify (qz)
 

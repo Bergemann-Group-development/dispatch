@@ -54,6 +54,12 @@ SUBROUTINE update_experiment (self)
 
   call pboundaries%apply(self, self%mhd, self%it)
   call self%pebble_patch_t%output()
+  if (self%kind == 'zeus_mhd_patch') then
+    if (self%mesh(1)%lower_boundary) self%btypes%iib = 9
+    if (self%mesh(1)%upper_boundary) self%btypes%oib = 9
+    if (self%mesh(2)%lower_boundary) self%btypes%ijb = 1
+    if (self%mesh(2)%upper_boundary) self%btypes%ojb = 1
+  end if
   call self%solver_t%update()
   call pboundaries%apply(self, self%mhd, self%new, previt=self%it)
   call self%density_floor(self%new)
