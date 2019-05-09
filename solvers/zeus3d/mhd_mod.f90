@@ -286,8 +286,10 @@ SUBROUTINE init_zeus (self)
   end do
   idx = self%idx
 
-  self%dt(self%it) = dtinit
-  self%t(self%it) = 0.0d0
+  if (io%restart < 0) then
+    self%dt(self%it) = dtinit
+    self%t(self%it) = 0.0d0
+  end if
 
   call trace_end
 END SUBROUTINE init_zeus

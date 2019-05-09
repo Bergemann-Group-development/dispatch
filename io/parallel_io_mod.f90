@@ -645,11 +645,11 @@ SUBROUTINE input (patch, ok)
     return
   end if
   if (io%guard_zones) then
-    patch%mem(:,:,:,:,patch%it,1) = buffer
+    patch%mem(:,:,:,1:io%nv,patch%it,1) = buffer
   else
     patch%mem(patch%li(1):patch%ui(1), &
               patch%li(2):patch%ui(2), &
-              patch%li(3):patch%ui(3),:,patch%it,1) = buffer
+              patch%li(3):patch%ui(3),1:io%nv,patch%it,1) = buffer
   end if
   if (io%verbose > 1) then
     do iv=1,io%nv

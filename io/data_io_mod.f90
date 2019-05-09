@@ -348,11 +348,10 @@ SUBROUTINE output_nml (patch, append)
   integer, save        :: last_snapshot=-1
   character(len=16)    :: kind, eos, opacity, method
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method
-  namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
-    position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
-    ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    no_mans_land
-  namelist /patch_nml/ id, time, position, size, level, dtime
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, gamma, eos, opacity, &
+    periodic, guard_zones, time_derivs, no_mans_land, nv
+  namelist /patch_nml/ id, time, position, size, level, dtime, istep, ds, box, &
+    velocity, quality, mesh_type, ncell, li, ui, n, ng, gn, nt, nw, kind
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
@@ -371,6 +370,7 @@ SUBROUTINE output_nml (patch, append)
   iout        = patch%iout
   time        = merge (patch%time, patch%out_next, io%out_time==0)
   dtime       = patch%dtime
+  istep       = patch%istep
   l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
   u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
   ncell        = u-l+1
@@ -477,16 +477,16 @@ SUBROUTINE input_nml (patch)
   logical, save        :: guard_zones, no_mans_land, periodic(3)
   character(len=16)    :: kind, eos, opacity, method
   integer              :: iostat
-  namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
-    position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
-    ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
-    no_mans_land
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, gamma, eos, opacity, &
+                          periodic, guard_zones, time_derivs, no_mans_land, nv
   !-----------------------------------------------------------------------------
   real(8), save        :: origin(3)
   integer, save        :: dims(3), mpi_dims(3), per_rank(3)
   logical, save        :: face_nbors, fast_nbors, omp_init
   namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
     fast_nbors, omp_init
+  namelist /patch_nml/ id, time, position, size, level, dtime, istep, ds, box, &
+    velocity, quality, mesh_type, ncell, li, ui, n, ng, gn, nt, nw, kind
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   ! Read info from namelist
@@ -495,21 +495,46 @@ SUBROUTINE input_nml (patch)
   !$omp critical (output_cr)
   if (first_time) then
     first_time = .false.
-    patch%iout = io%restart
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%inputdir), patch%iout
     open  (unit=io_unit%nml1, file=filename, form='formatted', status='old')
     read  (io_unit%nml1, snapshot_nml, iostat=iostat)
     read  (io_unit%nml1, cartesian_params, iostat=iostat)
     close (io_unit%nml1)
     io%mpi_odims = mpi_dims
+    io%format = ioformat
+    io%ntotal = ntotal
+    io%time_derivs = time_derivs
+    io%guard_zones = guard_zones
   end if
+  !-----------------------------------------------------------------------------
+  ! Open the file "data/run/rank_rrrrr_patches.nml" for reading
+  !-----------------------------------------------------------------------------
+  patch%iout = io%restart
+  write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
+         trim(io%inputdir), patch%iout, mpi%rank
+  if (filename /= filename2) then
+    if (filename2 /= '') close (io_unit%nml2)
+    open (io_unit%nml2, file=trim(filename), form='formatted', status='old')
+    filename2 = filename
+  end if
+  rewind (io_unit%nml2)
+  do
+    read (io_unit%nml2, patch_nml, iostat=iostat)
+    if (id == patch%id) exit
+    if (iostat < 0) then
+      print*,'ID = ',patch%id
+      call mpi%abort('input_nml: patch_nml not found! Abort!')
+    end if
+  end do
   patch%t     = time
-  patch%dt    = 0d0
+  patch%dt    = dtime
   patch%time  = time
-  patch%istep = 0
+  patch%dtime = dtime
+  patch%istep = istep
   patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
   patch%guard_zones = guard_zones
   patch%time_derivs = time_derivs
+  patch%velocity = velocity
   !$omp end critical (output_cr)
   call trace%end()
 END SUBROUTINE input_nml

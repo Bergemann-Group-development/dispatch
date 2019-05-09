@@ -49,7 +49,7 @@ SUBROUTINE init (self)
   namelist /experiment_params/ n_patches, n_per_patch, extent, r_offset, &
                                coord_type
 
-  integer:: i1, i2, i3
+  integer:: i1, i2, i3, ip
   integer:: iostat
   real(8), dimension(3):: pextent, curr_offset
   class(task_list_t), pointer:: task_list
@@ -141,12 +141,18 @@ SUBROUTINE init (self)
     curr_offset(2) = self%r_offset
   end if
 
+  ip = 0
   do i3=1,n_patches(3)
     do i2=1,n_patches(2)
       do i1=1,n_patches(1)
         allocate (experiment_t:: patch)
         select type (patch)
         type is (experiment_t)
+          patch%rank = mpi%rank
+          if (patch%rank == mpi%rank) then
+            ip = ip + 1
+            patch%ip = ip
+          end if
           patch%size = pextent
           patch%position = curr_offset + ([i1,i2,i3] - 0.5) * pextent
           patch%n = n_per_patch
