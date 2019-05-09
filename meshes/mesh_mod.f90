@@ -597,7 +597,11 @@ FUNCTION func_position_f (self, i) RESULT(r)
   integer, intent(in) :: i
   real(8) :: r
   !.............................................................................
-  r = self%centre_nat + self%r(i) - 0.5 * self%d
+  if (i /= self%gn .or. self%gn == 1) then
+    r = self%centre_nat + self%r(i) - 0.5 * self%d
+  else
+    r = self%centre_nat + self%r(i-1) + 0.5 * self%d
+  end if
 
 END FUNCTION func_position_f
 
