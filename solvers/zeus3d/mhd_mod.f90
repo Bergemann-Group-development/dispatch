@@ -42,52 +42,6 @@ MODULE mhd_mod
     procedure:: courant_condition => do_nothing ! this is handled internally by the ZEUS solver
   end type
 
-  ! ---- ZEUS common blocks, variables, and namelist parameters ----
-  ! TODO: Purge common blocks!
-
-  ! Domain description variables
-  character(len=3):: zcoordsys
-
-  ! Input parameters
-  integer:: iord    , iords   , istp    , iscydf  , iscyqq  , ix1x2x3 &
-          , itote   , isetemf , cadvs   , cadvc   , cadvt   , trnvrsn &
-          , uordq   , avordw  , voutbc  , istpcd  , zniib   , znoib   &
-          , znijb   , znojb   , znikb   , znokb   , nghst
-  real(KindReal):: gamma_z , qcon    , qlin    , dfloor  , efloor &
-                 , e2floor , v1floor , v2floor , v3floor , b1floor , b2floor &
-                 , b3floor , nuscalar, diffc1  , diffc2  , dtmax   , dt      &
-                 , dtold   , dtnew   , dtcs    , dtal    , dtqq    , dtv1    &
-                 , dtv2    , dtv3    , dtdf    , dtss    , courno  , gamma   &
-                 , dtinit  , prtime
-
-  ! Other
-  real(KindReal) :: glblnmax, adbmin  , adbmax
-  real(KindReal), parameter :: huge = 1.0d+99
-  logical:: do_mhd
-
-  ! Common blocks
-  common / zcompubi / &
-                    iscydf  , iscyqq  , isetemf , itote   , nghst &
-                  , iord    , iords   , istp    , istpcd  , cadvs   &
-                  , cadvc   , cadvt   , uordq   , avordw  , trnvrsn &
-                  , voutbc
-! thread-shared common block
-  common / zcompubr /&
-                    b1floor , b2floor , b3floor , dfloor  , efloor&
-                  , e2floor , v1floor , v2floor , v3floor , dtmax&
-                  , qcon    , qlin    , diffc1  , diffc2  , nuscalar&
-                  , glblnmax, gamma_z , adbmin  , adbmax  , dtinit
-  common / zcomprvc / &
-                    zcoordsys
-  common / zcomprvi / &
-                    ix1x2x3 , zniib   , znoib   , znijb   , znojb   &
-                  , znikb   , znokb   , do_mhd
-  common / zcomprvr / &
-                    dt      , dtold   , dtnew   , prtime&
-                  , dtcs    , dtal    , dtqq    , dtv1    , dtv2    &
-                  , dtv3    , dtdf    , dtss    , courno
-!$omp threadprivate (/zcomprvc/, /zcomprvi/, /zcomprvr/)
-
 PUBLIC CopyToZeus, CopyFromZeus
 CONTAINS
 
@@ -215,10 +169,12 @@ CONTAINS
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !===============================================================================
 SUBROUTINE init_zeus (self)
+  USE zparams
   class(mhd_t):: self
   integer:: i
   logical, save :: first_time=.true.
   real, save:: courant=0.5
+  real(8), save:: gamma
   namelist / zeus_params /  gamma   , qcon    , qlin    , nghst   , courant &
                           , iord    , iords   , istp    , itote   , iscydf  &
                           , iscyqq  , ix1x2x3 , nuscalar, isetemf , trnvrsn &
@@ -254,7 +210,7 @@ SUBROUTINE init_zeus (self)
     nuscalar = 0.0d0
     diffc1  = 1.0d0
     diffc2  = 0.0d0
-    dtinit  = huge
+    dtinit  = huge(1.0d0)
     rewind (io%input); read (io%input, zeus_params)
     if (io%master) write (*, zeus_params)
 
@@ -357,7 +313,8 @@ END SUBROUTINE update_zeus
 !===============================================================================
 !===============================================================================
 SUBROUTINE CopyToZeus (self)
-  use amnodal
+  USE zparams
+  USE amnodal
   class(mhd_t) :: self
   real(KindReal) :: x1low, x2low, x3low, dx1, dx2, dx3, pvelocity(3)
   logical, save :: first_time=.true.
@@ -468,6 +425,9 @@ END SUBROUTINE CopyToZeus
 
 !===============================================================================
 SUBROUTINE CopyFromZeus (self)
+  USE zparams
+  USE amrfluxes, only: amemf1, amemf2, amemf3
+
   class(mhd_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
   integer, save:: itimer=0
