@@ -721,6 +721,24 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
         if (target%kind(1:4) == 'zeus' .and. target%mesh(i)%h(iv) == -0.5 .and. ui(i) > 1) &
           li(i) = li(i)+1
       end do
+      ! for staggered quantities, include the ub+1 zone for the appropriate components
+      ! note: p* and b* are face-centred in the same direction as the component, while
+      ! emfs are face-centred in both directions *orthogonal* to the component direction.
+      if (target%kind(1:4) == 'zeus' .and. iv >= target%idx%px .and. iv <= target%idx%pz) then
+        do i=1,3
+          if (iv == target%idx%px+i-1 .and. target%n(i) > 1) u(i) = u(i) + 1
+        end do
+      end if
+      if (target%kind(1:4) == 'zeus' .and. iv >= target%idx%bx .and. iv <= target%idx%bz) then
+        do i=1,3
+          if (iv == target%idx%bx+i-1 .and. target%n(i) > 1) u(i) = u(i) + 1
+        end do
+      end if
+      if (target%kind(1:4) == 'zeus' .and. iv >= target%idx%ex .and. iv <= target%idx%ez) then
+        do i=1,3
+          if (iv /= target%idx%ex+i-1 .and. target%n(i) > 1) u(i) = u(i) + 1
+        end do
+      end if
       if (target%id==id_debug) &
         write(io_unit%log,1) source%id, l, u, o, jt, pt
         1 format("download_t%same:", i6,"  l,u,o:",3(3i4,2x)," jt,pt:",2i4,2x,2f6.2)
