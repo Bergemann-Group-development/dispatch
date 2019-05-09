@@ -542,7 +542,7 @@ contains
     call trace%begin ('parallel_io-t%output_single::convert_variables')
     if (io%guard_zones) then
       l = patch%mesh%lb
-      u = patch%mesh%ub
+      u = max(patch%mesh%ub,patch%mesh%gn)
     else
       l = patch%mesh%li
       u = patch%mesh%ui
@@ -673,8 +673,8 @@ SUBROUTINE input (patch, ok)
   !-----------------------------------------------------------------------------
   ok = .true.
   if (io%verbose==1) &
-    write(io%output,'(a,2i6,1p,e16.6)') ' parallel_io_t%input: iout, id, time =', &
-    patch%iout, patch%id, patch%time
+    write(io%output,'(a,2i6,1p,2e16.6)') ' parallel_io_t%input: iout, id, time, dtime =', &
+    patch%iout, patch%id, patch%time, patch%dtime
   if (io%verbose>1) &
     write(io%output,'(a,4i6,2i7)') &
     ' parallel_io_t%input: iout, n, snapshot_words, buffer_words =', &

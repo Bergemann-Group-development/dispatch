@@ -155,7 +155,10 @@ SUBROUTINE init (self, name)
     inputdir = self%rundir
     rewind (io_unit%input)
     read (io_unit%input, io_params, iostat=iostat)
-    if (self%master.and.first_time) write (*,io_params)
+    if (self%master) then
+      if (iostat > 0) call self%namelist_warning ('io_params')
+      if (first_time) write (*,io_params)
+    end if
     if (mpi%master .and. .not. do_validate) then
       print'(a,i4)', ' n_socket =', omp%nsockets
       print'(a,i4)', '   n_core =', omp%ncores
