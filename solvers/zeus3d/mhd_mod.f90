@@ -261,7 +261,7 @@ SUBROUTINE init_zeus (self)
   endif
 
   self%ix1x2x3 = ix1x2x3
-  self%nv = 10
+  self%nv = 13
   self%gamma = gamma
   gamma_z = gamma
   self%courant = courant
@@ -274,11 +274,15 @@ SUBROUTINE init_zeus (self)
   self%idx%px=4  ; self%idx%py=5; self%idx%pz=6
   self%idx%bx=7  ; self%idx%by=8; self%idx%bz=9
   self%idx%tt=-1 ; self%idx%s=-1; self%idx%dphi=-1
+  self%idx%ex=11 ; self%idx%ey=12; self%idx%ez=13
+  io%nv = 10 ! do not write EMFs to output
   call self%gpatch_t%init()
   self%idx%phi=10 ! ZEUS always has a slot for the grav. pot. included (even if not used).
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5 ! momentum/velocity components
     self%mesh(i)%h(self%idx%bx+i-1) = -0.5 ! mag. field components
+    self%mesh(i)%h(self%idx%ex:self%idx%ez) = -0.5
+    self%mesh(i)%h(self%idx%ex+i-1) = 0.0 ! EMFs; each component is cell-centred in its own direction.
   end do
   idx = self%idx
 
@@ -441,6 +445,14 @@ SUBROUTINE CopyFromZeus (self)
   qz => self%mem(:,:,:,:,self%new,1)
 
   call trace_begin ('copyztoa (external)', itimer=itimer)
+
+  ! Save the EMFs as calculated by the solver.
+  ! Note that what is actually stored is `E_i * g_i * dx_i`, where `E_i` are the
+  ! actual EMFs (= v x B).
+  self%mem(:,:,:,self%idx%ex,self%new,1) = amemf1(:,:,:)
+  self%mem(:,:,:,self%idx%ey,self%new,1) = amemf2(:,:,:)
+  self%mem(:,:,:,self%idx%ez,self%new,1) = amemf3(:,:,:)
+
   call copyztoa (qz, self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, self%nv)
   call trace_end (itimer)
 

@@ -150,12 +150,21 @@ SUBROUTINE condition (self, m, ff, idx)
     psi = 0.0
   else
   ! NOTE!: the flux function should be *edge-centred*!!!
-    do i3=m3%lb,m3%ub
-      phi = m3%centre_nat + m3%r(i3) - 0.5*m3%d
-      do i2=m2%lb,m2%ub
-        x2 = m2%centre_nat + m2%r(i2) - 0.5*m2%d
-        do i1=m1%lb,m1%ub
-          x1 = m1%centre_nat + m1%r(i1) - 0.5*m1%d
+    do i3=m3%lb,m3%gn
+      do i2=m2%lb,m2%gn
+        ! face-centred
+        if (i2 == m2%gn) then
+          x2 = m2%centre_nat + m2%r(m2%ub) + 0.5*m2%d
+        else
+          x2 = m2%centre_nat + m2%r(i2) - 0.5*m2%d
+        end if
+        do i1=m1%lb,m1%gn
+          ! face-centred
+          if (i1 == m1%gn) then
+            x1 = m1%centre_nat + m1%r(m1%ub) + 0.5*m1%d
+          else
+            x1 = m1%centre_nat + m1%r(i1) - 0.5*m1%d
+          end if
           if (m1%type == 'spherical_mesh') then
             theta = x2
             r_sph = abs(x1)
@@ -167,9 +176,12 @@ SUBROUTINE condition (self, m, ff, idx)
             r_sph = sqrt(z**2 + r_cyl**2)
             theta = acos(z / r_cyl)
           end if
-          cot_theta = 1.0 / tan(theta)
+          cot_theta = 1.0 / (tan(theta) + tiny(0.0))
+          ! the introduction of the `sign` function is to ensure B_theta changes sign
+          ! across a symmetry axis.
           psi(i1,i2,i3) = 4.0 * self%disc_r0**2 * bpol0 * (r_cyl / self%disc_r0)**0.75 &
-                      * self%mbend**1.25 / 3.0 / (self%mbend**2 + cot_theta**2)**0.625
+                        * self%mbend**1.25 / 3.0 / (self%mbend**2 + cot_theta**2)**0.625 &
+                        * sign(1.0d0,sin(theta))
         end do
       end do
     end do
@@ -226,12 +238,28 @@ SUBROUTINE condition (self, m, ff, idx)
           ff(i1,i2,i3,idx%bx) = (psi(i1,i2+jone,i3) - psi(i1,i2,i3)) &
                               / (m2%d * m1%h2f(i1) * m1%h31f(i1) * m2%h32c(i2))
           ff(i1,i2,i3,idx%by) = -(psi(i1+ione,i2,i3) - psi(i1,i2,i3)) &
-                              / (m1%d * m1%h31c(i1) * m2%h32f(i2))
+                              / (m1%d * m1%h31c(i1) * m2%h32f(i2) + tiny(0.0))
           ff(i1,i2,i3,idx%bz) = 0.0
         end if
       end do
+      ! recall that the ZEUS solver has one extra zone (ub+1) for staggered quantities.
+      ! it is particularly important to account for this when the boundary values of the
+      ! magnetic fields are not being updated directly (but rather using EMFs).
+      if (self%solver(1:4) == 'zeus' .and. m1%n > 1) then
+        ff(m1%gn,i2,i3,idx%bx) = (psi(m1%gn,i2+jone,i3) - psi(m1%gn,i2,i3)) &
+                              / (m2%d * m1%h2f(m1%gn) * m1%h31f(m1%gn) * m2%h32c(i2))
+      end if
     end do
+    if (self%solver(1:4) == 'zeus' .and. m2%n > 1) then
+      do i1=m1%lb,m1%ub
+        ff(i1,m2%gn,i3,idx%by) = -(psi(i1+ione,m2%gn,i3) - psi(i1,m2%gn,i3)) &
+                               / (m1%d * m1%h31c(i1) * m2%h32f(m2%gn))
+      end do
+    end if
   end do
+  if (self%solver(1:4) == 'zeus' .and. m3%n > 1) then
+    ff(m1%lb:m1%ub,m2%lb:m2%ub,m3%gn,idx%bz) = 0.0
+  end if
 
   nullify (m1, m2, m3)
   deallocate (psi)
