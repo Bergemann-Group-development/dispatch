@@ -126,9 +126,6 @@ SUBROUTINE init (self, name)
   ! unit numbers should be taken directly from io_unit_mod
   !-----------------------------------------------------------------------------
   self%input     = io_unit%input
-  self%output    = io_unit%output
-  self%log_unit  = io_unit%log
-  self%data_unit = io_unit%data
   !-----------------------------------------------------------------------------
   ! Use serial region to avoid threads using the input file simultaneously
   !-----------------------------------------------------------------------------
@@ -169,34 +166,6 @@ SUBROUTINE init (self, name)
     call ensure_dirname (self%inputdir)
     call ensure_dirname (self%outputname)
     !---------------------------------------------------------------------------
-    ! OMP specific setup
-    !---------------------------------------------------------------------------
-    !$omp parallel
-    !$omp critical (open_cr)
-    io_unit%rundir = self%rundir
-    io_unit%inputdir = self%inputdir    
-    io_unit%outputname = self%outputname
-    if (omp%master) then
-      io_unit%verbose = verbose
-    else
-      io_unit%verbose = -2
-    end if
-    !---------------------------------------------------------------------------
-    ! Open MPI rank and OMP thread-specific log files
-    !---------------------------------------------------------------------------
-    io_unit%do_validate = do_validate
-    write (filename,'(a,i5.5,"/")') trim(io%outputname), 0
-    call os%mkdir (trim(filename))
-    if (omp_trace .and. omp%nthreads>1) then
-      io_unit%log = 110+omp%mythread()
-      write (filename,'(a,"thread_",i5.5,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%thread
-      open (unit=io_unit%log, file=filename, form='formatted', status='unknown')
-    else
-      io_unit%log = io_unit%mpi
-    end if
-    !$omp end critical (open_cr)
-    !$omp end parallel
-    !---------------------------------------------------------------------------
     ! Log-file names:
     ! -- io_unit%output     : stdout on rank 0, same as io_unit%mpi on rank 1-n
     ! -- io_unit%mpi        : data/run/rank_rrrrr.log
@@ -211,17 +180,50 @@ SUBROUTINE init (self, name)
     call open_rank_file (io_unit%validate  , ".val"  , 'unformatted')
     call open_rank_file (io_unit%dispatcher, ".disp" , 'formatted')
     !---------------------------------------------------------------------------
+    ! OMP specific setup; need to set io_unit in all threadprivate instances
+    !---------------------------------------------------------------------------
+    !$omp parallel
+    !$omp critical (open_cr)
+    io_unit%rundir = self%rundir
+    io_unit%inputdir = self%inputdir    
+    io_unit%outputname = self%outputname
+    if (omp%master) then
+      io_unit%verbose = verbose
+    else
+      io_unit%verbose = -2
+    end if
+    !---------------------------------------------------------------------------
+    ! Open MPI rank and OMP thread-specific log files, if omp_trace is true,
+    ! else fall back io_unit%log being just MPI rank-specific
+    !---------------------------------------------------------------------------
+    io_unit%do_validate = do_validate
+    write (filename,'(a,i5.5,"/")') trim(io%outputname), 0
+    call os%mkdir (trim(filename))
+    if (omp_trace .and. omp%nthreads>1) then
+      io_unit%log = 110+omp%mythread()
+      write (filename,'(a,"thread_",i5.5,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%thread
+      open (unit=io_unit%log, file=filename, form='formatted', status='unknown')
+    else
+      io_unit%log = io_unit%mpi
+    end if
+    !---------------------------------------------------------------------------
     ! For non-master MPI ranks, redirect log file output to rundir/rank_rrrrr.log
     !---------------------------------------------------------------------------
     if (mpi%rank > 0) then
       io_unit%output = io_unit%mpi
     end if
-    io%output = io_unit%output
-    log_unit = io_unit%log
+    !$omp end critical (open_cr)
+    !$omp end parallel
+    !---------------------------------------------------------------------------
+    ! Backwards compatibility
+    !---------------------------------------------------------------------------
+    io%output    = io_unit%output
+    io%data_unit = io_unit%data
+    io%log_unit  = io_unit%log
+    log_unit     = io_unit%log
     write (io_unit%log,'(a,i4,2l4)') &
       'io_mod::init io_unit%log, io_unit%master, io_unit%verbose:', &
       io_unit%log, io_unit%master, io_unit%verbose
-    self%log_unit = io_unit%log
     write(io%output,*) 'logfile:', filename
     write(io%output,*) '======================================================================='
     write(io%output,*) 'NOTE: Reading parameters from '//trim(self%inputname)
