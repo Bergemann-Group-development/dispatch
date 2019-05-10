@@ -1,5 +1,5 @@
 !===============================================================================
-!****ZEUS-TW MHD method/operators module**
+!> **ZEUS-TW MHD method/operators module**
 !> The type defined/extended here is intended for instantiation/invokation/use.
 !> This particular form uses rho, e, \vec{s} = rho * \vec{v}, \vec{B} as the
 !> MHD fluid variables.

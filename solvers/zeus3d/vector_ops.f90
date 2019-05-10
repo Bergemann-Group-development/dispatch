@@ -16,10 +16,10 @@ MODULE vector_ops
   end interface
 
 CONTAINS
-!> =============================================================================
+!===============================================================================
 !> Calculate the curl of a face-centred quantity. Result is edge-centred.
 !> e.g. The current density from the magnetic field.
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_curl_dn_vector (mesh, in) RESULT (out)
   real(kind=KindScalarVar), dimension(:,:,:,:), intent(in):: in
   real(kind=KindScalarVar), dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -83,13 +83,13 @@ FUNCTION vector_curl_dn_vector (mesh, in) RESULT (out)
   call trace%end
 END FUNCTION vector_curl_dn_vector
 
-!> =============================================================================
+!===============================================================================
 !> Calculate the curl of a zone-centred quantity. Result is face-centred.
 !> e.g. Time rate change of magnetic field from the EMFs; the magnetic field
 !> from the vector potential.
 !> The difference between this and `vector_curl_up_emfs` is that the definition
 !> of EMFs in the latter include metric and length factors, e.g. `E_i * g_i * dx_i`.
-!> =============================================================================
+!===============================================================================
 FUNCTION vector_curl_up_vector (mesh, in) RESULT (out)
   real(kind=KindScalarVar), dimension(:,:,:,:), intent(in):: in
   real(kind=KindScalarVar), dimension(size(in,1),size(in,2),size(in,3),3):: out
@@ -152,14 +152,14 @@ FUNCTION vector_curl_up_vector (mesh, in) RESULT (out)
   call trace%end
 END FUNCTION vector_curl_up_vector
 
-!> =============================================================================
+!===============================================================================
 !> Calculate the curl of a zone-centred quantity. Result is face-centred.
 !> e.g. Time rate change of magnetic field from the EMFs; the magnetic field
 !> from the vector potential.
 !> The difference between this and `vector_curl_up_vector` is that the latter is
 !> more generic and does *not* assume that the EMFs alrady include metric and
 !> length factors.
-!> =============================================================================
+!===============================================================================
 FUNCTION dbdt_curl_up_emfs (mesh, in) RESULT (out)
   real(kind=KindScalarVar), dimension(:,:,:,:), intent(in):: in
   real(kind=KindScalarVar), dimension(size(in,1),size(in,2),size(in,3),3):: out

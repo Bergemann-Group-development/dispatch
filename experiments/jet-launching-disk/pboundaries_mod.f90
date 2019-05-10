@@ -1,6 +1,6 @@
-!> =============================================================================
+!===============================================================================
 !> Physical boundary conditions module for a jet launching disk
-!> =============================================================================
+!===============================================================================
 MODULE pboundaries_mod
   USE io_mod
   USE trace_mod
@@ -25,9 +25,9 @@ MODULE pboundaries_mod
 
 CONTAINS
 
-!> =============================================================================
+!===============================================================================
 !> Initialise physical boundary condition data type
-!> =============================================================================
+!===============================================================================
 SUBROUTINE init_bdries (self, mesh, position, indices)
   class(pboundaries_t)              :: self
   class(mesh_t), pointer, optional :: mesh(:)
@@ -43,9 +43,9 @@ SUBROUTINE init_bdries (self, mesh, position, indices)
   call trace%end
 END SUBROUTINE init_bdries
 
-!> =============================================================================
+!===============================================================================
 !> Apply physical boundary conditions to current patch if applicable
-!> =============================================================================
+!===============================================================================
 SUBROUTINE apply_bcs (self, patch, mhd, cit, previt)
   USE bits_mod
   class(pboundaries_t) :: self
@@ -119,13 +119,13 @@ SUBROUTINE apply_bcs (self, patch, mhd, cit, previt)
   call trace%end
 END SUBROUTINE apply_bcs
 
-!> =============================================================================
+!===============================================================================
 !> Standard outflow conditions
 !> Apply zero gradient boundary conditions to all variables, with the exception
 !> that the velocity component normal to boundary does not result in inflow.
 !> For the EMFs, skin values are intentionally NOT set (i.e. we keep the computed
 !> values).
-!> =============================================================================
+!===============================================================================
 SUBROUTINE outflow (self, mem, iv, select)
   class(pboundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: mem
@@ -263,10 +263,10 @@ SUBROUTINE outflow (self, mem, iv, select)
   call trace%end
 END SUBROUTINE outflow
 
-!> =============================================================================
+!===============================================================================
 !> Reflection at a coordinate axis boundary conditions
 !> Most variables are symmetric, but certain vectors are antisymmetric.
-!> =============================================================================
+!===============================================================================
 SUBROUTINE axis_reflection (self, mem, iv, select)
   class(pboundaries_t):: self
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: mem
@@ -376,7 +376,10 @@ SUBROUTINE axis_reflection (self, mem, iv, select)
   call trace%end
 END SUBROUTINE axis_reflection
 
-!> =============================================================================
+!===============================================================================
+!> Update magnetic field values in the boundaries using the EMFs (w/ BCs already
+!> applied).
+!===============================================================================
 SUBROUTINE update_b (patch, cit, pit, select)
   USE vector_ops, only: curl_emfs
 

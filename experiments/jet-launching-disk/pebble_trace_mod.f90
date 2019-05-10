@@ -1,4 +1,4 @@
-!===============================================================================
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 !> Module used for tracing particles, producing one output file for every (save
 !> frequency) particles.  Each particle being traced has a buffer here, which is
 !> being filled by trace_pebble() calls.  When full, trace_output() is called to
@@ -10,7 +10,7 @@
 !> pebble_trace%check (self, pebble)                     ! close if pebble traced
 !> pebble_trace%close (self, i)                          ! close buffer i
 !> pebble_trace%close_all (self)                         ! close all buffers
-!===============================================================================
+!|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE pebble_trace_mod
   USE io_mod
   USE omp_mod
