@@ -44,7 +44,6 @@ SUBROUTINE init (self, n)
                          self%window, mpi_err)
     call mpi%assert ('MPI_Win_create', mpi_err)
 #endif
-    print *, 'mpi_global_t%init:', self%a
   end if
   !$omp end critical (mpi_global_cr)
   call trace%end
