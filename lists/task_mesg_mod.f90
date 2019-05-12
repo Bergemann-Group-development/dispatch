@@ -462,8 +462,8 @@ SUBROUTINE unpack (self, mesg, link)
       write (io_unit%log,*) 'unpack: init_nbors, id =', task%id
     call task%setup
     if (self%verbose > 0) then
-      write (io_unit%log,'(a,i6,4(3f9.4,1x))') &
-        'task_mesg_t%unpack: new', id, task%box, task%size, task%ds, task%mesh%d
+      write (io_unit%log,'(f12.6,2x,a,i6,4(3f9.4,1x))') wallclock(), &
+        'task_mesg_t%unpack: new', id, task%size, task%ds, task%mesh%d
       flush(io_unit%log)
     end if
     call self%lock%set ('unpack')

@@ -688,9 +688,9 @@ SUBROUTINE send_to_vnbors (self)
     if (self%task%id == io%id_debug) &
       write(io%output,*) 'DBG link_t%send_to_vnbors: nbor, rank =', &
           task%id, task%rank
-    if (verbose > 1) then
-      write (io_unit%log,'(f12.6,2x,a,2i6,i4)') wallclock(), &
-        'send_to_vnb: id,nbor,rank =', self%task%id, task%id, task%rank
+    if (verbose > 0 .and. task%rank /= mpi%rank) then
+      write (io_unit%log,'(f12.6,2x,a,2i6,2i4)') wallclock(), &
+        'send_to_vnb: id,nbor,rank =', self%task%id, task%id, task%rank, rank
       flush (io_unit%log)
     end if
     if (task%rank/=mpi%rank .and. task%rank/=rank) then         ! new rank?

@@ -787,6 +787,10 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   call tlist%reset_status()
   call tlist%check_nbors (child_link)
   call tlist%check_nbor_nbors (child_link)
+  if (tlist%verbose > 0) then
+    write (io_unit%log,'(f12.6,2x,a,i6,l3)') &
+      wallclock(), 'refine_t%make_child:', child%id, child%is_set(bits%boundary)
+  end if
   call tlist%lock%unset ('refine')
   if (verbose > 0) &
     write (io_unit%output,*) '  refine', parent%id, 'to', child%id, child%level, &
@@ -843,8 +847,9 @@ SUBROUTINE remove_patch (self, tlist, this)
     call this%send_to_vnbors
   end if
   if (tlist%verbose > 0) then
-    write (io_unit%log,'(f12.6,2x,a,i6)') &
-      wallclock(), 'remove_patch: id =', this%task%id
+    write (io_unit%log,'(f12.6,2x,a,i6,2l3)') &
+      wallclock(), 'refine_t%remove_patch: id =', this%task%id, &
+      this%task%is_set(bits%boundary), this%task%is_set(bits%virtual)
   end if
   !-----------------------------------------------------------------------------
   ! Decrement the I/O write counter
