@@ -261,14 +261,11 @@ FUNCTION find_task (self, id, new) RESULT (link)
   ! original boundary task, since it may need to play a role in extras features.
   !-----------------------------------------------------------------------------
   call task%init
-  if (verbose>1) &
-    write (io_unit%log,*) mpi%rank,' task_mesg_t%find_task: new task', id, associated(task%mem)
-  flush(io_unit%log)
   !-----------------------------------------------------------------------------
   ! Append to the task_list.  Since we don't yet know the position of the task,
   ! we can't update the nbor list yet; the calling procedure must do that, and
-  ! we need to notify it when to do it, so it's not done every time a virtual
-  ! task that already exists is updated.
+  ! we notify to do it via 'new', so it's not done every time a virtual task
+  ! that already exists is updated.
   !-----------------------------------------------------------------------------
   call task%set (bits%virtual)
   call self%lock%set ('find_task')
@@ -305,17 +302,20 @@ SUBROUTINE unpack (self, mesg, link)
   new = .false.
   if (present(link)) then
     link1 => link
-    write (io_unit%log,*) &
-      'unpack: link present, id =', mesg%id, link1%task%id
+    if (self%verbose > 0) &
+      write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
+        wallclock(), 'task_mesg_t%unpack: id =', mesg%id, link1%task%id
   else
     link1 => find_task (self, mesg%id, new)
-    write (io_unit%log,*) &
-      'unpack: find_task, id =', mesg%id, link1%task%id, new
+    if (self%verbose > 0) &
+      write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
+        wallclock(), 'task_mesg_t%unpack: found id =', mesg%id, link1%task%id
   end if
   task => link1%task
   failed = .false.
   !-----------------------------------------------------------------------------
   if (associated(link1%task)) then
+   if (verbose > 1) &
     write (io_unit%log,'(a,i6,2x,5l1)') 'unpack: id, bits BVRES =', mesg%id, &
       task%is_set (bits%boundary), &
       task%is_set (bits%virtual), &
@@ -363,17 +363,22 @@ SUBROUTINE unpack (self, mesg, link)
   !---------------------------------------------------------------------------
   id = task%id
   call task%unpack (mesg)
-  write (io_unit%log,'(a,i6,2x,5l1)') 'unpack: after task%unpack BVRES =', &
-    mesg%id, &
-    task%is_set (bits%boundary), &
-    task%is_set (bits%virtual), &
-    task%is_set (bits%ready), &
-    task%is_set (bits%remove), &
-    task%is_set (bits%swap_request)
+  if (self%verbose > 1) &
+    write (io_unit%log,'(a,i6,2x,5l1)') 'unpack: after task%unpack BVRES =', &
+      mesg%id, &
+      task%is_set (bits%boundary), &
+      task%is_set (bits%virtual), &
+      task%is_set (bits%ready), &
+      task%is_set (bits%remove), &
+      task%is_set (bits%swap_request)
   !-----------------------------------------------------------------------------
   ! Check for suicide note
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%remove)) then
+    if (self%verbose > 0) then
+      write (io_unit%log,'(f12.6,2x,a,i6)') &
+        wallclock(), 'unpack: suicide note received for id =', task%id
+    end if
     call refine%remove_patch (self, link1)
     call trace%end (itimer)
     return
@@ -442,7 +447,13 @@ SUBROUTINE unpack (self, mesg, link)
   ! If a virtual task was just created it, it and its nbors need new nbor lists
   !-----------------------------------------------------------------------------
   if (new) then
-    write (io_unit%log,*) 'unpack: init_nbors, id =', task%id
+    if (verbose > 1) &
+      write (io_unit%log,*) 'unpack: init_nbors, id =', task%id
+    if (self%verbose > 0) then
+      write (io_unit%log,'(a,i6,4(3f9.4,1x))') &
+        'task_mesg_t%unpack: new', id, task%box, task%size, task%ds, task%mesh%d
+      flush(io_unit%log)
+    end if
     call self%lock%set ('unpack')
     call self%init_nbors (link1)
     call self%init_nbor_nbors (link1)
@@ -457,7 +468,8 @@ SUBROUTINE unpack (self, mesg, link)
   !if (verbose>1) &
   !  call link1%test_nbor_status
   if (self%method==0) then
-    write (io_unit%log,*) 'unpack: check_nbors, id =', task%id
+    if (verbose > 1) &
+      write (io_unit%log,*) 'unpack: check_nbors, id =', task%id
     call self%check_nbors (link1)
   end if
   call trace%end (itimer)
@@ -566,7 +578,7 @@ SUBROUTINE init_virtual (self)
         call task%allocate_mesg
         task%wc_last = wallclock()
         call task%mesg%irecv  (task%rank, task%id)
-        if (verbose>0) &
+        if (verbose > 1) &
           write (io_unit%log,*) 'task_mesg_t%unpack: init_virtual', omp_get_thread_num(), task%id
         !if (mpi%rank==0) &
         !  write(io%output,*) mpi%rank,'MK',omp_get_thread_num(),i,task%id,'irec'
@@ -609,7 +621,7 @@ SUBROUTINE check_virtual (self)
       !$omp end critical (log_sent_cr)
     end if
     if (task%mesg%test_recv()) then
-      if (verbose > 0) &
+      if (verbose > 1) &
         write (io_unit%log,*) wallclock(),' task_mesg_t%unpack: check_virtual hit ', task%id
       call unpack (self, task%mesg, link=link)
       !$omp atomic

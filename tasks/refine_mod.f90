@@ -842,6 +842,10 @@ SUBROUTINE remove_patch (self, tlist, this)
     call this%task%set (bits%remove)
     call this%send_to_vnbors
   end if
+  if (tlist%verbose > 0) then
+    write (io_unit%log,'(f12.6,2x,a,i6)') &
+      wallclock(), 'remove_patch: id =', this%task%id
+  end if
   !-----------------------------------------------------------------------------
   ! Decrement the I/O write counter
   !-----------------------------------------------------------------------------

@@ -190,10 +190,10 @@ SUBROUTINE update (self, task_list, test)
   ! harm is done if that makes the thread hangs for a while; other threads work
   !-----------------------------------------------------------------------------
   call data_io%open_and_close ()
-  if (task_list%verbose > 0) &
+  if (task_list%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' waiting for tasklist(1)'
   call task_list%lock%set ('dispatch0_t%update 1')
-  if (task_list%verbose > 0) &
+  if (task_list%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(1)'
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in what is normally a very brief critical region
@@ -325,7 +325,7 @@ SUBROUTINE update (self, task_list, test)
       write(io_unit%log,'(f12.6,i6,2x,a)') wallclock(), task_list%na, 'no queue'
   end if
   call task_list%lock%unset ('dispatch0_t%update 1')
-  if (task_list%verbose > 0) &
+  if (task_list%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(1)'
   !-----------------------------------------------------------------------------
   ! As long as we are syncing, skip the update and come back.  The on thread

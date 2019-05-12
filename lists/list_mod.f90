@@ -163,10 +163,10 @@ SUBROUTINE append_link (self, link)
   !.............................................................................
   call trace_begin ('list_t%append_link '//self%name)
   call link%init
-  if (self%verbose > 0) &
+  if (self%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' wait for tasklist(2)'
   call self%lock%set ('list_t%append_link')
-  if (self%verbose > 0) &
+  if (self%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(2)'
   nullify(link%next)
   if (associated(self%tail)) then
@@ -197,7 +197,7 @@ SUBROUTINE append_link (self, link)
     call io%abort('append_link: no task associated')
   end if
   call self%lock%unset ('list_t%append_link')
-  if (self%verbose > 0) &
+  if (self%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(2)'
   call trace_end
 END SUBROUTINE append_link
@@ -394,7 +394,7 @@ END SUBROUTINE resend_bdry
 !===============================================================================
 SUBROUTINE check_oldest (self)
   class(list_t):: self
-  class(link_t), pointer:: link, oldest, oldestv, oldestnb
+  class(link_t), pointer:: link, oldest, oldestv, oldestnb, nbor
   real(8):: told, toldv
   integer, save:: phase=1
   !.............................................................................
@@ -424,16 +424,26 @@ SUBROUTINE check_oldest (self)
   write (io_unit%mpi,*) 'oldest active is ', oldest%task%id , told, &
     oldest%task%is_set(bits%ready), oldest%task%is_set(bits%busy) 
   flush (io_unit%mpi)
-  write (io_unit%mpi,*) 'it was last unpacked at', oldest%task%unpack_time
-  flush (io_unit%mpi)
+  if (associated(oldestv)) then
+    write (io_unit%mpi,*) 'the oldest virtual task is ', oldestv%task%id, toldv
+    write (io_unit%mpi,*) 'it was last unpacked at', oldestv%task%unpack_time
+    flush (io_unit%mpi)
+  end if
+  nbor => oldest%nbor
+2 format(i6,f12.6,2i4,5L3,f12.6)
+  write (io_unit%mpi,2) oldest%task%id, oldest%task%time, oldest%task%rank, oldest%task%level, &
+    oldest%needed, oldest%needs_me, oldest%task%is_set(bits%boundary), oldest%task%is_set(bits%virtual)
+  write (io_unit%mpi,*) 'nbor list:'
+  do while (associated(nbor))
+    write (io_unit%mpi,2) nbor%task%id, nbor%task%time, nbor%task%rank, nbor%task%level, &
+      nbor%needed, nbor%needs_me, nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual), &
+      nbor%task%is_ahead_of (oldest%task), nbor%task%unpack_time
+    nbor => nbor%next
+  end do
   call oldest%task%clear (bits%ready+bits%busy)
   call self%queue_by_time (oldest)                  ! add task to queue
   write (io_unit%mpi,*) 'task queued'
   flush (io_unit%mpi)
-  if (associated(oldestv)) then
-    write (io_unit%mpi,*) 'the oldest virtual task is ', oldestv%task%id, toldv
-    flush (io_unit%mpi)
-  end if
   write (io_unit%mpi,*) 'check_oldest: phase 1 done'
   flush (io_unit%mpi)
   link => oldest
@@ -499,7 +509,7 @@ SUBROUTINE check_ready (self, link)
   ! be checked, we first check if any bits are set indicating this to be the case
   !-----------------------------------------------------------------------------
   task => link%task
-  if (self%verbose > 0 .and. task%is_set(bits%hands_off)) &     ! ready+busy+frozen+...
+  if (self%verbose > 1 .and. task%is_set(bits%hands_off)) &     ! ready+busy+frozen+...
     write (io_unit%log,*) 'list_t%check_ready:', task%id, &
     task%is_set(bits%ready), task%is_set(bits%busy), task%is_set(bits%frozen)
   if (task%is_set (bits%hands_off)) return              ! ready+busy+frozen+..
@@ -523,7 +533,12 @@ SUBROUTINE check_ready (self, link)
             task%id, task%time, '  is OK on', nbor%task%id, nbor%task%time, &
             nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
       else                                              ! not ahead in time
-        if (debug1 .or. self%verbose > 0) &
+        if (self%verbose > 0) then
+          write (io_unit%log,'(f12.6,2x,"list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
+            wallclock(), task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
+            nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
+        end if
+        if (debug1 .or. self%verbose > 1) &
           write (io_unit%log,'("list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
             task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
             nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
@@ -534,7 +549,11 @@ SUBROUTINE check_ready (self, link)
     nbor => nbor%next                                   ! next nbor
   end do
   call link%lock%unset ('check_ready')
-  if (debug .or. self%verbose > 0) then
+  if (self%verbose > 0) then
+    write (io_unit%log,'(f12.6,2x,"list_t%check_ready:",i5,f10.6,a)') &
+      wallclock(), task%id, task%time, ' succeded'
+  end if
+  if (debug .or. self%verbose > 1) then
     write (io_unit%output,'("list_t%check_ready:",i5,f10.6,a)') &
       task%id, task%time, ' succeded'
     write (io_unit%log,'("list_t%check_ready:",i5,f10.6,a)') &
@@ -776,7 +795,8 @@ SUBROUTINE init_nbors (self, link)
         ! virtual patch, or the nbor is not a virtual patch, thus excluding
         ! adding virtual patches as nbors to virtual patches
         !-----------------------------------------------------------------------
-        if (scan%task%is_clear(bits%virtual).or.link%task%is_clear(bits%virtual)) then
+        if (scan%task%rank == mpi%rank .or. link%task%rank == mpi%rank) then
+        !if (scan%task%is_clear(bits%virtual).or.link%task%is_clear(bits%virtual)) then
           allocate (nbor)
           nbor%task => scan%task                      ! pointer to task
           nbor%link => scan                           ! pointer to task link
@@ -924,7 +944,7 @@ SUBROUTINE init_all_nbors (self)
     if (link%task%is_set(bits%virtual)) nv = nv+1
     link => link%next                                   ! continue list
   end do
-  if (io%verbose > 0) & 
+  if (io%verbose > 1) & 
     write (io%output,'(1x,a,3i6)') &
       'list_t%init_all_nbors: n, nb, nv =', n, nb, nv
   call trace_end (itimer)
@@ -964,7 +984,9 @@ SUBROUTINE reset_status (self)
       call link%task%set(bits%internal)
       call link%task%clear(bits%virtual+bits%external)
       !-------------------------------------------------------------------------
-      ! If at least one nbor task is on a different rank, set boundary bit
+      ! If at least one nbor task is on a different rank, set boundary bit, and
+      ! clear needs_me, since check_ready should not be called for that nbor, 
+      ! when this task calls check_nbors.
       !-------------------------------------------------------------------------
       do while (associated(nbor))
         if (nbor%task%rank/=mpi%rank) then
@@ -1120,10 +1142,10 @@ SUBROUTINE remove_task (self, task)
   class(link_t), pointer:: link, prev
   !.............................................................................
   call trace_begin('list_t%remove_task')
-  if (self%verbose > 0) &
+  if (self%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' wait for tasklist(3)'
   call self%lock%set ('remove_task')
-  if (self%verbose > 0) &
+  if (self%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(3)'
   link => self%head
   nullify (prev)
@@ -1143,7 +1165,7 @@ SUBROUTINE remove_task (self, task)
   print*,'ERROR: failed to remove from task list, task', task%id
 9 continue
   call self%lock%unset ('remove_task')
-  if (self%verbose > 0) &
+  if (self%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(3)'
   call trace_end
 END SUBROUTINE remove_task
@@ -1172,10 +1194,10 @@ SUBROUTINE queue_by_time (self, this)
   logical:: error
   integer:: verbose
   !-----------------------------------------------------------------------------
-  if (self%verbose > 0) &
+  if (self%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(4)'
   call self%lock%set ('queue_by_time')
-  if (self%verbose > 0) &
+  if (self%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(4)'
   call real_queue_by_time (self, this, error)
   if (error) then
@@ -1193,7 +1215,7 @@ SUBROUTINE queue_by_time (self, this)
     io%do_trace = .false.
   end if
   call self%lock%unset ('queue_by_time')
-  if (self%verbose > 0) &
+  if (self%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(4)'
 END SUBROUTINE queue_by_time
 

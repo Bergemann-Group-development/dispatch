@@ -56,7 +56,8 @@ SUBROUTINE init (self, name)
   integer:: iostat
   real(8), save:: job_seconds=1d30
   real(8), save:: sync_time=0.0
-  namelist /task_list_params/ sync_time, job_seconds
+  integer, save:: verbose=0
+  namelist /task_list_params/ sync_time, job_seconds, verbose
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -70,6 +71,7 @@ SUBROUTINE init (self, name)
     self%sync_next = sync_time
   self%sync_time = sync_time
   io%job_seconds = job_seconds
+  self%verbose = verbose
   write (io_unit%mpi,*) 'task_list%init: next_sync =', self%sync_next, self%sync_time
   call load_balance%init
   call trace_end
@@ -295,6 +297,9 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), 'before update')
     end select
     call task%update                                  ! update the task
+    if (self%verbose > 0) &
+      write (io_unit%log,'(f12.6,2x,a,i6,1p,g14.6)') &
+        wallclock(), 'update:', task%id, task%time
   end if
   !----------------------------------------------------------------------------
   ! Default delay time = first update time

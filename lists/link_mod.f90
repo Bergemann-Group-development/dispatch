@@ -688,10 +688,11 @@ SUBROUTINE send_to_vnbors (self)
     if (self%task%id == io%id_debug) &
       write(io%output,*) 'DBG link_t%send_to_vnbors: nbor, rank =', &
           task%id, task%rank
-    if (io%verbose > 2) &
-      write (io_unit%log,*) 'send_to_vnb: id,nbor,rank =', &
-        self%task%id, task%id, task%rank
-    flush (io_unit%log)
+    if (verbose > 1) then
+      write (io_unit%log,'(f12.6,2x,a,2i6,i4)') wallclock(), &
+        'send_to_vnb: id,nbor,rank =', self%task%id, task%id, task%rank
+      flush (io_unit%log)
+    end if
     if (task%rank/=mpi%rank .and. task%rank/=rank) then         ! new rank?
       rank = nbor%task%rank                                     ! current rank
       if (.not.flag) then                                       ! if not already packed
@@ -756,10 +757,10 @@ SUBROUTINE garbage_collect (link)
   ! If no other task needs this task remove it immediately, else add to garbage
   !-----------------------------------------------------------------------------
   if (link%task%n_needed <= 0) then
-    if (verbose > 1) then
-      write (io_unit%output,*) &
-        link%task%id, ' immediately deleted: garbage_n =', &
-        link%task%n_needed, garbage_n
+    if (verbose > 0) then
+      write (io_unit%log,'(f12.6,2x,a,i4,l4)') &
+        wallclock(), 'garbage_collect deleted: id =', link%task%id, &
+        link%task%n_needed, link%task%is_set(bits%virtual)
     end if
     !---------------------------------------------------------------------------
     ! At this point, the link task has been removed from the task list, and
@@ -805,6 +806,11 @@ SUBROUTINE garbage_remove
   do while (associated(link))
     next => link%next
     if (link%task%n_needed <= 0) then
+      if (verbose > 0) then
+        write (io_unit%log,'(f12.6,2x,a,i4,l4)') &
+          wallclock(), 'garbage_remove deleted: id =', link%task%id, &
+          link%task%n_needed, link%task%is_set(bits%virtual)
+      end if
       garbage_n = garbage_n-1
       call link%delete (link)                 ! deallocate & delete task + link
       prev%next => next                       ! remove from GC list
@@ -884,7 +890,7 @@ SUBROUTINE delete (self, link)
   !-----------------------------------------------------------------------------
   call link%remove_nbor_list (link%nbor)
   call link%task%dealloc()
-  if (verbose > 0) then
+  if (verbose > 1) then
     write (io_unit%output,'(f12.5,2x,a,2i6)') &
       wallclock(), 'delete: task, garbage_n =', link%task%id, garbage_n
     flush (io_unit%output)
