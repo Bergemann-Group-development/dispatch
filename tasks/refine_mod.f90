@@ -785,6 +785,8 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   call tlist%init_nbors (child_link)
   call tlist%init_nbor_nbors (child_link)
   call tlist%reset_status()
+  if (child%is_set(bits%boundary)) &
+    call child_link%send_to_vnbors
   call tlist%check_nbors (child_link)
   call tlist%check_nbor_nbors (child_link)
   if (tlist%verbose > 0) then
