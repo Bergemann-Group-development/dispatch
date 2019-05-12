@@ -283,7 +283,7 @@ SUBROUTINE unpack (self, mesg, link)
   class(mesg_t), pointer:: mesg
   class(link_t), pointer, optional:: link
   class(link_t), pointer:: link1, link2
-  class(task_t), pointer:: task
+  class(experiment_t), pointer:: task
   logical:: found, failed, new
   integer:: id
   integer, save:: itimer=0
@@ -311,7 +311,15 @@ SUBROUTINE unpack (self, mesg, link)
       write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
         wallclock(), 'task_mesg_t%unpack: found id =', mesg%id, link1%task%id
   end if
-  task => link1%task
+  !-----------------------------------------------------------------------------
+  ! Make sure the task pointer has all experiment_t attributes
+  !-----------------------------------------------------------------------------
+  associate (ltask=>link1%task)
+  select type (ltask)
+  class is (experiment_t)
+  task => ltask
+  end select
+  end associate
   failed = .false.
   !-----------------------------------------------------------------------------
   if (associated(link1%task)) then
@@ -444,11 +452,15 @@ SUBROUTINE unpack (self, mesg, link)
     end if
   end if
   !-----------------------------------------------------------------------------
-  ! If a virtual task was just created it, it and its nbors need new nbor lists
+  ! If a virtual task was just created it, it and its nbors need new nbor lists.
+  ! Also, since the proper size and position were not known when a new task was
+  ! created, but were set by the task%unpack, we need to redo the task%setup,
+  ! which regenerates the meshes and sets up all geometric properties.
   !-----------------------------------------------------------------------------
   if (new) then
     if (verbose > 1) &
       write (io_unit%log,*) 'unpack: init_nbors, id =', task%id
+    call task%setup
     if (self%verbose > 0) then
       write (io_unit%log,'(a,i6,4(3f9.4,1x))') &
         'task_mesg_t%unpack: new', id, task%box, task%size, task%ds, task%mesh%d
