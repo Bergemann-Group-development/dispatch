@@ -409,8 +409,6 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
                 d['position'] = _parse_namelist(items)
             elif items[0]=='SIZE':
                 d['size'] = _parse_namelist(items)
-            elif items[0]=='TIME':
-                d['time']=float(items[1])
             elif items[0]=='LEVEL':
                 d['level']=int(items[1])
             elif items[0]=='DTIME':
@@ -423,10 +421,6 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
                 d['mesh_type'] = int(items[1])
             elif items[0]=='NCELL':
                 d['ncell'] = _parse_namelist(items)
-            elif items[0]=='NG':
-                d['ng'] = _parse_namelist(items)
-            elif items[0]=='BOX':
-                d['box'] = _parse_namelist(items)
             elif items[0]=='KIND':
                 d['kind']=items[1]
             elif items[0]=='/' and watch_block: # the final entry of a namelist is always "/"

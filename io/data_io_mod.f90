@@ -348,10 +348,10 @@ SUBROUTINE output_nml (patch, append)
   integer, save        :: last_snapshot=-1
   character(len=16)    :: kind, eos, opacity, method
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method
-  namelist /snapshot_nml/ ioformat, iout, time, ntotal, gamma, eos, opacity, &
-    periodic, guard_zones, time_derivs, no_mans_land, nv
-  namelist /patch_nml/ id, time, position, size, level, dtime, istep, ds, box, &
-    velocity, quality, mesh_type, ncell, li, ui, n, ng, gn, nt, nw, kind
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, &
+    nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land
+  namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, nw, &
+    velocity, quality, mesh_type, kind
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
@@ -477,16 +477,16 @@ SUBROUTINE input_nml (patch)
   logical, save        :: guard_zones, no_mans_land, periodic(3)
   character(len=16)    :: kind, eos, opacity, method
   integer              :: iostat
-  namelist /snapshot_nml/ ioformat, iout, time, ntotal, gamma, eos, opacity, &
-                          periodic, guard_zones, time_derivs, no_mans_land, nv
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, &
+    nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land
   !-----------------------------------------------------------------------------
   real(8), save        :: origin(3)
   integer, save        :: dims(3), mpi_dims(3), per_rank(3)
   logical, save        :: face_nbors, fast_nbors, omp_init
   namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
     fast_nbors, omp_init
-  namelist /patch_nml/ id, time, position, size, level, dtime, istep, ds, box, &
-    velocity, quality, mesh_type, ncell, li, ui, n, ng, gn, nt, nw, kind
+  namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, nw, &
+    velocity, quality, mesh_type, kind
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   ! Read info from namelist
@@ -507,6 +507,10 @@ SUBROUTINE input_nml (patch)
     io%time_derivs = time_derivs
     io%guard_zones = guard_zones
   end if
+  patch%time  = time
+  patch%t     = time
+  patch%guard_zones = guard_zones
+  patch%time_derivs = time_derivs
   !-----------------------------------------------------------------------------
   ! Open the file "data/run/rank_rrrrr_patches.nml" for reading
   !-----------------------------------------------------------------------------
@@ -526,14 +530,10 @@ SUBROUTINE input_nml (patch)
       call mpi%abort('input_nml: patch_nml not found! Abort!')
     end if
   end do
-  patch%t     = time
   patch%dt    = dtime
-  patch%time  = time
   patch%dtime = dtime
   patch%istep = istep
   patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
-  patch%guard_zones = guard_zones
-  patch%time_derivs = time_derivs
   patch%velocity = velocity
   !$omp end critical (output_cr)
   call trace%end()
