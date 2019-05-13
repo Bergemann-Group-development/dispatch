@@ -34,6 +34,7 @@ MODULE validate_mod
   USE trace_mod
   USE patch_mod
   USE link_mod
+  USE kinds_mod
   implicit none
   private
   type, public:: validate_t
@@ -358,10 +359,10 @@ END SUBROUTINE check2t
 !> 3-D comparison
 !===============================================================================
 SUBROUTINE check3 (self, patch, f1, label1)
-  class(validate_t)    :: self
-  class(patch_t)       :: patch
-  real                 :: f1(:,:,:)
-  character(len=*)     :: label1
+  class(validate_t)        :: self
+  class(patch_t)           :: patch
+  real(kind=KindScalarVar) :: f1(:,:,:)
+  character(len=*)         :: label1
   !.............................................................................
   real, allocatable    :: f0(:,:,:), diff1(:), diff2(:,:), diff3(:,:,:)
   logical, allocatable :: inside(:,:,:)
@@ -447,10 +448,10 @@ END SUBROUTINE check3
 !> 3-D comparison
 !===============================================================================
 SUBROUTINE check3t (self, link, f1, label1)
-  class(validate_t)      :: self
-  class(link_t), pointer :: link
-  real                   :: f1(:,:,:)
-  character(len=*)       :: label1
+  class(validate_t)        :: self
+  class(link_t), pointer   :: link
+  real(kind=KindScalarVar) :: f1(:,:,:)
+  character(len=*)         :: label1
   !.............................................................................
   associate (patch => link%task)
   select type (patch)

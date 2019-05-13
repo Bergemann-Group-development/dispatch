@@ -195,6 +195,7 @@ END FUNCTION check_refine
 !> Cast a generic task_t to patch_t
 !===============================================================================
 FUNCTION cast2extras (task) RESULT(extras)
+  USE task_mod
   class(task_t), pointer:: task
   class(extras_t), pointer:: extras
   !.............................................................................

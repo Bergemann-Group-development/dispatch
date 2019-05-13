@@ -338,7 +338,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   class(link_t), pointer:: link
   logical, optional:: all_cells, all_times
   integer, optional:: only
-  real, dimension(:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
   !.............................................................................
   class(link_t), pointer:: nbor, sorted_head
   class(patch_t), pointer:: target, source

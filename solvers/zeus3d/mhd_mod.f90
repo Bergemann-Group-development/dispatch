@@ -8,7 +8,7 @@ MODULE mhd_mod
   USE io_mod
   USE trace_mod
   USE mpi_mod
-  USE gpatch_mod
+  USE extras_mod
   USE kinds_mod
   USE variable_mod
   USE mesh_mod
@@ -27,7 +27,7 @@ MODULE mhd_mod
   contains
   end type
 
-  type, extends(gpatch_t), public:: mhd_t
+  type, extends(extras_t), public:: mhd_t
     type(scalar_t):: d, e, et, gp
     type(vector_t):: s, B
     logical:: mhd = .true.

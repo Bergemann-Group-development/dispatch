@@ -36,6 +36,8 @@ MODULE solver_mod
   interface MomToVel
     module procedure:: MomToVel_VectorToArray
   end interface
+
+  public cast2solver
 CONTAINS
 
 !=======================================================================
@@ -355,5 +357,22 @@ FUNCTION zdn_3vector (a) RESULT (b)
     b = a
   end if
 END FUNCTION zdn_3vector
+
+!===============================================================================
+!> Cast a generic task_t to patch_t
+!===============================================================================
+FUNCTION cast2solver (task) RESULT(solver)
+  USE task_mod
+  class(task_t), pointer:: task
+  class(solver_t), pointer:: solver
+  !.............................................................................
+  select type (task)
+  class is (solver_t)
+  solver => task
+  class default
+  nullify(solver)
+  call io%abort ('patch_t%cast: failed to cast a task to patch_t')
+  end select
+END FUNCTION cast2solver
 
 END MODULE solver_mod
