@@ -495,6 +495,7 @@ SUBROUTINE input_nml (patch)
   !$omp critical (output_cr)
   if (first_time) then
     first_time = .false.
+    patch%iout = io%restart
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%inputdir), patch%iout
     open  (unit=io_unit%nml1, file=filename, form='formatted', status='old')
     read  (io_unit%nml1, snapshot_nml, iostat=iostat)
@@ -509,7 +510,6 @@ SUBROUTINE input_nml (patch)
   !-----------------------------------------------------------------------------
   ! Open the file "data/run/rank_rrrrr_patches.nml" for reading
   !-----------------------------------------------------------------------------
-  patch%iout = io%restart
   write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
          trim(io%inputdir), patch%iout, mpi%rank
   if (filename /= filename2) then
