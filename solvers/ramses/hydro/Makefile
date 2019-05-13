@@ -1,5 +1,5 @@
 # Vpath
-VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER)
+VPATH := $(VPATH):$(TOP)/solvers/$(SOLVER):$(TOP)/solvers
 
 include $(TOP)/solvers/ramses/Makefile
 
@@ -14,4 +14,4 @@ initial_mod.o           : io_unit_mod.o trace_mod.o random_mod.o io_mod.o mesh_m
                           index_mod.o hydro_commons.o
 force_mod.o             : io_unit_mod.o trace_mod.o io_mod.o mesh_mod.o random_mod.o scaling_mod.o
 rhd_mod.o               : io_mod.o trace_mod.o hd_mod.o rt_mod.o
-solver_mod.o            : io_mod.o trace_mod.o kinds_mod.o patch_mod.o hd_mod.o
+solver_mod.o            : io_mod.o trace_mod.o kinds_mod.o patch_mod.o hd_mod.o stagger_2nd.o

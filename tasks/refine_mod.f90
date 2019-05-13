@@ -46,7 +46,7 @@
 !> The absolute minimum amount of synchronization would be to just make sure
 !> that an nbor list 1) can never change exactly when it is accessed, 2) to
 !> immediately make a copy of it, 3) to make sure no to remove any task on the
-!> nbor list while it is being used, and 4) to make sure that rotating the 
+!> nbor list while it is being used, and 4) to make sure that rotating the
 !> memory slots will not invalidate using the nbor list, as is.
 !>
 !> An nbor list relevant for a particular task update is accessed in the
@@ -67,13 +67,13 @@
 !>    the current thread, or a thread working on an nbor decides to refine or
 !>    derefine, then the nbor list of the task may become modified.
 !>
-!>    a) If it is refined, the data upon which the decision to use it as a 
+!>    a) If it is refined, the data upon which the decision to use it as a
 !>    source of guard zone data still exists (in the parent task), and the
 !>    refined data in the child task(s) is initially just a prolongation of the
 !>    parent data, so does not yet provide any improvement.  Therefore, there
 !>    is no problem, and the insertion of the new nbor list should be delayed
 !>    until it is entirely complete, at which point the insertion can be done
-!>    using a very brief locking of the link, while changeing task%link%nbor to 
+!>    using a very brief locking of the link, while changeing task%link%nbor to
 !>    point to the new first nbor.
 !>
 !>    b) If it is derefined, one just has to leave the nbor list and the task
@@ -94,7 +94,7 @@
 !>    possibly need it has done their downloads; a tall order.
 !>
 !> As part of putting the task in the ready queue, a copy of the nbor list
-!> should be made -- this could be exactly the sorted copy that will be needed 
+!> should be made -- this could be exactly the sorted copy that will be needed
 !> in the download step in any case.
 !>
 !> Keeping track of "no longer needed" can be done with an atomically updated
@@ -107,7 +107,7 @@
 !> Updating an nbor list with list_t%init_nbors() should be done in two steps:
 !> first the head of the list is allocated, without linking it to link%nbor,
 !> and the rest of the tasks are appended (or prepended).  Then, in an lock
-!> protected assignment, link%nbor is pointed to the head of the new nbor list.  
+!> protected assignment, link%nbor is pointed to the head of the new nbor list.
 !> Before that, a link is saved to the head of the existing nbor list, and after
 !> the atomic reassignment, the old list is deleted.
 !>
@@ -119,7 +119,7 @@
 !> Summary:  A sorted copy of the nbor list is created in connection with the
 !> queue_by_time() call in check_ready().  At the same time a counter task_t%
 !> n_needed is incremented for all tasks in the temporary nbor list.  When the
-!> task is used as a source in download_link() the counter is decremented 
+!> task is used as a source in download_link() the counter is decremented
 !> (atomically), and if the task is derefined the counter is decremented there
 !> as well, leading to a zero cound when the task is no longer on an nbor list
 !> copy.  Then, and only then, the task may be deleted.
@@ -182,13 +182,15 @@ MODULE refine_mod
   real:: min_jeans=0.0                        ! Jeans number above which a patch is flagged for derefinement
   real:: max_shock=0.0, max_contact=0.0       ! Tolerance values for shock/discontinuity detector refinement
   real:: min_shock=0.0, min_contact=0.0       ! Tolerance values for shock/discontinuity detector derefinement
+  real:: min_compress=0.0, max_compress=0.0   ! Tolerance values for compression (negative divergence)
+  real:: min_vorticity=0.0, max_vorticity=0.0 ! Tolerance values for vorticity
   integer, parameter:: ngradvar=10            ! Number of gradient variables
   real, dimension(3):: region_llc=0.0         ! Sometimes you want to refine a region (manually)
   real, dimension(3):: region_urc=0.0
   real, dimension(ngradvar):: max_grad=0.0    ! Tolerance values for gradient detector refinement
   real, dimension(ngradvar):: min_grad=0.0    ! Tolerance values for gradient detector derefinement
   character(len=32), dimension(ngradvar):: grad_var=""
-  logical:: on=.false.                        ! Flag to turn the entire process on or off 
+  logical:: on=.false.                        ! Flag to turn the entire process on or off
   logical:: force_cubical=.false.             ! Force cubical patches
   integer:: n_locks=1                         ! number of locks to use
   integer:: verbose=0                         ! Noise level
@@ -207,6 +209,7 @@ SUBROUTINE init (self)
   namelist /refine_params/ on, levelmin, levelmax, check_interval, ratio, &
     refine_from_t, refine_until_t, min_dx, max_dx, max_jeans, min_jeans, &
     max_shock, min_shock, max_contact, min_contact, max_grad, min_grad, &
+    max_vorticity, min_vorticity, max_compress, min_compress, &
     grad_var, region_llc, region_urc, force_cubical, n_locks, verbose
   character(len=120):: id = &
     '$Id$ tasks/refine_mod.f90'
@@ -279,6 +282,18 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
     refine = max (refine, self%shock_and_cd_detector(patch))
   if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'shock'
+  !
+  ! compression detector
+  if (max_compress > 0.0) &
+    refine = max (refine, check_compress (self, patch))
+  if (verbose > 3) write (io_unit%output,*) &
+    patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'compress'
+  !
+  ! vorticity detector
+  if (max_vorticity > 0.0) &
+    refine = max (refine, check_vorticity (self, patch))
+  if (verbose > 3) write (io_unit%output,*) &
+    patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'vorticity'
   !
   ! gradient detector
   if (any(max_grad > 0.0)) refine = max (refine, self%gradient_detector(patch))
@@ -417,8 +432,9 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
   real(8), dimension(3):: size, pos
   logical:: not_already_refined
   integer:: refine_it
+  integer:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%selective_refine')
+  call trace%begin ('refine_t%selective_refine', itimer=itimer)
   was_refined = .false.
   was_derefined = .false.
   link => patch%link
@@ -499,7 +515,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
       end if
     end if
   end if
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE selective_refine
 
 !===============================================================================
@@ -626,7 +642,7 @@ FUNCTION check_support (self, tlist, link, check_only) RESULT (refine)
     end if
     nbor1 => nbor1%next
   end do
-  if (.not.ok) then 
+  if (.not.ok) then
     refine = 1
     if (verbose > 0) &
       write (io_unit%output,*) link%task%id, ' requests refine to add support'
@@ -692,8 +708,9 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   class(solver_t), pointer :: parent, child
   real(8), dimension(3), intent(in) :: pos, child_size
   integer:: j, count, l(3), u(3)
+  integer, save:: itimer=0
   !------------------------------------------------------------------------
-  call trace%begin('refine_mod::make_child_patch')
+  call trace%begin('refine_mod::make_child_patch', itimer=itimer)
   !------------------------------------------------------------------------
   ! Allocate a new task, 1/nsplit the size of original one, and adjust its
   ! position in each direction with "pos", in units of the new size.
@@ -816,7 +833,7 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   !$omp atomic update
   timer%levelpop (child%level) = &          ! increment level population count
   timer%levelpop (child%level) + 1
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE make_child_patch
 
 !===============================================================================
@@ -837,10 +854,11 @@ SUBROUTINE remove_patch (self, tlist, this)
   class(link_t), pointer:: this, link, nbor, nbors
   class(task_t), pointer:: task
   integer:: count, io_verbose
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Start processing, blocking (at least for now) all queue-related activity
   !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%remove_patch')
+  call trace%begin ('refine_t%remove_patch', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Send a suicide note to virtual nbors, if this is a boundary patch
   !-----------------------------------------------------------------------------
@@ -876,7 +894,7 @@ SUBROUTINE remove_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   !$omp atomic write
   io%dtime = huge(1d0)
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE remove_patch
 
 !===============================================================================
@@ -912,7 +930,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   real, allocatable:: test(:,:,:)
   logical:: masked
   !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%check_check_jeans')
+  call trace%begin ('refine_t%check_jeans')
   l = 1
   u = patch%gn
   d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
@@ -952,7 +970,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
     !---------------------------------------------------------------------------
     else where (test > min_jeans)
       patch%irefine = max (patch%irefine, 0)
-    end where 
+    end where
     deallocate (test)
     refine_it = 0
     if (Jeans_num > max_jeans) refine_it = +1
@@ -983,6 +1001,164 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   deallocate (pg)
   call trace%end()
 END FUNCTION check_Jeans
+
+!===============================================================================
+!> Refine / derefine on vorticity (velocity difference per cell)
+!===============================================================================
+FUNCTION check_compress (self, patch) RESULT(refine_it)
+  USE math_mod
+  USE scaling_mod
+  class(refine_t):: self
+  class(solver_t), pointer:: patch
+  integer:: refine_it
+  !.............................................................................
+  integer:: imin(3), l(3), u(3)
+  real:: w_num, wmin, c
+  real, dimension(:,:,:), allocatable:: w
+  real, allocatable:: test(:,:,:)
+  logical:: masked
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('refine_t%check_compress', itimer=itimer)
+  l = 1
+  u = patch%gn
+  allocate (w(patch%gn(1),patch%gn(2),patch%gn(3)))
+  select type (patch)
+  class is (solver_t)
+    call patch%compression_magnitude (w)
+  class default
+    call mpi%abort("Unrecognised patch type. Abort!")
+  end select
+  allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
+  c =  minval(patch%mesh%d)
+  test = c*w
+  if (allocated(patch%mask)) then
+    w_num = maxval(test, mask=patch%mask)
+  else
+    w_num = patch%fmaxval(test)
+  end if
+  !---------------------------------------------------------------------------
+  ! Evaluate a per-cell criterion, which sets patch%irefine to +1 where it
+  ! needs refinement, and sets it to 0 where the current resolution is needed.
+  ! By implication, where it does not set patch%irefine, and where it remains
+  ! at the intial -1 value, derefinement is allowed
+  !---------------------------------------------------------------------------
+  where (test > max_compress)
+    patch%irefine = +1
+  !---------------------------------------------------------------------------
+  ! compression number not small enough, or overlying refinement
+  !---------------------------------------------------------------------------
+  else where (test > min_compress)
+    patch%irefine = max (patch%irefine, 0)
+  end where
+  deallocate (test)
+  refine_it = 0
+  if (w_num > max_compress) refine_it = +1
+  if (w_num < min_compress) refine_it = -1
+  !---------------------------------------------------------------------------
+  ! A patch with existing child patches has those regions masked out in the
+  ! calculation of Jeans_num above, so it might indicate derefinement,
+  ! causing the child patch to loose support (or causing support check to
+  ! repeatedly call for refinement.  To prevent this, if the mask shows that
+  ! there are refine regions inside, derefinement is off table.
+  !---------------------------------------------------------------------------
+  if (.not.all(patch%mask)) &
+    refine_it = max(refine_it,0)
+  if (verbose > 2 .or. &
+     (verbose > 1 .and. patch%level < self%levelmax .and. refine_it > 0) .or. &
+     (verbose > 1 .and. patch%level > self%levelmin .and. refine_it < 0)) then
+    if (allocated(patch%mask)) then
+      masked = .not.all(patch%mask)
+    else
+      masked = .false.
+    end if
+    write (io_unit%output,'(a,i6,1p,3e9.2,i4,e9.2,l3)') &
+      'compression criterion: id, max, num, min, refine, maxval(w)', &
+      patch%id, max_compress, w_num, min_compress, refine_it, maxval(w), &
+      masked
+  end if
+  deallocate (w)
+  call trace%end (itimer)
+END FUNCTION check_compress
+
+!===============================================================================
+!> Refine / derefine on vorticity (velocity difference per cell)
+!===============================================================================
+FUNCTION check_vorticity (self, patch) RESULT(refine_it)
+  USE math_mod
+  USE scaling_mod
+  class(refine_t):: self
+  class(solver_t), pointer:: patch
+  integer:: refine_it
+  !.............................................................................
+  integer:: imin(3), l(3), u(3)
+  real:: w_num, wmin, c
+  real, dimension(:,:,:), allocatable:: w
+  real, allocatable:: test(:,:,:)
+  logical:: masked
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('refine_t%check_vorticity', itimer=itimer)
+  l = 1
+  u = patch%gn
+  allocate (w(patch%gn(1),patch%gn(2),patch%gn(3)))
+  select type (patch)
+  class is (solver_t)
+    call patch%vorticity_magnitude (w)
+  class default
+    call mpi%abort("Unrecognised patch type. Abort!")
+  end select
+  allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
+  c =  minval(patch%mesh%d)
+  test = c*w
+  if (allocated(patch%mask)) then
+    w_num = maxval(test, mask=patch%mask)
+  else
+    w_num = patch%fmaxval(test)
+  end if
+  !---------------------------------------------------------------------------
+  ! Evaluate a per-cell criterion, which sets patch%irefine to +1 where it
+  ! needs refinement, and sets it to 0 where the current resolution is needed.
+  ! By implication, where it does not set patch%irefine, and where it remains
+  ! at the intial -1 value, derefinement is allowed
+  !---------------------------------------------------------------------------
+  where (test > max_vorticity)
+    patch%irefine = +1
+  !---------------------------------------------------------------------------
+  ! vorticity number not small enough, or overlying refinement
+  !---------------------------------------------------------------------------
+  else where (test > min_vorticity)
+    patch%irefine = max (patch%irefine, 0)
+  end where
+  deallocate (test)
+  refine_it = 0
+  if (w_num > max_vorticity) refine_it = +1
+  if (w_num < min_vorticity) refine_it = -1
+  !---------------------------------------------------------------------------
+  ! A patch with existing child patches has those regions masked out in the
+  ! calculation of Jeans_num above, so it might indicate derefinement,
+  ! causing the child patch to loose support (or causing support check to
+  ! repeatedly call for refinement.  To prevent this, if the mask shows that
+  ! there are refine regions inside, derefinement is off table.
+  !---------------------------------------------------------------------------
+  if (.not.all(patch%mask)) &
+    refine_it = max(refine_it,0)
+  if (verbose > 2 .or. &
+     (verbose > 1 .and. patch%level < self%levelmax .and. refine_it > 0) .or. &
+     (verbose > 1 .and. patch%level > self%levelmin .and. refine_it < 0)) then
+    if (allocated(patch%mask)) then
+      masked = .not.all(patch%mask)
+    else
+      masked = .false.
+    end if
+    write (io_unit%output,'(a,i6,1p,3e9.2,i4,e9.2,l3)') &
+      'vorticity criterion: id, max, num, min, refine, maxval(w)', &
+      patch%id, max_vorticity, w_num, min_vorticity, refine_it, maxval(w), &
+      masked
+  end if
+  deallocate (w)
+  call trace%end (itimer)
+END FUNCTION check_vorticity
 
 !===============================================================================
 !> Refine on shocks, with threshold set by tolerance parameter `tol_shock`.
