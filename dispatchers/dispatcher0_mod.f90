@@ -80,7 +80,8 @@ SUBROUTINE init (self, name)
   if (io%master) then
     if (io%master) write (*, dispatcher0_params)
   end if
-  call self%lock%init
+  call self%lock%init ('disp')
+  call self%lock%append
   call trace_end
 END SUBROUTINE init
 

@@ -13,6 +13,7 @@ MODULE timer_mod
   USE io_unit_mod
   USE omp_mod
   USE omp_timer_mod
+  USE omp_lock_mod
   USE omp_lib
   implicit none
   private
@@ -315,6 +316,7 @@ contains
         timer%levelcost(level) = 0d0
       end do
     end if
+    call omp_lock%info (unit)
     flush (unit)
   end subroutine write_to
 END SUBROUTINE real_print

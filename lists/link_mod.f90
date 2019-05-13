@@ -67,7 +67,7 @@ MODULE link_mod
     procedure:: delete
     procedure:: sort_nbors_by_level
   end type
-  type(link_t), target:: garbage
+  type(link_t), target, public:: garbage
   integer:: garbage_n=0, verbose=1
   logical, save:: debug=.false.
 CONTAINS

@@ -100,7 +100,7 @@ SUBROUTINE init (self, name)
     self%name = name
     write (io_unit%log,*)'init_list: ', name
   end if
-  call self%lock%init (self%kind)
+  call self%lock%init (name(1:4))
   call trace_end
 END SUBROUTINE init
 
@@ -504,6 +504,7 @@ SUBROUTINE check_ready (self, link)
   class(task_t), pointer:: task
   class(link_t), pointer:: nbor
   logical:: debug, debug1
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Since we may be called upon to check nbors of a patch that should not itself
   ! be checked, we first check if any bits are set indicating this to be the case
@@ -513,6 +514,7 @@ SUBROUTINE check_ready (self, link)
     write (io_unit%log,*) 'list_t%check_ready:', task%id, &
     task%is_set(bits%ready), task%is_set(bits%busy), task%is_set(bits%frozen)
   if (task%is_set (bits%hands_off)) return              ! ready+busy+frozen+..
+  call trace%begin ('list_t%check_ready', itimer=itimer)
   debug = io%verbose > 1 .or. task%id==io%id_debug
   !-----------------------------------------------------------------------------
   ! If the cached nbor list does not exist, we need to use the normal nbor list,
@@ -543,6 +545,7 @@ SUBROUTINE check_ready (self, link)
             task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
             nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
         call link%lock%unset ('check_ready')
+        call trace%end (itimer)
         return
       end if
     end if
@@ -560,6 +563,7 @@ SUBROUTINE check_ready (self, link)
       task%id, task%time, ' succeded'
   end if
   call self%queue_by_time (link)                        ! add task to queue
+  call trace%end (itimer)
 END SUBROUTINE check_ready
 
 !===============================================================================

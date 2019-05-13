@@ -1,0 +1,68 @@
+! $Id$
+
+&cartesian_params
+ omp_init=f
+size=1,1,1 dims=04,04,04 mpi_dims=2,2,1                !  1 process    1 node      64 patches    2 cores    128x128x128  32 patches/core
+!size=1,1,1 dims=08,08,08 mpi_dims=2,2,1                !  1 process    1 node      64 patches    2 cores    128x128x128  32 patches/core
+ origin=0,0,0
+/
+
+!---------------------------------------------
+! For unigrid run, use the no_mans_land=t line
+!---------------------------------------------
+&patch_params           nt=5 grace=0.2 n=3*32 no_mans_land=t /
+!&patch_params           nt=5 grace=0.05 n=3*16 no_mans_land=t /
+!&patch_params           nt=5 grace=0.1 n=3*21 no_mans_land=f /
+!&out_params             end_time=1.001 out_time=0.050 print_time=0.0 /
+&out_params             end_time=1.001 out_time=0.020 print_time=0.0 /
+&io_params              verbose=0 do_trace=f omp_trace=t do_output=t restart=-2
+                        method='legacy' format=10 guard_zones=t time_derivs=0 /
+&timer_params           sec_per_report=20 /
+&validate_params        mode='' /
+&time_slices_params     order=1 /
+&download_params        verbose=0 use_locks=t use_different=-2 sorted=t check_filled=t id_debug=0 /
+&time_slices_params     order=3 id_debug=1 /
+&counters_params        verbose=0 /
+&lock_params            verbose=1 /
+&refine_params          on=t verbose=0 levelmin=7 levelmax=12
+                        max_jeans=0.25 min_jeans=0.10
+                        max_vorticity=5 min_vorticity=2.0
+                        max_compress=10 min_compress =4.0
+                        check_interval=5
+                        /
+
+!---------------------------------
+! Initial condition and forces
+!---------------------------------
+&initial_params         type='turbulence' /
+&force_params           type='turbulence' /
+&turbulence_params      ampl_turb=8 t_turn=0.10 k1=1 k2=2 pk=0.0 seed=5 /
+!&turbulence_params      ampl_turb=13.0 t_turn=0.0625 k1=1 k2=2 pk=0.0 seed=5 / ! Mach ~16
+&IC_turbulence_params   b0=0.1 /
+&selfgravity_params     selfgravity=f /
+&trace_particle_params  on=f verbose=0 per_cell=1.0 /
+
+!---------------------------------
+! Solver specific parameters
+!---------------------------------
+&ramses_params          courant_factor=0.250 isothermal=t gamma=1.0 slope_type=3.5 smallr=1e-3 smallc=1
+                        unsigned=t detailed_timer=f /
+&stagger_params         gamma=1.0 nu=0.30,0.0,1.0,0.1,1.0,1.0 /
+&timestep_params        /
+&sinkparticles_params   on=f rho_limit=1.2 max_sinks=1 verbose=0 /
+
+!----------------------------------------------------------------------------------
+! MPI and loadbalancing parameters
+!----------------------------------------------------------------------------------
+&load_balance_params    /
+
+!----------------------------------------------------------------------------------
+! Method=0 uses a ready queue, which may or may not work for more than 1e12 updates
+! Method=1 uses a simple master thread dispatcher
+! Method=2 uses a more complex master thread dispatcher
+!----------------------------------------------------------------------------------
+&dispatcher_params      method=0 test=f /
+&dispatcher0_params     recv_active=f recv_priv=t retry_stalled=30 /
+&task_list_params       verbose=1 job_seconds=1e6 /
+&task_mesg_params       verbose=1 /
+&mpi_mesg_params        verbose=1 /

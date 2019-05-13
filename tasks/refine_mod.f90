@@ -235,6 +235,10 @@ SUBROUTINE init (self)
   self%levelmax = levelmax
   self%ratio = ratio
   self%on = on
+  !-----------------------------------------------------------------------------
+  ! Initialize the lock in the garbage collector (shared by link_mod)
+  !-----------------------------------------------------------------------------
+  call garbage%init
   call trace%end()
 END SUBROUTINE init
 
