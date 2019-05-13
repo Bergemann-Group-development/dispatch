@@ -179,7 +179,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             use_copy=copy
         else:
             use_copy=snap.copy
-        if use_copy:
+        if use_copy or _p2():
             return np.copy(np.memmap(filed, dtype=np.float32,
                 offset=patch.offset[iv], mode='r', order='F', shape=shape))
         else:
