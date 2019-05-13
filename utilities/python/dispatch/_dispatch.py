@@ -149,8 +149,12 @@ def _var(patch,filed,snap,verbose=0,copy=None):
     shape=tuple(patch.ncell)
     patch.offset=[]
     # p.ip is the offset in the file; ranging from 0 to ntotal-1
-    nrank=np.product(snap.cartesian.mpi_dims)
-    ntask=np.product(snap.cartesian.per_rank)
+    if hasattr('snap','cartesian'):
+        nrank=np.product(snap.cartesian.mpi_dims)
+        ntask=np.product(snap.cartesian.per_rank)
+    else:
+        nrank = 1
+        ntask = patch.ntotal
     patch.ip=(patch.id-1-patch.rank)//nrank + patch.rank*ntask
     if verbose==5:
         print('id:',patch.id)
