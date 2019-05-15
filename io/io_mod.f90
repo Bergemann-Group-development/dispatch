@@ -20,6 +20,7 @@ MODULE io_mod
     integer:: word_size=4
     integer:: iodir=-1
     integer:: format=0
+    integer:: nml_version=0
     integer:: restart=-1
     integer:: nwrite=0, ntask=0, ntotal=0
     integer:: dims(3)=0, mpi_dims(3), mpi_odims(3)=1
@@ -100,7 +101,7 @@ SUBROUTINE init (self, name)
   character(len=64):: filename, datadir='data', inputdir='data'
   character(len=64), save:: top='../../'
   character(len=8), save:: method='legacy'
-  integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0
+  integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0, nml_version=2
   integer, save:: log_sent=0
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
@@ -109,7 +110,7 @@ SUBROUTINE init (self, name)
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
     do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, top, &
     datadir, inputdir, method, restart, format, guard_zones, time_derivs, log_sent, &
-    namelist_errors
+    namelist_errors, nml_version
   real:: test
   integer:: iostat
   character(len=120):: ids = &
@@ -162,6 +163,7 @@ SUBROUTINE init (self, name)
       print'(a,i4)', ' n_thread =', omp_nthreads
     end if
     self%format = format
+    self%nml_version = nml_version
     self%inputdir = inputdir
     call ensure_dirname (self%inputdir)
     call ensure_dirname (self%outputname)

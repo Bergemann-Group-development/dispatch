@@ -334,6 +334,20 @@ SUBROUTINE output_nml (patch, append)
   class(patch_t):: patch
   logical :: append
   !.............................................................................
+  if (io%nml_version == 1) then
+    call output_nml_v1(patch, append)
+  else if (io%nml_version == 2) then
+    call output_nml_v2(patch, append)
+  else
+    print*,io%nml_version
+    call mpi%abort ('unknown nml_version!')
+  end if
+
+CONTAINS
+SUBROUTINE output_nml_v1 (patch, append)
+  class(patch_t):: patch
+  logical :: append
+  !.............................................................................
   character(len=128)   :: filename
   character(len=128), save:: filename1='', filename2=''
   integer              :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
@@ -348,6 +362,134 @@ SUBROUTINE output_nml (patch, append)
   integer, save        :: last_snapshot=-1
   character(len=16)    :: kind, eos, opacity, method
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
+    position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
+    ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
+    no_mans_land
+  namelist /patch_nml/ id, time, position, size, level, dtime
+  !-----------------------------------------------------------------------------
+  ! Write a small text file with info
+  !-----------------------------------------------------------------------------
+  call trace%begin ('data_io_t%output_nml')
+  !$omp critical (output_cr)
+  !-----------------------------------------------------------------------------
+  ! Write snapshot_nml to the file "data/run/NNNNN/snapshot.nml"
+  !-----------------------------------------------------------------------------
+  format      = io%format
+  ioformat    = io%format
+  ntotal      = io%ntotal
+  out_time    = io%out_time
+  guard_zones = io%guard_zones
+  time_derivs = io%time_derivs
+  method      = io%method
+  iout        = patch%iout
+  time        = merge (patch%time, patch%out_next, io%out_time==0)
+  dtime       = patch%dtime
+  l = merge(patch%mesh%lb,patch%mesh%li,io%guard_zones)
+  u = merge(patch%mesh%ub,patch%mesh%ui,io%guard_zones)
+  ncell        = u-l+1
+  ! Special consideration for ZEUS solvers because the include one extra cell
+  ! for staggered quantities (all other variables should be zero in the extra
+  ! cell).
+  if (patch%kind(1:4) == 'zeus') then
+    where (patch%n > 1)
+      ncell = ncell + 1
+    end where
+  endif
+  id           = patch%id
+  istep        = patch%istep
+  mesh_type    = patch%mesh_type
+  position     = patch%position
+  size         = patch%size
+  ds           = patch%ds
+  box          = patch%box
+  velocity     = patch%velocity
+  level        = patch%level
+  quality      = patch%quality
+  gamma        = patch%gamma
+  li           = patch%li
+  ui           = patch%ui
+  n            = patch%n
+  gn           = patch%gn
+  ng           = patch%ng
+  nv           = patch%nv
+  nv           = merge (io%nv, patch%nv, io%nv>0 .and. io%nv<patch%nv)
+  nv           = nv*(io%time_derivs+1)
+  nt           = patch%nt
+  nw           = patch%nw
+  kind         = patch%kind
+  eos          = patch%eos
+  opacity      = patch%opacity
+  no_mans_land = patch%no_mans_land
+  periodic     = patch%periodic
+  if (mpi%master .and. patch%iout > last_snapshot) then
+    last_snapshot = patch%iout
+    write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%outputname), patch%iout
+    if (filename /= filename1) then
+      write(io_unit%log,'(a,i5,2x,2a)') &
+       ' thread', omp%thread, 'opening ', trim(filename)
+      flush (io_unit%log)
+      open  (io_unit%nml1, file=trim(filename), form='formatted', status='unknown')
+      write(io_unit%log,'(a,i5,2x,2a)') &
+       ' thread', omp%thread, 'opened  ', trim(filename)
+      flush (io_unit%log)
+      filename1 = filename
+    end if
+    write (io_unit%nml1, io_nml)
+    write (io_unit%nml1, snapshot_nml)
+    call patch%idx%output (io_unit%nml1)
+    call file_append (io_unit%nml, io_unit%nml1)
+    flush (io_unit%nml1)
+    if (io%debug(2)) write(io%output,'(a,3x,"time:",2f13.6)') &
+      ' data_io_t%output_nml: '//trim(filename), patch%out_next, patch%time
+  end if
+  !-----------------------------------------------------------------------------
+  ! Open the file "data/run/rank_rrrrr_patches.nml", appending or not
+  !-----------------------------------------------------------------------------
+  write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
+         trim(io%outputname), patch%iout, mpi%rank
+  if (filename /= filename2) then
+    if (filename2 /= '') close (io_unit%nml2)
+    write(io_unit%log,'(a,i5,2x,2a)') &
+     ' thread', omp%thread, 'opening ', trim(filename)
+    flush (io_unit%log)
+    open  (io_unit%nml2, file=trim(filename), form='formatted', status='unknown', &
+         access=trim(merge('append    ','sequential',append)))
+    write(io_unit%log,'(a,i5,2x,2a)') &
+     ' thread', omp%thread, 'opened  ', trim(filename)
+    flush (io_unit%log)
+    filename2 = filename
+  end if
+  !-----------------------------------------------------------------------------
+  ! Write the namelist info, including a leading idx_nml
+  !-----------------------------------------------------------------------------
+  if (mpi%master .and. .not.append) then
+    call patch%idx%output (io_unit%nml2)
+  end if
+  write (io_unit%nml2, patch_nml)
+  flush (io_unit%nml2)
+  !$omp end critical (output_cr)
+  call trace%end()
+END SUBROUTINE output_nml_v1
+
+SUBROUTINE output_nml_v2 (patch, append)
+  class(patch_t):: patch
+  logical :: append
+  !.............................................................................
+  character(len=128)   :: filename
+  character(len=128), save:: filename1='', filename2=''
+  integer              :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
+                          nw, ntotal, format, nml_version
+  integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
+  real                 :: gamma, quality
+  real(8)              :: time, dtime, out_next, out_time, ms
+  real(8), dimension(3):: size, position, ds, box, velocity, &
+                          llc_nat, llc_cart, centre_nat
+  integer              :: time_derivs
+  logical              :: guard_zones, no_mans_land, periodic(3)
+  integer, save        :: last_snapshot=-1
+  character(len=16)    :: kind, eos, opacity, method
+  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method, nml_version
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, &
     nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, nw, &
@@ -362,6 +504,7 @@ SUBROUTINE output_nml (patch, append)
   !-----------------------------------------------------------------------------
   format      = io%format
   ioformat    = io%format
+  nml_version = io%nml_version
   ntotal      = io%ntotal
   out_time    = io%out_time
   guard_zones = io%guard_zones
@@ -456,12 +599,88 @@ SUBROUTINE output_nml (patch, append)
   flush (io_unit%nml2)
   !$omp end critical (output_cr)
   call trace%end()
+END SUBROUTINE output_nml_v2
+
 END SUBROUTINE output_nml
 
 !===============================================================================
 !> Read in the basic, common meta-data from the snapshot.nml file.
 !===============================================================================
 SUBROUTINE input_nml (patch)
+  class(patch_t):: patch
+  !.............................................................................
+  if (io%nml_version == 1) then
+    call input_nml_v1(patch)
+  else if (io%nml_version == 2) then
+    call input_nml_v2(patch)
+  else
+    print*,io%nml_version
+    call mpi%abort ('unknown nml_version!')
+  end if
+
+CONTAINS
+!===============================================================================
+!> Read snapshot namelists, version 1.
+!===============================================================================
+SUBROUTINE input_nml_v1 (patch)
+  class(patch_t):: patch
+  !.............................................................................
+  character(len=128)   :: filename
+  character(len=128), save:: filename1='', filename2=''
+  integer, save        :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
+                          nw, ntotal, format
+  integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
+  real   , save        :: gamma, quality
+  real(8), save        :: time, dtime, out_next, out_time, ms
+  real(8), dimension(3):: size, position, ds, box, velocity, &
+                          llc_nat, llc_cart, centre_nat
+  integer, save        :: time_derivs
+  logical, save        :: guard_zones, no_mans_land, periodic(3)
+  character(len=16)    :: kind, eos, opacity, method
+  integer              :: iostat
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
+    position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
+    ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
+    no_mans_land
+  !-----------------------------------------------------------------------------
+  real(8), save        :: origin(3)
+  integer, save        :: dims(3), mpi_dims(3), per_rank(3)
+  logical, save        :: face_nbors, fast_nbors, omp_init
+  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
+    fast_nbors, omp_init
+  logical, save:: first_time=.true.
+  !-----------------------------------------------------------------------------
+  ! Read info from namelist
+  !-----------------------------------------------------------------------------
+  call trace%begin ('data_io_t%input_nml')
+  !$omp critical (output_cr)
+  if (first_time) then
+    first_time = .false.
+    patch%iout = io%restart
+    write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%inputdir), patch%iout
+    open  (unit=io_unit%nml1, file=filename, form='formatted', status='old')
+    read  (io_unit%nml1, snapshot_nml, iostat=iostat)
+    read  (io_unit%nml1, cartesian_params, iostat=iostat)
+    close (io_unit%nml1)
+    io%mpi_odims = mpi_dims
+  end if
+  patch%t     = time
+  patch%dt    = 0d0
+  patch%time  = time
+  patch%istep = 0
+  patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
+  patch%guard_zones = guard_zones
+  patch%time_derivs = time_derivs
+  !$omp end critical (output_cr)
+  call trace%end()
+END SUBROUTINE input_nml_v1
+
+END SUBROUTINE input_nml
+
+!===============================================================================
+!> Read snapshot namelists, version 2.
+!===============================================================================
+SUBROUTINE input_nml_v2 (patch)
   class(patch_t):: patch
   !.............................................................................
   character(len=128)   :: filename
@@ -493,9 +712,9 @@ SUBROUTINE input_nml (patch)
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%input_nml')
   !$omp critical (output_cr)
+  patch%iout = io%restart
   if (first_time) then
     first_time = .false.
-    patch%iout = io%restart
     write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%inputdir), patch%iout
     open  (unit=io_unit%nml1, file=filename, form='formatted', status='old')
     read  (io_unit%nml1, snapshot_nml, iostat=iostat)
@@ -537,7 +756,7 @@ SUBROUTINE input_nml (patch)
   patch%velocity = velocity
   !$omp end critical (output_cr)
   call trace%end()
-END SUBROUTINE input_nml
+END SUBROUTINE input_nml_v2
 
 !===============================================================================
 !> Copy one text file to another
