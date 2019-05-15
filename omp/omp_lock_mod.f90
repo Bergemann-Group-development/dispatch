@@ -16,7 +16,7 @@ MODULE omp_lock_mod
   implicit none
   private
   type, public:: lock_t
-    integer:: id=-9
+    integer:: id=-1
     integer(kind=omp_nest_lock_kind):: lock
     integer:: thread=-1
     character(len=4):: kind = 'void'
@@ -66,7 +66,7 @@ SUBROUTINE init (self, kind, id)
   call trace%begin('lock_t%init')
 #endif
   !$omp critical (lock_cr)
-  if (self%id == -9) then
+  if (self%id == -1) then
     if (first_time) then
       first_time = .false.
       rewind (io_unit%input)
