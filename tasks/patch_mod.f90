@@ -552,7 +552,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     self%mesh(i)%h = 0.0
     if (self%kind == 'zeus_mhd_patch' .and. &
         self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
-    if (self%kind == 'zeustw_mhd_patch' .and. &
+    if (self%kind == 'zeus_tw_mhd_patch' .and. &
         self%staggered .and. self%n(i) /= 1) self%mesh(i)%gn = self%mesh(i)%gn + 1
   end do
   self%ds = self%mesh%d

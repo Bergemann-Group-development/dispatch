@@ -54,7 +54,7 @@ SUBROUTINE update_experiment (self)
 
   call pboundaries%apply(self, self%mhd, self%it)
   call self%pebble_patch_t%output()
-  if (self%kind == 'zeus_mhd_patch') then
+  if (self%kind == 'zeus_mhd_patch' .or. self%kind == 'zeus_tw_mhd_patch') then
     if (self%mesh(1)%lower_boundary) self%btypes%iib = 9
     if (self%mesh(1)%upper_boundary) self%btypes%oib = 9
     if (self%mesh(2)%lower_boundary) self%btypes%ijb = 1

@@ -141,7 +141,7 @@ SUBROUTINE init (self)
       end do
       ! set total energy; it needs to be done after because it uses the `i+1` values.
       ! only applies to ZEUS3D and RAMSES solvers.
-      if (self%kind(1:7) /= 'stagger' .and. self%kind(1:16) /= 'zeustw_mhd_patch') then
+      if (self%kind(1:7) /= 'stagger' .and. self%kind(1:16) /= 'zeus_tw_mhd_patch') then
         do i=m1%lb,m1%uo
           if (self%kind(1:14) == 'zeus_mhd_patch') then
             rhov2 = (0.25 * (px(i,j,k) + px(i+1,j,k))**2 + py(i,j,k)**2 + pz(i,j,k)**2) &

@@ -8,7 +8,7 @@ MODULE mhd_mod
   USE io_mod
   USE trace_mod
   USE mpi_mod
-  USE gpatch_mod
+  USE extras_mod
   USE kinds_mod
   USE variable_mod
   USE mesh_mod
@@ -28,7 +28,7 @@ MODULE mhd_mod
   contains
   end type
 
-  type, extends(gpatch_t), public:: mhd_t
+  type, extends(extras_t), public:: mhd_t
     type(scalar_t):: d, e, gp
     type(vector_t):: s, B
     logical:: mhd = .true.
@@ -91,12 +91,12 @@ SUBROUTINE init_zeusTW (self)
     call timestep%init
   endif
 
-  self%nv = 9
+  self%nv = 12
   self%gamma = gamma
   self%courant = courant
   self%ix1x2x3 = 1
 
-  self%kind = 'zeustw_mhd_patch'
+  self%kind = 'zeus_tw_mhd_patch'
   ! don't store the time derivatives, only the MHD quantities;
   ! this also implies that `time_order` in `timestep_params` should be set to 0.
   self%nw = 1
@@ -104,16 +104,22 @@ SUBROUTINE init_zeusTW (self)
   self%idx%px=3  ; self%idx%py=4; self%idx%pz=5
   self%idx%bx=6  ; self%idx%by=7; self%idx%bz=8
   self%idx%tt=-1 ; self%idx%s=-1; ; self%idx%et=-1; self%idx%dphi=-1
+  self%idx%ex=10 ; self%idx%ey=11; self%idx%ez=12
+  io%nv = 10 ! do not write EMFs to output
   call self%gpatch_t%init()
-  self%idx%phi=10 ! ZEUS always has a slot for the grav. pot. included (even if not used).
+  self%idx%phi=9 ! ZEUS always has a slot for the grav. pot. included (even if not used).
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5 ! momentum/velocity components
     self%mesh(i)%h(self%idx%bx+i-1) = -0.5 ! mag. field components
+    self%mesh(i)%h(self%idx%ex:self%idx%ez) = -0.5
+    self%mesh(i)%h(self%idx%ex+i-1) = 0.0 ! EMFs; each component is cell-centred in its own direction.
   end do
   idx = self%idx
 
-  self%t(self%it) = 0.0d0
-  self%ix1x2x3 = 1
+  if (io%restart < 0) then
+    self%t(self%it) = 0.0d0
+    self%ix1x2x3 = 1
+  end if
 
   call trace_end
 END SUBROUTINE init_zeusTW
@@ -138,6 +144,8 @@ SUBROUTINE update_zeusTW (self)
   call ZeusTW (self%istep)  ! run ZEUS
   call trace_end(itimer)
   call CopyFromZeusTW (self)
+  !-----------------------------------------------------------------------------
+  call self%counter_update
 END SUBROUTINE update_zeusTW
 
 !===============================================================================
@@ -193,9 +201,9 @@ SUBROUTINE CopyToZeusTW (self)
   dx1 = self%mesh(1)%d
   dx2 = self%mesh(2)%d
   dx3 = self%mesh(3)%d
-  x1low = self%mesh(1)%r(1) + self%mesh(1)%centre_nat - 0.5d0 * dx1
-  x2low = self%mesh(2)%r(1) + self%mesh(2)%centre_nat - 0.5d0 * dx2
-  x3low = self%mesh(3)%r(1) + self%mesh(3)%centre_nat - 0.5d0 * dx3
+  x1low = self%mesh(1)%r(self%mesh(1)%li) + self%mesh(1)%centre_nat - 0.5d0 * dx1
+  x2low = self%mesh(2)%r(self%mesh(2)%li) + self%mesh(2)%centre_nat - 0.5d0 * dx2
+  x3low = self%mesh(3)%r(self%mesh(3)%li) + self%mesh(3)%centre_nat - 0.5d0 * dx3
 
   if (self%mesh(1)%type == 'Cartesian_mesh') then
     geometry = 'xyz'
@@ -233,7 +241,7 @@ SUBROUTINE CopyToZeusTW (self)
     associate (v1=>self%vgas(:,:,:,1,self%it),v2=>self%vgas(:,:,:,2,self%it),v3=>self%vgas(:,:,:,3,self%it))
     call get_vel (self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, v1, v2, v3)
     end associate
-    self%pressure(:,:,:,self%it) = self%mem(:,:,:,idx%e,self%it,1) * (self%gamma - 1.0)
+    self%pressure(:,:,:,self%it) = self%mem(:,:,:,self%idx%e,self%it,1) * (self%gamma - 1.0)
   end if
 
   courno = self%courant
@@ -248,6 +256,14 @@ SUBROUTINE CopyToZeusTW (self)
   time = self%time
   ix1x2x3 = self%ix1x2x3
   dtold = dt
+
+  ! copy physical boundary logical flags
+  lx1ipb = self%mesh(1)%lower_boundary
+  lx1opb = self%mesh(1)%upper_boundary
+  lx2ipb = self%mesh(2)%lower_boundary
+  lx2opb = self%mesh(2)%upper_boundary
+  lx3ipb = self%mesh(3)%lower_boundary
+  lx3opb = self%mesh(3)%upper_boundary
 
   if (associated(self%force%selected)) deallocate (force)
   nullify (qz)
@@ -271,6 +287,14 @@ SUBROUTINE CopyFromZeusTW (self)
   qz => self%mem(:,:,:,:,self%new,1)
 
   call trace_begin ('copyztoa (external)', itimer=itimer)
+
+  ! Save the EMFs as calculated by the solver.
+  ! Note that what is actually stored is `E_i * g_i * dx_i`, where `E_i` are the
+  ! actual EMFs (= v x B).
+  !self%mem(:,:,:,self%idx%ex,self%new,1) = amemf1(:,:,:)
+  !self%mem(:,:,:,self%idx%ey,self%new,1) = amemf2(:,:,:)
+  !self%mem(:,:,:,self%idx%ez,self%new,1) = amemf3(:,:,:)
+
   call copyfromztw (qz, self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, self%nv)
   call trace_end (itimer)
 

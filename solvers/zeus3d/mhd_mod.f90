@@ -171,7 +171,7 @@ CONTAINS
 SUBROUTINE init_zeus (self)
   USE zparams
   class(mhd_t):: self
-  integer:: i
+  integer:: i, iostat
   logical, save :: first_time=.true.
   real, save:: courant=0.5
   real(8), save:: gamma
@@ -212,6 +212,7 @@ SUBROUTINE init_zeus (self)
     diffc2  = 0.0d0
     dtinit  = huge(1.0d0)
     rewind (io%input); read (io%input, zeus_params)
+    if (iostat/=0) call io%namelist_warning ('zeus_params')
     if (io%master) write (*, zeus_params)
 
     ! ---- Fool-proofing ----

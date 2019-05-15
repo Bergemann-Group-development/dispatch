@@ -53,6 +53,13 @@
   courant=0.25
 /
 
+&zeustw_params
+  gamma = 1.01
+  qlin=0.1
+  qcon=2.0
+  courant=0.25
+/
+
 &timestep_params
   time_order=0
 /
@@ -61,6 +68,7 @@
   periodic=f
   no_mans_land=f
   grace=0.01
+  ng=3*3
 /
 
 &pebble_params
