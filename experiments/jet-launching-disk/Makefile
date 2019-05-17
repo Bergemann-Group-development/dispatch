@@ -4,13 +4,10 @@
 OPTS = full_debug
 #OPTS = optimized
 
-# Path to ZEUScore shared library.
-# Don't forget to update the LD_LIBRARY_PATH environment variable.
-LIBS+=-L/home/jramsey/repos/ZEUScore -lzeuscore
-
 # Targets and methods
 UPD = adams_bashforth
-SOLVER = zeus3d
+SOLVER = zeus3d/zeustw
+# Don't forget to update the LD_LIBRARY_PATH environment variable to point to libzeuscore!
 EXEC = dispatch.x
 TOP = ../..
 sinclude $(TOP)/config/Makefile
