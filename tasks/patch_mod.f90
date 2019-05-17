@@ -212,6 +212,7 @@ MODULE patch_mod
   logical, save:: do_check_nan=.false.
   logical, save:: panic=.false.
   logical, save:: zero_order_extrap=.true.
+  logical, save:: pack_all=.true.
   public task2patch
 CONTAINS
 
@@ -1197,7 +1198,7 @@ SUBROUTINE pack (self, mesg)
   class(mesg_t), pointer:: mesg
   !.............................................................................
   type(header_t):: header
-  integer:: n_buf, ibuf, iv, it
+  integer:: n_buf, ibuf, iv, it, l(3), u(3)
   real:: pt
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -1205,7 +1206,14 @@ SUBROUTINE pack (self, mesg)
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%pack', itimer=itimer)
   allocate (mesg)
-  n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
+  if (pack_all) then
+    l = self%mesh%lb
+    u = self%mesh%ub
+  else
+    l = self%mesh%li
+    u = self%mesh%ui
+  end if
+  n_buf = product(u-l+1)        ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
   if (kind(self%mem)==8) &
     n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
   mesg%nbuf = n_header + self%nv*n_buf
@@ -1241,7 +1249,8 @@ SUBROUTINE pack (self, mesg)
   ! copy as a minimum also the previous time slot
   !-----------------------------------------------------------------------------
   do iv=1,self%nv
-    call anonymous_copy (n_buf, self%mem(:,:,:,iv,self%it,1), mesg%buffer(ibuf))
+    call anonymous_copy (n_buf, &
+      self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1), mesg%buffer(ibuf))
     ibuf = ibuf + n_buf
   end do
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
@@ -1251,7 +1260,8 @@ SUBROUTINE pack (self, mesg)
       flush (io_unit%log)
     end if
     do iv=1,self%nv
-      call anonymous_copy (n_buf, self%mem(:,:,:,iv,it,1), mesg%buffer(ibuf))
+      call anonymous_copy (n_buf, &
+        self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it,1), mesg%buffer(ibuf))
       ibuf = ibuf + n_buf
     end do
   end if
@@ -1282,7 +1292,7 @@ SUBROUTINE unpack (self, mesg)
   class(mesg_t), pointer:: mesg
   !.............................................................................
   type(header_t):: header
-  integer:: n_buf, ibuf, iv, it
+  integer:: n_buf, ibuf, iv, it, l(3), u(3)
   integer, dimension(:), pointer:: buffer
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -1291,7 +1301,14 @@ SUBROUTINE unpack (self, mesg)
   call trace_begin ('patch_t%unpack', itimer=itimer)
   self%unpack_time = wallclock()
   buffer => mesg%buffer
-  n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
+  if (pack_all) then
+    l = self%mesh%lb
+    u = self%mesh%ub
+  else
+    l = self%mesh%li
+    u = self%mesh%ui
+  end if
+  n_buf = product(u-l+1)        ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
   if (kind(self%mem)==8) &
     n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
   !-----------------------------------------------------------------------------
@@ -1302,7 +1319,7 @@ SUBROUTINE unpack (self, mesg)
   ibuf = ibuf + n_header
   call self%lock%set
   call self%header_to_patch (header)
-  if (io%verbose > 1) &
+  if (io%verbose > 2) &
     write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
       wallclock(), 'header_to_patch: id, nq, BVS, nsnd, nrcv, latency, time =', &
       self%id, mesg%sender, self%nq, &
@@ -1311,21 +1328,23 @@ SUBROUTINE unpack (self, mesg)
       self%is_set(bits%swap_request), &
       mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, self%latency, self%time
   self%wc_last = wallclock()
-  if (io%verbose > 1) write (io_unit%log,1) 'patch_mod::unpk id, nq, time  after:', &
-    self%id, self%nq, self%time, &
-    self%is_set (bits%internal), &
-    self%is_set (bits%boundary), &
-    self%is_set (bits%virtual), &
-    self%is_set (bits%external), &
-    self%is_set (bits%swap_request), &
-    self%wc_last
-    1 format(a,2i9,f12.6,2x,5l1,f12.1)
+  if (io%verbose > 1) &
+    write (io_unit%log,'(f12.1,a,2i9,f12.6,2x,5l1)') &
+      self%wc_last, &
+      'patch_t%unpk: id, nq, time, IBVES =', &
+      self%id, self%nq, self%time, &
+      self%is_set (bits%internal), &
+      self%is_set (bits%boundary), &
+      self%is_set (bits%virtual), &
+      self%is_set (bits%external), &
+      self%is_set (bits%swap_request)
   !-----------------------------------------------------------------------------
   ! Copy the variables from the output buffer.  If this is swap of patch roles
   ! expect at least one more time slot.
   !-----------------------------------------------------------------------------
   do iv=1,self%nv
-    call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
+    call anonymous_copy (n_buf, buffer(ibuf), &
+      self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1))
     ibuf = ibuf + n_buf
   end do
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then
@@ -1335,7 +1354,8 @@ SUBROUTINE unpack (self, mesg)
       flush (io_unit%log)
     end if
     do iv=1,self%nv
-      call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,it,1))
+      call anonymous_copy (n_buf, buffer(ibuf), &
+        self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it,1))
       ibuf = ibuf + n_buf
     end do
   end if
