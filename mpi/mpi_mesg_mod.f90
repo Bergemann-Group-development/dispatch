@@ -726,6 +726,10 @@ contains
       mesg%id = stat(MPI_TAG)
       mesg%sender = stat(MPI_SOURCE)
       mesg%nbuf = nbuf
+      if (verbose > 0) then
+        write (io_unit%log,'(f12.6,2x,a,3i6)') wallclock(), &
+          'probe: id, send, nbuf =', mesg%id, mesg%sender, mesg%nbuf
+      end if
       !$omp atomic
       mpi_mesg%n_recv = mpi_mesg%n_recv+1
       !$omp atomic

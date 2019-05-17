@@ -537,9 +537,10 @@ SUBROUTINE check_ready (self, link)
             nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
       else                                              ! not ahead in time
         if (self%verbose > 0) then
-          write (io_unit%log,'(f12.6,2x,"list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
-            wallclock(), task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
-            nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
+          write (io_unit%log,'(f12.6,2x,a,i5,f10.6,a,i6,i5,2f10.6,f6.2,l4)') &
+            wallclock(), 'list_t%check_ready:', task%id, task%time, ' failed on', &
+            nbor%task%id, nbor%task%rank, nbor%task%time, nbor%task%dtime, &
+            nbor%task%grace, nbor%task%is_set(bits%virtual)
         end if
         if (debug1 .or. self%verbose > 1) &
           write (io_unit%log,'("list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
@@ -953,6 +954,10 @@ SUBROUTINE init_all_nbors (self)
     n = n+1
     if (link%task%is_set(bits%boundary)) nb = nb+1
     if (link%task%is_set(bits%virtual)) nv = nv+1
+    !write (io_unit%output,*) 'init_all_nbors:', &
+    !  link%task%id, link%task%rank, &
+    !  link%task%is_set(bits%boundary), &
+    !  link%task%is_set(bits%virtual)
     link => link%next                                   ! continue list
   end do
   if (io%verbose > 1) & 

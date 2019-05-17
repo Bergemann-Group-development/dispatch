@@ -300,7 +300,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     call task%update                                  ! update the task
     if (self%verbose > 0) &
       write (io_unit%log,'(f12.6,2x,a,i6,1p,g14.6)') &
-        wallclock(), 'update:', task%id, task%time
+        wallclock(), 'update:', task%id, task%time+task%dtime
   end if
   !----------------------------------------------------------------------------
   ! Default delay time = first update time

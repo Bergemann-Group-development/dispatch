@@ -258,12 +258,13 @@ FUNCTION find_task (self, id, new) RESULT (link)
   new = .false.
   link => self%head
   do while (associated(link))
-!write (io_unit%log,*) mpi%rank,' find task: id, link%id, virtual =', id, link%task%id, link%task%is_set(bits%virtual)
     patch => task2patch(link%task)
     if (patch%id == id) then
-      if (verbose>1) &
-        write (io_unit%log,*) mpi%rank,' task_mesg_t%find_task: match', id, associated(patch%mem)
-      flush(io_unit%log)
+      if (verbose > 2) then
+        write (io_unit%log,*) &
+          ' task_mesg_t%find_task: match', id, associated(patch%mem)
+        flush(io_unit%log)
+      end if
       call trace%end()
       return
     end if
@@ -330,9 +331,9 @@ SUBROUTINE unpack (self, mesg, link)
         wallclock(), 'task_mesg_t%unpack: id =', mesg%id, link1%task%id
   else
     link1 => find_task (self, mesg%id, new)
-    if (self%verbose > 0) &
+    if (verbose > 1) &
       write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
-        wallclock(), 'task_mesg_t%unpack: found id =', mesg%id, link1%task%id
+        wallclock(), 'task_mesg_t%unpack: found id =', link1%task%id
   end if
   !-----------------------------------------------------------------------------
   ! Make sure the task pointer has all experiment_t attributes
@@ -346,8 +347,9 @@ SUBROUTINE unpack (self, mesg, link)
   failed = .false.
   !-----------------------------------------------------------------------------
   if (associated(link1%task)) then
-   if (verbose > 1) &
-    write (io_unit%log,'(a,i6,2x,5l1)') 'unpack: id, bits BVRES =', mesg%id, &
+   if (verbose > 0) &
+    write (io_unit%log,'(f12.6,2x,a,i6,2x,5l1)') &
+      wallclock(), 'unpack: id, bits BVRES =', mesg%id, &
       task%is_set (bits%boundary), &
       task%is_set (bits%virtual), &
       task%is_set (bits%ready), &
@@ -395,12 +397,15 @@ SUBROUTINE unpack (self, mesg, link)
   id = task%id
   call task%lock%set ('unpack')
   call task%unpack (mesg)
-  if (self%verbose > 1) &
-    write (io_unit%log,'(a,i6,2x,5l1)') 'unpack: after task%unpack BVRES =', &
-      mesg%id, &
+  if (verbose > 0) &
+    write (io_unit%log,'(f12.6,2x,a,i6,f12.6,i5,2x,6l1)') &
+      task%wc_last, &
+      'unpack: id, time, IBVERS =', &
+      task%id, task%time, task%rank, &
+      task%is_set (bits%internal), &
       task%is_set (bits%boundary), &
       task%is_set (bits%virtual), &
-      task%is_set (bits%ready), &
+      task%is_set (bits%external), &
       task%is_set (bits%remove), &
       task%is_set (bits%swap_request)
   !-----------------------------------------------------------------------------
@@ -483,8 +488,9 @@ SUBROUTINE unpack (self, mesg, link)
   ! which regenerates the meshes and sets up all geometric properties.
   !-----------------------------------------------------------------------------
   if (new) then
-    if (verbose > 1) &
-      write (io_unit%log,*) 'unpack: init_nbors, id =', task%id
+    if (verbose > 0) &
+      write (io_unit%log,'(f12.6,2x,a,i8)') &
+        wallclock(), 'unpack: new id =', task%id
     call task%setup
     if (self%verbose > 0) then
       write (io_unit%log,'(f12.6,2x,a,i6,4(3f9.4,1x))') wallclock(), &
@@ -519,8 +525,9 @@ SUBROUTINE unpack (self, mesg, link)
   !if (verbose>1) &
   !  call link1%test_nbor_status
   if (self%method==0) then
-    if (verbose > 1) &
-      write (io_unit%log,*) 'unpack: check_nbors, id =', task%id
+    if (verbose > 0) &
+      write (io_unit%log,'(f12.6,2x,a,i8)') &
+        wallclock(), 'unpack: check_nbors, id =', task%id
     call self%check_nbors (link1)
   end if
   call trace%end (itimer)
@@ -546,10 +553,14 @@ SUBROUTINE check_priv (self)
   do while (associated(mesg))
     n = n+1
     if (mesg%is_complete()) then
-      write (io_unit%log,*) 'adding mesg to unpk_list', mesg%id, n
+      if (verbose > 1) &
+        write (io_unit%log,'(f12.6,2x,a,2i6)') &
+          wallclock(), 'adding mesg to unpk_list', mesg%id, n
       call unpk_list%add (mesg)
     else
-      write (io_unit%log,*) 'adding mesg to recv_list', mesg%id, n
+      if (verbose > 1) &
+        write (io_unit%log,'(f12.6,2x,a,2i6)') &
+          wallclock(), 'adding mesg to recv_list', mesg%id, n
       call recv_list%add (mesg)
     end if
     if (n > mpi_mesg%max_probe) exit
@@ -562,7 +573,9 @@ SUBROUTINE check_priv (self)
   do while (associated(mesg))
     next => mesg%next
     if (mesg%is_complete()) then
-      write (io_unit%log,*) 'moving mesg to unpk_list', mesg%id
+      if (verbose > 1) &
+        write (io_unit%log,'(f12.6,2x,a,i6)') &
+          wallclock(), 'moving mesg to unpk_list', mesg%id
       call recv_list%remove (mesg)
       call unpk_list%add (mesg)
     end if
@@ -573,7 +586,9 @@ SUBROUTINE check_priv (self)
   !-----------------------------------------------------------------------------
   mesg => unpk_list%head
   do while (associated(mesg))
-    write (io_unit%log,*) 'unpacking mesg in unpk_list', mesg%id
+    if (verbose > 1) &
+      write (io_unit%log,'(f12.6,2x,a,i6)') &
+          wallclock(), 'unpacking mesg in unpk_list', mesg%id
     next => mesg%next
     call unpack (self, mesg)
     call unpk_list%remove (mesg)
@@ -701,6 +716,12 @@ END SUBROUTINE check_virtual
 !> Run through all virtual patches, and allocate message data types if not
 !> allocated.  If an old request exists, test if it has completed.  If yes,
 !> unpack and issue a new request.  If no request exists, issue a request.
+!> 
+!> The current version visits all virtual patches once for every patch update,
+!> which may be excessive (especially since the task is locked while accessing).
+!>
+!> A possibly better alternative is to visit only the virtual tasks on each
+!> nbor list, while doing the check_nbors() that follows each update.
 !===============================================================================
 SUBROUTINE check_active (self)
   class(task_mesg_t):: self

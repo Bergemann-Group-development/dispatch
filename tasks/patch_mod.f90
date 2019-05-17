@@ -1467,15 +1467,14 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         end do
       end if
       !-------------------------------------------------------------------------
-      ! Print a one-liner if verbose==1 and id==1, or verbose>1, while
+      ! Print a one-liner if verbose==0 and id==io%id, or verbose>1, while
       ! accumulating counters also when not printing
       !-------------------------------------------------------------------------
       if (io%verbose>0 .or. self%id==io%id) then
-        if (omp%master) &
-          counts = counts + &
-            [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
-             mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &
-             mpi_mesg%n_delay]
+        counts = counts + &
+          [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
+           mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &
+           mpi_mesg%n_delay]
         !$omp atomic
         timer%n_lines = timer%n_lines-1
         if (timer%n_lines==0) then
