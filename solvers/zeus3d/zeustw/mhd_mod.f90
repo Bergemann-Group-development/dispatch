@@ -58,7 +58,7 @@ SUBROUTINE init_zeusTW (self)
   integer:: i, iostat
   logical, save :: first_time=.true.
   real, save:: courant=0.5
-  namelist / zeustw_params /  gamma, qcon, qlin, courant, ienergy, dtminrat, dtratini, &
+  namelist / zeustw_params /  gamma, qcon, qlin, courant, ienergy, dtratini, &
                               iohmic, with_ad_1f, ihall, &
                               ohmic_eta_factor, ohmic_exponent, ohmic_rho_transition , &
                               max_ohmic_steps, courno_ohmic, &
@@ -164,18 +164,6 @@ SUBROUTINE CopyToZeusTW (self)
   integer, save:: itimer1=0
   type(index_t):: idx
 
-  ! DISPATCH does not have explicit information about the interface of the ZEUScore
-  ! procedure, so let's provide it. This allows for passing pointers to arrays
-  ! to ZEUScore.
-  interface
-    subroutine copyatoz (val, mito, mjto, mkto, nvar, x1low, x2low, x3low, &
-                         dx1, dx2, dx3, mptr, pvelocity, force)
-       integer:: mito, mjto, mkto, nvar, mptr
-       real(kind=8):: x1low, x2low, x3low, dx1, dx2, dx3
-       real(kind=8), dimension(3):: pvelocity
-       real(kind=8), dimension(:,:,:,:), pointer:: val, force
-    end subroutine copyatoz
-  end interface
   !-----------------------------------------------------------------------------
   ! Remember: ZEUS has one extra zone in each direction to handle staggered variables
   ! (in ZEUS-speak this is "*ep3"); this is one more zone than STAGGER.
@@ -231,7 +219,7 @@ SUBROUTINE CopyToZeusTW (self)
     force => null()
   end if
 
-  call trace%begin ('copyatoz (external)', itimer=itimer1)
+  call trace%begin ('CopyToZTW (external)', itimer=itimer1)
   call copytoztw (qz, self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, &
                  self%nv, x1low, x2low, x3low, dx1, dx2, dx3, self%id, &
                  pvelocity, force)
@@ -273,27 +261,22 @@ END SUBROUTINE CopyToZeusTW
 !===============================================================================
 SUBROUTINE CopyFromZeusTW (self)
   use zeus_main
+  use zeus_fluxes
 
   class(mhd_t) :: self
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer :: qz
   integer, save:: itimer=0
-  interface
-    subroutine copyztoa (val, mito, mjto, mkto, nvar)
-       integer:: mito, mjto, mkto, nvar
-       real(kind=8), dimension(:,:,:,:), pointer:: val
-    end subroutine copyztoa
-  end interface
   !-----------------------------------------------------------------------------
   qz => self%mem(:,:,:,:,self%new,1)
 
-  call trace_begin ('copyztoa (external)', itimer=itimer)
+  call trace_begin ('CopyFromZTW (external)', itimer=itimer)
 
   ! Save the EMFs as calculated by the solver.
   ! Note that what is actually stored is `E_i * g_i * dx_i`, where `E_i` are the
   ! actual EMFs (= v x B).
-  !self%mem(:,:,:,self%idx%ex,self%new,1) = amemf1(:,:,:)
-  !self%mem(:,:,:,self%idx%ey,self%new,1) = amemf2(:,:,:)
-  !self%mem(:,:,:,self%idx%ez,self%new,1) = amemf3(:,:,:)
+  self%mem(:,:,:,self%idx%ex,self%new,1) = amemf1(:,:,:)
+  self%mem(:,:,:,self%idx%ey,self%new,1) = amemf2(:,:,:)
+  self%mem(:,:,:,self%idx%ez,self%new,1) = amemf3(:,:,:)
 
   call copyfromztw (qz, self%mesh(1)%gn, self%mesh(2)%gn, self%mesh(3)%gn, self%nv)
   call trace_end (itimer)
