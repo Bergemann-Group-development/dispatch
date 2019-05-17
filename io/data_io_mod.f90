@@ -488,7 +488,7 @@ SUBROUTINE output_nml_v2 (patch, append)
   integer              :: time_derivs
   logical              :: guard_zones, no_mans_land, periodic(3)
   integer, save        :: last_snapshot=-1
-  character(len=16)    :: kind, eos, opacity, method
+  character(len=32)    :: kind, eos, opacity, method
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method, nml_version
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, &
     nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land
@@ -694,7 +694,7 @@ SUBROUTINE input_nml_v2 (patch)
                           llc_nat, llc_cart, centre_nat
   integer, save        :: time_derivs
   logical, save        :: guard_zones, no_mans_land, periodic(3)
-  character(len=16)    :: kind, eos, opacity, method
+  character(len=32)    :: kind, eos, opacity, method
   integer              :: iostat
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, &
     nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land
