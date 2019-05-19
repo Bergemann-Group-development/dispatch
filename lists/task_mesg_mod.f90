@@ -11,6 +11,16 @@
 !> check_active :TF ditto, but not split up into thread-private lists
 !> check_priv   :FT puts messages in recv_list and/or unpk_list
 !> check_mpi    :FF original method, also uses progressive list handling
+!>
+!> When doing active receives (asking actively for the package to each virtual
+!> task, it is necessary that the MPI message tag equals (or is a function of)
+!> the task ID, while another, unique ID should be reserved for load balance
+!> messages. To allow detecting packages for new patches (AMR), and still use
+!> active receives, one could reserve another unique ID for "new" patches, for
+!> which then the actual ID would be extracted from the header part of the
+!> buffer.  Upon receipt of such a package, the new virtual patch would be
+!> created, the first direct request would be sent, and the message would be
+!> added to the (thread-private) list of messages.
 !===============================================================================
 MODULE task_mesg_mod
   USE io_mod
@@ -81,6 +91,19 @@ SUBROUTINE check_mpi (self)
   !$omp atomic read
   nq = self%nq
   call mpi_mesg%sent_list%check_sent (nq)
+  !-----------------------------------------------------------------------------
+  ! Choose method used to receive messages:
+  ! - 'check_virtual' uses prepared, thread private lists of virtual patches, 
+  !   and thus does not work with AMR
+  ! - 'check_active' runs through all virtual patches and issues irecv requests,
+  !   re-issuing requests when they are completed
+  ! - 'check_priv' used mpi_mesg%get to handle all incoming MPI packages, and
+  !   and is thus the most reliable method, suffering only from the randomness
+  !   that appears to inflict some MPI installations, where some messages may
+  !   get tucked away for a significant time before being received
+  ! - the default 'check_mpi' procedure is similar to 'check_priv', but uses 
+  !   lists that are common to all threads, which requires using critical regions
+  !-----------------------------------------------------------------------------
   if (mpi_mesg%recv_active) then
     if (mpi_mesg%recv_priv) then
       call check_virtual (self)
@@ -370,6 +393,7 @@ SUBROUTINE unpack (self, mesg, link)
   ! lock) while it is being updated here
   !---------------------------------------------------------------------------
   id = task%id
+  call task%lock%set ('unpack')
   call task%unpack (mesg)
   if (self%verbose > 1) &
     write (io_unit%log,'(a,i6,2x,5l1)') 'unpack: after task%unpack BVRES =', &
@@ -451,6 +475,7 @@ SUBROUTINE unpack (self, mesg, link)
       call self%count_status
     end if
   end if
+  call task%lock%unset ('unpack')
   !-----------------------------------------------------------------------------
   ! If a virtual task was just created it, it and its nbors need new nbor lists.
   ! Also, since the proper size and position were not known when a new task was
