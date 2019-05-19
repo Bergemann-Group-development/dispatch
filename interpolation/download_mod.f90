@@ -417,7 +417,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     wc(0) = wallclock()
     !call source%lock%set ('download_link')
     wc(1) = wc(1) + wallclock() - wc(0)
-    if (verbose > 0) &
+    if (verbose > 1) &
       write(io_unit%log,*) target%id, 'download_t%download_link: source, download =', &
         source%id, nbor%download
     if (nbor%download) then
@@ -479,7 +479,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     nbor => nbor%next
   end do
   call link%lock%unset ('download_link')
-  if (verbose > 0) then
+  if (verbose > 1) then
     wc(3) = wc(3)-wc(2)
     wc(2) = wc(2)-wc(1)
     write (io_unit%log,'(a,6p,3f7.1,i6)') &
@@ -493,17 +493,24 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     call target%check_density (" after download")
   end if
   if (self%check_filled) then
-    if (any(filled == -1)) then
+    if (all_cells_l) then
+      l = target%mesh%li
+      u = target%mesh%ui
+    else
+      l = target%mesh%lb
+      u = target%mesh%ub
+    end if
+    if (any(filled(l(1):u(1),l(2):u(2),l(3):u(3),:) == -1)) then
       !-------------------------------------------------------------------------
       ! Since only the parent patch is used, this condition is expected, and OK
       !-------------------------------------------------------------------------
-      if (verbose > 0) &
+      if (verbose > 0) then
         write (io%output,*) 'INFO: some guard zone cells were not filled'
-      if (verbose > 1) then
-        do iz=target%mesh(3)%lb,target%mesh(3)%ub
-        do iy=target%mesh(2)%lb,target%mesh(2)%ub
-        do ix=target%mesh(1)%lb,target%mesh(1)%ub
-          if (filled(ix,iy,iz,1) == -1) write(io%output,*) ix, iy, iz
+        do iz=l(3),u(3)
+        do iy=l(2),u(2)
+        do ix=l(1),u(1)
+          if (filled(ix,iy,iz,1) == -1) &
+            write(io_unit%log,'(a,3i3)') 'not filled:', ix, iy, iz
         end do
         end do
         end do
@@ -595,12 +602,12 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
         target%id, target%level, source%id, source%level
       call mpi%abort('dnload_range')
     end if
-    if (verbose > 0 .or. io_unit%do_validate .or. target%id==id_debug) &
+    if (verbose > 1 .or. io_unit%do_validate .or. target%id==id_debug) &
       write(io_unit%log,1) target%id, target%level, iv, source%id, source%level, l, u, offset
       1 format("download_t%dnload_range: id,lv,iv:",i6,2i3, &
                "  source,lv,l,u,o:",i6,i3,3(2x,3i4))
   else
-    if (verbose > 0 .or. io_unit%do_validate .or. target%id==id_debug) &
+    if (verbose > 1 .or. io_unit%do_validate .or. target%id==id_debug) &
       write(io_unit%log,2) target%id, target%level, iv, source%id, source%level, l, u
       2 format("download_t%dnload_range: id,lv,iv:",i6,2i3, &
                "  source,lv,l,u:",i6,i3,3(2x,3i4))
@@ -676,7 +683,7 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
     call io%abort()
   end if
   do iv=iv1, iv2
-    if (verbose > 0 .and. source%unsigned(iv)) then
+    if (verbose > 1 .and. source%unsigned(iv)) then
       fmin = min(minval(source%mem(:,:,:,iv,jt(1),1)),minval(source%mem(:,:,:,iv,jt(2),1)))
       if (fmin <= 0.0) then
         write(io_unit%log,*) 'iv, jt, pt / minval, minloc =', iv, jt, pt
@@ -935,13 +942,11 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
       end if
       if (verbose > 0 .or. target%id==id_debug) then
         if (iv == 1 .or. verbose > 2) &
-          write (io_unit%log,'(i6,4(2x,a,i6),1p,2e12.4)') target%id, &
-          'same_linear picked up', product(max(0,u-l+1)), &
-          'values of', product(target%n), &
-          'from', source%id, &
-          ' iv, min, max =', iv, &
-          minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,target%it,1)), &
-          maxval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,target%it,1))
+          write (io_unit%log,2) target%id, target%level, source%id, source%level, &
+          'same_line picked up', &
+          product(u-l+1), ' values, l, u, mind, pt =', l, u, &
+          minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), pt
+        2 format(2(i6,i3),2x,a,i6,a,2(2x,3i4),1p,e14.4,2x,0p2f6.3)
       end if
     end if
   end do
@@ -1269,7 +1274,7 @@ SUBROUTINE different (self, target, source, all_cells, only)
 !    do i=1,3
 !      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
 !    end do
-    if (verbose > 0 .or. target%id==id_debug) &
+    if (verbose > 1 .or. target%id==id_debug) &
       write (io_unit%log,1) &
         source%id, (source%position-target%position)/target%size, l, u, all_cells_l
       1 format("DBG download_t%different:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x),l3)
@@ -1305,12 +1310,15 @@ SUBROUTINE different (self, target, source, all_cells, only)
       end do
     end do
     end associate
+    if (verbose > 0 .or. target%id==id_debug) then
+      if (iv == 1 .or. verbose > 2) &
+        write (io_unit%log,2) target%id, target%level, source%id, source%level, &
+        'different picked up', &
+        product(u-l+1), ' values, l, u, mind, pt =', l, u, &
+        minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), pt
+      2 format(2(i6,i3),2x,a,i6,a,2(2x,3i4),1p,e14.4,2x,0p2f6.3)
+    end if
   end do
-  if (verbose > 0 .or. target%id == id_debug) &
-    write (io_unit%log,2) target%id, target%level, source%id, source%level, 'different picked up', &
-      product(u-l+1), ' values, mind =', &
-      minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), l, u
-  2 format(2(i6,i3),2x,a,i6,a,1p,e12.4,2(2x,3i4))
   call trace%end (itimer)
 END SUBROUTINE different
 
@@ -1351,8 +1359,8 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
   else
     all_cells_l = .false.
   end if
-  if (verbose > 0 .or. target%id == id_debug) &
-    write(io_unit%log,'(2(a,i7,i4,1p,3e11.3,4x),l3)') &
+  if (verbose > 1 .or. target%id == id_debug) &
+       write(io_unit%log,'(2(a,i7,i4,1p,3e11.3,4x),l3)') &
       'DBG different_prolong; target:', target%id, target%level, target%ds, &
                              'source:', source%id, source%level, source%ds, all_cells_l
   li = target%mesh%li
@@ -1412,7 +1420,7 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
                 nskip = nskip+1
                 cycle
               end if
-              end if
+            end if
             ninter = ninter+1
             if (verbose > 1 .and. target%id == id_debug) &
               write (io_unit%log,*) target%id, 'different_prolong:    using', &
@@ -1457,18 +1465,15 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
         end do
       end do
     end do
+    if (verbose > 0 .or. target%id==id_debug) then
+      if (iv == 1 .or. verbose > 2) &
+        write (io_unit%log,2) target%id, target%level, source%id, source%level, &
+        'diff_prol picked up', &
+        ninter, nskip, nint, ' values, l, u, mind, pt =', l, u, &
+        minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), pt
+      2 format(2(i6,i3),2x,a,3i6,a,2(2x,3i4),1p,e14.4,2x,0p2f6.3)
+    end if
   end do
-  if (verbose > 1 .or. target%id == id_debug) &
-    write (io%output,'(2i6,i4,2x,a,6i6,2x,a,2(2x,3i4),2x,f10.6,f8.3)') &
-      target%id, source%id, omp%thread, 'ntot, skip, int, inter, perv, exp =', &
-      ntot, nskip, nint, ninter, nperv, nexp, ' l, u =', l, u, wallclock()-start, &
-      1e6*(wallclock()-start)/ninter
-  if (verbose > 0 .or. target%id == id_debug) &
-    write (io_unit%log,2) target%id, target%level, source%id, source%level, &
-      'different_prolong picked up', &
-      n, product(u-l+1), ' values, mind =', &
-      minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), l, u
-  2 format(2(i6,i3),2x,a,2i6,a,1p,e12.4,2(2x,3i4))
   call trace%end (itimer)
 END SUBROUTINE different_prolong
 
@@ -1511,10 +1516,10 @@ SUBROUTINE prolong (self, target, source, all_cells, only)
   else
     all_cells_l = .false.
   end if
-  if (verbose > 0 .or. target%id == id_debug) &
+  if (verbose > 1 .or. target%id == id_debug) &
     write(io_unit%log,'(2(a,i7,i4,1p,3e11.3,4x),l3)') &
-      'DBG different_prolong; target:', target%id, target%level, target%ds, &
-                             'source:', source%id, source%level, source%ds, all_cells_l
+      'DBG prolong; target:', target%id, target%level, target%ds, &
+                   'source:', source%id, source%level, source%ds, all_cells_l
   li = target%mesh%li
   ui = target%mesh%ui
   call dnload_range (target, source, target%idx%d, l, u)
@@ -1842,6 +1847,14 @@ SUBROUTINE different_restrict (self, target, source, only)
       end do
     end do
     end associate
+    if (verbose > 0 .or. target%id==id_debug) then
+      if (iv == 1 .or. verbose > 2) &
+        write (io_unit%log,2) target%id, target%level, source%id, source%level, &
+        'diff_rest picked up', &
+        product(u-l+1), ' values, l, u, mind, pt =', l, u, &
+        minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), pt
+      2 format(2(i6,i3),2x,a,i6,a,2(2x,3i4),1p,e14.4,2x,0p2f6.3)
+    end if
   end do
   call trace%end (itimer)
 END SUBROUTINE different_restrict
