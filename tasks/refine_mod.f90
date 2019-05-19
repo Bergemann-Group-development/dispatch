@@ -203,7 +203,6 @@ MODULE refine_mod
     procedure:: shock_and_cd_detector
     procedure:: refine_region
     procedure:: gradient_detector
-    procedure:: check_support
   end type
   !
   integer:: check_interval=10                 ! Number of steps betwen checks
@@ -342,10 +341,8 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'user'
   !
-  ! Check that neighbors of `self` are not more than one level different.
-  ! If they are, mark this patch for splitting so that support can be
-  ! provided to the neighbors of `patch`.
-  refine = max (refine ,self%check_support (tasklist, link))
+  ! Check if support constraints allow derefinement
+  refine = max (refine, check_derefine_support (self, tasklist, link))
   if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'support'
   !
@@ -365,7 +362,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   class(solver_t), pointer:: patch
   logical, intent(out):: was_refined, was_derefined
   real:: dxmin, dxmax
-  integer:: refine, id
+  integer:: refine, id, n_added
   integer, save:: itimer=0
   !.............................................................................
   was_refined = .false.
@@ -428,9 +425,9 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     end where
     if (verbose > 3) write (io_unit%output,*) &
       patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'mask'
-    !-------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Apply refinement criteria on potential child patch parts
-    !-------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     if (any(patch%irefine /= 0)) then
       call selective_refine (self, tasklist, patch, was_refined, was_derefined)
     end if
@@ -442,9 +439,19 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
                         product(shape(patch%mask)), '-mask')
       deallocate (patch%mask)
     end if
-    !-------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
+    ! Check support for patches so marked, and clear the bit
+    !---------------------------------------------------------------------------
+    if (patch%is_set (bits%support)) then
+      call check_support (self, tasklist, link, n_added)
+      if (verbose > 0 .and. n_added > 0) then
+        write (io_unit%log,*) 'check_support: pre-added', n_added
+      end if
+      call patch%clear (bits%support)
+    end if
+    !---------------------------------------------------------------------------
     ! Update next refinement step counter
-    !-------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     patch%check_refine_next = patch%istep + check_interval
   end if
   call trace%end (itimer)
@@ -466,7 +473,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
   integer, dimension(3):: l, u, n, ii
   real(8), dimension(3):: size, pos
   logical:: not_already_refined
-  integer:: refine_it
+  integer:: refine_it, n_added
   integer:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%selective_refine', itimer=itimer)
@@ -514,7 +521,10 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
                   maxval(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)), &
                   l, u
               call make_child_patch (self, tasklist, patch, pos, size, child)
-              call check_child_support (self, tasklist, child%link)
+              call check_support (self, tasklist, child%link, n_added)
+              if (verbose > 0 .and. n_added > 0) then
+                write (io_unit%log,*) 'check_support: post-added', n_added
+              end if
               was_refined= .true.
             end if
           end do
@@ -564,10 +574,11 @@ END SUBROUTINE selective_refine
 !> currently exist, but overlap with the given level L patch, and hence would
 !> give level L-1 support to the level L patch.
 !===============================================================================
-SUBROUTINE check_child_support (self, tasklist, link)
+SUBROUTINE check_support (self, tasklist, link, n_added)
   class(refine_t):: self
   class(list_t):: tasklist
   class(link_t), pointer:: link
+  integer:: n_added
   !.............................................................................
   class(link_t), pointer:: nbor1, nbor2, nbor3
   class(task_t), pointer:: parent
@@ -580,8 +591,9 @@ SUBROUTINE check_child_support (self, tasklist, link)
   !-----------------------------------------------------------------------------
   ! Return if there are less than two levels down to levelmin
   !-----------------------------------------------------------------------------
+  n_added = 0
   if (link%task%level <= self%levelmin+1) return
-  call trace%begin ('refine_t%check_child_support', itimer=itimer)
+  call trace%begin ('refine_t%check_support', itimer=itimer)
   if (verbose > 1) then
     n = 0
     start = wallclock()
@@ -646,6 +658,7 @@ SUBROUTINE check_child_support (self, tasklist, link)
                       used = wallclock()-start
                     call make_child_patch (self, tasklist, parent, &
                                            trial%position, trial%size, support)
+                    n_added = n_added+1
                     if (verbose > 1) then
                       start = wallclock()-used
                       write(io_unit%log,'(3(a,i6,i3,2x),3i3,6i5,2l3)') &
@@ -658,8 +671,8 @@ SUBROUTINE check_child_support (self, tasklist, link)
                     if (verbose > 0) then
                       write(io_unit%output,*) &
                         '  refine', parent%id, &
-                        '  to', support%id, &
-                        '  to support', link%task%id
+                        'to', support%id, &
+                        'to support', link%task%id
                     end if
                   end if
                 end if
@@ -689,7 +702,7 @@ contains
     contains = all(abs(patch1%distance(patch2)) < patch1%ds)
     end select
   end function contains
-END SUBROUTINE check_child_support
+END SUBROUTINE check_support
 
 !===============================================================================
 !> To check if a patch at level L may be removed w/o patches at level L+1 loosing
@@ -697,7 +710,7 @@ END SUBROUTINE check_child_support
 !> there are they would have, at the place where it had level L support, instead
 !> only a level L-1 patch.  
 !===============================================================================
-FUNCTION check_support (self, tlist, link, check_only) RESULT (refine)
+FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
   USE task_mod
   class(refine_t):: self
   class(list_t):: tlist
@@ -708,7 +721,7 @@ FUNCTION check_support (self, tlist, link, check_only) RESULT (refine)
   class(link_t), pointer:: nbor
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('refine_t%check_support', itimer=itimer)
+  call trace%begin('refine_t%check_derefine_support', itimer=itimer)
   refine = -1
   nbor => link%nbor
   do while (associated(nbor))
@@ -719,7 +732,7 @@ FUNCTION check_support (self, tlist, link, check_only) RESULT (refine)
     nbor => nbor%next
   end do
   call trace%end (itimer)
-END FUNCTION check_support
+END FUNCTION check_derefine_support
 
 !===============================================================================
 !> Setup a mask with false values where a higher level patch overlaps this patch.
@@ -831,6 +844,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child%t(:) = child%time                            ! sinle time
   child%parentid = parent%id                         ! for debugging
   child%check_refine_next = 0                        ! allow recursive refine
+  call child%set (bits%support)                      ! trigger check_child_support
   !------------------------------------------------------------------------
   ! Increment I/O write counter, to avoid repeated writing of metadata
   !------------------------------------------------------------------------

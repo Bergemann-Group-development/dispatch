@@ -11,6 +11,7 @@ MODULE bits_mod
   integer, parameter::      virtual_bit=2**5
   integer, parameter::     external_bit=2**6
   integer, parameter:: swap_request_bit=2**7
+  integer, parameter::      support_bit=2**8
   integer, parameter::    root_grid_bit=2**9
   integer, parameter::         star_bit=2**10
   integer, parameter::       planet_bit=2**11
@@ -40,6 +41,7 @@ MODULE bits_mod
     integer:: not_leaf     = leaf_bit
     integer:: frozen       = frozen_bit
     integer:: swap_request = swap_request_bit
+    integer:: support      = support_bit
     integer:: particle     = particle_bit
     integer:: star         = star_bit
     integer:: planet       = planet_bit
