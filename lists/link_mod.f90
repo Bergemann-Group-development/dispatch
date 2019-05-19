@@ -758,7 +758,7 @@ SUBROUTINE garbage_collect (link)
   !-----------------------------------------------------------------------------
   if (link%task%n_needed <= 0) then
     if (verbose > 0) then
-      write (io_unit%log,'(f12.6,2x,a,i4,l4)') &
+      write (io_unit%log,'(f12.6,2x,a,i4,2l4)') &
         wallclock(), 'garbage_collect deleted: id =', link%task%id, &
         link%task%n_needed, link%task%is_set(bits%virtual)
     end if
