@@ -102,6 +102,7 @@ MODULE patch_mod
     procedure:: rotate
     procedure:: allocate_mesg           ! allocate a mesg buffer
     procedure:: pack                    ! pack patch into buffer
+    procedure, nopass:: unpack_id       ! unpack patch id
     procedure:: unpack                  ! unpack buffer into patch
     procedure:: info                    ! print info to stdout
     procedure, private:: contains1      ! patch contains a point
@@ -1260,6 +1261,20 @@ SUBROUTINE pack (self, mesg)
 END SUBROUTINE pack
 
 !===============================================================================
+!> Unpack patch id from an MPI patch_t buffer
+!===============================================================================
+INTEGER FUNCTION unpack_id (mesg)
+  class(mesg_t), pointer:: mesg
+  !.............................................................................
+  type(header_t):: header
+  !-----------------------------------------------------------------------------
+  call trace_begin ('patch_t%unpack_id')
+  call anonymous_copy (n_header, mesg%buffer, header)
+  unpack_id = header%id
+  call trace%end ()
+END FUNCTION unpack_id
+
+!===============================================================================
 !> Unpack patch info from a buffer, for MPI communication
 !===============================================================================
 SUBROUTINE unpack (self, mesg)
@@ -1482,7 +1497,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
 END SUBROUTINE info
 
 !===============================================================================
-!> Return true of a point is inside the patch interior
+!> Return true if a point is inside the self interior
 !===============================================================================
 LOGICAL FUNCTION contains1 (self, point)
   class(patch_t):: self
@@ -1491,11 +1506,11 @@ LOGICAL FUNCTION contains1 (self, point)
 END FUNCTION contains1
 
 !===============================================================================
-!> Return true of a point is inside the patch interior
+!> Return true if a patch position is inside the self interior
 !===============================================================================
-LOGICAL FUNCTION contains2 (self, other)
-  class(patch_t):: self, other
-  contains2 = contains1 (self, other%position)
+LOGICAL FUNCTION contains2 (self, patch)
+  class(patch_t):: self, patch
+  contains2 = contains1 (self, patch%position)
 END FUNCTION contains2
 
 !===============================================================================
