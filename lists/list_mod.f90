@@ -83,6 +83,7 @@ MODULE list_mod
     procedure:: print_queue_times
     procedure:: print => print_list
     procedure:: print_tasks
+    procedure, nopass:: check_nbor_list
   end type
   integer, parameter:: mnbor=100
   public link_t, task2patch
@@ -1236,7 +1237,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
   !-----------------------------------------------------------------------------
   error=.false.
   task => this%task
-  call trace_begin ('list_t%queue_by_time ', itimer=itimer)
+  call trace%begin ('list_t%queue_by_time ', itimer=itimer)
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
   !-----------------------------------------------------------------------------
@@ -1258,7 +1259,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
       if (nit > self%nq) then
         print *,'ERROR: hang in queue_by_time, nit =', nit
         error = .true.
-        call trace_end (itimer)
+        call trace%end (itimer)
         return
       end if
       if (associated(next%task, task)) then
@@ -1320,7 +1321,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
       ' found ready bit in queue_by_time for task', task%id, task%time
     flush (io_unit%log)
   end if
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE real_queue_by_time
 
 !===============================================================================
@@ -1718,5 +1719,44 @@ contains
   if (task%boundaries%is_set(bits%zu))  out(6:6) = 'T'
   end function formatted
 END SUBROUTINE init_bdries
+
+!===============================================================================
+!> Check nbor list of self, verifying that %task and %link are consistent
+!===============================================================================
+SUBROUTINE check_nbor_list (link, label, verbose)
+  class(link_t):: link
+  character(len=*):: label
+  integer, optional:: verbose
+  class(link_t), pointer:: nbor
+  class(task_t), pointer:: task
+  !.............................................................................
+  nbor => link%nbor
+  do while (associated(nbor))
+    if (associated(nbor%link)) then
+      if (associated(nbor%task)) then
+        task => nbor%task
+        select type (task)
+        class is (patch_t)
+          if (.not.associated(task%link,nbor%link)) then
+            print *, label, link%task%id, task%id, &
+              'ERROR: nbor%link, task%link not associated'
+          end if
+        end select
+      else
+        print *, label, link%task%id, 'ERROR: nbor%task not associated'
+      end if
+    else
+      print *, label, link%task%id, 'ERROR: nbor%link not associated'
+    end if
+    if (present(verbose)) then
+      task => nbor%link%task
+      select type (task)
+      class is (patch_t)
+      print *, link%task%id, nbor%task%id, task%id, associated(task%link,nbor%link)
+      end select
+    end if
+    nbor => nbor%next
+  end do
+END SUBROUTINE check_nbor_list
 
 END MODULE list_mod
