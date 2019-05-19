@@ -24,6 +24,38 @@
 !>   update
 !>   ...
 !>
+!> Support criterion
+!> -----------------
+!> A patch should be able to load guard zone values from nbors differing at
+!> most by one AMR-level, to avoid too abrupt changes of resolution at patch
+!> boundaries.  The criterion to test must be formulated as a criterion on
+!> the patch that should potentially be created, and not as a criterion on
+!> the that needs the support (to avoid having to find a sub-region of the 
+!> parent of the parent -- and thus have to maintain parent relationships)
+!>
+!> On the other hand, the criterion needs to be checked at the point in time
+!> when a new, higher level patch is to be created, to check if this requires
+!> that an nbor patch should also be refined.  The typical situation to look
+!> for is when creating a patch at level L+1 requires of the patch whose sub-
+!> region is being investigated requires a new patch at level L -- a so far
+!> non-existing nbor of the patch at level L under investigation.  The logic
+!> is, in brief:
+!>
+!>   for candidate in sub_regions_of (patch):
+!>     if needed(candidate):
+!>       attach_preliminary_nbor_list_to (candidate)
+!>       for nbor in candidate.nbors:
+!>         if nbor.patch.level==patch_candidate+2:
+!>           for nbor_candidate in sub_region_of (nbor.patch):
+!>             if overlap_between (candidate,nbor_candidate):
+!>               create(nbor_candidate)
+!>               candidate.add_nbor (nbor_candidate)
+!>               update_nbor_lists
+!>
+!> Note that this procedure does not assume a specific (e.g. side-by-side)
+!> arrangement of patches, and hence allows for moving patches.  Thus, it also
+!> does not rely on the existence of a parent-child relation between patches.
+!>
 !> OpenMP synchronization is implemented with two (nested) OMP locks; one
 !> (check_lock) responsible for synchronizing calls to list_t%check_nbors,
 !> and one (download_lock) responsible for synchronizing filling of guard
@@ -127,7 +159,7 @@
 !> FIXME:  Care should be extended also to updates over MPI.
 !> FIXME:  Use of the deprecated scene_mod should be removed
 !>
-!> MPI specific handling:  Boundary patches are always send to vnbors, and if
+!> MPI specific handling:  Boundary patches are always sent to vnbors, and if
 !> they are new on the recieving rank, new nbor lists are generated, so no new
 !> actions should be needed there.   If a boundary task is removed, the vnbors
 !> are send a copy with the "remove" bit set, and they should react correspond-
@@ -428,9 +460,8 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
   class(solver_t), pointer:: patch
   logical:: was_refined, was_derefined
   !.............................................................................
-  class(link_t), pointer:: nbor
-  class(link_t), pointer:: link, nbors, tail
-  !.............................................................................
+  class(solver_t), pointer:: child
+  class(link_t), pointer:: nbor, link, nbors, tail
   integer:: i, j, k
   integer, dimension(3):: l, u, n, ii
   real(8), dimension(3):: size, pos
@@ -474,15 +505,16 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
             not_already_refined = patch%mask(ii(1),ii(2),ii(3))
             if (not_already_refined .and. refine_it > 0) then
               !io%do_trace = .true.
-              !---------------------------------------------------------------------
+              !-----------------------------------------------------------------
               ! Create a refined patch here
-              !---------------------------------------------------------------------
+              !-----------------------------------------------------------------
               if (verbose > 1) &
                 write (io_unit%output,'(a,i6,1p2g16.5,2x,3(i4,":",i2))') 'refine', &
                   patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
                   maxval(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)), &
                   l, u
-              call make_child_patch (self, tasklist, patch%link, patch, pos, size)
+              call make_child_patch (self, tasklist, patch, pos, size, child)
+              call check_child_support (self, tasklist, child%link)
               was_refined= .true.
             end if
           end do
@@ -523,18 +555,147 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
 END SUBROUTINE selective_refine
 
 !===============================================================================
-!> A task having support, as measured by nbor levels and containment, means
-!> that none of it nbors at level+1 has an nbor at level+2 that both overlaps
-!> with the current task, and is not "covered" by an nbor at level+1.
+!> Check that the linked task has level-1 support, and create missing level-1
+!> patches that overlap with the given patch. This could be more than one patch, 
+!> if for example the patch needs both side and corner support.
 !>
-!> We assume here that nbor lists are by construction such that they contain at
-!> most one level differences.  Hence we must potentially check all nbors of
-!> nbors, but only the ones that have level==l+2 could potentiall lack support,
-!> and of those also only the ones that overlapt with link%task
-!>
-!> The ones that need to be checked must, if they are fully contained in level==l,
-!> also be fully contained in a level==l+1.  If they only overlap, then they must
-!> also overlap with a level==l+1 immediate nbor.
+!> The procedure is to find the level=L-2 patches that overlap with the level L
+!> patch, and then search for level L-1 sub-regions of the L-2 patch that do not
+!> currently exist, but overlap with the given level L patch, and hence would
+!> give level L-1 support to the level L patch.
+!===============================================================================
+SUBROUTINE check_child_support (self, tasklist, link)
+  class(refine_t):: self
+  class(list_t):: tasklist
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(link_t), pointer:: nbor1, nbor2, nbor3
+  class(task_t), pointer:: parent
+  class(solver_t), pointer:: support
+  type(patch_t):: trial
+  logical:: supported
+  integer:: i, j, k, n(6)
+  real(8):: start, used
+  integer:: itimer=0
+  !-----------------------------------------------------------------------------
+  ! Return if there are less than two levels down to levelmin
+  !-----------------------------------------------------------------------------
+  if (link%task%level <= self%levelmin+1) return
+  call trace%begin ('refine_t%check_child_support', itimer=itimer)
+  if (verbose > 1) then
+    n = 0
+    start = wallclock()
+  end if
+  !-----------------------------------------------------------------------------
+  ! Loop over nbors and select level-1 nbors, to find level-2 nbors
+  !-----------------------------------------------------------------------------
+  nbor1 => link%nbor
+  do while (associated(nbor1))
+    n(1) = n(1)+1
+    if (nbor1%task%level == link%task%level-1) then
+      n(2) = n(2)+1
+      !-------------------------------------------------------------------------
+      ! Among the level-1 nbors, select level-2 nbors that overlap with patch
+      !-------------------------------------------------------------------------
+      nbor2 => nbor1%link%nbor
+      do while (associated(nbor2))
+        if (nbor2%task%level == link%task%level-2 .and. &
+            nbor2%task%overlaps(link%task)) then
+          n(3) = n(3)+1
+          !---------------------------------------------------------------------
+          ! Loop over the candidate trial patches with overlap
+          !---------------------------------------------------------------------
+          parent => nbor2%task
+          select type (parent)
+          class is (solver_t)
+          do k=1,self%ratio
+            do j=1,self%ratio
+              do i=1,self%ratio
+                trial%ds = parent%ds/self%ratio
+                trial%size = parent%size/self%ratio
+                trial%position = parent%position &
+                           + ([i,j,k]-(self%ratio+1)*0.5)*trial%size
+                trial%centre_nat = trial%position
+                !---------------------------------------------------------------
+                ! Check for overlap of trial patches with the given patch
+                !---------------------------------------------------------------
+                if (link%task%overlaps (trial)) then
+                  n(4) = n(4)+1
+                  !-------------------------------------------------------------
+                  ! For those candidates that overlap, check if there is already
+                  ! a level-1 patch at the trial patch location.  FIXME: This
+                  ! assumes that the level-1 and trial patches are aligned!
+                  !-------------------------------------------------------------
+                  supported = .false.
+                  nbor3 => parent%link%nbor
+                  do while (associated(nbor3))
+                    n(5) = n(5)+1
+                    if (nbor3%task%level == link%task%level-1 .and. &
+                        contains(nbor3%task,trial)) then
+                      supported = .true.
+                      exit
+                    end if
+                    nbor3 => nbor3%next
+                  end do
+                  !-------------------------------------------------------------
+                  ! If there is currently no support, add a supporting patch
+                  !-------------------------------------------------------------
+                  if (.not. supported) then
+                    n(6) = n(6)+1
+                    if (verbose > 1) &
+                      used = wallclock()-start
+                    call make_child_patch (self, tasklist, parent, &
+                                           trial%position, trial%size, support)
+                    if (verbose > 1) then
+                      start = wallclock()-used
+                      write(io_unit%log,'(3(a,i6,i3,2x),3i3,6i5,2l3)') &
+                      'check_child_support:', link%task%id, link%task%level, &
+                      'parent:', parent%id, parent%level, &
+                      'support:', support%id, support%level, &
+                      i, j, k, n, &
+                      link%task%overlaps(trial), link%task%overlaps(support)
+                    end if
+                    if (verbose > 0) then
+                      write(io_unit%output,*) &
+                        '  refine', parent%id, &
+                        '  to', support%id, &
+                        '  to support', link%task%id
+                    end if
+                  end if
+                end if
+              end do
+            end do
+          end do
+          end select
+        end if
+        nbor2 => nbor2%next
+      end do
+    end if
+    nbor1 => nbor1%next
+  end do
+  if (verbose > 1) then
+    used = wallclock()-start
+    write (io_unit%log,'(a,6i5,f12.6)') &
+      'check_child_support:', n, used
+    flush (io_unit%log)
+  end if
+  call trace%end (itimer)
+contains
+  logical function contains (patch1, patch2)
+    class(task_t), pointer:: patch1
+    type(patch_t):: patch2
+    select type (patch1)
+    class is (patch_t)
+    contains = all(abs(patch1%distance(patch2)) < patch1%ds)
+    end select
+  end function contains
+END SUBROUTINE check_child_support
+
+!===============================================================================
+!> To check if a patch at level L may be removed w/o patches at level L+1 loosing
+!> support it is enough to check if there are nbors at level L+1, because if
+!> there are they would have, at the place where it had level L support, instead
+!> only a level L-1 patch.  
 !===============================================================================
 FUNCTION check_support (self, tlist, link, check_only) RESULT (refine)
   USE task_mod
@@ -544,126 +705,18 @@ FUNCTION check_support (self, tlist, link, check_only) RESULT (refine)
   logical, optional:: check_only
   integer:: refine
   !.............................................................................
-  class(link_t), pointer:: nbor, next, nbor1, nbor2, nbor1a
-  integer:: n(4)
-  logical:: ok
-  logical, save:: two_levels=.false.
+  class(link_t), pointer:: nbor
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('refine_t%check_support', itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Optimize, by creating a temporary nbor list that contains only level==l+1
-  ! tasks.  We are only concerned with nbor-nbors at level==l+2, and these
-  ! can only occur in the nbor lists of level==l+1 tasks.
-  !-----------------------------------------------------------------------------
-  ok = .true.
-  nullify (nbor)                        ! temporary nbor head
-  n = 0
-  nbor1 => link%nbor
-  do while (associated(nbor1))
-    if (nbor1%task%level == link%task%level+1) then
-      allocate (next)
-      next%task => nbor1%task           ! connect level+1 task
-      next%link => nbor1%link           ! connect to link
-      next%next => nbor                 ! point to the previous 1st nbor
-      nbor => next                      ! insert as 1st nbor
-      n(1) = n(1)+1
-    end if
-    nbor1 => nbor1%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! Assume initially that there is no nbor at level > linkt%task%level + 1, and
-  ! if that turns out to be false, then increase refine to at leat 0
-  !-----------------------------------------------------------------------------
   refine = -1
-  nbor1 => nbor
-  do while (associated(nbor1))
-    if (nbor1%task%level > link%task%level) then
-      refine = max(0,refine)
+  nbor => link%nbor
+  do while (associated(nbor))
+    if (nbor%task%level == link%task%level+1) then
+      refine = 0
+      exit
     end if
-    if (two_levels) then
-      nbor2 => nbor1%link%nbor
-      do while (associated(nbor2))
-        if (nbor2%task%level == link%task%level+2) then
-          n(2) = n(2)+1
-          !---------------------------------------------------------------------
-          ! If a task at level+2 is fully contained in link%task, then it must
-          ! also be fully contained in a level+1 task, which must be on the
-          ! nbor1 list
-          !---------------------------------------------------------------------
-          associate (task=>link%task, task2=>nbor2%task)
-          select type (task)
-          class is (patch_t)
-          select type (task2)
-          class is (patch_t)
-          if (task%contains(task2)) then
-            ok = .false.
-            nbor1a => nbor
-            do while (associated(nbor1a))
-              associate (task1a=>nbor1a%task)
-              select type (task1a)
-              class is (patch_t)
-              if (task%contains(task1a)) then
-                ok = .true.
-                n(3) = n(3)+1
-                exit
-              end if
-              nbor1a => nbor1a%next
-              end select
-              end associate
-            end do
-          !---------------------------------------------------------------------
-          ! If a level==l+2 task overlaps, but is not contained in a level==l
-          ! task, then a level==l+1 task that overlaps with it must also exist
-          !---------------------------------------------------------------------
-          else if (task%overlaps(task2)) then
-            ok = .false.
-            nbor1a => nbor
-            do while (associated(nbor1a))
-              associate (task1a=>nbor1a%task)
-              select type (task1a)
-              class is (patch_t)
-              if (task%overlaps(task1a)) then
-                ok = .true.
-                n(4) = n(4)+1
-                exit
-              end if
-              nbor1a => nbor1a%next
-              end select
-              end associate
-            end do
-          end if
-          end select
-          end select
-          end associate
-          if (ok) exit
-        !else
-          ! These cases are not at level==link%task%level+2, so are of no concern
-        end if
-        if (ok) exit
-        nbor2 => nbor2%next
-      end do
-    end if
-    nbor1 => nbor1%next
-  end do
-  if (.not.ok) then
-    refine = 1
-    if (verbose > 0) &
-      write (io_unit%output,*) link%task%id, ' requests refine to add support'
-  end if
-  if (verbose > 1 .and. n(1) > 0 .or. verbose > 0 .and. n(2) > 0) then
-    write (io_unit%output,'(a,i6,i3,2x,5i4)') &
-    'check_support: id, refine, nbors at +1 and +2:', &
-    link%task%id, refine, n
-  end if
-  !-----------------------------------------------------------------------------
-  ! Delete the temporary nbor list
-  !-----------------------------------------------------------------------------
-  nbor1 => nbor
-  do while (associated(nbor1))
-    next => nbor1%next
-    deallocate (nbor1)
-    nbor1 => next
+    nbor => nbor%next
   end do
   call trace%end (itimer)
 END FUNCTION check_support
@@ -705,16 +758,18 @@ END SUBROUTINE setup_mask
 !> Create a new patch using an existing "parent" patch.
 !> This procedure is used frequently during refinement.
 !===============================================================================
-SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
+SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
+                             child)
   class(refine_t):: self
   class(list_t) :: tlist
-  class(link_t), pointer :: parent_link, child_link, child_nbor
   class(solver_t), pointer :: parent, child
   real(8), dimension(3), intent(in) :: pos, child_size
+  !.............................................................................
+  class(link_t), pointer :: child_link, child_nbor
   integer:: j, count, l(3), u(3)
   integer, save:: itimer=0
   !------------------------------------------------------------------------
-  call trace%begin('refine_mod::make_child_patch', itimer=itimer)
+  call trace%begin('refine_t%make_child_patch', itimer=itimer)
   !------------------------------------------------------------------------
   ! Allocate a new task, 1/nsplit the size of original one, and adjust its
   ! position in each direction with "pos", in units of the new size.
@@ -758,7 +813,7 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   allocate (child_link)
   call child_link%init                               ! initialise the lock
   child_link%task => child                           ! associate task with link
-  child_link%parent => parent_link                   ! used in remove_patch
+  child_link%parent => parent%link                   ! used in remove_patch
   child%link => child_link                           ! associate link with task
   child%parent => parent                             ! task relation
   !------------------------------------------------------------------------
@@ -788,7 +843,7 @@ SUBROUTINE make_child_patch (self, tlist, parent_link, parent, pos, child_size)
   ! values from parent to child.
   !------------------------------------------------------------------------
   allocate (child_nbor)
-  child_nbor%link => parent_link
+  child_nbor%link => parent%link
   child_nbor%task => parent
   nullify (child_link%nbor)
   child_link%nbors_by_level => child_nbor
@@ -1421,7 +1476,7 @@ FUNCTION refine_region (self, patch) RESULT (refine)
   b_urc = region_urc
   intersect = all((p_urc - b_llc) > 0) .and. all((b_urc - p_llc) > 0)
   if (.not. intersect) then
-    call trace_end
+    call trace%end ()
     return
   endif
   do iz=m3%li,m3%ui
