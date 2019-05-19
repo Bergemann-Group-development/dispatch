@@ -262,7 +262,7 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   !----------------------------------------------------------------------------
   ! Refinement criteria, starting with assumed derefinement
   !------------------------------------------------------------------------
-  patch => cast2solver (link%task)
+  patch => solver%cast2solver (link%task)
   refine = -1
   !
   ! Extras refinement
@@ -345,7 +345,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       link%task%time, link%task%level, self%levelmax
   !---------------------------------------------------------------------------
   call trace%begin('refine_t%check_current', itimer=itimer)
-  patch => cast2solver (link%task)
+  patch => solver%cast2solver (link%task)
   id = patch%id
   !----------------------------------------------------------------------------
   dxmin = minval(patch%ds)
@@ -684,7 +684,7 @@ SUBROUTINE setup_mask (self, patch)
   !-----------------------------------------------------------------------------
   nbor => patch%link%nbor
   do while (associated(nbor))
-    nbpatch => cast2solver(nbor%task)
+    nbpatch => solver%cast2solver(nbor%task)
     if (patch%contains(nbpatch%position) .and. &
         patch%level == nbpatch%level-1) then
       l = patch%index_only (nbpatch%position + nbpatch%mesh%lf)
