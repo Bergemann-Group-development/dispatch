@@ -521,6 +521,8 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
                   maxval(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)), &
                   l, u
               call make_child_patch (self, tasklist, patch, pos, size, child)
+              write (io_unit%log,*) 'after make_child_patch(1)', patch%id, child%id, associated(child%link)
+              flush (io_unit%log)
               call check_support (self, tasklist, child%link, n_added)
               if (verbose > 0 .and. n_added > 0) then
                 write (io_unit%log,*) 'check_support: post-added', n_added
@@ -658,6 +660,9 @@ SUBROUTINE check_support (self, tasklist, link, n_added)
                       used = wallclock()-start
                     call make_child_patch (self, tasklist, parent, &
                                            trial%position, trial%size, support)
+                    write (io_unit%log,*) 'after make_child_patch(2)', &
+                      parent%id, support%id, associated(support%link)
+                    flush (io_unit%log)
                     n_added = n_added+1
                     if (verbose > 1) then
                       start = wallclock()-used
