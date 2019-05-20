@@ -859,7 +859,13 @@ SUBROUTINE init_nbor_nbors (self, link)
   call link%copy_nbor_list (link%nbor, nbors) ! copy to temporary nbor list
   call link%lock%unset ('remove_patch')       ! unlock the link
   nbor => nbors                               ! loop over temporary list
+  !-----------------------------------------------------------------------------
+  ! When resetting the nbors of nbors, notify rank nbors to do the same
+  !-----------------------------------------------------------------------------
   do while (associated(nbor))
+    if (nbor%link%task%is_set (bits%boundary)) &
+      call nbor%link%task%set (bits%init_nbors)
+    write (io_unit%log,*) 'init_nbor_nbors: id =', nbor%link%task%id
     call self%init_nbors (nbor%link)
     nbor => nbor%next
   end do

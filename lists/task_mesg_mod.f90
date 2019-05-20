@@ -499,6 +499,17 @@ SUBROUTINE unpack (self, mesg, link)
     call self%check_nbor_nbors (link1)
     call self%lock%unset ('unpack')
   end if
+  !-----------------------------------------------------------------------------
+  ! Patches whose nbor lists are reset by init_nbor_nbors have the init_nbors
+  ! bit set, in order to replicate the behavior on the nbor ranks
+  !-----------------------------------------------------------------------------
+  if (task%is_set (bits%init_nbors)) then
+    call self%lock%set ('unpack-init_nbors')
+    call self%init_nbors (link1)
+    call task%clear (bits%init_nbors)
+    call self%lock%unset ('unpack-init_nbors')
+    write (io_unit%log,*) 'unpack: init_nbor_nbors id =', task%id
+  end if
   !!omp end critical (unpack_cr)
   !-----------------------------------------------------------------------------
   ! As the task has now been updated, we need to check if any of the neighbors

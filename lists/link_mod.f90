@@ -516,7 +516,8 @@ SUBROUTINE update_nbor_status (self, link)
       call nbor%task%set (bits%swap_request)
       nbor%task%rank = mpi%rank                         ! since it's a boundary
       call nbor%link%send_to_vnbors
-      call nbor%task%clear (bits%swap_request)
+      call nbor%link%task%clear (bits%swap_request + &  ! sometimes set -- make
+                                 bits%init_nbors)       ! sure clear after send
     end if
     nbor => nbor%next                                   ! check next nbor
   end do

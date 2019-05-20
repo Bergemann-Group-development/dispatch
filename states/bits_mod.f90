@@ -28,6 +28,7 @@ MODULE bits_mod
   integer, parameter::  no_download_bit=2**26
   integer, parameter::   no_density_bit=2**25
   integer, parameter::        no_rt_bit=2**24
+  integer, parameter::        nbors_bit=2**23
   integer, parameter::      counter_bit=2**20
   type bits_t
     integer:: remove       = remove_bit
@@ -53,6 +54,7 @@ MODULE bits_mod
     integer:: no_download  = no_download_bit
     integer:: no_density   = no_density_bit
     integer:: no_rt        = no_rt_bit
+    integer:: init_nbors   = nbors_bit
     integer:: has_counter  = counter_bit
     integer:: hands_off    = ready_bit+busy_bit+virtual_bit+frozen_bit+external_bit
     !-------- BOUNDARY CONDITION BITS ------------------------------------------
