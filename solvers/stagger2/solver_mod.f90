@@ -40,6 +40,8 @@ MODULE solver_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
     procedure:: apply_heating
+    procedure:: compression_magnitude
+    procedure:: vorticity_magnitude
     procedure:: gas_velocity_vector
     procedure:: gas_velocity_scalar
     generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
@@ -53,6 +55,9 @@ CONTAINS
 SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
+  call self%mhd_t%pre_init
+  call self%extras_t%pre_init
+  !
   call self%mhd_t%init
   call self%extras_t%init
   call validate%init
@@ -83,7 +88,11 @@ SUBROUTINE update (self)
   !.............................................................................
   call self%extras_t%pre_update
   call validate%check (self, d, 'before update')
-  call self%mhd_t%update
+  if (self%do_mhd) then
+    call self%mhd_t%update
+  else
+    call self%output
+  end if
   call validate%check (self, d, ' after update')
   call self%extras_t%post_update
   end associate
@@ -392,5 +401,79 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
   call deallocate_scalars_a (lnd, ld, dd)
   nullify (d)
 END FUNCTION gas_velocity_scalar
+
+!===============================================================================
+!> Compute the compression
+!===============================================================================
+SUBROUTINE compression_magnitude (self, w)
+  class (solver_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:):: w
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: vx, vy, vz
+  integer:: i
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t%compression_magnitude', itimer=itimer)
+  allocate (vx(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (vy(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (vz(self%gn(1),self%gn(2),self%gn(3)))
+  allocate ( d(self%gn(1),self%gn(2),self%gn(3),3))
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    d=up(log(d))
+  else
+    d = down(log(self%mem(:,:,:,self%idx%d,self%it,1)))
+  end if
+  vx = self%mem(:,:,:,self%idx%px,self%it,1)/exp(d(:,:,:,1))
+  vy = self%mem(:,:,:,self%idx%py,self%it,1)/exp(d(:,:,:,2))
+  vz = self%mem(:,:,:,self%idx%pz,self%it,1)/exp(d(:,:,:,3))
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    w = max(- ddxup(self%ds(1),vx) &
+            - ddyup(self%ds(2),vy) &
+            - ddzup(self%ds(3),vz), 0.0)
+  else
+    w = max(- ddx(self%ds(1),vx) &
+            - ddy(self%ds(2),vy) &
+            - ddz(self%ds(3),vz), 0.0)
+  end if
+  deallocate (vx, vy, vz, d)
+  call trace%end (itimer)
+END SUBROUTINE compression_magnitude
+
+!===============================================================================
+!> Compute the vorticity
+!===============================================================================
+SUBROUTINE vorticity_magnitude (self, w)
+  class (solver_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:):: w
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: vx, vy, vz
+  integer:: i
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t%vorticity_magnitude', itimer=itimer)
+  allocate (vx(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (vy(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (vz(self%gn(1),self%gn(2),self%gn(3)))
+  allocate ( d(self%gn(1),self%gn(2),self%gn(3),3))
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    d=up(log(d))
+  else
+    d = down(log(self%mem(:,:,:,self%idx%d,self%it,1)))
+  end if
+  vx = self%mem(:,:,:,self%idx%px,self%it,1)/exp(d(:,:,:,1))
+  vy = self%mem(:,:,:,self%idx%py,self%it,1)/exp(d(:,:,:,2))
+  vz = self%mem(:,:,:,self%idx%pz,self%it,1)/exp(d(:,:,:,3))
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    w = sqrt((ddyup(self%ds(2),vz)-ddzup(self%ds(3),vy))**2 &
+           + (ddzup(self%ds(3),vx)-ddxup(self%ds(1),vz))**2 &
+           + (ddxup(self%ds(1),vy)-ddyup(self%ds(2),vx))**2)
+  else
+    w = sqrt((ddy(self%ds(2),vz)-ddz(self%ds(3),vy))**2 &
+           + (ddz(self%ds(3),vx)-ddx(self%ds(1),vz))**2 &
+           + (ddx(self%ds(1),vy)-ddy(self%ds(2),vx))**2)
+  end if
+  deallocate (vx, vy, vz)
+  call trace%end (itimer)
+END SUBROUTINE vorticity_magnitude
 
 END MODULE solver_mod
