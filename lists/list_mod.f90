@@ -261,14 +261,15 @@ SUBROUTINE remove_head (self)
 END SUBROUTINE remove_head
 
 !===============================================================================
-!> Updating the status counts needs to be done after the status bits have been
-!> set.  This is usually done in reset_status(), which relies on the task
-!> already being in the task list!
+!> Updating the status counts using the delta of a single task, which is faster
+!> but less robust than counting all tasks.  Should be thoroughly validated
+!> before put into use, which is also not motivated unless count_status() takes
+!> a noticeable time.
 !===============================================================================
 SUBROUTINE update_counts (self, link, delta)
   class(list_t):: self
   class(link_t), pointer:: link
-  integer:: delta
+  integer:: delta, n, na
   !-----------------------------------------------------------------------------
   ! The counter updates below do not need to be atomic if the list is locked,
   ! but the penalty is minimal
@@ -289,6 +290,21 @@ SUBROUTINE update_counts (self, link, delta)
     !$omp atomic update
     self%na = self%na + delta
   end if
+  !-----------------------------------------------------------------------------
+  ! Validate using the incremental method, when task_list_t%verbose > 0
+  !-----------------------------------------------------------------------------
+  if (self%verbose > 0) then
+    n  = self%n
+    na = self%na
+    call self%count_status ()
+    if (n /= self%n .or. na /= self%na) then
+      write (io_unit%stdout,*) &
+        'list_t%update_counts WARNING: inconsisten counts', &
+        n, self%n, na, self%na
+      self%n  = n
+      self%na = na
+    end if
+  end if
 END SUBROUTINE update_counts 
 
 !===============================================================================
@@ -299,8 +315,9 @@ SUBROUTINE count_status (self, label)
   character(len=*), optional:: label
   class(link_t) , pointer:: link, nbor
   integer:: n, ni, nb, nv, ne, nf
+  integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('list_t%count_status')
+  call trace%begin ('list_t%count_status', itimer=itimer)
   call self%lock%set ('count_status')
   nb=0; ni=0; nv=0; ne=0; nf=0; n = 0
   link => self%head
@@ -332,7 +349,7 @@ SUBROUTINE count_status (self, label)
   io%ntotal = self%n                        ! Authoritative !
   !-----------------------------------------------------------------------------
   call self%lock%unset ('count_status')
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE count_status
 
 !===============================================================================
