@@ -1,8 +1,13 @@
 ! $Id$
 !===============================================================================
-!> Using trace_mod causes a dependency loop, and can only be compiled if/when
-!> the code is already successfully compiled.  It should only be used to trace
-!> problems with locks.
+!> The lock module uses nested locks, to allow versatile use of locks, where
+!> a procedure may want to make sure to lock a data type, even though it may
+!> (or may not) already have been locked by another procedure in the calling
+!> hierarchy.
+!>
+!> NOTE: Enabling trace_mod here, via the TRACE macro, causes a dependency 
+!> loop, and can only be compiled if/when the code is already successfully 
+!> compiled.  It should only be used to trace problems with locks.
 !===============================================================================
 MODULE omp_lock_mod
   USE io_unit_mod
