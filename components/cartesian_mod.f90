@@ -40,28 +40,29 @@ SUBROUTINE init (self, label)
   real:: position(3)
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
-  integer:: i, j, k, i1, j1, k1, rank, nbrank, dim, nn(2,3), iostat
+  integer:: i, j, k, i1, j1, k1, rank, nbrank, dim, nn(2,3)
   !
-  type links_t
-    type(link_t), pointer:: p
-  end type
-  type(links_t), dimension(:,:,:), pointer:: links
   real(8):: size(3) = [1.0,1.0,1.0]
   integer:: dims(3) = [4,4,4]
   integer:: mpi_dims(3) = [1,1,1]
   integer:: per_rank(3) = [0,0,0]
   integer:: npatch, nvpatch, nbpatch, nlpatch
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
-  logical:: face_nbors=.false., fast_nbors=.false.
+  logical:: face_nbors=.false.
   integer:: thread, icoords(3),ipos(3)
   integer:: id, ip
   integer, save:: itimer=0
   namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
-    fast_nbors, omp_init
+    omp_init
+  character(len=120):: ids = &
+    '$Id$ components/cartesian_mod.f90'
   !-----------------------------------------------------------------------------
-  call trace_begin ('cartesian_mod::init')
+  call trace%begin ('cartesian_mod::init')
   call io%header('begin cartesian_t%init: Cartesian patch arrangement')
-  rewind (io%input); read (io%input, cartesian_params,iostat=iostat)
+  call trace%print_id (ids)
+  !-----------------------------------------------------------------------------
+  rewind (io%input); read (io%input, cartesian_params)
+  write (io%output, cartesian_params)
   if (any(per_rank/=0)) then
     where (per_rank/=0) dims=per_rank*mpi_dims
   end if
@@ -86,14 +87,6 @@ SUBROUTINE init (self, label)
   mpi_dims = mpi_coords%dims
   patches_per_mpi = self%dims/mpi_dims
   mpi_coords%npatch = patches_per_mpi
-  io%ntask = product(patches_per_mpi)
-  !-----------------------------------------------------------------------------
-  ! io%nwrite is the number of task writes this process is doing per snapshot --
-  ! it is given a default value here, which may be modified in data_io_mod, if
-  ! more than one write per task is being performed.
-  !-----------------------------------------------------------------------------
-  io%nwrite = io%ntask
-  write (io_unit%log,*) 'io%nwrite =', io%nwrite
   !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------
@@ -113,7 +106,6 @@ SUBROUTINE init (self, label)
   ! id, rank, size, position, integer position, and status bits.  Discard
   ! external patches and add the rest to the task_list.
   !-----------------------------------------------------------------------------
-  allocate (links(0:self%dims(1)-1,0:self%dims(2)-1,0:self%dims(3)-1))
   io%ntotal = product(self%dims)
   ip = 0
   do k=0,self%dims(3)-1
@@ -121,7 +113,6 @@ SUBROUTINE init (self, label)
   do i=0,self%dims(1)-1
     allocate (link, patch); link%task => patch; patch%link => link
     task => link%task
-    links(i,j,k)%p => null()
     ! --- patch 3D and 1D coordinates ---
     patch%ipos = [i,j,k]
     patch%rank = mpi_coords%coords_to_rank ([i,j,k]/patches_per_mpi)
@@ -169,7 +160,6 @@ SUBROUTINE init (self, label)
     if (patch%is_set(bits%external)) then
       deallocate (patch, link)
     else
-      links(i,j,k)%p => link
       task => patch
       call self%task_list%append_link (link)
       if (patch%is_set(bits%boundary))  nbpatch = nbpatch+1
@@ -195,55 +185,28 @@ SUBROUTINE init (self, label)
     flush (io_unit%nml)
   end if
   !-----------------------------------------------------------------------------
-  ! Use the links to generate nbor lists -- faster than using init_all_nbors
+  ! Construct nbor lists, set the internal/boundary/virtual bits, and count the
+  ! number of tasks in each category.  The nbor list constructions are (and
+  ! must remain) independent of the status bits, since setting the status bits
+  ! relies on correct nbor lists -- hence the order of calls below.
+  !
+  ! FIXME:  For some reason, the number of elements in the task list (%n) must
+  ! currently be correct for this to work.
   !-----------------------------------------------------------------------------
-  if (fast_nbors) then
-    if (io%master) &
-      print *, 'cartesian_t%init: generating nbors'
-    do k=0,self%dims(3)-1
-    do j=0,self%dims(2)-1
-    do i=0,self%dims(1)-1
-      link => links(i,j,k)%p
-      do k1=nn(1,3),nn(2,3)
-      do j1=nn(1,2),nn(2,2)
-      do i1=nn(1,1),nn(2,1)
-        if (i1==0.and.j1==0.and.k1==0) cycle
-        ipos = [i+i1,j+j1,k+k1]
-        where (link%task%periodic)
-          ipos = modulo(ipos,self%dims)
-        end where
-        ! -- skip nbors that fall outside non-periodic boundaries
-        if (any(ipos<0.or.ipos>=self%dims)) cycle
-        ! -- allocate nbor and set pointers
-        allocate (nbor)
-        nbor%link => links(ipos(1),ipos(2),ipos(3))%p
-        nbor%task => nbor%link%task
-        ! -- add rank sorted
-        call link%add_nbor_by_rank (link%nbor, nbor)
-      end do
-      end do
-      end do
-    end do
-    end do
-    end do
-  end if
-  deallocate (links)
-  !-----------------------------------------------------------------------------
-  ! Ŕeset the boundary / internal / virtual and boundary bits (and flags), and
-  ! reconstruct the nbor lists based on that
-  !-----------------------------------------------------------------------------
+  write (io_unit%output,*) 'Number of tasks in task list:', self%task_list%n
+  if (io%verbose > 0) &
+    write(io%output,*) 'cartesian_t%init: init all nbors'
+  call self%task_list%init_all_nbors
+  if (io%verbose > 0) &
+    write(io%output,*) 'cartesian_t%init: setting status bits'
+  call self%task_list%reset_status
   if (io%verbose > 0) &
     write(io%output,*) 'cartesian_t%init: counting patch status'
   call self%task_list%count_status
-  io%ntask = self%task_list%na
   if (io%verbose > 0) &
     write(io%output,*) 'cartesian_t%init: init boundaries'
   call self%task_list%init_bdries
-  if (.not. fast_nbors) then
-    if (io%verbose > 0) &
-      write(io%output,*) 'cartesian_t%init: init all nbors'
-    call self%task_list%init_all_nbors
-  end if
+  !-----------------------------------------------------------------------------
   if (io%verbose > 0) &
     write(io%output,*) 'cartesian_t%init: diagnostics'
   call self%diagnostics()
@@ -254,7 +217,8 @@ SUBROUTINE init (self, label)
   call self%task_list%print_tasks
   if (io%verbose > 0) &
     write(io%output,*) 'cartesian_t%init: done'
-  call trace_end
+  !-----------------------------------------------------------------------------
+  call trace%end ()
 END SUBROUTINE init
 
 SUBROUTINE init_exp (self, origin)
