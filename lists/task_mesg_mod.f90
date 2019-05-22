@@ -117,8 +117,6 @@ SUBROUTINE check_mpi (self)
     return
   end if
   call trace%begin ('task_mesg_t%check_mpi', 1, itimer=itimer)
-  i=1; wc(i) = wallclock()-wc(0)
-  if (wc(i) > mpi_mesg%check_ms*1e-3)  go to 9
   !-----------------------------------------------------------------------------
   ! Step 2: probe for new messages and check for completeness. Put messages on
   ! one of two thread-local lists, depending on if complete or not.  The probing
@@ -169,8 +167,6 @@ SUBROUTINE check_mpi (self)
     call unpk_tmp%delete (mesg, .false.)
     mesg => next
   end do
-  i=i+1; wc(i) = wallclock()-wc(0)
-  if (wc(i) > mpi_mesg%check_ms*1e-3)  go to 9
   !-----------------------------------------------------------------------------
   ! Step 3: if there are more than max_recv messages in recv_list, then wait
   ! for and unpack enough messages to reach the limit.  If task_list%nq is less
@@ -205,8 +201,6 @@ SUBROUTINE check_mpi (self)
     call unpk_tmp%delete (mesg, .false.)
     mesg => next
   end do
-  i=i+1; wc(i) = wallclock()-wc(0)
-  if (wc(i) > mpi_mesg%check_ms*1e-3) go to 9
   !-----------------------------------------------------------------------------
   ! Step 4: check the rest of the recv_list for completed messages.  The (fast)
   ! traversal is protected inside (recv_cr), but unpacking from the local list

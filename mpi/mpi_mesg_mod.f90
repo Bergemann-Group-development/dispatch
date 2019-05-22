@@ -68,7 +68,6 @@ MODULE mpi_mesg_mod
     integer:: nq_send=0
     integer:: nq_recv=0
     real:: delay_ms=0.0
-    real:: check_ms=10.
     integer:: max_recv
     integer:: max_probe
     integer:: min_nq
@@ -528,11 +527,10 @@ SUBROUTINE init (self)
   logical, save:: recv_active
   logical, save:: send_priv
   logical, save:: queue_unpack
-  real, save:: check_ms=10.
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, wait, send_wait, send_priv, &
                              recv_active, recv_priv, queue_unpack, test_time, debug, &
-                             check_ms, verbose
+                             verbose
   integer:: iostat
   !-----------------------------------------------------------------------------
   ! Prevent initializing more than once
@@ -557,7 +555,6 @@ SUBROUTINE init (self)
   self%min_nq = min_nq
   self%max_recv = max_recv
   self%max_probe = max_probe
-  self%check_ms = check_ms
   self%wait = wait
   !-----------------------------------------------------------------------------
   ! Default values from dispatcher possible changed here
