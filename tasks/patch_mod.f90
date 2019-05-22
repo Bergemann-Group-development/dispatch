@@ -1384,6 +1384,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer, save:: itimer=0
   integer, parameter:: max_lines=50
   integer, save:: counts(7)=0
+  integer:: counts_l(7), i
   character(len=120):: fmt
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%info')
@@ -1471,11 +1472,15 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       ! accumulating counters also when not printing
       !-------------------------------------------------------------------------
       if (io%verbose>0 .or. self%id==io%id) then
-        counts = counts + &
+        counts_l = &
           [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
            mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &
            mpi_mesg%n_delay]
-        !$omp atomic
+        do i=1,size(counts)
+          !$omp atomic update
+          counts(i) = counts(i) + counts_l(i)
+        end do
+        !$omp atomic update
         timer%n_lines = timer%n_lines-1
         if (timer%n_lines==0) then
           !$omp critical (info_cr2)
