@@ -51,9 +51,12 @@ MODULE list_mod
     procedure:: reset
     procedure:: append
     procedure:: append_link
+    procedure:: remove_task
     procedure:: remove_link
-    procedure:: update_counts
     procedure:: remove_head
+    procedure:: update_counts
+    procedure:: count_status
+    procedure:: reset_status
     procedure:: check_nbors
     procedure:: check_ready
     procedure:: check_all
@@ -72,13 +75,10 @@ MODULE list_mod
     procedure:: aconsistency
     procedure:: statistics
     procedure:: append_list
-    procedure:: remove_task
-    procedure:: reset_status
     procedure:: add_by_quality
     procedure:: queue_by_time
     procedure:: queue_active
     procedure:: remove_active
-    procedure:: count_status
     procedure:: print_queue
     procedure:: print_queue_until
     procedure:: print_queue_times
@@ -232,6 +232,35 @@ SUBROUTINE remove_link (self, link)
 END SUBROUTINE remove_link
 
 !===============================================================================
+!> Remove the head link
+!===============================================================================
+SUBROUTINE remove_head (self)
+  class(list_t):: self
+  class(link_t), pointer:: head, link, next
+  !.............................................................................
+  call trace_begin ('list_t%remove_head '//self%name)
+  head => self%head
+  next => head%next
+  !-------------------------------------------------------------------------
+  ! Check for tail task (only one task left)
+  !-------------------------------------------------------------------------
+  if (associated(next)) then
+    next%prev => head%prev                  ! point backwards, possibly null
+  else
+    self%tail => head%prev                  ! new tail link
+  end if
+  !-------------------------------------------------------------------------
+  ! Remove the head link
+  !-------------------------------------------------------------------------
+  self%head => next                         ! make head point to next
+  !-----------------------------------------------------------------------------
+  ! IMPORTANT: Some procedures depend on knowing the size of the list!
+  !-----------------------------------------------------------------------------
+  call self%count_status()
+  call trace_end
+END SUBROUTINE remove_head
+
+!===============================================================================
 !> Updating the status counts needs to be done after the status bits have been
 !> set.  This is usually done in reset_status(), which relies on the task
 !> already being in the task list!
@@ -263,33 +292,171 @@ SUBROUTINE update_counts (self, link, delta)
 END SUBROUTINE update_counts 
 
 !===============================================================================
-!> Remove the head link
+!> Print a table with task id, positions, and all neighbors
 !===============================================================================
-SUBROUTINE remove_head (self)
-  class(list_t):: self
-  class(link_t), pointer:: head, link, next
+SUBROUTINE count_status (self, label)
+  class (list_t):: self
+  character(len=*), optional:: label
+  class(link_t) , pointer:: link, nbor
+  integer:: n, ni, nb, nv, ne, nf
   !.............................................................................
-  call trace_begin ('list_t%remove_head '//self%name)
-  head => self%head
-  next => head%next
-  !-------------------------------------------------------------------------
-  ! Check for tail task (only one task left)
-  !-------------------------------------------------------------------------
-  if (associated(next)) then
-    next%prev => head%prev                  ! point backwards, possibly null
-  else
-    self%tail => head%prev                  ! new tail link
+  call trace%begin ('list_t%count_status')
+  call self%lock%set ('count_status')
+  nb=0; ni=0; nv=0; ne=0; nf=0; n = 0
+  link => self%head
+  do while (associated(link))
+    n = n+1
+    if (link%task%is_set(bits%frozen  )) nf = nf+1
+    if (link%task%is_set(bits%boundary)) nb = nb+1
+    if (link%task%is_set(bits%virtual )) nv = nv+1
+    if (link%task%is_set(bits%internal)) ni = ni+1
+    if (link%task%is_set(bits%external)) ne = ne+1
+    link => link%next
+  end do
+  self%ni = ni
+  self%nb = nb
+  self%nv = nv
+  self%n  = n
+  if (self%verbose > 1) &
+    write (io_unit%output,'(1x,a,6i6)') 'list_t%count_status: n[ibveaf] = ', &
+    self%ni, self%nb, self%nv, self%ne, self%na, nf
+  if (present(label) .and. self%verbose > 0) then
+    write (io_unit%output,*) 'count_status:', self%na, ni+nb-nf, label
   end if
-  !-------------------------------------------------------------------------
-  ! Remove the head link
-  !-------------------------------------------------------------------------
-  self%head => next                         ! make head point to next
+  self%na = ni + nb - nf
   !-----------------------------------------------------------------------------
-  ! IMPORTANT: Some procedures depend on knowing the size of the list!
+  ! IMPORTANT:  The globally available io%ntask must reflect the total number
+  ! of active tasks on the rank (io%nwrite is set in data_io_mod)
   !-----------------------------------------------------------------------------
-  call self%count_status()
-  call trace_end
-END SUBROUTINE remove_head
+  io%ntask  = self%na                       ! Authoritative !
+  io%ntotal = self%n                        ! Authoritative !
+  !-----------------------------------------------------------------------------
+  call self%lock%unset ('count_status')
+  call trace%end()
+END SUBROUTINE count_status
+
+!===============================================================================
+!> Clear and then set the virtual and boundary bits
+!===============================================================================
+SUBROUTINE reset_status (self)
+  class(list_t):: self
+  class(link_t), pointer:: link, nbor
+  integer:: n_internal, n_boundary, n_virtual, n_external, n_frozen
+  !-----------------------------------------------------------------------------
+  ! Clear virtual and boundary bits
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%reset_status')
+  if (self%verbose > 0) &
+    write (io_unit%output,*) 'reset_status'
+  n_internal = 0
+  n_boundary = 0
+  n_virtual  = 0
+  n_external = 0
+  n_frozen   = 0
+  call self%lock%set ('reset_status')
+  !-----------------------------------------------------------------------------
+  ! Set bit
+  !-----------------------------------------------------------------------------
+  link => self%head
+  do while (associated(link))
+    if (link%task%rank == mpi%rank) then
+      nbor => link%nbor
+      call link%task%set(bits%internal)
+      call link%task%clear(bits%boundary+bits%virtual+bits%external)
+      !-------------------------------------------------------------------------
+      ! If at least one nbor task is on a different rank, set boundary bit, and
+      ! clear needs_me, since check_ready should not be called for that nbor, 
+      ! when this task calls check_nbors.
+      !-------------------------------------------------------------------------
+      do while (associated(nbor))
+        !-----------------------------------------------------------------------
+        ! task is active, nbor is virtual
+        !-----------------------------------------------------------------------
+        if (nbor%task%rank /= mpi%rank) then
+          call link%task%set(bits%boundary)
+          call link%task%clear(bits%internal)
+          ! -- do not include in check_nbors()
+          nbor%needed = .true.
+          nbor%needs_me = .false.
+        else
+          nbor%needed = .true.
+          nbor%needs_me = .true.
+        end if
+        nbor%download = .true.
+        nbor => nbor%next
+      end do
+    else
+      call link%task%set(bits%external)
+      call link%task%clear(bits%internal+bits%boundary+bits%virtual)
+      nbor => link%nbor
+      !-------------------------------------------------------------------------
+      ! If at least one nbor task is on a this rank, set virtual bit
+      !-------------------------------------------------------------------------
+      do while (associated(nbor))
+        if (link%task%id==io%id_debug) write (io_unit%log,'(a,i5,2i4,3f9.4)') &
+          'mk2', nbor%task%id, link%task%rank, nbor%task%rank, link%task%position-nbor%task%position
+        ! -- if an nbor task is ours, the task is a virtual task
+        !-----------------------------------------------------------------------
+        ! task is virtual, nbor is active
+        !-----------------------------------------------------------------------
+        if (nbor%task%rank==mpi%rank) then
+          call link%task%set(bits%virtual)
+          call link%task%clear(bits%external)
+          nbor%needed = .false.
+          nbor%needs_me = .true.
+        !-----------------------------------------------------------------------
+        ! Task is virtual, nbor is virtual
+        !-----------------------------------------------------------------------
+        else
+          nbor%needed = .false.
+          nbor%needs_me = .false.
+        end if
+        nbor%download = .false.
+        nbor => nbor%next
+      end do
+    end if
+    nbor => link%nbor
+    do while (associated(nbor))
+      if (nbor%task%level == link%task%level-2) then
+        nbor%download = .false.
+        nbor%needs_me = .false.
+        nbor%needed   = .false.
+      end if
+      nbor => nbor%next
+    end do
+   if (self%verbose > 2) &
+      write(io_unit%output,*) &
+        'reset_status: id, rank, IBV =', link%task%id, link%task%rank, &
+        link%task%is_set(bits%internal), &
+        link%task%is_set(bits%boundary), &
+        link%task%is_set(bits%virtual)
+    n_internal = n_internal + merge(1,0,link%task%is_set(bits%internal))
+    n_boundary = n_boundary + merge(1,0,link%task%is_set(bits%boundary))
+    n_virtual  = n_virtual  + merge(1,0,link%task%is_set(bits%virtual ))
+    n_external = n_external + merge(1,0,link%task%is_set(bits%external))
+    n_frozen   = n_frozen   + merge(1,0,link%task%is_set(bits%frozen  ))
+    link => link%next
+  end do
+  self%nb = n_boundary
+  self%nv = n_virtual
+  self%ni = n_internal
+  !-----------------------------------------------------------------------------
+  ! Check that this does not interfere with end_time logics
+  !-----------------------------------------------------------------------------
+  self%na = n_internal+n_boundary-n_frozen
+  self%n  = n_internal+n_boundary+n_virtual
+  if (self%verbose > 1) then
+    write (io_unit%log,'(5(a,i7,5x))') &
+      'rank:',mpi%rank, &
+      'n_internal:', n_internal, &
+      'n_boundary:', n_boundary, &
+      'n_virtual:' , n_virtual, &
+      'n_frozen:'  , n_frozen
+    flush (io_unit%log)
+  end if
+  call self%lock%unset ('reset_status')
+  call trace%end()
+END SUBROUTINE reset_status
 
 !===============================================================================
 !> Among a task and its neighbor tasks, move local tasks to ready_queue if they
@@ -1021,129 +1188,6 @@ SUBROUTINE init_all_nbors (self)
 END SUBROUTINE init_all_nbors
 
 !===============================================================================
-!> Clear and then set the virtual and boundary bits
-!===============================================================================
-SUBROUTINE reset_status (self)
-  class(list_t):: self
-  class(link_t), pointer:: link, nbor
-  integer:: n_internal, n_boundary, n_virtual, n_external, n_frozen
-  !-----------------------------------------------------------------------------
-  ! Clear virtual and boundary bits
-  !-----------------------------------------------------------------------------
-  call trace%begin ('list_t%reset_status')
-  if (self%verbose > 0) &
-    write (io_unit%output,*) 'reset_status'
-  n_internal = 0
-  n_boundary = 0
-  n_virtual  = 0
-  n_external = 0
-  n_frozen   = 0
-  call self%lock%set ('reset_status')
-  !-----------------------------------------------------------------------------
-  ! Set bit
-  !-----------------------------------------------------------------------------
-  link => self%head
-  do while (associated(link))
-    if (link%task%rank == mpi%rank) then
-      nbor => link%nbor
-      call link%task%set(bits%internal)
-      call link%task%clear(bits%boundary+bits%virtual+bits%external)
-      !-------------------------------------------------------------------------
-      ! If at least one nbor task is on a different rank, set boundary bit, and
-      ! clear needs_me, since check_ready should not be called for that nbor, 
-      ! when this task calls check_nbors.
-      !-------------------------------------------------------------------------
-      do while (associated(nbor))
-        !-----------------------------------------------------------------------
-        ! task is active, nbor is virtual
-        !-----------------------------------------------------------------------
-        if (nbor%task%rank /= mpi%rank) then
-          call link%task%set(bits%boundary)
-          call link%task%clear(bits%internal)
-          ! -- do not include in check_nbors()
-          nbor%needed = .true.
-          nbor%needs_me = .false.
-        else
-          nbor%needed = .true.
-          nbor%needs_me = .true.
-        end if
-        nbor%download = .true.
-        nbor => nbor%next
-      end do
-    else
-      call link%task%set(bits%external)
-      call link%task%clear(bits%internal+bits%boundary+bits%virtual)
-      nbor => link%nbor
-      !-------------------------------------------------------------------------
-      ! If at least one nbor task is on a this rank, set virtual bit
-      !-------------------------------------------------------------------------
-      do while (associated(nbor))
-        if (link%task%id==io%id_debug) write (io_unit%log,'(a,i5,2i4,3f9.4)') &
-          'mk2', nbor%task%id, link%task%rank, nbor%task%rank, link%task%position-nbor%task%position
-        ! -- if an nbor task is ours, the task is a virtual task
-        !-----------------------------------------------------------------------
-        ! task is virtual, nbor is active
-        !-----------------------------------------------------------------------
-        if (nbor%task%rank==mpi%rank) then
-          call link%task%set(bits%virtual)
-          call link%task%clear(bits%external)
-          nbor%needed = .false.
-          nbor%needs_me = .true.
-        !-----------------------------------------------------------------------
-        ! Task is virtual, nbor is virtual
-        !-----------------------------------------------------------------------
-        else
-          nbor%needed = .false.
-          nbor%needs_me = .false.
-        end if
-        nbor%download = .false.
-        nbor => nbor%next
-      end do
-    end if
-    nbor => link%nbor
-    do while (associated(nbor))
-      if (nbor%task%level == link%task%level-2) then
-        nbor%download = .false.
-        nbor%needs_me = .false.
-        nbor%needed   = .false.
-      end if
-      nbor => nbor%next
-    end do
-   if (self%verbose > 2) &
-      write(io_unit%output,*) &
-        'reset_status: id, rank, IBV =', link%task%id, link%task%rank, &
-        link%task%is_set(bits%internal), &
-        link%task%is_set(bits%boundary), &
-        link%task%is_set(bits%virtual)
-    n_internal = n_internal + merge(1,0,link%task%is_set(bits%internal))
-    n_boundary = n_boundary + merge(1,0,link%task%is_set(bits%boundary))
-    n_virtual  = n_virtual  + merge(1,0,link%task%is_set(bits%virtual ))
-    n_external = n_external + merge(1,0,link%task%is_set(bits%external))
-    n_frozen   = n_frozen   + merge(1,0,link%task%is_set(bits%frozen  ))
-    link => link%next
-  end do
-  self%nb = n_boundary
-  self%nv = n_virtual
-  self%ni = n_internal
-  !-----------------------------------------------------------------------------
-  ! Check that this does not interfere with end_time logics
-  !-----------------------------------------------------------------------------
-  self%na = n_internal+n_boundary-n_frozen
-  self%n  = n_internal+n_boundary+n_virtual
-  if (self%verbose > 1) then
-    write (io_unit%log,'(5(a,i7,5x))') &
-      'rank:',mpi%rank, &
-      'n_internal:', n_internal, &
-      'n_boundary:', n_boundary, &
-      'n_virtual:' , n_virtual, &
-      'n_frozen:'  , n_frozen
-    flush (io_unit%log)
-  end if
-  call self%lock%unset ('reset_status')
-  call trace%end()
-END SUBROUTINE reset_status
-
-!===============================================================================
 !> Remove parent patches, which have higher level patches inside
 !===============================================================================
 SUBROUTINE remove_parents (self)
@@ -1668,50 +1712,6 @@ SUBROUTINE insert (self, old, new)
   call self%lock%unset ('insert')
   call trace_end
 END SUBROUTINE insert
-
-!===============================================================================
-!> Print a table with task id, positions, and all neighbors
-!===============================================================================
-SUBROUTINE count_status (self, label)
-  class (list_t):: self
-  character(len=*), optional:: label
-  class(link_t) , pointer:: link, nbor
-  integer:: n, ni, nb, nv, ne, nf
-  !.............................................................................
-  call trace%begin ('list_t%count_status')
-  call self%lock%set ('count_status')
-  nb=0; ni=0; nv=0; ne=0; nf=0; n = 0
-  link => self%head
-  do while (associated(link))
-    n = n+1
-    if (link%task%is_set(bits%frozen  )) nf = nf+1
-    if (link%task%is_set(bits%boundary)) nb = nb+1
-    if (link%task%is_set(bits%virtual )) nv = nv+1
-    if (link%task%is_set(bits%internal)) ni = ni+1
-    if (link%task%is_set(bits%external)) ne = ne+1
-    link => link%next
-  end do
-  self%ni = ni
-  self%nb = nb
-  self%nv = nv
-  self%n  = n
-  if (self%verbose > 1) &
-    write (io_unit%output,'(1x,a,6i6)') 'list_t%count_status: n[ibveaf] = ', &
-    self%ni, self%nb, self%nv, self%ne, self%na, nf
-  if (present(label) .and. self%verbose > 0) then
-    write (io_unit%output,*) 'count_status:', self%na, ni+nb-nf, label
-  end if
-  self%na = ni + nb - nf
-  !-----------------------------------------------------------------------------
-  ! IMPORTANT:  The globally available io%ntask must reflect the total number
-  ! of active tasks on the rank (io%nwrite is set in data_io_mod)
-  !-----------------------------------------------------------------------------
-  io%ntask  = self%na                       ! Authoritative !
-  io%ntotal = self%n                        ! Authoritative !
-  !-----------------------------------------------------------------------------
-  call self%lock%unset ('count_status')
-  call trace%end()
-END SUBROUTINE count_status
 
 !===============================================================================
 !> Print a table with task id, positions, and all neighbors
