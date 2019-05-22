@@ -313,8 +313,7 @@ SUBROUTINE header_to_patch (self, head)
   ! Update only the time in slot 'it', which is the one in the package
   !-----------------------------------------------------------------------------
   if (nt > 0) then
-    self%t(self%it) = head%t(self%it)
-    !self%t          = head%t(1:nt)
+    self%t          = head%t(1:nt)
     self%dt         = head%dt(1:nt)
     self%iit        = head%iit(1:nt)
   else

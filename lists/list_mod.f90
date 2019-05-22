@@ -1316,10 +1316,10 @@ SUBROUTINE remove_task (self, task)
   class(link_t), pointer:: link, prev
   !.............................................................................
   call trace_begin('list_t%remove_task')
-  if (self%verbose > 1) &
+  if (self%verbose > 2) &
     write (io%output,*) wallclock(),' thread',omp%thread,' wait for tasklist(3)'
   call self%lock%set ('remove_task')
-  if (self%verbose > 1) &
+  if (self%verbose > 2) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(3)'
   link => self%head
   nullify (prev)
