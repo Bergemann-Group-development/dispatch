@@ -21,6 +21,7 @@ MODULE mpi_mesg_mod
     integer, dimension(:), pointer:: buffer
     integer, pointer:: reqs(:) => null()
     integer:: nbuf, nreq, req=0, sender, id, ntry=0
+    integer:: seq
     integer:: tag=2**30
     real(8):: test_next=0d0
   contains
@@ -721,12 +722,13 @@ contains
       call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
       mesg%req = req
       mesg%id = stat(MPI_TAG)
+      mesg%seq = mod(mesg%id,100)
+      mesg%id = mesg%id/100
       mesg%sender = stat(MPI_SOURCE)
+      write (io_unit%mpi,'(f12.6,2x,"get: id, seq, sender =",3i6)') &
+        wallclock(), mesg%id, mesg%seq, mesg%sender
+      flush(io_unit%mpi)
       mesg%nbuf = nbuf
-      if (verbose > 0) then
-        write (io_unit%log,'(f12.6,2x,a,3i6)') wallclock(), &
-          'probe: id, send, nbuf =', mesg%id, mesg%sender, mesg%nbuf
-      end if
       !$omp atomic
       mpi_mesg%n_recv = mpi_mesg%n_recv+1
       !$omp atomic
@@ -738,6 +740,7 @@ contains
   end subroutine probe_for
 END SUBROUTINE get
 
+!===============================================================================
 !===============================================================================
 !> Return true or false, depending on if the mesg request is complete or not
 !===============================================================================
@@ -946,6 +949,8 @@ FUNCTION test_recv (self) RESULT (flag)
   end if
   if (flag) then
     self%id = stat(MPI_TAG)
+    self%seq = mod(self%id,100)
+    self%id = self%id/100
     if (mpi_mesg%debug) then
       write (io_unit%log,*) wallclock(), 'recv task', self%id
       flush (io_unit%log)

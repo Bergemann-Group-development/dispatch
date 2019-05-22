@@ -43,6 +43,7 @@ MODULE link_mod
     logical:: download = .true.     ! marks nbors included in download_link()
   contains
     procedure:: init
+    procedure, nopass:: init_verbose
     procedure:: add_nbor_by_quality
     procedure:: add_nbor_by_rank
     procedure:: remove_nbor
@@ -68,7 +69,7 @@ MODULE link_mod
     procedure:: sort_nbors_by_level
   end type
   type(link_t), target, public:: garbage
-  integer:: garbage_n=0, verbose=1
+  integer:: garbage_n=0, verbose=0
   logical, save:: debug=.false.
 CONTAINS
 
@@ -85,6 +86,17 @@ SUBROUTINE init (self)
     call self%lock%init ('link')
   end if
 END SUBROUTINE init
+
+!===============================================================================
+!> Set the verbosity level (called from task_mesg_mod -- duplicates the setting
+!> of verbose in the task_mesg_params namelist.
+!===============================================================================
+SUBROUTINE init_verbose (verb)
+  integer:: verb
+  !.............................................................................
+  !$omp atomic write
+  verbose = verb
+END SUBROUTINE init_verbose
 
 !===============================================================================
 !> Initialize the nbors chain of a new task (self), by
@@ -665,7 +677,7 @@ SUBROUTINE send_to_vnbors (self)
   class(task_t), pointer:: task
   class(mesg_t), pointer:: mesg
   logical:: flag
-  integer:: ierr, rank, nsend
+  integer:: ierr, rank, nsend, tag
   integer, dimension(:), allocatable:: ranks
   integer, save:: itimer=0
   !.............................................................................
@@ -701,19 +713,18 @@ SUBROUTINE send_to_vnbors (self)
         call task%pack (mesg)                                   ! pack into mesg
         flag = .true.                                           ! mesg has been packed
       end if
-      if (self%task%id == io%id_debug) &
-        write(io%output,*) 'DBG link_t%send_to_vnbors: rank =', nbor%task%rank
-      call mesg%send (rank)                                     ! send it
+      tag = mod(task%istep,100) + 100*task%id                   ! unique tag
+      call mesg%send (rank,tag=tag)                             ! send it
       nsend = nsend+1
       if (verbose > 0) then
-        write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6,2x,a,i5,2x,5l1)') &
+        write (io_unit%mpi,'(f12.6,2x,a,i9,1p,e18.6,2x,a,i5,2x,5l1)') &
           wallclock(), 'sent', mesg%id, self%task%time, 'to', rank, &
           self%task%is_set (bits%internal), &
           self%task%is_set (bits%boundary), &
           self%task%is_set (bits%virtual), &
           self%task%is_set (bits%external), &
           self%task%is_set (bits%swap_request)
-        flush (io_unit%log)
+        flush (io_unit%mpi)
       end if
       ranks(nsend) = rank
     end if
@@ -726,8 +737,6 @@ SUBROUTINE send_to_vnbors (self)
     flush (io_unit%sent)
     !$omp end critical (log_sent_cr)
   end if
-  if (verbose > 1) &
-    write (io_unit%output,*) 'sent patch', self%task%id,' to',nsend,' other ranks'
   !-----------------------------------------------------------------------------
   ! Add the message to mesg%sent_list, if it was sent, and clear the swap bit
   !-----------------------------------------------------------------------------
@@ -808,7 +817,7 @@ SUBROUTINE garbage_remove
     next => link%next
     if (link%task%n_needed <= 0) then
       if (verbose > 0) then
-        write (io_unit%log,'(f12.6,2x,a,i4,l4)') &
+        write (io_unit%log,'(f12.6,2x,a,i6,i4,l4)') &
           wallclock(), 'garbage_remove deleted: id =', link%task%id, &
           link%task%n_needed, link%task%is_set(bits%virtual)
       end if
