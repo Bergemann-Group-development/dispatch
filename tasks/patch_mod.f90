@@ -91,6 +91,7 @@ MODULE patch_mod
     real(8):: grid_vel(3) = 0d0         ! velocity of the patch in its native coords. and
                                         ! units (e.g. rad/s for the phi coord.); for
                                         ! Cartesian coords., equal to `velocity`.
+    integer:: nprint=9                  ! turn on debug printout
   contains
     procedure, nopass:: cast2patch
     procedure:: init
@@ -247,6 +248,7 @@ SUBROUTINE patch_to_header (self, head)
   head%iit(1:nt)  = self%iit
   head%nq         = self%nq
   head%send_time  = wallclock()
+  !-----------------------------------------------------------------------------
   if (io%verbose > 1) &
     write (io_unit%log,'(f12.6,3x,a,i7,i4,l3,2i4,f8.4)') &
       wallclock(), 'patch_to_header: id, nq =', self%id, &
@@ -261,6 +263,18 @@ SUBROUTINE header_to_patch (self, head)
   class(patch_t):: self
   type(header_t):: head
   integer:: nt
+  !-----------------------------------------------------------------------------
+  ! Guard against messages being unpacked in reverse order.  This can happen 
+  ! when using threadprivate receive lists, where the packages happen to be 
+  ! received by different threads, and where the unpack of the first message is 
+  ! delayed by enough time to happen after that of the second package. It may
+  ! be very rare when the number of threads matches the number of cores, but
+  ! can more easily happen when testing for example 5 threads on 2 MPI ranks on
+  ! 2-core laptop.
+  !
+  ! FIXME: This may not be safe, in that the package being skipped could contain
+  ! vital information, such as swapping ownership.  This is handled here by 
+  ! allowing the unpack to continue, but w/o using the time and memory info.
   !-----------------------------------------------------------------------------
   ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
   ! ready bit, which is an indicator of a patch being in the ready queue, which
@@ -282,21 +296,25 @@ SUBROUTINE header_to_patch (self, head)
   self%id         = head%id
   self%status     = head%status
   self%rank       = head%rank
-  self%istep      = head%istep
-  self%iout       = head%iout
   self%level      = head%level
-  self%time       = head%time
-  self%out_next   = head%out_next
-  self%print_next = head%print_next
-  self%dtime      = head%dtime
-  self%position   = head%position
-  self%velocity   = head%velocity
   self%size       = head%size
-  self%it         = head%it
   self%nt         = head%nt
   nt              = head%nt
+  self%istep      = head%istep
+  self%iout       = head%iout
+  self%out_next   = head%out_next
+  self%print_next = head%print_next
+  self%time       = head%time
+  self%dtime      = head%dtime
+  self%position   = head%position
+  self%it         = head%it
+  self%velocity   = head%velocity
+  !-----------------------------------------------------------------------------
+  ! Update only the time in slot 'it', which is the one in the package
+  !-----------------------------------------------------------------------------
   if (nt > 0) then
-    self%t          = head%t(1:nt)
+    self%t(self%it) = head%t(self%it)
+    !self%t          = head%t(1:nt)
     self%dt         = head%dt(1:nt)
     self%iit        = head%iit(1:nt)
   else
@@ -1294,6 +1312,10 @@ SUBROUTINE unpack (self, mesg)
   type(header_t):: header
   integer:: n_buf, ibuf, iv, it, l(3), u(3)
   integer, dimension(:), pointer:: buffer
+  logical:: reversed
+  real(8):: t(self%nt), time
+  integer:: iit(self%nt), i(1), j
+  character(len=40):: fmt
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Compute size of buffer
@@ -1319,7 +1341,7 @@ SUBROUTINE unpack (self, mesg)
   ibuf = ibuf + n_header
   call self%lock%set
   call self%header_to_patch (header)
-  if (io%verbose > 2) &
+  if (io%verbose > 1) &
     write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
       wallclock(), 'header_to_patch: id, nq, BVS, nsnd, nrcv, latency, time =', &
       self%id, mesg%sender, self%nq, &
@@ -1328,23 +1350,22 @@ SUBROUTINE unpack (self, mesg)
       self%is_set(bits%swap_request), &
       mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, self%latency, self%time
   self%wc_last = wallclock()
-  if (io%verbose > 1) &
-    write (io_unit%log,'(f12.1,a,2i9,f12.6,2x,5l1)') &
-      self%wc_last, &
-      'patch_t%unpk: id, nq, time, IBVES =', &
-      self%id, self%nq, self%time, &
-      self%is_set (bits%internal), &
-      self%is_set (bits%boundary), &
-      self%is_set (bits%virtual), &
-      self%is_set (bits%external), &
-      self%is_set (bits%swap_request)
+  if (io%verbose > 1) write (io_unit%log,1) 'patch_mod::unpk id, nq, time  after:', &
+    self%id, self%nq, self%time, &
+    self%is_set (bits%internal), &
+    self%is_set (bits%boundary), &
+    self%is_set (bits%virtual), &
+    self%is_set (bits%external), &
+    self%is_set (bits%swap_request), &
+    self%wc_last
+    1 format(a,2i9,f12.6,2x,5l1,f12.1)
   !-----------------------------------------------------------------------------
   ! Copy the variables from the output buffer.  If this is swap of patch roles
   ! expect at least one more time slot.
   !-----------------------------------------------------------------------------
   do iv=1,self%nv
-    call anonymous_copy (n_buf, buffer(ibuf), &
-      self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1))
+  call anonymous_copy (n_buf, buffer(ibuf), &
+    self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1))
     ibuf = ibuf + n_buf
   end do
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then
@@ -1354,10 +1375,59 @@ SUBROUTINE unpack (self, mesg)
       flush (io_unit%log)
     end if
     do iv=1,self%nv
-      call anonymous_copy (n_buf, buffer(ibuf), &
-        self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it,1))
+    call anonymous_copy (n_buf, buffer(ibuf), &
+      self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,it,1))
       ibuf = ibuf + n_buf
     end do
+  end if
+  !-----------------------------------------------------------------------------
+  ! If the MPI packages were reversed, the time slots must be re-ordered by 
+  ! monotonically increasing time.  We might as well do this always, and only
+  ! use detection to print diagnostics.
+  !-----------------------------------------------------------------------------
+  t = self%t(self%iit)
+  reversed = any((t(2:self%nt-1)-t(1:self%nt-2)) < 0d0)
+  !-----------------------------------------------------------------------------
+  ! Order the time slots in increasing time order, always
+  !-----------------------------------------------------------------------------
+  t = self%t
+  t(self%nt) = -1.0
+  do j=1,self%nt
+    i = minloc(t)
+    iit(j) = i(1)
+    t(i(1)) = huge(1d0)
+  end do
+  !-----------------------------------------------------------------------------
+  ! The time value at iit(self%nt) is the oldest one, since that is the slot
+  ! about to be updated (we can make sure in pack() that this is the case).
+  ! Hence the resulting array needs to shifted one slot to the left, so the
+  ! 2nd smallest time becomes the first one.  Then self%it=self%iit(nt-1) will
+  ! ensure consistency, while self%time is automatically correct.
+  !-----------------------------------------------------------------------------
+  iit(1:self%nt-1) = iit(2:self%nt)
+  it = iit(self%nt-1)
+  !-----------------------------------------------------------------------------
+  ! Validate for a few time updates when this has happened
+  !-----------------------------------------------------------------------------
+  if (reversed) then
+    self%nprint = self%nt
+  end if
+  if (io%verbose > 0 .and. self%nprint > 0) then
+    self%nprint = self%nprint-1
+    t = self%t(self%iit)
+    write (fmt,'("(a,i6,f12.6,l3,",i1,"f12.6,i3,2x,",i1,"i3)")') self%nt, self%nt
+    write (io_unit%output,fmt) &
+      'id, time,  reversed, t =', self%id, self%time, reversed, t, &
+      self%it, self%iit
+    t = self%t(iit)
+    time = t(self%nt-1)
+    write (io_unit%output,fmt) &
+      'id, time, corrected, t =', self%id, time, reversed, t, &
+      self%it, self%iit
+!    write (io_unit%stdout,'(i5,i4,2x,a,1p,g14.6,2x,a,9g14.6)') &
+!      mpi%rank, omp%thread, &
+!     'patch_t%unpack WARNING: time reversal handled, time =', self%time, &
+!     'times =', self%t(self%iit(1:self%nt-1))
   end if
   call self%lock%unset
   if (io%verbose > 2) &
@@ -1503,6 +1573,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             mpi_mesg%nq_send, mpi_mesg%nq_recv, &
             self%is_set(bits%boundary), self%is_set(bits%virtual)
         end do
+        flush (io%output)
         !$omp atomic write
         io%dmin = huge(1.)
         !$omp atomic write
