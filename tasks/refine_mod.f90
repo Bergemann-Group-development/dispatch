@@ -883,7 +883,6 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   !-----------------------------------------------------------------------------
   if (child%time > io%end_time) then
     call child%set (bits%frozen)
-    call tlist%count_status()
   end if
   !-----------------------------------------------------------------------------
   ! Set the bits%support here, which causes it to be set on the rank nbors
@@ -895,10 +894,6 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   ! calls check_support(), and then clears the bit.
   !-----------------------------------------------------------------------------
   call child%set (bits%support)                      ! trigger check_child_support
-  !-----------------------------------------------------------------------------
-  ! Increment I/O write counter, to avoid repeated writing of metadata
-  !-----------------------------------------------------------------------------
-  count = counters%increment (parent%iout+1, io%ntask)
   !-----------------------------------------------------------------------------
   ! Make parent a neighbor of new child patch.  This will be overwritten
   ! in `init_nbor_nbors` but is necessary here to permit interpolation of
@@ -928,6 +923,10 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   call tlist%init_nbors (child_link)
   call tlist%init_nbor_nbors (child_link)
   call tlist%reset_status()
+  !-----------------------------------------------------------------------------
+  ! Increment I/O write counter, to avoid repeated writing of metadata
+  !-----------------------------------------------------------------------------
+  count = counters%increment (parent%iout+1, io%ntask)
   if (child%is_set(bits%boundary)) &
     call child_link%send_to_vnbors
   call tlist%check_nbors (child_link)
