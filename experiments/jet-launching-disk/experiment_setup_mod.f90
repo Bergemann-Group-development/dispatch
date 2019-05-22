@@ -191,9 +191,6 @@ SUBROUTINE init (self)
   call self%task_list%reset_status
   call self%task_list%count_status
   call self%task_list%init_bdries
-  io%ntotal = self%task_list%n
-  io%ntask  = self%task_list%na
-  io%nwrite = io%ntask
   call self%task_list%init_all_nbors
   call self%task_list%print_tasks
 

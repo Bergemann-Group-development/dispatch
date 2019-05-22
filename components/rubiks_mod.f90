@@ -129,7 +129,6 @@ SUBROUTINE init_hierarchy (self, label)
   !-----------------------------------------------------------------------------
   call self%task_list%reset_status
   call self%task_list%count_status
-  io%ntask = self%task_list%na
   call self%task_list%init_bdries
   call self%task_list%init_all_nbors
   call trace%end

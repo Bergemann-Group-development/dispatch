@@ -282,7 +282,6 @@ SUBROUTINE make_child_patch (tlist, parent_link, parent, pos, child_size)
   child_link%task => child
   child_link%parent => parent_link                   ! link is the link to the new patch
   call tlist%append_link (child_link)                ! which is added to the patch list
-  io%ntask = tlist%na                                ! update the task count
   !------------------------------------------------------------------------
   ! Make parent a neighbour of new child patch.
   ! This will be overwritten in `init_all_nbors` but is necessary here to permit

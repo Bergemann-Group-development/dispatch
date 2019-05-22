@@ -1565,7 +1565,6 @@ SUBROUTINE create_level (self, level)
     end do
   end do
   deallocate (flag)
-  io%ntotal = n
   print *, 'create_level: level, patches =', level, n
   call trace%end
   return

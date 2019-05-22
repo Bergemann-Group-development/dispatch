@@ -129,6 +129,14 @@ SUBROUTINE output (self, patch, experiment_name)
   !-----------------------------------------------------------------------------
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! io%nwrite is the number of task writes this process is doing per snapshot --
+  ! it is given a default value here, which may be modified elsewhere in 
+  ! data_io_mod, if more than one write per task is being performed.
+  !-----------------------------------------------------------------------------
+  io%nwrite = io%ntask                        ! Authoritative -- set ONLY here!
+  write (io_unit%log,*) 'io%nwrite =', io%nwrite
+  !-----------------------------------------------------------------------------
   call self%init (patch)
   if (io%method=='legacy') then
     np = 1

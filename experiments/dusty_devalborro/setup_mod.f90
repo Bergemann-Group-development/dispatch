@@ -117,16 +117,12 @@ SUBROUTINE init_setup (self)
     task_list => nested_grids%task_list
     call self%task_list%append_list(task_list)
   end if
-  io%ntotal = self%task_list%n
-
   !-----------------------------------------------------------------------------
   ! Done. Perform final list initialisations.
   !-----------------------------------------------------------------------------
   call self%task_list%init(trim(self%experiment_name)//' task list')
   call self%task_list%init_all_nbors
   call self%task_list%reset_status
-  io%ntask = self%task_list%na
-
   call trace_end
 END SUBROUTINE init_setup
 

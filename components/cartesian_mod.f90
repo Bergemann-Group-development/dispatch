@@ -106,7 +106,6 @@ SUBROUTINE init (self, label)
   ! id, rank, size, position, integer position, and status bits.  Discard
   ! external patches and add the rest to the task_list.
   !-----------------------------------------------------------------------------
-  io%ntotal = product(self%dims)
   ip = 0
   do k=0,self%dims(3)-1
   do j=0,self%dims(2)-1

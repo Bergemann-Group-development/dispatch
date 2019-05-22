@@ -130,7 +130,6 @@ SUBROUTINE rt_setup (task_list)
     patch => omega
     call data_io%register_kind (patch)
   end if
-  io%nwrite = task_list%na
   write(io%output,'(1x,a,i5)') 'rt_setup: io%nwrite =', io%nwrite
   !-----------------------------------------------------------------------------
   ! Run through all nbor tasks of all RT tasks
