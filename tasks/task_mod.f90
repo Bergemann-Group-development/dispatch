@@ -488,8 +488,7 @@ LOGICAL FUNCTION has_finished (self)
   class (task_t):: self
   integer:: bit
   !.............................................................................
-  has_finished = (self%time > io%end_time+0.03*io%out_time) &
-    .or. self%is_set(bits%virtual)
+  has_finished = (self%time > io%end_time)
 END FUNCTION
 
 !===============================================================================
