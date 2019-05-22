@@ -554,7 +554,6 @@ FUNCTION overlaps (self, task)
   !.............................................................................
   call trace%begin ('task_t%overlaps',2)
   overlaps = all(abs(distance(self,task)) <= 0.5_8*(self%size+task%size+self%ds+task%ds))
-  overlaps = overlaps.and.(abs(self%level-task%level)<2)
   call trace%end()
 END FUNCTION overlaps
 
