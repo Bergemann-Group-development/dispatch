@@ -88,9 +88,6 @@ SUBROUTINE initialize (self)
   call self%init_all_nbors      ! make nbor lists, based on position
   call self%reset_status        ! set status buts, based on nbor lists
   call self%count_status        ! count number of different tasks
-  io%ntask = self%na
-  io%ntotal = self%n
-  io%nwrite = self%na
 END SUBROUTINE initialize
 
 !===============================================================================
@@ -251,6 +248,14 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     task%track =  .not.task%track
     io%id_track = 0
   end if
+  !---------------------------------------------------------------------------
+  ! If the task is frozen, make sure it is marked "not ready", and then return
+  !---------------------------------------------------------------------------
+  if (task%is_set (bits%frozen)) then
+    call task%clear (bits%ready)
+    call trace%end (itimer)
+    return
+  end if
   !-----------------------------------------------------------------------------
   ! Check if refinement is needed on the task; if so this will push new tasks
   ! onto the queue, with the same task time; i.e., to the head of the queue.
@@ -265,14 +270,6 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     was_derefined = derefined
   end if
   if (derefined) then
-    call trace%end (itimer)
-    return
-  end if
-  !---------------------------------------------------------------------------
-  ! If the task is frozen, make sure it is marked "not ready", and then return
-  !---------------------------------------------------------------------------
-  if (task%is_set (bits%frozen)) then
-    call task%clear (bits%ready)
     call trace%end (itimer)
     return
   end if
@@ -298,9 +295,13 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), 'before update')
     end select
     call task%update                                  ! update the task
-    if (self%verbose > 0) &
-      write (io_unit%log,'(f12.6,2x,a,i6,1p,g14.6)') &
+    if (self%verbose > 0) then
+      associate (unit => merge (io_unit%log, io_unit%mpi, self%verbose > 1))
+      write (unit,'(f12.6,2x,a,i6,1p,g14.6)') &
         wallclock(), 'update:', task%id, task%time+task%dtime
+      flush (unit)
+      end associate
+    end if
   end if
   !----------------------------------------------------------------------------
   ! Default delay time = first update time
@@ -340,19 +341,6 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     !$omp end critical (log_sent_cr)
   end if
   !-----------------------------------------------------------------------------
-  ! Tasks that have finished are subtracted from the task list count but are
-  ! not removed, since their data may be needed by other tasks (including on
-  ! other ranks).
-  !-----------------------------------------------------------------------------
-  if (task%has_finished()) then                       ! finished:
-    if (timer%dead_mans_hand == 0.0) then
-      timer%dead_mans_hand = wallclock()              ! cf. dispatcher
-    end if
-    call load_balance%active (.false.)                ! turn off load balancing
-    !$omp atomic
-    self%na = self%na-1
-  end if
-  !-----------------------------------------------------------------------------
   ! If the task is a boundary patch, first check if it should be given to
   ! another rank.  A patch that has been given to another rank becomes
   ! a virtual patch, and the load balance procedure has already sent those
@@ -362,18 +350,41 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   if (task%is_set(bits%boundary)) then                ! boundary patch?
     head%task%nq = self%nq                            ! make sure to pass on
     if (load_balance%check_load (head)) then          ! sell?
-      !$omp atomic
-       self%na = self%na-1
-      !$omp atomic
-       self%nb = self%nb-1
-      !$omp atomic
-       self%nv = self%nv-1
-       call self%count_status                         ! redundant? (FIXME)
+       call self%count_status                         ! cheap & robust overkill
     end if
     if (task%id == io%id_debug) &
       write(io_unit%mpi,*) &
         'DBG task_list_t%update: calling send_to_vnbors', task%id
     call head%send_to_vnbors                          ! send to virtual nbors
+  end if
+  !-----------------------------------------------------------------------------
+  ! Tasks that have finished are subtracted from the task list count but are
+  ! not removed, since their data may be needed by other tasks (including on
+  ! other ranks). In principle it should not be necessary to put a finished
+  ! task back into the ready queue, since it has a time > end_time, and thus
+  ! should not be able to stop another task from being considered ready.
+  !-----------------------------------------------------------------------------
+  if (task%has_finished()) then                       ! just finished:
+    if (timer%dead_mans_hand == 0.0) then
+      timer%dead_mans_hand = wallclock()              ! cf. dispatcher
+    end if
+    call load_balance%active (.false.)                ! turn off load balancing
+    !---------------------------------------------------------------------------
+    ! Use bits%frozen to make sure the task only decrements from self%na once
+    !---------------------------------------------------------------------------
+    if (task%is_clear (bits%frozen)) then
+      call task%set (bits%frozen)
+      call self%count_status ('has_finished')         ! TEST
+      if (io%verbose > 0) then
+        write (io_unit%log,*) task%id, 'has finished, na =', self%na
+        flush (io_unit%log)
+      end if
+    end if
+  end if
+  if (task%time > io%end_time .and. task%is_clear(bits%frozen)) then
+    print *, mpi%rank, omp%thread, 'ERROR: task should be frozen', &
+      task%time, io%end_time, task%is_set(bits%frozen), task%has_finished()
+    call task%set (bits%frozen)
   end if
   !-----------------------------------------------------------------------------
   ! Periodic task syncronization:  The first time a task%time is exactly equal

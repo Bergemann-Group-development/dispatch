@@ -196,6 +196,7 @@ MODULE refine_mod
     procedure:: init
     procedure:: refine_needed
     procedure:: check_current
+    procedure:: check_support
     procedure:: setup_mask
     procedure:: remove_patch
     procedure:: check_cubical
@@ -444,7 +445,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     !---------------------------------------------------------------------------
     if (patch%is_set (bits%support)) then
       call check_support (self, tasklist, link, n_added)
-      if (verbose > 0 .and. n_added > 0) then
+      if (verbose > 1 .and. n_added > 0) then
         write (io_unit%log,*) 'check_support: pre-added', n_added
       end if
       call patch%clear (bits%support)
@@ -521,10 +522,19 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
                   maxval(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)), &
                   l, u
               call make_child_patch (self, tasklist, patch, pos, size, child)
-              write (io_unit%log,*) 'after make_child_patch(1)', patch%id, child%id, associated(child%link)
-              flush (io_unit%log)
+              !-----------------------------------------------------------------
+              if (verbose > 0) then
+                associate (unit => merge (io_unit%stdout, io_unit%output, verbose>1))
+                write (unit,'(2(3x,a,i6,":",i2),2x,a,2l1)')  &
+                  'refine'    ,  patch%id, patch%level, &
+                  'to'        ,  child%id, child%level, &
+                  'BV:', child%is_set(bits%boundary), child%is_set(bits%virtual)
+                flush (unit)
+                end associate
+              end if
+              !----------------------------------------------------------------- 
               call check_support (self, tasklist, child%link, n_added)
-              if (verbose > 0 .and. n_added > 0) then
+              if (verbose > 1 .and. n_added > 0) then
                 write (io_unit%log,*) 'check_support: post-added', n_added
               end if
               was_refined= .true.
@@ -548,9 +558,15 @@ SUBROUTINE selective_refine (self, tasklist, patch, was_refined, was_derefined)
       .not.was_refined) then                            ! not after a refine!
     if (all(patch%mask)) then                           ! no child patch inside
       if (all(patch%irefine < 0)) then                  ! all criteria in favor
-        if (verbose > 0) &
-          write (io_unit%output,*) 'derefine', patch%id, patch%istep, &
-            patch%is_set (bits%boundary)
+        !-----------------------------------------------------------------------
+        if (verbose > 0) then
+          associate (unit => merge (io_unit%stdout, io_unit%output, verbose > 1))
+          write (io_unit%output,'(1x,a,i6,":",i2,2x,"B:",l1,3x,a,i6)') &
+            'derefine', patch%id, patch%level, patch%is_set (bits%boundary), &
+            'istep:', patch%istep
+          flush (unit)
+          end associate
+        end if
         !-----------------------------------------------------------------------
         call io%bits_mem (-storage_size(patch%irefine), &
                           product(shape(patch%irefine)), '-irefine')
@@ -575,6 +591,9 @@ END SUBROUTINE selective_refine
 !> patch, and then search for level L-1 sub-regions of the L-2 patch that do not
 !> currently exist, but overlap with the given level L patch, and hence would
 !> give level L-1 support to the level L patch.
+!>
+!> Below, nbor runs through the L-2 nbors of the patch to be supported, and nbor1
+!> runs through the level-1 nbors, to find the ones that overlap with the patch.
 !===============================================================================
 SUBROUTINE check_support (self, tasklist, link, n_added)
   class(refine_t):: self
@@ -582,121 +601,122 @@ SUBROUTINE check_support (self, tasklist, link, n_added)
   class(link_t), pointer:: link
   integer:: n_added
   !.............................................................................
-  class(link_t), pointer:: nbor1, nbor2, nbor3
-  class(task_t), pointer:: parent
-  class(solver_t), pointer:: support
+  class(link_t), pointer:: nbor1, nbor2, nbors
+  class(patch_t), pointer:: patch1, patch2
+  class(solver_t), pointer:: parent, support
   type(patch_t):: trial
-  logical:: supported
+  logical:: supported, overlap(2)
   integer:: i, j, k, n(6)
-  real(8):: start, used
   integer:: itimer=0
   !-----------------------------------------------------------------------------
   ! Return if there are less than two levels down to levelmin
   !-----------------------------------------------------------------------------
   n_added = 0
   if (link%task%level <= self%levelmin+1) return
+  !-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_support', itimer=itimer)
-  if (verbose > 1) then
-    n = 0
-    start = wallclock()
-  end if
+  n = 0
   !-----------------------------------------------------------------------------
-  ! Loop over nbors and select level-1 nbors, to find level-2 nbors
+  ! Now that check_support() is active, clear the bit to prevent repeat
   !-----------------------------------------------------------------------------
-  nbor1 => link%nbor
-  do while (associated(nbor1))
+  call link%task%clear (bits%support)
+  !-----------------------------------------------------------------------------
+  ! Use a copy of the nbor list, to isolate from changes in make_child_patch()
+  !-----------------------------------------------------------------------------
+  call link%copy_nbor_list (link%nbor, nbors)
+  !-----------------------------------------------------------------------------
+  ! Loop over nbors and select level-2 active nbors
+  !-----------------------------------------------------------------------------
+  patch1 => trial%cast2patch (link%task)
+  nbor2 => nbors
+  do while (associated(nbor2))
     n(1) = n(1)+1
-    if (nbor1%task%level == link%task%level-1) then
+    if (nbor2%task%level == link%task%level-2 .and. &
+        nbor2%task%is_clear(bits%virtual)) then
       n(2) = n(2)+1
       !-------------------------------------------------------------------------
-      ! Among the level-1 nbors, select level-2 nbors that overlap with patch
+      ! Select level-2 nbors that overlap with patch
       !-------------------------------------------------------------------------
-      nbor2 => nbor1%link%nbor
-      do while (associated(nbor2))
-        if (nbor2%task%level == link%task%level-2 .and. &
-            nbor2%task%overlaps(link%task)) then
-          n(3) = n(3)+1
+      patch2 => trial%cast2patch (nbor2%task)
+      if (patch2%overlaps(patch1)) then
+        n(3) = n(3)+1
+        !-----------------------------------------------------------------------
+        ! Loop over the candidate trial patches
+        !-----------------------------------------------------------------------
+        parent => solver%cast2solver (nbor2%task)
+        do k=1,self%ratio
+        do j=1,self%ratio
+        do i=1,self%ratio
+          trial%ds = parent%ds/self%ratio
+          trial%size = parent%size/self%ratio
+          trial%position = parent%position &
+                         + ([i,j,k]-(self%ratio+1)*0.5)*trial%size
+          trial%centre_nat = trial%position
           !---------------------------------------------------------------------
-          ! Loop over the candidate trial patches with overlap
+          ! Check for overlap of trial patches with the given patch
           !---------------------------------------------------------------------
-          parent => nbor2%task
-          select type (parent)
-          class is (solver_t)
-          do k=1,self%ratio
-            do j=1,self%ratio
-              do i=1,self%ratio
-                trial%ds = parent%ds/self%ratio
-                trial%size = parent%size/self%ratio
-                trial%position = parent%position &
-                           + ([i,j,k]-(self%ratio+1)*0.5)*trial%size
-                trial%centre_nat = trial%position
-                !---------------------------------------------------------------
-                ! Check for overlap of trial patches with the given patch
-                !---------------------------------------------------------------
-                if (link%task%overlaps (trial)) then
-                  n(4) = n(4)+1
-                  !-------------------------------------------------------------
-                  ! For those candidates that overlap, check if there is already
-                  ! a level-1 patch at the trial patch location.  FIXME: This
-                  ! assumes that the level-1 and trial patches are aligned!
-                  !-------------------------------------------------------------
-                  supported = .false.
-                  nbor3 => parent%link%nbor
-                  do while (associated(nbor3))
-                    n(5) = n(5)+1
-                    if (nbor3%task%level == link%task%level-1 .and. &
-                        contains(nbor3%task,trial)) then
-                      supported = .true.
-                      exit
-                    end if
-                    nbor3 => nbor3%next
-                  end do
-                  !-------------------------------------------------------------
-                  ! If there is currently no support, add a supporting patch
-                  !-------------------------------------------------------------
-                  if (.not. supported) then
-                    n(6) = n(6)+1
-                    if (verbose > 1) &
-                      used = wallclock()-start
-                    call make_child_patch (self, tasklist, parent, &
-                                           trial%position, trial%size, support)
-                    write (io_unit%log,*) 'after make_child_patch(2)', &
-                      parent%id, support%id, associated(support%link)
-                    flush (io_unit%log)
-                    n_added = n_added+1
-                    if (verbose > 1) then
-                      start = wallclock()-used
-                      write(io_unit%log,'(3(a,i6,i3,2x),3i3,6i5,2l3)') &
-                      'check_child_support:', link%task%id, link%task%level, &
-                      'parent:', parent%id, parent%level, &
-                      'support:', support%id, support%level, &
-                      i, j, k, n, &
-                      link%task%overlaps(trial), link%task%overlaps(support)
-                    end if
-                    if (verbose > 0) then
-                      write(io_unit%output,*) &
-                        '  refine', parent%id, &
-                        'to', support%id, &
-                        'to support', link%task%id
-                    end if
-                  end if
-                end if
-              end do
+          if (patch1%overlaps (trial)) then
+            n(4) = n(4)+1
+            !-------------------------------------------------------------------
+            ! For those candidates that overlap, check if there is already
+            ! a level-1 patch at the trial patch location.  FIXME: This
+            ! assumes that the level-1 and trial patches are aligned!
+            !-------------------------------------------------------------------
+            supported = .false.
+            nbor1 => nbors
+            do while (associated(nbor1))
+              n(5) = n(5)+1
+              if (nbor1%task%level == link%task%level-1 .and. &
+                  contains(nbor1%task,trial)) then
+                supported = .true.
+                exit
+              end if
+              nbor1 => nbor1%next
             end do
-          end do
-          end select
-        end if
-        nbor2 => nbor2%next
-      end do
-    end if
-    nbor1 => nbor1%next
+            !-------------------------------------------------------------------
+            ! If there is currently no support, add a supporting patch
+            !-------------------------------------------------------------------
+            if (.not.supported) then
+              n(6) = n(6)+1
+              call make_child_patch (self, tasklist, parent, &
+                trial%position, trial%size, support)
+              n_added = n_added+1
+              !-----------------------------------------------------------------
+              if (verbose > 0) then
+                associate (unit => merge (io_unit%stdout, io_unit%output, verbose > 1))
+                write (unit,'(2(3x,a,i6,":",i2),2x,a,2l1,3x,a,i6,":",i2)')  &
+                  'refine'    ,    parent%id,    parent%level, &
+                  'to'        ,   support%id,   support%level, &
+                  'BV:', support%is_set(bits%boundary), &
+                          support%is_set(bits%virtual), &
+                  'to support', link%task%id, link%task%level
+                flush (unit)
+                end associate
+              end if
+              !-----------------------------------------------------------------
+              if (verbose > 1) then
+                write(io_unit%log,'(2(a,i6,i3,2x),3i3,6i5,5l3)') &
+                  'check_support:', link%task%id, link%task%level, &
+                  'parent:', parent%id, parent%level, &
+                  i, j, k, n, &
+                  patch1%overlaps(trial)
+                flush (io_unit%log)
+              end if ! verbose
+              !-----------------------------------------------------------------
+            end if ! .not.supported
+          end if ! overlaps
+        end do ! i
+        end do ! j
+        end do ! k
+      end if ! overlap
+    end if ! level
+    nbor2 => nbor2%next
   end do
-  if (verbose > 1) then
-    used = wallclock()-start
-    write (io_unit%log,'(a,6i5,f12.6)') &
-      'check_child_support:', n, used
-    flush (io_unit%log)
-  end if
+  !-----------------------------------------------------------------------------
+  ! Clean up: deallocate the nbor list copy
+  !-----------------------------------------------------------------------------
+  call link%remove_nbor_list (nbors)
   call trace%end (itimer)
 contains
   logical function contains (patch1, patch2)
@@ -786,21 +806,25 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   class(link_t), pointer :: child_link, child_nbor
   integer:: j, count, l(3), u(3)
   integer, save:: itimer=0
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace%begin('refine_t%make_child_patch', itimer=itimer)
-  !------------------------------------------------------------------------
+  if (parent%rank /= mpi%rank) then
+    print *, 'make_child_patch: mpi%rank, parent%rank =', mpi%rank, parent%rank
+    call io%abort ('make_child_patch: wrong MPI rank')
+  end if
+  !-----------------------------------------------------------------------------
   ! Allocate a new task, 1/nsplit the size of original one, and adjust its
   ! position in each direction with "pos", in units of the new size.
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Using sourced allocation below effectively clones the parent.  This is
   ! necessary, to pick up properties that may have been set at the experiment
   ! level, which would otherwise be left undefined, or in inconsistent state
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call parent%lock%set
   allocate (child, source=parent)
   call parent%lock%unset
   call child%clone_mem_accounting
- !------------------------------------------------------------------------
+ !-----------------------------------------------------------------------------
   child%mem_allocated = .false.                      ! make sure to get ..
   nullify (child%mem)                                ! .. new mem
   nullify (child%mesh)                               ! .. new mesh
@@ -812,31 +836,33 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child%llc_nat = child%llc_cart                     ! FIXME!: this form only applies for Cartesian coords.
   child%n_needed = 1                                 ! reset to initial
   child%istep = 0                                    ! for diagnostics
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Force consistent resolution in new patches, overriding the resolution
   ! inherited from the parent patch.
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   child%n = scene%patch_n
-  !------------------------------------------------------------------------
-  ! Reset flags -- showing which ones are relevant
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  ! Clear flags -- explictly to show which ones are relevant
+  !-----------------------------------------------------------------------------
+  !child%status = 0
   call child%clear(bits%root_grid)
   call child%clear(bits%ready)
   call child%clear(bits%busy)
+  call child%clear(bits%frozen)
   child%boundaries%bits = 0
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Append links to the new patch in the patch list, sorted by quality
   ! Neighbour lists are constructed at the end of `split_patch`.
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   allocate (child_link)
   call child_link%init                               ! initialise the lock
   child_link%task => child                           ! associate task with link
   child_link%parent => parent%link                   ! used in remove_patch
   child%link => child_link                           ! associate link with task
   child%parent => parent                             ! task relation
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Initialise the new patch
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   child%level = parent%level + 1                     ! must be set before init!
   call child%init()                                  ! patch, for a new id
   child%level = parent%level + 1                     ! override patch_t%init
@@ -849,18 +875,35 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child%t(:) = child%time                            ! sinle time
   child%parentid = parent%id                         ! for debugging
   child%check_refine_next = 0                        ! allow recursive refine
+  !-----------------------------------------------------------------------------
+  ! Check if the new patch, which might have been created to support another
+  ! patch, possibly should be immediately frozen. If that is the case, it still
+  ! needs to be added to the task list, in case it is needed for support, but by
+  ! setting bits%frozen it is prevented from being added to the ready queue.
+  !-----------------------------------------------------------------------------
+  if (child%time > io%end_time) then
+    call child%set (bits%frozen)
+    call tlist%count_status()
+  end if
+  !-----------------------------------------------------------------------------
+  ! Set the bits%support here, which causes it to be set on the rank nbors
+  ! if this is a boundary task.  There, a check for support should then
+  ! be triggered, where the nbor lists even in the virtual part of space
+  ! need to be the same as in the internal space (apart from external patches).
+  ! Here, on the owner rank, the bits%support will remain until next time
+  ! the task is to be updated, when code in check_current() sees the bit,
+  ! calls check_support(), and then clears the bit.
+  !-----------------------------------------------------------------------------
   call child%set (bits%support)                      ! trigger check_child_support
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Increment I/O write counter, to avoid repeated writing of metadata
-  !------------------------------------------------------------------------
-  io%nwrite = io%nwrite + 1
-  count = counters%increment (parent%iout+1, io%nwrite)
-  io%ntask = tlist%na                                ! update the task count
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  count = counters%increment (parent%iout+1, io%ntask)
+  !-----------------------------------------------------------------------------
   ! Make parent a neighbor of new child patch.  This will be overwritten
   ! in `init_nbor_nbors` but is necessary here to permit interpolation of
   ! values from parent to child.
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   allocate (child_nbor)
   child_nbor%link => parent%link
   child_nbor%task => parent
@@ -868,15 +911,20 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child_link%nbors_by_level => child_nbor
   !$omp atomic update
   parent%n_needed = parent%n_needed + 1
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Download values from parent and neighbors, except at time = 0, to allow
   ! recursive refinement there. If time = 0, patch should have been filled
   ! with values during `child%init()` call.
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (parent%time > 0.0 .and. child%restart <= 0) &
     call download%download_link (child_link, all_cells=.true.)
   call tlist%lock%set ('refine')
   call tlist%append_link (child_link)
+  call tlist%reset_status()                               ! TEST
+  !-----------------------------------------------------------------------------
+  ! Increment I/O write counter, to avoid repeated writing of metadata
+  !-----------------------------------------------------------------------------
+  count = counters%increment (parent%iout+1, io%ntask)
   call tlist%init_nbors (child_link)
   call tlist%init_nbor_nbors (child_link)
   call tlist%reset_status()
@@ -889,9 +937,6 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
       wallclock(), 'refine_t%make_child:', child%id, child%is_set(bits%boundary)
   end if
   call tlist%lock%unset ('refine')
-  if (verbose > 0) &
-    write (io_unit%output,*) '  refine', parent%id, 'to', child%id, child%level, &
-      child%is_set (bits%boundary)
   if (verbose > 1) then
     l = parent%index_only (child%position + child%mesh%lf)
     u = parent%index_only (child%position + child%mesh%uf)
@@ -907,6 +952,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
     print 1,'                   child, level, iout, time, size(3), position(3) =', &
       child%id, child%level, child%time, child%size, child%position , &
       maxval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1))
+    flush (io%output)
   end if
   !$omp atomic update
   timer%levelpop (child%level) = &          ! increment level population count
@@ -950,11 +996,6 @@ SUBROUTINE remove_patch (self, tlist, this)
       this%task%is_set(bits%boundary), this%task%is_set(bits%virtual)
   end if
   !-----------------------------------------------------------------------------
-  ! Decrement the I/O write counter
-  !-----------------------------------------------------------------------------
-  io%nwrite = io%nwrite - 1
-  count = counters%decrement (this%task%iout+1, io%nwrite)
-  !-----------------------------------------------------------------------------
   ! Remove the link from the task list, update the nbor lists of nbors, then
   ! deallocate this link (and the associated task memory and task).  The task
   ! list is modified, so it needs to be locked here.
@@ -966,6 +1007,10 @@ SUBROUTINE remove_patch (self, tlist, this)
   timer%levelpop (this%task%level) - 1
   call tlist%init_nbor_nbors (this)         ! new nbor lists, w/o this
   call tlist%reset_status()                 ! set task status bits
+  !-----------------------------------------------------------------------------
+  ! Decrement the I/O write counter; may be moot, with task disappearing
+  !-----------------------------------------------------------------------------
+  count = counters%decrement (this%task%iout+1, io%ntask)
   call tlist%check_nbor_nbors (this)        ! check / send to ready queue
   call this%garbage_collect (this)          ! add to garbage bin
   call tlist%lock%unset ('remove_patch')    ! release the task list
