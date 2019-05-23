@@ -37,6 +37,7 @@ MODULE task_mod
     integer:: parentid=0
     integer:: thread=-1
     integer:: mem_thread=-1
+    integer:: phys_id=-1                ! physical (NUMA) id (socket)
     integer:: n_dump=0                  ! number of dump files
     integer:: ip                        ! rank local task id
     integer:: n_needed=1                ! number of tasks that needs it

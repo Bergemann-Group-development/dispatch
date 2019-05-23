@@ -27,6 +27,8 @@ MODULE dispatcher0_mod
   type, public:: dispatcher0_t
     integer:: verbose=0
     integer:: n_spawn=0
+    integer(8):: n_numa=0
+    integer(8):: n_update=0
     type(lock_t):: lock
   contains
     procedure:: init
@@ -40,6 +42,7 @@ MODULE dispatcher0_mod
   logical, save:: debug=.false.
   logical, save:: do_delay=.false.
   logical, save:: track_active=.false.
+  logical, save:: omp_bind=.false.
   type(dispatcher0_t), save:: virtual_list
   !$omp threadprivate (virtual_list)
   type(dispatcher0_t), public:: dispatcher0
@@ -60,7 +63,7 @@ SUBROUTINE init (self, name)
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
   namelist /dispatcher0_params/ verbose, max_stalled, retry_stalled, do_delay, &
-    queue_unpack, send_priv, recv_active, recv_priv, debug
+    queue_unpack, send_priv, recv_active, recv_priv, omp_bind, debug
   character(len=120):: ids = &
   '$Id$ dispatchers/dispatcher0_mod.f90'
   !-----------------------------------------------------------------------------
@@ -127,7 +130,9 @@ SUBROUTINE execute (self, task_list, test)
   write (io_unit%mpi,*) 'at mpi%barrier'
   flush (io_unit%mpi)
   call mpi%barrier ('end')
-  write (io%output,*) "task list finished, min_nq =", min_nq
+  write (io%output,'(1x,a,i4,6x,a,f6.2)') &
+    "task list finished, min_nq =", min_nq, &
+    "fraction of NUMA hits =", self%n_numa/real(self%n_update)
   if (validate%mode == "write") then
     call io%print_hl
     write (io%output,'(a)') &
@@ -208,22 +213,34 @@ SUBROUTINE update (self, task_list, test)
       write(io_unit%log,'(f12.6,2x,a,i6,i7)') wallclock(), &
         'dispather0::update: na, id =',task_list%na, head%task%id
     !---------------------------------------------------------------------------
-    ! If the patch mem was OMP placed, search ready queue for matching thread
+    ! If the patch mem was OMP placed, search ready queue for matching socket
     !---------------------------------------------------------------------------
-    do while (associated(head))
-      task => head%task
-      if (task%mem_thread==-1 .or. omp%thread == task%mem_thread) exit
-      prev => head
-      head => head%next_time
-    end do
-    !---------------------------------------------------------------------------
-    ! If not found, fall back on first task in queue
-    !---------------------------------------------------------------------------
-    if (.not. associated(head)) then
-      nullify (prev)
-      head => task_list%queue
-      task => head%task                                   ! head task
+    if (omp_bind) then
+      do while (associated(head))
+        task => head%task
+        if (task%phys_id==-1) then
+          exit
+        else if (omp%phys_id == task%phys_id) then
+          !$omp atomic update
+          self%n_numa = self%n_numa+1
+          exit
+        end if
+        prev => head
+        head => head%next_time
+      end do
+      !-------------------------------------------------------------------------
+      ! If not found, fall back on first task in queue
+      !-------------------------------------------------------------------------
+      if (.not. associated(head)) then
+        nullify (prev)
+        head => task_list%queue
+        task => head%task                                   ! head task
+      end if
+    else
+      task => head%task                                     ! head task
     end if
+    !$omp atomic update
+    self%n_update = self%n_update+1
     !---------------------------------------------------------------------------
     if (debug) then
       !$omp atomic read

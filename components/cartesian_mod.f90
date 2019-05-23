@@ -241,8 +241,10 @@ SUBROUTINE init_exp (self, origin)
         call patch%init
         if (omp_init .and. omp%nthreads>1) then
           task%mem_thread = omp%thread
+          task%phys_id = omp%phys_id
         else
           task%mem_thread = -1
+          task%phys_id = -1
         end if
         patch%mesh%origin = origin
         !$omp atomic
@@ -257,21 +259,21 @@ SUBROUTINE init_exp (self, origin)
         if (io%verbose>0) then
           write (io_unit%log,1) &
             'cartesian_t%init: id, rank, size, pos =', &
-            patch%id, patch%rank, patch%size, patch%position, &
+            patch%id, patch%phys_id, patch%rank, patch%size, patch%position, &
             patch%is_set(bits%boundary), patch%is_set(bits%virtual)
-          1 format(a,i8,i6,1p,2(2x,3e14.6),2x,2l1,2x,a)
+          1 format(a,i8,i3,i6,1p,2(2x,3e14.6),2x,2l1,2x,a)
           flush (io_unit%log)
         end if
         if (patch%id == io%id_debug) then
           write (io_unit%output,1) &
             'cartesian_t%init: id, rank, size, pos =', &
-            patch%id, patch%rank, patch%size, patch%position, &
+            patch%id, patch%phys_id, patch%rank, patch%size, patch%position, &
             patch%is_set(bits%boundary), patch%is_set(bits%virtual), 'DBG'
           flush (io_unit%log)
         else if (io_unit%verbose>1 .and. io_unit%master) then
           write (io_unit%output,1) &
             'cartesian_t%init: id, rank, size, pos =', &
-            patch%id, patch%rank, patch%size, patch%position, &
+            patch%id, patch%phys_id, patch%rank, patch%size, patch%position, &
             patch%is_set(bits%boundary), patch%is_set(bits%virtual)
           flush (io_unit%log)
         end if
