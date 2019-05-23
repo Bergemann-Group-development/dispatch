@@ -187,7 +187,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             return np.copy(np.memmap(filed, dtype=np.float32,
                 offset=patch.offset[iv], mode='r', order='F', shape=shape))
         else:
-            return memmap2(filed, dtype=np.float32,
+            return np.memmap(filed, dtype=np.float32,
                 offset=patch.offset[iv], mode='r', order='F', shape=shape)
 
     def average_down(iv, axis=0):
