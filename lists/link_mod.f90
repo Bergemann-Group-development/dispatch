@@ -713,7 +713,11 @@ SUBROUTINE send_to_vnbors (self)
         call task%pack (mesg)                                   ! pack into mesg
         flag = .true.                                           ! mesg has been packed
       end if
-      tag = mod(task%istep,100) + 100*task%id                   ! unique tag
+      if (mpi_mesg%uniq_mesg) then
+        tag = mod(task%istep,100) + 100*task%id                 ! unique tag
+      else
+        tag = task%id
+      end if
       call mesg%send (rank,tag=tag)                             ! send it
       nsend = nsend+1
       if (verbose > 0) then

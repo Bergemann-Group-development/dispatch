@@ -78,6 +78,7 @@ MODULE mpi_mesg_mod
     logical:: send_priv=.true.
     logical:: debug=.false.
     logical:: queue_unpack=.true.
+    logical:: uniq_mesg=.false.
   contains
     procedure:: init
     procedure:: get
@@ -528,10 +529,11 @@ SUBROUTINE init (self)
   logical, save:: recv_active
   logical, save:: send_priv
   logical, save:: queue_unpack
+  logical, save:: uniq_mesg=.false.
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, wait, send_wait, send_priv, &
-                             recv_active, recv_priv, queue_unpack, test_time, debug, &
-                             verbose
+                             recv_active, recv_priv, queue_unpack, test_time, &
+                             uniq_mesg, debug, verbose
   integer:: iostat
   !-----------------------------------------------------------------------------
   ! Prevent initializing more than once
@@ -557,6 +559,7 @@ SUBROUTINE init (self)
   self%max_recv = max_recv
   self%max_probe = max_probe
   self%wait = wait
+  self%uniq_mesg = uniq_mesg
   !-----------------------------------------------------------------------------
   ! Default values from dispatcher possible changed here
   !-----------------------------------------------------------------------------
@@ -662,8 +665,9 @@ SUBROUTINE sent (self, mesg)
     !$omp end critical (sent_cr)
   end if
   if (verbose > 0) then
-    write (io_unit%log,'(f12.6,2x,a,3i6)') &
-      wallclock(), 'sent: id, thread, n =', mesg%id, omp_get_thread_num(), sent_list%n
+    write (io_unit%log,'(f12.6,2x,a,i9,2i6)') &
+      wallclock(), 'sent: id, thread, n =', &
+      mesg%id, omp_get_thread_num(), sent_list%n
     flush (io_unit%log)
   end if
 END SUBROUTINE sent
@@ -722,10 +726,12 @@ contains
       call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
       mesg%req = req
       mesg%id = stat(MPI_TAG)
-      mesg%seq = mod(mesg%id,100)
-      mesg%id = mesg%id/100
+      if (mpi_mesg%uniq_mesg) then
+        mesg%seq = mod(mesg%id,100)
+        mesg%id = mesg%id/100
+      end if
       mesg%sender = stat(MPI_SOURCE)
-      write (io_unit%mpi,'(f12.6,2x,"get: id, seq, sender =",3i6)') &
+      write (io_unit%mpi,'(f12.6,2x,"get: id, seq, sender =",i9,2i6)') &
         wallclock(), mesg%id, mesg%seq, mesg%sender
       flush(io_unit%mpi)
       mesg%nbuf = nbuf
@@ -949,8 +955,10 @@ FUNCTION test_recv (self) RESULT (flag)
   end if
   if (flag) then
     self%id = stat(MPI_TAG)
-    self%seq = mod(self%id,100)
-    self%id = self%id/100
+    if (mpi_mesg%uniq_mesg) then
+      self%seq = mod(self%id,100)
+      self%id = self%id/100
+    end if
     if (mpi_mesg%debug) then
       write (io_unit%log,*) wallclock(), 'recv task', self%id
       flush (io_unit%log)
