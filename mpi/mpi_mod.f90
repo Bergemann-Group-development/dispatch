@@ -291,14 +291,13 @@ SUBROUTINE detect_cores
   character(len=32):: file="/proc/cpuinfo"
   character(len=32):: line
   logical:: exist
-  integer:: i, iostat, id, oid, n_socket, n_core, thread
+  integer:: i, iostat, id, oid, n_socket, n_core
   type:: socket_t
     type(socket_t), pointer:: next => null()
     integer:: id
   end type
   type(socket_t), pointer:: p, o, head
   real(8):: wc
-  integer, allocatable:: phys_id(:)
   !.............................................................................
   nullify(head)
   n_socket = 0
@@ -323,23 +322,6 @@ SUBROUTINE detect_cores
         end if
       end if
     end do
-    rewind (io_unit%os)
-    if (n_socket>0) n_core = n_core*n_socket
-    allocate (phys_id(0:n_core-1))
-    do while (.true.)
-      read (io_unit%os,'(a32)',iostat=iostat) line
-      if (iostat/=0) then
-        exit
-      else
-        i = index(line,':')
-        if (line(1:9)=='processor') then
-          read (line(i+1:),*) thread
-        else if (line(1:8)=='physical') then
-          read (line(i+1:),*) id
-          phys_id(thread) = id
-        end if
-      end if
-    end do
     close (io_unit%os)
     wc = wallclock()-wc
     if (wc > 5) print '(a)','############################################################'
@@ -347,16 +329,10 @@ SUBROUTINE detect_cores
     print '(a,f6.1,a)',     'reading /proc/cpuinfo:', wc, ' sec'
     if (wc > 5) print '(a)','############################################################'
   end if
+  if (n_socket>0) n_core = n_core*n_socket
   !$omp parallel
   omp%ncores = n_core
-  allocate (omp%phys_ids(0:n_core-1))
-  omp%phys_ids = phys_id
-  omp%phys_id = phys_id(omp%thread)
-  !$omp critical (thread_cr)
-  write (io_unit%output,*) omp%thread, omp%phys_id
-  !$omp end critical (thread_cr)
   !$omp end parallel
-  deallocate (phys_id)
 !-----------------------------------------------------------------------------
 ! For good measure, although totally insignificant, deallocate the list
 !-----------------------------------------------------------------------------
