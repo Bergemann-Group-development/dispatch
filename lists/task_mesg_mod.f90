@@ -88,11 +88,19 @@ SUBROUTINE check_mpi (self)
   recv_tmp%name = 'recv_tmp'
   wc(0) = wallclock()
   !-----------------------------------------------------------------------------
-  ! Step 1: Prune the send list -- critical regions are handled inside
+  ! Step 1: Prune the send list -- critical regions are handled inside.
+  ! Thread 0 checks the send list if it the only thread, or if it has messages
+  ! on a thread private send list  -- otherwise it goes directly to handling 
+  ! incoming messages.
   !-----------------------------------------------------------------------------
   !$omp atomic read
   nq = self%nq
+  if (omp%nthreads==1 .or. mpi_mesg%send_priv) then
   call mpi_mesg%sent_list%check_sent (nq)
+  else if (omp%thread > 0) then
+    call mpi_mesg%sent_list%check_sent (nq)
+    return
+  end if
   !-----------------------------------------------------------------------------
   ! Choose method used to receive messages:
   ! - 'check_virtual' uses prepared, thread private lists of virtual patches, 
@@ -171,8 +179,6 @@ SUBROUTINE check_mpi (self)
     call unpk_tmp%delete (mesg, .false.)
     mesg => next
   end do
-!  i=i+1; wc(i) = wallclock()-wc(0)
-!  if (wc(i) > mpi_mesg%check_ms*1e-3)  go to 9
   !-----------------------------------------------------------------------------
   ! Step 3: if there are more than max_recv messages in recv_list, then wait
   ! for and unpack enough messages to reach the limit.  If task_list%nq is less
@@ -207,8 +213,6 @@ SUBROUTINE check_mpi (self)
     call unpk_tmp%delete (mesg, .false.)
     mesg => next
   end do
-!  i=i+1; wc(i) = wallclock()-wc(0)
-!  if (wc(i) > mpi_mesg%check_ms*1e-3) go to 9
   !-----------------------------------------------------------------------------
   ! Step 4: check the rest of the recv_list for completed messages.  The (fast)
   ! traversal is protected inside (recv_cr), but unpacking from the local list
