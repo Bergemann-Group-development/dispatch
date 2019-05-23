@@ -96,7 +96,7 @@ SUBROUTINE check_mpi (self)
   !$omp atomic read
   nq = self%nq
   if (omp%nthreads==1 .or. mpi_mesg%send_priv) then
-  call mpi_mesg%sent_list%check_sent (nq)
+    call mpi_mesg%sent_list%check_sent (nq)
   else if (omp%thread > 0) then
     call mpi_mesg%sent_list%check_sent (nq)
     return
@@ -593,17 +593,17 @@ SUBROUTINE check_priv (self)
   call mpi_mesg%get (mesg)
   n = 0
   do while (associated(mesg))
-    n = n+1
     if (mesg%is_complete()) then
       if (verbose > 1) &
-        write (io_unit%log,*) 'adding mesg to unpk_list', mesg%id, n
-      call unpk_list%add (mesg)
+        write (io_unit%log,*) 'unpacked directly', mesg%id, n
+      call unpack (self, mesg)
+      call recv_list%delete (mesg, .false.)
     else
-      if (verbose > 1) &
-        write (io_unit%log,*) 'adding mesg to recv_list', mesg%id, n
       call recv_list%add (mesg)
+      n = n+1
+      if (verbose > 1) &
+        write (io_unit%log,*) 'addded mesg to recv_list', mesg%id, n
     end if
-    if (n > mpi_mesg%max_probe) exit
     call mpi_mesg%get (mesg)
   end do
   !-----------------------------------------------------------------------------
@@ -613,24 +613,13 @@ SUBROUTINE check_priv (self)
   do while (associated(mesg))
     next => mesg%next
     if (mesg%is_complete()) then
-      if (verbose > 1) &
-        write (io_unit%log,*) 'moving mesg to unpk_list', mesg%id
+      call unpack (self, mesg)
       call recv_list%remove (mesg)
-      call unpk_list%add (mesg)
+      n = n-1
+      if (verbose > 1) &
+        write (io_unit%log,*) 'unpacked from list', mesg%id, n 
+      call recv_list%delete (mesg, .false.)
     end if
-    mesg => next
-  end do
-  !-----------------------------------------------------------------------------
-  ! Step 3: unpack messags in unpk_list
-  !-----------------------------------------------------------------------------
-  mesg => unpk_list%head
-  do while (associated(mesg))
-    if (verbose > 1) &
-      write (io_unit%log,*) 'unpacking mesg in unpk_list', mesg%id
-    next => mesg%next
-    call unpack (self, mesg)
-    call unpk_list%remove (mesg)
-    call unpk_list%delete (mesg, .false.)
     mesg => next
   end do
   call trace%end (itimer)

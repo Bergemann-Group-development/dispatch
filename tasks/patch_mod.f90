@@ -1490,7 +1490,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           timer%n_lines = max_lines
           write(io%output,'(a)') &
           '0....+....1....+....2....+....3....+....4....+....5....+....' &
-          //'6....+....7....+....8....+....9....+....0....+....1 ntsk    nq ' &
+          //'6....+....7....+....8....+....9....+....0....+....1  ntsk   nq ' &
           //' chk  rdy   upd  snt  prb  unp  dly snq rcq  BV'
           !$omp end critical (info_cr2)
         end if
