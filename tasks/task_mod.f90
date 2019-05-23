@@ -299,19 +299,6 @@ SUBROUTINE rotate (self)
     time = self%time + self%dtime
   end if
   !-----------------------------------------------------------------------------
-  ! Keep track of the shortest times step between updates of the first local
-  ! task.  Use this task in patch%info, rather than the one with ip==1.
-  !-----------------------------------------------------------------------------
-  if (self%id == io%id) then
-    io%dtime = huge(1d0)
-  end if
-  if (self%dtime < io%dtime) then
-    !$omp atomic write
-    io%id = self%id
-    !$omp atomic write
-    io%dtime = self%dtime
-  end if
-  !-----------------------------------------------------------------------------
   ! Time slot rotation.  Note that self%time should be the LAST of these
   ! updates, since we do not want to enforce a critical region, and the
   ! new self%time is what a task is judged on!  Also, note that the only time

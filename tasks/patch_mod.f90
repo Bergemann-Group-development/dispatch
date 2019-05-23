@@ -1388,6 +1388,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer, save:: counts(7)=0
   integer:: counts_l(7), i
   character(len=120):: fmt
+  real(8):: time
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%info')
   if (io_unit%do_validate) then
@@ -1426,54 +1427,23 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   else
     fmt = '(a,i8,2i4,i3,1p,2e12.5,     0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,2i4,l3,l1,o12)'
   end if
+  !-----------------------------------------------------------------------------
   if (io%verbose>=0) then
     !$omp atomic
     io%dmin = min(io%dmin, real(self%fminval(self%mem(:,:,:,self%idx%d,self%it,1)),kind=4))
     !$omp atomic
     io%dmax = max(io%dmax, real(self%fmaxval(self%mem(:,:,:,self%idx%d,self%it,1)),kind=4))
-    if (self%time>=self%print_next) then
-      if (io%print_time > 0) &
-        self%print_next = (nint(self%time/io%print_time)+1)*io%print_time
-      nv = 1
-      if (io%verbose>2) nv = self%nv
-      if (io%verbose>1) then
-        do iv=1,nv
-          write (io_unit%log,fmt) &
-            'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
-            self%dtime, log10(max(self%u_max,1e-30)), &
-            self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-            self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-            self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-            self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-            real(timer%n_update), ntask, nq, &
-            mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
-            mpi_mesg%n_send, mpi_mesg%n_recv, mpi_mesg%n_unpk, mpi_mesg%n_delay, &
-            mpi_mesg%nq_send, mpi_mesg%nq_recv, &
-            self%is_set(bits%boundary), self%is_set(bits%virtual)
-          if (io_unit%mpi/=io_unit%log) then
-            !$omp critical (info_cr)
-            write (io_unit%mpi,fmt) &
-              'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
-              self%dtime, self%u_max, &
-              self%fminval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-              self%fmaxval(self%mem(:,:,:,iv,self%it ,self%nw)), &
-              self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-              self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-              real(timer%n_update), ntask, nq, &
-              mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
-              mpi_mesg%n_send, mpi_mesg%n_recv, mpi_mesg%n_unpk, mpi_mesg%n_delay, &
-              mpi_mesg%nq_send, mpi_mesg%nq_recv, &
-              self%is_set(bits%boundary), self%is_set(bits%virtual)
-            flush (io_unit%mpi)
-            !$omp end critical (info_cr)
-          end if
-        end do
-      end if
-      !-------------------------------------------------------------------------
-      ! Print a one-liner if verbose==1 and id==1, or verbose>1, while
-      ! accumulating counters also when not printing
-      !-------------------------------------------------------------------------
+    if (self%time >= io%print_next) then
       if (io%verbose>0 .or. self%id==io%id) then
+        !-----------------------------------------------------------------------
+        ! If io%print_time is set, hold off printing until after print_next
+        !-----------------------------------------------------------------------
+        if (io%print_time > 0) then
+          io%print_next = (nint(self%time/io%print_time)+1)*io%print_time
+        end if
+        nv = 1
+        if (io%verbose>2) nv = self%nv
+        !-------------------------------------------------------------------------
         counts_l = &
           [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
            mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &
@@ -1494,9 +1464,14 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           //' chk  rdy   upd  snt  prb  unp  dly snq rcq  BV'
           !$omp end critical (info_cr2)
         end if
+        if (io%print_time > 0.0) then
+          time = self%time
+        else
+          time = self%time - self%dtime
+        end if
         do iv=1,nv
           write(io%output,fmt) &
-            'upd',self%id, self%level, iv, omp_mythread, self%time-self%dtime, &
+            'upd',self%id, self%level, iv, omp_mythread, time, &
             self%dtime, log10(max(self%u_max,1e-30)), &
             io%dmin, io%dmax, &
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
@@ -1510,6 +1485,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         io%dmin = huge(1.)
         !$omp atomic write
         io%dmax = tiny(1.)
+        !$omp atomic write
+        io%dtime = huge(1d0)
         counts(:) = 0
         !-----------------------------------------------------------------------
         ! Reset the message counters after every timestep, if relevant
@@ -1519,6 +1496,18 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         mpi_mesg%n_delay=0
       end if
     end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! Keep track of the shortest times step between updates of the first local
+  ! task.  Use this task in patch%info, rather than the one with ip==1.  As
+  ! long as shorter dtime are being found, io%id will not match the next self%id.
+  ! But if the same io%id survices one update cycle, it will match.
+  !-----------------------------------------------------------------------------
+  if (self%dtime < io%dtime) then
+    !$omp atomic write
+    io%id = self%id
+    !$omp atomic write
+    io%dtime = self%dtime
   end if
   call trace%end
 END SUBROUTINE info

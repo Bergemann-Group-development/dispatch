@@ -47,6 +47,7 @@ MODULE io_mod
     real(8):: out_time=1d0
     real(8):: out_next=1d0
     real(8):: print_time=0d0
+    real(8):: print_next=0d0
     real(8):: dtime=huge(1d0)   ! the shortest time step
     real(8):: gb=0.0
     real(8):: job_seconds=1d30
