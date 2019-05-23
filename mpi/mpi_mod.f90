@@ -158,7 +158,11 @@ SUBROUTINE init_mpi (self)
 !  Start up MPI and get number of nodes and our node rank
 !-------------------------------------------------------------------------------
 #ifdef MPI
+#ifdef __GFORTRAN__
+  call MPI_INIT_THREAD (MPI_THREAD_SINGLE, mpi_provided, mpi_err)
+#else
   call MPI_INIT_THREAD (MPI_THREAD_MULTIPLE, mpi_provided, mpi_err)
+#endif
   self%mode = mpi_provided
   call MPI_Comm_dup (mpi_comm_world, self%comm, mpi_err)
   call MPI_Comm_size (self%comm, mpi_size, mpi_err)
@@ -174,7 +178,7 @@ SUBROUTINE init_mpi (self)
     case(MPI_THREAD_MULTIPLE)
       print 1, ' MPI implementation provides support for simultaneous MPI calls by different threads'
     case(MPI_THREAD_SINGLE)
-      print 1, ' MPI implementation only provides support for MPI calls outside openmp regions'
+      print 1, ' MPI implementation only provides support for MPI calls in one thread at a time'
     case(MPI_THREAD_FUNNELED)
       print 1, ' MPI implementation only provides support for MPI calls in master regions'
     case(MPI_THREAD_SERIALIZED)
