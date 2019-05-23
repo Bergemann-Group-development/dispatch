@@ -425,7 +425,7 @@ SUBROUTINE update_task (self, head, test, was_refined)
     if (task%id == io%id_debug) &
       write(io_unit%mpi,*) &
         'DBG task_list_t%update: calling send_to_vnbors', task%id
-    call head%send_to_vnbors                          ! send to virtual nbors
+    call self%send_to_vnbors (head)                   ! send to virtual nbors
   end if
   !-----------------------------------------------------------------------------
   ! Tasks that have finished are subtracted from the task list count but are
@@ -628,7 +628,7 @@ SUBROUTINE unpack (self, mesg, link)
       self%na = self%na+1; self%nb = self%nb+1; self%nv = self%nv-1
       call self%init_nbors (link)
       call task%clear (bits%swap_request+bits%ready)
-      call link%update_nbor_status (link)
+      call self%update_nbor_status (link)
       call self%count_status
       if (verbose>1) &
         write(io%output,'(f12.6,2x,a,i6,a,i9,a,i6)') &
@@ -649,7 +649,7 @@ SUBROUTINE unpack (self, mesg, link)
       self%nv = self%nv+1
       call self%init_nbors (link)
       call task%clear (bits%swap_request+bits%ready)
-      call link%update_nbor_status (link)
+      call self%update_nbor_status (link)
       call self%count_status
     end if
   end if

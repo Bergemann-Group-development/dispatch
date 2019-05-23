@@ -481,7 +481,7 @@ SUBROUTINE unpack (self, mesg, link)
       self%nv = self%nv-1
       call self%init_nbors (link1)
       call task%clear (bits%swap_request+bits%ready)
-      call link1%update_nbor_status (link1)
+      call self%update_nbor_status (link1)
       call self%count_status
       if (verbose>1) &
         write(io%output,'(f12.6,2x,a,i6,a,i9,a,i6)') &
@@ -502,7 +502,7 @@ SUBROUTINE unpack (self, mesg, link)
       self%nv = self%nv+1
       call self%init_nbors (link1)
       call task%clear (bits%swap_request+bits%ready)
-      call link1%update_nbor_status (link1)
+      call self%update_nbor_status (link1)
       call self%count_status
     end if
   end if

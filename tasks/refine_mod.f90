@@ -928,7 +928,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   !-----------------------------------------------------------------------------
   count = counters%increment (parent%iout+1, io%ntask)
   if (child%is_set(bits%boundary)) &
-    call child_link%send_to_vnbors
+  call tlist%send_to_vnbors (child_link)
   call tlist%check_nbors (child_link)
   call tlist%check_nbor_nbors (child_link)
   if (tlist%verbose > 0) then
@@ -987,7 +987,7 @@ SUBROUTINE remove_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   if (this%task%is_set (bits%boundary)) then
     call this%task%set (bits%remove)
-    call this%send_to_vnbors
+    call tlist%send_to_vnbors (this)
   end if
   if (tlist%verbose > 0) then
     write (io_unit%log,'(f12.6,2x,a,i6,2l3)') &
