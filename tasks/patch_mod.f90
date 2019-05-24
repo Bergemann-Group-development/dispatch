@@ -255,26 +255,63 @@ END SUBROUTINE patch_to_header
 
 !===============================================================================
 !> Copy he most important fields to a sequenced header, for communication and I/O
+!>
+!> Guard against messages being unpacked in reverse order.  This can happen 
+!> when using threadprivate receive lists, where the packages happen to be 
+!> received by different threads, and where the unpack of the first message is 
+!> delayed by enough time to happen after that of the second package. It may
+!> be very rare when the number of threads matches the number of cores, but
+!> can more easily happen when testing for example 5 threads on 2 MPI ranks on
+!> 2-core laptop.
+!>
+!> FIXME: This may not be safe, in that the package being skipped could contain
+!> vital information, such as swapping ownership.  This is handled by forcing
+!> a mesg%wait_for_completion() on all outstanding packages, and avoiding to
+!> update time information for late arrivals.
+!>
+!> A special case is the arrival of new AMR packages.  If the 2nd package 
+!> arrives after the fist one, the new task is created as a result of the
+!> the 2nd package, and the 1st package, which arrives late, is going to fill
+!> in the 1st memory slot of the already existing task.  This should not be
+!> a problem, if no processing of task data takes place before completion of
+!> package arrival.
+!>
+!> The task should thus be locked, and remain locked, during the recovery.
+!> The current thread sets and unsets a lock in the task_mesg_t procedures,
+!> rather than here, to avoid possible deadlocks.
 !===============================================================================
 SUBROUTINE header_to_patch (self, head, reversed)
   class(patch_t):: self
   type(header_t):: head
-  logical:: reversed
+  logical:: reversed, late
   integer:: nt
   !-----------------------------------------------------------------------------
-  ! Guard against messages being unpacked in reverse order.  This can happen 
-  ! when using threadprivate receive lists, where the packages happen to be 
-  ! received by different threads, and where the unpack of the first message is 
-  ! delayed by enough time to happen after that of the second package. It may
-  ! be very rare when the number of threads matches the number of cores, but
-  ! can more easily happen when testing for example 5 threads on 2 MPI ranks on
-  ! 2-core laptop.
-  !
-  ! FIXME: This may not be safe, in that the package being skipped could contain
-  ! vital information, such as swapping ownership.  This is handled here by 
-  ! allowing the unpack to continue, but w/o using the time and memory info.
+  ! An increase by more than one of self%istep shows arrival of the first of
+  ! two (or more) time reversed packages
   !-----------------------------------------------------------------------------
-  reversed = (self%time > head%time) 
+  reversed = head%istep > self%istep+1
+  if (reversed) then
+    print *, 'WARNING: early message unpack', self%id, mpi%rank, omp%thread
+    self%reversed = .true.
+    call self%lock%set ('reversed')
+  end if
+  !-----------------------------------------------------------------------------
+  ! An attempted decrease of the task time shows arrival of a time reversed
+  ! package, which should be accepted, both to fill in the hole in the time
+  ! sequence, and because it could possibly contain bits that require special
+  ! handling
+  !-----------------------------------------------------------------------------
+  late = self%time > head%time
+  if (late) then
+    print *, 'WARNING: late message unpack', self%id, mpi%rank, omp%thread
+    if (self%reversed) then
+      self%reversed = .false.
+      call self%lock%unset ('reversed')
+    else
+      print *, mpi%rank, 'WARNING: late arrival not preceded by early arrival!', &
+      self%id
+    end if
+  end if
   !-----------------------------------------------------------------------------
   ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
   ! ready bit, which is an indicator of a patch being in the ready queue, which
@@ -299,17 +336,15 @@ SUBROUTINE header_to_patch (self, head, reversed)
   self%level      = head%level
   self%size       = head%size
   self%nt         = head%nt
+  self%position   = head%position
   nt              = head%nt
-  if (reversed) then
-    print *, 'WARNING: reversed message unpack', self%id, mpi%rank, omp%thread
-  else
+  if (.not. late) then
     self%time       = head%time
     self%istep      = head%istep
     self%iout       = head%iout
     self%out_next   = head%out_next
     self%print_next = head%print_next
     self%dtime      = head%dtime
-    self%position   = head%position
     self%it         = head%it
     self%velocity   = head%velocity
     if (nt > 0) then
@@ -321,6 +356,9 @@ SUBROUTINE header_to_patch (self, head, reversed)
       flush (io_unit%log)
     end if
   end if
+  !-----------------------------------------------------------------------------
+  ! Statistics of arrival
+  !-----------------------------------------------------------------------------
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
   !$omp atomic
@@ -1296,14 +1334,14 @@ END FUNCTION unpack_id
 !===============================================================================
 !> Unpack patch info from a buffer, for MPI communication
 !===============================================================================
-SUBROUTINE unpack (self, mesg)
+SUBROUTINE unpack (self, mesg, reversed)
   class(patch_t):: self
   class(mesg_t), pointer:: mesg
+  logical:: reversed
   !.............................................................................
   type(header_t):: header
   integer:: n_buf, ibuf, iv, it
   integer, dimension(:), pointer:: buffer
-  logical:: reversed
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Compute size of buffer
@@ -2044,7 +2082,8 @@ SUBROUTINE check_density (self, label)
     end do
     end do
     !$omp end critical (panic_cr)
-    call io%abort ('found non-positive density points -- check rank and thread logs')
+    print *, mpi%rank, 'WARNING: found non-positive density points -- check rank and thread logs'
+    !call io%abort ('found non-positive density points -- check rank and thread logs')
   end if
   call trace%end (itimer)
 END SUBROUTINE check_density

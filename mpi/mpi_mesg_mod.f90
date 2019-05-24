@@ -981,7 +981,7 @@ FUNCTION test_recv (self) RESULT (flag)
 END FUNCTION test_recv
 
 !===============================================================================
-!> Return true or false, depending on if the mesg is complete or not.
+!> Wait for completion of a message
 !===============================================================================
 SUBROUTINE wait_for_completion (self)
   class(mesg_t):: self

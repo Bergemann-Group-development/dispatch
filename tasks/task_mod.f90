@@ -71,6 +71,7 @@ MODULE task_mod
     logical:: track=.false.
     logical:: periodic(3)=.true.
     logical:: rotated=.false.
+    logical:: reversed=.false.          ! time reversal
     type(lock_t):: lock                 ! OMP lock
     type(random_t):: random             ! pseudo-random number generator
   contains
@@ -570,16 +571,16 @@ FUNCTION distance (self, task) RESULT (out)
   call trace%end()
 END FUNCTION distance
 
-
 SUBROUTINE pack (self, mesg)
   class(task_t):: self
   class(mesg_t), pointer:: mesg
   call mpi%abort ('task_t%pack called')
 END SUBROUTINE
 
-SUBROUTINE unpack (self, mesg)
+SUBROUTINE unpack (self, mesg, reversed)
   class(task_t):: self
   class(mesg_t), pointer:: mesg
+  logical:: reversed
   call mpi%abort ('task_t%unpack called')
 END SUBROUTINE
 

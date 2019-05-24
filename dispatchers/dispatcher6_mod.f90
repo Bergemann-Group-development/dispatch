@@ -525,7 +525,7 @@ SUBROUTINE unpack (self, mesg, link)
   class(link_t), pointer:: link
   class(link_t), pointer:: link2
   class(task_t), pointer:: task
-  logical:: failed
+  logical:: failed, reversed
   integer:: id
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -568,7 +568,7 @@ SUBROUTINE unpack (self, mesg, link)
   ! lock) while it is being updated here
   !---------------------------------------------------------------------------
   id = task%id
-  call task%unpack (mesg)
+  call task%unpack (mesg, reversed)
   if (mpi_mesg%debug) &
     write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6)') wallclock(), &
       'unpk: id, time =', task%id, task%time

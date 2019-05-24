@@ -46,7 +46,7 @@ MODULE task_mesg_mod
   contains
     procedure:: init
     procedure:: check_mpi
-    procedure:: unpack
+    procedure, private:: unpack
     procedure:: init_virtual
   end type
   integer, save:: verbose=0
@@ -82,6 +82,7 @@ SUBROUTINE check_mpi (self)
   integer, save:: itimer=0
   integer:: i, n, max_recv, nq
   real(8):: wc(0:10)=0.0
+  logical:: reversed, waitall
   !.............................................................................
   if (mpi%size <= 1) return
   unpk_tmp%name = 'unpk_tmp'
@@ -127,8 +128,7 @@ SUBROUTINE check_mpi (self)
     return
   end if
   call trace%begin ('task_mesg_t%check_mpi', 1, itimer=itimer)
-!  i=1; wc(i) = wallclock()-wc(0)
-!  if (wc(i) > mpi_mesg%check_ms*1e-3)  go to 9
+  waitall = .false.
   !-----------------------------------------------------------------------------
   ! Step 2: probe for new messages and check for completeness. Put messages on
   ! one of two thread-local lists, depending on if complete or not.  The probing
@@ -173,21 +173,28 @@ SUBROUTINE check_mpi (self)
   do while (associated(mesg))
     next => mesg%next
     call timer%end (itimer=itimer)
-    call unpack (self, mesg)
+    call self%unpack (mesg, reversed)
+    if (reversed) &
+      waitall = .true.
     call timer%begin (itimer=itimer)
     call unpk_tmp%remove (mesg)
     call unpk_tmp%delete (mesg, .false.)
     mesg => next
   end do
   !-----------------------------------------------------------------------------
-  ! Step 3: if there are more than max_recv messages in recv_list, then wait
+  ! Step 3: if there are more than max_recv messages in recv_list, or if  the
+  ! waitall logical flag has been set, indicating a time reversal, then wait
   ! for and unpack enough messages to reach the limit.  If task_list%nq is less
   ! then min_nq, reduce the max_recv to zero, forcing a wait on all receives.
   ! By splitting the operation into one part that moves the messages to a
   ! thead-local list, and a second part that does the wait and unpack, we
   ! minimize the blocking of other threads.
   !-----------------------------------------------------------------------------
-  max_recv = merge(mpi_mesg%max_recv,0,self%nq >= mpi_mesg%min_nq)
+  if (waitall .or. self%nq >= mpi_mesg%min_nq) then
+    max_recv = 0
+  else
+    max_recv = mpi_mesg%max_recv
+  end if
   call unpk_tmp%reset
   !$omp atomic read
   n = mpi_mesg%recv_list%n
@@ -202,12 +209,19 @@ SUBROUTINE check_mpi (self)
     end do
     !$omp end critical (recv_cr)
   end if
+  !-----------------------------------------------------------------------------
+  ! The indications of time reversal discoverde in Step 2 have now been cleared,
+  ! but other ones could possibly exist, so we reset the test
+  !-----------------------------------------------------------------------------
+  waitall = .false.
   mesg => unpk_tmp%head
   do while (associated(mesg))
     next => mesg%next
     call timer%end (itimer=itimer)
     call mesg%wait_for_completion ()
-    call unpack (self, mesg)
+    call self%unpack (mesg, reversed)
+    if (reversed) &
+      waitall = .true.
     call timer%begin (itimer=itimer)
     call unpk_tmp%remove (mesg)
     call unpk_tmp%delete (mesg, .false.)
@@ -223,7 +237,11 @@ SUBROUTINE check_mpi (self)
   mesg => mpi_mesg%recv_list%head
   do while (associated(mesg))
     next => mesg%next
-    if (mesg%is_complete()) then
+    if (waitall) then
+      call mesg%wait_for_completion()
+      call mpi_mesg%recv_list%remove (mesg)
+      call unpk_tmp%add (mesg)
+    else if (mesg%is_complete()) then
       call mpi_mesg%recv_list%remove (mesg)
       call unpk_tmp%add (mesg)
     end if
@@ -234,7 +252,7 @@ SUBROUTINE check_mpi (self)
   do while (associated(mesg))
     next => mesg%next
     call timer%end (itimer=itimer)
-    call unpack (self, mesg)
+    call self%unpack (mesg)
     call timer%begin (itimer=itimer)
     call unpk_tmp%remove (mesg)
     call unpk_tmp%delete (mesg, .false.)
@@ -312,10 +330,12 @@ END FUNCTION find_task
 !> Unpack a message, where the MPI tag is the task id.  Use that to search
 !> for the task, apply its unpack method, and check if any nbors become ready.
 !===============================================================================
-SUBROUTINE unpack (self, mesg, link)
+SUBROUTINE unpack (self, mesg, reversed, link)
   class(task_mesg_t):: self
   class(mesg_t), pointer:: mesg
   class(link_t), pointer, optional:: link
+  logical, optional:: reversed
+  logical:: reversed_l
   class(link_t), pointer:: link1, link2
   class(experiment_t), pointer:: task
   logical:: found, failed, new
@@ -405,14 +425,14 @@ SUBROUTINE unpack (self, mesg, link)
   ! lock) while it is being updated here
   !---------------------------------------------------------------------------
   id = task%id
-  !call task%lock%set ('unpack')
+  call task%lock%set ('unpack')
   block
   integer:: tid, mid
   logical:: error
   tid = task%id; mid = mesg%id
-  call self%lock%unset ('unpack')
-  call task%unpack (mesg)
-  call self%lock%set ('unpack')
+  call task%unpack (mesg, reversed=reversed_l)
+  if (present(reversed)) &
+    reversed = reversed_l
   if (error) &
     print *,'ERROR:', id, task%id, mesg%id, tid, mid
   end block
@@ -506,7 +526,7 @@ SUBROUTINE unpack (self, mesg, link)
       call self%count_status
     end if
   end if
-  !call task%lock%unset ('unpack')
+  call task%lock%unset ('unpack')
   !-----------------------------------------------------------------------------
   ! If a virtual task was just created it, it and its nbors need new nbor lists.
   ! Also, since the proper size and position were not known when a new task was
@@ -584,19 +604,24 @@ SUBROUTINE check_priv (self)
   class(mesg_t), pointer:: mesg, next
   integer, save:: itimer=0
   integer:: n
+  logical:: reversed, waitall
   !.............................................................................
   if (mpi%size <= 1) return
   call trace%begin ('task_mesg_t%check_priv', 1, itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Step 1: Add incoming messages to either recv_list or unpk_list
   !-----------------------------------------------------------------------------
+  waitall = .false.
   call mpi_mesg%get (mesg)
   n = 0
+  waitall = .false.
   do while (associated(mesg))
     if (mesg%is_complete()) then
       if (verbose > 1) &
         write (io_unit%log,*) 'unpacked directly', mesg%id, n
-      call unpack (self, mesg)
+      call self%unpack (mesg, reversed)
+      if (reversed) &
+        waitall = .true.
       call recv_list%delete (mesg, .false.)
     else
       call recv_list%add (mesg)
@@ -613,7 +638,9 @@ SUBROUTINE check_priv (self)
   do while (associated(mesg))
     next => mesg%next
     if (mesg%is_complete()) then
-      call unpack (self, mesg)
+      call self%unpack (mesg, reversed)
+      if (reversed) &
+        waitall = .true.
       call recv_list%remove (mesg)
       n = n-1
       if (verbose > 1) &
@@ -622,6 +649,21 @@ SUBROUTINE check_priv (self)
     end if
     mesg => next
   end do
+  !-----------------------------------------------------------------------------
+  ! If a time reversed unpack was found, force unpack of all outstanding mesgs
+  !-----------------------------------------------------------------------------
+  if (waitall) then
+    mesg => recv_list%head
+    do while (associated(mesg))
+      next => mesg%next
+      call mesg%wait_for_completion()
+      call self%unpack (mesg)
+      call recv_list%remove (mesg)
+      n = n-1
+      call recv_list%delete (mesg, .false.)
+      mesg => next
+    end do
+  end if
   call trace%end (itimer)
 END SUBROUTINE check_priv
 
@@ -695,6 +737,7 @@ SUBROUTINE check_virtual (self)
   class(task_t), pointer:: task
   integer:: nunpk
   real(8):: wc
+  logical:: reversed, waitall
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('task_mesg_t%check_virtual', itimer=itimer)
@@ -702,6 +745,7 @@ SUBROUTINE check_virtual (self)
   ! Each thread runs through its list of virtual tasks, unpacks completed
   ! messages, and issues a new request
   !-----------------------------------------------------------------------------
+  waitall = .false.
   nunpk = 0
   link => virtual_list%head
   do while (associated(link))
@@ -716,7 +760,9 @@ SUBROUTINE check_virtual (self)
     if (task%mesg%test_recv()) then
       if (verbose > 1) &
         write (io_unit%log,*) wallclock(),' task_mesg_t%unpack: check_virtual hit ', task%id
-      call unpack (self, task%mesg, link=link)
+      call self%unpack (task%mesg, reversed, link=link)
+      if (reversed) &
+        waitall = .true.
       !$omp atomic
       mpi_mesg%n_recv = mpi_mesg%n_recv+1
       !$omp atomic
@@ -735,6 +781,20 @@ SUBROUTINE check_virtual (self)
     end select
     link => link%next
   end do
+  !-----------------------------------------------------------------------------
+  ! If a time reversed unpack was found, force unpack of all outstanding mesgs
+  !-----------------------------------------------------------------------------
+  if (waitall) then
+    link => virtual_list%head
+    do while (associated(link))
+      task => link%task
+      if (task%mesg%test_recv()) then
+        call task%mesg%wait_for_completion()
+        call self%unpack (task%mesg)
+      end if
+      link => link%next
+    end do
+  end if
   if (verbose>1) write (io_unit%log,*) ' task_mesg_t%unpack: check_virtual', nunpk
   call trace%end (itimer)
 END SUBROUTINE check_virtual
@@ -743,6 +803,10 @@ END SUBROUTINE check_virtual
 !> Run through all virtual patches, and allocate message data types if not
 !> allocated.  If an old request exists, test if it has completed.  If yes,
 !> unpack and issue a new request.  If no request exists, issue a request.
+!>
+!> NOTE: This procedure is intrinsically unreliable, since it cannot handle
+!> several packages with the same task id, since only one mesg instance exists
+!> per task.  It could possibly be made reliable, by using the uniq_mesg option.
 !===============================================================================
 SUBROUTINE check_active (self)
   class(task_mesg_t):: self
@@ -753,11 +817,14 @@ SUBROUTINE check_active (self)
   integer, save:: itimer=0
   type(mesg_list_t):: unpk_tmp
   class(mesg_t), pointer:: mesg
+  logical:: reversed, waitall
   !.............................................................................
   call trace%begin ('task_mesg_t%check_active', itimer=itimer)
   !$omp critical (active_cr)
+  waitall = .false.
   nvirt = 0
   nunpk = 0
+  call self%lock%set ('check_active')
   link => self%head
   if (mpi_mesg%queue_unpack) call unpk_tmp%reset
   do while (associated(link))
@@ -785,7 +852,9 @@ SUBROUTINE check_active (self)
         if (mpi_mesg%queue_unpack) then
           call unpk_tmp%add (task%mesg)
         else
-          call unpack (self, task%mesg)
+          call self%unpack (task%mesg, reversed)
+          if (reversed) &
+            waitall = .true.
           if (mpi_mesg%debug) &
             write (io_unit%log,'(f12.6,2x,a,2i9,z12)') wallclock(), &
               'unpk: id, sender, req =', task%mesg%id, task%mesg%sender, task%mesg%req
@@ -805,7 +874,9 @@ SUBROUTINE check_active (self)
   if (mpi_mesg%queue_unpack) then
     mesg => unpk_tmp%head
     do while (associated(mesg))
-      call unpack (self, mesg)
+      call self%unpack (mesg, reversed)
+      if (reversed) &
+        waitall = .true.
       if (mpi_mesg%debug) &
         write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'unpk: id, time =', mesg%id, mesg%sender, mesg%req
       call unpk_tmp%remove (mesg)
@@ -819,6 +890,24 @@ SUBROUTINE check_active (self)
       mesg => mesg%next
     end do
   end if
+  !-----------------------------------------------------------------------------
+  ! If a time reversed unpack was found, force unpack of all outstanding mesgs
+  !-----------------------------------------------------------------------------
+  if (waitall) then
+    link => self%head
+    do while (associated(link))
+      task => link%task
+      if (task%is_set (bits%virtual)) then
+        mesg => task%mesg
+        if (mesg%test_recv()) then
+          call mesg%wait_for_completion()
+          call self%unpack (mesg)
+        end if
+      end if
+      link => link%next
+    end do
+  end if
+  call self%lock%unset ('check_active')
   call trace%end (itimer)
 END SUBROUTINE check_active
 
