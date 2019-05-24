@@ -2152,15 +2152,13 @@ SUBROUTINE send_to_vnbors (self, link)
   nbor => link%nbor                                             ! first nbor
   do while (associated(nbor))                                   ! until end
     nbtask => nbor%task
-    if (task%id == io%id_debug) &
-      write(io_unit%output,*) 'DBG link_t%send_to_vnbors: nbor, rank =', &
-          task%id, task%rank
     if (nbtask%rank/=mpi%rank .and. nbtask%rank/=rank) then     ! new rank?
       rank = nbtask%rank                                        ! current rank
       call mesg%send (rank,tag=tag)                             ! send it
-      if (self%verbose > 0) then
-        write (io_unit%mpi,'(f12.6,2x,a,i9,1p,e18.6,2x,a,i5,2x,5l1)') &
-          wallclock(), 'sent', mesg%id, task%time, 'to', rank, &
+      if (self%verbose > 0 .or. task%id == io%id_debug) then
+        write (io_unit%mpi,'(f12.6,2x,a,i9,1p,e18.6,i9,2x,a,i5,2x,5l1)') &
+          wallclock(), 'send_to_vnbors: sent', &
+          mesg%id, task%time, tag, 'to', rank, &
           task%is_set (bits%internal), &
           task%is_set (bits%boundary), &
           task%is_set (bits%virtual), &

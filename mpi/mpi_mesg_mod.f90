@@ -21,7 +21,7 @@ MODULE mpi_mesg_mod
     integer, dimension(:), pointer:: buffer
     integer, pointer:: reqs(:) => null()
     integer:: nbuf, nreq, req=0, sender, id, ntry=0
-    integer:: seq
+    integer:: seq=0
     integer:: tag=2**30
     real(8):: test_next=0d0
   contains
@@ -116,11 +116,16 @@ SUBROUTINE send (self, rank, tag)
   if (present(tag)) then
     ltag = tag
   else
-    ltag = self%id
+    if (mpi_mesg%uniq_mesg) then
+      ltag = mod(self%seq,100) + 100*self%id 
+      self%seq = self%seq+1
+    else
+      ltag = self%id 
+    end if
   end if
-  if (verbose>2 .or. self%id==io%id_debug) then
+  if (verbose>0 .or. self%id==io%id_debug) then
     write (io_unit%log,*) &
-    'mpi_mesg_t%send id, nbuf, to =', self%id, self%nbuf, rank
+    'mpi_mesg_t%send id, tag, nbuf, to =', self%id, tag, self%nbuf, rank
     flush (io_unit%log)
   end if
 #ifdef MPI
@@ -136,11 +141,6 @@ SUBROUTINE send (self, rank, tag)
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
     !$omp end critical (mpi_cr)
-  end if
-  if (verbose > 0) then
-    write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
-       wallclock(), 'mesg_t%send:', self%id, rank, req
-    flush (io_unit%log)
   end if
 #else
   !$omp critical (mpi_cr)
@@ -553,6 +553,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   rewind (io%input); read (io%input, mpi_mesg_params,iostat=iostat)
   if (io%master) write (io%output, mpi_mesg_params)
+  if (iostat) call io%namelist_warning ('mpi_mesg_params')
   if (verbose>0) write (io_unit%log,*) 'mpi_mesg_mod::init'
   self%debug = debug
   self%min_nq = min_nq
@@ -812,6 +813,7 @@ FUNCTION is_complete (self)
   class(mesg_t):: self
   logical:: is_complete
   !.............................................................................
+  integer:: tag
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   is_complete = .false.
@@ -829,6 +831,13 @@ FUNCTION is_complete (self)
     !$omp end critical (complete_cr)
   end if
 #endif
+  !if (is_complete) then
+    !if (mpi_mesg%uniq_mesg) then
+      !tag = mod(self%seq,100) + 100*self%id
+      !if (self%tag /= tag) &
+        !write (io_unit%stdout,*) 'mesg_t%is_complete: WARNING', tag, self%tag
+    !end if
+  !end if
   call trace%end (itimer)
   return
 contains
@@ -882,10 +891,20 @@ END FUNCTION is_complete
 !===============================================================================
 !> Issue a message recieve request from a specific rank
 !===============================================================================
-SUBROUTINE irecv (self, rank, tag)
+SUBROUTINE irecv (self, rank, id)
   class(mesg_t):: self
+  integer:: id
   integer:: rank, tag, ierr
-  !.............................................................................
+  !-----------------------------------------------------------------------------
+  ! Construct a unique tag, if so request, and otherwise use the optional tag
+  !-----------------------------------------------------------------------------
+  self%id = id
+  if (mpi_mesg%uniq_mesg) then
+    self%seq = self%seq+1
+    tag = mod(self%seq,100) + 100*self%id
+  else
+    tag = self%id
+  end if
   self%sender = rank
 #ifdef MPI
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
@@ -896,13 +915,10 @@ SUBROUTINE irecv (self, rank, tag)
     !$omp end critical (mpi_cr)
   end if
   !-----------------------------------------------------------------------------
-  if (verbose > 0) then
-    write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
-      wallclock(), 'mesg_t%irecv: ', self%id, rank, self%req
-    flush (io_unit%log)
-  end if
-  if (mpi_mesg%debug) then
-    write (io_unit%log,*) wallclock(), 'recv task', self%id
+  if (verbose > 1) then
+    write (io_unit%log,'(f12.6,2x,a,i6,i9,i5,z12)') &
+      wallclock(), 'mesg_t%irecv: id, tag, rank, req =', &
+      self%id, tag, rank, self%req
     flush (io_unit%log)
   end if
 #endif
