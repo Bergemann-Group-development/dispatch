@@ -996,23 +996,9 @@ SUBROUTINE remove_patch (self, tlist, this)
   end if
   !-----------------------------------------------------------------------------
   ! Remove the link from the task list, update the nbor lists of nbors, then
-  ! deallocate this link (and the associated task memory and task).  The task
-  ! list is modified, so it needs to be locked here.
+  ! deallocate this link (and the associated task memory and task).
   !-----------------------------------------------------------------------------
-  call tlist%lock%set ('remove_patch')      ! lock task list while changing
-  call tlist%remove_link (this)             ! remove this from task list
-  !$omp atomic update
-  timer%levelpop (this%task%level) = &      ! decrement level population count
-  timer%levelpop (this%task%level) - 1
-  call tlist%init_nbor_nbors (this)         ! new nbor lists, w/o this
-  call tlist%reset_status()                 ! set task status bits
-  !-----------------------------------------------------------------------------
-  ! Decrement the I/O write counter; may be moot, with task disappearing
-  !-----------------------------------------------------------------------------
-  count = counters%decrement (this%task%iout+1, io%ntask)
-  call tlist%check_nbor_nbors (this)        ! check / send to ready queue
-  call this%garbage_collect (this)          ! add to garbage bin
-  call tlist%lock%unset ('remove_patch')    ! release the task list
+  call tlist%remove_and_reset (this)        ! comprehensive removal
   !-----------------------------------------------------------------------------
   !$omp atomic write
   io%dtime = huge(1d0)
