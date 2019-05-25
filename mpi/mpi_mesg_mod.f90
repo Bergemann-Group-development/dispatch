@@ -553,7 +553,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   rewind (io%input); read (io%input, mpi_mesg_params,iostat=iostat)
   if (io%master) write (io%output, mpi_mesg_params)
-  if (iostat) call io%namelist_warning ('mpi_mesg_params')
+  if (iostat /= 0) call io%namelist_warning ('mpi_mesg_params')
   if (verbose>0) write (io_unit%log,*) 'mpi_mesg_mod::init'
   self%debug = debug
   self%min_nq = min_nq
