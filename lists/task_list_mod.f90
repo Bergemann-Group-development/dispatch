@@ -97,9 +97,6 @@ SUBROUTINE init_levels (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%init_levels')
   call refine%init                      ! Refinement parameters
-  if (refine%on .and. mpi_mesg%recv_active) then
-    call io%abort ('Must have recv_active==.false. when AMR is active')
-  end if
   link => self%head
   do while (associated(link))
     associate (patch => link%task)
