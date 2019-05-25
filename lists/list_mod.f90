@@ -53,6 +53,7 @@ MODULE list_mod
     procedure:: append_link
     procedure:: remove_task
     procedure:: remove_link
+    procedure:: remove_and_reset
     procedure:: remove_head
     procedure:: update_counts
     procedure:: count_status
@@ -203,6 +204,30 @@ SUBROUTINE append_link (self, link)
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(2)'
   call trace_end
 END SUBROUTINE append_link
+
+!===============================================================================
+!> Remove a link from the list, taking special care with the head and tail
+!===============================================================================
+SUBROUTINE remove_and_reset (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  integer:: count
+  !-----------------------------------------------------------------------------
+  call self%lock%set ('remove_and_reset')  ! lock task list while changing
+  call self%remove_link (link)             ! remove link from task list
+  !$omp atomic update
+  timer%levelpop (link%task%level) = &     ! decrement level population count
+  timer%levelpop (link%task%level) - 1
+  call self%init_nbor_nbors (link)         ! new nbor lists, w/o link
+  call self%reset_status()                 ! set task status bits
+  !-----------------------------------------------------------------------------
+  ! Decrement the I/O write counter; may be moot, with task disappearing
+  !-----------------------------------------------------------------------------
+  !count = counters%decrement (link%task%iout+1, io%ntask)
+  call self%check_nbor_nbors (link)        ! check / send to ready queue
+  call link%garbage_collect (link)          ! add to garbage bin
+  call self%lock%unset ('remove_patch')    ! release the task list
+END SUBROUTINE remove_and_reset
 
 !===============================================================================
 !> Remove a link from the list, taking special care with the head and tail
