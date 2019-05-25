@@ -73,9 +73,10 @@ MODULE io_mod
     procedure, nopass:: header
     procedure, nopass:: print_hl
   end type
+  integer:: stdout, stderr
   character(len=64), save:: inputname, outputname
   type(io_t), public:: io
-  public mch, io_unit, log_unit
+  public mch, io_unit, stdout, stderr
 CONTAINS
 
 !===============================================================================
@@ -257,6 +258,8 @@ SUBROUTINE init (self, name)
   if (do_direct) self%method = 'direct'
   io_unit%top    = top
   io_unit%do_validate = do_validate
+  stdout = io_unit%output
+  stderr = io_unit%stderr
   call timer%init
 contains
   !-----------------------------------------------------------------------------
