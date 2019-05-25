@@ -342,11 +342,13 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !.............................................................................
   class(link_t), pointer:: nbor, sorted_head
   class(patch_t), pointer:: target, source
-  integer:: edges, l(3), u(3), ix, iy, iz
+  integer:: edges, l(3), u(3), ix, iy, iz, n_total, n_src
   integer, save:: itimer=0
   real(8):: wc(0:4)
+  real:: d_min
   character(len=64):: info
   logical:: all_cells_l
+  logical, save:: nprint=5
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link', itimer=itimer)
   if (.not.associated(link)) then
@@ -403,6 +405,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   ! actually needed
   !-----------------------------------------------------------------------------
   wc = 0d0
+  n_total = 0
   do while (associated(nbor))
     if (.not.associated(nbor%task)) then
       write (io_unit%output,*) 'WARNING: nbor task not associated'
@@ -432,7 +435,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
          else if (use_different == -1) then
            call different_restrict (self, target, source, only=only)
          else if (source%level==target%level) then
-           call self%same (target, source, all_cells, only=only)
+           call self%same (target, source, all_cells, only=only, n_tot=n_src)
+           n_total = n_total + n_src
          else if ((source%level-target%level) == -1) then
            call different_prolong (self, target, source, all_cells, only=only)
            !call prolong (self, target, source, all_cells, only=only)
@@ -478,6 +482,45 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     wc(4) = wc(4) + 1d0
     nbor => nbor%next
   end do
+  d_min = minval(target%mem(:,:,:,target%idx%d,target%it,1))
+  if (d_min <= 0.0) then
+    print *, mpi%rank, 'WARNING: target, d_min =', target%id,target%idx%d, target%it, d_min
+    block
+    integer:: l(3), u(3), o(3), iter, verb
+    verb = verbose
+    verbose = 1
+    print *, 'ASSOC', associated (link%nbors_by_level), associated(target)
+    do iter=1,2
+    nbor => link%nbors_by_level
+    do while (associated(nbor))
+      !write(stdout,*) 'xx1'
+      source => task2patch(nbor%task)
+      !write(stdout,*) 'xx2', associated(source)
+      call source%lock%set ('download_link')
+      call dnload_range (target, source, 1, l, u, o)
+      !write(stdout,*) 'xx3'
+      if (iter==2) &
+        call self%same (target, source, all_cells, only=only)
+      call source%lock%unset ('download_link')
+      if (verbose > 0) &
+       write (stdout,'(a,i3,2i6,i8,1p,g11.3,3i4,2x,2l1)') 'DEBUG', iter, target%id, source%id, &
+        product(u-l+1), &
+        minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), &
+        minloc(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), &
+        target%unsigned(1), source%unsigned(1)
+      nbor => nbor%next
+      !write(stdout,*) 'xx4'
+    end do
+    end do
+    verbose = verb
+    end block
+  end if
+  if (n_total > 0 .and. &
+      n_total /= product(target%mesh%gn) - product(target%mesh%n)) then
+    write (io_unit%stdout,*) mpi%rank, omp%thread, &
+      'download_mod: ERROR, ntotal', &
+      n_total, product(target%mesh%gn) - product(target%mesh%n)
+  end if
   call link%lock%unset ('download_link')
   if (verbose > 1) then
     wc(3) = wc(3)-wc(2)
@@ -562,7 +605,7 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   debug = source%level /= target%level
   la = dist - source%size/2d0
   ua = dist + source%size/2d0
-  !if (debug) print '(i3,2(2x,3f9.3))', 1, la, ua
+  !if (debug) write (stdout,'(i3,2(2x,3f9.3))') 1, la, ua
   if (source%level /= target%level) then
     do i=1,3
       sm => source%mesh(i)
@@ -571,17 +614,17 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
       ua(i) = ua(i) + sm%h(iv)*sm%d - tm%h(iv)*tm%d
     end do
   end if
-  !if (debug) print '(i3,2(2x,3f9.3))', 2, la, ua
+  !if (debug) write (stdout,'(i3,2(2x,3f9.3))') 2, la, ua
   l = ceiling(la/target%mesh%d + target%mesh%o)
   u =   floor(ua/target%mesh%d + target%mesh%o)
-  !if (debug) print *, 3, l, u
+  !if (debug) write(stdout,*) 3, l, u
   !-----------------------------------------------------------------------------
   ! Make sure the range is legal.  The u index can become smaller than lb, which
   ! means there is no overlap.  Likewise, the l index can become larger than ub
   !-----------------------------------------------------------------------------
   l = max(l,target%mesh%lb)
   u = min(u,target%mesh%ub)
-  !if (debug) print *, 4, l, u
+  !if (debug) write(stdout,*) 4, l, u
   !-----------------------------------------------------------------------------
   ! Account for collapsed dimensions
   !-----------------------------------------------------------------------------
@@ -589,7 +632,7 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
     l = min(l,target%mesh%ub)
     u = max(u,target%mesh%lb)
   end where
-  !if (debug) print *, 5, l, u
+  !if (debug) write(stdout,*) 5, l, u
   !-----------------------------------------------------------------------------
   ! For same level patch, the integer offset is what should be added to the
   ! target index to get the source index.  For aligned meshes, offset=0.
@@ -641,24 +684,28 @@ END SUBROUTINE dnload_range
 !>   dnload_range
 !>   time_interval
 !===============================================================================
-SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
+SUBROUTINE same_linear (self, target, source, all_cells, only, all_times, n_tot)
   class(download_t):: self
   class(patch_t), pointer :: target, source
   logical, optional       :: all_cells, all_times
   integer, optional       :: only
+  integer, optional       :: n_tot
   !.............................................................................
-  integer                 :: l(3), u(3), o(3), ii(3), jt(2), i
+  integer                 :: l(3), u(3), o(3), ii(3), jt(2), i, n_total
   real(8)                 :: position(3), xx, dist(3)
   real                    :: pt(2), fmin
   integer                 :: ix, iy, iz, iv, iv1, iv2, li(3), ui(3)
-  integer, save           :: itimer=0
+  integer, save           :: itimer=0, nprint=2
   logical                 :: all_cells_l, no
+  real                    :: d_min, d_min1
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%same_linear', itimer=itimer)
-  if (target%id == id_debug) &
+  if (verbose > 1 .or. target%id == id_debug) then
     write(io_unit%log,'(a,1p,e14.5,i7,e14.5)') &
       'dbg download_t%same_linear: time, source =', &
       target%time, source%id, source%time
+    flush(io_unit%log)
+  end if
   call source%time_interval (target%time, jt, pt, all=all_times)
   if (present(only)) then
     iv1 = only
@@ -675,6 +722,7 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
   if (verbose > 1) then
     write(io_unit%log,'(a,2i7,2i4)') &
       ' same_linear: target, source, iv1, iv2 =', target%id, source%id, iv1, iv2
+    flush(io_unit%log)
   end if
   if (iv2 > source%nv) then
     write(io_unit%log,*) 'iv loop limit:', iv1, iv2
@@ -682,6 +730,8 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
     write(io_unit%log,*) 'target: id, nv =', target%id, target%nv
     call io%abort()
   end if
+  n_total = 0
+  d_min = huge(1.0)
   do iv=iv1, iv2
     if (verbose > 1 .and. source%unsigned(iv)) then
       fmin = min(minval(source%mem(:,:,:,iv,jt(1),1)),minval(source%mem(:,:,:,iv,jt(2),1)))
@@ -705,6 +755,10 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
+    if (any(l+o > ui .or. l+o < li .or. &
+            u+o > ui .or. u+o < li)) then
+      print *,'error, source index outside range',iv,l,u,o
+    end if
     if (target%id==id_debug) write(io_unit%log,'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') target%id,source%id,l,u,o
     l = max(l,source%mesh%lb-o)
     u = min(u,source%mesh%ub-o)
@@ -802,7 +856,7 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
       !-------------------------------------------------------------------------
       ! Unsigned values; interpolated in the log
       !-------------------------------------------------------------------------
-      else if (source%unsigned(iv)) then
+      else if (target%unsigned(iv)) then
         !-----------------------------------------------------------------------
         ! Fill all cells, even interior ones, when all_cells==.true., but only
         ! for cells that are not already filled.  The filling is expensive in
@@ -843,11 +897,20 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
             do iy=l(2),u(2)
               do ix=l(1),u(1)
                 ii = [ix,iy,iz]
-                target%mem(ix,iy,iz,iv,target%it,1) = &
-                  merge(target%mem(ix,iy,iz,iv,target%it,1), &
+                if (all((ii>=li).and.(ii<=ui))) then
+                  print *,'WARNING: target left alone', ix, iy, iz
+                else
+                  target%mem(ix,iy,iz,iv,target%it,1) = &
                     exp(pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
-                        pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1))), &
-                    all((ii>=li).and.(ii<=ui)))
+                        pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
+                end if
+                if (iv==1 .and. target%mem(ix,iy,iz,iv,target%it,1) <= 0.0) then
+                  write (stdout,'(a,3(3i4,1p,g12.3))') &
+                    'error',  &
+                     ix,iy,iz,target%mem(ix,iy,iz,iv,target%it,1), &
+                     ix+o(1),iy+o(2),iz+o(3), source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1), &
+                     jt(1),jt(2),0,           source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
+                end if
               end do
               if (self%check_filled) then
                 do ix=l(1),u(1)
@@ -940,16 +1003,26 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
           end do
         end if
       end if
-      if (verbose > 0 .or. target%id==id_debug) then
-        if (iv == 1 .or. verbose > 2) &
-          write (io_unit%log,2) target%id, target%level, source%id, source%level, &
-          'same_line picked up', &
-          product(u-l+1), ' values, l, u, mind, pt =', l, u, &
-          minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), pt
-        2 format(2(i6,i3),2x,a,i6,a,2(2x,3i4),1p,e14.4,2x,0p2f6.3)
-      end if
+    end if
+    if (iv == 1) then
+      n_total = n_total + product(u-l+1)
+    end if
+    if (verbose > 0 .or. target%id==id_debug) then
+      d_min1 = minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1))
+      d_min = min (d_min, d_min1)
+      if (iv == 1 .or. verbose > 2) &
+        write (io_unit%log,2) target%id, target%level, source%id, source%level, &
+        'same_line picked up', &
+        product(u-l+1), ' values, l, u, mind, pt =', l, u, d_min1, pt
+      2 format(2(i6,i3),2x,a,i6,a,2(2x,3i4),1p,e14.4,2x,0p2f6.3)
     end if
   end do
+  if (present(n_tot)) &
+    n_tot = n_total
+  if (d_min <= 0.0) then
+    write (stdout,'(2i6,2x,a,2(2x,3i4),1p,g10.3)') mpi%rank, omp%thread, &
+      'download_t%same_linear ERROR: density error ', l, u, d_min
+  end if
   call trace%end (itimer)
 END SUBROUTINE same_linear
 
@@ -960,16 +1033,17 @@ END SUBROUTINE same_linear
 !>   dnload_range
 !>   time_interval
 !===============================================================================
-SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
+SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times, n_tot)
   class(download_t):: self
   class(patch_t), pointer :: target, source
   logical, optional       :: all_cells, all_times
   integer, optional       :: only
+  integer, optional       :: n_tot
   !.............................................................................
   integer                 :: l(3), u(3), o(3), ii(3), jt, i
   real(8)                 :: position(3), xx, dist(3)
-  integer                 :: ix, iy, iz, iv, iv1, iv2, li(3), ui(3)
-  integer, save           :: itimer=0, nprint=20
+  integer                 :: ix, iy, iz, iv, iv1, iv2, li(3), ui(3), nprint=2
+  integer, save           :: itimer=0
   logical                 :: all_cells_l, filter
   integer, parameter      :: order=2
   real(8)                 :: w(order+1)
@@ -1627,8 +1701,8 @@ SUBROUTINE prolong (self, target, source, all_cells, only)
       end do
     end do
   end do
-  !print '(a,2(2x,3i4))', 'prolong: iimin, iimax =', iimin, iimax
-  !print '(a,2(2x,3i4))', 'prolong: jjmin, jjmax =', jjmin, jjmax
+  !write (stdout,'(a,2(2x,3i4))') 'prolong: iimin, iimax =', iimin, iimax
+  !write (stdout,'(a,2(2x,3i4))') 'prolong: jjmin, jjmax =', jjmin, jjmax
   deallocate (sbuf, pbuf, tbuf, sdbuf, tdbuf)
   call trace%end (itimer)
 contains
