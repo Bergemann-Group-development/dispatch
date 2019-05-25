@@ -290,16 +290,6 @@ contains
         end if
       end do
     end if
-    write (unit,'(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))') &
-      "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', wc, 'wall sec'
-    if (mpi%size>1) then
-      timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
-      write (unit,'(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
-        " nq_recv_max",2f8.3," max, aver latency",f7.2, " f_unpk")') &
-        timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
-        timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, &
-        timer%n_unpk/real(max(1,timer%n_test))
-    end if
     !---------------------------------------------------------------------------
     ! Output AMR level costs
     !---------------------------------------------------------------------------
@@ -316,6 +306,19 @@ contains
         !$omp atomic write
         timer%levelcost(level) = 0d0
       end do
+    end if
+    !---------------------------------------------------------------------------
+    ! MPI and OMP statistics
+    !---------------------------------------------------------------------------
+    write (unit,'(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))') &
+      "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', wc, 'wall sec'
+    if (mpi%size>1) then
+      timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
+      write (unit,'(1x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
+        " nq_recv_max",2f8.3," max, aver latency",f7.2, " f_unpk")') &
+        timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
+        timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, &
+        timer%n_unpk/real(max(1,timer%n_test))
     end if
     call omp_lock%info (unit)
     flush (unit)
