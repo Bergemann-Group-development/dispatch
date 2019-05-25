@@ -55,9 +55,6 @@ CONTAINS
 SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
-  call self%mhd_t%pre_init
-  call self%extras_t%pre_init
-  !
   call self%mhd_t%init
   call self%extras_t%init
   call validate%init
@@ -88,11 +85,7 @@ SUBROUTINE update (self)
   !.............................................................................
   call self%extras_t%pre_update
   call validate%check (self, d, 'before update')
-  if (self%do_mhd) then
-    call self%mhd_t%update
-  else
-    call self%output
-  end if
+  call self%mhd_t%update
   call validate%check (self, d, ' after update')
   call self%extras_t%post_update
   end associate
