@@ -1659,7 +1659,7 @@ SUBROUTINE remove_ramses_patches (self)
   do while (associated(link))
     next => link%next
     patch => task2patch (link%task)
-    call patch%delete
+    call patch%deallocate
     deallocate (link%task)
     deallocate (link)
     link => next
