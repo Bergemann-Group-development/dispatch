@@ -32,7 +32,7 @@ MODULE timer_mod
     real(8):: bytes_recv=0.0_8
     real(8):: sec_per_report=10d0
     integer(8):: n_update=0
-    integer(8):: n_recv=0_8, n_test=0_8
+    integer(8):: n_recv=0_8, n_test=0_8, n_unpk=0_8
     integer:: nq_send_max=0
     integer:: nq_recv_max=0
     integer:: n_lines=0
@@ -295,9 +295,10 @@ contains
     if (mpi%size>1) then
       timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
       write (unit,'(8x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
-        " nq_recv_max",2f8.3," max, aver latency",i8, " n_test")') &
+        " nq_recv_max",2f8.3," max, aver latency",f7.2, " f_unpk")') &
         timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
-        timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, timer%n_test
+        timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, &
+        timer%n_unpk/real(max(1,timer%n_test))
     end if
     !---------------------------------------------------------------------------
     ! Output AMR level costs

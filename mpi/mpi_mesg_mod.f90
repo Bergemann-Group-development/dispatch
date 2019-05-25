@@ -938,8 +938,8 @@ FUNCTION test_recv (self) RESULT (flag)
   real, parameter:: max_test=0.1
   integer, save:: itimer=0
   !.............................................................................
-  now = wallclock()
   flag = .false.
+  now = wallclock()
   if (now < self%test_next) return
   call trace%begin('mesg_t%test_recv', 2, itimer=itimer)
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
@@ -971,6 +971,8 @@ FUNCTION test_recv (self) RESULT (flag)
   end if
   if (flag) then
     self%id = stat(MPI_TAG)
+    !$omp atomic
+    timer%n_unpk = timer%n_unpk+ 1
     if (mpi_mesg%uniq_mesg) then
       self%seq = mod(self%id,100)
       self%id = self%id/100
