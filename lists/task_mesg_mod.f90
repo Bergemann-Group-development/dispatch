@@ -50,7 +50,7 @@ MODULE task_mesg_mod
     procedure:: init_virtual
   end type
   integer, save:: verbose=0
-  type(task_mesg_t), save:: virtual_list
+  type(task_mesg_t), save:: virtual_list, remove_list
   !$omp threadprivate (virtual_list)
   public:: task2patch
   type(task_mesg_t), public:: task_mesg
@@ -279,15 +279,15 @@ FUNCTION find_task (self, id, new) RESULT (link)
   logical:: new
   logical:: error
   class(link_t), pointer:: link
+  class(task_t), pointer:: task
   class(patch_t), pointer:: patch
-  class(experiment_t), pointer:: task
+  class(experiment_t), pointer:: exper
   !.............................................................................
   call trace%begin ('task_mesg_t%find_task')
 !  call self%lock%set ('find_task')
   new = .false.
   link => self%head
   do while (associated(link))
-!write (io_unit%log,*) mpi%rank,' find task: id, link%id, virtual =', id, link%task%id, link%task%is_set(bits%virtual)
     patch => task2patch(link%task)
     if (patch%id == id) then
       if (verbose>1) then
@@ -305,16 +305,28 @@ FUNCTION find_task (self, id, new) RESULT (link)
   !-----------------------------------------------------------------------------
   new = .true.
   allocate (link)
-  allocate (task)
-  link%task => task
-  task%link => link
-  task%id = id
-  task%box = self%size
+  allocate (exper)
+  link%task => exper
+  exper%link => link
+  exper%id = id
+  exper%box = self%size
   !-----------------------------------------------------------------------------
   ! The virtual task needs to have all of the capabilities and procedures of the
   ! original boundary task, since it may need to play a role in extras features.
   !-----------------------------------------------------------------------------
-  call task%init
+  call exper%init
+  if (mpi_mesg%recv_priv .or. mpi_mesg%recv_active) then
+    call exper%allocate_mesg
+    if (mpi_mesg%recv_priv) then
+      !-------------------------------------------------------------------------
+      ! If communication is handled by a thread-private virtual task list, then
+      ! append the new task to the (random) thread that happened to find it.
+      !-------------------------------------------------------------------------
+      task => exper
+      call virtual_list%append (task, nbor=exper%link%nbor, &
+        needed=exper%link%needed, needs_me=exper%link%needs_me)
+    end if
+  end if
   !-----------------------------------------------------------------------------
   ! Append to the task_list.  Since we don't yet know the position of the task,
   ! we can't update the nbor list yet; the calling procedure must do that, and
@@ -457,7 +469,19 @@ SUBROUTINE unpack (self, mesg, reversed, link)
         wallclock(), 'unpack: suicide note received for id =', task%id
       flush (io_unit%mpi)
     end if
-    call refine%remove_patch (self, link1)
+    !---------------------------------------------------------------------------
+    ! If the task is on a thread-private virtual task list things are more
+    ! complicated; we need to keep trying until this procedure is executed
+    ! by the correct thread
+    !---------------------------------------------------------------------------
+    if (mpi_mesg%recv_priv) then
+      call remove_list%append_link (link1)
+    !---------------------------------------------------------------------------
+    ! If not we need a normal remove, including new nbor lists etc.
+    !---------------------------------------------------------------------------
+    else
+      call self%remove_and_reset (link1)
+    end if
     call self%lock%unset('unpack')
     call trace%end (itimer)
     return
