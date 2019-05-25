@@ -403,7 +403,8 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
 END FUNCTION gas_velocity_scalar
 
 !===============================================================================
-!> Compute the compression
+!> Compute the compression, centered in cells, given that momenta are dn-staggered
+!> in stagger2, except for stagger2e_pic, where it up-staggered
 !===============================================================================
 SUBROUTINE compression_magnitude (self, w)
   class (solver_t):: self
@@ -419,7 +420,7 @@ SUBROUTINE compression_magnitude (self, w)
   allocate (vz(self%gn(1),self%gn(2),self%gn(3)))
   allocate ( d(self%gn(1),self%gn(2),self%gn(3),3))
   if (self%kind(1:13) == 'stagger2e_pic') then
-    d=up(log(d))
+    d = up(log(self%mem(:,:,:,self%idx%d,self%it,1)))
   else
     d = down(log(self%mem(:,:,:,self%idx%d,self%it,1)))
   end if
@@ -427,20 +428,21 @@ SUBROUTINE compression_magnitude (self, w)
   vy = self%mem(:,:,:,self%idx%py,self%it,1)/exp(d(:,:,:,2))
   vz = self%mem(:,:,:,self%idx%pz,self%it,1)/exp(d(:,:,:,3))
   if (self%kind(1:13) == 'stagger2e_pic') then
+    w = max(- ddxdn(self%ds(1),vx) &
+            - ddydn(self%ds(2),vy) &
+            - ddzdn(self%ds(3),vz), 0.0)
+  else
     w = max(- ddxup(self%ds(1),vx) &
             - ddyup(self%ds(2),vy) &
             - ddzup(self%ds(3),vz), 0.0)
-  else
-    w = max(- ddx(self%ds(1),vx) &
-            - ddy(self%ds(2),vy) &
-            - ddz(self%ds(3),vz), 0.0)
   end if
   deallocate (vx, vy, vz, d)
   call trace%end (itimer)
 END SUBROUTINE compression_magnitude
 
 !===============================================================================
-!> Compute the vorticity
+!> Compute the vorticity, centered in cells, given that momenta are dn-staggered
+!> in stagger2, except for stagger2e_pic, where it up-staggered
 !===============================================================================
 SUBROUTINE vorticity_magnitude (self, w)
   class (solver_t):: self
@@ -456,7 +458,7 @@ SUBROUTINE vorticity_magnitude (self, w)
   allocate (vz(self%gn(1),self%gn(2),self%gn(3)))
   allocate ( d(self%gn(1),self%gn(2),self%gn(3),3))
   if (self%kind(1:13) == 'stagger2e_pic') then
-    d=up(log(d))
+    d = up(log(self%mem(:,:,:,self%idx%d,self%it,1)))
   else
     d = down(log(self%mem(:,:,:,self%idx%d,self%it,1)))
   end if
@@ -464,13 +466,13 @@ SUBROUTINE vorticity_magnitude (self, w)
   vy = self%mem(:,:,:,self%idx%py,self%it,1)/exp(d(:,:,:,2))
   vz = self%mem(:,:,:,self%idx%pz,self%it,1)/exp(d(:,:,:,3))
   if (self%kind(1:13) == 'stagger2e_pic') then
-    w = sqrt((ddyup(self%ds(2),vz)-ddzup(self%ds(3),vy))**2 &
-           + (ddzup(self%ds(3),vx)-ddxup(self%ds(1),vz))**2 &
-           + (ddxup(self%ds(1),vy)-ddyup(self%ds(2),vx))**2)
+    w = sqrt(ydn(zdn(ddyup(self%ds(2),vz)-ddzup(self%ds(3),vy)))**2 &
+           + zdn(xdn(ddzup(self%ds(3),vx)-ddxup(self%ds(1),vz)))**2 &
+           + xdn(ydn(ddxup(self%ds(1),vy)-ddyup(self%ds(2),vx)))**2)
   else
-    w = sqrt((ddy(self%ds(2),vz)-ddz(self%ds(3),vy))**2 &
-           + (ddz(self%ds(3),vx)-ddx(self%ds(1),vz))**2 &
-           + (ddx(self%ds(1),vy)-ddy(self%ds(2),vx))**2)
+    w = sqrt(yup(zup(ddydn(self%ds(2),vz)-ddzdn(self%ds(3),vy)))**2 &
+           + zup(xup(ddzdn(self%ds(3),vx)-ddxdn(self%ds(1),vz)))**2 &
+           + xup(yup(ddxdn(self%ds(1),vy)-ddydn(self%ds(2),vx)))**2)
   end if
   deallocate (vx, vy, vz)
   call trace%end (itimer)
