@@ -809,119 +809,6 @@ SUBROUTINE check_active (self)
   class(task_mesg_t):: self
   class(link_t), pointer:: link
   class(task_t), pointer:: task
-  type item_t
-    class(task_t), pointer:: task
-    type(item_t), pointer:: next => null()
-  end type
-  type(item_t), pointer:: head, tail, item, next
-  integer:: req
-  integer, save:: itimer=0
-  !.............................................................................
-  call trace%begin ('task_mesg_t%check_active', itimer=itimer)
-  !------------------------------------------------------------------------------
-  ! Cache the virtual tasks, so the lock can be released
-  !------------------------------------------------------------------------------
-  call self%lock%set ('check_active')
-  nullify (head)
-  link => self%head
-  do while (associated(link))
-    if (link%task%is_set (bits%virtual)) then
-      allocate (item)
-      item%task => link%task
-      if (.not.associated(head)) then
-        head => item
-        tail => item
-      else
-        tail%next => item
-        tail => item
-      end if
-    end if
-    link => link%next
-  end do
-  !------------------------------------------------------------------------------
-  ! Run through the cached list
-  !------------------------------------------------------------------------------
-  item => head
-  do while (associated(item))
-    task => item%task
-    select type (task)
-    class is (patch_t)
-    !-------------------------------------------------------------------------
-    ! Check if this virtual task has a task message allocated.  If not, it is
-    ! a new virtual task -- for example created by AMR -- and should have a
-    ! message allocated, with a active receive request
-    !-------------------------------------------------------------------------
-    if (.not.associated(task%mesg)) then
-      call task%allocate_mesg
-      call irecv (task)
-      task%wc_last = wallclock()
-    end if
-    !-------------------------------------------------------------------------
-    ! If a mesg was recvd, then unpack and issue a new request,
-    !-------------------------------------------------------------------------
-    req = task%mesg%req
-    if (task%mesg%test_recv()) then
-      if (verbose > 0 .or. task%id == io%id_debug) &
-        write (io_unit%log,'(f12.6,2x,a,i6,i5,i9,i6,z12)') wallclock(), &
-          'task_mesg%tcheck_active:  recv id, seq, mesg%id, sender, req =', &
-          task%id, mod(task%istep,100), task%mesg%id, task%mesg%sender, req
-      !$omp atomic
-      mpi_mesg%n_recv = mpi_mesg%n_recv+1
-      !$omp atomic
-      timer%bytes_recv = timer%bytes_recv + 4.0_8*task%mesg%nbuf
-      !$omp atomic
-      timer%n_recv = timer%n_recv + 1_8
-      call self%unpack (task%mesg)
-      call irecv (task)
-    else
-      if (verbose > 1 .or. task%id == io%id_debug) &
-        write (io_unit%log,'(f12.6,2x,a,i6,i5,i9,i6,z12)') wallclock(), &
-          'task_mesg%tcheck_active:  fail id, seq, mesg%id, sender, req =', &
-          task%id, mod(task%istep,100), task%mesg%id, task%rank, task%mesg%req
-    end if
-    end select
-    item => item%next
-  end do
-  call self%lock%unset ('check_active')
-  !------------------------------------------------------------------------------
-  ! Deallocate cache
-  !------------------------------------------------------------------------------
-  item => head
-  do while (associated(item))
-    next => item%next
-    deallocate (item)
-    item => next
-  end do
-  call trace%end (itimer)
-contains
-  !-----------------------------------------------------------------------------
-  ! If mpi_mesg%uniq_mesg is set, the message tag is constructed intenally,
-  ! and if not, it is equal to the task%id
-  !-----------------------------------------------------------------------------
-  subroutine irecv (task)
-  class(patch_t):: task
-  call task%mesg%irecv (task%rank, task%id)
-  if (verbose > 0 .or. task%id == io%id_debug) &
-    write (io_unit%log,'(f12.6,2x,a,i6,i5,i9,i6,z12)') wallclock(), &
-      'task_mesg%tcheck_active: irecv id, seq, mesg%id, sender, req =', &
-      task%id, mod(task%istep,100), task%mesg%id, task%rank, task%mesg%req
-  end subroutine
-END SUBROUTINE check_active
-
-!===============================================================================
-!> Run through all virtual patches, and allocate message data types if not
-!> allocated.  If an old request exists, test if it has completed.  If yes,
-!> unpack and issue a new request.  If no request exists, issue a request.
-!>
-!> This procedure, which is only executed by the master thread, and is only
-!> used when more than one thread is available, asks for exactly the next
-!> message tag, and does not issue a new irecv until that message has arrived,
-!> hence it needs only one (permanent) mesg instance per task.
-!===============================================================================
-SUBROUTINE check_active2 (self)
-  class(task_mesg_t):: self
-  class(link_t), pointer:: link
-  class(task_t), pointer:: task
   integer:: req
   integer, save:: itimer=0
   !.............................................................................
@@ -985,6 +872,6 @@ contains
       'task_mesg%tcheck_active: irecv id, seq, mesg%id, sender, req =', &
       task%id, mod(task%istep,100), task%mesg%id, task%rank, task%mesg%req
   end subroutine
-END SUBROUTINE check_active2
+END SUBROUTINE check_active
 
 END MODULE task_mesg_mod
