@@ -232,6 +232,7 @@ SUBROUTINE dealloc (self)
   if (associated(self%t  )) deallocate (self%t  )
   if (associated(self%dt )) deallocate (self%dt )
   if (associated(self%iit)) deallocate (self%iit)
+  if (associated(self%mesg)) deallocate (self%mesg)
   call trace_end
 END SUBROUTINE dealloc
 
