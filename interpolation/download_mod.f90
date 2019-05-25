@@ -415,7 +415,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     !flush (io_unit%output)
     source => task2patch(nbor%task)
     wc(0) = wallclock()
-    !call source%lock%set ('download_link')
+    call source%lock%set ('download_link')
     wc(1) = wc(1) + wallclock() - wc(0)
     if (verbose > 1) &
       write(io_unit%log,*) target%id, 'download_t%download_link: source, download =', &
@@ -472,7 +472,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
        end if
      end if
     end if
-    !call source%lock%unset ('download_link')
+    call source%lock%unset ('download_link')
     wc(2) = wc(2) + wallclock() - wc(0)
     wc(3) = wc(3) + wallclock() - wc(0)
     wc(4) = wc(4) + 1d0
