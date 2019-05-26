@@ -134,6 +134,12 @@ SUBROUTINE output (self, patch, experiment_name)
   ! it is given a default value here, which may be modified elsewhere in 
   ! data_io_mod, if more than one write per task is being performed.
   !-----------------------------------------------------------------------------
+  if (io%ntask<=0) then
+    call mpi%abort ('io%ntask, which should be the number of active tasks, is zero')
+  end if
+  if (io%ntotal<=0) then
+    call mpi%abort ('io%ntotal, which should be the total number of tasks, is zero')
+  end if
   io%nwrite = io%ntask                        ! Authoritative -- set ONLY here!
   write (io_unit%log,*) 'io%nwrite =', io%nwrite
   !-----------------------------------------------------------------------------
