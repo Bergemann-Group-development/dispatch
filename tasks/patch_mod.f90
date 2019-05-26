@@ -255,63 +255,11 @@ END SUBROUTINE patch_to_header
 
 !===============================================================================
 !> Copy he most important fields to a sequenced header, for communication and I/O
-!>
-!> Guard against messages being unpacked in reverse order.  This can happen 
-!> when using threadprivate receive lists, where the packages happen to be 
-!> received by different threads, and where the unpack of the first message is 
-!> delayed by enough time to happen after that of the second package. It may
-!> be very rare when the number of threads matches the number of cores, but
-!> can more easily happen when testing for example 5 threads on 2 MPI ranks on
-!> 2-core laptop.
-!>
-!> FIXME: This may not be safe, in that the package being skipped could contain
-!> vital information, such as swapping ownership.  This is handled by forcing
-!> a mesg%wait_for_completion() on all outstanding packages, and avoiding to
-!> update time information for late arrivals.
-!>
-!> A special case is the arrival of new AMR packages.  If the 2nd package 
-!> arrives after the fist one, the new task is created as a result of the
-!> the 2nd package, and the 1st package, which arrives late, is going to fill
-!> in the 1st memory slot of the already existing task.  This should not be
-!> a problem, if no processing of task data takes place before completion of
-!> package arrival.
-!>
-!> The task should thus be locked, and remain locked, during the recovery.
-!> The current thread sets and unsets a lock in the task_mesg_t procedures,
-!> rather than here, to avoid possible deadlocks.
 !===============================================================================
-SUBROUTINE header_to_patch (self, head, reversed)
+SUBROUTINE header_to_patch (self, head)
   class(patch_t):: self
   type(header_t):: head
-  logical:: reversed, late
   integer:: nt
-  !-----------------------------------------------------------------------------
-  ! An increase by more than one of self%istep shows arrival of the first of
-  ! two (or more) time reversed packages
-  !-----------------------------------------------------------------------------
-  reversed = head%istep > self%istep+1
-  if (reversed) then
-    print *, 'WARNING: early message unpack', self%id, mpi%rank, omp%thread
-    self%reversed = .true.
-    call self%lock%set ('reversed')
-  end if
-  !-----------------------------------------------------------------------------
-  ! An attempted decrease of the task time shows arrival of a time reversed
-  ! package, which should be accepted, both to fill in the hole in the time
-  ! sequence, and because it could possibly contain bits that require special
-  ! handling
-  !-----------------------------------------------------------------------------
-  late = self%time > head%time
-  if (late) then
-    print *, 'WARNING: late message unpack', self%id, mpi%rank, omp%thread
-    if (self%reversed) then
-      self%reversed = .false.
-      call self%lock%unset ('reversed')
-    else
-      print *, mpi%rank, 'WARNING: late arrival not preceded by early arrival!', &
-      self%id
-    end if
-  end if
   !-----------------------------------------------------------------------------
   ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
   ! ready bit, which is an indicator of a patch being in the ready queue, which
@@ -330,35 +278,40 @@ SUBROUTINE header_to_patch (self, head, reversed)
       write (io_unit%mpi, *) head%id, 'swapping to boundary'
   end if
   head%status = iand(head%status, not(bits%ready+bits%busy))
+  if (head%id > self%id+1) then
+    write(stderr,*) 'WARNING: early arrival in time reversal id, rank =', &
+      self%id, mpi%rank
+    flush (stderr)
+  end if
   self%id         = head%id
   self%status     = head%status
   self%rank       = head%rank
+  self%istep      = head%istep
+  self%iout       = head%iout
   self%level      = head%level
-  self%size       = head%size
-  self%nt         = head%nt
-  self%position   = head%position
-  nt              = head%nt
-  if (.not. late) then
-    self%time       = head%time
-    self%istep      = head%istep
-    self%iout       = head%iout
-    self%out_next   = head%out_next
-    self%print_next = head%print_next
-    self%dtime      = head%dtime
-    self%it         = head%it
-    self%velocity   = head%velocity
-    if (nt > 0) then
-      self%t          = head%t(1:nt)
-      self%dt         = head%dt(1:nt)
-      self%iit        = head%iit(1:nt)
-    else
-      write (io_unit%log,*) omp%thread,'header_to_patch WARNING: nt non-positive', nt
-      flush (io_unit%log)
-    end if
+  self%time       = head%time
+  if (head%time < self%time) then
+    write(stderr,*) 'WARNING: late arrival in time reversal id, rank =', &
+      self%id, mpi%rank
+    flush (stderr)
   end if
-  !-----------------------------------------------------------------------------
-  ! Statistics of arrival
-  !-----------------------------------------------------------------------------
+  self%out_next   = head%out_next
+  self%print_next = head%print_next
+  self%dtime      = head%dtime
+  self%position   = head%position
+  self%velocity   = head%velocity
+  self%size       = head%size
+  self%it         = head%it
+  self%nt         = head%nt
+  nt              = head%nt
+  if (nt > 0) then
+    self%t          = head%t(1:nt)
+    self%dt         = head%dt(1:nt)
+    self%iit        = head%iit(1:nt)
+  else
+    write (io_unit%log,*) omp%thread,'header_to_patch WARNING: nt non-positive', nt
+    flush (io_unit%log)
+  end if
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
   !$omp atomic
@@ -1334,10 +1287,9 @@ END FUNCTION unpack_id
 !===============================================================================
 !> Unpack patch info from a buffer, for MPI communication
 !===============================================================================
-SUBROUTINE unpack (self, mesg, reversed)
+SUBROUTINE unpack (self, mesg)
   class(patch_t):: self
   class(mesg_t), pointer:: mesg
-  logical:: reversed
   !.............................................................................
   type(header_t):: header
   integer:: n_buf, ibuf, iv, it
@@ -1359,7 +1311,7 @@ SUBROUTINE unpack (self, mesg, reversed)
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
   call self%lock%set
-  call self%header_to_patch (header, reversed)
+  call self%header_to_patch (header)
   if (io%verbose > 1) &
     write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
       wallclock(), 'header_to_patch: id, nq, BVS, nsnd, nrcv, latency, time =', &
@@ -1382,22 +1334,20 @@ SUBROUTINE unpack (self, mesg, reversed)
   ! Copy the variables from the output buffer.  If this is swap of patch roles
   ! expect at least one more time slot.
   !-----------------------------------------------------------------------------
-  if (.not.reversed) then
+  do iv=1,self%nv
+    call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
+    ibuf = ibuf + n_buf
+  end do
+  if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then
+    it = mod(self%it-1+self%nt-1,self%nt)+1
+    if (io%verbose>0) then
+      write (io_unit%log,*) self%id, 'extra time slot unpacked', it
+      flush (io_unit%log)
+    end if
     do iv=1,self%nv
-      call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
+      call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,it,1))
       ibuf = ibuf + n_buf
     end do
-    if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then
-      it = mod(self%it-1+self%nt-1,self%nt)+1
-      if (io%verbose>0) then
-        write (io_unit%log,*) self%id, 'extra time slot unpacked', it
-        flush (io_unit%log)
-      end if
-      do iv=1,self%nv
-        call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,it,1))
-        ibuf = ibuf + n_buf
-      end do
-    end if
   end if
   call self%lock%unset
   if (io%verbose > 2) &
