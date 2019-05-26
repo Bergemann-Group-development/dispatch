@@ -67,6 +67,8 @@ MODULE task_mod
     real(8):: wc_last=0.0_8
     class(mesg_t), pointer:: mesg=>null()
     real(8):: sync_time=0d0
+    real(8):: update_last=0.0_8
+    real:: update_cadence=0.0
     logical:: syncing=.false.
     logical:: track=.false.
     logical:: periodic(3)=.true.

@@ -435,6 +435,15 @@ SUBROUTINE unpack (self, mesg, reversed, link)
     failed = .true.
   end if
   !---------------------------------------------------------------------------
+  ! Measure the update cadence for this virtual task
+  !---------------------------------------------------------------------------
+  block
+  real(8):: wc
+  wc = wallclock()
+  task%update_cadence = wc - task%update_last
+  task%update_last = wc
+  end block
+  !---------------------------------------------------------------------------
   ! Unpack a patch message (which includes swapping the roles of boundary bits).
   ! Since an already existing patch may, at any one time, be under investigation
   ! by check_nbors, it must be protected by a critical region (or an OMP
