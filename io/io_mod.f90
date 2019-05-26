@@ -103,7 +103,7 @@ SUBROUTINE init (self, name)
   character(len=64):: filename, datadir='data', inputdir='data'
   character(len=64), save:: top='../../'
   character(len=8), save:: method='legacy'
-  integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0, nml_version=2
+  integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0, nml_version=1
   integer, save:: log_sent=0
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
