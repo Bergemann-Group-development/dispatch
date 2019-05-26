@@ -1421,12 +1421,12 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer:: it0, it1, it
   real:: fmin, fmax
   real, dimension(:,:,:), pointer:: df
-  integer, save:: itimer=0
   integer, parameter:: max_lines=50
-  integer, save:: counts(7)=0
+  integer, save:: counts(7)=0, id_prv=0
   integer:: counts_l(7), i
   character(len=120):: fmt
   real(8):: time
+  type(lock_t), save:: lock
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%info')
   if (io_unit%do_validate) then
@@ -1471,13 +1471,28 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     io%dmin = min(io%dmin, real(self%fminval(self%mem(:,:,:,self%idx%d,self%it,1)),kind=4))
     !$omp atomic
     io%dmax = max(io%dmax, real(self%fmaxval(self%mem(:,:,:,self%idx%d,self%it,1)),kind=4))
+    !---------------------------------------------------------------------------
+    ! After coming back to the saved ID, reset it, so we stop searching
+    !---------------------------------------------------------------------------
+    if (self%id == id_prv) then
+      !$omp atomic write
+      id_prv = 0
+    end if
     if (self%time >= io%print_next) then
+     !--------------------------------------------------------------------------
+     ! Use double if and a brief lock period to ensure only one thread prints
+     !--------------------------------------------------------------------------
+     if (io%print_time > 0.0) &
+       call lock%set ('print')
+     if (self%time >= io%print_next) then
       if (io%verbose>0 .or. self%id==io%id) then
         !-----------------------------------------------------------------------
         ! If io%print_time is set, hold off printing until after print_next
         !-----------------------------------------------------------------------
         if (io%print_time > 0) then
+          !$omp atomic write
           io%print_next = (nint(self%time/io%print_time)+1)*io%print_time
+          call lock%unset ('print')
         end if
         nv = 1
         if (io%verbose>2) nv = self%nv
@@ -1502,10 +1517,16 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           //' chk  rdy   upd  snt  prb  unp  dly snq rcq  BV'
           !$omp end critical (info_cr2)
         end if
-        if (io%print_time > 0.0) then
-          time = self%time
-        else
+        !-----------------------------------------------------------------------
+        ! time-dtime is the task time when update started; it is guaranteed to
+        ! be increasing monotomically, since the ready queue is time sorted.
+        ! To allow using the column for plotting, we show this time when all
+        ! times are printed.
+        !-----------------------------------------------------------------------
+        if (io%print_time == 0.0 .and. io%verbose > 0) then
           time = self%time - self%dtime
+        else
+          time = self%time
         end if
         do iv=1,nv
           write(io%output,fmt) &
@@ -1525,6 +1546,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         io%dmax = tiny(1.)
         !$omp atomic write
         io%dtime = huge(1d0)
+        !$omp atomic write
+        id_prv = io%id
         counts(:) = 0
         !-----------------------------------------------------------------------
         ! Reset the message counters after every timestep, if relevant
@@ -1533,19 +1556,22 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_unpk=0
         mpi_mesg%n_delay=0
       end if
+     end if
+     if (io%print_time > 0.0) &
+       call lock%unset ('print')
     end if
-  end if
-  !-----------------------------------------------------------------------------
-  ! Keep track of the shortest times step between updates of the first local
-  ! task.  Use this task in patch%info, rather than the one with ip==1.  As
-  ! long as shorter dtime are being found, io%id will not match the next self%id.
-  ! But if the same io%id survices one update cycle, it will match.
-  !-----------------------------------------------------------------------------
-  if (self%dtime < io%dtime) then
-    !$omp atomic write
-    io%id = self%id
-    !$omp atomic write
-    io%dtime = self%dtime
+    !---------------------------------------------------------------------------
+    ! Keep track of the shortest times step between updates of the io%id local
+    ! task.  Use this task in patch%info, rather than the one with ip==1.  As
+    ! long as shorter dtime are being found, io%id will not match the next self%id.
+    ! But if the same io%id survices one update cycle, it will match.
+    !---------------------------------------------------------------------------
+    if (self%dtime < io%dtime .and. id_prv /= 0) then
+      !$omp atomic write
+      io%id = self%id
+      !$omp atomic write
+      io%dtime = self%dtime
+    end if
   end if
   call trace%end
 END SUBROUTINE info
