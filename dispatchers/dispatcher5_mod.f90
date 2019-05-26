@@ -479,7 +479,7 @@ SUBROUTINE check_ready (self, link)
   if (task%is_clear(bits%ready+bits%busy+bits%frozen+bits%external)) then
     if (task%is_set(bits%virtual)) then
       !$omp critical (irecv_cr)
-      ok = task%mesg%test_recv()
+      ok = task%mesg%is_complete()
       if (ok) then
         if (task%mesg%req==0) then
           call task%mesg%irecv (task%rank, task%id)

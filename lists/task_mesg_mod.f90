@@ -451,13 +451,9 @@ SUBROUTINE unpack (self, mesg, reversed, link)
   !---------------------------------------------------------------------------
   id = task%id
   call task%lock%set ('unpack')
-  block
-  integer:: tid, mid
-  tid = task%id; mid = mesg%id
   call task%unpack (mesg, reversed=reversed_l)
   if (present(reversed)) &
     reversed = reversed_l
-  end block
   if (verbose > 1) then
     write (io_unit%mpi,'(a,3i6,f12.6,2x,3f10.4,2x,5l1)') &
       'unpack: after task%unpack BVRES =', &
@@ -786,7 +782,8 @@ SUBROUTINE check_virtual (self)
     task => link%task
     select type (task)
     class is (patch_t)
-    if (task%mesg%test_recv()) then
+    call set_test_time (self, task)
+    if (task%mesg%is_complete()) then
       if (verbose > 1) &
         write (io_unit%log,*) wallclock(),' task_mesg_t%unpack: check_virtual hit ', task%id
       call self%unpack (task%mesg, reversed, link=link)
@@ -817,7 +814,7 @@ SUBROUTINE check_virtual (self)
     link => virtual_list%head
     do while (associated(link))
       task => link%task
-      if (task%mesg%test_recv()) then
+      if (task%mesg%is_complete()) then
         call task%mesg%wait_for_completion()
         call self%unpack (task%mesg)
       end if
@@ -827,6 +824,31 @@ SUBROUTINE check_virtual (self)
   if (verbose>1) write (io_unit%log,*) ' task_mesg_t%unpack: check_virtual', nunpk
   call trace%end (itimer)
 END SUBROUTINE check_virtual
+
+!===============================================================================
+!> Set the mesg%test_time
+!===============================================================================
+SUBROUTINE set_test_time (self, task)
+  class(task_mesg_t):: self
+  class(patch_t):: task
+  !---------------------------------------------------------------------------
+  ! If TEST_TIME is specified in MPI_MESG_PARAMS, set that as the minimum time
+  ! between MPI_TEST for the same task
+  !---------------------------------------------------------------------------
+  if (mpi_mesg%test_time > 0.0) then
+    task%mesg%test_time = mpi_mesg%test_time
+  !---------------------------------------------------------------------------
+  ! If the parameter is zero or negative, try to estimate an optimal time.
+  ! The first test is allowed after half the estimated update_cadence, and
+  ! after that the time interval is halved after every fail.  This point is
+  ! returned to about as often as a task update occurs on a single thread,
+  ! which is about the task overload times shorter than the update_cadence.
+  !---------------------------------------------------------------------------
+  else
+    task%update_cadence = 1e-6*product(task%n)*self%na/omp%nthreads
+    task%mesg%test_time = task%update_cadence*0.5**(task%mesg%n_failed+1)
+  end if
+END SUBROUTINE set_test_time
 
 !===============================================================================
 !> Run through all virtual patches, and allocate message data types if not
@@ -866,8 +888,9 @@ SUBROUTINE check_active (self)
       !-------------------------------------------------------------------------
       ! If a mesg was recvd, then unpack and issue a new request,
       !-------------------------------------------------------------------------
+      call set_test_time (self, task)
       req = task%mesg%req
-      if (task%mesg%test_recv()) then
+      if (task%mesg%is_complete()) then
         if (verbose > 0 .or. task%id == io%id_debug) &
           write (io_unit%log,'(f12.6,2x,a,i6,i5,i9,i6,z12)') wallclock(), &
             'task_mesg%tcheck_active:  recv id, seq, mesg%id, sender, req =', &
