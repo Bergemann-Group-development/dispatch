@@ -20,7 +20,7 @@
  By_r = 1.43667
 
 /
-&mhd_params              ! defaults are visible in the log file
+&stagger_params              ! defaults are visible in the log file
  !nu=    0.5, 1.0, 1.0, 0.1, 0.1, 0.1
  !nu=    0.5, 1., 0., 1., 0.1, 0.1
  !nu=    0.1, 1., 1., 1., 0.1, 0.1
@@ -32,6 +32,7 @@
  !       cs   pa  ofd  mas  kap  eta
  !gamma=1.0000001  
  gamma=1.666667
+ courant=0.2
 /
 
 &non_ideal_params
@@ -45,7 +46,6 @@
  !dt_fixed=1d-6        ! fixed time step
  ng =2,0,0
  nt=8                   ! time slots
- courant=0.2
 /
 &timer_params
  sec_per_report=15.0
@@ -54,7 +54,6 @@
  out_time = 0.1
  end_time = 5.1
  print_time = 0.1
- guard_zones=f
 / 
 &cartesian_params
  size=1,1,1
@@ -72,7 +71,8 @@
  !do_trace=f             ! =t to trace execution
  verbose=1              ! =1 for output file messages
  do_output=t
- do_debug=f 
+ do_debug=f
+ guard_zones=f
 /
 &initial_params
 /
