@@ -206,10 +206,17 @@ SUBROUTINE update (self, task_list, test)
     !---------------------------------------------------------------------------
     do while (associated(head))
       task => head%task
-      if (task%mem_thread==-1 .or. omp%thread == task%mem_thread) exit
+      if (task%mem_thread==-1) exit
+      if (omp%thread == task%mem_thread) then
+        !$omp atomic update
+        timer%mem_hit = timer%mem_hit+1
+        exit
+      end if
       prev => head
       head => head%next_time
     end do
+    !$omp atomic update
+    timer%mem_test = timer%mem_test+1
     !---------------------------------------------------------------------------
     ! If not found, fall back on first task in queue
     !---------------------------------------------------------------------------
