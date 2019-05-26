@@ -291,6 +291,15 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     class is (patch_t)
     call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), 'before update')
     end select
+    !---------------------------------------------------------------------------
+    ! IMPORTANT:  The globally available io%ntask must reflect the total number
+    ! of active tasks on the rank (io%nwrite is set in data_io_mod)
+    !---------------------------------------------------------------------------
+    !$omp atomic write
+    io%ntask  = self%na                                        ! Authoritative !
+    !$omp atomic write
+    io%ntotal = self%n                                         ! Authoritative !
+    !---------------------------------------------------------------------------
     call task%update                                  ! update the task
     if (self%verbose > 0) then
       associate (unit => merge (io_unit%log, io_unit%mpi, self%verbose > 1))

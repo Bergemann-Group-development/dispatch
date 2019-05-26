@@ -373,14 +373,6 @@ SUBROUTINE count_status (self, label)
   end if
   self%na = ni + nb - nf
   !-----------------------------------------------------------------------------
-  ! IMPORTANT:  The globally available io%ntask must reflect the total number
-  ! of active tasks on the rank (io%nwrite is set in data_io_mod)
-  !-----------------------------------------------------------------------------
-  !$omp atomic write
-  io%ntask  = self%na                       ! Authoritative !
-  !$omp atomic write
-  io%ntotal = self%n                        ! Authoritative !
-  !-----------------------------------------------------------------------------
   call self%lock%unset ('count_status')
   call trace%end (itimer)
 END SUBROUTINE count_status
@@ -504,13 +496,6 @@ SUBROUTINE reset_status (self)
       'n_frozen:'  , n_frozen
     flush (io_unit%log)
   end if
-  !-----------------------------------------------------------------------------
-  ! Authoritative update of the shared values of task counts
-  !-----------------------------------------------------------------------------
-  !$omp atomic write
-  io%ntask  = self%na                       ! Authoritative !
-  !$omp atomic write
-  io%ntotal = self%n                        ! Authoritative !
   !-----------------------------------------------------------------------------
   call self%lock%unset ('reset_status')
   call trace%end()
