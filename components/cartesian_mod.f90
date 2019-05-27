@@ -70,6 +70,8 @@ SUBROUTINE init (self, label)
   self%dims = dims
   self%size = size
   io%dims     = dims
+  if (mpi%size==1) &
+    mpi_dims = 1
   io%mpi_dims = mpi_dims
   !-----------------------------------------------------------------------------
   ! Generate a (periodic) MPI geometry, with dims specified in the input file,
