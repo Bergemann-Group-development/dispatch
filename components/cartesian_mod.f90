@@ -168,6 +168,16 @@ SUBROUTINE init (self, label)
   end do
   end do
   !-----------------------------------------------------------------------------
+  ! Count task types
+  !-----------------------------------------------------------------------------
+  call self%task_list%count_status
+  !-----------------------------------------------------------------------------
+  ! These must be set before reading input snapshots
+  !-----------------------------------------------------------------------------
+  io%ntask = self%task_list%na
+  io%ntotal = product(self%dims)
+  write(stdout,*) 'ntask, ntotal =', io%ntask, io%ntotal
+  !-----------------------------------------------------------------------------
   ! Initialize patches on our rank and virtual patches, in parallel OMP tasks
   !-----------------------------------------------------------------------------
   if (omp_init) then
@@ -187,27 +197,24 @@ SUBROUTINE init (self, label)
   ! number of tasks in each category.  The nbor list constructions are (and
   ! must remain) independent of the status bits, since setting the status bits
   ! relies on correct nbor lists -- hence the order of calls below.
-  !
-  ! FIXME:  For some reason, the number of elements in the task list (%n) must
-  ! currently be correct for this to work.
   !-----------------------------------------------------------------------------
   write (stdout,*) 'Number of tasks in task list:', &
     self%task_list%n, io%ntask
   if (io%verbose > 0) &
-    write(stdout,*) 'cartesian_t%init: init all nbors', io%ntask
+    write(stdout,*) 'cartesian_t%init: init all nbors'
   call self%task_list%init_all_nbors
   if (io%verbose > 0) &
-    write(stdout,*) 'cartesian_t%init: setting status bits', io%ntask
+    write(stdout,*) 'cartesian_t%init: setting status bits'
   call self%task_list%reset_status
   if (io%verbose > 0) &
-    write(stdout,*) 'cartesian_t%init: counting patch status', io%ntask
+    write(stdout,*) 'cartesian_t%init: count status'
   call self%task_list%count_status
   if (io%verbose > 0) &
-    write(stdout,*) 'cartesian_t%init: init boundaries', io%ntask
+    write(stdout,*) 'cartesian_t%init: init boundaries'
   call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
   if (io%verbose > 0) &
-    write(stdout,*) 'cartesian_t%init: diagnostics', io%ntask
+    write(stdout,*) 'cartesian_t%init: diagnostics'
   call self%diagnostics()
   write (io_unit%output,'(1x,a,5(i5,1x,a))') 'cartesian_t%init: ', &
     npatch,'patches',nvpatch,'virtual',nbpatch,'boundary',nlpatch,'local'
