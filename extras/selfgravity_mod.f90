@@ -71,7 +71,7 @@ SUBROUTINE init_extras (self, patch)
   !$omp end critical (input_cr)
   if (selfgravity) then
     self%selfgravity = selfgravity
-    if (trim(patch%kind) /= 'zeus_mhd_patch') patch%nv = patch%nv + 1
+    if (patch%kind(1:4) /= 'zeus') patch%nv = patch%nv + 1
     patch%idx%phi = patch%nv
     if (patch%nw == 1) then
       patch%nv = patch%nv + 1
@@ -83,7 +83,8 @@ SUBROUTINE init_extras (self, patch)
     patch%idx%phi = -1
     call patch%init
   end if
-  allocate (patch%force_per_unit_volume(patch%gn(1),patch%gn(2),patch%gn(3),3))
+  if (patch%kind(1:4) /= 'zeus') &
+    allocate (patch%force_per_unit_volume(patch%gn(1),patch%gn(2),patch%gn(3),3))
   self%d0 = d0
   !$omp critical (poisson_cr)
   if (first_poisson) then
@@ -152,9 +153,11 @@ SUBROUTINE pre_update (self, patch)
     print *, patch%id, 'WARNING: selfgravity_t%gravity, dmin, dmax, it =', dmin, dmax, patch%it
   call self%poisson%update (patch, phi, d, self%d0, detailed_timer)
   !-----------------------------------------------------------------------------
-  ! Compute the force per unit volume
+  ! Compute the force per unit volume (except for ZEUS solvers, which take the
+  ! gradient of the potential internally.
   !-----------------------------------------------------------------------------
-  patch%force_per_unit_volume = grad (patch%mesh, phi)
+  if (patch%kind(1:4) /= 'zeus') &
+    patch%force_per_unit_volume = grad (patch%mesh, phi)
   !-----------------------------------------------------------------------------
   ! compute estimate of dphi/dt
   !-----------------------------------------------------------------------------
