@@ -188,7 +188,7 @@ SUBROUTINE write3 (self, f, rec, id)
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose>1) &
-    write (io_unit%mpi, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write3: rec, id, words, pos =', &
+    write (io_unit%output, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write3: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
   if (mp%mode == MPI_THREAD_MULTIPLE) then
     call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
@@ -218,7 +218,7 @@ SUBROUTINE write4 (self, f, rec, id)
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose > 1) &
-    write (io_unit%mpi, '(a,2i6,i12,i15,1p,2e14.6)') &
+    write (io_unit%output, '(a,2i6,i12,i15,1p,2e14.6)') &
       ' mpi_io_t%write4: rec, id, words, pos, min/max =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
   if (verbose > 0) then
@@ -246,7 +246,7 @@ END SUBROUTINE write4
 SUBROUTINE iwrite3 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:), pointer:: f
-  integer:: rec, id
+  integer:: rec, id, unit
 #ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
   class(iwrite_t), pointer:: item
@@ -257,9 +257,16 @@ SUBROUTINE iwrite3 (self, f, rec, id)
   call trace%begin ('mpi_io_t%iwrite', itimer=itimer)
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
-  if (verbose>2) &
-    print '(a,3i8,i15,2f12.0)', ' mpi_io_t%iwrite: rec, id, words, pos =', &
-    rec, id, self%chunk_words, pos , minval(f), maxval(f)
+  if (verbose > 1) then
+    if (verbose > 2) then
+      unit = io_unit%output
+    else
+      unit = io_unit%mpi
+    end if
+    write (unit,'(a,3i8,i15,1p,2e14.6)') &
+      ' mpi_io_t%read3: rec, id, words, pos =', &
+      rec, id, self%chunk_words, pos, minval(f), maxval(f)
+  end if
   !-----------------------------------------------------------------------------
   ! Add details we need in order to check for buffers to deallocate
   !-----------------------------------------------------------------------------
@@ -288,7 +295,7 @@ END SUBROUTINE iwrite3
 SUBROUTINE iwrite4 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:,:), pointer:: f
-  integer:: rec, id
+  integer:: rec, id, unit
 #ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
   class(iwrite_t), pointer:: item
@@ -299,9 +306,16 @@ SUBROUTINE iwrite4 (self, f, rec, id)
   call trace%begin ('mpi_io_t%iwrite', itimer=itimer)
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
-  if (verbose>2) &
-    print '(a,3i8,i15,2f12.0)', ' mpi_io_t%iwrite: rec, id, words, pos =', &
-    rec, id, self%chunk_words, pos , minval(f), maxval(f)
+  if (verbose > 1) then
+    if (verbose > 2) then
+      unit = io_unit%output
+    else
+      unit = io_unit%mpi
+    end if
+    write (unit,'(a,3i8,i15,1p,2e14.6)') &
+      ' mpi_io_t%read3: rec, id, words, pos =', &
+      rec, id, self%chunk_words, pos, minval(f), maxval(f)
+  end if
   !-----------------------------------------------------------------------------
   ! Add details we need in order to check for buffers to deallocate
   !-----------------------------------------------------------------------------
@@ -330,11 +344,12 @@ END SUBROUTINE iwrite4
 SUBROUTINE read3 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:):: f
-  integer rec, id
+  integer rec, id, unit
 #ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
   !-----------------------------------------------------------------------------
-  if (rec < 1) return
+  if (rec < 1) &
+    call io%abort ('mpi_io_t%read4: illegal record number')
   call trace%begin ('mpi_io_t%read3')
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
@@ -347,10 +362,16 @@ SUBROUTINE read3 (self, f, rec, id)
                            self%status, self%err)
     !$omp end critical (mpi_cr)
   end if
-  if (verbose>1) &
-    write (io_unit%mpi,'(a,3i8,i15,1p,2e14.6)') &
+  if (verbose > 1) then
+    if (verbose > 2) then
+      unit = io_unit%output
+    else
+      unit = io_unit%mpi
+    end if
+    write (unit,'(a,3i8,i15,1p,2e14.6)') &
       ' mpi_io_t%read3: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
+  end if
   call trace%end()
 #endif
 END SUBROUTINE read3
@@ -361,11 +382,12 @@ END SUBROUTINE read3
 SUBROUTINE read4 (self, f, rec, id)
   class(mpi_io_t):: self
   real(kind=4), dimension(:,:,:,:):: f
-  integer rec, id
+  integer rec, id, unit
 #ifdef MPI
   integer(kind=MPI_OFFSET_KIND):: pos
   !-----------------------------------------------------------------------------
-  if (rec < 1) return
+  if (rec < 1) &
+    call io%abort ('mpi_io_t%read4: illegal record number')
   call trace%begin ('mpi_io_t%read4')
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
@@ -378,10 +400,16 @@ SUBROUTINE read4 (self, f, rec, id)
                          self%status, self%err)
     !$omp end critical (mpi_cr)
   end if
-  if (verbose > 1) &
-    write (io_unit%mpi,'(a,3i8,i15,1p,2e14.6)') &
+  if (verbose > 1) then
+    if (verbose > 2) then
+      unit = io_unit%output
+    else
+      unit = io_unit%mpi
+    end if
+    write (unit,'(a,3i8,i15,1p,2e14.6)') &
       ' mpi_io_t%read4: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
+  end if
   call trace%end()
 #endif
 END SUBROUTINE read4
