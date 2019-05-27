@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE vector_ops
   USE stagger_mod
+  USE mesh_mod
   implicit none
   public
   interface norm
@@ -194,11 +195,13 @@ FUNCTION vector_dup_vector (ds, in) RESULT (out)
 END FUNCTION vector_dup_vector
 
 !===============================================================================
-FUNCTION vector_grad_scalar (ds, in) RESULT(out)
+FUNCTION vector_grad_scalar (mesh, in) RESULT(out)
   real, dimension(:,:,:), intent(in):: in
   real, dimension(size(in,1),size(in,2),size(in,3),3):: out
+  class(mesh_t), dimension(:):: mesh
   real(8):: ds(3)
   !-----------------------------------------------------------------------------
+  ds = mesh%d
   out(:,:,:,1) = ddxdn (ds, in)
   out(:,:,:,2) = ddydn (ds, in)
   out(:,:,:,3) = ddzdn (ds, in)

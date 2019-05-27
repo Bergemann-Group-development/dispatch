@@ -154,7 +154,7 @@ SUBROUTINE pre_update (self, patch)
   !-----------------------------------------------------------------------------
   ! Compute the force per unit volume
   !-----------------------------------------------------------------------------
-  patch%force_per_unit_volume = grad (patch%ds, phi)
+  patch%force_per_unit_volume = grad (patch%mesh, phi)
   !-----------------------------------------------------------------------------
   ! compute estimate of dphi/dt
   !-----------------------------------------------------------------------------
