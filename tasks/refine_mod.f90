@@ -1061,7 +1061,7 @@ FUNCTION check_compress (self, patch) RESULT(refine_it)
   !.............................................................................
   integer:: imin(3), l(3), u(3)
   real:: w_num, wmin, c
-  real, dimension(:,:,:), allocatable:: w
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: w
   real, allocatable:: test(:,:,:)
   logical:: masked
   integer, save:: itimer=0
@@ -1124,7 +1124,7 @@ FUNCTION check_vorticity (self, patch) RESULT(refine_it)
   !.............................................................................
   integer:: imin(3), l(3), u(3)
   real:: w_num, wmin, c
-  real, dimension(:,:,:), allocatable:: w
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: w
   real, allocatable:: test(:,:,:)
   logical:: masked
   integer, save:: itimer=0
