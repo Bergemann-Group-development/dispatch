@@ -166,7 +166,7 @@ SUBROUTINE update (self, task_list, test)
   class(task_t), pointer:: task, otask
   class(mesg_t), pointer:: mesg
   logical:: already_busy, was_refined, was_derefined
-  real(8):: levelstart
+  real(8):: levelstart, wc
   real(8), save:: time, otime=0d0
   integer, save:: oid=0
   integer:: id
@@ -379,8 +379,9 @@ SUBROUTINE update (self, task_list, test)
     !$omp atomic read
     stalled_l = stalled
     if (stalled_l == 0) then
+      wc = wallclock()
       !$omp atomic write
-      stall_start = wallclock()
+      stall_start = wc
       if (debug) &
         write (io_unit%log,*) wallclock(), 'queue stalled', stalled_l
     end if
