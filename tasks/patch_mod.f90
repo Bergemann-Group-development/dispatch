@@ -278,8 +278,16 @@ SUBROUTINE header_to_patch (self, head)
       write (io_unit%mpi, *) head%id, 'swapping to boundary'
   end if
   head%status = iand(head%status, not(bits%ready+bits%busy))
-  if (head%id > self%id+1) then
+  if (head%id /= self%id) then
+    call io%abort('wrong message ID unpacked')
+  end if
+  if (head%istep > self%istep+1) then
     write(stderr,*) 'WARNING: early arrival in time reversal id, rank =', &
+      self%id, mpi%rank
+    flush (stderr)
+  end if
+  if (head%time < self%time) then
+    write(stderr,*) 'WARNING: late arrival in time reversal id, rank =', &
       self%id, mpi%rank
     flush (stderr)
   end if
@@ -290,11 +298,6 @@ SUBROUTINE header_to_patch (self, head)
   self%iout       = head%iout
   self%level      = head%level
   self%time       = head%time
-  if (head%time < self%time) then
-    write(stderr,*) 'WARNING: late arrival in time reversal id, rank =', &
-      self%id, mpi%rank
-    flush (stderr)
-  end if
   self%out_next   = head%out_next
   self%print_next = head%print_next
   self%dtime      = head%dtime
