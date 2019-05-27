@@ -1,3 +1,4 @@
 OPT = -O3 -fpe:0
 HW = -xHost -align array64byte -qopt-assume-safe-padding
 DEBUG = -traceback
+PAR = -qopenmp

@@ -19,7 +19,7 @@ LD  = $(FC)
 
 # Set openmp compiler flags if needed
 ifeq ($(strip $(OMP)),yes)
-  PAR = -qopenmp
+  PAR = -qopenmp -parallel-source-info=2
 endif
 
 # Pick up sub-options in the right order
