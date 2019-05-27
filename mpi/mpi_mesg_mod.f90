@@ -120,16 +120,12 @@ SUBROUTINE send (self, rank, tag)
   if (present(tag)) then
     ltag = tag
   else
-    if (mpi_mesg%uniq_mesg) then
-      ltag = mod(self%seq,100) + 100*self%id 
-      self%seq = self%seq+1
-    else
-      ltag = self%id 
-    end if
+    ltag = self%id
   end if
+  self%tag = ltag
   if (verbose>0 .or. self%id==io%id_debug) then
     write (io_unit%log,*) &
-    'mpi_mesg_t%send id, tag, nbuf, to =', self%id, tag, self%nbuf, rank
+    'mpi_mesg_t%send id, tag, nbuf, to =', self%id, ltag, self%nbuf, rank
     flush (io_unit%log)
   end if
 #ifdef MPI
@@ -764,7 +760,7 @@ FUNCTION completed (self) RESULT(flag)
   integer:: stat(MPI_STATUS_SIZE)
 #endif
   !-----------------------------------------------------------------------------
-  flag = .true.
+  flag = .false.
   if (mpi%size <= 1) return
   call trace%begin ('mesg_t%completed', itimer=itimer)
 #ifdef MPI
@@ -831,7 +827,7 @@ FUNCTION is_complete (self)
   now = wallclock()
   if (now < self%test_next) &
     return
-  call trace%begin ('mesg_t%is_complete', itimer=itimer)
+  call trace%begin ('mesg_t%is_complete', 2, itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Check for completion
   !-----------------------------------------------------------------------------
@@ -909,7 +905,8 @@ SUBROUTINE irecv (self, rank, id)
   integer:: id
   integer:: rank, tag, ierr
   !-----------------------------------------------------------------------------
-  ! Construct a unique tag, if so request, and otherwise use the optional tag
+  ! Construct a unique tag, if so requested, and otherwise use the given id.
+  ! Use the next seq number, relative to the one just received.
   !-----------------------------------------------------------------------------
   self%id = id
   if (mpi_mesg%uniq_mesg) then
@@ -918,6 +915,7 @@ SUBROUTINE irecv (self, rank, id)
   else
     tag = self%id
   end if
+  self%tag = tag
   self%sender = rank
 #ifdef MPI
   if (mpi%mode == MPI_THREAD_MULTIPLE) then

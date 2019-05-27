@@ -319,10 +319,10 @@ FUNCTION find_task (self, id, new) RESULT (link)
   ! we notify to do it via 'new', so it's not done every time a virtual task
   ! that already exists is updated.
   !-----------------------------------------------------------------------------
-  call task%set (bits%virtual)
+  call exper%set (bits%virtual)
   call self%append_link (link)
   if (verbose>0) &
-    write (io_unit%log,*) ' task_mesg_t%find_task: append', id, task%time
+    write (io_unit%log,*) ' task_mesg_t%find_task: append', id, exper%time
 !  call self%lock%unset ('find_task')
   call trace%end()
 END FUNCTION find_task
@@ -703,6 +703,8 @@ SUBROUTINE init_virtual (self)
         call task%allocate_mesg
         task%wc_last = wallclock()
         call task%mesg%irecv  (task%rank, task%id)
+        !write(io%output,*) 'init:', task%id, task%mesg%id, task%mesg%tag, task%rank
+        write (io_unit%output,*) 'init_virtual irecv request:', task%id, task%mesg%id, task%mesg%tag
         if (verbose > 1) &
           write (io_unit%log,*) 'task_mesg_t%unpack: init_virtual', omp_get_thread_num(), task%id
         !if (mpi%rank==0) &
@@ -742,6 +744,7 @@ SUBROUTINE check_virtual (self)
     class is (patch_t)
     call set_test_time (self, task)
     if (task%mesg%is_complete()) then
+      !write(stdout,*) 'recv:', task%id, task%mesg%id, task%mesg%tag, task%rank
       if (verbose > 1) &
         write (io_unit%log,*) wallclock(),' task_mesg_t%unpack: check_virtual hit ', task%id
       call self%unpack (task%mesg, link=link)
@@ -756,6 +759,7 @@ SUBROUTINE check_virtual (self)
         '("WARNING: virtual patch not updated in",f5.1," sec")') wc
       task%wc_last = wc
       call task%mesg%irecv (task%rank, task%id)
+      !write(stdout,*) 'ircv:', task%id, task%mesg%id, task%mesg%tag, task%rank
       nunpk = nunpk+1
     else if (verbose > 2) then
       write (io_unit%log,*) wallclock(),' task_mesg_t%unpack: check_virtual miss', task%id
@@ -824,8 +828,11 @@ SUBROUTINE check_active (self)
       !-------------------------------------------------------------------------
       if (.not.associated(task%mesg)) then
         call task%allocate_mesg
+      end if
+      if (task%mesg%req == 0) then
         call irecv (task)
         task%wc_last = wallclock()
+        !write(stdout,*) 'ircv:', task%id, task%mesg%id, task%mesg%tag, task%rank
       end if
       !-------------------------------------------------------------------------
       ! If a mesg was recvd, then unpack and issue a new request,
@@ -833,6 +840,7 @@ SUBROUTINE check_active (self)
       call set_test_time (self, task)
       req = task%mesg%req
       if (task%mesg%is_complete()) then
+        write(stdout,*) 'iscmp:', task%id, task%mesg%id, task%mesg%tag, task%rank
         if (verbose > 0 .or. task%id == io%id_debug) &
           write (io_unit%log,'(f12.6,2x,a,i6,i5,i9,i6,z12)') wallclock(), &
             'task_mesg%tcheck_active:  recv id, seq, mesg%id, sender, req =', &
@@ -845,6 +853,7 @@ SUBROUTINE check_active (self)
         timer%n_recv = timer%n_recv + 1_8
         call self%unpack (task%mesg)
         call irecv (task)
+        !write(stdout,*) 'irev:', task%id, task%mesg%id, task%mesg%tag, task%rank
       else
         if (verbose > 1 .or. task%id == io%id_debug) &
           write (io_unit%log,'(f12.6,2x,a,i6,i5,i9,i6,z12)') wallclock(), &

@@ -40,6 +40,7 @@ MODULE task_mod
     integer:: n_dump=0                  ! number of dump files
     integer:: ip                        ! rank local task id
     integer:: n_needed=1                ! number of tasks that needs it
+    integer:: seq=0                     ! incremental sequence number
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
     real(8):: out_next = 0d0

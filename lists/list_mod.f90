@@ -2148,13 +2148,15 @@ SUBROUTINE send_to_vnbors (self, link)
   call task%pack (mesg)
   end select
   !-----------------------------------------------------------------------------
-  ! Same tag for all stesp, or not
+  ! Same id for all steps, and increment mesg%seq only once, for all ranks
   !-----------------------------------------------------------------------------
   if (mpi_mesg%uniq_mesg) then
-    tag = mod(task%istep,100) + 100*task%id                 ! unique tag
+    task%seq = task%seq+1
+    tag = mod(task%seq,100) + 100*task%id
   else
     tag = task%id
   end if
+  mesg%id = task%id
   !-----------------------------------------------------------------------------
   ! Send to all unique ranks in the nbor list (which is sorted by rank).
   !-----------------------------------------------------------------------------
@@ -2164,7 +2166,8 @@ SUBROUTINE send_to_vnbors (self, link)
     nbtask => nbor%task
     if (nbtask%rank/=mpi%rank .and. nbtask%rank/=rank) then     ! new rank?
       rank = nbtask%rank                                        ! current rank
-      call mesg%send (rank,tag=tag)                             ! send it
+      call mesg%send (rank, tag=tag)                            ! send it
+      !write (stdout,*) 'send: ', task%id, mesg%id, tag, mesg%tag, rank
       if (self%verbose > 0 .or. task%id == io%id_debug) then
         write (io_unit%mpi,'(f12.6,2x,a,i9,1p,e18.6,i9,2x,a,i5,2x,5l1)') &
           wallclock(), 'send_to_vnbors: sent', &
