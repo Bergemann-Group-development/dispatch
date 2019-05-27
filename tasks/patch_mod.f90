@@ -1988,7 +1988,7 @@ SUBROUTINE check_density (self, label)
   logical:: inside, nan
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (io%verbose < 1 .and. .not.do_check_nan) return
+  if ((io%verbose < 1 .or. io%print_time > 0.0) .and. .not.do_check_nan) return
   if (self%is_set(bits%no_density)) return
   if (.not. associated(self%mem)) return
   call trace%begin ('patch_t%check_density', itimer=itimer)

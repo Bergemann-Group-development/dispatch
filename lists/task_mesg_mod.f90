@@ -703,10 +703,8 @@ SUBROUTINE init_virtual (self)
         call task%allocate_mesg
         task%wc_last = wallclock()
         call task%mesg%irecv  (task%rank, task%id)
-        !write(io%output,*) 'init:', task%id, task%mesg%id, task%mesg%tag, task%rank
-        write (io_unit%output,*) 'init_virtual irecv request:', task%id, task%mesg%id, task%mesg%tag
-        if (verbose > 1) &
-          write (io_unit%log,*) 'task_mesg_t%unpack: init_virtual', omp_get_thread_num(), task%id
+        if (verbose > 0) &
+          write (io_unit%output,*) 'init_virtual irecv request:', task%id, task%mesg%id, task%mesg%tag
         !if (mpi%rank==0) &
         !  write(io%output,*) mpi%rank,'MK',omp_get_thread_num(),i,task%id,'irec'
       end if
