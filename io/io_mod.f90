@@ -147,7 +147,9 @@ SUBROUTINE init (self, name)
     end if
     self%outputname = self%rundir                               ! compatibility
     call os%mkdir (trim(self%rundir))
+    !---------------------------------------------------------------------------
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
+    open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
     !---------------------------------------------------------------------------
     ! Read io_params namelist
