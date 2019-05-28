@@ -1378,7 +1378,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer, save:: counts(7)=0, id_prv=0
   integer:: counts_l(7), i
   character(len=120):: fmt
-  real(8):: time
+  real(8):: time, print_next
   type(lock_t), save:: lock
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%info')
@@ -1443,8 +1443,9 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         ! If io%print_time is set, hold off printing until after print_next
         !-----------------------------------------------------------------------
         if (io%print_time > 0) then
+          print_next = (nint(self%time/io%print_time)+1)*io%print_time
           !$omp atomic write
-          io%print_next = (nint(self%time/io%print_time)+1)*io%print_time
+          io%print_next = print_next
           call lock%unset ('print')
         end if
         nv = 1

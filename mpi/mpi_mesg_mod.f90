@@ -816,7 +816,7 @@ FUNCTION is_complete (self)
   logical:: is_complete
   !.............................................................................
   integer:: tag
-  real(8):: now
+  real(8):: now, test_next
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   is_complete = .false.
@@ -845,8 +845,9 @@ FUNCTION is_complete (self)
   else
     self%n_failed = self%n_failed+1
   end if
+  test_next = now + self%test_time
   !$omp atomic write
-  self%test_next = now + self%test_time
+  self%test_next = test_next
   call trace%end (itimer)
   return
 contains
