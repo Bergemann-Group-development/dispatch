@@ -655,7 +655,7 @@ SUBROUTINE check_support (self, tlist, new, n_added)
         guards = .true.
         if (old_patch%get_overlap (new_patch, guards, l, u)) then
           if (verbose > 2) &
-            write (stdout,'(a,i6,3(2x,i2,":",i2)))') &
+            write (stdout,'(a,i6,3(2x,i2,":",i2))') &
             '  level-2 overlap: id =', old_patch%id, &
             l(1),u(1), l(2),u(2), l(3),u(3)
           !---------------------------------------------------------------------
