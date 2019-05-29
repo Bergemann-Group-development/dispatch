@@ -70,8 +70,11 @@ MODULE patch_mod
     integer:: file_offset(4)
     type(index_t):: idx
     real:: safety_factor=1.0
+    !--- used in extras ---
     logical, allocatable:: mask(:,:,:)
-    integer(int8), allocatable:: irefine(:,:,:)
+    !--- used in refine ---
+    integer(int8), allocatable:: irefine(:,:,:), xrefine(:,:,:)
+    type(lock_t):: xrefine_lock
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
@@ -163,6 +166,7 @@ MODULE patch_mod
     procedure:: count_edges
     procedure:: update_position
     procedure:: nbors_info
+    procedure:: get_overlap
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -699,15 +703,20 @@ SUBROUTINE dealloc (self)
                       product(shape(self%pressure)),'-pressure')
     deallocate (self%pressure)
   end if
+  if (allocated(self%mask)) then
+    call io%bits_mem (-storage_size(self%mask), &
+                      product(shape(self%mask)), '-mask')
+    deallocate (self%mask)
+  end if
+  if (allocated(self%xrefine)) then
+    call io%bits_mem (-storage_size(self%xrefine), &
+                      product(shape(self%xrefine)), '-xrefine')
+    deallocate (self%xrefine)
+  end if
   if (allocated(self%irefine)) then
     call io%bits_mem (-storage_size(self%irefine), &
                       product(shape(self%irefine)), '-irefine')
     deallocate (self%irefine)
-  end if
-  if (allocated(self%mask)) then
-    call io%bits_mem (-storage_size(self%mask   ), &
-                      product(shape(self%mask   )), '-mask'  )
-    deallocate (self%mask)
   end if
   call self%task_t%dealloc
   call trace%end
@@ -715,12 +724,15 @@ END SUBROUTINE dealloc
 
 SUBROUTINE clone_mem_accounting (self)
   class(patch_t):: self
-  if (allocated(self%irefine)) &
-    call io%bits_mem (storage_size(self%irefine), &
-                     product(shape(self%irefine)), 'irefine')
   if (allocated(self%mask)) &
     call io%bits_mem (storage_size(self%mask), &
                      product(shape(self%mask)), 'mask')
+  if (allocated(self%xrefine)) &
+    call io%bits_mem (storage_size(self%xrefine), &
+                     product(shape(self%xrefine)), 'xrefine')
+  if (allocated(self%irefine)) &
+    call io%bits_mem (storage_size(self%irefine), &
+                     product(shape(self%irefine)), 'irefine')
   if (allocated(self%force_per_unit_mass)) &
     call io%bits_mem (storage_size(self%force_per_unit_mass), &
                      product(shape(self%force_per_unit_mass)),'fpm')
@@ -2662,5 +2674,66 @@ SUBROUTINE custom_refine (self)
   !-----------------------------------------------------------------------------
   call io%abort ("patch_t:: custom refine is triggered, but none provided. aborting.")
 END SUBROUTINE custom_refine
+
+!===============================================================================
+!> Check overlap and return overlap range in a patch, in terms self indices
+!===============================================================================
+FUNCTION get_overlap (self, patch, guards, l, u) RESULT(overlap)
+  class (patch_t):: self
+  class (patch_t), pointer:: patch
+  integer:: l(3), u(3)
+  logical:: guards, overlap
+  !.............................................................................
+  real(8):: dist(3), la(3), ua(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('download_t%overlap_range')
+  overlap = self%overlaps (patch)
+  if (overlap) then
+    !---------------------------------------------------------------------------
+    ! First take care of mapping the distance between the patch and self
+    ! centers, periodically, so this can be ignored in the next steps.
+    !---------------------------------------------------------------------------
+    dist = patch%position - self%position
+    where (patch%periodic)
+      dist = modulo(dist+0.5_8*patch%mesh%b,patch%mesh%b) - 0.5_8*patch%mesh%b
+    end where
+    !---------------------------------------------------------------------------
+    ! Add the distances from the patch center to the start and end of guard
+    ! zones, and convert to indices in self index space, making sure the range
+    ! is legal
+    !---------------------------------------------------------------------------
+    if (guards) then
+      la = dist - patch%size/2d0 - (patch%mesh%ng+1)*patch%mesh%d
+      ua = dist + patch%size/2d0 + (patch%mesh%ng+1)*patch%mesh%d
+    else
+      la = dist - patch%size/2d0
+      ua = dist + patch%size/2d0
+    end if
+    l =   floor(la/self%mesh%d + self%mesh%o)
+    u = ceiling(ua/self%mesh%d + self%mesh%o)
+    l = max(l,self%mesh%lb)
+    u = min(u,self%mesh%ub)
+    !---------------------------------------------------------------------------
+    ! Check that there really is overlap with the authoritative region
+    !---------------------------------------------------------------------------
+    if (any(l > self%mesh%ui .or. u < self%mesh%li .or. l > u)) then
+      write (stderr,'(a,2(3x,a,i6,":",i2),3x,a,3f8.3,3x,a,2(3i4,2x))') &
+      'patch_t%overlap_range false overlap, with ', &
+      'self:', self%id, self%level, &
+      'patch:', patch%id, patch%level, &
+      'dist:', dist/self%ds, &
+      'l, u:', l, u
+      overlap = .false.
+    end if
+    !---------------------------------------------------------------------------
+    ! Account for collapsed dimensions
+    !---------------------------------------------------------------------------
+    where (self%mesh%n == 1)
+      l = min(l,self%mesh%ub)
+      u = max(u,self%mesh%lb)
+    end where
+  end if
+  call trace%end()
+END FUNCTION get_overlap
 
 END MODULE patch_mod

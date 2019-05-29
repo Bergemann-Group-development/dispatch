@@ -223,7 +223,6 @@ SUBROUTINE remove_and_reset (self, link)
   !-----------------------------------------------------------------------------
   ! Decrement the I/O write counter; may be moot, with task disappearing
   !-----------------------------------------------------------------------------
-  !count = counters%decrement (link%task%iout+1, io%ntask)
   call self%check_nbor_nbors (link)        ! check / send to ready queue
   call link%garbage_collect (link)          ! add to garbage bin
   call self%lock%unset ('remove_patch')    ! release the task list

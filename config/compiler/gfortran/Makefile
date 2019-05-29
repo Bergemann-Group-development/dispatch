@@ -1,5 +1,5 @@
 # Default for gfortran
-OPT = -O2
+OPT = -O1
 HW =
 W = -Wline-truncation -Wno-surprising -w -fno-range-check
 DEBUG = -g -fbacktrace 

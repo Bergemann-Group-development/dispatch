@@ -102,7 +102,17 @@ SUBROUTINE init_levels (self)
     associate (patch => link%task)
     select type (patch)
     class is (patch_t)
-      patch%level = minval(nint(log(patch%box/patch%ds)/log(real(refine%ratio))), mask=patch%n > 1)
+      !-------------------------------------------------------------------------
+      ! Set up the refinement "bill board", where requests for refinement are made
+      !-------------------------------------------------------------------------
+      if (refine%on) then
+        allocate (patch%xrefine(patch%gn(1),patch%gn(2),patch%gn(3)))
+        call io%bits_mem (storage_size(patch%xrefine), &
+                         product(shape(patch%xrefine)), 'xrefine')
+        patch%xrefine = -1
+      end if
+      patch%level = minval(nint(log(patch%box/patch%ds)/log(real(refine%ratio))), &
+        mask=patch%n > 1)
     end select
     refine%levelmin = min(refine%levelmin,patch%level)
     refine%levelmax = max(refine%levelmax,patch%level)
