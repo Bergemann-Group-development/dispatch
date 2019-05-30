@@ -420,6 +420,9 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     if (verbose > 1) &
       write(io_unit%log,*) target%id, 'download_t%download_link: source, download =', &
         source%id, nbor%download
+    !---------------------------------------------------------------------------
+    ! Skip nbor not marked for download
+    !---------------------------------------------------------------------------
     if (nbor%download) then
      if (source%nt == 1) &
        self%same => same_linear
@@ -435,6 +438,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
            call self%same (target, source, all_cells, only=only)
          else if ((source%level-target%level) == -1) then
            call different_prolong (self, target, source, all_cells, only=only)
+           !call prolong (self, target, source, all_cells, only=only)
+         else if ((source%level-target%level) < -1) then
+           call different_prolong (self, target, source, all_cells, only=only)
+           write (io_unit%log,*) target%id, 'WARNING: using more than one level prolong from', source%id
            !call prolong (self, target, source, all_cells, only=only)
          else if (source%level < target%level .and. present(all_cells)) then
            call different_prolong (self, target, source, all_cells, only=only)
