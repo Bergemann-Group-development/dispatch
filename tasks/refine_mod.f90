@@ -238,11 +238,11 @@ SUBROUTINE init (self)
   integer, save:: levelmin=99, levelmax=1
   integer, save:: ratio=2                     ! How does a patch split when it is refined
   logical, save:: first_time = .true.
-  namelist /refine_params/ on, levelmin, levelmax, check_interval, ratio, &
-    refine_from_t, refine_until_t, min_dx, max_dx, max_jeans, min_jeans, &
+  namelist /refine_params/ verbose, on, levelmin, levelmax, check_interval, &
+    ratio, refine_from_t, refine_until_t, min_dx, max_dx, max_jeans, min_jeans, &
     max_shock, min_shock, max_contact, min_contact, max_grad, min_grad, &
     max_vorticity, min_vorticity, max_compress, min_compress, &
-    grad_var, region_llc, region_urc, force_cubical, n_locks, verbose
+    grad_var, region_llc, region_urc, force_cubical, n_locks
   character(len=120):: id = &
     '$Id$ tasks/refine_mod.f90'
   !-----------------------------------------------------------------------------
@@ -567,10 +567,6 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
                 end associate
               end if
               !----------------------------------------------------------------- 
-              call check_support (self, tasklist, child%link, n_added)
-              if (verbose > 1 .and. n_added > 0) then
-                write (io_unit%log,*) 'check_support: post-added', n_added
-              end if
               was_refined= .true.
             end if
           end do
@@ -639,15 +635,17 @@ SUBROUTINE check_support (self, tlist, new, n_added)
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_support', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Select patch-based tasks
+  ! Select patch-based tasks, and assume for now it is OK for updates
   !-----------------------------------------------------------------------------
   new_patch => patch%cast2patch (new%task)
-  if (verbose > 2) &
-    write (stdout,*) 'check_support: id =', new_patch%id
   if (associated(new_patch)) then
+    if (verbose > 2) &
+      write (stdout,*) 'check_support: id =', &
+      new_patch%id, new_patch%is_set (bits%support)
     !---------------------------------------------------------------------------
     ! Search task list for patch-based overlapping L-2 patches
     !---------------------------------------------------------------------------
+    call new_patch%clear (bits%support)
     old => tlist%head
     do while (associated(old))
       if (old%task%level == new%task%level-2) then
@@ -739,8 +737,9 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
     end if
     nbor => nbor%next
   end do
-  if (verbose > 3) &
-    write (stdout,*) 'check_derefine_support: id =', link%task%id, refine
+  call link%remove_nbor_list (nbors)
+  if (verbose > 2) &
+    write (stdout,*) link%task%id, 'check_derefine_support =', refine
   call trace%end (itimer)
 END FUNCTION check_derefine_support
 
@@ -756,7 +755,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   real(8), dimension(3), intent(in) :: pos, child_size
   !.............................................................................
   class(link_t), pointer :: child_link, child_nbor
-  integer:: j, count, l(3), u(3)
+  integer:: j, count, l(3), u(3), n_added
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('refine_t%make_child_patch', itimer=itimer)
@@ -827,7 +826,11 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child%t(:) = child%time                            ! sinle time
   child%parentid = parent%id                         ! for debugging
   child%check_refine_next = 0                        ! allow recursive refine
-  child%xrefine = -1                                 ! wipe out parent values
+  !-----------------------------------------------------------------------------
+  if (verbose > 0) &
+    write (io_unit%log,'(f12.5,2x,a,2i6,1p,g14.5)') &
+      wallclock(), 'refine_t%make_child_patch, parent, child, time =', &
+      parent%id, child%id, child%time
   !-----------------------------------------------------------------------------
   ! Check if the new patch, which might have been created to support another
   ! patch, possibly should be immediately frozen. If that is the case, it still
@@ -932,6 +935,12 @@ SUBROUTINE remove_patch (self, tlist, this)
   ! Start processing, blocking (at least for now) all queue-related activity
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%remove_patch', itimer=itimer)
+  if (verbose > 0) then
+    write (io_unit%log,'(f12.6,2x,a,1p,g14.5,2x,2l1)') &
+      wallclock(), 'refine_t%remove_patch: id, time, BV =', &
+      this%task%id, this%task%time, &
+      this%task%is_set (bits%boundary), this%task%is_set (bits%virtual)
+  end if
   !-----------------------------------------------------------------------------
   ! Send a suicide note to virtual nbors, if this is a boundary patch
   !-----------------------------------------------------------------------------

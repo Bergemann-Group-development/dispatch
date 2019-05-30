@@ -500,22 +500,47 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       l = target%mesh%lb
       u = target%mesh%ub
     end if
+    block
+    integer:: n_not
+    n_not = 0
     if (any(filled(l(1):u(1),l(2):u(2),l(3):u(3),:) == -1)) then
       !-------------------------------------------------------------------------
       ! Since only the parent patch is used, this condition is expected, and OK
       !-------------------------------------------------------------------------
       if (verbose > 0) then
-        write (io%output,*) 'INFO: some guard zone cells were not filled'
+        if (all_cells_l) then
+          write (io_unit%log,'(a,i6)') &
+           'INFO: some internal cells were not filled, iD =', target%id
+        else
+          write (io_unit%log,'(a,i6)') &
+           'INFO: some guard zone cells were not filled, iD =', target%id
+        end if
         do iz=l(3),u(3)
         do iy=l(2),u(2)
         do ix=l(1),u(1)
-          if (filled(ix,iy,iz,1) == -1) &
+          if (filled(ix,iy,iz,1) == -1) then
+            n_not = n_not+1
             write(io_unit%log,'(a,3i3)') 'not filled:', ix, iy, iz
+          end if
         end do
         end do
         end do
+        if (all_cells_l) then
+          write (io%output,'(i6,2x,a,i6,i4)') &
+           n_not, 'internal cells were not filled: id, level =', target%id, target%level
+        else
+          write (io%output,'(i6,2x,a,i6,i4)') &
+           n_not, 'guard zone cells were not filled: id, level =', target%id, target%level
+        end if
       end if
     end if
+    associate (task => link%task)
+    select type (task)
+    class is (patch_t)
+    task%not_filled = n_not
+    end select
+    end associate
+    end block
     deallocate (filled)
     if (verbose > 0) &
       deallocate (src)

@@ -566,10 +566,9 @@ SUBROUTINE unpack (self, mesg, link)
     ! or virtual. They will have the support bit set, and will trigger calls to
     ! check_support() from check_current() if they are active tasks.  If they 
     ! are virtual tasks, the support bit was set at the owner rank and they will
-    ! be check there.
+    ! be checked there.
     !---------------------------------------------------------------------------
     call refine%check_support (self, link1, n_added)
-    call self%check_nbors (link1)
     call self%check_nbor_nbors (link1)
     !call self%lock%unset ('unpack')
   else

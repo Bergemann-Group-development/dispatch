@@ -394,15 +394,19 @@ SUBROUTINE update (self, task_list, test)
         !print *, mpi%rank, 'STALLED:'
         call task_list%check_all
         if (associated(task_list%queue)) then
-          print *, mpi%rank, 'STALLED revived by check_all'
+          print *, mpi%rank, omp%thread, 'STALLED revived by check_all'
+          if (verbose > 1) &
+            call io%abort ('STALLED revided by check_all -- check thread log')
           stall_start = wallclock()
         else
           call task_list%check_oldest
           if (associated(task_list%queue)) then
-            print *, mpi%rank, 'STALLED revived by check_oldest'
+            print *, mpi%rank, omp%thread, 'STALLED revived by check_oldest'
+            if (verbose > 1) &
+              call io%abort ('STALLED revided by check_oldest -- check thread log')
             stall_start = wallclock()
           else
-            print *, mpi%rank, 'STALLED, revived FAILED'
+            print *, mpi%rank, omp%thread, 'STALLED, revived FAILED'
              call io%abort ('STALLED, revived FAILED')
           end if
         end if

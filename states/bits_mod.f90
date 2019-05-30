@@ -28,7 +28,7 @@ MODULE bits_mod
   integer, parameter::  no_download_bit=2**26
   integer, parameter::   no_density_bit=2**25
   integer, parameter::        no_rt_bit=2**24
-  integer, parameter::        nbors_bit=2**23
+  integer, parameter::        nbors_bit=2**23   ! trigger init_nbors on vnbor
   integer, parameter::      counter_bit=2**20
   type bits_t
     integer:: remove       = remove_bit

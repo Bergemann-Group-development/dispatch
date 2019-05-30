@@ -53,6 +53,7 @@ MODULE patch_mod
     integer:: max_files                 ! prevent disk overrun when NaN happens
     integer:: check_refine_next=0
     integer:: time_derivs               ! for restart changes
+    integer:: not_filled=0              ! guard zones not filled
     logical:: guard_zones               ! for restart changes
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.

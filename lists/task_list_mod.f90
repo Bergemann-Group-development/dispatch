@@ -269,27 +269,30 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   ! If the task is virtual, it will not be checked by this rank.
   !-----------------------------------------------------------------------------
   call refine%check_current(self, head, refined, derefined)
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (present(was_refined)) then
     was_refined = refined
   end if
   if (present(was_derefined)) then
     was_derefined = derefined
   end if
+  !-----------------------------------------------------------------------------
+  ! If the task was derefined it does not exist, so bail out
+  !-----------------------------------------------------------------------------
   if (derefined) then
     call trace%end (itimer)
     return
   end if
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Download nbor info -- this may be an experiment_t procedure, but if not,
-  ! the call should be answered by a solver-specific procedure (which may or
+  !-- the call should be answered by a solver-specific procedure (which may or
   ! may not choose to call the generic patch guard zone handler in tasks/)
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (.not.test) &
     call task%dnload                                  ! download nbor info
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Update the task, whatever that means (may include call to task%output)
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (mpi_mesg%delay_ms==0.0) then
     wc = wallclock()
   end if
