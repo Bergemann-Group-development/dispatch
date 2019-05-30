@@ -69,6 +69,12 @@ def domain_dimensions(s):
     return (22,22,22)
 
 def open_amr(iout=1,run='.',data='data',verbose=0,copy=True):
+    return snapshot(iout=iout,run=run,data=data,verbose=verbose,copy=copy)
+
+def snapshot(iout=1,run='.',data='data',verbose=0,copy=True):
+    """
+        Open snapshot iout in directory data/run/, returning a YT data set
+    """
     s=dispatch.snapshot(iout,run,data)
     #
     if verbose:

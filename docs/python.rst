@@ -1,14 +1,15 @@
 Python support
 ==============
 
-To load Python modules, do::
+To load Python modulesi, add the DISPATCH directory ``utilities/python/``
+to the Python path (environment variable ``PYTHONPATH``), and do::
 
     import dispatch
     import dispatch.yt
     import dispatch.select
     import dispatch.graphics
 
-The modules are self-documented -- see below:
+The modules are self-documented, cf:
 
 .. toctree::
    :maxdepth: 3
@@ -19,5 +20,5 @@ The modules are self-documented -- see below:
    python_dispatch_graphics.rst
 
 The source code may be found in ``utilities/python/dispatch/``, and is
-also available via the :ref:`auto-genrated documentation <doxy>`, which
-also contains source code.
+also available via the :ref:`auto-generated documentation <doxy>` (the
+"Files" menu contains source code).

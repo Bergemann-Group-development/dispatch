@@ -37,7 +37,7 @@ done by a required data type method.
 A part of this issue is also the arrangement of different task types.  We should
 be able to allow different solvers to exist, without insisting that one must be
 the extension of another.  They should all be extensions of task_t, and some should
-all be extensions of patch_t:
+all be extensions of patch_t:::
 
 
                  task_t
