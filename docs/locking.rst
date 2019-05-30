@@ -2,4 +2,9 @@
 OpenMP Locks
 ============
 
-Text discussing locks
+.. toctree::
+   :maxdepth: 3
+
+   locking_tasks
+   locking_links
+   locking_others

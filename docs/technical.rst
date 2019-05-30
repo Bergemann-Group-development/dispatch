@@ -3,7 +3,14 @@ Technical Details
 =================
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 4
 
+   amr
+   forces
+   init_calls
+   jobcontrol
    locking
+   sinkparticles
+   tasklists
+   timeslots
 

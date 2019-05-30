@@ -15,5 +15,5 @@ In this case data output goes to the ``./data/run/`` directory.
 .. toctree::
    :maxdepth: 3
 
-   omp.rst
-   mpi.rst
+   omp
+   mpi
