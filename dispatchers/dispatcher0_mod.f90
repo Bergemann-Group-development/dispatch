@@ -200,7 +200,8 @@ SUBROUTINE update (self, task_list, test)
     levelstart = wallclock()
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,2x,a,i6,i7)') wallclock(), &
-        'dispather0::update: na, id =',task_list%na, head%task%id
+        'dispather0_t%update: na, id, time =', &
+        task_list%na, head%task%id, head%task%time
     !---------------------------------------------------------------------------
     ! If the patch mem was OMP placed, search ready queue for matching thread
     !---------------------------------------------------------------------------

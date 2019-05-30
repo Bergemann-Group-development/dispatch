@@ -1121,13 +1121,17 @@ SUBROUTINE init_nbor_nbors (self, link)
   !.............................................................................
   class(link_t), pointer:: nbor, nbors
   !-----------------------------------------------------------------------------
+  ! Re-generate the link nbor list, to make sure a correct nbor loop below
+  !-----------------------------------------------------------------------------
   call trace%begin('list_t%init_nbor_nbors')
-  call link%lock%set ('remove_patch')         ! lock the link while modifying
+  call link%lock%set ('init_nbnbs')           ! lock the link while modifying
+  call link%init_nbors (link)
   call link%copy_nbor_list (link%nbor, nbors) ! copy to temporary nbor list
-  call link%lock%unset ('remove_patch')       ! unlock the link
+  call link%lock%unset ('init_nbnbs')         ! unlock the link
   nbor => nbors                               ! loop over temporary list
   !-----------------------------------------------------------------------------
-  ! When resetting the nbors of nbors, notify rank nbors to do the same
+  ! When resetting the nbors of nbors, notify rank nbors to do the same, by
+  ! setting bits%init_nbors
   !-----------------------------------------------------------------------------
   do while (associated(nbor))
     if (nbor%link%task%is_set (bits%boundary)) &
