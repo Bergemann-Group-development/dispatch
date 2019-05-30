@@ -388,7 +388,7 @@ SUBROUTINE reset_status (self)
   ! Clear virtual and boundary bits
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%reset_status')
-  if (self%verbose > 0) &
+  if (self%verbose > 1) &
     write (io_unit%output,*) 'reset_status'
   n_internal = 0
   n_boundary = 0
