@@ -72,7 +72,6 @@ SUBROUTINE init (self, label)
   io%dims     = dims
   if (mpi%size==1) &
     mpi_dims = 1
-  io%mpi_dims = mpi_dims
   !-----------------------------------------------------------------------------
   ! Generate a (periodic) MPI geometry, with dims specified in the input file,
   ! or assigned automatically by mpi_coords%init.
@@ -89,6 +88,7 @@ SUBROUTINE init (self, label)
   mpi_dims = mpi_coords%dims
   patches_per_mpi = self%dims/mpi_dims
   mpi_coords%npatch = patches_per_mpi
+  io%mpi_dims = mpi_dims
   !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------

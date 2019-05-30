@@ -310,8 +310,6 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     !---------------------------------------------------------------------------
     !$omp atomic write
     io%ntask  = self%na                                        ! Authoritative !
-    !$omp atomic write
-    io%ntotal = self%n                                         ! Authoritative !
     !---------------------------------------------------------------------------
     call task%update                                  ! update the task
     if (self%verbose > 0) then

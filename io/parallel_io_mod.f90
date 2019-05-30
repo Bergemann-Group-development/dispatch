@@ -881,21 +881,31 @@ contains
   ! on the I/O format parameter.
   !-----------------------------------------------------------------------------
   subroutine convert_variables
+    integer:: l(3), u(3)
     call trace%begin('input_single::convert_variables')
+    if (io%guard_zones) then
+      l = patch%mesh%lb
+      u = max(patch%mesh%ub,patch%mesh%gn)
+    else
+      l = patch%mesh%li
+      u = patch%mesh%ui
+    end if
     !-----------------------------------------------------------------------------
     ! Using log(d) if io%format==12 or 13
     !-----------------------------------------------------------------------------
     if (io%format >= 12 .and. iv==patch%idx%d) then
       ! --- Convert log density to density ---
-      patch%mem(:,:,:,iv,:,1) = exp(patch%mem(:,:,:,iv,:,1))
-    end if
+          patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,:,1) = &
+      exp(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,:,1))
     !-----------------------------------------------------------------------------
     ! Restore to momentum variables for RAMSES snapshots, if format=10,12
     !-----------------------------------------------------------------------------
-    if ((io%format == 10 .or. io%format==12) .and. patch%solver_is('ramses') &
+    else if ((io%format == 10 .or. io%format==12) .and. patch%solver_is('ramses') &
         .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
       ! --- Convert velocity to momentum ---
-      patch%mem(:,:,:,iv,:,1) = patch%mem(:,:,:,iv,:,1)*patch%mem(:,:,:,patch%idx%d,:,1)
+      patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,:,1) = &
+      patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,:,1) * &
+      patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,:,1)
     end if
     call trace%end
   end subroutine
