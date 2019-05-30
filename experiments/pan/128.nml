@@ -11,12 +11,17 @@
 !---------------------------------------------
 ! For unigrid run, use no_mans_land=t.  ADJUST: grace=0.05 may be overly conservative
 !---------------------------------------------
-!&patch_params           nt=5 grace=0.2 n=3*32 no_mans_land=t /
-&patch_params           nt=5 grace=0.3 n=3*16 no_mans_land=t /
+&patch_params           nt=5 grace=0.2 n=3*32 no_mans_land=t do_check_nan=f /
+!&patch_params           nt=5 grace=0.3 n=3*16 no_mans_land=t /
 !&out_params             end_time=2.0001 out_time=0.010 print_time=0.0 /  ! Mach 2
-&out_params             end_time=0.5001 out_time=0.050 print_time=0.01 /  ! Mach 4 and 8
-&io_params              verbose=0 do_trace=f omp_trace=f do_output=t restart=-2
-                        method='legacy' format=8 guard_zones=f time_derivs=2 /   ! format=6:d,y 7:d,p 8:lnd,u 9:lnd,p
+&out_params             end_time=0.2001 out_time=0.020 print_time=0.0 /  ! Mach 4 and 8
+&io_params              verbose=0 do_trace=f omp_trace=f do_output=t restart=1
+                        !method='legacy' format=8 guard_zones=f time_derivs=2 /   ! format=6:d,y 7:d,p 8:lnd,u 9:lnd,p
+                        method='parallel' format=12 guard_zones=t time_derivs=0 /   ! format=6:d,y 7:d,p 8:lnd,u 9:lnd,p
+&mpi_mesg_params        verbose=0 recv_active=t recv_priv=t uniq_mesg=t test_time=1e-4
+                        max_sent=10000 every_send=5 /
+&parallel_io_params     verbose=3 /
+&mpi_io_params          verbose=3 /
 &timer_params           sec_per_report=10 /
 &validate_params        /
 
@@ -33,7 +38,7 @@
 !---------------------------------
 ! Solver specific parameters.  ADJUST: nu=10
 !---------------------------------
-&ramses_params          courant_factor=0.250 isothermal=t gamma=1.0 slope_type=2 smallr=1e-4 smallc=5e-1 riemann='hllc' detailed_timer=f /
+&ramses_params          courant_factor=0.250 isothermal=t gamma=1.00 slope_type=2 smallr=1e-4 smallc=5e-1 riemann='hllc' detailed_timer=f /
 !stagger_params         gamma=1.0 courant=0.2 nu=2.0,0.0,1.0,0.0,1.0,1.0 test_p=f /  ! Mach 2
 &stagger_params         gamma=1.0 courant=0.2 nu=4.0,0.0,1.0,0.0,1.0,1.0 test_p=f /  ! Mach 4
 !stagger_params         gamma=1.0 courant=0.2 nu=8.0,0.0,1.0,0.0,1.0,1.0 test_p=f /  ! Mach 8
@@ -58,5 +63,4 @@
 &dispatcher0_params     recv_active=f recv_priv=f queue_unpack=f retry_stalled=30 omp_bind=t /
 &task_list_params       verbose=0 job_seconds=1e6 /
 &task_mesg_params       verbose=0 /
-&mpi_mesg_params        verbose=0 max_probe=200 max_sent=200 max_recv=200 every_send=2 /
 
