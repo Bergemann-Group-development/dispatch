@@ -724,22 +724,16 @@ FUNCTION need_to_support (self, tlist, link) RESULT (refine)
   call trace%begin ('refine_t%need_to_support')
   task => patch%cast2patch(link%task)
   !-----------------------------------------------------------------------------
-  ! Find L+2 nbor-nbors and check for overlap of their guard zones
+  ! Find L+2 and higher tasks, and check for overlap of their guard zones
   !-----------------------------------------------------------------------------
-  nbor1 => link%nbor
+  nbor1 => tlist%head
   do while (associated(nbor1))
-    if (nbor1%task%level == link%task%level+1) then
-      nbor2 => nbor1%link%nbor
-      do while (associated(nbor2))
-        if (nbor2%task%level == link%task%level+2) then
-          nbtask => patch%cast2patch (nbor2%task)
-          guards = .true.
-          if (task%get_overlap (nbtask, guards, l, u)) then
-            task%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 1
-          end if
-        end if
-        nbor2 => nbor2%next
-      end do
+    if (nbor1%task%level >= link%task%level+2) then
+      nbtask => patch%cast2patch (nbor1%task)
+      guards = .true.
+      if (task%get_overlap (nbtask, guards, l, u)) then
+        task%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 1
+      end if
     end if
     nbor1 => nbor1%next
   end do
