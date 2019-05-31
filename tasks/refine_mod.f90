@@ -644,7 +644,7 @@ SUBROUTINE check_support (self, tlist, new, n_added)
     call new_patch%clear (bits%support)
     old => tlist%head
     do while (associated(old))
-      if (old%task%level == new%task%level-2) then
+      if (old%task%level <= new%task%level-2) then
         old_patch => patch%cast2patch (old%task)
         guards = .true.
         if (old_patch%get_overlap (new_patch, guards, l, u)) then

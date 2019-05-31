@@ -488,12 +488,9 @@ SUBROUTINE set_status_and_flags (self, link, nbor)
       nbor%needs_me = .true.
     end if
     !-----------------------------------------------------------------------
-    ! nbor is more than one level different
+    ! real tasks need guard zones
     !-----------------------------------------------------------------------
-    if (abs(nbor%task%level-link%task%level) > 1) then
-      nbor%needed = .false.
-      nbor%needs_me = .false.
-    end if
+    nbor%download = .true.
   !-----------------------------------------------------------------------------
   ! task is virtual
   !-----------------------------------------------------------------------------
@@ -514,7 +511,19 @@ SUBROUTINE set_status_and_flags (self, link, nbor)
       nbor%needed = .false.
       nbor%needs_me = .false.
     end if
+    !-----------------------------------------------------------------------
+    ! virtual tasks do not need guard zones
+    !-----------------------------------------------------------------------
     nbor%download = .false.
+  end if
+  !-------------------------------------------------------------------------
+  ! nbor is more than one level different; these are normally not needed,
+  ! and are only used in support considerations, so should not take part
+  ! in check_nbors() and check_ready(), but may be downloaded exceptionally
+  !-------------------------------------------------------------------------
+  if (abs(nbor%task%level-link%task%level) > 1) then
+    nbor%needed = .false.
+    nbor%needs_me = .false.
   end if
   if (self%verbose > 2) &
     write(io_unit%log,'(a,i6,i4,3x,3l1)') &
@@ -1065,7 +1074,6 @@ SUBROUTINE init_nbors (self, link)
     !end if
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       overlaps = scan%task%overlaps(link%task) &
-           .and. scan%task%level >= link%task%level-2 &
            .and. scan%task%level <= link%task%level+1
       !-------------------------------------------------------------------------
       ! Potential nbors are other patches that overlap
