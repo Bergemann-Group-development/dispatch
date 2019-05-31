@@ -1170,25 +1170,22 @@ FUNCTION check_compress (self, patch) RESULT(refine_it)
   integer:: refine_it
   !.............................................................................
   integer:: imin(3), l(3), u(3)
-  real:: w_num, wmin, c
-  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: w
-  real, allocatable:: test(:,:,:)
+  real:: w_num, wmin
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: test
   logical:: masked
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_compress', itimer=itimer)
   l = 1
   u = patch%gn
-  allocate (w(patch%gn(1),patch%gn(2),patch%gn(3)))
+  allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
   select type (patch)
   class is (solver_t)
-    call patch%compression_magnitude (w)
+    call patch%compression_magnitude (test)
   class default
     call mpi%abort("Unrecognised patch type. Abort!")
   end select
-  allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
-  c =  minval(patch%mesh%d)
-  test = c*w
+  test = minval(patch%mesh%d)*test
   w_num = maxval(test, mask=patch%irefine <= 0)
   !---------------------------------------------------------------------------
   ! Evaluate a per-cell criterion, which sets patch%irefine to +1 where it
@@ -1204,7 +1201,6 @@ FUNCTION check_compress (self, patch) RESULT(refine_it)
   else where (test > min_compress)
     patch%irefine = max (patch%irefine, 0)
   end where
-  deallocate (test)
   refine_it = 0
   if (w_num > max_compress) refine_it = +1
   if (w_num < min_compress) refine_it = -1
@@ -1214,11 +1210,11 @@ FUNCTION check_compress (self, patch) RESULT(refine_it)
      (verbose > 1 .and. patch%level > self%levelmin .and. refine_it < 0)) then
     masked = any(patch%irefine >= 0)
     write (io_unit%output,'(a,i6,1p,3e9.2,i4,e9.2,l3)') &
-      'compression criterion: id, max, num, min, refine, maxval(w)', &
-      patch%id, max_compress, w_num, min_compress, refine_it, maxval(w), &
+      'compression criterion: id, max, num, min, refine, maxval(test)', &
+      patch%id, max_compress, w_num, min_compress, refine_it, maxval(test), &
       masked
   end if
-  deallocate (w)
+  deallocate (test)
   call trace%end (itimer)
 END FUNCTION check_compress
 
@@ -1233,25 +1229,22 @@ FUNCTION check_vorticity (self, patch) RESULT(refine_it)
   integer:: refine_it
   !.............................................................................
   integer:: imin(3), l(3), u(3)
-  real:: w_num, wmin, c
-  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: w
-  real, allocatable:: test(:,:,:)
+  real:: w_num, wmin
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: test
   logical:: masked
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_vorticity', itimer=itimer)
   l = 1
   u = patch%gn
-  allocate (w(patch%gn(1),patch%gn(2),patch%gn(3)))
+  allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
   select type (patch)
   class is (solver_t)
-    call patch%vorticity_magnitude (w)
+    call patch%vorticity_magnitude (test)
   class default
     call mpi%abort("Unrecognised patch type. Abort!")
   end select
-  allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
-  c =  minval(patch%mesh%d)
-  test = c*w
+  test = minval(patch%mesh%d)*test
   w_num = maxval(test, mask=patch%irefine <= 0)
   !---------------------------------------------------------------------------
   ! Evaluate a per-cell criterion, which sets patch%irefine to +1 where it
@@ -1267,7 +1260,6 @@ FUNCTION check_vorticity (self, patch) RESULT(refine_it)
   else where (test > min_vorticity)
     patch%irefine = max (patch%irefine, 0)
   end where
-  deallocate (test)
   refine_it = 0
   if (w_num > max_vorticity) refine_it = +1
   if (w_num < min_vorticity) refine_it = -1
@@ -1277,11 +1269,11 @@ FUNCTION check_vorticity (self, patch) RESULT(refine_it)
      (verbose > 1 .and. patch%level > self%levelmin .and. refine_it < 0)) then
     masked = any(patch%irefine >= 0)
     write (io_unit%output,'(a,i6,1p,3e9.2,i4,e9.2,l3)') &
-      'vorticity criterion: id, max, num, min, refine, maxval(w)', &
-      patch%id, max_vorticity, w_num, min_vorticity, refine_it, maxval(w), &
+      'vorticity criterion: id, max, num, min, refine, maxval(test)', &
+      patch%id, max_vorticity, w_num, min_vorticity, refine_it, maxval(test), &
       masked
   end if
-  deallocate (w)
+  deallocate (test)
   call trace%end (itimer)
 END FUNCTION check_vorticity
 
