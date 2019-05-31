@@ -7,10 +7,15 @@ Schematic timeline and call hierarchy showing lock set & unset::
     refine_t%check_current
       refine_needed
         need_to_support
+          tlist%lock%set                                                         +|
+          link%lock%set                                                 +|        |
+          ..                                                             |        |
+          link%lock%unset                                               -|        |
+          tlist%lock%unset                                                       -|
       selective_refine
         make_child_patch
-          parent%lock%set
-          parent%lock%unset
+          parent%lock%set                                               +|
+          parent%lock%unset                                             -|
           child%link%init
           child%init
             download_link
@@ -39,6 +44,10 @@ Schematic timeline and call hierarchy showing lock set & unset::
              link%remove_nbor_list (nbors)
           reset_status
           check_support()
+            tlist%lock%set
+            do link in tlist
+              ...
+            tlist%lock%unset
           send_to_vnbors
           check_nbor_nbors
             for nbor 

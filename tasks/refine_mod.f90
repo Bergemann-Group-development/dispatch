@@ -482,6 +482,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
   was_refined = .false.
   was_derefined = .false.
   link => patch%link
+  call link%lock%set ('selective_refine')
   nbors => link%nbor
   tail => tasklist%tail
   nbor => patch%link%nbor
@@ -505,7 +506,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
       patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = &
         max(0,patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)))
       !-------------------------------------------------------------------------
-      if (verbose > 1) then
+      if (verbose > 2) then
         write (io_unit%output,'(a,i6,a,i6,2(3x,3i4))') &
           'derefine: patch', patch%id, ' contains', nbpatch%id, l, u
       end if
@@ -513,6 +514,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
     end if
     nbor => nbor%next
   end do
+  call link%lock%unset ('selective_refine')
   !-----------------------------------------------------------------------------
   ! First, consider if any part should be refined
   !-----------------------------------------------------------------------------
@@ -642,6 +644,7 @@ SUBROUTINE check_support (self, tlist, new, n_added)
     ! Search task list for patch-based overlapping L-2 patches
     !---------------------------------------------------------------------------
     call new_patch%clear (bits%support)
+    call tlist%lock%set ('check_support')
     old => tlist%head
     do while (associated(old))
       if (old%task%level <= new%task%level-2) then
@@ -701,6 +704,7 @@ SUBROUTINE check_support (self, tlist, new, n_added)
       end if
       old => old%next
     end do
+    call tlist%lock%unset ('check_support')
   end if
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
@@ -726,6 +730,7 @@ FUNCTION need_to_support (self, tlist, link) RESULT (refine)
   !-----------------------------------------------------------------------------
   ! Find L+2 and higher tasks, and check for overlap of their guard zones
   !-----------------------------------------------------------------------------
+  call tlist%lock%set ('need_to_support')
   nbor1 => tlist%head
   do while (associated(nbor1))
     if (nbor1%task%level >= link%task%level+2) then
@@ -740,6 +745,7 @@ FUNCTION need_to_support (self, tlist, link) RESULT (refine)
   !-----------------------------------------------------------------------------
   ! Find L+1 nbor-nbors, check for overlap of their interiors
   !-----------------------------------------------------------------------------
+  call link%lock%set ('need_to_support')
   nbor1 => link%nbor
   do while (associated(nbor1))
     if (nbor1%task%level == link%task%level+1) then
@@ -751,6 +757,8 @@ FUNCTION need_to_support (self, tlist, link) RESULT (refine)
     end if
     nbor1 => nbor1%next
   end do
+  call link%lock%unset ('need_to_support')
+  call tlist%lock%unset ('need_to_support')
   l = task%mesh%li
   u = task%mesh%ui
   refine = maxval(task%irefine(l(1):u(1),l(2):u(2),l(3):u(3)))
@@ -788,13 +796,16 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
   !-----------------------------------------------------------------------------
   ! Make 100% sure all nbors are known
   !-----------------------------------------------------------------------------
+  call tlist%lock%set ('check_derefine_support')
+  call link%lock%set ('check_derefine_support')
   call link%copy_nbor_list (link%nbor, nbors)
   n_nbor1 = 0
-  nbor1 => link%nbor
+  nbor1 => nbors
   do while (associated(nbor))
     n_nbor1 = n_nbor1+1
     nbor1 => nbor1%next
   end do
+  !-----------------------------------------------------------------------------
   call tlist%init_nbors (link)
   n_nbor2 = 0
   nbor2 => link%nbor
@@ -802,6 +813,7 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
     n_nbor2 = n_nbor2+1
     nbor2 => nbor2%next
   end do
+  !-----------------------------------------------------------------------------
   if (n_nbor2 /= n_nbor1) then
     write (stdout,*) 'n_nbor changed', n_nbor1, n_nbor2
     nbor => nbors
@@ -819,6 +831,8 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
   end if
   end select
   end associate
+  call link%remove_nbor_list (nbors)
+  !-----------------------------------------------------------------------------
   refine = -1
   nbor => link%nbor
   do while (associated(nbor))
@@ -828,7 +842,8 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
     end if
     nbor => nbor%next
   end do
-  call link%remove_nbor_list (nbors)
+  call link%lock%unset ('check_derefine_support')
+  call tlist%lock%unset ('check_derefine_support')
   if (verbose > 2) &
     write (stdout,*) link%task%id, 'check_derefine_support =', refine
   call trace%end (itimer)
@@ -970,9 +985,9 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   ! Make new nbor lists
   !-----------------------------------------------------------------------------
   call tlist%init_nbors (parent%link)
-  call tlist%init_nbors (child_link)
+  !call tlist%init_nbors (child_link)
   call tlist%init_nbor_nbors (child_link)
-  call tlist%reset_status()
+  !call tlist%reset_status()
   !-----------------------------------------------------------------------------
   ! Check if the new task has support. bits%support will be set if not.
   !-----------------------------------------------------------------------------
