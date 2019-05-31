@@ -58,8 +58,6 @@ MODULE link_mod
     procedure:: check_level_sort
     procedure, nopass:: garbage_collect
     procedure, nopass:: garbage_remove
-    procedure:: decrement_needed
-    procedure:: increment_needed
     procedure:: delete
     procedure:: sort_nbors_by_level
   end type
@@ -160,6 +158,12 @@ SUBROUTINE add_nbor_by_quality (self, this)
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_quality')
   call self%lock%set ('add_nbor_by_quality')
+  !$omp atomic update
+  this%task%n_needed = this%task%n_needed + 1   ! because linked task derefined
+  if (verbose > 1) &
+    write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
+    this%task%id, 'needed by', this%task%n_needed, 'add_by_q'
+  flush (io_unit%mpi)
   nullify (prev)
   next => self%nbor
   do while (associated(next))
@@ -233,6 +237,12 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_rank', 3)
   call self%lock%set ('add_nbor_by_rank')
+  !$omp atomic update
+  this%task%n_needed = this%task%n_needed + 1   ! because linked task derefined
+  if (verbose > 1) &
+    write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
+    this%task%id, 'needed by', this%task%n_needed, 'add_by_rank'
+  flush (io_unit%mpi)
   if (io%verbose>2) &
   write (io_unit%log,*) '  adding task', this%task%id, &
     this%task%is_set(bits%boundary), this%task%is_set(bits%virtual), &
@@ -274,15 +284,15 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
 END SUBROUTINE add_nbor_by_rank
 
 !===============================================================================
-!> Remove this from the nbor list, and return the nbor pointer that was pointing
-!> to it
+!> Remove this from the nbor list
 !===============================================================================
 SUBROUTINE remove_nbor (self, this)
   class(link_t):: self
   class(link_t), pointer:: this
   class(link_t), pointer:: nbor, prev, next
+  integer, save:: itimer=0
   !.............................................................................
-  call trace_begin ('link_mod::remove_nbor', 2)
+  call trace%begin ('link_mod::remove_nbor', 1, itimer=itimer)
   call self%lock%set ('remove_nbor')
   if (io%verbose>1) &
     write (io_unit%log,*) 'removing task', this%task%id,associated(this%link), &
@@ -308,7 +318,7 @@ SUBROUTINE remove_nbor (self, this)
     write (io_unit%log,*) 'WARNING: remove_nbor could not find task', this%task%id
 9 continue
   call self%lock%unset ('remove_nbor')
-  call trace_end
+  call trace%end (itimer)
 END SUBROUTINE remove_nbor
 
 !===============================================================================
@@ -336,16 +346,25 @@ END SUBROUTINE remove_from_nbors
 SUBROUTINE remove_nbor_list (self, nbors)
   class(link_t):: self
   class(link_t), pointer:: nbors, nbor, next
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('link_t%remove_nbor_list')
-  nbor => nbors
+  call trace%begin ('link_t%remove_nbor_list', itimer=itimer)
+  if (verbose > 1) &
+    write (io_unit%mpi,'(f12.6,i4,2x,a)') wallclock(), omp%thread, 'remove_nbor_list'
+    nbor => nbors
   do while (associated(nbor))
     next => nbor%next
+    !$omp atomic update
+    nbor%task%n_needed = nbor%task%n_needed - 1
+    if (verbose > 1) &
+      write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
+      nbor%task%id, 'needed by', nbor%task%n_needed, 'remove_nb_list'
+    flush (io_unit%mpi)
     deallocate (nbor)
     nbor => next
   end do
   nullify (nbors)
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE remove_nbor_list
 
 !===============================================================================
@@ -356,12 +375,21 @@ SUBROUTINE copy_nbor_list (self, old_head, new_head)
   class(link_t), pointer:: old_head, new_head
   !.............................................................................
   class(link_t), pointer:: nbor, head, tail, new
+  integer:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('link_t%copy_nbors')
+  call trace%begin ('link_t%copy_nbors', itimer=itimer)
   nullify (head, tail)
   nbor => old_head
   do while (associated(nbor))
     allocate (new, source=nbor)
+    new%task => nbor%task
+    new%link => nbor%link
+    !$omp atomic update
+    nbor%task%n_needed = nbor%task%n_needed + 1
+    if (verbose > 1) &
+      write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
+      nbor%task%id, 'needed by', nbor%task%n_needed, 'copy_nb_list'
+    flush (io_unit%mpi)
     !---------------------------------------------------------------------------
     ! If the new list is empty the new link becomes the first one, and if not,
     ! it becomes the next one after the last one
@@ -376,7 +404,7 @@ SUBROUTINE copy_nbor_list (self, old_head, new_head)
   end do
   new_head => head
   !-----------------------------------------------------------------------------
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE copy_nbor_list
 
 !===============================================================================
@@ -428,7 +456,7 @@ SUBROUTINE log_nbors (self, label)
 END SUBROUTINE log_nbors
 
 !===============================================================================
-!> Print a list of nbors to stdout
+!> Print a list of nbors to io_unit%mpi
 !===============================================================================
 SUBROUTINE print_nbors (self, label)
   class (link_t):: self
@@ -469,13 +497,19 @@ SUBROUTINE garbage_collect (link)
   class(link_t), pointer:: link, nbor
   !.............................................................................
   call trace%begin ('link_t%garbage_collect')
+  flush (io_unit%mpi)
+  !-----------------------------------------------------------------------------
+  ! Immediately decrement the n_needed of the task, corresponding to the pending
+  ! deletion, and also reduce the n_needed of nbors and nbors_by_level, and remove
+  ! those list.  The task itself will be removed when the n_needed count drops
+  ! to zero.
+  !-----------------------------------------------------------------------------
   !$omp atomic update
-  link%task%n_needed = link%task%n_needed - 1   ! because linked task derefined
-  !-----------------------------------------------------------------------------
-  ! Immediately decrement the n_needed of nbors_by_level and remove that list.
-  ! The task itself will be removed when the n_needed count drops to zero.
-  !-----------------------------------------------------------------------------
-  call link%decrement_needed (link%nbors_by_level)
+  link%task%n_needed = link%task%n_needed-1
+  if (verbose > 1) &
+    write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
+    link%task%id, 'needed by', link%task%n_needed, 'garbage_collect'
+  call link%remove_nbor_list (link%nbor)
   call link%remove_nbor_list (link%nbors_by_level)
   !-----------------------------------------------------------------------------
   ! If no other task needs this task remove it immediately, else add to garbage
@@ -545,50 +579,6 @@ SUBROUTINE garbage_remove
   end do
   call trace%end
 END SUBROUTINE garbage_remove
-
-!===============================================================================
-!> Decrement the n_needed counters of the nbor tasks
-!===============================================================================
-SUBROUTINE decrement_needed (self, nbors)
-  class(link_t):: self
-  class(link_t), pointer:: nbors, nbor
-  !.............................................................................
-  call trace%begin ('link_t%decrement_needed')
-  nbor => nbors
-  do while (associated(nbor))
-    !$omp atomic update
-    nbor%task%n_needed = nbor%task%n_needed - 1
-    if (verbose > 1) then
-      write (io_unit%output,*) 'decrement_needed: self, task, n_needed =', &
-        self%task%id, nbor%task%id, nbor%task%n_needed
-      flush (io_unit%output)
-    end if
-    nbor => nbor%next
-  end do
-  call trace%end
-END SUBROUTINE decrement_needed
-
-!===============================================================================
-!> Increment the n_needed counters of the nbor tasks
-!===============================================================================
-SUBROUTINE increment_needed (self, nbors)
-  class(link_t):: self
-  class(link_t), pointer:: nbors, nbor
-  !.............................................................................
-  call trace%begin ('link_t%increment_needed')
-  nbor => nbors
-  do while (associated(nbor))
-    !$omp atomic update
-    nbor%task%n_needed = nbor%task%n_needed + 1
-    if (verbose > 1) then
-      write (io_unit%output,*) 'increment_needed: self, task, n_needed =', &
-        self%task%id, nbor%task%id, nbor%task%n_needed
-      flush (io_unit%output)
-    end if
-    nbor => nbor%next
-  end do
-  call trace%end
-END SUBROUTINE increment_needed
 
 !===============================================================================
 !> Delete a link, and the corresponding task.  First make sure to lock the link
@@ -683,6 +673,14 @@ contains
   subroutine prepend
     class(link_t), pointer:: new
     allocate (new, source=nbor)
+    new%task => nbor%task
+    new%link => nbor%link
+    !$omp atomic update
+    nbor%task%n_needed = nbor%task%n_needed + 1
+    if (verbose > 1) &
+      write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
+      nbor%task%id, 'needed by', nbor%task%n_needed, 'sort_by_level'
+    flush (io_unit%mpi)
     new%next => find
     if (associated(prev)) then
       prev%next => new
