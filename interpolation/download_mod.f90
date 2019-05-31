@@ -340,7 +340,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   integer, optional:: only
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
   !.............................................................................
-  class(link_t), pointer:: nbor, sorted_head
+  class(link_t), pointer:: nbor, sorted_head, nbors
   class(patch_t), pointer:: target, source
   integer:: edges, l(3), u(3), ix, iy, iz
   integer, save:: itimer=0
@@ -393,10 +393,13 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   if (target%is_periodic()) call target%periodic_grid
   !-----------------------------------------------------------------------------
   ! Use an nbor list sorted by decreasing level, recording in each cell the
-  ! level that supplied values, and skipping nbor contributions from lower levels
+  ! level that supplied values, and skipping nbor contributions from lower levels.
+  ! To avoid dead-lock, make a copy of it, and release the lock
   !-----------------------------------------------------------------------------
   call link%lock%set ('download_link')
-  nbor => link%nbors_by_level
+  call link%copy_nbor_list (link%nbors_by_level, nbors)
+  call link%lock%unset ('download_link')
+  nbor => nbors
   !-----------------------------------------------------------------------------
   ! Insert a value only if "filled" indicates that one is missing.  With the 
   ! nbor list sorted in decreasing level order, values are only computed where
@@ -485,7 +488,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     wc(4) = wc(4) + 1d0
     nbor => nbor%next
   end do
-  call link%lock%unset ('download_link')
+  !-----------------------------------------------------------------------------
+  ! Done with temporary nbor list, so remove it
+  !-----------------------------------------------------------------------------
+  call link%remove_nbor_list (nbors)
   if (verbose > 1) then
     wc(3) = wc(3)-wc(2)
     wc(2) = wc(2)-wc(1)
