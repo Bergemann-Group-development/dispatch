@@ -779,7 +779,7 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
   logical, optional:: check_only
   integer:: refine
   !.............................................................................
-  class(link_t), pointer:: nbor, nbor1, nbor2, nbors
+  class(link_t), pointer:: nbor, nbors
   integer:: n_nbor1, n_nbor2, n_added
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -800,18 +800,18 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
   call link%lock%set ('check_derefine_support')
   call link%copy_nbor_list (link%nbor, nbors)
   n_nbor1 = 0
-  nbor1 => nbors
+  nbor => nbors
   do while (associated(nbor))
     n_nbor1 = n_nbor1+1
-    nbor1 => nbor1%next
+    nbor => nbor%next
   end do
   !-----------------------------------------------------------------------------
   call tlist%init_nbors (link)
   n_nbor2 = 0
-  nbor2 => link%nbor
+  nbor => link%nbor
   do while (associated(nbor))
     n_nbor2 = n_nbor2+1
-    nbor2 => nbor2%next
+    nbor => nbor%next
   end do
   !-----------------------------------------------------------------------------
   if (n_nbor2 /= n_nbor1) then
