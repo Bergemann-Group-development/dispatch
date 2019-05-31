@@ -224,7 +224,6 @@ SUBROUTINE update (self, task_list, test)
     if (.not. associated(head)) then
       nullify (prev)
       head => task_list%queue
-      task => head%task                                   ! head task
     end if
     !---------------------------------------------------------------------------
     if (debug) then
@@ -237,95 +236,98 @@ SUBROUTINE update (self, task_list, test)
     !$omp atomic write
     stalled = 0
     !---------------------------------------------------------------------------
-    task%atime = task%time
-    if (io%verbose > 1) then
-      write (io_unit%log,'(f12.6,2x,a,i4,2x,a,i6,2x,a,1p,g16.6,2x,a,i5)') &
-        wallclock(), 'thread', omp%thread,'takes', task%id, &
-        'time', task%time, 'nq', task%nq
-      flush (io_unit%log)
-    end if
-    !---------------------------------------------------------------------------
-    ! Set the head of the queue to the next task in time.  The ready bit needs
-    ! to remain on for now, to prevent other threads from checking this task
-    ! before it is updated.  After the update, the clearing of the ready bit
-    ! allows the state of the current task to be evaluated by other threads, as
-    ! well as by the current thread.  Locking should be used to allow only a
-    ! single thread and task to check and change the ready bit status, at any
-    ! one time.
-    !
-    ! The busy bit is set on tasks that a thread is updating, to check that a
-    ! a task that has already been taken off the queue by another thread is not
-    ! taken again.  This should in principle not be possible, since removing
-    ! the task from the queue is done in a critical region, and removing a
-    ! task can only be done once.
-    !
-    ! A task generates a critical region three times: 1) when taken off the queue,
-    ! 2) when its time info is updated, 3) when it is added back to the queue.
-    !
-    ! To ensure 100% consistency, the task time information should not be
-    ! allowed to change during the testing going on in list_t%check_ready().
-    ! This could possibly be critical, if the fact that a task is / becomes
-    ! ready is missed, because of sychronization issue.  Several of the tasks
-    ! that form the nbor list of a task are typically undergoing updates at the
-    ! same time.  In rare cases, but only if the update time of task time info
-    ! is not uniquely defined, a task could thus be deemed not ready by the
-    ! last of its nbors that has just been updated, because another task in the
-    ! nbor list had not yet propagated its updated time info.
-    !---------------------------------------------------------------------------
-    already_busy = task%is_set (bits%busy)
-    id = task%id
-    if (.not.already_busy) then
-      call task%set (bits%busy)                              ! mark task busy
-      if (associated(prev)) then
-        !print *, omp%thread, 'match'
-        prev%next_time => head%next_time                     ! skip over
-      else
-        !print *, omp%thread, 'fall back'
-        task_list%queue => head%next_time                    ! chop head off
+    if (associated(head)) then
+      task => head%task                                   ! head task
+      task%atime = task%time
+      if (io%verbose > 1) then
+        write (io_unit%log,'(f12.6,2x,a,i4,2x,a,i6,2x,a,1p,g16.6,2x,a,i5)') &
+          wallclock(), 'thread', omp%thread,'takes', task%id, &
+          'time', task%time, 'nq', task%nq
+        flush (io_unit%log)
       end if
-      call task%clear (bits%ready)                           ! not in queue
-      if (track_active) &
-        call task_list%queue_active (head)
-      !$omp atomic
-      task_list%nq = task_list%nq-1                          ! decrement queue count
-      task%nq = task_list%nq                                 ! for info print
-      if (io%verbose >= 0) then
-        if (track_active) then
-          otask => task_list%active%task
-          time = otask%atime
-          if (time < otime) &
-            write (*,'(a,2(f12.6,i6))') 'TIME ERROR: otime, oid, time, id =', otime, oid, time, otask%id
-          !$omp atomic write
-          otime = time
-          !$omp atomic write
-          oid = otask%id
-          if (omp%master) then
-            write (io_unit%queue,'(f12.6,2i7,2f12.6,2i5)') &
-              wallclock(), task%id, task%istep, task%time, &
-              otask%atime, task_list%nq, task_list%nac
-            flush (io_unit%queue)
-          end if
+      !-------------------------------------------------------------------------
+      ! Set the head of the queue to the next task in time.  The ready bit needs
+      ! to remain on for now, to prevent other threads from checking this task
+      ! before it is updated.  After the update, the clearing of the ready bit
+      ! allows the state of the current task to be evaluated by other threads, as
+      ! well as by the current thread.  Locking should be used to allow only a
+      ! single thread and task to check and change the ready bit status, at any
+      ! one time.
+      !
+      ! The busy bit is set on tasks that a thread is updating, to check that a
+      ! a task that has already been taken off the queue by another thread is not
+      ! taken again.  This should in principle not be possible, since removing
+      ! the task from the queue is done in a critical region, and removing a
+      ! task can only be done once.
+      !
+      ! A task generates a critical region three times: 1) when taken off the queue,
+      ! 2) when its time info is updated, 3) when it is added back to the queue.
+      !
+      ! To ensure 100% consistency, the task time information should not be
+      ! allowed to change during the testing going on in list_t%check_ready().
+      ! This could possibly be critical, if the fact that a task is / becomes
+      ! ready is missed, because of sychronization issue.  Several of the tasks
+      ! that form the nbor list of a task are typically undergoing updates at the
+      ! same time.  In rare cases, but only if the update time of task time info
+      ! is not uniquely defined, a task could thus be deemed not ready by the
+      ! last of its nbors that has just been updated, because another task in the
+      ! nbor list had not yet propagated its updated time info.
+      !-------------------------------------------------------------------------
+      already_busy = task%is_set (bits%busy)
+      id = task%id
+      if (.not.already_busy) then
+        call task%set (bits%busy)                              ! mark task busy
+        if (associated(prev)) then
+          !print *, omp%thread, 'match'
+          prev%next_time => head%next_time                     ! skip over
         else
-          if (omp%master) then
-            write (io_unit%queue,'(f12.6,2i7,f12.6,2i5)') &
-              wallclock(), task%id, task%istep, task%time, &
-              task_list%nq, task_list%nac
-            flush (io_unit%queue)
+          !print *, omp%thread, 'fall back'
+          task_list%queue => head%next_time                    ! chop head off
+        end if
+        call task%clear (bits%ready)                           ! not in queue
+        if (track_active) &
+          call task_list%queue_active (head)
+        !$omp atomic
+        task_list%nq = task_list%nq-1                          ! decrement queue count
+        task%nq = task_list%nq                                 ! for info print
+        if (io%verbose >= 0) then
+          if (track_active) then
+            otask => task_list%active%task
+            time = otask%atime
+            if (time < otime) &
+              write (*,'(a,2(f12.6,i6))') 'TIME ERROR: otime, oid, time, id =', otime, oid, time, otask%id
+            !$omp atomic write
+            otime = time
+            !$omp atomic write
+            oid = otask%id
+            if (omp%master) then
+              write (io_unit%queue,'(f12.6,2i7,2f12.6,2i5)') &
+                wallclock(), task%id, task%istep, task%time, &
+                otask%atime, task_list%nq, task_list%nac
+              flush (io_unit%queue)
+            end if
+          else
+            if (omp%master) then
+              write (io_unit%queue,'(f12.6,2i7,f12.6,2i5)') &
+                wallclock(), task%id, task%istep, task%time, &
+                task_list%nq, task_list%nac
+              flush (io_unit%queue)
+            end if
           end if
         end if
       end if
-    end if
-    !---------------------------------------------------------------------------
-    ! The first time a task is at the head of the ready queue with time =
-    ! sync_time we can be sure that all other tasks are also being upated
-    ! (by other threads) to arrive at this time.  We can then temporarily
-    ! halt updating, and wait for this task to finish its update, at a barrier
-    ! where all other ranks are doing the same.
-    !---------------------------------------------------------------------------
-    if (task%time == task_list%sync_next) then
-      task_list%syncing = .true.
-      write (io_unit%mpi,*) task%id,omp%thread, &
-        ' is triggering a sync at t =', task_list%sync_next
+      !-------------------------------------------------------------------------
+      ! The first time a task is at the head of the ready queue with time =
+      ! sync_time we can be sure that all other tasks are also being upated
+      ! (by other threads) to arrive at this time.  We can then temporarily
+      ! halt updating, and wait for this task to finish its update, at a barrier
+      ! where all other ranks are doing the same.
+      !-------------------------------------------------------------------------
+      if (task%time == task_list%sync_next) then
+        task_list%syncing = .true.
+        write (io_unit%mpi,*) task%id,omp%thread, &
+          ' is triggering a sync at t =', task_list%sync_next
+      end if
     end if
   else
     if (verbose > 0) &
