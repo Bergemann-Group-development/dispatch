@@ -7,6 +7,7 @@ Technical Details
 
    amr
    forces
+   garbage_collection
    init_calls
    jobcontrol
    locking
