@@ -420,6 +420,13 @@ contains
     call check ('print_time.flag'     , remove, dvalue=self%print_time)
     call check ('end_time.flag'       , remove, dvalue=self%end_time)
     call check ('sec_per_report.flag' , remove, dvalue=timer%sec_per_report)
+    !-------------------------------------------------------------------------
+    if (io%do_stop .and. mpi%master) then
+      write (stdout,*) file
+      open (io_unit%flag, file=file, form='formatted', status='unknown')
+      close (io_unit%flag, status='delete')
+      call io%abort ('stop.flag detected')
+    end if
   end if
   !$omp end critical (flag_cr)
   end subroutine

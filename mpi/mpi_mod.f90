@@ -233,7 +233,7 @@ SUBROUTINE abort_mpi (self, reason)
   flush (io_unit%output)
   call message (io_unit%stderr)
   call message (io_unit%log)
-  call delay (2e3)
+  call delay (3e3)
   call MPI_Abort (mpi_comm_world, 127, mpi_err)
 #endif
   call exit
