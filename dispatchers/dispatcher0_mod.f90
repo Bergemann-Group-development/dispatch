@@ -40,6 +40,8 @@ MODULE dispatcher0_mod
   logical, save:: debug=.false.
   logical, save:: do_delay=.false.
   logical, save:: track_active=.false.
+  logical, save:: omp_pick=.false.
+  logical, save:: detailed_timer=.false.
   type(dispatcher0_t), save:: virtual_list
   !$omp threadprivate (virtual_list)
   type(dispatcher0_t), public:: dispatcher0
@@ -59,7 +61,7 @@ SUBROUTINE init (self, name)
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
   namelist /dispatcher0_params/ verbose, max_stalled, retry_stalled, do_delay, &
-    debug
+    debug, detailed_timer
   character(len=120):: ids = &
   '$Id$ dispatchers/dispatcher0_mod.f90'
   !-----------------------------------------------------------------------------
@@ -105,7 +107,6 @@ SUBROUTINE execute (self, task_list, test)
       !$omp atomic
       min_nq = min(min_nq,task_list%nq)
     end if
-    if (io%do_stop) call mpi%abort ('stop flag')
     if (timer%dead_mans_hand > 0.0) then
       if (wallclock() > timer%dead_mans_hand + 30.0) &
         call mpi_abort('dead mans hand')
@@ -169,11 +170,12 @@ SUBROUTINE update (self, task_list, test)
   real(8):: levelstart, wc
   real(8), save:: time, otime=0d0
   integer, save:: oid=0
-  integer:: id
+  integer:: i, id, nq
   integer:: stalled_l
   integer, save:: itimer(5)=0
   !.............................................................................
-  call trace%begin('dispatcher0_t%update(1)', itimer=itimer(1))
+  i = 1
+  call trace%begin('dispatcher0_t%update(1)', itimer=itimer(i))
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
@@ -186,15 +188,31 @@ SUBROUTINE update (self, task_list, test)
   call data_io%open_and_close ()
   if (task_list%verbose > 2) &
     write (io%output,*) wallclock(),' thread',omp%thread,' waiting for tasklist(1)'
-  !call trace%end (itimer(1))
-  !call trace%begin('dispatcher0_t%update(2)', itimer=itimer(2))
+  if (detailed_timer) then
+    call trace%end (itimer(i))
+    i = i+1
+    call trace%begin('dispatcher0_t%update(2)', itimer=itimer(i))
+  end if
+  !-----------------------------------------------------------------------------
+  ! Check atomicall if the ready queue is empty and return w/o locking if so,
+  ! to avoid hammering the task list lock, delaying other threads
+  !-----------------------------------------------------------------------------
+  !$omp atomic read
+  nq = task_list%nq
+  if (nq == 0) then
+    call trace%end(itimer(i))
+    return
+  end if
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in what is normally a very brief OMP lock region
   !-----------------------------------------------------------------------------
   call task_list%lock%set ('dispatch0_t%update 1')
   head => task_list%queue                                    ! queue start
-  !call trace%end (itimer(2))
-  !call trace%begin('dispatcher0_t%update(3)', itimer=itimer(3))
+  if (detailed_timer) then
+    call trace%end (itimer(i))
+    i = i+1
+    call trace%begin('dispatcher0_t%update(3)', itimer=itimer(i))
+  end if
   nullify (prev)
   if (associated(head) .and. .not.task_list%syncing) then
     levelstart = wallclock()
@@ -205,25 +223,30 @@ SUBROUTINE update (self, task_list, test)
     !---------------------------------------------------------------------------
     ! If the patch mem was OMP placed, search ready queue for matching thread
     !---------------------------------------------------------------------------
-    do while (associated(head))
-      task => head%task
-      if (task%mem_thread==-1) exit
-      if (omp%thread == task%mem_thread) then
-        !$omp atomic update
-        timer%mem_hit = timer%mem_hit+1
-        exit
+    if (omp_pick) then
+      do while (associated(head))
+        task => head%task
+        if (task%mem_thread==-1) exit
+        if (omp%thread == task%mem_thread) then
+          !$omp atomic update
+          timer%mem_hit = timer%mem_hit+1
+          exit
+        end if
+        prev => head
+        head => head%next_time
+      end do
+      !$omp atomic update
+      timer%mem_test = timer%mem_test+1
+      !-------------------------------------------------------------------------
+      ! If not found, fall back on first task in queue
+      !-------------------------------------------------------------------------
+      if (.not. associated(head)) then
+        nullify (prev)
+        head => task_list%queue
+        task => head%task                                   ! head task
       end if
-      prev => head
-      head => head%next_time
-    end do
-    !$omp atomic update
-    timer%mem_test = timer%mem_test+1
-    !---------------------------------------------------------------------------
-    ! If not found, fall back on first task in queue
-    !---------------------------------------------------------------------------
-    if (.not. associated(head)) then
-      nullify (prev)
-      head => task_list%queue
+    else
+      task => head%task
     end if
     !---------------------------------------------------------------------------
     if (debug) then
@@ -236,98 +259,95 @@ SUBROUTINE update (self, task_list, test)
     !$omp atomic write
     stalled = 0
     !---------------------------------------------------------------------------
-    if (associated(head)) then
-      task => head%task                                   ! head task
-      task%atime = task%time
-      if (io%verbose > 1) then
-        write (io_unit%log,'(f12.6,2x,a,i4,2x,a,i6,2x,a,1p,g16.6,2x,a,i5)') &
-          wallclock(), 'thread', omp%thread,'takes', task%id, &
-          'time', task%time, 'nq', task%nq
-        flush (io_unit%log)
+    task%atime = task%time
+    if (verbose > 1) then
+      write (io_unit%log,'(f12.6,2x,a,i4,2x,a,i6,2x,a,1p,g16.6,2x,a,i5)') &
+        wallclock(), 'thread', omp%thread,'takes', task%id, &
+        'time', task%time, 'nq', task%nq
+      flush (io_unit%log)
+    end if
+    !---------------------------------------------------------------------------
+    ! Set the head of the queue to the next task in time.  The ready bit needs
+    ! to remain on for now, to prevent other threads from checking this task
+    ! before it is updated.  After the update, the clearing of the ready bit
+    ! allows the state of the current task to be evaluated by other threads, as
+    ! well as by the current thread.  Locking should be used to allow only a
+    ! single thread and task to check and change the ready bit status, at any
+    ! one time.
+    !
+    ! The busy bit is set on tasks that a thread is updating, to check that a
+    ! a task that has already been taken off the queue by another thread is not
+    ! taken again.  This should in principle not be possible, since removing
+    ! the task from the queue is done in a critical region, and removing a
+    ! task can only be done once.
+    !
+    ! A task generates a critical region three times: 1) when taken off the queue,
+    ! 2) when its time info is updated, 3) when it is added back to the queue.
+    !
+    ! To ensure 100% consistency, the task time information should not be
+    ! allowed to change during the testing going on in list_t%check_ready().
+    ! This could possibly be critical, if the fact that a task is / becomes
+    ! ready is missed, because of sychronization issue.  Several of the tasks
+    ! that form the nbor list of a task are typically undergoing updates at the
+    ! same time.  In rare cases, but only if the update time of task time info
+    ! is not uniquely defined, a task could thus be deemed not ready by the
+    ! last of its nbors that has just been updated, because another task in the
+    ! nbor list had not yet propagated its updated time info.
+    !---------------------------------------------------------------------------
+    already_busy = task%is_set (bits%busy)
+    id = task%id
+    if (.not.already_busy) then
+      call task%set (bits%busy)                              ! mark task busy
+      if (associated(prev)) then
+        !print *, omp%thread, 'match'
+        prev%next_time => head%next_time                     ! skip over
+      else
+        !print *, omp%thread, 'fall back'
+        task_list%queue => head%next_time                    ! chop head off
       end if
-      !-------------------------------------------------------------------------
-      ! Set the head of the queue to the next task in time.  The ready bit needs
-      ! to remain on for now, to prevent other threads from checking this task
-      ! before it is updated.  After the update, the clearing of the ready bit
-      ! allows the state of the current task to be evaluated by other threads, as
-      ! well as by the current thread.  Locking should be used to allow only a
-      ! single thread and task to check and change the ready bit status, at any
-      ! one time.
-      !
-      ! The busy bit is set on tasks that a thread is updating, to check that a
-      ! a task that has already been taken off the queue by another thread is not
-      ! taken again.  This should in principle not be possible, since removing
-      ! the task from the queue is done in a critical region, and removing a
-      ! task can only be done once.
-      !
-      ! A task generates a critical region three times: 1) when taken off the queue,
-      ! 2) when its time info is updated, 3) when it is added back to the queue.
-      !
-      ! To ensure 100% consistency, the task time information should not be
-      ! allowed to change during the testing going on in list_t%check_ready().
-      ! This could possibly be critical, if the fact that a task is / becomes
-      ! ready is missed, because of sychronization issue.  Several of the tasks
-      ! that form the nbor list of a task are typically undergoing updates at the
-      ! same time.  In rare cases, but only if the update time of task time info
-      ! is not uniquely defined, a task could thus be deemed not ready by the
-      ! last of its nbors that has just been updated, because another task in the
-      ! nbor list had not yet propagated its updated time info.
-      !-------------------------------------------------------------------------
-      already_busy = task%is_set (bits%busy)
-      id = task%id
-      if (.not.already_busy) then
-        call task%set (bits%busy)                              ! mark task busy
-        if (associated(prev)) then
-          !print *, omp%thread, 'match'
-          prev%next_time => head%next_time                     ! skip over
+      call task%clear (bits%ready)                           ! not in queue
+      if (track_active) &
+        call task_list%queue_active (head)
+      !$omp atomic
+      task_list%nq = task_list%nq-1                          ! decrement queue count
+      task%nq = task_list%nq                                 ! for info print
+      if (verbose > 0) then
+        if (track_active) then
+          otask => task_list%active%task
+          time = otask%atime
+          if (time < otime) &
+            write (*,'(a,2(f12.6,i6))') 'TIME ERROR: otime, oid, time, id =', otime, oid, time, otask%id
+          !$omp atomic write
+          otime = time
+          !$omp atomic write
+          oid = otask%id
+          if (omp%master) then
+            write (io_unit%queue,'(f12.6,2i7,2f12.6,2i5)') &
+              wallclock(), task%id, task%istep, task%time, &
+              otask%atime, task_list%nq, task_list%nac
+            flush (io_unit%queue)
+          end if
         else
-          !print *, omp%thread, 'fall back'
-          task_list%queue => head%next_time                    ! chop head off
-        end if
-        call task%clear (bits%ready)                           ! not in queue
-        if (track_active) &
-          call task_list%queue_active (head)
-        !$omp atomic
-        task_list%nq = task_list%nq-1                          ! decrement queue count
-        task%nq = task_list%nq                                 ! for info print
-        if (io%verbose >= 0) then
-          if (track_active) then
-            otask => task_list%active%task
-            time = otask%atime
-            if (time < otime) &
-              write (*,'(a,2(f12.6,i6))') 'TIME ERROR: otime, oid, time, id =', otime, oid, time, otask%id
-            !$omp atomic write
-            otime = time
-            !$omp atomic write
-            oid = otask%id
-            if (omp%master) then
-              write (io_unit%queue,'(f12.6,2i7,2f12.6,2i5)') &
-                wallclock(), task%id, task%istep, task%time, &
-                otask%atime, task_list%nq, task_list%nac
-              flush (io_unit%queue)
-            end if
-          else
-            if (omp%master) then
-              write (io_unit%queue,'(f12.6,2i7,f12.6,2i5)') &
-                wallclock(), task%id, task%istep, task%time, &
-                task_list%nq, task_list%nac
-              flush (io_unit%queue)
-            end if
+          if (omp%master) then
+            write (io_unit%queue,'(f12.6,2i7,f12.6,2i5)') &
+              wallclock(), task%id, task%istep, task%time, &
+              task_list%nq, task_list%nac
+            flush (io_unit%queue)
           end if
         end if
       end if
-      !-------------------------------------------------------------------------
-      ! The first time a task is at the head of the ready queue with time =
-      ! sync_time we can be sure that all other tasks are also being upated
-      ! (by other threads) to arrive at this time.  We can then temporarily
-      ! halt updating, and wait for this task to finish its update, at a barrier
-      ! where all other ranks are doing the same.
-      !-------------------------------------------------------------------------
-      if (task%time == task_list%sync_next) then
-        task_list%syncing = .true.
-        write (io_unit%mpi,*) task%id,omp%thread, &
-          ' is triggering a sync at t =', task_list%sync_next
-      end if
+    end if
+    !---------------------------------------------------------------------------
+    ! The first time a task is at the head of the ready queue with time =
+    ! sync_time we can be sure that all other tasks are also being upated
+    ! (by other threads) to arrive at this time.  We can then temporarily
+    ! halt updating, and wait for this task to finish its update, at a barrier
+    ! where all other ranks are doing the same.
+    !---------------------------------------------------------------------------
+    if (task%time == task_list%sync_next) then
+      task_list%syncing = .true.
+      write (io_unit%mpi,*) task%id,omp%thread, &
+        ' is triggering a sync at t =', task_list%sync_next
     end if
   else
     if (verbose > 0) &
@@ -341,16 +361,22 @@ SUBROUTINE update (self, task_list, test)
   ! that hit the sync time last of all threads has set this flag, and will clear
   ! it as soon as all other ranks have arrived at the same time.
   !-----------------------------------------------------------------------------
-  !call trace%end (itimer(3))
+  if (detailed_timer) then
+    call trace%end (itimer(i))
+  end if
   if (associated(head)) then
-    !call trace%begin('dispatcher0_t%update(4)', itimer=itimer(4))
+    if (detailed_timer) then
+      i = i+1
+      call trace%begin('dispatcher0_t%update(4)', itimer=itimer(i))
+    end if
     if (already_busy) then
-      !!$omp critical (io_cr)
-      !write (io_unit%log,*) mpi%rank,' WARNING: thread',omp%thread, &
-      !  ' tried to update busy task', task%id
-      print *, mpi%rank,' WARNING: thread',omp%thread, &
+      !$omp critical (stderr_cr)
+      write (io_unit%log,*) mpi%rank,' WARNING: thread', omp%thread, &
         ' tried to update busy task', task%id
-      !!$omp end critical (io_cr)
+      write (stderr,*) mpi%rank,' WARNING: thread', omp%thread, &
+        ' tried to update busy task', task%id
+      !$omp end critical (stderr_cr)
+      call trace%end (itimer(i))
       return
     end if
     call task_list%update (head, test, was_refined, was_derefined)
@@ -370,9 +396,11 @@ SUBROUTINE update (self, task_list, test)
       timer%levelcost(task%level) = &
       timer%levelcost(task%level) + (wallclock() - levelstart)
     end if
-    !call trace%end (itimer(4))
   else
-    !call trace%begin('dispatcher0_t%update(5)', itimer=itimer(5))
+    if (detailed_timer) then
+      i = i+1
+      call trace%begin('dispatcher0_t%update(5)', itimer=itimer(i))
+    end if
     !---------------------------------------------------------------------------
     ! As long as there are tasks, the stalled value remains zero.  The test
     ! below is triggered the first time a thread enters here, and the start
@@ -423,9 +451,8 @@ SUBROUTINE update (self, task_list, test)
       print *, mpi%rank, 'STALLED bailing out'
       call mpi%abort ('exceeded max_stalled')
     end if
-    !call trace%end (itimer(5))
   end if
-  call trace%end (itimer(1))
+  call trace%end (itimer(i))
 END SUBROUTINE update
 
 END MODULE
