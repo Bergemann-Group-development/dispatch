@@ -87,11 +87,13 @@ SUBROUTINE init (patch)
   !-----------------------------------------------------------------------------
   call trace%print_id (id)
   call trace%begin ('parallel_io_t%init')
+  !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
     rewind (io%input); read(io%input, parallel_io_params, iostat=iostat)
      write (io%output, parallel_io_params)
   end if
+  !$omp end critical (input_cr)
   if (io%ntask==0) &
     call io%abort ('parallel_io_t%init: io%ntask == 0')
   io%nwrite = io%ntask
@@ -211,17 +213,17 @@ SUBROUTINE output (patch, count)
   !-----------------------------------------------------------------------------
   ! Info
   !-----------------------------------------------------------------------------
-  if (verbose==1) write(io%output,'(a,2i6)') ' parallel_io_t%output: iout, id =', &
-    patch%iout, patch%id
+  !$omp critical (first_cr)
   if (first_time) then
     first_time = .false.
-    if (io%master) write(io%output,'(a,f8.3,a,i10,a)') &
+    write(io%output,'(a,f8.3,a,i10,a)') &
       ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
       io%ntotal, ' patches'
+    write(io%output,'(a,4i6,2i12)') &
+      ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
+      patch%iout, n, snapshot_words, buffer_words
   end if
-  if (verbose>1) write(io%output,'(a,4i6,2i12)') &
-    ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
-    patch%iout, n, snapshot_words, buffer_words
+  !$omp end critical (first_cr)
   !-----------------------------------------------------------------------------
   ! Time interpolation to exaxt out_next
   !-----------------------------------------------------------------------------
@@ -407,6 +409,7 @@ SUBROUTINE output_single (patch, count)
   end if
   if (io%ntask==0) &
     call io%abort ('parallel_io_t%output_single: io%ntask == 0')
+  !-----------------------------------------------------------------------------
   nder = io%time_derivs+1
   snapshot_words = product(n)*io%ntotal*io%nv*nder
   buffer_words = product(n)*io%ntask
@@ -415,24 +418,32 @@ SUBROUTINE output_single (patch, count)
   else
     call mpi_io%use (file_out)
   end if
+  !-----------------------------------------------------------------------------
+  ! Info
+  !-----------------------------------------------------------------------------
+  if (first_time) then
+    !$omp critical (first_cr)
+    if (first_time) then
+      first_time = .false.
+      write(io%output,'(a,f8.3,a,i10,a)') &
+        ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
+        io%ntotal, ' patches'
+      write(io%output,'(a,4i6,2i12)') &
+        ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
+        patch%iout, n, snapshot_words, buffer_words
+    end if
+    !$omp end critical (first_cr)
+  end if
+  !-----------------------------------------------------------------------------
   call mpi_io%set (snapshot_words, buffer_words, 99)
+  !-----------------------------------------------------------------------------
   !$omp critical (allocate_cr)
   if (.not.associated(parallel_io%buffer)) then
-    nder = io%time_derivs+1
     allocate (parallel_io%buffer(n(1),n(2),n(3),io%ntask,io%nv,nder))
     if (verbose > 0) &
       write (io%output,*) 'shape io%buffer =', shape(parallel_io%buffer)
   end if
   !$omp end critical (allocate_cr)
-  !-----------------------------------------------------------------------------
-  ! Info
-  !-----------------------------------------------------------------------------
-  if (first_time .and. io%master) then
-    first_time = .false.
-    write(io%output,'(a,f8.3,a,i10,a)') &
-      ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
-      io%ntotal, ' patches'
-  end if
   ! --- rank-local patch 1D index; cf. cartesian_mod ---
   ip = patch%ip
   if (ip < 0 .or. ip > io%ntask) then
@@ -514,6 +525,9 @@ SUBROUTINE output_single (patch, count)
       ! out one after the other for one variable, followed by the next var
       !-------------------------------------------------------------------------
       irec = 1 + mpi%rank + mpi%size*(iv-1 + (ider-1)*io%nv)
+      if (verbose > 1) &
+        write (io_unit%output,*) 'write(1): irec, iout =', irec, iout
+      write (io_unit%mpi,*) 'mpi_io%write: iout, irec =', 1+iout, irec
       call mpi_io%write (parallel_io%buffer(:,:,:,:,iv,ider), 1+iout, irec)
     end do
     end do
@@ -594,6 +608,8 @@ SUBROUTINE input (patch, ok)
   integer:: iv, n(3), slot
   real, dimension(:,:,:,:), pointer:: buffer
   character(len=120):: filename
+  logical:: single_patch
+  logical, save:: first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('parallel_io_t%input', itimer=itimer)
@@ -639,10 +655,33 @@ SUBROUTINE input (patch, ok)
     n = patch%n
   end if
   !-----------------------------------------------------------------------------
+  ! Catch reading from a snapshot with different mpi_size
+  !-----------------------------------------------------------------------------
+  single_patch = any(io%mpi_odims/=io%mpi_dims)
+  !-----------------------------------------------------------------------------
   ! Compute offset size constants for the mpi_io reader
   !-----------------------------------------------------------------------------
-  buffer_words = product(n)*io%nv
-  snapshot_words = buffer_words*io%ntotal
+  snapshot_words = product(n)*io%ntotal*io%nv*(io%time_derivs+1)
+  if (single_patch) then
+    buffer_words = product(n)
+  else
+    buffer_words = product(n)*io%ntask
+  end if
+  !-----------------------------------------------------------------------------
+  ! Info
+  !-----------------------------------------------------------------------------
+  !$omp critical (first_cr)
+  if (first_time) then
+    first_time = .false.
+    write(io%output,'(a,f8.3,a,i10,a)') &
+      ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
+      io%ntotal, ' patches'
+    write(io%output,'(a,4i6,2i12)') &
+      ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
+      patch%iout, n, snapshot_words, buffer_words
+  end if
+  !$omp end critical (first_cr)
+  !-----------------------------------------------------------------------------
   call mpi_io%use (file_in)
   call mpi_io%set (snapshot_words, buffer_words, io%nwrite*(io%time_derivs+1))
   !-----------------------------------------------------------------------------
@@ -766,6 +805,7 @@ SUBROUTINE input_single (patch, ok)
   !-----------------------------------------------------------------------------
   if (io%ntask==0) &
     call io%abort ('parallel_io_t%input_single: io%ntask == 0')
+  !-----------------------------------------------------------------------------
   nder = io%time_derivs+1
   snapshot_words = product(n)*io%ntotal*io%nv*nder
   if (single_patch) then
@@ -773,6 +813,15 @@ SUBROUTINE input_single (patch, ok)
   else
     buffer_words = product(n)*io%ntask
   end if
+  !-----------------------------------------------------------------------------
+  !$omp critical (allocate_cr)
+  if (.not.associated(parallel_io%buffer)) then
+    allocate (parallel_io%buffer(n(1),n(2),n(3),io%ntask,io%nv,nder))
+    if (verbose > 0) &
+      write (io%output,*) 'shape io%buffer =', shape(parallel_io%buffer)
+  end if
+  !$omp end critical (allocate_cr)
+  !-----------------------------------------------------------------------------
   call mpi_io%use (file_in)
   call mpi_io%set (snapshot_words, buffer_words, 99)
   !-----------------------------------------------------------------------------
@@ -781,19 +830,41 @@ SUBROUTINE input_single (patch, ok)
   patch%iout = io%restart
   ip = patch%ip
   if (single_patch) then
+    !-----------------------------------------------------------------------------
+    ! Info
+    !-----------------------------------------------------------------------------
+    !$omp critical (first_cr)
+    if (first_time) then
+      first_time = .false.
+      write(io%output,'(a,f8.3,a,i10,a)') &
+        ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
+        io%ntotal, ' patches'
+        write(io%output,'(a,4i6,2i12)') &
+      ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
+        patch%iout, n, snapshot_words, buffer_words
+    end if
+    !$omp end critical (first_cr)
     allocate (buffer(n(1),n(2),n(3)))
+    !-----------------------------------------------------------------------------
+    ! The previous number of ranks is equal to the product of the previous mpi_dims.
+    ! The previous rank is computable from what the old %ipos would have been.
+    !-----------------------------------------------------------------------------
     nrank = product(io%mpi_odims)
-    rank = mpi_coords%coords_to_rank (patch%ipos/(io%dims/io%mpi_odims))
+    rank = mpi_coords%coords_to_rank (patch%ipos*io%mpi_odims/io%dims)
     if (verbose > 0) then
       !$omp critical (write_mpi_cr)
-      write (io_unit%mpi,*) 'single_patch:', ip, patch%id, rank, io%dims/io%mpi_odims
+      irec = 1 + rank
+      write (io_unit%output,'(a,i6,4(2x,3i5))') &
+        'single_patch: id, ip, rank, nrank, per_rank, ipos =', &
+          patch%id, ip, rank, nrank, io%dims/io%mpi_odims, patch%ipos, &
+          irec, patch%iout
       !$omp end critical (write_mpi_cr)
     end if
     do iv=1,io%nv
-      irec = rank + nrank*(iv-1)
+      irec = 1 + rank + nrank*(iv-1)
       if (verbose > 1) &
-        write (stdout,*) 'read(1): irec, iout =', irec, patch%iout
-      call mpi_io%read (buffer, 1+patch%iout, 1+irec)
+        write (io_unit%output,*) 'read(1): irec, iout =', irec, patch%iout
+      call mpi_io%read (buffer, 1+patch%iout, irec)
       if (io%guard_zones) then
         patch%mem(:,:,:,iv,patch%it,1) = buffer
       else
@@ -804,14 +875,18 @@ SUBROUTINE input_single (patch, ok)
     end do
     deallocate (buffer)
   else
+    !$omp critical (read_first_cr)
     if (first_time) then
       first_time = .false.
-      if (.not.associated(parallel_io%buffer)) then
-        nder = io%time_derivs+1
-        allocate (parallel_io%buffer(n(1),n(2),n(3),io%ntask,io%nv,nder))
-      end if
-      if (verbose > 0) &
-        write (io%output,*) 'shape io%buffer =', shape(parallel_io%buffer)
+      !---------------------------------------------------------------------------
+      ! Info
+      !---------------------------------------------------------------------------
+      write(io%output,'(a,f8.3,a,i10,a)') &
+        ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
+        io%ntotal, ' patches'
+      write(io%output,'(a,4i6,2i12)') &
+      ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
+        patch%iout, n, snapshot_words, buffer_words
       !---------------------------------------------------------------------------
       ! Read via buffer, in case guard zones not included. FIXME: read snapshot
       ! guard zone parameter, to allow it to differ
@@ -832,13 +907,14 @@ SUBROUTINE input_single (patch, ok)
           exit
         end if
       end do
-      if (read_failed) then
-        ok = .false.
-        call trace%end (itimer)
-        return
-      else if (io%master) then
+      if (.not.read_failed) &
         write(io%output,*) 'io%input_single: read succeeded, snapshot', io%restart
-      end if
+    end if
+    !$omp end critical (read_first_cr)
+    if (read_failed) then
+      ok = .false.
+      call trace%end (itimer)
+      return
     end if
     if (ip < 1 .or. ip > io%ntask) then
       write (io_unit%output,*) 'WARNING', ip, io%ntask
