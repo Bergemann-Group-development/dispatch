@@ -141,7 +141,8 @@ SUBROUTINE output (self, patch, experiment_name)
     call mpi%abort ('io%ntotal, which should be the total number of tasks, is zero')
   end if
   io%nwrite = io%ntask                        ! Authoritative -- set ONLY here!
-  write (io_unit%log,*) 'io%nwrite =', io%nwrite
+  if (io%verbose > 1) &
+    write (io_unit%log,*) 'io%nwrite =', io%nwrite
   !-----------------------------------------------------------------------------
   call self%init (patch)
   if (io%method=='legacy') then
