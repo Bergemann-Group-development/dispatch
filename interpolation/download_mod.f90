@@ -345,7 +345,6 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   class(patch_t), pointer:: target, source
   integer:: edges, l(3), u(3), ix, iy, iz
   integer, save:: itimer=0
-  real(8):: wc(0:4)
   character(len=64):: info
   logical:: all_cells_l
   !-----------------------------------------------------------------------------
@@ -410,7 +409,6 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   ! nbor list sorted in decreasing level order, values are only computed where
   ! actually needed
   !-----------------------------------------------------------------------------
-  wc = 0d0
   do while (associated(nbor))
     if (.not.associated(nbor%task)) then
       write (io_unit%output,*) 'WARNING: nbor task not associated'
@@ -422,9 +420,9 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     !  target%id, target%level, nbor%task%id, nbor%task%level, nbor%task%n_needed
     !flush (io_unit%output)
     source => task2patch(nbor%task)
-    wc(0) = wallclock()
-    call source%lock%set ('download_link')
-    wc(1) = wc(1) + wallclock() - wc(0)
+    if (omp_lock%tasks) then
+      call source%lock%set ('download_link')
+    end if
     if (verbose > 1) &
       write(io_unit%log,*) target%id, 'download_t%download_link: source, download =', &
         source%id, nbor%download
@@ -495,10 +493,9 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
        end if
      end if
     end if
-    call source%lock%unset ('download_link')
-    wc(2) = wc(2) + wallclock() - wc(0)
-    wc(3) = wc(3) + wallclock() - wc(0)
-    wc(4) = wc(4) + 1d0
+    if (omp_lock%tasks) then
+      call source%lock%unset ('download_link')
+    end if
     nbor => nbor%next
   end do
   !-----------------------------------------------------------------------------
@@ -506,12 +503,6 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   if (download%link_locks) then
     call link%remove_nbor_list (nbors)
-  end if
-  if (verbose > 1) then
-    wc(3) = wc(3)-wc(2)
-    wc(2) = wc(2)-wc(1)
-    write (io_unit%log,'(a,6p,3f7.1,i6)') &
-      'lock%set, source use, lock%unset =', wc(1:3)/wc(4), nint(wc(4))
   end if
   if (present(only)) then
     if (only==target%idx%d) then
@@ -573,8 +564,6 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     if (verbose > 0) &
       deallocate (src)
   end if
-  !-----------------------------------------------------------------------------
-  ! Decrement n_needed counters, and remove the sorted nbor list
   !-----------------------------------------------------------------------------
   call validate%check (target%link, d, ' after download')
   call trace%end (itimer)

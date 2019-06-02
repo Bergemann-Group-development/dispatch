@@ -25,6 +25,7 @@ MODULE mhd_mod
   USE trace_mod
   USE mpi_mod
   USE omp_mod
+  USE omp_lock_mod
   USE index_mod
   USE non_ideal_mod
   USE omp_timer_mod
@@ -136,15 +137,6 @@ SUBROUTINE update (self)
   if (io%smallr > 0) smallr = io%smallr
   if (io%courant > 0) self%courant = io%courant
   !----------------------------------------------------------------------------
-  ! Use one of several methods to clean div(B) from guard zones
-  !----------------------------------------------------------------------------
-  select case (divb_cleaner)
-  case (1)
-  call divb_clean1 (self)
-  case (2)
-  call divb_clean2 (self)
-  end select
-  !----------------------------------------------------------------------------
   ! Checks whether to do output
   !----------------------------------------------------------------------------
   call self%output
@@ -246,6 +238,7 @@ SUBROUTINE update (self)
              i1=>self%mesh(1)%ui, j1=>self%mesh(2)%ui, k1=>self%mesh(3)%ui, &
              uin=>self%uin,unew=>self%unew)
 
+  call self%lock%set ('update')
   unew = uin
   nv3 = 5
   unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,1:nv3  ) = &
@@ -321,6 +314,17 @@ SUBROUTINE update (self)
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dq2,self%bf,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
               self%Ex,self%Ey,self%Ez)
+  !----------------------------------------------------------------------------
+  ! Use one of several methods to clean div(B) from guard zones
+  !----------------------------------------------------------------------------
+  select case (divb_cleaner)
+  case (1)
+  call divb_clean1 (self)
+  case (2)
+  call divb_clean2 (self)
+  end select
+  !.............................................................................
+  call self%lock%unset ('update')
   call trace%end (itimer)
   if (rieman%ndiff > 0) then
     write(io_unit%mpi,*) 'id,ndiff', self%id, rieman%ndiff, rieman%nsolu

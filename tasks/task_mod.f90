@@ -287,7 +287,9 @@ SUBROUTINE rotate (self)
     write (io_unit%log,'(a,7i10)')   'task_mod::rotate iit =', self%iit
     flush (io_unit%log)
   end if
-  !call self%lock%set ('rotate')
+  if (omp_lock%tasks) then
+    call self%lock%set ('rotate')
+  end if
   !-----------------------------------------------------------------------------
   ! If this task has self%syncing set, then the time step has been set so as to
   ! arrive exactly ast sync_time.  To precent problems with round-off we set the
@@ -342,7 +344,9 @@ SUBROUTINE rotate (self)
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
   nullify (rptr, iptr)
   self%rotated = .true.
-  !call self%lock%unset ('rotate')
+  if (omp_lock%tasks) then
+    call self%lock%unset ('rotate')
+  end if
   call trace_end (itimer)
 END SUBROUTINE rotate
 

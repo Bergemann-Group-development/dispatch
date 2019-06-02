@@ -26,6 +26,7 @@ MODULE hd_mod
   USE trace_mod
   USE mpi_mod
   USE omp_mod
+  USE omp_lock_mod
   USE eos_mod
   USE index_mod
   USE patch_mod
@@ -192,6 +193,9 @@ SUBROUTINE update (self)
     p = p + self%dtime*self%force_per_unit_volume
   end if
   call validate%check (self%link, p, 'after force')
+  if (omp_lock%tasks) then
+    call self%lock%unset ('update')
+  end if
   !-----------------------------------------------------------------------------
   ! Deallocate
   !-----------------------------------------------------------------------------
@@ -370,6 +374,9 @@ subroutine godunov (self)
   ! Conservative update, looping over internal cells only
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('hd_t%godunov', itimer=itimer)
+  if (omp_lock%tasks) then
+    call self%lock%set ('update')
+  end if
   unew = uin
   do ivar=1,self%nv
     do idim=1,self%ndim

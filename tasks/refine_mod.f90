@@ -259,7 +259,7 @@ SUBROUTINE init (self)
       write (*, refine_params)
     end if
     if (on) then
-      list%link_locks = .true.
+      omp_lock%links = .true.
       download%link_locks = .true.
     end if
   end if

@@ -271,6 +271,7 @@ SUBROUTINE header_to_patch (self, head)
   ! an incoming patch is not.  By doing this here, we avoid having to do it in
   ! a critical region, otherwise needed to protect an operation on the patch
   !-----------------------------------------------------------------------------
+  call self%lock%set ('unpack')
   if (iand(head%status, bits%boundary) /= 0) then
     head%status = ior(head%status, bits%virtual)
     head%status = iand(head%status, not(bits%boundary))
@@ -328,6 +329,8 @@ SUBROUTINE header_to_patch (self, head)
   timer%latency%aver = timer%latency%aver+self%latency
   !$omp atomic
   timer%latency%n    = timer%latency%n+1
+  !.............................................................................
+  call self%lock%unset ('unpack')
 END SUBROUTINE header_to_patch
 
 !===============================================================================

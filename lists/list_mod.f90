@@ -45,7 +45,6 @@ MODULE list_mod
     type(lock_t):: lock
     character(len=4):: kind='list'
     logical:: face_nbors=.false.
-    logical:: link_locks=.false.
   contains
     procedure:: init
     procedure:: init_bdries
@@ -583,7 +582,7 @@ SUBROUTINE check_nbors (self, link)
   ! Keeping a lock on link, while also locking/unlocking its nbors, creates the
   ! possibility of a dead-lock.  To avoid that, we make a copy of the nbor list
   !-----------------------------------------------------------------------------
-  if (self%link_locks) then
+  if (omp_lock%links) then
     call link%lock%set ('check_nbors')
     call trace%end (itimer(itr))
     itr = itr+1
@@ -607,7 +606,7 @@ SUBROUTINE check_nbors (self, link)
     end if
     nbor => nbor%next                                   ! next nbor
   end do
-  if (self%link_locks) then
+  if (omp_lock%links) then
     call link%remove_nbor_list (nbors)                  ! remove nbor list copy
   end if
   !-----------------------------------------------------------------------------

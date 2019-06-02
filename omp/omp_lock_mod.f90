@@ -32,6 +32,8 @@ MODULE omp_lock_mod
     real(8):: start_time=0.0_8          ! start time
     real(8):: used_time=0.0_8           ! used time
     integer(8):: n_hold=0_8             ! number of times holding lock
+    logical:: links=.false.             ! lock nbor lists
+    logical:: tasks=.false.             ! lock task memory updates
     type(lock_t), pointer:: next => null()
   contains
     procedure:: init
@@ -61,10 +63,11 @@ SUBROUTINE init (self, kind, id)
   integer, optional:: id
   character(len=4), optional:: kind
   logical omp_in_parallel
+  logical, save:: tasks=.true., links=.false.
   integer:: iostat
   logical:: set_id
   logical:: first_time=.true.
-  namelist /lock_params/ on, verbose, verbose_time, log
+  namelist /lock_params/ on, verbose, verbose_time, log, tasks, links
   !-----------------------------------------------------------------------------
   if (.not.on) return
 #ifdef TRACE 
@@ -84,6 +87,8 @@ SUBROUTINE init (self, kind, id)
       end if
     end if
     call omp_init_nest_lock (self%lock)
+    omp_lock%tasks = tasks
+    omp_lock%links = links
     if (present(id)) then
       self%id = id
       id_save = max(id_save,id)
