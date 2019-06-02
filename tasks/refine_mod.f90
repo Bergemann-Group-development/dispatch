@@ -258,6 +258,10 @@ SUBROUTINE init (self)
       if (iostat > 0) call io%namelist_warning ('refine_params')
       write (*, refine_params)
     end if
+    if (on) then
+      list%link_locks = .true.
+      download%link_locks = .true.
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! If AMR is active, we must use check_filled, since nbor levels are in

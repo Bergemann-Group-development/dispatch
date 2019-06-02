@@ -38,6 +38,7 @@ MODULE download_mod
     integer(8):: n_same=0, n_differ=0
     integer:: order_interpolator
     logical:: check_filled=.false.
+    logical:: link_locks=.false.
     procedure(interpolator_interface), pointer, nopass:: interpolate => null()
     procedure(same_linear)           , pointer        :: same        => null()
   contains
@@ -396,10 +397,14 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   ! level that supplied values, and skipping nbor contributions from lower levels.
   ! To avoid dead-lock, make a copy of it, and release the lock
   !-----------------------------------------------------------------------------
-  call link%lock%set ('download_link')
-  call link%copy_nbor_list (link%nbors_by_level, nbors)
-  call link%lock%unset ('download_link')
-  nbor => nbors
+  if (download%link_locks) then
+    call link%lock%set ('download_link')
+    call link%copy_nbor_list (link%nbors_by_level, nbors)
+    call link%lock%unset ('download_link')
+    nbor => nbors
+  else
+    nbor => link%nbor
+  end if
   !-----------------------------------------------------------------------------
   ! Insert a value only if "filled" indicates that one is missing.  With the 
   ! nbor list sorted in decreasing level order, values are only computed where
@@ -499,7 +504,9 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   ! Done with temporary nbor list, so remove it
   !-----------------------------------------------------------------------------
-  call link%remove_nbor_list (nbors)
+  if (download%link_locks) then
+    call link%remove_nbor_list (nbors)
+  end if
   if (verbose > 1) then
     wc(3) = wc(3)-wc(2)
     wc(2) = wc(2)-wc(1)
