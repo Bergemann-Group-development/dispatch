@@ -1,4 +1,4 @@
-Garbage Collection
+Garbage collection
 ==================
 
 When tasks are being added or removed it is convenient if threads the are still

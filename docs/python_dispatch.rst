@@ -1,5 +1,5 @@
 Python ``dispatch`` module
-======================
+==========================
 
 Try for example::
 

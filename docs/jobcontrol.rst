@@ -16,7 +16,7 @@ process via jobcontrol.csh.
 The CANNED scripts are helpful with for example archiving
 copies of executables, input files and log files.
 
-SUBMIT SCRIPTS:
+Submit scripts:
 ---------------
 ::
 
@@ -37,7 +37,7 @@ The jobcontrol.csh script runs the script given as argument
 repeatedly, as long as there is a restart.flag file present
 in the run directory.
 
-JOB SCRIPTS:
+Job scripts:
 ------------
 ::
 
@@ -49,7 +49,7 @@ local systems, with syntax such as
 
 ivy.sh input.nml
 
-CANNED SCRIPTS:
+Canned scripts:
 ---------------
 ::
 

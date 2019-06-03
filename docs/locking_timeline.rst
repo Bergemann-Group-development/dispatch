@@ -90,3 +90,7 @@ Schematic timeline and call hierarchy showing lock set & unset::
         queue_by_time (link)
           tlist%lock%set
     task%has_finished
+
+.. toctree::
+   :maxdepth: 3
+
