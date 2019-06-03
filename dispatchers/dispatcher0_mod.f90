@@ -40,6 +40,8 @@ MODULE dispatcher0_mod
   logical, save:: debug=.false.
   logical, save:: do_delay=.false.
   logical, save:: track_active=.false.
+  logical, save:: omp_pick=.false.
+  logical, save:: detailed_timer=.false.
   type(dispatcher0_t), save:: virtual_list
   !$omp threadprivate (virtual_list)
   type(dispatcher0_t), public:: dispatcher0
@@ -54,30 +56,24 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   !.............................................................................
   class(link_t), pointer:: link
-  logical:: queue_unpack, send_priv, recv_active, recv_priv
   integer:: iostat
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
   namelist /dispatcher0_params/ verbose, max_stalled, retry_stalled, do_delay, &
-    queue_unpack, send_priv, recv_active, recv_priv, debug
+    debug, detailed_timer
   character(len=120):: ids = &
   '$Id$ dispatchers/dispatcher0_mod.f90'
   !-----------------------------------------------------------------------------
   call trace%print_id (ids)
   call trace%begin('dispatcher0_t%init')
   call mpi_mesg%init
-  recv_active  = .true.
-  queue_unpack = .true.
-  recv_priv    = .true.
-  send_priv    = .true.
   rewind (io%input); read(io%input, dispatcher0_params, iostat=iostat)
-  mpi_mesg%recv_active  = recv_active
-  mpi_mesg%queue_unpack = queue_unpack
-  mpi_mesg%recv_priv    = recv_priv
-  mpi_mesg%send_priv    = send_priv
   if (io%master) then
     if (io%master) write (*, dispatcher0_params)
+    if (iostat /= 0) then
+      call io%namelist_warning ('dispatcher0_params')
+    end if
   end if
   call self%lock%init ('disp')
   call self%lock%append
@@ -111,7 +107,6 @@ SUBROUTINE execute (self, task_list, test)
       !$omp atomic
       min_nq = min(min_nq,task_list%nq)
     end if
-    if (io%do_stop) call mpi%abort ('stop flag')
     if (timer%dead_mans_hand > 0.0) then
       if (wallclock() > timer%dead_mans_hand + 30.0) &
         call mpi_abort('dead mans hand')
@@ -172,14 +167,15 @@ SUBROUTINE update (self, task_list, test)
   class(task_t), pointer:: task, otask
   class(mesg_t), pointer:: mesg
   logical:: already_busy, was_refined, was_derefined
-  real(8):: levelstart
+  real(8):: levelstart, wc
   real(8), save:: time, otime=0d0
   integer, save:: oid=0
-  integer:: id
+  integer:: i, id, nq
   integer:: stalled_l
   integer, save:: itimer(5)=0
   !.............................................................................
-  call trace%begin('dispatcher0_t%update(1)', itimer=itimer(1))
+  i = 1
+  call trace%begin('dispatcher0_t%update(1)', itimer=itimer(i))
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
@@ -192,37 +188,65 @@ SUBROUTINE update (self, task_list, test)
   call data_io%open_and_close ()
   if (task_list%verbose > 2) &
     write (io%output,*) wallclock(),' thread',omp%thread,' waiting for tasklist(1)'
-  !call trace%end (itimer(1))
-  !call trace%begin('dispatcher0_t%update(2)', itimer=itimer(2))
+  if (detailed_timer) then
+    call trace%end (itimer(i))
+    i = i+1
+    call trace%begin('dispatcher0_t%update(2)', itimer=itimer(i))
+  end if
+  !-----------------------------------------------------------------------------
+  ! Check atomicall if the ready queue is empty and return w/o locking if so,
+  ! to avoid hammering the task list lock, delaying other threads
+  !-----------------------------------------------------------------------------
+  !$omp atomic read
+  nq = task_list%nq
+  if (nq == 0) then
+    call trace%end(itimer(i))
+    return
+  end if
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in what is normally a very brief OMP lock region
   !-----------------------------------------------------------------------------
   call task_list%lock%set ('dispatch0_t%update 1')
   head => task_list%queue                                    ! queue start
-  !call trace%end (itimer(2))
-  !call trace%begin('dispatcher0_t%update(3)', itimer=itimer(3))
+  if (detailed_timer) then
+    call trace%end (itimer(i))
+    i = i+1
+    call trace%begin('dispatcher0_t%update(3)', itimer=itimer(i))
+  end if
   nullify (prev)
   if (associated(head) .and. .not.task_list%syncing) then
     levelstart = wallclock()
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,2x,a,i6,i7)') wallclock(), &
-        'dispather0::update: na, id =',task_list%na, head%task%id
+        'dispather0_t%update: na, id, time =', &
+        task_list%na, head%task%id, head%task%time
     !---------------------------------------------------------------------------
     ! If the patch mem was OMP placed, search ready queue for matching thread
     !---------------------------------------------------------------------------
-    do while (associated(head))
+    if (omp_pick) then
+      do while (associated(head))
+        task => head%task
+        if (task%mem_thread==-1) exit
+        if (omp%thread == task%mem_thread) then
+          !$omp atomic update
+          timer%mem_hit = timer%mem_hit+1
+          exit
+        end if
+        prev => head
+        head => head%next_time
+      end do
+      !$omp atomic update
+      timer%mem_test = timer%mem_test+1
+      !-------------------------------------------------------------------------
+      ! If not found, fall back on first task in queue
+      !-------------------------------------------------------------------------
+      if (.not. associated(head)) then
+        nullify (prev)
+        head => task_list%queue
+        task => head%task                                   ! head task
+      end if
+    else
       task => head%task
-      if (task%mem_thread==-1 .or. omp%thread == task%mem_thread) exit
-      prev => head
-      head => head%next_time
-    end do
-    !---------------------------------------------------------------------------
-    ! If not found, fall back on first task in queue
-    !---------------------------------------------------------------------------
-    if (.not. associated(head)) then
-      nullify (prev)
-      head => task_list%queue
-      task => head%task                                   ! head task
     end if
     !---------------------------------------------------------------------------
     if (debug) then
@@ -236,7 +260,7 @@ SUBROUTINE update (self, task_list, test)
     stalled = 0
     !---------------------------------------------------------------------------
     task%atime = task%time
-    if (io%verbose > 1) then
+    if (verbose > 1) then
       write (io_unit%log,'(f12.6,2x,a,i4,2x,a,i6,2x,a,1p,g16.6,2x,a,i5)') &
         wallclock(), 'thread', omp%thread,'takes', task%id, &
         'time', task%time, 'nq', task%nq
@@ -287,7 +311,7 @@ SUBROUTINE update (self, task_list, test)
       !$omp atomic
       task_list%nq = task_list%nq-1                          ! decrement queue count
       task%nq = task_list%nq                                 ! for info print
-      if (io%verbose >= 0) then
+      if (verbose > 0) then
         if (track_active) then
           otask => task_list%active%task
           time = otask%atime
@@ -337,16 +361,22 @@ SUBROUTINE update (self, task_list, test)
   ! that hit the sync time last of all threads has set this flag, and will clear
   ! it as soon as all other ranks have arrived at the same time.
   !-----------------------------------------------------------------------------
-  !call trace%end (itimer(3))
+  if (detailed_timer) then
+    call trace%end (itimer(i))
+  end if
   if (associated(head)) then
-    !call trace%begin('dispatcher0_t%update(4)', itimer=itimer(4))
+    if (detailed_timer) then
+      i = i+1
+      call trace%begin('dispatcher0_t%update(4)', itimer=itimer(i))
+    end if
     if (already_busy) then
-      !!$omp critical (io_cr)
-      !write (io_unit%log,*) mpi%rank,' WARNING: thread',omp%thread, &
-      !  ' tried to update busy task', task%id
-      print *, mpi%rank,' WARNING: thread',omp%thread, &
+      !$omp critical (stderr_cr)
+      write (io_unit%log,*) mpi%rank,' WARNING: thread', omp%thread, &
         ' tried to update busy task', task%id
-      !!$omp end critical (io_cr)
+      write (stderr,*) mpi%rank,' WARNING: thread', omp%thread, &
+        ' tried to update busy task', task%id
+      !$omp end critical (stderr_cr)
+      call trace%end (itimer(i))
       return
     end if
     call task_list%update (head, test, was_refined, was_derefined)
@@ -366,9 +396,11 @@ SUBROUTINE update (self, task_list, test)
       timer%levelcost(task%level) = &
       timer%levelcost(task%level) + (wallclock() - levelstart)
     end if
-    !call trace%end (itimer(4))
   else
-    !call trace%begin('dispatcher0_t%update(5)', itimer=itimer(5))
+    if (detailed_timer) then
+      i = i+1
+      call trace%begin('dispatcher0_t%update(5)', itimer=itimer(i))
+    end if
     !---------------------------------------------------------------------------
     ! As long as there are tasks, the stalled value remains zero.  The test
     ! below is triggered the first time a thread enters here, and the start
@@ -378,8 +410,9 @@ SUBROUTINE update (self, task_list, test)
     !$omp atomic read
     stalled_l = stalled
     if (stalled_l == 0) then
+      wc = wallclock()
       !$omp atomic write
-      stall_start = wallclock()
+      stall_start = wc
       if (debug) &
         write (io_unit%log,*) wallclock(), 'queue stalled', stalled_l
     end if
@@ -391,15 +424,19 @@ SUBROUTINE update (self, task_list, test)
         !print *, mpi%rank, 'STALLED:'
         call task_list%check_all
         if (associated(task_list%queue)) then
-          print *, mpi%rank, 'STALLED revived by check_all'
+          print *, mpi%rank, omp%thread, 'STALLED revived by check_all'
+          if (verbose > 1) &
+            call io%abort ('STALLED revided by check_all -- check thread log')
           stall_start = wallclock()
         else
           call task_list%check_oldest
           if (associated(task_list%queue)) then
-            print *, mpi%rank, 'STALLED revived by check_oldest'
+            print *, mpi%rank, omp%thread, 'STALLED revived by check_oldest'
+            if (verbose > 1) &
+              call io%abort ('STALLED revided by check_oldest -- check thread log')
             stall_start = wallclock()
           else
-            print *, mpi%rank, 'STALLED, revived FAILED'
+            print *, mpi%rank, omp%thread, 'STALLED, revived FAILED'
              call io%abort ('STALLED, revived FAILED')
           end if
         end if
@@ -414,9 +451,8 @@ SUBROUTINE update (self, task_list, test)
       print *, mpi%rank, 'STALLED bailing out'
       call mpi%abort ('exceeded max_stalled')
     end if
-    !call trace%end (itimer(5))
   end if
-  call trace%end (itimer(1))
+  call trace%end (itimer(i))
 END SUBROUTINE update
 
 END MODULE

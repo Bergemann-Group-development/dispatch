@@ -226,18 +226,30 @@ SUBROUTINE abort_mpi (self, reason)
   class(mpi_t):: self
   character(len=*), optional:: reason
 !...............................................................................
-  if (present(reason)) then
-    print*, mpi_rank, omp%thread, 'mpi_abort: '//trim(reason)
-    write(io_unit%log,'(3(a,i6,2x))') 'mpi_abort: thread =',omp%thread,trim(reason)
-  else
-    print*, mpi_rank, omp%thread, 'mpi_abort: generic'
-    write(io_unit%log,'(3(a,i6,2x))') 'mpi_abort: thread =',omp%thread
-  end if
-  flush (io_unit%log)
 #ifdef MPI
+  !-----------------------------------------------------------------------------
+  ! Give other ranks a chance to issue messages as well, then abort
+  !-----------------------------------------------------------------------------
+  flush (io_unit%output)
+  call message (io_unit%stderr)
+  call message (io_unit%log)
+  call delay (3e3)
   call MPI_Abort (mpi_comm_world, 127, mpi_err)
 #endif
   call exit
+contains
+  subroutine message (unit)
+  integer:: unit
+  flush (unit)
+  if (present(reason)) then
+    write (unit,'("ABORT:  rank",i5,4x,"thread",i4,4x,"reason: ",a)') &
+      mpi_rank, omp%thread, trim(reason)
+  else
+    write (unit,'("ABORT:  rank",i5,4x,"thread",i4,4x,"generic")') &
+      mpi_rank, omp%thread
+  end if
+  flush (unit)
+  end subroutine
 END SUBROUTINE abort_mpi
 
 !===============================================================================

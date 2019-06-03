@@ -4,12 +4,15 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-DISPATCH documentation
-====================================
+DISPATCH Documentation
+======================
 
 .. toctree::
-   :maxdepth: 3
-   :caption: Contents:
+   :maxdepth: 2
+   :caption: Table of contents:
 
-   Documentation
- 
+   user_guide
+   technical
+   doxygen
+   wiki
+   google

@@ -10,7 +10,9 @@ UPD             = adams_bashforth
 SOLVER          = ramses/mhd
 EXEC            = dispatch.x
 TOP             = ../..
+
 sinclude $(TOP)/config/Makefile
+VPATH := $(TOP)/particles/:$(VPATH)
 
 # List the .o files the main program depends on after the colon:
 $(EXEC): setup_mod.o ramses_mod.o dispatcher_mod.o

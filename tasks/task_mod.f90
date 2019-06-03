@@ -40,6 +40,7 @@ MODULE task_mod
     integer:: n_dump=0                  ! number of dump files
     integer:: ip                        ! rank local task id
     integer:: n_needed=1                ! number of tasks that needs it
+    integer:: seq=0                     ! incremental sequence number
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
     real(8):: out_next = 0d0
@@ -67,6 +68,8 @@ MODULE task_mod
     real(8):: wc_last=0.0_8
     class(mesg_t), pointer:: mesg=>null()
     real(8):: sync_time=0d0
+    real(8):: update_last=0.0_8
+    real:: update_cadence=0.0
     logical:: syncing=.false.
     logical:: track=.false.
     logical:: periodic(3)=.true.
@@ -231,6 +234,7 @@ SUBROUTINE dealloc (self)
   if (associated(self%t  )) deallocate (self%t  )
   if (associated(self%dt )) deallocate (self%dt )
   if (associated(self%iit)) deallocate (self%iit)
+  if (associated(self%mesg)) deallocate (self%mesg)
   call trace_end
 END SUBROUTINE dealloc
 
@@ -283,7 +287,9 @@ SUBROUTINE rotate (self)
     write (io_unit%log,'(a,7i10)')   'task_mod::rotate iit =', self%iit
     flush (io_unit%log)
   end if
-  !call self%lock%set ('rotate')
+  if (omp_lock%tasks) then
+    call self%lock%set ('rotate')
+  end if
   !-----------------------------------------------------------------------------
   ! If this task has self%syncing set, then the time step has been set so as to
   ! arrive exactly ast sync_time.  To precent problems with round-off we set the
@@ -296,19 +302,6 @@ SUBROUTINE rotate (self)
       write (io_unit%mpi,*) 'task_t%rotate:: turning off syncing for now', self%id
   else
     time = self%time + self%dtime
-  end if
-  !-----------------------------------------------------------------------------
-  ! Keep track of the shortest times step between updates of the first local
-  ! task.  Use this task in patch%info, rather than the one with ip==1.
-  !-----------------------------------------------------------------------------
-  if (self%id == io%id) then
-    io%dtime = huge(1d0)
-  end if
-  if (self%dtime < io%dtime) then
-    !$omp atomic write
-    io%id = self%id
-    !$omp atomic write
-    io%dtime = self%dtime
   end if
   !-----------------------------------------------------------------------------
   ! Time slot rotation.  Note that self%time should be the LAST of these
@@ -351,7 +344,9 @@ SUBROUTINE rotate (self)
    write (io_unit%log,*) 'task t(iit):', self%t(self%iit)
   nullify (rptr, iptr)
   self%rotated = .true.
-  !call self%lock%unset ('rotate')
+  if (omp_lock%tasks) then
+    call self%lock%unset ('rotate')
+  end if
   call trace_end (itimer)
 END SUBROUTINE rotate
 
@@ -582,7 +577,6 @@ FUNCTION distance (self, task) RESULT (out)
   end if
   call trace%end()
 END FUNCTION distance
-
 
 SUBROUTINE pack (self, mesg)
   class(task_t):: self

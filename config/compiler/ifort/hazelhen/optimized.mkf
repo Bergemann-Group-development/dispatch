@@ -2,4 +2,4 @@ F90 = ftn -cpp -assume byterecl
 LD  = ftn -cpp
 
 HW = -xCORE-AVX2
-OPT = -O2
+OPT = -O3 -fpe:0

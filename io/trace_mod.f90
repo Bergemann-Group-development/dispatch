@@ -191,6 +191,8 @@ SUBROUTINE print_id (id)
     if (id .ne. '') then
       write (io_unit%output,'(a)') hl
       write (io_unit%output,'(a)') id
+      write (io_unit%hash,'(a)') id
+      flush (io_unit%hash)
       id = ''
     end if
     !$omp end critical (print_id_cr)

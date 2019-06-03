@@ -31,7 +31,6 @@ MODULE forces_mod
     real, dimension(:,:,:), pointer:: Ux=>null(), Uy=>null(), Uz=>null()
   contains
     procedure:: init
-    procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
   end type
@@ -48,17 +47,6 @@ SUBROUTINE init (self, link)
   call self%force%init (self%patch%kind, self%patch%id, self%patch%mesh)
   call trace%end
 END SUBROUTINE init
-
-!===============================================================================
-!> Deallocate
-!===============================================================================
-SUBROUTINE dealloc (self)
-  class(forces_t):: self
-  !.............................................................................
-  call trace%begin ('forces_t%dealloc')
-  call self%force%dealloc
-  call trace%end
-END SUBROUTINE dealloc
 
 !===============================================================================
 !> Use the pre-existing force%selected () function to set or add the force

@@ -1,6 +1,6 @@
 # Default for ifort. Beware that versions prior to version 12.3 may crash
 OPT = -O1
-DEBUG = -g -traceback -fpe:0
+DEBUG = -g -traceback
 #HW = -axAVX -xSSE4.1
 HW =
 
@@ -19,7 +19,7 @@ LD  = $(FC)
 
 # Set openmp compiler flags if needed
 ifeq ($(strip $(OMP)),yes)
-  PAR = -qopenmp
+  PAR = -qopenmp -parallel-source-info=2
 endif
 
 # Pick up sub-options in the right order

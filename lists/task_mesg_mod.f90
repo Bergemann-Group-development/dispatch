@@ -46,11 +46,11 @@ MODULE task_mesg_mod
   contains
     procedure:: init
     procedure:: check_mpi
-    procedure:: unpack
+    procedure, private:: unpack
     procedure:: init_virtual
   end type
   integer, save:: verbose=0
-  type(task_mesg_t), save:: virtual_list
+  type(task_mesg_t), save:: virtual_list, remove_list
   !$omp threadprivate (virtual_list)
   public:: task2patch
   type(task_mesg_t), public:: task_mesg
@@ -65,7 +65,10 @@ SUBROUTINE init (self, name)
   integer:: iostat
   type(link_t):: link
   namelist /task_mesg_params/ verbose
+  character(len=120):: id = &
+    '$Id$ lists/task_mesg_mod.f90'
   !-----------------------------------------------------------------------------
+  call trace%print_id (id)
   rewind (io%input)
   read (io%input, task_mesg_params, iostat=iostat)
   if (io%master) write (io%output, task_mesg_params)
@@ -127,8 +130,6 @@ SUBROUTINE check_mpi (self)
     return
   end if
   call trace%begin ('task_mesg_t%check_mpi', 1, itimer=itimer)
-!  i=1; wc(i) = wallclock()-wc(0)
-!  if (wc(i) > mpi_mesg%check_ms*1e-3)  go to 9
   !-----------------------------------------------------------------------------
   ! Step 2: probe for new messages and check for completeness. Put messages on
   ! one of two thread-local lists, depending on if complete or not.  The probing
@@ -173,7 +174,7 @@ SUBROUTINE check_mpi (self)
   do while (associated(mesg))
     next => mesg%next
     call timer%end (itimer=itimer)
-    call unpack (self, mesg)
+    call self%unpack (mesg)
     call timer%begin (itimer=itimer)
     call unpk_tmp%remove (mesg)
     call unpk_tmp%delete (mesg, .false.)
@@ -187,7 +188,11 @@ SUBROUTINE check_mpi (self)
   ! thead-local list, and a second part that does the wait and unpack, we
   ! minimize the blocking of other threads.
   !-----------------------------------------------------------------------------
-  max_recv = merge(mpi_mesg%max_recv,0,self%nq >= mpi_mesg%min_nq)
+  if (self%nq >= mpi_mesg%min_nq) then
+    max_recv = 0
+  else
+    max_recv = mpi_mesg%max_recv
+  end if
   call unpk_tmp%reset
   !$omp atomic read
   n = mpi_mesg%recv_list%n
@@ -202,12 +207,16 @@ SUBROUTINE check_mpi (self)
     end do
     !$omp end critical (recv_cr)
   end if
+  !-----------------------------------------------------------------------------
+  ! The indications of time reversal discoverde in Step 2 have now been cleared,
+  ! but other ones could possibly exist, so we reset the test
+  !-----------------------------------------------------------------------------
   mesg => unpk_tmp%head
   do while (associated(mesg))
     next => mesg%next
     call timer%end (itimer=itimer)
     call mesg%wait_for_completion ()
-    call unpack (self, mesg)
+    call self%unpack (mesg)
     call timer%begin (itimer=itimer)
     call unpk_tmp%remove (mesg)
     call unpk_tmp%delete (mesg, .false.)
@@ -223,10 +232,8 @@ SUBROUTINE check_mpi (self)
   mesg => mpi_mesg%recv_list%head
   do while (associated(mesg))
     next => mesg%next
-    if (mesg%is_complete()) then
-      call mpi_mesg%recv_list%remove (mesg)
-      call unpk_tmp%add (mesg)
-    end if
+    call mpi_mesg%recv_list%remove (mesg)
+    call unpk_tmp%add (mesg)
     mesg => next
   end do
   !$omp end critical (recv_cr)
@@ -234,7 +241,7 @@ SUBROUTINE check_mpi (self)
   do while (associated(mesg))
     next => mesg%next
     call timer%end (itimer=itimer)
-    call unpack (self, mesg)
+    call self%unpack (mesg)
     call timer%begin (itimer=itimer)
     call unpk_tmp%remove (mesg)
     call unpk_tmp%delete (mesg, .false.)
@@ -258,15 +265,15 @@ FUNCTION find_task (self, id, new) RESULT (link)
   logical:: new
   logical:: error
   class(link_t), pointer:: link
+  class(task_t), pointer:: task
   class(patch_t), pointer:: patch
-  class(experiment_t), pointer:: task
+  class(experiment_t), pointer:: exper
   !.............................................................................
   call trace%begin ('task_mesg_t%find_task')
 !  call self%lock%set ('find_task')
   new = .false.
   link => self%head
   do while (associated(link))
-!write (io_unit%log,*) mpi%rank,' find task: id, link%id, virtual =', id, link%task%id, link%task%is_set(bits%virtual)
     patch => task2patch(link%task)
     if (patch%id == id) then
       if (verbose>1) then
@@ -284,26 +291,38 @@ FUNCTION find_task (self, id, new) RESULT (link)
   !-----------------------------------------------------------------------------
   new = .true.
   allocate (link)
-  allocate (task)
-  link%task => task
-  task%link => link
-  task%id = id
-  task%box = self%size
+  allocate (exper)
+  link%task => exper
+  exper%link => link
+  exper%id = id
+  exper%box = self%size
   !-----------------------------------------------------------------------------
   ! The virtual task needs to have all of the capabilities and procedures of the
   ! original boundary task, since it may need to play a role in extras features.
   !-----------------------------------------------------------------------------
-  call task%init
+  call exper%init
+  if (mpi_mesg%recv_priv .or. mpi_mesg%recv_active) then
+    call exper%allocate_mesg
+    if (mpi_mesg%recv_priv) then
+      !-------------------------------------------------------------------------
+      ! If communication is handled by a thread-private virtual task list, then
+      ! append the new task to the (random) thread that happened to find it.
+      !-------------------------------------------------------------------------
+      task => exper
+      call virtual_list%append (task, nbor=exper%link%nbor, &
+        needed=exper%link%needed, needs_me=exper%link%needs_me)
+    end if
+  end if
   !-----------------------------------------------------------------------------
   ! Append to the task_list.  Since we don't yet know the position of the task,
   ! we can't update the nbor list yet; the calling procedure must do that, and
   ! we notify to do it via 'new', so it's not done every time a virtual task
   ! that already exists is updated.
   !-----------------------------------------------------------------------------
-  call task%set (bits%virtual)
+  call exper%set (bits%virtual)
   call self%append_link (link)
   if (verbose>0) &
-    write (io_unit%log,*) ' task_mesg_t%find_task: append', id, task%time
+    write (io_unit%log,*) ' task_mesg_t%find_task: append', id, exper%time
 !  call self%lock%unset ('find_task')
   call trace%end()
 END FUNCTION find_task
@@ -335,6 +354,7 @@ SUBROUTINE unpack (self, mesg, link)
   !-----------------------------------------------------------------------------
   !!omp critical (unpack_cr)
   new = .false.
+  mesg%id = mesg%id
   if (present(link)) then
     link1 => link
     if (self%verbose > 1) &
@@ -399,23 +419,23 @@ SUBROUTINE unpack (self, mesg, link)
     failed = .true.
   end if
   !---------------------------------------------------------------------------
+  ! Measure the update cadence for this virtual task
+  !---------------------------------------------------------------------------
+  block
+  real(8):: wc
+  wc = wallclock()
+  task%update_cadence = wc - task%update_last
+  task%update_last = wc
+  end block
+  !---------------------------------------------------------------------------
   ! Unpack a patch message (which includes swapping the roles of boundary bits).
   ! Since an already existing patch may, at any one time, be under investigation
   ! by check_nbors, it must be protected by a critical region (or an OMP
   ! lock) while it is being updated here
   !---------------------------------------------------------------------------
   id = task%id
-  !call task%lock%set ('unpack')
-  block
-  integer:: tid, mid
-  logical:: error
-  tid = task%id; mid = mesg%id
-  call self%lock%unset ('unpack')
+  call task%lock%set ('unpack')
   call task%unpack (mesg)
-  call self%lock%set ('unpack')
-  if (error) &
-    print *,'ERROR:', id, task%id, mesg%id, tid, mid
-  end block
   if (verbose > 1) then
     write (io_unit%mpi,'(a,3i6,f12.6,2x,3f10.4,2x,5l1)') &
       'unpack: after task%unpack BVRES =', &
@@ -436,7 +456,19 @@ SUBROUTINE unpack (self, mesg, link)
         wallclock(), 'unpack: suicide note received for id =', task%id
       flush (io_unit%mpi)
     end if
-    call refine%remove_patch (self, link1)
+    !---------------------------------------------------------------------------
+    ! If the task is on a thread-private virtual task list things are more
+    ! complicated; we need to keep trying until this procedure is executed
+    ! by the correct thread
+    !---------------------------------------------------------------------------
+    if (mpi_mesg%recv_priv) then
+      call remove_list%append_link (link1)
+    !---------------------------------------------------------------------------
+    ! If not we need a normal remove, including new nbor lists etc.
+    !---------------------------------------------------------------------------
+    else
+      call self%remove_and_reset (link1)
+    end if
     call self%lock%unset('unpack')
     call trace%end (itimer)
     return
@@ -481,7 +513,7 @@ SUBROUTINE unpack (self, mesg, link)
       self%nv = self%nv-1
       call self%init_nbors (link1)
       call task%clear (bits%swap_request+bits%ready)
-      call link1%update_nbor_status (link1)
+      call self%update_nbor_status (link1)
       call self%count_status
       if (verbose>1) &
         write(io%output,'(f12.6,2x,a,i6,a,i9,a,i6)') &
@@ -502,11 +534,11 @@ SUBROUTINE unpack (self, mesg, link)
       self%nv = self%nv+1
       call self%init_nbors (link1)
       call task%clear (bits%swap_request+bits%ready)
-      call link1%update_nbor_status (link1)
+      call self%update_nbor_status (link1)
       call self%count_status
     end if
   end if
-  !call task%lock%unset ('unpack')
+  call task%lock%unset ('unpack')
   !-----------------------------------------------------------------------------
   ! If a virtual task was just created it, it and its nbors need new nbor lists.
   ! Also, since the proper size and position were not known when a new task was
@@ -534,10 +566,9 @@ SUBROUTINE unpack (self, mesg, link)
     ! or virtual. They will have the support bit set, and will trigger calls to
     ! check_support() from check_current() if they are active tasks.  If they 
     ! are virtual tasks, the support bit was set at the owner rank and they will
-    ! be check there.
+    ! be checked there.
     !---------------------------------------------------------------------------
     call refine%check_support (self, link1, n_added)
-    call self%check_nbors (link1)
     call self%check_nbor_nbors (link1)
     !call self%lock%unset ('unpack')
   else
@@ -596,7 +627,7 @@ SUBROUTINE check_priv (self)
     if (mesg%is_complete()) then
       if (verbose > 1) &
         write (io_unit%log,*) 'unpacked directly', mesg%id, n
-      call unpack (self, mesg)
+      call self%unpack (mesg)
       call recv_list%delete (mesg, .false.)
     else
       call recv_list%add (mesg)
@@ -613,7 +644,7 @@ SUBROUTINE check_priv (self)
   do while (associated(mesg))
     next => mesg%next
     if (mesg%is_complete()) then
-      call unpack (self, mesg)
+      call self%unpack (mesg)
       call recv_list%remove (mesg)
       n = n-1
       if (verbose > 1) &
@@ -671,8 +702,8 @@ SUBROUTINE init_virtual (self)
         call task%allocate_mesg
         task%wc_last = wallclock()
         call task%mesg%irecv  (task%rank, task%id)
-        if (verbose > 1) &
-          write (io_unit%log,*) 'task_mesg_t%unpack: init_virtual', omp_get_thread_num(), task%id
+        if (verbose > 0) &
+          write (io_unit%output,*) 'init_virtual irecv request:', task%id, task%mesg%id, task%mesg%tag
         !if (mpi%rank==0) &
         !  write(io%output,*) mpi%rank,'MK',omp_get_thread_num(),i,task%id,'irec'
       end if
@@ -708,15 +739,12 @@ SUBROUTINE check_virtual (self)
     task => link%task
     select type (task)
     class is (patch_t)
-    if (io%log_sent > 1) then
-      !$omp critical (log_sent_cr)
-      write (io_unit%sent,'(f16.6,i4,2x,a,i6,i4)') wallclock(), omp%thread, 'chk', task%id, task%rank
-      !$omp end critical (log_sent_cr)
-    end if
-    if (task%mesg%test_recv()) then
+    call set_test_time (self, task)
+    if (task%mesg%is_complete()) then
+      !write(stdout,*) 'recv:', task%id, task%mesg%id, task%mesg%tag, task%rank
       if (verbose > 1) &
         write (io_unit%log,*) wallclock(),' task_mesg_t%unpack: check_virtual hit ', task%id
-      call unpack (self, task%mesg, link=link)
+      call self%unpack (task%mesg, link=link)
       !$omp atomic
       mpi_mesg%n_recv = mpi_mesg%n_recv+1
       !$omp atomic
@@ -728,6 +756,7 @@ SUBROUTINE check_virtual (self)
         '("WARNING: virtual patch not updated in",f5.1," sec")') wc
       task%wc_last = wc
       call task%mesg%irecv (task%rank, task%id)
+      !write(stdout,*) 'ircv:', task%id, task%mesg%id, task%mesg%tag, task%rank
       nunpk = nunpk+1
     else if (verbose > 2) then
       write (io_unit%log,*) wallclock(),' task_mesg_t%unpack: check_virtual miss', task%id
@@ -740,86 +769,113 @@ SUBROUTINE check_virtual (self)
 END SUBROUTINE check_virtual
 
 !===============================================================================
+!> Set the mesg%test_time
+!===============================================================================
+SUBROUTINE set_test_time (self, task)
+  class(task_mesg_t):: self
+  class(patch_t):: task
+  !---------------------------------------------------------------------------
+  ! If TEST_TIME is specified in MPI_MESG_PARAMS, set that as the minimum time
+  ! between MPI_TEST for the same task
+  !---------------------------------------------------------------------------
+  if (mpi_mesg%test_time > 0.0) then
+    task%mesg%test_time = mpi_mesg%test_time
+  !---------------------------------------------------------------------------
+  ! If the parameter is zero or negative, try to estimate an optimal time.
+  ! The first test is allowed after half the estimated update_cadence, and
+  ! after that the time interval is halved after every fail.  This point is
+  ! returned to about as often as a task update occurs on a single thread,
+  ! which is about the task overload times shorter than the update_cadence.
+  !---------------------------------------------------------------------------
+  else
+    task%update_cadence = 1e-6*product(task%n)*self%na/omp%nthreads
+    task%mesg%test_time = task%update_cadence*0.5**(task%mesg%n_failed+1)
+  end if
+END SUBROUTINE set_test_time
+
+!===============================================================================
 !> Run through all virtual patches, and allocate message data types if not
 !> allocated.  If an old request exists, test if it has completed.  If yes,
 !> unpack and issue a new request.  If no request exists, issue a request.
+!>
+!> This procedure, which is only executed by the master thread, and is only
+!> used when more than one thread is available, asks for exactly the next
+!> message tag, and does not issue a new irecv until that message has arrived,
+!> hence it needs only one (permanent) mesg instance per task.
 !===============================================================================
 SUBROUTINE check_active (self)
   class(task_mesg_t):: self
   class(link_t), pointer:: link
   class(task_t), pointer:: task
-  integer:: nvirt, nunpk
-  real(8):: wc
+  integer:: req
   integer, save:: itimer=0
-  type(mesg_list_t):: unpk_tmp
-  class(mesg_t), pointer:: mesg
   !.............................................................................
   call trace%begin ('task_mesg_t%check_active', itimer=itimer)
-  !$omp critical (active_cr)
-  nvirt = 0
-  nunpk = 0
+  call self%lock%set ('check_active')
   link => self%head
-  if (mpi_mesg%queue_unpack) call unpk_tmp%reset
   do while (associated(link))
     task => link%task
     if (task%is_set (bits%virtual)) then
-      nvirt = nvirt+1
       select type (task)
       class is (patch_t)
+      !-------------------------------------------------------------------------
+      ! Check if this virtual task has a task message allocated.  If not, it is
+      ! a new virtual task -- for example created by AMR -- and should have a
+      ! message allocated, with a active receive request
+      !-------------------------------------------------------------------------
       if (.not.associated(task%mesg)) then
         call task%allocate_mesg
-        task%wc_last = wallclock()
       end if
       if (task%mesg%req == 0) then
-        call task%mesg%irecv  (task%rank, task%id)
-        if (mpi_mesg%debug .or. task%id==io%id_debug) &
-          write (io_unit%log,'(f12.6,2x,a,2i9,z12)') wallclock(), &
-            'DBG recv: id, sender, req =', task%id, task%rank, task%mesg%req
+        call irecv (task)
+        task%wc_last = wallclock()
+        !write(stdout,*) 'ircv:', task%id, task%mesg%id, task%mesg%tag, task%rank
       end if
       !-------------------------------------------------------------------------
-      ! If a mesg was recvd, then either unpack directly and issue a new request,
-      ! or put the mesg on a thread private unpack list, to unpack outside the
-      ! critical region
+      ! If a mesg was recvd, then unpack and issue a new request,
       !-------------------------------------------------------------------------
-      if (task%mesg%test_recv()) then
-        if (mpi_mesg%queue_unpack) then
-          call unpk_tmp%add (task%mesg)
-        else
-          call unpack (self, task%mesg)
-          if (mpi_mesg%debug) &
-            write (io_unit%log,'(f12.6,2x,a,2i9,z12)') wallclock(), &
-              'unpk: id, sender, req =', task%mesg%id, task%mesg%sender, task%mesg%req
-          call task%mesg%irecv (task%rank, task%id)
-          if (mpi_mesg%debug) &
-            write (io_unit%log,'(f12.6,2x,a,2i9,z12)') wallclock(), &
-              'recv: id, sender, req =', task%id, task%rank, task%mesg%req
-          if (task%rank /= task%mesg%sender) call io%abort('rank ne sender')
-          if (task%id   /= task%mesg%id)     call io%abort('task%id ne mesg%id')
-        end if
+      call set_test_time (self, task)
+      req = task%mesg%req
+      if (task%mesg%is_complete()) then
+        write(stdout,*) 'iscmp:', task%id, task%mesg%id, task%mesg%tag, task%rank
+        if (verbose > 0 .or. task%id == io%id_debug) &
+          write (io_unit%log,'(f12.6,2x,a,i6,i5,i9,i6,z12)') wallclock(), &
+            'task_mesg%tcheck_active:  recv id, seq, mesg%id, sender, req =', &
+            task%id, mod(task%istep,100), task%mesg%id, task%mesg%sender, req
+        !$omp atomic
+        mpi_mesg%n_recv = mpi_mesg%n_recv+1
+        !$omp atomic
+        timer%bytes_recv = timer%bytes_recv + 4.0_8*task%mesg%nbuf
+        !$omp atomic
+        timer%n_recv = timer%n_recv + 1_8
+        call self%unpack (task%mesg)
+        call irecv (task)
+        !write(stdout,*) 'irev:', task%id, task%mesg%id, task%mesg%tag, task%rank
+      else
+        if (verbose > 1 .or. task%id == io%id_debug) &
+          write (io_unit%log,'(f12.6,2x,a,i6,i5,i9,i6,z12)') wallclock(), &
+            'task_mesg%tcheck_active:  fail id, seq, mesg%id, sender, req =', &
+            task%id, mod(task%istep,100), task%mesg%id, task%rank, task%mesg%req
       end if
       end select
     end if
     link => link%next
   end do
-  !$omp end critical (active_cr)
-  if (mpi_mesg%queue_unpack) then
-    mesg => unpk_tmp%head
-    do while (associated(mesg))
-      call unpack (self, mesg)
-      if (mpi_mesg%debug) &
-        write (io_unit%log,'(f12.6,2x,a,3i9)') wallclock(), 'unpk: id, time =', mesg%id, mesg%sender, mesg%req
-      call unpk_tmp%remove (mesg)
-      call mesg%irecv (mesg%sender, mesg%id)
-      if (mpi_mesg%debug) then
-        write (io_unit%log,'(f12.6,2x,a,2i9,z12)') wallclock(), &
-          'recv: id, sender, req =', mesg%id, mesg%sender, mesg%req
-        flush (io_unit%log)
-      end if
-      nunpk = nunpk+1
-      mesg => mesg%next
-    end do
-  end if
+  call self%lock%unset ('check_active')
   call trace%end (itimer)
+contains
+  !-----------------------------------------------------------------------------
+  ! If mpi_mesg%uniq_mesg is set, the message tag is constructed intenally,
+  ! and if not, it is equal to the task%id
+  !-----------------------------------------------------------------------------
+  subroutine irecv (task)
+  class(patch_t):: task
+  call task%mesg%irecv (task%rank, task%id)
+  if (verbose > 0 .or. task%id == io%id_debug) &
+    write (io_unit%log,'(f12.6,2x,a,i6,i5,i9,i6,z12)') wallclock(), &
+      'task_mesg%tcheck_active: irecv id, seq, mesg%id, sender, req =', &
+      task%id, mod(task%istep,100), task%mesg%id, task%rank, task%mesg%req
+  end subroutine
 END SUBROUTINE check_active
 
 END MODULE task_mesg_mod

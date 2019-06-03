@@ -11,7 +11,7 @@ PROGRAM dispatch
   call setup%init                               ! Standard setup (MPI, I/O, scaling, ...)
   call dispatcher%init                          ! Set dispatcher method
   call cartesian%init                           ! Initialize the patch list and patches
-  call dispatcher%execute (cartesian%task_list) ! Cáll dispatcher
+  call dispatcher%execute (cartesian%task_list) ! call dispatcher
   write (io_unit%mpi,*) 'calling setup%end'
   flush (io_unit%mpi)
   call setup%end

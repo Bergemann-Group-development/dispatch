@@ -57,7 +57,7 @@ SUBROUTINE init (self, label)
   character(len=120):: ids = &
     '$Id$ components/cartesian_mod.f90'
   !-----------------------------------------------------------------------------
-  call trace%begin ('cartesian_mod::init')
+  call trace%begin ('cartesian_t%init')
   call io%header('begin cartesian_t%init: Cartesian patch arrangement')
   call trace%print_id (ids)
   !-----------------------------------------------------------------------------
@@ -70,7 +70,8 @@ SUBROUTINE init (self, label)
   self%dims = dims
   self%size = size
   io%dims     = dims
-  io%mpi_dims = mpi_dims
+  if (mpi%size==1) &
+    mpi_dims = 1
   !-----------------------------------------------------------------------------
   ! Generate a (periodic) MPI geometry, with dims specified in the input file,
   ! or assigned automatically by mpi_coords%init.
@@ -87,6 +88,7 @@ SUBROUTINE init (self, label)
   mpi_dims = mpi_coords%dims
   patches_per_mpi = self%dims/mpi_dims
   mpi_coords%npatch = patches_per_mpi
+  io%mpi_dims = mpi_dims
   !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------
@@ -154,7 +156,6 @@ SUBROUTINE init (self, label)
     end do
     end do
     end do
-
     if (rank == mpi%rank) nlpatch=nlpatch+1
     if (patch%is_set(bits%external)) then
       deallocate (patch, link)
@@ -168,6 +169,16 @@ SUBROUTINE init (self, label)
   end do
   end do
   end do
+  !-----------------------------------------------------------------------------
+  ! Count task types
+  !-----------------------------------------------------------------------------
+  call self%task_list%count_status
+  !-----------------------------------------------------------------------------
+  ! These must be set before reading input snapshots
+  !-----------------------------------------------------------------------------
+  io%ntask = self%task_list%na
+  io%ntotal = product(self%dims)
+  write(stdout,*) 'ntask, ntotal =', io%ntask, io%ntotal
   !-----------------------------------------------------------------------------
   ! Initialize patches on our rank and virtual patches, in parallel OMP tasks
   !-----------------------------------------------------------------------------
@@ -188,34 +199,33 @@ SUBROUTINE init (self, label)
   ! number of tasks in each category.  The nbor list constructions are (and
   ! must remain) independent of the status bits, since setting the status bits
   ! relies on correct nbor lists -- hence the order of calls below.
-  !
-  ! FIXME:  For some reason, the number of elements in the task list (%n) must
-  ! currently be correct for this to work.
   !-----------------------------------------------------------------------------
-  write (io_unit%output,*) 'Number of tasks in task list:', self%task_list%n
+  write (stdout,*) 'Number of tasks in task list:', &
+    self%task_list%n, io%ntask
   if (io%verbose > 0) &
-    write(io%output,*) 'cartesian_t%init: init all nbors'
+    write(stdout,*) 'cartesian_t%init: init all nbors'
   call self%task_list%init_all_nbors
   if (io%verbose > 0) &
-    write(io%output,*) 'cartesian_t%init: setting status bits'
+    write(stdout,*) 'cartesian_t%init: setting status bits'
   call self%task_list%reset_status
   if (io%verbose > 0) &
-    write(io%output,*) 'cartesian_t%init: counting patch status'
+    write(stdout,*) 'cartesian_t%init: count status'
   call self%task_list%count_status
   if (io%verbose > 0) &
-    write(io%output,*) 'cartesian_t%init: init boundaries'
+    write(stdout,*) 'cartesian_t%init: init boundaries'
   call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
   if (io%verbose > 0) &
-    write(io%output,*) 'cartesian_t%init: diagnostics'
+    write(stdout,*) 'cartesian_t%init: diagnostics'
   call self%diagnostics()
   write (io_unit%output,'(1x,a,5(i5,1x,a))') 'cartesian_t%init: ', &
     npatch,'patches',nvpatch,'virtual',nbpatch,'boundary',nlpatch,'local'
   if (io%verbose > 0) &
-    write(io%output,*) 'cartesian_t%init: print tasks'
+    write(stdout,*) 'cartesian_t%init: print tasks'
   call self%task_list%print_tasks
   if (io%verbose > 0) &
-    write(io%output,*) 'cartesian_t%init: done'
+    write(stdout,*) 'cartesian_t%init: done'
+  flush (stdout)
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE init

@@ -1,5 +1,5 @@
 rm -f .d/*.*d
-rm -f *.o *.mod *.stackdump
+rm -f {.,build}/*.o {.,build}/*.mod *{.,build}/.stackdump
  [ FC ] io_unit_mod.o
  [ FC ] omp_mod.o
  [ FC ] omp_timer_mod.o
@@ -21,5 +21,6 @@ rm -f *.o *.mod *.stackdump
  [ FC ] index_mod.o
  [ FC ] boundary_wavekill_mod.o
  [ FC ] boundaries_mod.o
+ [ FC ] connect_mod.o
  [ FC ] patch_mod.o
  [ LD ] test.x

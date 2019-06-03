@@ -40,6 +40,8 @@ MODULE solver_mod
     procedure:: magnetic_field_magnitude => void
     procedure:: grav_potential => void
     procedure:: apply_heating
+    procedure:: compression_magnitude
+    procedure:: vorticity_magnitude
     procedure:: gas_velocity_vector
     procedure:: gas_velocity_scalar
     generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
@@ -392,5 +394,81 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
   call deallocate_scalars_a (lnd, ld, dd)
   nullify (d)
 END FUNCTION gas_velocity_scalar
+
+!===============================================================================
+!> Compute the compression, centered in cells, given that momenta are dn-staggered
+!> in stagger2, except for stagger2e_pic, where it up-staggered
+!===============================================================================
+SUBROUTINE compression_magnitude (self, w)
+  class (solver_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:):: w
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: vx, vy, vz
+  integer:: i
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t%compression_magnitude', itimer=itimer)
+  allocate (vx(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (vy(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (vz(self%gn(1),self%gn(2),self%gn(3)))
+  allocate ( d(self%gn(1),self%gn(2),self%gn(3),3))
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    d = up(log(self%mem(:,:,:,self%idx%d,self%it,1)))
+  else
+    d = down(log(self%mem(:,:,:,self%idx%d,self%it,1)))
+  end if
+  vx = self%mem(:,:,:,self%idx%px,self%it,1)/exp(d(:,:,:,1))
+  vy = self%mem(:,:,:,self%idx%py,self%it,1)/exp(d(:,:,:,2))
+  vz = self%mem(:,:,:,self%idx%pz,self%it,1)/exp(d(:,:,:,3))
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    w = max(- ddxdn(self%ds(1),vx) &
+            - ddydn(self%ds(2),vy) &
+            - ddzdn(self%ds(3),vz), 0.0)
+  else
+    w = max(- ddxup(self%ds(1),vx) &
+            - ddyup(self%ds(2),vy) &
+            - ddzup(self%ds(3),vz), 0.0)
+  end if
+  deallocate (vx, vy, vz, d)
+  call trace%end (itimer)
+END SUBROUTINE compression_magnitude
+
+!===============================================================================
+!> Compute the vorticity, centered in cells, given that momenta are dn-staggered
+!> in stagger2, except for stagger2e_pic, where it up-staggered
+!===============================================================================
+SUBROUTINE vorticity_magnitude (self, w)
+  class (solver_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:):: w
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: d
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: vx, vy, vz
+  integer:: i
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t%vorticity_magnitude', itimer=itimer)
+  allocate (vx(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (vy(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (vz(self%gn(1),self%gn(2),self%gn(3)))
+  allocate ( d(self%gn(1),self%gn(2),self%gn(3),3))
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    d = up(log(self%mem(:,:,:,self%idx%d,self%it,1)))
+  else
+    d = down(log(self%mem(:,:,:,self%idx%d,self%it,1)))
+  end if
+  vx = self%mem(:,:,:,self%idx%px,self%it,1)/exp(d(:,:,:,1))
+  vy = self%mem(:,:,:,self%idx%py,self%it,1)/exp(d(:,:,:,2))
+  vz = self%mem(:,:,:,self%idx%pz,self%it,1)/exp(d(:,:,:,3))
+  if (self%kind(1:13) == 'stagger2e_pic') then
+    w = sqrt(ydn(zdn(ddyup(self%ds(2),vz)-ddzup(self%ds(3),vy)))**2 &
+           + zdn(xdn(ddzup(self%ds(3),vx)-ddxup(self%ds(1),vz)))**2 &
+           + xdn(ydn(ddxup(self%ds(1),vy)-ddyup(self%ds(2),vx)))**2)
+  else
+    w = sqrt(yup(zup(ddydn(self%ds(2),vz)-ddzdn(self%ds(3),vy)))**2 &
+           + zup(xup(ddzdn(self%ds(3),vx)-ddxdn(self%ds(1),vz)))**2 &
+           + xup(yup(ddxdn(self%ds(1),vy)-ddydn(self%ds(2),vx)))**2)
+  end if
+  deallocate (vx, vy, vz)
+  call trace%end (itimer)
+END SUBROUTINE vorticity_magnitude
 
 END MODULE solver_mod

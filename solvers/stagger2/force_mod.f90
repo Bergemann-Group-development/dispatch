@@ -20,6 +20,7 @@ MODULE force_mod
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
     procedure init
+    procedure dealloc
   end type
   logical, save:: first_time=.true.
 CONTAINS

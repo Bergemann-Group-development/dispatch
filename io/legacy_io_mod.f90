@@ -193,75 +193,34 @@ SUBROUTINE input (self, ok)
   if (self%restart < 0) return
   call trace_begin('legacy_io_t%input')
   !$omp critical (output_cr)
-  !-----------------------------------------------------------------------------
-  ! Read the patch time from the .txt file
-  !-----------------------------------------------------------------------------
-  write (filename,'(a,"/",i4.4,"_",i4.4)') trim(io%inputdir), self%id, self%restart
-  inquire (file=trim(filename)//'.txt', exist=ok)
+  !---------------------------------------------------------------------------
+  ! If guard_zones is true, include the guard zones.
+  !---------------------------------------------------------------------------
+  l = merge (self%mesh%lb, self%mesh%li, io%guard_zones)
+  u = merge (self%mesh%ub, self%mesh%ui, io%guard_zones)
+  !---------------------------------------------------------------------------
+  ! Read the binary file with the data cube.
+  !---------------------------------------------------------------------------
+  write (filename,'(a,"/",i5.5,"/",i5.5)') trim(io%inputdir), self%restart, self%id
+  inquire (file=trim(filename)//'.dat', exist=ok)
   if (.not.ok) then
-    write (filename,'(a,"/",i5.5,"/",i5.5)') trim(io%inputdir), self%restart, self%id
-    inquire (file=trim(filename)//'.txt', exist=ok)
-    if (.not.ok) then
-      if (self%id==io%id_debug) &
-        print *,'MK input_legacy: no .txt file', trim(filename)//'.txt'
-    end if
+    call io%abort('MK input_legacy: no .dat file'//trim(filename)//'.dat')
   end if
   if (ok) then
-    do_print = do_print .and. io%master
-    open (io_unit%data, file=trim(filename)//'.txt', form='formatted', status='unknown')
-    read (io_unit%data,'(a)') line
-    if (line(1:2)=='  ') then
-      read (line,*) time
-      ioformat = 0
-      if (do_print) print '(a,i12)', 'snapshot ioformat:', ioformat
-    else
-      read (line,*) ioformat
-      if (do_print) print '(a,i12)', 'snapshot ioformat:', ioformat
-      if (ioformat==1 .or. ioformat==2) then
-        fmt = '(a)'
-        read (io_unit%data,fmt) line
-        if (trim(line) /= trim(self%kind)) call io%abort('wrong solver')
-        read (io_unit%data,fmt) line
-        if (do_print) print '(a,a12)','snapshot      EOS:', trim(line)
-        read (io_unit%data,fmt) line
-        if (do_print) print '(a,a12)','snapshot       RT:', trim(line)
-        read (io_unit%data,*) time
-      else
-        call io%abort('unsupported ioformat')
-      end if
-    end if
-    do_print = .false.
+    open (io_unit%data, file=trim(filename)//'.dat', form='unformatted', &
+      access='direct', status='unknown', recl=kind(self%mem)*product(u-l+1))
+    do iv=1,self%nv
+      read (io_unit%data,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
+    end do
+    if (io%master .and. io%verbose>0 .or. self%track) &
+      print*, 'legacy_io%input_legacy: ', trim(filename), time
     close (io_unit%data)
-    self%time = time
+    if (self%id==io%id_debug) &
+      print *,'MK input_legacy', self%id, ok, self%mem(18,18,36,1,self%it,1)
     !---------------------------------------------------------------------------
-    ! If guard_zones is true, include the guard zones.
+    ! Update the iout and out_next for continued experiment
     !---------------------------------------------------------------------------
-    l = merge (self%mesh%lb, self%mesh%li, io%guard_zones)
-    u = merge (self%mesh%ub, self%mesh%ui, io%guard_zones)
-    !---------------------------------------------------------------------------
-    ! Read the binary file with the data cube.
-    !---------------------------------------------------------------------------
-    inquire (file=trim(filename)//'.dat', exist=ok)
-    if (.not.ok) then
-      if (self%id==io%id_debug) &
-        print *,'MK input_legacy: no .dat file', trim(filename)//'.dat'
-    end if
-    if (ok) then
-      open (io_unit%data, file=trim(filename)//'.dat', form='unformatted', &
-        access='direct', status='unknown', recl=kind(self%mem)*product(u-l+1))
-      do iv=1,self%nv
-        read (io_unit%data,rec=iv) self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,1)
-      end do
-      if (io%master .and. io%verbose>0 .or. self%track) &
-        print*, 'legacy_io%input_legacy: ', trim(filename), time
-      close (io_unit%data)
-      if (self%id==io%id_debug) &
-        print *,'MK input_legacy', self%id, ok, self%mem(18,18,36,1,self%it,1)
-      !---------------------------------------------------------------------------
-      ! Update the iout and out_next for continued experiment
-      !---------------------------------------------------------------------------
-      self%out_next = (int(self%time/io%out_time)+1)*io%out_time
-    end if
+    self%out_next = (int(self%time/io%out_time)+1)*io%out_time
   end if
   !$omp end critical (output_cr)
   call trace_end

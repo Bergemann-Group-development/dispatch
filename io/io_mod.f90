@@ -47,6 +47,7 @@ MODULE io_mod
     real(8):: out_time=1d0
     real(8):: out_next=1d0
     real(8):: print_time=0d0
+    real(8):: print_next=0d0
     real(8):: dtime=huge(1d0)   ! the shortest time step
     real(8):: gb=0.0
     real(8):: job_seconds=1d30
@@ -72,9 +73,10 @@ MODULE io_mod
     procedure, nopass:: header
     procedure, nopass:: print_hl
   end type
+  integer:: stdout, stderr
   character(len=64), save:: inputname, outputname
   type(io_t), public:: io
-  public mch, io_unit, log_unit
+  public mch, io_unit, stdout, stderr
 CONTAINS
 
 !===============================================================================
@@ -101,7 +103,7 @@ SUBROUTINE init (self, name)
   character(len=64):: filename, datadir='data', inputdir='data'
   character(len=64), save:: top='../../'
   character(len=8), save:: method='legacy'
-  integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0, nml_version=2
+  integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0, nml_version=1
   integer, save:: log_sent=0
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
@@ -145,7 +147,9 @@ SUBROUTINE init (self, name)
     end if
     self%outputname = self%rundir                               ! compatibility
     call os%mkdir (trim(self%rundir))
+    !---------------------------------------------------------------------------
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
+    open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', status='unknown')
     open (self%input, file=self%inputname, form='formatted', status='old')
     !---------------------------------------------------------------------------
     ! Read io_params namelist
@@ -256,6 +260,8 @@ SUBROUTINE init (self, name)
   if (do_direct) self%method = 'direct'
   io_unit%top    = top
   io_unit%do_validate = do_validate
+  stdout = io_unit%output
+  stderr = io_unit%stderr
   call timer%init
 contains
   !-----------------------------------------------------------------------------
@@ -414,6 +420,13 @@ contains
     call check ('print_time.flag'     , remove, dvalue=self%print_time)
     call check ('end_time.flag'       , remove, dvalue=self%end_time)
     call check ('sec_per_report.flag' , remove, dvalue=timer%sec_per_report)
+    !-------------------------------------------------------------------------
+    if (io%do_stop .and. mpi%master) then
+      write (stdout,*) file
+      open (io_unit%flag, file=file, form='formatted', status='unknown')
+      close (io_unit%flag, status='delete')
+      call io%abort ('stop.flag detected')
+    end if
   end if
   !$omp end critical (flag_cr)
   end subroutine
@@ -464,20 +477,17 @@ SUBROUTINE namelist_warning (self, namelist)
   character(len=*):: namelist
   !.............................................................................
   if (io%master) then
-    if (.not. self%namelist_errors) then
-      print *, ''
-      print *, '*************************************************************************************'
-      print *, '*************************************************************************************'
-      print *, '           WARNING: namelist '//trim(namelist)//' had read error'
-      print *, '*************************************************************************************'
-      print *, '*************************************************************************************'
+    write(stdout,'(a)') ''
+    write(stdout,'(a)') '*************************************************************************************'
+    write(stdout,'(a)') '*************************************************************************************'
+    if (self%namelist_errors) then
+      write(stdout,'(a)') '           ERROR: namelist '//trim(namelist)//' had read error'
     else
-      print *, ''
-      print *, '*************************************************************************************'
-      print *, '*************************************************************************************'
-      print *, '           ERROR!: namelist '//trim(namelist)//' had read error'
-      print *, '*************************************************************************************'
-      print *, '*************************************************************************************'
+      write(stdout,'(a)') '           WARNING: namelist '//trim(namelist)//' had read error'
+    end if
+    write(stdout,'(a)') '*************************************************************************************'
+    write(stdout,'(a)') '*************************************************************************************'
+    if (self%namelist_errors) then
       call mpi%abort('Abort!')
     end if
   end if

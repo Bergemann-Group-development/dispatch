@@ -11,6 +11,7 @@ MODULE non_ideal_mod
   USE mpi_mod
   USE omp_mod
   USE index_mod
+  USE mesh_mod
   implicit none
   private
   type, public :: non_ideal_t
@@ -90,9 +91,11 @@ SUBROUTINE init (self)
 
 END SUBROUTINE init
 
-subroutine non_ideal_comp(self,bf,uin,qin,fluxambdiff,emfambdiff,u_max,ds,dt,gamma)
+subroutine non_ideal_comp(self,mesh,idx,bf,uin,qin,fluxambdiff,emfambdiff,u_max,ds,dt,gamma)
   class (non_ideal_t):: self
-  integer:: n(4)
+  class (mesh_t):: mesh(:)
+  class (index_t):: idx
+  integer:: n(4), l(3), u(3)
   real :: u_max
   real(8) :: gamma
   real(8) :: ds(3), dt
@@ -165,7 +168,13 @@ subroutine non_ideal_comp(self,bf,uin,qin,fluxambdiff,emfambdiff,u_max,ds,dt,gam
   
   if(self%mhd_AD) then
      call computambip(self,uin,qin,bemfx,bemfy,bemfz,florentzx,florentzy,florentzz,fluxad,bmagij,emfambdiff,fluxambdiff,jxbsquare,ds,dt,gamma)
-     u_max = max(u_max, maxval(uin(:,:,:,6)**2+uin(:,:,:,7)**2+uin(:,:,:,8)**2 / (self%gamma_AD * self%rho_ions * uin(:,:,:,1) * minval(ds)) )  )  
+     l = mesh%lo
+     u = mesh%uo
+     u_max = max(u_max, maxval( &
+       uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bx)**2 + &
+       uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%by)**2 + &
+       uin(l(1):u(1),l(2):u(2),l(3):u(3),idx%bz)**2 / &
+       (self%gamma_AD * self%rho_ions * uin(:,:,:,1) * minval(ds)) )  )
   endif
   
   

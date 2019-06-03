@@ -53,10 +53,12 @@ MODULE list_mod
     procedure:: append_link
     procedure:: remove_task
     procedure:: remove_link
+    procedure:: remove_and_reset
     procedure:: remove_head
     procedure:: update_counts
     procedure:: count_status
     procedure:: reset_status
+    procedure:: set_status_and_flags
     procedure:: check_nbors
     procedure:: check_ready
     procedure:: check_all
@@ -85,8 +87,14 @@ MODULE list_mod
     procedure:: print => print_list
     procedure:: print_tasks
     procedure, nopass:: check_nbor_list
+    procedure:: give_to
+    procedure:: update_nbor_status
+    procedure:: update_status
+    procedure:: send_to_vnbors
+    procedure:: test_nbor_status
   end type
   integer, parameter:: mnbor=100
+  type(list_t), public:: list
   public link_t, task2patch
 CONTAINS
 
@@ -197,6 +205,29 @@ SUBROUTINE append_link (self, link)
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(2)'
   call trace_end
 END SUBROUTINE append_link
+
+!===============================================================================
+!> Remove a link from the list, taking special care with the head and tail
+!===============================================================================
+SUBROUTINE remove_and_reset (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  integer:: count
+  !-----------------------------------------------------------------------------
+  call self%lock%set ('remove_and_reset')  ! lock task list while changing
+  call self%remove_link (link)             ! remove link from task list
+  !$omp atomic update
+  timer%levelpop (link%task%level) = &     ! decrement level population count
+  timer%levelpop (link%task%level) - 1
+  call self%init_nbor_nbors (link)         ! new nbor lists, w/o link
+  call self%reset_status()                 ! set task status bits
+  !-----------------------------------------------------------------------------
+  ! Decrement the I/O write counter; may be moot, with task disappearing
+  !-----------------------------------------------------------------------------
+  call self%check_nbor_nbors (link)        ! check / send to ready queue
+  call link%garbage_collect (link)         ! add to garbage bin
+  call self%lock%unset ('remove_patch')    ! release the task list
+END SUBROUTINE remove_and_reset
 
 !===============================================================================
 !> Remove a link from the list, taking special care with the head and tail
@@ -342,14 +373,6 @@ SUBROUTINE count_status (self, label)
   end if
   self%na = ni + nb - nf
   !-----------------------------------------------------------------------------
-  ! IMPORTANT:  The globally available io%ntask must reflect the total number
-  ! of active tasks on the rank (io%nwrite is set in data_io_mod)
-  !-----------------------------------------------------------------------------
-  !$omp atomic write
-  io%ntask  = self%na                       ! Authoritative !
-  !$omp atomic write
-  io%ntotal = self%n                        ! Authoritative !
-  !-----------------------------------------------------------------------------
   call self%lock%unset ('count_status')
   call trace%end (itimer)
 END SUBROUTINE count_status
@@ -365,7 +388,7 @@ SUBROUTINE reset_status (self)
   ! Clear virtual and boundary bits
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%reset_status')
-  if (self%verbose > 0) &
+  if (self%verbose > 1) &
     write (io_unit%output,*) 'reset_status'
   n_internal = 0
   n_boundary = 0
@@ -379,73 +402,29 @@ SUBROUTINE reset_status (self)
   link => self%head
   do while (associated(link))
     if (link%task%rank == mpi%rank) then
-      nbor => link%nbor
+      !-------------------------------------------------------------------------
+      ! Assume internal -- this may change in set_status_and_flags()
+      !-------------------------------------------------------------------------
       call link%task%set(bits%internal)
       call link%task%clear(bits%boundary+bits%virtual+bits%external)
-      !-------------------------------------------------------------------------
-      ! If at least one nbor task is on a different rank, set boundary bit, and
-      ! clear needs_me, since check_ready should not be called for that nbor, 
-      ! when this task calls check_nbors.
-      !-------------------------------------------------------------------------
-      do while (associated(nbor))
-        !-----------------------------------------------------------------------
-        ! task is active, nbor is virtual
-        !-----------------------------------------------------------------------
-        if (nbor%task%rank /= mpi%rank) then
-          call link%task%set(bits%boundary)
-          call link%task%clear(bits%internal)
-          ! -- do not include in check_nbors()
-          nbor%needed = .true.
-          nbor%needs_me = .false.
-        else
-          nbor%needed = .true.
-          nbor%needs_me = .true.
-        end if
-        nbor%download = .true.
-        nbor => nbor%next
-      end do
     else
+      !-------------------------------------------------------------------------
+      ! Assume external -- this may change in set_status_and_flags()
+      !-------------------------------------------------------------------------
       call link%task%set(bits%external)
       call link%task%clear(bits%internal+bits%boundary+bits%virtual)
-      nbor => link%nbor
-      !-------------------------------------------------------------------------
-      ! If at least one nbor task is on a this rank, set virtual bit
-      !-------------------------------------------------------------------------
-      do while (associated(nbor))
-        if (link%task%id==io%id_debug) write (io_unit%log,'(a,i5,2i4,3f9.4)') &
-          'mk2', nbor%task%id, link%task%rank, nbor%task%rank, link%task%position-nbor%task%position
-        ! -- if an nbor task is ours, the task is a virtual task
-        !-----------------------------------------------------------------------
-        ! task is virtual, nbor is active
-        !-----------------------------------------------------------------------
-        if (nbor%task%rank==mpi%rank) then
-          call link%task%set(bits%virtual)
-          call link%task%clear(bits%external)
-          nbor%needed = .false.
-          nbor%needs_me = .true.
-        !-----------------------------------------------------------------------
-        ! Task is virtual, nbor is virtual
-        !-----------------------------------------------------------------------
-        else
-          nbor%needed = .false.
-          nbor%needs_me = .false.
-        end if
-        nbor%download = .false.
-        nbor => nbor%next
-      end do
     end if
+    !---------------------------------------------------------------------------
+    ! Run through nbors and set their status
+    !---------------------------------------------------------------------------
     nbor => link%nbor
     do while (associated(nbor))
-      if (nbor%task%level == link%task%level-2) then
-        nbor%download = .false.
-        nbor%needs_me = .false.
-        nbor%needed   = .false.
-      end if
+      call self%set_status_and_flags (link, nbor)
       nbor => nbor%next
     end do
-   if (self%verbose > 2) &
-      write(io_unit%output,*) &
-        'reset_status: id, rank, IBV =', link%task%id, link%task%rank, &
+    if (self%verbose > 1) &
+      write(io_unit%log,'(a,i6,i4,3x,3l1)') &
+        'reset_status: task, rank, IBV =', link%task%id, link%task%rank, &
         link%task%is_set(bits%internal), &
         link%task%is_set(bits%boundary), &
         link%task%is_set(bits%virtual)
@@ -474,16 +453,106 @@ SUBROUTINE reset_status (self)
     flush (io_unit%log)
   end if
   !-----------------------------------------------------------------------------
-  ! Authoritative update of the shared values of task counts
-  !-----------------------------------------------------------------------------
-  !$omp atomic write
-  io%ntask  = self%na                       ! Authoritative !
-  !$omp atomic write
-  io%ntotal = self%n                        ! Authoritative !
-  !-----------------------------------------------------------------------------
   call self%lock%unset ('reset_status')
   call trace%end()
 END SUBROUTINE reset_status
+
+!===============================================================================
+!> Set the virtual and boundary bits, and the nbor flags
+!===============================================================================
+SUBROUTINE set_status_and_flags (self, link, nbor)
+  class(list_t):: self
+  class(link_t), pointer:: link, nbor
+  integer:: n_internal, n_boundary, n_virtual, n_external, n_frozen
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%set_status')
+  !-----------------------------------------------------------------------------
+  ! real task
+  !-----------------------------------------------------------------------------
+  if (link%task%rank == mpi%rank) then
+    !-----------------------------------------------------------------------
+    ! nbor is virtual
+    !-----------------------------------------------------------------------
+    if (nbor%task%rank /= mpi%rank) then
+      call link%task%set(bits%boundary)
+      call link%task%clear(bits%internal)
+      ! -- use in check_ready(), but not in check_nbors()
+      nbor%needed = .true.
+      nbor%needs_me = .false.
+    !-----------------------------------------------------------------------
+    ! nbor is real
+    !-----------------------------------------------------------------------
+    else
+      ! -- use in check_ready(), and in check_nbors()
+      nbor%needed = .true.
+      nbor%needs_me = .true.
+    end if
+    !-----------------------------------------------------------------------
+    ! real tasks need guard zones
+    !-----------------------------------------------------------------------
+    nbor%download = .true.
+  !-----------------------------------------------------------------------------
+  ! task is virtual
+  !-----------------------------------------------------------------------------
+  else
+    !-----------------------------------------------------------------------
+    ! task is virtual, nbor is real
+    !-----------------------------------------------------------------------
+    if (nbor%task%rank==mpi%rank) then
+      call link%task%set(bits%virtual)
+      call link%task%clear(bits%external)
+      ! -- don't use in check_ready(), use in check_nbors()
+      nbor%needed = .false.
+      nbor%needs_me = .true.
+    !-----------------------------------------------------------------------
+    ! task is virtual, nbor is virtual
+    !-----------------------------------------------------------------------
+    else
+      nbor%needed = .false.
+      nbor%needs_me = .false.
+    end if
+    !-----------------------------------------------------------------------
+    ! virtual tasks do not need guard zones
+    !-----------------------------------------------------------------------
+    nbor%download = .false.
+  end if
+  !-------------------------------------------------------------------------
+  ! nbor is more than one level different; these are normally not needed,
+  ! and are only used in support considerations, so should not take part
+  ! in check_nbors() and check_ready(), but may be downloaded exceptionally
+  !-------------------------------------------------------------------------
+  if (abs(nbor%task%level-link%task%level) > 1) then
+    nbor%needed = .false.
+    nbor%needs_me = .false.
+  end if
+  if (self%verbose > 2) &
+    write(io_unit%log,'(a,i6,i4,3x,3l1)') &
+      'set_status_and_flags: nbor, rank, IBV =', nbor%task%id, nbor%task%rank, &
+      nbor%task%is_set(bits%internal), &
+      nbor%task%is_set(bits%boundary), &
+      nbor%task%is_set(bits%virtual)
+  !-----------------------------------------------------------------------------
+  call trace%end()
+END SUBROUTINE set_status_and_flags
+
+!===============================================================================
+!> Check the nbor nbors for tasks ready to update, and the task itself
+!===============================================================================
+SUBROUTINE check_nbor_nbors (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(link_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%check_nbor_nbors')
+  nbor => link%nbor
+  do while (associated(nbor))
+    call self%check_nbors (nbor%link)
+    nbor => nbor%next
+  end do
+  call self%check_ready(link)
+  call trace%end
+END SUBROUTINE check_nbor_nbors
 
 !===============================================================================
 !> Among a task and its neighbor tasks, move local tasks to ready_queue if they
@@ -501,9 +570,11 @@ SUBROUTINE check_nbors (self, link)
   class(link_t), pointer:: link
   class(link_t), pointer:: nbor, nbors
   class(task_t), pointer:: task
-  integer, save:: itimer=0
+  integer:: itr
+  integer, save:: itimer(2)=0
   !.............................................................................
-  call trace_begin('list_t%check_nbors', itimer=itimer)
+  itr = 1
+  call trace_begin('list_t%check_nbors(lock)', itimer=itimer(itr))
   if (io%verbose > 1) &
     write (io_unit%log,*) 'checking nbors of',link%task%id,associated(link%nbor)
   task => link%task                                     ! main task
@@ -511,26 +582,33 @@ SUBROUTINE check_nbors (self, link)
   ! Keeping a lock on link, while also locking/unlocking its nbors, creates the
   ! possibility of a dead-lock.  To avoid that, we make a copy of the nbor list
   !-----------------------------------------------------------------------------
-  call link%lock%set ('check_nbors')
-  call link%copy_nbor_list (link%nbor, nbors)           ! temporary nbor list
-  call link%increment_needed (nbors)
-  call link%lock%unset ('check_nbors')
-  nbor => nbors                                         ! first nbor
+  if (omp_lock%links) then
+    call link%lock%set ('check_nbors')
+    call trace%end (itimer(itr))
+    itr = itr+1
+    call trace_begin('list_t%check_nbors', itimer=itimer(itr))
+    call link%copy_nbor_list (link%nbor, nbors)           ! temporary nbor list
+    call link%lock%unset ('check_nbors')
+    nbor => nbors                                         ! first nbor
+  else
+    nbor => link%nbor                                     ! first nbor
+  end if
   do while (associated (nbor))                          ! keep going until end
     if (nbor%task%id==io%id_debug) print *, &
       'task', task%id,' needs task ', nbor%task%id, nbor%needs_me
     if (nbor%needs_me) then                             ! needs checking?
-      if (io%verbose > 1) &
-        write (io_unit%log,*) 'check nbor', nbor%task%id
+      if (self%verbose > 1) &
+        write (io_unit%log,*) wallclock(), task%id, 'checks nbor', nbor%task%id
       call self%check_ready (nbor%link)                 ! pointer back
     else
-      if (io%verbose > 1) &
-        write (io_unit%log,*) 'no need to', nbor%task%id
+      if (self%verbose > 1) &
+        write (io_unit%log,*) wallclock(), task%id, 'no need to check', nbor%task%id
     end if
     nbor => nbor%next                                   ! next nbor
   end do
-  call link%decrement_needed (nbors)
-  call link%remove_nbor_list (nbors)                    ! remove nbor list copy
+  if (omp_lock%links) then
+    call link%remove_nbor_list (nbors)                  ! remove nbor list copy
+  end if
   !-----------------------------------------------------------------------------
   ! Since we may be called upon to check nbors of a patch that should not itself
   ! be checked, we check if any bits are set indicating this to be the case
@@ -538,7 +616,7 @@ SUBROUTINE check_nbors (self, link)
   if (task%is_clear (bits%virtual+bits%external)) then
     call self%check_ready (link)                      ! finally check link task
   end if
-  call trace_end (itimer)
+  call trace_end (itimer(itr))
   return
 END SUBROUTINE check_nbors
 
@@ -554,7 +632,7 @@ SUBROUTINE check_all (self, repair)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('list_t%check_all', itimer=itimer)
-  write (io_unit%mpi,*) wallclock(), 'check_all: phase 1', &
+  write (io_unit%log,*) wallclock(), 'check_all: phase 1', &
     self%nq, associated(self%queue)
   if (present(repair)) then
     nullify (self%queue)
@@ -566,7 +644,8 @@ SUBROUTINE check_all (self, repair)
     end if
     link => link%next
   end do
-  write (io_unit%mpi,*) 'check_all: done   ', self%nq, associated(self%queue)
+  write (io_unit%log,*) wallclock(), 'check_all: done   ', &
+    self%nq, associated(self%queue)
   if (.not.associated(self%queue)) then
     write (io_unit%log,*) 'check_all: phase 2, clearing ready bits'
     link => self%head
@@ -596,7 +675,7 @@ SUBROUTINE resend_bdry (self)
   link => self%head
   do while (associated(link))
     if (link%task%is_set (bits%boundary)) then
-      call link%send_to_vnbors
+      call self%send_to_vnbors (link)
     end if
     link => link%next
   end do
@@ -614,8 +693,8 @@ SUBROUTINE check_oldest (self)
   integer, save:: phase=1
   !.............................................................................
   call trace_begin('list_t%check_oldest ')
-  write (io_unit%mpi,*) 'check_oldest: phase 1', wallclock()
-  flush (io_unit%mpi)
+  write (io_unit%log,*) 'check_oldest: phase 1', wallclock()
+  flush (io_unit%log)
   told = 1d30
   toldv = told
   nullify (oldest)
@@ -636,37 +715,37 @@ SUBROUTINE check_oldest (self)
     end if
     link => link%next
   end do
-  write (io_unit%mpi,*) 'oldest active is ', oldest%task%id , told, &
+  write (io_unit%log,*) 'oldest active is ', oldest%task%id , told, &
     oldest%task%is_set(bits%ready), oldest%task%is_set(bits%busy) 
-  flush (io_unit%mpi)
+  flush (io_unit%log)
   if (associated(oldestv)) then
-    write (io_unit%mpi,*) 'the oldest virtual task is ', oldestv%task%id, toldv
-    write (io_unit%mpi,*) 'it was last unpacked at', oldestv%task%unpack_time
-    flush (io_unit%mpi)
+    write (io_unit%log,*) 'the oldest virtual task is ', oldestv%task%id, toldv
+    write (io_unit%log,*) 'it was last unpacked at', oldestv%task%unpack_time
+    flush (io_unit%log)
   end if
   nbor => oldest%nbor
 2 format(i6,f12.6,2i4,5L3,f12.6)
-  write (io_unit%mpi,2) oldest%task%id, oldest%task%time, oldest%task%rank, oldest%task%level, &
+  write (io_unit%log,2) oldest%task%id, oldest%task%time, oldest%task%rank, oldest%task%level, &
     oldest%needed, oldest%needs_me, oldest%task%is_set(bits%boundary), oldest%task%is_set(bits%virtual)
-  write (io_unit%mpi,*) 'nbor list:'
+  write (io_unit%log,*) 'nbor list:'
   do while (associated(nbor))
-    write (io_unit%mpi,2) nbor%task%id, nbor%task%time, nbor%task%rank, nbor%task%level, &
+    write (io_unit%log,2) nbor%task%id, nbor%task%time, nbor%task%rank, nbor%task%level, &
       nbor%needed, nbor%needs_me, nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual), &
       nbor%task%is_ahead_of (oldest%task), nbor%task%unpack_time
     nbor => nbor%next
   end do
   call oldest%task%clear (bits%ready+bits%busy)
   call self%queue_by_time (oldest)                  ! add task to queue
-  write (io_unit%mpi,*) 'task queued'
-  flush (io_unit%mpi)
-  write (io_unit%mpi,*) 'check_oldest: phase 1 done'
-  flush (io_unit%mpi)
+  write (io_unit%log,*) 'task queued'
+  flush (io_unit%log)
+  write (io_unit%log,*) 'check_oldest: phase 1 done'
+  flush (io_unit%log)
   link => oldest
   !
   if (phase > 1) then
     if (associated(oldest)) then
-      write (io_unit%mpi,*) 'check_oldest: phase 2', associated(oldest)
-      write (io_unit%mpi,1) 'the oldest local task is', oldest%task%id, &
+      write (io_unit%log,*) 'check_oldest: phase 2', associated(oldest)
+      write (io_unit%log,1) 'the oldest local task is', oldest%task%id, &
         'rank', oldest%task%rank, oldest%task%time, &
         oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
       told = 1d30
@@ -676,14 +755,14 @@ SUBROUTINE check_oldest (self)
           told =link%task%time
           oldestnb => link
         end if
-        write (io_unit%mpi,1) &
+        write (io_unit%log,1) &
           'nbor', link%task%id, 'rank', link%task%rank, link%task%time, &
           link%task%is_set(bits%boundary), link%task%is_set (bits%virtual)
         1 format (1x,a,i9,3x,a,i6,1p,e16.6,2l3)
         link => link%next
       end do
     end if
-    write (io_unit%mpi,'(f12.6,2(3x,a,i8,i6,f12.6,3x,4l1),3i5)') wallclock(), &
+    write (io_unit%log,'(f12.6,2(3x,a,i8,i6,f12.6,3x,4l1),3i5)') wallclock(), &
      'oldest:', oldest%task%id, oldest%task%rank, oldest%task%time, &
      oldest%task%is_set(bits%internal), oldest%task%is_set(bits%boundary), &
      oldest%task%is_set(bits%virtual), oldest%task%is_set(bits%external), &
@@ -691,16 +770,16 @@ SUBROUTINE check_oldest (self)
      oldestnb%task%is_set(bits%internal), oldestnb%task%is_set(bits%boundary), &
      oldestnb%task%is_set(bits%virtual), oldestnb%task%is_set(bits%external), &
      self%nq, sent_list%n, recv_list%n, unpk_list%n
-    flush (io_unit%mpi)
+    flush (io_unit%log)
     if (associated(oldestv)) then
-      write (io_unit%mpi,*) 'the oldest virtual task is ', oldestv%task%id, oldestv%task%time
-      write (io_unit%mpi,*) 'check_oldest: phase 3', associated(oldestv)
-      write (io_unit%mpi,1) 'the oldest virtual task is', oldestv%task%id, &
+      write (io_unit%log,*) 'the oldest virtual task is ', oldestv%task%id, oldestv%task%time
+      write (io_unit%log,*) 'check_oldest: phase 3', associated(oldestv)
+      write (io_unit%log,1) 'the oldest virtual task is', oldestv%task%id, &
         'rank', oldestv%task%rank, oldestv%task%time, &
         oldest%task%is_set (bits%virtual), oldest%task%is_set (bits%external)
       link => oldestv%nbor
       do while (associated(link))
-        write (io_unit%mpi,1) &
+        write (io_unit%log,1) &
           'nbor', link%task%id, 'rank', link%task%rank, link%task%time, &
           link%task%is_set(bits%boundary), link%task%is_set (bits%virtual)
         link => link%next
@@ -726,7 +805,7 @@ SUBROUTINE check_ready (self, link)
   !-----------------------------------------------------------------------------
   task => link%task
   if (self%verbose > 1 .and. task%is_set(bits%hands_off)) &     ! ready+busy+frozen+...
-    write (io_unit%log,*) 'list_t%check_ready:', task%id, &
+    write (io_unit%log,*) 'list_t%check_ready: hands_off', task%id, &
     task%is_set(bits%ready), task%is_set(bits%busy), task%is_set(bits%frozen)
   if (task%is_set (bits%hands_off)) return              ! ready+busy+frozen+..
   call trace%begin ('list_t%check_ready', itimer=itimer)
@@ -740,25 +819,30 @@ SUBROUTINE check_ready (self, link)
   nbor => link%nbor                                     ! use original nbor list
   do while (associated (nbor))                          ! keep going until end
     debug1 = nbor%task%id==io%id_debug
-    if (debug1 .or. self%verbose > 1) &
+    if (debug1 .or. self%verbose > 2) &
       write(io_unit%log,*) 'check_ready: id, nbor, needed, ahead', &
         task%id, nbor%task%id, nbor%needed, nbor%task%is_ahead_of(task)
-    if (nbor%needed) then
+    !---------------------------------------------------------------------------
+    ! Check nbors that are needed, not frozen, and have support
+    !---------------------------------------------------------------------------
+    if (nbor%needed .and. nbor%task%is_clear(bits%frozen)) then
       if (nbor%task%is_ahead_of(task)) then             ! and is ahead in time
         if (debug1 .or. self%verbose > 1) &
-          write (io_unit%log,'("list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
+          write (io_unit%log,'(f12.6,2x,"list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
+            wallclock(), &
             task%id, task%time, '  is OK on', nbor%task%id, nbor%task%time, &
             nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
       else                                              ! not ahead in time
-        if (self%verbose > 0) then
+        if (debug1 .or. self%verbose > 1) then
+          write (io_unit%log,'(f12.6,2x,"list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
+            wallclock(), &
+            task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
+            nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
+        else if (self%verbose > 0) then
           write (io_unit%log,'(f12.6,2x,"list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
             wallclock(), task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
             nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
         end if
-        if (debug1 .or. self%verbose > 1) &
-          write (io_unit%log,'("list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
-            task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
-            nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
         call link%lock%unset ('check_ready')
         call trace%end (itimer)
         return
@@ -987,7 +1071,7 @@ SUBROUTINE init_nbors (self, link)
   old_head => link%nbor
   nullify (new_head)
   n_add = 0
-  call self%lock%set ('init_nbors')
+  call link%lock%set ('init_nbors')
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
     !---------------------------------------------------------------------------
@@ -999,7 +1083,6 @@ SUBROUTINE init_nbors (self, link)
     !end if
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       overlaps = scan%task%overlaps(link%task) &
-           .and. scan%task%level >= link%task%level-2 &
            .and. scan%task%level <= link%task%level+1
       !-------------------------------------------------------------------------
       ! Potential nbors are other patches that overlap
@@ -1021,75 +1104,41 @@ SUBROUTINE init_nbors (self, link)
         nbor%task => scan%task                      ! pointer to task
         nbor%link => scan                           ! pointer to task link
         call link%add_nbor_by_rank (new_head, nbor) ! add in rank order
-        n_add = n_add+1
-        !-----------------------------------------------------------------------
-        ! The task is an active task
-        !-----------------------------------------------------------------------
-        if (link%task%rank == mpi%rank) then
-          if (abs(scan%task%level-link%task%level) < 2) then
-            scan%download = .true.
-          else
-            scan%download = .false.
-          end if
-          !---------------------------------------------------------------------
-          ! The nbor is an active task
-          !---------------------------------------------------------------------
-          scan%needed = .true.
-          if (scan%task%rank == mpi%rank) then
-            scan%needs_me = .true.
-          !---------------------------------------------------------------------
-          ! The nbor is a virtual task
-          !---------------------------------------------------------------------
-          else
-            scan%needs_me = .false.
-          end if
-        !-----------------------------------------------------------------------
-        ! The task is a virtual task
-        !-----------------------------------------------------------------------
-        else
-          scan%download = .false.
-          scan%needed = .false.
-          !---------------------------------------------------------------------
-          ! The nbor is an active task
-          !---------------------------------------------------------------------
-          if (scan%task%rank == mpi%rank) then
-            scan%needs_me = .true.
-          !---------------------------------------------------------------------
-          ! The nbor is a virtual task
-          !---------------------------------------------------------------------
-          else
-            scan%needs_me = .false.
-          end if
-        end if
+        call self%set_status_and_flags (link, nbor) ! set status bits and flags
       end if
     end if
-    scan => scan%next                                 ! continue search
+    scan => scan%next                               ! continue search
   end do
-  call self%lock%unset ('init_nbors')
+  !-----------------------------------------------------------------------------
+  if (self%verbose > 1 .or. link%task%id == io%id_debug) &
+    write(io_unit%log,'(a,i6,i4,3x,3l1)') &
+      'init_nbors: link, rank, IBV =', link%task%id, link%task%rank, &
+      link%task%is_set(bits%internal), &
+      link%task%is_set(bits%boundary), &
+      link%task%is_set(bits%virtual)
+  if (self%verbose > 2 .or. link%task%id == io%id_debug) &
+    write (io_unit%log,*) &
+    'added ', n_add, ' neighbors to', link%task%id, &
+    link%task%is_set(bits%boundary), link%task%is_set(bits%virtual)
+  !call link%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
   ! The link only needs to be locked the brief moment while it changes the
   ! nbor pointer.
   !-----------------------------------------------------------------------------
-  call link%lock%set ('init_nbors')
+  !call link%lock%set ('init_nbors')
   link%nbor => new_head                               ! switch nbor list
   call link%copy_nbor_list (link%nbors_by_level, nbors)
   call link%remove_nbor_list (link%nbors_by_level)
   call link%sort_nbors_by_level (link%nbor, link%nbors_by_level)
-  call link%increment_needed (link%nbors_by_level)
-  call link%decrement_needed (nbors)
   call link%remove_nbor_list (nbors)
+  call link%remove_nbor_list (old_head)               ! recover nbor list mem
   call link%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
   ! The old nbor list cannot possible be used by another thread at this time,
   ! since it was only used for one thing, namely to generate the cached nbor
   ! list, and during that time the link was locked.
   !-----------------------------------------------------------------------------
-  call link%remove_nbor_list (old_head)               ! recover nbor list mem
   link%task%n_nbors = n_add                           ! remember n_nbors
-  if (io%verbose>1 .or. link%task%id==io%id_debug) &
-    write (io_unit%log,*) &
-    'added ', n_add, ' neighbors to', link%task%id, &
-    link%task%is_set(bits%boundary), link%task%is_set(bits%virtual)
   call trace_end (itimer)
 END SUBROUTINE init_nbors
 
@@ -1106,14 +1155,18 @@ SUBROUTINE init_nbor_nbors (self, link)
   !.............................................................................
   class(link_t), pointer:: nbor, nbors
   !-----------------------------------------------------------------------------
+  ! Re-generate the link nbor list, to make sure a correct nbor loop below
+  !-----------------------------------------------------------------------------
   call trace%begin('list_t%init_nbor_nbors')
-  call link%lock%set ('remove_patch')         ! lock the link while modifying
+  call link%lock%set ('init_nbnbs')           ! lock the link while modifying
+  call self%init_nbors (link)                 ! initialize for loop below
   call link%copy_nbor_list (link%nbor, nbors) ! copy to temporary nbor list
-  call link%lock%unset ('remove_patch')       ! unlock the link
+  call link%lock%unset ('init_nbnbs')         ! unlock the link
+  !-----------------------------------------------------------------------------
+  ! When resetting the nbors of nbors, notify rank nbors to do the same, by
+  ! setting bits%init_nbors
+  !-----------------------------------------------------------------------------
   nbor => nbors                               ! loop over temporary list
-  !-----------------------------------------------------------------------------
-  ! When resetting the nbors of nbors, notify rank nbors to do the same
-  !-----------------------------------------------------------------------------
   do while (associated(nbor))
     if (nbor%link%task%is_set (bits%boundary)) &
       call nbor%link%task%set (bits%init_nbors)
@@ -1125,22 +1178,6 @@ SUBROUTINE init_nbor_nbors (self, link)
   call link%remove_nbor_list (nbors)          ! remove the nbor list copy
   call trace%end
 END SUBROUTINE init_nbor_nbors
-
-!===============================================================================
-!> Check the nbor nbors for tasks ready to update
-!===============================================================================
-SUBROUTINE check_nbor_nbors (self, link)
-  class(list_t):: self
-  class(link_t), pointer:: link
-  !.............................................................................
-  class(link_t), pointer:: nbor
-  !-----------------------------------------------------------------------------
-  nbor => link%nbor
-  do while (associated(nbor))
-    call self%check_nbors (nbor%link)
-    nbor => nbor%next
-  end do
-END SUBROUTINE check_nbor_nbors
 
 !===============================================================================
 !> Check if the nbor list is still OK.  A first test is to check if any of the
@@ -1953,5 +1990,291 @@ SUBROUTINE check_nbor_list (link, label, verbose)
     nbor => nbor%next
   end do
 END SUBROUTINE check_nbor_list
+
+!===============================================================================
+!> Give a task to another rank, making sure to update the nbor relations on
+!> this rank -- doing the same on the receiver rank is handled when unpacking,
+!===============================================================================
+SUBROUTINE give_to (self, link, rank)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  integer:: rank
+  !-----------------------------------------------------------------------
+  ! Set the bits and rank as they should be on the local rank, and mark
+  ! the task with a swap_request bit
+  !-----------------------------------------------------------------------
+  call link%task%clear (bits%boundary)
+  call link%task%set (bits%virtual+bits%swap_request)
+  link%task%rank = rank
+  !-----------------------------------------------------------------------
+  ! With the new rank and status settings, update the status of the nbors
+  ! and their nbor lists, which may all be affected by the change of rank.
+  ! The ones that are new boundary tasks will be sent to nbor ranks by
+  ! the update_nbor_status procedure.  The rank itself will be sent by
+  ! task_list_mod::update, and should not be sent from here.
+  !-----------------------------------------------------------------------
+  call self%update_nbor_status (link)
+  if (io%verbose>1) &
+    call self%test_nbor_status (link)
+END SUBROUTINE give_to
+
+!===============================================================================
+!> Update the nbor/vnbor status of a links nbor list, including the self link.
+!> If the boundary bit gets set, send the task to its vnbors.  Before doing so,
+!> the nbor list of the nbors need to be updated, to reflect the new task rank
+!===============================================================================
+SUBROUTINE update_nbor_status (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link, nbor, this
+  integer:: status
+  !-----------------------------------------------------------------------------
+  call trace_begin ('link_mod::update_nbor_status')
+  call link%lock%set ('update_nbor_status')
+  !
+  nbor => link%nbor                                     ! then help others
+  do while (associated(nbor))
+    if (io%verbose>1) &
+      write (io_unit%log,*) 'update_nbor_status:', nbor%task%id, &
+      nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual)
+    status = nbor%task%status                           ! current status
+    call nbor%link%remove_nbor (link)                   ! remove out-of-order
+    allocate (this)                                     ! new nbor link
+    this%link => link                                   ! attach task link
+    this%task => link%task                              ! attach task
+    call nbor%link%add_nbor_by_rank (link%nbor, this)   ! add in rank order
+    call self%update_status (nbor%link)                       ! new status
+    if (nbor%task%is_set (bits%boundary).and.iand(status,bits%boundary)==0) then
+      if (io%verbose>0) &
+        write (io_unit%log,*) 'sending new bdry task',nbor%task%id,' to vnbors'
+      if (.not.nbor%task%is_clear (bits%virtual)) then
+        call nbor%task%clear (bits%virtual)
+        write (io_unit%log,*) 'WARNING: needed to clear virtual bit(1)'
+      end if
+      call nbor%task%set (bits%swap_request)
+      nbor%task%rank = mpi%rank                         ! since it's a boundary
+      call self%send_to_vnbors (nbor%link)
+      call nbor%link%task%clear (bits%swap_request + &  ! sometimes set -- make
+                                 bits%init_nbors)       ! sure clear after send
+    end if
+    nbor => nbor%next                                   ! check next nbor
+  end do
+  !
+  if (io%verbose>0) &
+    write (io_unit%log,*) 'update_nbor_status: id =', link%task%id, associated(link)
+  status = link%task%status                             ! current status
+  call self%update_status (link)                        ! new status
+  if (link%task%is_set (bits%boundary).and.iand(status,bits%boundary)==0) then
+    if (io%verbose>0) &
+      write (io_unit%log,*) 'sending new bdry task',link%task%id,' to vnbors'
+    if (.not.nbor%task%is_clear (bits%virtual)) then
+      write (io_unit%log,*) 'WARNING: needed to clear virtual bit(2)'
+      call nbor%task%clear (bits%virtual)
+    end if
+    call nbor%task%set (bits%swap_request)
+    nbor%task%rank = mpi%rank                           ! since it's a boundary
+    call self%send_to_vnbors (link)                     ! need to send ...
+    call nbor%task%clear (bits%swap_request)
+  end if
+  call link%lock%unset ('update_nbor_status')
+  call trace_end
+END SUBROUTINE update_nbor_status
+
+!===============================================================================
+!> Update the nbor/vnbor status of a link.  If self belongs to the local rank
+!> it is either an internal or boundary rank, if not it is virtual or external,
+!> depending on what nbors it has.
+!===============================================================================
+SUBROUTINE update_status (self, link)
+  class(list_t):: self
+  class(link_t):: link
+  class(link_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  call link%lock%set ('update_status')
+  nbor => link%nbor
+  if      (link%task%rank == mpi%rank) then
+    do while (associated(nbor))
+      if (nbor%task%rank /= mpi%rank)  then
+        call link%task%set   (bits%boundary)
+        call link%task%clear (bits%internal+bits%external+bits%virtual)
+        if (io%verbose>0) &
+          write (io_unit%log,*) ' set to boundary id =', link%task%id
+        return
+      end if
+      nbor => nbor%next
+    end do
+    call link%task%set   (bits%internal)
+    call link%task%clear (bits%boundary+bits%external+bits%virtual)
+    if (io%verbose>0) &
+      write (io_unit%log,*) ' set to internal id =', link%task%id, associated(link%nbor)
+  else
+    do while (associated(nbor))
+      if (nbor%task%rank == mpi%rank)  then
+        call link%task%set   (bits%virtual)
+        call link%task%clear (bits%internal+bits%external+bits%boundary)
+        if (io%verbose>0) &
+          write (io_unit%log,*) ' set to virtual  id =', link%task%id
+        return
+      end if
+      nbor => nbor%next
+    end do
+    call link%task%set   (bits%external)
+    call link%task%clear (bits%internal+bits%boundary+bits%virtual)
+   !call link%remove_from_nbors
+    if (io%verbose>0) &
+      write (io_unit%log,*) '    set to external id =', link%task%id
+  end if
+  call link%lock%unset ('update_status')
+END SUBROUTINE update_status
+
+!===============================================================================
+!> Send a package with updated time slice info to neighbor ranks.
+!>
+!> 1) assemble task data into a message
+!> 3) send the message to the nbors rank (only once per rank)
+!> 4) add the message to a sent_list
+!> 5) check the sent list for completed sends
+!> 6) remove the message from the sent_list and disassemble the message
+!===============================================================================
+SUBROUTINE send_to_vnbors (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  class(link_t), pointer:: nbor
+  class(task_t), pointer:: task, nbtask
+  class(mesg_t), pointer:: mesg
+  integer:: ierr, rank, tag
+  integer, save:: itimer=0
+  !.............................................................................
+  task => link%task
+  if (task%is_clear (bits%boundary)) then
+    write (io_unit%stdout,*) mpi%rank, omp%thread, &
+      'ERROR: trying to send non-boundary task', task%id
+    return
+  end if
+  if (task%is_set (bits%virtual)) then
+    write (io_unit%stdout,*) mpi%rank, omp%thread, &
+      'ERROR: trying to send virtual task', task%id
+    return
+  end if
+  !-----------------------------------------------------------------------------
+  call trace_begin('link_mod::send_to_vnbors', itimer=itimer)
+  call link%lock%set ('send_to_vnbors')
+  if (task%id == io%id_debug) &
+    write(io%output,*) 'DBG link_t%send_to_vnbors: id, rank =', &
+      task%id, mpi%rank
+  !-----------------------------------------------------------------------------
+  ! Pack task into mesg
+  !-----------------------------------------------------------------------------
+  select type (task)
+  class is (patch_t)
+  call task%pack (mesg)
+  end select
+  !-----------------------------------------------------------------------------
+  ! Same id for all steps, and increment mesg%seq only once, for all ranks
+  !-----------------------------------------------------------------------------
+  if (mpi_mesg%uniq_mesg) then
+    task%seq = task%seq+1
+    tag = mod(task%seq,100) + 100*task%id
+  else
+    tag = task%id
+  end if
+  mesg%id = task%id
+  !-----------------------------------------------------------------------------
+  ! Send to all unique ranks in the nbor list (which is sorted by rank).
+  !-----------------------------------------------------------------------------
+  rank = -1                                                     ! previous rank
+  nbor => link%nbor                                             ! first nbor
+  do while (associated(nbor))                                   ! until end
+    nbtask => nbor%task
+    if (nbtask%rank/=mpi%rank .and. nbtask%rank/=rank) then     ! new rank?
+      rank = nbtask%rank                                        ! current rank
+      call mesg%send (rank, tag=tag)                            ! send it
+      !write (stdout,*) 'send: ', task%id, mesg%id, tag, mesg%tag, rank
+      if (self%verbose > 0 .or. task%id == io%id_debug) then
+        write (io_unit%mpi,'(f12.6,2x,a,i9,1p,e18.6,i9,2x,a,i5,2x,5l1)') &
+          wallclock(), 'send_to_vnbors: sent', &
+          mesg%id, task%time, tag, 'to', rank, &
+          task%is_set (bits%internal), &
+          task%is_set (bits%boundary), &
+          task%is_set (bits%virtual), &
+          task%is_set (bits%external), &
+          task%is_set (bits%swap_request)
+        flush (io_unit%mpi)
+      end if
+    end if
+    nbor => nbor%next                                           ! next nbor
+  end do
+  !-----------------------------------------------------------------------------
+  ! Add the message to mesg%sent_list, if it was sent, and clear the swap bit
+  !-----------------------------------------------------------------------------
+  call mpi_mesg%sent (mesg)                                     ! add to sent_list
+  call task%clear (bits%swap_request)
+  !-----------------------------------------------------------------------------
+  call trace_end (itimer)
+  call link%lock%unset ('send_to_vnbors')
+END SUBROUTINE send_to_vnbors
+
+!===============================================================================
+!> Check the status of a link and all nbor links
+!===============================================================================
+SUBROUTINE test_nbor_status (self, link)
+  class(list_t):: self
+  class(link_t):: link
+  class(link_t), pointer:: nbor
+  !.............................................................................
+  write (io_unit%log,*) 'test_nbor_status: link', link%task%id
+  call test_status (link)
+  nbor => link%nbor
+  do while (associated(nbor))
+    call test_status (nbor%link)
+    nbor => nbor%next
+  end do
+END SUBROUTINE test_nbor_status
+
+!===============================================================================
+!> Check the status of a link task  with respect to its nbors
+!===============================================================================
+SUBROUTINE test_status (self)
+  class(link_t):: self
+  class(link_t), pointer:: nbor
+  integer:: status, test, n
+  !.............................................................................
+  write (io_unit%log,*) 'test_status: link', self%task%id
+  if (self%task%rank == mpi%rank) then
+    status = bits%internal
+  else
+    status = bits%external
+  end if
+  nbor => self%nbor
+  do while (associated(nbor))
+    if      (nbor%task%rank /= mpi%rank .and. status==bits%internal) then
+      status = bits%boundary
+    else if (nbor%task%rank == mpi%rank .and. status==bits%external) then
+      status = bits%virtual
+    end if
+    nbor => nbor%next
+  end do
+  test = iand(self%task%status,bits%internal+bits%boundary+bits%virtual+bits%external)
+  if (status /= test) then
+    write (io_unit%log,'(i9,2x,a,i6,2(2x,4l1))') self%task%id, 'inconsistent:', &
+      self%task%rank, &
+      self%task%is_set(bits%internal), &
+      self%task%is_set(bits%boundary), &
+      self%task%is_set(bits%virtual) , &
+      self%task%is_set(bits%external), &
+      iand(status,bits%internal)/=0, &
+      iand(status,bits%boundary)/=0, &
+      iand(status,bits%virtual )/=0, &
+      iand(status,bits%external)/=0
+    n = 0
+    nbor => self%nbor
+    do while (associated(nbor))
+      n = n+1
+      write (io_unit%log,'(2i9,2x,a,2i6)') self%task%id, nbor%task%id, &
+        'inconsistent ranks', self%task%rank, nbor%task%rank
+      nbor => nbor%next
+    end do
+    if (n==0) write (io_unit%log,*) self%task%id, ' inconsistent bits: has no nbors'
+  end if
+END SUBROUTINE test_status
 
 END MODULE list_mod

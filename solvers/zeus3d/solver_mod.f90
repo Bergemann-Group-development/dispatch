@@ -24,9 +24,12 @@ MODULE solver_mod
     procedure:: gas_velocity_scalar
     generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
     procedure:: p2U
+    procedure, nopass:: cast2solver
+    procedure:: compression_magnitude
+    procedure:: vorticity_magnitude
   end type
-  type(solver_t):: solver
-  
+  type(solver_t), public:: solver
+
   interface norm
     module procedure:: Norm_ArrayToArray, Norm_VectorToArray
   end interface
@@ -36,8 +39,25 @@ MODULE solver_mod
   interface MomToVel
     module procedure:: MomToVel_VectorToArray
   end interface
+  interface xdn
+    module procedure:: xdn_scalar
+  end interface
+  interface ydn
+    module procedure:: ydn_scalar
+  end interface
+  interface zdn
+    module procedure:: zdn_scalar
+  end interface
+  interface xup
+    module procedure:: xup_scalar
+  end interface
+  interface yup
+    module procedure:: yup_scalar
+  end interface
+  interface zup
+    module procedure:: zup_scalar
+  end interface
 
-  public cast2solver
 CONTAINS
 
 !=======================================================================
@@ -357,6 +377,160 @@ FUNCTION zdn_3vector (a) RESULT (b)
     b = a
   end if
 END FUNCTION zdn_3vector
+
+!===============================================================================
+FUNCTION xup_scalar (a) RESULT (b)
+  real(kind=KindScalarVar), dimension(:,:,:):: a
+  real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
+  real(kind=KindScalarVar) :: c
+  integer :: ix, iy, iz, ione, jone, kone, n(3)
+  !.............................................................................
+  c = 0.5
+  n = ubound(a)
+  ione = merge(1, 0, n(1) > 1)
+  jone = merge(1, 0, n(2) > 1)
+  kone = merge(1, 0, n(3) > 1)
+  if (n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(n(1)  ,:,:) = a(n(1)-2,:,:)
+    b(n(1)-1,:,:) = a(n(1)-2,:,:)
+    do iz=1,n(3)-kone
+      do iy=1,n(2)-jone
+        do ix=1,n(1)-2
+          b(ix,iy,iz) = c*(a(ix+1,iy,iz) + a(ix  ,iy,iz))
+        end do
+      end do
+    end do
+  else
+    b = a
+  end if
+  if (n(2) > 1) b(:,n(2),:) = a(:,n(2)-1,:)
+  if (n(3) > 1) b(:,:,n(3)) = a(:,:,n(3)-1)
+  b(n(1),n(2),n(3)) = a(n(1)-ione,n(2)-jone,n(3)-kone)
+END FUNCTION xup_scalar
+
+!===============================================================================
+FUNCTION yup_scalar (a) RESULT (b)
+  real(kind=KindScalarVar), dimension(:,:,:):: a
+  real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
+  real(kind=KindScalarVar) :: c
+  integer :: ix, iy, iz, ione, jone, kone, n(3)
+  !.............................................................................
+  c = 0.5
+  n = ubound(a)
+  ione = merge(1, 0, n(1) > 1)
+  jone = merge(1, 0, n(2) > 1)
+  kone = merge(1, 0, n(3) > 1)
+  if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(:,n(2)  ,:) = a(:,n(2)-2,:)
+    b(:,n(2)-1,:) = a(:,n(2)-2,:)
+    do iz=1,n(3)-kone
+      do iy=1,n(2)-2
+        do ix=1,n(1)-ione
+          b(ix,iy,iz) = c*(a(ix,iy+1,iz) + a(ix,iy  ,iz))
+        end do
+      end do
+    end do
+  else
+    b = a
+  end if
+  if (n(3) > 1) b(:,:,n(3)) = a(:,:,n(3)-1)
+  if (n(1) > 1) b(n(1),:,:) = a(n(1)-1,:,:)
+  b(n(1),n(2),n(3)) = a(n(1)-ione,n(2)-jone,n(3)-kone)
+END FUNCTION yup_scalar
+
+!===============================================================================
+FUNCTION zup_scalar (a) RESULT (b)
+  real(kind=KindScalarVar), dimension(:,:,:):: a
+  real(kind=KindScalarVar), dimension(size(a,1),size(a,2),size(a,3)):: b
+  real(kind=KindScalarVar) :: c
+  integer :: ix, iy, iz, ione, jone, kone, n(3)
+!...............................................................................
+  c = 0.5
+  n = ubound(a)
+  ione = merge(1, 0, n(1) > 1)
+  jone = merge(1, 0, n(2) > 1)
+  kone = merge(1, 0, n(3) > 1)
+  if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+    b(:,:,n(3)  ) = a(:,:,n(3)-2)
+    b(:,:,n(3)-1) = a(:,:,n(3)-2)
+    do iz=1,n(3)-2
+      do iy=1,n(2)-jone
+        do ix=1,n(1)-ione
+          b(ix,iy,iz) = c*(a(ix,iy,iz+1) + a(ix,iy,iz))
+        end do
+      end do
+    end do
+  else
+    b = a
+  end if
+  if (n(1) > 1) b(n(1),:,:) = a(n(1)-1,:,:)
+  if (n(2) > 1) b(:,n(2),:) = a(:,n(2)-1,:)
+  b(n(1),n(2),n(3)) = a(n(1)-ione,n(2)-jone,n(3)-kone)
+END FUNCTION zup_scalar
+
+!===============================================================================
+!> Compute the zone-centred divergence (i.e. compression). Assumes velocities
+!> are face-centred and down-staggered by a half zone.
+!===============================================================================
+SUBROUTINE compression_magnitude (self, w)
+  use vector_ops, only: diverg
+  class (solver_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:), intent(out):: w
+  real(kind=KindScalarVar), dimension(:,:,:,:), allocatable:: v
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t%compression_magnitude', itimer=itimer)
+  allocate (v(self%gn(1),self%gn(2),self%gn(3),3))
+
+  v = MomToVel(self)
+  w = max(-diverg(self%mesh, v), 0.0)
+
+  deallocate (v)
+  call trace%end (itimer)
+END SUBROUTINE compression_magnitude
+
+!===============================================================================
+!> Compute the edge-centred vorticity. Assumes velocities are face-centred and
+!> down-staggered by a half zone.
+!===============================================================================
+SUBROUTINE vorticity_vector (self, w)
+  use vector_ops, only: curl_dn
+  class (solver_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:,:), intent(out):: w
+  real(kind=KindScalarVar), dimension(:,:,:,:), allocatable:: v
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t::vorticity_vector', itimer=itimer)
+  allocate (v(self%gn(1),self%gn(2),self%gn(3),3))
+
+  v = MomToVel(self)
+  w = curl_dn(self%mesh, v)
+
+  deallocate (v)
+  call trace%end (itimer)
+END SUBROUTINE vorticity_vector
+
+!===============================================================================
+!> Compute the magnitude of the *zone-centred* vorticity. Assumes the vorticity is
+!> edge-centred after the call to `vorticity_vector`.
+!===============================================================================
+SUBROUTINE vorticity_magnitude (self, wmag)
+  class (solver_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:), intent(out):: wmag
+  real(kind=KindScalarVar), dimension(:,:,:,:), allocatable:: w
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t::vorticity_vector', itimer=itimer)
+  allocate (w(self%gn(1),self%gn(2),self%gn(3),3))
+  call vorticity_vector(self, w)
+
+  wmag = sqrt( yup(zup(w(:,:,:,1)))**2 &
+             + zup(xup(w(:,:,:,2)))**2 &
+             + xup(yup(w(:,:,:,3)))**2 )
+
+  deallocate (w)
+  call trace%end (itimer)
+END SUBROUTINE vorticity_magnitude
 
 !===============================================================================
 !> Cast a generic task_t to patch_t

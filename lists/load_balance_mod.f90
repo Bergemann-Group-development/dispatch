@@ -24,6 +24,7 @@ MODULE load_balance_mod
   USE omp_lock_mod
   USE task_mod
   USE patch_mod
+  USE list_mod
   USE link_mod
   USE bits_mod
   USE random_mod
@@ -663,7 +664,7 @@ FUNCTION check_load (self, head) RESULT (sell)
                 2 format(f12.6,2x,a,i9,a,i6,2i5,1p,2g12.3)
               flush (io_unit%log)
             end if
-            call head%give_to (head, nbor%task%rank)
+            call list%give_to (head, nbor%task%rank)
             sell = .true.
             if (io%verbose>0) &
               write (io_unit%log,*) 'swapped boundary to virtual:', head%task%id

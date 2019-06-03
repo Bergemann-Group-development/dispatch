@@ -121,14 +121,6 @@ SUBROUTINE execute (self, task_list)
   !-----------------------------------------------------------------------------
   task_list%method = method
   task_list%dispatcher = .true.
-  if (io%ntask==0) then
-    call mpi%abort &
-      ('ERROR: io%ntask, which should be the number of active tasks, is zero')
-  end if
-  if (io%ntotal==0) then
-    call mpi%abort &
-      ('ERROR: io%ntotal, which should be the total number of tasks, is zero')
-  end if
   if (test) call set_io
   !-----------------------------------------------------------------------------
   ! Store a copy of the task list pointer in each task (generically in gpatch_t)

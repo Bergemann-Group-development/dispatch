@@ -97,15 +97,22 @@ SUBROUTINE init_levels (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%init_levels')
   call refine%init                      ! Refinement parameters
-  if (refine%on .and. mpi_mesg%recv_active) then
-    call io%abort ('Must have recv_active==.false. when AMR is active')
-  end if
   link => self%head
   do while (associated(link))
     associate (patch => link%task)
     select type (patch)
     class is (patch_t)
-      patch%level = minval(nint(log(patch%box/patch%ds)/log(real(refine%ratio))), mask=patch%n > 1)
+      !-------------------------------------------------------------------------
+      ! Set up the refinement "bill board", where requests for refinement are made
+      !-------------------------------------------------------------------------
+      if (refine%on) then
+        allocate (patch%xrefine(patch%gn(1),patch%gn(2),patch%gn(3)))
+        call io%bits_mem (storage_size(patch%xrefine), &
+                         product(shape(patch%xrefine)), 'xrefine')
+        patch%xrefine = -1
+      end if
+      patch%level = minval(nint(log(patch%box/patch%ds)/log(real(refine%ratio))), &
+        mask=patch%n > 1)
     end select
     refine%levelmin = min(refine%levelmin,patch%level)
     refine%levelmax = max(refine%levelmax,patch%level)
@@ -262,27 +269,30 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   ! If the task is virtual, it will not be checked by this rank.
   !-----------------------------------------------------------------------------
   call refine%check_current(self, head, refined, derefined)
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (present(was_refined)) then
     was_refined = refined
   end if
   if (present(was_derefined)) then
     was_derefined = derefined
   end if
+  !-----------------------------------------------------------------------------
+  ! If the task was derefined it does not exist, so bail out
+  !-----------------------------------------------------------------------------
   if (derefined) then
     call trace%end (itimer)
     return
   end if
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Download nbor info -- this may be an experiment_t procedure, but if not,
-  ! the call should be answered by a solver-specific procedure (which may or
+  !-- the call should be answered by a solver-specific procedure (which may or
   ! may not choose to call the generic patch guard zone handler in tasks/)
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (.not.test) &
     call task%dnload                                  ! download nbor info
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Update the task, whatever that means (may include call to task%output)
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (mpi_mesg%delay_ms==0.0) then
     wc = wallclock()
   end if
@@ -294,6 +304,13 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     class is (patch_t)
     call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), 'before update')
     end select
+    !---------------------------------------------------------------------------
+    ! IMPORTANT:  The globally available io%ntask must reflect the total number
+    ! of active tasks on the rank (io%nwrite is set in data_io_mod)
+    !---------------------------------------------------------------------------
+    !$omp atomic write
+    io%ntask  = self%na                                        ! Authoritative !
+    !---------------------------------------------------------------------------
     call task%update                                  ! update the task
     if (self%verbose > 0) then
       associate (unit => merge (io_unit%log, io_unit%mpi, self%verbose > 1))
@@ -355,7 +372,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     if (task%id == io%id_debug) &
       write(io_unit%mpi,*) &
         'DBG task_list_t%update: calling send_to_vnbors', task%id
-    call head%send_to_vnbors                          ! send to virtual nbors
+    call self%send_to_vnbors (head)                   ! send to virtual nbors
   end if
   !-----------------------------------------------------------------------------
   ! Tasks that have finished are subtracted from the task list count but are

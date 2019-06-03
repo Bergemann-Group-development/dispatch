@@ -21,9 +21,11 @@ MODULE mpi_mesg_mod
     integer, dimension(:), pointer:: buffer
     integer, pointer:: reqs(:) => null()
     integer:: nbuf, nreq, req=0, sender, id, ntry=0
-    integer:: seq
+    integer:: n_failed=0
+    integer:: seq=0
     integer:: tag=2**30
     real(8):: test_next=0d0
+    real:: test_time=0.0
   contains
     procedure:: send
     procedure:: recv
@@ -34,7 +36,6 @@ MODULE mpi_mesg_mod
     procedure:: completed
     procedure:: all_completed
     procedure:: irecv
-    procedure:: test_recv
   end type
   integer(8) :: n_wait_all=0  , n_wait_for=0
   real(8)    :: t_wait_all=0d0, t_wait_for=0d0
@@ -55,7 +56,9 @@ MODULE mpi_mesg_mod
     procedure:: print => print_list
     procedure:: count
   end type
-  !
+  !-----------------------------------------------------------------------------
+  ! Data type collecting parameters and message lists into one object
+  !-----------------------------------------------------------------------------
   type, public:: mpi_mesg_t
     logical:: initialized=.false.
     type(mesg_list_t):: sent_list, recv_list
@@ -68,17 +71,18 @@ MODULE mpi_mesg_mod
     integer:: n_unpk=0
     integer:: nq_send=0
     integer:: nq_recv=0
-    real:: delay_ms=0.0
     integer:: max_recv
     integer:: max_probe
     integer:: min_nq
-    logical:: wait=.false.
+    logical:: recv_wait=.false.
     logical:: recv_priv=.true.
     logical:: recv_active=.true.
     logical:: send_priv=.true.
     logical:: debug=.false.
     logical:: queue_unpack=.true.
     logical:: uniq_mesg=.false.
+    real:: delay_ms=0.0
+    real:: test_time=0.0
   contains
     procedure:: init
     procedure:: get
@@ -91,14 +95,14 @@ MODULE mpi_mesg_mod
   type(mpi_mesg_t), public:: mpi_mesg
   type(mesg_list_t), save, public:: unpk_list, sent_list, recv_list
   !$omp threadprivate (unpk_list,sent_list,recv_list)
-  real, save:: delay_ms=3.0, test_time=20d-3
+  real, save:: delay_ms=3.0
   integer, save:: min_nq=10                     ! min ready q size for MPI_Test
   integer, save:: max_sent=5                    ! max outstanding patch sends
   integer, save:: max_recv=100                  ! max outstanding patch recvs
   integer, save:: max_probe=10                  ! max loop count in MPI_Probe
   integer, save:: every_send=5                  ! how often to check send_list
   integer, save:: every_recv=1                  ! how often to check recv_list
-  logical, save:: wait=.false.                  ! if true, always use MPI_Wait
+  logical, save:: recv_wait=.false.             ! if true, always use MPI_Wait
   logical, save:: send_wait=.false.             ! if true, wait in OMP task
   integer, save:: id=0
   integer, save:: verbose=0
@@ -118,9 +122,10 @@ SUBROUTINE send (self, rank, tag)
   else
     ltag = self%id
   end if
-  if (verbose>2 .or. self%id==io%id_debug) then
+  self%tag = ltag
+  if (verbose>0 .or. self%id==io%id_debug) then
     write (io_unit%log,*) &
-    'mpi_mesg_t%send id, nbuf, to =', self%id, self%nbuf, rank
+    'mpi_mesg_t%send id, tag, nbuf, to =', self%id, ltag, self%nbuf, rank
     flush (io_unit%log)
   end if
 #ifdef MPI
@@ -136,11 +141,6 @@ SUBROUTINE send (self, rank, tag)
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
     !$omp end critical (mpi_cr)
-  end if
-  if (verbose > 0) then
-    write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
-       wallclock(), 'mesg_t%send:', self%id, rank, req
-    flush (io_unit%log)
   end if
 #else
   !$omp critical (mpi_cr)
@@ -530,8 +530,9 @@ SUBROUTINE init (self)
   logical, save:: send_priv
   logical, save:: queue_unpack
   logical, save:: uniq_mesg=.false.
+  real, save:: test_time=20e-3
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
-                             every_send, delay_ms, wait, send_wait, send_priv, &
+                             every_send, delay_ms, recv_wait, send_wait, send_priv, &
                              recv_active, recv_priv, queue_unpack, test_time, &
                              uniq_mesg, debug, verbose
   integer:: iostat
@@ -553,13 +554,15 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   rewind (io%input); read (io%input, mpi_mesg_params,iostat=iostat)
   if (io%master) write (io%output, mpi_mesg_params)
+  if (iostat /= 0) call io%namelist_warning ('mpi_mesg_params')
   if (verbose>0) write (io_unit%log,*) 'mpi_mesg_mod::init'
   self%debug = debug
   self%min_nq = min_nq
   self%max_recv = max_recv
   self%max_probe = max_probe
-  self%wait = wait
+  self%recv_wait = recv_wait
   self%uniq_mesg = uniq_mesg
+  mpi_mesg%test_time = test_time
   !-----------------------------------------------------------------------------
   ! Default values from dispatcher possible changed here
   !-----------------------------------------------------------------------------
@@ -747,8 +750,7 @@ contains
 END SUBROUTINE get
 
 !===============================================================================
-!===============================================================================
-!> Return true or false, depending on if the mesg request is complete or not
+!> Return true or false, depending on if the (send!) mesg request is complete or not
 !===============================================================================
 FUNCTION completed (self) RESULT(flag)
   class(mesg_t):: self
@@ -770,11 +772,11 @@ FUNCTION completed (self) RESULT(flag)
     !$omp end critical (mpi_cr)
   end if
   !$omp atomic
-  timer%n_test = timer%n_test + 1
+  timer%mpi_test = timer%mpi_test + 1
 #endif
   if (flag .and. verbose > 0) then
     write (io_unit%log,'(f12.6,2x,a,i6,i4,l2)') wallclock(), &
-      'mesg_t%completed:', self%id, mpi_mesg%recv_list%n, mpi_mesg%wait
+      'mesg_t%completed:', self%id, mpi_mesg%recv_list%n, mpi_mesg%recv_wait
   end if
   call trace%end (itimer)
 END FUNCTION completed
@@ -806,17 +808,26 @@ FUNCTION all_completed (self) RESULT(flag)
 END FUNCTION all_completed
 
 !===============================================================================
-!> Return true or false, depending on if the mesg is complete or not.
+!> Return true or false, depending on if the mesg is complete or not.  This
+!> procedure respects the mpi_mesg attributes TEST_TIME, MAX_RECV, and RECV_WAIT
 !===============================================================================
 FUNCTION is_complete (self)
   class(mesg_t):: self
   logical:: is_complete
   !.............................................................................
+  integer:: tag
+  real(8):: now, test_next
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   is_complete = .false.
-  if (mpi%size <= 1) return
-  call trace%begin ('mesg_t%is_complete', itimer=itimer)
+  if (mpi%size <= 1) then
+    is_complete = .true.
+    return
+  end if
+  now = wallclock()
+  if (now < self%test_next) &
+    return
+  call trace%begin ('mesg_t%is_complete', 2, itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Check for completion
   !-----------------------------------------------------------------------------
@@ -824,16 +835,24 @@ FUNCTION is_complete (self)
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
     call check_recv
   else
-    !$omp critical (complete_cr)
+    !$omp critical (mpi_cr)
     call check_recv
-    !$omp end critical (complete_cr)
+    !$omp end critical (mpi_cr)
   end if
 #endif
+  if (is_complete) then
+    self%n_failed = 0
+  else
+    self%n_failed = self%n_failed+1
+  end if
+  test_next = now + self%test_time
+  !$omp atomic write
+  self%test_next = test_next
   call trace%end (itimer)
   return
 contains
   !-----------------------------------------------------------------------------
-  ! Check for completed messages.
+  ! Check for completed messages, independent of MPI_THREAD_MULTIPLE
   !-----------------------------------------------------------------------------
   subroutine check_recv
     integer:: ierr
@@ -842,50 +861,62 @@ contains
 #endif
     real(8):: wc
     !---------------------------------------------------------------------------
-    if (mpi_mesg%recv_list%n > max_recv .or. mpi_mesg%wait) then
+    is_complete = .true.
+#ifdef MPI
+    if (mpi_mesg%recv_list%n > max_recv .or. mpi_mesg%recv_wait) then
       if (verbose > 1) then
         wc = wallclock()
         write (io_unit%log,*) wc, &
-          'is_complete waiting for id', self%id, mpi_mesg%recv_list%n, mpi_mesg%wait
+          'is_complete waiting for id', self%id, mpi_mesg%recv_list%n, mpi_mesg%recv_wait
         flush (io_unit%log)
       end if
-#ifdef MPI
-      if (mpi%mode == MPI_THREAD_MULTIPLE) then
-        call MPI_WAIT (self%req, stat, ierr)
-      else
-        !$omp critical (mpi_cr)
-        call MPI_WAIT (self%req, stat, ierr)
-        !$omp end critical (mpi_cr)
+      call MPI_WAIT (self%req, stat, ierr)
+      wc = wallclock()-wc
+      !$omp atomic
+      n_wait_for = n_wait_for + 1
+      !$omp atomic
+      t_wait_for = t_wait_for + wc
+      if (verbose > 0) then
+        write (io_unit%log,'(f12.6,2x,a,i6,i4,l2)') wallclock(), &
+          'is_complete:', self%id, mpi_mesg%recv_list%n, mpi_mesg%recv_wait
       end if
-#endif
-      is_complete = .true.
-#ifdef MPI
     else
-      if (mpi%mode == MPI_THREAD_MULTIPLE) then
-        call MPI_TEST (self%req, is_complete, stat, ierr)
-      else
-        !$omp critical (mpi_cr)
-        call MPI_TEST (self%req, is_complete, stat, ierr)
-        !$omp end critical (mpi_cr)
-      end if
+      call MPI_TEST (self%req, is_complete, stat, ierr)
+    end if
 #endif
-    end if
-    if (is_complete .and. verbose > 0) then
-      write (io_unit%log,'(f12.6,2x,a,i6,i4,l2)') wallclock(), &
-        'is_complete:', self%id, mpi_mesg%recv_list%n, mpi_mesg%wait
-    end if
+  !$omp atomic
+  timer%mpi_test = timer%mpi_test + 1
+  if (is_complete) then
     !$omp atomic
-    timer%n_test = timer%n_test + 1
+    timer%mpi_hit = timer%mpi_hit + 1
+    self%id = stat(MPI_TAG)
+    if (mpi_mesg%uniq_mesg) then
+      self%seq = mod(self%id,100)
+      self%id = self%id/100
+    end if
+  end if
   end subroutine check_recv
 END FUNCTION is_complete
 
 !===============================================================================
 !> Issue a message recieve request from a specific rank
 !===============================================================================
-SUBROUTINE irecv (self, rank, tag)
+SUBROUTINE irecv (self, rank, id)
   class(mesg_t):: self
+  integer:: id
   integer:: rank, tag, ierr
-  !.............................................................................
+  !-----------------------------------------------------------------------------
+  ! Construct a unique tag, if so requested, and otherwise use the given id.
+  ! Use the next seq number, relative to the one just received.
+  !-----------------------------------------------------------------------------
+  self%id = id
+  if (mpi_mesg%uniq_mesg) then
+    self%seq = self%seq+1
+    tag = mod(self%seq,100) + 100*self%id
+  else
+    tag = self%id
+  end if
+  self%tag = tag
   self%sender = rank
 #ifdef MPI
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
@@ -896,92 +927,17 @@ SUBROUTINE irecv (self, rank, tag)
     !$omp end critical (mpi_cr)
   end if
   !-----------------------------------------------------------------------------
-  if (verbose > 0) then
-    write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
-      wallclock(), 'mesg_t%irecv: ', self%id, rank, self%req
-    flush (io_unit%log)
-  end if
-  if (mpi_mesg%debug) then
-    write (io_unit%log,*) wallclock(), 'recv task', self%id
+  if (verbose > 1) then
+    write (io_unit%log,'(f12.6,2x,a,i6,i9,i5,z12)') &
+      wallclock(), 'mesg_t%irecv: id, tag, rank, req =', &
+      self%id, tag, rank, self%req
     flush (io_unit%log)
   end if
 #endif
 END SUBROUTINE irecv
 
 !===============================================================================
-!> Test if a message is fully received, taking care not to test too often - at
-!> least "test_time" must have passed since the previous test.
-!===============================================================================
-FUNCTION test_recv (self) RESULT (flag)
-  class(mesg_t):: self
-  integer:: ierr
-  logical:: flag
-#ifdef MPI
-  integer:: stat(MPI_STATUS_SIZE)
-  real(8):: now, wc, dwc
-  real, parameter:: max_test=0.1
-  integer, save:: itimer=0
-  !.............................................................................
-  now = wallclock()
-  flag = .false.
-  if (now < self%test_next) return
-  call trace%begin('mesg_t%test_recv', 2, itimer=itimer)
-  if (mpi%mode == MPI_THREAD_MULTIPLE) then
-    if (wait) then
-      call MPI_WAIT (self%req, stat, ierr)
-      flag = .true.
-      now = wallclock()
-    else
-      wc = wallclock()
-      call MPI_TEST (self%req, flag, stat, ierr)
-      dwc = wallclock()-wc
-      if (dwc > max_test) &
-        write(io%output,'(f12.6,2x,a,f12.6)') wc, 'WARNING: MPI_Test time =', dwc
-    end if
-  else
-    !$omp critical (mpi_cr)
-    if (wait) then
-      call MPI_WAIT (self%req, stat, ierr)
-      flag = .true.
-      now = wallclock()
-    else
-      wc = wallclock()
-      call MPI_TEST (self%req, flag, stat, ierr)
-      dwc = wallclock()-wc
-      if (dwc > max_test) &
-        write(io%output,'(f12.6,2x,a,f12.6)') wc, 'WARNING: MPI_Test time =', dwc
-    end if
-    !$omp end critical (mpi_cr)
-  end if
-  if (flag) then
-    self%id = stat(MPI_TAG)
-    if (mpi_mesg%uniq_mesg) then
-      self%seq = mod(self%id,100)
-      self%id = self%id/100
-    end if
-    if (mpi_mesg%debug) then
-      write (io_unit%log,*) wallclock(), 'recv task', self%id
-      flush (io_unit%log)
-    end if
-    if (verbose > 0) then
-      write (io_unit%log,'(f12.6,2x,a,i5)') &
-        wallclock(), 'mesg_t%trecv: ', self%id
-      flush (io_unit%log)
-    end if
-    self%req = 0
-  end if
-  !$omp atomic write
-  self%test_next = now + test_time
-  !$omp atomic
-  timer%n_test = timer%n_test + 1
-  call trace%end (itimer)
-#else
-  flag = .true.
-#endif
-END FUNCTION test_recv
-
-!===============================================================================
-!> Return true or false, depending on if the mesg is complete or not.
+!> Wait for completion of a message
 !===============================================================================
 SUBROUTINE wait_for_completion (self)
   class(mesg_t):: self

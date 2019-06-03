@@ -12,6 +12,7 @@ MODULE solver_mod
   USE kinds_mod
   USE mhd_mod
   USE validate_mod
+  USE stagger_mod
   implicit none
   private
   type, public, extends(mhd_t):: solver_t
@@ -40,6 +41,8 @@ MODULE solver_mod
     procedure:: apply_heating
     procedure:: gas_velocity_vector
     procedure:: gas_velocity_scalar
+    procedure:: compression_magnitude
+    procedure:: vorticity_magnitude
     generic:: gas_velocity => gas_velocity_vector, gas_velocity_scalar
   end type
   type(solver_t), public:: solver
@@ -329,5 +332,53 @@ FUNCTION gas_velocity_scalar (self, idir) RESULT (v)
     error stop "solver_mod::gas_velocity_scalar:: invalid value of idir"
   end select
 END FUNCTION gas_velocity_scalar
+
+!===============================================================================
+!> Compute the compression
+!===============================================================================
+SUBROUTINE compression_magnitude (self, w)
+  class (solver_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:):: w
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: vx, vy, vz
+  integer:: i
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t%compression_magnitude', itimer=itimer)
+  allocate (vx(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (vy(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (vz(self%gn(1),self%gn(2),self%gn(3)))
+  vx = self%mem(:,:,:,self%idx%px,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
+  vy = self%mem(:,:,:,self%idx%py,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
+  vz = self%mem(:,:,:,self%idx%pz,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
+  w = max(- stagger%ddx(self%ds(1),vx) &
+          - stagger%ddy(self%ds(2),vy) &
+          - stagger%ddz(self%ds(3),vz), 0.0)
+  deallocate (vx, vy, vz)
+  call trace%end (itimer)
+END SUBROUTINE compression_magnitude
+
+!===============================================================================
+!> Compute the vorticity
+!===============================================================================
+SUBROUTINE vorticity_magnitude (self, w)
+  class (solver_t):: self
+  real(kind=KindScalarVar), dimension(:,:,:):: w
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: vx, vy, vz
+  integer:: i
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('solver_t%vorticity_magnitude', itimer=itimer)
+  allocate (vx(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (vy(self%gn(1),self%gn(2),self%gn(3)))
+  allocate (vz(self%gn(1),self%gn(2),self%gn(3)))
+  vx = self%mem(:,:,:,self%idx%px,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
+  vy = self%mem(:,:,:,self%idx%py,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
+  vz = self%mem(:,:,:,self%idx%pz,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1)
+  w = sqrt((stagger%ddy(self%ds(2),vz)-stagger%ddz(self%ds(3),vy))**2 &
+         + (stagger%ddz(self%ds(3),vx)-stagger%ddx(self%ds(1),vz))**2 &
+         + (stagger%ddx(self%ds(1),vy)-stagger%ddy(self%ds(2),vx))**2)
+  deallocate (vx, vy, vz)
+  call trace%end (itimer)
+END SUBROUTINE vorticity_magnitude
 
 END MODULE solver_mod

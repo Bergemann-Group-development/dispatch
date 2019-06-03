@@ -38,6 +38,7 @@ MODULE download_mod
     integer(8):: n_same=0, n_differ=0
     integer:: order_interpolator
     logical:: check_filled=.false.
+    logical:: link_locks=.false.
     procedure(interpolator_interface), pointer, nopass:: interpolate => null()
     procedure(same_linear)           , pointer        :: same        => null()
   contains
@@ -340,11 +341,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   integer, optional:: only
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
   !.............................................................................
-  class(link_t), pointer:: nbor, sorted_head
+  class(link_t), pointer:: nbor, sorted_head, nbors
   class(patch_t), pointer:: target, source
   integer:: edges, l(3), u(3), ix, iy, iz
   integer, save:: itimer=0
-  real(8):: wc(0:4)
   character(len=64):: info
   logical:: all_cells_l
   !-----------------------------------------------------------------------------
@@ -393,16 +393,22 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   if (target%is_periodic()) call target%periodic_grid
   !-----------------------------------------------------------------------------
   ! Use an nbor list sorted by decreasing level, recording in each cell the
-  ! level that supplied values, and skipping nbor contributions from lower levels
+  ! level that supplied values, and skipping nbor contributions from lower levels.
+  ! To avoid dead-lock, make a copy of it, and release the lock
   !-----------------------------------------------------------------------------
-  call link%lock%set ('download_link')
-  nbor => link%nbors_by_level
+  if (download%link_locks) then
+    call link%lock%set ('download_link')
+    call link%copy_nbor_list (link%nbors_by_level, nbors)
+    call link%lock%unset ('download_link')
+    nbor => nbors
+  else
+    nbor => link%nbor
+  end if
   !-----------------------------------------------------------------------------
   ! Insert a value only if "filled" indicates that one is missing.  With the 
   ! nbor list sorted in decreasing level order, values are only computed where
   ! actually needed
   !-----------------------------------------------------------------------------
-  wc = 0d0
   do while (associated(nbor))
     if (.not.associated(nbor%task)) then
       write (io_unit%output,*) 'WARNING: nbor task not associated'
@@ -414,12 +420,15 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     !  target%id, target%level, nbor%task%id, nbor%task%level, nbor%task%n_needed
     !flush (io_unit%output)
     source => task2patch(nbor%task)
-    wc(0) = wallclock()
-    !call source%lock%set ('download_link')
-    wc(1) = wc(1) + wallclock() - wc(0)
+    if (omp_lock%tasks) then
+      call source%lock%set ('download_link')
+    end if
     if (verbose > 1) &
       write(io_unit%log,*) target%id, 'download_t%download_link: source, download =', &
         source%id, nbor%download
+    !---------------------------------------------------------------------------
+    ! Skip nbor not marked for download
+    !---------------------------------------------------------------------------
     if (nbor%download) then
      if (source%nt == 1) &
        self%same => same_linear
@@ -434,7 +443,19 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
          else if (source%level==target%level) then
            call self%same (target, source, all_cells, only=only)
          else if ((source%level-target%level) == -1) then
-           call different_prolong (self, target, source, all_cells, only=only)
+           if (use_different == -2) then
+             call different (self, target, source, all_cells, only=only)
+           else
+             call different_prolong (self, target, source, all_cells, only=only)
+           end if
+           !call prolong (self, target, source, all_cells, only=only)
+         else if ((source%level-target%level) < -1) then
+           if (use_different == -2) then
+             call different (self, target, source, all_cells, only=only)
+           else
+             call different_prolong (self, target, source, all_cells, only=only)
+           end if
+           !write (io_unit%log,*) target%id, 'WARNING: using more than one level prolong from', source%id
            !call prolong (self, target, source, all_cells, only=only)
          else if (source%level < target%level .and. present(all_cells)) then
            call different_prolong (self, target, source, all_cells, only=only)
@@ -472,18 +493,16 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
        end if
      end if
     end if
-    !call source%lock%unset ('download_link')
-    wc(2) = wc(2) + wallclock() - wc(0)
-    wc(3) = wc(3) + wallclock() - wc(0)
-    wc(4) = wc(4) + 1d0
+    if (omp_lock%tasks) then
+      call source%lock%unset ('download_link')
+    end if
     nbor => nbor%next
   end do
-  call link%lock%unset ('download_link')
-  if (verbose > 1) then
-    wc(3) = wc(3)-wc(2)
-    wc(2) = wc(2)-wc(1)
-    write (io_unit%log,'(a,6p,3f7.1,i6)') &
-      'lock%set, source use, lock%unset =', wc(1:3)/wc(4), nint(wc(4))
+  !-----------------------------------------------------------------------------
+  ! Done with temporary nbor list, so remove it
+  !-----------------------------------------------------------------------------
+  if (download%link_locks) then
+    call link%remove_nbor_list (nbors)
   end if
   if (present(only)) then
     if (only==target%idx%d) then
@@ -500,28 +519,51 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       l = target%mesh%lb
       u = target%mesh%ub
     end if
+    block
+    integer:: n_not
+    n_not = 0
     if (any(filled(l(1):u(1),l(2):u(2),l(3):u(3),:) == -1)) then
       !-------------------------------------------------------------------------
       ! Since only the parent patch is used, this condition is expected, and OK
       !-------------------------------------------------------------------------
       if (verbose > 0) then
-        write (io%output,*) 'INFO: some guard zone cells were not filled'
+        if (all_cells_l) then
+          write (io_unit%log,'(a,i6)') &
+           'INFO: some internal cells were not filled, iD =', target%id
+        else
+          write (io_unit%log,'(a,i6)') &
+           'INFO: some guard zone cells were not filled, iD =', target%id
+        end if
         do iz=l(3),u(3)
         do iy=l(2),u(2)
         do ix=l(1),u(1)
-          if (filled(ix,iy,iz,1) == -1) &
+          if (filled(ix,iy,iz,1) == -1) then
+            n_not = n_not+1
             write(io_unit%log,'(a,3i3)') 'not filled:', ix, iy, iz
+          end if
         end do
         end do
         end do
+        if (all_cells_l) then
+          write (io%output,'(i6,2x,a,i6,i4)') &
+           n_not, 'internal cells were not filled: id, level =', target%id, target%level
+        else
+          write (io%output,'(i6,2x,a,i6,i4)') &
+           n_not, 'guard zone cells were not filled: id, level =', target%id, target%level
+        end if
       end if
     end if
+    associate (task => link%task)
+    select type (task)
+    class is (patch_t)
+    task%not_filled = n_not
+    end select
+    end associate
+    end block
     deallocate (filled)
     if (verbose > 0) &
       deallocate (src)
   end if
-  !-----------------------------------------------------------------------------
-  ! Decrement n_needed counters, and remove the sorted nbor list
   !-----------------------------------------------------------------------------
   call validate%check (target%link, d, ' after download')
   call trace%end (itimer)

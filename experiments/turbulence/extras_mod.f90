@@ -167,7 +167,7 @@ END SUBROUTINE output
 !===============================================================================
 INTEGER function check_refine (self, patch)
   class(extras_t):: self
-  class(gpatch_t), pointer:: patch
+  class(extras_t), pointer:: patch
   !.............................................................................
   check_refine = -1
   !check_refine = max (check_refine, &
