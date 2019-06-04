@@ -213,10 +213,11 @@ MODULE patch_mod
     real:: num(3)
     integer:: dim(3)
   end type
-  logical, save:: extrapolate_gz=.false.
-  logical, save:: do_check_nan=.false.
-  logical, save:: panic=.false.
-  logical, save:: zero_order_extrap=.true.
+  integer, save:: print_every=0, iprint=0           ! print cadence
+  logical, save:: extrapolate_gz=.false.            ! extrapolate guard zones?
+  logical, save:: do_check_nan=.false.              ! check for NaN?
+  logical, save:: panic=.false.                     ! error handling
+  logical, save:: zero_order_extrap=.true.          ! extrap to no-mans-land
   public task2patch
 CONTAINS
 
@@ -412,7 +413,7 @@ SUBROUTINE init_default (self)
   namelist /patch_params/ n, nv, ng, nt, u_fixed, dt_fixed, &
     grace, periodic, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
     zero_order_extrap
-  namelist /out_params/ out_time, end_time, print_time, max_files
+  namelist /out_params/ out_time, end_time, print_time, print_every, max_files
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init_default')
@@ -438,6 +439,7 @@ SUBROUTINE init_default (self)
     if (io%master) write (*, out_params)
     if (mpi%rank > 0) &
       self%track = .true.
+    iprint = print_every                        ! print 1st task
   end if
   !-----------------------------------------------------------------------------
   ! To allow patches to have n, ng, nv, and nt values that differ, values that
@@ -645,7 +647,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
   !block
-  
+
   n_header = storage_size(header)/32             ! 32 bits per word
   if (n_header*4 /= storage_size(header)/8) then
     write(io%output,*) n_header*4, storage_size(header)/8
@@ -1386,7 +1388,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer, optional:: nq, ntask
   character(len=64), optional:: experiment_name
   !.............................................................................
-  integer:: iv, nv
+  integer:: iv, nv, iprint_l
   integer:: it0, it1, it
   real:: fmin, fmax
   real, dimension(:,:,:), pointer:: df
@@ -1395,6 +1397,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer:: counts_l(7), i
   character(len=120):: fmt
   real(8):: time, print_next
+  logical:: print_it
   type(lock_t), save:: lock
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%info')
@@ -1447,7 +1450,25 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       !$omp atomic write
       id_prv = 0
     end if
-    if (self%time >= io%print_next) then
+    !---------------------------------------------------------------------------
+    ! Allow print every print_every update, if > 0
+    !---------------------------------------------------------------------------
+    !$omp atomic read
+    iprint_l = iprint
+    if (print_every > 0 .and. iprint_l >= print_every) then
+      !$omp atomic write
+      iprint = 0
+      print_it = .true.
+    else
+      !$omp atomic update
+      iprint = iprint+1
+      print_it = .false.
+    end if
+    !---------------------------------------------------------------------------
+    ! If print_every==0, then use instead print_time to control cadence
+    !---------------------------------------------------------------------------
+    if (print_it .or. &
+        self%time >= io%print_next) then
      !--------------------------------------------------------------------------
      ! Use double if and a brief lock period to ensure only one thread prints
      !--------------------------------------------------------------------------
