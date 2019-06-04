@@ -15,6 +15,7 @@ MODULE list_mod
   USE link_mod
   !USE load_balance_mod
   USE timer_mod
+  USE counters_mod
   implicit none
   private
   type, public:: list_t
@@ -66,6 +67,7 @@ MODULE list_mod
     procedure:: check_oldest
     procedure:: check_queue
     procedure:: init_nbors
+    procedure:: set_init_nbors
     procedure:: init_nbor_nbors
     procedure:: check_nbor_nbors
     procedure:: refresh_nbors
@@ -207,26 +209,42 @@ SUBROUTINE append_link (self, link)
 END SUBROUTINE append_link
 
 !===============================================================================
-!> Remove a link from the list, taking special care with the head and tail
+!> Remove a link from the list, taking special care with the head and tail.
+!> Set bits%remove, which excludes the task from nbor lists in check_ready(),
+!> and signals rank nbors to repeat this remove_and_reset().
 !===============================================================================
 SUBROUTINE remove_and_reset (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
   integer:: count
   !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%remove_and_reset')
   call self%lock%set ('remove_and_reset')  ! lock task list while changing
+  !-----------------------------------------------------------------------------
+  ! Send a suicide note to virtual nbors, if this is a boundary patch
+  !-----------------------------------------------------------------------------
+  call link%task%set (bits%remove)         ! used in check_ready() and unpack()
+  if (link%task%is_set (bits%boundary)) then
+    call self%send_to_vnbors (link)
+  end if
+  !-----------------------------------------------------------------------------
+  if (self%verbose > 0) then
+    write (io_unit%log,'(f12.6,2x,a,i6,2l3)') &
+      wallclock(), 'list_t%remove_and_reset: id =', link%task%id, &
+      link%task%is_set(bits%boundary), link%task%is_set(bits%virtual)
+  end if
+  !-----------------------------------------------------------------------------
   call self%remove_link (link)             ! remove link from task list
+  call self%check_nbors (link)             ! check nbors, now link is removed
+  call self%set_init_nbors (link)          ! trigger new nbor lists on nbors
   !$omp atomic update
   timer%levelpop (link%task%level) = &     ! decrement level population count
   timer%levelpop (link%task%level) - 1
-  call self%init_nbor_nbors (link)         ! new nbor lists, w/o link
-  call self%reset_status()                 ! set task status bits
-  !-----------------------------------------------------------------------------
-  ! Decrement the I/O write counter; may be moot, with task disappearing
-  !-----------------------------------------------------------------------------
-  call self%check_nbor_nbors (link)        ! check / send to ready queue
+  count = counters%decrement &             ! decrement I/O task counter
+    (link%task%iout+1, io%ntask)
   call link%garbage_collect (link)         ! add to garbage bin
   call self%lock%unset ('remove_patch')    ! release the task list
+  call trace%end
 END SUBROUTINE remove_and_reset
 
 !===============================================================================
@@ -365,11 +383,16 @@ SUBROUTINE count_status (self, label)
   self%nb = nb
   self%nv = nv
   self%n  = n
-  if (self%verbose > 1) &
-    write (io_unit%output,'(1x,a,6i6)') 'list_t%count_status: n[ibveaf] = ', &
-    self%ni, self%nb, self%nv, self%ne, self%na, nf
-  if (present(label) .and. self%verbose > 0) then
-    write (io_unit%output,*) 'count_status:', self%na, ni+nb-nf, label
+  if (self%verbose > 0) then
+    if (present(label)) then
+      write (io_unit%log,'(1x,a,6i6,2x,a)') &
+      'list_t%count_status: n[ibveaf] = ', &
+      self%ni, self%nb, self%nv, self%ne, self%na, nf, label
+    else
+      write (io_unit%log,'(1x,a,6i6,2x,a)') &
+      'list_t%count_status: n[ibveaf] = ', &
+      self%ni, self%nb, self%nv, self%ne, self%na, nf
+    end if
   end if
   self%na = ni + nb - nf
   !-----------------------------------------------------------------------------
@@ -804,6 +827,8 @@ SUBROUTINE check_ready (self, link)
   ! be checked, we first check if any bits are set indicating this to be the case
   !-----------------------------------------------------------------------------
   task => link%task
+  bits%hands_off = bits%ready + bits%busy + bits%remove + bits%frozen + &
+    bits%virtual + bits%external
   if (self%verbose > 1 .and. task%is_set(bits%hands_off)) &     ! ready+busy+frozen+...
     write (io_unit%log,*) 'list_t%check_ready: hands_off', task%id, &
     task%is_set(bits%ready), task%is_set(bits%busy), task%is_set(bits%frozen)
@@ -825,7 +850,7 @@ SUBROUTINE check_ready (self, link)
     !---------------------------------------------------------------------------
     ! Check nbors that are needed, not frozen, and have support
     !---------------------------------------------------------------------------
-    if (nbor%needed .and. nbor%task%is_clear(bits%frozen)) then
+    if (nbor%needed .and. nbor%task%is_clear(bits%frozen+bits%remove)) then
       if (nbor%task%is_ahead_of(task)) then             ! and is ahead in time
         if (debug1 .or. self%verbose > 1) &
           write (io_unit%log,'(f12.6,2x,"list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
@@ -1142,6 +1167,31 @@ SUBROUTINE init_nbors (self, link)
   call trace_end (itimer)
 END SUBROUTINE init_nbors
 
+!===============================================================================
+!> Set bits%init_nbors on nbor tasks, if the task itself is new (and hence has
+!> a new nbor list, which should be matched by the nbors nbor list).  For safe
+!> measure, we do this twice, even though one time should in principle be eno
+!===============================================================================
+SUBROUTINE set_init_nbors (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link, nbor
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%set_init_nbors')
+  if (self%verbose > 0) &
+    write (io_unit%log,*) &
+      'set_init_nbors: id =', link%task%id
+  nbor => link%nbor
+  do while (associated(nbor))
+    call nbor%link%lock%set ('set_init_nbors')
+      call nbor%task%set (bits%init_nbors)
+      if (self%verbose > 1) then
+        write (io_unit%log,*) 'bits%init_nbors set ', nbor%task%id, nbor%task%istep
+      end if
+    call nbor%link%lock%unset ('set_init_nbors')
+    nbor => nbor%next
+  end do
+  call trace%end ()
+END SUBROUTINE set_init_nbors
 !===============================================================================
 !> Initialize the nbor lists of all nbors of link.  Note that the nbor list of
 !> an nbor starts at nbor%link%nbor.   To prevent other threads from modifying

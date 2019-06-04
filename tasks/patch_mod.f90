@@ -1455,7 +1455,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     !---------------------------------------------------------------------------
     !$omp atomic read
     iprint_l = iprint
-    if (print_every > 0 .and. iprint_l >= print_every) then
+    if (iprint_l >= print_every) then
       !$omp atomic write
       iprint = 0
       print_it = .true.
@@ -1468,7 +1468,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     ! If print_every==0, then use instead print_time to control cadence
     !---------------------------------------------------------------------------
     if (print_it .or. &
-        self%time >= io%print_next) then
+        print_every == 0 .and. self%time >= io%print_next) then
      !--------------------------------------------------------------------------
      ! Use double if and a brief lock period to ensure only one thread prints
      !--------------------------------------------------------------------------

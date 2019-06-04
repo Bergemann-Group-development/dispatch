@@ -559,17 +559,10 @@ SUBROUTINE unpack (self, mesg, link)
     end if
     !call self%lock%set ('unpack')
     call self%init_nbors (link1)
-    call self%init_nbor_nbors (link1)
-    call self%reset_status ()
     !---------------------------------------------------------------------------
-    ! The check_support() below may trigger the creation of new tasks -- internal
-    ! or virtual. They will have the support bit set, and will trigger calls to
-    ! check_support() from check_current() if they are active tasks.  If they 
-    ! are virtual tasks, the support bit was set at the owner rank and they will
-    ! be checked there.
     !---------------------------------------------------------------------------
     call refine%check_support (self, link1, n_added)
-    call self%check_nbor_nbors (link1)
+    call self%check_nbors (link1)
     !call self%lock%unset ('unpack')
   else
     if (verbose > 0) then
@@ -584,10 +577,7 @@ SUBROUTINE unpack (self, mesg, link)
   ! bit set, in order to replicate the behavior on the nbor ranks
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%init_nbors)) then
-    !call self%lock%set ('unpack-init_nbors')
     call self%init_nbors (link1)
-    call task%clear (bits%init_nbors)
-    !call self%lock%unset ('unpack-init_nbors')
     if (verbose > 1) &
       write (io_unit%log,*) 'unpack: bits%init_nbors id =', task%id
   end if
