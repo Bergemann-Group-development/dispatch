@@ -827,7 +827,9 @@ SUBROUTINE check_ready (self, link)
   ! be checked, we first check if any bits are set indicating this to be the case
   !-----------------------------------------------------------------------------
   task => link%task
-  if (task%is_set (bits%hands_off)) return              ! ready+busy+frozen+..
+  ignore = bits%ready + bits%busy + bits%remove + bits%virtual + bits%frozen
+  if (task%is_set (ignore)) &
+    return 
   call trace%begin ('list_t%check_ready', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Since only this thread can change the nbor list we are free to use it w/o lock
