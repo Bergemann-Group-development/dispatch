@@ -508,7 +508,7 @@ SUBROUTINE update (self)
   call self%courant_condition
   if (verbose>2) &
     call self%check_density('before timestep')
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh, self%lock)
   call self%check_density(' after timestep')
   !-----------------------------------------------------------------------------
   call self%counter_update

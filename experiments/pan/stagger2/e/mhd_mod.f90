@@ -514,7 +514,7 @@ SUBROUTINE update (self)
   call self%courant_condition
   if (verbose>2) &
     call self%check_density('before timestep')
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh, self%lock)
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   d = max(d,d_floor)
   if (self%id==io%id_debug) then
