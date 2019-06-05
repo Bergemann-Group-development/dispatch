@@ -1720,6 +1720,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   real(8):: dtime, ds(3), courant
   integer:: i2
   integer, save:: itimer=0
+  logical, parameter:: save_dbg=.false.
   !.............................................................................
   call trace_begin('patch_t%courant_condition', itimer=itimer)
   if (io%verbose>1) &
@@ -1744,11 +1745,11 @@ SUBROUTINE courant_condition (self, detailed_timer)
   endif
   !$omp atomic write
   self%dtime = dtime
-  if (self%nt>1) then
+  if (self%nt > 1 .and. self%istep > 5) then
     if (dtime < 0.5*self%dt(self%iit(self%nt-1)) .and. self%dt_fixed < 0.0) then
       self%safety_factor = 0.5
     end if
-    if (self%safety_factor < 0.6) then
+    if (self%safety_factor < 0.6 .and. save_dbg) then
       !$omp critical (fort88_cr)
       if (self%safety_factor == 0.5) then
         write (io_unit%dbg) self%id, self%gn, self%ipos
