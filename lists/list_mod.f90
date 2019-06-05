@@ -820,74 +820,33 @@ SUBROUTINE check_ready (self, link)
   class(link_t), pointer:: link
   class(task_t), pointer:: task
   class(link_t), pointer:: nbor
-  logical:: debug, debug1
+  integer:: ignore
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Since we may be called upon to check nbors of a patch that should not itself
   ! be checked, we first check if any bits are set indicating this to be the case
   !-----------------------------------------------------------------------------
   task => link%task
-  bits%hands_off = bits%ready + bits%busy + bits%remove + bits%frozen + &
-    bits%virtual + bits%external
-  if (self%verbose > 1 .and. task%is_set(bits%hands_off)) &     ! ready+busy+frozen+...
-    write (io_unit%log,*) 'list_t%check_ready: hands_off', task%id, &
-    task%is_set(bits%ready), task%is_set(bits%busy), task%is_set(bits%frozen)
   if (task%is_set (bits%hands_off)) return              ! ready+busy+frozen+..
   call trace%begin ('list_t%check_ready', itimer=itimer)
-  debug = io%verbose > 1 .or. task%id==io%id_debug
   !-----------------------------------------------------------------------------
-  ! If the cached nbor list does not exist, we need to use the normal nbor list,
-  ! and then it has to remain locked until the test has been carried out.  If not,
-  ! the lock can be released immediately
+  ! Since only this thread can change the nbor list we are free to use it w/o lock
   !-----------------------------------------------------------------------------
-  call link%lock%set ('check_ready')
+  ignore = bits%frozen + bits%remove
   nbor => link%nbor                                     ! use original nbor list
   do while (associated (nbor))                          ! keep going until end
-    debug1 = nbor%task%id==io%id_debug
-    if (debug1 .or. self%verbose > 2) &
-      write(io_unit%log,*) 'check_ready: id, nbor, needed, ahead', &
-        task%id, nbor%task%id, nbor%needed, nbor%task%is_ahead_of(task)
     !---------------------------------------------------------------------------
     ! Check nbors that are needed, not frozen, and have support
     !---------------------------------------------------------------------------
-    if (nbor%needed .and. nbor%task%is_clear(bits%frozen+bits%remove)) then
-      if (nbor%task%is_ahead_of(task)) then             ! and is ahead in time
-        if (debug1 .or. self%verbose > 1) &
-          write (io_unit%log,'(f12.6,2x,"list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
-            wallclock(), &
-            task%id, task%time, '  is OK on', nbor%task%id, nbor%task%time, &
-            nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
-      else                                              ! not ahead in time
-        if (debug1 .or. self%verbose > 1) then
-          write (io_unit%log,'(f12.6,2x,"list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
-            wallclock(), &
-            task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
-            nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
-        else if (self%verbose > 0) then
-          write (io_unit%log,'(f12.6,2x,"list_t%check_ready:",i5,f10.6,a,i6,2f10.6,f6.2,l4)') &
-            wallclock(), task%id, task%time, ' failed on', nbor%task%id, nbor%task%time, &
-            nbor%task%dtime, nbor%task%grace, nbor%task%is_set(bits%virtual)
-        end if
-        call link%lock%unset ('check_ready')
+    if (nbor%needed .and. nbor%task%is_clear(ignore)) then
+      if (.not. nbor%task%is_ahead_of(task)) then       ! and is ahead in time
         call trace%end (itimer)
         return
       end if
     end if
     nbor => nbor%next                                   ! next nbor
   end do
-  call link%lock%unset ('check_ready')
-  if (self%verbose > 0) then
-    write (io_unit%log,'(f12.6,2x,"list_t%check_ready:",i5,f10.6,a)') &
-      wallclock(), task%id, task%time, ' succeded'
-  end if
-  if (debug .or. self%verbose > 2) then
-    write (io_unit%output,'("list_t%check_ready:",i5,f10.6,a)') &
-      task%id, task%time, ' succeded'
-    write (io_unit%log,'("list_t%check_ready:",i5,f10.6,a)') &
-      task%id, task%time, ' succeded'
-  end if
-  if (link%task%is_clear(bits%frozen)) &
-    call self%queue_by_time (link)                      ! add task to queue
+  call self%queue_by_time (link)                        ! add task to queue
   call trace%end (itimer)
 END SUBROUTINE check_ready
 
