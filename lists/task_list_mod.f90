@@ -96,7 +96,16 @@ SUBROUTINE init_levels (self)
   type(link_t), pointer:: link
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%init_levels')
-  call refine%init                      ! Refinement parameters
+  call refine%init                      ! refinement parameters
+  !-----------------------------------------------------------------------------
+  ! FIXME: For now, active AMR cannot use recv_priv()
+  !-----------------------------------------------------------------------------
+  if (refine%on)  then
+    !$omp atomic write
+    mpi_mesg%recv_priv = .false.
+  end if
+  !$omp atomic write
+  refine%levelmin = refine%levelmax     ! ignore input value!
   link => self%head
   do while (associated(link))
     associate (patch => link%task)
