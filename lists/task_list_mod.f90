@@ -104,7 +104,8 @@ SUBROUTINE init_levels (self)
   ! FIXME: For now, active AMR cannot use recv_priv()
   !-----------------------------------------------------------------------------
   if (refine%on)  then
-    mpi_mesg%recv_priv = .false.
+    mpi_mesg%recv_active = .false.
+    mpi_mesg%recv_priv = .true.
   end if
   refine%levelmin = refine%levelmax     ! ignore input value!
   link => self%head
