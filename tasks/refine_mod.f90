@@ -388,10 +388,6 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   call trace%begin('refine_t%check_current', itimer=itimer)
   patch => solver%cast2solver (link%task)
   id = patch%id
-  !-----------------------------------------------------------------------------
-  ! Check if the new task has support. bits%support will be set if not.
-  !-----------------------------------------------------------------------------
-  call check_support (self, tasklist, link, n_added)
   if (verbose > 3) &
     write (io_unit%output,'(i6,2x,a,f12.6,2i4)') &
       link%task%id, 'refine_t%check_current, at t =', &
@@ -449,16 +445,6 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
         call trace%end (itimer)
         return
       end if
-    end if
-    !---------------------------------------------------------------------------
-    ! Check support for patches so marked, and clear the bit
-    !---------------------------------------------------------------------------
-    if (patch%is_set (bits%support)) then
-      call check_support (self, tasklist, link, n_added)
-      if (verbose > 1 .and. n_added > 0) then
-        write (io_unit%log,*) 'check_support: pre-added', n_added
-      end if
-      call patch%clear (bits%support)
     end if
     !---------------------------------------------------------------------------
     ! Update next refinement step counter and deallocate local irefine
@@ -618,12 +604,18 @@ END SUBROUTINE selective_refine
 
 !===============================================================================
 !> Check if new%task is a patch, and if it overlaps with other level L-2 patches,
-!> with points not covered by L-1 patches, indicating the a new L-1 patch should
+!> with points not covered by L-1 patches, indicating that a new L-1 patch should
 !> be created from the L-2 patch.
 !>
 !> To implement this, we need to look at the regions that overlap with an L-2
 !> patch, and then run through the nbor list L-1 patches, to see if they cover
-!> the area.  If not, "make an impresion" on the L-2 patch
+!> the area.  If not, "make an impression" on the L-2 patch, by setting the
+!> corresponding cells in its %xrefine map.
+!>
+!> NOTE: This mechanism is currently NOT used; it is left for now, to be removed
+!> when need_to_support() has been validated as being sufficient -- it looks
+!> at the same issue from the point of view of the L-2 patch, which is better,
+!> since it eliminates the need for synchronizing access to %xrefine.
 !===============================================================================
 SUBROUTINE check_support (self, tlist, new, n_added)
   class(refine_t):: self
@@ -800,9 +792,6 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
     return
   call trace%begin('refine_t%check_derefine_support', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! If the patch has been found to lack support, increase verbose and call
-  ! check_support() again
-  !-----------------------------------------------------------------------------
   call tlist%lock%set ('check_derefine_support')
   if (omp_lock%links) then
     call link%lock%set ('check_derefine_support')
@@ -966,14 +955,13 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   end if
   !-----------------------------------------------------------------------------
   ! Set the bits%support here, which causes it to be set on the rank nbors
-  ! if this is a boundary task.  There, a check for support should then
-  ! be triggered, where the nbor lists even in the virtual part of space
-  ! need to be the same as in the internal space (apart from external patches).
-  ! Here, on the owner rank, the bits%support will remain until next time
-  ! the task is to be updated, when code in check_current() sees the bit,
-  ! calls check_support(), and then clears the bit.
+  ! if this is a boundary task.  There, a check for support is then triggered,
+  ! where the nbor lists also in the virtual nbors are refreshed.  On the owner
+  ! rank the bits%support will remain until next time the task is updated, when 
+  ! code in dispatcher0_t%update() sees the bit, call init_nbors(), and clears
+  ! the bit.
   !-----------------------------------------------------------------------------
-  call child%set (bits%support)                      ! trigger check_child_support
+  call child%set (bits%support)
   !-----------------------------------------------------------------------------
   ! Make parent a neighbor of new child patch.  This will be overwritten
   ! in `init_nbor_nbors` but is necessary here to permit interpolation of
@@ -988,7 +976,8 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   parent%n_needed = parent%n_needed + 2
   !-----------------------------------------------------------------------------
   ! Add the child task to the task list and then directly into the ready queue,
-  ! bits%init_nbors triggers continue processing in check_current()
+  ! bits%init_nbors triggers continued processing in dispatcher0_t%update(),
+  ! which makes a new nbor list after updating the child patch the 1st time.
   !-----------------------------------------------------------------------------
   call child%set (bits%init_nbors)
   call tlist%append_link (child_link)

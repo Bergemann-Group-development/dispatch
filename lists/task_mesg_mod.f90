@@ -561,7 +561,7 @@ SUBROUTINE unpack (self, mesg, link)
     call self%init_nbors (link1)
     !---------------------------------------------------------------------------
     !---------------------------------------------------------------------------
-    call refine%check_support (self, link1, n_added)
+    !call refine%check_support (self, link1, n_added)
     call self%check_nbors (link1)
     !call self%lock%unset ('unpack')
   else

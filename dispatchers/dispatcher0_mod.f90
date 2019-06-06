@@ -21,7 +21,7 @@ MODULE dispatcher0_mod
   USE data_io_mod
   USE omp_lock_mod
   USE validate_mod
-  USE refine_mod
+!  USE refine_mod
   implicit none
   private
   type, public:: dispatcher0_t
@@ -394,6 +394,11 @@ SUBROUTINE update (self, task_list, test)
         call task_list%set_init_nbors (head)
       end if
       call task%clear (bits%init_nbors)
+      !-----------------------------------------------------------------------------
+      ! Now that a new task has a comprehensive nbor list, check if it has 
+      ! AMR support -- bits%support will be set if not (mainly informative).
+      !-----------------------------------------------------------------------------
+      !call refine%check_support (task_list, head)
     end if
     !---------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the
