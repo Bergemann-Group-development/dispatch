@@ -91,6 +91,9 @@ SUBROUTINE initialize (self)
 END SUBROUTINE initialize
 
 !===============================================================================
+!> Find the smallest minimum level among the existing tasks.  Note that this
+!> routine runs before entering the task update parallel region.
+!===============================================================================
 SUBROUTINE init_levels (self)
   class(task_list_t):: self
   type(link_t), pointer:: link
@@ -101,10 +104,8 @@ SUBROUTINE init_levels (self)
   ! FIXME: For now, active AMR cannot use recv_priv()
   !-----------------------------------------------------------------------------
   if (refine%on)  then
-    !$omp atomic write
     mpi_mesg%recv_priv = .false.
   end if
-  !$omp atomic write
   refine%levelmin = refine%levelmax     ! ignore input value!
   link => self%head
   do while (associated(link))
@@ -273,6 +274,15 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     return
   end if
   !-----------------------------------------------------------------------------
+  ! Download nbor info -- this may be an experiment_t procedure, but if not,
+  !-- the call should be answered by a solver-specific procedure (which may or
+  ! may not choose to call the generic patch guard zone handler in tasks/).
+  ! Note that this needs to be done before the AMR refinement tests, for which
+  ! guard zones may be needed
+  !-----------------------------------------------------------------------------
+  if (.not.test) &
+    call task%dnload                                  ! download nbor info
+  !-----------------------------------------------------------------------------
   ! Check if refinement is needed on the task; if so this will push new tasks
   ! onto the queue, with the same task time; i.e., to the head of the queue.
   ! If the task is virtual, it will not be checked by this rank.
@@ -292,13 +302,6 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     call trace%end (itimer)
     return
   end if
-  !-----------------------------------------------------------------------------
-  ! Download nbor info -- this may be an experiment_t procedure, but if not,
-  !-- the call should be answered by a solver-specific procedure (which may or
-  ! may not choose to call the generic patch guard zone handler in tasks/)
-  !-----------------------------------------------------------------------------
-  if (.not.test) &
-    call task%dnload                                  ! download nbor info
   !-----------------------------------------------------------------------------
   ! Update the task, whatever that means (may include call to task%output)
   !-----------------------------------------------------------------------------
