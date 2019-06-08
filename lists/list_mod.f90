@@ -111,7 +111,7 @@ SUBROUTINE init (self, name)
   if (present(name)) then
     self%name = name
     write (io_unit%log,*)'init_list: ', name
-  call self%lock%init (name(1:4))
+    call self%lock%init (name(1:4))
   else
     call self%lock%init ('list_t')
   end if
@@ -740,23 +740,23 @@ SUBROUTINE check_oldest (self)
   link => self%head
   do while (associated (link))                        ! keep going until end
     if (link%task%is_clear (bits%frozen)) then
-    if (link%task%is_set(bits%virtual)) then
-      if (link%task%time < toldv) then
-        toldv = link%task%time
-        oldestv => link
+      if (link%task%is_set(bits%virtual)) then
+        if (link%task%time < toldv) then
+          toldv = link%task%time
+          oldestv => link
+        end if
+      else
+        if (link%task%time < told) then
+          told = link%task%time
+          oldest => link
+        end if
       end if
-    else
-      if (link%task%time < told) then
-        told = link%task%time
-        oldest => link
-      end if
-    end if
     end if
     link => link%next
   end do
   if (associated(oldest)) then
-  write (io_unit%log,*) 'oldest active is ', oldest%task%id , told, &
-    oldest%task%is_set(bits%ready), oldest%task%is_set(bits%busy) 
+    write (io_unit%log,*) 'oldest active is ', oldest%task%id , told, &
+      oldest%task%is_set(bits%ready), oldest%task%is_set(bits%busy) 
   else
     write (stderr,*) 'STALLED: oldest active not found '
   end if
@@ -767,24 +767,24 @@ SUBROUTINE check_oldest (self)
     flush (io_unit%log)
   end if
   if (associated(oldest)) then
-  nbor => oldest%nbor
-  write (io_unit%log,2) oldest%task%id, oldest%task%time, oldest%task%rank, oldest%task%level, &
-    oldest%needed, oldest%needs_me, oldest%task%is_set(bits%boundary), oldest%task%is_set(bits%virtual)
+    nbor => oldest%nbor
+    write (io_unit%log,2) oldest%task%id, oldest%task%time, oldest%task%rank, oldest%task%level, &
+      oldest%needed, oldest%needs_me, oldest%task%is_set(bits%boundary), oldest%task%is_set(bits%virtual)
   2 format(i6,f12.6,2i4,5L3,f12.6)
-  write (io_unit%log,*) 'nbor list:'
-  do while (associated(nbor))
-    write (io_unit%log,2) nbor%task%id, nbor%task%time, nbor%task%rank, nbor%task%level, &
-      nbor%needed, nbor%needs_me, nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual), &
-      nbor%task%is_ahead_of (oldest%task), nbor%task%unpack_time
-    nbor => nbor%next
-  end do
-  call oldest%task%clear (bits%ready+bits%busy)
-  call self%queue_by_time (oldest)                  ! add task to queue
-  write (io_unit%log,*) 'task queued'
-  flush (io_unit%log)
-  write (io_unit%log,*) 'check_oldest: phase 1 done'
-  flush (io_unit%log)
-  link => oldest
+    write (io_unit%log,*) 'nbor list:'
+    do while (associated(nbor))
+      write (io_unit%log,2) nbor%task%id, nbor%task%time, nbor%task%rank, nbor%task%level, &
+        nbor%needed, nbor%needs_me, nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual), &
+        nbor%task%is_ahead_of (oldest%task), nbor%task%unpack_time
+      nbor => nbor%next
+    end do
+    call oldest%task%clear (bits%ready+bits%busy)
+    call self%queue_by_time (oldest)                  ! add task to queue
+    write (io_unit%log,*) 'task queued'
+    flush (io_unit%log)
+    write (io_unit%log,*) 'check_oldest: phase 1 done'
+    flush (io_unit%log)
+    link => oldest
   else
     call trace%end ()
     return

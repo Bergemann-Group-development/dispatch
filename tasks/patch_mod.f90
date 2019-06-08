@@ -1952,7 +1952,7 @@ SUBROUTINE check_nan (self, label, always)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. do_check_nan) then
-    if (io%verbose<1 .and. .not. present(always)) return
+    if (io%verbose < 2 .and. .not. present(always)) return
   end if
   if (.not. associated(self%mem)) return
   call trace%begin ('patch_t%check_nan', itimer=itimer)
@@ -2027,8 +2027,9 @@ SUBROUTINE check_density (self, label)
   logical:: inside, nan
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if ((io%verbose < 1 .or. io%print_time > 0.0) .and. .not.do_check_nan) return
-  if (self%is_set(bits%no_density)) return
+  if ((io%verbose < 2 .or. io%print_time > 0.0 .or. print_every > 1) .and. &
+      .not.do_check_nan) return
+  if (self%is_set(bits%no_density+bits%frozen)) return
   if (.not. associated(self%mem)) return
   call trace%begin ('patch_t%check_density', itimer=itimer)
   l = self%mesh%lb
@@ -2075,7 +2076,7 @@ SUBROUTINE check_density (self, label)
     else
       if (nins > 0) then
         write (io_unit%output,1) 'ID ',self%id, &
-         'ERROR: density non-positive in',ntot,' points,',nins,' inside'
+         'WARNING: density non-positive in',ntot,' points,',nins,' inside'
       else if (io%verbose>0) then
         write (io_unit%output,1) 'ID ',self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside'
