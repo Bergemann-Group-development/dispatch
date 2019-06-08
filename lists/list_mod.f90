@@ -496,9 +496,15 @@ SUBROUTINE set_status_and_flags (self, link, nbor)
   !-----------------------------------------------------------------------------
   if (link%task%rank == mpi%rank) then
     !-----------------------------------------------------------------------
+    ! nbor is frozen
+    !-----------------------------------------------------------------------
+    if (nbor%task%is_set (bits%frozen)) then
+      nbor%needs_me = .false.
+      nbor%needed = .false.
+    !-----------------------------------------------------------------------
     ! nbor is virtual
     !-----------------------------------------------------------------------
-    if (nbor%task%rank /= mpi%rank) then
+    else if (nbor%task%rank /= mpi%rank) then
       call link%task%set(bits%boundary)
       call link%task%clear(bits%internal)
       ! -- use in check_ready(), but not in check_nbors()
@@ -521,9 +527,15 @@ SUBROUTINE set_status_and_flags (self, link, nbor)
   !-----------------------------------------------------------------------------
   else
     !-----------------------------------------------------------------------
+    ! nbor is frozen
+    !-----------------------------------------------------------------------
+    if (nbor%task%is_set (bits%frozen)) then
+      nbor%needs_me = .false.
+      nbor%needed = .false.
+    !-----------------------------------------------------------------------
     ! task is virtual, nbor is real
     !-----------------------------------------------------------------------
-    if (nbor%task%rank==mpi%rank) then
+    else if (nbor%task%rank==mpi%rank) then
       call link%task%set(bits%virtual)
       call link%task%clear(bits%external)
       ! -- don't use in check_ready(), use in check_nbors()
@@ -727,6 +739,7 @@ SUBROUTINE check_oldest (self)
   nullify (oldestnb)
   link => self%head
   do while (associated (link))                        ! keep going until end
+    if (link%task%is_clear (bits%frozen)) then
     if (link%task%is_set(bits%virtual)) then
       if (link%task%time < toldv) then
         toldv = link%task%time
@@ -738,20 +751,26 @@ SUBROUTINE check_oldest (self)
         oldest => link
       end if
     end if
+    end if
     link => link%next
   end do
+  if (associated(oldest)) then
   write (io_unit%log,*) 'oldest active is ', oldest%task%id , told, &
     oldest%task%is_set(bits%ready), oldest%task%is_set(bits%busy) 
+  else
+    write (stderr,*) 'STALLED: oldest active not found '
+  end if
   flush (io_unit%log)
   if (associated(oldestv)) then
     write (io_unit%log,*) 'the oldest virtual task is ', oldestv%task%id, toldv
     write (io_unit%log,*) 'it was last unpacked at', oldestv%task%unpack_time
     flush (io_unit%log)
   end if
+  if (associated(oldest)) then
   nbor => oldest%nbor
-2 format(i6,f12.6,2i4,5L3,f12.6)
   write (io_unit%log,2) oldest%task%id, oldest%task%time, oldest%task%rank, oldest%task%level, &
     oldest%needed, oldest%needs_me, oldest%task%is_set(bits%boundary), oldest%task%is_set(bits%virtual)
+  2 format(i6,f12.6,2i4,5L3,f12.6)
   write (io_unit%log,*) 'nbor list:'
   do while (associated(nbor))
     write (io_unit%log,2) nbor%task%id, nbor%task%time, nbor%task%rank, nbor%task%level, &
@@ -766,6 +785,10 @@ SUBROUTINE check_oldest (self)
   write (io_unit%log,*) 'check_oldest: phase 1 done'
   flush (io_unit%log)
   link => oldest
+  else
+    call trace%end ()
+    return
+  end if
   !
   if (phase > 1) then
     if (associated(oldest)) then
@@ -1093,6 +1116,7 @@ SUBROUTINE init_nbors (self, link)
         nbor%link => scan                           ! pointer to task link
         call link%add_nbor_by_rank (new_head, nbor) ! add in rank order
         call self%set_status_and_flags (link, nbor) ! set status bits and flags
+        n_add = n_add+1
       end if
     end if
     scan => scan%next                               ! continue search
@@ -1251,17 +1275,7 @@ SUBROUTINE init_all_nbors (self)
     link => link%next                                   ! continue list
   end do
   !$omp end parallel
-  link => self%head                                     ! start checking links
-  do while (associated(link))
-    n = n+1
-    if (link%task%is_set(bits%boundary)) nb = nb+1
-    if (link%task%is_set(bits%virtual)) nv = nv+1
-    link => link%next                                   ! continue list
-  end do
-  if (io%verbose > 1) & 
-    write (io%output,'(1x,a,3i6)') &
-      'list_t%init_all_nbors: n, nb, nv =', n, nb, nv
-  call trace_end (itimer)
+  call list%reset_status                                ! set bits and count
 END SUBROUTINE init_all_nbors
 
 !===============================================================================
@@ -1460,7 +1474,10 @@ SUBROUTINE real_queue_by_time (self, this, error)
   error=.false.
   task => this%task
   if (task%is_set (bits%virtual + bits%frozen)) then
-    print *, mpi%rank, omp%thread, &
+    write(stderr,*) mpi%rank, omp%thread, &
+      'ERROR: tried to queue virtual or frozen task, VF =', &
+      task%is_set(bits%virtual), task%is_set(bits%frozen)
+    write(io_unit%log,*) mpi%rank, omp%thread, &
       'ERROR: tried to queue virtual or frozen task, VF =', &
       task%is_set(bits%virtual), task%is_set(bits%frozen)
     return
