@@ -15,16 +15,21 @@
 !---------------------------------------------
 ! For unigrid run, use the no_mans_land=t line
 !---------------------------------------------
-&patch_params           nt=5 nv=8 grace=0.1 n=3*16 ng=2 no_mans_land=t /
-&out_params             end_time=0.0201 out_time=0.01 print_time=0e-3 guard_zones=f time_derivs=f /
-&io_params              verbose=0 do_trace=f omp_trace=f do_output=f method='parallel' id_debug=0 /
+&patch_params           nt=5 nv=8 grace=0.1 n=3*16 no_mans_land=t /
+&out_params             end_time=0.0201 out_time=0.01 print_time=0e-3 /
+&io_params              verbose=0 do_trace=f omp_trace=t do_output=f
+                        method='legacy' id_debug=0
+                        guard_zones=f time_derivs=0 /
 &timer_params           sec_per_report=10 /
 &validate_params        state='write' /
 
 !---------------------------------
 ! Initial condition and forces
 !---------------------------------
-&ramses_reader_params   nout=5 minlvl=6 maxlvl=8 path='gmc2' centre_on_sink=f merge_octs=f make_cartesian=t /
+&ramses_reader_params   verbose=1 path='run22d' nout=1000 minlvl=7 maxlvl=29
+                        cut_out_size=6e-8 centre_on_sink=t
+                        nmerged_max=32
+                        merge_octs=f make_cartesian=t do_evaluate=t /
 &initial_params         /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 /
@@ -36,7 +41,7 @@
 &ramses_params          courant_factor=0.250 isothermal=t gamma=1.00001 slope_type=2 smallr=1e-4 smallc=5e-1 riemann='hlld' /
 &mhd_params             isothermal=f gamma=1.01 nu=0.20,1.4,1.0,0.1,1.0,1.0 /
 &timestep_params        /
-&refine_params          do_refine=t check_interval=2 /
+&refine_params          on=f check_interval=2 levelmin=20 /
 &sinkparticles_params   do_sink=f rho_limit=1.2 max_sinks=1 verbose=0 /
 
 !----------------------------------------------------------------------------------

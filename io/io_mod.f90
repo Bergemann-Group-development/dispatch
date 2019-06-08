@@ -118,7 +118,10 @@ SUBROUTINE init (self, name)
   character(len=120):: ids = &
   '$Id$ io/io_mod.f90'
   !.............................................................................
-  if (mpi%master) print'(1x,a)', trim(ids)
+  if (mpi%master) then
+    print'(a)', self%hl
+    print'(a)', trim(ids)
+  end if
   self%master = self%master .and. (mpi%rank==0)
   io%master = self%master
   !$omp parallel

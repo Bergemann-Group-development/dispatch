@@ -93,7 +93,6 @@ MODULE task_mod
     procedure:: is_set
     procedure:: is_clear
     procedure:: allocate => void
-    procedure:: deallocate => void
     procedure:: allocate_mesg => void
     procedure:: unique_id
     procedure:: load_balance

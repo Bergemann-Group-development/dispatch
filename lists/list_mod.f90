@@ -111,8 +111,10 @@ SUBROUTINE init (self, name)
   if (present(name)) then
     self%name = name
     write (io_unit%log,*)'init_list: ', name
-  end if
   call self%lock%init (name(1:4))
+  else
+    call self%lock%init ('list_t')
+  end if
   call trace_end
 END SUBROUTINE init
 
@@ -130,7 +132,7 @@ SUBROUTINE reset (self)
   do while (associated(link))
     task => link%task
     if (associated(link)) then
-      call task%deallocate
+      call task%dealloc
       deallocate (task)
     end if
     old => link

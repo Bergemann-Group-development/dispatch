@@ -584,6 +584,10 @@ subroutine ctoprim(self)
   !q(:,:,:,2:4) = q(:,:,:,idim+1) + Grho*gravin(:,:,:,1:3)*dt*half
   l = self%mesh%lo
   u = self%mesh%uo
+  if (any(l < 0 .or. u > self%gn)) then
+    write (stderr,*) 'ERROR: lo, uo =', self%id, l, u
+    call io%abort ('ctoprim: lo or uo inconsistent')
+  end if
   self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
   if (self%get_umax_location) then
     loc = maxloc(c(l(1):u(1),l(2):u(2),l(3):u(3))) + l-1
@@ -1047,11 +1051,11 @@ SUBROUTINE trace3d(self)
     sp0 = (-u*dpx-dux*eff_gamma*p)*dtdx + (-v*dpy-dvy*eff_gamma*p)*dtdy + (-w*dpz-dwz*eff_gamma*p)*dtdz
     !
     ! Add external force
-    associate (ff => self%force_per_unit_mass)
-    su0 = su0 + ff(i,j,k,1)*half*self%dtime
-    sv0 = sv0 + ff(i,j,k,2)*half*self%dtime
-    sw0 = sw0 + ff(i,j,k,3)*half*self%dtime
-    end associate
+    if (allocated(self%force_per_unit_mass)) then
+      su0 = su0 + self%force_per_unit_mass(i,j,k,1)*half*self%dtime
+      sv0 = sv0 + self%force_per_unit_mass(i,j,k,2)*half*self%dtime
+      sw0 = sw0 + self%force_per_unit_mass(i,j,k,3)*half*self%dtime
+    end if
     !
     ! Evolve entropy instead of pressure
     !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz

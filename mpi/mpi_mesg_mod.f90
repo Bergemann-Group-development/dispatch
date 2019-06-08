@@ -536,9 +536,12 @@ SUBROUTINE init (self)
                              recv_active, recv_priv, queue_unpack, test_time, &
                              uniq_mesg, debug, verbose
   integer:: iostat
+  character(len=120):: id = &
+  '$Id$ mpi_mesg_mod.f90'
   !-----------------------------------------------------------------------------
   ! Prevent initializing more than once
   !-----------------------------------------------------------------------------
+  call trace%print_id (id)
   if (self%initialized) return
   self%initialized = .true.
   call trace%begin ('mpi_mesg_t%init')
