@@ -130,6 +130,9 @@ SUBROUTINE init_levels (self)
     link => link%next
     end associate
   end do
+  if (.not. refine%on) then
+    refine%levelmax = refine%levelmin
+  end if
   if (refine%levelmax > refine%levelmin) &
     download%check_filled = .true.
   write (io%output,*) &
