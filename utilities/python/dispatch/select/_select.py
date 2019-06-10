@@ -55,6 +55,7 @@ def patches_along(pp,point=[0.5,0.5,0.5],dir=0,verbose=0):
     pt=np.copy(point)
     if verbose>0:
         np.set_printoptions(formatter={'float_kind': '{:6.3f}'.format})
+
     p=patch_at(pp,pt)
     if p:
         p1=p
@@ -122,10 +123,15 @@ def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,var=None,verbose=0,all=0):
         slot of data, taken along the direction v -- so far restricted
         to axis values
     '''
+
     ss=[]
     ff=[]
     ii,w=indices_and_weights(p,point,iv)
     data=p.data[iv] if hasattr(p,'data') else p.var(iv)
+    ione = (0,1)[p.gn[0] > 1]
+    jone = (0,1)[p.gn[1] > 1]
+    kone = (0,1)[p.gn[2] > 1]
+
     if verbose:
         print('{:3d} {}   {} {:5.1f} {:4.1f} {:4.1f}'.\
           format(p.id,iv,ii,w[0],w[1],w[2]))
@@ -144,8 +150,8 @@ def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,var=None,verbose=0,all=0):
         j=ii[1]
         k=ii[2]
         for i in range(m[0],m[0]+n[0]):
-            f1=data[i,j,k  ]*(1-w[1])+data[i,j+1,k, ]*w[1]
-            f2=data[i,j,k+1]*(1-w[1])+data[i,j+1,k+1]*w[1]
+            f1=data[i,j,k     ]*(1-w[1])+data[i,j+jone,k,    ]*w[1]
+            f2=data[i,j,k+kone]*(1-w[1])+data[i,j+jone,k+kone]*w[1]
             f=f1*(1-w[2])+f2*w[2]
             if hasattr(p,'p1'):
                 if iv==p.idx.p1:
@@ -159,8 +165,8 @@ def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,var=None,verbose=0,all=0):
         i=ii[0]
         k=ii[2]
         for j in range(m[1],m[1]+n[1]):
-            f1=data[i,j,k  ]*(1-w[0])+data[i+1,j,k  ]*w[0]
-            f2=data[i,j,k+1]*(1-w[0])+data[i+1,j,k+1]*w[0]
+            f1=data[i,j,k     ]*(1-w[0])+data[i+ione,j,k     ]*w[0]
+            f2=data[i,j,k+kone]*(1-w[0])+data[i+ione,j,k+kone]*w[0]
             f=f1*(1-w[2])+f2*w[2]
             if hasattr(p,'p2'):
                 if iv==p.idx.p2:
@@ -174,8 +180,8 @@ def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,var=None,verbose=0,all=0):
         i=ii[0]
         j=ii[1]
         for k in range(m[2],m[2]+n[2]):
-            f1=data[i,j  ,k]*(1-w[0])+data[i+1,j  ,k]*w[0]
-            f2=data[i,j+1,k]*(1-w[0])+data[i+1,j+1,k]*w[0]
+            f1=data[i,j     ,k]*(1-w[0])+data[i+ione,j     ,k]*w[0]
+            f2=data[i,j+jone,k]*(1-w[0])+data[i+ione,j+jone,k]*w[0]
             f=f1*(1-w[1])+f2*w[1]
             if hasattr(p,'p3'):
                 if iv==p.idx.p3:
