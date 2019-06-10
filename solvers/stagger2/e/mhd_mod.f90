@@ -574,7 +574,7 @@ SUBROUTINE divb_clean (self)
   real, dimension(:,:,:), pointer:: bx, by, bz
   real, dimension(:,:,:), allocatable:: divb
   real, parameter:: eps=0.11
-  integer:: l(3), u(3), ix, iy, iz
+  integer:: l(3), u(3), ix, iy, iz, i1, j1, k1
   integer:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('mhd_t%divb_clean2', itimer=itimer)
@@ -583,44 +583,47 @@ SUBROUTINE divb_clean (self)
   bz => self%mem(:,:,:,self%idx%bz,self%it,1)
   l = self%mesh%lb
   u = self%mesh%ub-1
+  i1 = merge(1, 0, self%n(1) > 1)
+  j1 = merge(1, 0, self%n(2) > 1)
+  k1 = merge(1, 0, self%n(3) > 1)
   !--- x-direction -------------------------------------------------------------
   do ix=self%mesh(1)%lo,self%mesh(1)%lb,-1
-    bx(ix  ,l(2):u(2),l(3):u(3)) = &
-    bx(ix+1,l(2):u(2),l(3):u(3)) + ( &
-      by(ix,l(2)+1:u(2)+1,l(3)  :u(3)  ) - by(ix,l(2):u(2),l(3):u(3)) + &
-      bz(ix,l(2)  :u(2)  ,l(3)+1:u(3)+1) - bz(ix,l(2):u(2),l(3):u(3)))
+    bx(ix   ,l(2):u(2),l(3):u(3)) = &
+    bx(ix+i1,l(2):u(2),l(3):u(3)) + ( &
+      by(ix,l(2)+j1:u(2)+j1,l(3)   :u(3)   ) - by(ix,l(2):u(2),l(3):u(3)) + &
+      bz(ix,l(2)   :u(2)   ,l(3)+k1:u(3)+k1) - bz(ix,l(2):u(2),l(3):u(3)))
   end do
   do ix=self%mesh(1)%ui,self%mesh(1)%ub-1
-    bx(ix+1,l(2):u(2),l(3):u(3)) = &
-    bx(ix  ,l(2):u(2),l(3):u(3)) - ( &
-      by(ix,l(2)+1:u(2)+1,l(3)  :u(3)  ) - by(ix,l(2):u(2),l(3):u(3)) + &
-      bz(ix,l(2)  :u(2)  ,l(3)+1:u(3)+1) - bz(ix,l(2):u(2),l(3):u(3)))
+    bx(ix+i1,l(2):u(2),l(3):u(3)) = &
+    bx(ix   ,l(2):u(2),l(3):u(3)) - ( &
+      by(ix,l(2)+j1:u(2)+j1,l(3)   :u(3)   ) - by(ix,l(2):u(2),l(3):u(3)) + &
+      bz(ix,l(2)   :u(2)   ,l(3)+k1:u(3)+k1) - bz(ix,l(2):u(2),l(3):u(3)))
   end do
   !--- y-direction -------------------------------------------------------------
   do iy=self%mesh(2)%lo,self%mesh(2)%lb,-1
-    by(l(1):u(1),iy  ,l(3):u(3)) = &
-    by(l(1):u(1),iy+1,l(3):u(3)) + ( &
-      bx(l(1)+1:u(1)+1,iy,l(3)  :u(3)  ) - bx(l(1):u(1),iy,l(3):u(3)) + &
-      bz(l(1)  :u(1)  ,iy,l(3)+1:u(3)+1) - bz(l(1):u(1),iy,l(3):u(3)))
+    by(l(1):u(1),iy   ,l(3):u(3)) = &
+    by(l(1):u(1),iy+j1,l(3):u(3)) + ( &
+      bx(l(1)+i1:u(1)+i1,iy,l(3)   :u(3)   ) - bx(l(1):u(1),iy,l(3):u(3)) + &
+      bz(l(1)   :u(1)   ,iy,l(3)+k1:u(3)+k1) - bz(l(1):u(1),iy,l(3):u(3)))
   end do
   do iy=self%mesh(2)%ui,self%mesh(2)%ub-1
-    by(l(1):u(1),iy+1,l(3):u(3)) = &
-    by(l(1):u(1),iy  ,l(3):u(3)) - ( &
-      bx(l(1)+1:u(1)+1,iy,l(3)  :u(3)  ) - bx(l(1):u(1),iy,l(3):u(3)) + &
-      bz(l(1)  :u(1)  ,iy,l(3)+1:u(3)+1) - bz(l(1):u(1),iy,l(3):u(3)))
+    by(l(1):u(1),iy+j1,l(3):u(3)) = &
+    by(l(1):u(1),iy   ,l(3):u(3)) - ( &
+      bx(l(1)+i1:u(1)+i1,iy,l(3)   :u(3)   ) - bx(l(1):u(1),iy,l(3):u(3)) + &
+      bz(l(1)   :u(1)   ,iy,l(3)+k1:u(3)+k1) - bz(l(1):u(1),iy,l(3):u(3)))
   end do
   !--- z-direction -------------------------------------------------------------
   do iz=self%mesh(3)%lo,self%mesh(3)%lb,-1
     bz(l(1):u(1),l(2):u(2),iz  ) = &
-    bz(l(1):u(1),l(2):u(2),iz+1) + ( &
-      bx(l(1)+1:u(1)+1,l(2)  :u(2)  ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
-      by(l(1)  :u(1)  ,l(2)+1:u(2)+1,iz) - by(l(1):u(1),l(2):u(2),iz))
+    bz(l(1):u(1),l(2):u(2),iz+k1) + ( &
+      bx(l(1)+i1:u(1)+i1,l(2)   :u(2)   ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
+      by(l(1)   :u(1)   ,l(2)+j1:u(2)+j1,iz) - by(l(1):u(1),l(2):u(2),iz))
   end do
   do iz=self%mesh(3)%ui,self%mesh(3)%ub-1
-    bz(l(1):u(1),l(2):u(2),iz+1) = &
-    bz(l(1):u(1),l(2):u(2),iz  ) - ( &
-      bx(l(1)+1:u(1)+1,l(2)  :u(2)  ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
-      by(l(1)  :u(1)  ,l(2)+1:u(2)+1,iz) - by(l(1):u(1),l(2):u(2),iz))
+    bz(l(1):u(1),l(2):u(2),iz+k1) = &
+    bz(l(1):u(1),l(2):u(2),iz   ) - ( &
+      bx(l(1)+i1:u(1)+i1,l(2)   :u(2)   ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
+      by(l(1)   :u(1)   ,l(2)+j1:u(2)+j1,iz) - by(l(1):u(1),l(2):u(2),iz))
   end do
   call trace%end (itimer)
 END SUBROUTINE divb_clean
