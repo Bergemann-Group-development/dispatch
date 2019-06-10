@@ -81,7 +81,7 @@ SUBROUTINE init_zeusTW (self)
     ienergy = 1
     courant = 0.5
 
-    rewind (io%input); read (io%input, zeustw_params)
+    rewind (io%input); read (io%input, zeustw_params, iostat=iostat)
     if (iostat/=0) call io%namelist_warning ('zeustw_params')
     if (io%master) write (*, zeustw_params)
 
