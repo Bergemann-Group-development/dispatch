@@ -20,8 +20,8 @@
 # -- Project information -----------------------------------------------------
 
 project = 'DISPATCH'
-copyright = '2019, Åke Nordlund'
-author = 'Åke Nordlund'
+copyright = u'2019, Åke Nordlund'
+author = u'Åke Nordlund'
 
 # The short X.Y version
 version = ''
@@ -135,7 +135,7 @@ latex_elements = {
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
     (master_doc, 'DISPATCH.tex', 'DISPATCH Documentation',
-     'Åke Nordlund', 'manual'),
+     u'Åke Nordlund', 'manual'),
 ]
 
 
