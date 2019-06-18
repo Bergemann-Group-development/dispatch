@@ -1,35 +1,28 @@
+
+! -- Run parameters ------------------------------------------------------------
+&io_params              verbose=0 do_output=t do_trace=f do_debug=f
+                        method='legacy' guard_zones=t namelist_errors=t /
+&out_params             end_time=0.1001 out_time=0.01 print_time=0.0 /
 &timer_params           /
 
-&io_params              verbose=0 do_trace=f do_debug=f do_output=t method='legacy' guard_zones=t namelist_errors=t /
-
-&mpi_mesg_params /
-
-&dispatcher0_params /
-
+! -- Experiment parameters -----------------------------------------------------
 &cartesian_params       size=1,0.010,0.010 dims=3,1,1 origin=0.0,0.0,0.0 /
-
-! The first version of `patch_params` is for the RAMSES solver; the second version
-! is for all other solvers.
-!!!&patch_params           n=30,4,4 ng=3*2 nt=5 no_mans_land=f grace=0.01 /
 &patch_params           n=60,1,1 ng=3*3 nt=5 no_mans_land=f grace=0.01 /
-
-&out_params             end_time=0.1001 out_time=0.01 print_time=0.0 /
-
 &experiment_params      /
+&force_params           /
+&initial_params         /
 
-&timestep_params        time_order=2 /
+! -- AMR parameters ------------------------------------------------------------
+&refine_params          verbose=1 on=t check_interval=2 min_dx=0.003 levelmax=3
+                        max_shock=0.1 max_contact=0.1 grad_var='d' max_grad=0.1 /
 
-&refine_params          on=t check_interval=2 min_dx=0.003 levelmax=3 max_shock=0.1 max_contact=0.1 grad_var='d' max_grad=0.1
-                        verbose=1 /
-
+! -- Solver parameters ---------------------------------------------------------
 &zeus_params            gamma=1.6666667 trnvrsn=0 dtinit=1.0e-5 itote=0 qlin=0.2 qcon=1.0 /
 
-&zeustw_params  /       iohmic=0 ihall=0 with_ad_1f=f withchem=f gamma=1.6666667 qlin=0.2 qcon=1.0
+&zeustw_params          iohmic=0 ihall=0 with_ad_1f=f withchem=f gamma=1.6666667 qlin=0.2 qcon=1.0 /
 
-&ramses_params          courant_factor=0.25 gamma=1.6666667 slope_type=3.5 smallr=1e-4 smallc=5e-1 riemann='hlld' /
+&ramses_params          courant_factor=0.25 gamma=1.6666667 slope_type=3.5 smallr=1e-4 smallc=5e-1 /
+
                                         !     cs   pa  ofd  mas  kap  eta
 &stagger_params         gamma=1.666667 nu=  0.10, 1.0, 1.0, 0.1, 1.0, 1.0 /
-
-&force_params           /
-
-&initial_params         /
+&timestep_params        time_order=2 /
