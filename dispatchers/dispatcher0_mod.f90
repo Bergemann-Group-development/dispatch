@@ -21,7 +21,7 @@ MODULE dispatcher0_mod
   USE data_io_mod
   USE omp_lock_mod
   USE validate_mod
-!  USE refine_mod
+  USE refine_mod
   implicit none
   private
   type, public:: dispatcher0_t
@@ -409,9 +409,11 @@ SUBROUTINE update (self, task_list, test)
       !-------------------------------------------------------------------------
       ! Cost counter for AMR
       !-------------------------------------------------------------------------
-      !$omp atomic
-      timer%levelcost(task%level) = &
-      timer%levelcost(task%level) + (wallclock() - levelstart)
+      if (refine%on) then
+        !$omp atomic
+        timer%levelcost(task%level) = &
+        timer%levelcost(task%level) + (wallclock() - levelstart)
+      end if
     end if
   else
     if (detailed_timer) then
