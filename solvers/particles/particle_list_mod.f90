@@ -13,10 +13,13 @@ MODULE particle_list_mod
   USE omp_timer_mod
   USE particle_mod
   USE patch_mod
+  !USE patch_force_mod
+  USE trace_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
   type, public, extends(dll_t):: particle_list_t
+    real:: rsoft=1.0
     integer:: verbose=0
     integer:: nt=4
   contains
@@ -41,7 +44,7 @@ SUBROUTINE init (self, name)
 END SUBROUTINE init
 
 !===============================================================================
-!> Initialize a particle list
+!> Append a new particle_t data type to the particle list
 !===============================================================================
 SUBROUTINE append (self, new)
   class (particle_list_t):: self
@@ -93,20 +96,23 @@ FUNCTION force (self, p)
 END FUNCTION force
 
 !===============================================================================
+!> Compute the force field (action) in the cells of a patch, and while doing so,
+!> also add up the opposite force (reaction) onto the particles from the cells.
 !===============================================================================
 SUBROUTINE force_field (self, patch)
   class(particle_list_t):: self
   class(patch_t):: patch
   !.............................................................................
   class(dll_node_t), pointer:: p
-  real(8), allocatable:: rp(:,:), m(:)
-  real(8):: force(3), pt, qt, rc(3), r(3), r1, r3
+  real(8), allocatable:: rp(:,:), m(:), f(:,:)
+  real(8):: force(3), pt, qt, rc(3), r(3), r1, r3, dm, r2, rsoft2
   integer:: i, i0, i1, ip, ix, iy, iz
   !-----------------------------------------------------------------------------
   ! Cache all particle position into array, in order to be able to loop over
   ! particles
   !-----------------------------------------------------------------------------
-  allocate (rp(self%n,3), m(self%n))
+  call trace%begin ('particle_list_t%force_field')
+  allocate (rp(self%n,3), m(self%n), f(self%n,3))
   ip = 0
   p => self%head
   do while (associated(p))
@@ -120,8 +126,9 @@ SUBROUTINE force_field (self, patch)
     end do
     pt = (patch%time - p%t(i0))/max(p%t(i1)-p%t(i0),tiny(1d0))
     qt = 1d0-pt
-    rp(:,ip) = qt*p%r(:,i0) + pt*p%r(:,i1)
+    rp(ip,:) = qt*p%r(:,i0) + pt*p%r(:,i1)
     m(ip) = p%mass
+    f(ip,:) = 0.0
     end select
     p => p%next
   end do
@@ -129,18 +136,23 @@ SUBROUTINE force_field (self, patch)
   ! For each cell, loop over particles and accumulate force in double precision
   !-----------------------------------------------------------------------------
   associate (m1=>patch%mesh(1), m2=>patch%mesh(2), m3=>patch%mesh(3))
+  rsoft2 = (self%rsoft*minval(patch%ds))**2
   do iz=m3%li,m3%ui
     rc(3) = m3%p + m3%r(iz)
     do iy=m2%li,m2%ui
       rc(2) = m2%p + m2%r(iy)
       do ix=m1%li,m1%ui
         rc(1) = m1%p + m1%r(ix)
+        dm = product(patch%ds)*patch%mem(ix,iy,iz,patch%idx%d,patch%it,1)
         force = 0d0
         do ip=1,self%n
-          r = rp(:,ip) - rc
-          r1 = 1d0/sqrt(r(1)**2 + r(2)**2 + r(3)**2 + tiny(1d0))
+          r = rp(ip,:) - rc
+          r2 = max(r(1)**2 + r(2)**2 + r(3)**2, rsoft2)
+          r1 = 1d0/sqrt(r2)
           r3 = r1*r1*r1
-          force = force - m(ip)*r*r3
+          r = r*r3
+          force = force - m(ip)*r
+          f(ip,:) = f(ip,:) + dm*r
         end do
         patch%force_per_unit_mass(ix,iy,iz,:) = &
         patch%force_per_unit_mass(ix,iy,iz,:) + force
@@ -149,6 +161,7 @@ SUBROUTINE force_field (self, patch)
   end do
   end associate
   deallocate (rp)
+  call trace%end
 END SUBROUTINE force_field
 
 !===============================================================================
