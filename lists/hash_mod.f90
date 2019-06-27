@@ -14,7 +14,7 @@ MODULE hash_mod
   !-----------------------------------------------------------------------------
   ! General module parameters
   !-----------------------------------------------------------------------------
-  integer, parameter :: key_length = (ndim + 1) * 8
+  integer, parameter :: key_length = ndim * 8
   integer, dimension(0:3), parameter :: constants = (/5, -1640531527, 97, 1003313/)
   !-----------------------------------------------------------------------------
   ! Define a bucket as a derived type (sequence statement!) for better
@@ -22,7 +22,7 @@ MODULE hash_mod
   !-----------------------------------------------------------------------------
   type, public:: bucket_t
     sequence
-    integer(kind=8), dimension(0:ndim) :: key
+    integer(kind=8), dimension(1:ndim) :: key
     integer :: value
     integer :: next_ibucket
   end type
@@ -49,9 +49,9 @@ CONTAINS
 !> Hash function
 !===============================================================================
 PURE FUNCTION hash_func(key)
-  integer(kind=8), dimension(0:ndim), intent(in) :: key
+  integer(kind=8), dimension(1:ndim), intent(in) :: key
   integer(kind=8)                                :: hash_func
-  hash_func = dot_product(key(0:ndim), constants(0:ndim))
+  hash_func = dot_product(key(1:ndim), constants(1:ndim))
 END FUNCTION hash_func
 
 !===============================================================================
@@ -131,7 +131,7 @@ END SUBROUTINE reset_bucket
 !===============================================================================
 SUBROUTINE set (htable, key, val)
   class(hash_table_t),                  intent(inout) :: htable
-  integer(kind=8) , dimension(0:ndim),  intent(in)    :: key
+  integer(kind=8) , dimension(1:ndim),  intent(in)    :: key
   integer,                              intent(in)    :: val    
   integer(kind=8) :: full_hash
   integer(kind=8) :: ibucket
@@ -149,7 +149,7 @@ SUBROUTINE set (htable, key, val)
      ! Bucket is empty, simply insert value       
      htable%data(ibucket)%next_ibucket = 0
      htable%data(ibucket)%value       = val
-     htable%data(ibucket)%key(0:ndim) = key(0:ndim)
+     htable%data(ibucket)%key(1:ndim) = key(1:ndim)
      htable%nfree = htable%nfree - 1
   !-----------------------------------------------------------------------------
   ! Bucket is not empty, walk through linked list
@@ -157,9 +157,9 @@ SUBROUTINE set (htable, key, val)
   else if (htable%nfree_chain>0)then
      do while (htable%data(ibucket)%next_ibucket .ne. 0)
         ! Check if key already exists - abort if so
-        if (same_keys(htable%data(ibucket)%key(0:ndim),key(0:ndim)))then
+        if (same_keys(htable%data(ibucket)%key(1:ndim),key(1:ndim)))then
            write(*,*) "trying to insert already existing key: ",key
-           write(*,*) "existing key: ", htable%data(ibucket)%key(0:ndim)
+           write(*,*) "existing key: ", htable%data(ibucket)%key(1:ndim)
            stop
         end if
         ibucket = htable%data(ibucket)%next_ibucket
@@ -167,7 +167,7 @@ SUBROUTINE set (htable, key, val)
      !--------------------------------------------------------------------------
      ! Check again (at the end of linked list)
      !--------------------------------------------------------------------------
-     if (same_keys(htable%data(ibucket)%key(0:ndim),key(0:ndim)))then
+     if (same_keys(htable%data(ibucket)%key(1:ndim),key(1:ndim)))then
         write(*,*) "trying to insert already existing key: ",key
         stop
      end if
@@ -178,7 +178,7 @@ SUBROUTINE set (htable, key, val)
      ibucket = htable%head_free
      htable%data(ibucket)%next_ibucket = 0
      htable%data(ibucket)%value = val
-     htable%data(ibucket)%key(0:ndim) = key(0:ndim)
+     htable%data(ibucket)%key(1:ndim) = key(1:ndim)
      !--------------------------------------------------------------------------
      ! remove bucket from head of free linked list
      !--------------------------------------------------------------------------
@@ -196,13 +196,13 @@ END SUBROUTINE set
 !===============================================================================
 PURE FUNCTION get (htable, key)
   class(hash_table_t),                    intent(in) :: htable
-  integer(kind=8)    , dimension(0:ndim), intent(in) :: key
+  integer(kind=8)    , dimension(1:ndim), intent(in) :: key
   integer                                          :: get
   integer(kind=8) :: ibucket, full_hash
   !-----------------------------------------------------------------------------
   full_hash = hash_func(key)
   ibucket = IAND(full_hash, htable%bitmask) + 1
-  if (same_keys(htable%data(ibucket)%key(0:ndim), key(0:ndim)))then
+  if (same_keys(htable%data(ibucket)%key(1:ndim), key(1:ndim)))then
      get = htable%data(ibucket)%value
      return
   end if
@@ -211,7 +211,7 @@ PURE FUNCTION get (htable, key)
   !-----------------------------------------------------------------------------
   do while( htable%data(ibucket)%next_ibucket > 0)
      ibucket = htable%data(ibucket)%next_ibucket
-     if (same_keys(htable%data(ibucket)%key(0:ndim), key(0:ndim)))then
+     if (same_keys(htable%data(ibucket)%key(1:ndim), key(1:ndim)))then
         get = htable%data(ibucket)%value
         return
      end if
@@ -227,18 +227,18 @@ END FUNCTION get
 !===============================================================================
 SUBROUTINE free (htable, key)
   class(hash_table_t),                     intent(inout) :: htable
-  integer(kind=8) , dimension(0:ndim), intent(in)    :: key
+  integer(kind=8) , dimension(1:ndim), intent(in)    :: key
   integer(kind=8) :: ibucket, previous_ibucket=0, full_hash
   full_hash = hash_func(key)
   ibucket = IAND(full_hash, htable%bitmask) + 1
   ! No collision case
   if (htable%data(ibucket)%next_ibucket == 0) then     
      htable%data(ibucket)%next_ibucket = -1
-     htable%data(ibucket)%key(0:ndim) = 0
+     htable%data(ibucket)%key(1:ndim) = 0
      htable%nfree = htable%nfree + 1
   else
      ! Collision case
-     do while (.not. same_keys(htable%data(ibucket)%key(0:ndim), key(0:ndim)))
+     do while (.not. same_keys(htable%data(ibucket)%key(1:ndim), key(1:ndim)))
         previous_ibucket=ibucket
         ibucket=htable%data(ibucket)%next_ibucket
      end do
@@ -263,8 +263,8 @@ END SUBROUTINE free
 !===============================================================================
 PURE FUNCTION same_keys(key1, key2)
   logical :: same_keys
-  integer(kind=8), dimension(0:ndim), intent(in) :: key1, key2
-  logical, dimension(0:ndim)                     :: ok
+  integer(kind=8), dimension(1:ndim), intent(in) :: key1, key2
+  logical, dimension(1:ndim)                     :: ok
   integer                                        :: i
   !-----------------------------------------------------------------------------
   do i = 0, ndim
