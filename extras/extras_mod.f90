@@ -5,7 +5,7 @@
 !> To add extra features to the code, copy this file to experiments/your_dir/,
 !> and add the extra dependencies to the Makefile (only) there.
 !>
-!> When doing to, the sketch of module dependencies below may be useful.
+!> When doing so, the sketch of module dependencies below may be useful.
 !> In particular, it shows that extras underlings, via gpatch_t, may use the
 !> list_t data type (and hence they can access the copy of the task_list
 !> pointer made available there).
@@ -82,6 +82,7 @@ MODULE extras_mod
     !type (spitzer_t):: spitzer                                  ! spitzer
     !type(gravity_t):: gravity                                   ! gravity
     !type(sinkparticles_t):: sinkparticles                       ! sinkp
+    !class(patch_force_t), pointer:: patch_force                 ! sinkp
     !class(trace_particles_t), pointer:: trace_particles         ! tracep
     !real, dimension(:,:,:,:), pointer:: v                       ! tracep
   contains
@@ -111,9 +112,11 @@ SUBROUTINE init (self)
   !allocate (self%trace_particles)                               ! tracep
   !self%connect%trace_particles => self%trace_particles          ! tracep
   !call self%trace_particles%add (self%link%task)                ! tracep
-  !call self%spitzer%init(self%link)                             ! spitzer
-  !call self%gravity%init(self%link)                             ! gravity
-  !call sink_patch%init                                          ! sinkp
+  !call self%spitzer%init (self%link)                            ! spitzer
+  !call self%gravity%init (self%link)                            ! gravity
+  !call sink_patch%init (self%link)                              ! sinkp
+  !allocate (self%patch_force)                                   ! sinkp
+  !call self%patch_force%init                                    ! sinkp 
   call trace%end
 END SUBROUTINE init
 

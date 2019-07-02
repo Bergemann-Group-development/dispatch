@@ -13,7 +13,9 @@ MODULE particle_list_mod
   USE omp_timer_mod
   USE particle_mod
   USE patch_mod
-  !USE patch_force_mod
+  USE patch_force_mod
+  USE patch_forces_mod
+  USE hash_table_mod
   USE trace_mod
   implicit none
   private
@@ -22,6 +24,7 @@ MODULE particle_list_mod
     real:: rsoft=1.0
     integer:: verbose=0
     integer:: nt=4
+    type(hash_table_t):: ht
   contains
     procedure:: init
     procedure:: force
@@ -29,6 +32,7 @@ MODULE particle_list_mod
     procedure:: test
     procedure:: print
   end type
+  type(particle_list_t):: particle_list
   !-----------------------------------------------------------------------------
 CONTAINS
 
@@ -41,6 +45,8 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   call self%dll_t%init (name)
   call particle%init
+  !call self%ht%init                            ! either this ..
+  !call hash_table%init                         ! .. or this
 END SUBROUTINE init
 
 !===============================================================================
@@ -107,6 +113,8 @@ SUBROUTINE force_field (self, patch)
   real(8), allocatable:: rp(:,:), m(:), f(:,:)
   real(8):: force(3), pt, qt, rc(3), r(3), r1, r3, dm, r2, rsoft2
   integer:: i, i0, i1, ip, ix, iy, iz
+  class(*), pointer:: ptr
+  type(patch_force_t), pointer:: patch_force
   !-----------------------------------------------------------------------------
   ! Cache all particle position into array, in order to be able to loop over
   ! particles
@@ -161,6 +169,28 @@ SUBROUTINE force_field (self, patch)
   end do
   end associate
   deallocate (rp)
+  !-----------------------------------------------------------------------------
+  ! Store the patch forces in the sink particle patch force slots, using a
+  ! pointer to the force obtained from a hash table lookup
+  !-----------------------------------------------------------------------------
+  ip = 0
+  p => self%head
+  do while (associated(p))
+    ip = ip+1
+    !call hash_table%get (ip, patch%id, ptr)
+    !call self%ht%get ([ip,patch%id], ptr)
+    if (.not. associated(ptr)) then
+      allocate (patch_force)
+      !call patch_forces%append (patch_force)
+      !call self%ht%set ([ip,patch%id], patch_force)
+      ptr => patch_force
+    end if
+    select type (ptr)
+    class is (patch_force_t)
+    ptr%f(:,ptr%it) = f(ip,:)
+    end select
+    p => p%next
+  end do
   call trace%end
 END SUBROUTINE force_field
 

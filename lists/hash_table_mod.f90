@@ -6,7 +6,7 @@
 !> - COLLISIONS: A linked list is used to deal with collisions
 !> Author: Troels Haugboelle
 !===============================================================================
-MODULE hash_mod
+MODULE hash_table_mod
   USE iso_c_binding, only: c_loc, c_ptr
   USE mpi_mod
   implicit none
@@ -22,7 +22,7 @@ MODULE hash_mod
   ! cache efficiency.
   !-----------------------------------------------------------------------------
   type, public:: bucket_t
-    integer(8), dimension(1:ndim) :: key
+    integer, dimension(1:ndim) :: key
     integer :: next_ibucket
     class(*), pointer :: value
   end type
@@ -43,14 +43,15 @@ MODULE hash_mod
     procedure:: free
     procedure:: stats
   end type
+  type(hash_table_t):: hash_table
 CONTAINS
 
 !===============================================================================
 !> Hash function
 !===============================================================================
 PURE FUNCTION hash_func(key)
-  integer(kind=8), dimension(1:ndim), intent(in) :: key
-  integer(kind=8)                                :: hash_func
+  integer, dimension(1:ndim), intent(in) :: key
+  integer(kind=8)                        :: hash_func
   hash_func = dot_product(key(1:ndim), constants(1:ndim))
 END FUNCTION hash_func
 
@@ -130,9 +131,9 @@ END SUBROUTINE reset_bucket
 !> pair stored for this key, return an error message.
 !===============================================================================
 SUBROUTINE set (htable, key, val)
-  class(hash_table_t),                  intent(inout) :: htable
-  integer(kind=8) , dimension(1:ndim),  intent(in)    :: key
-  class(*), pointer,                    intent(in)    :: val
+  class(hash_table_t),         intent(inout) :: htable
+  integer, dimension(1:ndim),  intent(in)    :: key
+  class(*), pointer,           intent(in)    :: val
   integer(kind=8) :: full_hash
   integer(kind=8) :: ibucket
   !-----------------------------------------------------------------------------
@@ -190,9 +191,9 @@ END SUBROUTINE set
 !> hash table value for a given key. If no entry exists, return 0
 !===============================================================================
 SUBROUTINE get (htable, key, value)
-  class(hash_table_t),                    intent(in) :: htable
-  integer(kind=8)    , dimension(1:ndim), intent(in) :: key
-  class(*), pointer                                  :: value
+  class(hash_table_t),            intent(in) :: htable
+  integer    , dimension(1:ndim), intent(in) :: key
+  class(*), pointer                          :: value
   integer(kind=8) :: ibucket, full_hash
   !-----------------------------------------------------------------------------
   full_hash = hash_func(key)
@@ -221,8 +222,8 @@ END SUBROUTINE get
 !> Remove the hash table entry for a given key 
 !===============================================================================
 SUBROUTINE free (htable, key)
-  class(hash_table_t),                     intent(inout) :: htable
-  integer(kind=8) , dimension(1:ndim), intent(in)    :: key
+  class(hash_table_t),         intent(inout) :: htable
+  integer , dimension(1:ndim), intent(in)    :: key
   integer(kind=8) :: ibucket, previous_ibucket=0, full_hash
   full_hash = hash_func(key)
   ibucket = IAND(full_hash, htable%bitmask) + 1
@@ -258,9 +259,9 @@ END SUBROUTINE free
 !===============================================================================
 PURE FUNCTION same_keys(key1, key2)
   logical :: same_keys
-  integer(kind=8), dimension(1:ndim), intent(in) :: key1, key2
-  logical, dimension(1:ndim)                     :: ok
-  integer                                        :: i
+  integer, dimension(1:ndim), intent(in) :: key1, key2
+  logical, dimension(1:ndim)             :: ok
+  integer                                :: i
   !-----------------------------------------------------------------------------
   do i = 0, ndim
      ok(i) = (key1(i)==key2(i))
@@ -297,4 +298,4 @@ SUBROUTINE stats (htable)
   endif
 END SUBROUTINE stats
 
-END MODULE hash_mod
+END MODULE hash_table_mod
