@@ -7,6 +7,7 @@
 !> Author: Troels Haugboelle
 !===============================================================================
 MODULE hash_mod
+  USE iso_c_binding, only: c_loc, c_ptr
   USE mpi_mod
   implicit none
   private
@@ -21,10 +22,9 @@ MODULE hash_mod
   ! cache efficiency.
   !-----------------------------------------------------------------------------
   type, public:: bucket_t
-    sequence
-    integer(kind=8), dimension(1:ndim) :: key
-    integer :: value
+    integer(8), dimension(1:ndim) :: key
     integer :: next_ibucket
+    class(*), pointer :: value
   end type
   !-----------------------------------------------------------------------------
   ! The actual hash table is an array of buckets
@@ -64,7 +64,7 @@ SUBROUTINE init (htable, req_size)
   integer            , intent(in)    :: req_size
   !-----------------------------------------------------------------------------
   htable%size = 2
-  do while (htable%size < req_size)
+  do while (htable%size < req_size*2)
      htable%size = htable%size * 2
   end do
   call reset_entire_hash (htable, .false.)
@@ -132,14 +132,9 @@ END SUBROUTINE reset_bucket
 SUBROUTINE set (htable, key, val)
   class(hash_table_t),                  intent(inout) :: htable
   integer(kind=8) , dimension(1:ndim),  intent(in)    :: key
-  integer,                              intent(in)    :: val    
+  class(*), pointer,                    intent(in)    :: val
   integer(kind=8) :: full_hash
   integer(kind=8) :: ibucket
-  !-----------------------------------------------------------------------------
-  if (val == 0)then
-     write(*,*) "trying to insert 0 (0 is used to indicate absence of a value) "
-     stop
-  end if
   !-----------------------------------------------------------------------------
   ! Compute ibucket
   !-----------------------------------------------------------------------------
@@ -148,7 +143,7 @@ SUBROUTINE set (htable, key, val)
   if (htable%data(ibucket)%next_ibucket < 0) then          
      ! Bucket is empty, simply insert value       
      htable%data(ibucket)%next_ibucket = 0
-     htable%data(ibucket)%value       = val
+     htable%data(ibucket)%value => val
      htable%data(ibucket)%key(1:ndim) = key(1:ndim)
      htable%nfree = htable%nfree - 1
   !-----------------------------------------------------------------------------
@@ -177,7 +172,7 @@ SUBROUTINE set (htable, key, val)
      htable%data(ibucket)%next_ibucket = htable%head_free
      ibucket = htable%head_free
      htable%data(ibucket)%next_ibucket = 0
-     htable%data(ibucket)%value = val
+     htable%data(ibucket)%value => val
      htable%data(ibucket)%key(1:ndim) = key(1:ndim)
      !--------------------------------------------------------------------------
      ! remove bucket from head of free linked list
@@ -194,16 +189,16 @@ END SUBROUTINE set
 !> Function (not subroutine, could also be changed...? ) which retrieves the 
 !> hash table value for a given key. If no entry exists, return 0
 !===============================================================================
-PURE FUNCTION get (htable, key)
+SUBROUTINE get (htable, key, value)
   class(hash_table_t),                    intent(in) :: htable
   integer(kind=8)    , dimension(1:ndim), intent(in) :: key
-  integer                                          :: get
+  class(*), pointer                                  :: value
   integer(kind=8) :: ibucket, full_hash
   !-----------------------------------------------------------------------------
   full_hash = hash_func(key)
   ibucket = IAND(full_hash, htable%bitmask) + 1
   if (same_keys(htable%data(ibucket)%key(1:ndim), key(1:ndim)))then
-     get = htable%data(ibucket)%value
+     value => htable%data(ibucket)%value
      return
   end if
   !-----------------------------------------------------------------------------
@@ -212,15 +207,15 @@ PURE FUNCTION get (htable, key)
   do while( htable%data(ibucket)%next_ibucket > 0)
      ibucket = htable%data(ibucket)%next_ibucket
      if (same_keys(htable%data(ibucket)%key(1:ndim), key(1:ndim)))then
-        get = htable%data(ibucket)%value
+        value => htable%data(ibucket)%value
         return
      end if
   end do
   !-----------------------------------------------------------------------------
   ! Nothing found...
   !-----------------------------------------------------------------------------
-  get = 0
-END FUNCTION get
+  nullify(value)
+END SUBROUTINE get
 
 !===============================================================================
 !> Remove the hash table entry for a given key 
@@ -245,7 +240,7 @@ SUBROUTINE free (htable, key)
      if (ibucket <= htable%size) then           
         ! It's the first element we need to erase: Move first element from chaning 
         ! space into bucket and do as if the value to remove had been in the chaning space
-        htable%data(ibucket)%value = htable%data(htable%data(ibucket)%next_ibucket)%value
+        htable%data(ibucket)%value => htable%data(htable%data(ibucket)%next_ibucket)%value
         htable%data(ibucket)%key = htable%data(htable%data(ibucket)%next_ibucket)%key
         previous_ibucket = ibucket
         ibucket = htable%data(ibucket)%next_ibucket
