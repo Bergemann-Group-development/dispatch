@@ -1,7 +1,6 @@
 !===============================================================================
 !> Module interface to the HDF5 library
 !===============================================================================
-
 MODULE h5_mod
   USE hdf5
   USE io_unit_mod
@@ -16,9 +15,12 @@ MODULE h5_mod
   contains
     procedure:: open
     procedure:: close
+    procedure:: flush
     procedure:: group_open
     procedure:: set_open
+    procedure:: set_open_ext_1d
     procedure:: set_write
+    procedure:: set_write_ext_1d
     procedure:: set_close
     procedure:: att_open
     procedure:: att_write
@@ -37,6 +39,8 @@ MODULE h5_mod
     generic, public:: output => ints, ints_1d, ints_2d, ints_3d, ints_4d, &
                                 real, real_1d, real_2d, real_3d, real_4d
   end type
+  integer(kind=HSIZE_T), parameter :: chunk_size=16 ! number of records to extend dataspace with in an extendible dataset
+  logical, private :: hdf5_initialized=.false.
   type(h5_t), public:: h5
 CONTAINS
 
@@ -50,7 +54,14 @@ INTEGER(HID_T) FUNCTION open (self, name, new, verbose) result (fid)
   integer, optional:: verbose
   logical:: exists
   !.............................................................................
-  call H5open_f (self%err)
+  if (.not. hdf5_initialized) then
+    !$omp critical
+    if (.not. hdf5_initialized) then
+      call H5open_f (self%err)
+      hdf5_initialized=.true.
+    endif
+    !$omp end critical
+  endif
   inquire (file=name, exist=exists)
   if (exists) then
     call H5Fopen_f (name, H5F_ACC_RDWR_F, fid, self%err)
@@ -75,10 +86,24 @@ SUBROUTINE close (self, id)
   integer(HID_T):: id
   !.............................................................................
   call H5Fclose_f (id, self%err)
-  call H5close_f (self%err)
+  !call H5close_f (self%err) ! never close hdf5 interface in program
   if (self%verbose > 1) &
     print *, 'close', self%err
 END SUBROUTINE close
+
+!> -----------------------------------------------------------------------------
+!>  Close an HDF5 file
+!> -----------------------------------------------------------------------------
+SUBROUTINE flush (self, id)
+  class (h5_t):: self
+  integer(HID_T):: id
+  !.............................................................................
+  ! scope can be either local or global depending on if the file
+  ! has virtual links to other files. Assume it is not the case.
+  call H5Fflush_f (id, H5F_SCOPE_LOCAL_F, self%err)
+  if (self%verbose > 1) &
+    print *, 'flush', self%err
+END SUBROUTINE flush
 
 !> -----------------------------------------------------------------------------
 !>  Open group
@@ -88,7 +113,7 @@ INTEGER(HID_T) FUNCTION group_open (self, id, name, new) result (gid)
   integer(HID_T):: id
   character(len=*):: name
   logical, optional:: new
-  integer:: type, links, corder
+  integer:: type, links
   logical:: exists
   !.............................................................................
   call H5Lexists_f (id, name, exists, self%err)
@@ -106,6 +131,57 @@ INTEGER(HID_T) FUNCTION group_open (self, id, name, new) result (gid)
 END FUNCTION group_open
 
 !> -----------------------------------------------------------------------------
+!>  Open or create extensible 1d dataset. Number of records used is stored in attribute
+!> -----------------------------------------------------------------------------
+INTEGER(HID_T) FUNCTION set_open_ext_1d (self, id, name, a, new) result (did)
+  USE ISO_C_BINDING
+  class (h5_t):: self
+  integer(HID_T):: id ! group/file id
+  character(len=*):: name
+  real(kind=8), dimension(:), intent(in) :: a
+  logical, optional:: new
+  !
+  integer(HID_T):: sid, pid           ! dataspace id, property identifier id
+  integer(HSIZE_T) :: maxdims(1), maxdims2(2)
+  integer:: type, links, nrec
+  integer(HSIZE_T):: asize=1
+  logical:: exists
+  !.............................................................................
+  call H5Lexists_f (id, name, exists, self%err)
+  if (exists) then
+    call H5Dopen_f (id, name, did, self%err)
+  else
+    ! if a has one element dataspace is a vector, otherwise it is 2-dimensional
+    if (size(a)==1) then
+      maxdims  =(/H5S_UNLIMITED_F/)
+      call H5Screate_simple_f(1, int((/chunk_size/),kind=HSIZE_T), sid, self%err, maxdims)
+      ! Modify dataset creation properties to enable chunking which is required for variable length dataset
+      call h5pcreate_f(H5P_DATASET_CREATE_F, pid, self%err)
+      call h5pset_chunk_f(pid, 1, (/chunk_size/), self%err)
+    else
+      maxdims2 =(/2_HSIZE_T, H5S_UNLIMITED_F/)
+      call H5Screate_simple_f(2, (/int(size(a),kind=HSIZE_T), chunk_size/), sid, self%err, maxdims2)
+      ! Modify dataset creation properties to enable chunking which is required for variable length dataset
+      call h5Pcreate_f(H5P_DATASET_CREATE_F, pid, self%err)
+      call h5Pset_chunk_f(pid, 2, (/int(size(a),kind=HSIZE_T), chunk_size/), self%err)
+    endif
+    call H5Dcreate_f (id, name, H5T_NATIVE_REAL, sid, did, self%err, pid)
+    call h5Pclose_f(pid, self%err)
+    call h5Sclose_f(sid, self%err)
+
+    ! write number of records currently stored in dataset
+    nrec=0
+    call H5LTset_attribute_int_f(id, name, 'length', nrec, asize, self%err)
+    call H5LTset_attribute_int_f(id, name, 'nchunk', chunk_size, asize, self%err)
+  end if
+  if (present(new)) then
+    new = .not.exists
+  end if
+  if (self%verbose > 1) &
+    print *, 'set_open_ext_1d ', name, exists, self%err
+END FUNCTION set_open_ext_1d
+
+!> -----------------------------------------------------------------------------
 !>  Open or create dataset
 !> -----------------------------------------------------------------------------
 INTEGER(HID_T) FUNCTION set_open (self, id, name, a, new) result (did)
@@ -113,7 +189,7 @@ INTEGER(HID_T) FUNCTION set_open (self, id, name, a, new) result (did)
   integer(HID_T):: id, sid
   character(len=*):: name
   real:: a(:,:,:)
-  integer:: type, links, corder
+  integer:: type, links
   logical, optional:: new
   logical:: exists
   !.............................................................................
@@ -130,6 +206,67 @@ INTEGER(HID_T) FUNCTION set_open (self, id, name, a, new) result (did)
   if (self%verbose > 1) &
     print *, 'set_open ', name, exists, self%err
 END FUNCTION set_open
+
+!> -----------------------------------------------------------------------------
+!>  Write to an extendible 1d data set
+!> -----------------------------------------------------------------------------
+SUBROUTINE set_write_ext_1d (self, id, a)
+  class (h5_t):: self
+  integer(HID_T):: id, sid
+  real(kind=8), dimension(:), intent(in) :: a
+  !.............................................................................
+  integer :: sza
+  integer(HID_T):: aid
+  integer(kind=HSIZE_T), dimension(1) :: offset1, count1, size
+  integer(kind=HSIZE_T), dimension(2) :: offset2, count2
+  integer, target::nrec,nchunk
+  type(c_ptr) :: f_ptr
+
+  !.............................................................................
+  sza = product(shape(a))
+  ! read atrtibute to know how many records have been written until now
+  call H5Aopen_f(id, 'length', aid, self%err)
+  size = int((/1/),kind=HSIZE_T)
+  f_ptr = c_loc(nrec)
+  call H5Aread_f(aid, H5T_NATIVE_INTEGER, f_ptr, self%err)  ! read number of records
+  nrec = nrec+1                                             ! increment counter
+  call H5Awrite_f(aid, H5T_NATIVE_INTEGER, f_ptr, self%err) ! write updated number of records
+  call H5Aclose_f(aid, self%err)
+
+  ! read atrtibute to know how big the the data set buffer is 
+  call H5Aopen_f(id, 'nchunk', aid, self%err)
+  f_ptr = c_loc(nchunk)
+  call H5Aread_f(aid, H5T_NATIVE_INTEGER, f_ptr, self%err) ! read number of records
+  if (nrec > nchunk) then                                  ! increment dataset extend if needed
+    nchunk = nchunk + chunk_size
+    call H5Awrite_f(aid, H5T_NATIVE_INTEGER, f_ptr, self%err) ! write updated number of records
+    if (sza==1) then
+      call h5dset_extent_f(id, int((/nchunk/),kind=HSIZE_T), self%err)
+    else
+      call h5dset_extent_f(id, int((/size(a), int(nchunk,kind=HSIZE_T)/),kind=HSIZE_T), self%err)
+    endif
+  endif
+  call H5Aclose_f(aid, self%err)
+
+  ! select hyperslab at the correct position and create corresponding dataspace
+  call H5Dget_space_f(id, sid, self%err) ! get a copy of the dataspace of the dataset
+
+  if (sza==1) then
+    count1  = (/1/) 
+    offset1 = int((/nrec/),kind=HSIZE_T)
+    call H5Sselect_hyperslab_f(sid, H5S_SELECT_SET_F, offset1, count1, self%err) 
+    ! write data at the right position using hyperslabbed dataspace
+    call H5Dwrite_f (id, H5T_NATIVE_DOUBLE, a, count1, self%err, sid)
+  else
+    count2  = (/size(a),1_HSIZE_T/) 
+    offset2 = int((/0,nrec/),kind=HSIZE_T)
+    call H5Sselect_hyperslab_f(sid, H5S_SELECT_SET_F, offset2, count2, self%err) 
+    ! write data at the right position using hyperslabbed dataspace
+    call H5Dwrite_f (id, H5T_NATIVE_DOUBLE, a, count2, self%err, sid)
+  endif
+  if (self%verbose > 1) &
+    print *, 'set_write_ext_1d', SHAPE(a), self%err
+END SUBROUTINE set_write_ext_1d
 
 !> -----------------------------------------------------------------------------
 !>  Write a data set
@@ -164,7 +301,7 @@ INTEGER(HID_T) FUNCTION att_open (self, id, name, a, new) result (did)
   integer(HID_T):: id, sid
   character(len=*):: name
   real:: a(:,:,:)
-  integer:: type, links, corder
+  integer:: type, links
   logical, optional:: new
   logical:: exists
   !.............................................................................
