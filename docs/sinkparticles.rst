@@ -1,30 +1,40 @@
 Sink-particles
 ==============
 
-A sinkparticle is represented by a task that is primarily an extension of a
-gpatch_t data type, with a patch%mem that only has a few variables (density,
-temperature, velocity), and a limited extend (8 cell radius).
+A sinkparticle is represented by a ``sink_patch_t`` data type that is primarily 
+an extension of a ``gpatch_t`` data type, with a ``patch%mem`` that only has a 
+few variables (density, temperature, velocity), and a limited extend (8 cell radius).
 
 From the point of view of the dispatcher task_list, the task appears as a
 normal patch, but with special case handling which causes all interior 
 values to be downloaded from its nbors, which are normal MHD patches.
 
-Correspondingly, those MHD patches have the sinkparticle in their nbor list,
-if they overlap, and by special handling the accept the changes of values
+Correspondingly, those MHD patches have the sinkparticle task in their nbor lists,
+if they overlap, and by special handling they accept the changes of values
 that occur when sinkparticle patches give up gas mass and angular momentum
 to their sinkparticles.
 
-The particle aspect of a sinkparticle is stored in a partcle_list_t data
-type, which stores several positions in time for the particle, making it
-possible to interpolate its position to any given time, when computing
-interactions (forces).
+The particle aspect of sinkparticles is stored in a ``partcle_list_t`` data
+type (itself an extension of the generic, doubly-linked list data type `dll_t``), 
+which stores several positions in time for the particles in the list, 
+making it possible to interpolate their position to any given time, when
+computing interactions (forces).
 
-The particle_list_t data is updated by an N-body solver, which gets
-access to the sinkparticle histories by being an extension on top of
-the task_list_t data type.
+The ``particle_solver_t`` data type is an extension of the ``particle_list_t``
+data type with procedures for updating the positions of the particles.
 
-All sinkparticle_t data_types inside an MPI rank will be collected into a
-particle_patch_t data type (which should perhaps be rename to particle_set_t
+Particle solvers should reside in 
+``solvers/particles/${PARTICLE_SOLVER}/particle_solver_mof.f90``, where
+``PARTICLE_SOLVER`` is the ``make`` macro name of the selected solver.
+
+The ``particle_list_t`` data type (and hence by extension the ``particle_solver_t``
+data type) has procedures::
+
+  force (particle)     : computes the force on one particle from the others
+  force_field (patch)  : computes the force field from the particles on a patch
+
+All ``sink_patch_t`` data_types inside an MPI rank will be collected into a
+``particle_patch_t`` data type (which should perhaps be renamed to ``particle_set_t``
 or some such).  The purpose of this "container" is to organize the direct
 interaction handling, by keeping an nbor list list of similar containers
 owned by other MPI ranks.
@@ -40,7 +50,6 @@ and simplicity dictates that this should include the sinkparticle motion.
 Updating the position of a sinkparticle requires access to an nbor list that
 gives the particle histories of not only the sinkparticles inside the current
 MPI rank, but also all of its nbors.  This information should be passed via
-the normal MPI pack/unpack mechanism, but since the sinkparticle patch mem
 (with 3D data) is not needed this information should be maintained by a
 procedure in the particle_set_t data type.
 

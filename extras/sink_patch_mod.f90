@@ -133,7 +133,8 @@ SUBROUTINE dealloc (self)
 END SUBROUTINE dealloc
 
 !===============================================================================
-!> Allows storing a link to a task list in the sink_patch_t data type
+!> Store a copy of the task list in the data type instance, for use when
+!> initializing the nbor list
 !===============================================================================
 SUBROUTINE init_task_list (self, task_list)
   class(sink_patch_t):: self
@@ -166,7 +167,9 @@ FUNCTION check (self, patch)
 END FUNCTION check
 
 !===============================================================================
-!> Create a sink partícle 
+!> Create a sink partícle, with the accompanying cell-based patch, which records
+!> the density and velocity from overlapping MHD patches, for use in the recipe
+!> for accretion.
 !===============================================================================
 SUBROUTINE init_task (self, patch)
   class(sink_patch_t):: self
@@ -265,6 +268,7 @@ SUBROUTINE dnload (self, only)
 END SUBROUTINE dnload
 
 !===============================================================================
+!> Update the sinkparticle task, by accreting mass, and by moving the sink
 !===============================================================================
 SUBROUTINE update (self)
   class (sink_patch_t):: self
@@ -277,6 +281,7 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !===============================================================================
+!> Accrete mass and momentum from the sinkparticle patch
 !===============================================================================
 SUBROUTINE accrete (self)
   class (sink_patch_t):: self
@@ -331,7 +336,10 @@ SUBROUTINE accrete (self)
     end do
     !print *, '1 id,dm:', self%id, dm
   !-----------------------------------------------------------------------------
-  ! Remove a fraction p of per-volume quantities and keep q=(1-p)
+  ! Remove a fraction p of per-volume quantities and keep q=(1-p), where p is
+  ! the fraction of an orbit that would be covered by in the time step, assuming
+  ! Keplerian rotation. The mask variable makes sure accretion is only done
+  ! inside the accretion radius.
   !-----------------------------------------------------------------------------
   else
     !print *, 'XX', scaling%grav, self%mass, minval(self%r), maxval(self%r)
@@ -365,7 +373,9 @@ SUBROUTINE accrete (self)
 END SUBROUTINE accrete
 
 !===============================================================================
-!> Move the sink particle one time step self%dt, using kidk-drift-kick
+!> Move the sink particle one time step self%dt, using kick-drift-kick. We do
+!> not include any potential here, since both the force from other sinks and the
+!> force from the gas is evaluated directly.
 !===============================================================================
 SUBROUTINE move (self)
   class (sink_patch_t):: self
@@ -403,6 +413,7 @@ SUBROUTINE move (self)
 END SUBROUTINE move
 
 !===============================================================================
+!> Interface to the refine_t%refine_needed procedure.
 !===============================================================================
 INTEGER FUNCTION check_refine (self, patch)
   class(sink_patch_t):: self
