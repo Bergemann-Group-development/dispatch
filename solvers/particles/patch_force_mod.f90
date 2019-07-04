@@ -1,5 +1,5 @@
 !===============================================================================
-!> Data type for storing the fime slices of forces from a patch onto a sink 
+!> Data type for storing the time slices of forces from a patch onto a sink 
 !> particle
 !===============================================================================
 MODULE patch_force_mod
@@ -12,7 +12,7 @@ MODULE patch_force_mod
     integer:: it=0, nt=5
   contains
     procedure:: init
-    procedure:: delete
+    procedure:: dealloc
     procedure:: update
     procedure:: force
   end type
@@ -33,11 +33,11 @@ END SUBROUTINE init
 !===============================================================================
 !> Remove storage for one  patch
 !===============================================================================
-SUBROUTINE delete (self)
+SUBROUTINE dealloc (self)
   class(patch_force_t):: self
   !.............................................................................
   deallocate (self%f, self%t)
-END SUBROUTINE delete
+END SUBROUTINE dealloc
 
 !===============================================================================
 !> Update storage for one  patch
