@@ -59,7 +59,6 @@ MODULE list_mod
     procedure:: update_counts
     procedure:: count_status
     procedure:: reset_status
-    procedure:: set_status_and_flags
     procedure:: check_nbors
     procedure:: check_ready
     procedure:: check_all
@@ -407,7 +406,7 @@ END SUBROUTINE count_status
 !===============================================================================
 SUBROUTINE reset_status (self)
   class(list_t):: self
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link, nb
   integer:: n_internal, n_boundary, n_virtual, n_external, n_frozen
   !-----------------------------------------------------------------------------
   ! Clear virtual and boundary bits
@@ -442,10 +441,10 @@ SUBROUTINE reset_status (self)
     !---------------------------------------------------------------------------
     ! Run through nbors and set their status
     !---------------------------------------------------------------------------
-    nbor => link%nbor
-    do while (associated(nbor))
-      call self%set_status_and_flags (link, nbor)
-      nbor => nbor%next
+    nb => link%nbor
+    do while (associated(nb))
+      call link%task%nbor_relations (nb%task, nb%needed, nb%needs_me, nb%download)
+      nb => nb%next
     end do
     if (self%verbose > 1) &
       write(io_unit%log,'(a,i6,i4,3x,3l1)') &
@@ -481,96 +480,6 @@ SUBROUTINE reset_status (self)
   call self%lock%unset ('reset_status')
   call trace%end()
 END SUBROUTINE reset_status
-
-!===============================================================================
-!> Set the virtual and boundary bits, and the nbor flags
-!===============================================================================
-SUBROUTINE set_status_and_flags (self, link, nbor)
-  class(list_t):: self
-  class(link_t), pointer:: link, nbor
-  integer:: n_internal, n_boundary, n_virtual, n_external, n_frozen
-  !-----------------------------------------------------------------------------
-  call trace%begin ('list_t%set_status')
-  !-----------------------------------------------------------------------------
-  ! real task
-  !-----------------------------------------------------------------------------
-  if (link%task%rank == mpi%rank) then
-    !-----------------------------------------------------------------------
-    ! nbor is frozen
-    !-----------------------------------------------------------------------
-    if (nbor%task%is_set (bits%frozen)) then
-      nbor%needs_me = .false.
-      nbor%needed = .false.
-    !-----------------------------------------------------------------------
-    ! nbor is virtual
-    !-----------------------------------------------------------------------
-    else if (nbor%task%rank /= mpi%rank) then
-      call link%task%set(bits%boundary)
-      call link%task%clear(bits%internal)
-      ! -- use in check_ready(), but not in check_nbors()
-      nbor%needed = .true.
-      nbor%needs_me = .false.
-    !-----------------------------------------------------------------------
-    ! nbor is real
-    !-----------------------------------------------------------------------
-    else
-      ! -- use in check_ready(), and in check_nbors()
-      nbor%needed = .true.
-      nbor%needs_me = .true.
-    end if
-    !-----------------------------------------------------------------------
-    ! real tasks need guard zones
-    !-----------------------------------------------------------------------
-    nbor%download = .true.
-  !-----------------------------------------------------------------------------
-  ! task is virtual
-  !-----------------------------------------------------------------------------
-  else
-    !-----------------------------------------------------------------------
-    ! nbor is frozen
-    !-----------------------------------------------------------------------
-    if (nbor%task%is_set (bits%frozen)) then
-      nbor%needs_me = .false.
-      nbor%needed = .false.
-    !-----------------------------------------------------------------------
-    ! task is virtual, nbor is real
-    !-----------------------------------------------------------------------
-    else if (nbor%task%rank==mpi%rank) then
-      call link%task%set(bits%virtual)
-      call link%task%clear(bits%external)
-      ! -- don't use in check_ready(), use in check_nbors()
-      nbor%needed = .false.
-      nbor%needs_me = .true.
-    !-----------------------------------------------------------------------
-    ! task is virtual, nbor is virtual
-    !-----------------------------------------------------------------------
-    else
-      nbor%needed = .false.
-      nbor%needs_me = .false.
-    end if
-    !-----------------------------------------------------------------------
-    ! virtual tasks do not need guard zones
-    !-----------------------------------------------------------------------
-    nbor%download = .false.
-  end if
-  !-------------------------------------------------------------------------
-  ! nbor is more than one level different; these are normally not needed,
-  ! and are only used in support considerations, so should not take part
-  ! in check_nbors() and check_ready(), but may be downloaded exceptionally
-  !-------------------------------------------------------------------------
-  if (abs(nbor%task%level-link%task%level) > 1) then
-    nbor%needed = .false.
-    nbor%needs_me = .false.
-  end if
-  if (self%verbose > 2) &
-    write(io_unit%log,'(a,i6,i4,3x,3l1)') &
-      'set_status_and_flags: nbor, rank, IBV =', nbor%task%id, nbor%task%rank, &
-      nbor%task%is_set(bits%internal), &
-      nbor%task%is_set(bits%boundary), &
-      nbor%task%is_set(bits%virtual)
-  !-----------------------------------------------------------------------------
-  call trace%end()
-END SUBROUTINE set_status_and_flags
 
 !===============================================================================
 !> Check the nbor nbors for tasks ready to update, and the task itself
@@ -1115,7 +1024,8 @@ SUBROUTINE init_nbors (self, link)
         nbor%task => scan%task                      ! pointer to task
         nbor%link => scan                           ! pointer to task link
         call link%add_nbor_by_rank (new_head, nbor) ! add in rank order
-        call self%set_status_and_flags (link, nbor) ! set status bits and flags
+        call link%task%nbor_relations (nbor%task, nbor%needed, &
+          nbor%needs_me, nbor%download)             ! set flags and status bits
         n_add = n_add+1
       end if
     end if

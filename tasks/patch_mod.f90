@@ -1595,19 +1595,14 @@ FUNCTION overlaps (self, task)
   class(task_t):: task
   logical:: overlaps
   !.............................................................................
-  !call trace%begin ('patch_t%overlaps',2)
-  !write (io_unit%log,*) self%id, task%id; flush(io_unit%log)
-  !write (io_unit%log,*) self%size, task%size; flush(io_unit%log)
-  !write (io_unit%log,*) self%ds, task%ds; flush(io_unit%log)
+  call trace%begin ('patch_t%overlaps', 2)
   select type (task)
   class is (patch_t)
-    !write (io_unit%log,*) 'patch'; flush(io_unit%log)
     overlaps = all(abs(self%distance(task)) <= 0.5_8*(self%size+task%size+self%ds+task%ds))
   class default
-    !write (io_unit%log,*) 'default'; flush(io_unit%log)
     overlaps = self%task_t%overlaps(task)
   end select
-  !call trace%end()
+  call trace%end ()
 END FUNCTION overlaps
 
 !===============================================================================

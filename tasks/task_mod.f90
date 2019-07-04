@@ -98,6 +98,7 @@ MODULE task_mod
     procedure:: load_balance
     procedure:: has_finished
     procedure:: overlaps
+    procedure:: nbor_relations
     procedure:: distance                ! return the distance btw two patches
     procedure:: pack
     procedure:: unpack
@@ -546,10 +547,100 @@ FUNCTION overlaps (self, task)
   class(task_t):: task
   logical:: overlaps
   !.............................................................................
-  call trace%begin ('task_t%overlaps',2)
+  call trace%begin ('task_t%overlaps', 2)
   overlaps = all(abs(distance(self,task)) <= 0.5_8*(self%size+task%size+self%ds+task%ds))
-  call trace%end()
+  call trace%end ()
 END FUNCTION overlaps
+
+!===============================================================================
+!> Decide if another task is needed, if it needs_me, and if it should be
+!> downloaded (= used in one way or another to prepare the task for update)
+!===============================================================================
+SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
+  class(task_t):: self, another
+  logical:: needed, needs_me, download
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_t%nbor_relations')
+  !-----------------------------------------------------------------------------
+  ! task is real
+  !-----------------------------------------------------------------------------
+  if (self%rank == mpi%rank) then
+    !---------------------------------------------------------------------------
+    ! nbor is frozen
+    !---------------------------------------------------------------------------
+    if (another%is_set (bits%frozen)) then
+      needs_me = .false.
+      needed = .false.
+    !---------------------------------------------------------------------------
+    ! nbor is virtual
+    !---------------------------------------------------------------------------
+    else if (another%rank /= mpi%rank) then
+      call self%set(bits%boundary)
+      call self%clear(bits%internal)
+      ! -- use in check_ready(), but not in check_nbors()
+      needed = .true.
+      needs_me = .false.
+    !---------------------------------------------------------------------------
+    ! nbor is real
+    !---------------------------------------------------------------------------
+    else
+      ! -- use in check_ready(), and in check_nbors()
+      needed = .true.
+      needs_me = .true.
+    end if
+    !---------------------------------------------------------------------------
+    ! real tasks need guard zones
+    !---------------------------------------------------------------------------
+    download = .true.
+  !-----------------------------------------------------------------------------
+  ! task is virtual
+  !-----------------------------------------------------------------------------
+  else
+    !---------------------------------------------------------------------------
+    ! nbor is frozen
+    !---------------------------------------------------------------------------
+    if (another%is_set (bits%frozen)) then
+      needs_me = .false.
+      needed = .false.
+    !---------------------------------------------------------------------------
+    ! task is virtual, nbor is real
+    !---------------------------------------------------------------------------
+    else if (another%rank==mpi%rank) then
+      call self%set(bits%virtual)
+      call self%clear(bits%external)
+      ! -- don't use in check_ready(), use in check_nbors()
+      needed = .false.
+      needs_me = .true.
+    !---------------------------------------------------------------------------
+    ! task is virtual, nbor is virtual
+    !---------------------------------------------------------------------------
+    else
+      needed = .false.
+      needs_me = .false.
+    end if
+    !---------------------------------------------------------------------------
+    ! virtual tasks don't need guard zones
+    !---------------------------------------------------------------------------
+    download = .false.
+  end if
+  !-----------------------------------------------------------------------------
+  ! nbor is more than one level different; these are normally not needed,
+  ! and are only used in support considerations, so should not take part
+  ! in check_nbors() and check_ready(), but may be downloaded exceptionally
+  !-----------------------------------------------------------------------------
+  if (abs(another%level-self%level) > 1) then
+    needed = .false.
+    needs_me = .false.
+  end if
+  if (self%verbose > 2) &
+    write(io_unit%log,'(a,i6,i4,3x,3l1)') &
+      'set_nbor_relations: nbor, rank, IBV =', another%id, another%rank, &
+      another%is_set(bits%internal), &
+      another%is_set(bits%boundary), &
+      another%is_set(bits%virtual)
+  !-----------------------------------------------------------------------------
+  call trace%end
+END SUBROUTINE nbor_relations
 
 !===============================================================================
 !> Signed distance between the centers of two tasks in a possibly periodic box
