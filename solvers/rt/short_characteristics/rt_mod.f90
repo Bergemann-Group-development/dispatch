@@ -856,12 +856,6 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
     if (.not.(associated(self%patch))) self%patch => gpatch%cast2gpatch(other)
   end if
   end select
-  select type (another)
-  class is (rt_t)
-  rt_another => another
-  if (self%i_omega == rt_another%i_omega) then
-  end if
-  end select
   !
   call trace%end()
 END SUBROUTINE nbor_relations
