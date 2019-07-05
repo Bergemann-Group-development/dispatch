@@ -61,15 +61,18 @@ MODULE extras_mod
   USE patch_mod
   USE connect_mod
   USE list_mod
+  USE task_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
+  !USE rt_mod                                                    ! radiative transfer
   !USE forces_mod                                                ! forces
   !USE trace_particles_mod                                       ! tracep
   !USE spitzer_mod                                               ! spitzer
   !USE gravity_mod                                               ! gravity
   !USE sink_patch_mod                                            ! sinkp
   !USE particle_solver_mod                                       ! sinkp
+  !USE pic_mod                                                   ! PIC
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -79,14 +82,18 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
     !type(forces_t):: forces                                     ! forces
+    !class(pic_t), pointer:: pic                                 ! pic
     !type (spitzer_t):: spitzer                                  ! spitzer
     !type(gravity_t):: gravity                                   ! gravity
+    !class(radiative_transfer_t), pointer:: rt                   ! radiative transfer
     !type(sinkparticles_t):: sinkparticles                       ! sinkp
     !class(patch_force_t), pointer:: patch_force                 ! sinkp
     !class(trace_particles_t), pointer:: trace_particles         ! tracep
     !real, dimension(:,:,:,:), pointer:: v                       ! tracep
+    logical :: do_mhd = .true.
   contains
     procedure, nopass:: cast2extras
+    procedure:: pre_init
     procedure:: init
     procedure:: dealloc
     procedure:: init_task_list
@@ -94,9 +101,33 @@ MODULE extras_mod
     procedure:: post_update
     procedure:: output
     procedure:: check_refine
+    procedure:: nbor_relations
   end type
   type(extras_t), public:: extras
 CONTAINS
+
+!===============================================================================
+!> Pre-initialize the modules that are to be included and used. These routines
+!> are used just to get an indication if more memory slots should be used or any
+!> specific variables ought to be modified, e.g. index, number of guard zones,
+!> periodicity, etc.
+!===============================================================================
+SUBROUTINE pre_init (self)
+  class(extras_t):: self
+  !.............................................................................
+  !call self%forces%init (self)                                  ! forces
+  !-----------------------------------------------------------------------------
+  ! Allocate a trace_particles data type, connect a pointer, and initialize
+  !-----------------------------------------------------------------------------
+  !allocate(self%rt)
+  !self%connect%rt => self%rt
+  !call self%rt%pre_init(self%link)                              ! radiative transfer
+  !allocate (self%trace_particles)                               ! tracep
+  !self%connect%trace_particles => self%trace_particles          ! tracep
+  !allocate(self%pic)                                            ! pic
+  !self%connect%pic_patch => self%pic                            ! pic
+  !call self%pic%pre_init(self%link)                             ! pic
+END SUBROUTINE pre_init
 
 !===============================================================================
 !> Initialize the modules that are to be included and used
@@ -109,9 +140,13 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------
+  !call self%rt%init()                                  ! radiative transfer
   !allocate (self%trace_particles)                               ! tracep
   !self%connect%trace_particles => self%trace_particles          ! tracep
   !call self%trace_particles%add (self%link%task)                ! tracep
+  !call self%pic%init                                            ! pic
+  !if (self%pic%on) self%do_mhd = self%pic%do_mhd                ! pic
+  !call self%spitzer%init(self%link)                             ! spitzer
   !call self%spitzer%init (self%link)                            ! spitzer
   !call self%gravity%init (self%link)                            ! gravity
   !call sink_patch%init (self%link)                              ! sinkp
@@ -153,11 +188,22 @@ END SUBROUTINE dealloc
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
+  if (allocated (self%force_per_unit_mass)) &                   ! keep
+    self%force_per_unit_mass = 0.0                              ! keep
+  if (allocated (self%force_per_unit_volume)) &                 ! keep
+    self%force_per_unit_volume = 0.0                            ! keep
+  if (allocated (self%heating_per_unit_mass)) &                 ! keep
+    self%heating_per_unit_mass = 0.0                            ! keep
+  if (allocated (self%heating_per_unit_volume)) &               ! keep
+    self%heating_per_unit_volume = 0.0                          ! keep
+  !
+  !call self%rt%pre_update()                                     ! radiative transfer
   !call self%forces%pre_update                                   ! forces
   !call self%trace_particles%update                              ! tracep
   !call self%spitzer%pre_update()                                ! spitzer
   !call self%gravity%pre_update()                                ! gravity
   !call particle_solver%force_field (self)                       ! sinkp
+  !call self%pic%pre_update()                                    ! pic
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -166,9 +212,11 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
+  !call self%rt%post_update                                      ! radiative transfer
   !call self%forces%post_update                                  ! forces
   !call self%trace_particles%post_update (self)                  ! tracep
   !call self%gravity%post_update                                 ! gravity
+  !call self%pic%post_update()                                   ! pic
 END SUBROUTINE post_update
 
 !===============================================================================
@@ -210,5 +258,37 @@ FUNCTION cast2extras (task) RESULT(extras)
   call io%abort ('extras_t%cast: failed to cast a task to extras_t')
   end select
 END FUNCTION cast2extras
+
+SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
+  class(extras_t):: self
+  class(task_t), pointer:: another
+  logical:: needed, needs_me, download
+  !.............................................................................
+  class(rt_t), pointer:: rt_another
+  class(task_t), pointer:: other
+  !-----------------------------------------------------------------------------
+  call trace%begin ('rt_t%nbor_relations')
+  !
+  ! ----------------------------------------------------------------------------
+  ! First check the main relations, based on location and level of refinement
+  ! ----------------------------------------------------------------------------
+  call self%task_t%nbor_relations(another, needed, needs_me, download)
+  ! ----------------------------------------------------------------------------
+  ! Check if another is one of the extras and do appropriate relations
+  ! ----------------------------------------------------------------------------
+  !select type (another)                                                        ! radiative transfer
+  !class is (rt_t)        ! if it is an RT task                                 ! radiative transfer
+  !  download = .false.                                                         ! radiative transfer
+  !  if (.not.self%overlaps(another)) then                                      ! radiative transfer
+  !  ! for now, if RT doesn't overlap MHD, they should not have nbor relations at all.
+  !    needed = .false.                                                         ! radiative transfer
+  !    needs_me = .false.                                                       ! radiative transfer
+  !  end if                                                                     ! radiative transfer
+  !class default                                                                ! radiative transfer
+  !
+  !end select                                                                   ! radiative transfer
+  !
+  call trace%end()
+END SUBROUTINE nbor_relations
 
 END MODULE extras_mod
