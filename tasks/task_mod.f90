@@ -46,6 +46,7 @@ MODULE task_mod
     real(8):: out_next = 0d0
     real(8):: print_next = 0d0
     real(8):: dtime = 0d0
+    real(8):: min_dtime = 0d0
     real(4):: grace = 0.0
     real(8):: position(3) = 0d0
     real(8):: origin(3)=0d0             ! the cartesian box origin (for BCs)
@@ -74,6 +75,7 @@ MODULE task_mod
     logical:: track=.false.
     logical:: periodic(3)=.true.
     logical:: rotated=.false.
+    logical:: limit_dtime=.false.
     type(lock_t):: lock                 ! OMP lock
     type(random_t):: random             ! pseudo-random number generator
   contains
@@ -557,7 +559,8 @@ END FUNCTION overlaps
 !> downloaded (= used in one way or another to prepare the task for update)
 !===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
-  class(task_t):: self, another
+  class(task_t):: self
+  class(task_t), pointer:: another
   logical:: needed, needs_me, download
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%nbor_relations')
