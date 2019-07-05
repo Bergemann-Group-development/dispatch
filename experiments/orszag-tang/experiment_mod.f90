@@ -46,7 +46,7 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   !
-  call self%mhd_t%update
+  call self%solver_t%update
   !
   call trace_end
 END SUBROUTINE update

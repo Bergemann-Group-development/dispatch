@@ -1,0 +1,72 @@
+&io_params
+ do_trace=f
+ verbose=0
+ do_debug=f
+ do_output=t
+ method='parallel' 
+ guard_zones=t
+ time_derivs=f
+ nml_version=1
+/
+&cartesian_params
+ size=1,1,0.0037
+ dims=5,5,1
+ origin=0,0,0
+/
+&experiment_params
+ d0=1.2
+ !B0=0.0,0.0,0.0
+/
+&patch_params
+ nt=5
+ ng=3*12
+ n=22,22,1
+ do_check_nan=t
+ dt_fixed=0.01
+ grace=0.02
+/
+
+&eos_params
+gamma=1.6666666666667
+/
+
+&out_params
+ end_time=2.000
+ out_time=0.01
+ print_time=0
+/
+&stagger_params
+ courant=0.10
+
+ !nu=  0.1,  0.0, 1.0, 0.0,  0.0,  1.0
+
+ nu=  0.10, 1.0, 1.0, 0.0, 1.0, 1.0
+ !     cs    pa  ofd  mas  kap  eta
+ gamma=1.6666666666667
+ do_maxwell=t
+ !gamma=1.
+/
+&force_params
+/
+&timestep_params
+ !time_order=4
+/
+&initial_params
+ idirect=3
+/
+&bifrost_params             
+gamma=1.6666666666667
+loginterpolation=t
+ca_max = 0.0 
+courant=0.02
+symmetric_e=f
+!     nu1   nu2  nu3  nu_d  nu_ee  eta3
+!nu=  0.6, 0.6, 0.6, 0.6, 0.6, 0.3 /
+!nu=  0.3, 0.2, 0.3, 0.0, 0.3, 0.3 /
+nu=  0.05 , 0.3,  0.7,  0.07,  0.05, 0.3 /
+!nu=  0.01, 0.03, 0.1, 0.05, 0.05, 0.3 /
+
+&dispatcher_params      method=3 /
+&dispatcher3_params     verbose=0 f_over=3 use_taskyield=f use_critical=f /
+
+!ffmpeg -framerate 10 -start_number 0 -i %01d.png -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p -vf scale=1150:960 output.avi
