@@ -34,6 +34,7 @@ MODULE ray_geometry_v3_mod
   USE io_mod
   USE io_unit_mod
   USE trace_mod
+  USE math_mod
   implicit none
   private
 ! ----------------------------------------------------------------------
@@ -71,6 +72,8 @@ MODULE ray_geometry_v3_mod
     integer :: axis                                                     ! identificator along which axis ray goes 1-3
     real    :: theta                                                    ! angle between ray and axis [0, 45], stored in radians
     real    :: phi                                                      ! angle of the ray in the axis plane [0, 360), stored in radians
+    real    :: mu
+    real    :: weight
   contains
     procedure :: print => print_bundle
   end type
@@ -83,7 +86,7 @@ MODULE ray_geometry_v3_mod
     class(ray_bndl_t), dimension(:), pointer :: bundle => null()
     integer :: ID
     integer :: n_bundles = 0                                            ! number of bundles in this direction
-    integer :: directionality(3)                                        ! 1 - two directions, 2 - only forward, 3 - only reverse (x|y|z)
+    integer :: directionality(3)                                        ! 0 - two directions, 1 - only forward, -1 - only reverse (x|y|z)
   contains
     procedure :: print => print_dirs
   end type
@@ -195,6 +198,7 @@ MODULE ray_geometry_v3_mod
   end type
 ! ----------------------------------------------------------------------
   type(ray_geometry_t), public :: ray_geometry
+  logical :: first_time = .true.
   real(8), public, parameter:: pi = asin(1.0d0) * 2.0d0, radian = 180./pi
 CONTAINS
 
@@ -211,44 +215,46 @@ SUBROUTINE init (self, geometry, n, ng, cell_dims, no_mans_land)
   real(kind=8) :: maxdim
 ! ......................................................................
   call trace_begin('ray_geometry_t%init')
+  if (first_time) then
+    first_time = .false.
+    allocate (new)                                                        ! allocate new geometry object
+    new%geometry = geometry
+    new%n  = n
+    new%li = ng+1                                                         ! cell domain lower point
+    new%ui = new%li+n - 1                                                 ! cell domain upper point
+    new%no_mans_land = no_mans_land
+    if(present(cell_dims)) then
+       if ((cell_dims(1) == cell_dims(2)).and.(cell_dims(2) == cell_dims(3))) then
+         new%cell_dims = 1.
+       else
+         maxdim = maxval(cell_dims)
+         new%cell_dims = cell_dims/maxdim
+       end if
+    else
+        new%cell_dims(:) = 1.                                              ! default - cubic cells
+    end if
 
-  allocate (new)                                                        ! allocate new geometry object
-  new%geometry = geometry
-  new%n  = n
-  new%li = 2                                                         ! cell domain lower point
-  new%ui = new%li+n - 1                                                 ! cell domain upper point
-  new%no_mans_land = no_mans_land
-  if(present(cell_dims)) then
-     if ((cell_dims(1) == cell_dims(2)).and.(cell_dims(2) == cell_dims(3))) then
-       new%cell_dims = 1.
-     else
-       maxdim = maxval(cell_dims)
-       new%cell_dims = cell_dims/maxdim
-     end if
-  else
-      new%cell_dims(:) = 1.                                              ! default - cubic cells
+    if(.not.associated(self%head)) then                                   ! connect to geometry list
+      self%head => new
+      self%tail => new
+    else
+      new%prev      => self%tail
+      new%head      => self%head
+      new%prev%next => new
+      self%tail     => new
+    end if
+
+    select case(geometry)
+      case(1)
+        call new%init_cartesian
+      case(2)
+        call new%init_spherical
+      case(3)
+        call new%init_cylindrical
+    end select
+
+    call new%print
   end if
-
-  if(.not.associated(self%head)) then                                   ! connect to geometry list
-    self%head => new
-    self%tail => new
-  else
-    new%prev      => self%tail
-    new%head      => self%head
-    new%prev%next => new
-    self%tail     => new
-  end if
-
-  select case(geometry)
-    case(1)
-      call new%init_cartesian
-    case(2)
-      call new%init_spherical
-    case(3)
-      call new%init_cylindrical
-  end select
-
-  call new%print
   call trace_end
 END SUBROUTINE init
 
@@ -297,11 +303,16 @@ SUBROUTINE init_cartesian(self)
   integer                         :: i, d45
   real, dimension(5)              :: xti=0.0, yti=0.0, zti=0.0
   integer, save                   :: nx=1, ny=0, nz=0
-  integer, save                   :: dx=1, dy=1, dz=1
+  integer, save                   :: dx=0, dy=0, dz=0
   logical, save                   :: space_diagonals=.true.
   logical, save                   :: do_chains = .true.
   integer, save                   :: n_warm_up=10
   logical, save                   :: first_time=.true.
+  ! ----------------------------------------------------------------------------
+  class(ray_bndl_t), pointer :: bnd
+  class(ray_dirs_t), pointer :: dir
+  integer:: ibn
+  real:: wgt
 ! ......................................................................
   namelist /cartesian_ray_geometry_params/ do_chains, &
     nx, ny, nz, xti, yti, zti, dx, dy, dz, space_diagonals, n_warm_up
@@ -379,7 +390,19 @@ SUBROUTINE init_cartesian(self)
       end if
     end do
   end if
-
+  
+  if (self%ray_list%directionality(1) == 0) then
+    wgt = math%pi4/(self%n_ray_dirs * 2)
+  else
+    wgt = math%pi4/(self%n_ray_dirs * 2)
+  end if
+  dir => self%ray_list%head
+  do while (associated(dir))
+    do ibn = 1, dir%n_bundles
+      dir%bundle%weight = wgt
+    end do
+    dir => dir%next
+  end do
   call trace_end
 END SUBROUTINE init_cartesian
 
@@ -466,6 +489,7 @@ SUBROUTINE add_axis(self, dir)
   allocate(bundle%packet(1))                                            ! packet for this bundle
   bundle%axis      = c                                                  ! direction axis of this bundle
   bundle%theta     = 0
+  bundle%mu        = cos(bundle%theta)
   bundle%phi       = 0
   bundle%id        = self%total_n_bundles                               ! bundle ID in this direction
   bundle%dir_id    = ndir%id                                            ! dir_ID of this bundle
@@ -1084,6 +1108,7 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
     bundle%dir_ID = dir%ID                                              ! dir ID
     bundle%axis   = self%axis                                           ! axis of ray flow
     bundle%theta  = self%theta
+    bundle%mu     = cos(bundle%theta)
     bundle%phi    = self%phi
     bundle%lwall  = sbundle%lwall                                       ! wall where bundle enters the box
     bundle%uwall  = sbundle%uwall                                       ! wall where bundle leaves the box
@@ -1138,6 +1163,7 @@ SUBROUTINE finish_single_ray_list(self, sbundle)
     bundle%dir_id = dir%id                                              ! give its dir ID
     bundle%axis   = self%axis                                           ! save axis
     bundle%theta  = self%theta                                          ! save theta
+    bundle%mu     = cos(bundle%theta)
     bundle%phi    = self%phi                                            ! save phi
     bundle%id     = self%total_n_bundles                                ! it is the only bundle
     bundle%dstep  = sbundle%dstep
