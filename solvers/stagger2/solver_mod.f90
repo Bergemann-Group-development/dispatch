@@ -55,6 +55,9 @@ CONTAINS
 SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
+  call self%mhd_t%pre_init
+  call self%extras_t%pre_init
+  !
   call self%mhd_t%init
   call self%extras_t%init
   call validate%init
@@ -85,7 +88,11 @@ SUBROUTINE update (self)
   !.............................................................................
   call self%extras_t%pre_update
   call validate%check (self, d, 'before update')
-  call self%mhd_t%update
+  if (self%do_mhd) then
+    call self%mhd_t%update
+  else
+    call self%output
+  end if
   call validate%check (self, d, ' after update')
   call self%extras_t%post_update
   end associate
@@ -421,21 +428,20 @@ SUBROUTINE compression_magnitude (self, w)
   vy = self%mem(:,:,:,self%idx%py,self%it,1)/exp(d(:,:,:,2))
   vz = self%mem(:,:,:,self%idx%pz,self%it,1)/exp(d(:,:,:,3))
   if (self%kind(1:13) == 'stagger2e_pic') then
-    w = max(- ddxdn(self%ds(1),vx) &
-            - ddydn(self%ds(2),vy) &
-            - ddzdn(self%ds(3),vz), 0.0)
+    w = max(- ddxdn(self%ds,vx) &
+            - ddydn(self%ds,vy) &
+            - ddzdn(self%ds,vz), 0.0)
   else
-    w = max(- ddxup(self%ds(1),vx) &
-            - ddyup(self%ds(2),vy) &
-            - ddzup(self%ds(3),vz), 0.0)
+    w = max(- ddxup(self%ds,vx) &
+            - ddyup(self%ds,vy) &
+            - ddzup(self%ds,vz), 0.0)
   end if
   deallocate (vx, vy, vz, d)
   call trace%end (itimer)
 END SUBROUTINE compression_magnitude
 
 !===============================================================================
-!> Compute the vorticity, centered in cells, given that momenta are dn-staggered
-!> in stagger2, except for stagger2e_pic, where it up-staggered
+!> Compute the vorticity
 !===============================================================================
 SUBROUTINE vorticity_magnitude (self, w)
   class (solver_t):: self
@@ -459,13 +465,13 @@ SUBROUTINE vorticity_magnitude (self, w)
   vy = self%mem(:,:,:,self%idx%py,self%it,1)/exp(d(:,:,:,2))
   vz = self%mem(:,:,:,self%idx%pz,self%it,1)/exp(d(:,:,:,3))
   if (self%kind(1:13) == 'stagger2e_pic') then
-    w = sqrt(ydn(zdn(ddyup(self%ds(2),vz)-ddzup(self%ds(3),vy)))**2 &
-           + zdn(xdn(ddzup(self%ds(3),vx)-ddxup(self%ds(1),vz)))**2 &
-           + xdn(ydn(ddxup(self%ds(1),vy)-ddyup(self%ds(2),vx)))**2)
+    w = sqrt(ydn(zdn(ddyup(self%ds,vz)-ddzup(self%ds,vy)))**2 &
+           + zdn(xdn(ddzup(self%ds,vx)-ddxup(self%ds,vz)))**2 &
+           + xdn(ydn(ddxup(self%ds,vy)-ddyup(self%ds,vx)))**2)
   else
-    w = sqrt(yup(zup(ddydn(self%ds(2),vz)-ddzdn(self%ds(3),vy)))**2 &
-           + zup(xup(ddzdn(self%ds(3),vx)-ddxdn(self%ds(1),vz)))**2 &
-           + xup(yup(ddxdn(self%ds(1),vy)-ddydn(self%ds(2),vx)))**2)
+    w = sqrt(yup(zup(ddydn(self%ds,vz)-ddzdn(self%ds,vy)))**2 &
+           + zup(xup(ddzdn(self%ds,vx)-ddxdn(self%ds,vz)))**2 &
+           + xup(yup(ddxdn(self%ds,vy)-ddydn(self%ds,vx)))**2)
   end if
   deallocate (vx, vy, vz)
   call trace%end (itimer)
