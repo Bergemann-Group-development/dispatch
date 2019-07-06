@@ -1,9 +1,10 @@
-# Append to VPATH
-VPATH := $(VPATH):$(TOP)/solvers/rt/hybrid
+VPATH := $(VPATH):$(TOP)/solvers/rt/$(RT_SOLVER)
 
-# Dependencies
-rt_solver_mod.o           : io_mod.o trace_mod.o
-rt_components_mod.o       : ray_geometry_v3_mod.o trace_mod.o io_mod.o link_mod.o rt_boundaries_mod.o patch_mod.o
-rt_mod.o                  : ray_geometry_v3_mod.o patch_mod.o rt_components_mod.o trace_mod.o rt_solver_mod.o eos_mod.o \
-                            download_mod.o data_hub_mod.o
-radiative_transfer_mod.o  : experiment_mod.o mesh_mod.o ray_geometry_v3_mod.o rt_mod.o
+rt_setup.o               : rt_mod.o task_list_mod.o data_io_mod.o ray_geometry_v3_mod.o
+rt_mod.o                 : io_mod.o trace_mod.o index_mod.o link_mod.o \
+                           eos_mod.o gpatch_mod.o math_mod.o bits_mod.o rt_solver_mod.o \
+                           scalar_mod.o timestep_mod.o rt_boundaries_mod.o rt_components_mod.o
+rt_boundaries_mod.o      : io_mod.o trace_mod.o kinds_mod.o mpi_mod.o bits_mod.o \
+                           mesh_mod.o eos_mod.o units_mod.o scaling_mod.o
+rt_solver_mod.o          : io_mod.o trace_mod.o kinds_mod.o
+rt_components_mod.o      : patch_mod.o ray_geometry_v3_mod.o trace_mod.o io_mod.o link_mod.o

@@ -11,6 +11,7 @@ MODULE initial_mod
   private
 
   type, public:: initial_t
+    logical:: mhd = .true.
   contains
     procedure:: init
     procedure:: condition
@@ -21,8 +22,9 @@ CONTAINS
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
-SUBROUTINE init (self, solver)
+SUBROUTINE init (self, solver, gamma)
   class(initial_t):: self
+  real:: gamma
   character(len=64):: solver
 END SUBROUTINE init
 

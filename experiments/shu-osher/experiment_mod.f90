@@ -1,6 +1,8 @@
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!> $Id$
-!> Solve the Alfven wave problem to test the hlld solver implementation
+!=======================================================================
+!> Shu-Osher shock tube problem.
+!> Eample 8 in https://doi.org/10.1016/0021-9991(89)90222-2
+!=======================================================================
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE experiment_mod
   USE io_mod
@@ -30,7 +32,7 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   ! Initial conditions
   !----------------------------------------------------------------------------
-  self%mhd = .false.
+  self%mhd = .true.
   call self%solver_t%init
 
   call self%set (bits%static)
@@ -42,8 +44,10 @@ SUBROUTINE init (self)
   self%unsigned(self%idx%d) = .true.
   self%periodic = [.false., .true., .true.]
   ! assign boundary conditions.
-  call pboundary%condition(self%mem(:,:,:,:,self%it,1), self%mesh, self%idx, .true.)
-  call pboundary%condition(self%mem(:,:,:,:,self%it,1), self%mesh, self%idx, .false.)
+  if (self%mesh(1)%lower_boundary) &
+  call pboundary%condition(self%mem(:,:,:,:,self%it,1), self%mesh, self%idx, .true.,self%kind)
+  if (self%mesh(1)%upper_boundary) &
+  call pboundary%condition(self%mem(:,:,:,:,self%it,1), self%mesh, self%idx, .false.,self%kind)
   call trace_end
 END SUBROUTINE init
 
@@ -64,14 +68,14 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
 
-  if ((self%llc_nat(1)-self%ds(1)) .lt. self%mesh(1)%origin) then
-    call pboundary%condition (self%mem(:,:,:,:,self%it,1), self%mesh, self%idx,.true.)
+  if (self%mesh(1)%lower_boundary) then
+    call pboundary%condition (self%mem(:,:,:,:,self%it,1), self%mesh, self%idx,.true.,self%kind)
   endif
-  if ((self%llc_nat(1)+self%size(1)+self%ds(1)) .gt. (self%mesh(1)%origin + self%box(1))) then
-    call pboundary%condition (self%mem(:,:,:,:,self%it,1), self%mesh, self%idx, .false.)
+  if (self%mesh(1)%upper_boundary) then
+    call pboundary%condition (self%mem(:,:,:,:,self%it,1), self%mesh, self%idx, .false.,self%kind)
   endif
   
-  call self%mhd_t%update
+  call self%solver_t%update
 
   call trace_end
 END SUBROUTINE update

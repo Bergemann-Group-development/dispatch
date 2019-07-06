@@ -405,14 +405,14 @@ SUBROUTINE init_default (self)
   !.............................................................................
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000
   logical, save:: periodic(3)=.true.
-  logical, save:: no_mans_land=.false., use_data_hub=.false.
+  logical, save:: no_mans_land=.false., use_data_hub=.false., limit_dtime=.false.
   real, save:: u_fixed=-1.0, grace=0.0
   real(8), save:: end_time=1.0, out_time=0.1, print_time=0.1, dt_fixed=-1.0
   real(8):: position(3), size(3)
   integer:: iostat, i, n_alloc=0, n_ext=0
   namelist /patch_params/ n, nv, ng, nt, u_fixed, dt_fixed, &
     grace, periodic, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
-    zero_order_extrap
+    zero_order_extrap, limit_dtime
   namelist /out_params/ out_time, end_time, print_time, print_every, max_files
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
@@ -467,6 +467,7 @@ SUBROUTINE init_default (self)
   self%use_data_hub = use_data_hub              ! guard zone handling
   self%no_mans_land = no_mans_land              ! mesh centering
   self%print_next  = print_time
+  self%limit_dtime = limit_dtime
   call trace%end()
 END SUBROUTINE init_default
 
@@ -2029,7 +2030,7 @@ SUBROUTINE check_density (self, label)
   call trace%begin ('patch_t%check_density', itimer=itimer)
   l = self%mesh%lb
   u = self%mesh%ub
-  mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1))
+  mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,1))
   if (present(label) .and. io%verbose>1) write (io_unit%log,*) label, self%id, mind
   if (mind <= 0.0) then
     panic = .true.
