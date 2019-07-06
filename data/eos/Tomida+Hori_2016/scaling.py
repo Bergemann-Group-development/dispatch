@@ -8,6 +8,7 @@ class cgs:
     grav=6.673e-8
     yr=3.156e+7
     au=1.498e+13
+    pc=3e18
     kms=1e+5
     mu=2.
     m_u=1.6726e-24
@@ -25,6 +26,7 @@ class SI:
     grav=6.673e-11
     yr=3.156e+7
     au=1.498e+11
+    pc=3e16
     kms=1e+3
     mu=2.
     m_u=1.6726e-27

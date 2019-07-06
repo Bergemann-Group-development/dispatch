@@ -19,7 +19,7 @@ evol=void()
 
 #%% Soft gravity
 sc=scaling()
-m_planet=5.0
+m_planet=1.0
 a_planet=1.0
 def force(r,rsm):
     if r>rsm:
