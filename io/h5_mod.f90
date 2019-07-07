@@ -4,6 +4,7 @@
 MODULE h5_mod
   USE hdf5
   USE io_unit_mod
+  USE io_mod
   USE omp_lock_mod
   USE trace_mod
   implicit none
@@ -224,17 +225,16 @@ SUBROUTINE set_write_ext_1d (self, id, a)
   integer(HID_T):: id, sid
   real(kind=8), dimension(:), intent(in) :: a
   !.............................................................................
-  integer :: sza
+  integer(kind=HSIZE_T) :: sza
   integer(HID_T):: aid
-  integer(kind=HSIZE_T), dimension(1) :: offset1, count1, size
+  integer(kind=HSIZE_T), dimension(1) :: offset1, count1
   integer(kind=HSIZE_T), dimension(2) :: offset2, count2
   integer, target::nrec,nchunk
   type(c_ptr) :: f_ptr
   !-----------------------------------------------------------------------------
-  sza = product(shape(a))
+  sza = size(a)
   ! read atrtibute to know how many records have been written until now
   call H5Aopen_f(id, 'length', aid, self%err)
-  size = int((/1/),kind=HSIZE_T)
   f_ptr = c_loc(nrec)
   call H5Aread_f(aid, H5T_NATIVE_INTEGER, f_ptr, self%err)  ! read number of records
   nrec = nrec+1                                             ! increment counter
@@ -252,8 +252,7 @@ SUBROUTINE set_write_ext_1d (self, id, a)
     if (sza==1) then
       call h5dset_extent_f(id, int((/nchunk/),kind=HSIZE_T), self%err)
     else
-      call h5dset_extent_f(id, int((/size(a), &
-                           int(nchunk,kind=HSIZE_T)/),kind=HSIZE_T), self%err)
+      call h5dset_extent_f(id, int((/sza, int(nchunk,kind=HSIZE_T)/),kind=HSIZE_T), self%err)
     endif
   endif
   call H5Aclose_f(aid, self%err)
@@ -268,7 +267,7 @@ SUBROUTINE set_write_ext_1d (self, id, a)
     ! write data at the right position using hyperslabbed dataspace
     call H5Dwrite_f (id, H5T_NATIVE_DOUBLE, a, count1, self%err, sid)
   else
-    count2  = (/size(a),1_HSIZE_T/) 
+    count2  = (/sza,1_HSIZE_T/) 
     offset2 = int((/0,nrec/),kind=HSIZE_T)
     call H5Sselect_hyperslab_f(sid, H5S_SELECT_SET_F, offset2, count2, self%err) 
     ! write data at the right position using hyperslabbed dataspace
