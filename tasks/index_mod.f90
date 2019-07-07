@@ -15,6 +15,7 @@ MODULE index_mod
   contains
     procedure:: init
     procedure:: copy
+    procedure:: request_index
     procedure:: output
   end type
   type(index_t), public:: idx
@@ -54,6 +55,26 @@ SUBROUTINE init (self, ie, mhd)
   end if
   call self%copy
 END SUBROUTINE init
+
+!===============================================================================
+!> Request a new, unique index
+!> idx should be index itself, nv is patch%nv.
+!===============================================================================
+SUBROUTINE request_index (self, idx, nv, success)
+  class(index_t):: self
+  integer :: idx, nv
+  logical, optional :: success
+  !-----------------------------------------------------------------------------
+  if (present(success)) success = .false.
+  if (idx <= 0) then
+    !$omp critical (index_cr)
+    nv  = nv+1
+    idx = nv
+    if (present(success)) success = .true.
+    !$omp end critical (index_cr)
+    call self%copy
+  end if
+END SUBROUTINE request_index
 
 !===============================================================================
 !> Initialize the indices to default values, possibly to be modified by solvers

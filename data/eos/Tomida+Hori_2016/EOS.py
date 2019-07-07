@@ -29,7 +29,8 @@ class eos_t(object):
         self.nvar = 10
         self.nt = 761
         self.nr = 461
-        self.d = np.zeros((self.nr,self.nt,self.nvar))
+        self.d = np.zeros((self.nt,self.nr,self.nvar))
+        self.dlnU = np.zeros((self.nt,self.nr))
         self.ts = np.zeros(self.nt)
         self.rs = np.zeros(self.nr)
         self.dt = 0.01
@@ -56,16 +57,20 @@ class eos_t(object):
                     if ir == 0:
                         self.ts[it] = float(col[1])
                     for i in range (2,len(col)):
-                        self.d[ir,it,i-2]=float(col[i])
+                        self.d[it,ir,i-2]=float(col[i])
                     it +=1
                     if it > self.nt-1:
                         ir+=1
                         it=0            
         f.close()
+        for ir in range(self.nr):
+            dlnT=self.ts[1]-self.ts[0]
+            lnU=self.d[:,ir,1]
+            self.dlnU[:,ir]=np.gradient(lnU,dlnT)
 
     def lookup(self,i):
         d = self.d[:,:,i]
-        f = interpolate.interp2d(self.ts,self.rs,d,kind='cubic')
+        f = interpolate.RectBivariateSpline(self.ts,self.rs,d)
         return f
 
     def logP(self):
@@ -85,15 +90,20 @@ class eos_t(object):
 
     def gamma(self,T,d):
         f=self.lookup(4)
-        if np.size(T)==1:
-            return f(np.log10(T),np.log10(d))[0]
-        else:
-            return f(np.log10(T),np.log10(d))
+        v=f(np.log10(T),np.log10(d),grid=False)
+        return v
+
+    def U(self,T,d):
+        f=self.lookup(1)
+        v=f(np.log10(T),np.log10(d),grid=False)
+        return 10.**v
+
+    def dlnUdlnT(self,T,d):
+        f = interpolate.RectBivariateSpline(self.ts,self.rs,self.dlnU)
+        v=f(np.log10(T),np.log10(d),grid=False)
+        return v
 
     def pressure(self,T,d):
         f=self.logP()
-        logP=f(np.log10(T),np.log10(d))
-        if np.size(T)==1:
-            return 10.**logP[0]
-        else:
-            return 10.**logP
+        logP=f(np.log10(T),np.log10(d),grid=False)
+        return 10.**logP

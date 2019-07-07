@@ -1,19 +1,22 @@
 !===============================================================================
-!> Define code units, in terms of (here) CGS units
+!> Define code units for stellar atmospheres, in terms of (here) CGS units
 !===============================================================================
 MODULE scaling_mod
   USE units_mod
   USE io_mod
-  USE math_mod
+  USE trace_mod
   implicit none
   private
-  type, public:: scaling_t
-    real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu, stefan, stefan_pi
+  !-----------------------------------------------------------------------------
+  ! Extend the units_t data type, which contains only the three fundamental
+  ! units: length, mass, and time (cf. CGS and MKS)
+  !-----------------------------------------------------------------------------
+  type, public, extends(units_t):: scaling_t
+    real(kind=8):: d, e, p, u, temp, grav, mu, ee, kr, b
   contains
     procedure:: init
   end type
   type(scaling_t), public :: scaling
-  !type(const_t), public:: code
 CONTAINS
 
 !===============================================================================
@@ -22,39 +25,44 @@ CONTAINS
 SUBROUTINE init (self)
   class(scaling_t):: self
   logical, save:: first_time=.true.
+  !-----------------------------------------------------------------------------
   if (.not.first_time) return
+  call trace%begin ('scaling_t%init')
+  if (io%master) print *, &
+ '-------------------------------- scaling_mod ---------------------------------'
   first_time = .false.
   call cgs%init
-  self%l = 1d0                                  		! length = 1 cm
-  self%m = 1d0                                  		! mass
-  self%d = self%m/self%l**3                             ! mass density
-  self%u = 1d0		                                      ! speed = 1 cm/s
-  self%t = self%l/self%u                                ! time ~ 6700 sec < 2 hours
-  self%p = self%d*self%u**2                             ! pressure = energy density
-  self%e = self%m*self%u**2                             ! energy
-  self%mu = 2.0                                         ! molecular weight
+  !--------------------------- defining quantities -----------------------------
+  self%system = 'cgs'                                   ! pass on to Python
+  self%l  = 1.0                                         ! length = 1Mm = 1e8 cm
+  self%d  = 1.0                                        ! photospheric density
+  self%t  = 1d-3                                         ! time = 100 sec
+  !--------------------------- derived quantities ------------------------------
+  self%u  = self%l/self%t                               ! speed
+  self%m  = self%d*self%l**3                            ! mass
+  self%p  = self%d*self%u**2                            ! pressure = energy density
+  self%e  = self%m*self%u**2                            ! energy
+  self%ee = self%u**2                                                   ! specific energy
+  self%kr = 1.0/(self%d*self%l)                                         ! rosseland opacity [cm2/g]
+  self%mu = 2.0
+  self%b = self%l**(-0.5)*self%m**0.5*self%t**(-1)                   ! magnetic flux density
   self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature for given mu
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
-  self%stefan = cgs%stefan/(self%p*self%u)*self%temp**4 ! Stefan's constant
-  self%stefan_pi = self%stefan/math%pi                  ! Stefan's constant / pi
-  !code%r_earth = cgs%r_earth/self%l
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
     print 1,'     length: ',self%l
-    print 1,'   velocity: ',self%u
     print 1,'       mass: ',self%m
     print 1,'       time: ',self%t
+    print 1,'   velocity: ',self%u
     print 1,'    density: ',self%d
     print 1,'   pressure: ',self%p
     print 1,'     energy: ',self%e
     print 1,'    gravity: ',self%grav
     print 1,'temperature: ',self%temp
   1 format(1x,a,1p,e11.3)
-    print *, 'omega consistency:', &
-      sqrt(cgs%grav*cgs%m_sun/cgs%au**3)/ &
-      (2.*math%pi/cgs%yr) - 1.d0
   end if
+  call self%output
+  call trace%end
 END SUBROUTINE init
 
 END MODULE scaling_mod
-
