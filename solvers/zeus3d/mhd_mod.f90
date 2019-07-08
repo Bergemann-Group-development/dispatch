@@ -211,7 +211,7 @@ SUBROUTINE init_zeus (self)
     diffc1  = 1.0d0
     diffc2  = 0.0d0
     dtinit  = huge(1.0d0)
-    rewind (io%input); read (io%input, zeus_params)
+    rewind (io%input); read (io%input, zeus_params, iostat=iostat)
     if (iostat/=0) call io%namelist_warning ('zeus_params')
     if (io%master) write (*, zeus_params)
 

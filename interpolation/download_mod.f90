@@ -442,25 +442,16 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
            call different_restrict (self, target, source, only=only)
          else if (source%level==target%level) then
            call self%same (target, source, all_cells, only=only)
-         else if ((source%level-target%level) == -1) then
-           if (use_different == -2) then
-             call different (self, target, source, all_cells, only=only)
+         else if ((source%level-target%level) <= -1) then
+           if (use_different == -3) then
+             call prolong (self, target, source, all_cells, only=only)
            else
              call different_prolong (self, target, source, all_cells, only=only)
            end if
-           !call prolong (self, target, source, all_cells, only=only)
-         else if ((source%level-target%level) < -1) then
-           if (use_different == -2) then
-             call different (self, target, source, all_cells, only=only)
-           else
-             call different_prolong (self, target, source, all_cells, only=only)
-           end if
-           !write (io_unit%log,*) target%id, 'WARNING: using more than one level prolong from', source%id
-           !call prolong (self, target, source, all_cells, only=only)
          else if (source%level < target%level .and. present(all_cells)) then
            call different_prolong (self, target, source, all_cells, only=only)
          else if ((source%level-target%level) == 1) then
-           if (use_different == -2) then
+           if (use_different <= -2) then
              call different (self, target, source, all_cells, only=only)
            else
              call different_restrict (self, target, source, only=only)

@@ -12,6 +12,7 @@ MODULE mhd_mod
   USE io_mod
   USE bits_mod
   USE omp_mod
+  USE math_mod
   USE omp_timer_mod
   USE mpi_mod
   USE trace_mod
@@ -37,42 +38,48 @@ MODULE mhd_mod
     real:: cdtd
     logical:: mhd=.false.
     logical:: first_time=.true.
-    logical:: do_force=.true.
     type(extras_t):: extras
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: test
     procedure:: pde
     procedure:: update
     procedure:: output
+    procedure:: divb_clean
     procedure:: gas_pressure
     procedure:: gas_pressure_sub
   end type
   integer:: verbose=0
   logical, save:: flop_count=.false.
+  logical, save:: unsigned=.true.
   logical, save:: do_2nd_div=.true.
   logical, save:: do_smooth=.false.
   logical, save:: do_maxwell=.true.
 CONTAINS
 
 !===============================================================================
-!> The construction with a double test on first_time avoids entering a critical
-!> region once the variable has been set.
+!> Read the namelist parameters, store them, determine the type of the solver
+!> (HD or MHD) and set the indices.
 !===============================================================================
-SUBROUTINE init (self)
-  class(mhd_t):: self
+SUBROUTINE pre_init (self)
+  class(mhd_t) :: self
+  type(index_t):: idx
   integer:: i, iv
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
   real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
+  logical, save:: mhd=.false.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    do_smooth, do_2nd_div, flop_count, verbose, do_maxwell
+    do_smooth, do_2nd_div, flop_count, verbose, do_maxwell, unsigned, divb_cleaner
   !----------------------------------------------------------------------------
-  call trace%begin('mhd_t%init')
+  call trace%begin('mhd_t%pre_init')
   !$omp critical (input_cr)
   if (first_time) then
+    first_time = .false.
     eos = self%eos
+    mhd = self%mhd
     rewind (io%input)
     read (io%input, stagger_params)
     if (io%master) write (*, stagger_params)
@@ -83,6 +90,7 @@ SUBROUTINE init (self)
   end if
   !$omp end critical (input_cr)
   self%eos = eos
+  self%mhd = mhd
   self%nu = nu
   self%gamma = gamma
   self%csound = csound
@@ -92,45 +100,53 @@ SUBROUTINE init (self)
   ! Read IC parameters, which determine if this is HD or MHD.  The IC init is
   ! called again, from extras_t%init, when gamma is known and can be passed on.
   !-----------------------------------------------------------------------------
-  call self%idx%init (5, self%mhd)
-  print *,'mhd, nv =', self%mhd, self%nv
   self%initial%mhd = self%mhd
-  call self%initial%init (self%kind)
+  call self%initial%init (self%kind, real(self%gamma))
   self%mhd = self%initial%mhd
-  print *,'mhd, nv =', self%mhd, self%nv
   if (self%mhd) then
     self%kind = 'stagger2_mhd_patch'
   else
     self%kind = 'stagger2_hd_patch'
-    self%idx%bx = -1
-    self%idx%by = -1
-    self%idx%bz = -1
   end if
-  if (self%nv==0) then
+  if (self%nv == 0) then
     if (self%mhd) then
       self%nv = 8
     else
       self%nv = 5
     end if
+  else
+    self%nv = self%nv + 5
+    if (self%mhd) self%nv = self%nv + 3
   end if
-  print *,'mhd, nv =', self%mhd, self%nv
+  call self%idx%init (5, self%mhd)
+  call trace%end()
+END SUBROUTINE pre_init
+
+!===============================================================================
+!> The construction with a double test on first_time avoids entering a critical
+!> region once the variable has been set.
+!===============================================================================
+SUBROUTINE init (self)
+  class(mhd_t):: self
+  integer :: i
+  ! ----------------------------------------------------------------------------
+  call trace%begin('mhd_t%init')
   !-----------------------------------------------------------------------------
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
-  call self%idx%init (5, self%mhd)
   call self%gpatch_t%init
   self%type = 'mhd_t'
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
-  if (io%verbose>1 .and. self%track) then
+  if (verbose>1 .and. self%track) then
     do i=1,3
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  self%unsigned(self%idx%d)  = .true.
-  self%pervolume(self%idx%s) = .true.
+  self%unsigned(self%idx%d)  = unsigned
+  self%pervolume(self%idx%s) = unsigned
   !-----------------------------------------------------------------------------
   ! Self tests, only on one thread
   !-----------------------------------------------------------------------------
@@ -195,9 +211,7 @@ SUBROUTINE test (self)
   ! Evaluate the PDE and print the time derivatives (which are placed in the 2nd
   ! time slot and the 2nd variable slot)
   !-----------------------------------------------------------------------------
-  tmp%do_force = .false.
   call tmp%pde
-  tmp%do_force = .true.
   m = (1+tmp%gn)/2
   allok = .true.
   eps = 3e-6/minval(tmp%ds)
@@ -351,7 +365,7 @@ SUBROUTINE pde (self)
     pa = self%nu(2)*d*du**2                                                     ! ops: 0 3 0
   end if
   !-----------------------------------------------------------------------------
-  ! MHHD stress diagonal
+  ! MHD stress diagonal
   !-----------------------------------------------------------------------------
   if (self%mhd) then
     ! Diagonal (negative) Maxwell stress (borrowing emf for scratch)
@@ -497,13 +511,11 @@ SUBROUTINE pde (self)
   ! External force; e.g. point source gravity.  Note that the density factor is
   ! applied here, and should not be included in the function definition
   !-----------------------------------------------------------------------------
-  if (self%do_force) then
-    if (allocated(self%force_per_unit_mass)) then
-      dpdt = dpdt + dd*self%force_per_unit_mass                                  ! ops: 2 2 0
-    end if
-    if (allocated(self%force_per_unit_volume)) then
-      dpdt = dpdt + self%force_per_unit_volume
-    end if
+  if (allocated(self%force_per_unit_mass)) then
+    dpdt = dpdt + dd*self%force_per_unit_mass                                  ! ops: 2 2 0
+  end if
+  if (allocated(self%force_per_unit_volume)) then
+    dpdt = dpdt + self%force_per_unit_volume
   end if
   !-----------------------------------------------------------------------------
   ! Conservation of entropy.  The formulation that works best so far is to make
@@ -560,6 +572,15 @@ SUBROUTINE pde (self)
     dBdt = -curl_up(ds,emf)
   end if
   !-----------------------------------------------------------------------------
+  ! External heating / cooling, if any; e.g. radiative or conductive
+  !-----------------------------------------------------------------------------
+  if (allocated(self%heating_per_unit_mass)) then
+    dsdt = dsdt + d*self%heating_per_unit_mass/pg                                  ! ops: 2 2 0
+  end if
+  if (allocated(self%heating_per_unit_volume)) then
+    dsdt = dsdt + self%heating_per_unit_volume/pg
+  end if
+  !-----------------------------------------------------------------------------
   ! Time step limitation for rate of change dS/dt = (ds/dt-(s/d)*dddt)/d
   !-----------------------------------------------------------------------------
   u_max = self%cdtd*dsmax*self%fmaxval(abs((dsdt-s*dddt/d)/d),outer=.true.)     ! ops: 1 1 2
@@ -598,14 +619,127 @@ SUBROUTINE update (self)
   call self%output
   call self%pde
   call self%courant_condition
-  if (io%verbose>2) &
+  if (verbose>2) &
     call self%check_density('before timestep')
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh, self%lock)
   call self%check_density(' after timestep')
   !-----------------------------------------------------------------------------
   call self%counter_update
   call trace%end (itimer)
 END SUBROUTINE update
+
+!===============================================================================
+!> Perform a single iteration of a div(B) clean.  The limit of stability is
+!> eps=1./6.  This is intended to prevent build-up of layers of large div(B)
+!> between patches. An exact solution would be to solve an internal Laplace
+!> equation, with boundary conditiosn = the boundary value of div(B), and then
+!> subtract the gradient of the resulting potential.
+!>
+!> The problem can also be greatly reduced by using a higher order time
+!> interpoation scheme, thus making the electric field computed from the
+!> guard zone values of B and U a better match to the neighbors E-fields.
+!===============================================================================
+SUBROUTINE divb_clean1(self)
+  class(mhd_t):: self
+  !.............................................................................
+  real, dimension(:,:,:,:), pointer:: b
+  real, dimension(:,:,:)  , pointer:: bx, by, bz, divb
+  real, dimension(:,:,:,:)  , allocatable:: dndivb
+  real, parameter:: eps=0.11
+  !-----------------------------------------------------------------------------
+  b  => self%mem(:,:,:,self%idx%bx:self%idx%bz,self%it,1)
+  bx => b(:,:,:,1)
+  by => b(:,:,:,2)
+  bz => b(:,:,:,3)
+  call allocate_scalars (self%gn, divb)
+  call allocate_vectors_a (self%gn, dndivb)
+  divb = ddup(bx,1) + ddup(by,2) + ddup(bz,3)
+  bx = bx + eps*dddn(divb,1)
+  by = by + eps*dddn(divb,2)
+  bz = bz + eps*dddn(divb,3)
+  call deallocate_vectors_a (dndivb)
+  call deallocate_scalars(divb)
+    return
+contains
+  !-----------------------------------------------------------------------------
+  function ddup(f,i) result (g)
+  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
+  integer:: i
+  !.............................................................................
+  g = cshift(f,1,i) - f
+  end function
+  !-----------------------------------------------------------------------------
+  function dddn(f,i) result (g)
+  real:: f(:,:,:), g(size(f,1),size(f,2),size(f,3))
+  integer:: i
+  !.............................................................................
+  g = f - cshift(f,-1,i)
+  end function
+END SUBROUTINE divb_clean1
+
+!===============================================================================
+!> Enforce div(B)=0 in the guard zones, by succesively imposing the condition,
+!> layer-by-layer, on the component perpendicular to each of the patch faces.
+!===============================================================================
+SUBROUTINE divb_clean (self)
+  class(mhd_t):: self
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: bx, by, bz
+  real, dimension(:,:,:), allocatable:: divb
+  real, parameter:: eps=0.11
+  integer:: l(3), u(3), ix, iy, iz, i1, j1, k1
+  integer:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%divb_clean2', itimer=itimer)
+  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
+  by => self%mem(:,:,:,self%idx%by,self%it,1)
+  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
+  l = self%mesh%lb
+  u = self%mesh%ub-1
+  i1 = merge(1, 0, self%n(1) > 1)
+  j1 = merge(1, 0, self%n(2) > 1)
+  k1 = merge(1, 0, self%n(3) > 1)
+  !--- x-direction -------------------------------------------------------------
+  do ix=self%mesh(1)%lo,self%mesh(1)%lb,-1
+    bx(ix   ,l(2):u(2),l(3):u(3)) = &
+    bx(ix+i1,l(2):u(2),l(3):u(3)) + ( &
+      by(ix,l(2)+j1:u(2)+j1,l(3)   :u(3)   ) - by(ix,l(2):u(2),l(3):u(3)) + &
+      bz(ix,l(2)   :u(2)   ,l(3)+k1:u(3)+k1) - bz(ix,l(2):u(2),l(3):u(3)))
+  end do
+  do ix=self%mesh(1)%ui,self%mesh(1)%ub-1
+    bx(ix+i1,l(2):u(2),l(3):u(3)) = &
+    bx(ix   ,l(2):u(2),l(3):u(3)) - ( &
+      by(ix,l(2)+j1:u(2)+j1,l(3)   :u(3)   ) - by(ix,l(2):u(2),l(3):u(3)) + &
+      bz(ix,l(2)   :u(2)   ,l(3)+k1:u(3)+k1) - bz(ix,l(2):u(2),l(3):u(3)))
+  end do
+  !--- y-direction -------------------------------------------------------------
+  do iy=self%mesh(2)%lo,self%mesh(2)%lb,-1
+    by(l(1):u(1),iy   ,l(3):u(3)) = &
+    by(l(1):u(1),iy+j1,l(3):u(3)) + ( &
+      bx(l(1)+i1:u(1)+i1,iy,l(3)   :u(3)   ) - bx(l(1):u(1),iy,l(3):u(3)) + &
+      bz(l(1)   :u(1)   ,iy,l(3)+k1:u(3)+k1) - bz(l(1):u(1),iy,l(3):u(3)))
+  end do
+  do iy=self%mesh(2)%ui,self%mesh(2)%ub-1
+    by(l(1):u(1),iy+j1,l(3):u(3)) = &
+    by(l(1):u(1),iy   ,l(3):u(3)) - ( &
+      bx(l(1)+i1:u(1)+i1,iy,l(3)   :u(3)   ) - bx(l(1):u(1),iy,l(3):u(3)) + &
+      bz(l(1)   :u(1)   ,iy,l(3)+k1:u(3)+k1) - bz(l(1):u(1),iy,l(3):u(3)))
+  end do
+  !--- z-direction -------------------------------------------------------------
+  do iz=self%mesh(3)%lo,self%mesh(3)%lb,-1
+    bz(l(1):u(1),l(2):u(2),iz  ) = &
+    bz(l(1):u(1),l(2):u(2),iz+k1) + ( &
+      bx(l(1)+i1:u(1)+i1,l(2)   :u(2)   ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
+      by(l(1)   :u(1)   ,l(2)+j1:u(2)+j1,iz) - by(l(1):u(1),l(2):u(2),iz))
+  end do
+  do iz=self%mesh(3)%ui,self%mesh(3)%ub-1
+    bz(l(1):u(1),l(2):u(2),iz+k1) = &
+    bz(l(1):u(1),l(2):u(2),iz   ) - ( &
+      bx(l(1)+i1:u(1)+i1,l(2)   :u(2)   ,iz) - bx(l(1):u(1),l(2):u(2),iz) + &
+      by(l(1)   :u(1)   ,l(2)+j1:u(2)+j1,iz) - by(l(1):u(1),l(2):u(2),iz))
+  end do
+  call trace%end (itimer)
+END SUBROUTINE divb_clean
 
 !===============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
@@ -619,7 +753,7 @@ SUBROUTINE output (self)
   out_next = self%out_next
   call trace%begin('mhd_t%output')
   call self%extras_t%output
-  if (self%time >= self%out_next .and. io%do_output .and. io%do_legacy) then
+  if (self%time >= out_next .and. io%do_output .and. io%do_legacy) then
     !$omp critical (out_cr)
     write (filename,'(a,i4.4,"_",i4.4,".txt")') trim(io%outputname), &
       self%id, self%iout
@@ -630,9 +764,9 @@ SUBROUTINE output (self)
       write (io%data_unit,'(8f10.4)') self%nu
       close (io%data_unit)
     end if
-    !$omp end critical (out_cr)
+  !$omp end critical (out_cr)
   end if
-  call trace%end()
+  call trace%end
 END SUBROUTINE output
 
 !===============================================================================

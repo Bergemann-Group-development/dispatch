@@ -91,38 +91,68 @@ SUBROUTINE initialize (self)
 END SUBROUTINE initialize
 
 !===============================================================================
+!> Find the smallest minimum level among the existing tasks.  Note that this
+!> routine runs before entering the task update parallel region.
+!===============================================================================
 SUBROUTINE init_levels (self)
   class(task_list_t):: self
   type(link_t), pointer:: link
+  logical:: first_time=.true.
+  integer:: levelmin, levelmax
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%init_levels')
-  call refine%init                      ! Refinement parameters
+  call refine%init                      ! refinement parameters
+  !-----------------------------------------------------------------------------
+  ! FIXME: For now, active AMR cannot use recv_priv()
+  !-----------------------------------------------------------------------------
+  if (refine%on)  then
+    mpi_mesg%recv_active = .false.
+    mpi_mesg%recv_priv = .true.
+  end if
+  !-----------------------------------------------------------------------------
+  ! Loop to find the initial level interval (e.g. due to fixed mesh refinement)
+  !-----------------------------------------------------------------------------
+  first_time = .true.
   link => self%head
   do while (associated(link))
     associate (patch => link%task)
     select type (patch)
     class is (patch_t)
-      !-------------------------------------------------------------------------
-      ! Set up the refinement "bill board", where requests for refinement are made
-      !-------------------------------------------------------------------------
-      if (refine%on) then
-        allocate (patch%xrefine(patch%gn(1),patch%gn(2),patch%gn(3)))
-        call io%bits_mem (storage_size(patch%xrefine), &
-                         product(shape(patch%xrefine)), 'xrefine')
-        patch%xrefine = -1
-      end if
       patch%level = minval(nint(log(patch%box/patch%ds)/log(real(refine%ratio))), &
         mask=patch%n > 1)
     end select
-    refine%levelmin = min(refine%levelmin,patch%level)
-    refine%levelmax = max(refine%levelmax,patch%level)
+    if (first_time) then
+      first_time = .false.
+      levelmin = patch%level
+      levelmax = patch%level
+    else
+      levelmin = min(levelmin,patch%level)
+      levelmax = max(levelmax,patch%level)
+    end if
     link => link%next
     end associate
   end do
-  if (refine%levelmax > refine%levelmin) &
-    download%check_filled = .true.
+  !-----------------------------------------------------------------------------
+  ! If AMR is on, force levelmin to be the initial levelmin, and make sure
+  ! levelmax includes the initial levelmax
+  !-----------------------------------------------------------------------------
+  if (refine%on) then
+    refine%levelmin = levelmin
+    refine%levelmax = max(levelmax,refine%levelmax)
+  !-----------------------------------------------------------------------------
+  ! If AMR is off, set levelmin and levelmax to the initial values
+  !-----------------------------------------------------------------------------
+  else
+    refine%levelmin = levelmin
+    refine%levelmax = levelmax
+  end if
   write (io%output,*) &
     'task_list_t%init_levels: levelmin,max =', refine%levelmin, refine%levelmax
+  !-----------------------------------------------------------------------------
+  ! If more than one level is active, for check that guard zones are filled
+  !-----------------------------------------------------------------------------
+  if (refine%levelmax > refine%levelmin) &
+    download%check_filled = .true.
   call self%init_levelstats
   call trace%end
 END SUBROUTINE init_levels
@@ -264,6 +294,15 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     return
   end if
   !-----------------------------------------------------------------------------
+  ! Download nbor info -- this may be an experiment_t procedure, but if not,
+  !-- the call should be answered by a solver-specific procedure (which may or
+  ! may not choose to call the generic patch guard zone handler in tasks/).
+  ! Note that this needs to be done before the AMR refinement tests, for which
+  ! guard zones may be needed
+  !-----------------------------------------------------------------------------
+  if (.not.test) &
+    call task%dnload                                  ! download nbor info
+  !-----------------------------------------------------------------------------
   ! Check if refinement is needed on the task; if so this will push new tasks
   ! onto the queue, with the same task time; i.e., to the head of the queue.
   ! If the task is virtual, it will not be checked by this rank.
@@ -283,13 +322,6 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     call trace%end (itimer)
     return
   end if
-  !-----------------------------------------------------------------------------
-  ! Download nbor info -- this may be an experiment_t procedure, but if not,
-  !-- the call should be answered by a solver-specific procedure (which may or
-  ! may not choose to call the generic patch guard zone handler in tasks/)
-  !-----------------------------------------------------------------------------
-  if (.not.test) &
-    call task%dnload                                  ! download nbor info
   !-----------------------------------------------------------------------------
   ! Update the task, whatever that means (may include call to task%output)
   !-----------------------------------------------------------------------------
@@ -538,7 +570,7 @@ FUNCTION task2experiment (task) RESULT (exper)
 END FUNCTION task2experiment
 
 !===============================================================================
-!> Initialize level statistics, making sure to unly do it once.  Note that, by
+!> Initialize level statistics, making sure to only do it once.  Note that, by
 !> placing the allocation of levelcost last, threads are encouraged to get
 !> caught on this critical region until everything is ready.
 !===============================================================================
@@ -562,10 +594,6 @@ SUBROUTINE init_levelstats (self)
     end do
     allocate (timer%levelcost(refine%levelmin:refine%levelmax))
     timer%levelcost = 0d0
-    if (io%verbose > 1) &
-      write (io_unit%output,*) &
-        'init_levelstats: levelpop =', &
-        refine%levelmin, refine%levelmax, timer%levelpop
   end if
   !$omp end critical (levelstat_cr)
   call trace%end

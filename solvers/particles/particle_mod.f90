@@ -6,6 +6,8 @@ MODULE particle_mod
   USE iso_fortran_env, only: int8
   USE io_unit_mod
   USE dll_mod
+  USE patch_forces_mod
+  !USE particle_forces_mod
   implicit none
   private
   integer, save:: id=0
@@ -18,7 +20,9 @@ MODULE particle_mod
     real(8):: time=0d0, dtime=0d0
     integer(kind=int8), allocatable:: iit(:)
     real, allocatable:: v(:,:)
-    real(8), allocatable:: r(:,:), t(:)
+    real(8), allocatable:: r(:,:), t(:), m(:)
+    real(8):: f(3)
+    type(patch_forces_t):: patch_forces
   contains
     procedure:: init
   end type
@@ -52,6 +56,7 @@ SUBROUTINE init (self)
   allocate (self%r(3,nt), self%v(3,nt), self%t(nt), self%iit(nt))
   self%r  = 0.0_8
   self%v  = 0.0_8
+  self%f  = 0.0_8
   self%t  = 0.0_8
   self%iit = 1
 END SUBROUTINE init

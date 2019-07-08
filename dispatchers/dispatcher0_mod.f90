@@ -21,7 +21,7 @@ MODULE dispatcher0_mod
   USE data_io_mod
   USE omp_lock_mod
   USE validate_mod
-  USE refine_mod
+!  USE refine_mod
   implicit none
   private
   type, public:: dispatcher0_t
@@ -67,14 +67,11 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   call trace%print_id (ids)
   call trace%begin('dispatcher0_t%init')
-  call mpi_mesg%init
   rewind (io%input); read(io%input, dispatcher0_params, iostat=iostat)
   if (io%master) then
     if (io%master) write (*, dispatcher0_params)
-    if (iostat /= 0) then
-      call io%namelist_warning ('dispatcher0_params')
-    end if
   end if
+  call mpi_mesg%init
   call self%lock%init ('disp')
   call self%lock%append
   call trace_end
@@ -194,15 +191,15 @@ SUBROUTINE update (self, task_list, test)
     call trace%begin('dispatcher0_t%update(2)', itimer=itimer(i))
   end if
   !-----------------------------------------------------------------------------
-  ! Check atomicall if the ready queue is empty and return w/o locking if so,
+  ! Check atomically if the ready queue is empty and return w/o locking if so,
   ! to avoid hammering the task list lock, delaying other threads
   !-----------------------------------------------------------------------------
-  !$omp atomic read
-  nq = task_list%nq
-  if (nq == 0) then
-    call trace%end(itimer(i))
-    return
-  end if
+  !!$omp atomic read
+  !nq = task_list%nq
+  !if (nq == 0) then
+    !call trace%end(itimer(i))
+    !return
+  !end if
   !-----------------------------------------------------------------------------
   ! Pick a task off the queue, in what is normally a very brief OMP lock region
   !-----------------------------------------------------------------------------
@@ -380,6 +377,26 @@ SUBROUTINE update (self, task_list, test)
       return
     end if
     call task_list%update (head, test, was_refined, was_derefined)
+    !-----------------------------------------------------------------------------
+    ! Make new nbor list, if requested.  If the head task is new, then pass the
+    ! bits%init_nbors on to the nbor
+    !-----------------------------------------------------------------------------
+    if (task%is_set (bits%init_nbors)) then
+      call task_list%init_nbors (head)
+      if (verbose > 0) then
+        write (io_unit%log,*) 'bits%init_nbors seen', &
+          task%id, task%istep, task%is_set (bits%init_nbors)
+      end if
+      if (task%istep <= 1) then
+        call task_list%set_init_nbors (head)
+      end if
+      call task%clear (bits%init_nbors)
+      !-----------------------------------------------------------------------------
+      ! Now that a new task has a comprehensive nbor list, check if it has 
+      ! AMR support -- bits%support will be set if not (mainly informative).
+      !-----------------------------------------------------------------------------
+      !call refine%check_support (task_list, head)
+    end if
     !---------------------------------------------------------------------------
     ! The task should now again be checked, before it can be returned to the
     ! queue, and its neighbors should also be checked for return to the queue.

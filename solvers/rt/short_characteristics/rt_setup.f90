@@ -25,6 +25,7 @@ SUBROUTINE rt_setup (task_list)
   USE list_mod
   USE link_mod
   USE task_mod
+  USE solver_mod
   USE patch_mod
   USE trace_mod
   USE rt_mod
@@ -36,15 +37,18 @@ SUBROUTINE rt_setup (task_list)
   !.............................................................................
   class(link_t), pointer:: link, nbor, new
   class(task_t), pointer:: task
-  class(rt_t), pointer:: omega=>null(), mhd
   class(patch_t), pointer:: patch
+  class(rt_t), pointer:: omega=>null(), rt_patch
+  class(solver_t), pointer:: mhd
   class(task_list_t), pointer:: rt_task_list
-  integer:: i_omega, ntask, iter, iostat, id_save, n_mhd, n_rt
+  integer:: i_omega, ntask, iter, iostat, id_save, n_mhd, n_rt, id
   integer, save:: verbose=0, n_warmup=5, n_omega=0
-  real(8):: boundary_distance
+  real(8):: boundary_distance(3)
+  logical:: on = .false.
   logical, save:: unique_ids=.false.
   logical, save:: only_vertical=.false.
-  namelist /rt_setup_params/ n_warmup, verbose, unique_ids, only_vertical
+  logical, save:: omp_warmup = .false.
+  namelist /rt_setup_params/ n_warmup, verbose, unique_ids, only_vertical, omp_warmup
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_setup')
   call io%header ('begin rt_setup')
@@ -59,7 +63,8 @@ SUBROUTINE rt_setup (task_list)
   if (io%master) write (io_unit%output, rt_setup_params)
   !-----------------------------------------------------------------------------
   allocate (rt_task_list)
-  call rt_task_list%init ('RT')
+  call task_list%initialize
+  call rt_task_list%init ('RT_list')
   if (verbose > 1) &
     call task_list%print ('task_list')
   n_rt = 0
@@ -71,52 +76,88 @@ SUBROUTINE rt_setup (task_list)
     if (verbose > 0) & 
       write(io%output,*) 'processing MHD task', task%id
     select type (task)
-    class is (rt_t)
+    class is (solver_t)
       mhd => task
       call io%assert (associated(mhd%link%task), 'mhd%link%task missing')
-      !-------------------------------------------------------------------------
-      ! Measure distance from lower or upper boundary, in patch size units
-      !-------------------------------------------------------------------------
-      boundary_distance = min(mhd%position(3)-task_list%lc(3), &
-                              task_list%uc(3)-mhd%position(3))/mhd%size(3)
+      
+      call mhd%rt%init
+      link => link%next
+    end select
+  end do
+  !
+  link => task_list%head
+  do while (associated(link))
+    call io%assert (associated(link%task), 'link%task missing')
+    task => link%task
+    select type (task)
+    class is (solver_t)
+      mhd => task
       !-------------------------------------------------------------------------
       ! Add nbor lists to the sub-tasks, if RT is active in the MHD patch
       !-------------------------------------------------------------------------
       if (mhd%is_clear(bits%no_rt)) then
-        call mhd%init_nbors
+        call mhd%rt%init_nbors
         !-----------------------------------------------------------------------
-        ! Append the sub-task links to the task list
+        ! Append the main task links to the task list
         !-----------------------------------------------------------------------
-        n_omega = mhd%n_omega
-        do i_omega=1,mhd%n_omega
-          omega => mhd%omega(i_omega)
-          !-------------------------------------------------------------------
-          ! Add a link to the sub-task to the MHD task nbor list
-          !-------------------------------------------------------------------
+        !-----------------------------------------------------------------------
+        ! Add a link to the rt task to the MHD task nbor list
+        !-----------------------------------------------------------------------
+        omega => mhd%rt
+        if (omega%on) then
+          on = .true.
           allocate (new)
           new%link => omega%link
           new%task => omega
-          new%needed   = .true.
-          new%needs_me = .true.
-          new%download = .false.
-          call link%add_nbor_by_rank (link%nbor, new)
-          !-------------------------------------------------------------------
-          ! Add a link to the MHD task to the sub-task nbor list
-          !-------------------------------------------------------------------
+          !call link%add_nbor_by_rank(link%nbors_by_level, new)
+          call link%add_nbor_by_rank(link%nbor, new)
+          !-----------------------------------------------------------------------
+          ! Add a link to the MHD task to the rt task nbor list
+          !-----------------------------------------------------------------------
           allocate (new)
           new%link => link
           new%task => task
-          new%needed   = .true.
-          new%needs_me = .true.
-          new%download = .false.
-          call omega%link%add_nbor_by_rank (link%nbor, new)
-          !-------------------------------------------------------------------
-          ! Add the sub-task to the RT task list
-          !-------------------------------------------------------------------
+          !call omega%link%add_nbor_by_rank(omega%link%nbors_by_level,new)
+          call omega%link%add_nbor_by_rank(omega%link%nbor,new)
+          !-----------------------------------------------------------------------
+          ! Add the rt task to the RT task list
+          !-----------------------------------------------------------------------
           call omega%clear (bits%ready)
           call rt_task_list%append_link (omega%link)
-        end do
-        n_rt = n_rt+1
+          !-----------------------------------------------------------------------
+          ! Append the sub-task links to the task list
+          !-----------------------------------------------------------------------
+          n_omega = mhd%rt%n_omega
+          do i_omega=1,mhd%rt%n_omega
+            omega => mhd%rt%omega(i_omega)
+            !-------------------------------------------------------------------
+            ! Add a link to the sub-task to the MHD task nbor list
+            !-------------------------------------------------------------------
+            allocate (new)
+            new%link => omega%link
+            new%task => omega
+            new%needed   = .true.
+            new%needs_me = .true.
+            new%download = .false.
+            call link%add_nbor_by_rank(link%nbor,new)
+            !-------------------------------------------------------------------
+            ! Add a link to the MHD task to the sub-task nbor list
+            !-------------------------------------------------------------------
+            allocate (new)
+            new%link => link
+            new%task => task
+            new%needed   = .true.
+            new%needs_me = .true.
+            new%download = .false.
+            call omega%link%add_nbor_by_rank(omega%link%nbor,new)
+            !-------------------------------------------------------------------
+            ! Add the sub-task to the RT task list
+            !-------------------------------------------------------------------
+            call omega%clear (bits%ready)
+            call rt_task_list%append_link (omega%link)
+          end do
+          n_rt = n_rt+1
+        end if
       else
         n_mhd = n_mhd+1
       end if
@@ -132,26 +173,6 @@ SUBROUTINE rt_setup (task_list)
   end if
   write(io%output,'(1x,a,i5)') 'rt_setup: io%nwrite =', io%nwrite
   !-----------------------------------------------------------------------------
-  ! Run through all nbor tasks of all RT tasks
-  !-----------------------------------------------------------------------------
-  if (only_vertical) then
-    link => rt_task_list%head
-    do while (associated(link))
-      nbor => link%nbor
-      do while (associated(nbor))
-        !-----------------------------------------------------------------------
-        ! If the nbor task has a different horizontal position, do not check it's
-        ! time -- accepting a possible delay of information sideways.
-        !-----------------------------------------------------------------------
-        if (any(link%task%position(1:2) /= nbor%task%position(1:2))) then
-          nbor%needed = .false.
-        end if
-        nbor => nbor%next
-      end do
-      link => link%next
-    end do
-  end if
-  !-----------------------------------------------------------------------------
   ! EOS for warm up
   !-----------------------------------------------------------------------------
   write(io%output,*) 'EOS for RT'
@@ -161,7 +182,7 @@ SUBROUTINE rt_setup (task_list)
   do while (associated(link))
     task => link%task
     select type (task)
-    class is (rt_t)
+    class is (solver_t)
       mhd => task
       if (task%is_clear(bits%no_rt)) then
         !-----------------------------------------------------------------------
@@ -170,11 +191,11 @@ SUBROUTINE rt_setup (task_list)
         if (omp%nthreads > 1) then
           !!omp task default(shared) firstprivate(mhd)
             mhd%mem(:,:,:,:,mhd%new,1) = mhd%mem(:,:,:,:,mhd%it,1)
-            call mhd%rt_eos (mhd%time)
+            call mhd%rt%rt_eos (mhd%time)
           !!omp end task
         else
             mhd%mem(:,:,:,:,mhd%new,1) = mhd%mem(:,:,:,:,mhd%it,1)
-          call mhd%rt_eos (mhd%time)
+          call mhd%rt%rt_eos (mhd%time)
         end if
       end if
     end select
@@ -185,49 +206,83 @@ SUBROUTINE rt_setup (task_list)
   !-----------------------------------------------------------------------------
   ! Merge task lists, if RT is present
   !-----------------------------------------------------------------------------
-  if (n_omega>0) then
-    if (verbose > 1) &
-      call rt_task_list%print ('rt_task_list')
-    call task_list%append_task_list (rt_task_list)
+  if (verbose > 1) &
+    call rt_task_list%print ('rt_task_list')
+  call task_list%append_task_list (rt_task_list)
+  link => task_list%head
+  ! Sort out the nbors list...
+  do while (associated(link))
+    call link%sort_nbors_by_level(link%nbors_by_level,link%nbors_by_level)
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Reset task_list status to establish nbor relations
+  !-----------------------------------------------------------------------------
+  call task_list%reset_status()
+  if (on) then
     !---------------------------------------------------------------------------
     ! Warm up the RT
     !---------------------------------------------------------------------------
     do iter=1,n_warmup
       write(io%output,*) 'warm-up, iteration', iter
+      if (omp_warmup) then
+        !$omp parallel default(shared)
+        link => task_list%head
+        id =0
+        do while (associated(link))
+          id = id+1
+          if (mod(id,omp%nthreads)==omp%thread) then
+            task => link%task
+            select type (task)
+            class is (rt_t)
+            if ((task%i_omega > 0).and.task%on) then
+              call task%dnload
+              call task%warm_up()
+            end if
+            end select
+          end if
+          link => link%next
+        end do
+        !$omp end parallel
+        if (omp_warmup .and. omp%nthreads>1) then
+          task%mem_thread = omp%thread
+        else
+          task%mem_thread = -1
+        end if
+      else
+        link => task_list%head
+        do while (associated(link))
+          task => link%task
+          select type (task)
+          class is (rt_t)
+          if ((task%i_omega > 0).and.task%on) then
+            call task%dnload
+            call task%warm_up()
+          end if
+          end select
+          link => link%next
+        end do
+      end if
+      
+    end do
+    !---------------------------------------------------------------------------
+    ! Collect the first heating rates
+    !---------------------------------------------------------------------------
+    write(io%output,*) 'collecting the heat'
       link => task_list%head
       do while (associated(link))
         task => link%task
         select type (task)
         class is (rt_t)
-        if (task%i_omega > 0) then
-          call download%download_link (link)
-          call task%solve
+        if (task%i_omega == 0) then
+          call task%warm_up
         end if
         end select
         link => link%next
       end do
-    end do
   end if
   !-----------------------------------------------------------------------------
   if (verbose > 0) &
     call task_list%print ('new task_list')
   call trace%end
-contains
-
-!===============================================================================
-!===============================================================================
-subroutine prepend_task (nbor, mhd)
-  class(link_t), pointer:: nbor
-  class(rt_t), pointer:: mhd
-  class(patch_t), pointer:: patch
-  class(link_t), pointer:: new
-  !.............................................................................
-  allocate (new)
-  patch => mhd
-  new%task => patch
-  new%next => nbor
-  new%link => patch%link
-  nbor => new
-end subroutine prepend_task
-
 END SUBROUTINE

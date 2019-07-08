@@ -20,8 +20,8 @@
 # -- Project information -----------------------------------------------------
 
 project = 'DISPATCH'
-copyright = '2019, Åke Nordlund'
-author = 'Åke Nordlund'
+copyright = u'2019, Åke Nordlund'
+author = u'Åke Nordlund'
 
 # The short X.Y version
 version = ''
@@ -39,6 +39,7 @@ release = ''
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    'nbsphinx',
     'sphinx.ext.todo',
     'sphinx.ext.mathjax',
     'sphinx.ext.ifconfig',
@@ -134,7 +135,7 @@ latex_elements = {
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
     (master_doc, 'DISPATCH.tex', 'DISPATCH Documentation',
-     'Åke Nordlund', 'manual'),
+     u'Åke Nordlund', 'manual'),
 ]
 
 

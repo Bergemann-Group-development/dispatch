@@ -14,10 +14,11 @@ The modules are self-documented, cf:
 .. toctree::
    :maxdepth: 3
 
-   python_dispatch.rst
-   python_dispatch_yt.rst
-   python_dispatch_select.rst
-   python_dispatch_graphics.rst
+   python/dispatch
+   python/dispatch_yt
+   python/dispatch_select
+   python/dispatch_graphics
+   python/notebooks
 
 The source code may be found in ``utilities/python/dispatch/``, and is
 also available via the :ref:`auto-generated documentation <doxy>` (the

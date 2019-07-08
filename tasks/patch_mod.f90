@@ -213,10 +213,11 @@ MODULE patch_mod
     real:: num(3)
     integer:: dim(3)
   end type
-  logical, save:: extrapolate_gz=.false.
-  logical, save:: do_check_nan=.false.
-  logical, save:: panic=.false.
-  logical, save:: zero_order_extrap=.true.
+  integer, save:: print_every=0, iprint=0           ! print cadence
+  logical, save:: extrapolate_gz=.false.            ! extrapolate guard zones?
+  logical, save:: do_check_nan=.false.              ! check for NaN?
+  logical, save:: panic=.false.                     ! error handling
+  logical, save:: zero_order_extrap=.true.          ! extrap to no-mans-land
   public task2patch
 CONTAINS
 
@@ -404,15 +405,15 @@ SUBROUTINE init_default (self)
   !.............................................................................
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000
   logical, save:: periodic(3)=.true.
-  logical, save:: no_mans_land=.false., use_data_hub=.false.
+  logical, save:: no_mans_land=.false., use_data_hub=.false., limit_dtime=.false.
   real, save:: u_fixed=-1.0, grace=0.0
   real(8), save:: end_time=1.0, out_time=0.1, print_time=0.1, dt_fixed=-1.0
   real(8):: position(3), size(3)
   integer:: iostat, i, n_alloc=0, n_ext=0
   namelist /patch_params/ n, nv, ng, nt, u_fixed, dt_fixed, &
     grace, periodic, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
-    zero_order_extrap
-  namelist /out_params/ out_time, end_time, print_time, max_files
+    zero_order_extrap, limit_dtime
+  namelist /out_params/ out_time, end_time, print_time, print_every, max_files
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init_default')
@@ -438,6 +439,7 @@ SUBROUTINE init_default (self)
     if (io%master) write (*, out_params)
     if (mpi%rank > 0) &
       self%track = .true.
+    iprint = print_every                        ! print 1st task
   end if
   !-----------------------------------------------------------------------------
   ! To allow patches to have n, ng, nv, and nt values that differ, values that
@@ -465,6 +467,7 @@ SUBROUTINE init_default (self)
   self%use_data_hub = use_data_hub              ! guard zone handling
   self%no_mans_land = no_mans_land              ! mesh centering
   self%print_next  = print_time
+  self%limit_dtime = limit_dtime
   call trace%end()
 END SUBROUTINE init_default
 
@@ -645,7 +648,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
   !block
-  
+
   n_header = storage_size(header)/32             ! 32 bits per word
   if (n_header*4 /= storage_size(header)/8) then
     write(io%output,*) n_header*4, storage_size(header)/8
@@ -1386,7 +1389,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer, optional:: nq, ntask
   character(len=64), optional:: experiment_name
   !.............................................................................
-  integer:: iv, nv
+  integer:: iv, nv, iprint_l
   integer:: it0, it1, it
   real:: fmin, fmax
   real, dimension(:,:,:), pointer:: df
@@ -1395,6 +1398,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer:: counts_l(7), i
   character(len=120):: fmt
   real(8):: time, print_next
+  logical:: print_it
   type(lock_t), save:: lock
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%info')
@@ -1447,7 +1451,25 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       !$omp atomic write
       id_prv = 0
     end if
-    if (self%time >= io%print_next) then
+    !---------------------------------------------------------------------------
+    ! Allow print every print_every update, if > 0
+    !---------------------------------------------------------------------------
+    !$omp atomic read
+    iprint_l = iprint
+    if (iprint_l >= print_every) then
+      !$omp atomic write
+      iprint = 0
+      print_it = .true.
+    else
+      !$omp atomic update
+      iprint = iprint+1
+      print_it = .false.
+    end if
+    !---------------------------------------------------------------------------
+    ! If print_every==0, then use instead print_time to control cadence
+    !---------------------------------------------------------------------------
+    if (print_it .or. &
+        print_every == 0 .and. self%time >= io%print_next) then
      !--------------------------------------------------------------------------
      ! Use double if and a brief lock period to ensure only one thread prints
      !--------------------------------------------------------------------------
@@ -1574,19 +1596,14 @@ FUNCTION overlaps (self, task)
   class(task_t):: task
   logical:: overlaps
   !.............................................................................
-  !call trace%begin ('patch_t%overlaps',2)
-  !write (io_unit%log,*) self%id, task%id; flush(io_unit%log)
-  !write (io_unit%log,*) self%size, task%size; flush(io_unit%log)
-  !write (io_unit%log,*) self%ds, task%ds; flush(io_unit%log)
+  call trace%begin ('patch_t%overlaps', 2)
   select type (task)
   class is (patch_t)
-    !write (io_unit%log,*) 'patch'; flush(io_unit%log)
     overlaps = all(abs(self%distance(task)) <= 0.5_8*(self%size+task%size+self%ds+task%ds))
   class default
-    !write (io_unit%log,*) 'default'; flush(io_unit%log)
     overlaps = self%task_t%overlaps(task)
   end select
-  !call trace%end()
+  call trace%end ()
 END FUNCTION overlaps
 
 !===============================================================================
@@ -1699,6 +1716,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   real(8):: dtime, ds(3), courant
   integer:: i2
   integer, save:: itimer=0
+  logical, parameter:: save_dbg=.false.
   !.............................................................................
   call trace_begin('patch_t%courant_condition', itimer=itimer)
   if (io%verbose>1) &
@@ -1723,11 +1741,11 @@ SUBROUTINE courant_condition (self, detailed_timer)
   endif
   !$omp atomic write
   self%dtime = dtime
-  if (self%nt>1) then
+  if (self%nt > 1 .and. self%istep > 5) then
     if (dtime < 0.5*self%dt(self%iit(self%nt-1)) .and. self%dt_fixed < 0.0) then
       self%safety_factor = 0.5
     end if
-    if (self%safety_factor < 0.6) then
+    if (self%safety_factor < 0.6 .and. save_dbg) then
       !$omp critical (fort88_cr)
       if (self%safety_factor == 0.5) then
         write (io_unit%dbg) self%id, self%gn, self%ipos
@@ -1930,7 +1948,7 @@ SUBROUTINE check_nan (self, label, always)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. do_check_nan) then
-    if (io%verbose<1 .and. .not. present(always)) return
+    if (io%verbose < 2 .and. .not. present(always)) return
   end if
   if (.not. associated(self%mem)) return
   call trace%begin ('patch_t%check_nan', itimer=itimer)
@@ -2005,13 +2023,14 @@ SUBROUTINE check_density (self, label)
   logical:: inside, nan
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if ((io%verbose < 1 .or. io%print_time > 0.0) .and. .not.do_check_nan) return
-  if (self%is_set(bits%no_density)) return
+  if ((io%verbose < 2 .or. io%print_time > 0.0 .or. print_every > 1) .and. &
+      .not.do_check_nan) return
+  if (self%is_set(bits%no_density+bits%frozen)) return
   if (.not. associated(self%mem)) return
   call trace%begin ('patch_t%check_density', itimer=itimer)
   l = self%mesh%lb
   u = self%mesh%ub
-  mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,self%it,1))
+  mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,1))
   if (present(label) .and. io%verbose>1) write (io_unit%log,*) label, self%id, mind
   if (mind <= 0.0) then
     panic = .true.
@@ -2053,7 +2072,7 @@ SUBROUTINE check_density (self, label)
     else
       if (nins > 0) then
         write (io_unit%output,1) 'ID ',self%id, &
-         'ERROR: density non-positive in',ntot,' points,',nins,' inside'
+         'WARNING: density non-positive in',ntot,' points,',nins,' inside'
       else if (io%verbose>0) then
         write (io_unit%output,1) 'ID ',self%id, &
          'WARNING: density non-positive in',ntot,' points,',nins,' inside'

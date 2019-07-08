@@ -19,7 +19,7 @@ MODULE initial_mod
     integer:: seed
     real:: gamma=1.4
     real:: d0
-    logical:: mhd
+    logical:: mhd=.true.
     real(8):: time=0d0
     character(len=64):: solver
   contains
@@ -40,7 +40,8 @@ SUBROUTINE init (self, solver, gamma)
   call trace_begin('initial_t%init')
   self%solver = trim(solver)
   self%gamma=1.4
-  call trace%end
+  self%mhd = .true.
+  call trace%end()
 END subroutine init
 
 
@@ -51,7 +52,7 @@ SUBROUTINE condition (self, m, ff, idx)
   real, dimension(:,:,:,:), pointer :: ff
   ! ....................................................................
   integer:: i, j, k
-  real:: x, y, z
+  real:: x, y, z, ds2(3), xs, rd
   logical:: first_time = .true.
   real(kind=KindScalarVar), dimension(:,:,:),   pointer:: d, s
   real(kind=KindScalarVar), dimension(:,:,:),   pointer:: e1, et
@@ -59,9 +60,9 @@ SUBROUTINE condition (self, m, ff, idx)
   real(4), save:: P_l=10.33333  , P_r=1.0, &
                   rho_l=3.857143, &
                   vx_l=2.629369, vx_r=0.0, &
-                  x_disc = 0.125
+                  a_d=0.2, f_d=5.0, x_disc = -4.0
   namelist /initial_params/ P_l, P_r, rho_l, &
-                           vx_l, vx_r, x_disc
+                           vx_l, vx_r, a_d, f_d, x_disc
   !$omp critical (input_cr)
   if (first_time) then
     rewind (io%input)
@@ -90,11 +91,19 @@ SUBROUTINE condition (self, m, ff, idx)
   end if
   ff(:,:,:,idx%py) = 0.0
   ff(:,:,:,idx%pz) = 0.0
+  if (self%solver(1:7)=='stagger') then
+    ds2 = 0.5*m%d
+  else if (self%solver(1:6)=='zeus3d') then
+    ds2 = 0.5*m%d
+  else
+    ds2 = 0.0
+  endif
   ! --------------------------------------------------------------------
   ! Set initial conditions
   ! --------------------------------------------------------------------
   do i=m(1)%lb,m(1)%ub
     x = m(1)%p + m(1)%r(i)
+    xs = x - ds2(1)
     if (x < x_disc) then
       d (i,:,:)= rho_l
       if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
@@ -106,7 +115,7 @@ SUBROUTINE condition (self, m, ff, idx)
       end if
       ff(i,:,:,idx%px) = vx_l * rho_l
     else
-      d (i,:,:) = 1.+0.2*sin(8.*math%pi*x)
+      d (i,:,:) = 1.0*(1.+a_d*sin(f_d*x))
       if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:10) == 'stagger2e_') then
         e1(i,:,:) = P_r / (self%gamma - 1.0)
       else if (self%solver(1:9) == 'stagger2_') then
@@ -116,7 +125,14 @@ SUBROUTINE condition (self, m, ff, idx)
       end if
       ff(i,:,:,idx%px) = 0.0
     end if
-        !  
+        ! 
+    ! correction for staggered momentum
+    if (self%solver(1:14) == 'zeus_mhd_patch' .or. self%solver(1:7) == 'stagger') then
+      if (x >= x_disc .and. (x - m(1)%d) < x_disc) then
+        rd = 1.0*(1.+a_d*sin(f_d*x))
+        ff(i,:,:,idx%px) = (rho_l + rd) * (vx_l + 0.0) * 0.25
+      end if
+    end if
   end do
   
   
@@ -137,12 +153,17 @@ SUBROUTINE condition (self, m, ff, idx)
   end do
   end if
   
+  if (idx%bx >0) then
+  ff(:,:,:,idx%bx:idx%bz) = 0.0
+  end if
+  
   ! --------------------------------------------------------------------
   ! Set boundary values
   ! --------------------------------------------------------------------
-  pboundary%rho_l = ff(m(1)%li,m(2)%li,m(3)%li,idx%d)
+  pboundary%rho_l = rho_l
   pboundary%e_l   = ff(m(1)%li,m(2)%li,m(3)%li,idx%e)
-  pboundary%px_l  = ff(m(1)%li,m(2)%li,m(3)%li,idx%px)
+  pboundary%vx_l  = vx_l
+  pboundary%P_l   = p_l
   !
   if (self%solver(1:6) == 'ramses') then
     deallocate (e1)
@@ -150,7 +171,7 @@ SUBROUTINE condition (self, m, ff, idx)
     nullify (e1)
   end if
   nullify (d, et)
-  call trace%end
+  call trace%end()
 END SUBROUTINE condition
 
 END MODULE initial_mod

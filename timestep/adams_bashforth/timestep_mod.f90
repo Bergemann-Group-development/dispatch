@@ -16,6 +16,7 @@ MODULE timestep_mod
   USE trace_mod
   USE kinds_mod
   USE mesh_mod
+  USE omp_lock_mod
   implicit none
   private
   integer, parameter:: nslice = 4
@@ -74,9 +75,10 @@ END SUBROUTINE init
 !> than attempting to map into linear time space.  The time slot derivative
 !> values have already been multiplied with the individual time steps dt.
 !===============================================================================
-SUBROUTINE update (self, id, iit, dt, mem, mesh)
+SUBROUTINE update (self, id, iit, dt, mem, mesh, lock)
   class(timestep_t):: self
   class(mesh_t):: mesh(:)
+  type(lock_t):: lock
   integer:: id, nt
   integer, dimension(:):: iit
   real(8), dimension(:):: dt
@@ -99,7 +101,7 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
     if (io%master) print *,id,'WARNING: setting time_order=0 in timestep%update'
     self%time_order=0
   end if
-  call self%lock%set ('timestep')
+  call lock%set ('timestep')
   select case (self%time_order)
   case (0)
   case (1)
@@ -135,14 +137,15 @@ SUBROUTINE update (self, id, iit, dt, mem, mesh)
       minval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt  ),1)), &
       maxval(mem(l(1):u(1),l(2):u(2),l(3):u(3),1,iit(nt  ),1)), shape(mem)
   end if
-  call sefl%lock%unset ('timestep')
+  call lock%unset ('timestep')
   call trace_end (itimer)
 END SUBROUTINE update
 
 !===============================================================================
-SUBROUTINE update_single (self, id, iit, dt, mem, dmem, mesh, time_order)
+SUBROUTINE update_single (self, id, iit, dt, mem, dmem, mesh, lock, time_order)
   class(timestep_t):: self
   class(mesh_t):: mesh(:)
+  type(lock_t):: lock
   integer:: id, nt
   integer, dimension(:):: iit
   real(8), dimension(:):: dt

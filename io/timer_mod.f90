@@ -61,6 +61,7 @@ MODULE timer_mod
   integer, save:: nprint=20
   real(8), save:: next_report_sec=0d0
   real(8), save:: prev2=0d0
+  real, save:: min_fraction=0.0005
   interface toc
     module procedure toc_i4, toc_i8, toc_1
   end interface
@@ -76,7 +77,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   integer:: ignore, i
   real(8):: sec_per_report=10.
-  namelist /timer_params/ sec_per_report
+  namelist /timer_params/ sec_per_report, min_fraction
   !.............................................................................
   !$omp critical (timer_cr)
   if (first_time) then
@@ -279,24 +280,32 @@ SUBROUTINE real_print (self)
 contains
   subroutine write_to (unit)
     integer:: unit, level, popu
-    real:: cost
-    write (unit,'(23x,a,7x,a,10x,a,7x,a,5x,a)') 'procedure', 'calls', 'time', 'percent', 'time/call'
+    real:: cost, per_call
+    logical:: warn, mesg
+    write (unit,'(23x,a,7x,a,10x,a,7x,a,5x,a)') 'procedure', 'calls', 'time', 'percent', 'ms/call'
     if (unit==io_unit%output) then
       !$omp atomic write
       timer%n_lines = 1
     end if
     if (total > 0.0) then
+      mesg = .false.
       do i=1,ntimer
-        if (proc(i)/total > 5e-4) then
-          write (unit,'(a32,1p,2g15.3,0p,f10.1,f14.6)') &
-            trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., proc(i)/max(ncalls(i),1d0)
+        if (proc(i)/total > min_fraction) then
+          per_call = proc(i)/max(ncalls(i),1d0)
+          warn = per_call < 0.5e-6
+          mesg = mesg .or. warn
+          write (unit,'(a32,1p,2g15.3,0p,f10.1,3p,f12.6,1x,a1)') &
+            trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., &
+            per_call, merge('W',' ',warn)
         end if
       end do
+      if (mesg) &
+        write (unit,*) 'W: much of the item time may be due to timer calls'
     end if
     !---------------------------------------------------------------------------
     ! Output AMR level costs
     !---------------------------------------------------------------------------
-    if (allocated(timer%levelcost)) then
+    if (allocated(timer%levelcost) .and. timer%levelmax > timer%levelmin) then
       do level=timer%levelmin,timer%levelmax
         !$omp atomic read
         cost = timer%levelcost(level)
@@ -313,7 +322,7 @@ contains
     !---------------------------------------------------------------------------
     ! MPI and OMP statistics
     !---------------------------------------------------------------------------
-    write (unit,'(a32,1p,2g15.3,g12.3,2(g12.3,2x,a,5x))') &
+    write (unit,'(a32,1p,2g15.3,g14.4,2(g12.3,2x,a,5x))') &
       "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', wc, 'wall sec'
     if (mpi%size>1) then
       timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)

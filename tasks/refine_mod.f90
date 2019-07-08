@@ -259,8 +259,7 @@ SUBROUTINE init (self)
       write (*, refine_params)
     end if
     if (on) then
-      omp_lock%links = .true.
-      download%link_locks = .true.
+      !omp_lock%links = .true.
     end if
   end if
   !-----------------------------------------------------------------------------
@@ -378,15 +377,21 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   !.............................................................................
   was_refined = .false.
   was_derefined = .false.
-  if (.not. on) return
-  if (verbose > 3) &
-    write (io_unit%output,'(i6,2x,a,f12.6,2i4)') &
-      link%task%id, 'refine_t%check_current, at t =', &
-      link%task%time, link%task%level, self%levelmax
+  !-----------------------------------------------------------------------------
+  ! Punt on refinement if the task is very new, or has the init_nbors bit set
+  !-----------------------------------------------------------------------------
+  if (.not.on .or. &
+      link%task%istep < 3 .or. &
+      link%task%is_set (bits%init_nbors)) &
+        return
   !---------------------------------------------------------------------------
   call trace%begin('refine_t%check_current', itimer=itimer)
   patch => solver%cast2solver (link%task)
   id = patch%id
+  if (verbose > 3) &
+    write (io_unit%output,'(i6,2x,a,f12.6,2i4)') &
+      link%task%id, 'refine_t%check_current, at t =', &
+      link%task%time, link%task%level, self%levelmax
   !----------------------------------------------------------------------------
   dxmin = minval(patch%ds)
   dxmax = maxval(patch%ds)
@@ -440,16 +445,6 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
         call trace%end (itimer)
         return
       end if
-    end if
-    !---------------------------------------------------------------------------
-    ! Check support for patches so marked, and clear the bit
-    !---------------------------------------------------------------------------
-    if (patch%is_set (bits%support)) then
-      call check_support (self, tasklist, link, n_added)
-      if (verbose > 1 .and. n_added > 0) then
-        write (io_unit%log,*) 'check_support: pre-added', n_added
-      end if
-      call patch%clear (bits%support)
     end if
     !---------------------------------------------------------------------------
     ! Update next refinement step counter and deallocate local irefine
@@ -609,12 +604,18 @@ END SUBROUTINE selective_refine
 
 !===============================================================================
 !> Check if new%task is a patch, and if it overlaps with other level L-2 patches,
-!> with points not covered by L-1 patches, indicating the a new L-1 patch should
+!> with points not covered by L-1 patches, indicating that a new L-1 patch should
 !> be created from the L-2 patch.
 !>
 !> To implement this, we need to look at the regions that overlap with an L-2
 !> patch, and then run through the nbor list L-1 patches, to see if they cover
-!> the area.  If not, "make an impresion" on the L-2 patch
+!> the area.  If not, "make an impression" on the L-2 patch, by setting the
+!> corresponding cells in its %xrefine map.
+!>
+!> NOTE: This mechanism is currently NOT used; it is left for now, to be removed
+!> when need_to_support() has been validated as being sufficient -- it looks
+!> at the same issue from the point of view of the L-2 patch, which is better,
+!> since it eliminates the need for synchronizing access to %xrefine.
 !===============================================================================
 SUBROUTINE check_support (self, tlist, new, n_added)
   class(refine_t):: self
@@ -791,52 +792,47 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
     return
   call trace%begin('refine_t%check_derefine_support', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! If the patch has been found to lack support, increase verbose and call
-  ! check_support() again
-  !-----------------------------------------------------------------------------
-  associate (task => link%task)
-  select type (task)
-  class is (patch_t)
-  !-----------------------------------------------------------------------------
-  ! Make 100% sure all nbors are known
-  !-----------------------------------------------------------------------------
   call tlist%lock%set ('check_derefine_support')
-  call link%lock%set ('check_derefine_support')
-  call link%copy_nbor_list (link%nbor, nbors)
-  n_nbor1 = 0
-  nbor => nbors
-  do while (associated(nbor))
-    n_nbor1 = n_nbor1+1
-    nbor => nbor%next
-  end do
-  !-----------------------------------------------------------------------------
-  call tlist%init_nbors (link)
-  n_nbor2 = 0
-  nbor => link%nbor
-  do while (associated(nbor))
-    n_nbor2 = n_nbor2+1
-    nbor => nbor%next
-  end do
-  !-----------------------------------------------------------------------------
-  if (n_nbor2 /= n_nbor1) then
-    write (stdout,*) 'n_nbor changed', n_nbor1, n_nbor2
+  if (omp_lock%links) then
+    call link%lock%set ('check_derefine_support')
+    call link%copy_nbor_list (link%nbor, nbors)
+    !---------------------------------------------------------------------------
+    ! Begin consistency check
+    !---------------------------------------------------------------------------
+    n_nbor1 = 0
     nbor => nbors
-    write (stdout,*) 'before:'
     do while (associated(nbor))
-      write (stdout,*) nbor%task%id, (nbor%task%position-link%task%position)/link%task%size
+      n_nbor1 = n_nbor1+1
       nbor => nbor%next
     end do
+    !---------------------------------------------------------------------------
+    call tlist%init_nbors (link)
+    n_nbor2 = 0
     nbor => link%nbor
-    write (stdout,*) 'after:'
     do while (associated(nbor))
-      write (stdout,*) nbor%task%id, (nbor%task%position-link%task%position)/link%task%size
+      n_nbor2 = n_nbor2+1
       nbor => nbor%next
     end do
+    !---------------------------------------------------------------------------
+    if (n_nbor2 /= n_nbor1) then
+      write (stdout,*) 'n_nbor changed', n_nbor1, n_nbor2
+      nbor => nbors
+      write (stdout,*) 'before:'
+      do while (associated(nbor))
+        write (stdout,*) nbor%task%id, (nbor%task%position-link%task%position)/link%task%size
+        nbor => nbor%next
+      end do
+      nbor => link%nbor
+      write (stdout,*) 'after:'
+      do while (associated(nbor))
+        write (stdout,*) nbor%task%id, (nbor%task%position-link%task%position)/link%task%size
+        nbor => nbor%next
+      end do
+    end if
+    !---------------------------------------------------------------------------
+    ! End consistency check
+    !---------------------------------------------------------------------------
   end if
-  end select
-  end associate
-  call link%remove_nbor_list (nbors)
-  !-----------------------------------------------------------------------------
   refine = -1
   nbor => link%nbor
   do while (associated(nbor))
@@ -846,10 +842,17 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
     end if
     nbor => nbor%next
   end do
-  call link%lock%unset ('check_derefine_support')
-  call tlist%lock%unset ('check_derefine_support')
   if (verbose > 2) &
     write (stdout,*) link%task%id, 'check_derefine_support =', refine
+  !-----------------------------------------------------------------------------
+  ! Release locks
+  !-----------------------------------------------------------------------------
+  if (omp_lock%links) then
+    call link%remove_nbor_list (nbors)
+    call link%lock%unset ('check_derefine_support')
+  end if
+  call tlist%lock%unset ('check_derefine_support')
+  !-----------------------------------------------------------------------------
   call trace%end (itimer)
 END FUNCTION check_derefine_support
 
@@ -952,14 +955,13 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   end if
   !-----------------------------------------------------------------------------
   ! Set the bits%support here, which causes it to be set on the rank nbors
-  ! if this is a boundary task.  There, a check for support should then
-  ! be triggered, where the nbor lists even in the virtual part of space
-  ! need to be the same as in the internal space (apart from external patches).
-  ! Here, on the owner rank, the bits%support will remain until next time
-  ! the task is to be updated, when code in check_current() sees the bit,
-  ! calls check_support(), and then clears the bit.
+  ! if this is a boundary task.  There, a check for support is then triggered,
+  ! where the nbor lists also in the virtual nbors are refreshed.  On the owner
+  ! rank the bits%support will remain until next time the task is updated, when 
+  ! code in dispatcher0_t%update() sees the bit, call init_nbors(), and clears
+  ! the bit.
   !-----------------------------------------------------------------------------
-  call child%set (bits%support)                      ! trigger check_child_support
+  call child%set (bits%support)
   !-----------------------------------------------------------------------------
   ! Make parent a neighbor of new child patch.  This will be overwritten
   ! in `init_nbor_nbors` but is necessary here to permit interpolation of
@@ -971,44 +973,23 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   nullify (child_link%nbor)
   child_link%nbors_by_level => child_nbor
   !$omp atomic update
-  parent%n_needed = parent%n_needed + 1
+  parent%n_needed = parent%n_needed + 2
   !-----------------------------------------------------------------------------
-  ! Download values from parent and neighbors, except at time = 0, to allow
-  ! recursive refinement there. If time = 0, patch should have been filled
-  ! with values during `child%init()` call.
+  ! Add the child task to the task list and then directly into the ready queue,
+  ! bits%init_nbors triggers continued processing in dispatcher0_t%update(),
+  ! which makes a new nbor list after updating the child patch the 1st time.
   !-----------------------------------------------------------------------------
-  if (parent%time > 0.0 .and. child%restart <= 0) &
-    call download%download_link (child_link, all_cells=.true.)
-  call tlist%lock%set ('refine')
+  call child%set (bits%init_nbors)
   call tlist%append_link (child_link)
+  call tlist%queue_by_time (child_link)
   !-----------------------------------------------------------------------------
   ! Increment I/O write counter, to avoid repeated writing of metadata
   !-----------------------------------------------------------------------------
   count = counters%increment (parent%iout+1, io%ntask)
+  !$omp atomic update
+  timer%levelpop (child%level) = &          ! increment level population count
+  timer%levelpop (child%level) + 1
   !-----------------------------------------------------------------------------
-  ! Make new nbor lists
-  !-----------------------------------------------------------------------------
-  call tlist%init_nbors (parent%link)
-  !call tlist%init_nbors (child_link)
-  call tlist%init_nbor_nbors (child_link)
-  !call tlist%reset_status()
-  !-----------------------------------------------------------------------------
-  ! Check if the new task has support. bits%support will be set if not.
-  !-----------------------------------------------------------------------------
-  call check_support (self, tlist, child%link, n_added)
-  !-----------------------------------------------------------------------------
-  ! Check the ready status of the child and its nbors.  The check_nbor_nbors
-  ! does a check_nbors on all the nbors, which includes then nbors themselved,
-  ! and finally does a check_ready on the link itself.
-  !-----------------------------------------------------------------------------
-  if (child%is_set(bits%boundary)) &
-    call tlist%send_to_vnbors (child_link)
-  call tlist%check_nbor_nbors (child_link)
-  if (tlist%verbose > 0) then
-    write (io_unit%log,'(f12.6,2x,a,i6,l3)') &
-      wallclock(), 'refine_t%make_child:', child%id, child%is_set(bits%boundary)
-  end if
-  call tlist%lock%unset ('refine')
   if (verbose > 1) then
     l = parent%index_only (child%position + child%mesh%lf)
     u = parent%index_only (child%position + child%mesh%uf)
@@ -1026,9 +1007,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
       maxval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1))
     flush (io%output)
   end if
-  !$omp atomic update
-  timer%levelpop (child%level) = &          ! increment level population count
-  timer%levelpop (child%level) + 1
+  !-----------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE make_child_patch
 
@@ -1056,28 +1035,15 @@ SUBROUTINE remove_patch (self, tlist, this)
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%remove_patch', itimer=itimer)
   if (verbose > 0) then
-    write (io_unit%log,'(f12.6,2x,a,1p,g14.5,2x,2l1)') &
+    write (io_unit%log,'(f12.6,2x,a,i6,1p,g14.5,2x,2l1)') &
       wallclock(), 'refine_t%remove_patch: id, time, BV =', &
       this%task%id, this%task%time, &
       this%task%is_set (bits%boundary), this%task%is_set (bits%virtual)
   end if
   !-----------------------------------------------------------------------------
-  ! Send a suicide note to virtual nbors, if this is a boundary patch
-  !-----------------------------------------------------------------------------
-  if (this%task%is_set (bits%boundary)) then
-    call this%task%set (bits%remove)
-    call tlist%send_to_vnbors (this)
-  end if
-  if (tlist%verbose > 0) then
-    write (io_unit%log,'(f12.6,2x,a,i6,2l3)') &
-      wallclock(), 'refine_t%remove_patch: id =', this%task%id, &
-      this%task%is_set(bits%boundary), this%task%is_set(bits%virtual)
-  end if
-  !-----------------------------------------------------------------------------
   ! Remove the link from the task list, update the nbor lists of nbors, then
   ! deallocate this link (and the associated task memory and task).
   !-----------------------------------------------------------------------------
-  count = counters%decrement (this%task%iout+1, io%ntask)
   call tlist%remove_and_reset (this)        ! comprehensive removal
   !-----------------------------------------------------------------------------
   !$omp atomic write

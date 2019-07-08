@@ -1,12 +1,12 @@
 Running
 =======
 
-To run with the default input file (input.nml), with data ouput into
+To run with the default input file (``input.nml``), with data ouput into
 the ``./data/`` directory::
 
 ./dispatch.x
 
-To run with another input file (run.nml)::
+To run with another input file::
 
 ./dispatch.x run.nml
 
