@@ -181,8 +181,8 @@ INTEGER(HID_T) FUNCTION set_open_ext_1d (self, id, name, a, new) result (did)
     !---------------------------------------------------------------------------
     ! write number of records currently stored in dataset
     nrec=0
-    call H5LTset_attribute_int_f (id, name, 'length', nrec, asize, self%err)
-    call H5LTset_attribute_int_f (id, name, 'nchunk', chunk_size, asize, self%err)
+    !call H5LTset_attribute_int_f (id, name, 'length', nrec, asize, self%err)
+    !call H5LTset_attribute_int_f (id, name, 'nchunk', chunk_size, asize, self%err)
   end if
   if (present(new)) then
     new = .not.exists
