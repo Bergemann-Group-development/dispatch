@@ -24,7 +24,7 @@ MODULE gpatch_mod
   type, public, extends(patch_t):: gpatch_t
     type(initial_t):: initial
     type(data_hub_t):: data_hub
-    type(list_t), pointer:: task_list => null()
+    class(list_t), pointer:: task_list => null()
     real(8):: d0
   contains
     procedure, nopass:: cast2gpatch

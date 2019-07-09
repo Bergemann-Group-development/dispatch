@@ -65,6 +65,7 @@ MODULE extras_mod
     !type(selfgravity_t) :: selfgravity                         ! selfg
   contains
     procedure:: init
+    procedure:: init_task_list
     procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
@@ -85,9 +86,23 @@ SUBROUTINE init (self)
   allocate (self%trace_particles)                               ! tracep
   self%connect%trace_particles => self%trace_particles          ! tracep
   call self%trace_particles%add (self%link)                     ! tracep
-  !call sink_patch%init                                          ! sinkp
+  call sink_patch%init                                          ! sinkp
   call trace%end
 END SUBROUTINE init
+
+!===============================================================================
+!> This intercept is the correct place to add calls to extras 'underlings' that
+!> need information both about the corresponding MHD patch (self), AND the task
+!> list.  The procedure is called for every task on the task list, just before
+!> task list updates start.
+!===============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(extras_t):: self
+  class(list_t), pointer:: task_list
+  !.............................................................................
+  call self%gpatch_t%init_task_list (task_list)
+  call sink_patch%ad_hoc_add (self, task_list)                  ! sinkp
+END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Deallocate allocated arrays
@@ -97,9 +112,9 @@ SUBROUTINE dealloc (self)
   !.............................................................................
   call trace%begin ('extras_t%dealloc')
   call self%forces%dealloc                                      ! forces
-  !call self%trace_particles%dealloc                             ! sinkp
+  call self%trace_particles%dealloc                             ! tracep
   deallocate (self%trace_particles)                             ! tracep
-  !call sink_patch%dealloc                                       ! sinkp
+  call sink_patch%dealloc                                       ! sinkp
   call self%gpatch_t%dealloc
   call trace%end
 END SUBROUTINE dealloc
@@ -112,7 +127,7 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   call self%forces%pre_update                                   ! forces
   call self%trace_particles%update                              ! tracep
-  !call particle_solver%force_field (self)                       ! sinkp
+  call particle_solver%force_field (self)                       ! sinkp
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -132,6 +147,7 @@ SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
   call self%gpatch_t%output                                     ! keep
+  call sink_patch%output                                        ! sinkp
 END SUBROUTINE output
 
 !===============================================================================
