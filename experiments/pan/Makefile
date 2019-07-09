@@ -13,6 +13,7 @@ SOLVER          = ramses/hydro
 PARTICLE_SOLVER = KDK
 EXEC            = dispatch.x
 TOP             = ../..
+HDF5 = /software/astro/hdf5-1.10.4
 
 # Tomida & Hori, with opacity
 #EOS             = data/eos/Tomida+Hori_2016/e

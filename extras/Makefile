@@ -18,5 +18,5 @@ sinkparticles_mod.o     : io_unit_mod.o trace_mod.o download_mod.o data_hub_mod.
 sinkparticle_mod.o      : io_unit_mod.o trace_mod.o download_mod.o data_hub_mod.o link_mod.o \
                           list_mod.o particle_history_mod.o gpatch_mod.o
 sink_patch_mod.o        : io_unit_mod.o trace_mod.o download_mod.o data_hub_mod.o link_mod.o \
-                          list_mod.o gpatch_mod.o particle_solver_mod.o
+                          list_mod.o gpatch_mod.o particle_solver_mod.o h5_mod.o
 connect_mod.o           :
