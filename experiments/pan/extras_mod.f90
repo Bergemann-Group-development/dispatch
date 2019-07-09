@@ -85,7 +85,7 @@ SUBROUTINE init (self)
   allocate (self%trace_particles)                               ! tracep
   self%connect%trace_particles => self%trace_particles          ! tracep
   call self%trace_particles%add (self%link)                     ! tracep
-  call sink_patch%init                                          ! sinkp
+  !call sink_patch%init                                          ! sinkp
   call trace%end
 END SUBROUTINE init
 
@@ -97,9 +97,9 @@ SUBROUTINE dealloc (self)
   !.............................................................................
   call trace%begin ('extras_t%dealloc')
   call self%forces%dealloc                                      ! forces
-  call self%trace_particles%dealloc                             ! sinkp
+  !call self%trace_particles%dealloc                             ! sinkp
   deallocate (self%trace_particles)                             ! tracep
-  call sink_patch%dealloc                                       ! sinkp
+  !call sink_patch%dealloc                                       ! sinkp
   call self%gpatch_t%dealloc
   call trace%end
 END SUBROUTINE dealloc
@@ -112,7 +112,7 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   call self%forces%pre_update                                   ! forces
   call self%trace_particles%update                              ! tracep
-  call particle_solver%force_field (self)                       ! sinkp
+  !call particle_solver%force_field (self)                       ! sinkp
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -145,8 +145,8 @@ INTEGER function check_refine (self, patch)
   !.............................................................................
   gpatch => patch
   check_refine = -1
-  check_refine = max (check_refine, &
-    sink_patch%check_refine (gpatch))                            ! sinkp
+  !check_refine = max (check_refine, &                            ! sinkp
+    !sink_patch%check_refine (gpatch))                            ! sinkp
 END FUNCTION check_refine
 
 END MODULE extras_mod
