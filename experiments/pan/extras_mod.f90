@@ -101,7 +101,7 @@ SUBROUTINE init_task_list (self, task_list)
   class(list_t), pointer:: task_list
   !.............................................................................
   call self%gpatch_t%init_task_list (task_list)
-  call sink_patch%ad_hoc_add (self, task_list)                  ! sinkp
+  call sink_patch%ad_hoc_add (self)                             ! sinkp
 END SUBROUTINE init_task_list
 
 !===============================================================================
@@ -161,8 +161,8 @@ INTEGER function check_refine (self, patch)
   !.............................................................................
   gpatch => patch
   check_refine = -1
-  !check_refine = max (check_refine, &                            ! sinkp
-    !sink_patch%check_refine (gpatch))                            ! sinkp
+  check_refine = max (check_refine, &                            ! sinkp
+    sink_patch%check_refine (gpatch))                            ! sinkp
 END FUNCTION check_refine
 
 END MODULE extras_mod
