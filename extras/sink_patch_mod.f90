@@ -60,7 +60,6 @@ MODULE sink_patch_mod
     procedure:: check_refine
     procedure:: output
     procedure, private:: refine_check
-    procedure, private:: refresh_nbor_list
   end type
   !-----------------------------------------------------------------------------
   integer(HID_T) :: sink_file_id=-1   ! id for sink file. -1: file not open
@@ -94,10 +93,10 @@ CONTAINS
 !> Initialize an instance of the sink_patch_t data type, with parameters for
 !> sink creation read from a sink_patch_params namelist.
 !===============================================================================
-SUBROUTINE init (self,link)
+SUBROUTINE init (self)
   class(sink_patch_t)   :: self
-  class(link_t), target :: link 
   !.............................................................................
+  type(link_t), pointer :: link 
   class(link_t), pointer:: new_link, nbor
   class(task_t), pointer:: task, patch
   class(dll_node_t), pointer:: particle
@@ -148,115 +147,122 @@ SUBROUTINE init (self,link)
   !$omp end critical (input_cr)
   self%on = on
   self%particle_solver => particle_solver
-  ! go through list of hand made sinks, and create them, if in patch
-  associate(patch=>link%task)
-  select type(patch)
-  class is (patch_t)
-    do i_sink=1,n_sinks
-      pos = [sinks(i_sink)%x,sinks(i_sink)%y,sinks(i_sink)%z]
-      if (patch%contains(pos)) then
-        !-------------------------------------------------------------------------
-        ! Allocate a new sink_patch_t instance, as the task of a new link
-        !-------------------------------------------------------------------------
-        allocate (new_link)
-        allocate (sink_patch_t:: task)
-        allocate (particle_t:: particle)
-        new_link%parent => link
-        new_link%task => task
-        !-------------------------------------------------------------------------
-        ! Create the new sinkparticle, using data from the namelist
-        !-------------------------------------------------------------------------
-        select type (task)
-        class is (sink_patch_t)
-          task%link => new_link
-          task%particle_solver => self%particle_solver
-          task%particle => particle
-          call self%particle_solver%append (particle)
-          call task%init_task (patch, sink_position=pos) 
+  !-----------------------------------------------------------------------------
+  ! Go through list of hand made sinks, and create them, if in patch
+  !-----------------------------------------------------------------------------
+  link => self%task_list%head
+  do while (associated(link))
+    associate(patch=>link%task)
+    select type(patch)
+    class is (gpatch_t)
+      do i_sink=1,n_sinks
+        pos = [sinks(i_sink)%x,sinks(i_sink)%y,sinks(i_sink)%z]
+        if (patch%contains(pos)) then
           !-------------------------------------------------------------------------
-          ! Initialize its neighbor list, and add it to the task list
+          ! Allocate a new sink_patch_t instance, as the task of a new link
           !-------------------------------------------------------------------------
-          call task_list%init_nbors (new_link)
-          call task_list%append_link (new_link)
-          nbor => new_link%nbor
-          do while (associated(nbor))
-            print *, 'nbor:', nbor%task%id, real((nbor%task%position-task%position)/task%ds)
-            nbor => nbor%next
-          end do
-          !------------------------------------------------------------------------
-          ! Download variables and set mass and momentum
-          !------------------------------------------------------------------------
-          call task%dnload
-          d => task%mem(:,:,:,task%idx%d,task%it,1)
-          d = max(d,task%fminval(d))
-          if (task%id==io%id_debug) then
-            m = nint(task%offset)
-            print *, 'sink_patch_t%create:  task%pos, d',  task%myposition(m), &
-              task%mem(m(1),m(2),m(3),task%idx%d,task%it,1)
-            print *,'MM', minval(d), task%fminval(task%idx%d), &
-                          maxval(d), task%fmaxval(task%idx%d)
-          end if
-          task%id   = i_sink
-          task%mass = sinks(i_sink)%mass
-          task%mom(1) = sinks(i_sink)%mass * sinks(i_sink)%vx
-          task%mom(2) = sinks(i_sink)%mass * sinks(i_sink)%vy
-          task%mom(3) = sinks(i_sink)%mass * sinks(i_sink)%vz
-        end select
-        call refresh_nbor_list(nbor,task_list)
-      endif
-    enddo
-  end select
-  call trace%end()
-
-  select type(patch)
-  class is (gpatch_t)
-    gpatch => patch
-    !-------------------------------------------------------------------------
-    ! Allocate a new sink_patch_t instance, as the task of a new link
-    !-------------------------------------------------------------------------
-    allocate (new_link)
-    allocate (sink_patch_t:: task)
-    allocate (particle_t:: particle)
-    new_link%parent => link
-    new_link%task => task
-    !-------------------------------------------------------------------------
-    ! Create the new sinkparticle, using data from the MHD patch
-    !-------------------------------------------------------------------------
-    select type (task)
-    class is (sink_patch_t)
-      task%link => new_link
-      task%particle_solver => self%particle_solver
-      task%particle => particle
-      call self%particle_solver%append (particle)
-      call task%init_task (gpatch)
-      !-------------------------------------------------------------------------
-      ! Initialize its neighbor list, and add it to the task list
-      !-------------------------------------------------------------------------
-      call task_list%init_nbors (new_link)
-      call task_list%append_link (new_link)
-      nbor => new_link%nbor
-      do while (associated(nbor))
-        print *, 'nbor:', nbor%task%id, real((nbor%task%position-task%position)/task%ds)
-        nbor => nbor%next
-      end do
-      !------------------------------------------------------------------------
-      ! Download variables and accrete
-      !------------------------------------------------------------------------
-      call task%dnload
-      d => task%mem(:,:,:,task%idx%d,task%it,1)
-      d = max(d,task%fminval(d))
-      if (task%id==io%id_debug) then
-        m = nint(task%offset)
-        print *, 'sink_patch_t%create:  task%pos, d',  task%myposition(m), &
-          task%mem(m(1),m(2),m(3),task%idx%d,task%it,1)
-        print *,'MM', minval(d), task%fminval(task%idx%d), &
-                      maxval(d), task%fmaxval(task%idx%d)
-      end if
-      call task%accrete
+          allocate (new_link)
+          allocate (sink_patch_t:: task)
+          allocate (particle_t:: particle)
+          new_link%parent => link
+          new_link%task => task
+          !-------------------------------------------------------------------------
+          ! Create the new sinkparticle, using data from the namelist
+          !-------------------------------------------------------------------------
+          select type (task)
+          class is (sink_patch_t)
+            task%link => new_link
+            task%particle_solver => self%particle_solver
+            task%particle => particle
+            call self%particle_solver%append (particle)
+            call task%init_task (patch, sink_position=pos) 
+            !-------------------------------------------------------------------------
+            ! Initialize its neighbor list, and add it to the task list
+            !-------------------------------------------------------------------------
+            call task_list%init_nbors (new_link)
+            call task_list%append_link (new_link)
+            nbor => new_link%nbor
+            do while (associated(nbor))
+              print *, 'nbor:', nbor%task%id, real((nbor%task%position-task%position)/task%ds)
+              nbor => nbor%next
+            end do
+            !------------------------------------------------------------------------
+            ! Download variables and set mass and momentum
+            !------------------------------------------------------------------------
+            call task%dnload
+            d => task%mem(:,:,:,task%idx%d,task%it,1)
+            d = max(d,task%fminval(d))
+            if (task%id==io%id_debug) then
+              m = nint(task%offset)
+              print *, 'sink_patch_t%create:  task%pos, d',  task%myposition(m), &
+                task%mem(m(1),m(2),m(3),task%idx%d,task%it,1)
+              print *,'MM', minval(d), task%fminval(task%idx%d), &
+                            maxval(d), task%fmaxval(task%idx%d)
+            end if
+            task%id   = i_sink
+            task%mass = sinks(i_sink)%mass
+            task%mom(1) = sinks(i_sink)%mass * sinks(i_sink)%vx
+            task%mom(2) = sinks(i_sink)%mass * sinks(i_sink)%vy
+            task%mom(3) = sinks(i_sink)%mass * sinks(i_sink)%vz
+          end select
+          call refresh_nbor_list (nbor, task_list)
+        endif
+      enddo
     end select
-    call refresh_nbor_list(nbor,task_list)
-  end select
-  end associate
+
+    select type(patch)
+    class is (gpatch_t)
+      gpatch => patch
+      !-------------------------------------------------------------------------
+      ! Allocate a new sink_patch_t instance, as the task of a new link
+      !-------------------------------------------------------------------------
+      allocate (new_link)
+      allocate (sink_patch_t:: task)
+      allocate (particle_t:: particle)
+      new_link%parent => link
+      new_link%task => task
+      !-------------------------------------------------------------------------
+      ! Create the new sinkparticle, using data from the MHD patch
+      !-------------------------------------------------------------------------
+      select type (task)
+      class is (sink_patch_t)
+        task%link => new_link
+        task%particle_solver => self%particle_solver
+        task%particle => particle
+        call self%particle_solver%append (particle)
+        call task%init_task (gpatch)
+        !-------------------------------------------------------------------------
+        ! Initialize its neighbor list, and add it to the task list
+        !-------------------------------------------------------------------------
+        call task_list%init_nbors (new_link)
+        call task_list%append_link (new_link)
+        nbor => new_link%nbor
+        do while (associated(nbor))
+          print *, 'nbor:', nbor%task%id, real((nbor%task%position-task%position)/task%ds)
+          nbor => nbor%next
+        end do
+        !------------------------------------------------------------------------
+        ! Download variables and accrete
+        !------------------------------------------------------------------------
+        call task%dnload
+        d => task%mem(:,:,:,task%idx%d,task%it,1)
+        d = max(d,task%fminval(d))
+        if (task%id==io%id_debug) then
+          m = nint(task%offset)
+          print *, 'sink_patch_t%create:  task%pos, d',  task%myposition(m), &
+            task%mem(m(1),m(2),m(3),task%idx%d,task%it,1)
+          print *,'MM', minval(d), task%fminval(task%idx%d), &
+                        maxval(d), task%fmaxval(task%idx%d)
+        end if
+        call task%accrete
+      end select
+      call refresh_nbor_list(nbor,task_list)
+    end select
+    end associate
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -299,8 +305,8 @@ SUBROUTINE output (self)
   real(kind=8),save::last_flush
   real(kind=8):: flush_frequency = 10. ! frequency with which data is flushed to disk
   !-----------------------------------------------------------------------------
-
-  ! open file if needed
+  ! Open file if needed
+  !-----------------------------------------------------------------------------
   if (sink_file_id==-1) then
     !$omp critical 
     if (sink_file_id==-1) then
@@ -312,8 +318,9 @@ SUBROUTINE output (self)
     endif
     !$omp end critical 
   endif
-
-  ! open group for sink if needed
+  !-----------------------------------------------------------------------------
+  ! Open group for sink if needed
+  !-----------------------------------------------------------------------------
   if (self%io%gid == -1) then
     write(self%io%name,'(a,i5.5)') 'sink', self%id
     self%io%gid = h5%group_open (sink_file_id, self%io%name)
@@ -323,15 +330,17 @@ SUBROUTINE output (self)
     self%io%vel_id  = h5%set_open_ext_1d (self%io%gid, 'velocity', self%mom / self%mass)
     self%io%mom_id  = h5%set_open_ext_1d (self%io%gid, 'momentum', self%mom)
   endif
- 
-  ! write sink properties
+  !-----------------------------------------------------------------------------
+  ! Write sink properties
+  !-----------------------------------------------------------------------------
   call h5%set_write_ext_1d (self%io%time_id, (/self%time/))
   call h5%set_write_ext_1d (self%io%mass_id, (/self%mass/))
   call h5%set_write_ext_1d (self%io%pos_id,  self%position)
   call h5%set_write_ext_1d (self%io%vel_id,  self%mom / self%mass)
   call h5%set_write_ext_1d (self%io%mom_id,  self%mom)
-
-  ! flush sink file to disk at least every flush_frequency seconds
+  !-----------------------------------------------------------------------------
+  ! Flush sink file to disk at least every flush_frequency seconds
+  !-----------------------------------------------------------------------------
   if (wallclock() > last_flush + flush_frequency) then
     !$omp critical
     if (wallclock() > last_flush + flush_frequency) then
@@ -340,7 +349,6 @@ SUBROUTINE output (self)
     endif
     !$omp end critical
   endif
-
 END SUBROUTINE output
 
 !===============================================================================
@@ -379,7 +387,7 @@ FUNCTION check (self, patch)
 END FUNCTION check
 
 !===============================================================================
-!> Create a sink partícle, with the accompanying cell-based patch, which records
+!> Create a sink particle, with the accompanying cell-based patch, which records
 !> the density and velocity from overlapping MHD patches, for use in the recipe
 !> for accretion.
 !===============================================================================
@@ -652,7 +660,7 @@ SUBROUTINE refine_check (self, link, refine)
   integer:: refine
   !.............................................................................
   logical:: check_sinkparticle
-  type(list_t), pointer:: task_list
+  class(list_t), pointer:: task_list
   class(task_t), pointer:: task, patch
   class(gpatch_t), pointer:: gpatch
   class(link_t), pointer:: new_link, nbor
@@ -726,21 +734,22 @@ SUBROUTINE refine_check (self, link, refine)
         end if
         call task%accrete
       end select
-      call refresh_nbor_list(link,task_list)
+      call refresh_nbor_list (link, task_list)
       io%do_trace = do_trace
     end if
   end select
 END SUBROUTINE refine_check
+
 !-------------------------------------------------------------------------
 ! Refresh the nbor lists of the parent and its nbors; the parent should
 ! be done after the nbors, to avoid putting the child link on its nbor
 ! list until the other ones are updated.  All nbors that happen to have
 ! overlap with the sink particle patch will have it as an nbor
 !-------------------------------------------------------------------------
-SUBROUTINE refresh_nbor_list(link,task_list)
+SUBROUTINE refresh_nbor_list (link, task_list)
   implicit none
   class(link_t), pointer :: link
-  type(list_t),  pointer :: task_list
+  class(list_t), pointer :: task_list
   class(link_t), pointer :: nbor
   !
   nbor => link%nbor
