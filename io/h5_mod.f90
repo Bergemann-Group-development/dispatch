@@ -2,6 +2,7 @@
 !> Module interface to the HDF5 library
 !===============================================================================
 MODULE h5_mod
+#ifdef HDF%
   USE hdf5
   USE io_unit_mod
   USE io_mod
@@ -556,4 +557,5 @@ SUBROUTINE real_4d (self, seq, record, name, a)
   call H5Dclose_f (did, self%err)
 END SUBROUTINE real_4d
 
+#endif
 END MODULE h5_mod

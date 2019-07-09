@@ -29,14 +29,18 @@ MODULE sink_patch_mod
   USE particle_mod
   USE particle_solver_mod
   USE omp_timer_mod
+#ifdef HDF5
   USE h5_mod
   USE hdf5, only : HID_T
+#endif
   implicit none
   private
   type :: io_t
     ! name and id handles for the different datasets
     character(len=9) :: name
+#ifdef HDF5
     integer(HID_T) :: gid, time_id, mass_id, pos_id, vel_id, mom_id
+#endif
   end type
   type, public, extends (gpatch_t):: sink_patch_t
     real(8):: mass=0.0_8, mom(3)
@@ -62,7 +66,9 @@ MODULE sink_patch_mod
     procedure, private:: refine_check
   end type
   !-----------------------------------------------------------------------------
+#ifdef HDF5
   integer(HID_T) :: sink_file_id=-1   ! id for sink file. -1: file not open
+#endif
   logical:: on=.false.                ! turn feature on/off
   logical:: do_translate=.true.       ! make a transformation to the velocity of the sink
   logical:: force_refine=.true.       ! insist on refining down to levelmax at star
@@ -295,15 +301,13 @@ END SUBROUTINE dealloc
 !> Output of sink data to hdf5 
 !===============================================================================
 SUBROUTINE output (self)
-  USE hdf5
-  USE h5_mod
-  implicit none
   class(sink_patch_t):: self
   !.............................................................................
   logical:: new
   integer:: verbose=1
   real(kind=8),save::last_flush
   real(kind=8):: flush_frequency = 10. ! frequency with which data is flushed to disk
+#ifdef HDF5
   !-----------------------------------------------------------------------------
   ! Open file if needed
   !-----------------------------------------------------------------------------
@@ -312,7 +316,6 @@ SUBROUTINE output (self)
     if (sink_file_id==-1) then
       last_flush = wallclock()
       sink_file_id = h5%open (file, new, verbose=verbose)
-
       if (verbose > 0) &
         print *, merge('creating ','updating ',new)//trim(file)
     endif
@@ -349,6 +352,7 @@ SUBROUTINE output (self)
     endif
     !$omp end critical
   endif
+#endif
 END SUBROUTINE output
 
 !===============================================================================
