@@ -5,6 +5,7 @@
 MODULE particle_mod
   USE iso_fortran_env, only: int8
   USE io_unit_mod
+  USE trace_mod
   USE dll_mod
   USE patch_forces_mod
   !USE particle_forces_mod
@@ -22,7 +23,7 @@ MODULE particle_mod
     real, allocatable:: v(:,:)
     real(8), allocatable:: r(:,:), t(:), m(:)
     real(8):: f(3)
-    type(patch_forces_t):: patch_forces
+    type(patch_forces_t), pointer:: patch_forces
   contains
     procedure:: init
   end type
@@ -38,14 +39,16 @@ CONTAINS
 SUBROUTINE init (self)
   class (particle_t):: self
   logical, save:: first_time=.true.
+  integer:: iostat
   namelist /particle_params/ verbose, nt
   !-----------------------------------------------------------------------------
+  call trace%begin ('particle_t%init')
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
       first_time = .false.
       rewind (io_unit%input)
-      read (io_unit%input, particle_params)
+      read (io_unit%input, particle_params,iostat=iostat)
       write (io_unit%output, particle_params)
     end if
     !$omp end critical (input_cr)
@@ -59,6 +62,7 @@ SUBROUTINE init (self)
   self%f  = 0.0_8
   self%t  = 0.0_8
   self%iit = 1
+  call trace%end
 END SUBROUTINE init
 
 END MODULE particle_mod

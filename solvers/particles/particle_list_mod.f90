@@ -43,10 +43,12 @@ SUBROUTINE init (self, name)
   class (particle_list_t):: self
   character(len=*), optional:: name
   !-----------------------------------------------------------------------------
+  call trace%begin ('particle_list_t%init')
   call self%dll_t%init (name)
   call particle%init
   !call self%ht%init                            ! either this ..
   !call hash_table%init                         ! .. or this
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================
@@ -57,8 +59,10 @@ SUBROUTINE append (self, new)
   class (particle_t), pointer:: new
   class (dll_node_t), pointer:: new_dll
   !-----------------------------------------------------------------------------
+  call trace%begin ('particle_list_t%append')
   new_dll => new
   call self%dll_t%append (new_dll)
+  call trace%end ()
 END SUBROUTINE append
 
 !===============================================================================
@@ -73,6 +77,7 @@ FUNCTION force (self, p)
   integer:: i, i0, i1, j
   real(8):: rp(3), pt, qt, r(3), r1, r2, r3
   !-----------------------------------------------------------------------------
+  call trace%begin ('particle_list_t%force')
   force = 0.0_8
   rp = p%r(:,p%it)
   o => self%head
@@ -99,6 +104,14 @@ FUNCTION force (self, p)
     end if
     o => o%next
   end do
+  !-----------------------------------------------------------------------------
+  ! Add the force from patches, which is summed up by p%patch_forces
+  !-----------------------------------------------------------------------------
+  select type (p)
+  class is (particle_t)
+    force = force + p%patch_forces%force (p%time)
+  end select
+  call trace%end ()
 END FUNCTION force
 
 !===============================================================================
@@ -114,6 +127,7 @@ SUBROUTINE force_field (self, patch)
   real(8):: force(3), pt, qt, rc(3), r(3), r1, r3, dm, r2, rsoft2
   integer:: i, i0, i1, ip, ix, iy, iz
   class(*), pointer:: ptr
+  class(dll_node_t), pointer:: dll_node
   type(patch_force_t), pointer:: patch_force
   !-----------------------------------------------------------------------------
   ! Cache all particle position into array, in order to be able to loop over
@@ -181,12 +195,19 @@ SUBROUTINE force_field (self, patch)
     !call self%ht%get ([ip,patch%id], ptr)
     if (.not. associated(ptr)) then
       allocate (patch_force)
-      !call patch_forces%append (patch_force)
+      call patch_force%init
+      select type (p)
+      class is (particle_t)
+        dll_node => patch_force
+        call p%patch_forces%append (dll_node)
+      end select
       !call self%ht%set ([ip,patch%id], patch_force)
       ptr => patch_force
     end if
     select type (ptr)
     class is (patch_force_t)
+print *, 'PP', ip, f(ip,:), associated(ptr)
+print *, 'PP', ip, ptr%it, allocated(ptr%f)
     ptr%f(:,ptr%it) = f(ip,:)
     end select
     p => p%next
