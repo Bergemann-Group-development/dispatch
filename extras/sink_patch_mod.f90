@@ -70,11 +70,11 @@ MODULE sink_patch_mod
   contains
     procedure:: init
     procedure:: init_sink
+    procedure:: init_patch
+    procedure:: init_task_list
     procedure:: ad_hoc_add
     procedure:: dealloc
-    procedure:: init_task_list
     procedure:: check
-    procedure:: init_patch
     procedure:: courant_condition
     procedure:: dnload
     procedure:: update
@@ -197,6 +197,129 @@ SUBROUTINE init_sink (self, patch)
   end if
   call trace%end()
 END SUBROUTINE init_sink
+
+!===============================================================================
+!> Create the accompanying cell-based patch, which records the density and
+!> velocity from overlapping MHD patches, for use in the recipe for accretion.
+!===============================================================================
+SUBROUTINE init_patch (self, patch, sink_position)
+  class(sink_patch_t):: self
+  class(gpatch_t), target:: patch
+  real(kind=8), dimension(3), optional :: sink_position
+  !.............................................................................
+  class(link_t), pointer:: nbor, prev
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
+  real(8), dimension(:), pointer:: r
+  real(kind=8) :: pos(3)
+  integer:: i, l(3), u(3), m(3), ix, iy, iz
+  real:: r2, dmin
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sink_patch_t%init_patch')
+  self%patch => patch
+  allocate (self%p(3,self%nt))
+  allocate (self%v(3,self%nt))
+  allocate (self%a(3,self%nt))
+  call io%bits_mem (storage_size(self%p), product(shape(self%p)), 'sink%p')
+  call io%bits_mem (storage_size(self%v), product(shape(self%v)), 'sink%v')
+  call io%bits_mem (storage_size(self%a), product(shape(self%a)), 'sink%a')
+  l = patch%mesh%li
+  u = patch%mesh%ui
+  d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
+  m = maxloc(d)+l-1
+  if (present(sink_position)) then
+    pos = sink_position
+  else
+    do i=1,3
+      r => patch%mesh(i)%r
+      pos(i) = patch%position(i) + r(m(i))
+    end do
+  endif
+  self%position = pos
+  self%ds = patch%mesh(:)%d
+  self%n  = 2*ceiling(accretion_radius)
+  self%ng = 2
+  self%nv = patch%nv
+  self%nt = patch%nt
+  self%nw = 1
+  !-----------------------------------------------------------------------------
+  ! We should use no_mans_land=.false., and an odd number for self%n
+  !-----------------------------------------------------------------------------
+  self%no_mans_land = .false.
+  self%n  = (self%n/2)*2 + 1
+  self%size = self%ds*(self%n-1)
+  !-----------------------------------------------------------------------------
+  ! Set a high level on the sink particle patch, to force downloading of interior
+  ! data
+  !-----------------------------------------------------------------------------
+  call self%patch_t%setup (self%position, self%size, self%n, self%ng, self%nt, self%nv, self%nw)
+  if (self%id==io%id_debug) then
+    print *, 'sink_patch_t%init_task: id, patch%id, m, dmax', self%id, patch%id, m, maxval(d)
+    print *, 'sink_patch_t%init_task: (pos-patch%pos)/size', (self%position-patch%position)/patch%size
+    print *, 'sink_patch_t%init_task: patch%pos, d', patch%myposition(m), patch%mem(m(1),m(2),m(3),patch%idx%d,patch%it,1)
+    print *, 'sink_patch_t%init_task:  self%n   , patch%n   ', self%n   , patch%n
+  end if
+  self%quality = 1024
+  self%level   = patch%level
+  self%time    = patch%time
+  do i=1,3
+    self%mesh(i)%h  = patch%mesh(i)%h
+  end do
+  self%mass = 0d0
+  self%velocity = 0d0
+  call self%idx%init (4, mhd=.false.)
+  self%unsigned(self%idx%d) = .true.
+  call self%set (bits%internal)
+  !-----------------------------------------------------------------------------
+  ! Pre-load radius and mask array for use in accretion calculations
+  !-----------------------------------------------------------------------------
+  allocate (self%mask(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn))
+  allocate (self%r   (self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn))
+  call io%bits_mem (storage_size(self%r   ), product(shape(self%r   )), 'sink%r')
+  call io%bits_mem (storage_size(self%mask), product(shape(self%mask)), 'sink%mask')
+  do iz=1,self%mesh(3)%gn
+  do iy=1,self%mesh(2)%gn
+  do ix=1,self%mesh(1)%gn
+    r2 = (ix-self%mesh(1)%o)**2 &
+       + (iy-self%mesh(2)%o)**2 &
+       + (iz-self%mesh(3)%o)**2
+    self%r(ix,iy,iz) = max(sqrt(r2),1e-3)
+    self%mask(ix,iy,iz) = merge(.true., .false., r2<accretion_radius**2)
+  end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Attach a task list link, initialize nbors, and append to the task list
+  !-----------------------------------------------------------------------------
+  self%task_list => patch%task_list
+  call self%task_list%init_nbors (self%link)
+  call self%task_list%append_link (self%link)
+  if (verbose > 1) then
+    nbor => self%link%nbor
+    do while (associated(nbor))
+      write (stdout,*) &
+        'nbor:', nbor%task%id, real((nbor%task%position-self%position)/self%ds)
+      nbor => nbor%next
+    end do
+  end if
+  !-----------------------------------------------------------------------------
+  ! Refresh the MHD patch nbor list, which adds the sink patch to it
+  !-----------------------------------------------------------------------------
+  call refresh_nbor_list (patch%link, self%task_list)
+  call trace%end()
+END SUBROUTINE init_patch
+
+!===============================================================================
+!> Store a copy of the task list in the data type instance, for use when
+!> initializing the nbor list
+!===============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(sink_patch_t):: self
+  class(list_t), pointer:: task_list
+  !.............................................................................
+  call trace%begin ('sink_patch_t%init_task_list')
+  self%task_list => task_list
+  call trace%end()
+END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Initialize test instances of the sink_patch_t data type, with parameters for
@@ -352,19 +475,6 @@ SUBROUTINE output (self)
 END SUBROUTINE output
 
 !===============================================================================
-!> Store a copy of the task list in the data type instance, for use when
-!> initializing the nbor list
-!===============================================================================
-SUBROUTINE init_task_list (self, task_list)
-  class(sink_patch_t):: self
-  class(list_t), pointer:: task_list
-  !.............................................................................
-  call trace%begin ('sink_patch_t%init_task_list')
-  self%task_list => task_list
-  call trace%end()
-END SUBROUTINE init_task_list
-
-!===============================================================================
 !> Test if a sink particle should be created in a given patch
 !===============================================================================
 FUNCTION check (self, patch)
@@ -386,116 +496,6 @@ FUNCTION check (self, patch)
   end if
   call trace%end()
 END FUNCTION check
-
-!===============================================================================
-!> Create the accompanying cell-based patch, which records the density and
-!> velocity from overlapping MHD patches, for use in the recipe for accretion.
-!===============================================================================
-SUBROUTINE init_patch (self, patch, sink_position)
-  class(sink_patch_t):: self
-  class(gpatch_t), target:: patch
-  real(kind=8), dimension(3), optional :: sink_position
-  !.............................................................................
-  class(link_t), pointer:: nbor, prev
-  real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
-  real(8), dimension(:), pointer:: r
-  real(kind=8) :: pos(3)
-  integer:: i, l(3), u(3), m(3), ix, iy, iz
-  real:: r2, dmin
-  !-----------------------------------------------------------------------------
-  call trace%begin ('sink_patch_t%init_patch')
-  self%patch => patch
-  allocate (self%p(3,self%nt))
-  allocate (self%v(3,self%nt))
-  allocate (self%a(3,self%nt))
-  call io%bits_mem (storage_size(self%p), product(shape(self%p)), 'sink%p')
-  call io%bits_mem (storage_size(self%v), product(shape(self%v)), 'sink%v')
-  call io%bits_mem (storage_size(self%a), product(shape(self%a)), 'sink%a')
-  l = patch%mesh%li
-  u = patch%mesh%ui
-  d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
-  m = maxloc(d)+l-1
-  if (present(sink_position)) then
-    pos = sink_position
-  else
-    do i=1,3
-      r => patch%mesh(i)%r
-      pos(i) = patch%position(i) + r(m(i))
-    end do
-  endif
-  self%position = pos
-  self%ds = patch%mesh(:)%d
-  self%n  = 2*ceiling(accretion_radius)
-  self%ng = 2
-  self%nv = patch%nv
-  self%nt = patch%nt
-  self%nw = 1
-  !-----------------------------------------------------------------------------
-  ! We should use no_mans_land=.false., and an odd number for self%n
-  !-----------------------------------------------------------------------------
-  self%no_mans_land = .false.
-  self%n  = (self%n/2)*2 + 1
-  self%size = self%ds*(self%n-1)
-  !-----------------------------------------------------------------------------
-  ! Set a high level on the sink particle patch, to force downloading of interior
-  ! data
-  !-----------------------------------------------------------------------------
-  call self%patch_t%setup (self%position, self%size, self%n, self%ng, self%nt, self%nv, self%nw)
-  if (self%id==io%id_debug) then
-    print *, 'sink_patch_t%init_task: id, patch%id, m, dmax', self%id, patch%id, m, maxval(d)
-    print *, 'sink_patch_t%init_task: (pos-patch%pos)/size', (self%position-patch%position)/patch%size
-    print *, 'sink_patch_t%init_task: patch%pos, d', patch%myposition(m), patch%mem(m(1),m(2),m(3),patch%idx%d,patch%it,1)
-    print *, 'sink_patch_t%init_task:  self%n   , patch%n   ', self%n   , patch%n
-  end if
-  self%quality = 1024
-  self%level   = patch%level
-  self%time    = patch%time
-  do i=1,3
-    self%mesh(i)%h  = patch%mesh(i)%h
-  end do
-  self%mass = 0d0
-  self%velocity = 0d0
-  call self%idx%init (4, mhd=.false.)
-  self%unsigned(self%idx%d) = .true.
-  call self%set (bits%internal)
-  !-----------------------------------------------------------------------------
-  ! Pre-load radius and mask array for use in accretion calculations
-  !-----------------------------------------------------------------------------
-  allocate (self%mask(self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn))
-  allocate (self%r   (self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn))
-  call io%bits_mem (storage_size(self%r   ), product(shape(self%r   )), 'sink%r')
-  call io%bits_mem (storage_size(self%mask), product(shape(self%mask)), 'sink%mask')
-  do iz=1,self%mesh(3)%gn
-  do iy=1,self%mesh(2)%gn
-  do ix=1,self%mesh(1)%gn
-    r2 = (ix-self%mesh(1)%o)**2 &
-       + (iy-self%mesh(2)%o)**2 &
-       + (iz-self%mesh(3)%o)**2
-    self%r(ix,iy,iz) = max(sqrt(r2),1e-3)
-    self%mask(ix,iy,iz) = merge(.true., .false., r2<accretion_radius**2)
-  end do
-  end do
-  end do
-  !-----------------------------------------------------------------------------
-  ! Attach a task list link, initialize nbors, and append to the task list
-  !-----------------------------------------------------------------------------
-  self%task_list => patch%task_list
-  call self%task_list%init_nbors (self%link)
-  call self%task_list%append_link (self%link)
-  if (verbose > 1) then
-    nbor => self%link%nbor
-    do while (associated(nbor))
-      write (stdout,*) &
-        'nbor:', nbor%task%id, real((nbor%task%position-self%position)/self%ds)
-      nbor => nbor%next
-    end do
-  end if
-  !-----------------------------------------------------------------------------
-  ! Refresh the MHD patch nbor list, which adds the sink patch to it
-  !-----------------------------------------------------------------------------
-  call refresh_nbor_list (patch%link, self%task_list)
-  call trace%end()
-END SUBROUTINE init_patch
 
 !===============================================================================
 !> Courant condition for sink particles.  FIXME: For now, just copy patch dtime
