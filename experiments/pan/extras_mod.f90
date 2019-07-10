@@ -100,8 +100,8 @@ SUBROUTINE init_task_list (self, task_list)
   class(extras_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
-  call self%gpatch_t%init_task_list (task_list)
-  call sink_patch%ad_hoc_add (self)                             ! sinkp
+  call self%gpatch_t%init_task_list (task_list)                 ! keep
+  call sink_patch%ad_hoc_add (self%link)                        ! sinkp
 END SUBROUTINE init_task_list
 
 !===============================================================================
