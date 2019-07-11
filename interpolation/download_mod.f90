@@ -355,11 +355,13 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     call io%abort('download_t%download_link: link%task not associated')
   end if
   target => task2patch(link%task)
-  d => target%mem(:,:,:,target%idx%d,target%it,1)
-  call validate%check (target%link, d, 'before download')
-  if (target%id == id_debug .or. verbose > 2) then
-    write(io_unit%output,*) 'download_t%download_link: id, time =', &
-      target%id, target%time
+  if (target%is_clear(bits%no_density)) then
+    d => target%mem(:,:,:,target%idx%d,target%it,1)
+    call validate%check (target%link, d, 'before download')
+    if (target%id == id_debug .or. verbose > 2) then
+      write(io_unit%output,*) 'download_t%download_link: id, time =', &
+        target%id, target%time
+    end if
   end if
   if (.not.associated(link%nbor)) then
     sorted = .false.
@@ -387,9 +389,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
         src(l(1):u(1),l(2):u(2),l(3):u(3)) = target%id
     end if
   end if
-  if (trim(target%kind)/='rt_solver') then
-    call target%check_density ("before download")
-  end if
+  if (target%is_clear(bits%no_density))call target%check_density ("before download")
+
   if (target%is_periodic()) call target%periodic_grid
   !-----------------------------------------------------------------------------
   ! Use an nbor list sorted by decreasing level, recording in each cell the
@@ -556,7 +557,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       deallocate (src)
   end if
   !-----------------------------------------------------------------------------
-  call validate%check (target%link, d, ' after download')
+  if (target%is_clear(bits%no_density)) call validate%check (target%link, d, ' after download')
   call trace%end (itimer)
 END SUBROUTINE download_link
 
@@ -712,8 +713,10 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
   if (iv2 > source%nv) then
     write(io_unit%log,*) 'iv loop limit:', iv1, iv2
     write(io_unit%log,*) 'source: id, nv =', source%id, source%nv
+    write(io_unit%log,*) 'source kind ',source%kind, source%position
+    write(io_unit%log,*) 'target kind ',target%kind, target%position
     write(io_unit%log,*) 'target: id, nv =', target%id, target%nv
-    call io%abort()
+    call io%abort("download::same_linear::iv2 > source%nv")
   end if
   do iv=iv1, iv2
     if (verbose > 1 .and. source%unsigned(iv)) then
