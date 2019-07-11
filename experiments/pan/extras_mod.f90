@@ -125,9 +125,11 @@ END SUBROUTINE dealloc
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
+  call trace%begin ('extras_t%pre_update')
   call self%forces%pre_update                                   ! forces
   call self%trace_particles%update                              ! tracep
   call particle_solver%force_field (self)                       ! sinkp
+  call trace%end
 END SUBROUTINE pre_update
 
 !===============================================================================

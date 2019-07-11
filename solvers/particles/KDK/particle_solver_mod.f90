@@ -42,14 +42,16 @@ SUBROUTINE init (self, name)
 END SUBROUTINE init
 
 !===============================================================================
-!> KDK update
+!> KDK update, using the self%force() procedure provided by particle_list_t.
 !===============================================================================
 SUBROUTINE update (self, p)
   class(particle_solver_t):: self
   class(particle_t), pointer:: p
+  !.............................................................................
   real(8):: dt, a(3)
   integer:: new, nt
-  !.............................................................................
+  !-----------------------------------------------------------------------------
+  call trace%begin ('particle_solver_t%update')
   new = 1 + mod(p%it,self%nt)
   associate (v=>p%v(:,new), r=>p%r(:,new))
   dt = self%courant_time (p)                    ! estimate dt
@@ -59,12 +61,16 @@ SUBROUTINE update (self, p)
   a = self%force(p)/p%mass                      ! acceleration
   v = v + 0.5_8*a*dt                            ! kick 2
   end associate
+  !-----------------------------------------------------------------------------
+  ! Rotate the time slice slots for the particle
+  !-----------------------------------------------------------------------------
   p%time = p%time+dt
   p%t(new) = p%time
   p%it = new
   nt = self%nt
   p%iit(1:nt-1) = p%iit(2:nt)
   p%iit(nt) = new
+  call trace%end ()
 END SUBROUTINE update
 
 !===============================================================================
@@ -85,7 +91,7 @@ FUNCTION courant_time (self, p) RESULT (dt)
   i1 = p%iit(self%nt-1)
   i0 = p%iit(self%nt-2)
   associate (v=>p%v(:,i1))
-  a = (p%v(:,i1)-p%v(:,i0))/(p%t(i1)-p%t(i0))
+  a = (p%v(:,i1)-p%v(:,i0))/max(1d-30,p%t(i1)-p%t(i0))
   ac = 1.0/sqrt(sum(a**2)+tiny(1.0_8))
   vc = 1.0/sqrt(sum(v**2)+tiny(1.0_8))
   dt1 = p%ds*vc*courant
@@ -96,6 +102,7 @@ FUNCTION courant_time (self, p) RESULT (dt)
     dt2 = p%ds*ac/vc*courant
   end if
   dt = min(dt1,dt2)
+print *, 'particle_solver_t%courant: dt1, dt2, a, v =', dt1, dt2, ac, vc
   end associate
 END FUNCTION courant_time
 

@@ -4,6 +4,7 @@
 !===============================================================================
 MODULE patch_force_mod
   USE dll_mod
+  USE trace_mod
   implicit none
   private
   type, public, extends(dll_node_t):: patch_force_t
@@ -24,10 +25,12 @@ CONTAINS
 SUBROUTINE init (self)
   class(patch_force_t):: self
   !.............................................................................
+  call trace%begin ('patch_force_t%init')
   allocate (self%f(self%nt,3), self%t(self%nt))
-  self%it = 0
+  self%it = 1
   self%t = 0d0
   self%f = 0.0
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================

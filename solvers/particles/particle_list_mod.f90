@@ -157,6 +157,11 @@ SUBROUTINE force_field (self, patch)
   !-----------------------------------------------------------------------------
   ! For each cell, loop over particles and accumulate force in double precision
   !-----------------------------------------------------------------------------
+  if (.not.allocated(patch%force_per_unit_mass)) then
+    associate (m=>patch%gn)
+    allocate (patch%force_per_unit_mass(m(1),m(2),m(3),3))
+    end associate
+  end if
   associate (m1=>patch%mesh(1), m2=>patch%mesh(2), m3=>patch%mesh(3))
   rsoft2 = (self%rsoft*minval(patch%ds))**2
   do iz=m3%li,m3%ui
@@ -191,28 +196,20 @@ SUBROUTINE force_field (self, patch)
   p => self%head
   do while (associated(p))
     ip = ip+1
-    !call hash_table%get (ip, patch%id, ptr)
-    !call self%ht%get ([ip,patch%id], ptr)
-    if (.not. associated(ptr)) then
-      allocate (patch_force)
-      call patch_force%init
-      select type (p)
-      class is (particle_t)
-        dll_node => patch_force
-        call p%patch_forces%append (dll_node)
-      end select
-      !call self%ht%set ([ip,patch%id], patch_force)
-      ptr => patch_force
-    end if
-    select type (ptr)
-    class is (patch_force_t)
+    select type (p)
+    class is (particle_t)
+print *, 'hash_table%get: key =', [p%id, patch%id]
+      call hash_table%get ([p%id, patch%id], ptr)
+      select type (ptr)
+        class is (patch_force_t)
 print *, 'PP', ip, f(ip,:), associated(ptr)
-print *, 'PP', ip, ptr%it, allocated(ptr%f)
-    ptr%f(:,ptr%it) = f(ip,:)
+print *, 'PP', ip, ptr%it, p%time
+        ptr%f(ptr%it,:) = f(ip,:)
+      end select
     end select
     p => p%next
   end do
-  call trace%end
+  call trace%end ()
 END SUBROUTINE force_field
 
 !===============================================================================
