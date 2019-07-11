@@ -85,7 +85,7 @@ MODULE extras_mod
     !class(pic_t), pointer:: pic                                 ! pic
     !type (spitzer_t):: spitzer                                  ! spitzer
     !type(gravity_t):: gravity                                   ! gravity
-    !class(radiative_transfer_t), pointer:: rt                   ! radiative transfer
+    !class(rt_t), pointer:: rt                 r                  ! radiative transfer
     !type(sinkparticles_t):: sinkparticles                       ! sinkp
     !class(patch_force_t), pointer:: patch_force                 ! sinkp
     !class(trace_particles_t), pointer:: trace_particles         ! tracep
