@@ -1,0 +1,77 @@
+!===============================================================================
+!> Boundary conditions for radiative heat transfer
+!===============================================================================
+MODULE rt_boundaries_mod
+  USE io_mod
+  USE trace_mod
+  USE kinds_mod
+  USE bits_mod
+  USE mesh_mod
+  USE eos_mod
+  USE units_mod
+  USE scaling_mod
+  implicit none
+  private
+  !-----------------------------------------------------------------------
+  type, public :: rt_boundaries_t
+    class(mesh_t), pointer:: mesh(:)
+    real :: grav
+  contains
+    procedure:: init
+    procedure:: condition                                               ! modify outer BCs if necessary
+  end type
+!-----------------------------------------------------------------------
+  type(rt_boundaries_t), public :: rt_boundaries
+CONTAINS
+
+!=======================================================================
+!> Initialize the boundary data type
+!=======================================================================
+SUBROUTINE init (self, mesh)
+  class(rt_boundaries_t):: self
+  class(mesh_t), pointer, optional:: mesh(:)
+  !.....................................................................
+  self%mesh => mesh
+  self%grav = 27500 * scaling%t**2 / scaling%l
+END SUBROUTINE init
+
+!===============================================================================
+!> Vertical boundary conditions; here we explicitly assume the vertical direction
+!> to be downwards, so the lower boundary index-wise is the top physical boundary,
+!> where I=0 => Q=-S.
+!===============================================================================
+SUBROUTINE condition (self, mem, src, rk, tt, mu,w)
+  class(rt_boundaries_t) :: self
+  real, dimension(:,:,:,:),pointer:: mem, src, rk
+  real, dimension(:,:,:), pointer:: tt
+  real :: mu, w
+  logical:: lower
+  !.....................................................................
+  class(mesh_t), pointer:: m1, m2, m3
+  integer:: ib, i3, i3b, i2, i1, n(4)
+  real:: h_scale, tau, mean1, mean2, f_scale
+  !---------------------------------------------------------------------
+  n=shape(mem)
+  if (self%mesh(3)%lower_boundary) then
+    i3 = self%mesh(3)%lo
+    mean1 = sum(tt(self%mesh(1)%li:self%mesh(1)%ui,self%mesh(2)%li:self%mesh(2)%ui,i3+1))/(n(1)*n(2))
+    mean2 = sum(tt(self%mesh(1)%li:self%mesh(1)%ui,self%mesh(2)%li:self%mesh(2)%ui,i3  ))/(n(1)*n(2))
+    do ib=1,n(4)
+      do i2=self%mesh(2)%lb,self%mesh(2)%ub
+      do i1=self%mesh(1)%lb,self%mesh(1)%ub
+        ! -- Estimate the boundary Q from an estimate of the total optical depth
+        f_scale = (tt(i1,i2,i3+1)/tt(i1,i2,i3))**0.05
+        h_scale = tt(i1,i2,i3)/self%grav*f_scale
+        tau = h_scale*rk(i1,i2,i3+1,ib)/abs(mu)
+        mem(i1,i2,i3,ib) = -src(i1,i2,i3,ib)*exp(-tau)
+      end do
+      end do
+    end do
+  end if
+  if (self%mesh(3)%upper_boundary) then
+    mem(:,:,self%mesh(3)%uo:self%mesh(3)%ub,:) = 0.0
+  end if 
+
+END SUBROUTINE condition
+
+END MODULE rt_boundaries_mod
