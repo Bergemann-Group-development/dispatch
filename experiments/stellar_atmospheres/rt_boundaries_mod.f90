@@ -5,19 +5,17 @@ MODULE rt_boundaries_mod
   USE io_mod
   USE trace_mod
   USE kinds_mod
-  USE mpi_mod
   USE bits_mod
   USE mesh_mod
   USE eos_mod
   USE units_mod
   USE scaling_mod
-  USE math_mod
   implicit none
   private
   !-----------------------------------------------------------------------
   type, public :: rt_boundaries_t
     class(mesh_t), pointer:: mesh(:)
-    real:: cool, hot
+    real :: grav
   contains
     procedure:: init
     procedure:: condition                                               ! modify outer BCs if necessary
@@ -31,131 +29,49 @@ CONTAINS
 !=======================================================================
 SUBROUTINE init (self, mesh)
   class(rt_boundaries_t):: self
-  class(mesh_t), pointer:: mesh(:)
+  class(mesh_t), pointer, optional:: mesh(:)
   !.....................................................................
-  real, dimension(:,:,:), pointer :: d, e
-  real, dimension(:,:,:,:), pointer :: src, rk
-  real :: t, d0
-  integer:: m(4)
-  logical, save:: first_time
-  real, save :: hot_temp = 1000, cool_temp = 10
-  real, save :: cool = 0.0, hot = 0.0
-  namelist /rt_bc_params/ cool_temp, hot_temp
-  !-----------------------------------------------------------------------------
   self%mesh => mesh
-  !
-  !$omp critical (input_cr)
-  if (first_time) then
-    first_time = .false.
-    rewind (io%input)
-    read (io%input, rt_bc_params)
-    if (io%master) write (*, rt_bc_params)
-  end if
-  !$omp end critical (input_cr)
-  allocate(d(1,1,2))
-    allocate(e(1,1,2))
-    allocate(src(1,1,2, eos%n_lambda))
-    allocate(rk(1,1,2, eos%n_lambda))
-    d = 1.0/scaling%d
-    e(:,:,1) = (cool_temp/scaling%temp)/(eos%gamma-1.0)
-    e(:,:,2) = (hot_temp/scaling%temp)/(eos%gamma-1.0)
-    m = shape(rk)
-    call eos%lookup_table (m, d=d, e=e, rk=rk, src=src)
-    cool = 0.0      
-    hot  = src(1,1,2,1) - src(1,1,1,1)          
-    deallocate(d,e,src, rk)
-  self%cool = cool
-  self%hot  = hot
+  self%grav = 27500 * scaling%t**2 / scaling%l
 END SUBROUTINE init
 
 !===============================================================================
+!> Vertical boundary conditions; here we explicitly assume the vertical direction
+!> to be downwards, so the lower boundary index-wise is the top physical boundary,
+!> where I=0 => Q=-S.
 !===============================================================================
-SUBROUTINE condition (self, mem, src, rk,tt, mu, w)
+SUBROUTINE condition (self, mem, src, rk, tt, mu,w)
   class(rt_boundaries_t) :: self
-  real, dimension(:,:,:,:):: mem, src, rk
+  real, dimension(:,:,:,:),pointer:: mem, src, rk
   real, dimension(:,:,:), pointer:: tt
-  real   :: mu, w, tau
+  real :: mu, w
+  logical:: lower
   !.....................................................................
   class(mesh_t), pointer:: m1, m2, m3
-  integer:: i3, i3b, i2, i1, n(4), iv
+  integer:: ib, i3, i3b, i2, i1, n(4)
+  real:: h_scale, tau, mean1, mean2, f_scale
   !---------------------------------------------------------------------
-  n = shape(rk)
-  
+  n=shape(mem)
   if (self%mesh(3)%lower_boundary) then
-    i3 =  self%mesh(3)%lo
-    i3b = self%mesh(3)%lb
+    i3 = self%mesh(3)%lo
+    mean1 = sum(tt(self%mesh(1)%li:self%mesh(1)%ui,self%mesh(2)%li:self%mesh(2)%ui,i3+1))/(n(1)*n(2))
+    mean2 = sum(tt(self%mesh(1)%li:self%mesh(1)%ui,self%mesh(2)%li:self%mesh(2)%ui,i3  ))/(n(1)*n(2))
+    do ib=1,n(4)
       do i2=self%mesh(2)%lb,self%mesh(2)%ub
       do i1=self%mesh(1)%lb,self%mesh(1)%ub
-      do iv=1, n(4)
-        mem(i1,i2,i3b:i3,iv) = self%cool*rk(i1,i2,i3b:i3,iv)!/abs(mu)/w*math%pi4
+        ! -- Estimate the boundary Q from an estimate of the total optical depth
+        f_scale = (tt(i1,i2,i3+1)/tt(i1,i2,i3))**0.05
+        h_scale = tt(i1,i2,i3)/self%grav*f_scale
+        tau = h_scale*rk(i1,i2,i3+1,ib)/abs(mu)
+        mem(i1,i2,i3,ib) = -src(i1,i2,i3,ib)*exp(-tau)
       end do
       end do
-      end do
+    end do
   end if
-  !print *, 'lower bnd', self%mesh(1)%lower_boundary,self%mesh(2)%lower_boundary,self%mesh(3)%lower_boundary
-  !print *, 'upper bnd', self%mesh(1)%upper_boundary,self%mesh(2)%upper_boundary,self%mesh(3)%upper_boundary
-  
   if (self%mesh(3)%upper_boundary) then
-    i3  = self%mesh(3)%uo
-    i3b = self%mesh(3)%ub
-      do i2=self%mesh(2)%lb,self%mesh(2)%ub
-      do i1=self%mesh(1)%lb,self%mesh(1)%ub
-      do iv=1, n(4)
-        mem(i1,i2,i3:i3b,iv) = self%cool*rk(i1,i2,i3:i3b,iv)!/abs(mu)/w*math%pi4
-      end do
-      end do
-      end do
-  end if
-!
-if (self%mesh(2)%lower_boundary) then
-    i3  = self%mesh(2)%lo
-    i3b = self%mesh(2)%lb
-      do i2=self%mesh(3)%lb,self%mesh(3)%ub
-      do i1=self%mesh(1)%lb,self%mesh(1)%ub
-      do iv=1, n(4)
-        mem(i1,i3b:i3,i2,iv) = self%cool*rk(i1,i3b:i3,i2,iv)!/abs(mu)/w*math%pi4
-      end do
-      end do
-      end do
-  end if
-  
-  if (self%mesh(2)%upper_boundary) then
-    i3  = self%mesh(2)%uo
-    i3b = self%mesh(2)%ub
-      do i2=self%mesh(3)%lb,self%mesh(3)%ub
-      do i1=self%mesh(1)%lb,self%mesh(1)%ub
-      do iv=1, n(4)
-        mem(i1,i3:i3b,i2,iv) = self%cool*rk(i1,i3:i3b,i2,iv)!/abs(mu)/w*math%pi4
-      end do
-      end do
-      end do
-  end if
-  !
-  if (self%mesh(1)%lower_boundary) then
-    i3  = self%mesh(1)%lo
-    i3b = self%mesh(1)%lb
-      do i2=self%mesh(3)%lb,self%mesh(3)%ub
-      do i1=self%mesh(2)%lb,self%mesh(2)%ub
-      do iv=1, n(4)
-        mem(i3b:i3,i1,i2,iv) = self%hot*rk(i3b:i3,i1,i2,iv)!/abs(mu)/w*math%pi4
-        !print *, 'boundary set',i3b, i1, i2, mem(i3b:i3,i1,i2,iv)
-      end do
-      end do
-      end do
-  end if
-  
-  if (self%mesh(1)%upper_boundary) then
-    i3  = self%mesh(1)%uo
-    i3b = self%mesh(1)%ub
-      do i2=self%mesh(3)%lb,self%mesh(3)%ub
-      do i1=self%mesh(2)%lb,self%mesh(2)%ub
-      do iv=1, n(4)
-        mem(i3:i3b,i1,i2,iv) = self%cool*rk(i3:i3b,i1,i2,iv)!/abs(mu)/w*math%pi4
-      end do
-      end do
-      end do
-  end if  
+    mem(:,:,self%mesh(3)%uo:self%mesh(3)%ub,:) = 0.0
+  end if 
+
 END SUBROUTINE condition
 
 END MODULE rt_boundaries_mod
-
