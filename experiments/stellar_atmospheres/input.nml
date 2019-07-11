@@ -1,27 +1,119 @@
+&task_list_params
+job_seconds=1e6
+/
+&task_mesg_params
+verbose=1
+/
+&mpi_mesg_params
+verbose=1
+debug  =.true.
+/
 
-&task_list_params       job_seconds=1e6 /
-&task_mesg_params       verbose=1 /
-&mpi_mesg_params        verbose=1 debug=.true. /
+&experiment_params
+ verbose=0
+ d_bot  =231.8
+ e_bot  =2897.0
+ top_temperature = 4500 
+ smudge_boundary=t
+/
 
-&experiment_params      verbose=0 d_bot=231.8 e_bot=2897.0 /
-&ic_params              verbose=0 file='mhd63' order=1 b0=1 /
-&rt_params              verbose=0 nt=1 n_mu=2 n_phi=4 n_bin=4 rt_time=0.005
-                        dtau_min=1e-6 dtau_dif=1e3 dtau_max=1e4 grace=0
-                        order=0 dbg_position=2*-0.25 rt_bottom=0.45 /
-&rt_setup_params        verbose=0 n_warmup=0 unique_ids=t only_vertical=t /
+& snapshot_params       
+ order    =1
+ verbose  =0
+ meshfile ='input_data/mhd63.msh'
+ snapfile ='input_data/mhd63.dat'
+ model    ='stagger'
+ b0       = -1.0
+ flip_z   = f
+/
 
-&io_params              verbose=0 do_trace=f omp_trace=f do_output=t method='parallel' id_debug=0 restart=-1 /
-&cartesian_params       size=2*6,3 dims=2*6,3 mpi_dims=2,1,1 origin=0,0,-0.5 omp_init=f fast_nbors=f /
-&patch_params           do_check_nan=t nt=5 grace=0.1 n=3*20 no_mans_land=t use_data_hub=f dt_fixed=-1 /
-&out_params             end_time=1.50 out_time=0.1 print_time=0 guard_zones=t /
-                        !    cs    pa  ofd   mas  kap  eta
-&stagger_params         nu=  0.03, 1.0, 1.0, 0.15, 1.0, 1.0
-                        gamma=1.4 eos='tabular' courant=0.15 /
-&eos_params             verbose=1 /
-&timestep_params        time_order=2 /
-&ramses_params          /
+&non_ideal_params
+ mhd_Ohm=f
+ eta_Ohm=0.01
+ mhd_AD=f
+/
 
-&timer_params           sec_per_report=20 /
+&gravity_params
+ on=t
+ constant=27500     ! in CGS
+ const_axis=3
+ position=0.0       ! in code position
+ mass=-1            ! in code units
+ minrad=-1          ! in code units
+/
+
+&sc_rt_params              
+ on =t 
+ verbose=0 
+ nt=1
+ n_mu=2
+ n_phi=4
+ n_lambda=4
+ rt_timestep=0.005
+ rt_grace=0.0
+ rt_llc = 0,0,-0.5
+ rt_extent = 6,6,0.45 
+ vertical_propagation = t
+/
+
+&rt_setup_params        
+ verbose=0 
+ n_warmup=2 
+ unique_ids=t 
+ omp_warmup=f
+/
+
+&io_params              
+ verbose=0 
+ do_trace=f 
+ omp_trace=f 
+ do_output=t 
+ id_debug=0 
+ restart=-1  
+ guard_zones=t
+ nml_version=1
+/
+
+&cartesian_params       
+ size=6,6,3 
+ dims=6,6,3 
+ mpi_dims=4,4,1 
+ origin=0,0,-0.5 
+ omp_init=f 
+/
+&patch_params
+ do_check_nan=t 
+ nt=5 
+ grace=0.05 
+ n=3*20
+ no_mans_land=t 
+ use_data_hub=f 
+ dt_fixed=-1 
+ periodic = t,t,f
+/
+
+&out_params             
+ end_time=25.00 
+ out_time=0.05 
+ print_time=0
+/
+                        
+&stagger_params         
+ !    cs    pa   ofd  mas   kap  eta
+ nu=  0.03, 1.0, 1.0, 0.05, 1.0, 1.0
+ gamma=1.4
+ eos='tabular' 
+ courant=0.15 
+/
+
+&eos_params
+   /
+&timestep_params        
+time_order=2
+/
+
+
+&timer_params  sec_per_report=20 /
 &dispatcher_params      method=0 /
 &dispatcher3_params     verbose=0 f_over=3 use_taskyield=f use_critical=f /
 &download_params        verbose=0 /

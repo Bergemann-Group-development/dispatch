@@ -24,6 +24,7 @@ MODULE read_snapshot_mod
   USE lagrange_mod
   USE experiment_mod
   USE omp_mod
+  USE scaling_mod
   implicit none
   private
   type, public:: rs_t
@@ -78,7 +79,8 @@ SUBROUTINE read_bifrost_snap (task_list)
   class(mesh_t), pointer, dimension(:):: m
   integer:: n(3), iv, iiv, recl, ix, iy, iz
   integer:: zi
-  integer:: mx, my, mz, nx, ny, nz, nv, ii(9)
+  integer:: mx, my, mz, nx, ny, nz, nv, ii(8)
+  real:: sc_u, sc_b
   real, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn
   real, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn
   real, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn
@@ -147,7 +149,7 @@ SUBROUTINE read_bifrost_snap (task_list)
   !---------------------------------------------------------------------------
   ! Allocate a buffer for reading Bifrost legacy snapshots
   !---------------------------------------------------------------------------
-  
+  allocate (rbuf(mx,my,mz))
   if (allocated(rbuf))call io%bits_mem (storage_size (rbuf), mx*my*mz)
   allocate (buffer(mx+1,my+1,mz))
   call io%bits_mem (storage_size (buffer), product(shape(buffer)), 'buffer')
@@ -155,15 +157,20 @@ SUBROUTINE read_bifrost_snap (task_list)
   if (io%master) &
     print *,'reading MHD data from ',trim(snapfile)
   open (io_unit%datain, file=trim(snapfile), form='unformatted', access='direct', recl=recl)
-  ii=[patch%idx%d,patch%idx%py,patch%idx%pz,patch%idx%px, &
-      patch%idx%e,patch%idx%tt,patch%idx%bx,patch%idx%by,patch%idx%bz]
+  ! Indices
+  ii=[patch%idx%d,patch%idx%px,patch%idx%py,patch%idx%pz, &
+      patch%idx%e,patch%idx%bx,patch%idx%by,patch%idx%bz]
   !-----------------------------------------------------------------------------
   ! Read data and optionally swap z
   !-----------------------------------------------------------------------------
-  do iv=1,min(nv,9)
+  do iv=1,min(nv,8)
     iiv = ii(iv)
     if (io%master) print *, 'reading variable index iv =', iv
     read (io_unit%datain, rec=iv) rbuf(1:mx,1:my,1:mz)
+    
+      print *, 'iv minmax in snapshot', minval(rbuf(1:mx,1:my,1:mz)), maxval(rbuf(1:mx,1:my,1:mz))
+      print *, 'iv minmax location in snapshot', minloc(rbuf(1:mx,1:my,1:mz)), maxloc(rbuf(1:mx,1:my,1:mz))
+        
     if (flip_z) then
       do iz=1,mz; do iy=1,my; do ix=1,mx
       zi = mz -iz + 1
@@ -220,7 +227,9 @@ SUBROUTINE read_bifrost_snap (task_list)
     !$omp end parallel
   end do
   close (io_unit%datain)
+  call io%bits_mem (-storage_size (buffer), product(shape(buffer)), 'buffer')
   deallocate (buffer)
+  if (allocated(rbuf))call io%bits_mem (-storage_size (rbuf), mx*my*mz)
   if (allocated(rbuf)) deallocate(rbuf)
   deallocate (xm,ym,zm,xmdn,ymdn,zmdn)
   !-----------------------------------------------------------------------------

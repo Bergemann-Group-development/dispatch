@@ -837,9 +837,14 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
     needed   = .false.
     download = .false.
   end if
-  if(self%vertical_propagation) then
-    if (any(self%position(1:2) /= rt_another%position(1:2))) &
+  if (self%vertical_propagation) then
+    if (any(self%position(1:2) /= rt_another%position(1:2))) then
       needed = .false.
+      needs_me = .false.
+    end if
+  else if (self%position(3) == rt_another%position(3)) then
+    needed = .false.
+    needs_me = .false.
   end if
   
   if (self%i_omega /= rt_another%i_omega) download = .false.

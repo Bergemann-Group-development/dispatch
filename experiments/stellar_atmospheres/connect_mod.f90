@@ -6,7 +6,7 @@ MODULE connect_mod
   private
   type, public:: connect_t
     !class(*), pointer:: trace_particles
-    !class(*), pointer:: rt
+    class(*), pointer:: rt
     !class(*), pointer:: pic_patch
   end type
 END MODULE connect_mod

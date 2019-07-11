@@ -387,7 +387,7 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
       + fy01(ix) * tab(ik (ix) +     ntab (ix) + 1) &
       + fy10(ix) * tab(ik1(ix) +     ntab1(ix)    ) &
       + fy11(ix) * tab(ik1(ix) +     ntab1(ix) + 1) &
-        )
+        )/scaling%temp
      end do
     end if
     ik  = ik  + 3*ntab

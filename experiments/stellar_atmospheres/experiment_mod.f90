@@ -17,29 +17,26 @@ MODULE experiment_mod
   USE trace_mod
   USE omp_timer_mod
   USE task_mod
-  USE gpatch_mod
   USE link_mod
-  USE rt_mod
-  USE rt_solver_mod
   USE solver_mod
   USE scaling_mod
   USE mesh_mod
   USE download_mod
   USE bits_mod
+  USE eos_mod
   implicit none
   private
-  type, public, extends(rt_solver_t):: experiment_t
+  type, public, extends(solver_t):: experiment_t
     real, dimension(:,:,:,:), pointer:: lower => null()
     real, dimension(:,:,:,:), pointer:: upper => null()
   contains
     procedure:: init
     procedure:: update
-    procedure:: dnload
     procedure:: boundary_condition
-    procedure, nopass:: is_ready
   end type
   integer, save:: verbose=1
-  real, save:: grav=2.75, d_bot=0.0, e_bot=0.0, top_temperature=4000.
+  logical, save:: smudge_boundary = .false.
+  real, save:: d_bot=0.0, e_bot=0.0, top_temperature=4000.
   real, save:: bottom_bc_rate=0.01
   type(experiment_t), public:: experiment
 CONTAINS
@@ -51,10 +48,10 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  namelist /experiment_params/ grav, d_bot, e_bot, bottom_bc_rate, &
-                               top_temperature, verbose
+  namelist /experiment_params/ d_bot, e_bot, bottom_bc_rate, &
+                               top_temperature, verbose, smudge_boundary
   !-----------------------------------------------------------------------------
-  call trace_begin('experiment_t%init')
+  call trace%begin('experiment_t%init')
   !-----------------------------------------------------------------------------
   if (first_time) then
     !$omp critical (input_cr)
@@ -63,6 +60,9 @@ SUBROUTINE init (self)
       rewind (io%input)
       read (io%input, experiment_params, iostat=iostat)
       if (io%master) write (*, experiment_params)
+      top_temperature = top_temperature/scaling%temp
+      !d_bot = d_bot/scaling%d
+      !e_bot = e_bot/scaling%e
     end if
     !$omp end critical (input_cr)
   end if
@@ -70,19 +70,21 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate memory and set default values
   !-----------------------------------------------------------------------------
-  call self%rt_solver_t%init
-  self%grav = grav
+  self%mhd = .true.
+  call self%solver_t%init
   self%unsigned = .false.
   !----------------------------------------------------------------------------
   ! Boundary setup
   !----------------------------------------------------------------------------
   self%periodic(3) = .false.                     ! non-periodic vertically
   call self%init_bdries
+  call self%boundaries%init(self%mesh)
+  self%boundaries%id = self%id
   if (verbose > 0) then
     if (self%mesh(3)%lower_boundary) write(io%output,*) self%id, 'at lower B'
     if (self%mesh(3)%upper_boundary) write(io%output,*) self%id, 'at upper B'
   end if
-  call trace_end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -93,42 +95,26 @@ SUBROUTINE update (self)
   class(link_t), pointer:: link
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_t%update')
-  ! -- apply BCs only to the parent MHD task
+  call trace%begin('experiment_t%update')
   if (self%mesh(3)%lower_boundary .or. &
       self%mesh(3)%upper_boundary) then
-    if (self%i_omega==0) then
       call self%boundary_condition
-    end if
   end if
-  call force (self)
-  call self%rt_solver_t%update
-  call trace_end
+  call self%solver_t%update
+  call trace%end()
 END SUBROUTINE update
-
-!===============================================================================
-!===============================================================================
-SUBROUTINE dnload (self, only)
-  class(experiment_t):: self
-  integer, optional:: only
-  if (self%i_omega > 0) then
-    call download%download_link (self%link, only=only, all_times=.true.)
-  else
-    call download%download_link (self%link, only=only)
-  end if
-END SUBROUTINE dnload
 
 !===============================================================================
 !===============================================================================
 SUBROUTINE boundary_condition (self)
   class(experiment_t):: self
   integer, dimension(3):: lb, lo, li, ui, uo, ub
-  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz, tt
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz, tt, ss
   real, dimension(:,:,:), allocatable:: ux, uy, uz, ex, ey, ez
   real(8), dimension(:), pointer:: z
   class(mesh_t), pointer:: m3
   integer:: ix, iy, iz
-  real:: d_ratio, h_scale, f_scale, dlnddz, dlnedz
+  real(8):: d_ratio, h_scale, f_scale, dlnddz, dlnedz, grav, mean1, mean2
   logical, save:: first_lower=.true., first_upper=.true.
   !-----------------------------------------------------------------------------
   call trace_begin('experiment_t%boundary_condition')
@@ -145,19 +131,38 @@ SUBROUTINE boundary_condition (self)
   by => self%mem(:,:,:,self%idx%by,self%it,1)
   bz => self%mem(:,:,:,self%idx%bz,self%it,1)
   tt => self%mem(:,:,:,self%idx%tt,self%it,1)
+  grav = self%gravity%const_grav
+   if (self%is_set(bits%zl+bits%zu)) print *, 'doing BC according to bits'
   if (m3%lower_boundary) then
     !---------------------------------------------------------------------------
     ! Clamp the energy per unit mass at the table limit
     !---------------------------------------------------------------------------
     e = max(e,3.5*d)
+    call eos%lookup_table (shape(d), d=d, e=e, tt=tt)
+  allocate(ss,mold=d)
+  !ss=e/d
+  !call self%e2ss(ss,self%it)
+  !call self%boundaries%log_extrapolate(ss,self%idx%e)
     !---------------------------------------------------------------------------
     !---------------------------------------------------------------------------
+    ! -- adjust the scale height so it becomes larger at high temperatures
+    if (smudge_boundary) then
+      mean1 = sum(tt(li(1):ui(1),li(2):ui(2),li(3)+1))/(self%n(1)*self%n(2))
+      mean2 = sum(tt(li(1):ui(1),li(2):ui(2),li(3)))/(self%n(1)*self%n(2))
+      f_scale = (mean2/mean1)**0.05
+      h_scale = mean2/grav*f_scale
+    end if
     do iz=lb(3),lo(3)
     do iy=lb(2),ub(2)
     do ix=lb(1),ub(1)
       ! -- adjust the scale height so it becomes larger at high temperatures
+      if (.not.smudge_boundary) then
       f_scale = (tt(ix,iy,li(3))/top_temperature)**0.05
-      h_scale = tt(ix,iy,li(3))/(scaling%temp*grav)*f_scale
+      h_scale = tt(ix,iy,li(3))/grav*f_scale
+      ! -- option: more localized, not constant clamping:
+      !f_scale = (tt(ix,iy,li(3)+1)/tt(ix,iy,li(3)))**0.05
+      !h_scale = tt(ix,iy,li(3))/grav*f_scale
+      end if
       d_ratio = exp((z(iz)-z(li(3)))/h_scale)
       if (first_lower) then
         first_lower = .false.
@@ -174,6 +179,9 @@ SUBROUTINE boundary_condition (self)
     end do
     end do
     end do
+    !e=ss*d
+    !call self%ss2e(ss,self%it)
+    !deallocate(ss)
     !---------------------------------------------------------------------------
     ! Let the magnetic field take care of itself, regularizing only the layer
     ! that gets contaminated by the vertical derivatives.  The time derivative
@@ -188,7 +196,14 @@ SUBROUTINE boundary_condition (self)
         bz(:,:,iz) = bz(:,:,li(3)-1)
       end do
     end if
+    ! -------------------------------------------------
+    ! avoid going outside the EOS table.
+    ! -------------------------------------------------
+    !where (e < exp(eos%lne_min)) e = exp(eos%lne_min)
   else if (m3%upper_boundary) then
+    !allocate(ss,mold=d)
+    !call self%e2s(ss,self%it)
+    !call self%boundaries%log_extrapolate(ss,self%idx%e)
     do iz=uo(3),ub(3)
     do iy=lb(2),ub(2)
     do ix=lb(1),ub(1)
@@ -214,6 +229,8 @@ SUBROUTINE boundary_condition (self)
     end do
     end do
     end do
+    !call self%s2e(ss,self%it)
+    !deallocate(ss)
     if (self%mhd) then
       do iz=uo(3)+1,ub(3)
         bx(:,:,iz) = bx(:,:,uo(3))
@@ -221,101 +238,11 @@ SUBROUTINE boundary_condition (self)
         bz(:,:,iz) = bz(:,:,uo(3))
       end do
     end if
+    ! -------------------------------------------------
+    ! avoid going outside the EOS table.
+    ! -------------------------------------------------
+    !where (e > exp(eos%lne_max)) e = exp(eos%lne_max)
   end if
   call trace_end
 END SUBROUTINE boundary_condition
-
-!===============================================================================
-!> Stellar atmosphere with gravity pointing in the positive y-direction
-!===============================================================================
-SUBROUTINE force (self)
-  class(gpatch_t)   :: self
-  !-----------------------------------------------------------------------------
-  call trace_begin('experiment_t%force')
-  if (.not.allocated(self%force_per_unit_mass)) then
-    allocate (self%force_per_unit_mass(self%gn(1),self%gn(2),self%gn(3),3))
-  end if
-  self%force_per_unit_mass(:,:,:,1) = 0.0
-  self%force_per_unit_mass(:,:,:,2) = 0.0
-  self%force_per_unit_mass(:,:,:,3) = grav
-  call trace_end
-END SUBROUTINE force
-
-!===============================================================================
-!> Check if a task is ready to update, by changing if all nbor task are "ahead
-!> of" the task in question
-!===============================================================================
-LOGICAL FUNCTION is_ready (link)
-  class(link_t), pointer:: link
-  !.............................................................................
-  class(link_t), pointer:: nbor
-  class(rt_t), pointer:: target, source
-  integer:: state
-  logical:: debug1, debug2
-  !-----------------------------------------------------------------------------
-  target => rt%task2rt(link%task)
-  !!$omp atomic
-  !n_check = n_check+1
-  !$omp atomic read
-  state = link%task%state
-  debug2 = .false.
-  if (target%is_set (bits%virtual)) then
-    is_ready = .false.
-  else
-    is_ready = .true.
-    nbor => link%nbor
-    do while (associated(nbor))
-     source => rt%task2rt(nbor%task)
-     debug1 = source%id==io%id_debug
-     debug2 = debug2 .or. debug1
-     if (debug1) write(io_unit%log,*) 'dbg check_ready: id, nbor, needed, ahead', &
-       link%task%id, source%id, nbor%needed, source%is_ahead_of(target), &
-       source%is_set (bits%virtual)
-     if (nbor%needed) then
-        !$omp atomic read
-        state = source%state
-        if (state==3) then
-          is_ready = .false.
-        else
-          is_ready = is_ready .and. source%is_ahead_of (target)
-        end if
-        !if (source%id == io%id_debug) then
-         ! write(io%output,*) '    dispatcher3_t%is_ready: id, nbid, ready =', &
-          !  target%id, source%id, is_ready
-        !end if
-        if (.not.is_ready) then
-          if (verbose > 2) &
-            write(io_unit%mpi,*) &
-              target%id, 'is_ready: failed  on', source%id, &
-              source%time, target%time
-          exit
-        end if
-      end if
-      nbor => nbor%next
-    end do
-  end if
-  if (is_ready) then
-    !!$omp atomic
-    !n_ready = n_ready+1
-    if (target%id == io%id_debug) &
-      write(io%output,*) 'DBG dispatcher3_t%is_ready: id =', target%id
-    if (debug2) &
-      write(io_unit%log,*) 'DBG dispatcher3_t%is_ready: id =', target%id
-!    write(io_unit%mpi,'(f12.6,2x,a,i6,f12.6)') &
-!      wallclock(), 'is_ready:', target%id, target%time
-  end if
-contains
-  !-----------------------------------------------------------------------------
-  function task2rt(task) result(rt)
-    class(task_t), pointer:: task
-    class(rt_t), pointer:: rt
-    !...........................................................................
-    select type (task)
-    class is (rt_t)
-    rt => task
-    end select
-  end function task2rt
-  !-----------------------------------------------------------------------------
-END FUNCTION is_ready
-
 END MODULE
