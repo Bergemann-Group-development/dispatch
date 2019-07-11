@@ -17,7 +17,7 @@ debug  =.true.
  smudge_boundary=t
 /
 
-& snapshot_params       
+&snapshot_params       
  order    =1
  verbose  =0
  meshfile ='input_data/mhd63.msh'
@@ -114,7 +114,7 @@ time_order=2
 
 
 &timer_params  sec_per_report=20 /
-&dispatcher_params      method=0 /
+&dispatcher_params      method=6 /
 &dispatcher3_params     verbose=0 f_over=3 use_taskyield=f use_critical=f /
 &download_params        verbose=0 /
 
