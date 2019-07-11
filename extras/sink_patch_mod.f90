@@ -41,8 +41,10 @@ MODULE sink_patch_mod
   USE kinds_mod
   USE task_mod
   USE dll_mod
+  USE patch_force_mod
   USE particle_mod
   USE particle_solver_mod
+  USE hash_table_mod
   USE omp_timer_mod
 #ifdef HDF5
   USE h5_mod
@@ -111,6 +113,7 @@ MODULE sink_patch_mod
   !-----------------------------------------------------------------------------
   integer, save:: n_sinks=0           ! counter
   integer, save:: n_ad_hoc=0          ! number of ad_hoc sinks
+  integer, parameter:: hash_size=10000
   type(sink_patch_t), public:: sink_patch
 CONTAINS
 
@@ -139,6 +142,7 @@ SUBROUTINE init (self)
     n_sinks = n_ad_hoc
     sink_patch%on = on
     sink_patch%particle_solver => particle_solver
+    call hash_table%init (hash_size)
   endif
   !$omp end critical (input_cr)
   self%on = on
@@ -150,11 +154,14 @@ END SUBROUTINE init
 !> Initialize an instance of the sink_patch_t data type
 !===============================================================================
 SUBROUTINE init_sink (self, patch)
-  class(sink_patch_t), target:: self
-  class(gpatch_t), pointer   :: patch
+  class(sink_patch_t), target :: self
+  class(gpatch_t)    , pointer:: patch
   !.............................................................................
-  class(link_t), pointer:: new_link
-  type(particle_t), pointer:: particle
+  class(link_t)      , pointer:: link, new_link
+  class(task_t)      , pointer:: task
+  type(particle_t)   , pointer:: particle
+  type(patch_force_t), pointer:: patch_force
+  class(dll_node_t)  , pointer:: dll_node
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
   integer:: id, m(3)
   !-----------------------------------------------------------------------------
@@ -183,6 +190,7 @@ SUBROUTINE init_sink (self, patch)
   ! Initialize the accretion patch and its neighbor list, and download values
   !-----------------------------------------------------------------------------
   call self%init_patch (patch)
+  call self%init_task_list (patch%task_list)
   call self%dnload
   !-----------------------------------------------------------------------------
   ! Make sure that the guard zone values (should it all have any???) 
@@ -309,15 +317,55 @@ SUBROUTINE init_patch (self, patch, sink_position)
 END SUBROUTINE init_patch
 
 !===============================================================================
-!> Store a copy of the task list in the data type instance, for use when
-!> initializing the nbor list
+!> Store a copy of the task list in the sink_patch_t instance, for use when
+!> initializing the nbor list, and add a list of patch_force_t instances to
+!> the particle%patch_forces list, indexing each patch force with the particle
+!> and patch ids in a hash table, for quick look-up.
 !===============================================================================
 SUBROUTINE init_task_list (self, task_list)
   class(sink_patch_t):: self
   class(list_t), pointer:: task_list
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  class(dll_node_t), pointer:: dll_node, particle
+  class(*), pointer:: ptr
+  type(patch_force_t), pointer:: patch_force
   !.............................................................................
   call trace%begin ('sink_patch_t%init_task_list')
   self%task_list => task_list
+  !-----------------------------------------------------------------------------
+  ! For each patch in the task list, add a patch_force_t instance to the
+  ! particle%patch_forces list
+  !-----------------------------------------------------------------------------
+  particle => self%particle
+  select type (particle)
+  class is (particle_t)
+  if (verbose > 1) &
+    write (stdout,*) 'sink_patch_t: particle id =', particle%id 
+  link => self%task_list%head
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    !---------------------------------------------------------------------------
+    ! Catch and ignore sink_patch_t tasks
+    !---------------------------------------------------------------------------
+    class is (sink_patch_t)
+    !---------------------------------------------------------------------------
+    ! Act on normal MHD tasks
+    !---------------------------------------------------------------------------
+    class is (gpatch_t)
+      allocate (patch_force)
+      ptr => patch_force
+      if (verbose > 1) &
+        write (stdout,*) 'hash_table%set key =', [particle%id, task%id]
+      call hash_table%set ([particle%id, task%id], ptr)
+      call patch_force%init
+      dll_node => patch_force
+      call particle%patch_forces%append (dll_node)
+    end select
+    link => link%next
+  end do
+  end select
   call trace%end()
 END SUBROUTINE init_task_list
 
@@ -331,6 +379,7 @@ SUBROUTINE ad_hoc_add (self, link)
   !.............................................................................
   class(task_t), pointer:: patch
   type(sink_patch_t), pointer:: task
+  class(dll_node_t), pointer:: particle
   integer:: iostat, i_sink, m(3)
   real(kind=8):: pos(3)
   type sinks_t
@@ -374,14 +423,28 @@ SUBROUTINE ad_hoc_add (self, link)
   class is (gpatch_t)
     do i_sink=1,n_ad_hoc
       pos = [sinks(i_sink)%x,sinks(i_sink)%y,sinks(i_sink)%z]
+      print *, patch%id, i_sink, pos, patch%contains(pos)
       if (patch%contains(pos)) then
-        print *, 'adding ad hoc sink to', patch%id, associated(self%task_list)
+        print *, 'adding ad hoc sink to', patch%id, i_sink
         allocate (task)
         call task%init_sink (patch)
         task%mass = sinks(i_sink)%mass
         task%mom(1) = sinks(i_sink)%mass * sinks(i_sink)%vx
         task%mom(2) = sinks(i_sink)%mass * sinks(i_sink)%vy
         task%mom(3) = sinks(i_sink)%mass * sinks(i_sink)%vz
+        particle => task%particle
+        select type (particle)
+        class is (particle_t)
+          print *, allocated(particle%m), allocated(particle%r)
+          particle%ds = minval(patch%ds)
+          particle%m(:) = sinks(i_sink)%mass
+          particle%r(1,:) = sinks(i_sink)%x
+          particle%r(2,:) = sinks(i_sink)%y
+          particle%r(3,:) = sinks(i_sink)%z
+          particle%v(1,:) = sinks(i_sink)%vx
+          particle%v(2,:) = sinks(i_sink)%vy
+          particle%v(3,:) = sinks(i_sink)%vz
+        end select
         call task%accrete
       endif
     enddo
@@ -531,7 +594,7 @@ SUBROUTINE update (self)
   class (sink_patch_t):: self
   !.............................................................................
   call trace%begin ('sink_patch_t%update')
-  call self%particle_solver%force_field (self)
+  call self%particle_solver%force_field (self%patch)
   call self%accrete
   call self%move
   self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)
@@ -631,42 +694,30 @@ SUBROUTINE accrete (self)
 END SUBROUTINE accrete
 
 !===============================================================================
-!> Move the sink particle one time step self%dt, using kick-drift-kick. We do
-!> not include any potential here, since both the force from other sinks and the
-!> force from the gas is evaluated directly.
+!> Move the sink particle one time step, using the particle solver, which in
+!> turn uses the particle_list_t%force() procedure to calculate the force from
+!> other particles and from the patches.   Call hierarchy:
+!>
+!> move(self)
+!>   particle_solver%update (self%particle)
+!>     particle_list_t%force (self%particle)
+!>       for other particles:
+!>         force = force - other%mass*r*r3
+!>       force = force + particle%patch_forces%force (particle%time)
 !===============================================================================
 SUBROUTINE move (self)
   class (sink_patch_t):: self
   real(8):: acceleration(3)
   real, dimension(:,:,:), pointer:: phi
+  class(dll_node_t), pointer:: particle
   integer:: ix, iy, iz, ii(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('sink_patch_t%move')
-  !-----------------------------------------------------------------------------
-  ! Kick. The sink is assumed to be in the exact grid position floor(mesh%o)
-  !-----------------------------------------------------------------------------
-  !phi = self%mem(:,:,:,self%idx%phi,self%it,1)
-  ii = floor(self%mesh%o)
-  ix = ii(1); iy=ii(2); iz=ii(3)
-  self%acceleration = 0.0
-  !self%acceleration = [(phi(ix+1,iy  ,iz  )-phi(ix-1,iy  ,iz  ))/(2.*self%ds(1)), &
-  !                     (phi(ix  ,iy+1,iz  )-phi(ix  ,iy-1,iz  ))/(2.*self%ds(2)), &
-  !                     (phi(ix  ,iy  ,iz+1)-phi(ix  ,iy  ,iz-1))/(2.*self%ds(3))]
-  self%velocity = self%velocity + 0.5d0*self%acceleration*self%dtime
-  !-----------------------------------------------------------------------------
-  ! Drift + update phi to the new space-time position
-  !-----------------------------------------------------------------------------
-  self%time     = self%time     + self%dtime
-  self%position = self%position + self%dtime*self%velocity
-  !call download%download_link (self%link, all_cells=.true., only=self%idx%phi)
-  !-----------------------------------------------------------------------------
-  ! Kick
-  !-----------------------------------------------------------------------------
-  self%acceleration = 0.0
-  !self%acceleration = [(phi(ix+1,iy  ,iz  )-phi(ix-1,iy  ,iz  ))/(2.*self%ds(1)), &
-  !                     (phi(ix  ,iy+1,iz  )-phi(ix  ,iy-1,iz  ))/(2.*self%ds(2)), &
-  !                     (phi(ix  ,iy  ,iz+1)-phi(ix  ,iy  ,iz-1))/(2.*self%ds(3))]
-  self%velocity = self%velocity + 0.5d0*self%acceleration*self%dtime
+  particle => self%particle
+  select type (particle)
+  class is (particle_t)
+  call self%particle_solver%update (particle)
+  end select
   call trace%end()
 END SUBROUTINE move
 
