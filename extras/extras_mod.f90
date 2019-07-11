@@ -215,7 +215,6 @@ SUBROUTINE post_update (self)
   !call self%rt%post_update                                      ! radiative transfer
   !call self%forces%post_update                                  ! forces
   !call self%trace_particles%post_update (self)                  ! tracep
-  !call self%gravity%post_update                                 ! gravity
   !call self%pic%post_update()                                   ! pic
 END SUBROUTINE post_update
 
