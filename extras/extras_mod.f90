@@ -264,7 +264,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(task_t), pointer:: another
   logical:: needed, needs_me, download
   !.............................................................................
-  class(rt_t), pointer:: rt_another
+  !class(rt_t), pointer:: rt_another
   class(task_t), pointer:: other
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%nbor_relations')
