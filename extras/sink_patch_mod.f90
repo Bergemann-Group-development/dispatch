@@ -292,7 +292,7 @@ SUBROUTINE init_patch (self, patch, sink_position)
   !-----------------------------------------------------------------------------
   self%task_list => patch%task_list
   call self%task_list%init_nbors (self%link)
-  call self%task_list%append_link (self%link)
+  call self%task_list%prepend_link (self%link)
   if (verbose > 1) then
     nbor => self%link%nbor
     do while (associated(nbor))

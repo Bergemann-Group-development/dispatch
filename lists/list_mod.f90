@@ -52,6 +52,7 @@ MODULE list_mod
     procedure:: reset
     procedure:: append
     procedure:: append_link
+    procedure:: prepend_link
     procedure:: remove_task
     procedure:: remove_link
     procedure:: remove_and_reset
@@ -208,6 +209,45 @@ SUBROUTINE append_link (self, link)
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(2)'
   call trace_end
 END SUBROUTINE append_link
+
+!===============================================================================
+!> Prepend to the task list, counting active tasks only
+!===============================================================================
+SUBROUTINE prepend_link (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  class(*), pointer:: anon
+  logical, save:: first_time=.true.
+  !.............................................................................
+  call trace_begin ('list_t%prepend_link '//self%name)
+  call link%init
+  call self%lock%set ('list_t%prepend_link')
+  nullify(link%prev)
+  if (associated(self%head)) then
+    link%next => self%head
+    link%next%prev => link
+    self%head => link
+  else
+    self%head => link
+    self%tail => link
+  end if
+  if (associated(link%task)) then
+    task => link%task
+    select type (task)
+    class is (patch_t)
+    task%link => link
+    end select
+  else
+    call io%abort('prepend_link: no task associated')
+  end if
+  !-----------------------------------------------------------------------------
+  ! IMPORTANT: Some procedures depend on knowing the size of the list!
+  !-----------------------------------------------------------------------------
+  call self%count_status()
+  call self%lock%unset ('list_t%prepend_link')
+  call trace_end
+END SUBROUTINE prepend_link
 
 !===============================================================================
 !> Remove a link from the list, taking special care with the head and tail.
