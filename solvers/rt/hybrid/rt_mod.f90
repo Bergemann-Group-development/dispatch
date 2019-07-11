@@ -1195,7 +1195,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   ! ----------------------------------------------------------------------------
   if (self%overlaps(other)) then
     download = .false.  ! don't download 
-    if (not(associated(self%patch))) self%patch => gpatch%cast2gpatch(other)
+    if (.not.(associated(self%patch))) self%patch => gpatch%cast2gpatch(other)
   end if
   end select
 
