@@ -1439,7 +1439,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     fmt = '(a,i8,2i4,i3,1p,2e12.5,     0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,2i4,l3,l1,o12)'
   end if
   !-----------------------------------------------------------------------------
-  if (io%verbose>=0) then
+  if ((io%verbose>=0).and.(self%is_clear(bits%no_density))) then
     !$omp atomic
     io%dmin = min(io%dmin, real(self%fminval(self%mem(:,:,:,self%idx%d,self%it,1)),kind=4))
     !$omp atomic
