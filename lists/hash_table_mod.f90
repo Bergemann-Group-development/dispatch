@@ -43,17 +43,8 @@ MODULE hash_table_mod
     procedure:: free
     procedure:: stats
   end type
-  type(hash_table_t):: hash_table
+  type(hash_table_t), public:: hash_table
 CONTAINS
-
-!===============================================================================
-!> Hash function
-!===============================================================================
-PURE FUNCTION hash_func(key)
-  integer, dimension(1:ndim), intent(in) :: key
-  integer(kind=8)                        :: hash_func
-  hash_func = dot_product(key(1:ndim), constants(1:ndim))
-END FUNCTION hash_func
 
 !===============================================================================
 !> Allocate all hash table arrays and variables.
@@ -70,6 +61,15 @@ SUBROUTINE init (htable, req_size)
   end do
   call reset_entire_hash (htable, .false.)
 END SUBROUTINE init
+
+!===============================================================================
+!> Hash function
+!===============================================================================
+PURE FUNCTION hash_func(key)
+  integer, dimension(1:ndim), intent(in) :: key
+  integer(kind=8)                        :: hash_func
+  hash_func = dot_product(key(1:ndim), constants(1:ndim))
+END FUNCTION hash_func
 
 !===============================================================================
 !> Subroutine to reset the entire hash table
@@ -154,9 +154,8 @@ SUBROUTINE set (htable, key, val)
      do while (htable%data(ibucket)%next_ibucket .ne. 0)
         ! Check if key already exists - abort if so
         if (same_keys(htable%data(ibucket)%key(1:ndim),key(1:ndim)))then
-           write(*,*) "trying to insert already existing key: ",key
-           write(*,*) "existing key: ", htable%data(ibucket)%key(1:ndim)
-           stop
+          write(*,*) "hash_taable: trying to insert already existing key: ", key
+          call mpi%abort ('hash_table: double insert')
         end if
         ibucket = htable%data(ibucket)%next_ibucket
      end do
@@ -263,7 +262,7 @@ PURE FUNCTION same_keys(key1, key2)
   logical, dimension(1:ndim)             :: ok
   integer                                :: i
   !-----------------------------------------------------------------------------
-  do i = 0, ndim
+  do i = 1, ndim
      ok(i) = (key1(i)==key2(i))
   end do
   same_keys = ALL(ok)
