@@ -1,13 +1,14 @@
 !===============================================================================
-!> This is a start on a module that could become a general turbulence forcing
-!> module, where the standard forcing we have been using in RAMSES is implemented
+!> Simple initical condition module for tests
+!>
+!> Note that the isothermal and gamma parameters are communicated from the solver
+!> via the hydro_parameters module.
 !===============================================================================
 MODULE initial_mod
   USE const
   USE io_mod
   USE trace_mod
   USE mesh_mod
-  USE random_mod
   USE hydro_parameters
   USE omp_mod
   USE index_mod
@@ -16,12 +17,11 @@ MODULE initial_mod
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     integer:: seed
-    real:: gamma
     real:: d0
     logical:: mhd
     real(8):: time=0d0
     character(len=64):: solver
-    procedure(void), pointer:: condition=>null()
+    procedure(single_solenoidal), pointer:: condition=>null()
   contains
     procedure:: init
     procedure, nopass:: cleanup
@@ -33,12 +33,12 @@ CONTAINS
 !===============================================================================
 !> Setup a uniform initial state, with density=d0 and B=B0
 !===============================================================================
-SUBROUTINE init (self, solver, gamma)
+SUBROUTINE init (self, solver, gamma1)
   class(initial_t):: self
-  integer:: iostat
   character(len=64):: solver
-  real, optional:: gamma
   character(len=32), save:: type='void'
+  integer:: iostat
+  real, optional:: gamma1
   logical, save:: first_time=.true.
   namelist /initial_params/ type
   !----------------------------------------------------------------------------
@@ -48,7 +48,7 @@ SUBROUTINE init (self, solver, gamma)
     first_time = .false.
     rewind (io%input)
     read (io%input, initial_params, iostat=iostat)
-    if (iostat/=0) call io%namelist_warning ('initial_params')
+    if (iostat/=0) call io%namelist_warning ('ramses/hydro/initial_mod.f90: initial_params')
     if (io%master) write (*, initial_params)
   end if
   !$omp end critical (input_cr)
@@ -68,7 +68,6 @@ SUBROUTINE init (self, solver, gamma)
     self%condition => void
   case default
     print*,'UNKNOWN INITIAL CONDITION TYPE :'//trim(type)//':'
-    stop
   end select
   call trace_end
 END SUBROUTINE init
@@ -79,34 +78,31 @@ SUBROUTINE cleanup
 END SUBROUTINE cleanup
 
 !===============================================================================
-!> Void initialization
+!> Void initializer
 !===============================================================================
 SUBROUTINE void (self, m, ff, idx)
   class(initial_t) :: self
   type(index_t):: idx
   class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
-  !.............................................................................
 END SUBROUTINE void
 
 !===============================================================================
-!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> Initialize a single 3-D wavenumber
 !===============================================================================
 SUBROUTINE single_solenoidal (self, m, ff, idx)
   class(initial_t) :: self
-  type(index_t):: idx
   class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
+  type(index_t):: idx
   !.............................................................................
-  type(random_t) :: random
   integer        :: ix, iy, iz
   real(8)        :: kx, ky, kz
-  integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /initial_solenoidal_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /initial_solenoidal_params/ k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
@@ -121,6 +117,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     end if
     !$omp end critical (input_cr)
   end if
+  self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
@@ -129,23 +126,18 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
         ff(ix,iy,iz,idx%d ) = d0
-        ff(ix,iy,iz,idx%px) = a0(1)*(sin(ky)+sin(kz))
-        ff(ix,iy,iz,idx%py) = a0(2)*(sin(kz)+sin(kx))
-        ff(ix,iy,iz,idx%pz) = a0(3)*(sin(kx)+sin(ky))
-        if (gamma==1.0) then
-          ff(ix,iy,iz,idx%e ) = d0*csound**2
-        else
-          ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1d0)) + &
-            half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
-        end if
+        ff(ix,iy,iz,idx%px) = d0*a0(1)*(sin(ky)+sin(kz))
+        ff(ix,iy,iz,idx%py) = d0*a0(2)*(sin(kz)+sin(kx))
+        ff(ix,iy,iz,idx%pz) = d0*a0(3)*(sin(kx)+sin(ky))
         if (self%mhd) then
-          ff(ix,iy,iz,idx%bx) = b0(1)*(sin(kx)+sin(ky))
-          ff(ix,iy,iz,idx%by) = b0(2)*(sin(kx)+sin(ky))
-          ff(ix,iy,iz,idx%bz) = b0(3)*(sin(kx)+sin(ky))
+          ff(ix,iy,iz,idx%bx) = b0(1)
+          ff(ix,iy,iz,idx%by) = b0(2)
+          ff(ix,iy,iz,idx%bz) = b0(3)
         end if
       end do
     end do
   end do
+  call energy (self, m, idx, ff)
   end associate
   call trace_end (itimer)
 END SUBROUTINE single_solenoidal
@@ -159,15 +151,13 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
-  type(random_t) :: random
   integer        :: ix, iy, iz
   real(8)        :: kx, ky, kz
-  integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /initial_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /initial_compressive_params/ k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
@@ -182,6 +172,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
     end if
     !$omp end critical (input_cr)
   end if
+  self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
@@ -190,16 +181,9 @@ SUBROUTINE single_compressive (self, m, ff, idx)
       do ix=m(1)%lb,m(1)%ub
         kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
         ff(ix,iy,iz,idx%d ) = d0
-        ff(ix,iy,iz,idx%px) = u0(1)*sin(kx)
-        ff(ix,iy,iz,idx%py) = u0(2)*sin(ky)
-        ff(ix,iy,iz,idx%pz) = u0(3)*sin(kz)
-        if (gamma==1.0) then
-          ff(ix,iy,iz,idx%e ) = d0*csound**2 + &
-            half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
-        else
-          ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1d0)) + &
-            half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
-        end if
+        ff(ix,iy,iz,idx%px) = d0*u0(1)*sin(kx)
+        ff(ix,iy,iz,idx%py) = d0*u0(2)*sin(ky)
+        ff(ix,iy,iz,idx%pz) = d0*u0(3)*sin(kz)
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(1)
           ff(ix,iy,iz,idx%by) = b0(2)
@@ -208,12 +192,13 @@ SUBROUTINE single_compressive (self, m, ff, idx)
       end do
     end do
   end do
+  call energy (self, m, idx, ff)
   end associate
   call trace_end (itimer)
 END SUBROUTINE single_compressive
 
 !===============================================================================
-!> Initialize a single 3-D wavenumber, with random amplitude and phase
+!> Initialize a single 3-D wavenumber, with non-random amplitude and phase
 !===============================================================================
 SUBROUTINE single_advection (self, m, ff, idx)
   class(initial_t) :: self
@@ -221,14 +206,12 @@ SUBROUTINE single_advection (self, m, ff, idx)
   class(mesh_t)    :: m(3)
   real, dimension(:,:,:,:) :: ff
   !.............................................................................
-  type(random_t) :: random
   integer        :: ix, iy, iz
   real(8)        :: kx, ky, kz
-  integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
-  namelist /initial_advection_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma
+  namelist /initial_advection_params/ k, a0, u0, b0, d0, s0, mhd, gamma
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_advection', itimer=itimer)
@@ -243,6 +226,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
     end if
     !$omp end critical (input_cr)
   end if
+  self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
     kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
@@ -254,12 +238,6 @@ SUBROUTINE single_advection (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = d0*u0(1)
         ff(ix,iy,iz,idx%py) = d0*u0(2)
         ff(ix,iy,iz,idx%pz) = d0*u0(3)
-        if (gamma==1.0) then
-          ff(ix,iy,iz,idx%e ) = d0*csound**2
-        else
-          ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1d0)) + &
-          half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
-        end if
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(3)*sin(kz)
           ff(ix,iy,iz,idx%by) = b0(1)*sin(kx)
@@ -268,6 +246,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
       end do
     end do
   end do
+  call energy (self, m, idx, ff)
   end associate
   call trace_end (itimer)
 END SUBROUTINE single_advection
@@ -306,8 +285,8 @@ SUBROUTINE exa256 (self, m, ff, idx)
   nx = m(1)%b/m(1)%d + 0.5
   ny = m(2)%b/m(2)%d + 0.5
   nz = m(3)%b/m(3)%d + 0.5
-  li = m%li
-  ui = m%ui
+  li = m%lb
+  ui = m%ub
   umax = 0.0
   do jz=li(3),ui(3)
   do jy=li(2),ui(2)
@@ -326,17 +305,10 @@ SUBROUTINE exa256 (self, m, ff, idx)
                            +abs(ff(li(1):ui(1),jy,jz,idx%pz))))
   end do
   end do
-  if (gamma==1.0) then
-    ff(:,:,:,5) = ff(:,:,:,idx%d)*csound**2
-  else
-    ff(:,:,:,5) = 0.5*ff(:,:,:,idx%d)*(ff(:,:,:,idx%px)**2+ &
-                                       ff(:,:,:,idx%py)**2+ &
-                                       ff(:,:,:,idx%pz)**2) &
-                + ff(:,:,:,idx%d)/(gamma-one)
-  end if
   do iv=idx%px,idx%pz
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
+  call energy (self, m, idx, ff)
   dt = courant_factor*m(1)%d/umax
   if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,courant_factor,gamma,umax
   if (io%verbose > 2) &
@@ -398,6 +370,7 @@ SUBROUTINE raw (self, m, ff, idx)
   do iv=idx%px,idx%pz
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
+  call energy (self, m, idx, ff)
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', i, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
@@ -405,5 +378,40 @@ SUBROUTINE raw (self, m, ff, idx)
   !$omp end critical (raw_cr)
   call trace_end (itimer)
 END SUBROUTINE raw
+
+!===============================================================================
+!> Calculate total energy
+!===============================================================================
+SUBROUTINE energy (self, m, idx, ff)
+  class(initial_t) :: self
+  class(mesh_t):: m(3)
+  type(index_t):: idx
+  real, dimension(:,:,:,:):: ff
+  !.............................................................................
+  real(dp):: fgamma
+  !-----------------------------------------------------------------------------
+  call trace%begin ('initial_t%energy')
+  if (isothermal .or. gamma==1.0_dp) then
+    fgamma = 1.0_dp
+  else
+    fgamma = gamma*(gamma-1.0_dp)
+  end if
+  ff(:,:,:,idx%e) = 0.5*(ff(:,:,:,idx%px)**2+ &
+                         ff(:,:,:,idx%py)**2+ &
+                         ff(:,:,:,idx%pz)**2)/ff(:,:,:,idx%d) &
+                  + ff(:,:,:,idx%d)/fgamma
+  if (self%mhd) then
+    ff(:,:,:,idx%e) = ff(:,:,:,idx%e) + &
+      0.5*(ff(:,:,:,idx%bx)**2 + &
+           ff(:,:,:,idx%by)**2 + &
+         ff(:,:,:,idx%bz)**2)
+  end if
+  !print *, 'IIII', idx%e, fgamma, &
+    !minval(ff(m(1)%lb:m(1)%ub,m(2)%lb:m(2)%ub,m(3)%lb:m(3)%ub,idx%d)), &
+    !maxval(ff(m(1)%lb:m(1)%ub,m(2)%lb:m(2)%ub,m(3)%lb:m(3)%ub,idx%d)), &
+    !minval(ff(m(1)%lb:m(1)%ub,m(2)%lb:m(2)%ub,m(3)%lb:m(3)%ub,idx%e)), &
+    !maxval(ff(m(1)%lb:m(1)%ub,m(2)%lb:m(2)%ub,m(3)%lb:m(3)%ub,idx%e))
+  call trace%end
+END SUBROUTINE energy
 
 END MODULE
