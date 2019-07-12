@@ -545,14 +545,26 @@ END SUBROUTINE print1
 !===============================================================================
 SUBROUTINE info (self)
   class(task_list_t):: self
-  class(link_t), pointer:: link
-  class(patch_t), pointer:: task
+  class(link_t), pointer:: link, nbor
+  class(task_t), pointer:: task, nbtask
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%info')
   link => self%head
   do while (associated(link))
-    task => task2patch(link%task)
-    call task%nbors_info()
+    task => link%task
+    select type (task)
+    class is (patch_t)
+      call task%task_info()
+      nbor => link%nbor
+      do while (associated(nbor))
+        nbtask => nbor%task
+        select type (nbtask)
+        class is (patch_t)
+          call nbtask%nbor_info (nbor)
+        end select
+        nbor => nbor%next
+      end do
+    end select
     link => link%next
   end do
   call trace%end()

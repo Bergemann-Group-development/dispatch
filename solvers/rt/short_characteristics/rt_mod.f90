@@ -93,6 +93,8 @@ MODULE rt_mod
     procedure:: setup_boundaries
     procedure:: warm_up
     procedure:: nbor_relations
+    procedure:: task_info
+    procedure:: nbor_info
   end type
   integer, save:: verbose=0
   real(8), save:: dbg_position(2) = -1e30
@@ -885,5 +887,26 @@ FUNCTION debug (self, level) RESULT (yes)
   yes = yes .or. id == io%id_debug
   yes = yes .and. (verbose >= level)
 END FUNCTION debug
+
+!===============================================================================
+SUBROUTINE task_info (self)
+  class(rt_t):: self
+  !-----------------------------------------------------------------------------
+  write(io_unit%mpi,'(1x,a,i6,2x,2l1,2x,3f9.3,i4,2f7.3)') &
+    'rt_t%task_info: id, BV, pos, i_omega, mu, phi =', self%id, self%is_set(bits%boundary), &
+    self%is_set(bits%virtual), self%position, self%i_omega, self%mu, self%rt_phi
+END SUBROUTINE task_info
+
+!===============================================================================
+SUBROUTINE nbor_info (self, nbor)
+  class(rt_t):: self
+  class(link_t):: nbor
+  !-----------------------------------------------------------------------------
+  write(io_unit%mpi,'(3x,a,i6,i4,2x,3l1,2x,2l1,2x,3f9.3,i4)') &
+    'rt_t%nbor_info: id, rank, needed, needs_me, download, BV, pos =', &
+    self%id, self%rank, nbor%needed, nbor%needs_me, nbor%download, &
+    self%is_set(bits%boundary), self%is_set(bits%virtual), &
+    self%position, self%i_omega
+END SUBROUTINE nbor_info
 
 END MODULE rt_mod
