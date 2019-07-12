@@ -2678,11 +2678,13 @@ SUBROUTINE nbors_info (self)
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
-  write (io_unit%mpi,*) 'patch_t%nbors_info: nbors of task', self%id
+  write(io_unit%mpi,'(1x,a,i6,2x,2l1,2x,3f9.3)') &
+    'patch_t%nbors_info: id, BV, pos =', self%id, self%is_set(bits%boundary), &
+    self%is_set(bits%virtual), self%position
   nbor => self%link%nbor
   do while (associated(nbor))
     task => nbor%task
-    write(io_unit%mpi,'(3x,a,i6,i4,2x,3l1,2x,2l1,f6.2,2x,3f9.3)') &
+    write(io_unit%mpi,'(3x,a,i6,i4,2x,3l1,2x,2l1,2x,3f9.3)') &
       'nbor_info: id, rank, needed, needs_me, download, BV, pos =', &
       task%id, task%rank, nbor%needed, nbor%needs_me, nbor%download, &
       task%is_set(bits%boundary), task%is_set(bits%virtual), &
