@@ -914,8 +914,8 @@ SUBROUTINE trace3d(self)
   real(dp) :: sAL0, sAR0, sBL0, sBR0, sCL0, sCR0
   real(dp), dimension(1:self%gn(1),1:self%gn(2),1:self%gn(3)):: rho_t, p_t
   real(dp) :: eff_gamma, off
+  real(dp) :: ff(self%gn(1),3)
   integer, save:: itimer(4)=0
-  real, allocatable:: ff(:,:,:,:)
   !-----------------------------------------------------------------------------
   associate(q=>self%q,bf=>self%bf,dq=>self%dq,dq2=>self%dq2,qm=>self%qm,qp=>self%qp, &
     dbf=>self%dbf,qRT=>self%qRT,qRB=>self%qRB,qLT=>self%qLT,qLB=>self%qLB, &
@@ -946,6 +946,15 @@ SUBROUTINE trace3d(self)
   eff_gamma = gamma
   do k=2,self%gn(3)-1
   do j=2,self%gn(2)-1
+  if (allocated(self%force_per_unit_mass)) then
+    do i=2,self%gn(2)-1
+      ff(i,1) = self%force_per_unit_mass(i,j,k,1)
+      ff(i,2) = self%force_per_unit_mass(i,j,k,2)
+      ff(i,3) = self%force_per_unit_mass(i,j,k,3)
+    end do
+  else
+      ff(:,:) = 0.0_dp
+  end if
   !!dir! simd
   do i=2,self%gn(1)-1
 !    associate ( &
@@ -1051,11 +1060,9 @@ SUBROUTINE trace3d(self)
     sp0 = (-u*dpx-dux*eff_gamma*p)*dtdx + (-v*dpy-dvy*eff_gamma*p)*dtdy + (-w*dpz-dwz*eff_gamma*p)*dtdz
     !
     ! Add external force
-    if (allocated(self%force_per_unit_mass)) then
-      su0 = su0 + self%force_per_unit_mass(i,j,k,1)*half*self%dtime
-      sv0 = sv0 + self%force_per_unit_mass(i,j,k,2)*half*self%dtime
-      sw0 = sw0 + self%force_per_unit_mass(i,j,k,3)*half*self%dtime
-    end if
+    su0 = su0 + ff(i,1)*half*self%dtime
+    sv0 = sv0 + ff(i,2)*half*self%dtime
+    sw0 = sw0 + ff(i,3)*half*self%dtime
     !
     ! Evolve entropy instead of pressure
     !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz
