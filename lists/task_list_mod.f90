@@ -548,12 +548,14 @@ SUBROUTINE info (self)
   class(link_t), pointer:: link
   class(patch_t), pointer:: task
   !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%info')
   link => self%head
   do while (associated(link))
     task => task2patch(link%task)
     call task%nbors_info()
     link => link%next
   end do
+  call trace%end()
 END SUBROUTINE info
 
 !===============================================================================

@@ -629,6 +629,7 @@ SUBROUTINE startup (task_list)
   class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher6::startup')
+  call task_list%info
   !-----------------------------------------------------------------------------
   ! Initialize the task message, and request the first package
   !-----------------------------------------------------------------------------
