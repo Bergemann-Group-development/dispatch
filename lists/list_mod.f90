@@ -388,7 +388,7 @@ SUBROUTINE update_counts (self, link, delta)
     na = self%na
     call self%count_status ()
     if (n /= self%n .or. na /= self%na) then
-      write (io_unit%stdout,*) &
+      write (stdout,*) &
         'list_t%update_counts WARNING: inconsisten counts', &
         n, self%n, na, self%na
       self%n  = n
@@ -2126,12 +2126,12 @@ SUBROUTINE send_to_vnbors (self, link)
   !.............................................................................
   task => link%task
   if (task%is_clear (bits%boundary)) then
-    write (io_unit%stdout,*) mpi%rank, omp%thread, &
+    write (stdout,*) mpi%rank, omp%thread, &
       'ERROR: trying to send non-boundary task', task%id
     return
   end if
   if (task%is_set (bits%virtual)) then
-    write (io_unit%stdout,*) mpi%rank, omp%thread, &
+    write (stdout,*) mpi%rank, omp%thread, &
       'ERROR: trying to send virtual task', task%id
     return
   end if

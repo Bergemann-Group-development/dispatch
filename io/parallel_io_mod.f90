@@ -447,7 +447,7 @@ SUBROUTINE output_single (patch, count)
   ! --- rank-local patch 1D index; cf. cartesian_mod ---
   ip = patch%ip
   if (ip < 0 .or. ip > io%ntask) then
-    write(io%output,*) 'WARNING', ip
+    write(io%output,*) 'WARNING', ip, io%ntask
     ip = max(1,min(ip,io%ntask))
   end if
   if (verbose > 0) then

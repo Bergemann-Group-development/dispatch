@@ -94,7 +94,7 @@ MODULE mpi_io_mod
     procedure:: assert
   end type
   character(len=32), save:: fmt='(1x,a,4i8,1p,5e12.3)'
-  integer, save:: verbose=1
+  integer, save:: verbose=0
   logical, save:: direct=.false.
   type(mpi_io_t), public:: mpi_io
 CONTAINS
@@ -519,7 +519,8 @@ SUBROUTINE check (self)
             deallocate (item%buffer)
           end if
           nullify (item%buffer)
-          if (nprint > 0 .and. .not.io_unit%do_validate) then
+          !---------------------------------------------------------------------
+          if (verbose > 0 .and. nprint > 0 .and. .not.io_unit%do_validate) then
             nprint = nprint-1
             dwc = wallclock()-wc
             if (direct) then

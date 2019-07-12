@@ -555,7 +555,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
               call make_child_patch (self, tasklist, patch, pos, size, child)
               !-----------------------------------------------------------------
               if (verbose > 0) then
-                associate (unit => merge (io_unit%stdout, io_unit%output, verbose>1))
+                associate (unit => merge (stdout, io_unit%output, verbose>1))
                 write (unit,'(2(3x,a,i6,":",i2),2x,a,2l1)')  &
                   'refine'    ,  patch%id, patch%level, &
                   'to'        ,  child%id, child%level, &
@@ -586,7 +586,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
     if (all(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) == -1)) then
       !-----------------------------------------------------------------------
       if (verbose > 0) then
-        associate (unit => merge (io_unit%stdout, io_unit%output, verbose > 1))
+        associate (unit => merge (stdout, io_unit%output, verbose > 1))
         write (io_unit%output,'(1x,a,i6,":",i2,2x,"B:",l1,3x,a,i6)') &
           'derefine', patch%id, patch%level, patch%is_set (bits%boundary), &
           'istep:', patch%istep

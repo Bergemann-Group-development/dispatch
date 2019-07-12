@@ -67,9 +67,10 @@ SUBROUTINE mkdir_real (dir)
   if (.not.io_unit%do_validate) then
     exists = MakeDirQQ (dir)
     if (exists) then
-      print *,omp%thread,' Intel created directory '//dir
+      write(stderr,*) ' Intel created directory '//dir
     else
-      print *,omp%thread,' WARNING: Intel failed to create directory '//dir
+      write(stderr,'(2(a,i5,2x),a)') 'rank:', mpi%rank, 'thread:', omp%thread, &
+        ' WARNING: Intel failed to create directory '//dir
     end if
   end if
 #else
@@ -82,22 +83,24 @@ SUBROUTINE mkdir_real (dir)
       inquire (file=dir, exist=exists)
       if (exists) then
         if (.not.io_unit%do_validate) &
-          print *, mpi%rank, omp%thread,' C-binding call created directory '//dir
+          write(stderr,*) ' C-binding call created directory '//dir
         exit
       else
         if (.not.io_unit%do_validate) &
-          print *, mpi%rank, omp%thread,' WARNING: C-binding call failed to create directory '//dir
+          write(stderr,'(2(a,i5,2x),a)') 'rank:', mpi%rank, 'thread:', omp%thread, &
+            ' WARNING: C-binding call failed to create directory '//dir
       end if
       call system ('mkdir -p '//dir)
       call mpi%delay (ms=ms)
       inquire (file=dir, exist=exists)
       if (exists) then
         if (.not.io_unit%do_validate) &
-          print *, mpi%rank, omp%thread,' system call created directory '//dir
+          write(stderr,*) ' system call created directory '//dir
         exit
       else
         if (.not.io_unit%do_validate) &
-          print *, mpi%rank, omp%thread,' WARNING: system call failed to create directory '//dir
+          write(stderr,'(2(a,i5,2x),a)') 'rank:', mpi%rank, 'thread:', omp%thread, &
+          ' WARNING: system call failed to create directory '//dir
       end if
     end do
   end if

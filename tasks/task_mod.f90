@@ -203,7 +203,7 @@ SUBROUTINE init_unique (self, keep)
   scene%n_patch = self%id
   !$omp end critical (task_init_cr)
   if (io%verbose>2) &
-    write (io%log_unit,*) 'obtained patch id', self%id
+    write (io_unit%log,*) 'obtained patch id', self%id
   call self%lock%init (self%kind(1:4), id=self%id+2)
   call self%random%init
   call trace_end

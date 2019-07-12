@@ -12,7 +12,7 @@ MODULE io_mod
   private
   logical:: mpi_trace=.false.
   type io_t
-    integer:: verbose=0, input, output, data_unit, log_unit
+    integer:: verbose=0, input, output, data_unit
     logical:: master=.true.
     logical:: do_legacy, do_direct, omp_trace
     character(len=16):: method='legacy'
@@ -36,7 +36,7 @@ MODULE io_mod
     logical:: do_flags=.false.
     logical:: do_stop=.false.
     logical:: guard_zones=.false.
-    logical:: namelist_errors=.false.
+    logical:: namelist_errors=.true.
     integer:: log_sent=0
     integer:: time_derivs=0
     integer:: id_debug=0
@@ -73,10 +73,9 @@ MODULE io_mod
     procedure, nopass:: header
     procedure, nopass:: print_hl
   end type
-  integer:: stdout, stderr
   character(len=64), save:: inputname, outputname
   type(io_t), public:: io
-  public mch, io_unit, stdout, stderr
+  public mch, io_unit, stderr, stdout
 CONTAINS
 
 !===============================================================================
@@ -108,7 +107,7 @@ SUBROUTINE init (self, name)
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.false., do_flags=.false., do_direct=.false., guard_zones=.false.
-  logical ,save:: namelist_errors=.false.
+  logical ,save:: namelist_errors=.true.
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
     do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, top, &
     datadir, inputdir, method, restart, format, guard_zones, time_derivs, log_sent, &
@@ -160,10 +159,8 @@ SUBROUTINE init (self, name)
     inputdir = self%rundir
     rewind (io_unit%input)
     read (io_unit%input, io_params, iostat=iostat)
-    if (self%master) then
-      if (iostat > 0) call self%namelist_warning ('io_params')
-      if (first_time) write (*,io_params)
-    end if
+    if (iostat > 0) call self%namelist_warning ('io_params')
+    write (stdout,io_params)
     if (mpi%master .and. .not. do_validate) then
       print'(a,i4)', ' n_socket =', omp%nsockets
       print'(a,i4)', '   n_core =', omp%ncores
@@ -228,8 +225,6 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     io%output    = io_unit%output
     io%data_unit = io_unit%data
-    io%log_unit  = io_unit%log
-    log_unit     = io_unit%log
     write (io_unit%log,'(a,i4,2l4)') &
       'io_mod::init io_unit%log, io_unit%master, io_unit%verbose:', &
       io_unit%log, io_unit%master, io_unit%verbose
@@ -264,7 +259,6 @@ SUBROUTINE init (self, name)
   io_unit%top    = top
   io_unit%do_validate = do_validate
   stdout = io_unit%output
-  stderr = io_unit%stderr
   call timer%init
 contains
   !-----------------------------------------------------------------------------
@@ -475,9 +469,10 @@ END SUBROUTINE check_flags
 !===============================================================================
 !> Issue message for missing namelist in input file
 !===============================================================================
-SUBROUTINE namelist_warning (self, namelist)
+SUBROUTINE namelist_warning (self, namelist, error)
   class(io_t):: self
   character(len=*):: namelist
+  logical, optional:: error
   !.............................................................................
   if (io%master) then
     write(stdout,'(a)') ''
@@ -491,7 +486,12 @@ SUBROUTINE namelist_warning (self, namelist)
     write(stdout,'(a)') '*************************************************************************************'
     write(stdout,'(a)') '*************************************************************************************'
     if (self%namelist_errors) then
-      call mpi%abort('Abort!')
+      if (present(error)) then
+        if (error) &
+          call mpi%abort('Namelist error')
+      else
+        call mpi%abort('Namelist error')
+      end if
     end if
   end if
 END SUBROUTINE namelist_warning

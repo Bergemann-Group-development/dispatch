@@ -231,7 +231,7 @@ SUBROUTINE abort_mpi (self, reason)
   ! Give other ranks a chance to issue messages as well, then abort
   !-----------------------------------------------------------------------------
   flush (io_unit%output)
-  call message (io_unit%stderr)
+  call message (stderr)
   call message (io_unit%log)
   call delay (3e3)
   call MPI_Abort (mpi_comm_world, 127, mpi_err)
