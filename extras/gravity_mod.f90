@@ -17,7 +17,7 @@ MODULE gravity_mod
     real(kind=KindScalarVar)       :: mass = -1.0
     real(8)                        :: minrad = 0.0
     real(8)                        :: position(3) = 0.0                    ! centre of gravity
-    integer                        :: const_axis  = 3
+    integer                        :: axis = 3
     class(patch_t), pointer:: patch
     logical:: on=.false.
   contains
@@ -42,8 +42,8 @@ SUBROUTINE init (self, link)
   real(kind=KindScalarVar), save:: mass = -1.0
   real(8),                  save:: minrad = 0.0
   real(8), save :: position(3) = 0.0                    ! centre of gravity
-  integer, save :: const_axis  = 3
-  namelist /gravity_params/ on, constant, const_axis, position, mass, minrad
+  integer, save :: axis  = 3
+  namelist /gravity_params/ on, constant, axis, position, mass, minrad
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
   !$omp critical (input_cr)
@@ -59,7 +59,7 @@ SUBROUTINE init (self, link)
     self%patch => task2patch(link%task)
     self%on = on
     self%const_grav = constant
-    self%const_axis = const_axis
+    self%axis = axis
     self%position   = position
     self%mass       = mass
     self%minrad     = minrad
@@ -92,8 +92,8 @@ END SUBROUTINE pre_update
 SUBROUTINE const_grav(self)
   class(gravity_t) :: self
   ! ----------------------------------------------------------------------------
-  self%patch%force_per_unit_mass(:,:,:,self%const_axis) = &
-  self%patch%force_per_unit_mass(:,:,:,self%const_axis) + self%const_grav
+  self%patch%force_per_unit_mass(:,:,:,self%axis) = &
+  self%patch%force_per_unit_mass(:,:,:,self%axis) + self%const_grav
 END SUBROUTINE const_grav
 
 !===============================================================================
