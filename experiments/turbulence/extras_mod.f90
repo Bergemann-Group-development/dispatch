@@ -85,7 +85,9 @@ MODULE extras_mod
     !class(trace_particles_t), pointer:: trace_particles         ! tracep
     !real, dimension(:,:,:,:), pointer:: v                       ! tracep
   contains
+    procedure, nopass:: cast2extras
     procedure:: init
+    procedure:: dealloc
     procedure:: init_task_list
     procedure:: pre_update
     procedure:: post_update
@@ -101,16 +103,18 @@ CONTAINS
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
+  call trace%begin ('extras_t%init')
   call self%forces%init (self%link)                             ! forces
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------
   !allocate (self%trace_particles)                               ! tracep
   !self%connect%trace_particles => self%trace_particles          ! tracep
-  !call self%trace_particles%add (self%link%task)                ! tracep
+  !call self%trace_particles%add (self%link)                     ! tracep
   !call self%spitzer%init(self%link)                             ! spitzer
   !call self%gravity%init(self%link)                             ! gravity
   !call sink_patch%init                                          ! sinkp
+  call trace%end
 END SUBROUTINE init
 
 !===============================================================================
@@ -124,6 +128,20 @@ SUBROUTINE init_task_list (self, task_list)
 END SUBROUTINE init_task_list
 
 !===============================================================================
+!> Deallocate allocated arrays
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(extras_t):: self
+  !.............................................................................
+  call trace%begin ('extras_t%dealloc')
+  call self%forces%dealloc                                      ! forces
+  !call trace_particles%dealloc                                  ! sinkp
+  !deallocate (self%trace_particles)                             ! tracep
+  !call sink_patch%dealloc                                       ! sinkp
+  call trace%end
+END SUBROUTINE dealloc
+
+!===============================================================================
 !> The pre_update hierarchy is called before the solver updates. To allow for
 !> a general case, with several force data types adding their contributions,
 !> the generic patch_t%arrays must (if allocated), be set to zero here, so each
@@ -132,12 +150,8 @@ END SUBROUTINE init_task_list
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
-  if (allocated (self%force_per_unit_mass)) &                   ! keep
-    self%force_per_unit_mass = 0.0                              ! keep
-  if (allocated (self%force_per_unit_volume)) &                 ! keep
-    self%force_per_unit_volume = 0.0                            ! keep
   call self%forces%pre_update                                   ! forces
-  !call self%trace_particles%update (self)                       ! tracep
+  !call self%trace_particles%update                              ! tracep
   !call self%spitzer%pre_update()                                ! spitzer
   !call self%gravity%pre_update()                                ! gravity
   !call particle_solver%force_field (self)                       ! sinkp
@@ -149,6 +163,7 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
+  call self%forces%post_update                                  ! forces
   !call self%trace_particles%post_update (self)                  ! tracep
   !call self%gravity%post_update                                 ! gravity
 END SUBROUTINE post_update
@@ -171,7 +186,24 @@ INTEGER function check_refine (self, patch)
   !.............................................................................
   check_refine = -1
   !check_refine = max (check_refine, &
-  !  sinkparticles%check_refine (patch))                         ! sinkp
+  !  sinkparticles%check_refine (gpatch))                        ! sinkp
 END FUNCTION check_refine
+
+!===============================================================================
+!> Cast a generic task_t to patch_t
+!===============================================================================
+FUNCTION cast2extras (task) RESULT(extras)
+  USE task_mod
+  class(task_t), pointer:: task
+  class(extras_t), pointer:: extras
+  !.............................................................................
+  select type (task)
+  class is (extras_t)
+  extras => task
+  class default
+  nullify(extras)
+  call io%abort ('extras_t%cast: failed to cast a task to extras_t')
+  end select
+END FUNCTION cast2extras
 
 END MODULE extras_mod

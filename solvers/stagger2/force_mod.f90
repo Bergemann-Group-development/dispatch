@@ -19,7 +19,8 @@ MODULE force_mod
     character(len=64):: solver
     procedure(single_solenoidal), pointer:: selected=>null()
   contains
-    procedure init
+    procedure:: init
+    procedure:: dealloc
   end type
   logical, save:: first_time=.true.
 CONTAINS
@@ -58,6 +59,13 @@ SUBROUTINE init (self, solver, id, mesh)
    end select
    call trace_end
 END SUBROUTINE init
+
+!===============================================================================
+!> Empty procedure; nothing to deallocate
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(force_t):: self
+END SUBROUTINE dealloc
 
 !===============================================================================
 !> Forcing on a single 3-D wavenumber, changing amplitude and phase periodically
