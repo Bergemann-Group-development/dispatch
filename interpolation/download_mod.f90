@@ -711,11 +711,11 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
       ' same_linear: target, source, iv1, iv2 =', target%id, source%id, iv1, iv2
   end if
   if (iv2 > source%nv) then
-    write(io_unit%log,*) 'iv loop limit:', iv1, iv2
-    write(io_unit%log,*) 'source: id, nv =', source%id, source%nv
-    write(io_unit%log,*) 'source kind ',source%kind, source%position
-    write(io_unit%log,*) 'target kind ',target%kind, target%position
-    write(io_unit%log,*) 'target: id, nv =', target%id, target%nv
+    write(stderr,*) 'iv loop limit:', iv1, iv2
+    write(stderr,*) 'source: id, nv =', source%id, source%nv
+    write(stderr,*) 'source kind ',source%kind, source%position
+    write(stderr,*) 'target kind ',target%kind, target%position
+    write(stderr,*) 'target: id, nv =', target%id, target%nv
     call io%abort("download::same_linear::iv2 > source%nv")
   end if
   do iv=iv1, iv2
