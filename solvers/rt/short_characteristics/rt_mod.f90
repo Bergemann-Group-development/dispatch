@@ -569,20 +569,20 @@ SUBROUTINE setup_boundaries(self)
   ubit = [bits%xu, bits%yu, bits%zu]                                            ! upper boundary bits -- convenience
   !
   do i = 1,3
-    if (self%rt_extent(i) > 0.) then
-      if ((urc(i) < self%rt_llc(i))) then
-        call self%patch%set(bits%no_rt)
-        self%on = .false.
-      else if (llc(i) <= self%rt_llc(i)) then
-        call self%boundaries%set (lbit(i))
-      end if
-      !
-      if ((llc(i) > rt_urc(i))) then
-        call self%patch%set(bits%no_rt)
-        self%on = .false.
-      else if (urc(i) >= rt_urc(i)) then
-        call self%boundaries%set (ubit(i))
-      end if
+    if ((urc(i) < self%rt_llc(i))) then
+      call self%patch%set(bits%no_rt)
+      self%on = .false.
+    else if (llc(i) <= self%rt_llc(i)) then
+      call self%boundaries%set (lbit(i))
+      self%mesh(i)%lower_boundary = .true.
+    end if
+    !
+    if ((llc(i) > rt_urc(i))) then
+      call self%patch%set(bits%no_rt)
+      self%on = .false.
+    else if (urc(i) >= rt_urc(i)) then
+      call self%boundaries%set (ubit(i))
+      self%mesh(i)%upper_boundary = .true.
     end if
   end do
 END SUBROUTINE setup_boundaries
