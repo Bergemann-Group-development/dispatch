@@ -139,13 +139,13 @@ SUBROUTINE rt_setup (task_list)
             new%needed   = .true.
             new%needs_me = .true.
             new%download = .false.
-            call link%add_nbor_by_rank(link%nbor,new)
+            call rt_task%link%add_nbor_by_rank(rt_task%link%nbor,new)
             !-------------------------------------------------------------------
-            ! Add a link to the MHD task to the sub-task nbor list
+            ! Add a link to the main RT task to the sub-task nbor list
             !-------------------------------------------------------------------
             allocate (new)
-            new%link => link
-            new%task => task
+            new%link => rt_task%link
+            new%task => rt_task
             new%needed   = .true.
             new%needs_me = .true.
             new%download = .false.
