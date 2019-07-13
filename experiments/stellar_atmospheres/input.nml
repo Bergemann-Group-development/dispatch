@@ -11,7 +11,7 @@
                     b0=-1.0 flip_z=f /
 &gravity_params     on=t constant=27500 axis=3 position=0.0 mass=-1 minrad=-1 /
 &sc_rt_params       on=t verbose=0 nt=1 n_mu=2 n_phi=4 n_lambda=4 rt_timestep=0.005
-                    rt_grace=0.0 rt_llc=0,0,-0.5 rt_extent=6,6,0.45
+                    rt_grace=0.01 rt_llc=0,0,-0.5 rt_extent=6,6,0.45
                     vertical_propagation=t /
 &rt_setup_params    verbose=0 n_warmup=2 unique_ids=t omp_warmup=f /
 &hybrid_rt_params   /
