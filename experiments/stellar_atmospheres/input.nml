@@ -16,7 +16,7 @@
 &rt_setup_params    verbose=0 n_warmup=2 unique_ids=t omp_warmup=f /
 &hybrid_rt_params   /
 &eos_params         /
-&download_params    /
+&download_params    check_filled=t use_different=0 /
 
 ! -- I/O parameters ------------------------------------------------------------
 &io_params          verbose=0 do_trace=f omp_trace=f do_output=t id_debug=0
