@@ -1,7 +1,7 @@
 
 ! -- Parameters defining the run -----------------------------------------------
 &experiment_params  verbose=0 d_bot=231.8 e_bot=2897.0 top_temperature=4500
-                    smudge_boundary=t /
+                    smudge_boundary=f /
 &cartesian_params   size=6,6,3 dims=6,6,3 mpi_dims=4,4,1 origin=0,0,-0.5
                     omp_init=f /
 &patch_params       do_check_nan=t nt=5 grace=0.05 n=3*20 no_mans_land=t
