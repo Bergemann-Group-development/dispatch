@@ -155,7 +155,9 @@ SUBROUTINE pre_init (self, link)
       call self%patch%idx%request_index (self%patch%idx%qr, self%patch%nv)
     end if
   end if
-  call self%patch%idx%request_index (self%patch%idx%tt, self%patch%nv)
+  if (self%patch%idx%tt <1) then
+    call self%patch%idx%request_index (self%patch%idx%tt, self%patch%nv)
+  end if
   call trace%end()
 END SUBROUTINE pre_init
 
