@@ -8,7 +8,7 @@
                     use_data_hub=f dt_fixed=-1 periodic=t,t,f /
 &snapshot_params    order=1 verbose=0 meshfile='input_data/mhd63.msh'
                     snapfile='input_data/mhd63.dat' model='stagger'
-                    b0=-1.0 flip_z=f /
+                    b0=0.0 flip_z=f /
 &gravity_params     on=t constant=27500 axis=3 position=0.0 mass=-1 minrad=-1 /
 &sc_rt_params       on=t verbose=0 nt=1 n_mu=2 n_phi=4 n_lambda=4 rt_timestep=0.005
                     rt_grace=0.01 rt_llc=0,0,-0.5 rt_extent=6,6,0.45
