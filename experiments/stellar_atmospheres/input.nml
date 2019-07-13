@@ -26,7 +26,7 @@
 ! -- Stagger code parameters ---------------------------------------------------
                     !   cs    pa   ofd  mas   kap  eta
 &stagger_params     nu= 0.03, 1.0, 1.0, 0.05, 1.0, 1.0 gamma=1.4 eos='tabular'
-                    courant=0.15 /
+                    do_maxwell=f courant=0.15 /
 &non_ideal_params   mhd_Ohm=f eta_Ohm=0.01 mhd_AD=f /
 &timestep_params    time_order=2 /
 
