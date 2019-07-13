@@ -33,7 +33,7 @@
 ! -- Task control parameters ---------------------------------------------------
 &timer_params       sec_per_report=20 /
 &task_list_params   job_seconds=1e6 /
-&dispatcher_params  method=6 /
+&dispatcher_params  method=0 /
 &dispatcher3_params verbose=0 f_over=3 use_taskyield=f use_critical=f /
 &task_mesg_params   verbose=0 /
 &mpi_mesg_params    verbose=0 debug=f /
