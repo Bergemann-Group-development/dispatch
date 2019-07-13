@@ -134,6 +134,7 @@ SUBROUTINE pre_init (self, link)
     if (io%master) write (io%output, sc_rt_params)
   end if
   !$omp end critical (input_cr)
+  self%patch => gpatch%cast2gpatch(link%task)
   if (on) then
     if (.not. io%master) verbose=0
     self%on = on
@@ -148,14 +149,13 @@ SUBROUTINE pre_init (self, link)
     self%n_mu  = n_mu
     self%n_phi = n_phi
     !---------------------------------------------------------------------------
-    ! Assign the MHD patch and request for two more mem indices
+    ! Request additional variable slot indices
     !---------------------------------------------------------------------------
-    self%patch => gpatch%cast2gpatch(link%task)
     if (self%patch%idx%qr <1) then
-      call self%patch%idx%request_index(self%patch%idx%qr, self%patch%nv)
-      call self%patch%idx%request_index(self%patch%idx%tt, self%patch%nv)
+      call self%patch%idx%request_index (self%patch%idx%qr, self%patch%nv)
     end if
   end if
+  call self%patch%idx%request_index (self%patch%idx%tt, self%patch%nv)
   call trace%end()
 END SUBROUTINE pre_init
 
