@@ -29,6 +29,7 @@ MODULE eos_mod
     procedure:: pressure
     procedure:: temperature
     procedure:: lookup
+    procedure:: lookup_table
   end type
   type (eos_t), public:: eos
 CONTAINS
@@ -97,6 +98,7 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   real, dimension(:,:,:),                      optional :: pg, tt, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
   real, dimension(:,:,:), pointer :: x_loc, y_loc
+  real:: stefan
   integer:: i
   integer, save:: itimer = 0
   !-----------------------------------------------------------------------------
@@ -127,8 +129,9 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
     tt = (self%gamma-1.0)*x_loc
   end if
   if (present(src)) then
+    stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
     do i=1,size(src,4)
-      src(:,:,:,i) = scaling%stefan_pi*real(((self%gamma-1.0)*x_loc),kind=8)**4
+      src(:,:,:,i) = stefan*real(((self%gamma-1.0)*x_loc),kind=8)**4
     end do
   end if
   if (present(pg)) then
@@ -143,6 +146,97 @@ SUBROUTINE lookup (self, dim, lnx, x, lny, y, pg, tt, ss, rk, src, gamma)
   if (present(lny)) deallocate(y_loc)
   call trace%end(itimer)
 END SUBROUTINE lookup
+
+!=======================================================================
+!> General EOS lookup routine, returning values in optional arguments
+!=======================================================================
+SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src, scat, ross,gamma)
+  class (eos_t):: self
+  integer:: dim(3)
+  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,lnee,e,ee,tt,ne,ross
+  real, dimension(:,:,:,:)         , optional :: src,rk,scat
+  real, dimension(:,:,:)           , optional :: pg
+  real, optional:: gamma
+  ! --------------------------------------------------------------------
+  real, dimension(:,:,:), pointer    :: d_loc, e_loc
+  integer,         dimension(dim(1)) :: il, jl
+  real(kind=4),    dimension(dim(1)) :: f1, f2, f3, f4
+  real    :: dmin,dmax,dd, emin,emax,de,fr, m1t, m1u, t, u, stefan
+  integer :: i
+  integer :: mx,my,mz
+  integer, save:: itimer=0
+  ! ....................................................................
+  call trace%begin ('eos_t%lookup_table', itimer=itimer)
+  if (io%verbose>2) then
+    print *, 'present(lnd) =', present(lnd)
+    print *, 'present(ee)  =', present(ee)
+    print *, 'present(pg)  =', present(pg)
+    print *, 'present(src) =', present(src)
+    print *, 'present(rk)  =', present(rk)
+    print *, 'present(scat)  =', present(scat)
+    print *, 'present(tt)  =', present(tt)
+    print *, 'present(ne)  =', present(ne)
+    print *, 'present(ross)  =', present(ross)
+    print *, 'present(gamma)  =', present(gamma)
+    print *, 'dim:', dim
+  end if
+  mx=dim(1)
+  my=dim(2)
+  mz=dim(3)
+  ! --------------------------------------------------------------------
+  ! Allocate temporary arrays, if needed
+  ! --------------------------------------------------------------------
+  ! For log(density)
+  if (present(d)) then
+    d_loc => d
+  else if (present(lnd)) then
+    allocate (d_loc(dim(1),dim(2),dim(3)))
+    d_loc = exp(lnd)
+  else
+    call io%abort ('eos_t: missing density')
+  end if
+  ! For log(internal energy)
+  if (present(lnee)) then
+    allocate (e_loc(dim(1),dim(2),dim(3)))
+    e_loc = exp(lnee)*d_loc
+  else if (present(e)) then
+    e_loc => e
+  else if (present(lne)) then
+    allocate (e_loc(dim(1),dim(2),dim(3)))
+    e_loc = exp(lne)
+  else if (present(ee)) then
+    allocate (e_loc(dim(1),dim(2),dim(3)))
+    e_loc = ee*d_loc
+  else
+    call io%abort ('eos_t: missing internal energy')
+  end if
+  !
+  if (present(tt)) then
+    tt = (self%gamma-1.0)*e_loc
+  end if
+  if (present(src)) then
+    stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
+    do i=1,size(src,4)
+      src(:,:,:,i) = stefan*real(((self%gamma-1.0)*e_loc),kind=8)**4
+    end do
+  end if
+  if (present(pg)) then
+    pg = (self%gamma-1.0)*d_loc*e_loc
+  end if
+  if (present(rk)) then
+    do i=1,size(rk,4)
+      rk(:,:,:,i) = self%alfa0 *((self%gamma-1.0)*e_loc * self%t0)**(-3.5)*(d_loc*self%rho0)**2
+    end do
+  end if
+  !
+  if (present(lnd)) then
+    deallocate (d_loc)
+  end if
+  if (present(lnee).or.present(lne).or.present(ee)) then
+    deallocate (e_loc)
+  end if
+  call trace%end (itimer)
+END SUBROUTINE lookup_table
 
 END MODULE eos_mod
 
