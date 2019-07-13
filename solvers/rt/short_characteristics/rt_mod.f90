@@ -406,10 +406,16 @@ SUBROUTINE init_nbors (self)
   call trace%begin ('rt_t%init_nbors')
   patch => self%patch
   call self%clear(bits%init_nbors)
+  !-----------------------------------------------------------------------------
+  ! Loop over all ray directions
+  !-----------------------------------------------------------------------------
   do i_omega=1,self%n_omega
     omega => self%omega(i_omega)
     n_nbor = 0
     nbor => patch%link%nbor
+    !--------------------------------------------------------------------------
+    ! Loop over all MHD nbors, looking at their RT tasks along the same omega
+    !--------------------------------------------------------------------------
     do while (associated(nbor))
       if (self%needs(omega,nbor%task)) then
         !-----------------------------------------------------------------------
@@ -433,8 +439,11 @@ SUBROUTINE init_nbors (self)
                 allocate (new)
                 new%link => raytask%link
                 new%task  => raytask
+                ! -- set "upstream attributes"
+                new%needed   = .true.
+                new%needs_me = .false.
+                new%download = .true.
                 ! -- add to the sub-tasks nbor list, in MPI rank order
-                !call omega%link%add_nbor_by_rank (omega%link%nbors_by_level, new)
                 call omega%link%add_nbor_by_rank (omega%link%nbor, new)
                 !-------------------------------------------------------------------
                 ! Create a "downstrean type" nbor node pointing back to omega
@@ -442,8 +451,11 @@ SUBROUTINE init_nbors (self)
                 allocate (new)
                 new%link => omega%link
                 new%task  => omega%link%task
-                !! -- add it to the nbor's nbor chain, in rank order
-                !call raytask%link%add_nbor_by_rank (raytask%link%nbors_by_level, new)
+                ! -- set "downstream attributes"
+                new%needed   = .false.
+                new%needs_me = .true.
+                new%download = .false.
+                ! -- add it to the nbor's nbor chain, in rank order
                 call raytask%link%add_nbor_by_rank (raytask%link%nbor, new)
                 n_nbor = n_nbor+1
               end if
@@ -630,17 +642,11 @@ SUBROUTINE post_update (self)
 END SUBROUTINE post_update
 
 !===============================================================================
-!> Run through all angular solvers and attempt to update them.  Solvers that
-!> lack upstream info (based on internal criteria) will do nothing, while
-!> solvers that have enough information will be updated.  The angular solvers
-!> are so lightweight (taking of the order 100-200 ns) that it would be too
-!> much overhead to consider them separate tasks.
+!> The rt_t%update procedure gets called directly by the task dispatcher, when
+!> it has concluded that the task is ready to update.
 !>
-!> It would be easy to spawn independent OMP tasks for the ones that are
-!> ready, and then wait on them, but for now we avoid complications.
-!>
-!> The update step computes the current RT patch time, based on the current
-!> time in the attached RT solvers for each angle
+!> The update task of the main RT task consists of summing up the results from
+!> the RT sub-tasks, while the sub-task update performs the actual RT solution
 !===============================================================================
 SUBROUTINE update (self)
   class (rt_t):: self
@@ -660,7 +666,9 @@ SUBROUTINE update (self)
   if (self%id == io%id_debug) &
     write (io%output,*) 'DBG rt_t%udpate: time =', self%time, &
     self%is_set(bits%boundary), self%is_set(bits%virtual)
-  !
+  !-----------------------------------------------------------------------------
+  ! Main RT task, summing up the contributions
+  !-----------------------------------------------------------------------------
   if (self%i_omega == 0) then
     ! -- Sum Q over angles and bin
     q       => self%mem(:,:,:,1,self%new,1)
@@ -675,17 +683,24 @@ SUBROUTINE update (self)
     end do
     ! -- Update EOS
     call self%rt_eos(self%time)
+  !-----------------------------------------------------------------------------
+  ! RT sub-task, solving for the radiation field in a given direction
+  !-----------------------------------------------------------------------------
   else
     ! -- Call RT solver, storing result in %it slot, at time = t(%it)
     self%q => self%mem(:,:,:,:,self%it,1)
     call self%solve ()
   end if
   !
-  if (verbose > 2) &
+  if ((verbose > 1) .or. (verbose > 0 .and. self%i_omega == 0)) &
     write(io%output,'(i6,2f7.3,2x,a,f8.4)') &
       self%id, self%position(3), self%mu, &
-      'rt_t%update:  RT patch updated to t =', self%time
-  !
+      'rt_t%update:  RT task updated to t =', self%time
+  !-----------------------------------------------------------------------------
+  ! By advancing the time a factor mu slower for inclined tasks they are forced
+  ! to update more often, thus propagation the solution by about the same amount
+  ! vertically.  NOTE (FIXME):  Purely horizontal rays need special treatment
+  !-----------------------------------------------------------------------------
   if ((self%vertical_propagation).and.(self%i_omega>0)) then
     self%dtime = self%dt_fixed*abs(self%mu)
   else
@@ -773,6 +788,8 @@ SUBROUTINE solve (self)
   call trace%end (itimer)
 END SUBROUTINE solve
 
+!===============================================================================
+!===============================================================================
 SUBROUTINE warm_up(self)
   class(rt_t):: self
   !.............................................................................
@@ -805,7 +822,12 @@ SUBROUTINE warm_up(self)
   call trace%end (itimer)
 END SUBROUTINE warm_up
 
-
+!===============================================================================
+!> NOTE: This procedure is currently NOT called.  It should be activated only
+!> after checking carefully that it gives the same result as when nbor relations
+!> are specified explicitly.  The procedure would only be relevant inside a loop
+!> over the RT task list.
+!===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(rt_t):: self
   class(task_t), pointer:: another
@@ -814,6 +836,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(rt_t), pointer:: rt_another
   class(task_t), pointer:: other
   !-----------------------------------------------------------------------------
+  if (.not.self%on) return
   call trace%begin ('rt_t%nbor_relations')
   !
   ! ----------------------------------------------------------------------------
@@ -848,9 +871,9 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
     needed = .false.
     needs_me = .false.
   end if
-  
+  !
   if (self%i_omega /= rt_another%i_omega) download = .false.
-  
+  !
   class default
   other => another
   ! ----------------------------------------------------------------------------

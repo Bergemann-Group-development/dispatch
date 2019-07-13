@@ -38,7 +38,7 @@ SUBROUTINE rt_setup (task_list)
   class(link_t), pointer:: link, nbor, new
   class(task_t), pointer:: task
   class(patch_t), pointer:: patch
-  class(rt_t), pointer:: omega=>null(), rt_patch
+  class(rt_t), pointer:: omega=>null(), rt_task
   class(solver_t), pointer:: mhd
   class(task_list_t), pointer:: rt_task_list
   integer:: i_omega, ntask, iter, iostat, id_save, n_mhd, n_rt, id
@@ -84,7 +84,9 @@ SUBROUTINE rt_setup (task_list)
       link => link%next
     end select
   end do
-  !
+  !-----------------------------------------------------------------------------
+  ! Loop over all MHD tasks, using their nbor lists to look for RT nbor tasks
+  !-----------------------------------------------------------------------------
   link => task_list%head
   do while (associated(link))
     call io%assert (associated(link%task), 'link%task missing')
@@ -96,42 +98,51 @@ SUBROUTINE rt_setup (task_list)
       ! Add nbor lists to the sub-tasks, if RT is active in the MHD patch
       !-------------------------------------------------------------------------
       if (mhd%is_clear(bits%no_rt)) then
+        !-----------------------------------------------------------------------
+        ! This call sets up upstrem/downstream nbor relations btw omega tasks
+        !-----------------------------------------------------------------------
         call mhd%rt%init_nbors
-        !-----------------------------------------------------------------------
-        ! Append the main task links to the task list
-        !-----------------------------------------------------------------------
-        !-----------------------------------------------------------------------
-        ! Add a link to the rt task to the MHD task nbor list
-        !-----------------------------------------------------------------------
-        omega => mhd%rt
-        if (omega%on) then
+        rt_task => mhd%rt
+        if (rt_task%on) then
           on = .true.
+          !---------------------------------------------------------------------
+          ! Add a link to the main RT task to the MHD task nbor list.  The RT
+          ! task is neeeded to update the MHD task, and the MHD task thus needs_me
+          !---------------------------------------------------------------------
           allocate (new)
-          new%link => omega%link
-          new%task => omega
-          !call link%add_nbor_by_rank(link%nbors_by_level, new)
-          call link%add_nbor_by_rank(link%nbor, new)
-          !-----------------------------------------------------------------------
-          ! Add a link to the MHD task to the rt task nbor list
-          !-----------------------------------------------------------------------
+          new%link => rt_task%link
+          new%task => rt_task
+          new%needed   = .true.
+          new%needs_me = .true.
+          new%download = .false.
+          call link%add_nbor_by_rank (link%nbor, new)
+          !---------------------------------------------------------------------
+          ! Add a link to the MHD task to the main RT task nbor list.  The MHD
+          ! task is needed to update the EOS data for the MHD task, and the RT
+          ! taks this needs_me.  None of the tasks should use download.
+          !---------------------------------------------------------------------
           allocate (new)
           new%link => link
           new%task => task
-          !call omega%link%add_nbor_by_rank(omega%link%nbors_by_level,new)
-          call omega%link%add_nbor_by_rank(omega%link%nbor,new)
-          !-----------------------------------------------------------------------
-          ! Add the rt task to the RT task list
-          !-----------------------------------------------------------------------
-          call omega%clear (bits%ready)
-          call rt_task_list%append_link (omega%link)
-          !-----------------------------------------------------------------------
-          ! Append the sub-task links to the task list
-          !-----------------------------------------------------------------------
+          new%needed   = .true.
+          new%needs_me = .true.
+          new%download = .false.
+          call rt_task%link%add_nbor_by_rank (rt_task%link%nbor,new)
+          !---------------------------------------------------------------------
+          ! Add the rt_task to the RT task list
+          !---------------------------------------------------------------------
+          call rt_task%clear (bits%ready)
+          call rt_task_list%append_link (rt_task%link)
+          !---------------------------------------------------------------------
+          ! Loop over sub-tasks, to add nbor lists, and add them to the task list.
+          ! Each sub-task has the main RT task as nbor, and is an nbor of the main
+          ! RT task.  The upstream/downstream nbors were already added above
+          !---------------------------------------------------------------------
           n_omega = mhd%rt%n_omega
           do i_omega=1,mhd%rt%n_omega
             omega => mhd%rt%omega(i_omega)
             !-------------------------------------------------------------------
-            ! Add a link to the sub-task to the MHD task nbor list
+            ! Add a link to the sub-task to the main rt task nbor list.
             !-------------------------------------------------------------------
             allocate (new)
             new%link => omega%link
@@ -218,7 +229,7 @@ SUBROUTINE rt_setup (task_list)
   !-----------------------------------------------------------------------------
   ! Reset task_list status to establish nbor relations
   !-----------------------------------------------------------------------------
-  call task_list%reset_status()
+  !call task_list%reset_status()
   if (on) then
     !---------------------------------------------------------------------------
     ! Warm up the RT
