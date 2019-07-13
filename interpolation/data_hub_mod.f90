@@ -87,13 +87,30 @@ SUBROUTINE select_dnloader (self, link, all_cells)
   nbor  => link%nbor
   do while (associated(nbor))
     source => task2patch(nbor%task)
-    if (trim(patch%kind)/='rt_solver') then
-      if ((source%is_clear(bits%no_download))) then
+    if (nbor%download) then
+      if (trim(patch%kind)/='rt_solver') then
+        if ((source%is_clear(bits%no_download))) then
+          if (abs(source%level-patch%level) < 2) then
+            call self%add_hub (patch, source, hub, all_cells)
+            if (source%level == patch%level) then
+              hub%dnload => dnload_from_same                                ! target and source are of the same level
+            call hub%init_same
+            else if (source%level > patch%level) then
+              hub%dnload => dnload_from_higher                              ! source is of higher level than the target
+              call hub%init_higher
+            else
+              hub%dnload => dnload_from_lower                               ! source is of lower level than the target
+              call hub%init_lower
+            end if
+          end if
+        end if
+      else if (trim(source%kind)=='rt_solver') then
         if (abs(source%level-patch%level) < 2) then
           call self%add_hub (patch, source, hub, all_cells)
+          hub%rt_target = .true.
           if (source%level == patch%level) then
             hub%dnload => dnload_from_same                                ! target and source are of the same level
-          call hub%init_same
+            call hub%init_same
           else if (source%level > patch%level) then
             hub%dnload => dnload_from_higher                              ! source is of higher level than the target
             call hub%init_higher
@@ -101,21 +118,6 @@ SUBROUTINE select_dnloader (self, link, all_cells)
             hub%dnload => dnload_from_lower                               ! source is of lower level than the target
             call hub%init_lower
           end if
-        end if
-      end if
-    else if (trim(source%kind)=='rt_solver') then
-      if (abs(source%level-patch%level) < 2) then
-        call self%add_hub (patch, source, hub, all_cells)
-        hub%rt_target = .true.
-        if (source%level == patch%level) then
-          hub%dnload => dnload_from_same                                ! target and source are of the same level
-          call hub%init_same
-        else if (source%level > patch%level) then
-          hub%dnload => dnload_from_higher                              ! source is of higher level than the target
-          call hub%init_higher
-        else
-          hub%dnload => dnload_from_lower                               ! source is of lower level than the target
-          call hub%init_lower
         end if
       end if
     end if
