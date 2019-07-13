@@ -322,11 +322,11 @@ SUBROUTINE read_stagger_snap (task_list)
   if (io%master) &
     print *,'reading MHD data from ',trim(snapfile)
   open (io_unit%datain, file=trim(snapfile), form='unformatted', access='direct', recl=recl)
-  ii=[patch%idx%d,patch%idx%py,patch%idx%pz,patch%idx%px, &
-      patch%idx%e,patch%idx%tt,patch%idx%by,patch%idx%bz,patch%idx%bx]
   !-----------------------------------------------------------------------------
   ! Read data and swap indices, so z becomes vertical
   !-----------------------------------------------------------------------------
+  ii = [patch%idx%d, patch%idx%py, patch%idx%pz, patch%idx%px, &
+        patch%idx%e, patch%idx%tt, patch%idx%by, patch%idx%bz, patch%idx%bx]
   do iv=1,min(nv,9)
     iiv = ii(iv)
     if (io%master) &
@@ -378,7 +378,7 @@ SUBROUTINE read_stagger_snap (task_list)
   link => task_list%head
   do while (associated(link))
     patch => task2patch(link%task)
-    if (b0 /= 0.0) &
+    if (b0 >= 0.0) &
       patch%mem(:,:,:,patch%idx%bz,1,1) = b0
     link => link%next
   end do
