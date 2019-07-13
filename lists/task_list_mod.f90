@@ -270,7 +270,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   logical, optional:: was_refined, was_derefined
   !.............................................................................
   class(task_t), pointer:: task
-  real(8):: wc
+  real(8):: wc, levelstart
   logical:: refined, derefined
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
@@ -279,6 +279,10 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   ! out_next will becoe that multiple.
   !----------------------------------------------------------------------------
   call trace%begin('task_list_t%update', itimer=itimer)
+  !-------------------------------------------------------------------------
+  ! Cost counter for AMR
+  !-------------------------------------------------------------------------
+  levelstart = wallclock()
   task => head%task
   call io%check_flags
   if (task%id==io%id_track) then
@@ -453,6 +457,14 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     self%syncing = .false.
   end if
   task%sync_time = self%sync_next
+  !-----------------------------------------------------------------------------
+  ! AMR level cost
+  !-----------------------------------------------------------------------------
+  if (refine%on .and. .not.was_derefined) then
+    !$omp atomic
+    timer%levelcost(task%level) = &
+    timer%levelcost(task%level) + (wallclock() - levelstart)
+  end if
   call trace%end (itimer)
 END SUBROUTINE update
 
