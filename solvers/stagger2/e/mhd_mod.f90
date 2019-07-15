@@ -54,6 +54,7 @@ MODULE mhd_mod
   logical, save:: unsigned=.true.
   logical, save:: do_smooth=.false.
   logical, save:: do_maxwell = .true.
+  logical, save:: do_temperature = .false.
   integer, save:: verbose=0
   integer, save:: divb_cleaner=2
 CONTAINS
@@ -72,7 +73,7 @@ SUBROUTINE pre_init (self)
   logical, save:: mhd=.false.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    do_smooth, unsigned, do_maxwell, verbose, divb_cleaner
+    do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
   !$omp critical (input_cr)
@@ -119,6 +120,8 @@ SUBROUTINE pre_init (self)
     if (self%mhd) self%nv = self%nv + 3
   end if
   call self%idx%init (5, self%mhd)
+  if (do_temperature) &
+    call self%idx%request_index (self%idx%tt, self%nv)
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -678,13 +681,19 @@ FUNCTION gas_pressure (self) RESULT (pg)
       pg = e*(self%gamma-1)
     end if
   else
-    tt => self%mem(:,:,:,self%idx%tt,self%it,1)
-    call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg, tt=tt)
+    if (self%idx%tt > 0) then
+      tt => self%mem(:,:,:,self%idx%tt,self%it,1)
+      call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg, tt=tt)
+      tt = tt*scaling%temp
+    else
+      call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg)
+    end if
     if (io%master .and. (verbose>1 .or. nprint>0)) then
       nprint = nprint-1
       write(io%output,*) self%id, 'lookup_table: lnd =', minval(self%lnd), maxval(self%lnd)
       write(io%output,*) self%id, 'lookup_table:  ee =', minval(self%ee ), maxval(self%ee )
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg),       maxval(pg)
+      if (self%idx%tt > 0) &
       write(io%output,*) self%id, 'lookup_table:  tt =', minval(tt),       maxval(tt)
     end if
   end if
