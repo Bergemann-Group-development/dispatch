@@ -117,20 +117,20 @@ SUBROUTINE pre_init (self, link)
   class (rt_t):: self
   class (link_t), pointer :: link
   !-----------------------------------------------------------------------------
-  integer, save:: n_mu=3, n_phi=4, n_lambda=4, nt=3
-  real,    save:: rt_grace=0.0
-  real(8), save:: rt_llc(3)    = 0d0
-  real(8), save:: rt_extent(3) = 0d0
-  real(8), save:: rt_timestep=0.01_8
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n
+  integer, save:: n_mu=3, n_phi=4, n_lambda=4, nt=3, n_warmup=3
+  real,    save:: rt_grace=0.0
+  real(8), save:: rt_llc(3)=-huge(1d0)
+  real(8), save:: rt_urc(3)=+huge(1d0)
+  real(8), save:: rt_timestep=0.01_8
   logical, save:: vertical_propagation=.false.
   logical, save:: constant_q = .true.
   logical, save:: first_time=.true.
   logical, save:: on =.false.
   !-----------------------------------------------------------------------------
-  namelist /sc_rt_params/ on, nt, rt_llc, rt_extent, rt_timestep, n_mu, n_lambda, n_phi, verbose, &
-                       rt_grace, vertical_propagation, constant_q
-                       
+  namelist /sc_rt_params/ on, verbose, nt, rt_llc, rt_urc, rt_timestep, &
+    n_mu, n_phi, n_lambda, rt_grace, vertical_propagation, constant_q, &
+    n_warmup
   !-----------------------------------------------------------------------------
   ! Read parameters
   !-----------------------------------------------------------------------------
@@ -472,13 +472,12 @@ END FUNCTION needs
 SUBROUTINE setup_boundaries(self)
   class (rt_t) :: self
   ! ----------------------------------------------------------------------------
-  real(8) :: llc(3), urc(3), rt_urc(3)
+  real(8) :: llc(3), urc(3)
   integer :: lbit(3), ubit(3), i
   ! ............................................................................
   call self%init_bdries
   llc = self%position-0.5_8*self%size
   urc = self%position+0.5_8*self%size
-  rt_urc = self%rt_llc+self%rt_extent
   !
   lbit = [bits%xl, bits%yl, bits%zl]                                            ! lower boundary bits -- convenience
   ubit = [bits%xu, bits%yu, bits%zu]                                            ! upper boundary bits -- convenience
@@ -492,10 +491,10 @@ SUBROUTINE setup_boundaries(self)
       self%mesh(i)%lower_boundary = .true.
     end if
     !
-    if ((llc(i) > rt_urc(i))) then
+    if ((llc(i) > self%rt_urc(i))) then
       call self%patch%set(bits%no_rt)
       self%on = .false.
-    else if (urc(i) >= rt_urc(i)) then
+    else if (urc(i) >= self%rt_urc(i)) then
       call self%boundaries%set (ubit(i))
       self%mesh(i)%upper_boundary = .true.
     end if
