@@ -84,10 +84,12 @@ END SUBROUTINE init
 SUBROUTINE initialize (self)
   class(task_list_t):: self
   !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%initialize')
   call self%init_bdries         ! initialize boundaries, based on position
   call self%init_all_nbors      ! make nbor lists, based on position
   call self%reset_status        ! set status buts, based on nbor lists
   call self%count_status        ! count number of different tasks
+  call trace%end
 END SUBROUTINE initialize
 
 !===============================================================================
@@ -118,8 +120,7 @@ SUBROUTINE init_levels (self)
     associate (patch => link%task)
     select type (patch)
     class is (patch_t)
-      patch%level = minval(nint(log(patch%box/patch%ds)/log(real(refine%ratio))), &
-        mask=patch%n > 1)
+      call patch%init_level
     end select
     if (first_time) then
       first_time = .false.

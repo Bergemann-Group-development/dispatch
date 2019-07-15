@@ -54,6 +54,7 @@ MODULE patch_mod
     integer:: check_refine_next=0
     integer:: time_derivs               ! for restart changes
     integer:: not_filled=0              ! guard zones not filled
+    integer:: refine_ratio=2            ! may differ btw patches
     logical:: guard_zones               ! for restart changes
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
@@ -166,9 +167,10 @@ MODULE patch_mod
     procedure:: index_only2
     procedure:: count_edges
     procedure:: update_position
+    procedure:: get_overlap
+    procedure:: init_level
     procedure:: task_info
     procedure:: nbor_info
-    procedure:: get_overlap
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -611,10 +613,10 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     1 format(a,1p,3e15.6)
   end if
   !-----------------------------------------------------------------------------
-  ! Measure levels in terms of the refinement factor -- however, this may come
-  ! in conflict with levels set by e.g. rubiks_mod
+  ! Measure levels in terms of the refinement factor -- make sure this doesn't 
+  ! come in conflict with levels set by e.g. rubiks_mod
   !-----------------------------------------------------------------------------
-  ! FIXME: self%level = log(maxval(self%box)/minval(self%ds))/log(real(self%msplit)) + 0.1
+  call self%init_level
   if (io%verbose>2) then
     !$omp critical (log_cr)
     write (io_unit%log,'(1x,a,i7,2(1p,3e12.4,2x))') 'patch_mod::init: id, size, pos =', &
@@ -2674,27 +2676,6 @@ SUBROUTINE update_position (self)
 END SUBROUTINE update_position
 
 !===============================================================================
-SUBROUTINE task_info (self)
-  class(patch_t):: self
-  !-----------------------------------------------------------------------------
-  write(io_unit%mpi,'(1x,a,i6,2x,2l1,2x,3f9.3)') &
-    'patch_t%task_info: id, BV, pos =', self%id, self%is_set(bits%boundary), &
-    self%is_set(bits%virtual), self%position
-END SUBROUTINE task_info
-
-!===============================================================================
-SUBROUTINE nbor_info (self, nbor)
-  class(patch_t):: self
-  class(link_t):: nbor
-  !-----------------------------------------------------------------------------
-  write(io_unit%mpi,'(3x,a,i6,i4,2x,3l1,2x,2l1,2x,3f9.3)') &
-    'pa_t%nbor_info: id, rank, needed, needs_me, download, BV, pos =', &
-    self%id, self%rank, nbor%needed, nbor%needs_me, nbor%download, &
-    self%is_set(bits%boundary), self%is_set(bits%virtual), &
-    self%position
-END SUBROUTINE nbor_info
-
-!===============================================================================
 SUBROUTINE custom_refine (self)
   class(patch_t):: self
   !-----------------------------------------------------------------------------
@@ -2761,5 +2742,34 @@ FUNCTION get_overlap (self, patch, guards, l, u) RESULT(overlap)
   end if
   call trace%end()
 END FUNCTION get_overlap
+
+!===============================================================================
+SUBROUTINE init_level (self)
+  class(patch_t):: self
+  !-----------------------------------------------------------------------------
+  self%level = minval(nint(log(self%box/self%ds) / &
+    log(real(self%refine_ratio))), mask=self%n > 1)
+END SUBROUTINE init_level
+
+!===============================================================================
+SUBROUTINE task_info (self)
+  class(patch_t):: self
+  !-----------------------------------------------------------------------------
+  write(io_unit%mpi,'(1x,a,40x,i6,2i4,2x,5x,2l1,2x,3f9.3)') &
+    'patch_t%task_info: id, BV, pos =', self%id, self%rank, self%level, &
+    self%is_set(bits%boundary), self%is_set(bits%virtual), self%position
+END SUBROUTINE task_info
+
+!===============================================================================
+SUBROUTINE nbor_info (self, nbor)
+  class(patch_t):: self
+  class(link_t):: nbor
+  !-----------------------------------------------------------------------------
+  write(io_unit%mpi,'(3x,a,i6,2i4,2x,3l1,2x,2l1,2x,3f9.3)') &
+    'pa_t%nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
+    self%id, self%rank, self%level, nbor%needed, nbor%needs_me, nbor%download, &
+    self%is_set(bits%boundary), self%is_set(bits%virtual), &
+    self%position
+END SUBROUTINE nbor_info
 
 END MODULE patch_mod
