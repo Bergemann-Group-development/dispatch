@@ -124,7 +124,7 @@ SUBROUTINE pre_init (self, link)
   real(8), save:: rt_urc(3)=+huge(1d0)
   real(8), save:: rt_timestep=0.01_8
   logical, save:: vertical_propagation=.false.
-  logical, save:: constant_q = .true.
+  logical, save:: constant_q=.true.
   logical, save:: first_time=.true.
   logical, save:: on =.false.
   !-----------------------------------------------------------------------------
@@ -494,9 +494,8 @@ END SUBROUTINE setup_boundaries
 !> heating per unit volume.
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class (rt_t) :: self
-  !-----------------------------------------------------------------------------
-  class(rt_t), pointer:: omega
+  class(rt_t):: self
+  !.............................................................................
   integer:: l(3), u(3)
   real, dimension(:,:,:), pointer:: q
   integer, save:: itimer=0
@@ -548,7 +547,7 @@ END SUBROUTINE post_update
 !> sub-task updates perform the actual RT solutions along rays.
 !===============================================================================
 SUBROUTINE update (self)
-  class (rt_t):: self
+  class(rt_t):: self
   !.............................................................................
   class(rt_t), pointer :: omega
   integer:: i_omega, i_bin
@@ -557,8 +556,8 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. self%on) then
-  call io%abort ('some rts are off - check if that is expected and remove this abort')
-  return
+    call io%abort ('some rts are off - check if that is expected and remove this abort')
+    return
   end if
   call trace%begin ('rt_t%update', itimer=itimer)
   !
@@ -572,7 +571,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   if (self%i_omega == 0) then
     ! -- Sum Q over angles and bin
-    q       => self%mem(:,:,:,1,self%new,1)
+    q => self%mem(:,:,:,1,self%new,1)
     q = 0.0
     ! -- multiply with the stored net intensities
     do i_omega=1,self%n_omega
@@ -582,8 +581,10 @@ SUBROUTINE update (self)
                 omega%mem(:,:,:,i_bin,omega%it,1)
       end do
     end do
-    ! -- Update EOS
-    call self%rt_eos(self%time)
+    if (verbose > 0) then
+      call self%stats (q, 'rt_t%update: q')
+    end if
+    call self%rt_eos (self%time)
   !-----------------------------------------------------------------------------
   ! RT sub-task, solving for the radiation field in a given direction
   !-----------------------------------------------------------------------------
@@ -591,12 +592,10 @@ SUBROUTINE update (self)
     ! -- Call RT solver, storing result in %it slot, at time = t(%it)
     self%q => self%mem(:,:,:,:,self%it,1)
     call self%solve ()
+    if (verbose > 0) then
+      call self%stats (q, 'rt_t%update: self%q')
+    end if
   end if
-  !
-  if ((verbose > 1) .or. (verbose > 0 .and. self%i_omega == 0)) &
-    write(io%output,'(i6,2f7.3,2x,a,f8.4)') &
-      self%id, self%position(3), self%mu, &
-      'rt_t%update:  RT task updated to t =', self%time
   !-----------------------------------------------------------------------------
   ! By advancing the time a factor mu slower for inclined tasks they are forced
   ! to update more often, thus propagation the solution by about the same amount
@@ -625,17 +624,22 @@ SUBROUTINE rt_eos (self, time)
   integer:: m(4), ib, i3, jt(2), l(3), u(3)
   real:: z, pt(2)
   !-----------------------------------------------------------------------------
-  if (.not. self%on) return
-  
+  if (time > self%eos_time) then
+    !$omp critical (eos_cr)
+    if (time > self%eos_time) then
+      call omp_eos
+      self%eos_time = time
+    end if
+    !$omp end critical (eos_cr)
+  end if
+  return
+contains
+subroutine omp_eos
   call trace%begin ('rt_t%rt_eos', itimer=itimer)
   patch => self%patch
-  !if (self%eos_time < time) then
-    !$omp critical (eos_cr)
-  !  if (self%eos_time < time) then
-      ! -- interpolate to the self%eos_time
-      call patch%time_interval (time, jt, pt, all=.true.)
-      m = shape(self%rk)
-      allocate (d(m(1),m(2),m(3)),e(m(1),m(2),m(3)))
+  call patch%time_interval (time, jt, pt, all=.true.)
+  m = shape(self%rk)
+  allocate (d(m(1),m(2),m(3)),e(m(1),m(2),m(3)))
   !-----------------------------------------------------------------------------
   l = patch%mesh%li - self%mesh%ng
   u = patch%mesh%ui + self%mesh%ng
@@ -646,27 +650,18 @@ SUBROUTINE rt_eos (self, time)
   if (verbose > 0) then
     call self%stats (d, 'rt_eos')
     call self%stats (e, 'rt_eos')
-      end if
-      call eos%lookup_table (m, d=d, e=e, rk=self%rk, src=self%src, tt=self%tt)
-      if (verbose > 3) then
-        write(io%output,*) patch%id,'rt_t%rt_eos:  d',minval(d),maxval(d)
-        write(io%output,*) patch%id,'rt_t%rt_eos:  e',minval(e),maxval(e)
-        write(io%output,*) patch%id,'rt_t%rt_eos: rk',minval(self%rk),maxval(self%rk)
-        write(io%output,*) patch%id,'rt_t%rt_eos: tt',minval(self%tt),maxval(self%tt),scaling%temp
-      end if
-      deallocate (d, e)
-      self%eos_time = time
-    !else
-    !  if (debug(patch,0)) then
-    !    write(io%output,*) patch%id, 'DBG rt_t%update: EOS tim', self%eos_time
-    !    write(io%output,*) patch%id, 'DBG rt_t%update: EOS REJ', time
-    !  end if
-    !end if
-    !$omp end critical (eos_cr)
-  !else
-  !  write(io%output,*) patch%id, 'rt_t%rt_eos: WARNING, called w/o need', self%eos_time-time
-  !end if
+  end if
+  call eos%lookup_table (m, d=d, e=e, rk=self%rk, src=self%src, tt=self%tt)
+  if (verbose > 2) then
+    write(io%output,*) patch%id,'rt_t%rt_eos:  d',minval(d),maxval(d)
+    write(io%output,*) patch%id,'rt_t%rt_eos:  e',minval(e),maxval(e)
+    write(io%output,*) patch%id,'rt_t%rt_eos: rk',minval(self%rk),maxval(self%rk)
+    write(io%output,*) patch%id,'rt_t%rt_eos: tt',minval(self%tt),maxval(self%tt), &
+      scaling%temp
+  end if
+  deallocate (d, e)
   call trace%end (itimer)
+end subroutine omp_eos
 END SUBROUTINE rt_eos
 
 !===============================================================================
@@ -682,11 +677,10 @@ SUBROUTINE solve (self)
   if (self%i_omega==0) return
   call trace%begin ('rt_t%solve', itimer=itimer)
   !-----------------------------------------------------------------------------
-  rt_integral%verbose = verbose
-  !if (self%mesh(3)%lower_boundary) print *, 'should be lower', self%mesh(3)%lower_boundary, self%patch%mesh(3)%lower_boundary
-  !if (self%boundaries%is_set(bits%zl+bits%zu)) print *, 'bits in bnd set properly' --VORKS
-  call self%rt_boundaries%condition (mem=self%q, src=self%src, rk=self%rk, tt=self%tt, mu=self%mu, w=self%w)
-  call rt_integral%solve (self%rk, self%src, self%q, self%mesh, self%mu, self%rt_phi)
+  call self%rt_boundaries%condition (mem=self%q, src=self%src, rk=self%rk, &
+                                     tt=self%tt, mu=self%mu, w=self%w)
+  call rt_integral%solve (self%rk, self%src, self%q, self%mesh, self%mu, &
+                          self%rt_phi)
   call trace%end (itimer)
 END SUBROUTINE solve
 

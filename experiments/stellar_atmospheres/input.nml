@@ -10,12 +10,11 @@
                     snapfile='input_data/mhd63.dat' model='stagger'
                     b0=0.5 flip_z=f /
 &gravity_params     on=t constant=27500 axis=3 position=0.0 mass=-1 minrad=-1 /
-&sc_rt_params       on=t verbose=0 nt=1 n_mu=2 n_phi=4 n_lambda=4 rt_timestep=0.005
-                    rt_grace=0.01 rt_llc=0,0,-0.5 rt_extent=6,6,0.45
-                    vertical_propagation=t /
-&rt_setup_params    verbose=0 n_warmup=2 unique_ids=t omp_warmup=f /
 &rt_setup_params    on=t verbose=0 /
 &rt_inregral_params /
+&sc_rt_params       on=t verbose=0 nt=1 n_mu=2 n_phi=4 n_lambda=4 rt_timestep=0.0025
+                    rt_grace=0.01 rt_llc=0,0,-0.5 rt_urc=6,6,0.45
+                    n_warmup=2 vertical_propagation=t /
 &newton_params      on=t axis=3 position=-0.5 scale=0.12 ee0=5.3 ee1=0.4 time=0.07 /
 &hybrid_rt_params   /
 &eos_params         /
