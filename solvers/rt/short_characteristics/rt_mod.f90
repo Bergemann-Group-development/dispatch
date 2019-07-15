@@ -173,7 +173,9 @@ SUBROUTINE pre_init (self, link)
 END SUBROUTINE pre_init
 
 !===============================================================================
-!> Initialize the object
+!> Initialize the rt_t data types.  To setup for n_warmup initial solutions, we
+!> set the time rt_t times = -n_warmup * rt_t%timestep, making sure to call
+!> rt_t%rt_eos for the initial MHD state.
 !===============================================================================
 SUBROUTINE init (self)
   USE link_mod
@@ -256,11 +258,6 @@ SUBROUTINE init (self)
       call radau%init (self%n_mu, mu, w_mu)
     end if
     !---------------------------------------------------------------------------
-    ! Allocate n_omega copies of self, cloning self via self
-    !---------------------------------------------------------------------------
-    if (n_omega > 0) allocate (self%omega(n_omega), source=self)
-    self%i_omega = 0
-    !---------------------------------------------------------------------------
     ! Allocate data, belonging to the main task
     !---------------------------------------------------------------------------
     allocate (self%rk (self%gn(1),self%gn(2),self%gn(3),self%n_lambda))
@@ -270,7 +267,12 @@ SUBROUTINE init (self)
     call io%bits_mem(storage_size(self%rk  ),product(shape(self%rk )),'rk')
     call io%bits_mem(storage_size(self%src ),product(shape(self%src)),'src')
     !---------------------------------------------------------------------------
-    ! Initialize the copies of self
+    ! Allocate n_omega copies of self, cloning self
+    !---------------------------------------------------------------------------
+    if (n_omega > 0) allocate (self%omega(n_omega), source=self)
+    self%i_omega = 0
+    !---------------------------------------------------------------------------
+    ! Initialize the clones of self
     !---------------------------------------------------------------------------
     do i_omega=1,self%n_omega
       call self%init_omega(i_omega)
@@ -293,9 +295,9 @@ SUBROUTINE init (self)
         end do
       end do
     end do
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Check task angles
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     if (verbose > 0 .and. self%id == 1) then
       do i_omega=1,n_omega
         omega => self%omega(i_omega)
@@ -326,7 +328,7 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Initialize rt sub-tasks
+!> Initialize rt sub-tasks; note that all self values are initially cloned
 !===============================================================================
 SUBROUTINE init_omega (self, i_omega)
   class (rt_t):: self
@@ -388,103 +390,6 @@ SUBROUTINE init_omega (self, i_omega)
 END SUBROUTINE init_omega
 
 !===============================================================================
-!> Add upstream and downstream tasks to an nbor list.  The upstream nbors should
-!> have the settings needed=T, needs_me=F, download=T, while the downstream 
-!> tasks should have needed=F, needs_me=T, download=F.
-!>
-!> Each omega subtask of an MHD task has, for each MHD nbor, either
-!> 1) no connection, or
-!> 2) an upstream connection, or
-!> 3) a downstream connection
-!>
-!> The nbor's sub-task in the omega direction should not be added to then MHD
-!> task's nbor list, and should, in the local sub-tasks nbor list, either
-!> 1) not be added
-!> 2) be added with needed=T, needs_me=F, download=T, or
-!> 3) be added with needed=F, needs_me=t, download=F
-!>
-!===============================================================================
-SUBROUTINE init_nbors (self)
-  class (rt_t):: self
-  !.............................................................................
-  integer:: i_omega
-  type(rt_t), pointer:: omega
-  class(*), pointer:: nb_rt_task
-  class(link_t), pointer:: nbor, new
-  class(task_t), pointer:: nbtask, raytask
-  class(gpatch_t), pointer:: patch, nb_patch
-  integer:: n_nbor
-  !-----------------------------------------------------------------------------
-  if (.not.self%on) return
-  call trace%begin ('rt_t%init_nbors')
-  patch => self%patch
-  call self%clear(bits%init_nbors)
-  !-----------------------------------------------------------------------------
-  ! Loop over all ray directions
-  !-----------------------------------------------------------------------------
-  do i_omega=1,self%n_omega
-    omega => self%omega(i_omega)
-    n_nbor = 0
-    nbor => patch%link%nbor
-    !--------------------------------------------------------------------------
-    ! Loop over all MHD nbors, looking at their RT tasks along the same omega
-    !--------------------------------------------------------------------------
-    do while (associated(nbor))
-      if (self%needs(omega,nbor%task)) then
-        !-----------------------------------------------------------------------
-        ! Add a new nbor, a new nbor%link, and pointers from link to task and
-        ! from task to link.  The omega-task on nbor already has its own link.
-        !-----------------------------------------------------------------------
-        nbtask => nbor%task
-        select type (nbtask)
-        class is (gpatch_t)
-          nb_patch   => nbtask
-          nb_rt_task => nbtask%connect%rt
-          select type(nb_rt_task)
-          class is (rt_t)
-            raytask => nb_rt_task%omega(i_omega)
-            select type (raytask)
-            class is (rt_t)
-              if (raytask%on) then
-                !-------------------------------------------------------------------
-                ! Create an "upstrean type" nbor node pointing to the nbor sub-task
-                !-------------------------------------------------------------------
-                allocate (new)
-                new%link => raytask%link
-                new%task  => raytask
-                ! -- set "upstream attributes"
-                new%needed   = .true.
-                new%needs_me = .false.
-                new%download = .true.
-                ! -- add to the sub-tasks nbor list, in MPI rank order
-                call omega%link%add_nbor_by_rank (omega%link%nbor, new)
-                !-------------------------------------------------------------------
-                ! Create a "downstrean type" nbor node pointing back to omega
-                !-------------------------------------------------------------------
-                allocate (new)
-                new%link => omega%link
-                new%task  => omega%link%task
-                ! -- set "downstream attributes"
-                new%needed   = .false.
-                new%needs_me = .true.
-                new%download = .false.
-                ! -- add it to the nbor's nbor chain, in rank order
-                call raytask%link%add_nbor_by_rank (raytask%link%nbor, new)
-                n_nbor = n_nbor+1
-              end if
-            end select
-           end select
-        end select
-      end if
-      nbor => nbor%next
-    end do
-    if (verbose > 2) &
-      write(io%output,*) omega%id, 'rt_t%init_nbors: n_nbor=', n_nbor
-  end do
-  call trace%end
-END SUBROUTINE init_nbors
-
-!===============================================================================
 !> Determine if a task is needed (is upstream).  We are being presented with
 !> the nbors of the MHD task, so there is no task above the top-most task, but
 !> there may well be tasks below the rt_bottom, which are not needed as RT nbors
@@ -500,7 +405,6 @@ FUNCTION needs (self, omega, task)
   integer:: is1(3), is2(3), i, lbit(3), ubit(3)
   logical:: lower, upper
   !-----------------------------------------------------------------------------
-  !-----------------------------------------------------------------------------
   ! If self is at a boundary and omega points inward, or the task has no RT,
   ! then the task is outside and is not needed
   !-----------------------------------------------------------------------------
@@ -508,8 +412,6 @@ FUNCTION needs (self, omega, task)
   where (self%periodic)
     ds1 = modulo(ds1 + 0.5_8*self%mesh%b, self%mesh%b) - 0.5_8*self%mesh%b
   end where
-
-  
   ds1 = ds1/self%box
   sinth = merge(0.0, sqrt(1.0-omega%mu**2), abs(omega%mu)==1.0)
   ds2 = [sinth*cos(omega%rt_phi),sinth*sin(omega%rt_phi),omega%mu]
@@ -565,7 +467,9 @@ FUNCTION needs (self, omega, task)
 END FUNCTION needs
 
 !===============================================================================
-!> Check if patch belongs to an RT box or is at its boundary.
+!> Check if patch belongs to an RT box or is at its boundary.  The mesh flags
+!> lower_boundary and upper_boundary are set for the tasks that contain bndries,
+!> and self%on is set false for tasks that are entirely outside.
 !===============================================================================
 SUBROUTINE setup_boundaries(self)
   class (rt_t) :: self
@@ -601,7 +505,9 @@ SUBROUTINE setup_boundaries(self)
 END SUBROUTINE setup_boundaries
 
 !===============================================================================
-!>
+!> This is called only for MHD tasks, just before they update, with self = main,
+!> so this is suitable place to add the resulting net radiative heating to the
+!> heating per unit volume.
 !===============================================================================
 SUBROUTINE pre_update (self)
   class (rt_t) :: self
@@ -609,12 +515,7 @@ SUBROUTINE pre_update (self)
   class(rt_t), pointer:: omega
   real, dimension(:,:,:), pointer:: q
   integer, save:: itimer=0
-  !---------------------------------------------------------------------------
-  ! If the main task is called with self%time > self%rt_next, then the
-  ! scheduler has concluded that the pre-requisites are in order, and hence
-  ! we can update self%q, which is later used (and reused) as the next
-  ! radiative heating.
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (.not. self%on) return
   call trace%begin ('rt_t%pre_update', itimer=itimer)
   if (self%constant_q) then
@@ -628,7 +529,9 @@ SUBROUTINE pre_update (self)
 END SUBROUTINE pre_update
 
 !===============================================================================
-!>
+!> This is called from MHD tasks, after updates, with self = main, and we use it
+!> to copy the net heating and temperature arrays over to the MHD memory, for
+!> output.
 !===============================================================================
 SUBROUTINE post_update (self)
   class (rt_t) :: self
@@ -636,12 +539,7 @@ SUBROUTINE post_update (self)
   class(rt_t), pointer:: omega
   real, dimension(:,:,:), pointer:: q
   integer, save:: itimer=0
-  !---------------------------------------------------------------------------
-  ! If the main task is called with self%time > self%rt_next, then the
-  ! scheduler has concluded that the pre-requisites are in order, and hence
-  ! we can update self%q, which is later used (and reused) as the next
-  ! radiative heating.
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (.not. self%on) return
   call trace%begin ('rt_t%post_update', itimer=itimer)
   if (self%constant_q) then
@@ -656,10 +554,9 @@ END SUBROUTINE post_update
 
 !===============================================================================
 !> The rt_t%update procedure gets called directly by the task dispatcher, when
-!> it has concluded that the task is ready to update.
-!>
-!> The update task of the main RT task consists of summing up the results from
-!> the RT sub-tasks, while the sub-task update performs the actual RT solution
+!> it has concluded that the task is ready to update.  An update of the main RT
+!> task consists of summing up the results from the RT sub-tasks, while the
+!> sub-task updates perform the actual RT solutions along rays.
 !===============================================================================
 SUBROUTINE update (self)
   class (rt_t):: self
@@ -677,10 +574,12 @@ SUBROUTINE update (self)
   call trace%begin ('rt_t%update', itimer=itimer)
   !
   if (self%id == io%id_debug) &
-    write (io%output,*) 'DBG rt_t%udpate: time =', self%time, &
-    self%is_set(bits%boundary), self%is_set(bits%virtual)
+    write (io%output,*) 'DBG rt_t%update: id, i_omega, BV, time =', &
+      self%id, self%i_omega, self%is_set(bits%boundary), self%is_set(bits%virtual), &
+      self%time
   !-----------------------------------------------------------------------------
-  ! Main RT task, summing up the contributions
+  ! Main RT task, summing up the contributions.  Since all RT sub-tasks then
+  ! must have finished, we can use the opportunity to call rt_eos at this time.
   !-----------------------------------------------------------------------------
   if (self%i_omega == 0) then
     ! -- Sum Q over angles and bin
@@ -717,7 +616,6 @@ SUBROUTINE update (self)
   if ((self%vertical_propagation).and.(self%i_omega>0)) then
     self%dtime = self%dt_fixed*abs(self%mu)
   else
-    ! -- choose an RT time step that is at least the parent MHD time step
     self%dtime = self%dt_fixed
   end if
   call self%rotate()
@@ -725,9 +623,8 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !===============================================================================
-!> Compute the RT EOS quantities for the patch, using self%eos_time to guard
-!> againts duplicate calculations when multi-threading.  Check both before and
-!> after entering a critical region, so most threads never hit the critical region.
+!> Compute the RT EOS quantities for the patch, using self%eos_time and an OMP
+!> critical region to guard against duplicate calculations when multi-threading.
 !===============================================================================
 SUBROUTINE rt_eos (self, time)
   class (rt_t):: self
