@@ -683,147 +683,30 @@ SUBROUTINE solve (self)
 END SUBROUTINE solve
 
 !===============================================================================
-!===============================================================================
-SUBROUTINE warm_up(self)
-  class(rt_t):: self
-  !.............................................................................
-  class(rt_t), pointer :: omega
-  integer:: i_omega, i_bin, itimer=0
-  real, dimension(:,:,:), pointer:: q
-  real(8):: time
-  !-----------------------------------------------------------------------------
-  if ((.not.self%on)) return
-  call trace%begin ('rt_t%warm_up', itimer=itimer)
-  if (self%i_omega == 0) then
-    ! -- Sum Q over angles and bin
-    q       => self%mem(:,:,:,1,self%new,1)
-    q = 0.0
-    ! -- multiply with the stored net intensities
-    do i_omega=1,self%n_omega
-      omega => self%omega(i_omega)
-      do i_bin=1,self%n_lambda
-        q = q + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
-                omega%mem(:,:,:,i_bin,omega%it,1)
-      end do
-    end do
-    ! -- Update EOS
-    call self%rt_eos(self%time)
-  else
-    ! -- Call RT solver, storing result in %it slot, at time = t(%it)
-    self%q => self%mem(:,:,:,:,self%it,1)
-    call self%solve ()
-  end if
-  call trace%end (itimer)
-END SUBROUTINE warm_up
-
-!===============================================================================
-!> NOTE: This procedure is currently NOT called.  It should be activated only
-!> after checking carefully that it gives the same result as when nbor relations
-!> are specified explicitly.  The procedure would only be relevant inside a loop
-!> over the RT task list.
-!===============================================================================
-SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
-  class(rt_t):: self
-  class(task_t), pointer:: another
-  logical:: needed, needs_me, download
-  !.............................................................................
-  class(rt_t), pointer:: rt_another
-  class(task_t), pointer:: other
-  !-----------------------------------------------------------------------------
-  if (.not.self%on) return
-  call trace%begin ('rt_t%nbor_relations')
-  !
-  ! ----------------------------------------------------------------------------
-  ! First check the main relations, based on location and level of refinement
-  ! ----------------------------------------------------------------------------
-  call self%task_t%nbor_relations(another, needed, needs_me, download)
-  ! ----------------------------------------------------------------------------
-  ! Now, if another is RT, add it appropriately, if it is MHD, it has to overlap
-  ! and have different kind of relations
-  ! ----------------------------------------------------------------------------
-  other => another
-  select type (another)
-  class is (rt_t)
-  rt_another => another
-  ! ----------------------------------------------------------------------------
-  ! for no chains solver nothing has to be done here - all logicals are true, 
-  ! unless are made false by other reasons.
-  ! ----------------------------------------------------------------------------
-  if (self%needs(self,other)) then
-    needs_me = .false.
-  end if
-  if (rt_another%needs(rt_another,self%link%task)) then
-    needed   = .false.
-    download = .false.
-  end if
-  if (self%vertical_propagation) then
-    if (any(self%position(1:2) /= rt_another%position(1:2))) then
-      needed = .false.
-      needs_me = .false.
-    end if
-  else if (self%position(3) == rt_another%position(3)) then
-    needed = .false.
-    needs_me = .false.
-  end if
-  !
-  if (self%i_omega /= rt_another%i_omega) download = .false.
-  !
-  class default
-  other => another
-  ! ----------------------------------------------------------------------------
-  ! Check if this is the "master" MHD patch. It might not be associated yet, i.e.
-  ! after moving to another MPI rank or changing level of refinement. in that 
-  ! case, associate it.
-  ! ----------------------------------------------------------------------------
-  if (self%overlaps(other)) then
-    download = .false.  ! don't download 
-    if (.not.(associated(self%patch))) self%patch => gpatch%cast2gpatch(other)
-  end if
-  end select
-  !
-  call trace%end()
-END SUBROUTINE nbor_relations
-
-!===============================================================================
-!> Return true if the patch is the horizontally closest to a give position, or
-!> if the patch ID equals io%id_debug, unless level is less than verbose.
-!===============================================================================
-FUNCTION debug (self, level) RESULT (yes)
-  class(gpatch_t):: self
-  integer:: level
-  real(8):: position(3)
-  logical:: yes
-  integer:: id
-  !-----------------------------------------------------------------------------
-  yes = maxval(abs(self%position(1:2)-dbg_position)/self%size(1:2)) < 0.55
-  if (associated(self%parent)) then
-    id = self%parent%id
-  else
-    id = self%id
-  end if
-  yes = yes .or. id == io%id_debug
-  yes = yes .and. (verbose >= level)
-END FUNCTION debug
-
+!> For diagnostic output of tasks and nbor lists to data/run/rank_RRRRR.log
 !===============================================================================
 SUBROUTINE task_info (self)
   class(rt_t):: self
   !-----------------------------------------------------------------------------
-  write(io_unit%mpi,'(1x,a,i6,2x,2l1,2x,3f9.3,i4,2f7.3)') &
-    'rt_t%task_info: id, BV, pos, i_omega, mu, phi =', self%id, self%is_set(bits%boundary), &
-    self%is_set(bits%virtual), self%position, self%i_omega, self%mu, self%rt_phi
+  write(io_unit%mpi,'(1x,a,12x,i6,2i4,11x,2l1,2x,3f9.3,i4,2f7.3)') &
+    'rt_t%task_info: id, rank, level, BV, pos, i_omega, mu, phi =', &
+    self%id, self%rank, self%level, &
+    self%is_set(bits%boundary), self%is_set(bits%virtual), self%position, &
+    self%i_omega, self%mu, self%rt_phi
 END SUBROUTINE task_info
 
+!===============================================================================
+!> For diagnostic output of tasks and nbor lists to data/run/rank_RRRRR.log
 !===============================================================================
 SUBROUTINE nbor_info (self, nbor)
   class(rt_t):: self
   class(link_t):: nbor
   !-----------------------------------------------------------------------------
-  write(io_unit%mpi,'(3x,a,i6,i4,2x,3l1,2x,2l1,2x,3f9.3,i4)') &
-    'rt_t%nbor_info: id, rank, needed, needs_me, download, BV, pos =', &
-    self%id, self%rank, nbor%needed, nbor%needs_me, nbor%download, &
+  write(io_unit%mpi,'(3x,a,i6,2i4,2x,3l1,2x,2l1,2x,3f9.3,i4,2f7.3)') &
+    'rt_t%nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
+    self%id, self%rank, self%level, nbor%needed, nbor%needs_me, nbor%download, &
     self%is_set(bits%boundary), self%is_set(bits%virtual), &
-    self%position, self%i_omega
+    self%position, self%i_omega, self%mu, self%rt_phi
 END SUBROUTINE nbor_info
 
 END MODULE rt_mod
