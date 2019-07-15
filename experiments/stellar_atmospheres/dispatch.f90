@@ -2,6 +2,7 @@
 !> Generic DISPATCH main program for Cartesian meshes
 !===============================================================================
 PROGRAM dispatch
+  USE rt_setup_mod
   USE read_snapshot_mod
   USE setup_mod
   USE cartesian_mod
@@ -11,8 +12,8 @@ PROGRAM dispatch
   call setup%init                               ! Standard setup (MPI, I/O, scaling, ...)
   call dispatcher%init                          ! Set dispatcher method
   call cartesian%init                           ! Initialize the patch list and patches
-  call read_snapshot%init (cartesian%task_list)            ! Construct ICs
-  call rt_setup(cartesian%task_list)            ! Add RT subtasks to task list
+  call read_snapshot%init (cartesian%task_list) ! Construct ICs
+  call rt_setup%init (cartesian%task_list)      ! Add RT subtasks to task list
   call dispatcher%execute (cartesian%task_list) ! Call dispatcher
   call setup%end
 !===============================================================================
