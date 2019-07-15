@@ -118,7 +118,8 @@ SUBROUTINE output (self, experiment_name)
         write (io_unit%log,'(1x,a,2i5,i3,1p,3e11.3)') &
           trim(filename),iv,it1,jo,minval(buf),maxval(buf),pt
       write (io_unit%data,rec=iv+(jo-1)*self%nv) buf
-      if (io%verbose>1 .and. iv==self%idx%d) print *,'rho minmax',minval(buf), maxval(buf)
+      if (io%verbose>1 .and. iv==self%idx%d) &
+        print *,'rho minmax',minval(buf), maxval(buf)
       deallocate (buf)
     end do
   end do

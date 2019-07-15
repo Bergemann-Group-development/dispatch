@@ -122,7 +122,8 @@ SUBROUTINE test (self)
   !-----------------------------------------------------------------------------
   allocate (source(3))
   do i=1,3
-    call source(i)%setup (size=0.1_8*[1,1,1]*(scene%f_zoom)**(i-2), n=[16,16,16], nv=2, nt=2, nw=1)
+    call source(i)%setup (size=0.1_8*[1,1,1]*(scene%f_zoom)**(i-2), &
+      n=[16,16,16], nv=2, nt=2, nw=1)
   end do
   !---------------------------------------------------------------------------
   ! Loop over source size
@@ -187,14 +188,16 @@ SUBROUTINE test (self)
       call set_position (src, target, j)
       if (i==2.and.(j==2.or.j==4)) cycle
       if (io%verbose>1) & 
-        print "('source size:',i2,3x,'position:',i2,2x,'levels:',2i2)", i, j, src%level, target%level
+        print "('source size:',i2,3x,'position:',i2,2x,'levels:',2i2)", i, j, &
+          src%level, target%level
       call set_values (src)
       call set_values (target)
       if (src%level==target%level) then
         call self%same (target, src, all_cells=.false.)
         if (self%check_filled) then
           if (any(filled < 0)) then
-            write (io_unit%log,*) target%id, 'WARNING: some cells not filled by download_t%same'
+            write (io_unit%log,*) target%id, &
+              'WARNING: some cells not filled by download_t%same'
           end if
         end if
       else
@@ -238,15 +241,19 @@ contains
     !---------------------------------------------------------------------------
     select case (j)
     case (1)
-      source%position = target%position - 0.5_8*(source%size+target%size) + 2.*abs(source%ds-target%ds)
+      source%position = target%position - 0.5_8*(source%size+target%size) + &
+        2.*abs(source%ds-target%ds)
     case (2)
-      source%position = target%position - 0.5_8*(source%size+target%size) + 2.*abs(source%ds-target%ds)
+      source%position = target%position - 0.5_8*(source%size+target%size) + &
+        2.*abs(source%ds-target%ds)
     case (3)
       source%position = target%position
     case (4)
-      source%position = target%position + 0.5_8*(source%size+target%size) - 2.*abs(source%ds-target%ds)
+      source%position = target%position + 0.5_8*(source%size+target%size) - &
+        2.*abs(source%ds-target%ds)
     case (5)
-      source%position = target%position + 0.5_8*(source%size+target%size) - 2.*abs(source%ds-target%ds)
+      source%position = target%position + 0.5_8*(source%size+target%size) - &
+        2.*abs(source%ds-target%ds)
     end select
     source%mesh%p = source%position
     source%t = 0d0; source%time=0d0; source%iit=1
@@ -358,8 +365,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   if (target%is_clear(bits%no_density)) then
     d => target%mem(:,:,:,target%idx%d,target%it,1)
     call validate%check (target%link, d, 'before download')
-    if (target%id == id_debug .or. verbose > 2) then
-      write(io_unit%output,*) 'download_t%download_link: id, time =', &
+    if (target%id == id_debug .or. verbose > 0) then
+      write(io_unit%log,*) 'download_t%download_link: id, time =', &
         target%id, target%time
     end if
   end if
@@ -416,17 +423,21 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       flush (io_unit%output)
       cycle
     end if
-    !write(io_unit%output,'(f12.6,2x,a,2(i6,i3),i4)') &
-    !  wallclock(), 'target, source, level, needed =', &
-    !  target%id, target%level, nbor%task%id, nbor%task%level, nbor%task%n_needed
-    !flush (io_unit%output)
     source => task2patch(nbor%task)
+    if (verbose > 1) then
+      write(io_unit%output,'(f12.6,2x,a,2(i6,i3),2x,2l1,i4)') &
+        wallclock(), 'target, level, source, level, ND, n_needed =', &
+        target%id, target%level, source%id, source%level, &
+        nbor%needed, nbor%download, source%n_needed
+      flush (io_unit%output)
+    end if
     if (omp_lock%tasks) then
       call source%lock%set ('download_link')
     end if
     if (verbose > 1) &
-      write(io_unit%log,*) target%id, 'download_t%download_link: source, download =', &
-        source%id, nbor%download
+      write(io_unit%log,*) target%id, target%level, &
+        'download_t%download_link: source, level, download =', &
+        source%id, source%level, nbor%download
     !---------------------------------------------------------------------------
     ! Skip nbor not marked for download
     !---------------------------------------------------------------------------
@@ -538,10 +549,12 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
         end do
         if (all_cells_l) then
           write (io%output,'(i6,2x,a,i6,i4)') &
-           n_not, 'internal cells were not filled: id, level =', target%id, target%level
+           n_not, 'internal cells were not filled: id, level =', &
+           target%id, target%level
         else
           write (io%output,'(i6,2x,a,i6,i4)') &
-           n_not, 'guard zone cells were not filled: id, level =', target%id, target%level
+           n_not, 'guard zone cells were not filled: id, level =', &
+           target%id, target%level
         end if
       end if
     end if
@@ -557,7 +570,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       deallocate (src)
   end if
   !-----------------------------------------------------------------------------
-  if (target%is_clear(bits%no_density)) call validate%check (target%link, d, ' after download')
+  if (target%is_clear(bits%no_density)) &
+    call validate%check (target%link, d, ' after download')
   call trace%end (itimer)
 END SUBROUTINE download_link
 
@@ -632,17 +646,20 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
     if (source%level==target%level) then
       offset = nint(-dist/target%ds + source%offset - target%offset)
     else
-      write(io_unit%log,*) 'ERROR: fixed offset not valid for different levels', &
+      write(io_unit%log,*) &
+        'ERROR: fixed offset not valid for different levels', &
         target%id, target%level, source%id, source%level
       call mpi%abort('dnload_range')
     end if
     if (verbose > 1 .or. io_unit%do_validate .or. target%id==id_debug) &
-      write(io_unit%log,1) target%id, target%level, iv, source%id, source%level, l, u, offset
+      write(io_unit%log,1) &
+        target%id, target%level, iv, source%id, source%level, l, u, offset
       1 format("download_t%dnload_range: id,lv,iv:",i6,2i3, &
                "  source,lv,l,u,o:",i6,i3,3(2x,3i4))
   else
     if (verbose > 1 .or. io_unit%do_validate .or. target%id==id_debug) &
-      write(io_unit%log,2) target%id, target%level, iv, source%id, source%level, l, u
+      write(io_unit%log,2) &
+        target%id, target%level, iv, source%id, source%level, l, u
       2 format("download_t%dnload_range: id,lv,iv:",i6,2i3, &
                "  source,lv,l,u:",i6,i3,3(2x,3i4))
   end if
@@ -720,16 +737,20 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
   end if
   do iv=iv1, iv2
     if (verbose > 1 .and. source%unsigned(iv)) then
-      fmin = min(minval(source%mem(:,:,:,iv,jt(1),1)),minval(source%mem(:,:,:,iv,jt(2),1)))
+      fmin = min(minval(source%mem(:,:,:,iv,jt(1),1)), &
+                 minval(source%mem(:,:,:,iv,jt(2),1)))
       if (fmin <= 0.0) then
         write(io_unit%log,*) 'iv, jt, pt / minval, minloc =', iv, jt, pt
-        write(io_unit%log,*) minval(source%mem(:,:,:,iv,jt(1),1)), minloc(source%mem(:,:,:,iv,jt(1),1))
-        write(io_unit%log,*) minval(source%mem(:,:,:,iv,jt(2),1)), minloc(source%mem(:,:,:,iv,jt(2),1))
+        write(io_unit%log,*) minval(source%mem(:,:,:,iv,jt(1),1)), &
+                             minloc(source%mem(:,:,:,iv,jt(1),1))
+        write(io_unit%log,*) minval(source%mem(:,:,:,iv,jt(2),1)), &
+                             minloc(source%mem(:,:,:,iv,jt(2),1))
         flush(io_unit%log)
       end if
     end if
     if (iv == target%idx%phi) then
-      if (verbose>1) write(io_unit%log,*) target%id, '     using same level potential from', source%id
+      if (verbose > 1) write(io_unit%log,*) &
+        target%id, '     using same level potential from', source%id
     end if
     if (source%quality > 1000.) then
       if (iv==target%idx%d .or. (iv >= target%idx%px .and. iv <= target%idx%pz)) then
@@ -737,21 +758,28 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
         !write(io_unit%log,*)  'all cells for source id', source%id
       end if
     end if
-    if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
+    ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
+    if (iv == target%idx%dphi) cycle 
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
-    if (target%id==id_debug) write(io_unit%log,'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') target%id,source%id,l,u,o
+    if (target%id==id_debug .or. verbose > 1) &
+      write(io_unit%log,'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') &
+        target%id,source%id,l,u,o
     l = max(l,source%mesh%lb-o)
     u = min(u,source%mesh%ub-o)
-    if (target%id==id_debug) write(io_unit%log,'(2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') target%id,source%id,l,u,o
+    if (target%id==id_debug .or. verbose > 1) then
+      write(io_unit%log,'(2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') &
+        target%id,source%id,l,u,o
+      flush(io_unit%log)
+    end if
     if (product(max(0,u-l+1))>0) then
-      !---------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       ! Extend the pick-up region to fill the guard zones also in the BC regions
-      !---------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       do i=1,3
-        if (source%mesh(i)%lower_boundary) l(i) = target%mesh(i)%lb
-        if (source%mesh(i)%upper_boundary) u(i) = target%mesh(i)%ub
+        !if (source%mesh(i)%lower_boundary) l(i) = target%mesh(i)%lb
+        !if (source%mesh(i)%upper_boundary) u(i) = target%mesh(i)%ub
         !if (i==2) then
           !if (source%boundaries%is_set (bits%yl)) l(i) = target%mesh(i)%lb
           !if (source%boundaries%is_set (bits%yu)) u(i) = target%mesh(i)%ub
@@ -759,32 +787,41 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
   !      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
         ! In no-no-mans-land, the `li`-th cell of variables that are staggered in
         ! direction `i` lie just outside the patch edge and should therefore be
-        ! interpolated. Currently only implemented for ZEUS solvers; TBD if it should
-        ! be applied to STAGGER solvers.
-        if (target%kind(1:4) == 'zeus' .and. target%mesh(i)%h(iv) == -0.5 .and. ui(i) > 1) &
-          li(i) = li(i)+1
+        ! interpolated. Currently only implemented for ZEUS solvers; TBD if it
+        ! should be applied to STAGGER solvers.
+        if (target%kind(1:4) == 'zeus' .and. &
+           target%mesh(i)%h(iv) == -0.5 .and. &
+           ui(i) > 1) &
+            li(i) = li(i)+1
       end do
-      ! for staggered quantities, include the ub+1 zone for the appropriate components
-      ! note: p* and b* are face-centred in the same direction as the component, while
-      ! emfs are face-centred in both directions *orthogonal* to the component direction.
-      if (target%kind(1:4) == 'zeus' .and. iv >= target%idx%px .and. iv <= target%idx%pz) then
+      ! for staggered quantities, include the ub+1 zone for the appropriate
+      ! components note: p* and b* are face-centred in the same direction as the
+      ! component, while emfs are face-centred in both directions *orthogonal*
+      !  to the component direction.
+      if (target%kind(1:4) == 'zeus' .and. &
+          iv >= target%idx%px .and. iv <= target%idx%pz) then
         do i=1,3
           if (iv == target%idx%px+i-1 .and. target%n(i) > 1) u(i) = u(i) + 1
         end do
       end if
-      if (target%kind(1:4) == 'zeus' .and. iv >= target%idx%bx .and. iv <= target%idx%bz) then
+      if (target%kind(1:4) == 'zeus' .and. &
+          iv >= target%idx%bx .and. &
+          iv <= target%idx%bz) then
         do i=1,3
           if (iv == target%idx%bx+i-1 .and. target%n(i) > 1) u(i) = u(i) + 1
         end do
       end if
-      if (target%kind(1:4) == 'zeus' .and. iv >= target%idx%ex .and. iv <= target%idx%ez) then
+      if (target%kind(1:4) == 'zeus' .and. &
+          iv >= target%idx%ex .and. &
+          iv <= target%idx%ez) then
         do i=1,3
           if (iv /= target%idx%ex+i-1 .and. target%n(i) > 1) u(i) = u(i) + 1
         end do
       end if
       if (target%id==id_debug) &
         write(io_unit%log,1) source%id, l, u, o, jt, pt
-        1 format("download_t%same:", i6,"  l,u,o:",3(3i4,2x)," jt,pt:",2i4,2x,2f6.2)
+        1 format("download_t%same:", i6,"  l,u,o:",3(3i4,2x)," jt,pt:", &
+                 2i4,2x,2f6.2)
       !-------------------------------------------------------------------------
       ! Special case, with nt==1
       !-------------------------------------------------------------------------
@@ -813,6 +850,9 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
             do iy=l(2),u(2)
               do ix=l(1),u(1)
                 ii = [ix,iy,iz]
+                if (ix+o(1) > size(source%mem,1)) then
+                  print '(5(3i4,2x))', l, u, o, shape(source%mem)
+                end if
                 target%mem(ix,iy,iz,iv,target%it,1) = &
                   merge(target%mem(ix,iy,iz,iv,target%it,1),  &
                         source%mem(ix+o(1),iy+o(2),iz+o(3),iv,1,1), &
@@ -822,7 +862,8 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
                 do ix=l(1),u(1)
                   ii = [ix,iy,iz]
                   no = all((ii>=li).and.(ii<=ui))
-                  filled(ix,iy,iz,iv) = merge(filled(ix,iy,iz,iv), int(source%level,kind=int8), no)
+                  filled(ix,iy,iz,iv) = merge(filled(ix,iy,iz,iv), &
+                    int(source%level,kind=int8), no)
                 end do
                 if (verbose > 0) then
                   do ix=l(1),u(1)
@@ -889,7 +930,8 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
                 do ix=l(1),u(1)
                   ii = [ix,iy,iz]
                   no = all((ii>=li).and.(ii<=ui))
-                  filled(ix,iy,iz,iv) = merge(filled(ix,iy,iz,iv), int(source%level,kind=int8), no)
+                  filled(ix,iy,iz,iv) = merge(filled(ix,iy,iz,iv), &
+                    int(source%level,kind=int8), no)
                 end do
                 if (verbose > 0) then
                   do ix=l(1),u(1)
@@ -923,7 +965,8 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
                       pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
                       pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
                       no)
-                  filled(ix,iy,iz,iv) = merge (filled(ix,iy,iz,iv), int(source%level, kind=int8), no)
+                  filled(ix,iy,iz,iv) = merge (filled(ix,iy,iz,iv), &
+                    int(source%level, kind=int8), no)
                 end do
                 if (verbose > 0) then
                   do ix=l(1),u(1)
@@ -1021,7 +1064,8 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
   call source%timeslots (iit, times)
   call lagrange%sequence_weights (target%time, times, j0, j1, w, order)
   if (verbose > 2) &
-    write(io_unit%log,'(a,2i4,1p,10e14.6)') 'same_lagrange: j0, j1, time, times, w:', &
+    write(io_unit%log,'(a,2i4,1p,10e14.6)') &
+      'same_lagrange: j0, j1, time, times, w:', &
     j0, j1, target%time, times(j0:j1), w
   if (present(only)) then
     iv1 = only
@@ -1035,36 +1079,41 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
   else
     all_cells_l = .false.
   end if
-  !write (io_unit%log,*)'same: target, source, iv =', target%id, source%id, iv1, iv2
   do iv=iv1, iv2
     if (iv == target%idx%phi) then
-      if (verbose>1) write(io_unit%log,*) target%id, '     using same level potential from', source%id
+      if (verbose>1) write(io_unit%log,*) &
+        target%id, '     using same level potential from', source%id
     end if
     if (source%quality > 1000.) then
-      if (iv==target%idx%d .or. (iv >= target%idx%px .and. iv <= target%idx%pz)) then
-        all_cells_l = .true.
-        !write(io_unit%log,*, 'all cells for source id', source%id
+      if (iv==target%idx%d .or. &
+         (iv >= target%idx%px .and. iv <= target%idx%pz)) then
+          all_cells_l = .true.
       end if
     end if
-    if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
+    ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
+    if (iv == target%idx%dphi) cycle 
     li = target%mesh%li
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
-    if (target%id==id_debug) write(io_unit%log,'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') target%id,source%id,l,u,o
+    if (target%id==id_debug) &
+      write(io_unit%log,'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') &
+        target%id,source%id,l,u,o
     l = max(l,source%mesh%lb-o)
     u = min(u,source%mesh%ub-o)
-    if (target%id==id_debug) write(io_unit%log,'(2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') target%id,source%id,l,u,o
+    if (target%id==id_debug) &
+      write(io_unit%log,'(2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') &
+        target%id,source%id,l,u,o
     if (product(max(0,u-l+1))>0) then
-      !---------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       ! Extend the pick-up region to fill the guard zones also in the BC regions
-      !---------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       do i=1,3
         if (source%mesh(i)%lower_boundary) l(i) = target%mesh(i)%lb
         if (source%mesh(i)%upper_boundary) u(i) = target%mesh(i)%ub
       end do
-      !---------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       ! Check if we need to filter away internal points
-      !---------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       filter = .false.
       if (.not. all_cells_l) then
         do iz=l(3),u(3)
@@ -1083,11 +1132,14 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
       end if
       if (filter) then
         if (nprint > 0) then
-          write(io_unit%log,*) 'WARNING: attempt to set internal cells in download_t%same_lagrange, using filter!'
+          write(io_unit%log,*) &
+'WARNING: attempt to set internal cells in download_t%same_lagrange, using filter!'
           nprint = nprint - 1
           if (nprint==0) then
-            write(io_unit%log,*) 'target id, position =', target%id, target%position
-            write(io_unit%log,*) 'source id, position =', source%id, source%position
+            write(io_unit%log,*) &
+              'target id, position =', target%id, target%position
+            write(io_unit%log,*) &
+              'source id, position =', source%id, source%position
             write(io_unit%log,*) 'l , u =', l, u
             write(io_unit%log,*) 'gn, o =', target%gn, o
           end if
@@ -1113,7 +1165,8 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
                       w(1+jt-j0)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,iit(jt),1))
                   end if
                 end do
-                target%mem(ix,iy,iz,iv,target%it,1) = exp(target%mem(ix,iy,iz,iv,target%it,1))
+                target%mem(ix,iy,iz,iv,target%it,1) = &
+                  exp(target%mem(ix,iy,iz,iv,target%it,1))
                 if (self%check_filled) then
                   filled(ix,iy,iz,iv) = source%level
                   if (verbose > 0) &
@@ -1137,7 +1190,8 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
               end if
               if (self%check_filled) then
                 do ix=l(1),u(1)
-                  target%mem(ix,iy,iz,iv,target%it,1) = exp(target%mem(ix,iy,iz,iv,target%it,1))
+                  target%mem(ix,iy,iz,iv,target%it,1) = &
+                    exp(target%mem(ix,iy,iz,iv,target%it,1))
                   filled(ix,iy,iz,iv) = source%level
                 end do
                 if (verbose > 0) then
@@ -1147,7 +1201,8 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
                 end if
               else
                 do ix=l(1),u(1)
-                  target%mem(ix,iy,iz,iv,target%it,1) = exp(target%mem(ix,iy,iz,iv,target%it,1))
+                  target%mem(ix,iy,iz,iv,target%it,1) = &
+                    exp(target%mem(ix,iy,iz,iv,target%it,1))
                 end do
               end if
             end do
@@ -1321,7 +1376,8 @@ SUBROUTINE different (self, target, source, all_cells, only)
           ii=[ix,iy,iz]
           if (all_cells_l .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
             if (verbose > 1 .and. target%id==id_debug) &
-              write (io_unit%log,*) target%id, 'DBG interpolate_t%different:    using', &
+              write (io_unit%log,*) &
+                target%id, 'DBG interpolate_t%different:    using', &
                 iv,ii, present(all_cells), (ii-li) < 0
             pos = target%myposition (ii, iv)
             call source%index_space (pos, iv, jj, pp)
@@ -1413,7 +1469,8 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
   nperv = 0
   ninter = 0
   do iv=iv1,iv2
-    if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
+    ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
+    if (iv == target%idx%dphi) cycle
     call dnload_range (target, source, iv, l, u)
     !---------------------------------------------------------------------------
     ! For no-no-mans-land meshes, use guard zone values for the li index, to
@@ -1423,8 +1480,10 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
 !      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
 !    end do
     if (verbose > 1 .or. target%id==id_debug) &
-      write (io_unit%log,1) source%id, (source%position-target%position)/target%size, l, u
-      1 format("download_t%different_prolong:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
+      write (io_unit%log,1) &
+        source%id, (source%position-target%position)/target%size, l, u
+      1 format("download_t%different_prolong:", i6,"  displ:",3f11.6, &
+        "  l,u:",2(3i4,2x))
     d1 => source%mem(:,:,:,source%idx%d,jt(1),1)
     d2 => source%mem(:,:,:,source%idx%d,jt(2),1)
     q1 => source%mem(:,:,:,iv,jt(1),1)
@@ -1575,7 +1634,8 @@ SUBROUTINE prolong (self, target, source, all_cells, only)
   nperv = 0
   ninter = 0
   do iv=iv1,iv2
-    if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
+    ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
+    if (iv == target%idx%dphi) cycle 
     call dnload_range (target, source, iv, l, u)
     !---------------------------------------------------------------------------
     ! For no-no-mans-land meshes, use guard zone values for the li index, to
@@ -1585,8 +1645,10 @@ SUBROUTINE prolong (self, target, source, all_cells, only)
 !      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
 !    end do
     if (verbose > 1 .or. target%id==id_debug) &
-      write (io_unit%log,1) source%id, (source%position-target%position)/target%size, l, u
-      1 format("download_t%different_prolong:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x))
+      write (io_unit%log,1) &
+        source%id, (source%position-target%position)/target%size, l, u
+      1 format("download_t%different_prolong:", i6,"  displ:",3f11.6,"  l,u:", &
+        2(3i4,2x))
     all_cells_l = all_cells_l .or. all((l >= li) .and. (u <= ui))
     n = 0
     do iz=l(3),u(3)
@@ -1631,16 +1693,19 @@ SUBROUTINE prolong (self, target, source, all_cells, only)
             !end if
             pbuf(n,1:3) = pp
             pbuf(n,  4) = pt(1)
-            sbuf(n,:,:,:,:) = source%mem(jj(1):jj(1)+1,jj(2):jj(2)+1,jj(3):jj(3)+1,iv,jt(:),1)
+            sbuf(n,:,:,:,:) = &
+              source%mem(jj(1):jj(1)+1,jj(2):jj(2)+1,jj(3):jj(3)+1,iv,jt(:),1)
             !if (self%check_filled) filled(ix,iy,iz,iv) = source%level
             !if (iv==1) &
-              !write (io_unit%output,'(a,i4,2(3i4,2x),2x,4f7.3)') 'prol', n, ii, jj, pbuf(n,:)
+              !write (io_unit%output,'(a,i4,2(3i4,2x),2x,4f7.3)') &
+              !'prol', n, ii, jj, pbuf(n,:)
           else
             nint = nint+1
             !if (verbose > 1 .and. target%id==id_debug) &
               !write (io_unit%output,'(i6,i3,2x,a,i6,i2,i3,2x,3i4,L2,2(1x,3L1))') &
               !  target%id, target%level, 'prolong: skipping internal', &
-              !  source%id, source%level, iv, ii, all_cells_l, (ii-li) < 0, (ii-ui) > 0
+              !  source%id, source%level, iv, ii, all_cells_l, (ii-li) < 0, 
+              !  (ii-ui) > 0
             cycle
           end if
         end do
@@ -1779,15 +1844,16 @@ SUBROUTINE different_restrict (self, target, source, only)
   integer, optional:: only
   integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, jx, jy, jz
   integer, dimension(3)   :: l, u, ii, li, ui, jj
-  real(8), dimension(3)   :: target_pos, source_pos, target_upper_edges, target_lower_edges, &
-                             source_upper_edges, source_lower_edges, le, ue
+  real(8), dimension(3)   :: target_pos, source_pos, target_upper_edges, &
+                             target_lower_edges, source_upper_edges, &
+                             source_lower_edges, le, ue
   logical                 :: valid
   integer, save           :: itimer=0
   real                    :: pt(2), pp(3)
   real(kind=KindScalarVar):: qint
   logical                 :: qmask(3)
-  real(8):: rratio(3), dVsource, dVtarget, dWsource, dWtarget, filling_factor, accumulate, &
-            filling_total, dWtargeti
+  real(8):: rratio(3), dVsource, dVtarget, dWsource, dWtarget, filling_factor, &
+            accumulate, filling_total, dWtargeti
   integer:: ilook(3)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_restrict', itimer=itimer)
@@ -1806,8 +1872,10 @@ SUBROUTINE different_restrict (self, target, source, only)
   li = target%mesh%li
   ui = target%mesh%ui
   do iv=iv1,iv2
-    if (iv == target%idx%dphi) cycle ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
-    qmask(:) = .true. ! logical mask to track if variable is averaged over a volume or an area
+    ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
+    if (iv == target%idx%dphi) cycle
+    ! -- logical mask to track if variable is averaged over a volume or an area
+    qmask(:) = .true. 
     if (iv == target%idx%bx) then
       dWsource = source%ds(2) * source%ds(3) ! only valid for Cartesian
       dWtarget = target%ds(2) * target%ds(3) ! only valid for Cartesian
@@ -1826,7 +1894,8 @@ SUBROUTINE different_restrict (self, target, source, only)
     end if
     dWtargeti = 1.0 / dWtarget
     call dnload_range (target, source, iv, l, u)
-    associate (q1 => source%mem(:,:,:,iv,jt(1),1), q2 => source%mem(:,:,:,iv,jt(2),1))
+    associate (q1 => source%mem(:,:,:,iv,jt(1),1), &
+               q2 => source%mem(:,:,:,iv,jt(2),1))
     do iz=l(3),u(3)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
@@ -1837,7 +1906,7 @@ SUBROUTINE different_restrict (self, target, source, only)
                 (any(ii < target%li) .or. any(ii > target%ui))) cycle
           end if
           target_pos = target%myposition (ii, iv)
-          target_lower_edges = target_pos - target%ds * 0.499999_8 ! to 1e-6 tolerance
+          target_lower_edges = target_pos - target%ds * 0.499999_8
           target_upper_edges = target_pos + target%ds * 0.499999_8
           ! skip cells that are not *entirely* covered by the finer patch
           if (any(target_lower_edges < source%llc_nat)) cycle
@@ -1852,20 +1921,21 @@ SUBROUTINE different_restrict (self, target, source, only)
                 if (any([jx,jy,jz] < source%li .or. [jx,jy,jz] > source%ui)) cycle
                 ! find intersection between source and target cells
                 source_pos = source%myposition([jx,jy,jz],iv)
-                source_lower_edges = source_pos - source%ds * 0.499999_8 ! to 1e-6 tolerance
+                source_lower_edges = source_pos - source%ds * 0.499999_8
                 source_upper_edges = source_pos + source%ds * 0.499999_8
                 ue = min(source_upper_edges, target_upper_edges)
                 le = max(source_lower_edges, target_lower_edges)
                 ! filling factor; if zero, then no overlap.
                 ! the logical mask is used to produce an area filling factor for
                 ! mag. fields (but a volume filling factor otherwise)
-                filling_factor = product(max(ue - le, 0.0),mask=qmask) ! to ~1.2e-5 tolerance
+                filling_factor = product(max(ue - le, 0.0),mask=qmask) 
                 filling_total = filling_total + filling_factor
-                ! one might note that `accumulate` should be multipled by `dWsource`.
-                ! but `filling_factor` should be divided by `dWsource`, so they cancel.
+                ! `accumulate` should be multipled by `dWsource`, but 
+                ! `filling_factor` should be divided by `dWsource`, so they cancel.
                 if (filling_factor > 0.0) then
                   accumulate = accumulate &
-                             + (q1(jx,jy,jz) * pt(1) + q2(jx,jy,jz) * pt(2)) * filling_factor
+                    + (q1(jx,jy,jz) * pt(1) + q2(jx,jy,jz) * pt(2)) * &
+                    filling_factor
                 end if
               end do
             end do
@@ -1873,8 +1943,8 @@ SUBROUTINE different_restrict (self, target, source, only)
           ! replace a portion of the current cell with values from the finer patch
           if (filling_total > 0.0) then
             target%mem(ix,iy,iz,iv,target%it,1) = accumulate * dWtargeti &
-                                                + target%mem(ix,iy,iz,iv,target%it,1) &
-                                                  * (1.0 - filling_total * dWtargeti)
+              + target%mem(ix,iy,iz,iv,target%it,1) &
+              * (1.0 - filling_total * dWtargeti)
             if (self%check_filled) then
               filled(ix,iy,iz,iv) = source%level
             end if
@@ -1905,8 +1975,9 @@ SUBROUTINE restrict_centered (self, target, source, only)
   integer, optional:: only
   integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, jx, jy, jz
   integer, dimension(3)   :: l, u, ii, li, ui, jj
-  real(8), dimension(3)   :: target_pos, source_pos, target_upper_edges, target_lower_edges, &
-                             source_upper_edges, source_lower_edges, le, ue
+  real(8), dimension(3)   :: target_pos, source_pos, target_upper_edges, &
+                             target_lower_edges, source_upper_edges, &
+                             source_lower_edges, le, ue
   logical                 :: valid
   integer, save           :: itimer=0
   real                    :: pt(2), pp(3)
@@ -1946,7 +2017,7 @@ SUBROUTINE restrict_centered (self, target, source, only)
                 (any(ii < target%li) .or. any(ii > target%ui))) cycle
           end if
           target_pos = target%myposition (ii, iv)
-          target_lower_edges = target_pos - target%ds * 0.499999_8 ! to 1e-6 tolerance
+          target_lower_edges = target_pos - target%ds * 0.499999_8
           target_upper_edges = target_pos + target%ds * 0.499999_8
           ! skip cells that are not *entirely* covered by the finer patch
           if (any(target_lower_edges < source%llc_nat)) cycle
@@ -1961,21 +2032,22 @@ SUBROUTINE restrict_centered (self, target, source, only)
                 if (any([jx,jy,jz] < source%li .or. [jx,jy,jz] > source%ui)) cycle
                 ! find intersection between source and target cells
                 source_pos = source%myposition([jx,jy,jz],iv)
-                source_lower_edges = source_pos - source%ds * 0.499999_8 ! to 1e-6 tolerance
+                source_lower_edges = source_pos - source%ds * 0.499999_8
                 source_upper_edges = source_pos + source%ds * 0.499999_8
                 ue = min(source_upper_edges, target_upper_edges)
                 le = max(source_lower_edges, target_lower_edges)
                 ! filling factor; if zero, then no overlap.
                 ! the logical mask is used to produce an area filling factor for
                 ! mag. fields (but a volume filling factor otherwise)
-                filling_factor = product(max(ue - le, 0.0),mask=qmask) ! to ~1.2e-5 tolerance
+                filling_factor = product(max(ue - le, 0.0),mask=qmask)
                 filling_total = filling_total + filling_factor
-                ! one might note that `accumulate` should be multipled by `dWsource`.
-                ! but `filling_factor` should be divided by `dWsource`, so they cancel.
+                ! `accumulate` should be multipled by `dWsource`. but
+                ! `filling_factor` should be divided by `dWsource`, so they cancel.
                 if (filling_factor > 0.0) then
                   do iv=iv1,iv2
                     accumulate(iv) = accumulate(iv) &
-                             + (q1(jx,jy,jz,iv) * pt(1) + q2(jx,jy,jz,iv) * pt(2)) * filling_factor
+                             + (q1(jx,jy,jz,iv) * pt(1) + q2(jx,jy,jz,iv) &
+                             * pt(2)) * filling_factor
                   end do
                 end if
               end do
@@ -1985,8 +2057,8 @@ SUBROUTINE restrict_centered (self, target, source, only)
           if (filling_total > 0.0) then
             do iv=iv1,iv2
               target%mem(ix,iy,iz,iv,target%it,1) = accumulate(iv) * dWtargeti &
-                                                  + target%mem(ix,iy,iz,iv,target%it,1) &
-                                                    * (1.0 - filling_total * dWtargeti)
+                 + target%mem(ix,iy,iz,iv,target%it,1) &
+                 * (1.0 - filling_total * dWtargeti)
             end do
             if (self%check_filled) then
               filled(ix,iy,iz,iv) = source%level
