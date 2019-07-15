@@ -144,28 +144,24 @@ SUBROUTINE pre_init (self, link)
   end if
   !$omp end critical (input_cr)
   self%patch => gpatch%cast2gpatch(link%task)
+  self%on = .true.
+  self%nt = nt
+  self%n_warmup = n_warmup
+  self%n_lambda = n_lambda
+  self%rt_grace = rt_grace
+  self%rt_llc = rt_llc
+  self%rt_urc = rt_urc
+  self%rt_timestep = rt_timestep
+  self%vertical_propagation = vertical_propagation
+  self%constant_q = constant_q
+  self%n_mu  = n_mu
+  self%n_phi = n_phi
+  !---------------------------------------------------------------------------
+  ! Request additional variable slot indices in patches with RT
+  !---------------------------------------------------------------------------
   if (on) then
-    if (.not. io%master) verbose=0
-    self%on = on
-    self%nt = nt
-    self%n_lambda = n_lambda
-    self%rt_grace = rt_grace
-    self%rt_llc = rt_llc
-    self%rt_extent = rt_extent
-    self%rt_timestep = rt_timestep
-    self%vertical_propagation = vertical_propagation
-    self%constant_q = constant_q
-    self%n_mu  = n_mu
-    self%n_phi = n_phi
-    !---------------------------------------------------------------------------
-    ! Request additional variable slot indices
-    !---------------------------------------------------------------------------
-    if (self%patch%idx%qr <1) then
-      call self%patch%idx%request_index (self%patch%idx%qr, self%patch%nv)
-    end if
-  end if
-  if (self%patch%idx%tt <1) then
     call self%patch%idx%request_index (self%patch%idx%tt, self%patch%nv)
+    call self%patch%idx%request_index (self%patch%idx%qr, self%patch%nv)
   end if
   call trace%end()
 END SUBROUTINE pre_init
@@ -182,12 +178,10 @@ SUBROUTINE init (self)
   class (gpatch_t), pointer :: p
   class (rt_t),     pointer :: omega
   class (link_t),   pointer :: link
-  class (*), pointer :: dummy
-  integer :: n_omega, i_omega
-  integer:: dir, i_mu, i_phi, iostat, n
+  class (*),        pointer :: dummy
+  integer:: n_omega, i_omega, dir, i_mu, i_phi, iostat, n
   real, dimension(:), allocatable:: mu, w_mu
   ! ----------------------------------------------------------------------------
-  if (.not.self%on) return
   call trace%begin ('rt_t%init')
   p => self%patch
   !-----------------------------------------------------------------------------
@@ -202,55 +196,66 @@ SUBROUTINE init (self)
   end select
   self%link => link
   !-----------------------------------------------------------------------------
-  ! Initialize the patch
+  ! Initialize the patch, with a unique ID, and a %kind used in data_io
   !-----------------------------------------------------------------------------
-  call self%init_unique                                                         ! get an unique ID
+  call self%init_unique
   self%track   = .false.
-  self%kind    = 'rt_t'                                                         ! to be used in data_io_mod
-  call self%patch_t%setup(position=p%position, size=p%size, n=p%n, ng=p%ng, &
+  self%kind    = 'rt_t'
+  call self%patch_t%setup(position=p%position, size=p%size, n=p%n, ng=[1,1,1], &
                           nt=self%nt, nv = self%n_lambda, nw = 1)
   !-----------------------------------------------------------------------------
   ! Synchronize with MHD patch
   ! ---------------------------------------------------------------------------- 
   self%box      = p%box
+  self%rank     = p%rank
+  self%level    = p%level
   self%size     = p%size
   self%origin   = p%origin
   self%llc_cart = p%llc_cart
   self%llc_nat  = p%llc_nat
   self%restart  = p%restart
-  self%time     = p%time
+  self%time     = p%time - (self%n_warmup+0.5)*self%rt_timestep
+  self%eos_time = self%time - self%rt_timestep
+  self%iit      = 1
+  self%mu       = 1.0
+  self%rt_phi   = 0.0
   self%t(self%it) = self%time
-  self%out_next = (int(self%time/io%out_time+1.0e-4)+1)*io%out_time             ! add an `eps` to avoid round-off errors
-  self%dt_fixed = self%rt_timestep                                              ! Fixed timestep for RT
-  self%iout = self%restart+1
+  ! -- add an `eps` to avoid round-off errors
+  self%out_next = (int(self%time/io%out_time+1.0e-4)+1)*io%out_time
+  self%dt_fixed = self%rt_timestep
+  self%dtime    = self%rt_timestep
+  self%dt       = self%rt_timestep
+  self%iout     = self%restart+1
   self%grace    = self%rt_grace
   self%periodic = p%periodic
+  self%verbose  = verbose
   call self%set (bits%no_density)
   !-----------------------------------------------------------------------------
   ! Check if this MHD patch needs RT
   !-----------------------------------------------------------------------------
   call self%setup_boundaries()
-  if(self%on) then
+  if (self%on) then
+    call self%rt_boundaries%init (self%mesh)
     !---------------------------------------------------------------------------
     ! Allocate heating for MHD
     !---------------------------------------------------------------------------
     if (.not.allocated(self%patch%heating_per_unit_volume)) then
-      allocate(self%patch%heating_per_unit_volume(self%gn(1), self%gn(2), self%gn(3)))
+      allocate(self%patch%heating_per_unit_volume(p%gn(1), p%gn(2), p%gn(3)))
       self%patch%heating_per_unit_volume = 0.0
     end if
     !---------------------------------------------------------------------------
     ! Integration weights (w_bin is baked into the source function in this case)
     !---------------------------------------------------------------------------
     allocate (self%w_bin (self%n_lambda))
-    self%w_bin = 1.0                                                            ! Frequency bin weights are baked into EOS
+    self%w_bin = 1.0
     n_omega      = merge (1+self%n_phi*(self%n_mu-1), 0, self%n_mu > 0)
     n_omega      = 2*n_omega
     self%n_omega = n_omega
     self%dt_fixed = self%rt_timestep
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Assign angles and integration weight and allocate the required RT solvers
     ! for all angles
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     if (self%n_mu > 0) then
       allocate (mu(self%n_mu),w_mu(self%n_mu))
       call radau%init (self%n_mu, mu, w_mu)
@@ -275,9 +280,10 @@ SUBROUTINE init (self)
     do i_omega=1,self%n_omega
       call self%init_omega(i_omega)
     end do
-    !-----------------------------------------------------------------------------
+    self%main => self%omega(1)%main
+    !---------------------------------------------------------------------------
     ! Assign angles -- Should change to 
-    !-----------------------------------------------------------------------------
+    !----------------------------------------------------------------------------
     i_omega = 0
     do i_mu=1,self%n_mu
       n = self%n_phi
@@ -288,7 +294,8 @@ SUBROUTINE init (self)
           omega => self%omega(i_omega)
           omega%mu  = dir*mu(i_mu)
           omega%w   = w_mu(i_mu)*math%pi4/n
-          omega%rt_phi = math%pi*(modulo(real(2*(i_phi-1))/self%n_phi + (dir+1)/2.0, 2.0) - 1.0)
+          omega%rt_phi = math%pi*(modulo(real(2*(i_phi-1))/self%n_phi + &
+            (dir+1)/2.0, 2.0) - 1.0)
           if (i_mu == self%n_mu) omega%rt_phi = 0.0
         end do
       end do
@@ -329,61 +336,42 @@ END SUBROUTINE init
 !> Initialize rt sub-tasks; note that all self values are initially cloned
 !===============================================================================
 SUBROUTINE init_omega (self, i_omega)
-  class (rt_t):: self
+  class (rt_t), target:: self
   integer:: i_omega
   ! ............................................................................
   class (rt_t), pointer:: omega
   ! ----------------------------------------------------------------------------
-  if (.not.self%on) return
   call trace%begin ('rt_t%init')
-  !
   omega => self%omega(i_omega)
-  ! -- assign MPI-unique ID
-  omega%rank = self%rank
+  omega%main => self
   ! -- assign unique and globally valid ID
   call omega%init_unique
-  omega%track   = .false.
-  omega%kind    = 'rt_t'   ! to be used in data_io_mod
-  omega%nt      = self%nt
-  allocate (omega%t(self%nt), omega%dt(self%nt), omega%iit(self%nt))
-  omega%t       = self%time
-  omega%dt      = self%dt_fixed
-  omega%iit     = 1
-  omega%nv      = self%n_lambda
-  allocate (omega%unsigned(self%n_lambda), omega%pervolume(self%n_lambda))
-  omega%unsigned  = .false.
-  omega%pervolume = .false.
+  ! -- set values that should be different from self
+  omega%i_omega = i_omega
   omega%it      = max(omega%nt-1,1)
   omega%new     = omega%nt
   omega%nw      = 1
-  omega%i_omega = i_omega
-  omega%time    = self%time
-  omega%status  = self%status
-  omega%verbose = verbose
-  call omega%set (bits%no_density)
-  omega%grace   = self%grace
-  omega%tt      => self%tt
-  omega%rk      => self%rk
-  omega%src     => self%src
-  omega%rt_grace    = self%rt_grace
-  omega%rt_llc      = self%rt_llc
-  omega%rt_extent   = self%rt_extent
-  omega%rt_timestep = self%rt_timestep
-  omega%vertical_propagation = self%vertical_propagation
-  omega%constant_q  = self%constant_q
-  nullify (omega%link)
-  allocate (omega%link)
-  omega%link%task => omega
-  allocate (omega%mem   (self%gn(1),self%gn(2),self%gn(3),self%n_lambda,self%nt,1))
+  omega%nv      = self%n_lambda
+  ! -- allocate unsigned and pervolume
+  allocate (omega%unsigned(omega%nv), omega%pervolume(omega%nv))
+  omega%unsigned  = .false.
+  omega%pervolume = .false.
+  ! -- allocate time slots
+  allocate (omega%t(omega%nt), omega%dt(omega%nt), omega%iit(omega%nt))
+  !-----------------------------------------------------------------------------
+  ! Setting omega%time beyond self%time to trigger first call to self%update()
+  !-----------------------------------------------------------------------------
+  omega%time    = self%time + 0.5d0*self%rt_timestep
+  omega%t       = omega%time
+  omega%dt      = omega%dtime
+  omega%iit     = 1
+  allocate (omega%mem(self%gn(1),self%gn(2),self%gn(3),self%n_lambda,self%nt,1))
   call io%bits_mem(storage_size(omega%mem)   ,product(shape(omega%mem))   ,'q')
   omega%q => omega%mem(:,:,:,:,omega%it,1)
   omega%q = 0.0
-  omega%patch => self%patch
-  call omega%setup_boundaries()
-  call omega%rt_boundaries%init(omega%mesh)
-  !if (associated(omega%mesh)) call MeshRecycler (omega%mesh)
-  !omega%mesh=> self%mesh
-  !
+  ! -- allocate task link and set link%task --
+  allocate (omega%link)
+  omega%link%task => omega
   call trace%end()
 END SUBROUTINE init_omega
 
@@ -394,10 +382,9 @@ END SUBROUTINE init_omega
 !===============================================================================
 FUNCTION needs (self, omega, task)
   logical:: needs
-  class(rt_t) :: self
-  class(rt_t):: omega
+  class(rt_t):: self, omega
   class(task_t), pointer:: task
-  !class(gpatch_t), pointer :: patch
+  !.............................................................................
   real:: ds1(3), ds2(3), sinth
   real, parameter:: eps=1e-4
   integer:: is1(3), is2(3), i, lbit(3), ubit(3)
@@ -470,7 +457,7 @@ END FUNCTION needs
 !> and self%on is set false for tasks that are entirely outside.
 !===============================================================================
 SUBROUTINE setup_boundaries(self)
-  class (rt_t) :: self
+  class(rt_t):: self
   ! ----------------------------------------------------------------------------
   real(8) :: llc(3), urc(3)
   integer :: lbit(3), ubit(3), i
@@ -479,8 +466,8 @@ SUBROUTINE setup_boundaries(self)
   llc = self%position-0.5_8*self%size
   urc = self%position+0.5_8*self%size
   !
-  lbit = [bits%xl, bits%yl, bits%zl]                                            ! lower boundary bits -- convenience
-  ubit = [bits%xu, bits%yu, bits%zu]                                            ! upper boundary bits -- convenience
+  lbit = [bits%xl, bits%yl, bits%zl]        ! lower boundary bits -- convenience
+  ubit = [bits%xu, bits%yu, bits%zu]        ! upper boundary bits -- convenience
   !
   do i = 1,3
     if ((urc(i) < self%rt_llc(i))) then
