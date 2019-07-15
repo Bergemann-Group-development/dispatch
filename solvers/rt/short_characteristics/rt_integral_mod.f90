@@ -15,8 +15,8 @@ MODULE rt_integral_mod
   implicit none
   private
   type, public:: rt_integral_t
-    integer:: verbose=0
   contains
+    procedure:: init
     procedure:: solve
     procedure:: prepare_layers
     procedure:: bilinear
@@ -24,11 +24,32 @@ MODULE rt_integral_mod
     procedure:: solve1
     procedure, nopass:: diagnostics
   end type
+  integer, save:: verbose=0, order=3
   logical:: detailed_timer=.false.
   real:: dtau_min=1e-3, dtau_dif=1e3, dtau_max=1e4
   integer(8), save:: n_cases(4)=0
   type(rt_integral_t), public:: rt_integral
 CONTAINS
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE init (self)
+  class(rt_integral_t):: self
+  integer:: iostat
+  logical, save:: first_time=.true.
+  namelist /rt_integral_params/ verbose, order, dtau_min, dtau_dif, dtau_max
+  !-----------------------------------------------------------------------------
+  if (first_time) then
+    !$omp critical (input_cr)
+    if (first_time) then
+      first_time=.false.
+      rewind (io_unit%input)
+      read (io_unit%input, rt_integral_params, iostat=iostat)
+      write (io_unit%output, rt_integral_params)
+    end if
+    !$omp end critical (input_cr)
+  end if
+END SUBROUTINE init
 
 !===============================================================================
 !> Solve the radiative transfer for all bins, along the closest axis direction
@@ -45,6 +66,7 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_integral_t%solve', itimer=itimer)
+  call self%init
   m = shape(k)
   !-----------------------------------------------------------------------------
   ! Determine closest axis direction
@@ -54,7 +76,7 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
   mu(3) = mu3
   loc = maxloc(abs(mu))
   dir = loc(1)
-  dr = mesh(dir)%d/abs(mu(dir))
+  dr = 0.5*mesh(dir)%d/abs(mu(dir))
   !-----------------------------------------------------------------------------
   ! Transpose dimensions to solver index coordinates and allocate
   !-----------------------------------------------------------------------------
@@ -79,7 +101,7 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
   else
     i1=u(3); i2=l(3); i3=-1
   end if
-  if (self%verbose > 1) &
+  if (verbose > 1) &
     print *, 'rt_integral_t%solve: mu, phi, dir, dr =', mu, dir, i1, i2, i3
   !-----------------------------------------------------------------------------
   ! Prepare layers for the single layer solver and call it
@@ -97,13 +119,14 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
     end if
   end do
   deallocate (k3, s3, q3)
-  if (self%verbose > 1) then
+  if (verbose > 1) then
     do ib=1,m(4)
       print '(a,i4,1p,10e10.2)', ' rt_integral_t%solve: q =', ib, &
         q(l(1):l(1)+9,(l(2)+u(2))/2,(l(3)+u(3))/2,ib)
     end do
   end if
-  !call diagnostics
+  if (verbose > 0) &
+    call diagnostics
   call trace%end (itimer)
 END SUBROUTINE solve
 
@@ -144,7 +167,7 @@ SUBROUTINE prepare_layers (self, mu, dir, mesh, in, out, i, i3)
     out(:,:,:,2) = in(:,:,i,:)
     call self%bilinear (in(:,:,i+i3,:), out(:,:,:,3), o(:,2), p(:,2), l, u)
   end if
-  if (self%verbose > 1) &
+  if (verbose > 1) &
     print *, 'rt_integral_t%prepare_layers: dir, l, u =', dir, l, u
   call trc_end (itimer)
 END SUBROUTINE prepare_layers
@@ -180,7 +203,7 @@ SUBROUTINE calculate_offsets (self, mu, dir, mesh, o, p)
   end do
   o = floor(p)
   p = p - o
-  if (self%verbose > 1) then
+  if (verbose > 1) then
     print '(i2,2x,a,2x,3f7.3,2x,2f7.3,2(2x,2i3),0p,2(2x,2f7.3))', &
       omp%thread, 'rt_integral_t%calculate_offsets: mu, dpdi, o, p =', &
       mu, dpdi, o, p
@@ -209,13 +232,13 @@ SUBROUTINE bilinear (self, in, out, o, p, l, u)
   !-----------------------------------------------------------------------------
   if (all(abs(o+p) < 1e-5)) then
     out = in
-    if (self%verbose > 1) &
+    if (verbose > 1) &
       print *, 'rt_integral_t%bilinear: no interpolation'
   !-----------------------------------------------------------------------------
   ! Interpolation only in y
   !-----------------------------------------------------------------------------
   else if (abs(o(1)+p(1)) < 1e-5) then
-    if (self%verbose > 1) &
+    if (verbose > 1) &
       print *, 'rt_integral_t%bilinear: 2nd index, o, p =', &
         o(2), p(2)
     do ib=1,m(3)
@@ -230,7 +253,7 @@ SUBROUTINE bilinear (self, in, out, o, p, l, u)
   ! Interpolation only in x
   !-----------------------------------------------------------------------------
   else if (abs(o(2)+p(2)) < 1e-5) then
-    if (self%verbose > 1) &
+    if (verbose > 1) &
       print *, 'rt_integral_t%bilinear: 1st index, o, p =', &
         o(1), p(1)
     do ib=1,m(3)
@@ -245,7 +268,7 @@ SUBROUTINE bilinear (self, in, out, o, p, l, u)
   ! Interpolation in x and y
   !-----------------------------------------------------------------------------
   else
-    if (self%verbose > 1) &
+    if (verbose > 1) &
       print *, 'rt_integral_t%bilinear: o, p =', &
         o, p
     do i1=l(1),u(1),u(1)-l(1)
@@ -340,7 +363,7 @@ SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u)
         n_cases(2) = n_cases(2)+1
       end if
     end do
-    if (self%verbose > 1) then
+    if (verbose > 1) then
       print '(a,i4,1p,10e10.2)', ' rt_integral_t%solve1: ib, q =', ib, &
         qout(l(1):l(1)+9,(l(2)+u(2))/2,ib)
     end if
@@ -350,11 +373,15 @@ END SUBROUTINE solve1
 
 !===============================================================================
 SUBROUTINE diagnostics (label)
-  character(len=*):: label
+  character(len=*), optional:: label
   real:: f
   f = 1./max(sum(n_cases),1_8)
-  print *, 'fractions of thin, full, diff, and zero cases: ', &
-    trim(label), n_cases*f
+  if (present(label)) then
+    print *, 'fractions of thin, full, diff, and zero cases: ', n_cases*f, &
+      trim(label)
+  else
+    print *, 'fractions of thin, full, diff, and zero cases: ', n_cases*f
+  end if
 END SUBROUTINE diagnostics 
 
 !===============================================================================
