@@ -497,15 +497,18 @@ SUBROUTINE pre_update (self)
   class (rt_t) :: self
   !-----------------------------------------------------------------------------
   class(rt_t), pointer:: omega
+  integer:: l(3), u(3)
   real, dimension(:,:,:), pointer:: q
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. self%on) return
   call trace%begin ('rt_t%pre_update', itimer=itimer)
   if (self%constant_q) then
+    l = self%patch%mesh%li - self%mesh%ng
+    u = self%patch%mesh%ui + self%mesh%ng
     q => self%mem(:,:,:,1,self%it,1)
-    self%patch%heating_per_unit_volume = &
-    self%patch%heating_per_unit_volume + q
+    self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+    self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + q
   else
     call io%abort("time-interpolated q in rt_t%pre_update is not implemented yet")
   end if
@@ -522,16 +525,18 @@ SUBROUTINE post_update (self)
   !-----------------------------------------------------------------------------
   class(rt_t), pointer:: omega
   real, dimension(:,:,:), pointer:: q
+  integer:: l(3), u(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. self%on) return
   call trace%begin ('rt_t%post_update', itimer=itimer)
   if (self%constant_q) then
+    associate (p => self%patch)
+    l = p%mesh%li - self%mesh%ng
+    u = p%mesh%ui + self%mesh%ng
     q => self%mem(:,:,:,1,self%it,1)
-    self%patch%mem(:,:,:,self%patch%idx%qr,self%patch%new,1) = q
-    self%patch%mem(:,:,:,self%patch%idx%tt,self%patch%new,1) = self%tt
-  else
-  
+    p%mem(l(1):u(1),l(2):u(2),l(3):u(3),p%idx%qr,p%new,1) = q
+    end associate
   end if
   call trace%end(itimer)
 END SUBROUTINE post_update
@@ -617,7 +622,7 @@ SUBROUTINE rt_eos (self, time)
   class (gpatch_t), pointer :: patch
   integer, save:: itimer=0
   real, dimension(:,:,:), pointer:: d, e
-  integer:: m(4), ib, i3, jt(2)
+  integer:: m(4), ib, i3, jt(2), l(3), u(3)
   real:: z, pt(2)
   !-----------------------------------------------------------------------------
   if (.not. self%on) return
@@ -631,13 +636,16 @@ SUBROUTINE rt_eos (self, time)
       call patch%time_interval (time, jt, pt, all=.true.)
       m = shape(self%rk)
       allocate (d(m(1),m(2),m(3)),e(m(1),m(2),m(3)))
-      d = patch%mem(:,:,:,patch%idx%d,jt(1),1)*pt(1) &
-        + patch%mem(:,:,:,patch%idx%d,jt(2),1)*pt(2)
-      e = patch%mem(:,:,:,patch%idx%e,jt(1),1)*pt(1) &
-        + patch%mem(:,:,:,patch%idx%e,jt(2),1)*pt(2)
-      if (verbose > 1) then
-        call patch%stats (d, 'rt_eos')
-        call patch%stats (e, 'rt_eos')
+  !-----------------------------------------------------------------------------
+  l = patch%mesh%li - self%mesh%ng
+  u = patch%mesh%ui + self%mesh%ng
+  d = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,jt(1),1)*pt(1) &
+    + patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,jt(2),1)*pt(2)
+  e = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,jt(1),1)*pt(1) &
+    + patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,jt(2),1)*pt(2)
+  if (verbose > 0) then
+    call self%stats (d, 'rt_eos')
+    call self%stats (e, 'rt_eos')
       end if
       call eos%lookup_table (m, d=d, e=e, rk=self%rk, src=self%src, tt=self%tt)
       if (verbose > 3) then
