@@ -69,47 +69,45 @@ MODULE rt_mod
   ! RT patch data type, extended from gpatch, with extra RT memory and parameters
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: rt_t
-    class(gpatch_t), pointer   :: patch                                         ! pointer to MHD patch
-    type(rt_boundaries_t)      :: rt_boundaries
-    integer                    :: n_lambda = 4                                  ! number of frequency bins
-    integer                    :: n_omega=0                                     ! number of rt space-angles
-    integer                    :: i_omega=0                                     ! space-angle ID for particular task
-    real, pointer              :: w_bin(:)                                      ! frequency bin statistical weight
-    type(rt_t), pointer        :: omega(:)                                      ! different RT directions
-    real                       :: mu, rt_phi, w
-    real(8)                    :: eos_time
-    real   :: rt_grace=0.0
-    real(8):: rt_llc(3)    = 0d0
-    real(8):: rt_extent(3) = 0d0
-    real(8):: rt_timestep=0.01_8
-    integer:: n_mu=3, n_phi=4
-    logical:: on = .false.
-    logical:: vertical_propagation=.false.
-    logical:: constant_q = .true.
-    real, pointer              :: q(:,:,:,:)
-    real, pointer              :: tt(:,:,:)
-    real, pointer              :: rk(:,:,:,:)
-    real, pointer              :: src(:,:,:,:)
+    class(gpatch_t), pointer :: patch                 ! pointer to MHD patch
+    type(rt_boundaries_t)    :: rt_boundaries         ! RT boundary conditions
+    integer                  :: n_warmup=5            ! number of initial solutions
+    integer                  :: n_lambda=4            ! number of frequency bins
+    integer                  :: n_omega=0             ! number of space-angles
+    integer                  :: i_omega=0             ! space-angle index
+    real, pointer            :: w_bin(:)              ! frequency weight
+    type(rt_t), pointer      :: omega(:)  => null()   ! different RT directions
+    type(rt_t), pointer      :: main => null()        ! point to main RT task
+    real                     :: mu, rt_phi, w         ! mu, phi, weights
+    real(8)                  :: eos_time              ! laste EOS time
+    real                     :: rt_grace=0.01         ! deal with roundoff        
+    real(8)                  :: rt_llc(3)=0d0         ! lower left corner
+    real(8)                  :: rt_urc(3)=0d0         ! upper right corner
+    real(8)                  :: rt_timestep=0.01_8    ! constant time step
+    integer                  :: n_mu=3, n_phi=4       ! no. of angles
+    logical                  :: on=.true.             ! allows local turn-off
+    logical                  :: vertical_propagation=.false. ! see code
+    logical                  :: constant_q=.true.     ! 0-order in time
+    real, pointer            :: q(:,:,:,:)            ! net radiative heating
+    real, pointer            :: tt(:,:,:)             ! EOS temperature
+    real, pointer            :: rk(:,:,:,:)           ! EOS rho*kappa
+    real, pointer            :: src(:,:,:,:)          ! EOS source function
   contains
-    procedure:: pre_init
-    procedure:: init
-    procedure:: init_omega
-    procedure:: init_nbors
-    procedure:: needs
-    procedure:: pre_update
-    procedure:: post_update
-    procedure:: update
-    procedure:: rt_eos
-    procedure:: solve
-    procedure:: setup_boundaries
-    procedure:: warm_up
-    procedure:: nbor_relations
-    procedure:: task_info
-    procedure:: nbor_info
+    procedure:: pre_init                              ! read parameters
+    procedure:: init                                  ! init RT task
+    procedure:: init_omega                            ! init omega task
+    procedure:: needs                                 ! check upstream
+    procedure:: pre_update                            ! pre MHD
+    procedure:: post_update                           ! post MHD
+    procedure:: update                                ! RT task update
+    procedure:: rt_eos                                ! EOS for RT
+    procedure:: solve                                 ! RT solver
+    procedure:: setup_boundaries                      ! BCs
+    procedure:: task_info                             ! formatted info print
+    procedure:: nbor_info                             ! formatted info print
   end type
-  integer, save:: verbose=0
-  real(8), save:: dbg_position(2) = -1e30
-  type(rt_t), public:: rt
+  integer, save:: verbose=0                           ! verbosity
+  type(rt_t), public:: rt                             ! public instance
 CONTAINS
 
 !===============================================================================
