@@ -29,7 +29,8 @@ MODULE experiment_mod
   type, public, extends(solver_t):: experiment_t
     real, dimension(:,:,:,:), pointer:: lower => null()
     real, dimension(:,:,:,:), pointer:: upper => null()
-    procedure(boundary_condition1), pointer:: boundary_condition => boundary_condition2
+    procedure(boundary_condition1), pointer:: &
+      boundary_condition => boundary_condition3
   contains
     procedure:: init
     procedure:: update
@@ -176,38 +177,7 @@ SUBROUTINE boundary_condition1 (self)
       end do
     end if
   else if (m3%upper_boundary) then
-    do iz=uo(3),ub(3)
-    do iy=lb(2),ub(2)
-    do ix=lb(1),ub(1)
-      if (pz(ix,iy,ui(3)) < 0.0) then
-        d (ix,iy,ui(3)) = d_bot*bottom_bc_rate + d(ix,iy,ui(3))*(1.-bottom_bc_rate)
-        e (ix,iy,ui(3)) = e_bot*bottom_bc_rate + e(ix,iy,ui(3))*(1.-bottom_bc_rate)
-        px(ix,iy,ui(3)) = px(ix,iy,ui(3))*(1.-bottom_bc_rate)
-        py(ix,iy,ui(3)) = py(ix,iy,ui(3))*(1.-bottom_bc_rate)
-      end if
-      dlnddz = log(d(ix,iy,ui(3))/d(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
-      dlnedz = log(e(ix,iy,ui(3))/e(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
-      d_ratio = exp((z(iz)-z(ui(3)))*dlnddz)
-      d (ix,iy,iz) = d (ix,iy,ui(3))*d_ratio
-      px(ix,iy,iz) = px(ix,iy,ui(3))*d_ratio
-      py(ix,iy,iz) = py(ix,iy,ui(3))*d_ratio
-      pz(ix,iy,iz) = pz(ix,iy,ui(3))*d_ratio
-      e(ix,iy,iz) = e(ix,iy,ui(3))*exp((z(iz)-z(ui(3)))*dlnedz)
-      if (first_upper) then
-        first_upper = .false.
-        write(io%output,*) self%id, 'experiment_t%boundary_condition (upper)', &
-          dlnddz, dlnedz, z(ui(3)-1), z(ui(3)), d_ratio
-      end if
-    end do
-    end do
-    end do
-    if (self%mhd) then
-      do iz=uo(3)+1,ub(3)
-        bx(:,:,iz) = bx(:,:,uo(3))
-        by(:,:,iz) = by(:,:,uo(3))
-        bz(:,:,iz) = bz(:,:,uo(3))
-      end do
-    end if
+    call bottom_condition1 (self)
   end if
   call trace_end
 END SUBROUTINE boundary_condition1
@@ -309,49 +279,191 @@ SUBROUTINE boundary_condition2 (self)
     ! -------------------------------------------------
     !where (e < exp(eos%lne_min)) e = exp(eos%lne_min)
   else if (m3%upper_boundary) then
-    !allocate(ss,mold=d)
-    !call self%e2s(ss,self%it)
-    !call self%boundaries%log_extrapolate(ss,self%idx%e)
-    do iz=uo(3),ub(3)
-    do iy=lb(2),ub(2)
-    do ix=lb(1),ub(1)
-      if (pz(ix,iy,ui(3)) < 0.0) then
-        d (ix,iy,ui(3)) = d_bot*bottom_bc_rate + d(ix,iy,ui(3))*(1.-bottom_bc_rate)
-        e (ix,iy,ui(3)) = e_bot*bottom_bc_rate + e(ix,iy,ui(3))*(1.-bottom_bc_rate)
-        px(ix,iy,ui(3)) = px(ix,iy,ui(3))*(1.-bottom_bc_rate)
-        py(ix,iy,ui(3)) = py(ix,iy,ui(3))*(1.-bottom_bc_rate)
-      end if
-      dlnddz = log(d(ix,iy,ui(3))/d(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
-      dlnedz = log(e(ix,iy,ui(3))/e(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
-      d_ratio = exp((z(iz)-z(ui(3)))*dlnddz)
-      d (ix,iy,iz) = d (ix,iy,ui(3))*d_ratio
-      px(ix,iy,iz) = px(ix,iy,ui(3))*d_ratio
-      py(ix,iy,iz) = py(ix,iy,ui(3))*d_ratio
-      pz(ix,iy,iz) = pz(ix,iy,ui(3))*d_ratio
-      e(ix,iy,iz) = e(ix,iy,ui(3))*exp((z(iz)-z(ui(3)))*dlnedz)
-      if (first_upper) then
-        first_upper = .false.
-        write(io%output,*) self%id, 'experiment_t%boundary_condition (upper)', &
-          dlnddz, dlnedz, z(ui(3)-1), z(ui(3)), d_ratio
-      end if
-    end do
-    end do
-    end do
-    !call self%s2e(ss,self%it)
-    !deallocate(ss)
-    if (self%mhd) then
-      do iz=uo(3)+1,ub(3)
-        bx(:,:,iz) = bx(:,:,uo(3))
-        by(:,:,iz) = by(:,:,uo(3))
-        bz(:,:,iz) = bz(:,:,uo(3))
-      end do
-    end if
-    ! -------------------------------------------------
-    ! avoid going outside the EOS table.
-    ! -------------------------------------------------
-    !where (e > exp(eos%lne_max)) e = exp(eos%lne_max)
+    call bottom_condition2 (self)
   end if
   call trace_end
 END SUBROUTINE boundary_condition2
 
+!===============================================================================
+!===============================================================================
+SUBROUTINE boundary_condition3 (self)
+  class(experiment_t):: self
+  integer, dimension(3):: lb, lo, li, ui, uo, ub
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz, tt, ss
+  real, dimension(:,:,:), allocatable:: ux, uy, uz, ex, ey, ez
+  real(8), dimension(:), pointer:: z
+  class(mesh_t), pointer:: m3
+  integer:: ix, iy, iz
+  real(8):: d_ratio, h_scale, f_scale, dlnddz, dlnedz, taper
+  logical, save:: first_lower=.true., first_upper=.true.
+  !-----------------------------------------------------------------------------
+  call trace_begin('experiment_t%boundary_condition')
+  lb = self%mesh%lb; lo = self%mesh%lo; li = self%mesh%li
+  ub = self%mesh%ub; uo = self%mesh%uo; ui = self%mesh%ui
+  m3 => self%mesh(3)
+  z  => m3%r
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  px => self%mem(:,:,:,self%idx%px,self%it,1)
+  py => self%mem(:,:,:,self%idx%py,self%it,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
+  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
+  by => self%mem(:,:,:,self%idx%by,self%it,1)
+  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
+  tt => self%mem(:,:,:,self%idx%tt,self%it,1)
+   if (self%is_set(bits%zl+bits%zu)) print *, 'doing BC according to bits'
+  if (m3%lower_boundary) then
+    !---------------------------------------------------------------------------
+    ! Clamp the energy per unit mass at the table limit
+    !---------------------------------------------------------------------------
+    e = max(e,3.5*d)
+    !---------------------------------------------------------------------------
+    ! Estimate scale height
+    !---------------------------------------------------------------------------
+    h_scale = 4500./(scaling%temp*self%gravity%const_grav)
+    do iz=lb(3),lo(3)
+      d_ratio = exp((z(iz)-z(li(3)))/h_scale)
+      do iy=lb(2),ub(2)
+      do ix=lb(1),ub(1)
+        d (ix,iy,iz) = d (ix,iy,li(3))*d_ratio
+        e (ix,iy,iz) = e (ix,iy,li(3))*d_ratio
+        px(ix,iy,iz) = px(ix,iy,li(3))*d_ratio
+        py(ix,iy,iz) = py(ix,iy,li(3))*d_ratio
+        pz(ix,iy,iz) = pz(ix,iy,li(3))*d_ratio**2
+      end do
+      end do
+    end do
+    if (self%mhd) then
+      do iz=lb(3),lo(3)-1
+        bx(:,:,iz) = bx(:,:,li(3)-1)
+        by(:,:,iz) = by(:,:,li(3)-1)
+        bz(:,:,iz) = bz(:,:,li(3)-1)
+      end do
+    end if
+  else if (m3%upper_boundary) then
+    call bottom_condition2 (self)
+  end if
+  call trace_end
+END SUBROUTINE boundary_condition3
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE bottom_condition1 (self)
+  class(experiment_t):: self
+  integer, dimension(3):: lb, lo, li, ui, uo, ub
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz
+  real(8), dimension(:), pointer:: z
+  class(mesh_t), pointer:: m3
+  integer:: ix, iy, iz
+  real(8):: d_ratio, h_scale, dlnddz, dlnedz, taper
+  logical, save:: first_lower=.true., first_upper=.true.
+  !-----------------------------------------------------------------------------
+  call trace_begin('experiment_t%bottom_condition')
+  lb = self%mesh%lb; lo = self%mesh%lo; li = self%mesh%li
+  ub = self%mesh%ub; uo = self%mesh%uo; ui = self%mesh%ui
+  m3 => self%mesh(3)
+  z  => m3%r
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  px => self%mem(:,:,:,self%idx%px,self%it,1)
+  py => self%mem(:,:,:,self%idx%py,self%it,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
+  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
+  by => self%mem(:,:,:,self%idx%by,self%it,1)
+  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
+  do iz=uo(3),ub(3)
+  do iy=lb(2),ub(2)
+  do ix=lb(1),ub(1)
+    if (pz(ix,iy,ui(3)) < 0.0) then
+      d (ix,iy,ui(3)) = d_bot*bottom_bc_rate + d(ix,iy,ui(3))*(1.-bottom_bc_rate)
+      e (ix,iy,ui(3)) = e_bot*bottom_bc_rate + e(ix,iy,ui(3))*(1.-bottom_bc_rate)
+      px(ix,iy,ui(3)) = px(ix,iy,ui(3))*(1.-bottom_bc_rate)
+      py(ix,iy,ui(3)) = py(ix,iy,ui(3))*(1.-bottom_bc_rate)
+    end if
+    dlnddz = log(d(ix,iy,ui(3))/d(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
+    dlnedz = log(e(ix,iy,ui(3))/e(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
+    d_ratio = exp((z(iz)-z(ui(3)))*dlnddz)
+    d (ix,iy,iz) = d (ix,iy,ui(3))*d_ratio
+    px(ix,iy,iz) = px(ix,iy,ui(3))*d_ratio
+    py(ix,iy,iz) = py(ix,iy,ui(3))*d_ratio
+    pz(ix,iy,iz) = pz(ix,iy,ui(3))*d_ratio
+    e(ix,iy,iz) = e(ix,iy,ui(3))*exp((z(iz)-z(ui(3)))*dlnedz)
+    if (first_upper) then
+      first_upper = .false.
+      write(io%output,*) self%id, 'experiment_t%boundary_condition (upper)', &
+        dlnddz, dlnedz, z(ui(3)-1), z(ui(3)), d_ratio
+    end if
+  end do
+  end do
+  end do
+  if (self%mhd) then
+    do iz=uo(3)+1,ub(3)
+      bx(:,:,iz) = bx(:,:,uo(3))
+      by(:,:,iz) = by(:,:,uo(3))
+      bz(:,:,iz) = bz(:,:,uo(3))
+    end do
+  end if
+  call trace_end
+END SUBROUTINE bottom_condition1
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE bottom_condition2 (self)
+  class(experiment_t):: self
+  integer, dimension(3):: lb, lo, li, ui, uo, ub
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz
+  real(8), dimension(:), pointer:: z
+  class(mesh_t), pointer:: m3
+  integer:: ix, iy, iz
+  real(8):: d_ratio, h_scale, dlnddz, dlnedz, taper
+  logical, save:: first_lower=.true., first_upper=.true.
+  !-----------------------------------------------------------------------------
+  call trace_begin('experiment_t%bottom_condition')
+  lb = self%mesh%lb; lo = self%mesh%lo; li = self%mesh%li
+  ub = self%mesh%ub; uo = self%mesh%uo; ui = self%mesh%ui
+  m3 => self%mesh(3)
+  z  => m3%r
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  px => self%mem(:,:,:,self%idx%px,self%it,1)
+  py => self%mem(:,:,:,self%idx%py,self%it,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
+  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
+  by => self%mem(:,:,:,self%idx%by,self%it,1)
+  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
+  do iz=uo(3),ub(3)
+  do iy=lb(2),ub(2)
+  do ix=lb(1),ub(1)
+    if (pz(ix,iy,ui(3)) < 0.0) then
+      d (ix,iy,ui(3)) = d_bot*bottom_bc_rate + d(ix,iy,ui(3))*(1.-bottom_bc_rate)
+      e (ix,iy,ui(3)) = e_bot*bottom_bc_rate + e(ix,iy,ui(3))*(1.-bottom_bc_rate)
+      px(ix,iy,ui(3)) = px(ix,iy,ui(3))*(1.-bottom_bc_rate)
+      py(ix,iy,ui(3)) = py(ix,iy,ui(3))*(1.-bottom_bc_rate)
+    end if
+    dlnddz = log(d(ix,iy,ui(3))/d(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
+    dlnedz = log(e(ix,iy,ui(3))/e(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
+    d_ratio = exp((z(iz)-z(ui(3)))*dlnddz)
+    d (ix,iy,iz) = d (ix,iy,ui(3))*d_ratio
+    px(ix,iy,iz) = px(ix,iy,ui(3))*d_ratio
+    py(ix,iy,iz) = py(ix,iy,ui(3))*d_ratio
+    pz(ix,iy,iz) = pz(ix,iy,ui(3))*d_ratio
+    e(ix,iy,iz) = e(ix,iy,ui(3))*exp((z(iz)-z(ui(3)))*dlnedz)
+    if (first_upper) then
+      first_upper = .false.
+      write(io%output,*) self%id, 'experiment_t%boundary_condition (upper)', &
+        dlnddz, dlnedz, z(ui(3)-1), z(ui(3)), d_ratio
+    end if
+  end do
+  end do
+  end do
+  if (self%mhd) then
+    do iz=uo(3)+1,ub(3)
+      bx(:,:,iz) = bx(:,:,uo(3))
+      by(:,:,iz) = by(:,:,uo(3))
+      bz(:,:,iz) = bz(:,:,uo(3))
+    end do
+  end if
+  call trace_end
+END SUBROUTINE bottom_condition2
+ 
 END MODULE
