@@ -66,6 +66,7 @@ MODULE extras_mod
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
   USE rt_mod                                                           ! RT
+  USE newton_mod                                                       ! Newton
   !USE forces_mod                                                       ! forces
   !USE trace_particles_mod                                              ! tracep
   !USE spitzer_mod                                                      ! spitzer
@@ -85,7 +86,8 @@ MODULE extras_mod
     !class(pic_t), pointer:: pic                                        ! pic
     !type (spitzer_t):: spitzer                                         ! spitzer
     type(gravity_t):: gravity                                          ! gravity
-    class(rt_t), pointer:: rt                                          ! RT
+    class(rt_t), pointer:: rt => null()                                ! RT
+    type(newton_t):: newton                                            ! Newton
     !type(sinkparticles_t):: sinkparticles                              ! sinkp
     !class(patch_force_t), pointer:: patch_force                        ! sinkp
     !class(trace_particles_t), pointer:: trace_particles                ! tracep
@@ -141,6 +143,7 @@ SUBROUTINE init (self)
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------
   call self%rt%init()                                                  ! RT
+  call self%newton%init (self%link)                                    ! Newton
   !allocate (self%trace_particles)                                      ! tracep
   !self%connect%trace_particles => self%trace_particles                 ! tracep
   !call self%trace_particles%add (self%link%task)                       ! tracep
@@ -198,6 +201,7 @@ SUBROUTINE pre_update (self)
     self%heating_per_unit_volume = 0.0                                 ! keep
   !
   call self%rt%pre_update()                                            ! RT
+  call self%newton%pre_update()                                        ! Newton
   !call self%forces%pre_update                                          ! forces
   !call self%trace_particles%update                                     ! tracep
   !call self%spitzer%pre_update()                                       ! spitzer
@@ -257,20 +261,15 @@ FUNCTION cast2extras (task) RESULT(extras)
 END FUNCTION cast2extras
 
 !===============================================================================
-!> Set default nbor relatioins, and allow underlings to modify them
+!> Set default nbor relations, and allow underlings to modify them
 !===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(extras_t):: self
   class(task_t), pointer:: another
   logical:: needed, needs_me, download
   !-----------------------------------------------------------------------------
-  call trace%begin ('rt_t%nbor_relations')
-  !
-  !-----------------------------------------------------------------------------
-  ! First check the main relations, then specific ones
-  !-----------------------------------------------------------------------------
+  call trace%begin ('extras_t%nbor_relations')
   call self%task_t%nbor_relations(another, needed, needs_me, download) ! keep
-  !
   call trace%end()
 END SUBROUTINE nbor_relations
 
