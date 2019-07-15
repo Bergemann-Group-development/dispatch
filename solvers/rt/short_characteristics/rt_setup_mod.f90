@@ -144,6 +144,10 @@ SUBROUTINE init (self, task_list)
   if (verbose > 0) &
     call task_list%print ('new task_list')
   !-----------------------------------------------------------------------------
+  ! Reset task_list status to establish nbor relations
+  !-----------------------------------------------------------------------------
+  call task_list%reset_status()
+  !-----------------------------------------------------------------------------
   ! Add nbor lists sorted by level
   !-----------------------------------------------------------------------------
   link => task_list%head
@@ -195,12 +199,12 @@ SUBROUTINE init_rt_nbors (self, mhd)
       class is (solver_t)
         if (nb_task%rt%n_omega > 0) then
           upstream => nb_task%rt%omega(i_omega)
-          if (rt%needs(omega,nbor%task) .and. upstream%on) then
+          if (rt%needs(omega,upstream) .and. upstream%on) then
             !-------------------------------------------------------------------
             ! The omega task needs the upstream task, and should download from 
             ! it, but the upstream task does not need the downstream omega task.
             !-------------------------------------------------------------------
-            needed=.true.; needs_me=.false.; download=.true.
+            !needed=.true.; needs_me=.false.; download=.true.
             call init_nbor_pair (omega, needed, upstream, needs_me, download)
           end if
         end if
@@ -210,13 +214,13 @@ SUBROUTINE init_rt_nbors (self, mhd)
     !---------------------------------------------------------------------------
     ! The omega task needs the RT task, which needs to omega tasks.  No download.
     !---------------------------------------------------------------------------
-    needed=.true.; needs_me=.true.; download=.false.
+    !needed=.true.; needs_me=.true.; download=.false.
     call init_nbor_pair (omega, needed, rt , needs_me, download)
   end do
   !-----------------------------------------------------------------------------
   ! The MHD task needs the main RT task (rt), which also needs the MHD task
   !-----------------------------------------------------------------------------
-  needed=.true.; needs_me=.true.; download=.false.
+  !needed=.true.; needs_me=.true.; download=.false.
   call init_nbor_pair (mhd, needed, rt, needs_me, download)
   call trace%end
 END SUBROUTINE init_rt_nbors
@@ -245,9 +249,9 @@ SUBROUTINE init_nbor_pair (task1, needed, task2, needs_me, download)
   allocate (new)
   new%link => link2
   new%task => new%link%task
-  new%needed = needed
-  new%needs_me = needs_me
-  new%download = download
+  !new%needed = needed
+  !new%needs_me = needs_me
+  !new%download = download
   call link1%add_nbor_by_rank (link1%nbor, new)
   !-----------------------------------------------------------------------------
   ! Add the 1st linked task as an nbor to the 2nd linked task
@@ -255,9 +259,9 @@ SUBROUTINE init_nbor_pair (task1, needed, task2, needs_me, download)
   allocate (new)
   new%link => link1
   new%task => new%link%task
-  new%needed = needs_me
-  new%needs_me = needed
-  new%download = .false.
+  !new%needed = needs_me
+  !new%needs_me = needed
+  !new%download = .false.
   call link2%add_nbor_by_rank (link2%nbor, new)
   !-----------------------------------------------------------------------------
   call trace%end

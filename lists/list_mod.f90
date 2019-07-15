@@ -481,11 +481,11 @@ SUBROUTINE reset_status (self)
     !---------------------------------------------------------------------------
     ! Run through nbors and set their status
     !---------------------------------------------------------------------------
-    !nb => link%nbor
-    !do while (associated(nb))
-      !call link%task%nbor_relations (nb%task, nb%needed, nb%needs_me, nb%download)
-      !nb => nb%next
-    !end do
+    nb => link%nbor
+    do while (associated(nb))
+      call link%task%nbor_relations (nb%task, nb%needed, nb%needs_me, nb%download)
+      nb => nb%next
+    end do
     if (self%verbose > 1) &
       write(io_unit%log,'(a,i6,i4,3x,3l1)') &
         'reset_status: task, rank, IBV =', link%task%id, link%task%rank, &
