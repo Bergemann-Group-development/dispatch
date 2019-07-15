@@ -3,7 +3,7 @@
 !> This means that the only extra memory with time slot that is needed is
 !> one slot for the net radiation heating, \Sum_bins \Sum_angles Q_bin_angle
 !>
-!> The data structure consists of self, an extension of the MHD solver_t data
+!> The data structure consists of self, an extension of the gpatch_t data
 !> type, which also contains n_omega clones of itself, with the specific info
 !> for each ray direction.  Since the data type is an extension of patch_t, we
 !> can use the standard guard zone loading procedures in download_mod or
@@ -14,23 +14,34 @@
 !> guard zone filling must take place for each angle, just before the solver
 !> is called.
 !>
-!> The self%time, self%rt_time, and self%rt_next control the scheduling of the
-!> tasks.  The MHD tasks require that the times of their nbors are "ahead",
+!> The self%time, self%rt_timestep, and self%rt_next control the scheduling of
+!> the tasks.  The MHD tasks require that the times of their nbors are "ahead",
 !> allowing for a grace fraction of the nbor time step.  The RT sub-tasks
-!> advance their time by self%rt_time (effectively their self%dtime) when done,
-!> hence they must update when their MHD master task passes their own time,
-!> which conforms with standard nbor relations.
+!> advance their time by self%rt_timestep (effectively their self%dtime) when
+!> done, hence they must update when their MHD master task passes their own time,
+!> which conforms with standard nbor relations.   To clarify, with the times
 !>
-!> Can this also be consistent with the "always update the oldest taske"
-!> strategy of dispather0?  It will update the MHD task, as long as it does
-!> not pass beyond the rt_next time (which generally should be the same while
-!> the RT sub-task are idle).  Once it passes rt_next (which should also be
-!> the self%time of all RT sub-tasks), they will be "older" than the MHD task,
-!> and will all be updated (subject to their inter-dependencies).
+!> MHD time: mhd%time
+!>  RT time: mhd%rt%time
+!> ray time: mhd%rt%omega%time
 !>
-!> Initially, we wish that only the MHD states are ready to update, and we set
-!> things up so the only thing they do is compute the EOS for the RT solvers.
-!> So, we need self%time < omega%time, and self%eos_time < self%rt_time < 0.
+!> The RT_time is a "rabbit time", which gives the time until which the MHD task
+!> should still be happy with the RT solution.  When the parent MHD task passes
+!> that time, the RT sub-tasks become out-of-date, and they perform solutions.
+!> Afterwards, they advance their "rabbit time" again, and when all of them have
+!> done so, the main RT task becomes ready to update, and when it runs it sums
+!> up the sub-task contributions, and advances its own "rabbit time", which then
+!> allows the MHD task to update.   Clearly, the EOS call that gives values to
+!> the RT tasks at the new MHD time has to be made after the MHD task has passed
+!> by, but before the first sub-task executes.  This could be detected either in
+!> the MHD task, or in the RT sub-tasks, where the first detection should lead
+!> to locking the EOS while executing it, followed by another test (so a double
+!> critical region type of thing).
+!>
+!> Initially, we wish that only the RT states are ready to update, and we set
+!> things up to compute the EOS, solve the RT, sum up Q, and only then let the
+!> MHD update.  This means that initially, the EOS_time should be negative, the
+!> RT times should be RT_timestep/2 negative, and the MHD_time should be zero.
 !===============================================================================
 MODULE rt_mod
   USE boundaries_mod
