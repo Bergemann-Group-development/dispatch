@@ -52,7 +52,7 @@ SUBROUTINE condition (self, mem, src, rk, tt, mu,w)
   real:: h_scale, tau, f_scale
   !-----------------------------------------------------------------------------
   n=shape(mem)
-  if (self%mesh(3)%lower_boundary) then
+  if (self%mesh(3)%lower_boundary .and. mu > 0.0) then
     i3 = self%mesh(3)%lo
     do ib=1,n(4)
       do i2=self%mesh(2)%lb,self%mesh(2)%ub
@@ -66,7 +66,7 @@ SUBROUTINE condition (self, mem, src, rk, tt, mu,w)
       end do
     end do
   end if
-  if (self%mesh(3)%upper_boundary) then
+  if (self%mesh(3)%upper_boundary .and. mu < 0.0) then
     mem(:,:,self%mesh(3)%uo:self%mesh(3)%ub,:) = 0.0
   end if 
 END SUBROUTINE condition
