@@ -24,6 +24,7 @@
 &io_params          verbose=0 do_trace=f omp_trace=f do_output=t id_debug=0
                     restart=-1  guard_zones=t nml_version=1 /
 &out_params         end_time=2.52 out_time=0.05 print_time=0 /
+&aux_params         verbose=1 select='tt','qr','rkap','src','qrad' /
 
 ! -- Stagger code parameters ---------------------------------------------------
                     !   cs    pa   ofd  mas   kap  eta

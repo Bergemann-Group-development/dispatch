@@ -120,7 +120,7 @@ SUBROUTINE pre_init (self, link)
   class (rt_t):: self
   class (link_t), pointer :: link
   !-----------------------------------------------------------------------------
-  class(*), pointer:: qr(:,:,:)
+  real, pointer:: qr(:,:,:)
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n
   integer, save:: n_mu=3, n_phi=4, n_lambda=4, nt=3, n_warmup=3
   real,    save:: rt_grace=0.0
@@ -165,7 +165,7 @@ SUBROUTINE pre_init (self, link)
   !---------------------------------------------------------------------------
   if (on) then
     qr => self%mem(:,:,:,1,1,1)
-    call aux%register ('qr', qr)
+    call self%patch%aux%register ('qr', qr)
   end if
   call trace%end()
 END SUBROUTINE pre_init
@@ -676,6 +676,9 @@ SUBROUTINE solve (self)
                                      tt=self%tt, mu=self%mu, w=self%w)
   call rt_integral%solve (self%rk, self%src, self%q, self%mesh, self%mu, &
                           self%rt_phi)
+  call self%patch%aux%register ('rkap', self%rk )
+  call self%patch%aux%register ('src',  self%src)
+  call self%patch%aux%register ('qout', self%q  )
   call trace%end (itimer)
 END SUBROUTINE solve
 
@@ -800,10 +803,7 @@ END SUBROUTINE nbor_relations
 !===============================================================================
 SUBROUTINE output (self)
   class(rt_t):: self
-  character(len=32):: filename
   !-----------------------------------------------------------------------------
-  write (filename,'("data/",i5.5,"/rt_sc_",i5.5,".aux")') self%iout, self%id
-  !call aux%output (filename, self%iout, self%patch%id)
 END SUBROUTINE output
 
 END MODULE rt_mod

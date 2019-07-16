@@ -497,7 +497,6 @@ END SUBROUTINE pde
 SUBROUTINE pre_update (self)
   class(mhd_t):: self
   real, dimension(:,:,:), pointer:: d, e, lnd, ee
-  class(*), pointer:: tt(:,:,:)
   integer:: iz
   !-----------------------------------------------------------------------------
   ! Compute initial temperature
@@ -516,8 +515,7 @@ SUBROUTINE pre_update (self)
     if (verbose > 0) &
       write(io%output,*) self%id, 'mhd_t%pre_update:  tt =', &
         minval(self%tt), maxval(self%tt)
-    tt => self%tt
-    call aux%register ('tt', tt)
+    call self%aux%register ('tt', self%tt)
   end if
   !-----------------------------------------------------------------------------
   ! Now we can call the extras_t%pre_update, which may need the temperature

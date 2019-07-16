@@ -8,7 +8,7 @@
 !> to the main RT axis. 
 !===============================================================================
 MODULE rt_integral_mod
-  USE io_mod
+  USE io_unit_mod
   USE trace_mod
   USE mesh_mod
   USE omp_mod
@@ -62,6 +62,7 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
   !.............................................................................
   real, dimension(:,:,:,:), allocatable:: k3, s3, q3
   real:: dr
+  logical:: debug
   integer:: m(4), loc(1), dir, i, i1, i2, i3, ib, l(3), u(3), ii(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -102,31 +103,33 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
     i1=u(3); i2=l(3); i3=-1
   end if
   if (verbose > 1) &
-    print *, 'rt_integral_t%solve: mu, phi, dir, dr =', mu, dir, i1, i2, i3
+    write(io_unit%log,*) 'rt_integral_t%solve: mu, phi, dir, dr =', mu, dir, i1, i2, i3
   !-----------------------------------------------------------------------------
   ! Prepare layers for the single layer solver and call it
   !-----------------------------------------------------------------------------
   do i=i1,i2,i3
+    debug = i==i1 .and. mu(dir) > 0.0
     call self%prepare_layers (mu, dir, mesh, k, k3, i, i3)
     call self%prepare_layers (mu, dir, mesh, s, s3, i, i3)
     call self%prepare_layers (mu, dir, mesh, q, q3, i, i3)
     if (dir==1) then
-      call self%solve1 (k3, s3, q3, q(i,:,:,:), dr, l, u)
+      call self%solve1 (k3, s3, q3, q(i,:,:,:), dr, l, u, debug)
     else if (dir==2) then
-      call self%solve1 (k3, s3, q3, q(:,i,:,:), dr, l, u)
+      call self%solve1 (k3, s3, q3, q(:,i,:,:), dr, l, u, debug)
     else
-      call self%solve1 (k3, s3, q3, q(:,:,i,:), dr, l, u)
+      call self%solve1 (k3, s3, q3, q(:,:,i,:), dr, l, u, debug)
     end if
   end do
   deallocate (k3, s3, q3)
   if (verbose > 1) then
     do ib=1,m(4)
-      print '(a,i4,1p,10e10.2)', ' rt_integral_t%solve: q =', ib, &
-        q(l(1):l(1)+9,(l(2)+u(2))/2,(l(3)+u(3))/2,ib)
+      write(io_unit%log,'(a,i4,1p,10e10.2)') ' rt_integral_t%solve: q =', &
+        ib, q(l(1):l(1)+9,(l(2)+u(2))/2,(l(3)+u(3))/2,ib)
     end do
   end if
   if (verbose > 0) &
     call diagnostics
+  !-----------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE solve
 
@@ -168,7 +171,7 @@ SUBROUTINE prepare_layers (self, mu, dir, mesh, in, out, i, i3)
     call self%bilinear (in(:,:,i+i3,:), out(:,:,:,3), o(:,2), p(:,2), l, u)
   end if
   if (verbose > 1) &
-    print *, 'rt_integral_t%prepare_layers: dir, l, u =', dir, l, u
+    write(io_unit%log,*) 'rt_integral_t%prepare_layers: dir, l, u =', dir, l, u
   call trc_end (itimer)
 END SUBROUTINE prepare_layers
 
@@ -204,7 +207,7 @@ SUBROUTINE calculate_offsets (self, mu, dir, mesh, o, p)
   o = floor(p)
   p = p - o
   if (verbose > 1) then
-    print '(i2,2x,a,2x,3f7.3,2x,2f7.3,2(2x,2i3),0p,2(2x,2f7.3))', &
+    write(io_unit%log,'(i2,2x,a,2x,3f7.3,2x,2f7.3,2(2x,2i3),0p,2(2x,2f7.3))') &
       omp%thread, 'rt_integral_t%calculate_offsets: mu, dpdi, o, p =', &
       mu, dpdi, o, p
   end if
@@ -233,13 +236,13 @@ SUBROUTINE bilinear (self, in, out, o, p, l, u)
   if (all(abs(o+p) < 1e-5)) then
     out = in
     if (verbose > 1) &
-      print *, 'rt_integral_t%bilinear: no interpolation'
+      write(io_unit%log,*) 'rt_integral_t%bilinear: no interpolation'
   !-----------------------------------------------------------------------------
   ! Interpolation only in y
   !-----------------------------------------------------------------------------
   else if (abs(o(1)+p(1)) < 1e-5) then
     if (verbose > 1) &
-      print *, 'rt_integral_t%bilinear: 2nd index, o, p =', &
+      write(io_unit%log,*) 'rt_integral_t%bilinear: 2nd index, o, p =', &
         o(2), p(2)
     do ib=1,m(3)
     do i2=l(2),u(2)
@@ -254,7 +257,7 @@ SUBROUTINE bilinear (self, in, out, o, p, l, u)
   !-----------------------------------------------------------------------------
   else if (abs(o(2)+p(2)) < 1e-5) then
     if (verbose > 1) &
-      print *, 'rt_integral_t%bilinear: 1st index, o, p =', &
+      write(io_unit%log,*) 'rt_integral_t%bilinear: 1st index, o, p =', &
         o(1), p(1)
     do ib=1,m(3)
     do i2=l(2),u(2)
@@ -269,17 +272,17 @@ SUBROUTINE bilinear (self, in, out, o, p, l, u)
   !-----------------------------------------------------------------------------
   else
     if (verbose > 1) &
-      print *, 'rt_integral_t%bilinear: o, p =', &
+      write(io_unit%log,*) 'rt_integral_t%bilinear: o, p =', &
         o, p
     do i1=l(1),u(1),u(1)-l(1)
       if (i1+o(1) < 1 .or. i1+o(1) > size(in,1)) then
-        print *, 'index 1 outside range', i1, o(1), p(1)
+        write(io_unit%log,*) 'index 1 outside range', i1, o(1), p(1)
         stop
       end if
     end do
     do i2=l(2),u(2),u(2)-l(2)
       if (i2+o(2) < 1 .or. i2+o(2) > size(in,2)) then
-        print *, 'index 2 outside range', i2, o(2), p(2)
+        write(io_unit%log,*) 'index 2 outside range', i2, o(2), p(2)
         stop
       end if
     end do
@@ -306,14 +309,15 @@ END SUBROUTINE bilinear
 !>
 !> The order of indices is in general permuted in the call, with 
 !===============================================================================
-SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u)
+SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u, debug)
   class(rt_integral_t):: self
   real, dimension(:,:,:,:) :: k, s, qin
   real, dimension(:,:,:) :: qout
   integer:: l(3), u(3)
   real:: dr
+  logical:: debug
   !.............................................................................
-  integer:: i1, i2, ib, m(4)
+  integer:: i1, i2, ib, m(4), icase
   real:: dsdtau1, dsdtau2, d2sdtau2, ex0, ex2, dtaumin, dtaumax
   real(8), pointer:: z(:)
   real, dimension(size(k,1)):: dtau1, dtau2
@@ -331,8 +335,7 @@ SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u)
         do i1=l(1),u(1)
           qout(i1,i2,ib) = 0.0
         end do
-        !$omp atomic
-        n_cases(4) = n_cases(4)+1
+        icase = 4
       else if (dtaumin > dtau_dif) then
         do i1=l(1),u(1)
           dsdtau1  =     (s(i1,i2,ib,2) - s(i1,i2,ib,1))/dtau1(i1)
@@ -340,15 +343,13 @@ SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u)
           d2sdtau2 = (dsdtau2 - dsdtau1)*2.0/(dtau1(i1)+dtau2(i1))
           qout(i1,i2,ib) = d2sdtau2
         end do
-        !$omp atomic
-        n_cases(3) = n_cases(3)+1
+        icase = 3
       else if (dtaumax < dtau_min) then
         do i1=l(1),u(1)
           ex0      = 1.0-dtau1(i1)
           qout(i1,i2,ib) = qin(i1,i2,ib,1)*ex0
         end do
-        !$omp atomic
-        n_cases(1) = n_cases(1)+1
+        icase = 1
       else 
         do i1=l(1),u(1)
           dsdtau1  =     (s(i1,i2,ib,2) - s(i1,i2,ib,1))/dtau1(i1)
@@ -359,13 +360,19 @@ SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u)
           qout(i1,i2,ib) = qin(i1,i2,ib,1)*ex0 &
                          + d2sdtau2       *ex2
         end do
-        !$omp atomic
-        n_cases(2) = n_cases(2)+1
+        icase = 2
       end if
+      !$omp atomic
+      n_cases(icase) = n_cases(icase)+1
     end do
-    if (verbose > 1) then
-      print '(a,i4,1p,10e10.2)', ' rt_integral_t%solve1: ib, q =', ib, &
-        qout(l(1):l(1)+9,(l(2)+u(2))/2,ib)
+    if (verbose > 1 .and. debug) then
+      write(io_unit%log,1) ' rt_integral_t%solve1: ib, dt =', &
+        ib, icase,  dtau1(l(1):l(1)+9)
+      write(io_unit%log,1) ' rt_integral_t%solve1: ib, qi =', &
+        ib, icase,  qin(l(1):l(1)+9,(l(2)+u(2))/2,ib,1)
+      write(io_unit%log,1) ' rt_integral_t%solve1: ib, qo =', &
+        ib, icase, qout(l(1):l(1)+9,(l(2)+u(2))/2,ib)
+      1 format(a,i4,i2,1p,10e10.2)
     end if
   end do
   call trc_end (itimer)
@@ -377,10 +384,10 @@ SUBROUTINE diagnostics (label)
   real:: f
   f = 1./max(sum(n_cases),1_8)
   if (present(label)) then
-    print *, 'fractions of thin, full, diff, and zero cases: ', n_cases*f, &
+    write(io_unit%log,*) 'fractions of thin, full, diff, and zero cases: ', n_cases*f, &
       trim(label)
   else
-    print *, 'fractions of thin, full, diff, and zero cases: ', n_cases*f
+    write(io_unit%log,*) 'fractions of thin, full, diff, and zero cases: ', n_cases*f
   end if
 END SUBROUTINE diagnostics 
 

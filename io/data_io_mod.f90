@@ -11,6 +11,7 @@
 MODULE data_io_mod
   USE io_mod
   USE os_mod
+  USE aux_mod
   USE mpi_mod
   USE omp_mod
   USE omp_timer_mod
@@ -215,7 +216,11 @@ SUBROUTINE output (self, patch, experiment_name)
         end if
       end if
       !---------------------------------------------------------------------------
+      ! Output aux file, and namelist file with metadata 
+      !---------------------------------------------------------------------------
+      call patch%aux%output (patch%iout, patch%id)
       call output_nml (patch, append)
+      !---------------------------------------------------------------------------
       patch%iout = patch%iout+1
       if (io%out_time==0.0) exit
       patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time

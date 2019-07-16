@@ -12,6 +12,7 @@ MODULE task_mod
   USE mpi_mesg_mod
   USE random_mod
   USE dll_mod
+  USE aux_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -78,6 +79,7 @@ MODULE task_mod
     logical:: limit_dtime=.false.
     type(lock_t):: lock                 ! OMP lock
     type(random_t):: random             ! pseudo-random number generator
+    type(aux_t):: aux
   contains
     procedure:: init
     procedure:: init_unique
