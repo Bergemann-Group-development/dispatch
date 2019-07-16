@@ -258,7 +258,7 @@ SUBROUTINE read_stagger_snap (task_list)
   class(mesh_t), pointer, dimension(:):: m
   integer:: n(3), iv, iiv, recl, ix, iy, iz
   integer:: zi
-  integer:: mx, my, mz, nx, ny, nz, nv, ii(9)
+  integer:: mx, my, mz, nx, ny, nz, nv, ii(9), biv
   real, dimension(:), allocatable, target:: dxm, dxmdn, xm, xmdn
   real, dimension(:), allocatable, target:: dym, dymdn, ym, ymdn
   real, dimension(:), allocatable, target:: dzm, dzmdn, zm, zmdn
@@ -327,11 +327,17 @@ SUBROUTINE read_stagger_snap (task_list)
   !-----------------------------------------------------------------------------
   ii = [patch%idx%d, patch%idx%py, patch%idx%pz, patch%idx%px, &
         patch%idx%e, patch%idx%tt, patch%idx%by, patch%idx%bz, patch%idx%bx]
+  biv=1
   do iv=1,min(nv,9)
-    iiv = ii(iv)
+    if ((iv==6).and.(patch%idx%tt<1)) then
+      biv = biv+1
+      print *, 'skipping temperature', iv
+      !cycle
+    end if
+    iiv = ii(biv)
     if (io%master) &
-      print *, 'reading variable index iv =', iv
-    read (io_unit%datain, rec=iv) rbuf
+      print *, 'reading variable index iv =', biv,'stored in', ii(biv)
+    read (io_unit%datain, rec=biv) rbuf
     if (flip_z) then
       do iz=1,mz; do iy=1,my; do ix=1,mx
         zi = mz - iz + 1
@@ -343,7 +349,7 @@ SUBROUTINE read_stagger_snap (task_list)
       end do; end do; end do
     end if
     if (verbose == 1) &
-      print *, iv, minval(rbuf), maxval(rbuf)
+      print *, biv, minval(rbuf), maxval(rbuf)
     !---------------------------------------------------------------------------
     ! Add periodic extension
     !---------------------------------------------------------------------------
@@ -368,6 +374,7 @@ SUBROUTINE read_stagger_snap (task_list)
     end do
     !$omp end single
     !$omp end parallel
+    biv = biv+1
   end do
   close (io_unit%datain)
   deallocate (rbuf, buffer)
