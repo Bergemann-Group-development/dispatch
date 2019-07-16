@@ -21,8 +21,8 @@ MODULE aux_mod
   integer, save:: max_select=30
   type, public, extends(dll_t):: aux_t
     integer:: unit
+    integer:: iout_prv=-1
   contains
-    procedure:: init
     procedure:: open
     procedure:: close
     procedure, private:: register1
@@ -46,26 +46,6 @@ MODULE aux_mod
   character(len=32), allocatable:: select(:)
   type(aux_t), public:: aux
 CONTAINS
-
-!===============================================================================
-SUBROUTINE init (self, name)
-  class(aux_t):: self
-  character(len=*), optional:: name
-  !.............................................................................
-  namelist /aux_params/ select
-  integer:: iostat
-  !-----------------------------------------------------------------------------
-  if (first_time) then
-    !$omp critical (input_cr)
-    if (first_time) then
-      allocate (select(max_select))
-      rewind (stdin)
-      read (stdin, aux_params, iostat=iostat)
-      write (stdout, aux_params)
-    end if
-    !$omp end critical (input_cr)
-  end if
-END SUBROUTINE
 
 !===============================================================================
 SUBROUTINE register1 (self, name, c)
@@ -121,17 +101,16 @@ SUBROUTINE register3 (self, name, c)
 END SUBROUTINE register3
 
 !===============================================================================
-SUBROUTINE output_aux (self, file, id)
+SUBROUTINE output_aux (self, file, iout, id)
   class(aux_t):: self
   character(len=*):: file
-  integer:: id
+  integer:: iout, id
   !.............................................................................
   class(dll_node_t), pointer:: item
   logical:: ok
   integer:: i
   !-----------------------------------------------------------------------------
-  call self%init
-  call self%open (file)
+  call self%open (file, iout /= self%iout_prv)
   write (self%unit) format, id
   item => aux%head
   do while (associated(item))
@@ -149,17 +128,35 @@ SUBROUTINE output_aux (self, file, id)
     end select
     item => item%next
   end do
-  !$omp atomic write
-  first_time = .true.
+  self%iout_prv = iout
   call self%close
 END SUBROUTINE
 
 !===============================================================================
-SUBROUTINE open (self, file)
+SUBROUTINE open (self, file, reread)
   class(aux_t):: self
   character(len=*):: file
+  logical:: reread
+  !.............................................................................
+  namelist /aux_params/ select
+  integer:: iostat
   !-----------------------------------------------------------------------------
   call trace%begin ('aux_t%open')
+  if (first_time) then
+    !$omp critical (input_cr)
+    first_time = .false.
+    allocate (select(max_select))
+    select(:) = ''
+    rewind (stdin)
+    read (stdin, aux_params, iostat=iostat)
+    write (stdout, aux_params)
+    !$omp end critical (input_cr)
+  else if (reread) then
+    !$omp critical (input_cr)
+    rewind (stdin)
+    read (stdin, aux_params, iostat=iostat)
+    !$omp end critical (input_cr)
+  end if
   !$omp atomic
   uniq = uniq+1  
   self%unit = uniq
@@ -242,7 +239,7 @@ SUBROUTINE test (self)
   call aux%register ('r1', r1)
   call aux%register ('r2', r2)
   call aux%register ('r3', r3)
-  call aux%output  ('test.aux',3)
+  call aux%output  ('test.aux',3,1)
 END SUBROUTINE
 
 END MODULE aux_mod

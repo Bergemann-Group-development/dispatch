@@ -803,7 +803,7 @@ SUBROUTINE output (self)
   character(len=32):: filename
   !-----------------------------------------------------------------------------
   write (filename,'("data/",i5.5,"/rt_sc_",i5.5,".aux")') self%iout, self%id
-  call aux%output (filename, self%patch%id)
+  !call aux%output (filename, self%iout, self%patch%id)
 END SUBROUTINE output
 
 END MODULE rt_mod
