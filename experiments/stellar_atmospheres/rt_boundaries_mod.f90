@@ -59,7 +59,7 @@ SUBROUTINE condition (self, mem, src, rk, tt, mu,w)
       do i1=self%mesh(1)%lb,self%mesh(1)%ub
         ! -- Estimate the boundary Q from an estimate of the total optical depth
         f_scale = (tt(i1,i2,i3+1)/tt(i1,i2,i3))**0.05
-        h_scale = tt(i1,i2,i3)/self%grav*f_scale
+        h_scale = tt(i1,i2,i3)/(scaling%temp*self%grav)*f_scale
         tau = h_scale*rk(i1,i2,i3+1,ib)/abs(mu)
         mem(i1,i2,i3,ib) = -src(i1,i2,i3,ib)*exp(-tau)
       end do

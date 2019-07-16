@@ -38,7 +38,7 @@ MODULE experiment_mod
   end type
   integer, save:: verbose=1
   logical, save:: smudge_boundary = .false.
-  real, save:: d_bot=0.0, e_bot=0.0, ee_top=5.2, tt_top=4000.
+  real, save:: d_bot=0.0, e_bot=0.0, ee_top=5.2, p_top=0.5, tt_top=4000.
   real, save:: bottom_bc_rate=0.01
   type(experiment_t), public:: experiment
 CONTAINS
@@ -319,8 +319,11 @@ SUBROUTINE boundary_condition3 (self)
     !---------------------------------------------------------------------------
     ! Estimate scale height
     !---------------------------------------------------------------------------
-    do iz=lb(3),lo(3)
+    do iz=lo(3),lb(3),-1
+      ! -- weight from 0 to 1 in inteval lb to li
       p = (z(iz)-z(lb(3)))/(z(li(3))-z(lb(3)))
+      ! -- remap to interval p_top - 1.0
+      p = p_top*(1.-p) + 1.*p
       do iy=lb(2),ub(2)
       do ix=lb(1),ub(1)
         if (associated(self%tt)) then
@@ -328,16 +331,20 @@ SUBROUTINE boundary_condition3 (self)
         else
           tt = tt_top
         end if
-        f = (tt/tt_top)**0.05
-        h_scale = tt/(scaling%temp*self%gravity%const_grav)*f
-        d_ratio = exp((z(iz)-z(li(3)))/h_scale)
+        f = (tt/tt_top)**0.03
+        if (iz==lo(3)) then
+          h_scale =     tt/(scaling%temp*self%gravity%const_grav)
+        else
+          h_scale = tt_top/(scaling%temp*self%gravity%const_grav)
+        end if
+        d_ratio = exp((z(iz)-z(iz+1))/h_scale)
         ee = e(ix,iy,li(3))/d(ix,iy,li(3))        
         ee = ee_top*(1.-p) + ee*p
-        d (ix,iy,iz) = d (ix,iy,li(3))*d_ratio
-        e (ix,iy,iz) = d (ix,iy,li(3))*ee
-        px(ix,iy,iz) = px(ix,iy,li(3))*d_ratio
-        py(ix,iy,iz) = py(ix,iy,li(3))*d_ratio
-        pz(ix,iy,iz) = pz(ix,iy,li(3))*d_ratio**2
+        d (ix,iy,iz) = d (ix,iy,iz+1)*d_ratio
+        e (ix,iy,iz) = d (ix,iy,iz   )*ee
+        px(ix,iy,iz) = px(ix,iy,iz+1)*d_ratio*p
+        py(ix,iy,iz) = py(ix,iy,iz+1)*d_ratio*p
+        pz(ix,iy,iz) = pz(ix,iy,iz+1)*d_ratio*P
       end do
       end do
     end do
