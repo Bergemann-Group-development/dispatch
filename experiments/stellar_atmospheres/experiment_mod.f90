@@ -30,7 +30,7 @@ MODULE experiment_mod
     real, dimension(:,:,:,:), pointer:: lower => null()
     real, dimension(:,:,:,:), pointer:: upper => null()
     procedure(boundary_condition1), pointer:: &
-      boundary_condition => boundary_condition3
+      boundary_condition => null()
   contains
     procedure:: init
     procedure:: update
@@ -75,6 +75,7 @@ SUBROUTINE init (self)
   self%mhd = .true.
   call self%solver_t%init
   self%unsigned = .false.
+  self%boundary_condition => boundary_condition3
   !----------------------------------------------------------------------------
   ! Boundary setup
   !----------------------------------------------------------------------------
@@ -310,7 +311,7 @@ SUBROUTINE boundary_condition3 (self)
   bx => self%mem(:,:,:,self%idx%bx,self%it,1)
   by => self%mem(:,:,:,self%idx%by,self%it,1)
   bz => self%mem(:,:,:,self%idx%bz,self%it,1)
-  tt => self%mem(:,:,:,self%idx%tt,self%it,1)
+  tt => self%tt
    if (self%is_set(bits%zl+bits%zu)) print *, 'doing BC according to bits'
   if (m3%lower_boundary) then
     !---------------------------------------------------------------------------
