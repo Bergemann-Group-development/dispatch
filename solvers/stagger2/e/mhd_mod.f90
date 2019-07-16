@@ -35,9 +35,8 @@ MODULE mhd_mod
   type, extends(extras_t), public:: mhd_t
     real, dimension(:,:,:),   pointer    :: d, dddt, e, dedt
     real, dimension(:,:,:,:), pointer    :: p, dpdt, B, dBdt
-    real, dimension(:,:,:),   pointer    :: lnd, ee, pg
+    real, dimension(:,:,:),   pointer    :: lnd, ee, pg, tt=>null()
     real, dimension(:,:,:),   allocatable:: qrad
-    real, pointer:: tt(:,:,:)
     !procedure(divB_clean1),   pointer    :: divB_clean => divb_clean2
     real:: nu(6)
     real:: cdtd
@@ -48,6 +47,7 @@ MODULE mhd_mod
     procedure:: pre_init
     procedure:: init
     procedure:: pde
+    procedure:: pre_update
     procedure:: update
     procedure:: output
     procedure:: divb_clean
@@ -73,7 +73,6 @@ SUBROUTINE pre_init (self)
   real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
   logical, save:: mhd=.false.
-  class(*), pointer:: tt(:,:,:)
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
     do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner
@@ -123,13 +122,6 @@ SUBROUTINE pre_init (self)
     if (self%mhd) self%nv = self%nv + 3
   end if
   call self%idx%init (5, self%mhd)
-  if (do_temperature) then
-    call self%idx%request_index (self%idx%tt, self%nv)
-    write (stdout,*) self%id, 'allocate', self%gn
-    allocate (real:: self%tt(self%gn(1),self%gn(2),self%gn(3)))
-    tt => self%tt
-    call aux%register ('tt', tt)
-  end if
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -501,6 +493,40 @@ SUBROUTINE pde (self)
 END SUBROUTINE pde
 
 !===============================================================================
+!===============================================================================
+SUBROUTINE pre_update (self)
+  class(mhd_t):: self
+  real, dimension(:,:,:), pointer:: d, e, lnd, ee
+  class(*), pointer:: tt(:,:,:)
+  integer:: iz
+  !-----------------------------------------------------------------------------
+  ! Compute initial temperature
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%pre_update')
+  if (do_temperature .and. .not. associated(self%tt)) then
+    allocate (real:: self%tt(self%gn(1),self%gn(2),self%gn(3)))
+    allocate (           lnd(self%gn(1),self%gn(2),self%gn(3)))
+    allocate (            ee(self%gn(1),self%gn(2),self%gn(3)))
+    d => self%mem(:,:,:,self%idx%d,self%it,1)
+    e => self%mem(:,:,:,self%idx%e,self%it,1)
+    lnd = alog(d)
+    ee = e/d
+    call eos%lookup_table (shape(self%tt), lnd=lnd, ee=ee, tt=self%tt)
+    deallocate (lnd, ee)
+    if (verbose > 0) &
+      write(io%output,*) self%id, 'mhd_t%pre_update:  tt =', &
+        minval(self%tt), maxval(self%tt)
+    tt => self%tt
+    call aux%register ('tt', tt)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Now we can call the extras_t%pre_update, which may need the temperature
+  !-----------------------------------------------------------------------------
+  call self%extras_t%pre_update
+  call trace%end
+END SUBROUTINE pre_update
+
+!===============================================================================
 !> Take a complete update step.  This can be overloaded in higher levels, e.g.
 !> in experiment_mod, where boundary conditions may be inserted
 !===============================================================================
@@ -676,7 +702,7 @@ END SUBROUTINE output
 FUNCTION gas_pressure (self) RESULT (pg)
   class(mhd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  real, dimension(:,:,:), pointer:: d, e, tt
+  real, dimension(:,:,:), pointer:: d, e
   integer, save:: nprint=1
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%gas_pressure')
@@ -690,21 +716,19 @@ FUNCTION gas_pressure (self) RESULT (pg)
     end if
   else
     if (do_temperature) then
-      print *, self%it, 'computing T', self%it
       call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg, &
         tt=self%tt)
-      self%tt = self%tt*scaling%temp
     else
       call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg)
     end if
-    !if (io%master .and. (verbose>1 .or. nprint>0)) then
+    if (verbose > 1 .or. nprint > 0) then
       nprint = nprint-1
       write(io%output,*) self%id, 'lookup_table: lnd =', minval(self%lnd), maxval(self%lnd)
       write(io%output,*) self%id, 'lookup_table:  ee =', minval(self%ee ), maxval(self%ee )
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg),       maxval(pg)
       if (do_temperature) &
-      write(io%output,*) self%id, 'lookup_table:  tt =', minval(tt),       maxval(tt)
-    !end if
+      write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), maxval(self%tt)
+    end if
   end if
   call trace%end()
 END FUNCTION gas_pressure
