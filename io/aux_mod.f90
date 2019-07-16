@@ -12,14 +12,17 @@
 !> call aux%output ('test.aux')
 !===============================================================================
 MODULE aux_mod
+  USE io_unit_mod
   USE trace_mod
   USE dll_mod
   implicit none
   private
   !
+  integer, save:: max_select=30
   type, public, extends(dll_t):: aux_t
     integer:: unit
   contains
+    procedure:: init
     procedure:: open
     procedure:: close
     procedure, private:: register1
@@ -38,9 +41,31 @@ MODULE aux_mod
   contains
     procedure:: output => output_item
   end type
+  character(len=32), allocatable:: select(:)
+  logical, save:: first_time=.true.
   integer:: uniq=200
   type(aux_t), public:: aux
 CONTAINS
+
+!===============================================================================
+SUBROUTINE init (self, name)
+  class(aux_t):: self
+  character(len=*), optional:: name
+  !.............................................................................
+  namelist /aux_params/ select
+  integer:: iostat
+  !-----------------------------------------------------------------------------
+  if (first_time) then
+    !$omp critical (input_cr)
+    if (first_time) then
+      allocate (select(max_select))
+      rewind (stdin)
+      read (stdin, aux_params, iostat=iostat)
+      write (stdout, aux_params)
+    end if
+    !$omp end critical (input_cr)
+  end if
+END SUBROUTINE
 
 !===============================================================================
 SUBROUTINE register1 (self, name, c)
@@ -100,16 +125,29 @@ SUBROUTINE output_aux (self, file)
   class(aux_t):: self
   character(len=*):: file
   class(dll_node_t), pointer:: item
+  logical:: ok
+  integer:: i
   !-----------------------------------------------------------------------------
+  call self%init
   call self%open (file)
   item => aux%head
   do while (associated(item))
     select type (item)
     class is (item_t)
-    call item%output (self%unit) 
+    ok = .false.
+    do i=1,max_select
+      if (trim(select(i)) == trim(item%name)) then
+        ok = .true.
+        exit
+      end if
+    end do
+    if (ok) &
+      call item%output (self%unit) 
     end select
     item => item%next
   end do
+  !$omp atomic write
+  first_time = .true.
   call self%close
 END SUBROUTINE
 

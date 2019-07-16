@@ -75,7 +75,7 @@ MODULE io_mod
   end type
   character(len=64), save:: inputname, outputname
   type(io_t), public:: io
-  public mch, io_unit, stderr, stdout
+  public mch, io_unit, stderr, stdout, stdin
 CONTAINS
 
 !===============================================================================
