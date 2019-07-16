@@ -49,13 +49,11 @@ SUBROUTINE condition (self, mem, src, rk, tt, mu,w)
   !.....................................................................
   class(mesh_t), pointer:: m1, m2, m3
   integer:: ib, i3, i3b, i2, i1, n(4)
-  real:: h_scale, tau, mean1, mean2, f_scale
+  real:: h_scale, tau, f_scale
   !---------------------------------------------------------------------
   n=shape(mem)
   if (self%mesh(3)%lower_boundary) then
     i3 = self%mesh(3)%lo
-    mean1 = sum(tt(self%mesh(1)%li:self%mesh(1)%ui,self%mesh(2)%li:self%mesh(2)%ui,i3+1))/(n(1)*n(2))
-    mean2 = sum(tt(self%mesh(1)%li:self%mesh(1)%ui,self%mesh(2)%li:self%mesh(2)%ui,i3  ))/(n(1)*n(2))
     do ib=1,n(4)
       do i2=self%mesh(2)%lb,self%mesh(2)%ub
       do i1=self%mesh(1)%lb,self%mesh(1)%ub
