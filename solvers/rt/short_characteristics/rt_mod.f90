@@ -46,6 +46,7 @@
 MODULE rt_mod
   USE boundaries_mod
   USE io_mod
+  USE aux_mod
   USE trace_mod
   USE mpi_mod
   USE omp_mod
@@ -85,7 +86,7 @@ MODULE rt_mod
     real(8)                  :: rt_urc(3)=0d0         ! upper right corner
     real(8)                  :: rt_timestep=0.01_8    ! constant time step
     integer                  :: n_mu=3, n_phi=4       ! no. of angles
-    logical                  :: on=.true.             ! allows local turn-off
+    logical                  :: on=.false.            ! allows local turn-off
     logical                  :: vertical_propagation=.false. ! see code
     logical                  :: constant_q=.true.     ! 0-order in time
     real, pointer            :: q(:,:,:,:)            ! net radiative heating
@@ -106,6 +107,7 @@ MODULE rt_mod
     procedure:: task_info                             ! formatted info print
     procedure:: nbor_info                             ! formatted info print
     procedure:: nbor_relations
+    procedure:: output
   end type
   integer, save:: verbose=0                           ! verbosity
   type(rt_t), public:: rt                             ! public instance
@@ -118,6 +120,7 @@ SUBROUTINE pre_init (self, link)
   class (rt_t):: self
   class (link_t), pointer :: link
   !-----------------------------------------------------------------------------
+  class(*), pointer:: qr(:,:,:)
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n
   integer, save:: n_mu=3, n_phi=4, n_lambda=4, nt=3, n_warmup=3
   real,    save:: rt_grace=0.0
@@ -161,8 +164,8 @@ SUBROUTINE pre_init (self, link)
   ! Request additional variable slot indices in patches with RT
   !---------------------------------------------------------------------------
   if (on) then
-    call self%patch%idx%request_index (self%patch%idx%tt, self%patch%nv)
-    call self%patch%idx%request_index (self%patch%idx%qr, self%patch%nv)
+    qr => self%mem(:,:,:,1,1,1)
+    call aux%register ('qr', qr)
   end if
   call trace%end()
 END SUBROUTINE pre_init
@@ -524,20 +527,11 @@ SUBROUTINE post_update (self)
   class (rt_t) :: self
   !-----------------------------------------------------------------------------
   class(rt_t), pointer:: omega
-  real, dimension(:,:,:), pointer:: q
   integer:: l(3), u(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (.not. self%on) return
+  if (.not.self%on) return
   call trace%begin ('rt_t%post_update', itimer=itimer)
-  if (self%constant_q) then
-    associate (p => self%patch)
-    l = p%mesh%li - self%mesh%ng
-    u = p%mesh%ui + self%mesh%ng
-    q => self%mem(:,:,:,1,self%it,1)
-    p%mem(l(1):u(1),l(2):u(2),l(3):u(3),p%idx%qr,p%new,1) = q
-    end associate
-  end if
   call trace%end(itimer)
 END SUBROUTINE post_update
 
@@ -712,7 +706,6 @@ SUBROUTINE nbor_info (self, nbor)
     self%position, self%i_omega, self%mu, self%rt_phi
 END SUBROUTINE nbor_info
 
-
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(rt_t):: self
   class(task_t), pointer:: another
@@ -801,5 +794,16 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   !
   call trace%end()
 END SUBROUTINE nbor_relations
+
+!===============================================================================
+!> Auxiliary output
+!===============================================================================
+SUBROUTINE output (self)
+  class(rt_t):: self
+  character(len=32):: filename
+  !-----------------------------------------------------------------------------
+  write (filename,'("data/",i5.5,"/qrad_",i5.5,".aux")') self%iout, self%id
+  call aux%output (filename)
+END SUBROUTINE output
 
 END MODULE rt_mod

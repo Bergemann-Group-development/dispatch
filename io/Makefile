@@ -17,4 +17,5 @@ data_io_mod.o:          io_mod.o trace_mod.o patch_mod.o os_mod.o omp_mod.o omp_
                         counters_mod.o time_slices_mod.o omp_lock_mod.o
 validate_mod.o:         io_mod.o io_unit_mod.o patch_mod.o link_mod.o kinds_mod.o
 h5a_mod.o:              omp_lock_mod.o
+aux_mod.o:              trace_mod.o dll_mod.o
 h5_mod.o:

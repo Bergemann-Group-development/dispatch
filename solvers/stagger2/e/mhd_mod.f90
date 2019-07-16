@@ -10,6 +10,7 @@
 !===============================================================================
 MODULE mhd_mod
   USE io_mod
+  USE aux_mod
   USE bits_mod
   USE omp_mod
   USE math_mod
@@ -36,6 +37,7 @@ MODULE mhd_mod
     real, dimension(:,:,:,:), pointer    :: p, dpdt, B, dBdt
     real, dimension(:,:,:),   pointer    :: lnd, ee, pg
     real, dimension(:,:,:),   allocatable:: qrad
+    real, pointer:: tt(:,:,:)
     !procedure(divB_clean1),   pointer    :: divB_clean => divb_clean2
     real:: nu(6)
     real:: cdtd
@@ -71,6 +73,7 @@ SUBROUTINE pre_init (self)
   real(8), save:: gamma=1.4_8
   logical, save:: first_time=.true.
   logical, save:: mhd=.false.
+  class(*), pointer:: tt(:,:,:)
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
     do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner
@@ -120,8 +123,13 @@ SUBROUTINE pre_init (self)
     if (self%mhd) self%nv = self%nv + 3
   end if
   call self%idx%init (5, self%mhd)
-  if (do_temperature) &
+  if (do_temperature) then
     call self%idx%request_index (self%idx%tt, self%nv)
+    write (stdout,*) self%id, 'allocate', self%gn
+    allocate (real:: self%tt(self%gn(1),self%gn(2),self%gn(3)))
+    tt => self%tt
+    call aux%register ('tt', tt)
+  end if
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -681,21 +689,22 @@ FUNCTION gas_pressure (self) RESULT (pg)
       pg = e*(self%gamma-1)
     end if
   else
-    if (self%idx%tt > 0) then
-      tt => self%mem(:,:,:,self%idx%tt,self%it,1)
-      call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg, tt=tt)
-      tt = tt*scaling%temp
+    if (do_temperature) then
+      print *, self%it, 'computing T', self%it
+      call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg, &
+        tt=self%tt)
+      self%tt = self%tt*scaling%temp
     else
       call eos%lookup_table (shape(self%lnd), lnd=self%lnd, ee=self%ee, pg=pg)
     end if
-    if (io%master .and. (verbose>1 .or. nprint>0)) then
+    !if (io%master .and. (verbose>1 .or. nprint>0)) then
       nprint = nprint-1
       write(io%output,*) self%id, 'lookup_table: lnd =', minval(self%lnd), maxval(self%lnd)
       write(io%output,*) self%id, 'lookup_table:  ee =', minval(self%ee ), maxval(self%ee )
       write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg),       maxval(pg)
-      if (self%idx%tt > 0) &
+      if (do_temperature) &
       write(io%output,*) self%id, 'lookup_table:  tt =', minval(tt),       maxval(tt)
-    end if
+    !end if
   end if
   call trace%end()
 END FUNCTION gas_pressure

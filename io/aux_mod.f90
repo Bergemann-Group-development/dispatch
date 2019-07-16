@@ -5,15 +5,14 @@
 !> USE aux_mod
 !> real, pointer:: a1(10), a2(11,12), a3(13,14,15)
 !> ...
-!> call aux%open ('test.aux')
 !> call aux%register ('a1', a1)
 !> call aux%register ('a2', a2)
 !> call aux%register ('a3', a3)
 !> ...
-!> call aux%output
-!> call aux%close
+!> call aux%output ('test.aux')
 !===============================================================================
 MODULE aux_mod
+  USE trace_mod
   USE dll_mod
   implicit none
   private
@@ -84,6 +83,7 @@ SUBROUTINE register3 (self, name, c)
   class(*), pointer  :: c(:,:,:)
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  call trace%begin ('aux_t%register3')
   allocate (item_t:: item)
   select type (item)
   class is (item_t)
@@ -92,32 +92,39 @@ SUBROUTINE register3 (self, name, c)
     item%c3 => c
   end select
   call self%append (item)
+  call trace%end
 END SUBROUTINE register3
 
 !===============================================================================
-SUBROUTINE output_aux (self)
+SUBROUTINE output_aux (self, file)
   class(aux_t):: self
+  character(len=*):: file
   class(dll_node_t), pointer:: item
   !-----------------------------------------------------------------------------
+  call self%open (file)
   item => aux%head
   do while (associated(item))
     select type (item)
     class is (item_t)
-    call item%output (self%unit)
+    call item%output (self%unit) 
     end select
     item => item%next
   end do
+  call self%close
 END SUBROUTINE
 
 !===============================================================================
 SUBROUTINE open (self, file)
   class(aux_t):: self
   character(len=*):: file
+  !-----------------------------------------------------------------------------
+  call trace%begin ('aux_t%open')
   !$omp atomic
   uniq = uniq+1  
   self%unit = uniq
   open (self%unit, file=file, form='unformatted', access='sequential', status='unknown')
   print *,'open '//trim(file)
+  call trace%end
 END SUBROUTINE
 
 !===============================================================================
@@ -142,6 +149,7 @@ SUBROUTINE output_item (self, unit)
   case(3)
     call write3 (self%c3)
   end select
+  flush (unit)
 !===============================================================================
 contains
 subroutine write1 (c1)
@@ -182,13 +190,11 @@ SUBROUTINE test (self)
   class(item_t), pointer:: item
   class(*), pointer:: r1(:), r2(:,:), r3(:,:,:)
   !-----------------------------------------------------------------------------
-  call aux%open ('test.aux')
   allocate (real:: r1(10), r2(2,3), r3(3,4,5))
   call aux%register ('r1', r1)
   call aux%register ('r2', r2)
   call aux%register ('r3', r3)
-  call aux%output
-  call aux%close
+  call aux%output  ('test.aux')
 END SUBROUTINE
 
 END MODULE aux_mod
