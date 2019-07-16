@@ -158,7 +158,7 @@ def map_var(p,iv):
     return jv
 
 def hminmax(s,iv=0,dir=2,offset=0,verbose=0):
-    """ Horizontal average """
+    """ Horizontal mín/max """
     pp=_patches(s)
     p=pp[0]
     xx=[]
@@ -170,8 +170,6 @@ def hminmax(s,iv=0,dir=2,offset=0,verbose=0):
         data=p.data[jv] if hasattr(p,'data') else p.var(iv)
         if offset != 0:
             o=offset
-        elif p.guard_zones:
-            o=p.ng[dir]
         else:
             o=0
         for i in range(p.n[dir]):
@@ -228,8 +226,6 @@ def haver(s,iv=0,dir=2,offset=0,verbose=0):
         data=p.data[iv] if hasattr(p,'data') else p.var(iv)
         if offset != 0:
             o=offset
-        elif p.guard_zones:
-            o=p.ng[dir]
         else:
             o=0
         for i in range(len(rr)):

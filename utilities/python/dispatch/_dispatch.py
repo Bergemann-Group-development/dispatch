@@ -226,7 +226,17 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         else:
             return mem(iv)
 
-    def var(iv,copy=None):
+    def internal(v,all=False):
+        if all:
+            return v
+        elif patch.guard_zones:
+            l=patch.ng
+            u=l+patch.n
+            return v[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
+        else:
+            return
+
+    def var(iv,all=False,copy=None):
         """
         Special logic to calculate velocities from momenta on the fly.
         If the data is in spherical or cylindrical coords., then it is the angular
@@ -239,29 +249,30 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
         if patch.kind[0:6]=='ramses':
             if   iv=='ux':
-                return mem('p1',copy=copy)/mem('d',copy=copy)
+                v=mem('p1',copy=copy)/mem('d',copy=copy)
             elif iv=='uy':
-                return mem('p2',copy=copy)/mem('d',copy=copy)
+                v=mem('p2',copy=copy)/mem('d',copy=copy)
             elif iv=='uz':
-                return mem('p3',copy=copy)/mem('d',copy=copy)
+                v=mem('p3',copy=copy)/mem('d',copy=copy)
             else:
-                return mem(iv,copy=copy)
+                v=mem(iv,copy=copy)
         else:
             if   iv=='u1' or iv=='ux':
-                return mem('p1')/xdown('d')
+                v=mem('p1')/xdown('d')
             elif iv=='u2' or iv=='uy':
                 if patch.mesh_type != 'Cartesian':
-                    return mem('p2')/ydown('d')/patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
+                    v=mem('p2')/ydown('d')/patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
                 else:
-                    return mem('p2')/ydown('d')
+                    v=mem('p2')/ydown('d')
             elif iv=='u3' or iv=='uz':
                 if patch.mesh_type != 'Cartesian':
                     gf = patch.geometric_factors # shorthand
-                    return mem('p3')/zdown('d')/gf['h31c'][:,np.newaxis,np.newaxis]/gf['h32c'][np.newaxis,:,np.newaxis]
+                    v=mem('p3')/zdown('d')/gf['h31c'][:,np.newaxis,np.newaxis]/gf['h32c'][np.newaxis,:,np.newaxis]
                 else:
-                    return mem('p3')/zdown('d')
+                    v=mem('p3')/zdown('d')
             else:
-                return mem(iv,copy=copy)
+                v=mem(iv,copy=copy)
+        return internal(v,all=all)
     return var
 
 class _patch():
@@ -433,14 +444,17 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
 
     return prop_dict
 
-import resource
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
     """
     def __init__(self, iout=0, run='', data='data', datadir='', verbose=0, copy=False, timeit=False):
         # Set the max number of open files to the hard limit
-        limits=resource.getrlimit(resource.RLIMIT_NOFILE)
-        resource.setrlimit(resource.RLIMIT_NOFILE, (limits[1],limits[1]))
+        try:
+            import resource
+            limits=resource.getrlimit(resource.RLIMIT_NOFILE)
+            resource.setrlimit(resource.RLIMIT_NOFILE, (limits[1],limits[1]))
+        except:
+            pass
         self.copy=copy
         # Start time measurement
         timer.start()

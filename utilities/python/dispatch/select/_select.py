@@ -50,7 +50,7 @@ def count_inside(p,point=[0.5,0.5,0.5],verbose=0):
 def patches_along(pp,point=[0.5,0.5,0.5],dir=0,verbose=0):
     ''' Get the patches along a given direction through a point
     '''
-    if isinstance(pp,dispatch.snapshot):
+    if isinstance(pp,dispatch._dispatch.snapshot):
         pp=pp.patches
     pt=np.copy(point)
     if verbose>0:
@@ -271,7 +271,7 @@ def _corner_radii(p,origin=[0.,0.,0.]):
 class shell_values:
     def __init__(self,pp,radius=0.25,nds=1,dr=0.05,origin=[0.5,0.5,0.5],iv=0,verbose=0):
         ''' return a dict with shell data '''
-        if isinstance(pp,dispatch.snapshot):
+        if isinstance(pp,dispatch._dispatch.snapshot):
             pp=pp.patches
         if verbose:
             start=time()
