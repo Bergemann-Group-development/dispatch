@@ -38,7 +38,7 @@ MODULE experiment_mod
   end type
   integer, save:: verbose=1
   logical, save:: smudge_boundary = .false.
-  real, save:: d_bot=0.0, e_bot=0.0, top_temperature=4000.
+  real, save:: d_bot=0.0, e_bot=0.0, ee_top=5.2, tt_top=4000.
   real, save:: bottom_bc_rate=0.01
   type(experiment_t), public:: experiment
 CONTAINS
@@ -50,8 +50,8 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  namelist /experiment_params/ d_bot, e_bot, bottom_bc_rate, &
-                               top_temperature, verbose, smudge_boundary
+  namelist /experiment_params/ d_bot, e_bot, bottom_bc_rate, ee_top, &
+                               tt_top, verbose, smudge_boundary
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%init')
   !-----------------------------------------------------------------------------
@@ -62,7 +62,6 @@ SUBROUTINE init (self)
       rewind (io%input)
       read (io%input, experiment_params, iostat=iostat)
       if (io%master) write (*, experiment_params)
-      top_temperature = top_temperature/scaling%temp
       !d_bot = d_bot/scaling%d
       !e_bot = e_bot/scaling%e
     end if
@@ -145,7 +144,7 @@ SUBROUTINE boundary_condition1 (self)
     do iy=lb(2),ub(2)
     do ix=lb(1),ub(1)
       ! -- adjust the scale height so it becomes larger at high temperatures
-      f_scale = (tt(ix,iy,li(3))/top_temperature)**0.05
+      f_scale = (tt(ix,iy,li(3))/tt_top)**0.05
       h_scale = tt(ix,iy,li(3))/(scaling%temp*self%gravity%const_grav)*f_scale
       d_ratio = exp((z(iz)-z(li(3)))/h_scale)
       if (first_lower) then
@@ -236,7 +235,7 @@ SUBROUTINE boundary_condition2 (self)
     do ix=lb(1),ub(1)
       ! -- adjust the scale height so it becomes larger at high temperatures
       if (.not.smudge_boundary) then
-        f_scale = (tt(ix,iy,li(3))/top_temperature)**0.05
+        f_scale = (tt(ix,iy,li(3))/tt_top)**0.05
         h_scale = tt(ix,iy,li(3))/grav*f_scale
         ! -- option: more localized, not constant clamping:
         !f_scale = (tt(ix,iy,li(3)+1)/tt(ix,iy,li(3)))**0.05
@@ -290,12 +289,12 @@ END SUBROUTINE boundary_condition2
 SUBROUTINE boundary_condition3 (self)
   class(experiment_t):: self
   integer, dimension(3):: lb, lo, li, ui, uo, ub
-  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz, tt, ss
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz, ss
   real, dimension(:,:,:), allocatable:: ux, uy, uz, ex, ey, ez
   real(8), dimension(:), pointer:: z
   class(mesh_t), pointer:: m3
   integer:: ix, iy, iz
-  real(8):: d_ratio, h_scale, f_scale, dlnddz, dlnedz, taper
+  real:: d_ratio, h_scale, f, p, ee, tt
   logical, save:: first_lower=.true., first_upper=.true.
   !-----------------------------------------------------------------------------
   call trace_begin('experiment_t%boundary_condition')
@@ -311,8 +310,7 @@ SUBROUTINE boundary_condition3 (self)
   bx => self%mem(:,:,:,self%idx%bx,self%it,1)
   by => self%mem(:,:,:,self%idx%by,self%it,1)
   bz => self%mem(:,:,:,self%idx%bz,self%it,1)
-  tt => self%tt
-   if (self%is_set(bits%zl+bits%zu)) print *, 'doing BC according to bits'
+  if (self%is_set(bits%zl+bits%zu)) print *, 'doing BC according to bits'
   if (m3%lower_boundary) then
     !---------------------------------------------------------------------------
     ! Clamp the energy per unit mass at the table limit
@@ -321,13 +319,22 @@ SUBROUTINE boundary_condition3 (self)
     !---------------------------------------------------------------------------
     ! Estimate scale height
     !---------------------------------------------------------------------------
-    h_scale = 4500./(scaling%temp*self%gravity%const_grav)
     do iz=lb(3),lo(3)
-      d_ratio = exp((z(iz)-z(li(3)))/h_scale)
+      p = (z(iz)-z(lb(3)))/(z(li(3))-z(lb(3)))
       do iy=lb(2),ub(2)
       do ix=lb(1),ub(1)
+        if (associated(self%tt)) then
+          tt = self%tt(ix,iy,li(3))
+        else
+          tt = tt_top
+        end if
+        f = (tt/tt_top)**0.05
+        h_scale = tt/(scaling%temp*self%gravity%const_grav)*f
+        d_ratio = exp((z(iz)-z(li(3)))/h_scale)
+        ee = e(ix,iy,li(3))/d(ix,iy,li(3))        
+        ee = ee_top*(1.-p) + ee*p
         d (ix,iy,iz) = d (ix,iy,li(3))*d_ratio
-        e (ix,iy,iz) = e (ix,iy,li(3))*d_ratio
+        e (ix,iy,iz) = d (ix,iy,li(3))*ee
         px(ix,iy,iz) = px(ix,iy,li(3))*d_ratio
         py(ix,iy,iz) = py(ix,iy,li(3))*d_ratio
         pz(ix,iy,iz) = pz(ix,iy,li(3))*d_ratio**2

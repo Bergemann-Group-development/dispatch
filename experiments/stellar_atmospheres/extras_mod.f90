@@ -191,6 +191,7 @@ END SUBROUTINE dealloc
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
+  call trace%begin ('extras_t%pre_update')
   if (allocated (self%force_per_unit_mass)) &                          ! keep
     self%force_per_unit_mass = 0.0                                     ! keep
   if (allocated (self%force_per_unit_volume)) &                        ! keep
@@ -208,6 +209,7 @@ SUBROUTINE pre_update (self)
   call self%gravity%pre_update()                                       ! gravity
   !call particle_solver%force_field (self)                              ! sinkp
   !call self%pic%pre_update()                                           ! pic
+  call trace%end
 END SUBROUTINE pre_update
 
 !===============================================================================
