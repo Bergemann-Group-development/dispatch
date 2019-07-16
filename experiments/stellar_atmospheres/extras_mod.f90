@@ -229,6 +229,7 @@ SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
   call self%gpatch_t%output                                            ! keep
+  call self%rt%output                                                  ! RT
 END SUBROUTINE output
 
 !===============================================================================

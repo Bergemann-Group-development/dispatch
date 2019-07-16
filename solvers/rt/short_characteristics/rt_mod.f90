@@ -802,8 +802,8 @@ SUBROUTINE output (self)
   class(rt_t):: self
   character(len=32):: filename
   !-----------------------------------------------------------------------------
-  write (filename,'("data/",i5.5,"/qrad_",i5.5,".aux")') self%iout, self%id
-  call aux%output (filename)
+  write (filename,'("data/",i5.5,"/rt_sc_",i5.5,".aux")') self%iout, self%id
+  call aux%output (filename, self%patch%id)
 END SUBROUTINE output
 
 END MODULE rt_mod

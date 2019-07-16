@@ -37,13 +37,13 @@ MODULE aux_mod
     class(*), pointer:: c1(:)=>null(), c2(:,:)=>null(), c3(:,:,:)=>null()
     character(len=32):: name
     integer:: rank
-    character(2):: type
   contains
     procedure:: output => output_item
   end type
-  character(len=32), allocatable:: select(:)
-  logical, save:: first_time=.true.
+  integer:: format=1
   integer:: uniq=200
+  logical:: first_time=.true.
+  character(len=32), allocatable:: select(:)
   type(aux_t), public:: aux
 CONTAINS
 
@@ -121,15 +121,18 @@ SUBROUTINE register3 (self, name, c)
 END SUBROUTINE register3
 
 !===============================================================================
-SUBROUTINE output_aux (self, file)
+SUBROUTINE output_aux (self, file, id)
   class(aux_t):: self
   character(len=*):: file
+  integer:: id
+  !.............................................................................
   class(dll_node_t), pointer:: item
   logical:: ok
   integer:: i
   !-----------------------------------------------------------------------------
   call self%init
   call self%open (file)
+  write (self%unit) format, id
   item => aux%head
   do while (associated(item))
     select type (item)
@@ -177,7 +180,8 @@ SUBROUTINE output_item (self, unit)
   integer:: unit, rank
   !-----------------------------------------------------------------------------
   print *,'write '//trim(self%name)
-  write (unit) self%type, self%rank, self%name
+  write (unit) self%name
+  write (unit) self%rank
   rank = self%rank
   select case (rank)
   case(1)
@@ -195,8 +199,10 @@ subroutine write1 (c1)
   write (unit) shape(c1)
   select type (c1)
     type is (real)
+      write (unit) 'r1'
       write (unit) c1
     type is (integer)
+      write (unit) 'i1'
       write (unit) c1
     end select
 end subroutine write1
@@ -205,8 +211,10 @@ subroutine write2 (c2)
   write (unit) shape(c2)
   select type (c2)
     type is (real)
+      write (unit) 'r2'
       write (unit) c2
     type is (integer)
+      write (unit) 'i2'
       write (unit) c2
     end select
 end subroutine write2
@@ -215,8 +223,10 @@ subroutine write3 (c3)
   write (unit) shape(c3)
   select type (c3)
     type is (real)
+      write (unit) 'r3'
       write (unit) c3
     type is (integer)
+      write (unit) 'i3'
       write (unit) c3
     end select
 end subroutine write3
@@ -232,7 +242,7 @@ SUBROUTINE test (self)
   call aux%register ('r1', r1)
   call aux%register ('r2', r2)
   call aux%register ('r3', r3)
-  call aux%output  ('test.aux')
+  call aux%output  ('test.aux',3)
 END SUBROUTINE
 
 END MODULE aux_mod
