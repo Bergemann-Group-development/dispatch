@@ -18,7 +18,7 @@
                         do_output=f
                         method='parallel'
                         guard_zones=f
-                        timer_derivs=0
+                        time_derivs=0
                         !method='legacy'
                         !method='direct'
                         !method='buffered'
