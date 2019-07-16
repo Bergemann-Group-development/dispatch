@@ -86,7 +86,8 @@ SUBROUTINE update (self)
   class(solver_t) :: self
   associate (d=>self%mem(:,:,:,self%idx%d,self%it,1))
   !.............................................................................
-  call self%extras_t%pre_update
+  call trace%begin ('solver_t%update')
+  call self%mhd_t%pre_update
   call validate%check (self, d, 'before update')
   if (self%do_mhd) then
     call self%mhd_t%update
@@ -94,8 +95,9 @@ SUBROUTINE update (self)
     call self%output
   end if
   call validate%check (self, d, ' after update')
-  call self%extras_t%post_update
+  call self%mhd_t%post_update
   end associate
+  call trace%end
 END SUBROUTINE update
 
 !===============================================================================
