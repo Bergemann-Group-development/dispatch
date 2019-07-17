@@ -93,6 +93,7 @@ MODULE rt_mod
     real, pointer            :: tt(:,:,:)             ! EOS temperature
     real, pointer            :: rk(:,:,:,:)           ! EOS rho*kappa
     real, pointer            :: src(:,:,:,:)          ! EOS source function
+    real, pointer            :: qr(:,:,:)             ! net radiative heating
   contains
     procedure:: pre_init                              ! read parameters
     procedure:: init                                  ! init RT task
@@ -120,7 +121,6 @@ SUBROUTINE pre_init (self, link)
   class (rt_t):: self
   class (link_t), pointer :: link
   !-----------------------------------------------------------------------------
-  real, pointer:: qr(:,:,:)
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n
   integer, save:: n_mu=3, n_phi=4, n_lambda=4, nt=3, n_warmup=3
   real,    save:: rt_grace=0.0
@@ -130,9 +130,8 @@ SUBROUTINE pre_init (self, link)
   logical, save:: vertical_propagation=.false.
   logical, save:: constant_q=.true.
   logical, save:: first_time=.true.
-  logical, save:: on =.false.
   !-----------------------------------------------------------------------------
-  namelist /sc_rt_params/ on, verbose, nt, rt_llc, rt_urc, rt_timestep, &
+  namelist /sc_rt_params/ verbose, nt, rt_llc, rt_urc, rt_timestep, &
     n_mu, n_phi, n_lambda, rt_grace, vertical_propagation, constant_q, &
     n_warmup
   !-----------------------------------------------------------------------------
@@ -163,9 +162,9 @@ SUBROUTINE pre_init (self, link)
   !---------------------------------------------------------------------------
   ! Request additional variable slot indices in patches with RT
   !---------------------------------------------------------------------------
-  if (on) then
-    qr => self%mem(:,:,:,1,1,1)
-    call self%patch%aux%register ('qr', qr)
+  if (self%on) then
+    self%qr => self%mem(:,:,:,1,1,1)
+    call self%patch%aux%register ('qr', self%qr)
   end if
   call trace%end()
 END SUBROUTINE pre_init
