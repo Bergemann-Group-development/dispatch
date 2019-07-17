@@ -267,9 +267,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             assert(iv in patch.keys),'variable key "'+iv+'" unknown'
 
         if hasattr(patch,'aux'):
-            print(iv, iv in patch.aux.vars.keys())
             if iv in patch.aux.vars.keys():
-                print('try')
                 v=patch.aux.var(iv)
                 return post_process(v,copy=copy,all=all)
         if iv=='ee' or iv=='E':
@@ -667,11 +665,5 @@ def attributes(patch):
             print ('{:>12}:  {}'.format(k,v))
 
 if __name__ == "__main__":
-    s=snapshot(2,verbose=1)
-    print(s.time)
-    for key in s.nml_list:
-        print(key)
-    obj=_param()
-    _add_nml_to(obj,s.nml_list['io_nml'])
-    _add_nml_list_to(obj,s.nml_list)
+    pass
 

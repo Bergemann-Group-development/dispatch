@@ -9,7 +9,8 @@ from __future__ import print_function
 
 import numpy as np
 
-def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],x=None,y=None,z=None,dir=2,verbose=0):
+def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],x=None,y=None,z=None,dir=2,
+                  i4=0,verbose=0):
     """
         assemble a plane from a unigrid experiment, where all
         patches have the same size and resolution
@@ -68,7 +69,12 @@ def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],x=None,y=None,z=None,dir=2,ve
         dirs=[2,0,1]
     f=np.zeros((n[dirs[1]],n[dirs[2]]))
     for p in pp:
+        if iv in p.keys or iv in p.idx.dict.values():
         data=p.data[iv] if hasattr(p,'data') else p.var(iv)
+            shape=data.shape
+            rank=len(shape)
+            if rank==4:
+                data=data[:,:,:,i4]
         if pp[0].no_mans_land:
             pn=p.n
         else:
