@@ -73,7 +73,7 @@ MODULE rt_mod
     class(gpatch_t), pointer :: patch                 ! pointer to MHD patch
     type(rt_boundaries_t)    :: rt_boundaries         ! RT boundary conditions
     integer                  :: n_warmup=5            ! number of initial solutions
-    integer                  :: n_lambda=4            ! number of frequency bins
+    integer                  :: n_bin=4               ! number of frequency bins
     integer                  :: n_omega=0             ! number of space-angles
     integer                  :: i_omega=0             ! space-angle index
     real, pointer            :: w_bin(:)              ! frequency weight
@@ -122,7 +122,7 @@ SUBROUTINE pre_init (self, link)
   class (link_t), pointer :: link
   !-----------------------------------------------------------------------------
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n
-  integer, save:: n_mu=3, n_phi=4, n_lambda=4, nt=3, n_warmup=3
+  integer, save:: n_mu=3, n_phi=4, n_bin=4, nt=3, n_warmup=3
   real,    save:: rt_grace=0.0
   real(8), save:: rt_llc(3)=-huge(1d0)
   real(8), save:: rt_urc(3)=+huge(1d0)
@@ -132,7 +132,7 @@ SUBROUTINE pre_init (self, link)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   namelist /sc_rt_params/ verbose, nt, rt_llc, rt_urc, rt_timestep, &
-    n_mu, n_phi, n_lambda, rt_grace, vertical_propagation, constant_q, &
+    n_mu, n_phi, n_bin, rt_grace, vertical_propagation, constant_q, &
     n_warmup
   !-----------------------------------------------------------------------------
   ! Read parameters
@@ -150,7 +150,7 @@ SUBROUTINE pre_init (self, link)
   self%on = .true.
   self%nt = nt
   self%n_warmup = n_warmup
-  self%n_lambda = n_lambda
+  self%n_bin = n_bin
   self%rt_grace = rt_grace
   self%rt_llc = rt_llc
   self%rt_urc = rt_urc
@@ -205,7 +205,7 @@ SUBROUTINE init (self)
   self%track   = .false.
   self%kind    = 'rt_t'
   call self%patch_t%setup(position=p%position, size=p%size, n=p%n, ng=[1,1,1], &
-                          nt=self%nt, nv = self%n_lambda, nw = 1)
+                          nt=self%nt, nv = self%n_bin, nw = 1)
   !-----------------------------------------------------------------------------
   ! Synchronize with MHD patch
   ! ---------------------------------------------------------------------------- 
@@ -249,7 +249,7 @@ SUBROUTINE init (self)
     !---------------------------------------------------------------------------
     ! Integration weights (w_bin is baked into the source function in this case)
     !---------------------------------------------------------------------------
-    allocate (self%w_bin (self%n_lambda))
+    allocate (self%w_bin (self%n_bin))
     self%w_bin = 1.0
     n_omega      = merge (1+self%n_phi*(self%n_mu-1), 0, self%n_mu > 0)
     n_omega      = 2*n_omega
@@ -266,9 +266,9 @@ SUBROUTINE init (self)
     !---------------------------------------------------------------------------
     ! Allocate data, belonging to the main task
     !---------------------------------------------------------------------------
-    allocate (self%rk (self%gn(1),self%gn(2),self%gn(3),self%n_lambda))
+    allocate (self%rk (self%gn(1),self%gn(2),self%gn(3),self%n_bin))
     allocate (self%tt (self%gn(1),self%gn(2),self%gn(3)))
-    allocate (self%src(self%gn(1),self%gn(2),self%gn(3),self%n_lambda))
+    allocate (self%src(self%gn(1),self%gn(2),self%gn(3),self%n_bin))
     call io%bits_mem(storage_size(self%tt  ),product(shape(self%tt )),'tt')
     call io%bits_mem(storage_size(self%rk  ),product(shape(self%rk )),'rk')
     call io%bits_mem(storage_size(self%src ),product(shape(self%src)),'src')
@@ -354,7 +354,7 @@ SUBROUTINE init_omega (self, i_omega)
   omega%it      = max(omega%nt-1,1)
   omega%new     = omega%nt
   omega%nw      = 1
-  omega%nv      = self%n_lambda
+  omega%nv      = self%n_bin
   ! -- allocate unsigned and pervolume
   allocate (omega%unsigned(omega%nv), omega%pervolume(omega%nv))
   omega%unsigned  = .false.
@@ -368,7 +368,7 @@ SUBROUTINE init_omega (self, i_omega)
   omega%t       = omega%time
   omega%dt      = omega%dtime
   omega%iit     = 1
-  allocate (omega%mem(self%gn(1),self%gn(2),self%gn(3),self%n_lambda,self%nt,1))
+  allocate (omega%mem(self%gn(1),self%gn(2),self%gn(3),self%n_bin,self%nt,1))
   call io%bits_mem(storage_size(omega%mem)   ,product(shape(omega%mem))   ,'q')
   omega%q => omega%mem(:,:,:,:,omega%it,1)
   omega%q = 0.0
@@ -570,7 +570,7 @@ SUBROUTINE update (self)
     ! -- multiply with the stored net intensities
     do i_omega=1,self%n_omega
       omega => self%omega(i_omega)
-      do i_bin=1,self%n_lambda
+      do i_bin=1,self%n_bin
         q = q + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
                 omega%mem(:,:,:,i_bin,omega%it,1)
       end do
