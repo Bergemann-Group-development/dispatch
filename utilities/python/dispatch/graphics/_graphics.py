@@ -152,7 +152,7 @@ def image_plane(snap,x=None,y=None,z=None,iv=0,verbose=1):
     pl.xlabel(labels[i][0])
     pl.ylabel(labels[i][1])
 
-def pdf(iout,run='',data='data',nbin=100,xlim=[-4,3],lnd=False):
+def pdf(iout,run='',data='data',iv='d',nbin=100,xlim=[-4,3],lnd=False):
     """ Plot the PDF of the density """
     s = di.snapshot(iout,run=run,data=data)
     n = nbin
@@ -163,7 +163,7 @@ def pdf(iout,run='',data='data',nbin=100,xlim=[-4,3],lnd=False):
         i += 1
         if i%1000==0:
             print('{:.0f%}'.format(i/len(s.patches)*100.0))
-        d = p.var('d')
+        d = p.var(iv)
         if lnd:
             logd = d/np.log(10.)
         else:
@@ -172,3 +172,7 @@ def pdf(iout,run='',data='data',nbin=100,xlim=[-4,3],lnd=False):
         htot += h
     pl.hist(bins[0:n],bins=bins,weights=htot,log=True,density=True)
     return bins,htot
+
+def unigrid_plane(sn,**kw):
+    import dispatch.select as dse
+    imshow(dse.unigrid_plane(sn,**kw))
