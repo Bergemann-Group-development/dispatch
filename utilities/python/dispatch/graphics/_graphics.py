@@ -35,10 +35,17 @@ def imshow(f,colorbar=None,origin='lower',interpolation='nearest',
     if verbose>0:
         print ('min:',f.min(),' max:',f.max())
     pl.imshow(np.transpose(f),origin=origin,interpolation=interpolation,cmap=cmap,**kw)
-    if update:
-        if type(colorbar)==matplotlib.colorbar.Colorbar:
-            colorbar.set_clim(f.min(),f.max())
-            colorbar.draw_all()
+    """ Check if there is an existing colorbar """
+    cb=None
+    ims=pl.gca().images
+    if len(ims)>0:
+        for im in ims:
+            if type(im.colorbar)==matplotlib.colorbar.Colorbar:
+                cb=im.colorbar
+    """ If a colorbar exists, update the limits - if not, make one """
+    if cb:
+        cb.set_clim(f.min(),f.max())
+        cb.draw_all()
     else:
         pl.colorbar()
 
