@@ -8,6 +8,7 @@ import numpy as np
 import dispatch.graphics as dg
 from time import time
 from ._dispatch_grid import GeometricFactors
+from ._aux import aux
 
 class _timer():
     def __init__(self):
@@ -50,6 +51,11 @@ def _p2():
 
 def _test():
     print ('a',_p2())
+
+def _pathjoin(d,f):
+    p=os.path.join(d,f)
+    p=p.replace('\\','/')
+    return p
 
 def _file(d,f):
     """ Join a dir and a filename, and check that the file exists
@@ -175,20 +181,12 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         if verbose==5:
             print (' iv, offset:',iv,patch.iout,patch.ntotal,patch.nv,offset)
 
-    def mem(iv,copy=None):
+    def mem(iv):
         """ Translage alphabetic variable keys to numeric """
         if type(iv)==type('d'):
             iv=patch.idx.dict[iv]
-        if copy != None:
-            use_copy=copy
-        else:
-            use_copy=snap.copy
-        if use_copy or _p2():
-            return np.copy(np.memmap(filed, dtype=np.float32,
-                offset=patch.offset[iv], mode='r', order='F', shape=shape))
-        else:
-            return np.memmap(filed, dtype=np.float32,
-                offset=patch.offset[iv], mode='r', order='F', shape=shape)
+        return np.memmap(filed, dtype=np.float32, offset=patch.offset[iv], 
+                         mode='r', order='F', shape=shape)
 
     def average_down(iv, axis=0):
         q = mem(iv)
@@ -232,9 +230,26 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         elif patch.guard_zones:
             l=patch.ng
             u=l+patch.n
+            """ check if v.rank does not match the normal patch size.
+            If so, compute the guard zone size, and adjust """
+            rank=min(len(v.shape),len(patch.gn))
+            if v.shape[0:rank] != tuple(patch.gn[0:rank]):
+                gn=np.array(v.shape)
+                ng2=np.copy(gn)
+                for i in range(len(patch.gn)):
+                    ng2[i]=patch.gn[i]-gn[i]
+                ng=ng2//2
+                n=gn-ng2
+                l=ng
+                u=l+n
             return v[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
         else:
             return
+
+    def post_process(v,copy=False,all=False):
+        if copy or _p2():
+            v=np.copy(v)
+        return internal(v,all=all)
 
     def var(iv,all=False,copy=None):
         """
@@ -246,33 +261,45 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         before multiplying by the data.
 
         """
-
-        if patch.kind[0:6]=='ramses':
-            if   iv=='ux':
-                v=mem('p1',copy=copy)/mem('d',copy=copy)
-            elif iv=='uy':
-                v=mem('p2',copy=copy)/mem('d',copy=copy)
-            elif iv=='uz':
-                v=mem('p3',copy=copy)/mem('d',copy=copy)
-            else:
-                v=mem(iv,copy=copy)
+        if type(iv)==int:
+            assert(iv in list(patch.idx.dict.values())),'variable index unknown'
         else:
-            if   iv=='u1' or iv=='ux':
+            assert(iv in patch.keys),'variable key "'+iv+'" unknown'
+
+        if hasattr(patch,'aux'):
+            print(iv, iv in patch.aux.vars.keys())
+            if iv in patch.aux.vars.keys():
+                print('try')
+                v=patch.aux.var(iv)
+                return post_process(v,copy=copy,all=all)
+        if iv=='ee' or iv=='E':
+            v=mem('e')/mem('d')
+        elif patch.kind[0:6]=='ramses':
+            if   iv=='ux' or iv=='u1' or iv=='vx':
+                v=mem('p1')/mem('d')
+            elif iv=='uy' or iv=='u2' or iv=='vy':
+                v=mem('p2')/mem('d')
+            elif iv=='uz' or iv=='u3' or iv=='vz':
+                v=mem('p3')/mem('d')
+            else:
+                v=mem(iv)
+        else:
+            if iv=='u1' or iv=='ux' or iv=='vx':
                 v=mem('p1')/xdown('d')
-            elif iv=='u2' or iv=='uy':
+            elif iv=='u2' or iv=='uy' or iv=='vy':
                 if patch.mesh_type != 'Cartesian':
                     v=mem('p2')/ydown('d')/patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
                 else:
                     v=mem('p2')/ydown('d')
-            elif iv=='u3' or iv=='uz':
+            elif iv=='u3' or iv=='uz' or iv=='vz':
                 if patch.mesh_type != 'Cartesian':
                     gf = patch.geometric_factors # shorthand
                     v=mem('p3')/zdown('d')/gf['h31c'][:,np.newaxis,np.newaxis]/gf['h32c'][np.newaxis,:,np.newaxis]
                 else:
                     v=mem('p3')/zdown('d')
             else:
-                v=mem(iv,copy=copy)
-        return internal(v,all=all)
+                v=mem(iv)
+        return post_process(v,copy=copy,all=all)
     return var
 
 class _patch():
@@ -317,6 +344,18 @@ class _patch():
             self.var=_var(self,self.filename,snap)
         else:
             self.var=_var(self,snap.datafiled,snap)
+        self.keys=list(snap.idx.dict.keys())
+        # attach an aux filaname, if it exists
+        auxfile='{:05d}.aux'.format(id)
+        auxfile=_pathjoin(snap.datadir,auxfile)
+        if os.path.isfile(auxfile):
+            self.auxfile=auxfile
+            self.aux=aux(id=id,io=snap.iout,file=auxfile)
+            self.keys.extend(self.aux.vars.keys())
+            extra=['ux','uy','uz','u1','u2','u3','ee','E']
+            self.keys.extend(extra)
+        else:
+            print(auxfile,'does not exist')
 
     def _h(self):
         idx=self.idx
@@ -329,6 +368,7 @@ class _patch():
             if idx.p3>=0: h[2,idx.p3]=-0.5
             if idx.b3>=0: h[2,idx.b3]=-0.5
         return h
+
     def cache(self,verbose=0):
         setattr(self,'o',_param())
         self.data={}
@@ -376,7 +416,7 @@ object takes both numeric and text key values: Examples:\n\
             p=p-i
             f = self.var(iv)[li[0]:ui[0],li[1]:ui[1],i  ]*(1.0-p) \
               + self.var(iv)[li[0]:ui[0],li[1]:ui[1],i+1]*p
-        if verbose:
+        if self.verbose:
             print('plane: i, p = {:d} {:.3f}'.format(i,p))
         return f
             
@@ -461,6 +501,7 @@ class snapshot():
         rundir=_dir(data,run)
         if datadir=='':
             datadir=_dir(rundir,'{:05d}'.format(iout))
+            self.datadir=datadir
         self.rundir=rundir
 
         files=[f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
@@ -515,7 +556,15 @@ class snapshot():
             if verbose==1:
                 print ('parsing',file)
             patch_dict=parse_patches(file)
+            """ 
+                At this point all metadata about patches is available in the
+                patch_dict, with patch IDs as keys.  This makes it possible to
+                scan for files that can supply both regular and auxiliary data 
+            """
             for id in sorted(patch_dict.keys()):
+                """ The _patch procedure collects all information about a patch
+                    into an instancc of the _patch class, and appends it to
+                    the snapshot.patches list """
                 p=_patch(id,patch_dict[id],self,rank)
                 self._add_axes(p)
                 # Append to array of patch instances
