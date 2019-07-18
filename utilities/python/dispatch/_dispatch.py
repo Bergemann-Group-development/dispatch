@@ -7,8 +7,8 @@ import f90nml
 import numpy as np
 import dispatch.graphics as dg
 from time import time
-from ._dispatch_grid import GeometricFactors
-from ._aux import aux
+from dispatch._dispatch_grid import GeometricFactors
+from dispatch._aux import aux
 
 class _timer():
     def __init__(self):
@@ -84,6 +84,14 @@ def _add_nml_to(obj,d,verbose=0):
         setattr(obj,key,value)
         if verbose==2:
             print('      adding property '+key+', with value',value)
+
+def map_var(p,iv):
+    """ Find the numeric index, if any, correspongind to a variable key """
+    if iv in p.keys['letters']:
+        jv=p.idx.dict[iv]
+    else:
+        jv=0
+    return jv
 
 class _param():
     pass
@@ -246,12 +254,14 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         else:
             return
 
-    def post_process(v,copy=False,all=False):
+    def post_process(v,copy=False,all=False,i4=0):
         if copy or _p2():
             v=np.copy(v)
+        if np.ndim(v)==4:
+            v=v[:,:,:,i4]
         return internal(v,all=all)
 
-    def var(iv,all=False,copy=None):
+    def var(iv,all=False,copy=None,i4=0):
         """
         Special logic to calculate velocities from momenta on the fly.
         If the data is in spherical or cylindrical coords., then it is the angular
@@ -262,42 +272,55 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
         """
         if type(iv)==int:
-            assert(iv in list(patch.idx.dict.values())),'variable index unknown'
+            assert(iv in patch.keys['numbers']),'variable index unknown'
         else:
-            assert(iv in patch.keys),'variable key "'+iv+'" unknown'
+            assert(iv in patch.all_keys),'variable key "'+iv+'" unknown'
 
+        """ Check if the index is numeric and corresponds to a cached array """
+        if hasattr(patch,'data'):
+            if iv in patch.data.keys():
+                v=patch.data[iv]
+                return post_process(v,all=all,copy=copy)
+
+        """ Check if the key corresponds to aux data """
         if hasattr(patch,'aux'):
             if iv in patch.aux.vars.keys():
                 v=patch.aux.var(iv)
                 return post_process(v,copy=copy,all=all)
-        if iv=='ee' or iv=='E':
-            v=mem('e')/mem('d')
-        elif patch.kind[0:6]=='ramses':
-            if   iv=='ux' or iv=='u1' or iv=='vx':
-                v=mem('p1')/mem('d')
-            elif iv=='uy' or iv=='u2' or iv=='vy':
-                v=mem('p2')/mem('d')
-            elif iv=='uz' or iv=='u3' or iv=='vz':
-                v=mem('p3')/mem('d')
+
+        """ Check special cases """
+        if iv in patch.keys['expressions']:
+            if iv=='ee' or iv=='E':
+                """ Expressions common to all solvers """
+                v=mem('e')/mem('d')
+            elif patch.kind[0:6]=='ramses':
+                """ Ramses solver expression """
+                if   iv=='ux' or iv=='u1' or iv=='vx':
+                    v=mem('p1')/mem('d')
+                elif iv=='uy' or iv=='u2' or iv=='vy':
+                    v=mem('p2')/mem('d')
+                elif iv=='uz' or iv=='u3' or iv=='vz':
+                    v=mem('p3')/mem('d')
             else:
-                v=mem(iv)
+                """ Stagger-like solver expressions """
+                if iv=='u1' or iv=='ux' or iv=='vx':
+                    v=mem('p1')/xdown('d')
+                elif iv=='u2' or iv=='uy' or iv=='vy':
+                    if patch.mesh_type != 'Cartesian':
+                        v=mem('p2')/ydown('d') \
+                          /patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
+                    else:
+                        v=mem('p2')/ydown('d')
+                elif iv=='u3' or iv=='uz' or iv=='vz':
+                    if patch.mesh_type != 'Cartesian':
+                        gf = patch.geometric_factors # shorthand
+                        v=mem('p3')/zdown('d')/gf['h31c'][:,np.newaxis,np.newaxis] \
+                         /gf['h32c'][np.newaxis,:,np.newaxis]
+                    else:
+                        v=mem('p3')/zdown('d')
         else:
-            if iv=='u1' or iv=='ux' or iv=='vx':
-                v=mem('p1')/xdown('d')
-            elif iv=='u2' or iv=='uy' or iv=='vy':
-                if patch.mesh_type != 'Cartesian':
-                    v=mem('p2')/ydown('d')/patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
-                else:
-                    v=mem('p2')/ydown('d')
-            elif iv=='u3' or iv=='uz' or iv=='vz':
-                if patch.mesh_type != 'Cartesian':
-                    gf = patch.geometric_factors # shorthand
-                    v=mem('p3')/zdown('d')/gf['h31c'][:,np.newaxis,np.newaxis]/gf['h32c'][np.newaxis,:,np.newaxis]
-                else:
-                    v=mem('p3')/zdown('d')
-            else:
-                v=mem(iv)
-        return post_process(v,copy=copy,all=all)
+            v=mem(iv)
+        return post_process(v,copy=copy,all=all,i4=i4)
     return var
 
 class _patch():
@@ -342,18 +365,27 @@ class _patch():
             self.var=_var(self,self.filename,snap)
         else:
             self.var=_var(self,snap.datafiled,snap)
-        self.keys=list(snap.idx.dict.keys())
+            
+        """ add a comprehensive set of variable keys """
+        self.keys={}
+        self.keys['letters']=list(snap.idx.dict.keys())
+        self.keys['numbers']=list(snap.idx.dict.values())
+        self.keys['expressions']=['ux','uy','uz','u1','u2','u3','ee','E']
         # attach an aux filaname, if it exists
         auxfile='{:05d}.aux'.format(id)
         auxfile=_pathjoin(snap.datadir,auxfile)
         if os.path.isfile(auxfile):
             self.auxfile=auxfile
             self.aux=aux(id=id,io=snap.iout,file=auxfile)
-            self.keys.extend(self.aux.vars.keys())
-            extra=['ux','uy','uz','u1','u2','u3','ee','E']
-            self.keys.extend(extra)
+            self.keys['aux']=self.aux.vars.keys()
         else:
             print(auxfile,'does not exist')
+        
+        """ Now collect all keys in a single list """
+        all=[]
+        for key_list in self.keys.values():
+            all.extend(key_list)
+        self.all_keys=all
 
     def _h(self):
         idx=self.idx

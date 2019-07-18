@@ -59,13 +59,13 @@ def plot(f,**kw):
 
 def plot_values_along(pp,pt=[0.5,0.5,0.5],**kw):
     """ Plot values along direction dir={0,1,2}, through point pt=[x,y,z] """
-    kv = {'dir':0, 'verbose':0, 'all':False, 'iv':0, 'var':None}
+    kv = {'dir':0, 'verbose':0, 'all':False, 'iv':0, 'i4':0, 'var':None}
     kw,kv = _kw_extract(kw,kv)
     plot(ds.values_along(pp,pt,iv=kv['iv'],dir=kv['dir'],all=kv['all']),**kw)
 
 def plot_patch_values_along(pp_in,pt=[0.5,0.5,0.5],hold=False,**kw):
     """ Plot values along direction dir={0,1,2}, through point pt=[x,y,z] """
-    kv = {'dir':0, 'verbose':0, 'all':False, 'iv':0, 'var':None}
+    kv = {'dir':0, 'verbose':0, 'all':False, 'iv':0, 'i4':0, 'var':None}
     kw,kv = _kw_extract(kw,kv)
     pp = ds.patches_along(pp_in,pt,dir=kv['dir'],verbose=kv['verbose'])
     xmin,xmax = ds.minmax_patches(pp,dir=kv['dir'])
@@ -152,7 +152,7 @@ def image_plane(snap,x=None,y=None,z=None,iv=0,verbose=1):
     pl.xlabel(labels[i][0])
     pl.ylabel(labels[i][1])
 
-def pdf(iout,run='',data='data',iv='d',nbin=100,xlim=[-4,3],lnd=False):
+def pdf(iout,run='',data='data',iv='d',i4=0,nbin=100,xlim=[-4,3],lnd=False):
     """ Plot the PDF of the density """
     s = di.snapshot(iout,run=run,data=data)
     n = nbin
@@ -163,7 +163,7 @@ def pdf(iout,run='',data='data',iv='d',nbin=100,xlim=[-4,3],lnd=False):
         i += 1
         if i%1000==0:
             print('{:.0f%}'.format(i/len(s.patches)*100.0))
-        d = p.var(iv)
+        d = p.var(iv,i4=i4)
         if lnd:
             logd = d/np.log(10.)
         else:

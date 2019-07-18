@@ -118,7 +118,7 @@ def indices_and_weights(p,point=[0.5,0.5,0.5],iv=0):
     #print(' after:',indices,weights)
     return indices, weights
 
-def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,var=None,verbose=0,all=0):
+def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,i4=0,var=None,verbose=0,all=0):
     ''' Return s,f(s) with s the coordinates and f the values in the iv
         slot of data, taken along the direction v -- so far restricted
         to axis values
@@ -127,7 +127,7 @@ def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,var=None,verbose=0,all=0):
     ss=[]
     ff=[]
     ii,w=indices_and_weights(p,point,iv)
-    data=p.data[iv] if hasattr(p,'data') else p.var(iv)
+    data=p.var(iv,i4=i4)
     ione = (0,1)[p.gn[0] > 1]
     jone = (0,1)[p.gn[1] > 1]
     kone = (0,1)[p.gn[2] > 1]
