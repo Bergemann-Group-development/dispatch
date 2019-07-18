@@ -22,6 +22,7 @@ MODULE rt_integral_mod
     procedure:: bilinear
     procedure:: calculate_offsets
     procedure:: solve1
+    procedure:: solve2
     procedure, nopass:: diagnostics
   end type
   integer, save:: verbose=0, order=3
@@ -115,9 +116,9 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
     if (dir==1) then
       call self%solve1 (k3, s3, q3, q(i,:,:,:), dr, l, u, debug)
     else if (dir==2) then
-      call self%solve1 (k3, s3, q3, q(:,i,:,:), dr, l, u, debug)
+      call self%solve2 (k3, s3, q3, q(:,i,:,:), dr, l, u, debug)
     else
-      call self%solve1 (k3, s3, q3, q(:,:,i,:), dr, l, u, debug)
+      call self%solve2 (k3, s3, q3, q(:,:,i,:), dr, l, u, debug)
     end if
   end do
   deallocate (k3, s3, q3)
@@ -377,6 +378,53 @@ SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u, debug)
   end do
   call trc_end (itimer)
 END SUBROUTINE solve1
+
+SUBROUTINE solve2 (self, k, s, qin, qout, dr, l, u, debug)
+  class(rt_integral_t):: self
+  real, dimension(:,:,:,:) :: k, s, qin
+  real, dimension(:,:,:) :: qout
+  integer:: l(3), u(3)
+  real:: dr
+  logical:: debug
+  !.............................................................................
+  integer:: i1, i2, ib, m(4), icase
+  real:: dsdtau1, dsdtau2, d2sdtau1, d2sdtau2, ex0, ex1, ex2, dtaumin, dtaumax
+  real(8), pointer:: z(:)
+  real, dimension(size(k,1)):: dtau1, dtau2
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trc_begin ('rt_integral_t%solve1', 1, itimer=itimer)
+  m = shape(k)
+  do ib=1,m(3)
+    do i2=l(2),u(2)
+      dtau1(l(1):u(1)) = dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,1))
+      dtau2(l(1):u(1)) = dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,3))
+        do i1=l(1),u(1)
+          ex0 = exp(-dtau1(i1))
+          ex1 = 1.-ex0
+          ex2 = ex1 - dtau1(i1)*ex0
+          dsdtau1  =     (s(i1,i2,ib,2) - s(i1,i2,ib,1))/dtau1(i1)
+          dsdtau2  =     (s(i1,i2,ib,3) - s(i1,i2,ib,2))/dtau2(i1)
+          d2sdtau1 = (dsdtau2 * dtau1(i1) + dsdtau1 * dtau2(i1))/(dtau1(i1)+dtau2(i1))
+          d2sdtau2 = (dsdtau2 - dsdtau1)*2.0/(dtau1(i1)+dtau2(i1))
+          
+          qout(i1,i2,ib) = qin(i1,i2,ib,1)*ex0 &
+                         - d2sdtau1       *ex1 &
+                         + d2sdtau2       *ex2 
+        end do
+    end do
+    if (verbose > 1 .and. debug) then
+      write(io_unit%log,1) ' rt_integral_t%solve1: ib, dt =', &
+        ib, icase,  dtau1(l(1):l(1)+9)
+      write(io_unit%log,1) ' rt_integral_t%solve1: ib, qi =', &
+        ib, icase,  qin(l(1):l(1)+9,(l(2)+u(2))/2,ib,1)
+      write(io_unit%log,1) ' rt_integral_t%solve1: ib, qo =', &
+        ib, icase, qout(l(1):l(1)+9,(l(2)+u(2))/2,ib)
+      1 format(a,i4,i2,1p,10e10.2)
+    end if
+  end do
+  call trc_end (itimer)
+END SUBROUTINE solve2
 
 !===============================================================================
 SUBROUTINE diagnostics (label)
