@@ -21,8 +21,7 @@ MODULE aux_mod
   !
   integer, save:: max_select=30
   type, public, extends(dll_t):: aux_t
-    integer:: unit
-    integer:: iout_prv=-1
+    integer:: unit=-1
   contains
     procedure:: prepare
     procedure:: new_item
@@ -187,14 +186,17 @@ SUBROUTINE output_aux (self, iout, id, testfile)
   logical:: ok
   integer:: i
   !-----------------------------------------------------------------------------
+  ! Make sure only one output runs at a time, so there is no interference of
+  ! reading stdin and deciding of to write messages only once
+  !-----------------------------------------------------------------------------
   call trace%begin ('aux_t%output')
-  call self%prepare 
+  !$omp critical (aux_cr)
+  call self%prepare (iout)
   if (present(testfile)) then
     filename = testfile
   else
     write (filename,'(a,i5.5"/",i5.5,".aux")') trim(io%outputname), iout, id
   end if
-  !$omp critical (input_cr)
   open (self%unit, file=filename, form='unformatted', access='sequential', &
     status='unknown')
   if (verbose > 2) &
@@ -213,7 +215,8 @@ SUBROUTINE output_aux (self, iout, id, testfile)
     end do
     if (ok) then
       if (verbose > 0 .or. iout > iout_prv) &
-        write (stdout,'(a,i5,2x,a)') 'aux_t%output: snapshot =', iout, trim(item%name)
+        write (stdout,'(a,i5,2x,a)') 'aux_t%output: snapshot =', &
+          iout, trim(item%name)
       call item%output (self%unit) 
     end if
     end select
@@ -221,27 +224,26 @@ SUBROUTINE output_aux (self, iout, id, testfile)
   end do
   iout_prv = iout
   close (self%unit)
-  !$omp end critical (input_cr)
+  !$omp end critical (aux_cr)
   call trace%end
 END SUBROUTINE output_aux
 
 !===============================================================================
-SUBROUTINE prepare (self)
+SUBROUTINE prepare (self, iout)
   class(aux_t):: self
+  integer:: iout
   !.............................................................................
   namelist /aux_params/ select, verbose
   integer:: iostat, i
   !-----------------------------------------------------------------------------
   call trace%begin ('aux_t%open')
-  if (first_time) then
+  if (self%unit < 0) then
     !---------------------------------------------------------------------------
     ! The first time we acquire a unique unit number, and allocate select
     !---------------------------------------------------------------------------
-    !$omp critical (input_cr)
-    if (first_time) then
-      first_time = .false.
-      uniq = uniq+1  
-      self%unit = uniq
+    uniq = uniq+1  
+    self%unit = uniq
+    if (.not.allocated(select)) then
       allocate (select(max_select))
       select(:) = ''
       rewind (stdin)
@@ -253,16 +255,15 @@ SUBROUTINE prepare (self)
         end if
       end do
       write (stdout,*) '/'
-     end if
-    !$omp end critical (input_cr)
+    end if
   else
     !---------------------------------------------------------------------------
-    ! Should add logics here to only do this once per new snapshot
+    ! Only do this once per new snapshot
     !---------------------------------------------------------------------------
-    !$omp critical (input_cr)
-    rewind (stdin)
-    read (stdin, aux_params, iostat=iostat)
-    !$omp end critical (input_cr)
+    if (iout > iout_prv) then
+      rewind (stdin)
+      read (stdin, aux_params, iostat=iostat)
+    end if
   end if
   call trace%end
 END SUBROUTINE prepare
