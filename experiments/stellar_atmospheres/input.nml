@@ -12,9 +12,9 @@
 &gravity_params     on=t constant=27500 axis=3 position=0.0 mass=-1 minrad=-1 /
 &rt_setup_params    on=t verbose=0 /
 &rt_integral_params verbose=0 /
-&sc_rt_params       verbose=0 nt=1 n_mu=2 n_phi=4 n_lambda=4 rt_timestep=0.0025
-                    rt_grace=0.01 rt_llc=0,0,-0.5 rt_urc=6,6,0.45
-                    n_warmup=2 vertical_propagation=t /
+&sc_rt_params       verbose=0 nt=5 n_mu=3 n_phi=12 n_bin=4 rt_timestep=0.0025
+                    rt_grace=0.02 rt_llc=0,0,-0.5 rt_urc=6,6,0.45
+                    n_warmup=6 vertical_propagation=t constant_q=f cdtd=1.0 courant=1.0/
 &newton_params      on=t axis=3 position=-0.5 scale=0.12 ee0=5.3 ee1=0.4 time=0.07 /
 &hybrid_rt_params   /
 &eos_params         /
@@ -24,7 +24,7 @@
 &io_params          verbose=0 do_trace=f omp_trace=f do_output=t id_debug=0
                     restart=-1  guard_zones=t nml_version=1 /
 !out_params         end_time=2.52 out_time=0.05 print_time=0 /
-&out_params         end_time=1.01 out_time=0.05 print_time=0 /
+&out_params         end_time=30.01 out_time=0.05 print_time=0 /
 &aux_params         verbose=0 select='tt','q','rkap','src','qout' /
 
 ! -- Stagger code parameters ---------------------------------------------------

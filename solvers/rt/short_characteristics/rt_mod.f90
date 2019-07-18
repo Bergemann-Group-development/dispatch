@@ -79,16 +79,20 @@ MODULE rt_mod
     real, pointer            :: w_bin(:)              ! frequency weight
     type(rt_t), pointer      :: omega(:)  => null()   ! different RT directions
     type(rt_t), pointer      :: main => null()        ! point to main RT task
+    real                     :: cdtd = 1.0
     real                     :: mu, rt_phi, w         ! mu, phi, weights
+    real                     :: epsilon =1.0          ! scattering coefficient
     real(8)                  :: eos_time              ! laste EOS time
     real                     :: rt_grace=0.01         ! deal with roundoff        
     real(8)                  :: rt_llc(3)=0d0         ! lower left corner
     real(8)                  :: rt_urc(3)=0d0         ! upper right corner
     real(8)                  :: rt_timestep=0.01_8    ! constant time step
+    real(8)                  :: warmup_end_time=0d0   ! time when RT time should start varying
     integer                  :: n_mu=3, n_phi=4       ! no. of angles
     logical                  :: on=.false.            ! allows local turn-off
     logical                  :: vertical_propagation=.false. ! see code
     logical                  :: constant_q=.true.     ! 0-order in time
+    logical                  :: warmup_done=.false.
     real, pointer            :: q(:,:,:,:)            ! net radiative heating
     real, pointer            :: tt(:,:,:)             ! EOS temperature
     real, pointer            :: rk(:,:,:,:)           ! EOS rho*kappa
@@ -123,6 +127,7 @@ SUBROUTINE pre_init (self, link)
   !-----------------------------------------------------------------------------
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n
   integer, save:: n_mu=3, n_phi=4, n_bin=4, nt=3, n_warmup=3
+  real, save   :: courant=0.5, cdtd=1.0
   real,    save:: rt_grace=0.0
   real(8), save:: rt_llc(3)=-huge(1d0)
   real(8), save:: rt_urc(3)=+huge(1d0)
@@ -133,7 +138,7 @@ SUBROUTINE pre_init (self, link)
   !-----------------------------------------------------------------------------
   namelist /sc_rt_params/ verbose, nt, rt_llc, rt_urc, rt_timestep, &
     n_mu, n_phi, n_bin, rt_grace, vertical_propagation, constant_q, &
-    n_warmup
+    n_warmup, courant, cdtd
   !-----------------------------------------------------------------------------
   ! Read parameters
   !-----------------------------------------------------------------------------
@@ -159,13 +164,8 @@ SUBROUTINE pre_init (self, link)
   self%constant_q = constant_q
   self%n_mu  = n_mu
   self%n_phi = n_phi
-  !---------------------------------------------------------------------------
-  ! Request additional variable slot indices in patches with RT
-  !---------------------------------------------------------------------------
-  if (self%on) then
-    self%qr => self%mem(:,:,:,1,1,1)
-    call self%patch%aux%register ('qr', self%qr)
-  end if
+  self%courant = courant
+  self%cdtd    = cdtd
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -218,6 +218,7 @@ SUBROUTINE init (self)
   self%llc_nat  = p%llc_nat
   self%restart  = p%restart
   self%time     = p%time - (self%n_warmup+0.5)*self%rt_timestep
+  self%warmup_end_time = p%time
   self%eos_time = self%time - self%rt_timestep
   self%iit      = 1
   self%mu       = 1.0
@@ -331,6 +332,13 @@ SUBROUTINE init (self)
     call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
   else
     call self%dealloc()
+  end if
+  !---------------------------------------------------------------------------
+  ! Request additional variable slot indices in patches with RT
+  !---------------------------------------------------------------------------
+  if (self%on) then
+    self%qr => self%mem(:,:,:,1,self%it,1)
+    call self%patch%aux%register ('qr', self%qr)
   end if
   call trace%end()
 END SUBROUTINE init
@@ -499,20 +507,28 @@ END SUBROUTINE setup_boundaries
 SUBROUTINE pre_update (self)
   class(rt_t):: self
   !.............................................................................
-  integer:: l(3), u(3)
-  real, dimension(:,:,:), pointer:: q
+  integer:: l(3), u(3), jt(2)
+  real:: pt(2)
+  real, dimension(:,:,:), pointer:: q, q2
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. self%on) return
   call trace%begin ('rt_t%pre_update', itimer=itimer)
+  l = self%patch%mesh%li - self%mesh%ng
+  u = self%patch%mesh%ui + self%mesh%ng
   if (self%constant_q) then
-    l = self%patch%mesh%li - self%mesh%ng
-    u = self%patch%mesh%ui + self%mesh%ng
     q => self%mem(:,:,:,1,self%it,1)
     self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
     self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + q
   else
-    call io%abort("time-interpolated q in rt_t%pre_update is not implemented yet")
+    call self%time_interval (self%patch%time, jt, pt, all=.true.)
+    q => self%mem(:,:,:,1,jt(1),1)
+    q2 => self%mem(:,:,:,1,jt(2),1)
+    self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+    self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + &
+    q*pt(1) + q2*pt(2)
+    !print *, 'jt, pt', jt, pt, minval(q), minval(q2), maxval(q), maxval(q2)
+    !print *, 'var q', minval(self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3))),maxval(self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)))
   end if
   call trace%end(itimer)
 END SUBROUTINE pre_update
@@ -574,17 +590,29 @@ SUBROUTINE update (self)
         q = q + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
                 omega%mem(:,:,:,i_bin,omega%it,1)
       end do
+      omega%dt_fixed = self%dtime
     end do
+    !print *, 'new q collected', minval(q), maxval(q)
     if (verbose > 0) then
       call self%stats (q, 'rt_t%update: q')
     end if
+    !
     call self%rt_eos (self%time)
+    ! --------------------------------------------------------------------------
+    ! set a new dtime
+    ! --------------------------------------------------------------------------
+    call self%courant_condition
+    !print *, 'current q', minval(self%mem(:,:,:,1,self%new,1)),maxval(self%mem(:,:,:,1,self%new,1))
+    !print *, 'time, u_max, dtime(rt) ',self%time, self%u_max, self%dtime, self%dt_fixed
   !-----------------------------------------------------------------------------
   ! RT sub-task, solving for the radiation field in a given direction
   !-----------------------------------------------------------------------------
   else
-    ! -- Call RT solver, storing result in %it slot, at time = t(%it)
-    self%q => self%mem(:,:,:,:,self%it,1)
+    ! -- copy the result of the previous timestep
+    self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)
+    ! -- Call RT solver, storing result in %new slot, at time = t(%it)
+    
+    self%q => self%mem(:,:,:,:,self%new,1)
     call self%solve ()
     if (verbose > 0) then
       call self%stats (q, 'rt_t%update: self%q')
@@ -595,11 +623,11 @@ SUBROUTINE update (self)
   ! to update more often, thus propagation the solution by about the same amount
   ! vertically.  NOTE (FIXME):  Purely horizontal rays need special treatment
   !-----------------------------------------------------------------------------
-  if ((self%vertical_propagation).and.(self%i_omega>0)) then
-    self%dtime = self%dt_fixed*abs(self%mu)
-  else
-    self%dtime = self%dt_fixed
-  end if
+  !if ((self%vertical_propagation).and.(self%i_omega>0)) then
+  !  self%dtime = self%dt_fixed*abs(self%mu)
+  !else
+  !  self%dtime = self%dt_fixed
+  !end if
   call self%rotate()
   call trace%end (itimer)
 END SUBROUTINE update
@@ -609,23 +637,24 @@ END SUBROUTINE update
 !> critical region to guard against duplicate calculations when multi-threading.
 !===============================================================================
 SUBROUTINE rt_eos (self, time)
+  USE units_mod
   class (rt_t):: self
   real(8):: time
   !.............................................................................
   class (gpatch_t), pointer :: patch
   integer, save:: itimer=0
-  real, dimension(:,:,:), pointer:: d, e
-  integer:: m(4), ib, i3, jt(2), l(3), u(3)
-  real:: z, pt(2)
+  real, dimension(:,:,:), pointer:: d, e, pgas, fmax
+  integer:: m(4), ib, i3, jt(2), l(3), u(3), i
+  real:: z, pt(2), u_max, stefan
   !-----------------------------------------------------------------------------
-  if (time > self%eos_time) then
+  !if (time > self%eos_time) then
     !$omp critical (eos_cr)
-    if (time > self%eos_time) then
+  !  if (time > self%eos_time) then
       call omp_eos
-      self%eos_time = time
-    end if
+ !     self%eos_time = time
+ !   end if
     !$omp end critical (eos_cr)
-  end if
+!  end if
   return
 contains
 subroutine omp_eos
@@ -634,6 +663,7 @@ subroutine omp_eos
   call patch%time_interval (time, jt, pt, all=.true.)
   m = shape(self%rk)
   allocate (d(m(1),m(2),m(3)),e(m(1),m(2),m(3)))
+  allocate (pgas(m(1),m(2),m(3)),fmax(m(1),m(2),m(3)))
   !-----------------------------------------------------------------------------
   l = patch%mesh%li - self%mesh%ng
   u = patch%mesh%ui + self%mesh%ng
@@ -645,7 +675,7 @@ subroutine omp_eos
     call self%stats (d, 'rt_eos')
     call self%stats (e, 'rt_eos')
   end if
-  call eos%lookup_table (m, d=d, e=e, rk=self%rk, src=self%src, tt=self%tt)
+  call eos%lookup_table (m, d=d, e=e, rk=self%rk, src=self%src, tt=self%tt, pg=pgas)
   if (verbose > 2) then
     write(io%output,*) patch%id,'rt_t%rt_eos:  d',minval(d),maxval(d)
     write(io%output,*) patch%id,'rt_t%rt_eos:  e',minval(e),maxval(e)
@@ -653,7 +683,25 @@ subroutine omp_eos
     write(io%output,*) patch%id,'rt_t%rt_eos: tt',minval(self%tt),maxval(self%tt), &
       scaling%temp
   end if
-  deallocate (d, e)
+  
+  if (.not.self%warmup_done) then
+    if (self%time > self%warmup_end_time) then
+      self%warmup_done=.true.
+      self%dt_fixed = -1.0
+    end if
+  end if
+  ! ----------------------------------------------------------------------------
+  ! Compute radiative diffusion speed
+  ! ----------------------------------------------------------------------------
+  u_max = 0.0
+  stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
+  do i =1, eos%n_lambda
+    fmax = (pgas/d)**4/pgas*(self%rk(:,:,:,i)*minval(self%ds))
+    fmax = fmax/(1.+(self%rk(:,:,:,i)*minval(self%ds))**2)
+    u_max = stefan*16./3.*self%fmaxval(fmax)*self%courant/self%cdtd*self%epsilon
+    self%u_max = max(self%u_max,u_max)
+  end do
+  deallocate (d, e, fmax, pgas)
   call trace%end (itimer)
 end subroutine omp_eos
 END SUBROUTINE rt_eos
@@ -723,6 +771,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   ! ----------------------------------------------------------------------------
   if (.not.(self%on)) then
     needed = .false.; needs_me = .false.; download = .false.
+    call trace%end()
     return
   end if
   ! ----------------------------------------------------------------------------
@@ -741,6 +790,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
       ! if nbor RT is not on, we don't need any relations to it.
       ! ------------------------------------------------------------------------
       needed = .false.; needs_me = .false.; download = .false.
+      call trace%end()
       return
     end if
     !
