@@ -177,6 +177,7 @@ SUBROUTINE init (self, label)
   ! These must be set before reading input snapshots
   !-----------------------------------------------------------------------------
   io%ntask = self%task_list%na
+  io%nwrite = self%task_list%na
   io%ntotal = product(self%dims)
   write(stdout,*) 'ntask, ntotal =', io%ntask, io%ntotal
   !-----------------------------------------------------------------------------

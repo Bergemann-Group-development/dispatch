@@ -96,7 +96,6 @@ SUBROUTINE init (patch)
   !$omp end critical (input_cr)
   if (io%ntask==0) &
     call io%abort ('parallel_io_t%init: io%ntask == 0')
-  io%nwrite = io%ntask
   call mpi_io%init
   call mpi_io%set (nwrite=io%nwrite*(io%time_derivs+1))
   if (io%method=='parallel') then

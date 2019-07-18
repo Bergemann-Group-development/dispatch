@@ -141,7 +141,6 @@ SUBROUTINE output (self, patch, experiment_name)
   if (io%ntotal<=0) then
     call mpi%abort ('io%ntotal, which should be the total number of tasks, is zero')
   end if
-  io%nwrite = io%ntask                        ! Authoritative -- set ONLY here!
   if (io%verbose > 1) &
     write (io_unit%log,*) 'io%nwrite =', io%nwrite
   !-----------------------------------------------------------------------------
