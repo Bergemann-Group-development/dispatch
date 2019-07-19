@@ -410,7 +410,7 @@ SUBROUTINE solve2 (self, k, s, qin, qout, dr, l, u, debug)
           
           qout(i1,i2,ib) = qin(i1,i2,ib,1)*ex0 &
                          - d2sdtau1       *ex1 &
-                         + d2sdtau2       *ex2 
+                   + merge(d2sdtau2       *ex2, 0.0, dtau1(i1) > dtau_min) 
         end do
     end do
     if (verbose > 1 .and. debug) then
