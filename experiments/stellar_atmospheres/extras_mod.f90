@@ -142,7 +142,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------
-  call self%rt%init()                                                  ! RT
   call self%newton%init (self%link)                                    ! Newton
   !allocate (self%trace_particles)                                      ! tracep
   !self%connect%trace_particles => self%trace_particles                 ! tracep
@@ -152,6 +151,9 @@ SUBROUTINE init (self)
   !call self%spitzer%init(self%link)                                    ! spitzer
   !call self%spitzer%init (self%link)                                   ! spitzer
   call self%gravity%init (self%link)                                   ! gravity
+  call self%rt%init()                                                  ! RT
+  ! -- ensure consistency (a value is already set via rt%init)         ! experiment
+  self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
   !call sink_patch%init (self%link)                                     ! sinkp
   !allocate (self%patch_force)                                          ! sinkp
   !call self%patch_force%init                                           ! sinkp 

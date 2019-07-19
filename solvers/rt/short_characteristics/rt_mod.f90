@@ -717,7 +717,7 @@ SUBROUTINE solve (self)
   call trace%begin ('rt_t%solve', itimer=itimer)
   !-----------------------------------------------------------------------------
   call self%rt_boundaries%condition (mem=self%q, src=self%src, rk=self%rk, &
-                                     tt=self%tt, mu=self%mu, w=self%w)
+                                     tt=self%tt, mu=self%mu)
   call rt_integral%solve (self%rk, self%src, self%q, self%mesh, self%mu, &
                           self%rt_phi)
   call self%patch%aux%register ('rkap', self%rk )
