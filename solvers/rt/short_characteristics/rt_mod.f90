@@ -203,7 +203,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call self%init_unique
   self%track   = .false.
-  self%kind    = 'rt_t'
+  self%type    = 'rt_t'
+  self%kind    = 'rt_sc'
   call self%patch_t%setup(position=p%position, size=p%size, n=p%n, ng=[1,1,1], &
                           nt=self%nt, nv = self%n_bin, nw = 1)
   !-----------------------------------------------------------------------------
@@ -330,15 +331,9 @@ SUBROUTINE init (self)
                        self%nv,self%nt,self%nw))
     self%mem_allocated = .true.               ! mark
     call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
+    self%mem = 0.0
   else
     call self%dealloc()
-  end if
-  !---------------------------------------------------------------------------
-  ! Request additional variable slot indices in patches with RT
-  !---------------------------------------------------------------------------
-  if (self%on) then
-    self%qr => self%mem(:,:,:,1,self%it,1)
-    call self%patch%aux%register ('qr', self%qr)
   end if
   call trace%end()
 END SUBROUTINE init
@@ -379,7 +374,7 @@ SUBROUTINE init_omega (self, i_omega)
   allocate (omega%mem(self%gn(1),self%gn(2),self%gn(3),self%n_bin,self%nt,1))
   call io%bits_mem(storage_size(omega%mem)   ,product(shape(omega%mem))   ,'q')
   omega%q => omega%mem(:,:,:,:,omega%it,1)
-  omega%q = 0.0
+  omega%mem = 0.0
   ! -- allocate task link and set link%task --
   allocate (omega%link)
   omega%link%task => omega
@@ -529,6 +524,9 @@ SUBROUTINE pre_update (self)
     q*pt(1) + q2*pt(2)
     !print *, 'jt, pt', jt, pt, minval(q), minval(q2), maxval(q), maxval(q2)
     !print *, 'var q', minval(self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3))),maxval(self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)))
+      !---------------------------------------------------------------------------
+      q => self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3))
+    call self%patch%aux%register ('q', q)
   end if
   call trace%end(itimer)
 END SUBROUTINE pre_update
@@ -566,7 +564,6 @@ SUBROUTINE update (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. self%on) then
-    call io%abort ('some rts are off - check if that is expected and remove this abort')
     return
   end if
   call trace%begin ('rt_t%update', itimer=itimer)
