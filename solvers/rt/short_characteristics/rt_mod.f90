@@ -596,8 +596,10 @@ SUBROUTINE update (self)
     if (verbose > 0) then
       call self%stats (q, 'rt_t%update: q')
     end if
-    !
-    call self%rt_eos (self%time)
+    !---------------------------------------------------------------------------
+    time = min (self%time       + 0.5*self%rt_timestep, &
+                self%patch%time + 0.5*self%patch%dtime)
+    call self%rt_eos (time)
     ! --------------------------------------------------------------------------
     ! set a new dtime
     ! --------------------------------------------------------------------------
