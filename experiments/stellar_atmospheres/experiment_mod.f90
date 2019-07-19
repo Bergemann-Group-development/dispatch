@@ -338,10 +338,9 @@ SUBROUTINE boundary_condition3 (self)
           h_scale = tt_top/(scaling%temp*self%gravity%const_grav)
         end if
         d_ratio = exp((z(iz)-z(iz+1))/h_scale)
-        ee = e(ix,iy,li(3))/d(ix,iy,li(3))        
-        ee = ee_top*(1.-p) + ee*p
+        ee = e(ix,iy,li(3))/d(ix,iy,li(3))
         d (ix,iy,iz) = d (ix,iy,iz+1)*d_ratio
-        e (ix,iy,iz) = d (ix,iy,iz   )*ee
+        e (ix,iy,iz) = d (ix,iy,iz  )*ee
         px(ix,iy,iz) = px(ix,iy,iz+1)*d_ratio*p
         py(ix,iy,iz) = py(ix,iy,iz+1)*d_ratio*p
         pz(ix,iy,iz) = pz(ix,iy,iz+1)*d_ratio*P
