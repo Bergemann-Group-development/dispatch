@@ -532,20 +532,44 @@ SUBROUTINE pre_update (self)
 END SUBROUTINE pre_update
 
 !===============================================================================
-!> This is called from MHD tasks, after updates, with self = main, and we use it
-!> to copy the net heating and temperature arrays over to the MHD memory, for
-!> output.
+!> This is called from MHD tasks, after updates, with self = main RT task
 !===============================================================================
 SUBROUTINE post_update (self)
   class (rt_t) :: self
   !-----------------------------------------------------------------------------
+  class(gpatch_t), pointer:: mhd
   class(rt_t), pointer:: omega
-  integer:: l(3), u(3)
-  integer, save:: itimer=0
+  integer:: i
   !-----------------------------------------------------------------------------
   if (.not.self%on) return
-  call trace%begin ('rt_t%post_update', itimer=itimer)
-  call trace%end(itimer)
+  call trace%begin ('rt_t%post_update')
+  !-----------------------------------------------------------------------------
+  ! After the MHD update, for which a task_t%rotate() has not yet taken place,
+  ! we now know the timestep size and the time, and we can set these for all the
+  ! RT solvers.  When the task_t%rotate() updates the patch%time, that allows
+  ! the task_list_t%update() to call the RT tasks, and the settings below ensure
+  ! that their rotate() will update there time to the same time as the MHD task
+  !-----------------------------------------------------------------------------
+  if (.not. self%constant_q) then
+    mhd => self%patch
+    self%time  = mhd%time
+    self%dtime = mhd%dtime
+    do i=1,self%n_omega
+      omega => self%omega(i)
+      omega%time = mhd%time
+      !-------------------------------------------------------------------------
+      ! Inclined tasks advance their time a factor mu slower, and are thus forced
+      ! to update more often, to propagate the solution by about the same amount
+      ! vertically.  NOTE (FIXME):  Purely horizontal rays need special treatment
+      !-------------------------------------------------------------------------
+      if (self%vertical_propagation) then
+        omega%dtime = mhd%dtime*abs(omega%mu)
+      else
+        omega%dtime = mhd%dtime
+      end if
+    end do
+  end if
+  call trace%end
 END SUBROUTINE post_update
 
 !===============================================================================
@@ -581,15 +605,16 @@ SUBROUTINE update (self)
     q => self%mem(:,:,:,1,self%new,1)
     q = 0.0
     ! -- multiply with the stored net intensities
+    self%u_max = huge(1.0)
     do i_omega=1,self%n_omega
       omega => self%omega(i_omega)
       do i_bin=1,self%n_bin
         q = q + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
                 omega%mem(:,:,:,i_bin,omega%it,1)
+        self%u_max = min(self%u_max,omega%u_max)
       end do
       omega%dt_fixed = self%dtime
     end do
-    !print *, 'new q collected', minval(q), maxval(q)
     if (verbose > 0) then
       call self%stats (q, 'rt_t%update: q')
     end if
@@ -599,6 +624,7 @@ SUBROUTINE update (self)
     ! set a new dtime
     ! --------------------------------------------------------------------------
     call self%courant_condition
+    self%patch%u_max = min (self%patch%u_max, self%u_max)
     !print *, 'current q', minval(self%mem(:,:,:,1,self%new,1)),maxval(self%mem(:,:,:,1,self%new,1))
     !print *, 'time, u_max, dtime(rt) ',self%time, self%u_max, self%dtime, self%dt_fixed
   !-----------------------------------------------------------------------------
@@ -615,16 +641,6 @@ SUBROUTINE update (self)
       call self%stats (q, 'rt_t%update: self%q')
     end if
   end if
-  !-----------------------------------------------------------------------------
-  ! By advancing the time a factor mu slower for inclined tasks they are forced
-  ! to update more often, thus propagation the solution by about the same amount
-  ! vertically.  NOTE (FIXME):  Purely horizontal rays need special treatment
-  !-----------------------------------------------------------------------------
-  !if ((self%vertical_propagation).and.(self%i_omega>0)) then
-  !  self%dtime = self%dt_fixed*abs(self%mu)
-  !else
-  !  self%dtime = self%dt_fixed
-  !end if
   call self%rotate()
   call trace%end (itimer)
 END SUBROUTINE update
@@ -644,14 +660,14 @@ SUBROUTINE rt_eos (self, time)
   integer:: m(4), ib, i3, jt(2), l(3), u(3), i
   real:: z, pt(2), u_max, stefan
   !-----------------------------------------------------------------------------
-  !if (time > self%eos_time) then
+  if (time > self%eos_time) then
     !$omp critical (eos_cr)
-  !  if (time > self%eos_time) then
+    if (time > self%eos_time) then
       call omp_eos
- !     self%eos_time = time
- !   end if
+      self%eos_time = time
+    end if
     !$omp end critical (eos_cr)
-!  end if
+  end if
   return
 contains
 subroutine omp_eos
@@ -659,15 +675,20 @@ subroutine omp_eos
   patch => self%patch
   call patch%time_interval (time, jt, pt, all=.true.)
   m = shape(self%rk)
-  allocate (d(m(1),m(2),m(3)),e(m(1),m(2),m(3)))
   allocate (pgas(m(1),m(2),m(3)),fmax(m(1),m(2),m(3)))
   !-----------------------------------------------------------------------------
   l = patch%mesh%li - self%mesh%ng
   u = patch%mesh%ui + self%mesh%ng
-  d = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,jt(1),1)*pt(1) &
-    + patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,jt(2),1)*pt(2)
-  e = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,jt(1),1)*pt(1) &
-    + patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,jt(2),1)*pt(2)
+  if (self%constant_q) then
+    allocate (d(m(1),m(2),m(3)),e(m(1),m(2),m(3)))
+    d = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,jt(1),1)*pt(1) &
+      + patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,jt(2),1)*pt(2)
+    e = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,jt(1),1)*pt(1) &
+      + patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,jt(2),1)*pt(2)
+  else
+    d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
+    e => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,patch%it,1)
+  end if
   if (verbose > 0) then
     call self%stats (d, 'rt_eos')
     call self%stats (e, 'rt_eos')
@@ -679,8 +700,7 @@ subroutine omp_eos
     write(io%output,*) patch%id,'rt_t%rt_eos: rk',minval(self%rk),maxval(self%rk)
     write(io%output,*) patch%id,'rt_t%rt_eos: tt',minval(self%tt),maxval(self%tt), &
       scaling%temp
-  end if
-  
+  end if  
   if (.not.self%warmup_done) then
     if (self%time > self%warmup_end_time) then
       self%warmup_done=.true.
@@ -698,7 +718,10 @@ subroutine omp_eos
     u_max = stefan*16./3.*self%fmaxval(fmax)*self%courant/self%cdtd*self%epsilon
     self%u_max = max(self%u_max,u_max)
   end do
-  deallocate (d, e, fmax, pgas)
+  if (self%constant_q) then
+    deallocate (d, e)
+  end if
+  deallocate (fmax, pgas)
   call trace%end (itimer)
 end subroutine omp_eos
 END SUBROUTINE rt_eos
@@ -753,6 +776,8 @@ SUBROUTINE nbor_info (self, nbor)
     self%position, self%i_omega, self%mu, self%rt_phi
 END SUBROUTINE nbor_info
 
+!===============================================================================
+!===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(rt_t):: self
   class(task_t), pointer:: another

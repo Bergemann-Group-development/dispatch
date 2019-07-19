@@ -493,6 +493,7 @@ SUBROUTINE pde (self)
 END SUBROUTINE pde
 
 !===============================================================================
+!> This procedure is called by solver_t%update, before it calls mhd_t%update
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(mhd_t):: self
@@ -545,13 +546,18 @@ SUBROUTINE update (self)
   end if
   if (self%mhd) call self%divB_clean
   call self%pde
+  !-----------------------------------------------------------------------------
+  ! The RT updates that take place before the mhd_t%update may modify self%u_max,
+  ! and hence affect the size of the timestep self%dtime
+  !-----------------------------------------------------------------------------
+  call self%extras_t%post_update
   call self%courant_condition
   if (verbose>2) &
     call self%check_density('before timestep')
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh, self%lock)
   call self%check_density(' after timestep')
-  !-----------------------------------------------------------------------------
   call self%counter_update
+  !-----------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE update
 

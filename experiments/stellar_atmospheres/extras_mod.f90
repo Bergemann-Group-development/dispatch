@@ -215,7 +215,8 @@ SUBROUTINE pre_update (self)
 END SUBROUTINE pre_update
 
 !===============================================================================
-!> The post_update hierarchy is called after the solver updates
+!> The post_update hierarchy is called after the solver updates, and might be
+!> called from either solver_t%update, or an intercepting from mhd_t%post_update
 !===============================================================================
 SUBROUTINE post_update (self)
   class(extras_t):: self
