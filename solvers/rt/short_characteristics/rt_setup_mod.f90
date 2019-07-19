@@ -21,7 +21,8 @@ MODULE rt_setup_mod
   type, public:: rt_setup_t
   contains
     procedure:: init
-    procedure:: init_rt_nbors
+    procedure:: init_rt_nbors_sc
+    procedure:: init_rt_nbors_hybrid
   end type
   type(rt_setup_t), public:: rt_setup
 CONTAINS
@@ -112,6 +113,7 @@ SUBROUTINE init (self, task_list)
           n_rt = n_rt + 1
         end do
         omega => task%rt%omega(1)
+        rt => task%rt
       end if
     end select
     link => link%next
@@ -119,6 +121,9 @@ SUBROUTINE init (self, task_list)
   write (stdout,*) 'rt_setup: n_mhd, n_rt =', n_mhd, n_rt
   if (associated(omega)) then
     patch => omega
+    call data_io%register_kind(patch)
+  else if (associated(rt)) then
+    patch => rt
     call data_io%register_kind(patch)
   end if
   !-----------------------------------------------------------------------------
@@ -130,7 +135,13 @@ SUBROUTINE init (self, task_list)
     select type (task)
     class is (solver_t)
       if (task%rt%on) then
-        call self%init_rt_nbors (task)
+        if (trim(task%rt%kind)=='rt_sc') then
+          call self%init_rt_nbors_sc (task)
+        else if (trim(task%rt%kind)=='rt_sc') then
+          call self%init_rt_nbors_hybrid (task)
+        else
+          call io%abort("rt_setup_mod:: unknown RT solver kind")
+        end if
       end if
     end select
     link => link%next
@@ -167,7 +178,7 @@ END SUBROUTINE init
 !> Each MHD depends on the main RT task, which again depends on the MHD task,
 !> and all its omega sub-tasks.
 !===============================================================================
-SUBROUTINE init_rt_nbors (self, mhd)
+SUBROUTINE init_rt_nbors_sc (self, mhd)
   class (rt_setup_t):: self
   class (solver_t):: mhd
   !.............................................................................
@@ -223,7 +234,46 @@ SUBROUTINE init_rt_nbors (self, mhd)
   !needed=.true.; needs_me=.true.; download=.false.
   call init_nbor_pair (mhd, needed, rt, needs_me, download)
   call trace%end
-END SUBROUTINE init_rt_nbors
+END SUBROUTINE init_rt_nbors_sc
+
+!===============================================================================
+!> Collect RT nbors. Each MHD depends on the RT task as well.
+!===============================================================================
+SUBROUTINE init_rt_nbors_hybrid (self, mhd)
+  class (rt_setup_t):: self
+  class (solver_t):: mhd
+  !.............................................................................
+  integer:: i_omega
+  class(rt_t), pointer:: rt, omega, upstream
+  class(link_t), pointer:: nbor, new
+  class(task_t), pointer:: nb_task
+  logical:: needed, needs_me, download
+  !-----------------------------------------------------------------------------
+  call trace%begin ('rt_setup_t%init_nbors')
+  rt => mhd%rt
+  call rt%clear(bits%init_nbors)
+  !---------------------------------------------------------------------------
+  ! Loop over all MHD nbors, looking at their RT tasks
+  !---------------------------------------------------------------------------
+  nbor => mhd%link%nbor
+  do while (associated(nbor))
+    nb_task => nbor%task
+    select type (nb_task)
+    class is (solver_t)
+      if (nb_task%rt%on) then
+        new%link => nb_task%rt%link
+        new%task => new%link%task
+        call rt%link%add_nbor_by_rank(rt%link%nbor, new)
+      end if
+    end select
+    nbor => nbor%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! The MHD task needs the main RT task (rt), which also needs the MHD task
+  !-----------------------------------------------------------------------------
+  call init_nbor_pair (mhd, needed, rt, needs_me, download)
+  call trace%end
+END SUBROUTINE init_rt_nbors_hybrid
 
 !===============================================================================
 !> Add mutual nbor relations to two nbor lists, making sure that the needed and
