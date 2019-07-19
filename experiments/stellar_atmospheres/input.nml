@@ -4,7 +4,7 @@
                     smudge_boundary=f /
 &cartesian_params   size=6,6,3 dims=6,6,3 mpi_dims=4,4,1 origin=0,0,-0.5
                     omp_init=f /
-&patch_params       nt=5 grace=0.05 n=3*20 no_mans_land=f use_data_hub=f
+&patch_params       nt=5 grace=0.05 n=3*20 no_mans_land=t use_data_hub=f
                     do_check_nan=t dt_fixed=-1 periodic=t,t,f /
 &snapshot_params    order=1 verbose=0 meshfile='input_data/mhd63.msh'
                     snapfile='input_data/mhd63.dat' model='stagger'
