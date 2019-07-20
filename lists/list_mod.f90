@@ -488,7 +488,7 @@ SUBROUTINE reset_status (self, check)
       if (present(check)) then
         flags(:,1) = [nb%needed, nb%needs_me, nb%download]
       end if
-      call link%task%nbor_relations (nb%task, nb%needed, nb%needs_me, nb%download)
+      !call link%task%nbor_relations (nb%task, nb%needed, nb%needs_me, nb%download)
       if (present(check)) then
         flags(:,2) = [nb%needed, nb%needs_me, nb%download]
         if (.not.all(flags(:,2) .eqv. flags(:,1))) then
