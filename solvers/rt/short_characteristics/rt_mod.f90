@@ -502,7 +502,8 @@ END SUBROUTINE setup_boundaries
 SUBROUTINE pre_update (self)
   class(rt_t):: self
   !.............................................................................
-  integer:: l(3), u(3), jt(2)
+  class(rt_t), pointer:: omega
+  integer:: l(3), u(3), jt(2), i_omega, i_bin
   real:: pt(2)
   real, dimension(:,:,:), pointer:: q, q2
   integer, save:: itimer=0
@@ -620,7 +621,7 @@ SUBROUTINE update (self)
   if (self%n_omega==0) then
     call self%gpatch_t%dnload
 write (io_unit%queue,*) 'dnl', wallclock(), self%patch%id, self%id, self%time, self%i_omega
-    call self%rt_eos
+    call self%rt_eos(self%time)
   !-----------------------------------------------------------------------------
   ! RT sub-task, solving for the radiation field in a given direction
   !-----------------------------------------------------------------------------
