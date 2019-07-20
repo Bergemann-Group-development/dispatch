@@ -444,8 +444,10 @@ END SUBROUTINE count_status
 !===============================================================================
 !> Clear and then set the virtual and boundary bits
 !===============================================================================
-SUBROUTINE reset_status (self)
+SUBROUTINE reset_status (self, check)
   class(list_t):: self
+  logical, optional:: check
+  logical:: flags(3,2)
   class(link_t), pointer:: link, nb
   integer:: n_internal, n_boundary, n_virtual, n_external, n_frozen
   !-----------------------------------------------------------------------------
@@ -479,12 +481,24 @@ SUBROUTINE reset_status (self)
       call link%task%clear(bits%internal+bits%boundary+bits%virtual)
     end if
     !---------------------------------------------------------------------------
-    ! Run through nbors and set their status
+    ! Run through nbors and set their status, optionally checking
     !---------------------------------------------------------------------------
     nb => link%nbor
-    do while (associated(nb))
+      do while (associated(nb))
+      if (present(check)) then
+        flags(:,1) = [nb%needed, nb%needs_me, nb%download]
+      end if
       call link%task%nbor_relations (nb%task, nb%needed, nb%needs_me, nb%download)
       nb => nb%next
+      if (present(check)) then
+        flags(:,2) = [nb%needed, nb%needs_me, nb%download]
+        if (.not.all(flags(:,2) .eqv. flags(:,1))) then
+          write (stderr,*) link%task%id, flags(:,1)
+          write (stderr,*)   nb%task%id, flags(:,2)
+          flush (stderr)
+          call io%abort ('nbor_relation returned value inconsistent with initaial values')
+        end if
+      end if
     end do
     if (self%verbose > 1) &
       write(io_unit%log,'(a,i6,i4,3x,3l1)') &
