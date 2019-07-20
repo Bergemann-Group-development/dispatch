@@ -489,7 +489,6 @@ SUBROUTINE reset_status (self, check)
         flags(:,1) = [nb%needed, nb%needs_me, nb%download]
       end if
       call link%task%nbor_relations (nb%task, nb%needed, nb%needs_me, nb%download)
-      nb => nb%next
       if (present(check)) then
         flags(:,2) = [nb%needed, nb%needs_me, nb%download]
         if (.not.all(flags(:,2) .eqv. flags(:,1))) then
@@ -499,6 +498,7 @@ SUBROUTINE reset_status (self, check)
           call io%abort ('nbor_relation returned value inconsistent with initaial values')
         end if
       end if
+      nb => nb%next
     end do
     if (self%verbose > 1) &
       write(io_unit%log,'(a,i6,i4,3x,3l1)') &
