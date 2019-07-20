@@ -527,7 +527,7 @@ write (io_unit%queue,*) 'sum', wallclock(), self%patch%id, self%id, self%time
 				omega%mem(:,:,:,i_bin,omega%it,1)
 		self%u_max = max(self%u_max,omega%u_max)
 	  end do
-	  omega%dt_fixed = self%dtime
+	  omega%dtime = self%dtime
 	end do
   !-----------------------------------------------------------------------------
   ! If constant_q is set we need to do interpolation in time, while of not the
