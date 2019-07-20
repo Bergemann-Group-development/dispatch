@@ -89,7 +89,7 @@ SUBROUTINE init (self, task_list)
   do while (associated(link))
     call io%assert (associated(link%task), 'link%task missing')
     task => link%task
-    if (verbose > 0) & 
+    if (verbose > 0) &
       write(io%output,*) 'processing MHD task', task%id
     select type (task)
     class is (solver_t)
@@ -226,7 +226,7 @@ SUBROUTINE init_rt_nbors_sc (self, mhd)
         upstream => nb_task%rt%omega(i_omega)
         if (omega%needs (omega, upstream) .and. upstream%on) then
           !---------------------------------------------------------------------
-          ! 2) The omega task needs the upstream task, and should download from 
+          ! 2) The omega task needs the upstream task, and should download from
           ! it, but the upstream task does not need the downstream omega task.
           !---------------------------------------------------------------------
           needs=.true.; needs_me=.false.; download=.true.

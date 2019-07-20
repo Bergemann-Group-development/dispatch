@@ -484,7 +484,7 @@ SUBROUTINE reset_status (self, check)
     ! Run through nbors and set their status, optionally checking
     !---------------------------------------------------------------------------
     nb => link%nbor
-      do while (associated(nb))
+    do while (associated(nb))
       if (present(check)) then
         flags(:,1) = [nb%needed, nb%needs_me, nb%download]
       end if

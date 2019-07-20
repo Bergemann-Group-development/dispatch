@@ -83,7 +83,7 @@ MODULE rt_mod
     real                     :: mu, rt_phi, w         ! mu, phi, weights
     real                     :: epsilon =1.0          ! scattering coefficient
     real(8)                  :: eos_time              ! laste EOS time
-    real                     :: rt_grace=0.01         ! deal with roundoff        
+    real                     :: rt_grace=0.01         ! deal with roundoff
     real(8)                  :: rt_llc(3)=0d0         ! lower left corner
     real(8)                  :: rt_urc(3)=0d0         ! upper right corner
     real(8)                  :: rt_timestep=0.01_8    ! constant time step
@@ -209,7 +209,7 @@ SUBROUTINE init (self)
                           nt=self%nt, nv = self%n_bin, nw = 1)
   !-----------------------------------------------------------------------------
   ! Synchronize with MHD patch
-  ! ---------------------------------------------------------------------------- 
+  ! ----------------------------------------------------------------------------
   self%box      = p%box
   self%rank     = p%rank
   self%level    = p%level
@@ -287,7 +287,7 @@ SUBROUTINE init (self)
     end do
     self%main => self%omega(1)%main
     !---------------------------------------------------------------------------
-    ! Assign angles -- Should change to 
+    ! Assign angles -- Should change to
     !----------------------------------------------------------------------------
     i_omega = 0
     do i_mu=1,self%n_mu
@@ -515,20 +515,20 @@ SUBROUTINE pre_update (self)
   ! Summing up the contributions to q.
   !-----------------------------------------------------------------------------
 write (io_unit%queue,*) 'sum', wallclock(), self%patch%id, self%id, self%time
-	! -- Sum Q over angles and bin
-	q => self%mem(:,:,:,1,self%new,1)
-	q = 0.0
-	! -- multiply with the stored net intensities
-	self%u_max = 0.0
-	do i_omega=1,self%n_omega
-	  omega => self%omega(i_omega)
-	  do i_bin=1,self%n_bin
-		q = q + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
-				omega%mem(:,:,:,i_bin,omega%it,1)
-		self%u_max = max(self%u_max,omega%u_max)
-	  end do
-	  omega%dtime = self%dtime
-	end do
+  ! -- Sum Q over angles and bin
+  q => self%mem(:,:,:,1,self%new,1)
+  q = 0.0
+  ! -- multiply with the stored net intensities
+  self%u_max = 0.0
+  do i_omega=1,self%n_omega
+    omega => self%omega(i_omega)
+    do i_bin=1,self%n_bin
+    q = q + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
+        omega%mem(:,:,:,i_bin,omega%it,1)
+    self%u_max = max(self%u_max,omega%u_max)
+    end do
+    omega%dtime = self%dtime
+  end do
   !-----------------------------------------------------------------------------
   ! If constant_q is set we need to do interpolation in time, while of not the
   ! net heating is at the exact (MHD) time
@@ -591,9 +591,9 @@ SUBROUTINE post_update (self)
         omega%dtime = mhd%dtime
       end if
     end do
-  end if 
+  end if
 write (io_unit%queue,*) 'mhd', wallclock(), self%patch%id, self%id, self%patch%time
-  call trace%end 
+  call trace%end
 END SUBROUTINE post_update
 
 !===============================================================================
@@ -692,7 +692,7 @@ subroutine omp_eos
     write(io%output,*) patch%id,'rt_t%rt_eos: rk',minval(self%rk),maxval(self%rk)
     write(io%output,*) patch%id,'rt_t%rt_eos: tt',minval(self%tt),maxval(self%tt), &
       scaling%temp
-  end if  
+  end if
   if (.not.self%warmup_done) then
     if (self%time > self%warmup_end_time) then
       self%warmup_done=.true.
@@ -860,12 +860,12 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
     if (self%overlaps(other)) then
   ! ----------------------------------------------------------------------------
   ! Check if this is the "master" MHD patch. It might not be associated yet, i.e.
-  ! after moving to another MPI rank or changing level of refinement. in that 
+  ! after moving to another MPI rank or changing level of refinement. in that
   ! case, associate it.
   ! ----------------------------------------------------------------------------
       if (.not.(associated(self%patch))) self%patch => gpatch%cast2gpatch(other)
     end if
-    download = .false.  ! don't download 
+    download = .false.  ! don't download
   end select
 
   !
