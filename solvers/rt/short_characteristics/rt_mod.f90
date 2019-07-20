@@ -507,32 +507,53 @@ SUBROUTINE pre_update (self)
   real, dimension(:,:,:), pointer:: q, q2
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (.not. self%on) return
+  if (.not. self%on) &
+    return
   call trace%begin ('rt_t%pre_update', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Summing up the contributions to q.
+  !-----------------------------------------------------------------------------
+write (io_unit%queue,*) 'sum', wallclock(), self%patch%id, self%id, self%time
+	! -- Sum Q over angles and bin
+	q => self%mem(:,:,:,1,self%new,1)
+	q = 0.0
+	! -- multiply with the stored net intensities
+	self%u_max = 0.0
+	do i_omega=1,self%n_omega
+	  omega => self%omega(i_omega)
+	  do i_bin=1,self%n_bin
+		q = q + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
+				omega%mem(:,:,:,i_bin,omega%it,1)
+		self%u_max = max(self%u_max,omega%u_max)
+	  end do
+	  omega%dt_fixed = self%dtime
+	end do
+  !-----------------------------------------------------------------------------
+  ! If constant_q is set we need to do interpolation in time, while of not the
+  ! net heating is at the exact (MHD) time
+  !-----------------------------------------------------------------------------
   l = self%patch%mesh%li - self%mesh%ng
   u = self%patch%mesh%ui + self%mesh%ng
   if (self%constant_q) then
-    q => self%mem(:,:,:,1,self%it,1)
-    self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
-    self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + q
-  else
     call self%time_interval (self%patch%time, jt, pt, all=.true.)
     q => self%mem(:,:,:,1,jt(1),1)
     q2 => self%mem(:,:,:,1,jt(2),1)
     self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
     self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + &
     q*pt(1) + q2*pt(2)
-    !print *, 'jt, pt', jt, pt, minval(q), minval(q2), maxval(q), maxval(q2)
-    !print *, 'var q', minval(self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3))),maxval(self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)))
-      !---------------------------------------------------------------------------
-      q => self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3))
-    call self%patch%aux%register ('q', q)
+  else
+    q => self%mem(:,:,:,1,self%it,1)
+    self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+    self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + q
   end if
+  !---------------------------------------------------------------------------
   call trace%end(itimer)
 END SUBROUTINE pre_update
 
 !===============================================================================
-!> This is called from MHD tasks, after updates, with self = main RT task
+!> This is called from MHD tasks, after updates, with self = main RT task.  The
+!> main thing to do is to set the time step of the RT tasks equal to the MHD
+!> timestep, which was recently computed.
 !===============================================================================
 SUBROUTINE post_update (self)
   class (rt_t) :: self
@@ -548,7 +569,8 @@ SUBROUTINE post_update (self)
   ! we now know the timestep size and the time, and we can set these for all the
   ! RT solvers.  When the task_t%rotate() updates the patch%time, that allows
   ! the task_list_t%update() to call the RT tasks, and the settings below ensure
-  ! that their rotate() will update there time to the same time as the MHD task
+  ! that their rotate() will update there time to the same time as the MHD task.
+  ! This will however not happen until the next time the RT tasks have updated.
   !-----------------------------------------------------------------------------
   if (.not. self%constant_q) then
     mhd => self%patch
@@ -568,8 +590,9 @@ SUBROUTINE post_update (self)
         omega%dtime = mhd%dtime
       end if
     end do
-  end if
-  call trace%end
+  end if 
+write (io_unit%queue,*) 'mhd', wallclock(), self%patch%id, self%id, self%patch%time
+  call trace%end 
 END SUBROUTINE post_update
 
 !===============================================================================
@@ -587,46 +610,17 @@ SUBROUTINE update (self)
   real(8):: time
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (.not. self%on) then
+  if (.not. self%on) &
     return
-  end if
   call trace%begin ('rt_t%update', itimer=itimer)
-  !
-  if (self%id == io%id_debug) &
-    write (io%output,*) 'DBG rt_t%update: id, i_omega, BV, time =', &
-      self%id, self%i_omega, self%is_set(bits%boundary), self%is_set(bits%virtual), &
-      self%time
   !-----------------------------------------------------------------------------
-  ! Main RT task, summing up the contributions.  Since all RT sub-tasks then
-  ! must have finished, we can use the opportunity to call rt_eos at this time.
+  ! The omega0 task is responsible for downloading nbor MHD data, and for
+  ! calling rt_t%rt_eos to compute the RT EOS data
   !-----------------------------------------------------------------------------
-  if (self%i_omega == 0) then
-    ! -- Sum Q over angles and bin
-    q => self%mem(:,:,:,1,self%new,1)
-    q = 0.0
-    ! -- multiply with the stored net intensities
-    self%u_max = huge(1.0)
-    do i_omega=1,self%n_omega
-      omega => self%omega(i_omega)
-      do i_bin=1,self%n_bin
-        q = q + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
-                omega%mem(:,:,:,i_bin,omega%it,1)
-        self%u_max = min(self%u_max,omega%u_max)
-      end do
-      omega%dt_fixed = self%dtime
-    end do
-    if (verbose > 0) then
-      call self%stats (q, 'rt_t%update: q')
-    end if
-    !
-    call self%rt_eos (self%time)
-    ! --------------------------------------------------------------------------
-    ! set a new dtime
-    ! --------------------------------------------------------------------------
-    call self%courant_condition
-    self%patch%u_max = min (self%patch%u_max, self%u_max)
-    !print *, 'current q', minval(self%mem(:,:,:,1,self%new,1)),maxval(self%mem(:,:,:,1,self%new,1))
-    !print *, 'time, u_max, dtime(rt) ',self%time, self%u_max, self%dtime, self%dt_fixed
+  if (self%n_omega==0) then
+    call self%gpatch_t%dnload
+write (io_unit%queue,*) 'dnl', wallclock(), self%patch%id, self%id, self%time, self%i_omega
+    call self%rt_eos
   !-----------------------------------------------------------------------------
   ! RT sub-task, solving for the radiation field in a given direction
   !-----------------------------------------------------------------------------
@@ -634,14 +628,10 @@ SUBROUTINE update (self)
     ! -- copy the result of the previous timestep
     self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)
     ! -- Call RT solver, storing result in %new slot, at time = t(%it)
-    
     self%q => self%mem(:,:,:,:,self%new,1)
     call self%solve ()
-    if (verbose > 0) then
-      call self%stats (q, 'rt_t%update: self%q')
-    end if
+write (io_unit%queue,*) 'ome', wallclock(), self%patch%id, self%id, self%time, self%i_omega
   end if
-  call self%rotate()
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -665,6 +655,7 @@ SUBROUTINE rt_eos (self, time)
     if (time > self%eos_time) then
       call omp_eos
       self%eos_time = time
+write (io_unit%queue,*) 'eos', wallclock(), self%patch%id, self%id, time
     end if
     !$omp end critical (eos_cr)
   end if
@@ -718,6 +709,10 @@ subroutine omp_eos
     u_max = stefan*16./3.*self%fmaxval(fmax)*self%courant/self%cdtd*self%epsilon
     self%u_max = max(self%u_max,u_max)
   end do
+  !-----------------------------------------------------------------------------
+  ! Initialize the u_max value here, and let MHD modify it (down only)
+  !-----------------------------------------------------------------------------
+  self%patch%u_max = self%u_max
   if (self%constant_q) then
     deallocate (d, e)
   end if
@@ -777,6 +772,9 @@ SUBROUTINE nbor_info (self, nbor)
 END SUBROUTINE nbor_info
 
 !===============================================================================
+!> This procedure is called from rt_setup, at a point where nbor lists have
+!> already been made (based on needs() btw RT tasks), so the only thing to do
+!> is to set the three flags appropriately.
 !===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(rt_t):: self
@@ -787,7 +785,6 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(task_t), pointer:: other
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%nbor_relations')
-  !
   ! ----------------------------------------------------------------------------
   ! If this RT task has no RT on, it should have no nbor relations
   ! ----------------------------------------------------------------------------
@@ -828,27 +825,32 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
       end if
     !
     else if (self%needs(self,rt_another)) then
-      !-------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       ! The omega task needs the upstream task,
       ! but the upstream task does not need the downstream omega task.
-      !-------------------------------------------------------------------
-      needs_me=.false.
+      !-------------------------------------------------------------------------
+      needed   = .true.
+      needs_me = .false.
+      download = .true.
     ! --------------------------------------------------------------------------
     else if (rt_another%needs(rt_another,self)) then
+      ! ------------------------------------------------------------------------
       ! Downstream RT task will need me, but it is not needed and I should not
       ! download data from it.
       ! ------------------------------------------------------------------------
-      needed = .false.
+      needed   = .false.
+      needs_me = .true.
       download = .false.
     end if
     if(self%vertical_propagation) then
       if (any(self%position(1:2) /= rt_another%position(1:2))) &
         needed = .false.
     end if
-    
+    !---------------------------------------------------------------------------
     if ((self%i_omega >0).and.(rt_another%i_omega>0)) then
       if (self%i_omega /= rt_another%i_omega) then
-      download = .false.; needed = .false.; needs_me=.false.
+        write (stderr,*) 'rt_t%nbor_relatoins: this should never happen!'
+        download = .false.; needed = .false.; needs_me=.false.
       end if
     end if
     !
