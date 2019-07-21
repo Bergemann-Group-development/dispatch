@@ -128,7 +128,7 @@ SUBROUTINE pre_init (self, link)
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n
   integer, save:: n_mu=3, n_phi=4, n_bin=4, nt=3, n_warmup=3
   real, save   :: courant=0.5, cdtd=1.0
-  real,    save:: rt_grace=0.0
+  real,    save:: rt_grace=0.01
   real(8), save:: rt_llc(3)=-huge(1d0)
   real(8), save:: rt_urc(3)=+huge(1d0)
   real(8), save:: rt_timestep=0.01_8
@@ -218,7 +218,6 @@ SUBROUTINE init (self)
   self%llc_cart = p%llc_cart
   self%llc_nat  = p%llc_nat
   self%restart  = p%restart
-  self%time     = p%time - (self%n_warmup+0.5)*self%rt_timestep
   self%warmup_end_time = p%time
   self%eos_time = self%time - self%rt_timestep
   self%iit      = 1
@@ -230,8 +229,9 @@ SUBROUTINE init (self)
   self%dt_fixed = self%rt_timestep
   self%dtime    = self%rt_timestep
   self%dt       = self%rt_timestep
-  self%iout     = self%restart+1
   self%grace    = self%rt_grace
+  self%time     = p%time - (self%n_warmup-self%grace)*self%dtime
+  self%iout     = self%restart+1
   self%periodic = p%periodic
   self%verbose  = verbose
   call self%set (bits%no_density)
@@ -256,7 +256,6 @@ SUBROUTINE init (self)
     n_omega      = merge (1+self%n_phi*(self%n_mu-1), 0, self%n_mu > 0)
     n_omega      = 2*n_omega
     self%n_omega = n_omega
-    self%dt_fixed = self%rt_timestep
     !---------------------------------------------------------------------------
     ! Assign angles and integration weight and allocate the required RT solvers
     ! for all angles
@@ -365,9 +364,10 @@ SUBROUTINE init_omega (self, i_omega)
   ! -- allocate time slots
   allocate (omega%t(omega%nt), omega%dt(omega%nt), omega%iit(omega%nt))
   !-----------------------------------------------------------------------------
-  ! Setting omega%time beyond self%time to trigger first call to self%update()
+  ! Setting omega%time beyond self%time to trigger first call to self%update(),
+  ! which is needed to compute the EOS data
   !-----------------------------------------------------------------------------
-  omega%time    = self%time + 0.5d0*self%rt_timestep
+  omega%time    = self%time + 2.0*self%grace*self%dtime
   omega%t       = omega%time
   omega%dt      = omega%dtime
   omega%iit     = 1
@@ -573,26 +573,24 @@ SUBROUTINE post_update (self)
   ! that their rotate() will update there time to the same time as the MHD task.
   ! This will however not happen until the next time the RT tasks have updated.
   !-----------------------------------------------------------------------------
-  if (.not. self%constant_q) then
-    mhd => self%patch
-    self%time  = mhd%time
-    self%dtime = mhd%dtime
-    do i=1,self%n_omega
-      omega => self%omega(i)
-      omega%time = mhd%time
-      !-------------------------------------------------------------------------
-      ! Inclined tasks advance their time a factor mu slower, and are thus forced
-      ! to update more often, to propagate the solution by about the same amount
-      ! vertically.  NOTE (FIXME):  Purely horizontal rays need special treatment
-      !-------------------------------------------------------------------------
-      if (self%vertical_propagation) then
-        omega%dtime = mhd%dtime*abs(omega%mu)
-      else
-        omega%dtime = mhd%dtime
-      end if
-    end do
-  end if
-write (io_unit%queue,*) 'mhd', wallclock(), self%patch%id, self%id, self%patch%time
+  mhd => self%patch
+  self%dtime = mhd%dtime
+  self%time  = mhd%time + self%grace*self%dtime
+  do i=1,self%n_omega
+    omega => self%omega(i)
+    omega%time = mhd%time
+    !-------------------------------------------------------------------------
+    ! Inclined tasks advance their time a factor mu slower, and are thus forced
+    ! to update more often, to propagate the solution by about the same amount
+    ! vertically.  NOTE (FIXME):  Purely horizontal rays need special treatment
+    !-------------------------------------------------------------------------
+    if (self%vertical_propagation) then
+      omega%dtime = mhd%dtime*abs(omega%mu)
+    else
+      omega%dtime = mhd%dtime + 2*self%grace*self%dtime
+    end if
+  end do
+write (io_unit%queue,*) 'mhd', wallclock(), self%patch%id, self%id, mhd%time+mhd%dtime, self%rotated, omega%rotated
   call trace%end
 END SUBROUTINE post_update
 
@@ -615,23 +613,19 @@ SUBROUTINE update (self)
     return
   call trace%begin ('rt_t%update', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! The omega0 task is responsible for downloading nbor MHD data, and for
-  ! calling rt_t%rt_eos to compute the RT EOS data
+  ! The omega0 task is responsible for calling rt_t%rt_eos to compute the RT EOS
+  ! data. The nbor list has triggered download of nbor MHD data, before this call
   !-----------------------------------------------------------------------------
-  if (self%n_omega==0) then
-    call self%gpatch_t%dnload
-write (io_unit%queue,*) 'dnl', wallclock(), self%patch%id, self%id, self%time, self%i_omega
-    call self%rt_eos(self%time)
+  if (self%i_omega==0) then
+    call self%rt_eos (self%time+self%dtime)
   !-----------------------------------------------------------------------------
   ! RT sub-task, solving for the radiation field in a given direction
   !-----------------------------------------------------------------------------
   else
-    ! -- copy the result of the previous timestep
-    self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)
     ! -- Call RT solver, storing result in %new slot, at time = t(%it)
     self%q => self%mem(:,:,:,:,self%new,1)
     call self%solve ()
-write (io_unit%queue,*) 'ome', wallclock(), self%patch%id, self%id, self%time, self%i_omega
+write (io_unit%queue,*) 'ome', wallclock(), self%patch%id, self%id, self%time+self%dtime, self%i_omega
   end if
   call trace%end (itimer)
 END SUBROUTINE update
@@ -657,6 +651,8 @@ SUBROUTINE rt_eos (self, time)
       call omp_eos
       self%eos_time = time
 write (io_unit%queue,*) 'eos', wallclock(), self%patch%id, self%id, time
+    else
+write (io_unit%queue,*) 'eo0', wallclock(), self%patch%id, self%id, time, self%eos_time
     end if
     !$omp end critical (eos_cr)
   end if
