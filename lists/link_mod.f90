@@ -249,21 +249,38 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
     ' to nbor list of', self%task%id
   nullify (prev)
   next => nbors
+  !-------------------------------------------------------------------------
+  ! Check that the task is not self
+  !-------------------------------------------------------------------------
+  if (this%task%id == self%task%id) then
+    goto 9
+  end if
+  !-------------------------------------------------------------------------
+  ! Check that the new task is not already in the list
+  !-------------------------------------------------------------------------
   do while (associated(next))
-    if (.not.associated(next%task,this%task)) then
-      if (next%task%rank >= this%task%rank) then
-        !-------------------------------------------------------------------------
-        ! Found a task we should be ahead of, so insert here
-        !-------------------------------------------------------------------------
-        this%next => next
-        if (associated(prev)) then
-          prev%next => this
-        else
-          nbors => this
-        end if
-        self%task%n_nbors = self%task%n_nbors+1
-        goto 9
+    if (next%task%id == this%task%id) then
+      goto 9
+    end if
+    next => next%next
+  end do
+  !-------------------------------------------------------------------------
+  ! If not, find the right place to add it
+  !-------------------------------------------------------------------------
+  next => nbors
+  do while (associated(next))
+    if (next%task%rank >= this%task%rank) then
+      !-------------------------------------------------------------------------
+      ! Found a task we should be ahead of, so insert here
+      !-------------------------------------------------------------------------
+      this%next => next
+      if (associated(prev)) then
+        prev%next => this
+      else
+        nbors => this
       end if
+      self%task%n_nbors = self%task%n_nbors+1
+      goto 9
     end if
     prev => next
     next => next%next
