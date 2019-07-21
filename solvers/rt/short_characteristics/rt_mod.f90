@@ -180,7 +180,7 @@ SUBROUTINE init (self)
   class (rt_t),     pointer :: omega
   class (link_t),   pointer :: link
   class (*),        pointer :: dummy
-  integer:: n_omega, i_omega, dir, i_mu, i_phi, iostat, n
+  integer:: n_omega, i_omega, dir, i_mu, i_phi, iostat, n, l(3), u(3)
   real, dimension(:), allocatable:: mu, w_mu
   ! ----------------------------------------------------------------------------
   call trace%begin ('rt_t%init')
@@ -203,8 +203,8 @@ SUBROUTINE init (self)
   self%track   = .false.
   self%type    = 'rt_t'
   self%kind    = 'rt_sc'
-  call self%patch_t%setup(position=p%position, size=p%size, n=p%n, ng=[1,1,1], &
-                          nt=self%nt, nv = self%n_bin, nw = 1)
+  call self%patch_t%setup(position=p%position, size=p%size, n=p%n, nt=self%nt, &
+                          ng=self%ng, nv=self%n_bin, nw = 1)
   !-----------------------------------------------------------------------------
   ! Synchronize with MHD patch
   ! ----------------------------------------------------------------------------
@@ -316,9 +316,12 @@ SUBROUTINE init (self)
       end do
     end if
     !---------------------------------------------------------------------------
-    ! Point mem to the patch mem, for dnload to work correctly
+    ! Point mem to a patch mem section -- download_mod should be able handle a
+    ! target with fewer guard cells than the source
     !---------------------------------------------------------------------------
-    self%mem => self%patch%mem
+    l = p%mesh%li - self%mesh%ng
+    u = p%mesh%ui + self%mesh%ng
+    self%mem  => p%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,:,:)
   else
     call self%dealloc()
   end if
@@ -491,30 +494,28 @@ SUBROUTINE pre_update (self)
   class(rt_t):: self
   !.............................................................................
   class(rt_t), pointer:: omega
-  integer:: l(3), u(3), jt(2), i_omega, i_bin
-  real:: pt(2)
-  real, dimension(:,:,:), pointer:: q, q2
+  integer:: l(3), u(3), i_omega, i_bin
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. self%on) &
     return
   call trace%begin ('rt_t%pre_update', itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Summing up the omega-bin contributions to heating_per_unit_volume
-  !-----------------------------------------------------------------------------
-  l = self%patch%mesh%li - self%mesh%ng
-  u = self%patch%mesh%ui + self%mesh%ng
-  self%u_max = 0.0
+  !---------------------------------------------------------------------------
+  ! -- Sum Q over angles and bin
+  self%qr = 0.0
+  ! -- multiply with the stored net intensities
   do i_omega=1,self%n_omega
     omega => self%omega(i_omega)
-    self%u_max = max(self%u_max,omega%u_max)
     do i_bin=1,self%n_bin
-      self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
-      self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + &
-        + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
+      self%qr = self%qr + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
         omega%mem(:,:,:,i_bin,omega%it,1)
     end do
   end do
+  !---------------------------------------------------------------------------
+  l = self%patch%mesh%li - self%mesh%ng
+  u = self%patch%mesh%ui + self%mesh%ng
+  self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+  self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + self%qr
   !---------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE pre_update
@@ -607,8 +608,6 @@ SUBROUTINE rt_eos (self, time)
   class (gpatch_t), pointer :: patch
   integer, save:: itimer=0
   real, dimension(:,:,:), pointer:: d, e, pgas, fmax
-  integer:: m(4), ib, i3, jt(2), l(3), u(3), i
-  real:: z, pt(2), u_max, stefan
   !-----------------------------------------------------------------------------
   if (time > self%eos_time) then
     !$omp critical (eos_cr)
@@ -623,59 +622,50 @@ write (io_unit%queue,*) 'eo0', wallclock(), self%patch%id, self%id, time, self%e
   end if
   return
 contains
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
 subroutine omp_eos
+  integer:: m(4), ib
+  real:: u_max, stefan
+  !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%rt_eos', itimer=itimer)
   patch => self%patch
-  call patch%time_interval (time, jt, pt, all=.true.)
   m = shape(self%rk)
   allocate (pgas(m(1),m(2),m(3)),fmax(m(1),m(2),m(3)))
   !-----------------------------------------------------------------------------
-  l = patch%mesh%li - self%mesh%ng
-  u = patch%mesh%ui + self%mesh%ng
-  if (self%constant_q) then
-    allocate (d(m(1),m(2),m(3)),e(m(1),m(2),m(3)))
-    d = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,jt(1),1)*pt(1) &
-      + patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,jt(2),1)*pt(2)
-    e = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,jt(1),1)*pt(1) &
-      + patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,jt(2),1)*pt(2)
-  else
-    d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
-    e => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%e,patch%it,1)
-  end if
-  if (verbose > 0) then
-    call self%stats (d, 'rt_eos')
-    call self%stats (e, 'rt_eos')
+  d => self%mem(:,:,:,patch%idx%d,patch%it,1)
+  e => self%mem(:,:,:,patch%idx%e,patch%it,1)
+  if (verbose > 2) then
+    call self%stats (d, 'd')
+    call self%stats (e, 'e')
   end if
   call eos%lookup_table (m, d=d, e=e, rk=self%rk, src=self%src, tt=self%tt, pg=pgas)
+  ! ----------------------------------------------------------------------------
+  ! Compute radiative diffusion speed, and set default omega%u_max
+  ! ----------------------------------------------------------------------------
+  self%u_max = 0.0
+  stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
+  do ib=1, eos%n_lambda
+    fmax = (pgas/d)**4/pgas*(self%rk(:,:,:,ib)*minval(self%ds))
+    fmax = fmax/(1.+(self%rk(:,:,:,ib)*minval(self%ds))**2)
+    u_max = stefan*16./3.*self%fmaxval(fmax)*self%courant/self%cdtd*self%epsilon
+    self%u_max = max(self%u_max,u_max)
+  end do
+  self%omega(:)%u_max =  self%u_max
   if (verbose > 2) then
-    write(io%output,*) patch%id,'rt_t%rt_eos:  d',minval(d),maxval(d)
-    write(io%output,*) patch%id,'rt_t%rt_eos:  e',minval(e),maxval(e)
-    write(io%output,*) patch%id,'rt_t%rt_eos: rk',minval(self%rk),maxval(self%rk)
-    write(io%output,*) patch%id,'rt_t%rt_eos: tt',minval(self%tt),maxval(self%tt), &
-      scaling%temp
+    call self%stats (self%tt  , 'tt')
+    call self%stats (pgas, 'pgas')
+    call self%stats (self%rk(:,:,:,1), 'rkap')
+    call self%stats (fmax, 'fmax')
   end if
+  ! ----------------------------------------------------------------------------
+  deallocate (fmax, pgas)
   if (.not.self%warmup_done) then
     if (self%time > self%warmup_end_time) then
       self%warmup_done=.true.
       self%dt_fixed = -1.0
     end if
   end if
-  ! ----------------------------------------------------------------------------
-  ! Compute radiative diffusion speed, and set default omega%u_max
-  ! ----------------------------------------------------------------------------
-  self%u_max = 0.0
-  stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
-  do i =1, eos%n_lambda
-    fmax = (pgas/d)**4/pgas*(self%rk(:,:,:,i)*minval(self%ds))
-    fmax = fmax/(1.+(self%rk(:,:,:,i)*minval(self%ds))**2)
-    u_max = stefan*16./3.*self%fmaxval(fmax)*self%courant/self%cdtd*self%epsilon
-    self%u_max = max(self%u_max,u_max)
-  end do
-  self%omega(:)%u_max =  self%u_max
-  if (self%constant_q) then
-    deallocate (d, e)
-  end if
-  deallocate (fmax, pgas)
   call trace%end (itimer)
 end subroutine omp_eos
 END SUBROUTINE rt_eos
