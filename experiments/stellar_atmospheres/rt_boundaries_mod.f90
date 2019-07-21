@@ -69,7 +69,7 @@ SUBROUTINE condition (self, mem, src, rk, tt, mu)
       end do
     end do
   end if
-  if (self%mesh(3)%upper_boundary .and. mu < 0.0) then
+  if (self%mesh(3)%upper_boundary) then
     mem(:,:,self%mesh(3)%uo:self%mesh(3)%ub,:) = 0.0
   end if 
 END SUBROUTINE condition
