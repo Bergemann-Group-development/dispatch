@@ -267,6 +267,7 @@ SUBROUTINE init (self)
     !---------------------------------------------------------------------------
     allocate (self%rk (self%gn(1),self%gn(2),self%gn(3),self%n_bin))
     allocate (self%tt (self%gn(1),self%gn(2),self%gn(3)))
+    allocate (self%qr (self%gn(1),self%gn(2),self%gn(3)))
     allocate (self%src(self%gn(1),self%gn(2),self%gn(3),self%n_bin))
     call io%bits_mem(storage_size(self%tt  ),product(shape(self%tt )),'tt')
     call io%bits_mem(storage_size(self%rk  ),product(shape(self%rk )),'rk')
@@ -508,9 +509,10 @@ SUBROUTINE pre_update (self)
     omega => self%omega(i_omega)
     do i_bin=1,self%n_bin
       self%qr = self%qr + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
-        omega%mem(:,:,:,i_bin,omega%it,1)
+                omega%mem(:,:,:,i_bin,omega%it,1)
     end do
   end do
+  call self%patch%aux%register ('qr', self%qr)
   !---------------------------------------------------------------------------
   l = self%patch%mesh%li - self%mesh%ng
   u = self%patch%mesh%ui + self%mesh%ng
@@ -689,7 +691,6 @@ SUBROUTINE solve (self)
                           self%rt_phi)
   call self%patch%aux%register ('rkap', self%rk )
   call self%patch%aux%register ('src',  self%src)
-  call self%patch%aux%register ('qout', self%q  )
   call trace%end (itimer)
 END SUBROUTINE solve
 
