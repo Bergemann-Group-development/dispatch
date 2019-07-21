@@ -318,19 +318,9 @@ SUBROUTINE init (self)
       end do
     end if
     !---------------------------------------------------------------------------
-    ! Finalize the main RT patch. For now, it needs only one nv entry for q with
-    ! nt time slots.
+    ! Point mem to the patch mem, for dnload to work correctly
     !---------------------------------------------------------------------------
-    self%nv = 1
-    if (associated(self%mem)) deallocate (self%mem)
-    nullify (self%mem)
-    allocate (self%mem(self%mesh(1)%gn, &
-                       self%mesh(2)%gn, &
-                       self%mesh(3)%gn, &
-                       self%nv,self%nt,self%nw))
-    self%mem_allocated = .true.               ! mark
-    call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
-    self%mem = 0.0
+    self%mem => self%patch%mem
   else
     call self%dealloc()
   end if
@@ -512,43 +502,23 @@ SUBROUTINE pre_update (self)
     return
   call trace%begin ('rt_t%pre_update', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Summing up the contributions to q.
-  !-----------------------------------------------------------------------------
-write (io_unit%queue,*) 'sum', wallclock(), self%patch%id, self%id, self%time
-  ! -- Sum Q over angles and bin
-  q => self%mem(:,:,:,1,self%new,1)
-  q = 0.0
-  ! -- multiply with the stored net intensities
-  self%u_max = 0.0
-  do i_omega=1,self%n_omega
-    omega => self%omega(i_omega)
-    do i_bin=1,self%n_bin
-    q = q + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
-        omega%mem(:,:,:,i_bin,omega%it,1)
-    self%u_max = max(self%u_max,omega%u_max)
-    end do
-    omega%dtime = self%dtime
-  end do
-  !-----------------------------------------------------------------------------
-  ! If constant_q is set we need to do interpolation in time, while of not the
-  ! net heating is at the exact (MHD) time
+  ! Summing up the omega-bin contributions to heating_per_unit_volume
   !-----------------------------------------------------------------------------
   l = self%patch%mesh%li - self%mesh%ng
   u = self%patch%mesh%ui + self%mesh%ng
-  if (self%constant_q) then
-    call self%time_interval (self%patch%time, jt, pt, all=.true.)
-    q => self%mem(:,:,:,1,jt(1),1)
-    q2 => self%mem(:,:,:,1,jt(2),1)
-    self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
-    self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + &
-    q*pt(1) + q2*pt(2)
-  else
-    q => self%mem(:,:,:,1,self%it,1)
-    self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
-    self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + q
-  end if
+  self%u_max = 0.0
+  do i_omega=1,self%n_omega
+    omega => self%omega(i_omega)
+    self%u_max = max(self%u_max,omega%u_max)
+    do i_bin=1,self%n_bin
+      self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) = &
+      self%patch%heating_per_unit_volume(l(1):u(1),l(2):u(2),l(3):u(3)) + &
+        + self%rk(:,:,:,i_bin)*self%w_bin(i_bin)*omega%w* &
+        omega%mem(:,:,:,i_bin,omega%it,1)
+    end do
+  end do
   !---------------------------------------------------------------------------
-  call trace%end(itimer)
+  call trace%end (itimer)
 END SUBROUTINE pre_update
 
 !===============================================================================
