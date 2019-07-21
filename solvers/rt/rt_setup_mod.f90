@@ -195,9 +195,9 @@ SUBROUTINE init_rt_nbors_sc (self, mhd)
   omega0 => mhd%rt
   call omega0%clear(bits%init_nbors)
   !-----------------------------------------------------------------------------
-  ! 1) The omega0 task needs the MHD nbors, and needs download
+  ! 1) The omega0 needs the MHD task for the MHD variables, but no download
   !-----------------------------------------------------------------------------
-  needs=.true.; needs_me=.false.; download=.true.
+  needs=.true.; needs_me=.false.; download=.false.
   call init_nbor_pair (omega0, needs, mhd, needs_me, download)
   !-----------------------------------------------------------------------------
   ! Loop over all ray directions, and add nbors and nbor relations. The only
@@ -219,30 +219,36 @@ SUBROUTINE init_rt_nbors_sc (self, mhd)
       !-------------------------------------------------------------------------
       ! Select only omega tasks
       !-------------------------------------------------------------------------
-      if (nb_task%rt%n_omega > 0) then
+      if (nb_task%rt%n_omega == 0) then
+        !-----------------------------------------------------------------------
+        ! 2) The omega0 task needs the MHD nbors, and needs download
+        !-----------------------------------------------------------------------
+        needs=.true.; needs_me=.false.; download=.true.
+        call init_nbor_pair (omega0, needs, nb_task, needs_me, download)
+      else
         !-----------------------------------------------------------------------
         ! The omega0%needs() function tests for upstream nbor omega
         !-----------------------------------------------------------------------
         upstream => nb_task%rt%omega(i_omega)
         if (omega%needs (omega, upstream) .and. upstream%on) then
           !---------------------------------------------------------------------
-          ! 2) The omega task needs the upstream task, and should download from
-          ! it, but the upstream task does not need the downstream omega task.
+          ! 3) The omega tasks need the upstream tasks, and should download from
+          ! them, but the upstream tasks do not need the downstream omega tasks
           !---------------------------------------------------------------------
           needs=.true.; needs_me=.false.; download=.true.
           call init_nbor_pair (omega, needs, upstream, needs_me, download)
         end if
+        !-----------------------------------------------------------------------
+        ! 4) The omega task needs the RT task, which does not need the omega tasks
+        !-----------------------------------------------------------------------
+        needs=.true.; needs_me=.false.; download=.false.
+        call init_nbor_pair (omega, needs, omega0, needs_me, download)
       end if
       end select
       nbor => nbor%next
     end do
     !---------------------------------------------------------------------------
-    ! 3) The omega task needs the RT task, which does not need the omega tasks
-    !---------------------------------------------------------------------------
-    needs=.true.; needs_me=.false.; download=.false.
-    call init_nbor_pair (omega, needs, omega0, needs_me, download)
-    !---------------------------------------------------------------------------
-    ! 4) The MHD task needs the omega tasks, which do not need the MHD task
+    ! 5) The MHD task needs the omega tasks, which do not need the MHD task
     !---------------------------------------------------------------------------
     needs=.true.; needs_me=.false.; download=.false.
     call init_nbor_pair (mhd, needs, omega, needs_me, download)
