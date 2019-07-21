@@ -8,6 +8,7 @@
 !> to the main RT axis. 
 !===============================================================================
 MODULE rt_integral_mod
+  USE io_mod
   USE io_unit_mod
   USE trace_mod
   USE mesh_mod
@@ -15,6 +16,7 @@ MODULE rt_integral_mod
   implicit none
   private
   type, public:: rt_integral_t
+    procedure(solve1), pointer:: solver => null()
   contains
     procedure:: init
     procedure:: solve
@@ -25,7 +27,7 @@ MODULE rt_integral_mod
     procedure:: solve2
     procedure, nopass:: diagnostics
   end type
-  integer, save:: verbose=0, order=3
+  integer, save:: verbose=0, order=3, solver=2
   logical:: detailed_timer=.false.
   real:: dtau_min=1e-3, dtau_dif=1e3, dtau_max=1e4
   integer(8), save:: n_cases(4)=0
@@ -38,7 +40,7 @@ SUBROUTINE init (self)
   class(rt_integral_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  namelist /rt_integral_params/ verbose, order, dtau_min, dtau_dif, dtau_max
+  namelist /rt_integral_params/ verbose, solver, order, dtau_min, dtau_dif, dtau_max
   !-----------------------------------------------------------------------------
   if (first_time) then
     !$omp critical (input_cr)
@@ -49,6 +51,16 @@ SUBROUTINE init (self)
       write (io_unit%output, rt_integral_params)
     end if
     !$omp end critical (input_cr)
+    select case (solver)
+    case (1)
+      self%solver => solve1
+    case (2)
+      self%solver => solve2
+    case default
+      write (stderr,*) solver
+      flush (stderr)
+      call io%abort ('rt_integral%init: wrong solver')
+    end select
   end if
 END SUBROUTINE init
 
@@ -114,11 +126,11 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
     call self%prepare_layers (mu, dir, mesh, s, s3, i, i3)
     call self%prepare_layers (mu, dir, mesh, q, q3, i, i3)
     if (dir==1) then
-      call self%solve1 (k3, s3, q3, q(i,:,:,:), dr, l, u, debug)
+      call self%solver (k3, s3, q3, q(i,:,:,:), dr, l, u, debug)
     else if (dir==2) then
-      call self%solve2 (k3, s3, q3, q(:,i,:,:), dr, l, u, debug)
+      call self%solver (k3, s3, q3, q(:,i,:,:), dr, l, u, debug)
     else
-      call self%solve2 (k3, s3, q3, q(:,:,i,:), dr, l, u, debug)
+      call self%solver (k3, s3, q3, q(:,:,i,:), dr, l, u, debug)
     end if
   end do
   deallocate (k3, s3, q3)
