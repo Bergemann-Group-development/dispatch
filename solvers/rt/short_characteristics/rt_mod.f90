@@ -91,7 +91,6 @@ MODULE rt_mod
     integer                  :: n_mu=3, n_phi=4       ! no. of angles
     logical                  :: on=.false.            ! allows local turn-off
     logical                  :: vertical_propagation=.false. ! see code
-    logical                  :: constant_q=.true.     ! 0-order in time
     logical                  :: warmup_done=.false.
     real, pointer            :: q(:,:,:,:)            ! net radiative heating
     real, pointer            :: tt(:,:,:)             ! EOS temperature
@@ -127,19 +126,17 @@ SUBROUTINE pre_init (self, link)
   class (link_t), pointer :: link
   !-----------------------------------------------------------------------------
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n
-  integer, save:: n_mu=3, n_phi=4, n_bin=4, nt=3, n_warmup=3
+  integer, save:: n_mu=3, n_phi=4, n_bin=4, nt=3, n_warmup=3, ng=1
   real, save   :: courant=0.5, cdtd=1.0
   real,    save:: rt_grace=0.01
   real(8), save:: rt_llc(3)=-huge(1d0)
   real(8), save:: rt_urc(3)=+huge(1d0)
   real(8), save:: rt_timestep=0.01_8
   logical, save:: vertical_propagation=.false.
-  logical, save:: constant_q=.true.
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
-  namelist /sc_rt_params/ verbose, nt, rt_llc, rt_urc, rt_timestep, &
-    n_mu, n_phi, n_bin, rt_grace, vertical_propagation, constant_q, &
-    n_warmup, courant, cdtd
+  namelist /sc_rt_params/ verbose, nt, ng, rt_llc, rt_urc, rt_timestep, &
+    n_mu, n_phi, n_bin, rt_grace, vertical_propagation, n_warmup, courant, cdtd
   !-----------------------------------------------------------------------------
   ! Read parameters
   !-----------------------------------------------------------------------------
@@ -155,6 +152,7 @@ SUBROUTINE pre_init (self, link)
   self%patch => gpatch%cast2gpatch(link%task)
   self%on = .true.
   self%nt = nt
+  self%ng = ng
   self%n_warmup = n_warmup
   self%n_bin = n_bin
   self%rt_grace = rt_grace
@@ -162,7 +160,6 @@ SUBROUTINE pre_init (self, link)
   self%rt_urc = rt_urc
   self%rt_timestep = rt_timestep
   self%vertical_propagation = vertical_propagation
-  self%constant_q = constant_q
   self%n_mu  = n_mu
   self%n_phi = n_phi
   self%courant = courant
