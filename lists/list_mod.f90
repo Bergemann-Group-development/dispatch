@@ -830,12 +830,25 @@ SUBROUTINE check_ready (self, link)
     !---------------------------------------------------------------------------
     if (nbor%needed .and. nbor%task%is_clear(ignore)) then
       if (.not. nbor%task%is_ahead_of(task)) then       ! and is ahead in time
+        !$omp atomic update
+        task%n_failed = task%n_failed+1
+        if (task%n_failed > 10000) then
+          write (stderr,'(a,i4,1p,2(2x,a,i6,2x,a,g14.5),2(2x,a,g11.3))') &
+            'list_t%check_ready: on rank', task%rank, &
+            'task'               , task%id     , 'at t=', task%time, &
+            'failed on nbor task', nbor%task%id, 'at t=', nbor%task%time, &
+            'grace =', task%grace, ' dt=', nbor%task%dtime
+        end if
+        !$omp atomic write
+        task%n_failed = 0
         call trace%end (itimer)
         return
       end if
     end if
     nbor => nbor%next                                   ! next nbor
   end do
+  !$omp atomic write
+  task%n_failed = 0
   call self%queue_by_time (link)                        ! add task to queue
   call trace%end (itimer)
 END SUBROUTINE check_ready

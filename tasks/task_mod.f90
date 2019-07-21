@@ -5,6 +5,7 @@ MODULE task_mod
   USE io_mod
   USE omp_mod
   USE omp_lock_mod
+  USE omp_timer_mod
   USE mpi_mod
   USE bits_mod
   USE trace_mod
@@ -42,6 +43,7 @@ MODULE task_mod
     integer:: ip                        ! rank local task id
     integer:: n_needed=1                ! number of tasks that needs it
     integer:: seq=0                     ! incremental sequence number
+    integer:: n_failed                  ! number of times check_ready() failed
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
     real(8):: out_next = 0d0
