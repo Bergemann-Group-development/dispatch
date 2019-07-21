@@ -547,10 +547,8 @@ SUBROUTINE update (self)
   if (self%mhd) call self%divB_clean
   call self%pde
   !-----------------------------------------------------------------------------
-  ! The RT updates that take place before the mhd_t%update may modify self%u_max,
-  ! and hence affect the size of the timestep self%dtime
+  ! The call to courant_condition may optionally be interscepted in extras_t
   !-----------------------------------------------------------------------------
-  call self%extras_t%post_update
   call self%courant_condition
   if (verbose>2) &
     call self%check_density('before timestep')

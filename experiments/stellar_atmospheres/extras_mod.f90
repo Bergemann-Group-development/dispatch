@@ -104,6 +104,7 @@ MODULE extras_mod
     procedure:: output
     procedure:: check_refine
     procedure:: nbor_relations
+    procedure:: courant_condition
   end type
   type(extras_t), public:: extras
 CONTAINS
@@ -292,5 +293,18 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   end select
   call trace%end()
 END SUBROUTINE nbor_relations
+
+!===============================================================================
+!> Optional intercept of courant_condition() call
+!===============================================================================
+SUBROUTINE courant_condition (self, detailed_timer)
+  class(extras_t):: self
+  logical, optional:: detailed_timer
+  !-----------------------------------------------------------------------------
+  call trace%begin ('extras_t%courant_condition')
+  call self%rt%courant_condition (detailed_timer)                      ! RT
+  call self%gpatch_t%courant_condition (detailed_timer)                ! keep
+  call trace%end()
+END SUBROUTINE courant_condition
 
 END MODULE extras_mod

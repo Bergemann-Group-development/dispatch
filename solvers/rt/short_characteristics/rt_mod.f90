@@ -111,8 +111,9 @@ MODULE rt_mod
     procedure:: setup_boundaries                      ! BCs
     procedure:: task_info                             ! formatted info print
     procedure:: nbor_info                             ! formatted info print
-    procedure:: nbor_relations
-    procedure:: output
+    procedure:: nbor_relations                        ! set nbor flags
+    procedure:: courant_condition                     ! amend Courant condition
+    procedure:: output                                ! intercept output
   end type
   integer, save:: verbose=0                           ! verbosity
   type(rt_t), public:: rt                             ! public instance
@@ -522,9 +523,9 @@ SUBROUTINE pre_update (self)
 END SUBROUTINE pre_update
 
 !===============================================================================
-!> This is called from MHD tasks, after updates, with self = main RT task.  The
-!> main thing to do is to set the time step of the RT tasks equal to the MHD
-!> timestep, which was recently computed.
+!> This is called from MHD tasks, after updates, with self = main RT task.
+!> Sets the time step of the RT tasks equal to the MHD timestep, which was
+!> recently computed, and collects u_max and modifies the mhd%u_max
 !===============================================================================
 SUBROUTINE post_update (self)
   class (rt_t) :: self
@@ -536,12 +537,8 @@ SUBROUTINE post_update (self)
   if (.not.self%on) return
   call trace%begin ('rt_t%post_update')
   !-----------------------------------------------------------------------------
-  ! After the MHD update, for which a task_t%rotate() has not yet taken place,
-  ! we now know the timestep size and the time, and we can set these for all the
-  ! RT solvers.  When the task_t%rotate() updates the patch%time, that allows
-  ! the task_list_t%update() to call the RT tasks, and the settings below ensure
-  ! that their rotate() will update there time to the same time as the MHD task.
-  ! This will however not happen until the next time the RT tasks have updated.
+  ! We now know the timestep size and the time, and we can set these for all the
+  ! RT solvers, in such a way that they update in the desired order.
   !-----------------------------------------------------------------------------
   mhd => self%patch
   self%dtime = mhd%dtime
@@ -550,7 +547,7 @@ SUBROUTINE post_update (self)
     omega => self%omega(i)
     omega%time = mhd%time
     !-------------------------------------------------------------------------
-    ! Inclined tasks advance their time a factor mu slower, and are thus forced
+    ! Inclined tasks may advance their time a factor mu slower, and thus forced
     ! to update more often, to propagate the solution by about the same amount
     ! vertically.  NOTE (FIXME):  Purely horizontal rays need special treatment
     !-------------------------------------------------------------------------
@@ -561,6 +558,7 @@ SUBROUTINE post_update (self)
     end if
   end do
 write (io_unit%queue,*) 'mhd', wallclock(), self%patch%id, self%id, mhd%time+mhd%dtime, self%rotated, omega%rotated
+  !-----------------------------------------------------------------------------
   call trace%end
 END SUBROUTINE post_update
 
@@ -666,9 +664,9 @@ subroutine omp_eos
     end if
   end if
   ! ----------------------------------------------------------------------------
-  ! Compute radiative diffusion speed
+  ! Compute radiative diffusion speed, and set default omega%u_max
   ! ----------------------------------------------------------------------------
-  u_max = 0.0
+  self%u_max = 0.0
   stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
   do i =1, eos%n_lambda
     fmax = (pgas/d)**4/pgas*(self%rk(:,:,:,i)*minval(self%ds))
@@ -676,10 +674,7 @@ subroutine omp_eos
     u_max = stefan*16./3.*self%fmaxval(fmax)*self%courant/self%cdtd*self%epsilon
     self%u_max = max(self%u_max,u_max)
   end do
-  !-----------------------------------------------------------------------------
-  ! Initialize the u_max value here, and let MHD modify it (down only)
-  !-----------------------------------------------------------------------------
-  self%patch%u_max = self%u_max
+  self%omega(:)%u_max =  self%u_max
   if (self%constant_q) then
     deallocate (d, e)
   end if
@@ -837,6 +832,18 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   !
   call trace%end()
 END SUBROUTINE nbor_relations
+
+!===============================================================================
+!> Intercept of courant_condition() call
+!===============================================================================
+SUBROUTINE courant_condition (self, detailed_timer)
+  class(rt_t):: self
+  logical, optional:: detailed_timer
+  !-----------------------------------------------------------------------------
+  call trace%begin ('rt_t%courant_condition')
+  self%patch%u_max = max (self%patch%u_max, self%u_max)
+  call trace%end()
+END SUBROUTINE courant_condition
 
 !===============================================================================
 !> Auxiliary output
