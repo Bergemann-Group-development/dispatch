@@ -101,7 +101,6 @@ MODULE rt_mod
   contains
     procedure:: pre_init                              ! read parameters
     procedure:: init                                  ! init RT task
-    procedure:: init_task_list                        ! get task list
     procedure:: add_tasks_to                          ! add to task list
     procedure:: init_omega                            ! init omega task
     procedure:: needs                                 ! check upstream
@@ -333,17 +332,7 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Save a pointer to the task list
-!===============================================================================
-SUBROUTINE init_task_list (self, task_list)
-  class(rt_t):: self
-  class(list_t), pointer:: task_list
-  !.............................................................................
-  self%task_list => task_list
-END SUBROUTINE init_task_list
-
-!===============================================================================
-!> Initialize the RT tasks that belong to this task
+!> Add the (1+n_omega) RT tasks to the task list
 !===============================================================================
 SUBROUTINE add_tasks_to (self, task_list)
   class(rt_t):: self
@@ -353,21 +342,8 @@ SUBROUTINE add_tasks_to (self, task_list)
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%add_tasks_to')
   !-----------------------------------------------------------------------------
-  ! Add the (1+n_omega) RT tasks that belong to each MHD task with RT
-  !-----------------------------------------------------------------------------
   if (self%is_clear(bits%no_rt)) then
-    call io%assert (associated(self%link%task), 'mhd%link%task missing')
-    !-----------------------------------------------------------------------
-    ! self%rt was allocated via solver_t%init, which calls extras_t%pre_init
-    !-----------------------------------------------------------------------
-    call self%init
-    !-----------------------------------------------------------------------
-    ! Add the main RT task to the task_list
-    !-----------------------------------------------------------------------
     call task_list%prepend_link (self%link)
-    !-----------------------------------------------------------------------
-    ! Add the n_omega RT sub-tasks to the task_list
-    !-----------------------------------------------------------------------
     do i_omega=1,self%n_omega
       call task_list%prepend_link (self%omega(i_omega)%link)
     end do
