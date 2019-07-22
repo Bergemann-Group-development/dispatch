@@ -168,7 +168,8 @@ SUBROUTINE init_task_list (self, task_list)
   class(extras_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
-  self%task_list => task_list
+  self%task_list => task_list                                          ! keep
+  call self%rt%init_task_list (task_list)                              ! RT
 END SUBROUTINE init_task_list
 
 !===============================================================================

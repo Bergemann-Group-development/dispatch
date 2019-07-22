@@ -40,7 +40,6 @@ MODULE experiment_mod
       boundary_condition => null()
   contains
     procedure:: init
-    procedure:: init_rt
     procedure:: update
   end type
   !.............................................................................
@@ -107,74 +106,6 @@ SUBROUTINE init_task_list (self, task_list)
   self%task_list => task_list
   call nbors%init (self)
 END SUBROUTINE init_task_list
-
-!===============================================================================
-!> Initialize the RT tasks that belong to this task
-!===============================================================================
-SUBROUTINE init_rt (self, task_list)
-  class(experiment_t):: self
-  type(list_t):: task_list
-  !.............................................................................
-  class(link_t), pointer:: link
-  class(task_t), pointer:: task, rt_task
-  class(patch_t), pointer:: patch
-  class(rt_t), pointer:: omega, rt
-  integer:: i_omega, iostat, n_mhd, n_rt, id
-  integer, save:: verbose=0
-  logical:: on = .false.
-  namelist /rt_setup_params/ verbose, on
-  !-----------------------------------------------------------------------------
-  call trace%begin ('rt_setup')
-  call io%header ('begin rt_setup')
-  !-----------------------------------------------------------------------------
-  rewind (io_unit%input)
-  read (io_unit%input, rt_setup_params, iostat=iostat)
-  if (io%master) write (io_unit%output, rt_setup_params)
-  if (.not.on) then
-    call trace%end
-    return
-  end if
-  !-----------------------------------------------------------------------------
-  ! Add the (1+n_omega) RT tasks that belong to each MHD task with RT
-  !-----------------------------------------------------------------------------
-  n_rt = 0
-  n_mhd = 0
-  !-----------------------------------------------------------------------------
-  ! Add the (1+n_omega) RT tasks that belong to each MHD task with RT
-  !-----------------------------------------------------------------------------
-  if (verbose > 0) &
-    write(io%output,*) 'processing MHD task', self%id
-    if (self%is_clear(bits%no_rt)) then
-      call io%assert (associated(self%link%task), 'mhd%link%task missing')
-      !-----------------------------------------------------------------------
-      ! self%rt was allocated via solver_t%init, which calls extras_t%pre_init
-      !-----------------------------------------------------------------------
-      call self%rt%init
-      !-----------------------------------------------------------------------
-      ! Add the main RT task to the task_list
-      !-----------------------------------------------------------------------
-      call task_list%prepend_link (self%rt%link)
-      n_mhd = n_mhd + 1
-      n_rt = n_rt + 1
-      !-----------------------------------------------------------------------
-      ! Add the n_omega RT sub-tasks to the task_list
-      !-----------------------------------------------------------------------
-      do i_omega=1,self%rt%n_omega
-        call task_list%prepend_link (self%rt%omega(i_omega)%link)
-        n_rt = n_rt + 1
-      end do
-      omega => self%rt%omega(1)
-      rt => self%rt
-    end if
-  write (stdout,*) 'rt_setup: n_mhd, n_rt =', n_mhd, n_rt
-  if (associated(omega)) then
-    patch => omega
-    call data_io%register_kind(patch)
-  else if (associated(rt)) then
-    patch => rt
-    call data_io%register_kind(patch)
-  end if
-END SUBROUTINE init_rt
 
 !===============================================================================
 !> Experiment update
