@@ -137,6 +137,10 @@ SUBROUTINE execute (self, task_list)
     link => link%next
   end do
   !-----------------------------------------------------------------------------
+  ! Reset task_list status to re-establish nbor relations, checking consistency
+  !-----------------------------------------------------------------------------
+  call task_list%reset_status (check=.true.)
+  !-----------------------------------------------------------------------------
   ! Call the selected dispatcher method
   !-----------------------------------------------------------------------------
   call self%method (task_list)
