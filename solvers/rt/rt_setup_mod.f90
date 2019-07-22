@@ -3,20 +3,18 @@
 !> already existing task_list.
 !===============================================================================
 MODULE rt_setup_mod
-  USE nbors_mod
-  USE io_mod
-  USE io_unit_mod
-  USE omp_mod
-  USE mpi_mod
   USE task_list_mod
+  USE nbors_mod
+  USE solver_mod
+  USE rt_mod
+  USE patch_mod
   USE link_mod
   USE task_mod
-  USE patch_mod
-  USE solver_mod
-  USE trace_mod
-  USE rt_mod
-  USE bits_mod
   USE data_io_mod
+  USE io_mod
+  USE trace_mod
+  USE io_unit_mod
+  USE bits_mod
   implicit none
   private
   type, public:: rt_setup_t
