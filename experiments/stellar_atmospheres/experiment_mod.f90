@@ -24,6 +24,7 @@ MODULE experiment_mod
   USE download_mod
   USE bits_mod
   USE eos_mod
+  USE list_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -88,6 +89,16 @@ SUBROUTINE init (self)
   end if
   call trace%end()
 END SUBROUTINE init
+
+!===============================================================================
+!> Save a pointer to the task list, for use in underlings that need it
+!===============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(experiment_t):: self
+  class(list_t), pointer:: task_list
+  !.............................................................................
+  self%task_list => task_list
+END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Experiment update

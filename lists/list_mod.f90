@@ -495,7 +495,7 @@ SUBROUTINE reset_status (self, check)
           write (stderr,*) link%task%id, flags(:,1)
           write (stderr,*)   nb%task%id, flags(:,2)
           flush (stderr)
-          call io%abort ('nbor_relation returned value inconsistent with initaial values')
+          call io%abort ('nbor_relations() returned value inconsistent with initial values')
         end if
       end if
       nb => nb%next

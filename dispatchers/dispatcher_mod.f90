@@ -16,7 +16,7 @@ MODULE dispatcher_mod
   USE dispatcher6_mod
   USE mpi_mesg_mod
   USE data_io_mod
-  USE gpatch_mod
+  USE experiment_mod
   USe list_mod
   implicit none
   private
@@ -130,7 +130,7 @@ SUBROUTINE execute (self, task_list)
   do while (associated(link))
     associate (task=>link%task)
     select type (task)
-    class is (gpatch_t)
+    class is (experiment_t)
     call task%init_task_list (list)
     end select
     end associate
