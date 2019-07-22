@@ -777,22 +777,24 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(task_t), pointer:: another
   logical:: needed, needs_me, download
   !.............................................................................
+  logical:: needed1, needs_me1, download1
   class(rt_t), pointer:: rt_another
   class(task_t), pointer:: other
+  logical, parameter:: check=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%nbor_relations')
   ! ----------------------------------------------------------------------------
   ! If this RT task has no RT on, it should have no nbor relations
   ! ----------------------------------------------------------------------------
   if (.not.(self%on)) then
-    needed = .false.; needs_me = .false.; download = .false.
+    needed1 = .false.; needs_me1 = .false.; download1 = .false.
     call trace%end()
     return
   end if
   ! ----------------------------------------------------------------------------
   ! First check the main relations, based on location and level of refinement
   ! ----------------------------------------------------------------------------
-  call self%task_t%nbor_relations(another, needed, needs_me, download)
+  call self%task_t%nbor_relations(another, needed1, needs_me1, download1)
   ! ----------------------------------------------------------------------------
   ! Now, if another is RT, add it appropriately, if it is MHD, it has to overlap
   ! and have different kind of relations
@@ -804,7 +806,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
       ! ------------------------------------------------------------------------
       ! if nbor RT is not on, we don't need any relations to it.
       ! ------------------------------------------------------------------------
-      needed = .false.; needs_me = .false.; download = .false.
+      needed1 = .false.; needs_me1 = .false.; download1 = .false.
       call trace%end()
       return
     end if
@@ -813,11 +815,11 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
       !-------------------------------------------------------------------------
       ! The omega task needs the RT task, which needs omega tasks.  No download.
       !-------------------------------------------------------------------------
-      download = .false.
+      download1 = .false.
       if (self%i_omega == 0) then
       ! Different main RT tasks don't need to know about each other
-        needed = .false.
-        needs_me = .false.
+        needed1 = .false.
+        needs_me1 = .false.
       end if
     !
     else if (self%needs(self,rt_another)) then
@@ -825,28 +827,28 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
       ! The omega task needs the upstream task,
       ! but the upstream task does not need the downstream omega task.
       !-------------------------------------------------------------------------
-      needed   = .true.
-      needs_me = .false.
-      download = .true.
+      needed1   = .true.
+      needs_me1 = .false.
+      download1 = .true.
     ! --------------------------------------------------------------------------
     else if (rt_another%needs(rt_another,self)) then
       ! ------------------------------------------------------------------------
       ! Downstream RT task will need me, but it is not needed and I should not
       ! download data from it.
       ! ------------------------------------------------------------------------
-      needed   = .false.
-      needs_me = .true.
-      download = .false.
+      needed1   = .false.
+      needs_me1 = .true.
+      download1 = .false.
     end if
     if(self%vertical_propagation) then
       if (any(self%position(1:2) /= rt_another%position(1:2))) &
-        needed = .false.
+        needed1 = .false.
     end if
     !---------------------------------------------------------------------------
     if ((self%i_omega >0).and.(rt_another%i_omega>0)) then
       if (self%i_omega /= rt_another%i_omega) then
         write (stderr,*) 'rt_t%nbor_relatoins: this should never happen!'
-        download = .false.; needed = .false.; needs_me=.false.
+        download1 = .false.; needed1 = .false.; needs_me1=.false.
       end if
     end if
     !
@@ -860,10 +862,17 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   ! ----------------------------------------------------------------------------
       if (.not.(associated(self%patch))) self%patch => gpatch%cast2gpatch(other)
     end if
-    download = .false.  ! don't download
+    download1 = .false.  ! don't download
   end select
-
   !
+  if (check) then
+   if (.not.all([needed1, needs_me1, download1] .eqv. [needed, needs_me, download])) then
+    write (stdout,'(a,2(3x,3l0))') 'rt_t%nbor_relations: non matching NMD =',&
+      self%id, [needed1, needs_me1, download1], [needed, needs_me, download]
+   end if
+  else
+    needed = needed1; needs_me = needs_me1; download = download1
+  end if
   call trace%end()
 END SUBROUTINE nbor_relations
 

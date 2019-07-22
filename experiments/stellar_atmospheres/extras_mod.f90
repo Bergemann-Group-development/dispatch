@@ -279,21 +279,6 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   logical:: needed, needs_me, download
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%nbor_relations')
-  call self%task_t%nbor_relations(another, needed, needs_me, download) ! keep
-  ! ----------------------------------------------------------------------------
-  ! Check if another is one of the extras and do appropriate relations
-  ! ----------------------------------------------------------------------------
-  select type (another)
-  class is (rt_t)        ! if it is an RT task
-    download = .false.
-    if (.not.self%overlaps(another)) then
-    ! for now, if RT doesn't overlap MHD, they should not have nbor relations at all.
-      needed = .false.
-      needs_me = .false.
-    end if
-  class default
-  !
-  end select
   call trace%end()
 END SUBROUTINE nbor_relations
 
