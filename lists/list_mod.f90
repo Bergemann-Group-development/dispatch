@@ -94,6 +94,7 @@ MODULE list_mod
     procedure:: update_status
     procedure:: send_to_vnbors
     procedure:: test_nbor_status
+    procedure:: info
   end type
   integer, parameter:: mnbor=100
   type(list_t), public:: list
@@ -2283,5 +2284,35 @@ SUBROUTINE test_status (self)
     if (n==0) write (io_unit%log,*) self%task%id, ' inconsistent bits: has no nbors'
   end if
 END SUBROUTINE test_status
+
+!===============================================================================
+!> Dump nbor relations, flags and status bits around io%id_debug
+!===============================================================================
+SUBROUTINE info (self)
+  class(list_t):: self
+  class(link_t), pointer:: link, nbor
+  class(task_t), pointer:: task, nbtask
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%info')
+  link => self%head
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (patch_t)
+      call task%task_info()
+      nbor => link%nbor
+      do while (associated(nbor))
+        nbtask => nbor%task
+        select type (nbtask)
+        class is (patch_t)
+          call nbtask%nbor_info (nbor)
+        end select
+        nbor => nbor%next
+      end do
+    end select
+    link => link%next
+  end do
+  call trace%end()
+END SUBROUTINE info
 
 END MODULE list_mod

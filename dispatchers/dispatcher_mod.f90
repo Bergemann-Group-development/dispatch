@@ -141,6 +141,7 @@ SUBROUTINE execute (self, task_list)
   ! Reset task_list status to re-establish nbor relations, checking consistency
   !-----------------------------------------------------------------------------
   call task_list%reset_status (check=.true.)
+  call task_list%info
   !-----------------------------------------------------------------------------
   ! Call the selected dispatcher method
   !-----------------------------------------------------------------------------
