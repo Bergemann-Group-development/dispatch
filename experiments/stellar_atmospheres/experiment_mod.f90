@@ -13,18 +13,24 @@
 !> update procedure in $(TOP)/lists/task_list_mod.f90.
 !===============================================================================
 MODULE experiment_mod
-  USE io_mod
-  USE trace_mod
-  USE omp_timer_mod
-  USE task_mod
-  USE link_mod
+  USE nbors_mod
   USE solver_mod
-  USE scaling_mod
-  USE mesh_mod
-  USE download_mod
-  USE bits_mod
-  USE eos_mod
   USE list_mod
+  USE download_mod
+  USE patch_mod
+  USE link_mod
+  USE rt_mod
+  USE mesh_mod
+  USE task_mod
+  USE eos_mod
+  USE data_io_mod
+  USE io_mod
+  USE io_unit_mod
+  USE trace_mod
+  USE scaling_mod
+  USE bits_mod
+  USE omp_timer_mod
+
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
@@ -99,6 +105,125 @@ SUBROUTINE init_task_list (self, task_list)
   !.............................................................................
   self%task_list => task_list
 END SUBROUTINE init_task_list
+
+SUBROUTINE init_rt (task_list)
+  type(list_t):: task_list
+  !.............................................................................
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task, rt_task
+  class(patch_t), pointer:: patch
+  class(rt_t), pointer:: omega, rt
+  class(list_t), pointer:: rt_task_list
+  integer:: i_omega, iostat, n_mhd, n_rt, id
+  integer, save:: verbose=0
+  logical:: on = .false.
+  namelist /rt_setup_params/ verbose, on
+  !-----------------------------------------------------------------------------
+  call trace%begin ('rt_setup')
+  call io%header ('begin rt_setup')
+  !-----------------------------------------------------------------------------
+  rewind (io_unit%input)
+  read (io_unit%input, rt_setup_params, iostat=iostat)
+  if (io%master) write (io_unit%output, rt_setup_params)
+  if (.not.on) then
+    call trace%end
+    return
+  end if
+  !-----------------------------------------------------------------------------
+  ! Allocate and initialize an RT task list
+  !-----------------------------------------------------------------------------
+  allocate (rt_task_list)
+  call rt_task_list%init ('RT_list')
+  !-----------------------------------------------------------------------------
+  ! Add the (1+n_omega) RT tasks that belong to each MHD task with RT
+  !-----------------------------------------------------------------------------
+  n_rt = 0
+  n_mhd = 0
+  !-----------------------------------------------------------------------------
+  ! Add the (1+n_omega) RT tasks that belong to each MHD task with RT
+  !-----------------------------------------------------------------------------
+  link => task_list%head
+  do while (associated(link))
+    call io%assert (associated(link%task), 'link%task missing')
+    task => link%task
+    if (verbose > 0) &
+      write(io%output,*) 'processing MHD task', task%id
+    select type (task)
+    class is (solver_t)
+      if (task%is_clear(bits%no_rt)) then
+        call io%assert (associated(task%link%task), 'mhd%link%task missing')
+        !-----------------------------------------------------------------------
+        ! task%rt was allocated via solver_t%init, which calls extras_t%pre_init
+        !-----------------------------------------------------------------------
+        call task%rt%init
+        !-----------------------------------------------------------------------
+        ! Add the main RT task to the rt_task_list
+        !-----------------------------------------------------------------------
+        call rt_task_list%append_link (task%rt%link)
+        n_mhd = n_mhd + 1
+        n_rt = n_rt + 1
+        !-----------------------------------------------------------------------
+        ! Add the n_omega RT sub-tasks to the rt_task_list
+        !-----------------------------------------------------------------------
+        do i_omega=1,task%rt%n_omega
+          call rt_task_list%append_link (task%rt%omega(i_omega)%link)
+          n_rt = n_rt + 1
+        end do
+        omega => task%rt%omega(1)
+        rt => task%rt
+      end if
+    end select
+    link => link%next
+  end do
+  write (stdout,*) 'rt_setup: n_mhd, n_rt =', n_mhd, n_rt
+  if (associated(omega)) then
+    patch => omega
+    call data_io%register_kind(patch)
+  else if (associated(rt)) then
+    patch => rt
+    call data_io%register_kind(patch)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Add nbor lists (in a separate loop so all rt tasks are initialized first)
+  !-----------------------------------------------------------------------------
+  link => task_list%head
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (solver_t)
+      if (task%rt%on) then
+        if (trim(task%rt%kind)=='rt_sc') then
+          call nbors%init (task)
+        else
+          call io%abort("rt_setup_mod:: unknown RT solver kind")
+        end if
+      end if
+    end select
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Merge task lists
+  !-----------------------------------------------------------------------------
+  if (verbose > 1) &
+    call rt_task_list%print ('rt_task_list')
+  call task_list%append_list (rt_task_list)
+  if (verbose > 0) &
+    call task_list%print ('new task_list')
+  !-----------------------------------------------------------------------------
+  ! Reset task_list status to re-establish nbor relations, checking consistency
+  !-----------------------------------------------------------------------------
+  call task_list%reset_status (check=.true.)
+  !-----------------------------------------------------------------------------
+  ! Add nbor lists sorted by level
+  !-----------------------------------------------------------------------------
+  link => task_list%head
+  do while (associated(link))
+    call link%sort_nbors_by_level(link%nbors_by_level,link%nbors_by_level)
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  call trace%end
+END SUBROUTINE init_rt
 
 !===============================================================================
 !> Experiment update
