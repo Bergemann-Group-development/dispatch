@@ -88,7 +88,7 @@ SUBROUTINE read_bifrost_snap (task_list)
   integer, save:: itimer=0
   integer:: iostat
   !-----------------------------------------------------------------------------
-  call trace%begin('ic_mod%init', itimer=itimer)
+  call trace%begin('read_bifrost_snap', itimer=itimer)
   call io%header('begin ic_mod%read_snapshot: Reading Bifrost legacy data')
   !-----------------------------------------------------------------------------
   ! Pick up patch info from task_list
@@ -265,7 +265,7 @@ SUBROUTINE read_stagger_snap (task_list)
   real, dimension(:,:,:), allocatable:: rbuf, buffer
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('ic_mod%init', itimer=itimer)
+  call trace%begin('read_stagger_snap', itimer=itimer)
   call io%header('begin ic_mod%read_stagger: Reading legacy Stagger Code data')
   !-----------------------------------------------------------------------------
   ! Pick up patch info from task_list
@@ -391,7 +391,7 @@ SUBROUTINE read_stagger_snap (task_list)
   end do
   if (io%master) &
     print *,'ic_t%init finished'
-  call trace_end
+  call trace%end
 END SUBROUTINE read_stagger_snap
 
 !===============================================================================

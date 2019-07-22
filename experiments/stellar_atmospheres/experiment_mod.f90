@@ -103,8 +103,10 @@ SUBROUTINE init_task_list (self, task_list)
   class(experiment_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
+  call trace%begin ('experiment_t%init_task_list')
   self%task_list => task_list
   call nbors%init (self)
+  call trace%end
 END SUBROUTINE init_task_list
 
 !===============================================================================

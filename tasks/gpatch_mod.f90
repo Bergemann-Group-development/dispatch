@@ -67,7 +67,9 @@ SUBROUTINE init_task_list (self, task_list)
   class(gpatch_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
+  call trace%begin ('gpatch_t%init_task_list')
   self%task_list => task_list
+  call trace%end
 END SUBROUTINE init_task_list
 
 !===============================================================================

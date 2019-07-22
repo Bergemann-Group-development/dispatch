@@ -372,6 +372,7 @@ SUBROUTINE add_tasks_to (self, task_list)
       call task_list%prepend_link (self%omega(i_omega)%link)
     end do
   end if
+  call trace%end
 END SUBROUTINE add_tasks_to
 
 !===============================================================================

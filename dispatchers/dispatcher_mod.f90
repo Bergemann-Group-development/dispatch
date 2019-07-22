@@ -119,6 +119,7 @@ SUBROUTINE execute (self, task_list)
   class(list_t), pointer:: list
   class(link_t), pointer:: link
   !-----------------------------------------------------------------------------
+  call trace%begin ('dispatcher_t%execute')
   task_list%method = method
   task_list%dispatcher = .true.
   if (test) call set_io
@@ -144,6 +145,7 @@ SUBROUTINE execute (self, task_list)
   ! Call the selected dispatcher method
   !-----------------------------------------------------------------------------
   call self%method (task_list)
+  call trace%end
 END SUBROUTINE execute
 
 !===============================================================================
