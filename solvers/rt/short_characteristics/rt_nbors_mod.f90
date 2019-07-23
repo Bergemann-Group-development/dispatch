@@ -1,4 +1,4 @@
-MODULE nbors_mod
+MODULE rt_nbors_mod
   USE solver_mod
   USE rt_mod
   USE patch_mod
@@ -10,11 +10,11 @@ MODULE nbors_mod
   implicit none
   private
   !.............................................................................
-  type, public:: nbors_t
+  type, public:: rt_nbors_t
   contains
     procedure, nopass:: init
   end type
-  type(nbors_t), public:: nbors
+  type(rt_nbors_t), public:: rt_nbors
 CONTAINS
 
 !===============================================================================
@@ -144,4 +144,4 @@ SUBROUTINE init_nbor_pair (task1, needed, task2, needs_me, download)
   call trace%end
 END SUBROUTINE init_nbor_pair
 
-END MODULE nbors_mod
+END MODULE rt_nbors_mod

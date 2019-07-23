@@ -1,16 +1,16 @@
 MODULE cartesian_mod
-  USE omp_mod
-  USE mpi_mod
-  USE mpi_coords_mod
-  USE io_mod
-  USE bits_mod
-  USE trace_mod
-  USE task_mod
-  USE patch_mod
-  USE link_mod
   USE task_list_mod
   USE experiment_mod
+  USE patch_mod
+  USE link_mod
+  USE task_mod
+  USE trace_mod
+  USE io_mod
   USE timer_mod
+  USE mpi_coords_mod
+  USE mpi_mod
+  USE omp_mod
+  USE bits_mod
   implicit none
   private
   type, public:: cartesian_t

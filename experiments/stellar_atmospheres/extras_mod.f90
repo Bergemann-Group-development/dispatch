@@ -55,13 +55,13 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   ! Generic modules, which are always included in the code in any case
   !-----------------------------------------------------------------------------
+  USE gpatch_mod
+  USE list_mod
+  USE patch_mod
+  USE task_mod
   USE io_mod
   USE trace_mod
-  USE gpatch_mod
-  USE patch_mod
   USE connect_mod
-  USE list_mod
-  USE task_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------

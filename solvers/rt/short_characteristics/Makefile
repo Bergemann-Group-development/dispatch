@@ -8,4 +8,4 @@ rt_solver_mod.o     : rt_mod.o
 radau_mod.o	        : 
 rt_boundaries_mod.o : trace_mod.o kinds_mod.o bits_mod.o mesh_mod.o eos_mod.o \
                       units_mod.o scaling_mod.o
-nbors_mod.o         : solver_mod.o
+rt_nbors_mod.o      : solver_mod.o
