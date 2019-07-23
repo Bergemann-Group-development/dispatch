@@ -670,9 +670,10 @@ subroutine omp_eos
   self%u_max = 0.0
   stefan = cgs%stefan/(scaling%p*scaling%u)*scaling%temp**4
   do ib=1, eos%n_lambda
-    fmax = (pgas/d)**4/pgas*(self%rk(:,:,:,ib)*minval(self%ds))
+    fmax = math%pi2*self%src(:,:,:,ib)/pgas*(self%rk(:,:,:,ib)*minval(self%ds))
+    !fmax = (pgas/d)**4/pgas*(self%rk(:,:,:,ib)*minval(self%ds))
     fmax = fmax/(1.+(self%rk(:,:,:,ib)*minval(self%ds))**2)
-    u_max = stefan*16./3.*self%fmaxval(fmax)*self%courant/self%cdtd*self%epsilon
+    u_max = 16./3.*self%fmaxval(fmax)*self%courant/self%cdtd*self%epsilon
     self%u_max = max(self%u_max,u_max)
   end do
   self%omega(:)%u_max =  self%u_max
