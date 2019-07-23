@@ -124,23 +124,10 @@ SUBROUTINE execute (self, task_list)
   task_list%dispatcher = .true.
   if (test) call set_io
   !-----------------------------------------------------------------------------
-  ! Store a copy of the task list pointer in each task (generically in gpatch_t)
-  !-----------------------------------------------------------------------------
-  list => task_list
-  link => task_list%head
-  do while (associated(link))
-    associate (task=>link%task)
-    select type (task)
-    class is (experiment_t)
-    call task%init_task_list (list)
-    end select
-    end associate
-    link => link%next
-  end do
-  !-----------------------------------------------------------------------------
   ! Reset task_list status to re-establish nbor relations, checking consistency
   !-----------------------------------------------------------------------------
   call task_list%reset_status (check=.true.)
+  call task_list%init_task_list_pointers (task_list)
   call task_list%info
   !-----------------------------------------------------------------------------
   ! Call the selected dispatcher method

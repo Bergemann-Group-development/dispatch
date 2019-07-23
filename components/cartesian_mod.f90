@@ -33,7 +33,6 @@ SUBROUTINE init (self, label)
   class(cartesian_t):: self
   character(len=*), optional:: label
   !.............................................................................
-  type(task_list_t):: task_list
   type(task_list_t), pointer:: patch_list
   class(link_t), pointer:: link, next, nbor
   integer:: patches_per_mpi(3)
@@ -155,17 +154,7 @@ SUBROUTINE init (self, label)
     link => next
   end do
   !-----------------------------------------------------------------------------
-  ! Construct nbor lists, set the internal/boundary/virtual bits, and count the
-  ! number of tasks in each category.  The nbor list constructions are (and
-  ! must remain) independent of the status bits, since setting the status bits
-  ! relies on correct nbor lists -- hence the order of calls below.
   !-----------------------------------------------------------------------------
-  if (io%verbose > 0) &
-    write(stdout,*) 'cartesian_t%init: init all nbors'
-  call self%task_list%init_all_nbors
-  if (io%verbose > 0) &
-    write(stdout,*) 'cartesian_t%init: setting status bits'
-  call self%task_list%reset_status
   if (io%verbose > 0) &
     write(stdout,*) 'cartesian_t%init: count status'
   call self%task_list%count_status
@@ -183,6 +172,7 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   ! Initialize tasks
   !-----------------------------------------------------------------------------
+  call self%task_list%init_task_list_pointers (self%task_list)
   if (omp_init) then
     !$omp parallel default(shared)
     call init_exp (self, origin)

@@ -98,7 +98,6 @@ MODULE extras_mod
     procedure:: pre_init
     procedure:: init
     procedure:: dealloc
-    procedure:: init_task_list
     procedure:: pre_update
     procedure:: post_update
     procedure:: output
@@ -160,19 +159,6 @@ SUBROUTINE init (self)
   !call self%patch_force%init                                           ! sinkp 
   call trace%end
 END SUBROUTINE init
-
-!===============================================================================
-!> Save a pointer to the task list, for use in underlings that need it
-!===============================================================================
-SUBROUTINE init_task_list (self, task_list)
-  class(extras_t):: self
-  class(list_t), pointer:: task_list
-  !.............................................................................
-  call trace%begin ('extras_t%init_task_list')
-  self%task_list => task_list                                          ! keep
-  call self%rt%init_task_list (task_list)                              ! RT
-  call trace%end
-END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Deallocate allocated arrays

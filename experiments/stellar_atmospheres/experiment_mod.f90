@@ -108,9 +108,11 @@ SUBROUTINE init_task_list (self, task_list)
   ! -- punt to the next level; picked up by extras_t ---------------------------
   call self%solver_t%init_task_list (task_list)
   ! -- for RT tasks, modify the nbor lists and add tasks to the task list-------
-  if (self%rt%on) then
-    call nbors%init (self)
-    call self%rt%add_tasks_to (task_list)
+  if (associated(self%rt)) then
+    if (self%rt%on) then
+      call nbors%init (self)
+      call self%rt%add_tasks_to (task_list)
+    end if
   end if
   call trace%end
 END SUBROUTINE init_task_list
