@@ -100,8 +100,8 @@ MODULE rt_mod
     real, pointer            :: qr(:,:,:)             ! net radiative heating
   contains
     procedure:: pre_init                              ! read parameters
-    procedure:: init                                  ! init RT task
-    procedure:: add_tasks_to                          ! add to task list
+    procedure, nopass:: init_task                     ! init RT task
+    procedure:: add_to_task_list                      ! add to task list
     procedure:: init_omega                            ! init omega task
     procedure:: needs                                 ! check upstream
     procedure:: pre_update                            ! pre MHD
@@ -174,9 +174,8 @@ END SUBROUTINE pre_init
 !> set the time rt_t times = -n_warmup * rt_t%timestep, making sure to call
 !> rt_t%rt_eos for the initial MHD state.
 !===============================================================================
-SUBROUTINE init (self)
-  USE link_mod
-  class (rt_t):: self
+SUBROUTINE init_task (self)
+  class (rt_t), pointer:: self
   ! ............................................................................
   class (gpatch_t), pointer :: p
   class (rt_t),     pointer :: omega
@@ -192,11 +191,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   nullify(self%link)
   allocate(link)
-  dummy => p%connect%rt
-  select type(dummy)
-  class is (task_t)
-    link%task => dummy
-  end select
+  link%task => self
   self%link => link
   !-----------------------------------------------------------------------------
   ! Initialize the patch, with a unique ID, and a %kind used in data_io
@@ -329,19 +324,20 @@ SUBROUTINE init (self)
     call self%dealloc()
   end if
   call trace%end()
-END SUBROUTINE init
+END SUBROUTINE init_task
 
 !===============================================================================
 !> Add the (1+n_omega) RT tasks to the task list
 !===============================================================================
-SUBROUTINE add_tasks_to (self, task_list)
+SUBROUTINE add_to_task_list (self)
   class(rt_t):: self
-  type(list_t):: task_list
+  class(list_t), pointer:: task_list
   !.............................................................................
   integer:: i_omega
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%add_tasks_to')
   !-----------------------------------------------------------------------------
+  task_list => self%patch%task_list
   if (self%is_clear(bits%no_rt)) then
     call task_list%prepend_link (self%link)
     do i_omega=1,self%n_omega
@@ -349,7 +345,7 @@ SUBROUTINE add_tasks_to (self, task_list)
     end do
   end if
   call trace%end
-END SUBROUTINE add_tasks_to
+END SUBROUTINE add_to_task_list
 
 !===============================================================================
 !> Initialize rt sub-tasks; note that all self values are initially cloned
