@@ -575,7 +575,9 @@ SUBROUTINE post_update (self)
       omega%dtime = mhd%dtime + 2*self%grace*self%dtime
     end if
   end do
-write (io_unit%queue,*) 'mhd', wallclock(), self%patch%id, self%id, mhd%time+mhd%dtime, self%rotated, omega%rotated
+  if (verbose == -1) &
+    write (io_unit%queue,*) 'mhd', wallclock(), &
+      self%patch%id, self%id, mhd%time+mhd%dtime, self%rotated, omega%rotated
   !-----------------------------------------------------------------------------
   call trace%end
 END SUBROUTINE post_update
@@ -611,7 +613,9 @@ SUBROUTINE update (self)
     ! -- Call RT solver, storing result in %new slot, at time = t(%it)
     self%q => self%mem(:,:,:,:,self%new,1)
     call self%solve ()
-write (io_unit%queue,*) 'ome', wallclock(), self%patch%id, self%id, self%time+self%dtime, self%i_omega
+  if (verbose == -1) &
+    write (io_unit%queue,*) 'ome', wallclock(), &
+      self%patch%id, self%id, self%time+self%dtime, self%i_omega
   end if
   call trace%end (itimer)
 END SUBROUTINE update
@@ -634,9 +638,12 @@ SUBROUTINE rt_eos (self, time)
     if (time > self%eos_time) then
       call omp_eos
       self%eos_time = time
-write (io_unit%queue,*) 'eos', wallclock(), self%patch%id, self%id, time
-    else
-write (io_unit%queue,*) 'eo0', wallclock(), self%patch%id, self%id, time, self%eos_time
+      if (verbose == -1) &
+        write (io_unit%queue,*) 'eos', wallclock(), &
+          self%patch%id, self%id, time
+    else if (verbose == -1) then
+        write (io_unit%queue,*) 'eo0', wallclock(), &
+          self%patch%id, self%id, time, self%eos_time
     end if
     !$omp end critical (eos_cr)
   end if
