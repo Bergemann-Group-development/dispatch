@@ -170,6 +170,7 @@ SUBROUTINE init_task_list (self, task_list)
   !.............................................................................
   call trace%begin ('extras_t%init_task_list')
   self%task_list => task_list                                          ! keep
+  call self%rt%init_task_list (task_list)                              ! RT
   call trace%end
 END SUBROUTINE init_task_list
 
@@ -270,7 +271,8 @@ FUNCTION cast2extras (task) RESULT(extras)
 END FUNCTION cast2extras
 
 !===============================================================================
-!> Set default nbor relations, and allow underlings to modify them
+!> Set default nbor relations, and allow underlings to modify them.  This is
+!> called from list_t%init_nbors and from list_t%reset_status()
 !===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(extras_t):: self

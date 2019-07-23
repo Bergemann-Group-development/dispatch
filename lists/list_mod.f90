@@ -1254,6 +1254,7 @@ SUBROUTINE init_all_nbors (self)
   end do
   !$omp end parallel
   call list%reset_status                                ! set bits and count
+  call trace%end (itimer)
 END SUBROUTINE init_all_nbors
 
 !===============================================================================

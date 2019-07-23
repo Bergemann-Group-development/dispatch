@@ -722,7 +722,7 @@ END SUBROUTINE solve
 SUBROUTINE task_info (self)
   class(rt_t):: self
   !-----------------------------------------------------------------------------
-  write(io_unit%mpi,'(1x,a,12x,i6,2i4,11x,2l1,2x,3f9.3,i4,2f7.3)') &
+  write(io_unit%mpi,'(1x,a,12x,i6,2i4,7x,2l1,2x,3f9.3,i4,2f7.3)') &
     'rt_t%task_info: id, rank, level, BV, pos, i_omega, mu, phi =', &
     self%id, self%rank, self%level, &
     self%is_set(bits%boundary), self%is_set(bits%virtual), self%position, &
@@ -757,6 +757,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(rt_t), pointer:: rt_another
   class(task_t), pointer:: other
   logical, parameter:: check=.true.
+  character(len=4):: match
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%nbor_relations')
   ! ----------------------------------------------------------------------------
@@ -767,10 +768,6 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
     call trace%end()
     return
   end if
-  ! ----------------------------------------------------------------------------
-  ! First check the main relations, based on location and level of refinement
-  ! ----------------------------------------------------------------------------
-  call self%task_t%nbor_relations(another, needed1, needs_me1, download1)
   ! ----------------------------------------------------------------------------
   ! Now, if another is RT, add it appropriately, if it is MHD, it has to overlap
   ! and have different kind of relations
@@ -823,7 +820,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
     !---------------------------------------------------------------------------
     if ((self%i_omega >0).and.(rt_another%i_omega>0)) then
       if (self%i_omega /= rt_another%i_omega) then
-        write (stderr,*) 'rt_t%nbor_relatoins: this should never happen!'
+        write (stderr,*) 'rt_t%nbor_relations: this should never happen!'
         download1 = .false.; needed1 = .false.; needs_me1=.false.
       end if
     end if
@@ -842,10 +839,14 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   end select
   !
   if (check) then
-   if (.not.all([needed1, needs_me1, download1] .eqv. [needed, needs_me, download])) then
-    write (stdout,'(a,2(3x,3l0))') 'rt_t%nbor_relations: non matching NMD =',&
-      self%id, [needed1, needs_me1, download1], [needed, needs_me, download]
+    if (all([needed1, needs_me1, download1] .eqv. [needed, needs_me, download])) then
+      match = ''
+    else
+      match = 'miss'
    end if
+    write (stdout,'(2i6,3x,a,2(3x,3l0),3x,a)') self%id, another%id, &
+      'rt_t%nbor_relations: NMD =',&
+      [needed,needs_me,download], [needed1,needs_me1,download1], match
   else
     needed = needed1; needs_me = needs_me1; download = download1
   end if

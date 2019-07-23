@@ -40,6 +40,7 @@ MODULE experiment_mod
       boundary_condition => null()
   contains
     procedure:: init
+    procedure:: init_task_list
     procedure:: update
   end type
   !.............................................................................
@@ -97,15 +98,20 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Save a pointer to the task list, for use in underlings that need it
+!> Intercept the init_task_list call to finalize RT setup
 !===============================================================================
 SUBROUTINE init_task_list (self, task_list)
   class(experiment_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
   call trace%begin ('experiment_t%init_task_list')
-  self%task_list => task_list
-  call nbors%init (self)
+  ! -- punt to the next level; picked up by extras_t ---------------------------
+  call self%solver_t%init_task_list (task_list)
+  ! -- for RT tasks, modify the nbor lists and add tasks to the task list-------
+  if (self%rt%on) then
+    call nbors%init (self)
+    call self%rt%add_tasks_to (task_list)
+  end if
   call trace%end
 END SUBROUTINE init_task_list
 

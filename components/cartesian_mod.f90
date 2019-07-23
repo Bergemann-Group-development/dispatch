@@ -191,7 +191,6 @@ SUBROUTINE init (self, label)
     call init_exp (self, origin)
   end if
   if (io%master) then
-    write (*, cartesian_params)
     write (io_unit%nml, cartesian_params)
     flush (io_unit%nml)
   end if
