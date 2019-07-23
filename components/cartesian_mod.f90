@@ -130,78 +130,36 @@ SUBROUTINE init (self, label)
     patch%llc_nat = patch%llc_cart
     call patch%set(bits%static)
     if (all(self%dims==1)) call task%set(bits%root_grid)
-    rank = patch%rank
-    if (rank==mpi%rank) then
-      call patch%set(bits%internal)
-    else
-      call patch%set(bits%external)
+    ! -- initially append all tasks to the task list, to build nbor lists ------
+    call self%task_list%append_link (link)
+  end do
+  end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Generate nbor lists and set status bits for all tasks
+  !-----------------------------------------------------------------------------
+  call self%task_list%init_all_nbors
+  call self%task_list%reset_status
+  !-----------------------------------------------------------------------------
+  ! Remove tasks that are external
+  !-----------------------------------------------------------------------------
+  link => self%task_list%head
+  do while (associated(link))
+    next => link%next
+    if (link%task%is_set (bits%external)) then
+      call link%remove_nbor_list (link%nbor)
+      call self%task_list%remove (link)
+      deallocate (link%task)
+      deallocate (link)
     end if
-    !---------------------------------------------------------------------------
-    ! Set the patch status bits, by checking the ranks of neighbor patches
-    !---------------------------------------------------------------------------
-    do k1=nn(1,3),nn(2,3)
-    do j1=nn(1,2),nn(2,2)
-    do i1=nn(1,1),nn(2,1)
-      if (i1==0.and.j1==0.and.k1==0) cycle
-      ipos = modulo([i+i1,j+j1,k+k1],self%dims)
-      nbrank = mpi_coords%coords_to_rank(ipos/patches_per_mpi)
-      if (rank==mpi%rank .and. nbrank/=mpi%rank) then
-        call patch%set(bits%boundary)
-        call patch%clear(bits%internal)
-      end if
-      if (rank/=mpi%rank .and. nbrank==mpi%rank) then
-        call patch%set(bits%virtual)
-        call patch%clear(bits%external)
-      end if
-    end do
-    end do
-    end do
-    if (rank == mpi%rank) nlpatch=nlpatch+1
-    if (patch%is_set(bits%external)) then
-      deallocate (patch, link)
-    else
-      task => patch
-      call self%task_list%append_link (link)
-      if (patch%is_set(bits%boundary))  nbpatch = nbpatch+1
-      if (patch%is_set(bits%virtual ))  nvpatch = nvpatch+1
-      npatch = npatch+1
-    end if
+    link => next
   end do
-  end do
-  end do
-  !-----------------------------------------------------------------------------
-  ! Count task types
-  !-----------------------------------------------------------------------------
-  call self%task_list%count_status
-  !-----------------------------------------------------------------------------
-  ! These must be set before reading input snapshots
-  !-----------------------------------------------------------------------------
-  io%ntask = self%task_list%na
-  io%nwrite = self%task_list%na
-  io%ntotal = product(self%dims)
-  write(stdout,*) 'ntask, ntotal =', io%ntask, io%ntotal
-  !-----------------------------------------------------------------------------
-  ! Initialize patches on our rank and virtual patches, in parallel OMP tasks
-  !-----------------------------------------------------------------------------
-  if (omp_init) then
-    !$omp parallel default(shared)
-    call init_exp (self, origin)
-    !$omp end parallel
-  else
-    call init_exp (self, origin)
-  end if
-  if (io%master) then
-    write (io_unit%nml, cartesian_params)
-    flush (io_unit%nml)
-  end if
   !-----------------------------------------------------------------------------
   ! Construct nbor lists, set the internal/boundary/virtual bits, and count the
   ! number of tasks in each category.  The nbor list constructions are (and
   ! must remain) independent of the status bits, since setting the status bits
   ! relies on correct nbor lists -- hence the order of calls below.
   !-----------------------------------------------------------------------------
-  write (stdout,*) 'Number of tasks in task list:', &
-    self%task_list%n, io%ntask
   if (io%verbose > 0) &
     write(stdout,*) 'cartesian_t%init: init all nbors'
   call self%task_list%init_all_nbors
@@ -215,6 +173,28 @@ SUBROUTINE init (self, label)
     write(stdout,*) 'cartesian_t%init: init boundaries'
   call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
+  ! These must be set before reading input snapshots
+  !-----------------------------------------------------------------------------
+  io%ntask = self%task_list%na
+  io%nwrite = self%task_list%na
+  io%ntotal = product(self%dims)
+  write (stdout,*) 'Number of tasks in task list:', self%task_list%n
+  write(stdout,*) 'ntask, nwrite, ntotal =', io%ntask, io%nwrite, io%ntotal
+  !-----------------------------------------------------------------------------
+  ! Initialize tasks
+  !-----------------------------------------------------------------------------
+  if (omp_init) then
+    !$omp parallel default(shared)
+    call init_exp (self, origin)
+    !$omp end parallel
+  else
+    call init_exp (self, origin)
+  end if
+  !-----------------------------------------------------------------------------
+  if (io%master) then
+    write (io_unit%nml, cartesian_params)
+    flush (io_unit%nml)
+  end if
   if (io%verbose > 0) &
     write(stdout,*) 'cartesian_t%init: diagnostics'
   call self%diagnostics()

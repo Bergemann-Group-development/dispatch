@@ -55,6 +55,7 @@ MODULE list_mod
     procedure:: prepend_link
     procedure:: remove_task
     procedure:: remove_link
+    generic:: remove => remove_task, remove_link
     procedure:: remove_and_reset
     procedure:: remove_head
     procedure:: update_counts
