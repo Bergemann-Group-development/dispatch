@@ -200,19 +200,20 @@ SUBROUTINE init_task (self)
   self%track   = .false.
   self%type    = 'rt_t'
   self%kind    = 'rt_sc'
-  call self%patch_t%setup(position=p%position, size=p%size, n=p%n, nt=self%nt, &
-                          ng=self%ng, nv=self%n_bin, nw = 1)
+  self%box     = p%box
+  call self%patch_t%setup (position=p%position, size=p%size, n=p%n, nt=self%nt,&
+                           ng=self%ng, nv=self%n_bin, nw=1)
   !-----------------------------------------------------------------------------
   ! Synchronize with MHD patch
   ! ----------------------------------------------------------------------------
-  self%box      = p%box
-  self%rank     = p%rank
-  self%level    = p%level
-  self%size     = p%size
-  self%origin   = p%origin
-  self%llc_cart = p%llc_cart
-  self%llc_nat  = p%llc_nat
-  self%restart  = p%restart
+  self%rank       = p%rank
+  self%level      = p%level
+  self%size       = p%size
+  self%origin     = p%origin
+  self%llc_cart   = p%llc_cart
+  self%llc_nat    = p%llc_nat
+  self%centre_nat = p%centre_nat
+  self%restart    = p%restart
   self%warmup_end_time = p%time
   self%eos_time = self%time - self%rt_timestep
   self%iit      = 1
@@ -575,9 +576,6 @@ SUBROUTINE post_update (self)
       omega%dtime = mhd%dtime + 2*self%grace*self%dtime
     end if
   end do
-  if (verbose == -1) &
-    write (io_unit%queue,*) 'mhd', wallclock(), &
-      self%patch%id, self%id, mhd%time+mhd%dtime, self%rotated, omega%rotated
   !-----------------------------------------------------------------------------
   call trace%end
 END SUBROUTINE post_update
@@ -613,9 +611,12 @@ SUBROUTINE update (self)
     ! -- Call RT solver, storing result in %new slot, at time = t(%it)
     self%q => self%mem(:,:,:,:,self%new,1)
     call self%solve ()
-  if (verbose == -1) &
-    write (io_unit%queue,*) 'ome', wallclock(), &
-      self%patch%id, self%id, self%time+self%dtime, self%i_omega
+    if (verbose == -1) then
+      !$omp atomic
+      n_solve = n_solve+1
+      write (io_unit%queue,*) 'ome', n_solve, wallclock(), &
+        self%patch%id, self%id, self%time+self%dtime, self%i_omega
+    end if
   end if
   call trace%end (itimer)
 END SUBROUTINE update
@@ -639,10 +640,10 @@ SUBROUTINE rt_eos (self, time)
       call omp_eos
       self%eos_time = time
       if (verbose == -1) &
-        write (io_unit%queue,*) 'eos', wallclock(), &
+        write (io_unit%queue,*) 'eos', n_mhd, wallclock(), &
           self%patch%id, self%id, time
     else if (verbose == -1) then
-        write (io_unit%queue,*) 'eo0', wallclock(), &
+        write (io_unit%queue,*) 'eo0', n_mhd, wallclock(), &
           self%patch%id, self%id, time, self%eos_time
     end if
     !$omp end critical (eos_cr)
