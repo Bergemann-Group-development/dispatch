@@ -94,250 +94,6 @@ SUBROUTINE init (self)
 END SUBROUTINE init
 
 !===============================================================================
-!> Initialise downloading and interpolating options.
-!===============================================================================
-SUBROUTINE test (self)
-  class(download_t):: self
-  !.............................................................................
-  class(patch_t), pointer :: source(:), target, src
-  integer, dimension(3)  :: l, u, o, ii
-  integer                :: i, j, k, iv, dir
-  real(8), dimension(3)  :: pos
-  real(4), dimension(3)  :: pp
-  class(mesh_t), pointer :: mesh
-  logical                :: ok, allok
-  !-----------------------------------------------------------------------------
-  return
-  call trace%begin ('download_t%test')
-  self%interpolate => SelectInterpolator(-1)
-  !-----------------------------------------------------------------------------
-  ! Generate meshes with three resolutions, differing with a factor of three,
-  ! with and w/o staggering
-  !-----------------------------------------------------------------------------
-  allocate (target)
-  call target%setup (size=0.1_8*[1,1,1], n=[16,16,16], nv=2, nt=2, nw=1)
-  filled = -1
-  !-----------------------------------------------------------------------------
-  ! Loop over the three resolutions for source patches
-  !-----------------------------------------------------------------------------
-  allocate (source(3))
-  do i=1,3
-    call source(i)%setup (size=0.1_8*[1,1,1]*(scene%f_zoom)**(i-2), &
-      n=[16,16,16], nv=2, nt=2, nw=1)
-  end do
-  !---------------------------------------------------------------------------
-  ! Loop over source size
-  !---------------------------------------------------------------------------
-  target%level = 2
-  do i=1,3
-    source(i)%level = i
-    !---------------------------------------------------------------------------
-    ! Loop over no-stagger / stagger
-    !---------------------------------------------------------------------------
-    do iv=1,2
-      do dir=1,3
-        mesh => source(i)%mesh(dir)
-        mesh%h(iv)    = -0.5*(iv-1)
-        mesh => target%mesh(dir)
-        mesh%h(iv)    = -0.5*(iv-1)
-      end do
-      if (io%verbose>0 .or. io_unit%do_validate) then
-        mesh => source(i)%mesh(1)
-        write (io_unit%log,*) 'source size, stagger:', source(i)%size(1), mesh%h(iv)
-      end if
-      !-------------------------------------------------------------------------
-      ! Loop over placement of the source mesh: ol, il, c, ir, or
-      !-------------------------------------------------------------------------
-      src => source(i)
-      do j=1,5
-        call set_position (src, target, j)
-        if (i==2.and.(j==2.or.j==4)) cycle
-        if (src%level==target%level) then
-          call dnload_range (target, src, iv, l, u, o)
-        else
-          call dnload_range (target, src, iv, l, u)
-        end if
-        do k=l(1),u(1)
-          do dir=1,3
-            mesh => target%mesh(dir)
-            pos(dir) = target%position(dir) + mesh%r(k) + mesh%h(iv)*target%ds(dir)
-          end do
-          call source(i)%index_space (pos, iv, ii, pp)
-          if (io%verbose>0 .or. io_unit%do_validate) then
-            if (src%level==target%level) then
-              print 1, i, iv, j, "k:", k, "o:", o(1), "ii:", ii(1), "pp:", pp(1)
-              1 format("download_t%test",3i3,3(2x,a,i4),2x,a,f5.2)
-            else
-              print 2, i, iv, j, "k:", k, "o: N/A", "ii:", ii(1), "pp:", pp(1)
-              2 format("download_t%test",3i3,2x,a,i4,2x,a,2x,a,i4,2x,a,f5.2)
-            end if
-          end if
-        end do
-        if (io%verbose>0 .or. io_unit%do_validate) &
-          write (io_unit%log,*)' '
-      end do
-    end do
-  end do
-  !-----------------------------------------------------------------------------
-  ! Test actual download values
-  !-----------------------------------------------------------------------------
-  allok = .true.
-  do i=1,3
-    src => source(i)
-    do j=1,5
-      call set_position (src, target, j)
-      if (i==2.and.(j==2.or.j==4)) cycle
-      if (io%verbose>1) & 
-        print "('source size:',i2,3x,'position:',i2,2x,'levels:',2i2)", i, j, &
-          src%level, target%level
-      call set_values (src)
-      call set_values (target)
-      if (src%level==target%level) then
-        call self%same (target, src, all_cells=.false.)
-        if (self%check_filled) then
-          if (any(filled < 0)) then
-            write (io_unit%log,*) target%id, &
-              'WARNING: some cells not filled by download_t%same'
-          end if
-        end if
-      else
-        !call different_prolong (self, target, src, all_cells=.false.)
-        call prolong (self, target, src, all_cells=.false.)
-      end if
-      call check_values (target, ok)
-      allok = allok.and.ok
-    end do
-  end do
-  if (io%master) write (io_unit%log,*)io%hl
-  if (allok) then
-    if (io%master) then
-      write (io_unit%log,*)'download_t%test passed'
-      write (io_unit%log,*)io%hl
-    end if
-  else
-    write (io_unit%log,*)mpi%rank,'download_t%test failed'
-    if (io%master) write (io_unit%log,*)io%hl
-    call mpi%abort('download_t%test::check_values')
-  end if
-  !-----------------------------------------------------------------------------
-  ! Clean up
-  !-----------------------------------------------------------------------------
-  deallocate (filled)
-  call target%dealloc
-  do i=1,3
-    call source(i)%dealloc
-  end do
-  call target%init_id_reset
-  deallocate (target, source)
-  self%interpolate => SelectInterpolator(self%order_interpolator)
-  call trace%end()
-contains
-!===============================================================================
-!> Set position systematically
-!===============================================================================
-  subroutine set_position (source, target, j)
-    type(patch_t) :: source, target
-    integer       :: j
-    !---------------------------------------------------------------------------
-    select case (j)
-    case (1)
-      source%position = target%position - 0.5_8*(source%size+target%size) + &
-        2.*abs(source%ds-target%ds)
-    case (2)
-      source%position = target%position - 0.5_8*(source%size+target%size) + &
-        2.*abs(source%ds-target%ds)
-    case (3)
-      source%position = target%position
-    case (4)
-      source%position = target%position + 0.5_8*(source%size+target%size) - &
-        2.*abs(source%ds-target%ds)
-    case (5)
-      source%position = target%position + 0.5_8*(source%size+target%size) - &
-        2.*abs(source%ds-target%ds)
-    end select
-    source%mesh%p = source%position
-    source%t = 0d0; source%time=0d0; source%iit=1
-    target%t = 0d0; target%time=0d0; target%iit=1
-end subroutine set_position
-!===============================================================================
-!> Set some values to recover
-!===============================================================================
-subroutine set_values (patch)
-  type(patch_t)          :: patch
-  class(mesh_t), pointer :: m1, m2, m3
-  integer                :: ix, iy, iz, iv
-  real                   :: x, y, z, v
-  !-----------------------------------------------------------------------------
-  m1 => patch%mesh(1)
-  m2 => patch%mesh(2)
-  m3 => patch%mesh(3)
-  do iv=1,2
-    patch%mem(:,:,:,iv,:,:) = 0.0
-    do iz=m3%li,m3%ui
-      z = m3%p + m3%r(iz) + m3%h(iv)*m3%d
-      do iy=m2%li,m2%ui
-        y = m2%p + m2%r(iy) + m2%h(iv)*m2%d
-        do ix=m1%li,m1%ui
-          x = m1%p + m1%r(ix) + m1%h(iv)*m1%d
-          v = x + y*2.0 + z*3.0
-          patch%mem(ix,iy,iz,iv,:,:) = v
-        end do
-      end do
-    end do
-  end do
-end subroutine set_values
-!===============================================================================
-!> Check values, including in guard zones
-!===============================================================================
-subroutine check_values (patch, ok)
-  type(patch_t)          :: patch
-  class(mesh_t), pointer :: m1, m2, m3
-  logical                :: ok
-  integer                :: ix, iy, iz, iv, n(3)
-  real                   :: x, y, z, v, w, eps
-  !-----------------------------------------------------------------------------
-  m1 => patch%mesh(1)
-  m2 => patch%mesh(2)
-  m3 => patch%mesh(3)
-  eps=0.1*max(m1%d,m2%d,m3%d)
-  n = 0
-  do iv=1,2
-    do iz=m3%lb,m3%ub
-      z = m3%p + m3%r(iz) + m3%h(iv)*m3%d
-      do iy=m2%lb,m2%ub
-        y = m2%p + m2%r(iy) + m2%h(iv)*m2%d
-        do ix=m1%lb,m1%ub
-          x = m1%p + m1%r(ix) + m1%h(iv)*m1%d
-          v = x + y*2.0 + z*3.0
-          w = patch%mem(ix,iy,iz,iv,1,1)
-          if (w == 0.0) then
-            n(1) = n(1)+1
-          else
-            if (abs(w-v) > eps) then
-              print "('error: ix, iy, iz, iv, value:',4i4,1p,2e15.5)", &
-               ix, iy, iz, iv, w, v
-              n(3) = n(3)+1
-            else
-              n(2) = n(2)+1
-            end if
-          end if
-        end do
-      end do
-    end do
-  end do
-  if (io%verbose>0) & 
-    write (io_unit%log,*)'check_values: n_zero, n_ok, n_nok =', n
-  if (n(3) == 0) then
-    ok = .true.
-  else
-    ok = .false.
-    write (io_unit%log,*)'check_values: n_zero, n_ok, n_nok =', n
-  end if
-end subroutine check_values
-!===============================================================================
-END SUBROUTINE test
-
-!===============================================================================
 !> Select the best method for each case.  So far, this only supports static
 !> patches at the same level, or static patches one level up or down
 !===============================================================================
@@ -453,7 +209,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     if (nbor%download) then
      if (source%nt == 1) &
        self%same => same_linear
-     if (trim(target%kind)/='rt_solver') then
+     if (trim(target%kind) /= 'rt_solver') then
        if (source%is_clear(bits%no_download)) then
          if (use_different == 2) then
            call different (self, target, source, all_cells, only=only)
@@ -2092,5 +1848,248 @@ SUBROUTINE set_verbose (new)
   verbose = new
 END SUBROUTINE set_verbose
 
+!===============================================================================
+!> Initialise downloading and interpolating options.
+!===============================================================================
+SUBROUTINE test (self)
+  class(download_t):: self
+  !.............................................................................
+  class(patch_t), pointer :: source(:), target, src
+  integer, dimension(3)  :: l, u, o, ii
+  integer                :: i, j, k, iv, dir
+  real(8), dimension(3)  :: pos
+  real(4), dimension(3)  :: pp
+  class(mesh_t), pointer :: mesh
+  logical                :: ok, allok
+  !-----------------------------------------------------------------------------
+  return
+  call trace%begin ('download_t%test')
+  self%interpolate => SelectInterpolator(-1)
+  !-----------------------------------------------------------------------------
+  ! Generate meshes with three resolutions, differing with a factor of three,
+  ! with and w/o staggering
+  !-----------------------------------------------------------------------------
+  allocate (target)
+  call target%setup (size=0.1_8*[1,1,1], n=[16,16,16], nv=2, nt=2, nw=1)
+  filled = -1
+  !-----------------------------------------------------------------------------
+  ! Loop over the three resolutions for source patches
+  !-----------------------------------------------------------------------------
+  allocate (source(3))
+  do i=1,3
+    call source(i)%setup (size=0.1_8*[1,1,1]*(scene%f_zoom)**(i-2), &
+      n=[16,16,16], nv=2, nt=2, nw=1)
+  end do
+  !---------------------------------------------------------------------------
+  ! Loop over source size
+  !---------------------------------------------------------------------------
+  target%level = 2
+  do i=1,3
+    source(i)%level = i
+    !---------------------------------------------------------------------------
+    ! Loop over no-stagger / stagger
+    !---------------------------------------------------------------------------
+    do iv=1,2
+      do dir=1,3
+        mesh => source(i)%mesh(dir)
+        mesh%h(iv)    = -0.5*(iv-1)
+        mesh => target%mesh(dir)
+        mesh%h(iv)    = -0.5*(iv-1)
+      end do
+      if (io%verbose>0 .or. io_unit%do_validate) then
+        mesh => source(i)%mesh(1)
+        write (io_unit%log,*) 'source size, stagger:', source(i)%size(1), mesh%h(iv)
+      end if
+      !-------------------------------------------------------------------------
+      ! Loop over placement of the source mesh: ol, il, c, ir, or
+      !-------------------------------------------------------------------------
+      src => source(i)
+      do j=1,5
+        call set_position (src, target, j)
+        if (i==2.and.(j==2.or.j==4)) cycle
+        if (src%level==target%level) then
+          call dnload_range (target, src, iv, l, u, o)
+        else
+          call dnload_range (target, src, iv, l, u)
+        end if
+        do k=l(1),u(1)
+          do dir=1,3
+            mesh => target%mesh(dir)
+            pos(dir) = target%position(dir) + mesh%r(k) + mesh%h(iv)*target%ds(dir)
+          end do
+          call source(i)%index_space (pos, iv, ii, pp)
+          if (io%verbose>0 .or. io_unit%do_validate) then
+            if (src%level==target%level) then
+              print 1, i, iv, j, "k:", k, "o:", o(1), "ii:", ii(1), "pp:", pp(1)
+              1 format("download_t%test",3i3,3(2x,a,i4),2x,a,f5.2)
+            else
+              print 2, i, iv, j, "k:", k, "o: N/A", "ii:", ii(1), "pp:", pp(1)
+              2 format("download_t%test",3i3,2x,a,i4,2x,a,2x,a,i4,2x,a,f5.2)
+            end if
+          end if
+        end do
+        if (io%verbose>0 .or. io_unit%do_validate) &
+          write (io_unit%log,*)' '
+      end do
+    end do
+  end do
+  !-----------------------------------------------------------------------------
+  ! Test actual download values
+  !-----------------------------------------------------------------------------
+  allok = .true.
+  do i=1,3
+    src => source(i)
+    do j=1,5
+      call set_position (src, target, j)
+      if (i==2.and.(j==2.or.j==4)) cycle
+      if (io%verbose>1) & 
+        print "('source size:',i2,3x,'position:',i2,2x,'levels:',2i2)", i, j, &
+          src%level, target%level
+      call set_values (src)
+      call set_values (target)
+      if (src%level==target%level) then
+        call self%same (target, src, all_cells=.false.)
+        if (self%check_filled) then
+          if (any(filled < 0)) then
+            write (io_unit%log,*) target%id, &
+              'WARNING: some cells not filled by download_t%same'
+          end if
+        end if
+      else
+        !call different_prolong (self, target, src, all_cells=.false.)
+        call prolong (self, target, src, all_cells=.false.)
+      end if
+      call check_values (target, ok)
+      allok = allok.and.ok
+    end do
+  end do
+  if (io%master) write (io_unit%log,*)io%hl
+  if (allok) then
+    if (io%master) then
+      write (io_unit%log,*)'download_t%test passed'
+      write (io_unit%log,*)io%hl
+    end if
+  else
+    write (io_unit%log,*)mpi%rank,'download_t%test failed'
+    if (io%master) write (io_unit%log,*)io%hl
+    call mpi%abort('download_t%test::check_values')
+  end if
+  !-----------------------------------------------------------------------------
+  ! Clean up
+  !-----------------------------------------------------------------------------
+  deallocate (filled)
+  call target%dealloc
+  do i=1,3
+    call source(i)%dealloc
+  end do
+  call target%init_id_reset
+  deallocate (target, source)
+  self%interpolate => SelectInterpolator(self%order_interpolator)
+  call trace%end()
+contains
+!===============================================================================
+!> Set position systematically
+!===============================================================================
+  subroutine set_position (source, target, j)
+    type(patch_t) :: source, target
+    integer       :: j
+    !---------------------------------------------------------------------------
+    select case (j)
+    case (1)
+      source%position = target%position - 0.5_8*(source%size+target%size) + &
+        2.*abs(source%ds-target%ds)
+    case (2)
+      source%position = target%position - 0.5_8*(source%size+target%size) + &
+        2.*abs(source%ds-target%ds)
+    case (3)
+      source%position = target%position
+    case (4)
+      source%position = target%position + 0.5_8*(source%size+target%size) - &
+        2.*abs(source%ds-target%ds)
+    case (5)
+      source%position = target%position + 0.5_8*(source%size+target%size) - &
+        2.*abs(source%ds-target%ds)
+    end select
+    source%mesh%p = source%position
+    source%t = 0d0; source%time=0d0; source%iit=1
+    target%t = 0d0; target%time=0d0; target%iit=1
+end subroutine set_position
+!===============================================================================
+!> Set some values to recover
+!===============================================================================
+subroutine set_values (patch)
+  type(patch_t)          :: patch
+  class(mesh_t), pointer :: m1, m2, m3
+  integer                :: ix, iy, iz, iv
+  real                   :: x, y, z, v
+  !-----------------------------------------------------------------------------
+  m1 => patch%mesh(1)
+  m2 => patch%mesh(2)
+  m3 => patch%mesh(3)
+  do iv=1,2
+    patch%mem(:,:,:,iv,:,:) = 0.0
+    do iz=m3%li,m3%ui
+      z = m3%p + m3%r(iz) + m3%h(iv)*m3%d
+      do iy=m2%li,m2%ui
+        y = m2%p + m2%r(iy) + m2%h(iv)*m2%d
+        do ix=m1%li,m1%ui
+          x = m1%p + m1%r(ix) + m1%h(iv)*m1%d
+          v = x + y*2.0 + z*3.0
+          patch%mem(ix,iy,iz,iv,:,:) = v
+        end do
+      end do
+    end do
+  end do
+end subroutine set_values
+!===============================================================================
+!> Check values, including in guard zones
+!===============================================================================
+subroutine check_values (patch, ok)
+  type(patch_t)          :: patch
+  class(mesh_t), pointer :: m1, m2, m3
+  logical                :: ok
+  integer                :: ix, iy, iz, iv, n(3)
+  real                   :: x, y, z, v, w, eps
+  !-----------------------------------------------------------------------------
+  m1 => patch%mesh(1)
+  m2 => patch%mesh(2)
+  m3 => patch%mesh(3)
+  eps=0.1*max(m1%d,m2%d,m3%d)
+  n = 0
+  do iv=1,2
+    do iz=m3%lb,m3%ub
+      z = m3%p + m3%r(iz) + m3%h(iv)*m3%d
+      do iy=m2%lb,m2%ub
+        y = m2%p + m2%r(iy) + m2%h(iv)*m2%d
+        do ix=m1%lb,m1%ub
+          x = m1%p + m1%r(ix) + m1%h(iv)*m1%d
+          v = x + y*2.0 + z*3.0
+          w = patch%mem(ix,iy,iz,iv,1,1)
+          if (w == 0.0) then
+            n(1) = n(1)+1
+          else
+            if (abs(w-v) > eps) then
+              print "('error: ix, iy, iz, iv, value:',4i4,1p,2e15.5)", &
+               ix, iy, iz, iv, w, v
+              n(3) = n(3)+1
+            else
+              n(2) = n(2)+1
+            end if
+          end if
+        end do
+      end do
+    end do
+  end do
+  if (io%verbose>0) & 
+    write (io_unit%log,*)'check_values: n_zero, n_ok, n_nok =', n
+  if (n(3) == 0) then
+    ok = .true.
+  else
+    ok = .false.
+    write (io_unit%log,*)'check_values: n_zero, n_ok, n_nok =', n
+  end if
+end subroutine check_values
+!===============================================================================
+END SUBROUTINE test
+
 END MODULE
- 
