@@ -214,7 +214,7 @@ SUBROUTINE read_bifrost_snap (task_list)
     link => task_list%head
     do while (associated(link))
       patch => task2patch(link%task)
-      if (verbose==4) print *, 'ic_t%init: spawning task for patch%id =', patch%id
+      if (verbose==4) print *, 'read_bifrost_snap spawning task for patch%id =', patch%id
       !-------------------------------------------------------------------------
       ! Spawn OMP tasks to interpolate the patch data
       !-------------------------------------------------------------------------
@@ -243,7 +243,7 @@ SUBROUTINE read_bifrost_snap (task_list)
     link => link%next
   end do
   if (io%master) &
-    print *,'ic_t%init finished'
+    print *,'read_bifrost_snap finished'
   call trace%end()
 END SUBROUTINE read_bifrost_snap
 
@@ -363,7 +363,7 @@ SUBROUTINE read_stagger_snap (task_list)
     link => task_list%head
     do while (associated(link))
       patch => task2patch(link%task)
-      if (verbose==4) print *, 'ic_t%init: spawning task for patch%id =', patch%id
+      if (verbose==4) print *, 'read_stagger_snap spawning task for patch%id =', patch%id
       !-------------------------------------------------------------------------
       ! Spawn OMP tasks to interpolate the patch data
       !-------------------------------------------------------------------------
@@ -390,7 +390,7 @@ SUBROUTINE read_stagger_snap (task_list)
     link => link%next
   end do
   if (io%master) &
-    print *,'ic_t%init finished'
+    print *,'read_stagger_snap finished'
   call trace%end
 END SUBROUTINE read_stagger_snap
 

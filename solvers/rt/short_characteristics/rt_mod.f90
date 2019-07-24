@@ -848,7 +848,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
     else
       match = 'miss'
    end if
-    write (stdout,'(2i6,3x,a,2(3x,3l0),3x,a)') self%id, another%id, &
+    write (stdout,'(2i6,3x,a,2(3x,3l1),3x,a)') self%id, another%id, &
       'rt_t%nbor_relations: NMD =',&
       [needed,needs_me,download], [needed1,needs_me1,download1], match
   else
