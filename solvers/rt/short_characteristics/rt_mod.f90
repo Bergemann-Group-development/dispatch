@@ -196,7 +196,7 @@ SUBROUTINE init_task (self)
   !-----------------------------------------------------------------------------
   ! Initialize the patch, with a unique ID, and a %kind used in data_io
   !-----------------------------------------------------------------------------
-  call self%init_unique
+  call self%task_t%init
   self%track   = .false.
   self%type    = 'rt_t'
   self%kind    = 'rt_sc'
@@ -360,7 +360,7 @@ SUBROUTINE init_omega (self, i_omega)
   omega => self%omega(i_omega)
   omega%main => self
   ! -- assign unique and globally valid ID
-  call omega%init_unique
+  call omega%task_t%init
   ! -- set values that should be different from self
   omega%i_omega = i_omega
   omega%it      = max(omega%nt-1,1)

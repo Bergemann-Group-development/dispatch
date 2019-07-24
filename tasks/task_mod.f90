@@ -137,12 +137,12 @@ END SUBROUTINE dnload
 !===============================================================================
 SUBROUTINE init (self)
   class (task_t):: self
-  character(len=120):: id = &
+  character(len=120):: ids= &
     '$Id$ tasks/task_mod.f90'
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init',2)
-  call trace%print_id (id)
-  call init_unique (self, keep=.true.)
+  call trace%print_id (ids)
+  call init_unique (self)
   call trace_end
 END SUBROUTINE init
 
@@ -150,6 +150,22 @@ END SUBROUTINE init
 !> Define unique patch ids.  A critical region is OK; this is only done once.
 !===============================================================================
 SUBROUTINE init_unique (self, keep)
+  class (task_t):: self
+  logical, optional:: keep
+  integer, save:: id=0
+  if (present(keep) .and. keep) &
+    return
+  !$omp atomic
+  id = id+1
+  self%id = id
+  call self%lock%init (self%kind(1:4), id=self%id+2)
+  call self%random%init
+END SUBROUTINE init_unique
+
+!===============================================================================
+!> Define unique patch ids.  A critical region is OK; this is only done once.
+!===============================================================================
+SUBROUTINE init_unique2 (self, keep)
   class (task_t):: self
   logical, optional:: keep
   !.............................................................................
@@ -211,7 +227,7 @@ SUBROUTINE init_unique (self, keep)
   call self%lock%init (self%kind(1:4), id=self%id+2)
   call self%random%init
   call trace_end
-END SUBROUTINE init_unique
+END SUBROUTINE init_unique2
 
 !===============================================================================
 !> Reset unique patch ids.  A critical region is OK; this is only done once.

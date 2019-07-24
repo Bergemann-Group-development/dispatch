@@ -120,7 +120,7 @@ SUBROUTINE init (self, label)
       ip = ip + 1
       patch%ip = ip
     end if
-    call patch%task_t%init_unique
+    call patch%task_t%init
     patch%box = self%size
     patch%size = self%size / self%dims
     patch%position = ([i,j,k]+0.5d0)*patch%size + origin
