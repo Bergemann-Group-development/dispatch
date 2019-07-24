@@ -425,7 +425,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     end if
     source => task2patch(nbor%task)
     if (verbose > 1) then
-      write(io_unit%output,'(f12.6,2x,a,2(i6,i3),2x,2l1,i4)') &
+      write(io_unit%log,'(f12.6,2x,a,2(i6,i3),2x,2l1,i4)') &
         wallclock(), 'target, level, source, level, ND, n_needed =', &
         target%id, target%level, source%id, source%level, &
         nbor%needed, nbor%download, source%n_needed
@@ -529,7 +529,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       !-------------------------------------------------------------------------
       ! Since only the parent patch is used, this condition is expected, and OK
       !-------------------------------------------------------------------------
-      if (verbose > 0) then
+      if (verbose > 1) then
         if (all_cells_l) then
           write (io_unit%log,'(a,i6)') &
            'INFO: some internal cells were not filled, iD =', target%id
@@ -600,9 +600,11 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   ! centers, periodically, so this can be ignored in the next steps.
   !-----------------------------------------------------------------------------
   dist = source%position - target%position
+  if (target%id == id_debug) write (io_unit%log,*) 'dist(1)', dist
   where (source%periodic)
     dist = modulo(dist+0.5_8*source%mesh%b,source%mesh%b) - 0.5_8*source%mesh%b
   end where
+  if (target%id == id_debug) write (io_unit%log,*) 'dist(2)', dist
   !-----------------------------------------------------------------------------
   ! Add the distances from the source center to the start and end of the
   ! authoritative domain of each variable.
@@ -610,7 +612,7 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
   debug = source%level /= target%level
   la = dist - source%size/2d0
   ua = dist + source%size/2d0
-  !if (debug) print '(i3,2(2x,3f9.3))', 1, la, ua
+  if (target%id == id_debug) write (io_unit%log,*) 'la,ua(1)', la, ua
   if (source%level /= target%level) then
     do i=1,3
       sm => source%mesh(i)
@@ -619,17 +621,17 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
       ua(i) = ua(i) + sm%h(iv)*sm%d - tm%h(iv)*tm%d
     end do
   end if
-  !if (debug) print '(i3,2(2x,3f9.3))', 2, la, ua
+  if (target%id == id_debug) write (io_unit%log,*) 'la,ua(2)', la, ua
   l = ceiling(la/target%mesh%d + target%mesh%o)
   u =   floor(ua/target%mesh%d + target%mesh%o)
-  !if (debug) print *, 3, l, u
+  if (target%id == id_debug) write (io_unit%log,*) 'l,u(1)', l, u
   !-----------------------------------------------------------------------------
   ! Make sure the range is legal.  The u index can become smaller than lb, which
   ! means there is no overlap.  Likewise, the l index can become larger than ub
   !-----------------------------------------------------------------------------
   l = max(l,target%mesh%lb)
   u = min(u,target%mesh%ub)
-  !if (debug) print *, 4, l, u
+  if (target%id == id_debug) write (io_unit%log,*) 'l,u(2)', l, u
   !-----------------------------------------------------------------------------
   ! Account for collapsed dimensions
   !-----------------------------------------------------------------------------
@@ -637,7 +639,7 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
     l = min(l,target%mesh%ub)
     u = max(u,target%mesh%lb)
   end where
-  !if (debug) print *, 5, l, u
+  if (target%id == id_debug) write (io_unit%log,*) 'l,u(3)', l, u
   !-----------------------------------------------------------------------------
   ! For same level patch, the integer offset is what should be added to the
   ! target index to get the source index.  For aligned meshes, offset=0.
@@ -656,6 +658,7 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
         target%id, target%level, iv, source%id, source%level, l, u, offset
       1 format("download_t%dnload_range: id,lv,iv:",i6,2i3, &
                "  source,lv,l,u,o:",i6,i3,3(2x,3i4))
+    if (target%id == id_debug) write (io_unit%log,*) 'l,u,o', l, u, offset
   else
     if (verbose > 1 .or. io_unit%do_validate .or. target%id==id_debug) &
       write(io_unit%log,2) &
@@ -755,7 +758,8 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
     if (source%quality > 1000.) then
       if (iv==target%idx%d .or. (iv >= target%idx%px .and. iv <= target%idx%pz)) then
         all_cells_l = .true.
-        !write(io_unit%log,*)  'all cells for source id', source%id
+        write (io_unit%log,*) 'dnload all cells for target, source =', &
+          target%id, source%id, source%quality, source%level
       end if
     end if
     ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
@@ -1088,6 +1092,8 @@ SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
       if (iv==target%idx%d .or. &
          (iv >= target%idx%px .and. iv <= target%idx%pz)) then
           all_cells_l = .true.
+          write (io_unit%log,*) '(2)dnload all cells for target, source =', &
+            target%id, source%id, source%quality, source%level
       end if
     end if
     ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
