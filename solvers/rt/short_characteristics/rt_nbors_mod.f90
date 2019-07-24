@@ -1,3 +1,6 @@
+!===============================================================================
+!> Module to add nbor lists for RT sub-tasks, and modify the parent MHD tasks
+!===============================================================================
 MODULE rt_nbors_mod
   USE solver_mod
   USE rt_mod
@@ -18,7 +21,7 @@ MODULE rt_nbors_mod
 CONTAINS
 
 !===============================================================================
-!> In the new, synced RT/MHD arrangement the steps and relations needed are:
+!> In the syncronized RT/MHD arrangement the steps and relations needed are:
 !>
 !> 1) The omega0 task needs the MHD nbors to dnload and call EOS for RT
 !> 2) Each omega task needs the upstream omega task
@@ -42,8 +45,11 @@ SUBROUTINE init (mhd)
   call omega0%clear(bits%init_nbors)
   !-----------------------------------------------------------------------------
   ! 1) The omega0 needs the MHD task for the MHD variables, but no download
-  !-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------  
   needs=.true.; needs_me=.false.; download=.false.
+write (io_unit%mpi,*) '----------'; flush(io_unit%mpi)
+write (io_unit%mpi,*) '1) omega0:', omega0%id, 'mhd:', mhd%id, &
+omega0%is_set(bits%virtual), mhd%is_set(bits%virtual)
   call init_nbor_pair (omega0, needs, mhd, needs_me, download)
   !-----------------------------------------------------------------------------
   ! Loop over all ray directions, and add nbors and nbor relations. The only
@@ -70,6 +76,9 @@ SUBROUTINE init (mhd)
         ! 2) The omega0 task needs the MHD nbors, and needs download
         !-----------------------------------------------------------------------
         needs=.true.; needs_me=.false.; download=.true.
+write (io_unit%mpi,*) '----------'; flush(io_unit%mpi)
+write (io_unit%mpi,*) '2) omega0:', omega0%id, 'nbr:', nb_task%id, &
+omega0%is_set(bits%virtual), nb_task%is_set(bits%virtual)
         call init_nbor_pair (omega0, needs, nb_task, needs_me, download)
       else
         !-----------------------------------------------------------------------
@@ -82,21 +91,30 @@ SUBROUTINE init (mhd)
           ! them, but the upstream tasks do not need the downstream omega tasks
           !---------------------------------------------------------------------
           needs=.true.; needs_me=.false.; download=.true.
+write (io_unit%mpi,*) '----------'; flush(io_unit%mpi)
+write (io_unit%mpi,*) '3)  omega:', omega%id, 'ups:', upstream%id, &
+omega%is_set(bits%virtual), upstream%is_set(bits%virtual)
           call init_nbor_pair (omega, needs, upstream, needs_me, download)
         end if
-        !-----------------------------------------------------------------------
-        ! 4) The omega task needs the RT task, which does not need the omega tasks
-        !-----------------------------------------------------------------------
-        needs=.true.; needs_me=.false.; download=.false.
-        call init_nbor_pair (omega, needs, omega0, needs_me, download)
       end if
       end select
       nbor => nbor%next
     end do
+    !-----------------------------------------------------------------------
+    ! 4) The omega task needs the RT task, which does not need the omega tasks
+    !-----------------------------------------------------------------------
+    needs=.true.; needs_me=.false.; download=.false.
+write (io_unit%mpi,*) '----------'; flush(io_unit%mpi)
+write (io_unit%mpi,*) '4)  omega:', omega%id, 'om0:', omega0%id, &
+omega%is_set(bits%virtual), omega0%is_set(bits%virtual)
+    call init_nbor_pair (omega, needs, omega0, needs_me, download)
     !---------------------------------------------------------------------------
     ! 5) The MHD task needs the omega tasks, which do not need the MHD task
     !---------------------------------------------------------------------------
     needs=.true.; needs_me=.false.; download=.false.
+write (io_unit%mpi,*) '----------'; flush(io_unit%mpi)
+write (io_unit%mpi,*) '5)    mhd:', mhd%id, ' om:', omega%id, &
+mhd%is_set(bits%virtual), omega%is_set(bits%virtual)
     call init_nbor_pair (mhd, needs, omega, needs_me, download)
   end do
   call trace%end
@@ -109,7 +127,7 @@ END SUBROUTINE init
 SUBROUTINE init_nbor_pair (task1, needed, task2, needs_me, download)
   class(task_t):: task1, task2
   logical:: needed, needs_me, download
-  class(link_t), pointer:: link1, link2, new
+  class(link_t), pointer:: link1, link2, nbor1, nbor2
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%init_nbor_pairs')
   select type (task1)
@@ -123,24 +141,56 @@ SUBROUTINE init_nbor_pair (task1, needed, task2, needs_me, download)
   !-----------------------------------------------------------------------------
   ! Add the 2nd linked task as an nbor to the 1st linked task
   !-----------------------------------------------------------------------------
-  allocate (new)
-  new%link => link2
-  new%task => new%link%task
-  new%needed = needed
-  new%needs_me = needs_me
-  new%download = download
-  call link1%add_nbor_by_rank (link1%nbor, new)
+  allocate (nbor1)
+  nbor1%link => link2
+  nbor1%task => nbor1%link%task
+  nbor1%needed = needed
+  nbor1%needs_me = needs_me
+  nbor1%download = download
   !-----------------------------------------------------------------------------
   ! Add the 1st linked task as an nbor to the 2nd linked task
   !-----------------------------------------------------------------------------
-  allocate (new)
-  new%link => link1
-  new%task => new%link%task
-  new%needed = needs_me
-  new%needs_me = needed
-  new%download = .false.
-  call link2%add_nbor_by_rank (link2%nbor, new)
+  allocate (nbor2)
+  nbor2%link => link1
+  nbor2%task => nbor2%link%task
+  nbor2%needed = needs_me
+  nbor2%needs_me = needed
+  nbor2%download = .false.
   !-----------------------------------------------------------------------------
+  ! If the 1st task is a virtual task, it should not download from the 2nd task
+  ! and also does not need it (in the sense that it gets updated by MPI). If
+  ! the needs me flag is also false, then none of two tasks should be in the
+  ! nbor list of the other (this applies if the 1st task is a virtual downstream
+  ! RT task)  
+  !-----------------------------------------------------------------------------
+  if (link1%task%is_set (bits%virtual)) then
+    nbor1%download = .false.
+    nbor1%needed = .false.
+    nbor2%needs_me = .false.
+    if (.not.nbor1%needs_me) then
+      call trace%end
+      return
+    end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! If the 2nd task is a virtual task the same applies, except the meaning of
+  ! the flags is reversed (this applies if the 2nd task is a virtual downstream
+  ! RT task)
+  !-----------------------------------------------------------------------------
+  if (link2%task%is_set (bits%virtual)) then
+    nbor2%download = .false.
+    nbor2%needs_me = .false.
+    nbor1%needed = .false.
+    if (.not.nbor2%needed) then
+      call trace%end
+      return
+    end if
+  end if
+  !-----------------------------------------------------------------------------
+  ! Add the two tasks, which now are guaranteed to have matching flags
+  !-----------------------------------------------------------------------------
+  call link1%add_nbor_by_rank (link1%nbor, nbor1)
+  call link2%add_nbor_by_rank (link2%nbor, nbor2)
   call trace%end
 END SUBROUTINE init_nbor_pair
 
