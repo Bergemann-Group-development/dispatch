@@ -2,7 +2,7 @@
 ! -- Parameters defining the run -----------------------------------------------
 &experiment_params  verbose=0 d_bot=231.8 e_bot=2897.0 ee_top=5.4 tt_top=4500
                     smudge_boundary=f /
-&cartesian_params   size=6,6,3 dims=6,6,3 mpi_dims=4,4,1 origin=0,0,-0.5
+&cartesian_params   size=6,6,3 dims=6,6,3 mpi_dims=2,1,1 origin=0,0,-0.5
                     omp_init=f /
 &patch_params       nt=5 grace=0.05 n=3*20 no_mans_land=t use_data_hub=f
                     do_check_nan=t dt_fixed=-1 periodic=t,t,f /
@@ -17,17 +17,16 @@
 ! -- RT parameters -------------------------------------------------------------
 &rt_setup_params    on=t verbose=0 /
 &rt_integral_params verbose=0 dtau_min=1e-1 dtau_dif=1e6 order=1 /
-&sc_rt_params       verbose=0 nt=5 n_mu=3 n_phi=12 n_bin=4 rt_timestep=0.0025
-                    rt_grace=0.02 rt_llc=0,0,-0.5 rt_urc=6,6,0.45 courant=1.0
-                    n_warmup=6 vertical_propagation=t constant_q=f cdtd=1.0 /
+&sc_rt_params       verbose=0 nt=5 n_mu=3 n_phi=6 n_bin=4
+                    rt_grace=1e-5 rt_llc=0,0,-0.5 rt_urc=6,6,0.45 courant=1.0
+                    n_warmup=6 vertical_propagation=f cdtd=1.0 /
 &hybrid_rt_params   /
 
 ! -- I/O parameters ------------------------------------------------------------
 &io_params          verbose=0 do_trace=f omp_trace=f do_output=t id_debug=0
                     restart=-1  guard_zones=t nml_version=1 /
-!out_params         end_time=2.52 out_time=0.05 print_time=0 /
-&out_params         end_time=30.01 out_time=0.05 print_time=0 /
-&aux_params         verbose=0 select='tt','q','rkap','src','qout' /
+&out_params         end_time=0.101 out_time=0.01 print_time=0 /
+&aux_params         verbose=0 select='tt','qr','rkap','src' /
 
 ! -- Stagger code parameters ---------------------------------------------------
                     !   cs    pa   ofd  mas   kap  eta
