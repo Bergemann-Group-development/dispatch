@@ -361,7 +361,16 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   else if (.not.associated(link%task)) then
     call io%abort('download_t%download_link: link%task not associated')
   end if
+  !-----------------------------------------------------------------------------
+  ! Guard againt download twice, which could happen if an extras (e.g. RT) task
+  ! requests dnload before the parent task
+  !-----------------------------------------------------------------------------
   target => task2patch(link%task)
+  if (target%dnload_time >= target%time) then
+    call trace%end
+    return
+  end if
+  target%dnload_time = target%time
   if (target%is_clear(bits%no_density)) then
     d => target%mem(:,:,:,target%idx%d,target%it,1)
     call validate%check (target%link, d, 'before download')
