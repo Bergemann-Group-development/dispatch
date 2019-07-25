@@ -181,7 +181,7 @@ SUBROUTINE init_task (self)
   class (rt_t),     pointer :: omega
   class (link_t),   pointer :: link
   class (*),        pointer :: dummy
-  integer:: n_omega, i_omega, dir, i_mu, i_phi, iostat, n, l(3), u(3)
+  integer:: n_omega, i_omega, dir, i_mu, i_phi, iostat, n, l(3), u(3), id_mpi
   real, dimension(:), allocatable:: mu, w_mu
   ! ----------------------------------------------------------------------------
   call trace%begin ('rt_t%init')
@@ -193,14 +193,24 @@ SUBROUTINE init_task (self)
   allocate(link)
   link%task => self
   self%link => link
-  !-----------------------------------------------------------------------------
-  ! Initialize the patch, with a unique ID, and a %kind used in data_io
-  !-----------------------------------------------------------------------------
-  call self%task_t%init
   self%track   = .false.
   self%type    = 'rt_t'
   self%kind    = 'rt_sc'
   self%box     = p%box
+  !-----------------------------------------------------------------------------
+  ! Number of ray directions
+  !-----------------------------------------------------------------------------
+  n_omega = merge (1+self%n_phi*(self%n_mu-1), 0, self%n_mu > 0)
+  n_omega = 2*n_omega
+  self%n_omega = n_omega
+  !-----------------------------------------------------------------------------
+  ! Set the RT task ID in a predictable way, spacing by (1+n_omega) behind the
+  ! largest MPI-wide ID used so far, to make room for the omega tasks
+  !-----------------------------------------------------------------------------
+  id_mpi = mpi%id%update(0)
+  self%id = id_mpi + (p%id-1)*(1+n_omega) + 1
+  if (verbose == -1) &
+    write (io_unit%log,*) 'rt_t%init: id, mhd%id, mpi%id =', self%id, p%id, id_mpi
   call self%patch_t%setup (position=p%position, size=p%size, n=p%n, nt=self%nt,&
                            ng=self%ng, nv=self%n_bin, nw=1)
   !-----------------------------------------------------------------------------
@@ -249,9 +259,6 @@ SUBROUTINE init_task (self)
     !---------------------------------------------------------------------------
     allocate (self%w_bin (self%n_bin))
     self%w_bin = 1.0
-    n_omega      = merge (1+self%n_phi*(self%n_mu-1), 0, self%n_mu > 0)
-    n_omega      = 2*n_omega
-    self%n_omega = n_omega
     !---------------------------------------------------------------------------
     ! Assign angles and integration weight and allocate the required RT solvers
     ! for all angles
@@ -322,7 +329,11 @@ SUBROUTINE init_task (self)
     u = p%mesh%ui + self%mesh%ng
     self%mem  => p%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,:,:)
   else
+    !---------------------------------------------------------------------------
+    ! Deallocate the self%mem for this task, but keep the task, for simplicity
+    !---------------------------------------------------------------------------
     call self%dealloc()
+    self%n_omega = 0
   end if
   call trace%end()
 END SUBROUTINE init_task
@@ -361,7 +372,11 @@ SUBROUTINE init_omega (self, i_omega)
   omega => self%omega(i_omega)
   omega%main => self
   ! -- assign unique and globally valid ID
+  omega%id = self%id + i_omega
   call omega%task_t%init
+  if (verbose == -1) &
+    write (io_unit%log,*) 'rt_t%init_omega: id, self%id, mhd%id =', omega%id, &
+      self%id, self%patch%id
   ! -- set values that should be different from self
   omega%i_omega = i_omega
   omega%it      = max(omega%nt-1,1)
