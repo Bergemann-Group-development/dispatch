@@ -86,7 +86,6 @@ MODULE task_mod
   contains
     procedure:: init
     procedure:: init_unique
-    procedure:: init_id_reset
     procedure:: dealloc
     procedure:: dnload
     procedure:: update => void
@@ -132,9 +131,7 @@ SUBROUTINE dnload (self, only)
 END SUBROUTINE dnload
 
 !===============================================================================
-!> Define unique task id, unless already set before entry.  The task 
-!> IDs must be unique across MPI ranks, and must initially satisfy 
-!> modulo(self%id, mpi%size) == self%rank + 1
+!> Define unique task id, unless already set before entry.
 !===============================================================================
 SUBROUTINE init (self)
   class (task_t):: self
@@ -143,109 +140,47 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init',2)
   call trace%print_id (ids)
-  call init_unique (self)
+  if (self%id == 0) then
+    call init_unique (self)
+  end if
   call trace_end
 END SUBROUTINE init
 
 !===============================================================================
 !> Define unique patch ids.  A critical region is OK; this is only done once.
 !===============================================================================
-SUBROUTINE init_unique (self, keep)
+SUBROUTINE init_unique (self, same)
   class (task_t):: self
-  logical, optional:: keep
-  integer, save:: id=0
-  if (present(keep) .and. keep) &
-    return
-  !$omp atomic
-  id = id+1
+  logical, optional:: same
+  integer:: id
+  integer, save:: id_same=0
+  !$omp critical (task_id_cr)
+  !-----------------------------------------------------------------------------
+  ! Ranks that call this routinein sync  with same=.true. get a matching set
+  ! of IDs to prune from, while the master updates the global counter
+  !-----------------------------------------------------------------------------
+  if (present(same) .and. same) then
+    id_same = id_same+1
+    id = id_same
+    if (mpi%rank==0) then               ! on the master rank ..
+      mpi%id%i = id                     ! .. update the mpi%id counter directly
+    end if
+    if (io%verbose > 0) &
+      write (io_unit%log,*) 'task_t%init_unique(same): mpi%id, id =', id_same, id
+  !-----------------------------------------------------------------------------
+  ! Calls without the same option return unique IDs, which do not overlap with
+  ! matching set of IDs
+  !-----------------------------------------------------------------------------
+  else
+    id = mpi%id%update (1)
+    if (io%verbose > 0) &
+      write (io_unit%log,*) 'task_t%init_unique(else): mpi%id, id =', id_same, id
+  end if
   self%id = id
+  !$omp end critical (task_id_cr)
   call self%lock%init (self%kind(1:4), id=self%id+2)
   call self%random%init
 END SUBROUTINE init_unique
-
-!===============================================================================
-!> Define unique patch ids.  A critical region is OK; this is only done once.
-!===============================================================================
-SUBROUTINE init_unique2 (self, keep)
-  class (task_t):: self
-  logical, optional:: keep
-  !.............................................................................
-  integer:: rank
-  logical, save:: first_time=.true.
-  class(*), pointer:: idp
-  !-----------------------------------------------------------------------------
-  call trace_begin ('task_t%init_id')
-  !$omp critical (task_init_cr)
-  if (first_time) then
-    first_time = .false.
-    allocate (id(0:mpi%size-1))
-    do rank=0,mpi%size-1
-      id(rank) = 1+rank
-    end do
-    self%id = id(self%rank)
-    !print *, self%rank, 'IDDBG first time, id =', id(self%rank)
-    id(self%rank) = id(self%rank) + mpi%size
-  !else if (deleted_list%n > 0) then
-  !  idp => deleted_list%pop()
-  !  select type (idp)
-  !  type is (integer)
-  !  id = idp
-  !  end select
-  !  dellocate (idp%car)
-  !  dellocate (idp)
-  !-----------------------------------------------------------------------------
-  ! If ID already assigned and keep==.true., check consistency with MPI, and
-  ! adjust the saved ID accordingly
-  !-----------------------------------------------------------------------------
-  else if (present(keep)) then
-    if (self%id > 0) then
-      if (mod(self%id-1,mpi%size) == self%rank) then
-        id(self%rank) = max(id(self%rank),self%id)
-      else if (io%verbose > 1) then
-        print '("enforced ID =",i7," not consistent with MPI rank/size",2i6)', &
-          self%id, self%rank, mpi%size
-      end if
-      !print *, self%rank, 'IDDBG present(keep) 1, id =', id(self%rank)
-    else
-      self%id = id(self%rank)
-      !print *, self%rank, 'IDDBG present(keep) 2, id =', id(self%rank)
-      id(self%rank) = id(self%rank) + mpi%size
-    end if
-  !-----------------------------------------------------------------------------
-  ! Here we enforce a unique and MPI-consistent ID
-  !-----------------------------------------------------------------------------
-  else
-    self%id = id(self%rank)
-    !print *, self%rank, 'IDDBG generic, id =', id(self%rank)
-    id(self%rank) = id(self%rank) + mpi%size
-  end if
-  if (self%id==1) self%track = .true.
-  if (self%id==io%id_debug) self%track = .true.
-  scene%n_patch = self%id
-  !$omp end critical (task_init_cr)
-  if (io%verbose>2) &
-    write (io_unit%log,*) 'obtained patch id', self%id
-  call self%lock%init (self%kind(1:4), id=self%id+2)
-  call self%random%init
-  call trace_end
-END SUBROUTINE init_unique2
-
-!===============================================================================
-!> Reset unique patch ids.  A critical region is OK; this is only done once.
-!> This is done after, for example, `download%test`, which creates test patches.
-!> It is set to one rather than zero because there must have already been a
-!> patch with ID = 1 when `download%test` was called.
-!===============================================================================
-SUBROUTINE init_id_reset (self)
-  class (task_t):: self
-  logical:: first_time=.true.
-  !.............................................................................
-  call trace_begin ('task_t%init_reset')
-  !$omp critical (task_init_cr)
-  id = 1 + self%rank
-  !$omp end critical (task_init_cr)
-  call trace_end
-END SUBROUTINE init_id_reset
 
 !===============================================================================
 !> Deallocate permanent arrays

@@ -1856,7 +1856,7 @@ SUBROUTINE test (self)
   !.............................................................................
   class(patch_t), pointer :: source(:), target, src
   integer, dimension(3)  :: l, u, o, ii
-  integer                :: i, j, k, iv, dir
+  integer                :: i, j, k, iv, dir, id_start, id_end
   real(8), dimension(3)  :: pos
   real(4), dimension(3)  :: pp
   class(mesh_t), pointer :: mesh
@@ -1864,6 +1864,7 @@ SUBROUTINE test (self)
   !-----------------------------------------------------------------------------
   return
   call trace%begin ('download_t%test')
+  id_start = mpi%id%update(0)
   self%interpolate => SelectInterpolator(-1)
   !-----------------------------------------------------------------------------
   ! Generate meshes with three resolutions, differing with a factor of three,
@@ -1982,7 +1983,11 @@ SUBROUTINE test (self)
   do i=1,3
     call source(i)%dealloc
   end do
-  call target%init_id_reset
+  !-----------------------------------------------------------------------------
+  ! Set the MPI-global id counter back to what it was
+  !-----------------------------------------------------------------------------
+  id_end = mpi%id%update(0)
+  id_start = mpi%id%update (id_start-id_end)
   deallocate (target, source)
   self%interpolate => SelectInterpolator(self%order_interpolator)
   call trace%end()
