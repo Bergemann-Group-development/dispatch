@@ -553,13 +553,25 @@ SUBROUTINE post_update (self)
   class(rt_t), pointer:: omega
   integer:: i
   !-----------------------------------------------------------------------------
+  mhd => self%patch
+  if (verbose == -1) then
+    !$omp atomic
+    timer%n_mhd = timer%n_mhd+1
+    write (io_unit%queue,*) 'mhd', timer%n_mhd, wallclock(), &
+      self%patch%id, self%id, mhd%time+mhd%dtime, self%on, self%rotated
+    if (timer%n_mhd > 1000) then
+      !$omp atomic write
+      timer%n_mhd = 0
+      !$omp atomic write
+      timer%n_solve = 0
+    end if
+  end if
   if (.not.self%on) return
   call trace%begin ('rt_t%post_update')
   !-----------------------------------------------------------------------------
   ! We now know the timestep size and the time, and we can set these for all the
   ! RT solvers, in such a way that they update in the desired order.
   !-----------------------------------------------------------------------------
-  mhd => self%patch
   self%dtime = mhd%dtime
   self%time  = mhd%time + self%grace*self%dtime
   do i=1,self%n_omega
@@ -613,8 +625,8 @@ SUBROUTINE update (self)
     call self%solve ()
     if (verbose == -1) then
       !$omp atomic
-      n_solve = n_solve+1
-      write (io_unit%queue,*) 'ome', n_solve, wallclock(), &
+      timer%n_solve = timer%n_solve+1
+      write (io_unit%queue,*) 'ome', timer%n_solve, wallclock(), &
         self%patch%id, self%id, self%time+self%dtime, self%i_omega
     end if
   end if
@@ -640,10 +652,10 @@ SUBROUTINE rt_eos (self, time)
       call omp_eos
       self%eos_time = time
       if (verbose == -1) &
-        write (io_unit%queue,*) 'eos', n_mhd, wallclock(), &
+        write (io_unit%queue,*) 'eos', timer%n_mhd, wallclock(), &
           self%patch%id, self%id, time
     else if (verbose == -1) then
-        write (io_unit%queue,*) 'eo0', n_mhd, wallclock(), &
+        write (io_unit%queue,*) 'eo0', timer%n_mhd, wallclock(), &
           self%patch%id, self%id, time, self%eos_time
     end if
     !$omp end critical (eos_cr)

@@ -38,6 +38,7 @@ MODULE timer_mod
     integer:: nq_send_max=0
     integer:: nq_recv_max=0
     integer:: n_lines=0
+    integer:: n_mhd=0, n_solve=0
     type(latency_t):: latency
     real(8), allocatable:: levelcost(:)
     integer(8), allocatable:: levelpop(:)
@@ -337,6 +338,7 @@ contains
     end if
     call omp_lock%info (unit)
     flush (unit)
+    self%n_mhd = 0; self%n_solve=0
   end subroutine write_to
 END SUBROUTINE real_print
 
