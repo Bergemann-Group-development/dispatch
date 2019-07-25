@@ -40,7 +40,8 @@ SUBROUTINE init (self)
   class(rt_integral_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  namelist /rt_integral_params/ verbose, solver, order, dtau_min, dtau_dif, dtau_max
+  namelist /rt_integral_params/ verbose, solver, order, dtau_min, dtau_dif, &
+    dtau_max, detailed_timer
   !-----------------------------------------------------------------------------
   if (first_time) then
     !$omp critical (input_cr)
