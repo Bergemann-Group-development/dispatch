@@ -55,17 +55,18 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   ! Generic modules, which are always included in the code in any case
   !-----------------------------------------------------------------------------
+  USE gpatch_mod
+  USE list_mod
+  USE patch_mod
+  USE task_mod
   USE io_mod
   USE trace_mod
-  USE gpatch_mod
-  USE patch_mod
   USE connect_mod
-  USE list_mod
-  USE task_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
   !USE rt_mod                                                           ! RT
+  !USE newton_mod                                                       ! Newton
   !USE forces_mod                                                       ! forces
   !USE trace_particles_mod                                              ! tracep
   !USE spitzer_mod                                                      ! spitzer
@@ -85,7 +86,8 @@ MODULE extras_mod
     !class(pic_t), pointer:: pic                                        ! pic
     !type (spitzer_t):: spitzer                                         ! spitzer
     !type(gravity_t):: gravity                                          ! gravity
-    !class(radiative_transfer_t), pointer:: rt                          ! RT
+    !class(rt_t), pointer:: rt => null()                                ! RT
+    !type(newton_t):: newton                                            ! Newton
     !type(sinkparticles_t):: sinkparticles                              ! sinkp
     !class(patch_force_t), pointer:: patch_force                        ! sinkp
     !class(trace_particles_t), pointer:: trace_particles                ! tracep
@@ -96,12 +98,12 @@ MODULE extras_mod
     procedure:: pre_init
     procedure:: init
     procedure:: dealloc
-    procedure:: init_task_list
     procedure:: pre_update
     procedure:: post_update
     procedure:: output
     procedure:: check_refine
     procedure:: nbor_relations
+    procedure:: courant_condition
   end type
   type(extras_t), public:: extras
 CONTAINS
@@ -119,8 +121,7 @@ SUBROUTINE pre_init (self)
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------
-  !allocate(self%rt)
-  !self%connect%rt => self%rt                                           ! RT
+  !allocate(self%rt)                                                    ! RT
   !call self%rt%pre_init(self%link)                                     ! RT
   !allocate (self%trace_particles)                                      ! tracep
   !self%connect%trace_particles => self%trace_particles                 ! tracep
@@ -140,7 +141,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------
-  !call self%rt%init()                                                  ! RT
+  !call self%newton%init (self%link)                                    ! Newton
   !allocate (self%trace_particles)                                      ! tracep
   !self%connect%trace_particles => self%trace_particles                 ! tracep
   !call self%trace_particles%add (self%link%task)                       ! tracep
@@ -149,21 +150,14 @@ SUBROUTINE init (self)
   !call self%spitzer%init(self%link)                                    ! spitzer
   !call self%spitzer%init (self%link)                                   ! spitzer
   !call self%gravity%init (self%link)                                   ! gravity
+  !call self%rt%init_task (self%rt)                                     ! RT
+  ! -- ensure consistency (a value is already set via rt%init)         ! experiment
+  !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
   !call sink_patch%init (self%link)                                     ! sinkp
   !allocate (self%patch_force)                                          ! sinkp
   !call self%patch_force%init                                           ! sinkp 
   call trace%end
 END SUBROUTINE init
-
-!===============================================================================
-!> Save a pointer to the task list, for use in underlings that need it
-!===============================================================================
-SUBROUTINE init_task_list (self, task_list)
-  class(extras_t):: self
-  class(list_t), pointer:: task_list
-  !.............................................................................
-  self%task_list => task_list
-END SUBROUTINE init_task_list
 
 !===============================================================================
 !> Deallocate allocated arrays
@@ -188,6 +182,7 @@ END SUBROUTINE dealloc
 SUBROUTINE pre_update (self)
   class(extras_t):: self
   !.............................................................................
+  call trace%begin ('extras_t%pre_update')
   if (allocated (self%force_per_unit_mass)) &                          ! keep
     self%force_per_unit_mass = 0.0                                     ! keep
   if (allocated (self%force_per_unit_volume)) &                        ! keep
@@ -198,16 +193,19 @@ SUBROUTINE pre_update (self)
     self%heating_per_unit_volume = 0.0                                 ! keep
   !
   !call self%rt%pre_update()                                            ! RT
+  !call self%newton%pre_update()                                        ! Newton
   !call self%forces%pre_update                                          ! forces
   !call self%trace_particles%update                                     ! tracep
   !call self%spitzer%pre_update()                                       ! spitzer
   !call self%gravity%pre_update()                                       ! gravity
   !call particle_solver%force_field (self)                              ! sinkp
   !call self%pic%pre_update()                                           ! pic
+  call trace%end
 END SUBROUTINE pre_update
 
 !===============================================================================
-!> The post_update hierarchy is called after the solver updates
+!> The post_update hierarchy is called after the solver updates, and might be
+!> called from either solver_t%update, or an intercepting from mhd_t%post_update
 !===============================================================================
 SUBROUTINE post_update (self)
   class(extras_t):: self
@@ -225,6 +223,7 @@ SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
   call self%gpatch_t%output                                            ! keep
+  !call self%rt%output                                                  ! RT
 END SUBROUTINE output
 
 !===============================================================================
@@ -257,7 +256,8 @@ FUNCTION cast2extras (task) RESULT(extras)
 END FUNCTION cast2extras
 
 !===============================================================================
-!> Set default nbor relatioins, and allow underlings to modify them
+!> Set default nbor relations, and allow underlings to modify them.  This is
+!> called from list_t%init_nbors and from list_t%reset_status()
 !===============================================================================
 SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(extras_t):: self
@@ -274,5 +274,18 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   !
   call trace%end()
 END SUBROUTINE nbor_relations
+
+!===============================================================================
+!> Optional intercept of courant_condition() call
+!===============================================================================
+SUBROUTINE courant_condition (self, detailed_timer)
+  class(extras_t):: self
+  logical, optional:: detailed_timer
+  !-----------------------------------------------------------------------------
+  call trace%begin ('extras_t%courant_condition')
+  !call self%rt%courant_condition (detailed_timer)                      ! RT
+  call self%gpatch_t%courant_condition (detailed_timer)                ! keep
+  call trace%end()
+END SUBROUTINE courant_condition
 
 END MODULE extras_mod
