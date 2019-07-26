@@ -45,11 +45,8 @@ SUBROUTINE init (mhd)
   call omega0%clear(bits%init_nbors)
   !-----------------------------------------------------------------------------
   ! 1) The omega0 needs the MHD task for the MHD variables, but no download
-  !-----------------------------------------------------------------------------  
+  !-----------------------------------------------------------------------------
   needs=.true.; needs_me=.false.; download=.false.
-write (io_unit%mpi,*) '----------'; flush(io_unit%mpi)
-write (io_unit%mpi,*) '1) omega0:', omega0%id, 'mhd:', mhd%id, &
-omega0%is_set(bits%virtual), mhd%is_set(bits%virtual)
   call init_nbor_pair (omega0, needs, mhd, needs_me, download)
   !-----------------------------------------------------------------------------
   ! Loop over all ray directions, and add nbors and nbor relations. The only
@@ -69,16 +66,14 @@ omega0%is_set(bits%virtual), mhd%is_set(bits%virtual)
       select type (nb_task)
       class is (solver_t)
       !-------------------------------------------------------------------------
-      ! Select only omega tasks
+      ! Select omega sub-tasks
       !-------------------------------------------------------------------------
+      if (associated(nb_task%rt)) then
       if (nb_task%rt%n_omega == 0) then
         !-----------------------------------------------------------------------
         ! 2) The omega0 task needs the MHD nbors, and needs download
         !-----------------------------------------------------------------------
         needs=.true.; needs_me=.false.; download=.true.
-write (io_unit%mpi,*) '----------'; flush(io_unit%mpi)
-write (io_unit%mpi,*) '2) omega0:', omega0%id, 'nbr:', nb_task%id, &
-omega0%is_set(bits%virtual), nb_task%is_set(bits%virtual)
         call init_nbor_pair (omega0, needs, nb_task, needs_me, download)
       else
         !-----------------------------------------------------------------------
@@ -91,11 +86,9 @@ omega0%is_set(bits%virtual), nb_task%is_set(bits%virtual)
           ! them, but the upstream tasks do not need the downstream omega tasks
           !---------------------------------------------------------------------
           needs=.true.; needs_me=.false.; download=.true.
-write (io_unit%mpi,*) '----------'; flush(io_unit%mpi)
-write (io_unit%mpi,*) '3)  omega:', omega%id, 'ups:', upstream%id, &
-omega%is_set(bits%virtual), upstream%is_set(bits%virtual)
           call init_nbor_pair (omega, needs, upstream, needs_me, download)
         end if
+      end if
       end if
       end select
       nbor => nbor%next
@@ -104,17 +97,11 @@ omega%is_set(bits%virtual), upstream%is_set(bits%virtual)
     ! 4) The omega task needs the RT task, which does not need the omega tasks
     !-----------------------------------------------------------------------
     needs=.true.; needs_me=.false.; download=.false.
-write (io_unit%mpi,*) '----------'; flush(io_unit%mpi)
-write (io_unit%mpi,*) '4)  omega:', omega%id, 'om0:', omega0%id, &
-omega%is_set(bits%virtual), omega0%is_set(bits%virtual)
     call init_nbor_pair (omega, needs, omega0, needs_me, download)
     !---------------------------------------------------------------------------
     ! 5) The MHD task needs the omega tasks, which do not need the MHD task
     !---------------------------------------------------------------------------
     needs=.true.; needs_me=.false.; download=.false.
-write (io_unit%mpi,*) '----------'; flush(io_unit%mpi)
-write (io_unit%mpi,*) '5)    mhd:', mhd%id, ' om:', omega%id, &
-mhd%is_set(bits%virtual), omega%is_set(bits%virtual)
     call init_nbor_pair (mhd, needs, omega, needs_me, download)
   end do
   call trace%end
@@ -161,7 +148,7 @@ SUBROUTINE init_nbor_pair (task1, needed, task2, needs_me, download)
   ! and also does not need it (in the sense that it gets updated by MPI). If
   ! the needs me flag is also false, then none of two tasks should be in the
   ! nbor list of the other (this applies if the 1st task is a virtual downstream
-  ! RT task)  
+  ! RT task)
   !-----------------------------------------------------------------------------
   if (link1%task%is_set (bits%virtual)) then
     nbor1%download = .false.
