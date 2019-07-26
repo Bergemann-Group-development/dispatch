@@ -49,6 +49,7 @@ MODULE link_mod
     procedure:: remove_nbor
     procedure:: remove_from_nbors
     procedure:: remove_nbor_list
+    procedure:: remove_nbor_list2
     procedure:: copy_nbor_list
     procedure:: make_new_nbors
     procedure:: make_new_nbor
@@ -362,7 +363,7 @@ END SUBROUTINE remove_from_nbors
 !===============================================================================
 SUBROUTINE remove_nbor_list (self, nbors)
   class(link_t):: self
-  class(link_t), pointer:: nbors, nbor, next
+  class(link_t), pointer:: nbors, nbor, next, link2, nbor2, next2, prev
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('link_t%remove_nbor_list', itimer=itimer)
@@ -373,16 +374,61 @@ SUBROUTINE remove_nbor_list (self, nbors)
     next => nbor%next
     !$omp atomic update
     nbor%task%n_needed = nbor%task%n_needed - 1
-    if (verbose > 1) &
+    if (verbose > 1) then
       write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
-      nbor%task%id, 'needed by', nbor%task%n_needed, 'remove_nb_list'
-    flush (io_unit%mpi)
+        nbor%task%id, 'needed by', nbor%task%n_needed, 'remove_nb_list'
+      flush (io_unit%mpi)
+    end if
     deallocate (nbor)
     nbor => next
   end do
   nullify (nbors)
   call trace%end (itimer)
 END SUBROUTINE remove_nbor_list
+
+!===============================================================================
+!> Remove, deallocate, and nullify an existing nbor list
+!===============================================================================
+SUBROUTINE remove_nbor_list2 (self, nbors)
+  class(link_t):: self
+  class(link_t), pointer:: nbors, nbor, next, link2, nbor2, next2, prev
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('link_t%remove_nbor_list', itimer=itimer)
+  if (verbose > 1) &
+    write (io_unit%mpi,'(f12.6,i4,2x,a)') wallclock(), omp%thread, 'remove_nbor_list'
+    nbor => nbors
+  do while (associated(nbor))
+    next => nbor%next
+    !$omp atomic update
+    nbor%task%n_needed = nbor%task%n_needed - 1
+    if (verbose > 1) then
+      write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
+        nbor%task%id, 'needed by', nbor%task%n_needed, 'remove_nb_list'
+      flush (io_unit%mpi)
+    end if
+    !---------------------------------------------------------------------------
+    ! Also remove self from the nbor list of nbor
+    !---------------------------------------------------------------------------
+    nullify (prev)
+    nbor2 => nbor%link%nbor
+    do while (associated(nbor2))
+      if (nbor2%task%id == self%task%id) then
+        if (associated(prev)) then
+          prev%next => nbor2%next
+        else
+          nbor%link%nbor => nbor2%next
+        end if
+      end if
+      prev => nbor2
+      nbor2 => nbor2%next
+    end do
+    deallocate (nbor)
+    nbor => next
+  end do
+  nullify (nbors)
+  call trace%end (itimer)
+END SUBROUTINE remove_nbor_list2
 
 !===============================================================================
 !> Create a temporary nbor list
