@@ -3,6 +3,7 @@
  verbose=0
  do_debug=f
  do_output=t
+ method='parallel' 
 /
 &cartesian_params
  size=1,1,1
@@ -18,7 +19,7 @@
  n=128,128,1
 /
 &out_params
- end_time=0.600
+ end_time=1.000
  out_time=0.010
  print_time=0
  guard_zones=t
@@ -26,7 +27,9 @@
 /
 &stagger_params
  courant=0.20
- nu=  0.1,  0.0, 1.0, 0.0,  0.0,  1.0
+ nu=  0.15,  0.0, 1.0, 0.0,  0.0,  1.0
+ !nu=  0.1, 1.0, 1.0, 0.1, 1.0, 1.0
+ !nu=  0.03, 1.0, 1.0, 0.15, 1.0, 1.0
  !     cs    du   pa  ofd   mas   eta
  gamma=1.6666666666667
  !gamma=1.
@@ -37,5 +40,7 @@
  !time_order=4
 /
 &initial_params
- idirect=3
+ idirect=1
 /
+
+!ffmpeg -framerate 10 -start_number 0 -i %01d.png -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p -vf scale=1150:960 output.avi

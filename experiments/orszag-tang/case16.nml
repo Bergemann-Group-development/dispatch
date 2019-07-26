@@ -18,16 +18,16 @@
  n=128,128,1
 /
 &out_params
- end_time=0.600
+ end_time=1.000
  out_time=0.010
  print_time=0
  guard_zones=t
  time_derivs=f
 /
-&mhd_params
+&stagger_params
  courant=0.10
- nu=  0.1,  0.0, 1.0, 0.0,  1.0,  0.5, 0.5
- !     cs    du   pa  mas   ene   eta  off
+ nu=  0.1,  0.0, 1.0, 0.0,  1.0,  0.5
+ !     cs    du   pa  mas   ene   eta  
  gamma=1.6666666666667
  !gamma=1.
 /

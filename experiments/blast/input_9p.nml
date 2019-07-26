@@ -2,12 +2,14 @@
 /
 
 &io_params
- verbose=1
  do_trace=f
+ verbose=0
  do_debug=f
  do_output=t
- do_legacy=t
- omp_trace=t
+ method='parallel' 
+ guard_zones=t
+ time_derivs=f
+ nml_version=1
 /
 
 &rubiks_params
@@ -20,25 +22,39 @@
   n_patch=3,3,1
 /
 
+
+&cartesian_params
+ size=1,1,0.01
+ dims=3,3,1
+ origin=-0.5,-0.5,0
+/
+&experiment_params
+ d0=1.2
+ !B0=0.0,0.0,0.0
+/
+&patch_params
+ nt=5
+ ng=3*8
+ n=32,32,1
+ do_check_nan=t
+ !dt_fixed=0.0001
+ grace=0.05
+/
+
 &out_params
  end_time=0.021
  out_time=0.001
- guard_zones=t
 /
 
-&patch_params
-  courant=0.5
-  n=32,32,1
-/
 
 &experiment_params
   r0=0.125
   d0=1.0,1.0
   p0=1.0,100.0
-  !bx0=7.0711,7.0711
-  !by0=7.0711,7.0711
-  bx0=0.0,0.0
-  by0=0.0,0.0
+  bx0=7.0711,7.0711
+  by0=7.0711,7.0711
+  !bx0=0.0,0.0
+  !by0=0.0,0.0
 /
 
 &zeus_params
@@ -54,7 +70,6 @@
 /
 
 &timestep_params
-  time_order=0
 /
 
 &refine_params
@@ -79,8 +94,10 @@
  do_isothermal=f
 /
 
-&mhd_params
+&stagger_params
  gamma=1.666667
+ courant=0.10
+ do_maxwell=t
  nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
 /
