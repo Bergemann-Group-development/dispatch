@@ -136,8 +136,9 @@ SUBROUTINE pre_init (self, link)
   real(8), save:: rt_timestep=0.01_8
   logical, save:: vertical_propagation=.false.
   logical, save:: first_time=.true.
+  logical, save:: on=.true.
   !-----------------------------------------------------------------------------
-  namelist /sc_rt_params/ verbose, nt, ng, rt_llc, rt_urc, rt_timestep, &
+  namelist /sc_rt_params/ on, verbose, nt, ng, rt_llc, rt_urc, rt_timestep, &
     n_mu, n_phi, n_bin, rt_grace, vertical_propagation, n_warmup, courant, cdtd
   !-----------------------------------------------------------------------------
   ! Read parameters
@@ -152,7 +153,7 @@ SUBROUTINE pre_init (self, link)
   end if
   !$omp end critical (input_cr)
   self%patch => gpatch%cast2gpatch(link%task)
-  self%on = .true.
+  self%on = on
   self%nt = nt
   self%ng = ng
   self%n_warmup = n_warmup
