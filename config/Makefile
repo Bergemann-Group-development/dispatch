@@ -9,10 +9,11 @@ OMP  = yes
 MPI  = mpi
 MOD  = mod
 DEFS = -D$(PREC) -DDISPATCH
-SOLVER  ?= VOID
-PREC    ?= SINGLE
-RT_PREC ?= RT_SINGLE
-BUILD   ?= build
+SOLVER     ?= VOID
+RT_SOLVER  ?= VOID
+PREC       ?= SINGLE
+RT_PREC    ?= RT_SINGLE
+BUILD      ?= build
 
 #############################################################################
 # Check for options
