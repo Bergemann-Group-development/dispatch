@@ -225,7 +225,6 @@ SUBROUTINE init_task (self)
   self%centre_nat = p%centre_nat
   self%restart    = p%restart
   self%warmup_end_time = p%time
-  self%eos_time = self%time - self%rt_timestep
   self%iit      = 1
   self%mu       = 1.0
   self%rt_phi   = 0.0
@@ -237,6 +236,7 @@ SUBROUTINE init_task (self)
   self%dt       = self%rt_timestep
   self%grace    = self%rt_grace
   self%time     = p%time - (self%n_warmup-self%grace)*self%dtime
+  self%eos_time = self%time - self%rt_timestep
   self%iout     = self%restart+1
   self%periodic = p%periodic
   self%verbose  = verbose
