@@ -18,6 +18,7 @@ MODULE rt_boundaries_mod
   type, public :: rt_boundaries_t
     class(mesh_t), pointer:: mesh(:)
     real:: cool, hot
+    logical:: wall(6)
   contains
     procedure:: init
     procedure:: condition                                               ! modify outer BCs if necessary
@@ -37,10 +38,11 @@ SUBROUTINE init (self, mesh)
   real, dimension(:,:,:,:), pointer :: src, rk
   real :: t, d0
   integer:: m(4)
-  logical, save:: first_time
+  logical, save:: first_time=.true.
+  logical, save:: wall(6)= [.false.,.false.,.false.,.false.,.true.,.false.]
   real, save :: hot_temp = 1000, cool_temp = 10
   real, save :: cool = 0.0, hot = 0.0
-  namelist /rt_bc_params/ cool_temp, hot_temp
+  namelist /rt_bc_params/ cool_temp, hot_temp, wall
   !-----------------------------------------------------------------------------
   self%mesh => mesh
   !
@@ -66,11 +68,12 @@ SUBROUTINE init (self, mesh)
     deallocate(d,e,src, rk)
   self%cool = cool
   self%hot  = hot
+  self%wall = wall
 END SUBROUTINE init
 
 !===============================================================================
 !===============================================================================
-SUBROUTINE condition (self, mem, src, rk,tt, mu, w)
+SUBROUTINE condition (self, mem, src, rk,tt, mu)
   class(rt_boundaries_t) :: self
   real, dimension(:,:,:,:):: mem, src, rk
   real, dimension(:,:,:), pointer:: tt
@@ -84,76 +87,133 @@ SUBROUTINE condition (self, mem, src, rk,tt, mu, w)
   if (self%mesh(3)%lower_boundary) then
     i3 =  self%mesh(3)%lo
     i3b = self%mesh(3)%lb
+    if (self%wall(5)) then
       do i2=self%mesh(2)%lb,self%mesh(2)%ub
-      do i1=self%mesh(1)%lb,self%mesh(1)%ub
-      do iv=1, n(4)
-        mem(i1,i2,i3b:i3,iv) = self%cool*rk(i1,i2,i3b:i3,iv)!/abs(mu)/w*math%pi4
+        do i1=self%mesh(1)%lb,self%mesh(1)%ub
+          do iv=1, n(4)
+            mem(i1,i2,i3b:i3,iv) = self%hot*rk(i1,i2,i3b:i3,iv)
+          end do
+        end do
       end do
+    else
+      do i2=self%mesh(2)%lb,self%mesh(2)%ub
+        do i1=self%mesh(1)%lb,self%mesh(1)%ub
+          do iv=1, n(4)
+            mem(i1,i2,i3b:i3,iv) = self%cool*rk(i1,i2,i3b:i3,iv)
+          end do
+        end do
       end do
-      end do
+    end if
   end if
-  !print *, 'lower bnd', self%mesh(1)%lower_boundary,self%mesh(2)%lower_boundary,self%mesh(3)%lower_boundary
-  !print *, 'upper bnd', self%mesh(1)%upper_boundary,self%mesh(2)%upper_boundary,self%mesh(3)%upper_boundary
-  
+
   if (self%mesh(3)%upper_boundary) then
     i3  = self%mesh(3)%uo
     i3b = self%mesh(3)%ub
+    if (self%wall(6)) then
       do i2=self%mesh(2)%lb,self%mesh(2)%ub
       do i1=self%mesh(1)%lb,self%mesh(1)%ub
       do iv=1, n(4)
-        mem(i1,i2,i3:i3b,iv) = self%cool*rk(i1,i2,i3:i3b,iv)!/abs(mu)/w*math%pi4
+        mem(i1,i2,i3:i3b,iv) = self%hot*rk(i1,i2,i3:i3b,iv)
       end do
       end do
       end do
+    else
+      do i2=self%mesh(2)%lb,self%mesh(2)%ub
+      do i1=self%mesh(1)%lb,self%mesh(1)%ub
+      do iv=1, n(4)
+        mem(i1,i2,i3:i3b,iv) = self%cool*rk(i1,i2,i3:i3b,iv)
+      end do
+      end do
+      end do
+    end if
   end if
 !
 if (self%mesh(2)%lower_boundary) then
     i3  = self%mesh(2)%lo
     i3b = self%mesh(2)%lb
+    if (self%wall(3)) then
       do i2=self%mesh(3)%lb,self%mesh(3)%ub
       do i1=self%mesh(1)%lb,self%mesh(1)%ub
       do iv=1, n(4)
-        mem(i1,i3b:i3,i2,iv) = self%cool*rk(i1,i3b:i3,i2,iv)!/abs(mu)/w*math%pi4
+        mem(i1,i3b:i3,i2,iv) = self%hot*rk(i1,i3b:i3,i2,iv)
       end do
       end do
       end do
+    else
+      do i2=self%mesh(3)%lb,self%mesh(3)%ub
+      do i1=self%mesh(1)%lb,self%mesh(1)%ub
+      do iv=1, n(4)
+        mem(i1,i3b:i3,i2,iv) = self%cool*rk(i1,i3b:i3,i2,iv)
+      end do
+      end do
+      end do
+    end if
   end if
   
   if (self%mesh(2)%upper_boundary) then
     i3  = self%mesh(2)%uo
     i3b = self%mesh(2)%ub
+    if (self%wall(4)) then
       do i2=self%mesh(3)%lb,self%mesh(3)%ub
       do i1=self%mesh(1)%lb,self%mesh(1)%ub
       do iv=1, n(4)
-        mem(i1,i3:i3b,i2,iv) = self%cool*rk(i1,i3:i3b,i2,iv)!/abs(mu)/w*math%pi4
+        mem(i1,i3:i3b,i2,iv) = self%hot*rk(i1,i3:i3b,i2,iv)
       end do
       end do
       end do
+    else
+      do i2=self%mesh(3)%lb,self%mesh(3)%ub
+      do i1=self%mesh(1)%lb,self%mesh(1)%ub
+      do iv=1, n(4)
+        mem(i1,i3:i3b,i2,iv) = self%cool*rk(i1,i3:i3b,i2,iv)
+      end do
+      end do
+      end do
+    end if
   end if
   !
   if (self%mesh(1)%lower_boundary) then
     i3  = self%mesh(1)%lo
     i3b = self%mesh(1)%lb
+    if (self%wall(1)) then
       do i2=self%mesh(3)%lb,self%mesh(3)%ub
       do i1=self%mesh(2)%lb,self%mesh(2)%ub
       do iv=1, n(4)
-        mem(i3b:i3,i1,i2,iv) = self%hot*rk(i3b:i3,i1,i2,iv)!/abs(mu)/w*math%pi4
-        !print *, 'boundary set',i3b, i1, i2, mem(i3b:i3,i1,i2,iv)
+        mem(i3b:i3,i1,i2,iv) = self%hot*rk(i3b:i3,i1,i2,iv)
       end do
       end do
       end do
+    else
+      do i2=self%mesh(3)%lb,self%mesh(3)%ub
+      do i1=self%mesh(2)%lb,self%mesh(2)%ub
+      do iv=1, n(4)
+        mem(i3b:i3,i1,i2,iv) = self%cool*rk(i3b:i3,i1,i2,iv)
+      end do
+      end do
+      end do
+    end if
   end if
   
   if (self%mesh(1)%upper_boundary) then
     i3  = self%mesh(1)%uo
     i3b = self%mesh(1)%ub
+    if (self%wall(2)) then
       do i2=self%mesh(3)%lb,self%mesh(3)%ub
       do i1=self%mesh(2)%lb,self%mesh(2)%ub
       do iv=1, n(4)
-        mem(i3:i3b,i1,i2,iv) = self%cool*rk(i3:i3b,i1,i2,iv)!/abs(mu)/w*math%pi4
+        mem(i3:i3b,i1,i2,iv) = self%hot*rk(i3:i3b,i1,i2,iv)
       end do
       end do
       end do
+    else
+      do i2=self%mesh(3)%lb,self%mesh(3)%ub
+      do i1=self%mesh(2)%lb,self%mesh(2)%ub
+      do iv=1, n(4)
+        mem(i3:i3b,i1,i2,iv) = self%cool*rk(i3:i3b,i1,i2,iv)
+      end do
+      end do
+      end do
+    end if
   end if  
 END SUBROUTINE condition
 

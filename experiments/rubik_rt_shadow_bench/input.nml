@@ -9,27 +9,28 @@
 
 &cartesian_params     
  size=1,1,1
- dims=6,6,6
- mpi_dims=1,1,1
+ dims=4,4,4
+ mpi_dims=2,2,1
  origin=0,0,0 
  omp_init=f  /
 
 
 &out_params
- end_time=2d-6
- out_time=2d-8
+ end_time=1d-6
+ out_time=1d-7
  print_time=0.0
  /
+
+ &aux_params         verbose=0 select='tt','qr','rkap','src' /
 
 &io_params
  verbose=0 
  do_trace=f 
  omp_trace=f 
  do_output=t  
- format=13
  id_debug=0 
  restart=-1  
- guard_zones=f
+ guard_zones=t
  nml_version=1/
 
 
@@ -40,8 +41,8 @@
  !dt_fixed=1d-11
  no_mans_land=t
  use_data_hub =f
- dt_fixed=1d-8
- periodic = f,t,t
+ !dt_fixed=1d-8
+ periodic = f,f,f
 /
 
 &eos_params
@@ -75,7 +76,7 @@
  n_phi=12
  n_lambda=1
  epsilon=0.9
- rt_timestep=1d-8
+ rt_timestep=1d-9
  rt_grace=0.02
  rt_llc = 0,0,0
  rt_extent = 1,1,1 
@@ -89,14 +90,17 @@
  verbose=0 
  nt=1
  n_mu=2
- n_phi=12
- n_lambda=1
+ n_phi=4
+ n_bin=1
+ n_warmup=5
  rt_timestep=1d-8
  rt_grace=0.02
  rt_llc = 0,0,0
- rt_extent = 1,1,1 
+ rt_urc = 1,1,1 
  vertical_propagation = f
 /
+
+&rt_integral_params verbose=0 dtau_min=1e-1 dtau_dif=1e6 order=1 /
 
 &rt_setup_params        verbose=0 n_warmup=3 unique_ids=t omp_warmup=f/
 
@@ -104,6 +108,9 @@
 &rt_bc_params
 cool_temp = 290!103530!40000 !290   ! in kelvins
 hot_temp  = 1740!621180!240000 !1740
+wall = f,f,
+       f,f,
+       t,f
 /
 
 &cartesian_ray_geometry_params

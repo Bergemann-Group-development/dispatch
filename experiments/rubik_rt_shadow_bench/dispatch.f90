@@ -11,9 +11,7 @@ PROGRAM dispatch
   call setup%init
   call dispatcher%init
   call cartesian%init     
-  call rt_setup (cartesian%task_list)              ! add RT tasks to the task list
   call dispatcher%execute (cartesian%task_list) ! Call dispatcher
-  print*,'stopping: all tasks finished'
   call setup%end
 !===============================================================================
 END PROGRAM dispatch

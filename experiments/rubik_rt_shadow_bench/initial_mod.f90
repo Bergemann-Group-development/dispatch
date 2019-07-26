@@ -70,7 +70,7 @@ SUBROUTINE condition (self, m, mem, i)
   integer :: ix, iy, iz
   real :: p0, q, x, y, z, d
   !----------------------------------------------------------------------------
-  call trace_begin('initial_t::initial_conditions')
+  call trace%begin('initial_t::initial_conditions')
 
   mx => m(1)
   my => m(2)
@@ -124,9 +124,8 @@ SUBROUTINE condition (self, m, mem, i)
       end do
     end do
   end do
-
   nullify (mx, my, mz, mem)
-  call trace_end
+  call trace%end
 END SUBROUTINE condition
 
 END MODULE
