@@ -252,7 +252,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                 u=l+n
             return v[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
         else:
-            return
+            return v
 
     def post_process(v,copy=False,all=False,i4=0):
         if copy or _p2():
