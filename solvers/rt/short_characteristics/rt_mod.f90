@@ -112,7 +112,6 @@ MODULE rt_mod
     procedure:: setup_boundaries                      ! BCs
     procedure:: task_info                             ! formatted info print
     procedure:: nbor_info                             ! formatted info print
-    procedure:: nbor_relations                        ! set nbor flags
     procedure:: courant_condition                     ! amend Courant condition
     procedure:: output                                ! intercept output
   end type
@@ -775,116 +774,6 @@ SUBROUTINE nbor_info (self, nbor)
     self%is_set(bits%boundary), self%is_set(bits%virtual), &
     self%position, self%i_omega, self%mu, self%rt_phi
 END SUBROUTINE nbor_info
-
-!===============================================================================
-!> This procedure is called from rt_setup, at a point where nbor lists have
-!> already been made (based on needs() btw RT tasks), so the only thing to do
-!> is to set the three flags appropriately.
-!===============================================================================
-SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
-  class(rt_t):: self
-  class(task_t), pointer:: another
-  logical:: needed, needs_me, download
-  !.............................................................................
-  logical:: needed1, needs_me1, download1
-  class(rt_t), pointer:: rt_another
-  class(task_t), pointer:: other
-  logical, parameter:: check=.true.
-  character(len=4):: match
-  !-----------------------------------------------------------------------------
-  call trace%begin ('rt_t%nbor_relations')
-  ! ----------------------------------------------------------------------------
-  ! If this RT task has no RT on, it should have no nbor relations
-  ! ----------------------------------------------------------------------------
-  if (.not.(self%on)) then
-    needed1 = .false.; needs_me1 = .false.; download1 = .false.
-    call trace%end()
-    return
-  end if
-  ! ----------------------------------------------------------------------------
-  ! Now, if another is RT, add it appropriately, if it is MHD, it has to overlap
-  ! and have different kind of relations
-  ! ----------------------------------------------------------------------------
-  select type (another)
-  class is (rt_t)
-    rt_another => another
-    if (.not.(rt_another%on)) then
-      ! ------------------------------------------------------------------------
-      ! if nbor RT is not on, we don't need any relations to it.
-      ! ------------------------------------------------------------------------
-      needed1 = .false.; needs_me1 = .false.; download1 = .false.
-      call trace%end()
-      return
-    end if
-    !
-    if (rt_another%i_omega == 0) then
-      !-------------------------------------------------------------------------
-      ! The omega task needs the RT task, which needs omega tasks.  No download.
-      !-------------------------------------------------------------------------
-      download1 = .false.
-      if (self%i_omega == 0) then
-      ! Different main RT tasks don't need to know about each other
-        needed1 = .false.
-        needs_me1 = .false.
-      end if
-    !
-    else if (self%needs(self,rt_another)) then
-      !-------------------------------------------------------------------------
-      ! The omega task needs the upstream task,
-      ! but the upstream task does not need the downstream omega task.
-      !-------------------------------------------------------------------------
-      needed1   = .true.
-      needs_me1 = .false.
-      download1 = .true.
-    ! --------------------------------------------------------------------------
-    else if (rt_another%needs(rt_another,self)) then
-      ! ------------------------------------------------------------------------
-      ! Downstream RT task will need me, but it is not needed and I should not
-      ! download data from it.
-      ! ------------------------------------------------------------------------
-      needed1   = .false.
-      needs_me1 = .true.
-      download1 = .false.
-    end if
-    if(self%vertical_propagation) then
-      if (any(self%position(1:2) /= rt_another%position(1:2))) &
-        needed1 = .false.
-    end if
-    !---------------------------------------------------------------------------
-    if ((self%i_omega >0).and.(rt_another%i_omega>0)) then
-      if (self%i_omega /= rt_another%i_omega) then
-        write (stderr,*) 'rt_t%nbor_relations: this should never happen!'
-        download1 = .false.; needed1 = .false.; needs_me1=.false.
-      end if
-    end if
-    !
-  class default
-    other => another
-    if (self%overlaps(other)) then
-  ! ----------------------------------------------------------------------------
-  ! Check if this is the "master" MHD patch. It might not be associated yet, i.e.
-  ! after moving to another MPI rank or changing level of refinement. in that
-  ! case, associate it.
-  ! ----------------------------------------------------------------------------
-      if (.not.(associated(self%patch))) self%patch => gpatch%cast2gpatch(other)
-    end if
-    download1 = .false.  ! don't download
-  end select
-  !
-  if (check) then
-    if (all([needed1, needs_me1, download1] .eqv. [needed, needs_me, download])) then
-      match = ''
-    else
-      match = 'miss'
-   end if
-    write (stdout,'(2i6,3x,a,2(3x,3l1),3x,a)') self%id, another%id, &
-      'rt_t%nbor_relations: NMD =',&
-      [needed,needs_me,download], [needed1,needs_me1,download1], match
-  else
-    needed = needed1; needs_me = needs_me1; download = download1
-  end if
-  call trace%end()
-END SUBROUTINE nbor_relations
 
 !===============================================================================
 !> Intercept of courant_condition() call

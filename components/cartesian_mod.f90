@@ -145,13 +145,14 @@ SUBROUTINE init (self, label)
   call self%task_list%init_all_nbors
   call self%task_list%reset_status
   !-----------------------------------------------------------------------------
-  ! Remove tasks that are external
+  ! Remove tasks that are external, and make sure to also remove them from the
+  ! nbor lists of virtual tasks
   !-----------------------------------------------------------------------------
   link => self%task_list%head
   do while (associated(link))
     next => link%next
     if (link%task%is_set (bits%external)) then
-      call link%remove_nbor_list (link%nbor)
+      call link%remove_nbor_list2 (link%nbor)
       call self%task_list%remove (link)
       deallocate (link%task)
       deallocate (link)

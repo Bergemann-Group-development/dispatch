@@ -102,7 +102,6 @@ MODULE extras_mod
     procedure:: post_update
     procedure:: output
     procedure:: check_refine
-    procedure:: nbor_relations
     procedure:: courant_condition
   end type
   type(extras_t), public:: extras
@@ -254,19 +253,6 @@ FUNCTION cast2extras (task) RESULT(extras)
   call io%abort ('extras_t%cast: failed to cast a task to extras_t')
   end select
 END FUNCTION cast2extras
-
-!===============================================================================
-!> Set default nbor relations, and allow underlings to modify them.  This is
-!> called from list_t%init_nbors and from list_t%reset_status()
-!===============================================================================
-SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
-  class(extras_t):: self
-  class(task_t), pointer:: another
-  logical:: needed, needs_me, download
-  !-----------------------------------------------------------------------------
-  call trace%begin ('extras_t%nbor_relations')
-  call trace%end()
-END SUBROUTINE nbor_relations
 
 !===============================================================================
 !> Optional intercept of courant_condition() call
