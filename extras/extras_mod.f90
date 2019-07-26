@@ -270,7 +270,6 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   ! First check the main relations, then specific ones
   !-----------------------------------------------------------------------------
   call self%task_t%nbor_relations(another, needed, needs_me, download) ! keep
-  !call self%rt%nbor_relations(another, needed, needs_me, download)     ! RT
   !
   call trace%end()
 END SUBROUTINE nbor_relations
