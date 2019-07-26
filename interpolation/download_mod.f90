@@ -123,7 +123,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   target => task2patch(link%task)
   if (target%dnload_time >= target%time) then
-    call trace%end
+    call trace%end (itimer)
     return
   end if
   target%dnload_time = target%time
