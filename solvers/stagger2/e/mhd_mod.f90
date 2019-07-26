@@ -37,7 +37,7 @@ MODULE mhd_mod
     real, dimension(:,:,:,:), pointer    :: p, dpdt, B, dBdt
     real, dimension(:,:,:),   pointer    :: lnd, ee, pg, tt=>null()
     real, dimension(:,:,:),   allocatable:: qrad
-    !procedure(divB_clean1),   pointer    :: divB_clean => divb_clean2
+    procedure(divB_clean1),   pointer    :: divB_clean => null()
     real:: nu(6)
     real:: cdtd
     real:: maxJ=0.0
@@ -50,7 +50,6 @@ MODULE mhd_mod
     procedure:: pre_update
     procedure:: update
     procedure:: output
-    procedure:: divb_clean
     procedure:: gas_pressure
   end type
   logical, save:: unsigned=.true.
@@ -148,14 +147,14 @@ SUBROUTINE init (self)
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
-  !select case(divb_cleaner)
-  !case(1)
-  !  self%divb_clean => divb_clean1
-  !case(2)
-  !  self%divb_clean => divb_clean2
-  !case default
-  !  call io%abort('mhd_mod:: divb cleaner method not understood')
-  !end select
+  select case(divb_cleaner)
+  case(1)
+    self%divb_clean => divb_clean1
+  case(2)
+    self%divb_clean => divb_clean2
+  case default
+    call io%abort('mhd_mod:: divb cleaner method not understood')
+  end select
   self%unsigned(self%idx%d)  = unsigned
   self%pervolume(self%idx%e) = unsigned
  call trace%end
@@ -612,7 +611,7 @@ END SUBROUTINE divb_clean1
 !> Enforce div(B)=0 in the guard zones, by succesively imposing the condition,
 !> layer-by-layer, on the component perpendicular to each of the patch faces.
 !===============================================================================
-SUBROUTINE divb_clean (self)
+SUBROUTINE divb_clean2 (self)
   class(mhd_t):: self
   !.............................................................................
   real, dimension(:,:,:), pointer:: bx, by, bz
@@ -670,7 +669,7 @@ SUBROUTINE divb_clean (self)
       by(l(1)   :u(1)   ,l(2)+j1:u(2)+j1,iz) - by(l(1):u(1),l(2):u(2),iz))
   end do
   call trace%end (itimer)
-END SUBROUTINE divb_clean
+END SUBROUTINE divb_clean2
 
 !===============================================================================
 !> Add extra, MHD-related information to the patch .txt output file

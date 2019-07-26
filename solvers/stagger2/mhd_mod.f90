@@ -39,6 +39,7 @@ MODULE mhd_mod
     logical:: mhd=.false.
     logical:: first_time=.true.
     type(extras_t):: extras
+    procedure(divB_clean1),   pointer    :: divB_clean => null()
   contains
     procedure:: pre_init
     procedure:: init
@@ -56,6 +57,7 @@ MODULE mhd_mod
   logical, save:: do_2nd_div=.true.
   logical, save:: do_smooth=.false.
   logical, save:: do_maxwell=.true.
+  integer, save:: divb_cleaner=2
 CONTAINS
 
 !===============================================================================
@@ -72,7 +74,7 @@ SUBROUTINE pre_init (self)
   logical, save:: mhd=.false.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    do_smooth, do_2nd_div, flop_count, verbose, do_maxwell, unsigned, divb_cleaner
+    do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
   !$omp critical (input_cr)
@@ -118,6 +120,14 @@ SUBROUTINE pre_init (self)
     self%nv = self%nv + 5
     if (self%mhd) self%nv = self%nv + 3
   end if
+  select case(divb_cleaner)
+  case(1)
+    self%divb_clean => divb_clean1
+  case(2)
+    self%divb_clean => divb_clean2
+  case default
+    call io%abort('mhd_mod:: divb cleaner method not understood')
+  end select
   call self%idx%init (5, self%mhd)
   call trace%end()
 END SUBROUTINE pre_init
@@ -681,7 +691,7 @@ END SUBROUTINE divb_clean1
 !> Enforce div(B)=0 in the guard zones, by succesively imposing the condition,
 !> layer-by-layer, on the component perpendicular to each of the patch faces.
 !===============================================================================
-SUBROUTINE divb_clean (self)
+SUBROUTINE divb_clean2 (self)
   class(mhd_t):: self
   !.............................................................................
   real, dimension(:,:,:), pointer:: bx, by, bz
@@ -739,7 +749,7 @@ SUBROUTINE divb_clean (self)
       by(l(1)   :u(1)   ,l(2)+j1:u(2)+j1,iz) - by(l(1):u(1),l(2):u(2),iz))
   end do
   call trace%end (itimer)
-END SUBROUTINE divb_clean
+END SUBROUTINE divb_clean2
 
 !===============================================================================
 !> Add extra, MHD-related information to the patch .txt output file
