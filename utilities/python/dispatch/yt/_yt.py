@@ -44,19 +44,14 @@ def patch(p,copy=True):
       'particle_position_x': p_void,
       'particle_position_y': p_void,
       'particle_position_z': p_void}
-    for k,iv in p.idx.dict.items():
-        if p.kind[0:6]=='ramses':
-            k = 'ux' if k=='p1' else k
-            k = 'uy' if k=='p2' else k
-            k = 'uz' if k=='p3' else k
-        key = tr[k] if k in tr.keys() else k
+    for k in tr.keys():
+        iv=p.idx.dict[k]
         if iv >= 0:
-            if p.guard_zones:
-                l=p.li
-                u=p.ui+1
-                dict[key]=p.var(iv,copy=copy)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
-            else:
-                dict[key]=p.var(iv,copy=copy)
+            key = tr[k]
+            dict[key]=p.var(k,copy=copy)
+    for k in p.keys['aux']:
+        key = tr[k] if k in tr.keys() else k
+        dict[key]=p.var(k,copy=copy)
     return dict
 
 def patches(s,copy=True):
