@@ -8,6 +8,7 @@
 !> to the main RT axis. 
 !===============================================================================
 MODULE rt_integral_mod
+  USE timer_mod
   USE io_mod
   USE io_unit_mod
   USE trace_mod
@@ -80,7 +81,7 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
   integer:: m(4), loc(1), dir, i, i1, i2, i3, ib, l(3), u(3), ii(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('rt_integral_t%solve', itimer=itimer)
+  call trc_begin ('rt_integral_t%solve', itimer=itimer)
   call self%init
   m = shape(k)
   !-----------------------------------------------------------------------------
@@ -144,7 +145,7 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
   if (verbose > 0) &
     call diagnostics
   !-----------------------------------------------------------------------------
-  call trace%end (itimer)
+  call trc_end (itimer)
 END SUBROUTINE solve
 
 !===============================================================================
@@ -201,8 +202,8 @@ SUBROUTINE calculate_offsets (self, mu, dir, mesh, o, p)
   real(8), pointer, dimension(:):: x, y, z
   real:: dpdi(2)
   integer:: j
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trc_begin ('rt_integral_t%calculate_offsets')
   ! -- Fractional steps in perpendicular indices per parallel index
   if (dir==1) then
     dpdi(1) = mu(2)/mu(1)*mesh(1)%d/mesh(2)%d
@@ -225,7 +226,6 @@ SUBROUTINE calculate_offsets (self, mu, dir, mesh, o, p)
       omp%thread, 'rt_integral_t%calculate_offsets: mu, dpdi, o, p =', &
       mu, dpdi, o, p
   end if
-  call trc_end
 END SUBROUTINE calculate_offsets
 
 !===============================================================================
@@ -241,7 +241,7 @@ SUBROUTINE bilinear (self, in, out, o, p, l, u)
   integer:: i1, i2, ib, m(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trc_begin ('rt_integral_t%bilinear', 2, itimer=itimer)
+  call trc_begin ('rt_integral_t%bilinear', itimer=itimer)
   m = shape(in)
   q = 1.0-p
   !-----------------------------------------------------------------------------
@@ -337,7 +337,7 @@ SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u, debug)
   real, dimension(size(k,1)):: dtau1, dtau2
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trc_begin ('rt_integral_t%solve1', 1, itimer=itimer)
+  call trc_begin ('rt_integral_t%solve1', itimer=itimer)
   m = shape(k)
   do ib=1,m(3)
     do i2=l(2),u(2)
@@ -406,7 +406,7 @@ SUBROUTINE solve2 (self, k, s, qin, qout, dr, l, u, debug)
   real, dimension(size(k,1)):: dtau1, dtau2
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trc_begin ('rt_integral_t%solve1', 1, itimer=itimer)
+  call trc_begin ('rt_integral_t%solve2', itimer=itimer)
   m = shape(k)
   do ib=1,m(3)
     do i2=l(2),u(2)
@@ -445,22 +445,20 @@ SUBROUTINE diagnostics (label)
   real:: f
   f = 1./max(sum(n_cases),1_8)
   if (present(label)) then
-    write(io_unit%log,*) 'fractions of thin, full, diff, and zero cases: ', n_cases*f, &
-      trim(label)
+    write(io_unit%log,*) 'fractions of thin, full, diff, and zero cases: ', &
+      n_cases*f, trim(label)
   else
-    write(io_unit%log,*) 'fractions of thin, full, diff, and zero cases: ', n_cases*f
+    write(io_unit%log,*) 'fractions of thin, full, diff, and zero cases: ', &
+    n_cases*f
   end if
 END SUBROUTINE diagnostics 
 
 !===============================================================================
-SUBROUTINE trc_begin (label, idebug, itimer)
+SUBROUTINE trc_begin (label, itimer)
   character(len=*):: label
-  integer, optional:: idebug
   integer, optional:: itimer
   if (detailed_timer) then
-    call trace%begin (label, idebug, itimer)
-  else
-    call trace%begin (label, idebug)
+    call timer%begin (label, itimer)
   end if
 END SUBROUTINE
 
@@ -468,9 +466,7 @@ END SUBROUTINE
 SUBROUTINE trc_end (itimer)
   integer, optional:: itimer
   if (detailed_timer) then
-    call trace%end (itimer)
-  else
-    call trace%end
+    call timer%end (itimer)
   end if
 END SUBROUTINE
 
