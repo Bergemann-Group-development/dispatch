@@ -407,14 +407,13 @@ SUBROUTINE init_default (self)
   class(patch_t):: self
   !.............................................................................
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000
-  logical, save:: periodic(3)=.true.
   logical, save:: no_mans_land=.false., use_data_hub=.false., limit_dtime=.false.
   real, save:: u_fixed=-1.0, grace=0.0
   real(8), save:: end_time=1.0, out_time=0.1, print_time=0.1, dt_fixed=-1.0
   real(8):: position(3), size(3)
   integer:: iostat, i, n_alloc=0, n_ext=0
   namelist /patch_params/ n, nv, ng, nt, u_fixed, dt_fixed, &
-    grace, periodic, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
+    grace, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
     zero_order_extrap, limit_dtime
   namelist /out_params/ out_time, end_time, print_time, print_every, max_files
   logical, save:: first_time = .true.
@@ -466,7 +465,6 @@ SUBROUTINE init_default (self)
   self%dt_fixed    = dt_fixed
   self%u_fixed     = u_fixed
   self%max_files   = max_files                  ! prevent run-away NaN
-  self%periodic    = periodic                   ! periodic box or not
   self%use_data_hub = use_data_hub              ! guard zone handling
   self%no_mans_land = no_mans_land              ! mesh centering
   self%print_next  = print_time
@@ -1631,8 +1629,8 @@ FUNCTION distance_curvilinear (self, task) RESULT (out)
   end select
   ! account for periodic wrapping
   !write (io_unit%log,*) self%box; flush(io_unit%log)
-  where (self%periodic)
-    out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
+  where (self%periodic .and. self%box > 0d0)
+    out = modulo (out+0.5_8*self%box, self%box) - 0.5_8*self%box
   end where
   if (io%verbose>1 .and. (task%id==io%id_debug .or. self%id==io%id_debug)) then
     write(io%output,1) &
@@ -1954,7 +1952,7 @@ SUBROUTINE check_nan (self, label, always)
     if (io%verbose < 2 .and. .not. present(always)) return
   end if
   if (.not. associated(self%mem)) return
-  call trace%begin ('patch_t%check_nan', itimer=itimer)
+  call timer%begin ('patch_t%check_nan', itimer=itimer)
   if (io%verbose>1) then
     if (present(label)) then
       write(io%output,*) self%id, trim(label)//', min(d), max(d):', &
@@ -2005,7 +2003,7 @@ SUBROUTINE check_nan (self, label, always)
     flush (io%output)
     call io%abort ('found NaN -- check rank & thread logs!')
   end if
-  call trace%end (itimer)
+  call timer%end (itimer)
 END SUBROUTINE check_nan
 
 LOGICAL FUNCTION isinf(a)
@@ -2030,7 +2028,7 @@ SUBROUTINE check_density (self, label)
       .not.do_check_nan) return
   if (self%is_set(bits%no_density+bits%frozen)) return
   if (.not. associated(self%mem)) return
-  call trace%begin ('patch_t%check_density', itimer=itimer)
+  call timer%begin ('patch_t%check_density', itimer=itimer)
   l = self%mesh%lb
   u = self%mesh%ub
   mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,1))
@@ -2103,7 +2101,7 @@ SUBROUTINE check_density (self, label)
     print *, mpi%rank, 'WARNING: found non-positive density points -- check rank and thread logs'
     !call io%abort ('found non-positive density points -- check rank and thread logs')
   end if
-  call trace%end (itimer)
+  call timer%end (itimer)
 END SUBROUTINE check_density
 
 !===============================================================================

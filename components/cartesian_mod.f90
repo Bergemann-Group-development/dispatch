@@ -49,10 +49,11 @@ SUBROUTINE init (self, label)
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
   logical:: face_nbors=.false.
   integer:: thread, icoords(3),ipos(3)
+  logical:: periodic(3)=.true.
   integer:: id, ip
   integer, save:: itimer=0
   namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
-    omp_init
+    omp_init, periodic
   character(len=120):: ids = &
     '$Id$ components/cartesian_mod.f90'
   !-----------------------------------------------------------------------------
@@ -132,6 +133,7 @@ SUBROUTINE init (self, label)
     patch%llc_cart = patch%position - 0.5 * patch%size
     patch%centre_nat = patch%position
     patch%llc_nat = patch%llc_cart
+    patch%periodic = periodic
     call patch%set(bits%static)
     if (all(self%dims==1)) call task%set(bits%root_grid)
     ! -- initially append all tasks to the task list, to build nbor lists ------
@@ -160,13 +162,11 @@ SUBROUTINE init (self, label)
     link => next
   end do
   !-----------------------------------------------------------------------------
+  ! This call is not valid until the patch meshes have been allocated
   !-----------------------------------------------------------------------------
   if (io%verbose > 0) &
     write(stdout,*) 'cartesian_t%init: count status'
   call self%task_list%count_status
-  if (io%verbose > 0) &
-    write(stdout,*) 'cartesian_t%init: init boundaries'
-  call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
   ! These must be set before reading input snapshots
   !-----------------------------------------------------------------------------
@@ -178,7 +178,6 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   ! Initialize tasks
   !-----------------------------------------------------------------------------
-  call self%task_list%init_task_list_pointers (self%task_list)
   if (omp_init) then
     !$omp parallel default(shared)
     call init_exp (self, origin)
@@ -186,6 +185,12 @@ SUBROUTINE init (self, label)
   else
     call init_exp (self, origin)
   end if
+  !-----------------------------------------------------------------------------
+  ! This call is not valid until the patch mem and meshes have been allocated
+  !-----------------------------------------------------------------------------
+  if (io%verbose > 0) &
+    write(stdout,*) 'cartesian_t%init: init boundaries'
+  call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
   if (io%master) then
     write (io_unit%nml, cartesian_params)
