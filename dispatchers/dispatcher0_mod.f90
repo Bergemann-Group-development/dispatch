@@ -107,7 +107,7 @@ SUBROUTINE execute (self, task_list, test)
     end if
     if (timer%dead_mans_hand > 0.0) then
       if (wallclock() > timer%dead_mans_hand + 30.0) &
-        call mpi_abort('dead mans hand')
+        call mpi%abort('dead mans hand')
     end if
   end do
   write (io_unit%log,*) 'thread',omp%thread,' arrived'

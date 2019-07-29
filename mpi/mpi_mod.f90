@@ -421,6 +421,7 @@ SUBROUTINE init4 (self, n)
   class(mpi_counter_t):: self
   integer:: n
   !.............................................................................
+#ifdef MPI
   integer(kind=MPI_ADDRESS_KIND):: nbytes=8
   integer:: mpi_err
   !----------------------------------------------------------------------------
@@ -429,6 +430,7 @@ SUBROUTINE init4 (self, n)
   call MPI_Win_create (self%i, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
                        self%window, mpi_err)
   call mpi%assert ('MPI_Win_create', mpi_err)
+#endif
 END SUBROUTINE init4
 
 !===============================================================================
@@ -438,6 +440,7 @@ SUBROUTINE init8 (self, n)
   class(mpi_counter_t):: self
   integer(8):: n
   !.............................................................................
+#ifdef MPI
   integer(kind=MPI_ADDRESS_KIND):: nbytes=8
   integer:: mpi_err
   !----------------------------------------------------------------------------
@@ -446,6 +449,7 @@ SUBROUTINE init8 (self, n)
   call MPI_Win_create (self%i, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
                        self%window, mpi_err)
   call mpi%assert ('MPI_Win_create', mpi_err)
+#endif
 END SUBROUTINE init8
 
 !===============================================================================
@@ -470,6 +474,7 @@ FUNCTION update8 (self, i, n) RESULT (j)
   integer(8), optional:: n
   !.............................................................................
   integer:: master=0, mpi_err
+#ifdef MPI
   integer(kind=MPI_ADDRESS_KIND):: offset=0
   !-----------------------------------------------------------------------------
   call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
@@ -501,6 +506,7 @@ contains
                               1, MPI_INTEGER8, MPI_SUM, self%window, mpi_err)
   call mpi%assert ('MPI_Accumulate', mpi_err)
   end subroutine
+#endif
 END FUNCTION update8
 
 END MODULE mpi_mod

@@ -43,11 +43,13 @@ SUBROUTINE request_open (self, filename)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_file_t%request_open')
   call trace%print_id (id)
+#ifdef MPI
   if (self%closed) then
     self%mode = MPI_MODE_CREATE + MPI_MODE_RDWR
     self%filename = filename
     self%closed = .false.
   end if
+#endif
   call trace%end
 END SUBROUTINE request_open
 

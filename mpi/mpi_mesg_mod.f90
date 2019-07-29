@@ -887,7 +887,11 @@ contains
   if (is_complete) then
     !$omp atomic
     timer%mpi_hit = timer%mpi_hit + 1
+#ifdef MPI
     self%id = stat(MPI_TAG)
+#else
+    self%id = 0
+#endif
     if (mpi_mesg%uniq_mesg) then
       self%seq = mod(self%id,100)
       self%id = self%id/100
