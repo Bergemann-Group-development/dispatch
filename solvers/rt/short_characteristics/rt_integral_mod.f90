@@ -82,7 +82,6 @@ SUBROUTINE solve (self, k, s, q, mesh, dir, mu)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trc_begin ('rt_integral_t%solve', itimer=itimer)
-  call self%init
   debug = .false.
   m = shape(k)
   !-----------------------------------------------------------------------------
@@ -437,11 +436,11 @@ SUBROUTINE solve2 (self, k, s, qin, qout, dr, l, u, debug)
         end do
     end do
     if (verbose > 1 .and. debug) then
-      write(io_unit%log,1) ' rt_integral_t%solve1: ib, dt =', &
+      write(io_unit%log,1) ' rt_integral_t%solve2: ib, dt =', &
         ib, icase,  dtau1(l(1):l(1)+9)
-      write(io_unit%log,1) ' rt_integral_t%solve1: ib, qi =', &
+      write(io_unit%log,1) ' rt_integral_t%solve2: ib, qi =', &
         ib, icase,  qin(l(1):l(1)+9,(l(2)+u(2))/2,ib,1)
-      write(io_unit%log,1) ' rt_integral_t%solve1: ib, qo =', &
+      write(io_unit%log,1) ' rt_integral_t%solve2: ib, qo =', &
         ib, icase, qout(l(1):l(1)+9,(l(2)+u(2))/2,ib)
       1 format(a,i4,i2,1p,10e10.2)
     end if

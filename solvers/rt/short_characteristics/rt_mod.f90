@@ -169,6 +169,7 @@ SUBROUTINE pre_init (self, link)
   self%n_phi = n_phi
   self%courant = courant
   self%cdtd    = cdtd
+  call rt_integral%init
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -818,11 +819,8 @@ END SUBROUTINE rt_eos
 !===============================================================================
 SUBROUTINE solve (self)
   class(rt_t):: self
-  integer:: i3, ib
-  real:: mu
-  integer, save:: itimer=0
   !.............................................................................
-  real, pointer :: mem(:,:,:,:)
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (self%i_omega==0) return
   call trace%begin ('rt_t%solve', itimer=itimer)

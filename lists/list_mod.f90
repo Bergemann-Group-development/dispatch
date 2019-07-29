@@ -843,7 +843,7 @@ SUBROUTINE check_ready (self, link)
         end if
         !$omp atomic write
         task%n_failed = 0
-        call trace%end (itimer)
+        call timer%end (itimer)
         return
       end if
     end if

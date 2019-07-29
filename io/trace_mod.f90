@@ -73,20 +73,31 @@ SUBROUTINE trace_begin (id, set_verbose, itimer, detailed_timer)
     level = level+1
     indent = indent + 3
   end if
-  write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
+  write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
   if (io%verbose>=verbose) then
     wc = wallclock()
     if (io_unit%do_validate) wc = 0d0
     if (io%omp_trace) then
-      write(io_unit%log,fmt) omp_mythread, wc, trim(id)//' begin'
-      flush(io_unit%log)
+      call print_out (io_unit%log)
     else
       !$omp critical (trace_cr)
-      write(io%output,fmt) omp_mythread, wc, trim(id)//' begin'
-      flush(io%output)
+      call print_out (io_unit%output)
       !$omp end critical (trace_cr)
     end if
   end if
+contains
+!===============================================================================
+subroutine print_out (unit)
+  integer:: unit
+  if (present(itimer)) then
+    write(io%output,fmt) &
+      omp_mythread, wc, trim(id)//' begin, itimer =', itimer
+  else
+    write(io%output,fmt) &
+      omp_mythread, wc, trim(id)//' begin'
+  end if
+  flush(io%output)
+end subroutine
 END SUBROUTINE trace_begin
 
 !===============================================================================
@@ -147,16 +158,27 @@ SUBROUTINE trace_end (itimer, detailed_timer)
     wc = wallclock()
     if (io_unit%do_validate) wc = 0d0
     if (io%omp_trace) then
-      write(io_unit%log,fmt) omp_mythread, wc, trim(tracing(level))//' end'
-      flush(io_unit%log)
+      call print_out (io_unit%log)
     else
       !$omp critical (trace_cr)
-      write(io%output,fmt) omp_mythread, wc, trim(tracing(level))//' end'
-      flush(io%output)
+      call print_out (io_unit%output)
       !$omp end critical (trace_cr)
     end if
   end if
   indent = max(indent-3,4)
+contains
+!===============================================================================
+subroutine print_out (unit)
+  integer:: unit
+  if (present(itimer)) then
+    write (unit,fmt) &
+      omp_mythread, wc, trim(tracing(level))//' end, itimer =', itimer
+  else
+    write (unit,fmt) &
+      omp_mythread, wc, trim(tracing(level))//' end'
+  end if
+  flush (unit)
+end subroutine
 END SUBROUTINE trace_end
 
 !===============================================================================

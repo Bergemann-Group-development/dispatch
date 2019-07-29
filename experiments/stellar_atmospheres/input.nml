@@ -16,7 +16,8 @@
 
 ! -- RT parameters -------------------------------------------------------------
 &rt_setup_params    on=t verbose=0 /
-&rt_integral_params verbose=0 dtau_min=1e-1 dtau_dif=1e6 order=1 /
+&rt_integral_params verbose=0 dtau_min=1e-1 dtau_dif=1e6 order=1
+                    detailed_timer=t /
 &sc_rt_params       verbose=0 nt=5 n_mu=2 n_phi=4 n_bin=4
                     rt_grace=1e-5 rt_llc=0,0,-0.5 rt_urc=6,6,0.45 courant=1.0
                     n_warmup=6 vertical_propagation=f cdtd=1.0 /
@@ -36,7 +37,7 @@
 &timestep_params    time_order=2 /
 
 ! -- Task control parameters ---------------------------------------------------
-&timer_params       sec_per_report=20 /
+&timer_params       sec_per_report=20 verbose=0 /
 &task_list_params   job_seconds=1e6 /
 &dispatcher_params  method=0 /
 &dispatcher3_params verbose=0 f_over=3 use_taskyield=f use_critical=f /

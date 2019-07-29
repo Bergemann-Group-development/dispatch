@@ -60,6 +60,7 @@ MODULE timer_mod
   type(timer_t), pointer:: timers(:)
   type(timer_t), public:: timer
   integer, save:: nprint=20
+  integer, save:: verbose=0
   real(8), save:: next_report_sec=0d0
   real(8), save:: prev2=0d0
   real, save:: min_fraction=0.0005
@@ -78,7 +79,7 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   integer:: ignore, i
   real(8):: sec_per_report=10.
-  namelist /timer_params/ sec_per_report, min_fraction
+  namelist /timer_params/ sec_per_report, min_fraction, verbose
   !.............................................................................
   !$omp critical (timer_cr)
   if (first_time) then
@@ -127,6 +128,8 @@ SUBROUTINE begin (self, name, itimer)
         if (ntimer > maxproc) call mpi%abort ('timer_mod: increase maxproc')
         itimer = ntimer
         names(itimer) = name
+      else
+        write (stdout,*) 'timer_t%begin: WARNING, duplicate name: '//trim(name)
       end if
     end if
     !$omp end critical (timer_cr)
@@ -153,6 +156,9 @@ SUBROUTINE begin (self, name, itimer)
   if (istack>maxdepth) call mpi%abort ('too many timer levels;'//trim(name))
   timers(thread)%stack(istack) = itimer
   timers(thread)%istack = istack
+  if (verbose > 0) then
+    print '(a,2i5,3x,a)', 'timer%begin: istack, itimer, name =', istack, itimer, trim(name)
+  end if
 END SUBROUTINE begin
 
 !===============================================================================
@@ -177,19 +183,23 @@ SUBROUTINE end (self, itimer)
     return
   end if
   otimer = timers(thread)%stack(istack)
+  if (verbose > 0) then
+    print '(a,2i5,3x,a)', 'timer%end:   istack, otimer, name =', istack, otimer, trim(names(otimer))
+  end if
   !-----------------------------------------------------------------------------
   ! Increment call counter and total time used
   !-----------------------------------------------------------------------------
   wc = wallclock()
   if (present(itimer)) then
-    timers(thread)%calls(otimer) = timers(thread)%calls(otimer) + 1
-    if (itimer == 0) then
-      print *, omp%thread, 'WARNING: itimer should not be zero!'
-    else
-      timers(thread)%total(otimer) = timers(thread)%total(otimer) + &
-                                     wc - timers(thread)%start(otimer)
+    if (itimer /= otimer) then
+      write (stdout,'(i6,2(3x,a,i4))') &
+        omp%thread, 'WARNING: itimer =',itimer, & 
+        ' not equal to expected value =', otimer
     end if
   end if
+  timers(thread)%calls(otimer) = timers(thread)%calls(otimer) + 1
+  timers(thread)%total(otimer) = timers(thread)%total(otimer) + &
+                                 wc - timers(thread)%start(otimer)
   !-----------------------------------------------------------------------------
   ! Check if there is a suspended timer present, and if so restart it
   !-----------------------------------------------------------------------------
@@ -197,7 +207,6 @@ SUBROUTINE end (self, itimer)
   if (istack>0) then
     otimer = timers(thread)%stack(istack)
     timers(thread)%start(otimer) = wc
-    !print *,'restarting timer for '//trim(names(otimer))
   else if (istack<0) then
     print *,'WARNNING: too many timer%end calls'
     istack = 0
