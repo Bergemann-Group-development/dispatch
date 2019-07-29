@@ -77,14 +77,14 @@ SUBROUTINE condition (self, mem, src, rk,tt, mu)
   class(rt_boundaries_t) :: self
   real, dimension(:,:,:,:):: mem, src, rk
   real, dimension(:,:,:), pointer:: tt
-  real   :: mu, w, tau
+  real   :: mu(3)
   !.....................................................................
+  real   :: w, tau
   class(mesh_t), pointer:: m1, m2, m3
   integer:: i3, i3b, i2, i1, n(4), iv
   !---------------------------------------------------------------------
   n = shape(rk)
-  
-  if (self%mesh(3)%lower_boundary) then
+  if (self%mesh(3)%lower_boundary .and. mu(3) > 0.0) then
     i3 =  self%mesh(3)%lo
     i3b = self%mesh(3)%lb
     if (self%wall(5)) then
@@ -105,8 +105,7 @@ SUBROUTINE condition (self, mem, src, rk,tt, mu)
       end do
     end if
   end if
-
-  if (self%mesh(3)%upper_boundary) then
+  if (self%mesh(3)%upper_boundary .and. mu(3) < 0.0) then
     i3  = self%mesh(3)%uo
     i3b = self%mesh(3)%ub
     if (self%wall(6)) then
@@ -127,8 +126,8 @@ SUBROUTINE condition (self, mem, src, rk,tt, mu)
       end do
     end if
   end if
-!
-if (self%mesh(2)%lower_boundary) then
+  !
+  if (self%mesh(2)%lower_boundary .and. mu(2) > 0.0) then
     i3  = self%mesh(2)%lo
     i3b = self%mesh(2)%lb
     if (self%wall(3)) then
@@ -149,8 +148,7 @@ if (self%mesh(2)%lower_boundary) then
       end do
     end if
   end if
-  
-  if (self%mesh(2)%upper_boundary) then
+  if (self%mesh(2)%upper_boundary .and. mu(2) < 0.0) then
     i3  = self%mesh(2)%uo
     i3b = self%mesh(2)%ub
     if (self%wall(4)) then
@@ -172,7 +170,7 @@ if (self%mesh(2)%lower_boundary) then
     end if
   end if
   !
-  if (self%mesh(1)%lower_boundary) then
+  if (self%mesh(1)%lower_boundary .and. mu(1) > 0.0) then
     i3  = self%mesh(1)%lo
     i3b = self%mesh(1)%lb
     if (self%wall(1)) then
@@ -192,9 +190,8 @@ if (self%mesh(2)%lower_boundary) then
       end do
       end do
     end if
-  end if
-  
-  if (self%mesh(1)%upper_boundary) then
+  end if  
+  if (self%mesh(1)%upper_boundary .and. mu(1) < 0.0) then
     i3  = self%mesh(1)%uo
     i3b = self%mesh(1)%ub
     if (self%wall(2)) then

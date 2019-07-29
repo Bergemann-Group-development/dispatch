@@ -9,9 +9,10 @@
 
 &cartesian_params     
  size=1,1,1
- dims=4,4,4
+ dims=3*3
  mpi_dims=2,2,1
  origin=0,0,0 
+ periodic=f,f,f
  omp_init=f  /
 
 
@@ -24,15 +25,15 @@
  &aux_params         verbose=0 select='tt','qr','rkap','src' /
 
 &io_params
- verbose=0 
- do_trace=f 
- omp_trace=f 
+ verbose=1 
+ do_trace=f
+ omp_trace=f
  do_output=t  
- id_debug=0 
+ id_debug=0
  restart=-1  
- guard_zones=t
- nml_version=1/
-
+ guard_zones=f
+ nml_version=1
+/
 
 &patch_params
  nt=5
@@ -42,7 +43,6 @@
  no_mans_land=t
  use_data_hub =f
  !dt_fixed=1d-8
- periodic = f,f,f
 /
 
 &eos_params
@@ -72,7 +72,7 @@
  on =t 
  verbose=0 
  nt=1
- n_mu=2
+ n_mu=4
  n_phi=12
  n_lambda=1
  epsilon=0.9
@@ -89,7 +89,7 @@
  on =t 
  verbose=0 
  nt=1
- n_mu=2
+ n_mu=5
  n_phi=4
  n_bin=1
  n_warmup=5
