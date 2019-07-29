@@ -90,13 +90,13 @@ contains
 subroutine print_out (unit)
   integer:: unit
   if (present(itimer)) then
-    write(io%output,fmt) &
+    write(unit,fmt) &
       omp_mythread, wc, trim(id)//' begin, itimer =', itimer
   else
-    write(io%output,fmt) &
+    write(unit,fmt) &
       omp_mythread, wc, trim(id)//' begin'
   end if
-  flush(io%output)
+  flush(unit)
 end subroutine
 END SUBROUTINE trace_begin
 
