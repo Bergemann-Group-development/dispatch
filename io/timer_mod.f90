@@ -106,11 +106,13 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE begin (self, name, itimer)
   class(timer_t):: self
-  character(len=*), optional:: name
-  integer:: itimer, thread, i, otimer, istack
+  character(len=*):: name
+  integer:: itimer
+  !.............................................................................
+  integer:: thread, i, otimer, istack
   logical:: ok
   real(8):: wc
-  !.............................................................................
+  !-----------------------------------------------------------------------------
   if (io_unit%do_validate) return
   thread = omp_get_thread_num()
   if (itimer==0) then
@@ -137,17 +139,16 @@ SUBROUTINE begin (self, name, itimer)
   ! If a procedure is being timed, accumulate to its total
   !-----------------------------------------------------------------------------
   istack = timers(thread)%istack
+  wc = wallclock()
   if (istack>0) then
     otimer = timers(thread)%stack(istack)
-    !print *,'suspending timer for '//trim(names(otimer))
-    wc = wallclock()
     timers(thread)%total(otimer) = timers(thread)%total(otimer) &
                                  + (wc - timers(thread)%start(otimer))
   end if
   !-----------------------------------------------------------------------------
   ! Start the new timer, and record it on the stack
   !-----------------------------------------------------------------------------
-  timers(thread)%start(itimer) = wallclock()
+  timers(thread)%start(itimer) = wc
   istack = istack+1
   if (istack>maxdepth) call mpi%abort ('too many timer levels;'//trim(name))
   timers(thread)%stack(istack) = itimer

@@ -255,9 +255,7 @@ SUBROUTINE check_sent (self, nq)
     mesg => sent_tmp%head                                             ! top of list
     do while (associated(mesg))
       next => mesg%next
-      call timer%end (itimer=itimer)
       call mesg%wait_all
-      call timer%begin (itimer=itimer)
       call sent_tmp%remove (mesg)
       call sent_tmp%delete (mesg, send=.true.)
       mesg => next
@@ -285,9 +283,7 @@ SUBROUTINE check_sent (self, nq)
     mesg => self%head                                           ! top of list
     do while (associated(mesg))
       next => mesg%next                                         ! in case removed
-      call timer%end (itimer=itimer)
       call mesg%test_all (flag)                                 ! done with?
-      call timer%begin (itimer=itimer)
       if (flag) then
         call self%remove (mesg)                                 ! yes, remove
         call self%delete (mesg, send=.true.)                    ! deallocate
