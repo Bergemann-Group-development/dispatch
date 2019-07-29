@@ -104,8 +104,10 @@ MODULE task_mod
     procedure:: load_balance
     procedure:: has_finished
     procedure:: overlaps
+    procedure:: overlaps_point
     procedure:: nbor_relations
-    procedure:: distance                ! return the distance btw two patches
+    procedure:: distance
+    procedure:: point_distance
     procedure:: pack
     procedure:: unpack
     procedure:: is_relevant
@@ -511,6 +513,20 @@ FUNCTION overlaps (self, task)
 END FUNCTION overlaps
 
 !===============================================================================
+!> Check if point p overlaps with the internal region of self
+!===============================================================================
+FUNCTION overlaps_point (self, p)
+  class(task_t):: self
+  real(8):: p(3), d(3)
+  logical:: overlaps_point
+  !.............................................................................
+  call trace%begin ('task_t%overlaps', 2)
+  d = self%point_distance (self%position, p)
+  overlaps_point = all(abs(d) < self%size*0.5d0)
+  call trace%end ()
+END FUNCTION overlaps_point
+
+!===============================================================================
 !> Decide if another task is needed, if it needs_me, and if it should be
 !> downloaded (= used in one way or another to prepare the task for update)
 !===============================================================================
@@ -614,11 +630,7 @@ FUNCTION distance (self, task) RESULT (out)
   real(8):: out(3)
   !.............................................................................
   call trace%begin ('task_t%distance',2)
-  out = self%position-task%position
-  ! account for periodic wrapping
-  where (self%periodic)
-    out = modulo(out+0.5_8*self%box,max(self%box,1d-30))-0.5_8*self%box
-  end where
+  out = self%point_distance (self%position, task%position)
   if (io%verbose>1 .and. (task%id==io%id_debug .or. self%id==io%id_debug)) then
     print *,'distance: self', self%position, self%id
     print *,'distance: task', task%position, task%id
@@ -626,6 +638,22 @@ FUNCTION distance (self, task) RESULT (out)
   end if
   call trace%end()
 END FUNCTION distance
+
+!===============================================================================
+!> Signed distance between two points in a possibly periodic box
+!===============================================================================
+FUNCTION point_distance (self, point1, point2) RESULT (out)
+  class(task_t):: self
+  real(8), intent(in):: point1(3), point2(3)
+  real(8):: out(3)
+  !.............................................................................
+  call trace%begin ('task_t%point_distance',2)
+  out = point1-point2
+  where (self%periodic .and. self%box /= 0d0)
+    out = modulo (out+0.5_8*self%box, self%box) - 0.5_8*self%box
+  end where
+  call trace%end()
+END FUNCTION point_distance
 
 SUBROUTINE pack (self, mesg)
   class(task_t):: self

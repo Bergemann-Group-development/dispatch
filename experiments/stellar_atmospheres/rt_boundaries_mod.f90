@@ -48,7 +48,7 @@ SUBROUTINE condition (self, mem, src, rk, tt, mu)
   class(rt_boundaries_t) :: self
   real, dimension(:,:,:,:),pointer:: mem, src, rk
   real, dimension(:,:,:), pointer:: tt
-  real :: mu
+  real :: mu(3)
   logical:: lower
   !.............................................................................
   class(mesh_t), pointer:: m1, m2, m3
@@ -56,20 +56,20 @@ SUBROUTINE condition (self, mem, src, rk, tt, mu)
   real:: h_scale, tau
   !-----------------------------------------------------------------------------
   n=shape(mem)
-  if (self%mesh(3)%lower_boundary .and. mu > 0.0) then
+  if (self%mesh(3)%lower_boundary .and. mu(3) > 0.0) then
     i3 = self%mesh(3)%lo
     do ib=1,n(4)
       do i2=self%mesh(2)%lb,self%mesh(2)%ub
       do i1=self%mesh(1)%lb,self%mesh(1)%ub
         ! -- Estimate the boundary Q from an estimate of the total optical depth
         h_scale = tt(i1,i2,i3+1)/(scaling%temp*self%grav)
-        tau = h_scale*rk(i1,i2,i3+1,ib)/abs(mu)
+        tau = h_scale*rk(i1,i2,i3+1,ib)/abs(mu(3))
         mem(i1,i2,i3,ib) = -src(i1,i2,i3,ib)*exp(-tau)
       end do
       end do
     end do
   end if
-  if (self%mesh(3)%upper_boundary) then
+  if (self%mesh(3)%upper_boundary .and. mu(3) < 0.0) then
     mem(:,:,self%mesh(3)%uo:self%mesh(3)%ub,:) = 0.0
   end if 
 END SUBROUTINE condition

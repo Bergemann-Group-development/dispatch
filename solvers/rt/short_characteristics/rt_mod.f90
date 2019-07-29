@@ -77,11 +77,13 @@ MODULE rt_mod
     integer                  :: n_bin=4               ! number of frequency bins
     integer                  :: n_omega=0             ! number of space-angles
     integer                  :: i_omega=0             ! space-angle index
+    integer                  :: axis=0                ! neares axis
     real, pointer            :: w_bin(:)              ! frequency weight
     type(rt_t), pointer      :: omega(:)  => null()   ! different RT directions
     type(rt_t), pointer      :: main => null()        ! point to main RT task
     real                     :: cdtd = 1.0
     real                     :: mu, rt_phi, w         ! mu, phi, weights
+    real                     :: rt_hat(3)             ! RT direction
     real                     :: epsilon =1.0          ! scattering coefficient
     real(8)                  :: eos_time              ! laste EOS time
     real                     :: rt_grace=0.01         ! deal with roundoff
@@ -104,6 +106,7 @@ MODULE rt_mod
     procedure:: add_to_task_list                      ! add to task list
     procedure:: init_omega                            ! init omega task
     procedure:: needs                                 ! check upstream
+    procedure:: is_upstream_of                        ! check upstream
     procedure:: pre_update                            ! pre MHD
     procedure:: post_update                           ! post MHD
     procedure:: update                                ! RT task update
@@ -222,7 +225,8 @@ SUBROUTINE init_task (self)
   self%origin     = p%origin
   self%llc_cart   = p%llc_cart
   self%llc_nat    = p%llc_nat
-  self%centre_nat = p%centre_nat
+  self%position   = p%position
+  self%centre_nat = p%position
   self%restart    = p%restart
   self%warmup_end_time = p%time
   self%iit      = 1
@@ -282,15 +286,9 @@ SUBROUTINE init_task (self)
     !---------------------------------------------------------------------------
     if (n_omega > 0) allocate (self%omega(n_omega), source=self)
     self%i_omega = 0
-    !---------------------------------------------------------------------------
-    ! Initialize the clones of self
-    !---------------------------------------------------------------------------
-    do i_omega=1,self%n_omega
-      call self%init_omega(i_omega)
-    end do
     self%main => self%omega(1)%main
     !---------------------------------------------------------------------------
-    ! Assign angles -- Should change to
+    ! Assign angles and initialize clones
     !----------------------------------------------------------------------------
     i_omega = 0
     do i_mu=1,self%n_mu
@@ -305,6 +303,7 @@ SUBROUTINE init_task (self)
           omega%rt_phi = math%pi*(modulo(real(2*(i_phi-1))/self%n_phi + &
             (dir+1)/2.0, 2.0) - 1.0)
           if (i_mu == self%n_mu) omega%rt_phi = 0.0
+          call self%init_omega(i_omega)
         end do
       end do
     end do
@@ -367,6 +366,8 @@ SUBROUTINE init_omega (self, i_omega)
   integer:: i_omega
   ! ............................................................................
   class (rt_t), pointer:: omega
+  real:: mu(3)
+  integer:: loc(1)
   ! ----------------------------------------------------------------------------
   call trace%begin ('rt_t%init')
   omega => self%omega(i_omega)
@@ -401,7 +402,17 @@ SUBROUTINE init_omega (self, i_omega)
   call io%bits_mem(storage_size(omega%mem)   ,product(shape(omega%mem))   ,'q')
   omega%q => omega%mem(:,:,:,:,omega%it,1)
   omega%mem = 0.0
-  ! -- allocate task link and set link%task --
+  !-----------------------------------------------------------------------------
+  ! Determine closest axis direction
+  !-----------------------------------------------------------------------------
+  omega%rt_hat(1) = sin(acos(omega%mu))*cos(omega%rt_phi)
+  omega%rt_hat(2) = sin(acos(omega%mu))*sin(omega%rt_phi)
+  omega%rt_hat(3) = omega%mu
+  loc = maxloc(abs(omega%rt_hat))
+  omega%axis = loc(1)
+  !-----------------------------------------------------------------------------
+  ! Allocate task link and set link%task 
+  !-----------------------------------------------------------------------------
   allocate (omega%link)
   omega%link%task => omega
   call trace%end()
@@ -420,7 +431,7 @@ FUNCTION needs (self, omega, task)
   real:: ds1(3), ds2(3), sinth
   real, parameter:: eps=1e-4
   integer:: is1(3), is2(3), i, lbit(3), ubit(3)
-  logical:: lower, upper
+  logical:: lower, upper, upstream
   !-----------------------------------------------------------------------------
   ! If self is at a boundary and omega points inward, or the task has no RT,
   ! then the task is outside and is not needed
@@ -481,7 +492,83 @@ FUNCTION needs (self, omega, task)
   else if (is2(2)==0 .and. is1(2)/=0) then
     needs = .false.
   end if
+  upstream = task%is_upstream_of(omega)
+if (needs .neqv. upstream) then
+  print '(a,2i4,2f8.3,l4,2(3f8.3,2x),2i4)', &
+    'needs and is_upstream of disagree on', omega%id, task%id, omega%mu, &
+    omega%rt_phi, needs, real(omega%task_t%distance(task),kind=4), &
+    omega%mesh%s, omega%i_omega, task%i_omega
+  !needs = upstream
+end if
 END FUNCTION needs
+
+!===============================================================================
+!> Determine if the self task is "upstream" of the other task; i.e., if its
+!> guard cells that lie between the two patches overlap with the internal
+!> region of the other patch
+!>
+!> In the most general case one needs to first identify the "faces" of the task
+!> that are at play.  Those correspond to the components of the ray direction
+!> that are non-zero.  For each upstream candidate, one should run through the
+!> candidate faces, identified by squares (or more generally flat volumes), and
+!> check if they have overlap in all three directions with the internal region
+!> of the candidate upstream task.
+!===============================================================================
+LOGICAL FUNCTION is_upstream_of (self, other)
+  class(rt_t):: self, other
+  real(8):: p(3), d(3), dh(3)
+  integer:: i
+  logical:: debug
+  !-----------------------------------------------------------------------------
+  ! Check if the direction vector d is in the same octant; to be correct for
+  ! periodic meshes this must use the patch_t%distance() function!
+  !-----------------------------------------------------------------------------
+  d = other%distance (self)                       ! direction towards other
+  dh = d*self%rt_hat                              ! projection onto rt_hat
+  is_upstream_of = all(dh > -self%ds)             ! all components "not negative"
+debug=.false.
+!debug = self%position(2)==other%position(2) !&
+  !.and. abs(self%position(2)-0.5d0) < 0.01
+if (debug) then
+print *, self%id, other%id
+print 1, 'sp:',  self%position      , 'sm:',  self%mesh%p
+print 1, 'op:', other%position      , 'om:', other%mesh%p
+print 1, ' d:', d
+print 1, 'dh:', dh                  , 'rt:', self%rt_hat, is_upstream_of
+1 format(2(a,3f8.3,2x),l3)
+end if
+  !-----------------------------------------------------------------------------
+  ! If we have a possible upstream task
+  !-----------------------------------------------------------------------------
+  if (is_upstream_of) then
+    p = self%position
+    do i=1,3
+      associate (r => self%mesh(i)%r)
+      !-------------------------------------------------------------------------
+      ! If the direction vector projected on the ray is non-zero (w roundoff),
+      ! then move the point to the guard zone in the other task direction
+      !-------------------------------------------------------------------------
+      if (abs(dh(i)) > self%ds(i)) then
+        if      (d(i) > +self%ds(i)) then
+          p(i) = p(i) + r(self%mesh(i)%uo)
+        else if (d(i) < -self%ds(i)) then
+          p(i) = p(i) + r(self%mesh(i)%lo)
+        end if
+      end if
+      end associate
+    end do
+    !---------------------------------------------------------------------------
+    ! If that doesn't overlap with the other task, self is not upstream
+    !---------------------------------------------------------------------------
+    if (.not. other%overlaps_point (p)) then
+      is_upstream_of = .false.
+    end if
+  end if
+if (debug) &
+print '(3i4,l4,5(2x,a,3f8.3))', self%id, other%id, self%axis, is_upstream_of, &
+'sp:',self%mesh%p, 'op:',other%mesh%p, 'd:',abs(d), &
+'s2:',other%mesh%s/2d0
+END FUNCTION is_upstream_of
 
 !===============================================================================
 !> Check if patch belongs to an RT box or is at its boundary.  The mesh flags
@@ -732,6 +819,7 @@ END SUBROUTINE rt_eos
 SUBROUTINE solve (self)
   class(rt_t):: self
   integer:: i3, ib
+  real:: mu
   integer, save:: itimer=0
   !.............................................................................
   real, pointer :: mem(:,:,:,:)
@@ -740,9 +828,9 @@ SUBROUTINE solve (self)
   call trace%begin ('rt_t%solve', itimer=itimer)
   !-----------------------------------------------------------------------------
   call self%rt_boundaries%condition (mem=self%q, src=self%src, rk=self%rk, &
-                                     tt=self%tt, mu=self%mu)
-  call rt_integral%solve (self%rk, self%src, self%q, self%mesh, self%mu, &
-                          self%rt_phi)
+                                     tt=self%tt, mu=self%rt_hat)
+  call rt_integral%solve (self%rk, self%src, self%q, self%mesh, self%axis, &
+                          self%rt_hat)
   call self%patch%aux%register ('rkap', self%rk )
   call self%patch%aux%register ('src',  self%src)
   call trace%end (itimer)

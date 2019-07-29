@@ -40,7 +40,7 @@ SUBROUTINE init (mhd)
   class(task_t), pointer:: nb_task
   logical:: needs, needs_me, download
   !-----------------------------------------------------------------------------
-  call trace%begin ('nbors_t%init')
+  call trace%begin ('rt_nbors_t%init')
   omega0 => mhd%rt
   call omega0%clear(bits%init_nbors)
   !-----------------------------------------------------------------------------

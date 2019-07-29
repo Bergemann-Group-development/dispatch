@@ -69,7 +69,7 @@ END SUBROUTINE init
 !===============================================================================
 !> Solve the radiative transfer for all bins, along the closest axis direction
 !===============================================================================
-SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
+SUBROUTINE solve (self, k, s, q, mesh, dir, mu)
   class(rt_integral_t):: self
   real, dimension(:,:,:,:), pointer:: k, s, q
   class(mesh_t), pointer:: mesh(:)
@@ -83,15 +83,9 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
   !-----------------------------------------------------------------------------
   call trc_begin ('rt_integral_t%solve', itimer=itimer)
   call self%init
+  debug = .false.
   m = shape(k)
   !-----------------------------------------------------------------------------
-  ! Determine closest axis direction
-  !-----------------------------------------------------------------------------
-  mu(1) = sin(acos(mu3))*cos(phi3)
-  mu(2) = sin(acos(mu3))*sin(phi3)
-  mu(3) = mu3
-  loc = maxloc(abs(mu))
-  dir = loc(1)
   dr = 0.5*mesh(dir)%d/abs(mu(dir))
   !-----------------------------------------------------------------------------
   ! Transpose dimensions to solver index coordinates and allocate
@@ -99,7 +93,7 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
   if (dir==1) then
     ii = [2,3,1]
   else if (dir==2) then
-    ii = [1,3,2]
+    ii = [3,1,2]
   else
     ii = [1,2,3]
   end if
@@ -123,7 +117,6 @@ SUBROUTINE solve (self, k, s, q, mesh, mu3, phi3)
   ! Prepare layers for the single layer solver and call it
   !-----------------------------------------------------------------------------
   do i=i1,i2,i3
-    debug = i==i1 .and. mu(dir) > 0.0
     call self%prepare_layers (mu, dir, mesh, k, k3, i, i3)
     call self%prepare_layers (mu, dir, mesh, s, s3, i, i3)
     call self%prepare_layers (mu, dir, mesh, q, q3, i, i3)
@@ -206,20 +199,24 @@ SUBROUTINE calculate_offsets (self, mu, dir, mesh, o, p)
   !-----------------------------------------------------------------------------
   ! -- Fractional steps in perpendicular indices per parallel index
   if (dir==1) then
-    dpdi(1) = mu(2)/mu(1)*mesh(1)%d/mesh(2)%d
-    dpdi(2) = mu(3)/mu(1)*mesh(1)%d/mesh(3)%d
+    ! -- when dir==1, the 1st index is y, the 2nd is z
+    dpdi(1) = mu(2)/abs(mu(1))*mesh(1)%d/mesh(2)%d
+    dpdi(2) = mu(3)/abs(mu(1))*mesh(1)%d/mesh(3)%d
   else if (dir==2) then
-    dpdi(1) = mu(1)/mu(2)*mesh(2)%d/mesh(1)%d
-    dpdi(2) = mu(3)/mu(2)*mesh(2)%d/mesh(3)%d
+    ! -- when dir==2, the 1st index is z, the 2nd is x
+    dpdi(1) = mu(3)/abs(mu(2))*mesh(2)%d/mesh(3)%d
+    dpdi(2) = mu(1)/abs(mu(2))*mesh(2)%d/mesh(1)%d
   else
-    dpdi(1) = mu(1)/mu(3)*mesh(3)%d/mesh(1)%d
-    dpdi(2) = mu(2)/mu(3)*mesh(3)%d/mesh(2)%d
+    ! -- when dir==3, the 1st index is x, the 2nd is y
+    dpdi(1) = mu(1)/abs(mu(3))*mesh(3)%d/mesh(1)%d
+    dpdi(2) = mu(2)/abs(mu(3))*mesh(3)%d/mesh(2)%d
   end if
   ! -- backward and forwards one index
   do j=1,2
     p(:,j) = (2*j-3)*dpdi
   end do
-  o = floor(p)
+  ! -- prevent o=1 p=0.0 from happening
+  o = max(-1,min(0,floor(p)))
   p = p - o
   if (verbose > 1) then
     write(io_unit%log,'(i2,2x,a,2x,3f7.3,2x,2f7.3,2(2x,2i3),0p,2(2x,2f7.3))') &
@@ -256,8 +253,9 @@ SUBROUTINE bilinear (self, in, out, o, p, l, u)
   !-----------------------------------------------------------------------------
   else if (abs(o(1)+p(1)) < 1e-5) then
     if (verbose > 1) &
-      write(io_unit%log,*) 'rt_integral_t%bilinear: 2nd index, o, p =', &
+      write(stderr,*) 'rt_integral_t%bilinear: 2nd index, o, p =', &
         o(2), p(2)
+    call check_index_2 ('(1)')
     do ib=1,m(3)
     do i2=l(2),u(2)
     do i1=l(1),u(1)
@@ -271,8 +269,9 @@ SUBROUTINE bilinear (self, in, out, o, p, l, u)
   !-----------------------------------------------------------------------------
   else if (abs(o(2)+p(2)) < 1e-5) then
     if (verbose > 1) &
-      write(io_unit%log,*) 'rt_integral_t%bilinear: 1st index, o, p =', &
+      write(stderr,*) 'rt_integral_t%bilinear: 1st index, o, p =', &
         o(1), p(1)
+    call check_index_1 ('(1)')
     do ib=1,m(3)
     do i2=l(2),u(2)
     do i1=l(1),u(1)
@@ -286,20 +285,10 @@ SUBROUTINE bilinear (self, in, out, o, p, l, u)
   !-----------------------------------------------------------------------------
   else
     if (verbose > 1) &
-      write(io_unit%log,*) 'rt_integral_t%bilinear: o, p =', &
+      write(stderr,*) 'rt_integral_t%bilinear: o, p =', &
         o, p
-    do i1=l(1),u(1),u(1)-l(1)
-      if (i1+o(1) < 1 .or. i1+o(1) > size(in,1)) then
-        write(io_unit%log,*) 'index 1 outside range', i1, o(1), p(1)
-        stop
-      end if
-    end do
-    do i2=l(2),u(2),u(2)-l(2)
-      if (i2+o(2) < 1 .or. i2+o(2) > size(in,2)) then
-        write(io_unit%log,*) 'index 2 outside range', i2, o(2), p(2)
-        stop
-      end if
-    end do
+    call check_index_1 ('(2)')
+    call check_index_2 ('(2)')
     do ib=1,m(3)
     do i2=l(2),u(2)
     do i1=l(1),u(1)
@@ -313,6 +302,27 @@ SUBROUTINE bilinear (self, in, out, o, p, l, u)
     end do
   end if
   call trc_end (itimer)
+contains
+!===============================================================================
+subroutine check_index_1 (label)
+  character(len=*):: label
+  do i1=l(1),u(1),u(1)-l(1)
+    if (i1+o(1) < 1 .or. i1+o(1)+1 > size(in,1)) then
+      write(stderr,*) 'index 1 outside range '//label, i1, size(in,1), o(1), p(1)
+      call io%abort ('rt_integral_t%bilinear: index outside range')
+    end if
+  end do
+end subroutine check_index_1
+!===============================================================================
+subroutine check_index_2 (label)
+  character(len=*):: label
+  do i2=l(2),u(2),u(2)-l(2)
+    if (i2+o(2) < 1 .or. i2+o(2)+1 > size(in,2)) then
+      write(stderr,*) 'index 2 outside range '//label, i2, size(in,2), o(2), p(2)
+      call io%abort ('rt_integral_t%bilinear: index outside range')
+    end if
+  end do
+end subroutine check_index_2
 END SUBROUTINE bilinear
 
 !===============================================================================

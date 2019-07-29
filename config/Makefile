@@ -189,6 +189,7 @@ info:
 	@echo "$B  PATCH       $N= $(PATCH)"
 	@echo "$B  VPATH       $N= $(VPATH)"
 	@echo "$B  SOLVER      $N= $(SOLVER)"
+	@echo "$B  RT_SOLVER   $N= $(RT_SOLVER)"
 	@echo "$B  OPACITY     $N= $(OPACITY)"
 	@echo "$B  EOS         $N= $(EOS)"
 	@echo "$B  PROG        $N= $(PROG).o"
