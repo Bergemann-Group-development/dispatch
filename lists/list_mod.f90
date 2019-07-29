@@ -820,7 +820,7 @@ SUBROUTINE check_ready (self, link)
   ignore = bits%ready + bits%busy + bits%remove + bits%virtual + bits%frozen
   if (task%is_set (ignore)) &
     return 
-  call trace%begin ('list_t%check_ready', itimer=itimer)
+  call timer%begin ('list_t%check_ready', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Since only this thread can change the nbor list we are free to use it w/o lock
   !-----------------------------------------------------------------------------
@@ -852,7 +852,7 @@ SUBROUTINE check_ready (self, link)
   !$omp atomic write
   task%n_failed = 0
   call self%queue_by_time (link)                        ! add task to queue
-  call trace%end (itimer)
+  call timer%end (itimer)
 END SUBROUTINE check_ready
 
 !===============================================================================
@@ -1504,7 +1504,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
     return
   end if
   !-----------------------------------------------------------------------------
-  call trace%begin ('list_t%queue_by_time ', itimer=itimer)
+  call timer%begin ('list_t%queue_by_time ', itimer=itimer)
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
   !-----------------------------------------------------------------------------
@@ -1526,7 +1526,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
       if (nit > self%nq) then
         print *,'ERROR: hang in queue_by_time, nit =', nit
         error = .true.
-        call trace%end (itimer)
+        call timer%end (itimer)
         return
       end if
       if (associated(next%task, task)) then
@@ -1588,7 +1588,7 @@ SUBROUTINE real_queue_by_time (self, this, error)
       ' found ready bit in queue_by_time for task', task%id, task%time
     flush (io_unit%log)
   end if
-  call trace%end (itimer)
+  call timer%end (itimer)
 END SUBROUTINE real_queue_by_time
 
 !===============================================================================
@@ -1600,7 +1600,7 @@ SUBROUTINE queue_active (self, this)
   class(task_t), pointer:: task
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('list_t%queue_active ', itimer=itimer)
+  call timer%begin ('list_t%queue_active ', itimer=itimer)
   !-----------------------------------------------------------------------------
   task => this%task
   task%atime = task%time
@@ -1650,7 +1650,7 @@ SUBROUTINE queue_active (self, this)
   end if
   call self%aconsistency (1)
   !$omp end critical (active_cr)
-  call trace_end (itimer)
+  call timer%end (itimer)
 END SUBROUTINE queue_active
 
 !===============================================================================

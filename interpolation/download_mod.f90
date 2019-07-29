@@ -32,6 +32,7 @@ MODULE download_mod
   USE lagrange_mod
   USE validate_mod
   USE omp_lock_mod
+  USE timer_mod
   implicit none
   private
   type, public:: download_t
@@ -473,7 +474,7 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
   integer, save           :: itimer=0
   logical                 :: all_cells_l, no
   !-----------------------------------------------------------------------------
-  call trace%begin('download_t%same_linear', itimer=itimer)
+  call timer%begin('download_t%same_linear', itimer=itimer)
   if (target%id == id_debug) &
     write(io_unit%log,'(a,1p,e14.5,i7,e14.5)') &
       'dbg download_t%same_linear: time, source =', &
@@ -798,7 +799,7 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
       end if
     end if
   end do
-  call trace%end (itimer)
+  call timer%end (itimer)
 END SUBROUTINE same_linear
 
 !===============================================================================
