@@ -685,7 +685,7 @@ FUNCTION check_load (self, head) RESULT (sell)
     end do
   end if ! (rank_info%ok .and. wc < duration)
   call self%lock%unset
-  call trace%end()
+  call trace%end(itimer)
 END FUNCTION check_load
 
 END MODULE load_balance_mod

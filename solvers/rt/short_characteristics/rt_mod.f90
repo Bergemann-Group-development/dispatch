@@ -187,7 +187,7 @@ SUBROUTINE init_task (self)
   integer:: n_omega, i_omega, dir, i_mu, i_phi, iostat, n, l(3), u(3), id_mpi
   real, dimension(:), allocatable:: mu, w_mu
   ! ----------------------------------------------------------------------------
-  call trace%begin ('rt_t%init')
+  call trace%begin ('rt_t%init_task')
   p => self%patch
   !-----------------------------------------------------------------------------
   ! interconnect itself
@@ -369,7 +369,7 @@ SUBROUTINE init_omega (self, i_omega)
   real:: mu(3)
   integer:: loc(1)
   ! ----------------------------------------------------------------------------
-  call trace%begin ('rt_t%init')
+  call trace%begin ('rt_t%init_omega')
   omega => self%omega(i_omega)
   omega%main => self
   ! -- assign unique and globally valid ID

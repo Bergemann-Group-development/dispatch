@@ -244,7 +244,7 @@ SUBROUTINE read_bifrost_snap (task_list)
   end do
   if (io%master) &
     print *,'read_bifrost_snap finished'
-  call trace%end()
+  call trace%end(itimer)
 END SUBROUTINE read_bifrost_snap
 
 !===============================================================================
@@ -391,7 +391,7 @@ SUBROUTINE read_stagger_snap (task_list)
   end do
   if (io%master) &
     print *,'read_stagger_snap finished'
-  call trace%end
+  call trace%end(itimer)
 END SUBROUTINE read_stagger_snap
 
 !===============================================================================
