@@ -6,7 +6,9 @@ MODULE mpi_global_mod
   USE trace_mod
   implicit none
   private
+#ifdef MPI
   include "mpif.h"
+#endif
   type, public:: mpi_global_t
     integer:: window=0
     real(8), pointer:: a(:)
@@ -27,7 +29,9 @@ SUBROUTINE init (self, n)
   class(mpi_global_t):: self
   integer:: n
   !.............................................................................
+#ifdef MPI
   integer(kind=MPI_ADDRESS_KIND):: nbytes
+#endif
   integer:: mpi_err
   !----------------------------------------------------------------------------
   call trace%begin('mpi_global_t%init8')
@@ -35,13 +39,17 @@ SUBROUTINE init (self, n)
   if (self%window==0) then
     self%n = n
     allocate (self%a(n))
+#ifdef MPI
     nbytes = 8*n
+#endif
     self%a = 0d0
 #ifdef __GFORTRAN__
     self%window = -1
 #else
+#ifdef MPI
     call MPI_Win_create (self%a, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
                          self%window, mpi_err)
+#endif
     call mpi%assert ('MPI_Win_create', mpi_err)
 #endif
   end if
@@ -88,22 +96,30 @@ FUNCTION update8_real (self, a) RESULT (b)
   real(8):: a(self%n), b(self%n)
   !.............................................................................
   integer:: master=0, mpi_err
+#ifdef MPI
   integer(kind=MPI_ADDRESS_KIND):: offset=0
+#endif
   !-----------------------------------------------------------------------------
   call trace%begin('mpi_global_t%init')
   !$omp critical (mpi_global_cr)
+#ifdef MPI
   call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
   call MPI_Get_accumulate (a, self%n, MPI_REAL8, &
                       self%a, self%n, MPI_REAL8, master, offset, &
                               self%n, MPI_REAL8, MPI_SUM, self%window, mpi_err)
+#endif
   call mpi%assert ('MPI_Accumulate', mpi_err)
+#ifdef MPI
   call MPI_Win_flush (master, self%window, mpi_err)
+#endif
   if (mpi%rank == master) then
     b = self%a
   else
     b = self%a + a
   end if
+#ifdef MPI
   call MPI_Win_unlock (master, self%window, mpi_err)
+#endif
   !$omp end critical (mpi_global_cr)
   call trace%end
 END FUNCTION update8_real
