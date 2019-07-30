@@ -148,7 +148,7 @@ END FUNCTION zup1
 FUNCTION ddx (ds, a) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(8):: ds(3), c
+  real(8):: ds, c
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
@@ -170,7 +170,7 @@ FUNCTION ddx (ds, a) RESULT (b)
   if (n(1) > 1) then
     b(   1,:,:) = 0.0
     b(n(1),:,:) = 0.0
-    c = 0.5/ds(1)
+    c = 0.5/ds
     do iz=1,n(3)
     do iy=1,n(2)
     !$vector always assert
@@ -191,7 +191,7 @@ END FUNCTION ddx
 FUNCTION ddy (ds, a) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(8):: ds(3), c
+  real(8):: ds, c
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
@@ -213,7 +213,7 @@ FUNCTION ddy (ds, a) RESULT (b)
   if (n(2) > 1) then
     b(:,   1,:) = 0.0
     b(:,n(2),:) = 0.0
-    c = 0.5/ds(2)
+    c = 0.5/ds
     do iz=1,n(3)
     do iy=2,n(2)-1
     !$vector always assert
@@ -234,7 +234,7 @@ END FUNCTION ddy
 FUNCTION ddz (ds, a) RESULT (b)
   real, dimension(:,:,:), intent(in):: a
   real, dimension(size(a,1),size(a,2),size(a,3)):: b
-  real(8):: ds(3), c
+  real(8):: ds, c
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
@@ -256,7 +256,7 @@ FUNCTION ddz (ds, a) RESULT (b)
   if (n(3) > 1) then
     b(:,:,   1) = 0.0
     b(:,:,n(3)) = 0.0
-    c = 0.5/ds(3)
+    c = 0.5/ds
     do iz=2,n(3)-1
     do iy=1,n(2)
     !$vector always assert
