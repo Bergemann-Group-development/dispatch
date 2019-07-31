@@ -148,16 +148,13 @@ END SUBROUTINE lookup
 !===============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !===============================================================================
-!===============================================================================
-!> General EOS lookup routine, returning values in optional arguments
-!===============================================================================
-SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, src, gamma)
-
+SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne,lnee, pg, tt, ne, rk, &
+                         ss, src, gamma)
   class (eos_t):: self
   integer:: dim(3)
   real, optional:: gamma
   real, dimension(:,:,:), intent(in), pointer, optional :: e, lne, d, lnee, lnd, ee
-  real, dimension(:,:,:),                      optional :: pg, tt, ne
+  real, dimension(:,:,:),                      optional :: pg, tt, ne, ss
   real, dimension(:,:,:,:),                    optional :: src, rk
   real, dimension(:,:,:), pointer :: d_loc, ee_loc
   integer:: i

@@ -200,10 +200,11 @@ END SUBROUTINE lookup
 !===============================================================================
 !> General EOS lookup routine, returning values in optional arguments
 !===============================================================================
-SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gamma)
+SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, &
+                         ss, gamma)
   class (eos_t):: self
   integer:: dim(3)
-  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,e,ee,tt,ne
+  real, dimension(:,:,:)  , pointer, optional :: lnd,d,lne,e,ee,tt,ne,ss
   real, dimension(:,:,:,:)         , optional :: src,rk
   real, dimension(:,:,:)           , optional :: pg
   real, optional:: gamma
