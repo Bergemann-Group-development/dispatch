@@ -2,6 +2,7 @@
 !> $Id$
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE vector_mod
+  USE io_mod
   USE trace_mod
   implicit none
   public
@@ -45,6 +46,16 @@ SUBROUTINE allocate_vectors_a (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   if (present(v8)) allocate(v8(n(1),n(2),n(3),3))
   if (present(v9)) allocate(v9(n(1),n(2),n(3),3))
   if (present(v10)) allocate(v10(n(1),n(2),n(3),3))
+  if (present(v1)) call io%bits_mem(storage_size(v1),product(shape(v1)),'v1')
+  if (present(v2)) call io%bits_mem(storage_size(v2),product(shape(v2)),'v2')
+  if (present(v3)) call io%bits_mem(storage_size(v3),product(shape(v3)),'v3')
+  if (present(v4)) call io%bits_mem(storage_size(v4),product(shape(v4)),'v4')
+  if (present(v5)) call io%bits_mem(storage_size(v5),product(shape(v5)),'v5')
+  if (present(v6)) call io%bits_mem(storage_size(v6),product(shape(v6)),'v6')
+  if (present(v7)) call io%bits_mem(storage_size(v7),product(shape(v7)),'v7')
+  if (present(v8)) call io%bits_mem(storage_size(v8),product(shape(v8)),'v8')
+  if (present(v9)) call io%bits_mem(storage_size(v9),product(shape(v9)),'v9')
+  if (present(v10)) call io%bits_mem(storage_size(v10),product(shape(v10)),'v10')
   call trace_end
 END SUBROUTINE allocate_vectors_a
 
@@ -64,6 +75,16 @@ SUBROUTINE allocate_vectors (n, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   if (present(v8)) allocate(v8(n(1),n(2),n(3),3))
   if (present(v9)) allocate(v9(n(1),n(2),n(3),3))
   if (present(v10)) allocate(v10(n(1),n(2),n(3),3))
+  if (present(v1)) call io%bits_mem(storage_size(v1),product(shape(v1)),'v1')
+  if (present(v2)) call io%bits_mem(storage_size(v2),product(shape(v2)),'v2')
+  if (present(v3)) call io%bits_mem(storage_size(v3),product(shape(v3)),'v3')
+  if (present(v4)) call io%bits_mem(storage_size(v4),product(shape(v4)),'v4')
+  if (present(v5)) call io%bits_mem(storage_size(v5),product(shape(v5)),'v5')
+  if (present(v6)) call io%bits_mem(storage_size(v6),product(shape(v6)),'v6')
+  if (present(v7)) call io%bits_mem(storage_size(v7),product(shape(v7)),'v7')
+  if (present(v8)) call io%bits_mem(storage_size(v8),product(shape(v8)),'v8')
+  if (present(v9)) call io%bits_mem(storage_size(v9),product(shape(v9)),'v9')
+  if (present(v10)) call io%bits_mem(storage_size(v10),product(shape(v10)),'v10')
   call trace_end
 END SUBROUTINE allocate_vectors
 
@@ -73,6 +94,16 @@ SUBROUTINE deallocate_vectors_a (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   real, dimension(:,:,:,:), allocatable, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
   !.............................................................................
   call trace_begin('deallocate_vectors_a')
+  if (present(v1)) call io%bits_mem(storage_size(v1),-product(shape(v1)),'v1')
+  if (present(v2)) call io%bits_mem(storage_size(v2),-product(shape(v2)),'v2')
+  if (present(v3)) call io%bits_mem(storage_size(v3),-product(shape(v3)),'v3')
+  if (present(v4)) call io%bits_mem(storage_size(v4),-product(shape(v4)),'v4')
+  if (present(v5)) call io%bits_mem(storage_size(v5),-product(shape(v5)),'v5')
+  if (present(v6)) call io%bits_mem(storage_size(v6),-product(shape(v6)),'v6')
+  if (present(v7)) call io%bits_mem(storage_size(v7),-product(shape(v7)),'v7')
+  if (present(v8)) call io%bits_mem(storage_size(v8),-product(shape(v8)),'v8')
+  if (present(v9)) call io%bits_mem(storage_size(v9),-product(shape(v9)),'v9')
+  if (present(v10)) call io%bits_mem(storage_size(v10),-product(shape(v10)),'v10')
   if (present(v1)) deallocate(v1)
   if (present(v2)) deallocate(v2)
   if (present(v3)) deallocate(v3)
@@ -92,6 +123,16 @@ SUBROUTINE deallocate_vectors (v1, v2, v3, v4, v5, v6, v7, v8, v9, v10)
   real, dimension(:,:,:,:), pointer, optional:: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10
   !.............................................................................
   call trace_begin('deallocate_vectors')
+  if (present(v1)) call io%bits_mem(storage_size(v1),-product(shape(v1)),'v1')
+  if (present(v2)) call io%bits_mem(storage_size(v2),-product(shape(v2)),'v2')
+  if (present(v3)) call io%bits_mem(storage_size(v3),-product(shape(v3)),'v3')
+  if (present(v4)) call io%bits_mem(storage_size(v4),-product(shape(v4)),'v4')
+  if (present(v5)) call io%bits_mem(storage_size(v5),-product(shape(v5)),'v5')
+  if (present(v6)) call io%bits_mem(storage_size(v6),-product(shape(v6)),'v6')
+  if (present(v7)) call io%bits_mem(storage_size(v7),-product(shape(v7)),'v7')
+  if (present(v8)) call io%bits_mem(storage_size(v8),-product(shape(v8)),'v8')
+  if (present(v9)) call io%bits_mem(storage_size(v9),-product(shape(v9)),'v9')
+  if (present(v10)) call io%bits_mem(storage_size(v10),-product(shape(v10)),'v10')
   if (present(v1)) deallocate(v1)
   if (present(v2)) deallocate(v2)
   if (present(v3)) deallocate(v3)
