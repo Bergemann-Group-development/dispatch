@@ -429,7 +429,7 @@ SUBROUTINE pde (self)
     fyy = pp + d*(fyy - du*Tyy)                                                 ! ops: 2 2 0
     fzz = pp + d*(fzz - du*Tzz)                                                 ! ops: 2 2 0
   end if
-  if (first_time) &
+  if (mpi%master .and. (first_time .or. flop_count)) &
     print *, stagger%count, ' stagger calls', stagger%flops/product(real(self%n)),' flops per interior point'
   u_max = self%fmaxval(cs + uu,outer=.true.)
   self%u_max = max(self%u_max,u_max)
