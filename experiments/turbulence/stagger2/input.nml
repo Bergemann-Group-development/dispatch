@@ -2,15 +2,18 @@
 &timer_params
  sec_per_report=10
 /
-&task_list_params
+&dispatcher0_params
  do_delay=f
- recv_active=t          ! IMPORTANT
- queue_unpack=t         ! CHECK
  retry_stalled=10
+/
+&task_list_params
+ verbose=0
  !sync_time=0.003
 /
 &mpi_mesg_params
  delay_ms=300
+ recv_active=t          ! IMPORTANT
+ queue_unpack=t         ! CHECK
  send_priv=t            ! IMPORTANT
  recv_priv=t            ! CHECK
 /
@@ -20,6 +23,8 @@
  do_trace=f
  omp_trace=f
  do_output=t
+ guard_zones=t
+ time_derivs=0
 !id_debug=2
 /
 &particle_patch_params
@@ -59,8 +64,6 @@
  end_time=0.5 out_time=0.01
  !end_time=10e-3 out_time=5e-3
  print_time=0.0
- guard_zones=t
- time_derivs=f
 /
 &stagger_params
  courant=0.2
