@@ -354,11 +354,17 @@ SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u, debug)
       dtau2(l(1):u(1)) = dr*(k(l(1):u(1),i2,ib,2)+k(l(1):u(1),i2,ib,3))
       dtaumin = minval(dtau1(l(1):u(1)))
       dtaumax = maxval(dtau1(l(1):u(1)))
+      !-------------------------------------------------------------------------
+      ! For optical depth increments larger than dtau_max for all points: Q=0.0
+      !-------------------------------------------------------------------------
       if (dtaumin > dtau_max) then
         do i1=l(1),u(1)
           qout(i1,i2,ib) = 0.0
         end do
         icase = 4
+      !-------------------------------------------------------------------------
+      ! For optical depth increments larger than dtau_dif: Q = diffusion approx
+      !-------------------------------------------------------------------------
       else if (dtaumin > dtau_dif) then
         do i1=l(1),u(1)
           dsdtau1  =     (s(i1,i2,ib,2) - s(i1,i2,ib,1))/dtau1(i1)
@@ -367,12 +373,18 @@ SUBROUTINE solve1 (self, k, s, qin, qout, dr, l, u, debug)
           qout(i1,i2,ib) = d2sdtau2
         end do
         icase = 3
+      !-------------------------------------------------------------------------
+      ! For optical depth increments all maller than dtau_min: linear absorption
+      !-------------------------------------------------------------------------
       else if (dtaumax < dtau_min) then
         do i1=l(1),u(1)
           ex0      = 1.0-dtau1(i1)
           qout(i1,i2,ib) = qin(i1,i2,ib,1)*ex0
         end do
         icase = 1
+      !-------------------------------------------------------------------------
+      ! For all other cases, use the full expression (assume sum of +/- directions)
+      !-------------------------------------------------------------------------
       else 
         do i1=l(1),u(1)
           dsdtau1  =     (s(i1,i2,ib,2) - s(i1,i2,ib,1))/dtau1(i1)
