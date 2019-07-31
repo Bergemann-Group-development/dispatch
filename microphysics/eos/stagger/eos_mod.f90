@@ -246,7 +246,11 @@ SUBROUTINE lookup_table (self, dim, e, ee, d, lnd, lne, pg, tt, ne, rk, src, gam
     ee_loc => ee
   else if (present(e)) then
     allocate (ee_loc(dim(1),dim(2),dim(3)))
-    ee_loc = e/d
+    if (present(d)) then
+      ee_loc = e/d
+    else
+      ee_loc = e/exp(lnd_loc)
+    end if
   else if (present(lne)) then
     allocate (ee_loc(dim(1),dim(2),dim(3)))
     ee_loc = exp(lne)
