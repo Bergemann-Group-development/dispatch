@@ -45,7 +45,7 @@ MODULE experiment_mod
   !.............................................................................
   integer, save:: verbose=1
   logical, save:: smudge_boundary = .false.
-  real, save:: d_bot=0.0, e_bot=0.0, ee_top=5.2, p_top=0.5, tt_top=4000.
+  real, save:: d_bot=0.0, e_bot=0.0
   real, save:: bottom_bc_rate=0.01
   type(experiment_t), public:: experiment
 CONTAINS
@@ -57,8 +57,7 @@ SUBROUTINE init (self)
   class(experiment_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  namelist /experiment_params/ d_bot, e_bot, bottom_bc_rate, ee_top, &
-                               tt_top, p_top, verbose
+  namelist /experiment_params/ d_bot, e_bot, bottom_bc_rate, verbose
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%init')
   !-----------------------------------------------------------------------------
@@ -138,7 +137,7 @@ END SUBROUTINE update
 SUBROUTINE boundary_condition (self)
   class(experiment_t):: self
   integer, dimension(3):: lb, lo, li, ui, uo, ub
-  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz, ss, d1, e1
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz, ss, d1, e1, p1
   real, dimension(:,:,:), allocatable:: ux, uy, uz, ex, ey, ez, pg
   real(8), dimension(:), pointer:: z
   class(mesh_t), pointer:: m3
@@ -217,6 +216,20 @@ SUBROUTINE boundary_condition (self)
       end do
     end if
   else if (m3%upper_boundary) then
+    !---------------------------------------------------------------------------
+    ! Compute the pressure pg at the bottom BC, and what we would like it to be
+    !---------------------------------------------------------------------------
+    d1 => d(:,:,ui(3):ui(3))
+    e1 => e(:,:,ui(3):ui(3))
+    allocate (pg(size(d,1),size(d,2),1))
+    call eos%lookup_table (shape(pg), pg=pg, d=d1, e=e1)
+    allocate (d1(size(d,1),size(d,2),1))
+    allocate (e1(size(d,1),size(d,2),1))
+    allocate (p1(size(d,1),size(d,2),1))
+    d1 = d_bot
+    e1 = e_bot
+    call eos%lookup_table (shape(p1), pg=p1, d=d1, e=e1)
+    !---------------------------------------------------------------------------
     do iy=lb(2),ub(2)
     do ix=lb(1),ub(1)
       dlnddz = log(d(ix,iy,ui(3)-1)/d(ix,iy,ui(3)-3))/(z(ui(3)-1)-z(ui(3)-3))
@@ -245,7 +258,24 @@ SUBROUTINE boundary_condition (self)
         ! possible
         !-----------------------------------------------------------------------
         else
-          if (iz > ui(3)) then
+          !---------------------------------------------------------------------
+          ! At iz=ui(3), nudge the density towards what would give a constant
+          ! pressure = pg(d_bot,e_bot), while keeping ee=e/d unchanged
+          !---------------------------------------------------------------------
+          if (iz == ui(3)) then
+            d1(ix,iy,1) = d(iz,iy,iz)*(p1(ix,iy,1)/pg(ix,iy,1))
+            e1(ix,iy,1) = e(iz,iy,iz)*(p1(ix,iy,1)/pg(ix,iy,1))
+            associate (w => bottom_bc_rate)
+            d(ix,iy,iz) = w*d1(ix,iy,1) + (1.0-w)*d(ix,iy,iz)
+            e(ix,iy,iz) = w*e1(ix,iy,1) + (1.0-w)*e(ix,iy,iz)
+            end associate
+          !---------------------------------------------------------------------
+          ! Note that pz(ix,iy,iz) is centered half a cell above pressure, so
+          ! by imposing pz at ui(3)+1=uo(3), we are in principle imposing the
+          ! density evolution at uo(3), but that is overruled in any case here,
+          ! hence it is not necessary to stagger the BC for pz
+          !---------------------------------------------------------------------
+          else
             d_ratio = exp((z(iz)-z(ui(3)))*dlnddz)
             e_ratio = exp((z(iz)-z(ui(3)))*dlnedz)
             d(ix,iy,iz)  =  d(ix,iy,ui(3))*d_ratio
@@ -265,6 +295,7 @@ SUBROUTINE boundary_condition (self)
         bz(:,:,iz) = bz(:,:,uo(3))
       end do
     end if
+    deallocate (d1, e1, p1, pg)
   end if
   call trace_end
 END SUBROUTINE boundary_condition
