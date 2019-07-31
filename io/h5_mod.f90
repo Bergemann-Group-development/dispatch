@@ -2,7 +2,7 @@
 !> Module interface to the HDF5 library
 !===============================================================================
 MODULE h5_mod
-#ifdef HDF%
+#ifdef HDF5
   USE hdf5
   USE io_unit_mod
   USE io_mod

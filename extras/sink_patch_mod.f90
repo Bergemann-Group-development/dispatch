@@ -378,6 +378,7 @@ SUBROUTINE ad_hoc_add (self, link)
   class(link_t), pointer:: link
   !.............................................................................
   class(task_t), pointer:: patch
+  class(gpatch_t), pointer:: gpatch
   type(sink_patch_t), pointer:: task
   class(dll_node_t), pointer:: particle
   integer:: iostat, i_sink, m(3)
@@ -421,13 +422,14 @@ SUBROUTINE ad_hoc_add (self, link)
   !-----------------------------------------------------------------------------
   select type(patch)
   class is (gpatch_t)
+    gpatch => patch
     do i_sink=1,n_ad_hoc
       pos = [sinks(i_sink)%x,sinks(i_sink)%y,sinks(i_sink)%z]
       print *, patch%id, i_sink, pos, patch%contains(pos)
       if (patch%contains(pos)) then
         print *, 'adding ad hoc sink to', patch%id, i_sink
         allocate (task)
-        call task%init_sink (patch)
+        call task%init_sink (gpatch)
         task%mass = sinks(i_sink)%mass
         task%mom(1) = sinks(i_sink)%mass * sinks(i_sink)%vx
         task%mom(2) = sinks(i_sink)%mass * sinks(i_sink)%vy
@@ -709,13 +711,15 @@ SUBROUTINE move (self)
   class (sink_patch_t):: self
   real(8):: acceleration(3)
   real, dimension(:,:,:), pointer:: phi
-  class(dll_node_t), pointer:: particle
+  class(dll_node_t), pointer:: dll_node
+  class(particle_t), pointer:: particle
   integer:: ix, iy, iz, ii(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('sink_patch_t%move')
-  particle => self%particle
-  select type (particle)
+  dll_node => self%particle
+  select type (dll_node)
   class is (particle_t)
+  particle => dll_node
   call self%particle_solver%update (particle)
   end select
   call trace%end()
@@ -743,6 +747,7 @@ SUBROUTINE refine_check (self, link, refine)
   !.............................................................................
   logical:: check_sinkparticle
   class(task_t), pointer:: patch
+  class(gpatch_t), pointer:: gpatch
   class(link_t), pointer:: new_link
   class(sink_patch_t), pointer:: new_sink
   class(dll_node_t), pointer:: particle
@@ -761,10 +766,11 @@ SUBROUTINE refine_check (self, link, refine)
   ! For gpatch_t task: Check if a sink particle task should be created
   !-----------------------------------------------------------------------------
   class is (gpatch_t)
+    gpatch => patch
     check_sinkparticle = sink_patch%check (patch)
     if (check_sinkparticle) then
       allocate (new_sink)
-      call new_sink%init_sink (patch)
+      call new_sink%init_sink (gpatch)
       call new_sink%accrete
     end if
   end select
