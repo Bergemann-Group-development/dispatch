@@ -48,7 +48,10 @@
 &force_params               type='single_solenoidal' /
 &force_solenoidal_params    k=1,1,2 a0=10.0,10.2,10.1 t_turn=0.1000 /
 
-&stagger_params             /
+                            !    cs   pa  ofd  mas  kap  eta
+&stagger_params             nu=0.10, 1.0, 1.0, 0.1, 1.0, 1.0
+                            courant=0.2 eos='ideal' gamma=1.6666667
+/
 &ramses_params              detailed_timer=f courant_factor=0.25 slope_type=2
                             isothermal=f gamma=1.4 smallr=1e-6 smallc=1e-2
 /
