@@ -36,12 +36,11 @@ MODULE experiment_mod
   type, public, extends(solver_t):: experiment_t
     real, dimension(:,:,:,:), pointer:: lower => null()
     real, dimension(:,:,:,:), pointer:: upper => null()
-    procedure(boundary_condition1), pointer:: &
-      boundary_condition => null()
   contains
     procedure:: init
     procedure:: init_task_list
     procedure:: update
+    procedure:: boundary_condition
   end type
   !.............................................................................
   integer, save:: verbose=1
@@ -59,7 +58,7 @@ SUBROUTINE init (self)
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /experiment_params/ d_bot, e_bot, bottom_bc_rate, ee_top, &
-                               tt_top, verbose, smudge_boundary
+                               tt_top, p_top, verbose
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%init')
   !-----------------------------------------------------------------------------
@@ -82,7 +81,6 @@ SUBROUTINE init (self)
   self%mhd = .true.
   call self%solver_t%init
   self%unsigned = .false.
-  self%boundary_condition => boundary_condition3
   !----------------------------------------------------------------------------
   ! Boundary setup
   !----------------------------------------------------------------------------
@@ -135,194 +133,17 @@ SUBROUTINE update (self)
 END SUBROUTINE update
 
 !===============================================================================
+!> Top boundary conditions
 !===============================================================================
-SUBROUTINE boundary_condition1 (self)
+SUBROUTINE boundary_condition (self)
   class(experiment_t):: self
   integer, dimension(3):: lb, lo, li, ui, uo, ub
-  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz, tt
-  real, dimension(:,:,:), allocatable:: ux, uy, uz, ex, ey, ez
+  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz, ss, d1, e1
+  real, dimension(:,:,:), allocatable:: ux, uy, uz, ex, ey, ez, pg
   real(8), dimension(:), pointer:: z
   class(mesh_t), pointer:: m3
-  integer:: ix, iy, iz
-  real:: d_ratio, h_scale, f_scale, dlnddz, dlnedz
-  logical, save:: first_lower=.true., first_upper=.true.
-  !-----------------------------------------------------------------------------
-  call trace_begin('experiment_t%boundary_condition')
-  lb = self%mesh%lb; lo = self%mesh%lo; li = self%mesh%li
-  ub = self%mesh%ub; uo = self%mesh%uo; ui = self%mesh%ui
-  m3 => self%mesh(3)
-  z  => m3%r
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
-  px => self%mem(:,:,:,self%idx%px,self%it,1)
-  py => self%mem(:,:,:,self%idx%py,self%it,1)
-  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
-  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
-  by => self%mem(:,:,:,self%idx%by,self%it,1)
-  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
-  tt => self%mem(:,:,:,self%idx%tt,self%it,1)
-  if (m3%lower_boundary) then
-    !---------------------------------------------------------------------------
-    ! Clamp the energy per unit mass at the table limit
-    !---------------------------------------------------------------------------
-    e = max(e,3.5*d)
-    !---------------------------------------------------------------------------
-    !---------------------------------------------------------------------------
-    do iz=lb(3),lo(3)
-    do iy=lb(2),ub(2)
-    do ix=lb(1),ub(1)
-      ! -- adjust the scale height so it becomes larger at high temperatures
-      f_scale = (tt(ix,iy,li(3))/tt_top)**0.05
-      h_scale = tt(ix,iy,li(3))/(scaling%temp*self%gravity%const_grav)*f_scale
-      d_ratio = exp((z(iz)-z(li(3)))/h_scale)
-      if (first_lower) then
-        first_lower = .false.
-        write(io%output,*) self%id, 'experiment_t%boundary_condition (lower)', &
-          tt(ix,iy,li(3)), scaling%temp, h_scale, d_ratio
-      end if
-      ! -- velocity / momentum boundary conditions
-      d (ix,iy,iz) = d (ix,iy,li(3))*d_ratio
-      e (ix,iy,iz) = e (ix,iy,li(3))*d_ratio
-      e (ix,iy,iz) = e (ix,iy,iz)/f_scale
-      px(ix,iy,iz) = px(ix,iy,li(3))*d_ratio
-      py(ix,iy,iz) = py(ix,iy,li(3))*d_ratio
-      pz(ix,iy,iz) = pz(ix,iy,li(3))*d_ratio
-    end do
-    end do
-    end do
-    !---------------------------------------------------------------------------
-    ! Let the magnetic field take care of itself, regularizing only the layer
-    ! that gets contaminated by the vertical derivatives.  The time derivative
-    ! of the horizontal components involve a vertical derivative, and the horizontal
-    ! components of the electric field controlling the vertical component of the
-    ! magnetic field depend on vertical velocities coming out of vertical staggering
-    !---------------------------------------------------------------------------
-    if (self%mhd) then
-      do iz=lb(3),lo(3)-1
-        bx(:,:,iz) = bx(:,:,li(3)-1)
-        by(:,:,iz) = by(:,:,li(3)-1)
-        bz(:,:,iz) = bz(:,:,li(3)-1)
-      end do
-    end if
-  else if (m3%upper_boundary) then
-    call bottom_condition1 (self)
-  end if
-  call trace_end
-END SUBROUTINE boundary_condition1
-
-!===============================================================================
-!===============================================================================
-SUBROUTINE boundary_condition2 (self)
-  class(experiment_t):: self
-  integer, dimension(3):: lb, lo, li, ui, uo, ub
-  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz, tt, ss
-  real, dimension(:,:,:), allocatable:: ux, uy, uz, ex, ey, ez
-  real(8), dimension(:), pointer:: z
-  class(mesh_t), pointer:: m3
-  integer:: ix, iy, iz
-  real(8):: d_ratio, h_scale, f_scale, dlnddz, dlnedz, grav, mean1, mean2
-  logical, save:: first_lower=.true., first_upper=.true.
-  !-----------------------------------------------------------------------------
-  call trace_begin('experiment_t%boundary_condition')
-  lb = self%mesh%lb; lo = self%mesh%lo; li = self%mesh%li
-  ub = self%mesh%ub; uo = self%mesh%uo; ui = self%mesh%ui
-  m3 => self%mesh(3)
-  z  => m3%r
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
-  px => self%mem(:,:,:,self%idx%px,self%it,1)
-  py => self%mem(:,:,:,self%idx%py,self%it,1)
-  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
-  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
-  by => self%mem(:,:,:,self%idx%by,self%it,1)
-  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
-  tt => self%mem(:,:,:,self%idx%tt,self%it,1)
-  grav = self%gravity%const_grav
-   if (self%is_set(bits%zl+bits%zu)) print *, 'doing BC according to bits'
-  if (m3%lower_boundary) then
-    !---------------------------------------------------------------------------
-    ! Clamp the energy per unit mass at the table limit
-    !---------------------------------------------------------------------------
-    e = max(e,3.5*d)
-    call eos%lookup_table (shape(d), d=d, e=e, tt=tt)
-  allocate(ss,mold=d)
-  !ss=e/d
-  !call self%e2ss(ss,self%it)
-  !call self%boundaries%log_extrapolate(ss,self%idx%e)
-    !---------------------------------------------------------------------------
-    !---------------------------------------------------------------------------
-    ! -- adjust the scale height so it becomes larger at high temperatures
-    if (smudge_boundary) then
-      mean1 = sum(tt(li(1):ui(1),li(2):ui(2),li(3)+1))/(self%n(1)*self%n(2))
-      mean2 = sum(tt(li(1):ui(1),li(2):ui(2),li(3)))/(self%n(1)*self%n(2))
-      f_scale = (mean2/mean1)**0.05
-      h_scale = mean2/grav*f_scale
-    end if
-    do iz=lb(3),lo(3)
-    do iy=lb(2),ub(2)
-    do ix=lb(1),ub(1)
-      ! -- adjust the scale height so it becomes larger at high temperatures
-      if (.not.smudge_boundary) then
-        f_scale = (tt(ix,iy,li(3))/tt_top)**0.05
-        h_scale = tt(ix,iy,li(3))/grav*f_scale
-        ! -- option: more localized, not constant clamping:
-        !f_scale = (tt(ix,iy,li(3)+1)/tt(ix,iy,li(3)))**0.05
-        !h_scale = tt(ix,iy,li(3))/grav*f_scale
-      end if
-      d_ratio = exp((z(iz)-z(li(3)))/h_scale)
-      if (first_lower) then
-        first_lower = .false.
-        write(io%output,*) self%id, 'experiment_t%boundary_condition (lower)', &
-          tt(ix,iy,li(3)), scaling%temp, h_scale, d_ratio
-      end if
-      ! -- velocity / momentum boundary conditions
-      d (ix,iy,iz) = d (ix,iy,li(3))*d_ratio
-      e (ix,iy,iz) = e (ix,iy,li(3))*d_ratio
-      e (ix,iy,iz) = e (ix,iy,iz)/f_scale
-      px(ix,iy,iz) = px(ix,iy,li(3))*d_ratio
-      py(ix,iy,iz) = py(ix,iy,li(3))*d_ratio
-      pz(ix,iy,iz) = pz(ix,iy,li(3))*d_ratio
-    end do
-    end do
-    end do
-    !e=ss*d
-    !call self%ss2e(ss,self%it)
-    !deallocate(ss)
-    !---------------------------------------------------------------------------
-    ! Let the magnetic field take care of itself, regularizing only the layer
-    ! that gets contaminated by the vertical derivatives.  The time derivative
-    ! of the horizontal components involve a vertical derivative, and the horizontal
-    ! components of the electric field controlling the vertical component of the
-    ! magnetic field depend on vertical velocities coming out of vertical staggering
-    !---------------------------------------------------------------------------
-    if (self%mhd) then
-      do iz=lb(3),lo(3)-1
-        bx(:,:,iz) = bx(:,:,li(3)-1)
-        by(:,:,iz) = by(:,:,li(3)-1)
-        bz(:,:,iz) = bz(:,:,li(3)-1)
-      end do
-    end if
-    ! -------------------------------------------------
-    ! avoid going outside the EOS table.
-    ! -------------------------------------------------
-    !where (e < exp(eos%lne_min)) e = exp(eos%lne_min)
-  else if (m3%upper_boundary) then
-    call bottom_condition2 (self)
-  end if
-  call trace_end
-END SUBROUTINE boundary_condition2
-
-!===============================================================================
-!===============================================================================
-SUBROUTINE boundary_condition3 (self)
-  class(experiment_t):: self
-  integer, dimension(3):: lb, lo, li, ui, uo, ub
-  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz, ss
-  real, dimension(:,:,:), allocatable:: ux, uy, uz, ex, ey, ez
-  real(8), dimension(:), pointer:: z
-  class(mesh_t), pointer:: m3
-  integer:: ix, iy, iz
-  real:: d_ratio, h_scale, f, p, ee, tt
+  integer:: ix, iy, iz, iz1
+  real:: d_ratio, e_ratio, h_scale, p, ee, dlnddz, dlnedz
   logical, save:: first_lower=.true., first_upper=.true.
   !-----------------------------------------------------------------------------
   call trace_begin('experiment_t%boundary_condition')
@@ -345,36 +166,49 @@ SUBROUTINE boundary_condition3 (self)
     !---------------------------------------------------------------------------
     e = max(e,3.5*d)
     !---------------------------------------------------------------------------
-    ! Estimate scale height
+    ! Boundary conditions need the gas pressure in one layer
     !---------------------------------------------------------------------------
-    do iz=lo(3),lb(3),-1
-      ! -- weight from 0 to 1 in inteval lb to li
-      p = (z(iz)-z(lb(3)))/(z(li(3))-z(lb(3)))
-      ! -- remap to interval p_top - 1.0
-      p = p_top*(1.-p) + 1.*p
+    allocate (pg(size(d,1),size(d,2),1))
+    d1 => d(:,:,li(3):li(3))
+    e1 => e(:,:,li(3):li(3))
+    call eos%lookup_table (shape(pg), pg=pg, d=d1, e=e1)
+    !---------------------------------------------------------------------------
+    ! Note that the loop for simplicity includes iz=li(3), but d_ratio=1.0 for
+    ! that index, except for the vertical momentum
+    !---------------------------------------------------------------------------
+    do iz=lb(3),li(3)
       do iy=lb(2),ub(2)
       do ix=lb(1),ub(1)
-        if (associated(self%tt)) then
-          tt = self%tt(ix,iy,li(3))
-        else
-          tt = tt_top
-        end if
-        f = (tt/tt_top)**0.03
-        if (iz==lo(3)) then
-          h_scale =     tt/(scaling%temp*self%gravity%const_grav)
-        else
-          h_scale = tt_top/(scaling%temp*self%gravity%const_grav)
-        end if
-        d_ratio = exp((z(iz)-z(iz+1))/h_scale)
-        ee = e(ix,iy,li(3))/d(ix,iy,li(3))
-        d (ix,iy,iz) = d (ix,iy,iz+1)*d_ratio
-        e (ix,iy,iz) = d (ix,iy,iz  )*ee
-        px(ix,iy,iz) = px(ix,iy,iz+1)*d_ratio*p
-        py(ix,iy,iz) = py(ix,iy,iz+1)*d_ratio*p
-        pz(ix,iy,iz) = pz(ix,iy,iz+1)*d_ratio*P
+        !-----------------------------------------------------------------------
+        ! 1) The BC for energy per unit mass is that it is = the value at li,
+        ! while the density is assumed to drop with a scale height that is to
+        ! lowest order proportional to temperature.
+        !-----------------------------------------------------------------------
+        iz1 = li(3)
+        h_scale = pg(ix,iy,1)/(d(ix,iy,iz1)*self%gravity%const_grav)
+        ee = e(ix,iy,iz1)/d(ix,iy,iz1)
+        d_ratio = exp((z(iz)-z(iz1))/h_scale)
+        d(ix,iy,iz) = d(ix,iy,iz1)*d_ratio
+        e(ix,iy,iz) = d(ix,iy,iz)*ee
+        !-----------------------------------------------------------------------
+        ! 2) The horizontal components of the momenta are assumed to taper off
+        ! with density, consistent with assuming a no-shear boundary condition
+        ! for the horizontal velocity components
+        !-----------------------------------------------------------------------
+        px(ix,iy,iz) = px(ix,iy,iz1)*d_ratio
+        py(ix,iy,iz) = py(ix,iy,iz1)*d_ratio
+        !-----------------------------------------------------------------------
+        ! 3) The vertical momenta for z-index 1-li are locked to the vertical
+        ! momentum at the point li+1, which is the 1st point inside the physical
+        ! domain.  The vertical velocity is tapered of with the d_ratio factor.
+        !-----------------------------------------------------------------------
+        iz1 = li(3)+1
+        d_ratio = exp((z(iz)-z(iz1))/h_scale)
+        pz(ix,iy,iz) = pz(ix,iy,iz1)*d_ratio**2
       end do
       end do
     end do
+    deallocate (pg)
     if (self%mhd) then
       do iz=lb(3),lo(3)-1
         bx(:,:,iz) = bx(:,:,li(3)-1)
@@ -383,129 +217,56 @@ SUBROUTINE boundary_condition3 (self)
       end do
     end if
   else if (m3%upper_boundary) then
-    call bottom_condition2 (self)
-  end if
-  call trace_end
-END SUBROUTINE boundary_condition3
-
-!===============================================================================
-!===============================================================================
-SUBROUTINE bottom_condition1 (self)
-  class(experiment_t):: self
-  integer, dimension(3):: lb, lo, li, ui, uo, ub
-  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz
-  real(8), dimension(:), pointer:: z
-  class(mesh_t), pointer:: m3
-  integer:: ix, iy, iz
-  real(8):: d_ratio, h_scale, dlnddz, dlnedz, taper
-  logical, save:: first_lower=.true., first_upper=.true.
-  !-----------------------------------------------------------------------------
-  call trace_begin('experiment_t%bottom_condition')
-  lb = self%mesh%lb; lo = self%mesh%lo; li = self%mesh%li
-  ub = self%mesh%ub; uo = self%mesh%uo; ui = self%mesh%ui
-  m3 => self%mesh(3)
-  z  => m3%r
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
-  px => self%mem(:,:,:,self%idx%px,self%it,1)
-  py => self%mem(:,:,:,self%idx%py,self%it,1)
-  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
-  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
-  by => self%mem(:,:,:,self%idx%by,self%it,1)
-  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
-  do iz=uo(3),ub(3)
-  do iy=lb(2),ub(2)
-  do ix=lb(1),ub(1)
-    if (pz(ix,iy,ui(3)) < 0.0) then
-      d (ix,iy,ui(3)) = d_bot*bottom_bc_rate + d(ix,iy,ui(3))*(1.-bottom_bc_rate)
-      e (ix,iy,ui(3)) = e_bot*bottom_bc_rate + e(ix,iy,ui(3))*(1.-bottom_bc_rate)
-      px(ix,iy,ui(3)) = px(ix,iy,ui(3))*(1.-bottom_bc_rate)
-      py(ix,iy,ui(3)) = py(ix,iy,ui(3))*(1.-bottom_bc_rate)
-    end if
-    dlnddz = log(d(ix,iy,ui(3))/d(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
-    dlnedz = log(e(ix,iy,ui(3))/e(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
-    d_ratio = exp((z(iz)-z(ui(3)))*dlnddz)
-    d (ix,iy,iz) = d (ix,iy,ui(3))*d_ratio
-    px(ix,iy,iz) = px(ix,iy,ui(3))*d_ratio
-    py(ix,iy,iz) = py(ix,iy,ui(3))*d_ratio
-    pz(ix,iy,iz) = pz(ix,iy,ui(3))*d_ratio
-    e(ix,iy,iz) = e(ix,iy,ui(3))*exp((z(iz)-z(ui(3)))*dlnedz)
-    if (first_upper) then
-      first_upper = .false.
-      write(io%output,*) self%id, 'experiment_t%boundary_condition (upper)', &
-        dlnddz, dlnedz, z(ui(3)-1), z(ui(3)), d_ratio
-    end if
-  end do
-  end do
-  end do
-  if (self%mhd) then
-    do iz=uo(3)+1,ub(3)
-      bx(:,:,iz) = bx(:,:,uo(3))
-      by(:,:,iz) = by(:,:,uo(3))
-      bz(:,:,iz) = bz(:,:,uo(3))
+    do iy=lb(2),ub(2)
+    do ix=lb(1),ub(1)
+      dlnddz = log(d(ix,iy,ui(3)-1)/d(ix,iy,ui(3)-3))/(z(ui(3)-1)-z(ui(3)-3))
+      dlnedz = log(e(ix,iy,ui(3)-1)/e(ix,iy,ui(3)-3))/(z(ui(3)-1)-z(ui(3)-3))
+      !-------------------------------------------------------------------------
+      ! We assume that the iz index of the last free values is ui(3)-1, except
+      ! for pz, for which it us ui(3).  Hence, if there are 2 guard zones, we
+      ! set 2 values for pz, and 3 values for the other variables
+      !-------------------------------------------------------------------------
+      do iz=ui(3),ub(3)
+        !-----------------------------------------------------------------------
+        ! For inflow, set d,e to d_bot,e_bot at li, and set the momenta constant,
+        ! corresponding to velocities that taper off with depth
+        !-----------------------------------------------------------------------
+        if (pz(ix,iy,ui(3)-1) < 0.0) then
+          d(ix,iy,iz) = bottom_bc_rate*d_bot + (1.0-bottom_bc_rate)*d(ix,iy,iz)
+          e(ix,iy,iz) = bottom_bc_rate*e_bot + (1.0-bottom_bc_rate)*e(ix,iy,iz)
+          d(ix,iy,iz) = d_bot*exp((z(iz)-z(ui(3)))*dlnddz)
+          e(ix,iy,iz) = e_bot*exp((z(iz)-z(ui(3)))*dlnedz)
+          px(ix,iy,iz) = px(ix,iy,ui(3)-1)
+          py(ix,iy,iz) = py(ix,iy,ui(3)-1)
+          pz(ix,iy,iz) = pz(ix,iy,ui(3)-1)
+        !-----------------------------------------------------------------------
+        ! For outflow, extrapolate d and e, and assume velocity is constant.
+        ! Leave values untouched at iz=ui(3), to affect outflow as little as
+        ! possible
+        !-----------------------------------------------------------------------
+        else
+          if (iz > ui(3)) then
+            d_ratio = exp((z(iz)-z(ui(3)))*dlnddz)
+            e_ratio = exp((z(iz)-z(ui(3)))*dlnedz)
+            d(ix,iy,iz)  =  d(ix,iy,ui(3))*d_ratio
+            e(ix,iy,iz)  =  e(ix,iy,ui(3))*e_ratio
+            px(ix,iy,iz) = px(ix,iy,ui(3))*d_ratio
+            py(ix,iy,iz) = py(ix,iy,ui(3))*d_ratio
+            pz(ix,iy,iz) = pz(ix,iy,ui(3))*d_ratio
+          end if
+        end if
+      end do
     end do
-  end if
-  call trace_end
-END SUBROUTINE bottom_condition1
-
-!===============================================================================
-!===============================================================================
-SUBROUTINE bottom_condition2 (self)
-  class(experiment_t):: self
-  integer, dimension(3):: lb, lo, li, ui, uo, ub
-  real, dimension(:,:,:), pointer:: d, e, px, py, pz, bx, by, bz
-  real(8), dimension(:), pointer:: z
-  class(mesh_t), pointer:: m3
-  integer:: ix, iy, iz
-  real(8):: d_ratio, h_scale, dlnddz, dlnedz, taper
-  logical, save:: first_lower=.true., first_upper=.true.
-  !-----------------------------------------------------------------------------
-  call trace_begin('experiment_t%bottom_condition')
-  lb = self%mesh%lb; lo = self%mesh%lo; li = self%mesh%li
-  ub = self%mesh%ub; uo = self%mesh%uo; ui = self%mesh%ui
-  m3 => self%mesh(3)
-  z  => m3%r
-  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
-  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
-  px => self%mem(:,:,:,self%idx%px,self%it,1)
-  py => self%mem(:,:,:,self%idx%py,self%it,1)
-  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
-  bx => self%mem(:,:,:,self%idx%bx,self%it,1)
-  by => self%mem(:,:,:,self%idx%by,self%it,1)
-  bz => self%mem(:,:,:,self%idx%bz,self%it,1)
-  do iz=uo(3),ub(3)
-  do iy=lb(2),ub(2)
-  do ix=lb(1),ub(1)
-    if (pz(ix,iy,ui(3)) < 0.0) then
-      d (ix,iy,ui(3)) = d_bot*bottom_bc_rate + d(ix,iy,ui(3))*(1.-bottom_bc_rate)
-      e (ix,iy,ui(3)) = e_bot*bottom_bc_rate + e(ix,iy,ui(3))*(1.-bottom_bc_rate)
-      px(ix,iy,ui(3)) = px(ix,iy,ui(3))*(1.-bottom_bc_rate)
-      py(ix,iy,ui(3)) = py(ix,iy,ui(3))*(1.-bottom_bc_rate)
-    end if
-    dlnddz = log(d(ix,iy,ui(3))/d(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
-    dlnedz = log(e(ix,iy,ui(3))/e(ix,iy,ui(3)-2))/(z(ui(3))-z(ui(3)-2))
-    d_ratio = exp((z(iz)-z(ui(3)))*dlnddz)
-    d (ix,iy,iz) = d (ix,iy,ui(3))*d_ratio
-    px(ix,iy,iz) = px(ix,iy,ui(3))*d_ratio
-    py(ix,iy,iz) = py(ix,iy,ui(3))*d_ratio
-    pz(ix,iy,iz) = pz(ix,iy,ui(3))*d_ratio
-    e(ix,iy,iz) = e(ix,iy,ui(3))*exp((z(iz)-z(ui(3)))*dlnedz)
-    if (first_upper) then
-      first_upper = .false.
-      write(io%output,*) self%id, 'experiment_t%boundary_condition (upper)', &
-        dlnddz, dlnedz, z(ui(3)-1), z(ui(3)), d_ratio
-    end if
-  end do
-  end do
-  end do
-  if (self%mhd) then
-    do iz=uo(3)+1,ub(3)
-      bx(:,:,iz) = bx(:,:,uo(3))
-      by(:,:,iz) = by(:,:,uo(3))
-      bz(:,:,iz) = bz(:,:,uo(3))
     end do
+    if (self%mhd) then
+      do iz=uo(3)+1,ub(3)
+        bx(:,:,iz) = bx(:,:,uo(3))
+        by(:,:,iz) = by(:,:,uo(3))
+        bz(:,:,iz) = bz(:,:,uo(3))
+      end do
+    end if
   end if
   call trace_end
-END SUBROUTINE bottom_condition2
+END SUBROUTINE boundary_condition
  
 END MODULE
