@@ -47,7 +47,6 @@ MODULE mhd_mod
     procedure:: pde
     procedure:: update
     procedure:: output
-    procedure:: divb_clean
     procedure:: gas_pressure
     procedure:: gas_pressure_sub
   end type
@@ -74,7 +73,7 @@ SUBROUTINE pre_init (self)
   logical, save:: mhd=.false.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner
+    do_smooth, unsigned, do_maxwell, verbose, divb_cleaner
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
   !$omp critical (input_cr)
@@ -139,6 +138,7 @@ END SUBROUTINE pre_init
 SUBROUTINE init (self)
   class(mhd_t):: self
   integer :: i
+  logical, save:: first_time=.true.
   ! ----------------------------------------------------------------------------
   call trace%begin('mhd_t%init')
   !-----------------------------------------------------------------------------
