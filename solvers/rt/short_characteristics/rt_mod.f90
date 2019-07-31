@@ -281,6 +281,7 @@ SUBROUTINE init_task (self)
     allocate (self%src(self%gn(1),self%gn(2),self%gn(3),self%n_bin))
     call io%bits_mem(storage_size(self%tt  ),product(shape(self%tt )),'tt')
     call io%bits_mem(storage_size(self%rk  ),product(shape(self%rk )),'rk')
+    call io%bits_mem(storage_size(self%qr  ),product(shape(self%qr )),'qr')
     call io%bits_mem(storage_size(self%src ),product(shape(self%src)),'src')
     !---------------------------------------------------------------------------
     ! Allocate n_omega copies of self, cloning self
