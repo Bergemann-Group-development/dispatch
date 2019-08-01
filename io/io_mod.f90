@@ -157,6 +157,7 @@ SUBROUTINE init (self, name)
     ! Read io_params namelist
     !---------------------------------------------------------------------------
     inputdir = self%rundir
+    stdout = io_unit%output
     rewind (io_unit%input)
     read (io_unit%input, io_params, iostat=iostat)
     if (iostat > 0) call self%namelist_warning ('io_params')
