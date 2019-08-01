@@ -625,18 +625,22 @@ subroutine hllc (qleft,qright,fgdnv,ngrid,nvar,isothermal,error,detailed_timer)
       ! Sample the solution at x/t=0
 !define MERGE
 #ifdef MERGE
+      ! -- default values
       ro=rr
       uo=ur
       Ptoto=Ptotr
       etoto=etotr
+      ! -- 3rd if block
       ro   =merge(rstarr   ,ro     ,SR>0d0)
       uo   =merge(ustar    ,uo     ,SR>0d0)
       Ptoto=merge(Ptotstar ,Ptoto  ,SR>0d0)
       etoto=merge(etotstarr,etoto  ,SR>0d0)
-      ro   =merge(rstarr   ,ro     ,ustar>0d0)
+      ! -- 2nd if block
+      ro   =merge(rstarl   ,ro     ,ustar>0d0)
       uo   =merge(ustar    ,uo     ,ustar>0d0)
       Ptoto=merge(Ptotstar ,Ptoto  ,ustar>0d0)
       etoto=merge(etotstarl,etoto  ,ustar>0d0)
+      ! -- 1sr if block
       ro   =merge(rl       ,ro     ,SL>0d0)
       uo   =merge(ul       ,uo     ,SL>0d0)
       Ptoto=merge(Ptotl    ,Ptoto  ,SL>0d0)
