@@ -10,6 +10,7 @@ MODULE cartesian_mod
   USE mpi_coords_mod
   USE mpi_mod
   USE omp_mod
+  USE omp_timer_mod
   USE bits_mod
   implicit none
   private
@@ -37,23 +38,19 @@ SUBROUTINE init (self, label)
   character(len=*), optional:: label
   !.............................................................................
   type(task_list_t), pointer:: patch_list
-  class(link_t), pointer:: link, next, nbor
-  integer:: patches_per_mpi(3)
-  real:: position(3)
+  class(link_t), pointer:: link, next
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
-  integer:: i, j, k, i1, j1, k1, nbrank, dim, nn(2,3)
-  !
-  real(8):: size(3) = [1.0,1.0,1.0]
+  integer:: i, j, k, id, ip
   integer:: dims(3) = [4,4,4]
+  integer:: patches_per_mpi(3)
   integer:: mpi_dims(3) = [1,1,1]
   integer:: per_rank(3) = [0,0,0]
-  integer:: npatch, nvpatch, nbpatch, nlpatch
+  real(8):: size(3) = [1.0,1.0,1.0]
   real(8):: origin(3) = [-0.5,-0.5,-0.5]
+  real(8):: wc
   logical:: face_nbors=.false.
-  integer:: thread, icoords(3),ipos(3)
   logical:: periodic(3)=.true.
-  integer:: id, ip
   integer, save:: itimer=0
   namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
     omp_init, periodic
@@ -110,10 +107,6 @@ SUBROUTINE init (self, label)
   io%dims = self%dims
   self%task_list%n_tasks = product(self%dims)
   self%task_list%face_nbors = face_nbors
-  do dim=1,3
-    nn(:,dim) = merge([-1,1],[0,0],self%dims(dim)>1)
-  end do
-  npatch=0; nvpatch=0; nbpatch=0; nlpatch=0
   !-----------------------------------------------------------------------------
   ! Allocate an array of links, pointing to patches, and give the patches each
   ! id, rank, size, position, integer position, and status bits.  Discard
@@ -160,7 +153,9 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   ! Generate nbor lists and set status bits for all tasks
   !-----------------------------------------------------------------------------
+  if (io%verbose > 0) write(stdout,*) 'cartesian_t%init: init_all_nbors'
   call self%task_list%init_all_nbors
+  if (io%verbose > 0) write(stdout,*) 'cartesian_t%init: reset_status'
   call self%task_list%reset_status
   !-----------------------------------------------------------------------------
   ! Remove tasks that are external, and make sure to also remove them from the
@@ -180,8 +175,7 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   ! This call is not valid until the patch meshes have been allocated
   !-----------------------------------------------------------------------------
-  if (io%verbose > 0) &
-    write(stdout,*) 'cartesian_t%init: count status'
+  if (io%verbose > 0) write(stdout,*) 'cartesian_t%init: count status'
   call self%task_list%count_status
   !-----------------------------------------------------------------------------
   ! These must be set before reading input snapshots
@@ -215,8 +209,6 @@ SUBROUTINE init (self, label)
   if (io%verbose > 0) &
     write(stdout,*) 'cartesian_t%init: diagnostics'
   call self%diagnostics()
-  write (io_unit%output,'(1x,a,5(i5,1x,a))') 'cartesian_t%init: ', &
-    npatch,'patches',nvpatch,'virtual',nbpatch,'boundary',nlpatch,'local'
   if (io%verbose > 0) &
     write(stdout,*) 'cartesian_t%init: print tasks'
   call self%task_list%print_tasks
