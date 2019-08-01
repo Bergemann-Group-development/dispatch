@@ -13,6 +13,8 @@ MODULE cartesian_mod
   USE bits_mod
   implicit none
   private
+  type, public, extends(task_t):: rank_t
+  end type
   type, public:: cartesian_t
     real(8):: size(3)
     integer:: dims(3)
@@ -22,6 +24,7 @@ MODULE cartesian_mod
     procedure, nopass:: diagnostics
   end type
   logical:: omp_init=.false.
+  type(rank_t):: rank
   integer, save:: np=0                  ! patches per process
   public task_list_t                    ! export, to avoid excessive USE
 CONTAINS
@@ -39,7 +42,7 @@ SUBROUTINE init (self, label)
   real:: position(3)
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
-  integer:: i, j, k, i1, j1, k1, rank, nbrank, dim, nn(2,3)
+  integer:: i, j, k, i1, j1, k1, nbrank, dim, nn(2,3)
   !
   real(8):: size(3) = [1.0,1.0,1.0]
   integer:: dims(3) = [4,4,4]
@@ -90,6 +93,14 @@ SUBROUTINE init (self, label)
   mpi_coords%npatch = patches_per_mpi
   io%mpi_dims = mpi_dims
   !-----------------------------------------------------------------------------
+  ! Set attritbutes of the rank_t data type -- just enough to use distance().
+  !-----------------------------------------------------------------------------
+  rank%periodic = .true.
+  rank%box = self%size
+  rank%size = rank%box/mpi_dims
+  rank%ds = rank%size/patches_per_mpi
+  rank%position = (mpi_coords%rank_to_coords(mpi%rank) + 0.5_8)*rank%size
+  !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------
   allocate (self%task_list)
@@ -128,6 +139,11 @@ SUBROUTINE init (self, label)
     patch%box = self%size
     patch%size = self%size / self%dims
     patch%position = ([i,j,k]+0.5d0)*patch%size + origin
+    if (any(abs(rank%distance (patch)) > 0.5*(rank%size + 1.5*rank%ds))) then
+      deallocate (link, patch)
+      cycle
+    end if
+    call patch%set (bits%virtual)
     patch%ds = patch%size*0.001
     patch%origin = origin
     patch%llc_cart = patch%position - 0.5 * patch%size
