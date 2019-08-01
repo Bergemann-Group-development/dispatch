@@ -91,7 +91,7 @@ SUBROUTINE execute (self, task_list, test)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher0_t%execute', itimer=itimer)
-  call io%header('begin dispatcher3_t%execute: Any opportunity dispatcher')
+  call io%header('begin dispatcher0_t%execute:')
   call task_list%startup
   call tic (time=sec)
   call timer%print()
