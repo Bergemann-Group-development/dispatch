@@ -963,7 +963,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   !-----------------------------------------------------------------------------
   call child%set (bits%support)
   !-----------------------------------------------------------------------------
-  ! Make parent a neighbor of new child patch.  This will be overwritten
+  ! Make parent a neighbor of the new child patch.  This will be overwritten
   ! in `init_nbor_nbors` but is necessary here to permit interpolation of
   ! values from parent to child.
   !-----------------------------------------------------------------------------
@@ -972,23 +972,19 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child_nbor%task => parent
   nullify (child_link%nbor)
   child_link%nbors_by_level => child_nbor
+  !-----------------------------------------------------------------------------
+  ! FIXME: Why is the n_needed of the parent task incremented here??
+  !-----------------------------------------------------------------------------
   !$omp atomic update
   parent%n_needed = parent%n_needed + 2
   !-----------------------------------------------------------------------------
-  ! Add the child task to the task list and then directly into the ready queue,
-  ! bits%init_nbors triggers continued processing in dispatcher0_t%update(),
-  ! which makes a new nbor list after updating the child patch the 1st time.
+  ! Add the child task to the task list, including giving it an nbor list etc
   !-----------------------------------------------------------------------------
-  call child%set (bits%init_nbors)
-  call tlist%append_link (child_link)
-  call tlist%queue_by_time (child_link)
+  call tlist%add_new_link (child_link)
   !-----------------------------------------------------------------------------
   ! Increment I/O write counter, to avoid repeated writing of metadata
   !-----------------------------------------------------------------------------
   count = counters%increment (parent%iout+1, io%ntask)
-  !$omp atomic update
-  timer%levelpop (child%level) = &          ! increment level population count
-  timer%levelpop (child%level) + 1
   !-----------------------------------------------------------------------------
   if (verbose > 1) then
     l = parent%index_only (child%position + child%mesh%lf)

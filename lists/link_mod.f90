@@ -46,6 +46,7 @@ MODULE link_mod
     procedure, nopass:: init_verbose
     procedure:: add_nbor_by_quality
     procedure:: add_nbor_by_rank
+    procedure:: add_nbor_link_by_rank
     procedure:: remove_nbor
     procedure:: remove_from_nbors
     procedure:: remove_nbor_list
@@ -228,6 +229,26 @@ SUBROUTINE check_level_sort (self)
 END SUBROUTINE check_level_sort
 
 !===============================================================================
+!> Add a task link to an nbor list, setting also the nbor relations, based on
+!> the ranks of the link%task and the self%task (which must be the "owner" of
+!> the nbor_list)
+!===============================================================================
+SUBROUTINE add_nbor_link_by_rank (self, nbor_list, link)
+  class(link_t):: self
+  class(link_t), pointer:: nbor_list, link
+  class(link_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  call trace%begin ('link_t%add_nbor_by_rank')
+  allocate (nbor)
+  nbor%link => link
+  nbor%task => link%task
+  call self%add_nbor_by_rank (nbor_list, nbor)
+  call self%task%nbor_relations (nbor%task, nbor%needed, nbor%needs_me, &
+    nbor%download)
+  call trace%end ()
+END SUBROUTINE add_nbor_link_by_rank
+
+!===============================================================================
 !> Add a link node into the nbors list of self, in increasing rank order.
 !> self must be a link whose 'nbors' points to a chain of nbors
 !===============================================================================
@@ -300,6 +321,7 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
   call self%lock%unset ('add_nbor_by_rank')
   call trace_end
 END SUBROUTINE add_nbor_by_rank
+
 
 !===============================================================================
 !> Remove this from the nbor list

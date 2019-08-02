@@ -310,7 +310,6 @@ FUNCTION find_task (self, id, new) RESULT (link)
   ! that already exists is updated.
   !-----------------------------------------------------------------------------
   call exper%set (bits%virtual)
-  call self%append_link (link)
   if (verbose>0) &
     write (io_unit%log,*) ' task_mesg_t%find_task: append', id, exper%time
 !  call self%lock%unset ('find_task')
@@ -541,6 +540,7 @@ SUBROUTINE unpack (self, mesg, link)
   !-----------------------------------------------------------------------------
   if (new) then
     call task%setup
+    call self%append_link (link)
     if (verbose > 0) then
       write (io_unit%mpi,'(f12.6,2x,a,i6,2i4,f12.6,2x,3f10.5,2x,"new")') &
         wallclock(), 'task_mesg_t%unpack: ', id, mesg%seq, omp%thread, &
@@ -550,7 +550,11 @@ SUBROUTINE unpack (self, mesg, link)
     !call self%lock%set ('unpack')
     call self%init_nbors (link1)
     !---------------------------------------------------------------------------
+    ! If the task has the %support bit set, call refine_t%check_supprt on it
     !---------------------------------------------------------------------------
+    if (task%is_set (bits%support)) then
+      call refine%check_support (self, link, n_added)
+    end if
     !call refine%check_support (self, link1, n_added)
     call self%check_nbors (link1)
     !call self%lock%unset ('unpack')

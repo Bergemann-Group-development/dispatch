@@ -50,8 +50,9 @@ MODULE list_mod
     procedure:: init
     procedure:: init_bdries
     procedure:: reset
-    procedure:: append
+    procedure:: append_task
     procedure:: append_link
+    generic:: append => append_task, append_link
     procedure:: prepend_link
     procedure:: remove_task
     procedure:: remove_link
@@ -67,6 +68,7 @@ MODULE list_mod
     procedure:: resend_bdry
     procedure:: check_oldest
     procedure:: check_queue
+    procedure:: add_new_link
     procedure:: init_nbors
     procedure:: set_init_nbors
     procedure:: init_nbor_nbors
@@ -149,14 +151,14 @@ END SUBROUTINE reset
 !===============================================================================
 !> Allocate a new link and append to the list, optionally setting attributes
 !===============================================================================
-SUBROUTINE append (self, task, nbor, needed, needs_me)
+SUBROUTINE append_task (self, task, nbor, needed, needs_me)
   class(list_t):: self
   class(link_t), pointer, optional:: nbor
   logical, optional:: needed, needs_me
   class(task_t), pointer:: task
   class(link_t), pointer:: link
   !.............................................................................
-  call trace_begin ('list_t%append '//self%name)
+  call trace_begin ('list_t%append_task '//self%name)
   allocate (link)
   call link%init
   link%task => task
@@ -165,7 +167,7 @@ SUBROUTINE append (self, task, nbor, needed, needs_me)
   if (present(needs_me)) link%needs_me = needs_me
   call self%append_link (link)
   call trace_end
-END SUBROUTINE append
+END SUBROUTINE append_task
 
 !===============================================================================
 !> Append to the task list, counting active tasks only
@@ -262,11 +264,12 @@ SUBROUTINE remove_and_reset (self, link)
   integer:: count
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%remove_and_reset')
-  call self%lock%set ('remove_and_reset')  ! lock task list while changing
   !-----------------------------------------------------------------------------
   ! Send a suicide note to virtual nbors, if this is a boundary patch
   !-----------------------------------------------------------------------------
-  call link%task%set (bits%remove)         ! used in check_ready() and unpack()
+  call link%task%lock%set ('remove_patch')    ! lock the task list
+  call link%task%set (bits%remove)            ! cf. check_ready() and unpack()
+  call link%task%lock%unset ('remove_patch')  ! release the task list
   if (link%task%is_set (bits%boundary)) then
     call self%send_to_vnbors (link)
   end if
@@ -277,7 +280,9 @@ SUBROUTINE remove_and_reset (self, link)
       link%task%is_set(bits%boundary), link%task%is_set(bits%virtual)
   end if
   !-----------------------------------------------------------------------------
+  call self%lock%set ('remove_and_reset')  ! lock task list while changing
   call self%remove_link (link)             ! remove link from task list
+  call self%lock%unset ('remove_patch')    ! release the task list
   call self%check_nbors (link)             ! check nbors, now link is removed
   call self%set_init_nbors (link)          ! trigger new nbor lists on nbors
   !$omp atomic update
@@ -286,7 +291,6 @@ SUBROUTINE remove_and_reset (self, link)
   count = counters%decrement &             ! decrement I/O task counter
     (link%task%iout+1, io%ntask)
   call link%garbage_collect (link)         ! add to garbage bin
-  call self%lock%unset ('remove_patch')    ! release the task list
   call trace%end
 END SUBROUTINE remove_and_reset
 
@@ -1044,6 +1048,57 @@ SUBROUTINE init_nonleaf (self)
 END SUBROUTINE init_nonleaf
 
 !===============================================================================
+!> Add a new task (e.g. originating from AMR or load balancing)
+!===============================================================================
+SUBROUTINE add_new_link (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(link_t), pointer:: nbor
+  class(task_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%add_new_task')
+  !-----------------------------------------------------------------------------
+  ! Make sure class(patch_t) tasks have a pointer back to the task link
+  !-----------------------------------------------------------------------------
+  task => link%task
+  select type (task)
+  class is (patch_t)
+    task%link => link
+  end select
+  !-----------------------------------------------------------------------------
+  ! Add an nbor list, and set status bits and flags.  Add the task to the
+  ! task_list, and if it turns out to be a boundary task, send it to rank nbors.
+  !-----------------------------------------------------------------------------
+  call self%init_nbors (link)
+  call self%append (link)
+  if (link%task%is_set (bits%boundary)) &
+    call self%send_to_vnbors (link)
+  !-----------------------------------------------------------------------------
+  ! Increment task counters on the rank
+  !-----------------------------------------------------------------------------
+  if (task%is_clear (bits%virtual)) then
+    !$omp atomic update
+    io%ntask = io%ntask+1                     ! increment local task count
+    !$omp atomic update
+    timer%levelpop (task%level) = &          ! increment level population count
+    timer%levelpop (task%level) + 1
+  end if
+  !-----------------------------------------------------------------------------
+  ! Set the flag init_nbors in the nbor tasks, so the next time they are being
+  ! updated, they obtain updated nbor lists
+  !-----------------------------------------------------------------------------
+  call self%set_init_nbors (link)
+  !-----------------------------------------------------------------------------
+  ! Check the ready state of the new task, which already knows its nbors.
+  ! The nbors do not have the new task in their nbor lists yet, but will check
+  ! correspondingly when the new task has been added.
+  !-----------------------------------------------------------------------------
+  call self%check_ready (link)
+  call trace%end ()
+END SUBROUTINE add_new_link
+
+!===============================================================================
 !> The very first initialization of a neighbor list.  After this, it can be
 !> maintained without searching the entire task list on the rank.
 !===============================================================================
@@ -1148,16 +1203,20 @@ SUBROUTINE set_init_nbors (self, link)
       'set_init_nbors: id =', link%task%id
   nbor => link%nbor
   do while (associated(nbor))
-    call nbor%link%lock%set ('set_init_nbors')
-      call nbor%task%set (bits%init_nbors)
-      if (self%verbose > 1) then
+    call nbor%task%lock%set ('set_init_nbors')
+    call nbor%task%set (bits%init_nbors)
+    call nbor%task%lock%unset ('set_init_nbors')
+    if (nbor%task%is_set (bits%boundary)) then
+      call self%send_to_vnbors (nbor%link) 
+    end if
+    if (self%verbose > 1) then
         write (io_unit%log,*) 'bits%init_nbors set ', nbor%task%id, nbor%task%istep
-      end if
-    call nbor%link%lock%unset ('set_init_nbors')
+    end if
     nbor => nbor%next
   end do
   call trace%end ()
 END SUBROUTINE set_init_nbors
+
 !===============================================================================
 !> Initialize the nbor lists of all nbors of link.  Note that the nbor list of
 !> an nbor starts at nbor%link%nbor.   To prevent other threads from modifying
@@ -1194,6 +1253,43 @@ SUBROUTINE init_nbor_nbors (self, link)
   call link%remove_nbor_list (nbors)          ! remove the nbor list copy
   call trace%end
 END SUBROUTINE init_nbor_nbors
+
+!===============================================================================
+!> Create an nbor list for a new task, and also add the new task to the nbor
+!> list of all its nbors
+!===============================================================================
+SUBROUTINE add_new_nbors (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(link_t), pointer:: scan, nbor, link_nbor
+  !-----------------------------------------------------------------------------
+  call trace%begin('list_t%add_new_nbors')
+  !-----------------------------------------------------------------------------
+  nullify (link_nbor)
+  scan => self%head
+  do while (associated(scan))
+    if (.not.associated(scan,link) .and. associated(scan%task)) then
+      !-------------------------------------------------------------------------
+      ! If the tasks overlap, add the scan link to the link_nbor list, and add
+      ! the link task link to the scan%nbor list (with appropriate locking)
+      !-------------------------------------------------------------------------
+      if (scan%task%overlaps(link%task) .and. &
+          scan%task%level <= link%task%level+1) then
+        call link%add_nbor_link_by_rank (link_nbor, scan)
+        call scan%lock%set ('add_new_nbors')
+        call scan%add_nbor_link_by_rank (scan%nbor, link)
+        call scan%lock%unset ('add_new_nbors')
+      end if
+    end if
+    scan => scan%next
+  end do
+  call link%lock%set ('add_new_nbors')
+  link%nbor => link_nbor
+  call link%lock%unset ('add_new_nbors')
+  !-----------------------------------------------------------------------------
+  call trace%end
+END SUBROUTINE add_new_nbors
 
 !===============================================================================
 !> Check if the nbor list is still OK.  A first test is to check if any of the
