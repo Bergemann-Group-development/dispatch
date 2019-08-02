@@ -167,6 +167,7 @@ SUBROUTINE init_sink (self, patch)
   !-----------------------------------------------------------------------------
   ! Allocate a new sink_patch_t instance, as the task of a new link
   !-----------------------------------------------------------------------------
+  if (.not.self%on) return
   call trace%begin ('sink_patch_t%init_sink')
   allocate (new_link)
   new_link%parent => patch%link
@@ -331,6 +332,7 @@ SUBROUTINE init_task_list (self, task_list)
   class(*), pointer:: ptr
   type(patch_force_t), pointer:: patch_force
   !.............................................................................
+  if (.not.self%on) return
   call trace%begin ('sink_patch_t%init_task_list')
   self%task_list => task_list
   !-----------------------------------------------------------------------------
@@ -392,6 +394,7 @@ SUBROUTINE ad_hoc_add (self, link)
   namelist /sink_params/ mass, x, y, z, vx, vy, vz
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
+  if (.not.self%on) return
   call trace%begin ('sink_patch_t%ad_hoc_add')
   patch => link%task
   !$omp critical (input_cr)
@@ -491,6 +494,8 @@ SUBROUTINE output (self)
   integer:: verbose=1
   real(kind=8),save::last_flush
   real(kind=8):: flush_frequency = 10. ! frequency with which data is flushed to disk
+  !-----------------------------------------------------------------------------
+  if (.not.self%on) return
 #ifdef HDF5
   !-----------------------------------------------------------------------------
   ! Open file if needed
@@ -548,6 +553,7 @@ FUNCTION check (self, patch)
   logical:: check
   !-----------------------------------------------------------------------------
   check = .false.
+  if (.not.self%on) return
   if (n_sinks >= max_sinks) return
   call trace%begin ('sink_patch_t%check')
   check = .true.
@@ -569,6 +575,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   class(sink_patch_t):: self
   logical, optional:: detailed_timer
   !-----------------------------------------------------------------------------
+  if (.not.self%on) return
   self%dtime = self%patch%dtime
 END SUBROUTINE courant_condition
 
@@ -595,6 +602,7 @@ END SUBROUTINE dnload
 SUBROUTINE update (self)
   class (sink_patch_t):: self
   !.............................................................................
+  if (.not.self%on) return
   call trace%begin ('sink_patch_t%update')
   call self%particle_solver%force_field (self%patch)
   call self%accrete
@@ -616,6 +624,7 @@ SUBROUTINE accrete (self)
   real:: omega, dv
   real(8):: p, q, dm
   !-----------------------------------------------------------------------------
+  if (.not.self%on) return
   call trace%begin ('sink_patch_t%accrete')
   allocate (u2 (self%mesh(1)%gn,self%mesh(2)%gn,self%mesh(3)%gn))
   !-----------------------------------------------------------------------------
@@ -715,6 +724,7 @@ SUBROUTINE move (self)
   class(particle_t), pointer:: particle
   integer:: ix, iy, iz, ii(3)
   !-----------------------------------------------------------------------------
+  if (.not.self%on) return
   call trace%begin ('sink_patch_t%move')
   dll_node => self%particle
   select type (dll_node)
@@ -754,7 +764,7 @@ SUBROUTINE refine_check (self, link, refine)
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d
   integer:: id, m(3)
   !-----------------------------------------------------------------------------
-  if (.not.sink_patch%on) return
+  if (.not.self%on) return
   patch => link%task
   select type (patch)
   !-----------------------------------------------------------------------------
