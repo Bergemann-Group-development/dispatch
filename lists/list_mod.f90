@@ -634,8 +634,9 @@ SUBROUTINE check_all (self, repair)
   class(list_t):: self
   logical, optional:: repair
   !.............................................................................
-  class(link_t), pointer:: link
+  class(link_t), pointer:: link, nbor
   integer, save:: itimer=0
+  integer:: nq
   !-----------------------------------------------------------------------------
   call trace_begin('list_t%check_all', itimer=itimer)
   write (io_unit%log,*) wallclock(), 'check_all: phase 1', &
@@ -643,10 +644,21 @@ SUBROUTINE check_all (self, repair)
   if (present(repair)) then
     nullify (self%queue)
   end if
+  nq = self%nq
   link => self%head
   do while (associated (link))                          ! keep going until end
     if (link%task%is_clear (bits%virtual+bits%external)) then
       call self%check_ready (link)                      ! link ready?
+      if (self%nq > nq) then
+        write (io_unit%log,*) 'check_all found', link%task%id, link%task%time
+        nbor => link%nbor
+        do while (associated(nbor))
+          write (io_unit%log,*) 'nbor, time =', nbor%task%id, nbor%task%time, &
+            nbor%needed, nbor%needs_me, nbor%download
+          nbor => nbor%next
+        end do
+        nq = self%nq
+      end if
     end if
     link => link%next
   end do

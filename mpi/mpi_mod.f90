@@ -477,6 +477,9 @@ FUNCTION update8 (self, i, n) RESULT (j)
 #ifdef MPI
   integer(kind=MPI_ADDRESS_KIND):: offset=0
   !-----------------------------------------------------------------------------
+  if (io_unit%verbose > 0) &
+    write (io_unit%log,*) 'mpi_counter_t%update(1): incr, sum, rank, size =', &
+    i, self%i, mpi%rank, mpi%size
   call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
   call add(i)
   call MPI_Win_flush (master, self%window, mpi_err)
@@ -485,7 +488,9 @@ FUNCTION update8 (self, i, n) RESULT (j)
   else
     j = self%i
   end if
-!write (io_unit%log,*) 'mpi_counter_t%update8: incr, sum =', i, self%i
+  if (io_unit%verbose > 0) &
+    write (io_unit%log,*) 'mpi_counter_t%update(2): incr, sum, rank, size =', &
+    i, self%i, mpi%rank, mpi%size
   !-----------------------------------------------------------------------------
   ! If / when the (actual) counter hits zero, add n to it, if present
   !-----------------------------------------------------------------------------

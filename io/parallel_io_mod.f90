@@ -445,8 +445,9 @@ SUBROUTINE output_single (patch, count)
   !$omp end critical (allocate_cr)
   ! --- rank-local patch 1D index; cf. cartesian_mod ---
   ip = patch%ip
-  if (ip < 0 .or. ip > io%ntask) then
-    write(io%output,*) 'WARNING', ip, io%ntask
+  if (ip < 0 .or. ip > io%ntask .and. patch%time < io%end_time) then
+      write (io_unit%output,*) &
+        'parallel_io_t%output_single: WARNING io, ntask =', ip, io%ntask
     ip = max(1,min(ip,io%ntask))
   end if
   if (verbose > 0) then
@@ -916,7 +917,8 @@ SUBROUTINE input_single (patch, ok)
       return
     end if
     if (ip < 1 .or. ip > io%ntask) then
-      write (io_unit%output,*) 'WARNING', ip, io%ntask
+      write (io_unit%output,*) &
+        'parallel_io_t%input_single: WARNING io, ntask =', ip, io%ntask
       flush (io_unit%output)
       ip = max(1,min(ip,io%ntask))
     end if
