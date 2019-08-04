@@ -1197,6 +1197,14 @@ SUBROUTINE init_nbors (self, link)
   ! list, and during that time the link was locked.
   !-----------------------------------------------------------------------------
   link%task%n_nbors = n_add                           ! remember n_nbors
+  !-----------------------------------------------------------------------------
+  ! Finally, clear the bits%init_nbors, in case it was set, and perform a
+  ! check_nbors() on the link, in order to detect if an nbor that was waiting
+  ! for an update on this task, which did not yet have it in its nbor list,
+  ! now should be added to the ready queue.
+  !-----------------------------------------------------------------------------
+  call link%task%clear (bits%init_nbors)
+  call self%check_nbors (link)
   call trace_end (itimer)
 END SUBROUTINE init_nbors
 
@@ -1265,43 +1273,6 @@ SUBROUTINE init_nbor_nbors (self, link)
   call link%remove_nbor_list (nbors)          ! remove the nbor list copy
   call trace%end
 END SUBROUTINE init_nbor_nbors
-
-!===============================================================================
-!> Create an nbor list for a new task, and also add the new task to the nbor
-!> list of all its nbors
-!===============================================================================
-SUBROUTINE add_new_nbors (self, link)
-  class(list_t):: self
-  class(link_t), pointer:: link
-  !.............................................................................
-  class(link_t), pointer:: scan, nbor, link_nbor
-  !-----------------------------------------------------------------------------
-  call trace%begin('list_t%add_new_nbors')
-  !-----------------------------------------------------------------------------
-  nullify (link_nbor)
-  scan => self%head
-  do while (associated(scan))
-    if (.not.associated(scan,link) .and. associated(scan%task)) then
-      !-------------------------------------------------------------------------
-      ! If the tasks overlap, add the scan link to the link_nbor list, and add
-      ! the link task link to the scan%nbor list (with appropriate locking)
-      !-------------------------------------------------------------------------
-      if (scan%task%overlaps(link%task) .and. &
-          scan%task%level <= link%task%level+1) then
-        call link%add_nbor_link_by_rank (link_nbor, scan)
-        call scan%lock%set ('add_new_nbors')
-        call scan%add_nbor_link_by_rank (scan%nbor, link)
-        call scan%lock%unset ('add_new_nbors')
-      end if
-    end if
-    scan => scan%next
-  end do
-  call link%lock%set ('add_new_nbors')
-  link%nbor => link_nbor
-  call link%lock%unset ('add_new_nbors')
-  !-----------------------------------------------------------------------------
-  call trace%end
-END SUBROUTINE add_new_nbors
 
 !===============================================================================
 !> Check if the nbor list is still OK.  A first test is to check if any of the
