@@ -794,46 +794,6 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
   call trace%begin('refine_t%check_derefine_support', itimer=itimer)
   !-----------------------------------------------------------------------------
   call tlist%lock%set ('check_derefine_support')
-  if (omp_lock%links) then
-    call link%lock%set ('check_derefine_support')
-    call link%copy_nbor_list (link%nbor, nbors)
-    !---------------------------------------------------------------------------
-    ! Begin consistency check
-    !---------------------------------------------------------------------------
-    n_nbor1 = 0
-    nbor => nbors
-    do while (associated(nbor))
-      n_nbor1 = n_nbor1+1
-      nbor => nbor%next
-    end do
-    !---------------------------------------------------------------------------
-    call tlist%init_nbors (link)
-    n_nbor2 = 0
-    nbor => link%nbor
-    do while (associated(nbor))
-      n_nbor2 = n_nbor2+1
-      nbor => nbor%next
-    end do
-    !---------------------------------------------------------------------------
-    if (n_nbor2 /= n_nbor1) then
-      write (stdout,*) 'n_nbor changed', n_nbor1, n_nbor2
-      nbor => nbors
-      write (stdout,*) 'before:'
-      do while (associated(nbor))
-        write (stdout,*) nbor%task%id, (nbor%task%position-link%task%position)/link%task%size
-        nbor => nbor%next
-      end do
-      nbor => link%nbor
-      write (stdout,*) 'after:'
-      do while (associated(nbor))
-        write (stdout,*) nbor%task%id, (nbor%task%position-link%task%position)/link%task%size
-        nbor => nbor%next
-      end do
-    end if
-    !---------------------------------------------------------------------------
-    ! End consistency check
-    !---------------------------------------------------------------------------
-  end if
   nbor => link%nbor
   do while (associated(nbor))
     if (nbor%task%level == link%task%level+1) then
@@ -845,12 +805,8 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
   if (verbose > 2) &
     write (stdout,*) link%task%id, 'check_derefine_support =', refine
   !-----------------------------------------------------------------------------
-  ! Release locks
+  ! Release lock
   !-----------------------------------------------------------------------------
-  if (omp_lock%links) then
-    call link%remove_nbor_list (nbors)
-    call link%lock%unset ('check_derefine_support')
-  end if
   call tlist%lock%unset ('check_derefine_support')
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
