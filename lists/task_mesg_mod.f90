@@ -559,21 +559,21 @@ SUBROUTINE unpack (self, mesg, link)
     call self%check_nbors (link1)
     !call self%lock%unset ('unpack')
   else
+    !-----------------------------------------------------------------------------
+    ! Patches that have the init_nbors bit set should have new nbor lists, in 
+    ! order to replicate the behavior on the owner rank
+    !-----------------------------------------------------------------------------
+    if (task%is_set (bits%init_nbors)) then
+      call self%init_nbors (link1)
+      if (verbose > 1) &
+        write (io_unit%log,*) 'unpack: bits%init_nbors id =', task%id
+    end if
     if (verbose > 0) then
       write (io_unit%mpi,'(f12.6,2x,a,i6,2i4,f12.6,2x,3f10.5,2x)') &
         wallclock(), 'task_mesg_t%unpack: ', id, mesg%seq, omp%thread, &
         task%time, task%position
       flush(io_unit%mpi)
     end if
-  end if
-  !-----------------------------------------------------------------------------
-  ! Patches whose nbor lists are reset by init_nbor_nbors have the init_nbors
-  ! bit set, in order to replicate the behavior on the nbor ranks
-  !-----------------------------------------------------------------------------
-  if (task%is_set (bits%init_nbors)) then
-    call self%init_nbors (link1)
-    if (verbose > 1) &
-      write (io_unit%log,*) 'unpack: bits%init_nbors id =', task%id
   end if
   !!omp end critical (unpack_cr)
   !-----------------------------------------------------------------------------
