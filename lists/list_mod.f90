@@ -585,20 +585,10 @@ SUBROUTINE check_nbors (self, link)
     write (io_unit%log,*) 'checking nbors of',link%task%id,associated(link%nbor)
   task => link%task                                     ! main task
   !-----------------------------------------------------------------------------
-  ! Keeping a lock on link, while also locking/unlocking its nbors, creates the
-  ! possibility of a dead-lock.  To avoid that, we make a copy of the nbor list
+  ! Lock the other task link while accessing its nbor list, to prevent changes
   !-----------------------------------------------------------------------------
-  if (omp_lock%links) then
-    call link%lock%set ('check_nbors')
-    call trace%end (itimer(itr))
-    itr = itr+1
-    call trace_begin('list_t%check_nbors', itimer=itimer(itr))
-    call link%copy_nbor_list (link%nbor, nbors)           ! temporary nbor list
-    call link%lock%unset ('check_nbors')
-    nbor => nbors                                         ! first nbor
-  else
-    nbor => link%nbor                                     ! first nbor
-  end if
+  call link%lock%set ('check_nbors')
+  nbor => link%nbor                                     ! first nbor
   do while (associated (nbor))                          ! keep going until end
     if (nbor%task%id==io%id_debug) print *, &
       'task', task%id,' needs task ', nbor%task%id, nbor%needs_me
@@ -612,9 +602,7 @@ SUBROUTINE check_nbors (self, link)
     end if
     nbor => nbor%next                                   ! next nbor
   end do
-  if (omp_lock%links) then
-    call link%remove_nbor_list (nbors)                  ! remove nbor list copy
-  end if
+  call link%lock%unset ('check_nbors')
   !-----------------------------------------------------------------------------
   ! Since we may be called upon to check nbors of a patch that should not itself
   ! be checked, we check if any bits are set indicating this to be the case
@@ -1127,7 +1115,6 @@ SUBROUTINE init_nbors (self, link)
   old_head => link%nbor
   nullify (new_head)
   n_add = 0
-  call link%lock%set ('init_nbors')
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
     !---------------------------------------------------------------------------
@@ -1178,19 +1165,22 @@ SUBROUTINE init_nbors (self, link)
     write (io_unit%log,*) &
     'added ', n_add, ' neighbors to', link%task%id, &
     link%task%is_set(bits%boundary), link%task%is_set(bits%virtual)
-  !call link%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
   ! The link only needs to be locked the brief moment while it changes the
-  ! nbor pointer.
+  ! nbor pointer.  
   !-----------------------------------------------------------------------------
-  !call link%lock%set ('init_nbors')
+  call link%lock%set ('init_nbors')
   link%nbor => new_head                               ! switch nbor list
-  call link%copy_nbor_list (link%nbors_by_level, nbors)
+  call link%lock%unset ('init_nbors')
+  !-----------------------------------------------------------------------------
+  ! The extra copy was to prevent tasks from being removed by garbage collection
+  ! and should not be needed any more
+  !-----------------------------------------------------------------------------
+  !call link%copy_nbor_list (link%nbors_by_level, nbors)
   call link%remove_nbor_list (link%nbors_by_level)
   call link%sort_nbors_by_level (link%nbor, link%nbors_by_level)
-  call link%remove_nbor_list (nbors)
+  !call link%remove_nbor_list (nbors)
   call link%remove_nbor_list (old_head)               ! recover nbor list mem
-  call link%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
   ! The old nbor list cannot possible be used by another thread at this time,
   ! since it was only used for one thing, namely to generate the cached nbor
@@ -2246,7 +2236,6 @@ SUBROUTINE send_to_vnbors (self, link)
   end if
   !-----------------------------------------------------------------------------
   call trace_begin('link_mod::send_to_vnbors', itimer=itimer)
-  call link%lock%set ('send_to_vnbors')
   if (task%id == io%id_debug) &
     write(io%output,*) 'DBG link_t%send_to_vnbors: id, rank =', &
       task%id, mpi%rank
@@ -2299,7 +2288,6 @@ SUBROUTINE send_to_vnbors (self, link)
   call task%clear (bits%swap_request)
   !-----------------------------------------------------------------------------
   call trace_end (itimer)
-  call link%lock%unset ('send_to_vnbors')
 END SUBROUTINE send_to_vnbors
 
 !===============================================================================
