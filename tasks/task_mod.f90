@@ -167,7 +167,7 @@ SUBROUTINE init_unique (self, same)
     id_same = id_same+1
     id = id_same
     if (mpi%rank==0) then               ! on the master rank ..
-      mpi%id%i = id                     ! .. update the mpi%id counter directly
+      mpi%id%i = id+1                   ! .. update the mpi%id counter directly
     end if
     if (io%verbose > 0) &
       write (io_unit%log,*) 'task_t%init_unique(same): mpi%id, id =', id_same, id

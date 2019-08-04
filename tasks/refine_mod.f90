@@ -884,7 +884,6 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   ! Initialise the new patch
   !-----------------------------------------------------------------------------
   child%level = parent%level + 1                     ! must be set before init!
-  child%id = 0                                       ! reset, to get a new
   call child%init()                                  ! patch, for a new id
   child%level = parent%level + 1                     ! override patch_t%init
   child%time  = parent%time                          ! same time

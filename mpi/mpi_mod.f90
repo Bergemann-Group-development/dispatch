@@ -489,8 +489,8 @@ FUNCTION update8 (self, i, n) RESULT (j)
     j = self%i
   end if
   if (io_unit%verbose > 0) &
-    write (io_unit%log,*) 'mpi_counter_t%update(2): incr, sum, rank, size =', &
-    i, self%i, mpi%rank, mpi%size
+    write (io_unit%log,*) 'mpi_counter_t%update(2):  val, sum, rank, size =', &
+    j, self%i, mpi%rank, mpi%size
   !-----------------------------------------------------------------------------
   ! If / when the (actual) counter hits zero, add n to it, if present
   !-----------------------------------------------------------------------------
