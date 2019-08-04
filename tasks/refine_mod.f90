@@ -935,13 +935,15 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   !$omp atomic update
   parent%n_needed = parent%n_needed + 2
   !-----------------------------------------------------------------------------
-  ! Add the child task to the task list, including giving it an nbor list etc
-  !-----------------------------------------------------------------------------
-  call tlist%add_new_link (child_link)
-  !-----------------------------------------------------------------------------
   ! Increment I/O write counter, to avoid repeated writing of metadata
   !-----------------------------------------------------------------------------
   count = counters%increment (parent%iout+1, io%ntask)
+  !-----------------------------------------------------------------------------
+  ! Add the child task to the task list, including giving it an nbor list etc,
+  ! and add it also to the ready queue
+  !-----------------------------------------------------------------------------
+  call tlist%add_new_link (child_link)
+  call tlist%queue_by_time (child_link)
   !-----------------------------------------------------------------------------
   if (verbose > 1) then
     l = parent%index_only (child%position + child%mesh%lf)
