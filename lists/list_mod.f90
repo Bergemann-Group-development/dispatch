@@ -1213,9 +1213,7 @@ SUBROUTINE set_init_nbors (self, link)
       'set_init_nbors: id =', link%task%id
   nbor => link%nbor
   do while (associated(nbor))
-    call nbor%task%lock%set ('set_init_nbors')
     call nbor%task%set (bits%init_nbors)
-    call nbor%task%lock%unset ('set_init_nbors')
     if (nbor%task%is_set (bits%boundary)) then
       call self%send_to_vnbors (nbor%link) 
     end if
