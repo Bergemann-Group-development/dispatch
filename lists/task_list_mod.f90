@@ -397,14 +397,6 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     !$omp end critical (log_sent_cr)
   end if
   !-----------------------------------------------------------------------------
-  ! If the task has bits%init_nbors set, call init_nbors(), which also clears
-  ! the bit
-  !-----------------------------------------------------------------------------
-  if (task%is_set (bits%init_nbors)) then
-    call self%init_nbors (head)
-    call head%info
-  end if
-  !-----------------------------------------------------------------------------
   ! If the task is a boundary patch, first check if it should be given to
   ! another rank.  A patch that has been given to another rank becomes
   ! a virtual patch, and the load balance procedure has already sent those
@@ -420,6 +412,14 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
       write(io_unit%mpi,*) &
         'DBG task_list_t%update: calling send_to_vnbors', task%id
     call self%send_to_vnbors (head)                   ! send to virtual nbors
+  end if
+  !-----------------------------------------------------------------------------
+  ! If the task has bits%init_nbors set, call init_nbors(), which also clears
+  ! the bit
+  !-----------------------------------------------------------------------------
+  if (task%is_set (bits%init_nbors)) then
+    call self%init_nbors (head)
+    call head%info
   end if
   !-----------------------------------------------------------------------------
   ! Tasks that have finished are subtracted from the task list count but are
