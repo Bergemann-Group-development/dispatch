@@ -587,7 +587,6 @@ SUBROUTINE check_nbors (self, link)
   !-----------------------------------------------------------------------------
   ! Lock the other task link while accessing its nbor list, to prevent changes
   !-----------------------------------------------------------------------------
-  call link%lock%set ('check_nbors')
   nbor => link%nbor                                     ! first nbor
   do while (associated (nbor))                          ! keep going until end
     if (nbor%task%id==io%id_debug) print *, &
@@ -595,17 +594,24 @@ SUBROUTINE check_nbors (self, link)
     if (nbor%needs_me) then                             ! needs checking?
       if (self%verbose > 1) &
         write (io_unit%log,*) wallclock(), task%id, 'checks nbor', nbor%task%id
+        
+      !-------------------------------------------------------------------------
+      ! Lock the nbor list of nbor tasks, while the nbor list is being used
+      !-------------------------------------------------------------------------
+      call nbor%link%lock%set ('check_nbors')
       call self%check_ready (nbor%link)                 ! pointer back
+      call nbor%link%lock%unset ('check_nbors')
     else
       if (self%verbose > 1) &
         write (io_unit%log,*) wallclock(), task%id, 'no need to check', nbor%task%id
     end if
     nbor => nbor%next                                   ! next nbor
   end do
-  call link%lock%unset ('check_nbors')
   !-----------------------------------------------------------------------------
   ! Since we may be called upon to check nbors of a patch that should not itself
-  ! be checked, we check if any bits are set indicating this to be the case
+  ! be checked, we check if any bits are set indicating this to be the case.
+  ! Note that this call to check_ready(), which concerns the task being updated,
+  ! does NOT need locking of the task link.
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%virtual+bits%external)) then
     call self%check_ready (link)                      ! finally check link task
