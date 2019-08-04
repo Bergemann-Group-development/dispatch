@@ -169,8 +169,6 @@ MODULE patch_mod
     procedure:: update_position
     procedure:: get_overlap
     procedure:: init_level
-    procedure:: task_info
-    procedure:: nbor_info
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -2748,26 +2746,5 @@ SUBROUTINE init_level (self)
   self%level = minval(nint(log(self%box/self%ds) / &
     log(real(self%refine_ratio))), mask=self%n > 1)
 END SUBROUTINE init_level
-
-!===============================================================================
-SUBROUTINE task_info (self)
-  class(patch_t):: self
-  !-----------------------------------------------------------------------------
-  write(io_unit%mpi,'(1x,a,40x,i6,2i4,2x,5x,2l1,2x,3f9.3)') &
-    'patch_t%task_info: id, BV, pos =', self%id, self%rank, self%level, &
-    self%is_set(bits%boundary), self%is_set(bits%virtual), self%position
-END SUBROUTINE task_info
-
-!===============================================================================
-SUBROUTINE nbor_info (self, nbor)
-  class(patch_t):: self
-  class(link_t):: nbor
-  !-----------------------------------------------------------------------------
-  write(io_unit%mpi,'(3x,a,i6,2i4,2x,3l1,2x,2l1,2x,3f9.3)') &
-    'pa_t%nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
-    self%id, self%rank, self%level, nbor%needed, nbor%needs_me, nbor%download, &
-    self%is_set(bits%boundary), self%is_set(bits%virtual), &
-    self%position
-END SUBROUTINE nbor_info
 
 END MODULE patch_mod

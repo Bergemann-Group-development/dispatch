@@ -2384,7 +2384,7 @@ SUBROUTINE test_status (self)
 END SUBROUTINE test_status
 
 !===============================================================================
-!> Dump nbor relations, flags and status bits around io%id_debug
+!> Dump nbor relations, flags and status bits for the list
 !===============================================================================
 SUBROUTINE info (self)
   class(list_t):: self
@@ -2394,20 +2394,7 @@ SUBROUTINE info (self)
   call trace%begin ('task_list_t%info')
   link => self%head
   do while (associated(link))
-    task => link%task
-    select type (task)
-    class is (patch_t)
-      call task%task_info()
-      nbor => link%nbor
-      do while (associated(nbor))
-        nbtask => nbor%task
-        select type (nbtask)
-        class is (patch_t)
-          call nbtask%nbor_info (nbor)
-        end select
-        nbor => nbor%next
-      end do
-    end select
+    call link%info
     link => link%next
   end do
   call trace%end()

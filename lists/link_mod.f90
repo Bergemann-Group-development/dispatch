@@ -62,6 +62,8 @@ MODULE link_mod
     procedure, nopass:: garbage_remove
     procedure:: delete
     procedure:: sort_nbors_by_level
+    procedure:: nbor_info
+    procedure:: info
   end type
   type(link_t), target, public:: garbage
   integer:: garbage_n=0, verbose=0
@@ -813,5 +815,33 @@ contains
     end if
   end subroutine nbor_check
 END SUBROUTINE sort_nbors_by_level
+
+!===============================================================================
+!> Info for one nbor
+!===============================================================================
+SUBROUTINE nbor_info (self)
+  class(link_t):: self
+  !-----------------------------------------------------------------------------
+  write(io_unit%mpi,'(3x,a,i6,2i4,2x,3l1,2x,2l1,2x,3f9.3)') &
+    'pa_t%nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
+    self%task%id, self%task%rank, self%task%level, self%needed, self%needs_me, &
+    self%download, self%task%is_set(bits%boundary), &
+    self%task%is_set(bits%virtual), self%task%position
+END SUBROUTINE nbor_info
+
+!===============================================================================
+!> Info for all nbors
+!===============================================================================
+SUBROUTINE info (self)
+  class(link_t):: self
+  class(link_t), pointer:: nbor
+  !-----------------------------------------------------------------------------
+  call self%task%task_info()
+  nbor => self%nbor
+  do while (associated(nbor))
+    call nbor%nbor_info
+    nbor => nbor%next
+  end do
+END SUBROUTINE info
 
 END MODULE link_mod

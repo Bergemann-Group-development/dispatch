@@ -114,6 +114,7 @@ MODULE task_mod
     procedure:: test_update
     procedure:: solver_is
     procedure:: debug
+    procedure:: task_info
   end type
   integer, dimension(:), pointer, save:: id => null()
   type(dll_t), pointer:: deleted_list
@@ -140,12 +141,12 @@ SUBROUTINE init (self)
   character(len=120):: ids= &
     '$Id$ tasks/task_mod.f90'
   !-----------------------------------------------------------------------------
-  call trace_begin ('task_t%init',2)
+  call trace_begin ('task_t%init')
   call trace%print_id (ids)
   if (self%id == 0) then
     call init_unique (self)
   end if
-  call trace_end
+  call trace_end ()
 END SUBROUTINE init
 
 !===============================================================================
@@ -161,6 +162,7 @@ SUBROUTINE init_unique (self, same)
   ! Ranks that call this routinein sync  with same=.true. get a matching set
   ! of IDs to prune from, while the master updates the global counter
   !-----------------------------------------------------------------------------
+  call trace_begin ('task_t%init_unique')
   if (present(same) .and. same) then
     id_same = id_same+1
     id = id_same
@@ -182,6 +184,7 @@ SUBROUTINE init_unique (self, same)
   !$omp end critical (task_id_cr)
   call self%lock%init (self%kind(1:4), id=self%id+2)
   call self%random%init
+  call trace%end ()
 END SUBROUTINE init_unique
 
 !===============================================================================
@@ -706,5 +709,14 @@ FUNCTION debug (self, level)
   !-----------------------------------------------------------------------------
   debug = (io%verbose >= level) .or. (self%id == io%id_debug)
 END FUNCTION debug
+
+!===============================================================================
+SUBROUTINE task_info (self)
+  class(task_t):: self
+  !-----------------------------------------------------------------------------
+  write(io_unit%mpi,'(1x,a,40x,i6,2i4,2x,5x,2l1,2x,3f9.3)') &
+    'patch_t%task_info: id, BV, pos =', self%id, self%rank, self%level, &
+    self%is_set(bits%boundary), self%is_set(bits%virtual), self%position
+END SUBROUTINE task_info
 
 END MODULE task_mod
