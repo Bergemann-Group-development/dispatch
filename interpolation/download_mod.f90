@@ -170,14 +170,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   ! level that supplied values, and skipping nbor contributions from lower levels.
   ! To avoid dead-lock, make a copy of it, and release the lock
   !-----------------------------------------------------------------------------
-  if (download%link_locks) then
-    call link%lock%set ('download_link')
-    call link%copy_nbor_list (link%nbors_by_level, nbors)
-    call link%lock%unset ('download_link')
-    nbor => nbors
-  else
-    nbor => link%nbor
-  end if
+  call link%lock%set ('download_link')
+  call link%copy_nbor_list (link%nbors_by_level, nbors)
+  call link%lock%unset ('download_link')
+  nbor => nbors
   !-----------------------------------------------------------------------------
   ! Insert a value only if "filled" indicates that one is missing.  With the 
   ! nbor list sorted in decreasing level order, values are only computed where
@@ -270,9 +266,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   ! Done with temporary nbor list, so remove it
   !-----------------------------------------------------------------------------
-  if (download%link_locks) then
-    call link%remove_nbor_list (nbors)
-  end if
+  call link%remove_nbor_list (nbors)
   if (present(only)) then
     if (only==target%idx%d) then
       call target%check_density (" after download")
