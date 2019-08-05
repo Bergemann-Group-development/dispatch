@@ -50,7 +50,7 @@ MODULE omp_lock_mod
   type(lock_t), save, public:: omp_lock
   integer, save:: id_save=-1, n_lock=0
   logical, save:: on = .true.
-  character(len=6):: log='output'
+  character(len=6):: log='queue'
   integer:: unit
   real(8):: wait_time=0d0
 CONTAINS
