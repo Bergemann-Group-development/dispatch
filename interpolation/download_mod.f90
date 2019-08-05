@@ -255,6 +255,9 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
        end if
      end if
     end if
+    if (omp_lock%tasks) then
+      call source%lock%unset ('download_link')
+    end if
     nbor => nbor%next
   end do
   if (present(only)) then

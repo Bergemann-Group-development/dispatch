@@ -36,9 +36,7 @@ MODULE mpi_mesg_mod
     procedure:: completed
     procedure:: all_completed
     procedure:: irecv
-    procedure:: is_in_order
   end type
-  integer, dimension(:), allocatable, save:: expected
   integer(8) :: n_wait_all=0  , n_wait_for=0
   real(8)    :: t_wait_all=0d0, t_wait_for=0d0
   !
@@ -78,11 +76,11 @@ MODULE mpi_mesg_mod
     integer:: min_nq
     logical:: recv_wait=.false.
     logical:: recv_priv=.true.
-    logical:: recv_active=.false.
+    logical:: recv_active=.true.
     logical:: send_priv=.true.
     logical:: debug=.false.
     logical:: queue_unpack=.true.
-    logical:: uniq_mesg=.true.
+    logical:: uniq_mesg=.false.
     real:: delay_ms=0.0
     real:: test_time=0.0
   contains
@@ -99,16 +97,15 @@ MODULE mpi_mesg_mod
   !$omp threadprivate (unpk_list,sent_list,recv_list)
   real, save:: delay_ms=3.0
   integer, save:: min_nq=10                     ! min ready q size for MPI_Test
-  integer, save:: max_sent=100                  ! max outstanding patch sends
+  integer, save:: max_sent=5                    ! max outstanding patch sends
   integer, save:: max_recv=100                  ! max outstanding patch recvs
-  integer, save:: max_probe=100                 ! max loop count in MPI_Probe
+  integer, save:: max_probe=10                  ! max loop count in MPI_Probe
   integer, save:: every_send=5                  ! how often to check send_list
   integer, save:: every_recv=1                  ! how often to check recv_list
   logical, save:: recv_wait=.false.             ! if true, always use MPI_Wait
   logical, save:: send_wait=.false.             ! if true, wait in OMP task
   integer, save:: id=0
   integer, save:: verbose=0
-  logical, save:: detailed_timer=.false.
 CONTAINS
 
 !===============================================================================
@@ -258,7 +255,9 @@ SUBROUTINE check_sent (self, nq)
     mesg => sent_tmp%head                                             ! top of list
     do while (associated(mesg))
       next => mesg%next
+      call timer%end (itimer=itimer)
       call mesg%wait_all
+      call timer%begin (itimer=itimer)
       call sent_tmp%remove (mesg)
       call sent_tmp%delete (mesg, send=.true.)
       mesg => next
@@ -286,7 +285,9 @@ SUBROUTINE check_sent (self, nq)
     mesg => self%head                                           ! top of list
     do while (associated(mesg))
       next => mesg%next                                         ! in case removed
+      call timer%end (itimer=itimer)
       call mesg%test_all (flag)                                 ! done with?
+      call timer%begin (itimer=itimer)
       if (flag) then
         call self%remove (mesg)                                 ! yes, remove
         call self%delete (mesg, send=.true.)                    ! deallocate
@@ -333,10 +334,8 @@ SUBROUTINE test_all (self, flag)
   integer:: rank, req, ierr
   integer, save:: itimer=0
   !.............................................................................
-  if ((self%nreq <= 0) .or. (.not.associated(self%reqs))) then
-    if (verbose > 2) &
-      write (stdout,*) 'mesg_t%test_all: WARNING', &
-        self%nreq, associated(self%reqs)
+  if ((self%nreq<=0) .or. (.not.associated(self%reqs))) then
+    print*,'WARNING: test_all', self%nreq, associated(self%reqs)
     return
   end if
 #ifdef MPI
@@ -399,13 +398,13 @@ SUBROUTINE add (self, mesg)
   class(mesg_list_t):: self
   class(mesg_t), pointer:: mesg
   !.............................................................................
-  nullify (mesg%next)                           ! since mesg will be tail
+  nullify (mesg%next)
   if (associated(self%head)) then               ! if the list is non-empty
     self%tail%next => mesg                      ! add to the tail
     mesg%prev => self%tail                      ! prev is the previous tail
   else
     self%head => mesg                           ! else add at the head
-    nullify (mesg%prev)                         ! mesg is head
+    nullify (mesg%prev, mesg%next)
   end if
   self%tail => mesg                             ! tail points to it
   !$omp atomic
@@ -530,26 +529,22 @@ SUBROUTINE init (self)
   logical, save:: recv_active
   logical, save:: send_priv
   logical, save:: queue_unpack
-  logical, save:: uniq_mesg
+  logical, save:: uniq_mesg=.false.
   real, save:: test_time=20e-3
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, recv_wait, send_wait, send_priv, &
                              recv_active, recv_priv, queue_unpack, test_time, &
-                             uniq_mesg, debug, verbose, detailed_timer
+                             uniq_mesg, debug, verbose
   integer:: iostat
-  character(len=120):: id = &
-  '$Id$ mpi_mesg_mod.f90'
   !-----------------------------------------------------------------------------
   ! Prevent initializing more than once
   !-----------------------------------------------------------------------------
-  call trace%print_id (id)
   if (self%initialized) return
   self%initialized = .true.
   call trace%begin ('mpi_mesg_t%init')
   !-----------------------------------------------------------------------------
   ! Default values from dispatcher
   !-----------------------------------------------------------------------------
-  uniq_mesg = self%uniq_mesg
   recv_priv = self%recv_priv
   send_priv = self%send_priv
   recv_active = self%recv_active
@@ -559,6 +554,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   rewind (io%input); read (io%input, mpi_mesg_params,iostat=iostat)
   if (io%master) write (io%output, mpi_mesg_params)
+  if (iostat /= 0) call io%namelist_warning ('mpi_mesg_params')
   if (verbose>0) write (io_unit%log,*) 'mpi_mesg_mod::init'
   self%debug = debug
   self%min_nq = min_nq
@@ -733,16 +729,11 @@ contains
       call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
       mesg%req = req
       mesg%id = stat(MPI_TAG)
-      mesg%sender = stat(MPI_SOURCE)
       if (mpi_mesg%uniq_mesg) then
         mesg%seq = mod(mesg%id,100)
         mesg%id = mesg%id/100
-        write (io_unit%log,*) 'mpi_mesg_t%get: id, sender, seq =', &
-          mesg%id, mesg%sender, mesg%seq
-      else
-        write (io_unit%log,*) 'mpi_mesg_t%get: id, sender      =', &
-          mesg%id, mesg%sender
       end if
+      mesg%sender = stat(MPI_SOURCE)
       write (io_unit%mpi,'(f12.6,2x,"get: id, seq, sender =",i9,2i6)') &
         wallclock(), mesg%id, mesg%seq, mesg%sender
       flush(io_unit%mpi)
@@ -820,10 +811,9 @@ END FUNCTION all_completed
 !> Return true or false, depending on if the mesg is complete or not.  This
 !> procedure respects the mpi_mesg attributes TEST_TIME, MAX_RECV, and RECV_WAIT
 !===============================================================================
-FUNCTION is_complete (self, parentname)
+FUNCTION is_complete (self)
   class(mesg_t):: self
   logical:: is_complete
-  character(len=*), optional:: parentname
   !.............................................................................
   integer:: tag
   real(8):: now, test_next
@@ -837,11 +827,7 @@ FUNCTION is_complete (self, parentname)
   now = wallclock()
   if (now < self%test_next) &
     return
-  if (present(parentname) .and. detailed_timer) then
-    call trace%begin ('mesg_t%is_complete('//trim(parentname)//')', 2, itimer=itimer)
-  else
-    call trace%begin ('mesg_t%is_complete', 2, itimer=itimer)
-  end if
+  call trace%begin ('mesg_t%is_complete', 2, itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Check for completion
   !-----------------------------------------------------------------------------
@@ -903,6 +889,11 @@ contains
   if (is_complete) then
     !$omp atomic
     timer%mpi_hit = timer%mpi_hit + 1
+    self%id = stat(MPI_TAG)
+    if (mpi_mesg%uniq_mesg) then
+      self%seq = mod(self%id,100)
+      self%id = self%id/100
+    end if
   end if
   end subroutine check_recv
 END FUNCTION is_complete
@@ -1042,27 +1033,5 @@ SUBROUTINE diagnostics (self, flag)
     !$omp end single
   end if
 END SUBROUTINE diagnostics
-
-!===============================================================================
-!> Check that a package is in the expected order
-!===============================================================================
-LOGICAL FUNCTION is_in_order (self)
-  class(mesg_t):: self
-  if (.not.allocated(expected)) then
-    allocate (expected(0:mpi%size-1))
-    expected(:) = 1
-  end if
-  !$omp critical (expected_cr)
-  is_in_order = self%seq == expected(self%sender)
-  if (is_in_order) then
-    expected(self%sender) = mod(expected(self%sender)+1,100)
-  else
-    if (verbose > 1) &
-      write (io_unit%log,*) 'MPI mesg not in expected order', &
-        self%seq, expected(self%sender)
-  end if
-  flush (io_unit%log)
-  !$omp end critical (expected_cr)
-END FUNCTION is_in_order
 
 END MODULE mpi_mesg_mod
