@@ -76,11 +76,11 @@ MODULE mpi_mesg_mod
     integer:: min_nq
     logical:: recv_wait=.false.
     logical:: recv_priv=.true.
-    logical:: recv_active=.true.
+    logical:: recv_active=.false.
     logical:: send_priv=.true.
     logical:: debug=.false.
     logical:: queue_unpack=.true.
-    logical:: uniq_mesg=.false.
+    logical:: uniq_mesg=.true.
     real:: delay_ms=0.0
     real:: test_time=0.0
   contains
@@ -97,9 +97,9 @@ MODULE mpi_mesg_mod
   !$omp threadprivate (unpk_list,sent_list,recv_list)
   real, save:: delay_ms=3.0
   integer, save:: min_nq=10                     ! min ready q size for MPI_Test
-  integer, save:: max_sent=5                    ! max outstanding patch sends
+  integer, save:: max_sent=100                  ! max outstanding patch sends
   integer, save:: max_recv=100                  ! max outstanding patch recvs
-  integer, save:: max_probe=10                  ! max loop count in MPI_Probe
+  integer, save:: max_probe=100                 ! max loop count in MPI_Probe
   integer, save:: every_send=5                  ! how often to check send_list
   integer, save:: every_recv=1                  ! how often to check recv_list
   logical, save:: recv_wait=.false.             ! if true, always use MPI_Wait
@@ -526,7 +526,7 @@ SUBROUTINE init (self)
   logical, save:: recv_active
   logical, save:: send_priv
   logical, save:: queue_unpack
-  logical, save:: uniq_mesg=.false.
+  logical, save:: uniq_mesg
   real, save:: test_time=20e-3
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, recv_wait, send_wait, send_priv, &
@@ -545,6 +545,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Default values from dispatcher
   !-----------------------------------------------------------------------------
+  uniq_mesg = self%uniq_mesg
   recv_priv = self%recv_priv
   send_priv = self%send_priv
   recv_active = self%recv_active
