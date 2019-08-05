@@ -260,7 +260,12 @@ FUNCTION find_task (self, id, new) RESULT (link)
   class(experiment_t), pointer:: exper
   !.............................................................................
   call trace%begin ('task_mesg_t%find_task')
-!  call self%lock%set ('find_task')
+  !-----------------------------------------------------------------------------
+  ! While searching through the task list we need to lock it, which may have an
+  ! impact on the dispatcher.  FIXME: It would be better to use a hash table to
+  ! store the link pointer to known tasks, with the task ID as the key
+  !-----------------------------------------------------------------------------
+  call self%lock%set ('find_task')
   new = .false.
   link => self%head
   do while (associated(link))
@@ -270,12 +275,13 @@ FUNCTION find_task (self, id, new) RESULT (link)
         write (io_unit%log,*) mpi%rank,' task_mesg_t%find_task: match', id
         flush(io_unit%log)
       end if
-!      call self%lock%unset ('find_task')
+      call self%lock%unset ('find_task')
       call trace%end()
       return
     end if
     link => link%next
   end do
+  call self%lock%unset ('find_task')
   !-----------------------------------------------------------------------------
   ! No task found, which means it's a new virtual task that needs to be created
   !-----------------------------------------------------------------------------
@@ -308,7 +314,6 @@ FUNCTION find_task (self, id, new) RESULT (link)
   call exper%set (bits%virtual)
   if (verbose>0) &
     write (io_unit%log,*) ' task_mesg_t%find_task: append', id, exper%time
-!  call self%lock%unset ('find_task')
   call trace%end()
 END FUNCTION find_task
 
