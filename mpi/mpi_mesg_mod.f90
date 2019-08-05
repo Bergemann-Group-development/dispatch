@@ -106,6 +106,7 @@ MODULE mpi_mesg_mod
   logical, save:: send_wait=.false.             ! if true, wait in OMP task
   integer, save:: id=0
   integer, save:: verbose=0
+  logical, save:: detailed_timer=.false.
 CONTAINS
 
 !===============================================================================
@@ -530,7 +531,7 @@ SUBROUTINE init (self)
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, recv_wait, send_wait, send_priv, &
                              recv_active, recv_priv, queue_unpack, test_time, &
-                             uniq_mesg, debug, verbose
+                             uniq_mesg, debug, verbose, detailed_timer
   integer:: iostat
   character(len=120):: id = &
   '$Id$ mpi_mesg_mod.f90'
@@ -809,9 +810,10 @@ END FUNCTION all_completed
 !> Return true or false, depending on if the mesg is complete or not.  This
 !> procedure respects the mpi_mesg attributes TEST_TIME, MAX_RECV, and RECV_WAIT
 !===============================================================================
-FUNCTION is_complete (self)
+FUNCTION is_complete (self, parentname)
   class(mesg_t):: self
   logical:: is_complete
+  character(len=*), optional:: parentname
   !.............................................................................
   integer:: tag
   real(8):: now, test_next
@@ -825,7 +827,11 @@ FUNCTION is_complete (self)
   now = wallclock()
   if (now < self%test_next) &
     return
-  call trace%begin ('mesg_t%is_complete', 2, itimer=itimer)
+  if (present(parentname) .and. detailed_timer) then
+    call trace%begin ('mesg_t%is_complete('//trim(parentname)//')', 2, itimer=itimer)
+  else
+    call trace%begin ('mesg_t%is_complete', 2, itimer=itimer)
+  end if
   !-----------------------------------------------------------------------------
   ! Check for completion
   !-----------------------------------------------------------------------------

@@ -141,7 +141,7 @@ SUBROUTINE check_mpi (self)
   call mpi_mesg%get (mesg)
   n = 0
   do while (associated(mesg))
-    if (mesg%is_complete()) then
+    if (mesg%is_complete('check_mpi')) then
       call unpk_tmp%add (mesg)
     else
       call recv_tmp%add (mesg)
@@ -608,7 +608,7 @@ SUBROUTINE check_priv (self)
   call mpi_mesg%get (mesg)
   n = 0
   do while (associated(mesg))
-    if (mesg%is_complete()) then
+    if (mesg%is_complete('priv(1)')) then
       if (verbose > 1) &
         write (io_unit%log,*) 'unpacked directly', mesg%id, n
       call self%unpack (mesg)
@@ -627,7 +627,7 @@ SUBROUTINE check_priv (self)
   mesg => recv_list%head
   do while (associated(mesg))
     next => mesg%next
-    if (mesg%is_complete()) then
+    if (mesg%is_complete('priv(2)')) then
       call self%unpack (mesg)
       call recv_list%remove (mesg)
       n = n-1
@@ -724,7 +724,7 @@ SUBROUTINE check_virtual (self)
     select type (task)
     class is (patch_t)
     call set_test_time (self, task)
-    if (task%mesg%is_complete()) then
+    if (task%mesg%is_complete('virtual')) then
       !write(stdout,*) 'recv:', task%id, task%mesg%id, task%mesg%tag, task%rank
       if (verbose > 1) &
         write (io_unit%log,*) wallclock(),' task_mesg_t%unpack: check_virtual hit ', task%id
@@ -820,7 +820,7 @@ SUBROUTINE check_active (self)
       !-------------------------------------------------------------------------
       call set_test_time (self, task)
       req = task%mesg%req
-      if (task%mesg%is_complete()) then
+      if (task%mesg%is_complete('active')) then
         write(stdout,*) 'iscmp:', task%id, task%mesg%id, task%mesg%tag, task%rank
         if (verbose > 0 .or. task%id == io%id_debug) &
           write (io_unit%log,'(f12.6,2x,a,i6,i5,i9,i6,z12)') wallclock(), &
