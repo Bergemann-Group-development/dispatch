@@ -331,8 +331,10 @@ SUBROUTINE test_all (self, flag)
   integer:: rank, req, ierr
   integer, save:: itimer=0
   !.............................................................................
-  if ((self%nreq<=0) .or. (.not.associated(self%reqs))) then
-    print*,'WARNING: test_all', self%nreq, associated(self%reqs)
+  if ((self%nreq <= 0) .or. (.not.associated(self%reqs))) then
+    if (verbose > 2) &
+      write (stdout,*) 'mesg_t%test_all: WARNING', &
+        self%nreq, associated(self%reqs)
     return
   end if
 #ifdef MPI
@@ -395,13 +397,13 @@ SUBROUTINE add (self, mesg)
   class(mesg_list_t):: self
   class(mesg_t), pointer:: mesg
   !.............................................................................
-  nullify (mesg%next)
+  nullify (mesg%next)                           ! since mesg will be tail
   if (associated(self%head)) then               ! if the list is non-empty
     self%tail%next => mesg                      ! add to the tail
     mesg%prev => self%tail                      ! prev is the previous tail
   else
     self%head => mesg                           ! else add at the head
-    nullify (mesg%prev, mesg%next)
+    nullify (mesg%prev)                         ! mesg is head
   end if
   self%tail => mesg                             ! tail points to it
   !$omp atomic
@@ -729,11 +731,16 @@ contains
       call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
       mesg%req = req
       mesg%id = stat(MPI_TAG)
+      mesg%sender = stat(MPI_SOURCE)
       if (mpi_mesg%uniq_mesg) then
         mesg%seq = mod(mesg%id,100)
         mesg%id = mesg%id/100
+        write (io_unit%log,*) 'mpi_mesg_t%get: id, sender, seq =', &
+          mesg%id, mesg%sender, mesg%seq
+      else
+        write (io_unit%log,*) 'mpi_mesg_t%get: id, sender      =', &
+          mesg%id, mesg%sender
       end if
-      mesg%sender = stat(MPI_SOURCE)
       write (io_unit%mpi,'(f12.6,2x,"get: id, seq, sender =",i9,2i6)') &
         wallclock(), mesg%id, mesg%seq, mesg%sender
       flush(io_unit%mpi)

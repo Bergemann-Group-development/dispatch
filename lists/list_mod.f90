@@ -846,8 +846,13 @@ SUBROUTINE check_ready (self, link, lock)
       if (.not. nbor%task%is_ahead_of(task)) then       ! and is ahead in time
         !$omp atomic update
         task%n_failed = task%n_failed+1
-        if (task%n_failed > 10000) then
-          write (stderr,'(a,i4,1p,2(2x,a,i6,2x,a,g14.5),2(2x,a,g11.3))') &
+        if (self%verbose > 1 .or. task%n_failed > 10000) then
+          if (self%verbose > 1) then
+            unit = io_unit%log
+          else
+            unit = stderr
+          end if
+          write (unit ,'(a,i4,1p,2(2x,a,i6,2x,a,g14.5),2(2x,a,g11.3))') &
             'list_t%check_ready: on rank', task%rank, &
             'task'               , task%id     , 'at t=', task%time, &
             'failed on nbor task', nbor%task%id, 'at t=', nbor%task%time, &
