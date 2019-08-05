@@ -598,9 +598,7 @@ SUBROUTINE check_nbors (self, link)
       !-------------------------------------------------------------------------
       ! Lock the nbor list of nbor tasks, while the nbor list is being used
       !-------------------------------------------------------------------------
-      call nbor%link%lock%set ('check_nbors')
-      call self%check_ready (nbor%link)                 ! pointer back
-      call nbor%link%lock%unset ('check_nbors')
+      call self%check_ready (nbor%link, lock=.true.)    ! pointer back
     else
       if (self%verbose > 1) &
         write (io_unit%log,*) wallclock(), task%id, 'no need to check', nbor%task%id
@@ -815,13 +813,16 @@ END SUBROUTINE check_oldest
 !===============================================================================
 !> Check if the link task is ready, and if so, add it to self (the ready_queue)
 !===============================================================================
-SUBROUTINE check_ready (self, link)
+SUBROUTINE check_ready (self, link, lock)
   class(list_t):: self
   class(link_t), pointer:: link
+  logical, optional:: lock
+  !.............................................................................
   class(task_t), pointer:: task
   class(link_t), pointer:: nbor
   integer:: ignore
   integer, save:: itimer=0
+  logical:: ok
   !-----------------------------------------------------------------------------
   ! Since we may be called upon to check nbors of a patch that should not itself
   ! be checked, we first check if any bits are set indicating this to be the case
@@ -835,6 +836,9 @@ SUBROUTINE check_ready (self, link)
   ! Since only this thread can change the nbor list we are free to use it w/o lock
   !-----------------------------------------------------------------------------
   ignore = bits%frozen + bits%remove
+  if (present(lock)) &
+    call link%lock%set ('check_ready')
+  ok = .true.
   nbor => link%nbor                                     ! use original nbor list
   do while (associated (nbor))                          ! keep going until end
     !---------------------------------------------------------------------------
@@ -851,17 +855,19 @@ SUBROUTINE check_ready (self, link)
             'failed on nbor task', nbor%task%id, 'at t=', nbor%task%time, &
             'grace =', task%grace, ' dt=', nbor%task%dtime
         end if
-        !$omp atomic write
-        task%n_failed = 0
-        call timer%end (itimer)
-        return
+        ok = .false.
+        exit
       end if
     end if
     nbor => nbor%next                                   ! next nbor
   end do
-  !$omp atomic write
-  task%n_failed = 0
-  call self%queue_by_time (link)                        ! add task to queue
+  if (present(lock)) &
+    call link%lock%unset ('check_ready')
+  if (ok) then
+    !$omp atomic write
+    task%n_failed = 0
+    call self%queue_by_time (link)                      ! add task to queue
+  end if
   call timer%end (itimer)
 END SUBROUTINE check_ready
 
