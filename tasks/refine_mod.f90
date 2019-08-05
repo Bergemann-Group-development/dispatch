@@ -15,7 +15,7 @@
 !>           check_nbors ...
 !>           tasklist%lock%unset
 !>       if ... derefine
-!>         remove_patch
+!>         remove_and_reset
 !>           tasklist%lock%set
 !>           init_nbors ...
 !>           check_nbors ...
@@ -163,7 +163,7 @@
 !> they are new on the recieving rank, new nbor lists are generated, so no new
 !> actions should be needed there.   If a boundary task is removed, the vnbors
 !> are send a copy with the "remove" bit set, and they should react correspond-
-!> ingly, by doing essentially what remove_patch does.
+!> ingly, by doing essentially what remove_and_reset does.
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 MODULE refine_mod
   USE iso_fortran_env, only: int8
@@ -199,7 +199,6 @@ MODULE refine_mod
     procedure:: check_current
     procedure:: check_support
     procedure:: need_to_support
-    procedure:: remove_patch
     procedure:: check_cubical
     procedure:: check_jeans
     procedure:: shock_and_cd_detector
@@ -594,7 +593,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
         end associate
       end if
       !-----------------------------------------------------------------------
-      call remove_patch (self, tasklist, link)
+      call tasklist%remove_and_reset (link)
       was_derefined = .true.
     end if
   end if
@@ -964,46 +963,6 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   !-----------------------------------------------------------------------------
   call trace%end (itimer)
 END SUBROUTINE make_child_patch
-
-!===============================================================================
-!> Remove a patch that has been deemed not necessary.  At this point, the task
-!> is not in the ready queue, but is still in the task list.  The proper order
-!> of removal is then:
-!>
-!>   * remove the task link from the task list
-!>   * update the nbor lists of all its nbors
-!>   * deallocate the task memory
-!>   * deallocate the task
-!>   * deallocate the nbor list
-!>   * deallocate the task link
-!===============================================================================
-SUBROUTINE remove_patch (self, tlist, this)
-  class(refine_t):: self
-  class(list_t):: tlist
-  class(link_t), pointer:: this, link, nbor, nbors
-  class(task_t), pointer:: task
-  integer:: count, io_verbose
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  ! Start processing, blocking (at least for now) all queue-related activity
-  !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%remove_patch', itimer=itimer)
-  if (verbose > 0) then
-    write (io_unit%log,'(f12.6,2x,a,i6,1p,g14.5,2x,2l1)') &
-      wallclock(), 'refine_t%remove_patch: id, time, BV =', &
-      this%task%id, this%task%time, &
-      this%task%is_set (bits%boundary), this%task%is_set (bits%virtual)
-  end if
-  !-----------------------------------------------------------------------------
-  ! Remove the link from the task list, update the nbor lists of nbors, then
-  ! deallocate this link (and the associated task memory and task).
-  !-----------------------------------------------------------------------------
-  call tlist%remove_and_reset (this)        ! comprehensive removal
-  !-----------------------------------------------------------------------------
-  !$omp atomic write
-  io%dtime = huge(1d0)
-  call trace%end (itimer)
-END SUBROUTINE remove_patch
 
 !===============================================================================
 !> Check that the patch dimensions are the desired cubical ones
