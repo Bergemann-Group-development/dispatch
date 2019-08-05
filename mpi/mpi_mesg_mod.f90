@@ -36,7 +36,9 @@ MODULE mpi_mesg_mod
     procedure:: completed
     procedure:: all_completed
     procedure:: irecv
+    procedure:: is_in_order
   end type
+  integer, dimension(:), allocatable, save:: expected
   integer(8) :: n_wait_all=0  , n_wait_for=0
   real(8)    :: t_wait_all=0d0, t_wait_for=0d0
   !
@@ -901,15 +903,6 @@ contains
   if (is_complete) then
     !$omp atomic
     timer%mpi_hit = timer%mpi_hit + 1
-#ifdef MPI
-    self%id = stat(MPI_TAG)
-#else
-    self%id = 0
-#endif
-    if (mpi_mesg%uniq_mesg) then
-      self%seq = mod(self%id,100)
-      self%id = self%id/100
-    end if
   end if
   end subroutine check_recv
 END FUNCTION is_complete
@@ -1049,5 +1042,27 @@ SUBROUTINE diagnostics (self, flag)
     !$omp end single
   end if
 END SUBROUTINE diagnostics
+
+!===============================================================================
+!> Check that a package is in the expected order
+!===============================================================================
+LOGICAL FUNCTION is_in_order (self)
+  class(mesg_t):: self
+  if (.not.allocated(expected)) then
+    allocate (expected(0:mpi%size-1))
+    expected(:) = 1
+  end if
+  !$omp critical (expected_cr)
+  is_in_order = self%seq == expected(self%sender)
+  if (is_in_order) then
+    expected(self%sender) = mod(expected(self%sender)+1,100)
+  else
+    if (verbose > 1) &
+      write (io_unit%log,*) 'MPI mesg not in expected order', &
+        self%seq, expected(self%sender)
+  end if
+  flush (io_unit%log)
+  !$omp end critical (expected_cr)
+END FUNCTION is_in_order
 
 END MODULE mpi_mesg_mod

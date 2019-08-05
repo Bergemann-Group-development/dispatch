@@ -99,6 +99,7 @@ MODULE list_mod
     procedure:: test_nbor_status
     procedure:: info
   end type
+  integer, dimension(:), allocatable:: sequence
   integer, parameter:: mnbor=100
   type(list_t), public:: list
   public link_t, task2patch
@@ -289,6 +290,8 @@ SUBROUTINE remove_and_reset (self, link)
   count = counters%decrement &             ! decrement I/O task counter
     (link%task%iout+1, io%ntask)
   call link%garbage_collect (link)         ! add to garbage bin
+  !$omp atomic write
+  io%dtime = huge(1d0)
   call trace%end
 END SUBROUTINE remove_and_reset
 
@@ -818,7 +821,7 @@ SUBROUTINE check_ready (self, link, lock)
   !.............................................................................
   class(task_t), pointer:: task
   class(link_t), pointer:: nbor
-  integer:: ignore
+  integer:: ignore, unit
   integer, save:: itimer=0
   logical:: ok
   !-----------------------------------------------------------------------------
@@ -2233,6 +2236,10 @@ SUBROUTINE send_to_vnbors (self, link)
   integer:: ierr, rank, tag
   integer, save:: itimer=0
   !.............................................................................
+  if (.not.allocated(sequence)) then
+    allocate (sequence(0:mpi%size-1))
+    sequence(:) = 0
+  end if
   task => link%task
   if (task%is_clear (bits%boundary)) then
     write (stdout,*) mpi%rank, omp%thread, &
@@ -2258,13 +2265,8 @@ SUBROUTINE send_to_vnbors (self, link)
   end select
   !-----------------------------------------------------------------------------
   ! Same id for all steps, and increment mesg%seq only once, for all ranks
+  ! If the task is new, force the sequence number to be 1
   !-----------------------------------------------------------------------------
-  if (mpi_mesg%uniq_mesg) then
-    task%seq = task%seq+1
-    tag = mod(task%seq,100) + 100*task%id
-  else
-    tag = task%id
-  end if
   mesg%id = task%id
   !-----------------------------------------------------------------------------
   ! Send to all unique ranks in the nbor list (which is sorted by rank).
@@ -2275,6 +2277,14 @@ SUBROUTINE send_to_vnbors (self, link)
     nbtask => nbor%task
     if (nbtask%rank/=mpi%rank .and. nbtask%rank/=rank) then     ! new rank?
       rank = nbtask%rank                                        ! current rank
+      if (mpi_mesg%uniq_mesg) then
+        !$omp critical (send_to_cr)
+        sequence(rank) = sequence(rank)+1
+        tag = mod(sequence(rank),100) + 100*task%id
+        !$omp end critical (send_to_cr)
+      else
+        tag = task%id
+      end if
       call mesg%send (rank, tag=tag)                            ! send it
       !write (stdout,*) 'send: ', task%id, mesg%id, tag, mesg%tag, rank
       if (self%verbose > 0 .or. task%id == io%id_debug) then

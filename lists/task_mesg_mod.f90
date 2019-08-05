@@ -523,24 +523,19 @@ SUBROUTINE unpack (self, mesg, link)
   !-----------------------------------------------------------------------------
   if (new) then
     call task%setup
-    call self%append_link (link)
     if (verbose > 0) then
       write (io_unit%mpi,'(f12.6,2x,a,3i6,2i4,f12.6,2x,3f10.5,2x,"new")') &
         wallclock(), 'task_mesg_t%unpack: ', id, task%id, link1%task%id, &
         mesg%seq, omp%thread, task%time, task%position
       flush(io_unit%mpi)
     end if
-    !call self%lock%set ('unpack')
-    call self%init_nbors (link1)
+    call self%add_new_link (link1)
     !---------------------------------------------------------------------------
     ! If the task has the %support bit set, call refine_t%check_supprt on it
     !---------------------------------------------------------------------------
     if (task%is_set (bits%support)) then
-      call refine%check_support (self, link, n_added)
+      call refine%check_support (self, link1, n_added)
     end if
-    !call refine%check_support (self, link1, n_added)
-    call self%check_nbors (link1)
-    !call self%lock%unset ('unpack')
   else
     !-----------------------------------------------------------------------------
     ! Patches that have the init_nbors bit set should have new nbor lists, in 
@@ -592,32 +587,52 @@ SUBROUTINE check_priv (self)
   call mpi_mesg%get (mesg)
   n = 0
   do while (associated(mesg))
-    if (mesg%is_complete('priv(1)')) then
-      if (verbose > 1) &
-        write (io_unit%log,*) 'unpacked directly', mesg%id, n
-      call self%unpack (mesg)
-      call recv_list%delete (mesg, .false.)
-    else
-      call recv_list%add (mesg)
-      n = n+1
-      if (verbose > 1) &
-        write (io_unit%log,*) 'addded mesg to recv_list', mesg%id, n
-    end if
+    call recv_list%add (mesg)
+    n = n+1
+    if (verbose > 1) &
+      write (io_unit%log,*) 'check_priv: addded mesg to recv_list', &
+        mesg%id, mesg%seq
     call mpi_mesg%get (mesg)
   end do
   !-----------------------------------------------------------------------------
-  ! Step 2: check the recv_list for completed messages
+  ! Step 2: check the recv_list for completed messages and move to unpk_list
   !-----------------------------------------------------------------------------
+  n = 0
   mesg => recv_list%head
+  do while (associated(mesg))
+    next => mesg%next
+    n = n+1
+    if (mesg%is_complete('priv(1)')) then
+      if (verbose > 1) &
+        write (io_unit%log,*) 'check_priv: moved to unpk_list:', &
+          mesg%id, mesg%seq, associated(next)
+      call recv_list%remove (mesg)
+      call unpk_list%add (mesg)
+    else
+      if (verbose > 2) &
+        write (io_unit%log,*) 'check_priv:   not yet complete:', &
+          mesg%id, mesg%seq
+    end if
+    mesg => next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Step 3: unpack in sequence order
+  !-----------------------------------------------------------------------------
+  mesg => unpk_list%head
   do while (associated(mesg))
     next => mesg%next
     if (mesg%is_complete('priv(2)')) then
       call self%unpack (mesg)
-      call recv_list%remove (mesg)
       n = n-1
       if (verbose > 1) &
-        write (io_unit%log,*) 'unpacked from list', mesg%id, n 
-      call recv_list%delete (mesg, .false.)
+        write (io_unit%log,*) 'check_priv: unpacked from list:', &
+          mesg%id, mesg%seq
+      call unpk_list%remove (mesg)
+      call unpk_list%delete (mesg, .false.)
+    else
+      if (verbose > 2) &
+        write (io_unit%log,*) 'check_priv:  kept in unpk_list:', &
+          mesg%id, mesg%seq
     end if
     mesg => next
   end do
