@@ -267,9 +267,7 @@ SUBROUTINE remove_and_reset (self, link)
   !-----------------------------------------------------------------------------
   ! Send a suicide note to virtual nbors, if this is a boundary patch
   !-----------------------------------------------------------------------------
-  call link%task%lock%set ('remove_patch')    ! lock the task list
   call link%task%set (bits%remove)            ! cf. check_ready() and unpack()
-  call link%task%lock%unset ('remove_patch')  ! release the task list
   if (link%task%is_set (bits%boundary)) then
     call self%send_to_vnbors (link)
   end if
@@ -282,7 +280,7 @@ SUBROUTINE remove_and_reset (self, link)
   !-----------------------------------------------------------------------------
   call self%lock%set ('remove_and_reset')  ! lock task list while changing
   call self%remove_link (link)             ! remove link from task list
-  call self%lock%unset ('remove_patch')    ! release the task list
+  call self%lock%unset ('remove_and_reset')! release the task list
   call self%check_nbors (link)             ! check nbors, now link is removed
   call self%set_init_nbors (link)          ! trigger new nbor lists on nbors
   !$omp atomic update
