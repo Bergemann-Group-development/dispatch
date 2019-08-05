@@ -2239,7 +2239,7 @@ SUBROUTINE send_to_vnbors (self, link)
     return
   end if
   !-----------------------------------------------------------------------------
-  call trace_begin('link_mod::send_to_vnbors', itimer=itimer)
+  call trace_begin('list_t%send_to_vnbors', itimer=itimer)
   if (task%id == io%id_debug) &
     write(io%output,*) 'DBG link_t%send_to_vnbors: id, rank =', &
       task%id, mpi%rank
