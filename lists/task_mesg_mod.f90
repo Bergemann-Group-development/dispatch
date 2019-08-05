@@ -564,6 +564,7 @@ SUBROUTINE unpack (self, mesg, link)
     ! order to replicate the behavior on the owner rank
     !-----------------------------------------------------------------------------
     if (task%is_set (bits%init_nbors)) then
+      call self%check_nbors (link1)
       call self%init_nbors (link1)
       if (verbose > 1) &
         write (io_unit%log,*) 'unpack: bits%init_nbors id =', task%id
