@@ -289,15 +289,22 @@ SUBROUTINE header_to_patch (self, head)
   if (head%id /= self%id) then
     call io%abort('wrong message ID unpacked')
   end if
-  if (head%istep > self%istep+1) then
-    write(stderr,*) 'WARNING: early arrival in time reversal id, rank =', &
-      self%id, mpi%rank
-    flush (stderr)
-  end if
-  if (head%time < self%time) then
-    write(stderr,*) 'WARNING: late arrival in time reversal id, rank =', &
-      self%id, mpi%rank
-    flush (stderr)
+  !-----------------------------------------------------------------------------
+  ! Except for the first and last appearance, istep should increase be one
+  !-----------------------------------------------------------------------------
+  if ((self%istep > 0) .and. (iand(head%status, bits%remove) == 0)) then
+    if (head%istep > self%istep+1) then
+      write(io_unit%log,1) &
+        'WARNING: early arrival in time reversal id, rank =', &
+        self%id, mpi%rank, head%istep, self%istep, head%time, self%time
+    1 format(a,4i6,2f12.6)
+      flush (io_unit%log)
+    else if (head%istep < self%istep+1) then
+      write(io_unit%log,1) &
+        'WARNING: late arrival in time reversal id, rank =', &
+        self%id, mpi%rank, head%istep, self%istep, head%time, self%time
+      flush (io_unit%log)
+    end if
   end if
   self%id         = head%id
   self%status     = head%status
