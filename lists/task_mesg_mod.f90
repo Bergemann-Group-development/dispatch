@@ -170,8 +170,8 @@ SUBROUTINE check_mpi (self)
   do while (associated(mesg))
     next => mesg%next
     call self%unpack (mesg)
-    call unpk_tmp%remove (mesg)
-    call unpk_tmp%delete (mesg, .false.)
+      call unpk_tmp%remove (mesg)
+      call unpk_tmp%delete (mesg, .false.)
     mesg => next
   end do
   !-----------------------------------------------------------------------------
@@ -210,8 +210,8 @@ SUBROUTINE check_mpi (self)
     next => mesg%next
     call mesg%wait_for_completion ()
     call self%unpack (mesg)
-    call unpk_tmp%remove (mesg)
-    call unpk_tmp%delete (mesg, .false.)
+      call unpk_tmp%remove (mesg)
+      call unpk_tmp%delete (mesg, .false.)
     mesg => next
   end do
   !-----------------------------------------------------------------------------
@@ -260,7 +260,7 @@ FUNCTION find_task (self, id, new) RESULT (link)
   class(experiment_t), pointer:: exper
   !.............................................................................
   call trace%begin ('task_mesg_t%find_task')
-!  call self%lock%set ('find_task')
+  call self%lock%set ('find_task')
   new = .false.
   link => self%head
   do while (associated(link))
@@ -270,7 +270,7 @@ FUNCTION find_task (self, id, new) RESULT (link)
         write (io_unit%log,*) mpi%rank,' task_mesg_t%find_task: match', id
         flush(io_unit%log)
       end if
-!      call self%lock%unset ('find_task')
+      call self%lock%unset ('find_task')
       call trace%end()
       return
     end if
@@ -308,7 +308,7 @@ FUNCTION find_task (self, id, new) RESULT (link)
   call exper%set (bits%virtual)
   if (verbose>0) &
     write (io_unit%log,*) ' task_mesg_t%find_task: append', id, exper%time
-!  call self%lock%unset ('find_task')
+  call self%lock%unset ('find_task')
   call trace%end()
 END FUNCTION find_task
 
@@ -440,7 +440,7 @@ SUBROUTINE unpack (self, mesg, link)
       write (io_unit%log,'(f12.6,2x,a,i6)') &
         wallclock(), 'unpack: suicide note received for id =', task%id
     end if
-      call self%remove_and_reset (link1)
+    call self%remove_and_reset (link1)
     call self%lock%unset('unpack')
     call trace%end (itimer)
     return
@@ -534,20 +534,20 @@ SUBROUTINE unpack (self, mesg, link)
     ! If the task has the %support bit set, call refine_t%check_supprt on it
     !---------------------------------------------------------------------------
     if (task%is_set (bits%support)) then
-    call refine%check_support (self, link1, n_added)
-  end if
+      call refine%check_support (self, link1, n_added)
+    end if
   else
-  !-----------------------------------------------------------------------------
+    !-----------------------------------------------------------------------------
     ! Patches that have the init_nbors bit set should have new nbor lists, in 
     ! order to replicate the behavior on the owner rank
-  !-----------------------------------------------------------------------------
-  if (task%is_set (bits%init_nbors)) then
+    !-----------------------------------------------------------------------------
+    if (task%is_set (bits%init_nbors)) then
       call self%check_nbors (link1)
-    call self%init_nbors (link1)
+      call self%init_nbors (link1)
       call self%check_nbors (link1)
-    if (verbose > 1) &
-      write (io_unit%log,*) 'unpack: bits%init_nbors id =', task%id
-  end if
+      if (verbose > 1) &
+        write (io_unit%log,*) 'unpack: bits%init_nbors id =', task%id
+    end if
     if (verbose > 0) then
       write (io_unit%mpi,'(f12.6,2x,a,i6,2i4,f12.6,2x,3f10.5,2x)') &
         wallclock(), 'task_mesg_t%unpack: ', id, mesg%seq, omp%thread, &
@@ -588,9 +588,9 @@ SUBROUTINE check_priv (self)
   call mpi_mesg%get (mesg)
   n = 0
   do while (associated(mesg))
-      call recv_list%add (mesg)
-      n = n+1
-      if (verbose > 1) &
+    call recv_list%add (mesg)
+    n = n+1
+    if (verbose > 1) &
       write (io_unit%log,*) 'check_priv: addded mesg to recv_list', &
         mesg%id, mesg%seq
     call mpi_mesg%get (mesg)
