@@ -50,8 +50,9 @@ SUBROUTINE init (self)
   namelist /dispatcher_params/ method, verbose, test, test_seconds
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher_t%init')
-  rewind (io%input); read (io%input, dispatcher_params, iostat=iostat)
-  if (io%master) write (io%output, dispatcher_params)
+  rewind (io%input)
+  read (io%input, dispatcher_params, iostat=iostat)
+  write (io%output, dispatcher_params)
   select case (method)
   case (0)
     self%method => method0

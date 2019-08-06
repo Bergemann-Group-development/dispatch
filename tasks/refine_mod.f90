@@ -254,10 +254,7 @@ SUBROUTINE init (self)
     first_time=.false.
     rewind (io%input)
     read (io%input, refine_params, iostat=iostat)
-    if (io%master) then
-      if (iostat > 0) call io%namelist_warning ('refine_params')
-      write (*, refine_params)
-    end if
+    write (io%output, refine_params)
     if (on) then
       !omp_lock%links = .true.
       mpi_mesg%recv_active = .false.

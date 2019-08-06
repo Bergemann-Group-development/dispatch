@@ -71,7 +71,7 @@ SUBROUTINE init (self, name)
   call trace%print_id (id)
   rewind (io%input)
   read (io%input, task_mesg_params, iostat=iostat)
-  if (io%master) write (io%output, task_mesg_params)
+  write (io%output, task_mesg_params)
   call link%init_verbose (verbose)
 END SUBROUTINE init
 

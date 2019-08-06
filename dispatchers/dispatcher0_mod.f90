@@ -67,14 +67,10 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   call trace%print_id (ids)
   call trace%begin('dispatcher0_t%init')
+  rewind (io%input)
+  read(io%input, dispatcher0_params, iostat=iostat)
+  write (io%output, dispatcher0_params)
   call mpi_mesg%init
-  rewind (io%input); read(io%input, dispatcher0_params, iostat=iostat)
-  if (io%master) then
-    if (io%master) write (*, dispatcher0_params)
-    if (iostat /= 0) then
-      call io%namelist_warning ('dispatcher0_params')
-    end if
-  end if
   call self%lock%init ('disp')
   call self%lock%append
   call trace_end

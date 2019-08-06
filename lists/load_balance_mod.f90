@@ -105,10 +105,9 @@ SUBROUTINE init (self)
   integer:: iostat
   !.............................................................................
   call self%lock%init ('load')
-  rewind (io%input); read(io%input, load_balance_params, iostat=iostat)
-  if (io%master) then
-    if (io%master) write (*,load_balance_params)
-  end if
+  rewind (io%input)
+  read(io%input, load_balance_params, iostat=iostat)
+  write (io%output, load_balance_params)
   self%on = on
   next_info = cadence
 #ifndef _CRAYFTN

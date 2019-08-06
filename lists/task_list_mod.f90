@@ -66,8 +66,9 @@ SUBROUTINE init (self, name)
   call self%lock%append
   call mpi_mesg%init
   call task_mesg%init
-  rewind (io%input); read(io%input, task_list_params, iostat=iostat)
-  if (io%master) write (*,task_list_params)
+  rewind (io%input)
+  read(io%input, task_list_params, iostat=iostat)
+  write (io%output, task_list_params)
   if (sync_time > 0.0) &
     self%sync_next = sync_time
   self%sync_time = sync_time
