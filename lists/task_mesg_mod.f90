@@ -138,9 +138,7 @@ SUBROUTINE check_mpi (self)
   !-----------------------------------------------------------------------------
   call unpk_tmp%reset
   call recv_tmp%reset
-  call timer%end (itimer=itimer)
   call mpi_mesg%get (mesg)
-  call timer%begin (itimer=itimer)
   n = 0
   do while (associated(mesg))
     if (mesg%is_complete()) then
@@ -150,9 +148,7 @@ SUBROUTINE check_mpi (self)
     end if
     n = n+1
     if (n > mpi_mesg%max_probe) exit
-    call timer%end (itimer=itimer)
     call mpi_mesg%get (mesg)
-    call timer%begin (itimer=itimer)
   end do
   !-----------------------------------------------------------------------------
   ! Move pending receive messages to the recv_list.  This part must be in a
@@ -173,9 +169,7 @@ SUBROUTINE check_mpi (self)
   mesg => unpk_tmp%head
   do while (associated(mesg))
     next => mesg%next
-    call timer%end (itimer=itimer)
     call self%unpack (mesg)
-    call timer%begin (itimer=itimer)
     call unpk_tmp%remove (mesg)
     call unpk_tmp%delete (mesg, .false.)
     mesg => next
@@ -214,10 +208,8 @@ SUBROUTINE check_mpi (self)
   mesg => unpk_tmp%head
   do while (associated(mesg))
     next => mesg%next
-    call timer%end (itimer=itimer)
     call mesg%wait_for_completion ()
     call self%unpack (mesg)
-    call timer%begin (itimer=itimer)
     call unpk_tmp%remove (mesg)
     call unpk_tmp%delete (mesg, .false.)
     mesg => next
@@ -240,9 +232,7 @@ SUBROUTINE check_mpi (self)
   mesg => unpk_tmp%head
   do while (associated(mesg))
     next => mesg%next
-    call timer%end (itimer=itimer)
     call self%unpack (mesg)
-    call timer%begin (itimer=itimer)
     call unpk_tmp%remove (mesg)
     call unpk_tmp%delete (mesg, .false.)
     mesg => next
