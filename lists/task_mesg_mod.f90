@@ -92,7 +92,7 @@ SUBROUTINE check_mpi (self)
   wc(0) = wallclock()
   !-----------------------------------------------------------------------------
   ! Step 1: Prune the send list -- critical regions are handled inside.
-  ! Thread 0 checks the send list if it the only thread, or if it has messages
+  ! Thread 0 checks the send list if it is the only thread, or if it has messages
   ! on a thread private send list  -- otherwise it goes directly to handling 
   ! incoming messages.
   !-----------------------------------------------------------------------------
@@ -267,7 +267,7 @@ FUNCTION find_task (self, id, new) RESULT (link)
     patch => task2patch(link%task)
     if (patch%id == id) then
       if (verbose>1) then
-        write (io_unit%log,*) mpi%rank,' task_mesg_t%find_task: match', id, associated(patch%mem)
+        write (io_unit%log,*) mpi%rank,' task_mesg_t%find_task: match', id
         flush(io_unit%log)
       end if
 !      call self%lock%unset ('find_task')
@@ -291,6 +291,8 @@ FUNCTION find_task (self, id, new) RESULT (link)
   ! original boundary task, since it may need to play a role in extras features.
   !-----------------------------------------------------------------------------
   call exper%init
+  if (verbose > 0) &
+    write (io_unit%log,*) 'task_mesg_t%find: created new task, id =', id, exper%id
   if (mpi_mesg%recv_priv .or. mpi_mesg%recv_active) then
     call exper%allocate_mesg
     if (mpi_mesg%recv_priv) then
@@ -408,21 +410,21 @@ SUBROUTINE unpack (self, mesg, link)
       task%is_set(bits%swap_request)
     failed = .true.
   end if
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Measure the update cadence for this virtual task
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   block
   real(8):: wc
   wc = wallclock()
   task%update_cadence = wc - task%update_last
   task%update_last = wc
   end block
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Unpack a patch message (which includes swapping the roles of boundary bits).
   ! Since an already existing patch may, at any one time, be under investigation
   ! by check_nbors, it must be protected by a critical region (or an OMP
   ! lock) while it is being updated here
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   id = task%id
   call task%lock%set ('unpack')
   call task%unpack (mesg)
@@ -442,9 +444,8 @@ SUBROUTINE unpack (self, mesg, link)
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%remove)) then
     if (verbose > 0) then
-      write (io_unit%mpi,'(f12.6,2x,a,i6)') &
+      write (io_unit%log,'(f12.6,2x,a,i6)') &
         wallclock(), 'unpack: suicide note received for id =', task%id
-      flush (io_unit%mpi)
     end if
     !---------------------------------------------------------------------------
     ! If the task is on a thread-private virtual task list things are more
@@ -511,8 +512,8 @@ SUBROUTINE unpack (self, mesg, link)
       if (verbose>0) &
         write (io_unit%log,*) 'task_mesg_t%unpack: swapped virtual to boundary:', task%id
     !---------------------------------------------------------------------------
-    ! If the link has no nbors it is a newly created virtual task. Does it need
-    ! an nbor list?  At least we can use the nbor list to check that the link is
+    ! If link1 has no nbors it is a newly created virtual task. Does it need
+    ! an nbor list?  At least we can use the nbor list to check that link1 is
     ! in its nbors nbor lists.  A new virtual task (where no task existed) means
     ! that some nbor of it has changed from internal to boundary, which will be
     ! checked by the test_nbor_status call below, but only if an nbor list exists.
@@ -542,9 +543,9 @@ SUBROUTINE unpack (self, mesg, link)
   if (new) then
     call task%setup
     if (verbose > 0) then
-      write (io_unit%mpi,'(f12.6,2x,a,i6,2i4,f12.6,2x,3f10.5,2x,"new")') &
-        wallclock(), 'task_mesg_t%unpack: ', id, mesg%seq, omp%thread, &
-        task%time, task%position
+      write (io_unit%mpi,'(f12.6,2x,a,3i6,2i4,f12.6,2x,3f10.5,2x,"new")') &
+        wallclock(), 'task_mesg_t%unpack: ', id, task%id, link1%task%id, &
+        mesg%seq, omp%thread, task%time, task%position
       flush(io_unit%mpi)
     end if
     !call self%lock%set ('unpack')
@@ -570,8 +571,8 @@ SUBROUTINE unpack (self, mesg, link)
     end if
   end if
   !-----------------------------------------------------------------------------
-  ! Patches whose nbor lists are reset by init_nbor_nbors have the init_nbors
-  ! bit set, in order to replicate the behavior on the nbor ranks
+    ! Patches that have the init_nbors bit set should have new nbor lists, in 
+    ! order to replicate the behavior on the owner rank
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%init_nbors)) then
     !call self%lock%set ('unpack-init_nbors')

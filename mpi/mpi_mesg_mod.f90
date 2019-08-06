@@ -330,8 +330,10 @@ SUBROUTINE test_all (self, flag)
   integer:: rank, req, ierr
   integer, save:: itimer=0
   !.............................................................................
-  if ((self%nreq<=0) .or. (.not.associated(self%reqs))) then
-    print*,'WARNING: test_all', self%nreq, associated(self%reqs)
+  if ((self%nreq <= 0) .or. (.not.associated(self%reqs))) then
+    if (verbose > 2) &
+      write (stdout,*) 'mesg_t%test_all: WARNING', &
+        self%nreq, associated(self%reqs)
     return
   end if
 #ifdef MPI

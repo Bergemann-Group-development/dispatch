@@ -84,12 +84,17 @@ END SUBROUTINE init
 SUBROUTINE initialize (self)
   class(task_list_t):: self
   !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%initialize')
   call self%init_bdries         ! initialize boundaries, based on position
   call self%init_all_nbors      ! make nbor lists, based on position
   call self%reset_status        ! set status buts, based on nbor lists
   call self%count_status        ! count number of different tasks
+  call trace%end
 END SUBROUTINE initialize
 
+!===============================================================================
+!> Find the smallest minimum level among the existing tasks.  Note that this
+!> routine runs before entering the task update parallel region.
 !===============================================================================
 SUBROUTINE init_levels (self)
   class(task_list_t):: self
@@ -538,7 +543,7 @@ FUNCTION task2experiment (task) RESULT (exper)
 END FUNCTION task2experiment
 
 !===============================================================================
-!> Initialize level statistics, making sure to unly do it once.  Note that, by
+!> Initialize level statistics, making sure to only do it once.  Note that, by
 !> placing the allocation of levelcost last, threads are encouraged to get
 !> caught on this critical region until everything is ready.
 !===============================================================================
@@ -562,10 +567,6 @@ SUBROUTINE init_levelstats (self)
     end do
     allocate (timer%levelcost(refine%levelmin:refine%levelmax))
     timer%levelcost = 0d0
-    if (io%verbose > 1) &
-      write (io_unit%output,*) &
-        'init_levelstats: levelpop =', &
-        refine%levelmin, refine%levelmax, timer%levelpop
   end if
   !$omp end critical (levelstat_cr)
   call trace%end

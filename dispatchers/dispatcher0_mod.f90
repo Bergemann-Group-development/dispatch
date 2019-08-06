@@ -94,6 +94,7 @@ SUBROUTINE execute (self, task_list, test)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher0_t%execute', itimer=itimer)
+  call io%header('begin dispatcher0_t%execute:')
   call task_list%startup
   call tic (time=sec)
   call timer%print()
@@ -109,7 +110,7 @@ SUBROUTINE execute (self, task_list, test)
     end if
     if (timer%dead_mans_hand > 0.0) then
       if (wallclock() > timer%dead_mans_hand + 30.0) &
-        call mpi_abort('dead mans hand')
+        call mpi%abort('dead mans hand')
     end if
   end do
   write (io_unit%log,*) 'thread',omp%thread,' arrived'
@@ -194,7 +195,7 @@ SUBROUTINE update (self, task_list, test)
     call trace%begin('dispatcher0_t%update(2)', itimer=itimer(i))
   end if
   !-----------------------------------------------------------------------------
-  ! Check atomicall if the ready queue is empty and return w/o locking if so,
+  ! Check atomically if the ready queue is empty and return w/o locking if so,
   ! to avoid hammering the task list lock, delaying other threads
   !-----------------------------------------------------------------------------
   !$omp atomic read
@@ -424,19 +425,20 @@ SUBROUTINE update (self, task_list, test)
         !print *, mpi%rank, 'STALLED:'
         call task_list%check_all
         if (associated(task_list%queue)) then
-          print *, mpi%rank, omp%thread, 'STALLED revived by check_all'
+          write(stderr,1) mpi%rank, omp%thread, 'check_all', wallclock()
+        1 format("rank:",i5,2x,"thread:",i4,3x,"STALL revived by ",a," at",f12.3)
           if (verbose > 1) &
             call io%abort ('STALLED revided by check_all -- check thread log')
           stall_start = wallclock()
         else
           call task_list%check_oldest
           if (associated(task_list%queue)) then
-            print *, mpi%rank, omp%thread, 'STALLED revived by check_oldest'
+            write(stderr,1) mpi%rank, omp%thread, 'check_oldest', wallclock()
             if (verbose > 1) &
               call io%abort ('STALLED revided by check_oldest -- check thread log')
             stall_start = wallclock()
           else
-            print *, mpi%rank, omp%thread, 'STALLED, revived FAILED'
+            write (stderr,*) mpi%rank, omp%thread, 'STALLED, revived FAILED'
              call io%abort ('STALLED, revived FAILED')
           end if
         end if
