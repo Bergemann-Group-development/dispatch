@@ -633,26 +633,22 @@ class snapshot():
         timer.print(verbose=verbose,timeit=timeit)
 
     def _add_axes(self,patch):
+        first=patch.llc_cart-patch.ng*patch.ds
+        n=patch.gn
+        ng=patch.ng
         if patch.no_mans_land:
-            first=patch.llc_cart+0.5*patch.ds
-        else:
-            first=patch.llc_cart
-        if self.io.guard_zones:
-            first=first-patch.ds*patch.ng
-            ii0=np.arange(patch.ncell[0])
-            ii1=np.arange(patch.ncell[1])
-            ii2=np.arange(patch.ncell[2])
-        else:
-            ii0=np.arange(patch.n[0])
-            ii1=np.arange(patch.n[1])
-            ii2=np.arange(patch.n[2])
-        patch.x=first[0]+patch.ds[0]*ii0
-        patch.y=first[1]+patch.ds[1]*ii1
-        patch.z=first[2]+patch.ds[2]*ii2
+            first=first+0.5*patch.ds
+        patch.x=first[0]+patch.ds[0]*np.arange(n[0])
+        patch.y=first[1]+patch.ds[1]*np.arange(n[1])
+        patch.z=first[2]+patch.ds[2]*np.arange(n[2])
+        patch.xi=patch.x[ng[0]:-ng[0]]
+        patch.yi=patch.y[ng[0]:-ng[0]]
+        patch.zi=patch.z[ng[0]:-ng[0]]
         patch.xs=patch.x-0.5*patch.ds[0]
         patch.ys=patch.y-0.5*patch.ds[1]
         patch.zs=patch.z-0.5*patch.ds[2]
         patch.xyz=[patch.x,patch.y,patch.z]
+        patch.xyzi=[patch.xi,patch.yi,patch.zi]
         # add geometric factors to patch (important for spherical/cylindrical coords.)
         patch.geometric_factors = GeometricFactors(patch)
 
