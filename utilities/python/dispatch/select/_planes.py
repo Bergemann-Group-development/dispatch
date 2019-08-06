@@ -9,124 +9,130 @@ from __future__ import print_function
 
 import numpy as np
 
-def unigrid_plane(snap,iv=0,position=[0.5,0.5,0.5],x=None,y=None,z=None,dir=2,
-                  i4=0,verbose=0):
-    """
-        assemble a plane from a unigrid experiment, where all
-        patches have the same size and resolution
-    """
+def contribution(p,dir=2,point=0.5,iv=0,i4=0,all=False,verbose=0):
+    """ Return the contribution from a patch to a unitgrid_plane """
+    f=0.0
+    v=0.0
+    ds=p.ds[dir]
+    # Bounds of interval along the dir axes
+    lc=p.position[dir]-p.size[dir]/2.0
+    uc=p.position[dir]+p.size[dir]/2.0
+    if all and p.guard_zones:
+        lc=lc-ds*p.ng[dir]
+        uc=uc+ds*p.ng[dir]
+        n=p.gn[dir]
+    else:
+        n=p.n[dir]
+    ds2 = ds*0.5
+    # For patches that contain the given point along the axis
+    if uc+ds2 >= point and lc-ds2 <= point:
+        if p.no_mans_land:
+            lc=lc+ds2
+        # Floating point index => integer index + floating remainder
+        fi=(point-lc)/ds
+        i=int(max(0,min(n-1,np.floor(fi))))
+        fi=fi-i
+        if verbose>2:
+            print(p.id,i,fi)
+        # The 1st no-mans-land half interval
+        if fi < 0:
+            w0=1.0+fi
+            w1=None
+        # The 2nd no-mans-land half interval
+        elif i == n-1:
+            w0=1.0-fi
+            w1=None
+        # Internal interval
+        else:
+            w0=1.0-fi
+            w1=fi
+        if verbose>1:
+            if w1:                
+                print ('id:{:3d}  i:{:3d}  w:{:5.2f}{:5.2f}'.format(p.id,i,w0,w1))
+            else:
+                print ('id:{:3d}  i:{:3d}  w:{:5.2f}'.format(p.id,i,w0)) 
+        n+=1
+        dv=np.product(p.ds)
+        data=p.var(iv,i4=i4,all=all)
+        v=v+dv*w0
+        if w1:
+            v=v+dv*w1
+        if dir==0:
+            f=f+dv*data[i,:,:]*w0
+            if w1:
+                f=f+dv*data[i+1,:,:]*w1
+        elif dir==1:
+            f=f+dv*data[:,i,:]*w0
+            if w1:
+                f=f+dv*data[:,i+1,:]*w1
+        else:
+            f=f+dv*data[:,:,i]*w0
+            if w1:
+                f=f+dv*data[:,:,i+1]*w1
+        if all and p.guard_zones:
+            m=list(p.ng)
+            m.pop(dir)
+            f=f[m[0]:-m[0],m[1]:-m[1]]
+        return f/v,i
+    else:
+        return None,0
+
+def corner_indices(sn,p,dir=-1):
+    """ Return the corder indices of patch p in snapshot sn in direction dir """
+    i=(p.position-p.size/2-sn.cartesian.origin)/p.ds
+    i=[int(k+0.5) for k in i]
+    n=list(p.n)
+    if dir>=0 and dir<3:
+        i.pop(dir)
+        n.pop(dir)
+        return i[0],i[0]+n[0],i[1],i[1]+n[1]
+    else:
+        return i[0],i[0]+n[0],i[1],i[1]+n[1],i[2],i[2]+n[2]
+
+def unigrid_plane(snap,iv=0,x=None,y=None,z=None,point=0.5,dir=2,all=False,i4=0,verbose=0):
+    pp=snap.patches
+    p=pp[0]
+    dim=list(snap.cartesian.dims*p.n)
+    dim.pop(dir)
+    ff=np.zeros(dim)
     if x:
         dir=0
-        position=[x,0.5,0.5]
+        point=x
     elif y:
         dir=1
-        position=[0.5,y,0.5]
+        point=y
     elif z:
         dir=2
-        position=[0.5,0.5,z]
-    assert dir<3, 'dir must be in the range 0-2'
-    if type(position)==np.float   or \
-       type(position)==np.float64 or \
-       type(position)==int:
-        pos=0.5*np.ones(3)
-        pos[dir]=position
-        position=pos
-    position=np.array(position)
-    def contains(p,s):
-        return np.abs(p.position[dir]-s) <= 0.5*p.size[dir]
-    pp=[p for p in snap.patches if contains(p,position[dir])]
-    n=list(map(int,0.5+snap.cartesian.size/snap.patches[0].ds))
-    if verbose:
-        print (len(pp),'patches, dimensions',n)
-        if verbose>1:
-            for p in pp:
-                print ('id:',p.id,' position:',dir,p.position)
-    if dir == 0:
-        dirs=[0,1,2]
-    elif dir == 1:
-        dirs=[1,0,2]
+        point=z
+    # List of patches that contain the plane
+    if all:
+        ds=p.ds[dir]*(2*p.ng[dir]+1)
     else:
-        dirs=[2,0,1]
-    f=np.zeros((n[dirs[1]],n[dirs[2]]))
+        ds=p.ds[dir]
+    pp=[p for p in pp if abs(point-p.position[dir]) <= (p.size[dir]+ds)/2]
+    if verbose>0:
+        print('number of patches:',len(pp))
     for p in pp:
-        if iv in p.all_keys:
-            data=p.var(iv,i4=i4)
-            shape=data.shape
-            rank=len(shape)
-            if rank==4:
-                data=data[:,:,:,i4]
-        if pp[0].no_mans_land:
-            pn=p.n
+        k=corner_indices(snap,p,dir)
+        f,i=contribution(p,dir=dir,point=point,iv=iv,i4=i4,all=all,
+          verbose=verbose)
+        if f is not None:
+            ff[k[0]:k[1],k[2]:k[3]]+=f
         else:
-            pn=p.n-1
-        i0=int(0.5+(position[dirs[0]]-p.llc_cart[dirs[0]])/p.ds[dirs[0]])
-        i0=min(p.n[dir]-1,max(0,i0))
-        o=list(map(int,0.5+(p.llc_cart-snap.cartesian.origin)/p.ds))
-        for i2 in range(0,pn[dirs[2]]):
-            i1=range(0,pn[dirs[1]])
-            if dir==0:
-                i=i0; j=i1; k=i2
-            elif dir==1:
-                i=i1; j=i0; k=i2
-            else:
-                i=i1; j=i2; k=i0
-            j1=[l+o[dirs[1]] for l in i1]
-            j2=i2+o[dirs[2]]
-            if verbose>2:
-                print('j1:',j1[0],'j2:',j2,'i0:',i0,'i1:',i1[0],'i2:',i2)
-            f[j1,j2]=data[i,j,k]
-    return f
+            if verbose>1:
+                print('patch:',p.id,'range:',k,'shape: None')
+    return ff
 
-def unigrid_volume(snap,iv=0,i4=0,position=[0.5,0.5,0.5],dir=2,verbose=0):
+def unigrid_volume(snap,iv=0,i4=0,verbose=0):
     """
-        assemble a plane from a unigrid experiment, where all
+        assemble a volume from a unigrid experiment, where all
         patches have the same size and resolution
     """
-    if type(iv)==type('d'):
-        iv=snap.idx.dict[iv]
-    assert dir<3, 'dir must be in the range 0-2'
-    if type(position)==type(1.0) or type(position)==type(1):
-        pos=0.5*np.ones(3)
-        pos[dir]=position
-        position=pos
-    position=np.array(position)
-    def contains(p,s):
-        return np.abs(p.position[dir]-s) <= 0.5*p.size[dir]
-    pp=[p for p in snap.patches if contains(p,position[dir])]
-    n=list(map(int,0.5+snap.cartesian.size/snap.patches[0].ds))
-    if verbose:
-        print (len(pp),'patches, dimensions',n)
-        if verbose>1:
-            for p in pp:
-                print ('id:',p.id,' position:',dir,p.position)
-    if dir == 0:
-        dirs=[0,1,2]
-    elif dir == 1:
-        dirs=[1,0,2]
-    else:
-        dirs=[2,0,1]
-    f=np.zeros((n[dirs[0]],n[dirs[1],dirs[2]]))
+    pp=snap.patches
+    p=pp[0]
+    dim=tuple(snap.cartesian.dims*p.n)
+    ff=np.zeros(dim)
     for p in pp:
-        if iv in p.all_keys:
-            data=p.var(iv,i4=i4)
-            if pp[0].no_mans_land:
-                pn=p.n
-            else:
-                pn=p.n-1
-            i0=int(0.5+(position[dirs[0]]-p.llc_cart[dirs[0]])/p.ds[dirs[0]])
-            i0=min(p.n[dir]-1,max(0,i0))
-            o=list(map(int,0.5+(p.llc_cart-snap.cartesian.origin)/p.ds))
-            for i2 in range(0,pn[dirs[2]]):
-                i1=range(0,pn[dirs[1]])
-                if dir==0:
-                    i=i0; j=i1; k=i2
-                elif dir==1:
-                    i=i1; j=i0; k=i2
-                else:
-                    i=i1; j=i2; k=i0
-                j1=[l+o[dirs[1]] for l in i1]
-                j2=i2+o[dirs[2]]
-                if verbose>2:
-                    print('j1:',j1[0],'j2:',j2,'i0:',i0,'i1:',i1[0],'i2:',i2)
-                f[j0,j1,j2]=data[i,j,k]
-    return f
+        k=corner_indices(snap,p)
+        ff[k[0]:k[1],k[2]:k[3],k[4]:k[5]]=p.var(iv)
+    return ff
