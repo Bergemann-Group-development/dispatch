@@ -45,6 +45,6 @@
 &dispatcher0_params     retry_stalled=5 /
 &task_list_params       verbose=0 job_seconds=1e6 /
 &task_mesg_params       verbose=0 /
-&mpi_mesg_params        verbose=0 /
-!&mpi_mesg_params        verbose=1 uniq_mesg=t send_priv=f recv_active=f recv_priv=t
-!                        every_send=1 test_time=0.0 max_sent=10 max_probe=10 max_recv=100 /
+!&mpi_mesg_params        verbose=0 /
+&mpi_mesg_params        verbose=1 uniq_mesg=t send_priv=f recv_active=f recv_priv=t
+                        every_send=1 test_time=0.0 max_sent=10 max_probe=10 max_recv=100 /
