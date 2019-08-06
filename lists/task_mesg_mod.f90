@@ -141,7 +141,7 @@ SUBROUTINE check_mpi (self)
   call mpi_mesg%get (mesg)
   n = 0
   do while (associated(mesg))
-    if (mesg%is_complete()) then
+    if (mesg%is_complete('check_mpi')) then
       call unpk_tmp%add (mesg)
     else
       call recv_tmp%add (mesg)
@@ -264,8 +264,8 @@ FUNCTION find_task (self, id, new) RESULT (link)
   new = .false.
   link => self%head
   do while (associated(link))
-    patch => task2patch(link%task)
-    if (patch%id == id) then
+    task => link%task
+    if (task%id == id) then
       if (verbose>1) then
         write (io_unit%log,*) mpi%rank,' task_mesg_t%find_task: match', id
         flush(io_unit%log)
@@ -305,14 +305,7 @@ FUNCTION find_task (self, id, new) RESULT (link)
         needed=exper%link%needed, needs_me=exper%link%needs_me)
     end if
   end if
-  !-----------------------------------------------------------------------------
-  ! Append to the task_list.  Since we don't yet know the position of the task,
-  ! we can't update the nbor list yet; the calling procedure must do that, and
-  ! we notify to do it via 'new', so it's not done every time a virtual task
-  ! that already exists is updated.
-  !-----------------------------------------------------------------------------
   call exper%set (bits%virtual)
-  call self%append_link (link)
   if (verbose>0) &
     write (io_unit%log,*) ' task_mesg_t%find_task: append', id, exper%time
 !  call self%lock%unset ('find_task')
@@ -447,19 +440,7 @@ SUBROUTINE unpack (self, mesg, link)
       write (io_unit%log,'(f12.6,2x,a,i6)') &
         wallclock(), 'unpack: suicide note received for id =', task%id
     end if
-    !---------------------------------------------------------------------------
-    ! If the task is on a thread-private virtual task list things are more
-    ! complicated; we need to keep trying until this procedure is executed
-    ! by the correct thread
-    !---------------------------------------------------------------------------
-    if (mpi_mesg%recv_priv) then
-      call remove_list%append_link (link1)
-    !---------------------------------------------------------------------------
-    ! If not we need a normal remove, including new nbor lists etc.
-    !---------------------------------------------------------------------------
-    else
       call self%remove_and_reset (link1)
-    end if
     call self%lock%unset('unpack')
     call trace%end (itimer)
     return
@@ -518,7 +499,7 @@ SUBROUTINE unpack (self, mesg, link)
     ! that some nbor of it has changed from internal to boundary, which will be
     ! checked by the test_nbor_status call below, but only if an nbor list exists.
     !---------------------------------------------------------------------------
-    !else if (.not.associated(link%nbor)) then
+    !else if (.not.associated(link1%nbor)) then
     else if (task%is_set(bits%swap_request) .and. task%is_set(bits%virtual)) then
       if (verbose>0) &
         write (io_unit%log,*) 'task_mesg_t%unpack: new virtual patch:', task%id
@@ -548,37 +529,22 @@ SUBROUTINE unpack (self, mesg, link)
         mesg%seq, omp%thread, task%time, task%position
       flush(io_unit%mpi)
     end if
-    !call self%lock%set ('unpack')
-    call self%init_nbors (link1)
-    call self%init_nbor_nbors (link1)
-    call self%reset_status ()
+    call self%add_new_link (link1)
     !---------------------------------------------------------------------------
-    ! The check_support() below may trigger the creation of new tasks -- internal
-    ! or virtual. They will have the support bit set, and will trigger calls to
-    ! check_support() from check_current() if they are active tasks.  If they 
-    ! are virtual tasks, the support bit was set at the owner rank and they will
-    ! be checked there.
+    ! If the task has the %support bit set, call refine_t%check_supprt on it
     !---------------------------------------------------------------------------
+    if (task%is_set (bits%support)) then
     call refine%check_support (self, link1, n_added)
-    call self%check_nbor_nbors (link1)
-    !call self%lock%unset ('unpack')
-  else
-    if (verbose > 0) then
-      write (io_unit%mpi,'(f12.6,2x,a,i6,2i4,f12.6,2x,3f10.5,2x)') &
-        wallclock(), 'task_mesg_t%unpack: ', id, mesg%seq, omp%thread, &
-        task%time, task%position
-      flush(io_unit%mpi)
-    end if
   end if
+  else
   !-----------------------------------------------------------------------------
     ! Patches that have the init_nbors bit set should have new nbor lists, in 
     ! order to replicate the behavior on the owner rank
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%init_nbors)) then
-    !call self%lock%set ('unpack-init_nbors')
+      call self%check_nbors (link1)
     call self%init_nbors (link1)
-    call task%clear (bits%init_nbors)
-    !call self%lock%unset ('unpack-init_nbors')
+      call self%check_nbors (link1)
     if (verbose > 1) &
       write (io_unit%log,*) 'unpack: bits%init_nbors id =', task%id
   end if
@@ -758,7 +724,7 @@ SUBROUTINE check_virtual (self)
     select type (task)
     class is (patch_t)
     call set_test_time (self, task)
-    if (task%mesg%is_complete()) then
+    if (task%mesg%is_complete('virtual')) then
       !write(stdout,*) 'recv:', task%id, task%mesg%id, task%mesg%tag, task%rank
       if (verbose > 1) &
         write (io_unit%log,*) wallclock(),' task_mesg_t%unpack: check_virtual hit ', task%id
@@ -854,7 +820,7 @@ SUBROUTINE check_active (self)
       !-------------------------------------------------------------------------
       call set_test_time (self, task)
       req = task%mesg%req
-      if (task%mesg%is_complete()) then
+      if (task%mesg%is_complete('active')) then
         write(stdout,*) 'iscmp:', task%id, task%mesg%id, task%mesg%tag, task%rank
         if (verbose > 0 .or. task%id == io%id_debug) &
           write (io_unit%log,'(f12.6,2x,a,i6,i5,i9,i6,z12)') wallclock(), &
