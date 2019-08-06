@@ -903,11 +903,6 @@ contains
   if (is_complete) then
     !$omp atomic
     timer%mpi_hit = timer%mpi_hit + 1
-    self%id = stat(MPI_TAG)
-    if (mpi_mesg%uniq_mesg) then
-      self%seq = mod(self%id,100)
-      self%id = self%id/100
-    end if
   end if
   end subroutine check_recv
 END FUNCTION is_complete
