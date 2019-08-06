@@ -173,7 +173,6 @@ MODULE refine_mod
   USE omp_timer_mod
   USE omp_lock_mod
   USE mpi_mod
-  USE mpi_mesg_mod
   USE bits_mod
   USE kinds_mod
   USE link_mod
@@ -255,10 +254,6 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, refine_params, iostat=iostat)
     write (io%output, refine_params)
-    if (on) then
-      !omp_lock%links = .true.
-      mpi_mesg%recv_active = .false.
-    end if
   end if
   !-----------------------------------------------------------------------------
   ! If AMR is active, we must use check_filled, since nbor levels are in

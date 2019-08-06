@@ -102,7 +102,15 @@ SUBROUTINE init_levels (self)
   type(link_t), pointer:: link
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%init_levels')
-  call refine%init                      ! Refinement parameters
+  call refine%init                      ! refinement parameters
+  !-----------------------------------------------------------------------------
+  ! FIXME: For now, active AMR needs this specific combinations, which selects
+  ! procedure task_mesg_t%check_priv()
+  !-----------------------------------------------------------------------------
+  if (refine%on)  then
+    mpi_mesg%recv_active = .false.
+    mpi_mesg%recv_priv = .true.
+  end if
   link => self%head
   do while (associated(link))
     associate (patch => link%task)

@@ -164,7 +164,7 @@ SUBROUTINE update (self, task_list, test)
   class(task_t), pointer:: task, otask
   class(mesg_t), pointer:: mesg
   logical:: already_busy, was_refined, was_derefined
-  real(8):: levelstart, wc
+  real(8):: wc
   real(8), save:: time, otime=0d0
   integer, save:: oid=0
   integer:: i, id, nq
@@ -212,7 +212,6 @@ SUBROUTINE update (self, task_list, test)
   end if
   nullify (prev)
   if (associated(head) .and. .not.task_list%syncing) then
-    levelstart = wallclock()
     if (verbose > 0) &
       write(io_unit%log,'(f12.6,2x,a,i6,i7)') wallclock(), &
         'dispather0_t%update: na, id, time =', &
@@ -386,12 +385,6 @@ SUBROUTINE update (self, task_list, test)
     if (.not. was_derefined) then
       call task%clear (bits%busy)
       call task_list%check_nbors (head)   ! any nbors ready?
-      !-------------------------------------------------------------------------
-      ! Cost counter for AMR
-      !-------------------------------------------------------------------------
-      !$omp atomic
-      timer%levelcost(task%level) = &
-      timer%levelcost(task%level) + (wallclock() - levelstart)
     end if
   else
     if (detailed_timer) then
@@ -435,7 +428,7 @@ SUBROUTINE update (self, task_list, test)
             stall_start = wallclock()
           else
             write (stderr,*) mpi%rank, omp%thread, 'STALLED, revived FAILED'
-             call io%abort ('STALLED, revived FAILED')
+            call io%abort ('STALLED, revived FAILED')
           end if
         end if
       end if
