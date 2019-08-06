@@ -9,7 +9,7 @@ from __future__ import print_function
 
 import numpy as np
 import dispatch
-import types
+#import types
 
 def aver(s,iv=0):
     f=0.0
@@ -106,60 +106,93 @@ def stat(s,iv=0,i4=0):
     print('    max: {:12.4e}, at {}'.format(dmax,rmax))
     print('    min: {:12.4e}, at {}'.format(dmin,rmin))
 
-def haver1(s,iv=0,point=0.0,dir=2,i4=0,verbose=0):
+def haver1(s,iv=0,point=0.0,dir=2,x=None,y=None,z=None,all=False,i4=0,verbose=0):
     """ Horizontal average in one plane """
     pp=_patches(s)
-    n=0
+    n_patch=0
     f=0.0
     v=0.0
+    if x:
+        dir=0
+        point=x
+    elif y:
+        dir=1
+        point=y
+    elif z:
+        dir=2
+        point=z
     for p in pp:
-        if p.position[dir]+p.size[dir]/2.0 >= point and \
-           p.position[dir]-p.size[dir]/2.0 <= point:
+        ds=p.ds[dir]
+        lc=p.position[dir]-p.size[dir]/2.0
+        uc=p.position[dir]+p.size[dir]/2.0
+        if all and p.guard_zones:
+            lc=lc-p.ng[dir]*p.ds[dir]
+            uc=uc+p.ng[dir]*p.ds[dir]
+            n=p.gn[dir]
+        else:
+            n=p.n[dir]
+        if uc >= point and lc <= point:
+            n_patch+=1
+            if p.no_mans_land:
+                lc=lc+p.ds[dir]/2
+            fi=(point-lc)/ds
+            i=max(0,min(n-2,np.floor(fi)))
+            fi=fi-i
+            if fi < 0:
+                w0=1.0+fi
+                w1=None
+            elif fi > 1.0:
+                w0=2.0-fi
+                w1=None
+            else:
+                w0=1.0-fi
+                w1=fi
             if verbose>1:
-                print ('use',p.id)
+                print ('id:',p.id,'i:',i,'w:',w0,w1)
             n+=1
             dv=np.product(p.ds)
-            v=v+dv
-            data=p.var(iv,i4=i4)
+            data=p.var(iv,i4=i4,all=all)
+            v=v+dv*w0
+            if w1:
+                v=v+dv*w1
             if dir==0:
-                s=np.abs(p.x-point)
-                i=np.argmin(s)
-                f=f+dv*np.sum(data[i,:,:])
+                f=f+dv*np.sum(data[i,:,:])*w0
+                if w1:
+                    f=f+dv*np.sum(data[i+1,:,:])*w1
             elif dir==1:
-                s=np.abs(p.y-point)
-                i=np.argmin(s)
-                f=f+dv*np.sum(data[:,i,:])
+                f=f+dv*np.sum(data[:,i,:])*w0
+                if w1:
+                    f=f+dv*np.sum(data[:,i+1,:])*w1
             else:
-                s=np.abs(p.z-point)
-                i=np.argmin(s)
-                f=f+dv*np.sum(data[:,:,i])
+                f=f+dv*np.sum(data[:,:,i])*w0
+                if w1:
+                    f=f+dv*np.sum(data[:,:,i+1])*w1
     if verbose>0:
-        print('using',n,'patches')
+        print('using',n_patch,'patches')
     return f/v
 
-def hminmax(s,iv=0,dir=2,offset=0,i4=0,verbose=0):
-    """ Horizontal mín/max """
+def hminmax(s,iv=0,dir=2,i4=0,all=False,verbose=0):
+    """ Find the smallest and largest values in planes perpendicular to dir """
     pp=_patches(s)
     p=pp[0]
     xx=[]
     hmin=[]
     hmax=[]
     for p in pp:
-        rr=p.xyz[dir]
+        if all:
+            rr=p.xyz[dir]
+        else:
+            rr=p.xyzi[dir]
         if iv in p.all_keys:
-            data=p.var(iv,i4=i4)
-            if offset != 0:
-                o=offset
-            else:
-                o=0
-            for i in range(p.n[dir]):
+            data=p.var(iv,all=all,i4=i4)
+            for i in range(data.shape[dir]):
                 if dir==0:
-                    f=data[i+o,:,:]
+                    f=data[i,:,:]
                 elif dir==1:
-                    f=data[:,i+o,:]
+                    f=data[:,i,:]
                 else:
-                    f=data[:,:,i+o]
-                xx.append(rr[i+o])
+                    f=data[:,:,i]
+                xx.append(rr[i])
                 hmin.append(f.min())
                 hmax.append(f.max())
     # sort the results
@@ -180,6 +213,7 @@ def hminmax(s,iv=0,dir=2,offset=0,i4=0,verbose=0):
         h1=hmin[i]
         h2=hmax[i]
         x0=xx[i]
+        # if there are nore at the same coordinate
         while i<len(xx) and xx[i]==x0:
             h1=min(h1,hmin[i])
             h2=max(h2,hmax[i])
@@ -192,7 +226,7 @@ def hminmax(s,iv=0,dir=2,offset=0,i4=0,verbose=0):
     hmax=np.array(ymax)
     return xx,hmin,hmax
 
-def haver(s,iv=0,dir=2,offset=0,i4=0,verbose=0):
+def haver(s,iv=0,dir=2,i4=0,all=False,verbose=0):
     """ Horizontal average in all planes """
     pp=_patches(s)
     p=pp[0]
@@ -202,22 +236,22 @@ def haver(s,iv=0,dir=2,offset=0,i4=0,verbose=0):
     for p in pp:
         es=0.5 if p.no_mans_land else 0.0
         es=es+p.idx.h[dir,jv]
-        rr=p.llc_cart[dir]+p.ds[dir]*(np.arange(p.n[dir])+es)
+        n=p.gn if all else p.n
+        if all:
+            rr=p.xyz[dir]
+        else:
+            rr=p.xyzi[dir]
         if iv in p.all_keys:
-            data=p.var(iv,i4=i4)
-            if offset != 0:
-                o=offset
-            else:
-                o=0
-            for i in range(len(rr)):
+            data=p.var(iv,i4=i4,all=all)
+            for i in range(data.shape[dir]):
                 if dir==0:
-                    f=data[i+o,:,:]
+                    f=data[i,:,:]
                 elif dir==1:
-                    f=data[:,i+o,:]
+                    f=data[:,i,:]
                 else:
-                    f=data[:,:,i+o]
+                    f=data[:,:,i]
                 xx.append(rr[i])
-                hav.append(np.average(f))
+                hav.append(f.mean())
     # sort the results
     xx=np.array(xx)
     hav=np.array(hav)
