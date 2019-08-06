@@ -38,8 +38,8 @@ MODULE task_list_mod
     procedure:: average
     procedure:: append_task_list
     procedure:: print => print1
-    procedure:: info
     procedure:: init_levelstats
+    procedure:: init_task_list_pointers
   end type
   public:: task2patch
   type(task_list_t), target:: task_list
@@ -580,5 +580,31 @@ SUBROUTINE init_levelstats (self)
   !$omp end critical (levelstat_cr)
   call trace%end
 END SUBROUTINE init_levelstats
+
+!===============================================================================
+!> Initialize a task list pointer in each task
+!===============================================================================
+SUBROUTINE init_task_list_pointers (self, task_list)
+  class(task_list_t):: self
+  type(task_list_t), pointer:: task_list
+  class(list_t), pointer:: list
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  ! Store a copy of the task list pointer in each task (generically in gpatch_t)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%init_task_list_pointers')
+  list => task_list
+  link => self%head
+  do while (associated(link))
+    associate (task=>link%task)
+    select type (task)
+    class is (experiment_t)
+    call task%init_task_list (list)
+    end select
+    end associate
+    link => link%next
+  end do
+  call trace%end
+END SUBROUTINE
 
 END MODULE task_list_mod
