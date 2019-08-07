@@ -2233,7 +2233,7 @@ SUBROUTINE send_to_vnbors (self, link)
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
   class(mesg_t), pointer:: mesg
-  integer:: ierr, rank, tag
+  integer:: ierr, rank, tag, seq
   integer, save:: itimer=0
   !.............................................................................
   if (.not.allocated(sequence)) then
@@ -2279,15 +2279,14 @@ SUBROUTINE send_to_vnbors (self, link)
       rank = nbtask%rank                                        ! current rank
       if (mpi_mesg%uniq_mesg) then
         if (mpi_mesg%tag_type == 1) then
-          !$omp critical (send_to_cr)
           task%seq = task%seq + 1
           tag = mod(task%seq,100) + 100*task%id
-          !$omp end critical (send_to_cr)
         else if (mpi_mesg%tag_type == 2) then
-          !$omp critical (send_to_cr)
+          !$omp atomic capture
           sequence(rank) = sequence(rank)+1
-          tag = mod(sequence(rank),100) + 100*task%id
-          !$omp end critical (send_to_cr)
+          seq = sequence(rank)
+          !$omp end atomic
+          tag = mod(seq,100) + 100*task%id
         else
           tag = task%id
         end if
