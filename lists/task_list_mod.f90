@@ -56,8 +56,9 @@ SUBROUTINE init (self, name)
   integer:: iostat
   real(8), save:: job_seconds=1d30
   real(8), save:: sync_time=0.0
+  logical, save:: detailed_timer=.false.
   integer, save:: verbose=0
-  namelist /task_list_params/ sync_time, job_seconds, verbose
+  namelist /task_list_params/ verbose, job_seconds, sync_time, detailed_timer
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -73,7 +74,7 @@ SUBROUTINE init (self, name)
   self%sync_time = sync_time
   io%job_seconds = job_seconds
   self%verbose = verbose
-  write (io_unit%mpi,*) 'task_list%init: next_sync =', self%sync_next, self%sync_time
+  self%detailed_timer = detailed_timer
   call load_balance%init
   call trace_end
 END SUBROUTINE init

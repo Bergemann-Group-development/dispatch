@@ -46,6 +46,7 @@ MODULE list_mod
     type(lock_t):: lock
     character(len=4):: kind='list'
     logical:: face_nbors=.false.
+    logical:: detailed_timer=.false.
   contains
     procedure:: init
     procedure:: init_bdries
@@ -832,7 +833,8 @@ SUBROUTINE check_ready (self, link, lock)
   ignore = bits%ready + bits%busy + bits%remove + bits%virtual + bits%frozen
   if (task%is_set (ignore)) &
     return 
-  call timer%begin ('list_t%check_ready', itimer=itimer)
+  if (self%detailed_timer) &
+    call timer%begin ('list_t%check_ready', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Since only this thread can change the nbor list we are free to use it w/o lock
   !-----------------------------------------------------------------------------
@@ -874,7 +876,8 @@ SUBROUTINE check_ready (self, link, lock)
     task%n_failed = 0
     call self%queue_by_time (link)                      ! add task to queue
   end if
-  call timer%end (itimer)
+  if (self%detailed_timer) &
+    call timer%end (itimer)
 END SUBROUTINE check_ready
 
 !===============================================================================
