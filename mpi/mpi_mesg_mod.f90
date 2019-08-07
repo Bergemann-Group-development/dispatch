@@ -33,6 +33,7 @@ MODULE mpi_mesg_mod
     procedure:: wait_all
     procedure:: wait_for_completion
     procedure:: is_complete
+    procedure, private:: get_id
     procedure:: completed
     procedure:: all_completed
     procedure:: irecv
@@ -76,12 +77,10 @@ MODULE mpi_mesg_mod
     integer:: max_recv
     integer:: max_probe
     integer:: min_nq
+    integer:: tag_type=0
     logical:: recv_wait=.false.
-    logical:: recv_priv=.true.
-    logical:: recv_active=.true.
     logical:: send_priv=.true.
     logical:: debug=.false.
-    logical:: queue_unpack=.true.
     logical:: uniq_mesg=.true.
     real:: delay_ms=0.0
     real:: test_time=0.0
@@ -534,8 +533,7 @@ SUBROUTINE init (self)
   real, save:: test_time=20e-3
   namelist /mpi_mesg_params/ min_nq, max_sent, max_probe, max_recv, every_recv, &
                              every_send, delay_ms, recv_wait, send_wait, send_priv, &
-                             recv_active, recv_priv, queue_unpack, test_time, &
-                             uniq_mesg, debug, verbose, detailed_timer
+                             test_time, uniq_mesg, debug, verbose, detailed_timer
   integer:: iostat
   character(len=120):: id = &
   '$Id$ mpi_mesg_mod.f90'
@@ -550,10 +548,7 @@ SUBROUTINE init (self)
   ! Default values from dispatcher
   !-----------------------------------------------------------------------------
   uniq_mesg = self%uniq_mesg
-  recv_priv = self%recv_priv
   send_priv = self%send_priv
-  recv_active = self%recv_active
-  queue_unpack = self%queue_unpack
   !-----------------------------------------------------------------------------
   ! Namelist input
   !-----------------------------------------------------------------------------
@@ -571,9 +566,6 @@ SUBROUTINE init (self)
   ! Default values from dispatcher possible changed here
   !-----------------------------------------------------------------------------
   self%send_priv    = send_priv
-  self%recv_priv    = recv_priv
-  self%recv_active  = recv_active
-  self%queue_unpack = queue_unpack
   !-----------------------------------------------------------------------------
   ! Initialize thread-private lists
   !-----------------------------------------------------------------------------
@@ -586,6 +578,9 @@ SUBROUTINE init (self)
   sent_list%id = omp_get_thread_num()
   !$omp end parallel
   !call self%test
+  !-----------------------------------------------------------------------------
+  allocate (expected(0:mpi%size-1))
+  expected(:) = 1
   call trace%end()
 END SUBROUTINE init
 
@@ -673,7 +668,7 @@ SUBROUTINE sent (self, mesg)
   end if
   if (verbose > 0) then
     write (io_unit%log,'(f12.6,2x,a,i9,2i6)') &
-      wallclock(), 'sent: id, thread, n =', &
+      wallclock(), 'mpi_mesg_t%sent: id, thread, n =', &
       mesg%id, omp_get_thread_num(), sent_list%n
     flush (io_unit%log)
   end if
@@ -728,21 +723,11 @@ contains
       call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
       allocate (mesg%buffer(nbuf))
       call io%bits_mem (storage_size(mesg%buffer),product(shape(mesg%buffer)), 'buf')
+      call mesg%get_id (stat)
       !$omp atomic
       mpi_mesg%nq_recv = mpi_mesg%nq_recv+1
       call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
       mesg%req = req
-      mesg%id = stat(MPI_TAG)
-      mesg%sender = stat(MPI_SOURCE)
-      if (mpi_mesg%uniq_mesg) then
-        mesg%seq = mod(mesg%id,100)
-        mesg%id = mesg%id/100
-        write (io_unit%log,*) 'mpi_mesg_t%get: id, sender, seq =', &
-          mesg%id, mesg%sender, mesg%seq
-      else
-        write (io_unit%log,*) 'mpi_mesg_t%get: id, sender      =', &
-          mesg%id, mesg%sender
-      end if
       write (io_unit%mpi,'(f12.6,2x,"get: id, seq, sender =",i9,2i6)') &
         wallclock(), mesg%id, mesg%seq, mesg%sender
       flush(io_unit%mpi)
@@ -759,7 +744,29 @@ contains
 END SUBROUTINE get
 
 !===============================================================================
-!> Return true or false, depending on if the (send!) mesg request is complete or not
+!> Get mesg%id, mesg%sender, mesg%seq
+!===============================================================================
+SUBROUTINE get_id (self, stat)
+  class(mesg_t):: self
+  integer:: stat(:)
+#ifdef MPI
+  self%id = stat(MPI_TAG)
+  self%sender = stat(MPI_SOURCE)
+  if (mpi_mesg%uniq_mesg) then
+    self%seq = mod(self%id,100)
+    self%id = self%id/100
+    write (io_unit%log,*) 'mpi_mesg_t%get_id: id, sender, seq =', &
+      self%id, self%sender, self%seq
+  else
+    write (io_unit%log,*) 'mpi_mesg_t%get_id: id, sender      =', &
+      self%id, self%sender
+  end if
+#endif
+END SUBROUTINE get_id
+
+!===============================================================================
+!> Return true or false, depending on if the (send!) mesg request is complete or
+!> not -- this is used by load_balance_mod
 !===============================================================================
 FUNCTION completed (self) RESULT(flag)
   class(mesg_t):: self
@@ -828,6 +835,9 @@ FUNCTION is_complete (self, parentname)
   integer:: tag
   real(8):: now, test_next
   integer, save:: itimer=0
+#ifdef MPI
+  integer:: stat(MPI_STATUS_SIZE)
+#endif
   !-----------------------------------------------------------------------------
   is_complete = .false.
   if (mpi%size <= 1) then
@@ -853,12 +863,16 @@ FUNCTION is_complete (self, parentname)
     call check_recv
     !$omp end critical (mpi_cr)
   end if
-#endif
   if (is_complete) then
+    !---------------------------------------------------------------------------
+    ! In cases when MPI_IMPROBE has not already done so, get ID and sequence
+    !---------------------------------------------------------------------------
+    call self%get_id (stat)
     self%n_failed = 0
   else
     self%n_failed = self%n_failed+1
   end if
+#endif
   test_next = now + self%test_time
   !$omp atomic write
   self%test_next = test_next
@@ -870,9 +884,6 @@ contains
   !-----------------------------------------------------------------------------
   subroutine check_recv
     integer:: ierr
-#ifdef MPI
-    integer:: stat(MPI_STATUS_SIZE)
-#endif
     real(8):: wc
     !---------------------------------------------------------------------------
     is_complete = .true.
@@ -913,18 +924,23 @@ END FUNCTION is_complete
 SUBROUTINE irecv (self, rank, id)
   class(mesg_t):: self
   integer:: id
-  integer:: rank, tag, ierr
+  integer:: rank, tag, ierr, seq
   !-----------------------------------------------------------------------------
-  ! Construct a unique tag, if so requested, and otherwise use the given id.
-  ! Use the next seq number, relative to the one just received.
+  ! Construct a unique tag from the incremented sequence number next seq number
   !-----------------------------------------------------------------------------
   self%id = id
-  if (mpi_mesg%uniq_mesg) then
-    self%seq = self%seq+1
-    tag = mod(self%seq,100) + 100*self%id
+  write (io_unit%log,*) self%seq, mpi_mesg%tag_type
+  if      (mpi_mesg%tag_type == 1) then
+    self%seq = self%seq + 1
+    tag = mod(self%seq,100) + id*100
+  else if (mpi_mesg%tag_type == 2) then
+    expected(rank) = expected(rank) + 1
+    tag = mod(expected(rank),100) + id*100
   else
-    tag = self%id
+    tag = id
   end if
+  write (io_unit%log,*) &
+    'irecv: seq, tag_type, tag', self%seq, mpi_mesg%tag_type, tag
   self%tag = tag
   self%sender = rank
 #ifdef MPI

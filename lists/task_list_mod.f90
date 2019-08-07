@@ -65,7 +65,6 @@ SUBROUTINE init (self, name)
   call self%list_t%init (name)
   call self%lock%append
   call mpi_mesg%init
-  call task_mesg%init
   rewind (io%input)
   read(io%input, task_list_params, iostat=iostat)
   write (io%output, task_list_params)
@@ -105,14 +104,6 @@ SUBROUTINE init_levels (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('task_list_t%init_levels')
   call refine%init                      ! refinement parameters
-  !-----------------------------------------------------------------------------
-  ! FIXME: For now, active AMR needs this specific combinations, which selects
-  ! procedure task_mesg_t%check_priv()
-  !-----------------------------------------------------------------------------
-  if (refine%on)  then
-    mpi_mesg%recv_active = .false.
-    mpi_mesg%recv_priv = .true.
-  end if
   !-----------------------------------------------------------------------------
   ! Loop to find the initial level interval (e.g. due to fixed mesh refinement)
   !-----------------------------------------------------------------------------
@@ -187,7 +178,12 @@ SUBROUTINE startup (self)
   !call self%init_bdries
   !call self%init_all_nbors
   !call self%reset_status
+  !-----------------------------------------------------------------------------
+  ! Must initialize refine before calling init_levels and task_mesg_t%init --
+  !-----------------------------------------------------------------------------
+  call refine%init
   call self%init_levels
+  call self%task_mesg_t%init
   call validate%init
   !-----------------------------------------------------------------------------
   ! When restarting, the virtual tasks need to be received and unpacked before
@@ -195,8 +191,7 @@ SUBROUTINE startup (self)
   ! patches, initialize the recv mechanism, and check for corresponding incoming
   ! messages.
   !-----------------------------------------------------------------------------
-  if (mpi_mesg%recv_active .and. mpi_mesg%recv_priv) &
-    call self%init_virtual ()
+  call self%task_mesg_t%init_virtual ()
   if (io%restart >= 0) then
     call self%resend_bdry ()
   end if

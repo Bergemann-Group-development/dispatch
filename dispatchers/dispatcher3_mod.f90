@@ -66,17 +66,9 @@ SUBROUTINE init (self, task_list)
   integer:: iostat
   namelist /dispatcher3_params/ verbose, use_critical, n_write
   !.............................................................................
-  rewind (io%input); read (io%input, dispatcher3_params, iostat=iostat)
-  if (io%master) write (io%output, dispatcher3_params)
-  !-----------------------------------------------------------------------------
-  ! This method uses send_priv=.false., collecting a list of sent messages in
-  ! the shared mpi_mesg%sent_list, and checking all with the master thread,
-  ! using the recv_active() strategy, with no need for queueing the unpack.
-  !-----------------------------------------------------------------------------
-  mpi_mesg%send_priv    = .false.
-  mpi_mesg%recv_priv    = .false.
-  mpi_mesg%recv_active  = .true.
-  mpi_mesg%queue_unpack = .false.
+  rewind (io%input)
+  read (io%input, dispatcher3_params, iostat=iostat)
+  write (io%output, dispatcher3_params)
 END SUBROUTINE init
 
 !===============================================================================

@@ -2278,10 +2278,19 @@ SUBROUTINE send_to_vnbors (self, link)
     if (nbtask%rank/=mpi%rank .and. nbtask%rank/=rank) then     ! new rank?
       rank = nbtask%rank                                        ! current rank
       if (mpi_mesg%uniq_mesg) then
-        !$omp critical (send_to_cr)
-        sequence(rank) = sequence(rank)+1
-        tag = mod(sequence(rank),100) + 100*task%id
-        !$omp end critical (send_to_cr)
+        if (mpi_mesg%tag_type == 1) then
+          !$omp critical (send_to_cr)
+          task%seq = task%seq + 1
+          tag = mod(task%seq,100) + 100*task%id
+          !$omp end critical (send_to_cr)
+        else if (mpi_mesg%tag_type == 2) then
+          !$omp critical (send_to_cr)
+          sequence(rank) = sequence(rank)+1
+          tag = mod(sequence(rank),100) + 100*task%id
+          !$omp end critical (send_to_cr)
+        else
+          tag = task%id
+        end if
       else
         tag = task%id
       end if
