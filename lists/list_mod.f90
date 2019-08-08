@@ -2235,10 +2235,12 @@ SUBROUTINE send_to_vnbors (self, link)
   integer:: ierr, rank, tag, seq
   integer, save:: itimer=0
   !.............................................................................
+  !$omp critical (sequence_alloc_cr)
   if (.not.allocated(sequence)) then
     allocate (sequence(0:mpi%size-1))
     sequence(:) = 0
   end if
+  !$omp end critical (sequence_alloc_cr)
   task => link%task
   if (task%is_clear (bits%boundary)) then
     write (stdout,*) mpi%rank, omp%thread, &
