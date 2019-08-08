@@ -226,11 +226,10 @@ SUBROUTINE init_virtual (self)
   class(link_t), pointer:: link
   class(task_t), pointer:: task
   integer:: nvirt, per, i, i1, i2
-  integer, save:: itimer=0
   !.............................................................................
   if (mpi%size==1) return
   if (trim(method) == 'master') return
-  call trace%begin ('task_mesg_t%init_virtual', itimer=itimer)
+  call trace%begin ('task_mesg_t%init_virtual')
   mpi_mesg%uniq_mesg = .true.
   mpi_mesg%tag_type = 1
   !---------------------------------------------------------------------------
@@ -256,10 +255,10 @@ SUBROUTINE init_virtual (self)
     i2 = i1 + per
     call init_virtual_list (self, private_list, i1, i2)
     !$omp end parallel
-  else
+  else if (trim(method) == 'virtual') then
     call init_virtual_list (self, master_list, 1, 1+nvirt)
   end if
-  call trace%end (itimer)
+  call trace%end ()
 END SUBROUTINE init_virtual
 
 !===============================================================================
@@ -272,6 +271,7 @@ SUBROUTINE init_virtual_list (self, list, i1, i2)
   class(task_t), pointer:: task
   integer:: i
   !-----------------------------------------------------------------------------
+  call trace%begin ('task_mesg_t%init_virtual_list')
   i = 1
   link => self%head
   do while (associated(link))
@@ -296,8 +296,10 @@ SUBROUTINE init_virtual_list (self, list, i1, i2)
     link => link%next
   end do
   if (verbose > 0) &
-    write (io_unit%log,*) &
-      'task_mesg_t%init_virtual: virtual_list%n =', list%n, omp%thread
+    write (io_unit%log,'(a,2i5,2x,2i4)') &
+      'task_mesg_t%init_virtual_list: n, thread, i1, i2 =', &
+      list%n, omp%thread, i1, i2
+  call trace%end
 END SUBROUTINE init_virtual_list
 
 !===============================================================================
@@ -371,8 +373,9 @@ FUNCTION find_task (self, id, new) RESULT (link)
   class(task_t), pointer:: task
   class(patch_t), pointer:: patch
   class(experiment_t), pointer:: exper
+  integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('task_mesg_t%find_task')
+  call trace%begin ('task_mesg_t%find_task', itimer=itimer)
   if (verbose > 1) &
     write (io_unit%log,*) 'task_mesg_t%find_task: id =', id
   call self%lock%set ('find_task')
@@ -388,14 +391,10 @@ FUNCTION find_task (self, id, new) RESULT (link)
         flush(io_unit%log)
       end if
       new = .false.
-      write (io_unit%log,*) 'match', task%id, new
       exit
-    else
-      write (io_unit%log,*) ' miss', task%id
     end if
     link => link%next
   end do
-  write (io_unit%log,*) 'exit', task%id, new
   !-----------------------------------------------------------------------------
   ! If new, a virtual task needs to be created
   !-----------------------------------------------------------------------------
@@ -417,7 +416,7 @@ FUNCTION find_task (self, id, new) RESULT (link)
         'task_mesg_t%find: created new task, id =', id, exper%id
   end if
   call self%lock%unset ('find_task')
-  call trace%end()
+  call trace%end (itimer)
 END FUNCTION find_task
 
 !===============================================================================
@@ -439,7 +438,6 @@ SUBROUTINE unpack (self, mesg, link)
     call load_balance%unpack (mesg%buffer)
     return
   end if
-  call self%lock%set ('unpack')
   !-----------------------------------------------------------------------------
   ! This entire operation should be threadsafe, since no other thread should be
   ! working on the same message and the same patch. And find_task uses only the
@@ -527,7 +525,6 @@ SUBROUTINE unpack (self, mesg, link)
   ! lock) while it is being updated here
   !-----------------------------------------------------------------------------
   id = task%id
-  call task%lock%set ('unpack')
   call task%unpack (mesg)
   if (verbose > 1) then
     write (io_unit%mpi,'(a,3i6,f12.6,2x,3f10.4,2x,5l1)') &
@@ -549,7 +546,6 @@ SUBROUTINE unpack (self, mesg, link)
         wallclock(), 'unpack: suicide note received for id =', task%id
     end if
     call self%remove_and_reset (link1)
-    call self%lock%unset('unpack')
     call trace%end (itimer)
     return
   end if
@@ -618,7 +614,6 @@ SUBROUTINE unpack (self, mesg, link)
       call self%count_status
     end if
   end if
-  call task%lock%unset ('unpack')
   !-----------------------------------------------------------------------------
   ! If a virtual task was just created it, it and its nbors need new nbor lists.
   ! Also, since the proper size and position were not known when a new task was
@@ -673,7 +668,6 @@ SUBROUTINE unpack (self, mesg, link)
       write (io_unit%log,*) 'unpack: check_nbors, id =', task%id
     call self%check_nbors (link1)
   end if
-  call self%lock%unset ('unpack')
   call trace%end (itimer)
 END SUBROUTINE unpack
 

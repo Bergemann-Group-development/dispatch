@@ -596,10 +596,6 @@ SUBROUTINE check_nbors (self, link)
     if (nbor%needs_me) then                             ! needs checking?
       if (self%verbose > 1) &
         write (io_unit%log,*) wallclock(), task%id, 'checks nbor', nbor%task%id
-        
-      !-------------------------------------------------------------------------
-      ! Lock the nbor list of nbor tasks, while the nbor list is being used
-      !-------------------------------------------------------------------------
       call self%check_ready (nbor%link, lock=.true.)    ! pointer back
     else
       if (self%verbose > 1) &
@@ -2266,6 +2262,12 @@ SUBROUTINE send_to_vnbors (self, link)
   class is (patch_t)
   call task%pack (mesg)
   end select
+  if (mpi_mesg%uniq_mesg .and. mpi_mesg%tag_type == 1) then
+    task%seq = task%seq + 1
+    tag = mod(task%seq,100) + 100*task%id
+  else
+    tag = task%id
+  end if
   !-----------------------------------------------------------------------------
   ! Same id for all steps, and increment mesg%seq only once, for all ranks
   ! If the task is new, force the sequence number to be 1
@@ -2280,21 +2282,12 @@ SUBROUTINE send_to_vnbors (self, link)
     nbtask => nbor%task
     if (nbtask%rank/=mpi%rank .and. nbtask%rank/=rank) then     ! new rank?
       rank = nbtask%rank                                        ! current rank
-      if (mpi_mesg%uniq_mesg) then
-        if (mpi_mesg%tag_type == 1) then
-          task%seq = task%seq + 1
-          tag = mod(task%seq,100) + 100*task%id
-        else if (mpi_mesg%tag_type == 2) then
-          !$omp atomic capture
-          sequence(rank) = sequence(rank)+1
-          seq = sequence(rank)
-          !$omp end atomic
-          tag = mod(seq,100) + 100*task%id
-        else
-          tag = task%id
-        end if
-      else
-        tag = task%id
+      if (mpi_mesg%uniq_mesg .and. mpi_mesg%tag_type == 2) then
+        !$omp atomic capture
+        sequence(rank) = sequence(rank)+1
+        seq = sequence(rank)
+        !$omp end atomic
+        tag = mod(seq,100) + 100*task%id
       end if
       call mesg%send (rank, tag=tag)                            ! send it
       !write (stdout,*) 'send: ', task%id, mesg%id, tag, mesg%tag, rank

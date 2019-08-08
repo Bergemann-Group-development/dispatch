@@ -728,9 +728,11 @@ contains
       mpi_mesg%nq_recv = mpi_mesg%nq_recv+1
       call MPI_IMRECV (mesg%buffer, nbuf, MPI_INT, msg, req, ierr)
       mesg%req = req
-      write (io_unit%mpi,'(f12.6,2x,"get: id, seq, sender =",i9,2i6)') &
-        wallclock(), mesg%id, mesg%seq, mesg%sender
-      flush(io_unit%mpi)
+      if (verbose > 0) then
+        write (io_unit%mpi,'(f12.6,2x,"get: id, seq, sender =",i9,2i6)') &
+          wallclock(), mesg%id, mesg%seq, mesg%sender
+        flush(io_unit%mpi)
+      end if
       mesg%nbuf = nbuf
       !$omp atomic
       mpi_mesg%n_recv = mpi_mesg%n_recv+1
@@ -755,9 +757,10 @@ SUBROUTINE get_id (self, stat)
   if (mpi_mesg%uniq_mesg) then
     self%seq = mod(self%id,100)
     self%id = self%id/100
-    write (io_unit%log,*) 'mpi_mesg_t%get_id: id, sender, seq =', &
-      self%id, self%sender, self%seq
-  else
+    if (verbose > 0) &
+      write (io_unit%log,*) 'mpi_mesg_t%get_id: id, sender, seq =', &
+        self%id, self%sender, self%seq
+  else if (verbose > 0) then
     write (io_unit%log,*) 'mpi_mesg_t%get_id: id, sender      =', &
       self%id, self%sender
   end if

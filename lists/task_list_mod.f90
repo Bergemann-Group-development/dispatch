@@ -204,9 +204,11 @@ SUBROUTINE startup (self)
   link => self%head
   do while (associated(link))
     call link%task%clear(bits%ready)
-    if (link%task%is_set(bits%virtual)) &
+    if (link%task%is_set(bits%virtual)) then
       link%task%wc_last = wallclock()
-    call self%check_ready (link)
+    else
+      call self%check_ready (link)
+    end if
     if (self%sync_time > 0.0) &
       link%task%sync_time = link%task%time + self%sync_time
     link => link%next
