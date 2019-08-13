@@ -369,12 +369,12 @@ LOGICAL FUNCTION is_ahead_of (self, target)
   ! -- a negative nbor time signals an invalid (e.g. initial RT) state
 !  else if (nbtime < 0.0) then
 !    is_ahead_of = .false.
-  ! -- do not use a grace interval for different levels or for the first steps
-  else if (self%level /= target%level .or. self%istep < 3) then
+  ! -- do not use a grace interval for the first few steps
+  else if (self%istep < 3) then
     is_ahead_of = nbtime >= target%time
   ! -- use a grace interval that is fraction of the nbor time step
   else
-    is_ahead_of = nbtime + nbdtime*target%grace > target%time
+    is_ahead_of = nbtime + nbdtime*self%grace > target%time
   end if
   if (io_unit%verbose>1) then
     if (target%id==io%id_debug.or.io_unit%verbose>4) &
