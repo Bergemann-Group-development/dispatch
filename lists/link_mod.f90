@@ -245,7 +245,7 @@ SUBROUTINE add_nbor_link_by_rank (self, nbor_list, link)
   class(link_t), pointer:: nbor_list, link
   class(link_t), pointer:: nbor
   !-----------------------------------------------------------------------------
-  call trace%begin ('link_t%add_nbor_by_rank')
+  call trace%begin ('link_t%add_nbor_link_by_rank')
   allocate (nbor)
   nbor%link => link
   nbor%task => link%task
@@ -265,7 +265,6 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
   class(link_t), pointer:: next, prev
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_rank', 3)
-  call self%lock%set ('add_nbor_by_rank')
   !$omp atomic update
   this%task%n_needed = this%task%n_needed + 1   ! because linked task derefined
   if (verbose > 1) &
@@ -325,7 +324,6 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
   end if
   self%task%n_nbors = self%task%n_nbors+1
 9 continue
-  call self%lock%unset ('add_nbor_by_rank')
   call trace_end
 END SUBROUTINE add_nbor_by_rank
 
