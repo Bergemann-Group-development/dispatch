@@ -31,10 +31,13 @@ MODULE timer_mod
     integer:: istack=0
     real(8):: bytes_recv=0.0_8
     real(8):: sec_per_report=10d0
+    integer(8):: n_download(2)=0
+    integer(8):: n_master(4)=0
     integer(8):: n_update=0
     integer(8):: n_recv=0_8
     integer(8):: mpi_test=0_8, mpi_hit=0_8
     integer(8):: mem_test=0_8, mem_hit=0_8
+    real(8):: busy_time=0d0, spin_time=0d0
     integer:: nq_send_max=0
     integer:: nq_recv_max=0
     integer:: n_lines=0
@@ -338,15 +341,24 @@ contains
     if (mpi%size>1) then
       timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
       write (unit,'(1x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
-        " nq_recv_max",2f8.3," max, aver latency",f7.2, " f_unpk",f7.2," f_mem")') &
+        " nq_recv_max",2f8.3," max, aver latency",f7.2, " f_unpk",f7.2," f_mem",f8.3," f_q")') &
         timer%bytes_recv/1024.**2/sec, timer%bytes_recv/1024.**2/n_recv, &
         timer%nq_send_max, timer%nq_recv_max, timer%latency%max, timer%latency%aver, &
         timer%mpi_hit/real(max(1,timer%mpi_test)), &
-        timer%mem_hit/real(max(1,timer%mem_test))
+        timer%mem_hit/real(max(1,timer%mem_test)), &
+        timer%busy_time/max(timer%spin_time + timer%busy_time,1d-30)
       timer%mpi_hit = 0
       timer%mpi_test = 0
+      timer%busy_time = 0d0
+      timer%spin_time = 0d0
     end if
     call omp_lock%info (unit)
+    if (omp_lock%on) then
+      write (unit,'(2(a,i6,8x))') &
+        ' download locked:', timer%n_download(1), &
+                'unlocked:', timer%n_download(2)
+      timer%n_download(:) = 0
+    end if
     flush (unit)
     self%n_mhd = 0; self%n_solve=0
   end subroutine write_to
