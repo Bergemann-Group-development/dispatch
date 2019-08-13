@@ -357,15 +357,15 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     end if
   end if
   !----------------------------------------------------------------------------
-  ! Default delay time = first update time
+  ! Default delay time = 10% of first update time
   !----------------------------------------------------------------------------
   if (mpi_mesg%delay_ms==0.0) then
     !$omp atomic write
-    mpi_mesg%delay_ms = 1d3*(wallclock()-wc)
+    mpi_mesg%delay_ms = 1d3*(wallclock()-wc)*0.1
   end if
   !$omp atomic
   mpi_mesg%n_update = mpi_mesg%n_update+1
-  if (io%verbose>1) &
+  if (self%verbose>1) &
     write (io_unit%log,'(a,i4,2x,a,i7,2x,a,2x,a,i7,2x,a,1p,2g14.6,2x,a,2i5,l3)') &
     'thread', omp_mythread, 'task', task%id, trim(task%type), &
     'step', task%istep, 'dt, time:', task%dtime, task%time, &
@@ -416,7 +416,11 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%init_nbors)) then
     call self%init_nbors (head)
-    call head%info
+    if (self%verbose > 1) then
+      call head%info
+    else if (self%verbose > 0) then
+      write (io_unit%log,*) 'task_list_t%update: init_nbors for task', task%id
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! Tasks that have finished are subtracted from the task list count but are
@@ -444,7 +448,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     if (task%is_clear (bits%frozen)) then
       call task%set (bits%frozen)
       call self%count_status ('has_finished')         ! TEST
-      if (io%verbose > 0) then
+      if (self%verbose > 0) then
         write (io_unit%log,*) task%id, 'has finished, na =', self%na
         flush (io_unit%log)
       end if
