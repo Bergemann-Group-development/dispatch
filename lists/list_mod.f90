@@ -599,13 +599,11 @@ SUBROUTINE check_nbors (self, link)
   class(link_t), pointer:: nbor, nbors
   class(task_t), pointer:: task
   integer:: itr
-  integer, save:: itimer(2)=0
+  integer, save:: itimer=0
   !.............................................................................
-  itr = 1
-  call trace%begin('list_t%check_nbors(lock)', itimer=itimer(itr))
-  if (io%verbose > 1) &
-    write (io_unit%log,*) 'checking nbors of',link%task%id,associated(link%nbor)
   task => link%task                                     ! main task
+  itr = 1
+  call trace%begin('list_t%check_nbors', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Lock the other task link while accessing its nbor list, to prevent changes
   !-----------------------------------------------------------------------------
@@ -632,7 +630,7 @@ SUBROUTINE check_nbors (self, link)
   if (task%is_clear (bits%virtual+bits%external)) then
     call self%check_ready (link)                      ! finally check link task
   end if
-  call trace%end (itimer(itr))
+  call trace%end (itimer)
   return
 END SUBROUTINE check_nbors
 
@@ -850,13 +848,18 @@ SUBROUTINE check_ready (self, link, lock)
   if (task%is_set (ignore)) &
     return 
   if (self%detailed_timer) &
-    call timer%begin ('list_t%check_ready', itimer=itimer)
+    call trace%begin ('list_t%check_ready', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Since only this thread can change the nbor list we are free to use it w/o lock
+  ! Since only this thread can change the nbor list we are free to use it w/o
+  ! lock in cases where task is the active task, but in other cases we need to
+  ! lock the nbor list, so it isn't changed during the loop
   !-----------------------------------------------------------------------------
-  ignore = bits%frozen + bits%remove
   if (present(lock)) &
     call link%lock%set ('check_ready')
+  !-----------------------------------------------------------------------------
+  ! Tasks that are frozen or removed should not be used in the loop
+  !-----------------------------------------------------------------------------
+  ignore = bits%frozen + bits%remove
   ok = .true.
   nbor => link%nbor                                     ! use original nbor list
   do while (associated (nbor))                          ! keep going until end
@@ -873,11 +876,11 @@ SUBROUTINE check_ready (self, link, lock)
           else
             unit = stderr
           end if
-          write (unit ,'(a,i4,1p,2(2x,a,i6,2x,a,g14.5),2(2x,a,g11.3))') &
-            'list_t%check_ready: on rank', task%rank, &
-            'task'               , task%id     , 'at t=', task%time, &
-            'failed on nbor task', nbor%task%id, 'at t=', nbor%task%time, &
-            'grace =', task%grace, ' dt=', nbor%task%dtime
+!          write (unit ,'(a,i4,1p,2(2x,a,i6,2x,a,g14.5),2(2x,a,g11.3))') &
+!            'list_t%check_ready: on rank', task%rank, &
+!            'task'               , task%id     , 'at t=', task%time, &
+!            'failed on nbor task', nbor%task%id, 'at t=', nbor%task%time, &
+!            'grace =', task%grace, ' dt=', nbor%task%dtime
         end if
         ok = .false.
         exit
@@ -893,7 +896,7 @@ SUBROUTINE check_ready (self, link, lock)
     call self%queue_by_time (link)                      ! add task to queue
   end if
   if (self%detailed_timer) &
-    call timer%end (itimer)
+    call trace%end (itimer)
 END SUBROUTINE check_ready
 
 !===============================================================================
@@ -1351,7 +1354,7 @@ SUBROUTINE init_all_nbors (self)
     link => link%next                                   ! continue list
   end do
   !$omp end parallel
-  call list%reset_status                                ! set bits and count
+  !call self%reset_status                                ! set bits and count
   call trace%end (itimer)
 END SUBROUTINE init_all_nbors
 
