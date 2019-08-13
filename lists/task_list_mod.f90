@@ -42,7 +42,7 @@ MODULE task_list_mod
     procedure:: init_levelstats
     procedure:: init_task_list_pointers
   end type
-  real(8), save:: dead_mans_hand=30d0, first_finished=0d0
+  real(8), save:: dead_mans_hand=60d0, first_finished=0d0
   public:: task2patch
   type(task_list_t), target:: task_list
 CONTAINS
@@ -489,19 +489,21 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
 END SUBROUTINE update
 
 !===============================================================================
+!> List remaining tasks when dead_mans_hand time interval has expired
 !===============================================================================
 SUBROUTINE dead_mans_hand_list (self)
   class (task_list_t):: self
   class(link_t), pointer:: link
   !-----------------------------------------------------------------------------
-  write (stderr,*) 'active tasks remaining:', self%na
+  write (stderr,*) 'Updates stopped after expired dead_mans_hand time!'
+  write (stderr,*) 'Active tasks remaining:', self%na
   link => self%head
   do while (associated(link))
     write (stderr,*) 'task id, time =', link%task%id, link%task%time
     link => link%next
   end do        
   write (stderr,*) 'tasks in garbage:'
-  link => garbage
+  link => garbage%next
   do while (associated(link))
     write (stderr,*) 'task id, time =', &
       link%task%id, link%task%time, link%task%n_needed

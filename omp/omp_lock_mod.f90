@@ -303,7 +303,6 @@ SUBROUTINE info (unit)
       lock%n_hold = 0_8
       lock => lock%next
     end do
-    write (unit,*) 'expected number of initialized locks:', n_lock
     !$omp end critical (lock_cr)
   end if
   !$omp atomic read
