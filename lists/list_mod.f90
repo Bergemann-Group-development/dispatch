@@ -322,17 +322,25 @@ SUBROUTINE remove_link (self, link)
   ! Check for tail task
   !-----------------------------------------------------------------------------
   if (associated(next)) then
+    !call next%qlock%set ('remove_link')
     next%prev => link%prev                  ! point backwards, possibly null
+    !call next%qlock%unset ('remove_link')
   else
+    !call self%tail%qlock%set ('remove_link')
     self%tail => link%prev                  ! new tail link
+    !call self%tail%qlock%unset ('remove_link')
   end if
   !-----------------------------------------------------------------------------
   ! Check for head task
   !-----------------------------------------------------------------------------
   if (associated(link%prev)) then           ! not head task
+    !call link%prev%qlock%set ('remove_link')
     link%prev%next => next                  ! make prev point to next
+    !call link%prev%qlock%unset ('remove_link')
   else                                      ! link was head
+    !call self%head%qlock%set ('remove_link')
     self%head => next                       ! make head point to next
+    !call self%head%qlock%unset ('remove_link')
   end if
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
@@ -691,7 +699,7 @@ SUBROUTINE resend_bdry (self)
   class(link_t), pointer:: link
   !.............................................................................
   call trace%begin ('list_t%resend_bdry')
-  call self%lock%set
+  call self%lock%set ('resend_bdry')
   link => self%head
   do while (associated(link))
     if (link%task%is_set (bits%boundary)) then
@@ -699,7 +707,7 @@ SUBROUTINE resend_bdry (self)
     end if
     link => link%next
   end do
-  call self%lock%unset
+  call self%lock%unset ('resend_bdry')
   call trace%end
 END SUBROUTINE resend_bdry
 
@@ -1632,9 +1640,13 @@ SUBROUTINE real_queue_by_time (self, this, error)
               omp%thread, 'task',task%id,' in ready queue between',prev%task%id,next%task%id, &
               prev%task%time, this%task%time, next%task%time
           end if
+          !call prev%qlock%set ('queue_by_time')
           prev%next_time => this
+          !call prev%qlock%unset ('queue_by_time')
         else
+          !call self%queue%qlock%set ('queue_by_time')
           self%queue => this
+          !call self%queue%qlock%unset ('queue_by_time')
           if (io%verbose > 1) then
             write (io_unit%output,*) 'task',task%id,' at ready queue head',self%nq
             write (io_unit%log,*) 'task',task%id,' at ready queue head',self%nq
