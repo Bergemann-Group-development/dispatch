@@ -38,10 +38,12 @@ MODULE task_mesg_mod
   USE bits_mod
   USE load_balance_mod
   USE refine_mod
+  USE hash_table_mod
   implicit none
   private
   type, public, extends(list_t):: task_mesg_t
     integer:: method=0
+    type(hash_table_t):: hash_table
   contains
     procedure:: init
     procedure:: check_mpi
@@ -66,8 +68,9 @@ SUBROUTINE init (self, name)
   class(task_mesg_t):: self
   character(len=*), optional:: name
   integer:: iostat
+  integer, save:: hash_table_size=10000
   type(link_t):: link
-  namelist /task_mesg_params/ verbose, method
+  namelist /task_mesg_params/ verbose, method, hash_table_size
   character(len=120):: id = &
     '$Id$ lists/task_mesg_mod.f90'
   !-----------------------------------------------------------------------------
@@ -77,6 +80,7 @@ SUBROUTINE init (self, name)
   read (io%input, task_mesg_params, iostat=iostat)
   call link%init_verbose (verbose)
   write (io%output, task_mesg_params)
+  call self%hash_table%init (hash_table_size)
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE init
@@ -154,38 +158,76 @@ SUBROUTINE recv_master (self)
   class(mesg_t), pointer:: mesg, next
   integer, save:: itimer=0
   integer:: n
+  logical:: ok
   !.............................................................................
   if (omp%thread > 0) return
   call trace%begin ('task_mesg_t%recv_master', 1, itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Step 1: Add incoming messages to either recv_list or unpk_list
-  !-----------------------------------------------------------------------------
   mpi_mesg%uniq_mesg = .true.
+  !-----------------------------------------------------------------------------
+  ! Step 1-3: receive, move, and unpack
+  !-----------------------------------------------------------------------------
+  call recv_mesgs
+  call move_mesgs
+  call unpk_mesgs
+  !-----------------------------------------------------------------------------
+  ! Step 4: check if the queue is getting short.  If so, try recv again, then
+  ! wait for messages and move + unpack immediately, one-by-one (in case a
+  ! reverse order message is received and allows more to be unpacked)
+  !-----------------------------------------------------------------------------
+  if (self%nq < mpi_mesg%min_nq) then
+    call recv_mesgs
+    call move_mesgs
+    !---------------------------------------------------------------------------
+    mesg => mpi_mesg%recv_list%head
+    do while (associated(mesg) .and. self%nq < mpi_mesg%min_nq)
+      next => mesg%next
+      call mesg%wait_for_completion()
+      !$omp atomic update
+      timer%n_master(4) = timer%n_master(4) + 1
+      if (verbose > 1) &
+        write (io_unit%log,*) 'recv_master: waited on mesg', &
+          mesg%id, mesg%seq
+      call mpi_mesg%recv_list%remove (mesg)
+      call mpi_mesg%unpk_list%add (mesg)
+      call unpk_mesgs
+      mesg => next
+    end do
+  end if
+  call trace%end (itimer)
+contains
+!===============================================================================
+!> Step 1: Get new messages
+!===============================================================================
+subroutine recv_mesgs
   mpi_mesg%tag_type = 2
-  call mpi_mesg%get (mesg)
   n = 0
+  call mpi_mesg%get (mesg)
   do while (associated(mesg))
-    call recv_list%add (mesg)
+    !$omp atomic update
+    timer%n_master(1) = timer%n_master(1) + 1
+    call mpi_mesg%recv_list%add (mesg)
     n = n+1
     if (verbose > 1) &
       write (io_unit%log,*) 'recv_master: addded mesg to recv_list', &
         mesg%id, mesg%seq
     call mpi_mesg%get (mesg)
   end do
-  !-----------------------------------------------------------------------------
-  ! Step 2: check the recv_list for completed messages and move to unpk_list
-  !-----------------------------------------------------------------------------
-  n = 0
-  mesg => recv_list%head
+end subroutine recv_mesgs
+!===============================================================================
+!> Step 2: Move complete messages to unpk_list
+!===============================================================================
+subroutine move_mesgs
+  mesg => mpi_mesg%recv_list%head
   do while (associated(mesg))
     next => mesg%next
-    n = n+1
     if (mesg%is_complete('recv_master')) then
+      !$omp atomic update
+      timer%n_master(2) = timer%n_master(2) + 1
       if (verbose > 1) &
         write (io_unit%log,*) 'recv_master: moved to unpk_list:', &
           mesg%id, mesg%seq, associated(next)
-      call recv_list%remove (mesg)
-      call unpk_list%add (mesg)
+      call mpi_mesg%recv_list%remove (mesg)
+      call mpi_mesg%unpk_list%add (mesg)
     else
       if (verbose > 2) &
         write (io_unit%log,*) 'recv_master:   not yet complete:', &
@@ -193,20 +235,23 @@ SUBROUTINE recv_master (self)
     end if
     mesg => next
   end do
-  !-----------------------------------------------------------------------------
-  ! Step 3: unpack in sequence order
-  !-----------------------------------------------------------------------------
-  mesg => unpk_list%head
+end subroutine move_mesgs
+!===============================================================================
+!> Step 3: Unpack in correct order
+!===============================================================================
+subroutine unpk_mesgs
+  mesg => mpi_mesg%unpk_list%head
   do while (associated(mesg))
     next => mesg%next
     if (mesg%is_in_order()) then
+      !$omp atomic update
+      timer%n_master(3) = timer%n_master(3) + 1
       call self%unpack (mesg)
-      n = n-1
       if (verbose > 1) &
         write (io_unit%log,*) 'recv_master: unpacked from list:', &
           mesg%id, mesg%seq
-      call unpk_list%remove (mesg)
-      call unpk_list%delete (mesg, .false.)
+      call mpi_mesg%unpk_list%remove (mesg)
+      call mpi_mesg%unpk_list%delete (mesg, .false.)
     else
       if (verbose > 2) &
         write (io_unit%log,*) 'recv_master:  kept in unpk_list:', &
@@ -214,7 +259,7 @@ SUBROUTINE recv_master (self)
     end if
     mesg => next
   end do
-  call trace%end (itimer)
+end subroutine unpk_mesgs
 END SUBROUTINE recv_master
 
 !===============================================================================
@@ -373,28 +418,50 @@ FUNCTION find_task (self, id, new) RESULT (link)
   class(task_t), pointer:: task
   class(patch_t), pointer:: patch
   class(experiment_t), pointer:: exper
+  class(*), pointer:: ptr
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('task_mesg_t%find_task', itimer=itimer)
   if (verbose > 1) &
     write (io_unit%log,*) 'task_mesg_t%find_task: id =', id
-  call self%lock%set ('find_task')
-  new = .true.
-  link => self%head
-  do while (associated(link))
+  call self%hash_table%get ([id, 1], ptr)
+  if (associated(ptr)) then
+    new = .false.
+    nullify(link)
+    select type (ptr)
+    class is (link_t)
+    link => ptr
+    class default
+    call io%abort ('hash table link not useful')
+    end select
     task => link%task
-    if (verbose > 2) &
-      write (io_unit%log,*) 'task_mesg_t%find_task: task%id =', task%id
-    if (task%id == id) then
-      if (verbose > 1) then
-        write (io_unit%log,*) 'task_mesg_t%find_task: match', id
-        flush(io_unit%log)
+    if (verbose > 1) &
+      write (io_unit%log,*) 'task_mesg_t%find_task: hash =', task%id
+  else
+    call self%lock%set ('find_task')
+    new = .true.
+    link => self%head
+    do while (associated(link))
+      task => link%task
+      if (verbose > 2) &
+        write (io_unit%log,*) 'task_mesg_t%find_task: task%id =', task%id
+      if (task%id == id) then
+        if (verbose > 1) then
+          write (io_unit%log,*) 'task_mesg_t%find_task: match =', id
+          flush(io_unit%log)
+        end if
+        !-----------------------------------------------------------------------
+        ! Save in hash table for next time
+        !-----------------------------------------------------------------------
+        ptr => link
+        call self%hash_table%set ([id, 1], ptr)
+        new = .false.
+        exit
       end if
-      new = .false.
-      exit
-    end if
-    link => link%next
-  end do
+      link => link%next
+    end do
+    call self%lock%unset ('find_task')
+  end if
   !-----------------------------------------------------------------------------
   ! If new, a virtual task needs to be created
   !-----------------------------------------------------------------------------
@@ -403,8 +470,12 @@ FUNCTION find_task (self, id, new) RESULT (link)
     allocate (exper)
     link%task => exper
     exper%link => link
-    exper%id = id
     exper%box = self%size
+    !---------------------------------------------------------------------------
+    ! Need a task id to assign the lock id in link%init
+    !---------------------------------------------------------------------------
+    exper%id = id
+    call link%init
     !---------------------------------------------------------------------------
     ! The virtual task needs to have all of the capabilities and procedures of the
     ! original boundary task, since it may need to play a role in extras features.
@@ -415,7 +486,6 @@ FUNCTION find_task (self, id, new) RESULT (link)
       write (io_unit%log,*) &
         'task_mesg_t%find: created new task, id =', id, exper%id
   end if
-  call self%lock%unset ('find_task')
   call trace%end (itimer)
 END FUNCTION find_task
 
