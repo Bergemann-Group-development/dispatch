@@ -101,7 +101,7 @@ SUBROUTINE init (self, label)
   ! Begin on task list
   !-----------------------------------------------------------------------------
   allocate (self%task_list)
-  call self%task_list%init ('Cartesian')
+  call self%task_list%init ('tlist')
   self%task_list%size = self%size
   self%task_list%dims = self%dims
   io%dims = self%dims

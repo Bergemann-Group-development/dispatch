@@ -36,6 +36,8 @@ MODULE dispatcher0_mod
   real(8):: stall_start=0d0, max_stalled=600d0, retry_stalled=30d0
   integer, save:: verbose=0
   integer, save:: stalled=0
+  integer, save:: n_spin=0
+  integer, save:: n_update=0
   integer, save:: min_nq=2**30
   logical, save:: debug=.false.
   logical, save:: do_delay=.false.
@@ -160,7 +162,7 @@ SUBROUTINE update (self, task_list, test)
   class(task_t), pointer:: task, otask
   class(mesg_t), pointer:: mesg
   logical:: already_busy, was_refined, was_derefined
-  real(8):: wc
+  real(8):: wc, start
   real(8), save:: time, otime=0d0
   integer, save:: oid=0
   integer:: i, id, nq
@@ -169,6 +171,9 @@ SUBROUTINE update (self, task_list, test)
   !.............................................................................
   i = 1
   call trace%begin('dispatcher0_t%update(1)', itimer=itimer(i))
+  start = wallclock()
+  !$omp atomic update
+  n_update = n_update+1
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
@@ -193,6 +198,7 @@ SUBROUTINE update (self, task_list, test)
   !$omp atomic read
   nq = task_list%nq
   if (nq == 0) then
+    call stall_handler
     call trace%end(itimer(i))
     return
   end if
@@ -239,6 +245,15 @@ SUBROUTINE update (self, task_list, test)
       end if
     else
       task => head%task
+    end if
+    if (debug) then
+      !$omp critical (wrt_cr)
+      write (io_unit%queue,'(f12.6,2i7,3i5,f12.6,i6,2i9,7i7)') &
+        wallclock(), task%id, task%istep, task%it, task%new, omp%thread, &
+        task%time, task_list%nq, n_spin, timer%n_master
+      timer%n_master(:) = 0
+      n_spin = 0
+      !$omp end critical (wrt_cr)
     end if
     !---------------------------------------------------------------------------
     if (debug) then
@@ -292,10 +307,14 @@ SUBROUTINE update (self, task_list, test)
       call task%set (bits%busy)                              ! mark task busy
       if (associated(prev)) then
         !print *, omp%thread, 'match'
+        !call prev%qlock%set ('dipatcher0')
         prev%next_time => head%next_time                     ! skip over
+        !call prev%qlock%unset ('dipatcher0')
       else
         !print *, omp%thread, 'fall back'
+        !call task_list%queue%qlock%set ('dipatcher0')
         task_list%queue => head%next_time                    ! chop head off
+        !call task_list%queue%qlock%unset ('dipatcher0')
       end if
       call task%clear (bits%ready)                           ! not in queue
       if (track_active) &
@@ -382,7 +401,19 @@ SUBROUTINE update (self, task_list, test)
       call task%clear (bits%busy)
       call task_list%check_nbors (head)   ! any nbors ready?
     end if
+    !$omp atomic update
+    timer%busy_time = timer%busy_time + (wallclock()-start)
   else
+    call stall_handler
+  end if
+  call trace%end (itimer(i))
+contains
+!-------------------------------------------------------------------------------
+!> Stall handling, when the queue is empty
+!-------------------------------------------------------------------------------
+subroutine stall_handler
+    !$omp atomic update
+    n_spin = n_spin+1
     if (detailed_timer) then
       i = i+1
       call trace%begin('dispatcher0_t%update(5)', itimer=itimer(i))
@@ -396,15 +427,19 @@ SUBROUTINE update (self, task_list, test)
     !$omp atomic read
     stalled_l = stalled
     if (stalled_l == 0) then
-      wc = wallclock()
       !$omp atomic write
-      stall_start = wc
+      stall_start = wallclock()
       if (debug) &
         write (io_unit%log,*) wallclock(), 'queue stalled', stalled_l
     end if
     !$omp atomic update
     stalled = stalled+1
-    if (wallclock()-stall_start > retry_stalled) then
+    if (wallclock()-stall_start > max_stalled) then
+      print *, mpi%rank, 'STALLED diagnostics'
+      call mpi_mesg%diagnostics (1)
+      print *, mpi%rank, 'STALLED bailing out'
+      call mpi%abort ('exceeded max_stalled')
+    else if (wallclock()-stall_start > retry_stalled) then
       !$omp critical (stall_cr)
       if (wallclock()-stall_start > retry_stalled) then
         !print *, mpi%rank, 'STALLED:'
@@ -430,16 +465,14 @@ SUBROUTINE update (self, task_list, test)
       end if
       !$omp end critical (stall_cr)
     else if (do_delay) then
+      !$omp atomic update
+      timer%spin_time = timer%spin_time + (wallclock()-start)
       call mpi_mesg%delay (stalled)
+      return
     end if
-    if (wallclock()-stall_start > max_stalled) then
-      print *, mpi%rank, 'STALLED diagnostics'
-      call mpi_mesg%diagnostics (1)
-      print *, mpi%rank, 'STALLED bailing out'
-      call mpi%abort ('exceeded max_stalled')
-    end if
-  end if
-  call trace%end (itimer(i))
+    !$omp atomic update
+    timer%spin_time = timer%spin_time + (wallclock()-start)
+end subroutine stall_handler
 END SUBROUTINE update
 
 END MODULE
