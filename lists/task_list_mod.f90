@@ -12,6 +12,7 @@ MODULE task_list_mod
   USE mpi_mod
   USE mpi_mesg_mod
   USE list_mod
+  USE link_mod
   USE task_mod
   USE patch_mod
   USE experiment_mod
@@ -41,6 +42,7 @@ MODULE task_list_mod
     procedure:: init_levelstats
     procedure:: init_task_list_pointers
   end type
+  real(8), save:: dead_mans_hand=30d0, first_finished=0d0
   public:: task2patch
   type(task_list_t), target:: task_list
 CONTAINS
@@ -58,7 +60,8 @@ SUBROUTINE init (self, name)
   real(8), save:: sync_time=0.0
   logical, save:: detailed_timer=.false.
   integer, save:: verbose=0
-  namelist /task_list_params/ verbose, job_seconds, sync_time, detailed_timer
+  namelist /task_list_params/ verbose, job_seconds, dead_mans_hand, sync_time, &
+    detailed_timer
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -73,6 +76,7 @@ SUBROUTINE init (self, name)
     self%sync_next = sync_time
   self%sync_time = sync_time
   io%job_seconds = job_seconds
+  timer%dead_mans_hand = dead_mans_hand
   self%verbose = verbose
   self%detailed_timer = detailed_timer
   call load_balance%init
@@ -274,10 +278,6 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   logical:: refined, derefined
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
-  ! Check for flag files.  If io%out_time is set, set a new out_next.
-  ! If task%time is slightly smaller than a multiple of out_time, then
-  ! out_next will becoe that multiple.
-  !----------------------------------------------------------------------------
   call trace%begin('task_list_t%update', itimer=itimer)
   !-------------------------------------------------------------------------
   ! Cost counter for AMR
@@ -426,8 +426,16 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   ! should not be able to stop another task from being considered ready.
   !-----------------------------------------------------------------------------
   if (task%has_finished()) then                       ! just finished:
-    if (timer%dead_mans_hand == 0.0) then
-      timer%dead_mans_hand = wallclock()              ! cf. dispatcher
+    !---------------------------------------------------------------------------
+    ! Record the time when the first task finishes, and at dead_mans_hand time
+    ! after that force the active task count to zero, which triggers job end
+    !---------------------------------------------------------------------------
+    if (first_finished == 0.0) then
+      !$omp atomic write
+      first_finished = wallclock()                    ! cf. dispatcher
+    else if (wallclock() > first_finished+dead_mans_hand) then
+      call dead_mans_hand_list (self)
+      self%na = 0
     end if
     call load_balance%active (.false.)                ! turn off load balancing
     !---------------------------------------------------------------------------
@@ -475,6 +483,27 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   end if
   call trace%end (itimer)
 END SUBROUTINE update
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE dead_mans_hand_list (self)
+  class (task_list_t):: self
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  write (stderr,*) 'active tasks remaining:', self%na
+  link => self%head
+  do while (associated(link))
+    write (stderr,*) 'task id, time =', link%task%id, link%task%time
+    link => link%next
+  end do        
+  write (stderr,*) 'tasks in garbage:'
+  link => garbage
+  do while (associated(link))
+    write (stderr,*) 'task id, time =', &
+      link%task%id, link%task%time, link%task%n_needed
+    link => link%next
+  end do        
+END SUBROUTINE dead_mans_hand_list
 
 !===============================================================================
 !> Average over a variable with index idx

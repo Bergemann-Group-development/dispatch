@@ -104,10 +104,6 @@ SUBROUTINE execute (self, task_list, test)
       !$omp atomic
       min_nq = min(min_nq,task_list%nq)
     end if
-    if (timer%dead_mans_hand > 0.0) then
-      if (wallclock() > timer%dead_mans_hand + 30.0) &
-        call mpi%abort('dead mans hand')
-    end if
   end do
   write (io_unit%log,*) 'thread',omp%thread,' arrived'
   flush (io_unit%log)
