@@ -64,7 +64,7 @@ MODULE mpi_mesg_mod
   !-----------------------------------------------------------------------------
   type, public:: mpi_mesg_t
     logical:: initialized=.false.
-    type(mesg_list_t):: sent_list, recv_list
+    type(mesg_list_t):: sent_list, recv_list, unpk_list
     integer:: n_check=0
     integer:: n_ready=0
     integer:: n_update=0
@@ -96,7 +96,7 @@ MODULE mpi_mesg_mod
   type(mpi_mesg_t), public:: mpi_mesg
   type(mesg_list_t), save, public:: unpk_list, sent_list, recv_list
   !$omp threadprivate (unpk_list,sent_list,recv_list)
-  real, save:: delay_ms=3.0
+  real, save:: delay_ms=0.0                     ! allow automatic setting
   integer, save:: min_nq=10                     ! min ready q size for MPI_Test
   integer, save:: max_sent=10                   ! max outstanding patch sends
   integer, save:: max_recv=100                  ! max outstanding patch recvs
@@ -303,7 +303,7 @@ END SUBROUTINE check_sent
 SUBROUTINE check_priv
   class(mesg_t), pointer:: mesg, next
   logical:: flag
-  integer:: ierr
+  integer:: ierr, n, m
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (mpi%size <= 1 .or. .not.associated(sent_list%head)) return
@@ -312,10 +312,14 @@ SUBROUTINE check_priv
   mesg => sent_list%head                                      ! top of list
   do while (associated(mesg))
     next => mesg%next                                         ! in case removed
-    !call MPI_TESTALL (mesg%nreq, mesg%reqs, flag, MPI_STATUSES_IGNORE, ierr)
-    call mesg%test_all (flag)
-    if (flag) then
-      call sent_list%remove (mesg)                            ! yes, remove
+    if (sent_list%n > max_sent) then                          ! force wait?
+      call mesg%wait_all                                      ! wait for mesg
+      flag = .true.
+    else
+      call mesg%test_all (flag)                               ! test mesgs
+    end if
+    if (flag) then                                            ! remove?
+      call sent_list%remove (mesg)                            ! yes
       call sent_list%delete (mesg, send=.true.)               ! deallocate
     end if
     mesg => next                                              ! true next
@@ -554,6 +558,13 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   rewind (io%input)
   read (io%input, mpi_mesg_params,iostat=iostat)
+  if (mpi%mode /= MPI_THREAD_MULTIPLE) then
+    min_nq = 0
+    max_sent = 1000
+    max_recv = 1000
+    recv_wait = .false.
+    send_wait = .false.
+  end if
   write (io%output, mpi_mesg_params)
   self%debug = debug
   self%min_nq = min_nq
@@ -561,6 +572,7 @@ SUBROUTINE init (self)
   self%max_probe = max_probe
   self%recv_wait = recv_wait
   self%uniq_mesg = uniq_mesg
+  self%delay_ms = delay_ms
   mpi_mesg%test_time = test_time
   !-----------------------------------------------------------------------------
   ! Default values from dispatcher possible changed here
@@ -571,6 +583,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   self%sent_list%name = 'sent_list'
   self%recv_list%name = 'recv_list'
+  self%unpk_list%name = 'unpk_list'
   !$omp parallel
   recv_list%name = 'recv_list'
   sent_list%name = 'sent_list'
@@ -1017,12 +1030,8 @@ SUBROUTINE delay (self, n, ms)
     ms_l = mpi_mesg%delay_ms
   end if
   if (ms_l==0.0) return
-  call trace%begin ('mpi_mesg_t%delay', itimer=itimer)
+  call trace%begin ('mpi_mesg_t%no_queue', itimer=itimer)
   call mpi%delay (ms_l)
-  if (present(n)) then
-    write (io_unit%log,*) wallclock(), omp%thread, 'delay:', n
-    flush (io_unit%log)
-  end if
   !$omp atomic
   self%n_delay = self%n_delay + 1
   call trace%end (itimer)
@@ -1063,25 +1072,16 @@ SUBROUTINE diagnostics (self, flag)
 END SUBROUTINE diagnostics
 
 !===============================================================================
-!> Check that a package is in the expected order
+!> Check that a package is in the expected order. Note that only the master
+!> thread exectures this function, so no atomic constructs are needed
 !===============================================================================
 LOGICAL FUNCTION is_in_order (self)
   class(mesg_t):: self
-  if (.not.allocated(expected)) then
-    allocate (expected(0:mpi%size-1))
-    expected(:) = 1
-  end if
-  !$omp critical (expected_cr)
+  !.............................................................................
   is_in_order = self%seq == expected(self%sender)
   if (is_in_order) then
     expected(self%sender) = mod(expected(self%sender)+1,100)
-  else
-    if (verbose > 1) &
-      write (io_unit%log,*) 'MPI mesg not in expected order', &
-        self%seq, expected(self%sender)
   end if
-  flush (io_unit%log)
-  !$omp end critical (expected_cr)
 END FUNCTION is_in_order
 
 END MODULE mpi_mesg_mod
