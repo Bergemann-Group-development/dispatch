@@ -26,6 +26,7 @@ MODULE omp_lock_mod
     integer:: thread=-1
     character(len=4):: kind = 'void'
     integer:: level=0
+    logical:: on
     !real:: verbose=0.0
     real(8):: wait_time=0.0_8           ! time waiting for lock
     real(8):: hold_time=0.0_8           ! time holding lock
@@ -47,12 +48,12 @@ MODULE omp_lock_mod
   end type
   integer, save:: verbose=0
   real, save:: verbose_time=0.0
-  type(lock_t), save, public:: omp_lock
   integer, save:: id_save=-1, n_lock=0
   logical, save:: on = .true.
   character(len=6):: log='queue'
   integer:: unit
   real(8):: wait_time=0d0
+  type(lock_t), save, public:: omp_lock
 CONTAINS
 
 !===============================================================================
@@ -82,6 +83,8 @@ SUBROUTINE init (self, kind, id)
       write (io_unit%output, lock_params)
       if (trim(log)=='queue') then
         unit = io_unit%queue
+      else if (trim(log)=='log') then
+        unit = io_unit%log
       else
         unit = io_unit%output
       end if
@@ -99,11 +102,14 @@ SUBROUTINE init (self, kind, id)
       set_id = .false.
     end if
     if (present(kind)) self%kind = kind
-    if (wallclock() < verbose) &
+    if (wallclock() < verbose_time .or. verbose > 1) &
       write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
         self%kind, self%id, set_id
+    omp_lock%on = on
   end if
   !$omp end critical (lock_cr)
+  if (omp%nthreads == 1) &
+    on = .false.
 #ifdef TRACE 
   call trace%end()
 #endif
@@ -140,7 +146,12 @@ SUBROUTINE set (self, label)
 #endif
   thread = omp_get_thread_num()
   wc = wallclock()
-  if (wc < verbose_time) then
+  self%start_time = wc
+  call omp_set_nest_lock (self%lock)
+  !-----------------------------------------------------------------------------
+  ! Wait with the (possibly disturbing) output of log info until the lock is set
+  !-----------------------------------------------------------------------------
+  if (wc < verbose_time .or. verbose > 1) then
     if (present(label)) then
       write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, &
@@ -151,8 +162,6 @@ SUBROUTINE set (self, label)
         self%level, thread, '   get'
     end if
   end if
-  self%start_time = wc
-  call omp_set_nest_lock (self%lock)
   wc = wallclock()
   self%used_time = wc - self%start_time
   self%wait_time = self%wait_time + self%used_time
@@ -162,7 +171,7 @@ SUBROUTINE set (self, label)
   self%thread = thread
   self%level = self%level+1
   !$omp flush
-  if (wc < verbose_time) then
+  if (wc < verbose_time .or. verbose > 1) then
     write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
       ' lock kind, id, level, thread = ', self%kind, self%id, &
       self%level, thread, '   set'
@@ -199,7 +208,7 @@ FUNCTION test (self) RESULT (out)
       self%thread = thread
       self%level = self%level+1
       wc = wallclock()
-      if (wc < verbose_time) &
+      if (wc < verbose_time .or. verbose > 1) &
         write (io_unit%log,'(f10.6,i4,a,i6,i3,a)') wc, thread, ' lock id', self%id, self%level, '  test'
       !print *, thread, ' test has lock id', self%id, self%thread
     else
@@ -225,12 +234,12 @@ FUNCTION check (self) RESULT (out)
 END FUNCTION check
 
 !===============================================================================
-!> Unset the associated thread number and relase the lock (in that order!)
+!> Unset the associated thread number and release the lock (in that order!)
 !===============================================================================
 SUBROUTINE unset (self, label)
   class(lock_t):: self
   character(len=*), optional:: label
-  integer:: thread
+  integer:: thread, level
   real(8):: wc
   !-----------------------------------------------------------------------------
   if (.not.on) return
@@ -239,6 +248,7 @@ SUBROUTINE unset (self, label)
 #endif
   thread = omp_get_thread_num()
   self%level = self%level-1
+  level = self%level
   if (self%level==0) then
     self%thread = -1
   end if
@@ -249,13 +259,13 @@ SUBROUTINE unset (self, label)
   self%hold_time = self%hold_time + self%used_time
   !write(unit,*) &
   !  'lock%unset: kind, id, thread, level = ', self%kind, self%id, self%thread, self%level
-  if (wc < verbose_time) then
+  if (wc < verbose_time .or. verbose > 1) then
     if (present(label)) then
       write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
-        ' lock kind, id, level, thread = ', self%kind, self%id, self%level, thread, ' unset at '//label
+        ' lock kind, id, level, thread = ', self%kind, self%id, level, thread, ' unset at '//label
     else
       write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
-        ' lock kind, id, level, thread = ', self%kind, self%id, self%level, thread, ' unset'
+        ' lock kind, id, level, thread = ', self%kind, self%id, level, thread, ' unset'
     end if
   end if
 #ifdef TRACE 
@@ -278,6 +288,7 @@ SUBROUTINE info (unit)
   real(8):: time
   type(lock_t), pointer:: lock
   !-----------------------------------------------------------------------------
+  if (.not.on) return
   if (verbose > 0) then
     lock => omp_lock%next
     !$omp critical (lock_cr)
