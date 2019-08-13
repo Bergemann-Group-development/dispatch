@@ -107,10 +107,11 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !.............................................................................
   class(link_t), pointer:: nbor, sorted_head, nbors
   class(patch_t), pointer:: target, source
-  integer:: edges, l(3), u(3), ix, iy, iz
+  integer:: edges, l(3), u(3), ix, iy, iz, jt(2), new
   integer, save:: itimer=0
+  real:: pt(2)
   character(len=64):: info
-  logical:: all_cells_l
+  logical:: all_cells_l, lock_it
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link', itimer=itimer)
   if (.not.associated(link)) then
@@ -191,12 +192,34 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       flush (io_unit%output)
     end if
     if (omp_lock%tasks) then
-      call source%lock%set ('download_link')
+      !-------------------------------------------------------------------------
+      ! If the source task is being actively updated, and the slot could become
+      ! the one after source%new, lock the task mem, so either it cannot change
+      ! during the guard zone loading or, if the lock is already set, access to
+      ! the source will have to wait until after the source update.
+      !-------------------------------------------------------------------------
+      call source%time_interval (target%time, jt, pt)
+      !$omp atomic read
+      new = source%new
+      new = mod(new,source%nt) + 1
+      lock_it = source%is_set(bits%busy) .and. (jt(1) == new)
+      if (lock_it) then
+        if (verbose > 0) &
+          write (io_unit%log,'(a,2i3,1x,2i3,2x,2f6.3,f12.6,2x,10f12.6)') &
+            'download_link: it, new, jt, pt, target%time, source%t =', &
+            source%it, source%new, jt, pt, target%time, source%t
+        !$omp atomic update
+        timer%n_download(1) = timer%n_download(1) + 1
+        call source%lock%set ('download_link')
+      else
+        !$omp atomic update
+        timer%n_download(2) = timer%n_download(2) + 1
+      end if
     end if
     if (verbose > 1) &
       write(io_unit%log,*) target%id, target%level, &
         'download_t%download_link: source, level, download =', &
-        source%id, source%level, nbor%download
+        source%id, source%level, nbor%download, lock_it
     !---------------------------------------------------------------------------
     ! Skip nbor not marked for download
     !---------------------------------------------------------------------------
@@ -214,7 +237,9 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
          else if (source%level==target%level) then
            call self%same (target, source, all_cells, only=only)
          else if ((source%level-target%level) <= -1) then
-           if (use_different == -3) then
+           if (use_different == -2) then
+             call different (self, target, source, all_cells, only=only)
+           else if (use_different == -3) then
              call prolong (self, target, source, all_cells, only=only)
            else
              call different_prolong (self, target, source, all_cells, only=only)
@@ -256,7 +281,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
      end if
     end if
     if (omp_lock%tasks) then
-      call source%lock%unset ('download_link')
+      if (lock_it) &
+        call source%lock%unset ('download_link')
     end if
     nbor => nbor%next
   end do
@@ -677,6 +703,17 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
             do iy=l(2),u(2)
               do ix=l(1),u(1)
                 ii = [ix,iy,iz]
+!                if (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) <= 0.0) then
+!                  write (io_unit%log,9) wallclock(), &
+!                    l,u,ix,iy,iz,o,iv,source%it,source%new,1,jt, &
+!                    source%id,source%time,target%id,target%time,source%iit
+!                9 format(f12.6,6(3i4,2x),2(i6,f12.6),7i3)
+!                end if
+!                if (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1) <= 0.0) then
+!                  write (io_unit%log,9) wallclock(), &
+!                    l,u,ix,iy,iz,o,iv,source%it,source%new,2,jt, &
+!                    source%id,source%time,target%id,target%time,source%iit
+!                end if
                 target%mem(ix,iy,iz,iv,target%it,1) = &
                   merge(target%mem(ix,iy,iz,iv,target%it,1), &
                     exp(pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &

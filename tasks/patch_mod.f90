@@ -325,6 +325,7 @@ SUBROUTINE header_to_patch (self, head)
     self%t          = head%t(1:nt)
     self%dt         = head%dt(1:nt)
     self%iit        = head%iit(1:nt)
+    self%new        = head%iit(nt)
   else
     write (io_unit%log,*) omp%thread,'header_to_patch WARNING: nt non-positive', nt
     flush (io_unit%log)
@@ -1322,6 +1323,7 @@ SUBROUTINE unpack (self, mesg)
   ! Compute size of buffer
   !-----------------------------------------------------------------------------
   call trace_begin ('patch_t%unpack', itimer=itimer)
+  call self%set (bits%busy)
   self%unpack_time = wallclock()
   buffer => mesg%buffer
   n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
@@ -1375,6 +1377,7 @@ SUBROUTINE unpack (self, mesg)
   call self%lock%unset ('unpack')
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
+  call self%clear (bits%busy)
   call trace_end (itimer)
 END SUBROUTINE unpack
 
