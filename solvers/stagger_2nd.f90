@@ -152,7 +152,7 @@ FUNCTION ddx (ds, a) RESULT (b)
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
-  call trace%begin ('stagger_mod::ddx', itimer=itimer)
+  !call trace%begin ('stagger_mod::ddx', itimer=itimer)
   n = shape(a)
 !  if (hardwire) then
 !    if (all(n==[16,16,16])) then
@@ -182,7 +182,7 @@ FUNCTION ddx (ds, a) RESULT (b)
   else
     b = 0.0
   endif
-  call trace%end (itimer)
+  !call trace%end (itimer)
   stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddx
@@ -195,7 +195,7 @@ FUNCTION ddy (ds, a) RESULT (b)
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
-  call trace%begin ('stagger_mod::ddy', itimer=itimer)
+  !call trace%begin ('stagger_mod::ddy', itimer=itimer)
   n = shape(a)
 !  if (hardwire) then
 !    if (all(n==[16,16,16])) then
@@ -225,7 +225,7 @@ FUNCTION ddy (ds, a) RESULT (b)
   else
     b = 0.0
   endif
-  call trace%end (itimer)
+  !call trace%end (itimer)
   stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddy
@@ -238,7 +238,7 @@ FUNCTION ddz (ds, a) RESULT (b)
   integer :: ix, iy, iz, n(3)
   integer, save:: itimer=0
 !...............................................................................
-  call trace%begin ('stagger_mod::ddz', itimer=itimer)
+  !call trace%begin ('stagger_mod::ddz', itimer=itimer)
   n = shape(a)
 !  if (hardwire) then
 !    if (all(n==[16,16,16])) then
@@ -268,7 +268,7 @@ FUNCTION ddz (ds, a) RESULT (b)
   else
     b = 0.0
   endif
-  call trace%end (itimer)
+  !call trace%end (itimer)
   stagger%flops = stagger%flops + 2*n(2)*n(3)*(n(1)-1)
   stagger%count = stagger%count + 1
 END FUNCTION ddz
