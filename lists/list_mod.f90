@@ -263,7 +263,7 @@ SUBROUTINE prepend_link (self, link)
 END SUBROUTINE prepend_link
 
 !===============================================================================
-!> Remove a link from the list, taking special care with the head and tail.
+!> Remove a task from consideration, making sure that virtual copies do the same.
 !> Set bits%remove, which excludes the task from nbor lists in check_ready(),
 !> and signals rank nbors to repeat this remove_and_reset().
 !===============================================================================
@@ -274,9 +274,14 @@ SUBROUTINE remove_and_reset (self, link)
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%remove_and_reset')
   !-----------------------------------------------------------------------------
-  ! Send a suicide note to virtual nbors, if this is a boundary patch
+  ! By setting bits%remove immediately, we make sure that the task is no longer
+  ! considered in check_ready() calls, and also that the task is no longer
+  ! counted in check_ready() calls to nbors of it.
   !-----------------------------------------------------------------------------
   call link%task%set (bits%remove)            ! cf. check_ready() and unpack()
+  !-----------------------------------------------------------------------------
+  ! Send a suicide note to virtual nbors, if this is a boundary patch
+  !-----------------------------------------------------------------------------
   if (link%task%is_set (bits%boundary)) then
     call self%send_to_vnbors (link)
   end if
@@ -1130,14 +1135,13 @@ SUBROUTINE init_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
   !.............................................................................
-  class(link_t), pointer:: nbor, scan, new_head, old_head, nbors
+  class(link_t), pointer:: nbor, scan, new_head, new_sort, old_head, old_sort, nbors
   integer:: n_add
   logical:: overlaps
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('list_t%init_nbors ', itimer=itimer)
-  old_head => link%nbor
-  nullify (new_head)
+  nullify (new_head, new_sort)
   n_add = 0
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
@@ -1190,25 +1194,22 @@ SUBROUTINE init_nbors (self, link)
     'added ', n_add, ' neighbors to', link%task%id, &
     link%task%is_set(bits%boundary), link%task%is_set(bits%virtual)
   !-----------------------------------------------------------------------------
-  ! The link only needs to be locked the brief moment while it changes the
-  ! nbor pointer.  
+  ! The links only needs to be locked the brief moment while the nbor pointers
+  ! are changed.  
   !-----------------------------------------------------------------------------
+  nullify (new_sort)
+  call link%sort_nbors_by_level (new_head, new_sort)
   call link%lock%set ('init_nbors')
+  old_head => link%nbor
+  old_sort => link%nbors_by_level
   link%nbor => new_head                               ! switch nbor list
+  link%nbors_by_level => new_sort
   call link%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
-  ! The extra copy was to prevent tasks from being removed by garbage collection
-  ! and should not be needed any more
+  ! Remove the two previour nbor lists
   !-----------------------------------------------------------------------------
-  !call link%copy_nbor_list (link%nbors_by_level, nbors)
-  call link%remove_nbor_list (link%nbors_by_level)
-  call link%sort_nbors_by_level (link%nbor, link%nbors_by_level)
-  !call link%remove_nbor_list (nbors)
   call link%remove_nbor_list (old_head)               ! recover nbor list mem
-  !-----------------------------------------------------------------------------
-  ! The old nbor list cannot possible be used by another thread at this time,
-  ! since it was only used for one thing, namely to generate the cached nbor
-  ! list, and during that time the link was locked.
+  call link%remove_nbor_list (old_sort)
   !-----------------------------------------------------------------------------
   link%task%n_nbors = n_add                           ! remember n_nbors
   !-----------------------------------------------------------------------------
