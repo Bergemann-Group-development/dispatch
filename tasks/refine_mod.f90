@@ -224,6 +224,7 @@ MODULE refine_mod
   character(len=32), dimension(ngradvar):: grad_var=""
   logical:: on=.false.                        ! Flag to turn the entire process on or off
   logical:: force_cubical=.false.             ! Force cubical patches
+  logical:: detailed_timer=.false.            ! Lump all AMR together when false
   integer:: n_locks=1                         ! number of locks to use
   integer:: verbose=0                         ! Noise level
   type(refine_t), public:: refine
@@ -242,7 +243,7 @@ SUBROUTINE init (self)
     ratio, refine_from_t, refine_until_t, min_dx, max_dx, max_jeans, min_jeans, &
     max_shock, min_shock, max_contact, min_contact, max_grad, min_grad, &
     max_vorticity, min_vorticity, max_compress, min_compress, &
-    grad_var, region_llc, region_urc, force_cubical, n_locks
+    grad_var, region_llc, region_urc, force_cubical, n_locks, detailed_timer
   character(len=120):: id = &
     '$Id$ tasks/refine_mod.f90'
   !-----------------------------------------------------------------------------
@@ -287,7 +288,7 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   !----------------------------------------------------------------------------
   refine = 0
   if (.not. on) return
-  call trace%begin('refine_t%needed', itimer=itimer)
+  call trace%begin('refine_t%needed', itimer=itimer, detailed_timer=detailed_timer)
   !----------------------------------------------------------------------------
   ! Refinement criteria, starting with assumed derefinement
   !------------------------------------------------------------------------
@@ -349,7 +350,7 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'derefine support'
   !
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION refine_needed
 
 !===============================================================================
@@ -470,7 +471,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
   integer(int8), allocatable:: refined(:,:,:)
   integer:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%selective_refine', itimer=itimer)
+  call trace%begin ('refine_t%selective_refine', itimer=itimer, detailed_timer=detailed_timer)
   was_refined = .false.
   was_derefined = .false.
   link => patch%link
@@ -586,13 +587,17 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
         flush (unit)
         end associate
       end if
-      !-----------------------------------------------------------------------
+      !-------------------------------------------------------------------------
+      ! If task is to be removed, call the comprehensive remove procedure, which
+      ! includes calling set_init_nbors(), queueing all nbors for immediate
+      ! update of their nbor lists.
+      !-------------------------------------------------------------------------
       call tasklist%remove_and_reset (link)
       was_derefined = .true.
     end if
   end if
   deallocate (refined)
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE selective_refine
 
 !===============================================================================
@@ -629,7 +634,9 @@ SUBROUTINE check_support (self, tlist, new, n_added)
   n_added = 0
   if (new%task%level <= self%levelmin+1) return
   !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%check_support', itimer=itimer)
+  call trace%begin ('refine_t%check_support', itimer=itimer, detailed_timer=detailed_timer)
+write (io_unit%log,*) 'unexpected call to check_support for', new%task%id, &
+new%task%is_set(bits%boundary),  new%task%is_set(bits%virtual)
   !-----------------------------------------------------------------------------
   ! Select patch-based tasks, and assume for now it is OK for updates
   !-----------------------------------------------------------------------------
@@ -705,7 +712,7 @@ SUBROUTINE check_support (self, tlist, new, n_added)
     call tlist%lock%unset ('check_support')
   end if
   !-----------------------------------------------------------------------------
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE check_support
 
 !===============================================================================
@@ -784,7 +791,7 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
   refine = -1
   if (link%task%level == self%levelmin) &
     return
-  call trace%begin('refine_t%check_derefine_support', itimer=itimer)
+  call trace%begin('refine_t%check_derefine_support', itimer=itimer, detailed_timer=detailed_timer)
   !-----------------------------------------------------------------------------
   call tlist%lock%set ('check_derefine_support')
   nbor => link%nbor
@@ -802,7 +809,7 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
   !-----------------------------------------------------------------------------
   call tlist%lock%unset ('check_derefine_support')
   !-----------------------------------------------------------------------------
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION check_derefine_support
 
 !===============================================================================
@@ -820,7 +827,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   integer:: j, count, l(3), u(3), n_added
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('refine_t%make_child_patch', itimer=itimer)
+  call trace%begin('refine_t%make_child_patch', itimer=itimer, detailed_timer=detailed_timer)
   if (parent%rank /= mpi%rank) then
     print *, 'make_child_patch: mpi%rank, parent%rank =', mpi%rank, parent%rank
     call io%abort ('make_child_patch: wrong MPI rank')
@@ -833,9 +840,9 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   ! necessary, to pick up properties that may have been set at the experiment
   ! level, which would otherwise be left undefined, or in inconsistent state
   !-----------------------------------------------------------------------------
-  call parent%lock%set
+  call parent%lock%set ('parent')
   allocate (child, source=parent)
-  call parent%lock%unset
+  call parent%lock%unset ('parent')
   call child%clone_mem_accounting
  !-----------------------------------------------------------------------------
   child%mem_allocated = .false.                      ! make sure to get ..
@@ -955,7 +962,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
     flush (io%output)
   end if
   !-----------------------------------------------------------------------------
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE make_child_patch
 
 !===============================================================================
@@ -1067,7 +1074,7 @@ FUNCTION check_compress (self, patch) RESULT(refine_it)
   logical:: masked
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%check_compress', itimer=itimer)
+  call trace%begin ('refine_t%check_compress', itimer=itimer, detailed_timer=detailed_timer)
   l = 1
   u = patch%gn
   allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
@@ -1107,7 +1114,7 @@ FUNCTION check_compress (self, patch) RESULT(refine_it)
       masked
   end if
   deallocate (test)
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION check_compress
 
 !===============================================================================
@@ -1126,7 +1133,7 @@ FUNCTION check_vorticity (self, patch) RESULT(refine_it)
   logical:: masked
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%check_vorticity', itimer=itimer)
+  call trace%begin ('refine_t%check_vorticity', itimer=itimer, detailed_timer=detailed_timer)
   l = 1
   u = patch%gn
   allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
@@ -1166,7 +1173,7 @@ FUNCTION check_vorticity (self, patch) RESULT(refine_it)
       masked
   end if
   deallocate (test)
-  call trace%end (itimer)
+  call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION check_vorticity
 
 !===============================================================================
