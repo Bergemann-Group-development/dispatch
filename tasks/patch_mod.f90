@@ -273,7 +273,6 @@ SUBROUTINE header_to_patch (self, head)
   ! an incoming patch is not.  By doing this here, we avoid having to do it in
   ! a critical region, otherwise needed to protect an operation on the patch
   !-----------------------------------------------------------------------------
-  call self%lock%set ('unpack')
   if (iand(head%status, bits%boundary) /= 0) then
     head%status = ior(head%status, bits%virtual)
     head%status = iand(head%status, not(bits%boundary))
@@ -339,7 +338,6 @@ SUBROUTINE header_to_patch (self, head)
   !$omp atomic
   timer%latency%n    = timer%latency%n+1
   !.............................................................................
-  call self%lock%unset ('unpack')
 END SUBROUTINE header_to_patch
 
 !===============================================================================
@@ -653,18 +651,15 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   self%new = self%iit(self%nt)                  ! short-hand
   self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
-  !block
-
   n_header = storage_size(header)/32             ! 32 bits per word
   if (n_header*4 /= storage_size(header)/8) then
     write(io%output,*) n_header*4, storage_size(header)/8
     call mpi%abort ('n_header is incorrect')
   end if
-  !end block
-!  if (all(self%size == self%box)) then
-!    call self%set (bits%root_grid)
-!    if (io%verbose > 1) write(io%output,*) 'set bits%root_grid id =', self%id
-!  end if
+  if (all(self%size == self%box)) then
+    call self%set (bits%root_grid)
+    if (io%verbose > 1) write(io%output,*) 'set bits%root_grid id =', self%id
+  end if
   call trace%end()
 END SUBROUTINE setup
 
@@ -1338,7 +1333,7 @@ SUBROUTINE unpack (self, mesg)
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
-  call self%lock%set
+  call self%lock%set ('unpack')
   call self%header_to_patch (header)
   if (io%verbose > 1) &
     write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
@@ -1377,7 +1372,7 @@ SUBROUTINE unpack (self, mesg)
       ibuf = ibuf + n_buf
     end do
   end if
-  call self%lock%unset
+  call self%lock%unset ('unpack')
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
   call trace_end (itimer)
@@ -1400,8 +1395,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   real:: fmin, fmax
   real, dimension(:,:,:), pointer:: df
   integer, parameter:: max_lines=50
-  integer, save:: counts(7)=0, id_prv=0
-  integer:: counts_l(7), i
+  integer, save:: counts(6)=0, id_prv=0
+  integer:: counts_l(6), i
   character(len=120):: fmt
   real(8):: time, print_next
   logical:: print_it
@@ -1464,7 +1459,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     iprint_l = iprint
     if (iprint_l >= print_every) then
       !$omp atomic write
-      iprint = 0
+      iprint = 1
       print_it = .true.
     else
       !$omp atomic update
@@ -1476,13 +1471,13 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     !---------------------------------------------------------------------------
     if (print_it .or. &
         print_every == 0 .and. self%time >= io%print_next) then
-     !--------------------------------------------------------------------------
-     ! Use double if and a brief lock period to ensure only one thread prints
-     !--------------------------------------------------------------------------
-     if (io%print_time > 0.0) &
-       call lock%set ('print')
-     if (self%time >= io%print_next) then
-      if (io%verbose>0 .or. self%id==io%id) then
+      !--------------------------------------------------------------------------
+      ! Use double if and a brief lock period to ensure only one thread prints
+      !--------------------------------------------------------------------------
+      if (io%print_time > 0.0) &
+        call lock%set ('print')
+      if (print_it .or. self%time >= io%print_next .or. &
+        io%verbose>0 .or. self%id==io%id) then
         !-----------------------------------------------------------------------
         ! If io%print_time is set, hold off printing until after print_next
         !-----------------------------------------------------------------------
@@ -1497,8 +1492,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         !-------------------------------------------------------------------------
         counts_l = &
           [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
-           mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  , &
-           mpi_mesg%n_delay]
+           mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  ]
         do i=1,size(counts)
           !$omp atomic update
           counts(i) = counts(i) + counts_l(i)
@@ -1512,7 +1506,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
           write(io%output,'(a)') &
           '0....+....1....+....2....+....3....+....4....+....5....+....' &
           //'6....+....7....+....8....+....9....+....0....+....1  ntsk   nq ' &
-          //' chk  rdy   upd  snt  prb  unp  dly snq rcq  BV'
+          //' chk  rdy   upd  snt  prb  unp  snq rcq unq  BV'
           !$omp end critical (info_cr2)
         end if
         !-----------------------------------------------------------------------
@@ -1534,7 +1528,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
             self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
             self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
             real(timer%n_update), ntask, nq, counts, &
-            mpi_mesg%nq_send, mpi_mesg%nq_recv, &
+            mpi_mesg%nq_send, mpi_mesg%nq_recv, mpi_mesg%unpk_list%n, &
             self%is_set(bits%boundary), self%is_set(bits%virtual)
         end do
         flush (io%output)
@@ -1554,9 +1548,6 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_unpk=0
         mpi_mesg%n_delay=0
       end if
-     end if
-     if (io%print_time > 0.0) &
-       call lock%unset ('print')
     end if
     !---------------------------------------------------------------------------
     ! Keep track of the shortest times step between updates of the io%id local
