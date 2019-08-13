@@ -480,6 +480,18 @@ FUNCTION update8 (self, i, n) RESULT (j)
   if (io_unit%verbose > 0) &
     write (io_unit%log,*) 'mpi_counter_t%update(1): incr, sum, rank, size =', &
     i, self%i, mpi%rank, mpi%size
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call accumulate (i)
+  else
+    !$omp critical (mpi_cr)
+    call accumulate (i)
+    !$omp end critical (mpi_cr)
+  end if
+  return
+contains
+  !-----------------------------------------------------------------------------
+  subroutine accumulate (i)
+  integer(8):: i
   call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
   call add(i)
   call MPI_Win_flush (master, self%window, mpi_err)
@@ -502,7 +514,7 @@ FUNCTION update8 (self, i, n) RESULT (j)
     end if
   end if
   call MPI_Win_unlock (master, self%window, mpi_err)
-contains
+  end subroutine accumulate
   !-----------------------------------------------------------------------------
   subroutine add (i)
   integer(8):: i
