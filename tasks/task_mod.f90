@@ -146,6 +146,8 @@ SUBROUTINE init (self)
   if (self%id == 0) then
     call init_unique (self)
   end if
+  call self%lock%init (self%kind(1:4), id=self%id+2)
+  call self%random%init
   call trace_end ()
 END SUBROUTINE init
 
@@ -157,15 +159,16 @@ SUBROUTINE init_unique (self, same)
   logical, optional:: same
   integer:: id
   integer, save:: id_same=0
-  !$omp critical (task_id_cr)
   !-----------------------------------------------------------------------------
-  ! Ranks that call this routinein sync  with same=.true. get a matching set
+  ! Ranks that call this routine in sync  with same=.true. get a matching set
   ! of IDs to prune from, while the master updates the global counter
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init_unique')
   if (present(same) .and. same) then
+    !$omp atomic capture
     id_same = id_same+1
     id = id_same
+    !$omp end atomic
     if (mpi%rank==0) then               ! on the master rank ..
       mpi%id%i = id+1                   ! .. update the mpi%id counter directly
     end if
@@ -181,9 +184,6 @@ SUBROUTINE init_unique (self, same)
       write (io_unit%log,*) 'task_t%init_unique(else): mpi%id, id =', id_same, id
   end if
   self%id = id
-  !$omp end critical (task_id_cr)
-  call self%lock%init (self%kind(1:4), id=self%id+2)
-  call self%random%init
   call trace%end ()
 END SUBROUTINE init_unique
 
@@ -397,6 +397,7 @@ SUBROUTINE set (self, bits)
 !  call trace_begin ('task_t%set')
   !$omp atomic
   self%status = ior(self%status, bits)
+!write (io_unit%log,'(f12.6,3x,a,i6,z8)') wallclock(), 'set bit', self%id, bits
 !  call trace_end
 END SUBROUTINE
 
@@ -410,6 +411,7 @@ SUBROUTINE clear (self, bits)
 !  call trace_begin ('task_t%clear')
   !$omp atomic
   self%status = iand(self%status, not(bits))
+!write (io_unit%log,'(f12.6,3x,a,i6,z8)') wallclock(), 'clr bit', self%id, bits
 !  call trace_end
 END SUBROUTINE
 
