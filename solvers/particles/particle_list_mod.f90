@@ -198,12 +198,12 @@ SUBROUTINE force_field (self, patch)
     ip = ip+1
     select type (p)
     class is (particle_t)
-print *, 'hash_table%get: key =', [p%id, patch%id]
+      print *, 'hash_table%get: key =', [p%id, patch%id]
       call hash_table%get ([p%id, patch%id], ptr)
-print *, 'PP', ip, f(ip,:), associated(ptr)
+      print *, 'PP', ip, f(ip,:), associated(ptr)
       select type (ptr)
         class is (patch_force_t)
-print *, 'PP', ip, ptr%it, p%time
+        print *, 'PP', ip, ptr%it, p%time
         ptr%f(ptr%it,:) = f(ip,:)
       end select
     end select
