@@ -157,11 +157,9 @@ SUBROUTINE init (self, name)
     ! Read io_params namelist
     !---------------------------------------------------------------------------
     inputdir = self%rundir
-    stdout = io_unit%output
     rewind (io_unit%input)
     read (io_unit%input, io_params, iostat=iostat)
     if (iostat > 0) call self%namelist_warning ('io_params')
-    write (stdout,io_params)
     if (mpi%master .and. .not. do_validate) then
       print'(a,i4)', ' n_socket =', omp%nsockets
       print'(a,i4)', '   n_core =', omp%ncores
@@ -221,6 +219,8 @@ SUBROUTINE init (self, name)
     end if
     !$omp end critical (open_cr)
     !$omp end parallel
+    stdout = io_unit%output
+    write (stdout,io_params)
     !---------------------------------------------------------------------------
     ! Backwards compatibility
     !---------------------------------------------------------------------------
