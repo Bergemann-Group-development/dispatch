@@ -1247,6 +1247,15 @@ SUBROUTINE pack (self, mesg)
     mesg%nbuf = mesg%nbuf+ self%nv*n_buf
   end if
   allocate (mesg%buffer(mesg%nbuf))
+  if (mpi_mesg%nbuf==0) then
+    !$omp critical (nbuf_cr)
+    if (mpi_mesg%nbuf==0) then
+      mpi_mesg%nbuf = mesg%nbuf
+      write (io_unit%log,*) &
+        'patch_t%pack: setting mpi_mesg%nbuf =', mpi_mesg%nbuf
+    end if
+    !$omp end critical (nbuf_cr)
+  end if
   call io%bits_mem (storage_size(mesg%buffer), product(shape(mesg%buffer)))
   allocate (mesg%reqs(self%n_nbors))
   mesg%id = self%id                                             ! MPI message tag
@@ -1361,6 +1370,9 @@ SUBROUTINE unpack (self, mesg)
   !-----------------------------------------------------------------------------
   do iv=1,self%nv
     call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
+!write(io_unit%log,'(a,i6,2i4,1p,e14.5)') &
+!'patch_t%unpack: id, iv, it, it, minval =', &
+!self%id, iv, self%it, minval(self%mem(:,:,:,iv,it,1))
     ibuf = ibuf + n_buf
   end do
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then

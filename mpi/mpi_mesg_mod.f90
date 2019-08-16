@@ -78,6 +78,7 @@ MODULE mpi_mesg_mod
     integer:: max_probe
     integer:: min_nq
     integer:: tag_type=0
+    integer:: nbuf=0
     logical:: recv_wait=.false.
     logical:: send_priv=.true.
     logical:: debug=.false.
@@ -87,6 +88,7 @@ MODULE mpi_mesg_mod
   contains
     procedure:: init
     procedure:: get
+    procedure:: iget
     procedure:: sent
     procedure:: delay
     procedure:: diagnostics
@@ -556,8 +558,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Namelist input
   !-----------------------------------------------------------------------------
-  rewind (io%input)
-  read (io%input, mpi_mesg_params,iostat=iostat)
   if (mpi%mode /= MPI_THREAD_MULTIPLE) then
     min_nq = 0
     max_sent = 1000
@@ -565,6 +565,8 @@ SUBROUTINE init (self)
     recv_wait = .false.
     send_wait = .false.
   end if
+  rewind (io%input)
+  read (io%input, mpi_mesg_params,iostat=iostat)
   write (io%output, mpi_mesg_params)
   self%debug = debug
   self%min_nq = min_nq
@@ -757,6 +759,66 @@ contains
 #endif
   end subroutine probe_for
 END SUBROUTINE get
+
+!===============================================================================
+!> Check for new incoming messages.  Note that, ideally, we want to probe for
+!> messages just before doing a task update, and then check afterwards, so that
+!> if the delay doing the work is enough, some probed messages will have arrived.
+!> This procedure returns flag=.true. as long as there are incoming messages,
+!> and returns the message if comlete.   If not, the message is added to the
+!> recv_list, to be check later.
+!===============================================================================
+SUBROUTINE iget (self, mesg)
+  class(mpi_mesg_t):: self
+  class(mesg_t), pointer:: mesg
+  integer:: nbuf
+  !.............................................................................
+  logical:: flag
+  integer:: msg ,ierr, req
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  nullify(mesg)
+  if (mpi%size <= 1) return
+  call trace%begin ('mpi_mesg_t%get', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Probe for incoming messages
+  !-----------------------------------------------------------------------------
+#ifdef MPI
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call probe_for
+  else
+    !$omp critical (mpi_cr)
+    call probe_for
+    !$omp end critical (mpi_cr)
+  end if
+#endif
+  call trace%end (itimer)
+  return
+contains
+  !-----------------------------------------------------------------------------
+  ! Probe for incoming MPI messages
+  !-----------------------------------------------------------------------------
+  subroutine probe_for
+    logical:: complete
+#ifdef MPI
+    allocate (mesg)
+    mesg%nbuf = mpi_mesg%nbuf
+    allocate (mesg%buffer(mesg%nbuf))
+    call io%bits_mem (storage_size(mesg%buffer),product(shape(mesg%buffer)), 'buf')
+    !call mesg%get_id (stat)
+    call MPI_IRECV (mesg%buffer, mesg%nbuf, MPI_INT, MPI_ANY_SOURCE, &
+                    MPI_ANY_TAG, mpi%comm, mesg%req, ierr)
+    !$omp atomic
+    mpi_mesg%nq_recv = mpi_mesg%nq_recv+1
+    !$omp atomic
+    mpi_mesg%n_recv = mpi_mesg%n_recv+1
+    !$omp atomic
+    timer%bytes_recv = timer%bytes_recv + 4.0_8*mesg%nbuf
+    !$omp atomic
+    timer%n_recv = timer%n_recv + 1_8
+#endif
+  end subroutine probe_for
+END SUBROUTINE iget
 
 !===============================================================================
 !> Get mesg%id, mesg%sender, mesg%seq

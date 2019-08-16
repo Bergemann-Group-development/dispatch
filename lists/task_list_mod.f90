@@ -184,7 +184,8 @@ SUBROUTINE startup (self)
   !call self%init_all_nbors
   !call self%reset_status
   !-----------------------------------------------------------------------------
-  ! Must initialize refine before calling init_levels and task_mesg_t%init --
+  ! Must initialize refine before calling init_levels and task_mesg_t%init, but
+  ! after tasks with levels have been created and initialized
   !-----------------------------------------------------------------------------
   call refine%init
   call self%init_levels

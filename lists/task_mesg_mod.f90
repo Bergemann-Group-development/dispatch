@@ -7,7 +7,7 @@
 !> after the colon).  Only the ones with recv_active==.false. can (FIXME) be
 !> used in AMR runs.
 !>
-!> recv_master  : master puts MPI_IMPROBE messages in recv_list and unpk_list
+!> recv_improbe  : master puts MPI_IMPROBE messages in recv_list and unpk_list
 !> recv_private : master checks (only) for msgs to known virtual tasks
 !> recv_private : ditto, but split up into thread-private lists
 !>
@@ -47,7 +47,8 @@ MODULE task_mesg_mod
   contains
     procedure:: init
     procedure:: check_mpi
-    procedure, private:: recv_master
+    procedure, private:: recv_improbe
+    procedure, private:: recv_irecv
     procedure:: init_virtual
     procedure, private:: recv_virtual
     procedure, private:: find_task
@@ -82,6 +83,23 @@ SUBROUTINE init (self, name)
   write (io%output, task_mesg_params)
   call self%hash_table%init (hash_table_size)
   !-----------------------------------------------------------------------------
+  mpi_mesg%uniq_mesg = .true.
+  select case (trim(method))
+  case ('irecv')
+    !---------------------------------------------------------------------------
+    ! When only the master thread is doing MPI recv, it will need to be able
+    ! to service a potentially large number of virtual tasks.  If, for example,
+    ! there are 64 cores handling 100 tasks each, and there are more virtual
+    ! than real tasks, then each time the master thread updates there must be
+    ! 63 other real task updates, and even more virtual task updates.
+    !---------------------------------------------------------------------------
+    mpi_mesg%max_recv = 5
+    mpi_mesg%tag_type = 2
+  case ('improbe')
+    mpi_mesg%tag_type = 2
+  case default
+    mpi_mesg%tag_type = 1
+  end select
   call trace%end ()
 END SUBROUTINE init
 
@@ -135,14 +153,19 @@ SUBROUTINE check_mpi (self)
   ! The 'private' method runs on all threads; the others only on master
   !-----------------------------------------------------------------------------
   select case (trim(method))
-  case ('master')
+  case ('improbe')
     if (omp%master) &
-      call self%recv_master
+      call self%recv_improbe
+  case ('irecv')
+    if (omp%master) &
+      call self%recv_irecv
   case ('virtual')
     if (omp%master) &
       call self%recv_virtual (master_list)
   case ('private')
     call self%recv_virtual (private_list)
+  case default
+    call mpi%abort ('unknown method in MPI_MESG_PARAMS')
   end select
   call trace%end
 END SUBROUTINE check_mpi
@@ -153,7 +176,7 @@ END SUBROUTINE check_mpi
 !> incoming messages is once per task update on one thread, which is suitable,
 !> since each task will be "served" about once per task update time. 
 !===============================================================================
-SUBROUTINE recv_master (self)
+SUBROUTINE recv_improbe (self)
   class(task_mesg_t):: self
   class(mesg_t), pointer:: mesg, next
   integer, save:: itimer=0
@@ -161,7 +184,7 @@ SUBROUTINE recv_master (self)
   logical:: ok
   !.............................................................................
   if (omp%thread > 0) return
-  call trace%begin ('task_mesg_t%recv_master', 1, itimer=itimer)
+  call trace%begin ('task_mesg_t%recv_improbe', 1, itimer=itimer)
   mpi_mesg%uniq_mesg = .true.
   !-----------------------------------------------------------------------------
   ! Step 1-3: receive, move, and unpack
@@ -185,7 +208,7 @@ SUBROUTINE recv_master (self)
       !$omp atomic update
       timer%n_master(4) = timer%n_master(4) + 1
       if (verbose > 1) &
-        write (io_unit%log,*) 'recv_master: waited on mesg', &
+        write (io_unit%log,*) 'recv_improbe: waited on mesg', &
           mesg%id, mesg%seq
       call mpi_mesg%recv_list%remove (mesg)
       call mpi_mesg%unpk_list%add (mesg)
@@ -199,16 +222,19 @@ contains
 !> Step 1: Get new messages
 !===============================================================================
 subroutine recv_mesgs
-  mpi_mesg%tag_type = 2
   n = 0
   call mpi_mesg%get (mesg)
   do while (associated(mesg))
     !$omp atomic update
     timer%n_master(1) = timer%n_master(1) + 1
-    call mpi_mesg%recv_list%add (mesg)
+    if (mesg%is_complete('recv_improbe')) then
+      call mpi_mesg%unpk_list%add (mesg)
+    else
+      call mpi_mesg%recv_list%add (mesg)
+    end if
     n = n+1
     if (verbose > 1) &
-      write (io_unit%log,*) 'recv_master: addded mesg to recv_list', &
+      write (io_unit%log,*) 'recv_improbe: addded mesg to recv_list', &
         mesg%id, mesg%seq
     call mpi_mesg%get (mesg)
   end do
@@ -220,17 +246,17 @@ subroutine move_mesgs
   mesg => mpi_mesg%recv_list%head
   do while (associated(mesg))
     next => mesg%next
-    if (mesg%is_complete('recv_master')) then
+    if (mesg%is_complete('recv_improbe')) then
       !$omp atomic update
       timer%n_master(2) = timer%n_master(2) + 1
       if (verbose > 1) &
-        write (io_unit%log,*) 'recv_master: moved to unpk_list:', &
+        write (io_unit%log,*) 'recv_improbe: moved to unpk_list:', &
           mesg%id, mesg%seq, associated(next)
       call mpi_mesg%recv_list%remove (mesg)
       call mpi_mesg%unpk_list%add (mesg)
     else
       if (verbose > 2) &
-        write (io_unit%log,*) 'recv_master:   not yet complete:', &
+        write (io_unit%log,*) 'recv_improbe:   not yet complete:', &
           mesg%id, mesg%seq
     end if
     mesg => next
@@ -248,19 +274,103 @@ subroutine unpk_mesgs
       timer%n_master(3) = timer%n_master(3) + 1
       call self%unpack (mesg)
       if (verbose > 1) &
-        write (io_unit%log,*) 'recv_master: unpacked from list:', &
+        write (io_unit%log,*) 'recv_improbe: unpacked from list:', &
           mesg%id, mesg%seq
       call mpi_mesg%unpk_list%remove (mesg)
       call mpi_mesg%unpk_list%delete (mesg, .false.)
     else
       if (verbose > 2) &
-        write (io_unit%log,*) 'recv_master:  kept in unpk_list:', &
+        write (io_unit%log,*) 'recv_improbe:  kept in unpk_list:', &
           mesg%id, mesg%seq
     end if
     mesg => next
   end do
 end subroutine unpk_mesgs
-END SUBROUTINE recv_master
+END SUBROUTINE recv_improbe
+
+!===============================================================================
+!> Check for and unpack MPI messages, using only the master thread, to avoid
+!> the need for critical regions and locks.  The cadence of checking for
+!> incoming messages is once per task update on one thread, which is suitable,
+!> since each task will be "served" about once per task update time. 
+!===============================================================================
+SUBROUTINE recv_irecv (self)
+  class(task_mesg_t):: self
+  class(mesg_t), pointer:: mesg, next
+  integer, save:: itimer=0
+  integer:: n
+  logical:: ok
+  !.............................................................................
+  if (omp%thread > 0) return
+  if (mpi_mesg%nbuf == 0) return
+  call trace%begin ('task_mesg_t%recv_irecv', 1, itimer=itimer)
+  mpi_mesg%uniq_mesg = .true.
+  !-----------------------------------------------------------------------------
+  ! Step 1-3: receive, move, and unpack
+  !-----------------------------------------------------------------------------
+  call recv_mesgs
+  call move_mesgs
+  call unpk_mesgs
+  call trace%end (itimer)
+contains
+!===============================================================================
+!> Step 1: Get new messages
+!===============================================================================
+subroutine recv_mesgs
+  n = 0
+  do while (mpi_mesg%recv_list%n < mpi_mesg%max_recv)
+    call mpi_mesg%iget (mesg)
+    if (mesg%is_complete('recv_irecv')) then
+      call mpi_mesg%unpk_list%add (mesg)
+    else
+      call mpi_mesg%recv_list%add (mesg)
+    end if
+    n = n + 1
+    if (verbose > 1) &
+      write (io_unit%log,*) 'recv_irecv: to recv_list', n, mpi_mesg%recv_list%n
+  end do
+end subroutine recv_mesgs
+!===============================================================================
+!> Step 2: Move complete messages to unpk_list; the mesg%id and %seq are filled
+!> in by is_complete(), using get_id()
+!===============================================================================
+subroutine move_mesgs
+  mesg => mpi_mesg%recv_list%head
+  do while (associated(mesg))
+    next => mesg%next
+    if (mesg%is_complete('recv_irecv')) then
+      if (verbose > 1) &
+        write (io_unit%log,*) 'recv_master: moved to unpk_list:', &
+          mesg%id, mesg%seq, associated(next)
+      call mpi_mesg%recv_list%remove (mesg)
+      call mpi_mesg%unpk_list%add (mesg)
+    end if
+    mesg => next
+  end do
+end subroutine move_mesgs
+!===============================================================================
+!> Step 3: Unpack in correct order
+!===============================================================================
+subroutine unpk_mesgs
+  mesg => mpi_mesg%unpk_list%head
+  do while (associated(mesg))
+    next => mesg%next
+    if (mesg%is_in_order()) then
+      call self%unpack (mesg)
+      if (verbose > 1) &
+        write (io_unit%log,*) 'recv_irecv: unpacked from list:', &
+          mesg%id, mesg%seq
+      call mpi_mesg%unpk_list%remove (mesg)
+      call mpi_mesg%unpk_list%delete (mesg, .false.)
+    else
+      if (verbose > 2) &
+        write (io_unit%log,*) 'recv_irecv:  kept in unpk_list:', &
+          mesg%id, mesg%seq
+    end if
+    mesg => next
+  end do
+end subroutine unpk_mesgs
+END SUBROUTINE recv_irecv
 
 !===============================================================================
 !> Run through all virtual patches, count them, and optionally create separate
@@ -273,10 +383,8 @@ SUBROUTINE init_virtual (self)
   integer:: nvirt, per, i, i1, i2
   !.............................................................................
   if (mpi%size==1) return
-  if (trim(method) == 'master') return
+  if (trim(method) /= 'virtual' .and. trim(method) /= 'private') return
   call trace%begin ('task_mesg_t%init_virtual')
-  mpi_mesg%uniq_mesg = .true.
-  mpi_mesg%tag_type = 1
   !---------------------------------------------------------------------------
   ! Count the number of virtual tasks, and assign a number per thread
   !---------------------------------------------------------------------------
