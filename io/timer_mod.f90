@@ -31,7 +31,6 @@ MODULE timer_mod
     integer:: istack=0
     real(8):: bytes_recv=0.0_8
     real(8):: sec_per_report=10d0
-    integer(8):: n_download(2)=0
     integer(8):: n_master(4)=0
     integer(8):: n_update=0
     integer(8):: n_recv=0_8
@@ -353,12 +352,6 @@ contains
       timer%spin_time = 0d0
     end if
     call omp_lock%info (unit)
-    if (omp_lock%on) then
-      write (unit,'(2(a,i6,8x))') &
-        ' download locked:', timer%n_download(1), &
-                'unlocked:', timer%n_download(2)
-      timer%n_download(:) = 0
-    end if
     flush (unit)
     self%n_mhd = 0; self%n_solve=0
   end subroutine write_to

@@ -209,11 +209,11 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
             'download_link: it, new, jt, pt, target%time, source%t =', &
             source%it, source%new, jt, pt, target%time, source%t
         !$omp atomic update
-        timer%n_download(1) = timer%n_download(1) + 1
+        omp_lock%n_download(1) = omp_lock%n_download(1) + 1
         call source%lock%set ('download_link')
       else
         !$omp atomic update
-        timer%n_download(2) = timer%n_download(2) + 1
+        omp_lock%n_download(2) = omp_lock%n_download(2) + 1
       end if
     end if
     if (verbose > 1) &
