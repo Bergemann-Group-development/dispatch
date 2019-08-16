@@ -30,7 +30,7 @@ MODULE particle_list_mod
     procedure:: force
     procedure:: force_field
     procedure:: test
-    procedure:: print
+    procedure:: print => print_list
   end type
   type(particle_list_t):: particle_list
   !-----------------------------------------------------------------------------
@@ -284,7 +284,7 @@ END SUBROUTINE test
 !===============================================================================
 !> Print a particle list
 !===============================================================================
-SUBROUTINE print (self)
+SUBROUTINE print_list (self)
   class(particle_list_t):: self
   class(dll_node_t), pointer:: p
   p => self%head
@@ -295,6 +295,6 @@ SUBROUTINE print (self)
     end select
     p => p%next
   end do
-END SUBROUTINE print
+END SUBROUTINE print_list
 
 END MODULE particle_list_mod
