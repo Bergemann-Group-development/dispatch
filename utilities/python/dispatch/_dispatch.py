@@ -336,7 +336,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
     return var
 
 class _patch():
-    def __init__(self,id,patch_dict,snap,rank):
+    def __init__(self,id,patch_dict,snap,rank,verbose=0):
         self.id=id
         self.rank=rank
         # add general attributes from snapshot_nml
@@ -390,7 +390,7 @@ class _patch():
             self.auxfile=auxfile
             self.aux=aux(id=id,io=snap.iout,file=auxfile)
             self.keys['aux']=self.aux.vars.keys()
-        else:
+        elif verbose>0:
             print(auxfile,'does not exist')
         
         """ Now collect all keys in a single list """
@@ -607,7 +607,7 @@ class snapshot():
                 """ The _patch procedure collects all information about a patch
                     into an instancc of the _patch class, and appends it to
                     the snapshot.patches list """
-                p=_patch(id,patch_dict[id],self,rank)
+                p=_patch(id,patch_dict[id],self,rank,verbose=verbose)
                 self._add_axes(p)
                 # Append to array of patch instances
                 self.patches.append(p)

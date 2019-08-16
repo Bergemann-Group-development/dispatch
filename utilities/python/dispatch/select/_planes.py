@@ -112,7 +112,14 @@ def unigrid_plane(snap,iv=0,x=None,y=None,z=None,point=0.5,dir=2,all=False,i4=0,
     pp=[p for p in pp if abs(point-p.position[dir]) <= (p.size[dir]+ds)/2]
     if verbose>0:
         print('number of patches:',len(pp))
+    n=0
     for p in pp:
+        n+=1
+        if verbose>1:
+            print(n)
+        elif verbose>0:
+            if n%100==0:
+                print(n)
         k=corner_indices(snap,p,dir)
         f,i=contribution(p,dir=dir,point=point,iv=iv,i4=i4,all=all,
           verbose=verbose)
@@ -132,7 +139,14 @@ def unigrid_volume(snap,iv=0,i4=0,verbose=0):
     p=pp[0]
     dim=tuple(snap.cartesian.dims*p.n)
     ff=np.zeros(dim)
+    n=0
     for p in pp:
+        n+=1
+        if verbose>1:
+            print(n)
+        elif verbose>0:
+            if n%100==0:
+                print(n)
         k=corner_indices(snap,p)
         ff[k[0]:k[1],k[2]:k[3],k[4]:k[5]]=p.var(iv)
     return ff
