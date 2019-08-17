@@ -55,9 +55,10 @@ MODULE task_mesg_mod
     procedure, private:: unpack
   end type
   integer, save:: verbose=0
+  logical, save:: use_hashtable=.true.
   type(task_mesg_t), save:: private_list, master_list, remove_list
   !$omp threadprivate (private_list)
-  character(len=8), save:: method='master'
+  character(len=8), save:: method='irecv'
   public:: task2patch
   type(task_mesg_t), public:: task_mesg
 CONTAINS
@@ -71,7 +72,7 @@ SUBROUTINE init (self, name)
   integer:: iostat
   integer, save:: hash_table_size=10000
   type(link_t):: link
-  namelist /task_mesg_params/ verbose, method, hash_table_size
+  namelist /task_mesg_params/ verbose, method, hash_table_size, use_hashtable
   character(len=120):: id = &
     '$Id$ lists/task_mesg_mod.f90'
   !-----------------------------------------------------------------------------
@@ -81,7 +82,8 @@ SUBROUTINE init (self, name)
   read (io%input, task_mesg_params, iostat=iostat)
   call link%init_verbose (verbose)
   write (io%output, task_mesg_params)
-  call self%hash_table%init (hash_table_size)
+  if (use_hashtable) &
+    call self%hash_table%init (hash_table_size)
   !-----------------------------------------------------------------------------
   mpi_mesg%uniq_mesg = .true.
   select case (trim(method))
@@ -147,7 +149,7 @@ SUBROUTINE check_mpi (self)
   ! Choose MPI recv method -- note that we force the hand in the AMR case
   !-----------------------------------------------------------------------------
   if (refine%on) then
-    method = 'master'
+    method = 'irecv'
   end if
   !-----------------------------------------------------------------------------
   ! The 'private' method runs on all threads; the others only on master
@@ -532,7 +534,9 @@ FUNCTION find_task (self, id, new) RESULT (link)
   call trace%begin ('task_mesg_t%find_task', itimer=itimer)
   if (verbose > 1) &
     write (io_unit%log,*) 'task_mesg_t%find_task: id =', id
-  call self%hash_table%get ([id, 1], ptr)
+  nullify(ptr)
+  if (use_hashtable) &
+    call self%hash_table%get ([id, 1], ptr)
   if (associated(ptr)) then
     new = .false.
     nullify(link)
@@ -561,8 +565,10 @@ FUNCTION find_task (self, id, new) RESULT (link)
         !-----------------------------------------------------------------------
         ! Save in hash table for next time
         !-----------------------------------------------------------------------
-        ptr => link
-        call self%hash_table%set ([id, 1], ptr)
+        if (use_hashtable) then
+          ptr => link
+          call self%hash_table%set ([id, 1], ptr)
+        end if
         new = .false.
         exit
       end if
