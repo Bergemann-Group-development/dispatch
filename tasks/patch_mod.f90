@@ -1346,6 +1346,9 @@ SUBROUTINE unpack (self, mesg)
   ibuf = ibuf + n_header
   call self%lock%set ('unpack')
   call self%header_to_patch (header)
+write (io_unit%log,'(f12.6,3x,a,i6,i4)') &
+wallclock(), 'patch_t%unpack: begin id =', self%id, self%it
+flush (io_unit%log)
   if (io%verbose > 1) &
     write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
       wallclock(), 'header_to_patch: id, nq, BVS, nsnd, nrcv, latency, time =', &
@@ -1387,6 +1390,9 @@ SUBROUTINE unpack (self, mesg)
     end do
   end if
   call self%lock%unset ('unpack')
+write (io_unit%log,'(f12.6,3x,a,i6,1p,e14.5)') &
+wallclock(), 'patch_t%unpack:   end id =', self%id, minval(self%mem(:,:,:,1,self%it,1))
+flush (io_unit%log)
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
   call self%clear (bits%busy)

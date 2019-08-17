@@ -691,8 +691,8 @@ SUBROUTINE unpack (self, mesg, link)
   id = task%id
   call task%unpack (mesg)
   if (verbose > 1) then
-    write (io_unit%mpi,'(a,3i6,f12.6,2x,3f10.4,2x,5l1)') &
-      'unpack: after task%unpack BVRES =', &
+    write (io_unit%mpi,'(f12.6,3x,a,3i6,f12.6,2x,3f10.4,2x,5l1)') &
+      wallclock(), 'unpack: after task%unpack BVRES =', &
       id, mesg%id, task%id, task%time, task%position, &
       task%is_set (bits%boundary), &
       task%is_set (bits%virtual), &
