@@ -179,6 +179,10 @@ SUBROUTINE update (self, task_list, test)
   !-----------------------------------------------------------------------------
   call task_list%check_mpi (n_unpk)                     ! check incoming MPI
   call mpi_io%iwrite_list%check                         ! I/O check
+  if (omp%nthreads > 4 .and. omp%master) then
+    call trace%end (itimer(i))
+    return
+  end if
   !-----------------------------------------------------------------------------
   ! Now is a convenient time to check if a file should be opened or closed.  No
   ! harm is done if that makes the thread hangs for a while; other threads work
