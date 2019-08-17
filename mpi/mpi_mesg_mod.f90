@@ -230,6 +230,9 @@ SUBROUTINE check_sent (self, nq)
     call check_priv
     return
   end if
+if (verbose > 0) &
+write (io_unit%log,*) wallclock(), omp%thread, &
+'check_sent: n =', self%n, max_sent, associated(self%head)
   if (mpi%size <= 1 .or. .not.associated(self%head)) return
   call trace%begin ('mpi_mesg_t%check_sent', itimer=itimer)
   !-----------------------------------------------------------------------------
@@ -296,6 +299,8 @@ SUBROUTINE check_sent (self, nq)
     end do
     !$omp end critical (sent_cr)
   end if
+if (verbose > 0) &
+write (io_unit%log,*) wallclock(), omp%thread, 'check_sent: n =', self%n 
   call trace%end (itimer)
 END SUBROUTINE check_sent
 
@@ -307,7 +312,12 @@ SUBROUTINE check_priv
   logical:: flag
   integer:: ierr, n, m
   integer, save:: itimer=0
+logical:: debug
   !-----------------------------------------------------------------------------
+debug = (verbose > 0) .and. (sent_list%n > 0)
+if (debug) &
+write (io_unit%log,*) wallclock(), omp%thread, &
+'check_priv: n =', sent_list%n, associated(sent_list%head)
   if (mpi%size <= 1 .or. .not.associated(sent_list%head)) return
   call trace%begin ('mpi_mesg_t%check_priv', itimer=itimer)
   !-----------------------------------------------------------------------------
@@ -326,6 +336,9 @@ SUBROUTINE check_priv
     end if
     mesg => next                                              ! true next
   end do
+if (debug) &
+write (io_unit%log,*) wallclock(), omp%thread, &
+'check_priv: n =', sent_list%n
   call trace%end (itimer)
 END SUBROUTINE check_priv
 
@@ -832,10 +845,10 @@ SUBROUTINE get_id (self, stat)
   if (mpi_mesg%uniq_mesg) then
     self%seq = mod(self%id,100)
     self%id = self%id/100
-    if (verbose > 0) &
+    if (verbose > 1) &
       write (io_unit%log,*) 'mpi_mesg_t%get_id: id, sender, seq =', &
         self%id, self%sender, self%seq
-  else if (verbose > 0) then
+  else if (verbose > 1) then
     write (io_unit%log,*) 'mpi_mesg_t%get_id: id, sender      =', &
       self%id, self%sender
   end if

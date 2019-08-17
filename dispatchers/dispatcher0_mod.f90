@@ -165,7 +165,7 @@ SUBROUTINE update (self, task_list, test)
   real(8):: wc, start
   real(8), save:: time, otime=0d0
   integer, save:: oid=0
-  integer:: i, id, nq
+  integer:: i, id, nq, n_unpk
   integer:: stalled_l
   integer, save:: itimer(5)=0
   !.............................................................................
@@ -177,7 +177,7 @@ SUBROUTINE update (self, task_list, test)
   !-----------------------------------------------------------------------------
   ! Check incoming MPI, which may free up tasks for execution
   !-----------------------------------------------------------------------------
-  call task_list%check_mpi                              ! check incoming MPI
+  call task_list%check_mpi (n_unpk)                     ! check incoming MPI
   call mpi_io%iwrite_list%check                         ! I/O check
   !-----------------------------------------------------------------------------
   ! Now is a convenient time to check if a file should be opened or closed.  No
@@ -426,6 +426,14 @@ subroutine stall_handler
     !---------------------------------------------------------------------------
     !$omp atomic read
     stalled_l = stalled
+    if (n_unpk > 0 .and. stalled_l > 0) then              ! unpack reset
+      write (io_unit%log,'(a,i7,i4,f12.6)') &
+        'dispatcher0_t%update: unpack reset, n, time =', &
+        stalled_l, n_unpk, wallclock()-stall_start
+      !$omp atomic write
+      stalled = 0                                         ! reset stalled
+      stalled_l = 0                                       ! new stall interval
+    end if
     if (stalled_l == 0) then
       !$omp atomic write
       stall_start = wallclock()

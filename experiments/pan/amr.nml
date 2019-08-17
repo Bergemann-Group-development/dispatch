@@ -17,7 +17,7 @@
 &time_slices_params     order=3 id_debug=1 /
 &counters_params        verbose=0 /
 &lock_params            verbose=1 verbose_time=000 tasks=t /
-&refine_params          on=t verbose=1 levelmin=9 levelmax=11 check_interval=5
+&refine_params          on=t verbose=1 levelmin=6 levelmax=9 check_interval=5
                         !max_jeans=0.25 min_jeans=0.10
                         max_vorticity=8 min_vorticity=3.2
                         max_compress=20 min_compress =8.0 /
@@ -42,11 +42,13 @@
 ! MPI and loadbalancing parameters
 !----------------------------------------------------------------------------------
 &dispatcher_params      method=0 test=f /
-&dispatcher0_params     debug=f do_delay=t retry_stalled=5 /
+&dispatcher0_params     debug=f do_delay=t retry_stalled=10 /
 &load_balance_params    /
 &task_list_params       verbose=0 job_seconds=1e6 detailed_timer=t dead_mans_hand=60 /
-&task_mesg_params       verbose=0 method='irecv' /
+!&task_mesg_params       verbose=1 method='improbe' /
+&task_mesg_params       verbose=1 method='irecv' /
 !&task_mesg_params       verbose=0 method='private' /
 !&mpi_mesg_params        verbose=0 /
 !&mpi_mesg_params        verbose=0 send_priv=f max_send=5 max_sent=1000 min_nq=0 max_recv=1000 max_probe=1000 /
-&mpi_mesg_params        verbose=0 send_priv=f max_sent=1000 min_nq=0 max_recv=1000 max_probe=1000 /
+!&mpi_mesg_params        verbose=1 send_priv=f max_sent=1000 min_nq=0 max_recv=1000 max_probe=1000 delay_ms=0.1 /
+&mpi_mesg_params        verbose=1 send_priv=t max_sent=1000 min_nq=0 max_recv=1000 max_probe=1000 delay_ms=0.1 /

@@ -101,8 +101,12 @@ SUBROUTINE init (self, name)
     mpi_mesg%tag_type = 2
   case ('improbe')
     mpi_mesg%tag_type = 2
-  case default
+  case ('virtual')
     mpi_mesg%tag_type = 1
+  case ('private')
+    mpi_mesg%tag_type = 1
+  case default
+    call mpi%abort ('unknown method in MPI_MESG_PARAMS')
   end select
   call trace%end ()
 END SUBROUTINE init
@@ -135,10 +139,13 @@ END SUBROUTINE set_test_time
 !===============================================================================
 !> Check for and unpack MPI messages.
 !===============================================================================
-SUBROUTINE check_mpi (self)
+SUBROUTINE check_mpi (self, n_unpk)
   class(task_mesg_t):: self
+  integer, optional:: n_unpk
+  integer:: n_unpk_l
   integer:: nq
   !.............................................................................
+  n_unpk_l = 0
   if (mpi%size <= 1) return
   call trace%begin ('task_mesg_t%check_mpi')
   !-----------------------------------------------------------------------------
@@ -153,18 +160,19 @@ SUBROUTINE check_mpi (self)
   select case (trim(method))
   case ('improbe')
     if (omp%master) &
-      call self%recv_improbe
+      call self%recv_improbe (n_unpk_l)
   case ('irecv')
     if (omp%master) &
-      call self%recv_irecv
+      call self%recv_irecv (n_unpk_l)
   case ('virtual')
     if (omp%master) &
-      call self%recv_virtual (master_list)
+      call self%recv_virtual (master_list, n_unpk_l)
   case ('private')
-    call self%recv_virtual (private_list)
-  case default
-    call mpi%abort ('unknown method in MPI_MESG_PARAMS')
+    call self%recv_virtual (private_list, n_unpk_l)
   end select
+  if (present(n_unpk)) then
+    n_unpk = n_unpk_l
+  end if
   call trace%end
 END SUBROUTINE check_mpi
 
@@ -174,8 +182,9 @@ END SUBROUTINE check_mpi
 !> incoming messages is once per task update on one thread, which is suitable,
 !> since each task will be "served" about once per task update time. 
 !===============================================================================
-SUBROUTINE recv_improbe (self)
+SUBROUTINE recv_improbe (self, n_unpk)
   class(task_mesg_t):: self
+  integer:: n_unpk
   class(mesg_t), pointer:: mesg, next
   integer, save:: itimer=0
   integer:: n
@@ -187,9 +196,15 @@ SUBROUTINE recv_improbe (self)
   !-----------------------------------------------------------------------------
   ! Step 1-3: receive, move, and unpack
   !-----------------------------------------------------------------------------
+if (verbose > 0) &
+write (io_unit%log,*) wallclock(), &
+'recv_improbe: n =', mpi_mesg%recv_list%n, mpi_mesg%max_recv
   call recv_mesgs
   call self%move_mesgs
-  call self%unpk_mesgs
+  call self%unpk_mesgs (n_unpk)
+if (verbose > 0) &
+write (io_unit%log,*) wallclock(), &
+'recv_improbe: n =', mpi_mesg%recv_list%n, mpi_mesg%min_nq
   !-----------------------------------------------------------------------------
   ! Step 4: check if the queue is getting short.  If so, try recv again, then
   ! wait for messages and move + unpack immediately, one-by-one (in case a
@@ -210,9 +225,11 @@ SUBROUTINE recv_improbe (self)
           mesg%id, mesg%seq
       call mpi_mesg%recv_list%remove (mesg)
       call mpi_mesg%unpk_list%add (mesg)
-      call self%unpk_mesgs
+      call self%unpk_mesgs (n_unpk)
       mesg => next
     end do
+if (verbose > 0) &
+write (io_unit%log,*) wallclock(), 'recv_improbe: n =', mpi_mesg%recv_list%n
   end if
   call trace%end (itimer)
 contains
@@ -236,6 +253,50 @@ subroutine recv_mesgs
   end do
 end subroutine recv_mesgs
 END SUBROUTINE recv_improbe
+
+!===============================================================================
+!> Check for and unpack MPI messages, using only the master thread, to avoid
+!> the need for critical regions and locks.   This method does not use 
+!> MPI_IMPROBE, which is not supported before IMPI/2019.x on systems with
+!> OmniPath fabric.
+!===============================================================================
+SUBROUTINE recv_irecv (self, n_unpk)
+  class(task_mesg_t):: self
+  integer:: n_unpk
+  class(mesg_t), pointer:: mesg, next
+  integer, save:: itimer=0
+  integer:: n
+  logical:: ok
+  !.............................................................................
+  if (omp%thread > 0) return
+  if (mpi_mesg%nbuf == 0) return
+  call trace%begin ('task_mesg_t%recv_irecv', 1, itimer=itimer)
+  mpi_mesg%uniq_mesg = .true.
+  !-----------------------------------------------------------------------------
+  ! Step 1-3: receive, move, and unpack
+  !-----------------------------------------------------------------------------
+  n = 0
+if (verbose > 0) &
+write (io_unit%log,*) wallclock(), &
+'recv_irecv: n =', mpi_mesg%recv_list%n, mpi_mesg%max_recv
+  do while (mpi_mesg%recv_list%n < mpi_mesg%max_recv)
+    call mpi_mesg%iget (mesg)
+    if (mesg%is_complete('recv_irecv')) then
+      call mpi_mesg%unpk_list%add (mesg)
+    else
+      call mpi_mesg%recv_list%add (mesg)
+    end if
+    n = n + 1
+    if (verbose > 1) &
+      write (io_unit%log,*) 'recv_irecv: to recv_list', n, mpi_mesg%recv_list%n
+  end do
+  call self%move_mesgs
+  call self%unpk_mesgs (n_unpk)
+if (verbose > 0) &
+write (io_unit%log,*) wallclock(), &
+'recv_irecv: n =', mpi_mesg%recv_list%n
+  call trace%end (itimer)
+END SUBROUTINE recv_irecv
 
 !===============================================================================
 !> Step 2: Move complete messages to unpk_list
@@ -267,8 +328,9 @@ END SUBROUTINE move_mesgs
 !===============================================================================
 !> Step 3: Unpack in correct order
 !===============================================================================
-SUBROUTINE unpk_mesgs (self)
+SUBROUTINE unpk_mesgs (self, n)
   class(task_mesg_t):: self
+  integer:: n
   class(mesg_t), pointer:: mesg, next
   !-----------------------------------------------------------------------------
   mesg => mpi_mesg%unpk_list%head
@@ -283,6 +345,7 @@ SUBROUTINE unpk_mesgs (self)
           mesg%id, mesg%seq
       call mpi_mesg%unpk_list%remove (mesg)
       call mpi_mesg%unpk_list%delete (mesg, .false.)
+      n = n+1
     else
       if (verbose > 2) &
         write (io_unit%log,*) 'recv_improbe:  kept in unpk_list:', &
@@ -291,43 +354,6 @@ SUBROUTINE unpk_mesgs (self)
     mesg => next
   end do
 END SUBROUTINE unpk_mesgs
-
-!===============================================================================
-!> Check for and unpack MPI messages, using only the master thread, to avoid
-!> the need for critical regions and locks.   This method does not use 
-!> MPI_IMPROBE, which is not supported before IMPI/2019.x on systems with
-!> OmniPath fabric.
-!===============================================================================
-SUBROUTINE recv_irecv (self)
-  class(task_mesg_t):: self
-  class(mesg_t), pointer:: mesg, next
-  integer, save:: itimer=0
-  integer:: n
-  logical:: ok
-  !.............................................................................
-  if (omp%thread > 0) return
-  if (mpi_mesg%nbuf == 0) return
-  call trace%begin ('task_mesg_t%recv_irecv', 1, itimer=itimer)
-  mpi_mesg%uniq_mesg = .true.
-  !-----------------------------------------------------------------------------
-  ! Step 1-3: receive, move, and unpack
-  !-----------------------------------------------------------------------------
-  n = 0
-  do while (mpi_mesg%recv_list%n < mpi_mesg%max_recv)
-    call mpi_mesg%iget (mesg)
-    if (mesg%is_complete('recv_irecv')) then
-      call mpi_mesg%unpk_list%add (mesg)
-    else
-      call mpi_mesg%recv_list%add (mesg)
-    end if
-    n = n + 1
-    if (verbose > 1) &
-      write (io_unit%log,*) 'recv_irecv: to recv_list', n, mpi_mesg%recv_list%n
-  end do
-  call self%move_mesgs
-  call self%unpk_mesgs
-  call trace%end (itimer)
-END SUBROUTINE recv_irecv
 
 !===============================================================================
 !> Run through all virtual patches, count them, and optionally create separate
@@ -417,11 +443,11 @@ END SUBROUTINE init_virtual_list
 !> receive requests.  The virtual_list is threadprivate, so no critical region
 !> is needed.
 !===============================================================================
-SUBROUTINE recv_virtual (self, list)
+SUBROUTINE recv_virtual (self, list, n_unpk)
   class(task_mesg_t):: self, list
   class(link_t), pointer:: link
   class(task_t), pointer:: task
-  integer:: nunpk
+  integer:: n_unpk
   real(8):: wc
   integer, save:: itimer=0
   !.............................................................................
@@ -430,7 +456,6 @@ SUBROUTINE recv_virtual (self, list)
   ! Each thread runs through its list of virtual tasks, unpacks completed
   ! messages, and issues a new request
   !-----------------------------------------------------------------------------
-  nunpk = 0
   link => list%head
   do while (associated(link))
     task => link%task
@@ -455,7 +480,7 @@ SUBROUTINE recv_virtual (self, list)
       task%wc_last = wc
       call task%mesg%irecv (task%rank, task%id)
       !write(stdout,*) 'ircv:', task%id, task%mesg%id, task%mesg%tag, task%rank
-      nunpk = nunpk+1
+      n_unpk = n_unpk+1
     else if (verbose > 2 .or. task%id == io%id_debug) then
       write (io_unit%log,'(f12.6,2x,a,i6,i5,i9,i6,z12)') wallclock(), &
         'task_mesg_t%recv_virtual:  fail id, seq, mesg%id, sender, req =', &
@@ -465,7 +490,7 @@ SUBROUTINE recv_virtual (self, list)
     link => link%next
   end do
   if (verbose > 0) &
-    write (io_unit%log,*) ' task_mesg_t%recv_virtual, nunpk =', nunpk
+    write (io_unit%log,*) ' task_mesg_t%recv_virtual, n_unpk =', n_unpk
   call trace%end (itimer)
 END SUBROUTINE recv_virtual
 
