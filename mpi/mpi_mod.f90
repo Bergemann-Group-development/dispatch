@@ -492,6 +492,7 @@ contains
   !-----------------------------------------------------------------------------
   subroutine accumulate (i)
   integer(8):: i
+  !$omp critical (mpi_win_cr)
   call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
   call add(i)
   call MPI_Win_flush (master, self%window, mpi_err)
@@ -514,6 +515,7 @@ contains
     end if
   end if
   call MPI_Win_unlock (master, self%window, mpi_err)
+  !$omp end critical (mpi_win_cr)
   end subroutine accumulate
   !-----------------------------------------------------------------------------
   subroutine add (i)
