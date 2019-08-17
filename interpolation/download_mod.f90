@@ -203,6 +203,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       new = source%new
       new = mod(new,source%nt) + 1
       lock_it = source%is_set(bits%busy) .and. (jt(1) == new)
+      if (use_locks) &
+        lock_it = .true.
       if (lock_it) then
         if (verbose > 0) &
           write (io_unit%log,'(a,2i3,1x,2i3,2x,2f6.3,f12.6,2x,10f12.6)') &
@@ -216,10 +218,12 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
         omp_lock%n_download(2) = omp_lock%n_download(2) + 1
       end if
     end if
-    if (verbose > 1) &
-      write(io_unit%log,*) target%id, target%level, &
-        'download_t%download_link: source, level, download =', &
+    if (verbose > 1) then
+      write(io_unit%log,'(f12.6,i6,i3,3x,a,i6,i3,2x,2l1)') wallclock(), target%id, target%level, &
+        'download_link: source, level =', &
         source%id, source%level, nbor%download, lock_it
+      flush (io_unit%log)
+    end if
     !---------------------------------------------------------------------------
     ! Skip nbor not marked for download
     !---------------------------------------------------------------------------
@@ -283,6 +287,11 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     if (omp_lock%tasks) then
       if (lock_it) &
         call source%lock%unset ('download_link')
+    end if
+    if (verbose > 1) then
+      write(io_unit%log,'(f12.6,i6,i3,3x,a,i6,i3,2x,2l1)') wallclock(), target%id, target%level, &
+        'download_link: source, level =', source%id, source%level
+      flush (io_unit%log)
     end if
     nbor => nbor%next
   end do
