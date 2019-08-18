@@ -34,6 +34,7 @@ MODULE dispatcher0_mod
     procedure:: update
   end type
   real(8):: stall_start=0d0, max_stalled=600d0, retry_stalled=30d0
+  integer, save:: mpi_only_master=21
   integer, save:: verbose=0
   integer, save:: stalled=0
   integer, save:: n_spin=0
@@ -63,7 +64,7 @@ SUBROUTINE init (self, name)
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
   namelist /dispatcher0_params/ verbose, max_stalled, retry_stalled, do_delay, &
-    debug, detailed_timer
+    mpi_only_master, debug, detailed_timer
   character(len=120):: ids = &
   '$Id$ dispatchers/dispatcher0_mod.f90'
   !-----------------------------------------------------------------------------
@@ -179,7 +180,7 @@ SUBROUTINE update (self, task_list, test)
   !-----------------------------------------------------------------------------
   call task_list%check_mpi (n_unpk)                     ! check incoming MPI
   call mpi_io%iwrite_list%check                         ! I/O check
-  if (omp%nthreads > 4 .and. omp%master) then
+  if (omp%nthreads >= mpi_only_master .and. omp%master) then
     call trace%end (itimer(i))
     return
   end if

@@ -136,7 +136,7 @@ SUBROUTINE init (self, mpi_dims, dims)
   mpi_coords%up     = self%up
   mpi_coords%ok     = self%ok
   if (mpi%size /= product(mpi_dim3)) then
-    print*,'inconstent mpi%size:', mpi%size, mpi_dim3
+    print*,'inconsistent mpi%size:', mpi%size, mpi_dim3
     stop
   end if
 END SUBROUTINE init
