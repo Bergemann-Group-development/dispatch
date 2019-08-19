@@ -571,6 +571,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Namelist input
   !-----------------------------------------------------------------------------
+#ifdef MPI
   if (mpi%mode /= MPI_THREAD_MULTIPLE) then
     min_nq = 0
     max_sent = 1000
@@ -578,6 +579,7 @@ SUBROUTINE init (self)
     recv_wait = .false.
     send_wait = .false.
   end if
+#endif
   rewind (io%input)
   read (io%input, mpi_mesg_params,iostat=iostat)
   write (io%output, mpi_mesg_params)
