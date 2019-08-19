@@ -5,11 +5,13 @@ PROGRAM dispatch
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
   USE setup_mod
   USE cartesian_mod
+  USE dispatcher_mod
   type (cartesian_t):: cartesian
   !.............................................................................
   call setup%init
+  call dispatcher%init
   call cartesian%init                   ! Initialize the patch list and patches
-  call cartesian%task_list%execute      ! update the list = update member patches
+  call dispatcher%execute(cartesian%task_list)      ! update the list = update member patches
   call setup%end
 !===============================================================================
 END PROGRAM dispatch

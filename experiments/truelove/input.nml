@@ -9,6 +9,8 @@
  do_output=t
  do_legacy=t
  omp_trace=f
+ namelist_errors=t
+ guard_zones=t
 /
 
 &cartesian_params
@@ -22,30 +24,28 @@
  end_time=0.511
  !end_time=0.611
  out_time=0.005
- guard_zones=t
  print_time=0.001
 /
 
 &patch_params
- courant=0.2
  n=17,17,17
  nt=5
  no_mans_land=f
 /
 
 ! uniform, non-rotating
-!&experiment_params
-! rho0=15.27026
-! r0=0.25
-! truealpha=0.0475
-! truebeta=0.0
-! perta=0.0
-! chipres=1.0
-! chirho=100.0
-!/
-!&scaling_params
-! l0=3.12e16
-!/
+&experiment_params
+ rho0=15.27026
+ r0=0.25
+ truealpha=0.0475
+ truebeta=0.0
+ perta=0.0
+ chipres=1.0
+ chirho=100.0
+/
+&scaling_params
+ l0=3.12e16
+/
 
 ! uniform, rotating
 !&experiment_params
@@ -62,19 +62,19 @@
 !/
 
 ! rotating, perturbed, 10%
-&experiment_params
- rho0=16.0130
- r0=0.25
- truealpha=0.26
- truebeta=0.16
- perta=0.1
- pertm=2
- chipres=10.0
- chirho=100.0
-/
-&scaling_params
- l0=2.0e17
-/
+!&experiment_params
+! rho0=16.0130
+! r0=0.25
+! truealpha=0.26
+! truebeta=0.16
+! perta=0.1
+! pertm=2
+! chipres=10.0
+! chirho=100.0
+!/
+!&scaling_params
+! l0=2.0e17
+!/
 
 &boundary_params
   fixedbcs=t
@@ -131,7 +131,7 @@
  do_isothermal=t
 /
 
-&mhd_params
+&stagger_params
  gamma=1.0
  !csound=0.077746 ! non-rotating case
  !csound=0.08451 ! rotating case
