@@ -26,7 +26,8 @@ MODULE selfgravity_mod
     real(8):: d0
     real(8):: poisson_time=-1.0
   contains
-    procedure:: init_extras
+    procedure:: pre_init
+    procedure:: init
     procedure:: pre_update
     procedure:: post_update
     procedure:: ahead_of
@@ -39,16 +40,51 @@ MODULE selfgravity_mod
 CONTAINS
 
 !===============================================================================
-!> Add restart functionality to patch initialization.  This %init routine is
-!> called for both internal and virtual patches, which both can be initialized
-!> fully by the self%ininitial%condition() procedure. When instead calling the
-!> self%input() procedure, we need to make a decision:  Either we must make sure
-!> that the data_io%input() routine can handle off-rank reading, or we need to
-!> nevertheless return ok=.true., and instead rely on a negative time to force
-!> any task that relies on the patch for guard zone values to wait until data
-!> has been recieved with MPI from the owner rank.
+!> Further initialisation of the self-gravity module
 !===============================================================================
-SUBROUTINE init_extras (self, patch)
+SUBROUTINE pre_init (self, patch)
+  class(selfgravity_t):: self
+  class(patch_t):: patch
+  real(kind=KindScalarVar), pointer :: ff(:,:,:,:)
+  character(len=64)                 :: filename
+  logical                           :: ok
+  integer                           :: iostat
+  logical, save                     :: first_time=.true., first_poisson=.true.
+  real, save                        :: d0=-1.0
+  real(kind=KindScalarVar), pointer :: d(:,:,:)
+  namelist /selfgravity_params/ selfgravity, prediction, order, d0, verbose
+  !-----------------------------------------------------------------------------
+  call trace%begin ('selfgravity_t%pre_init')
+
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, selfgravity_params, iostat=iostat)
+    if (io%master) write (io%output, selfgravity_params)
+  end if
+  !$omp end critical (input_cr)
+
+  if (selfgravity) then
+    self%selfgravity = selfgravity
+    if (patch%kind(1:4) /= 'zeus') patch%nv = patch%nv + 1
+    patch%idx%phi = patch%nv
+    if (patch%nw == 1) then
+      patch%nv = patch%nv + 1
+      patch%idx%dphi = patch%nv
+    end if
+    call self%poisson%init
+  else
+    patch%idx%phi = -1
+  end if
+
+  call trace%end()
+END SUBROUTINE pre_init
+
+!===============================================================================
+!> Further initialisation of the self-gravity module
+!===============================================================================
+SUBROUTINE init (self, patch)
   class(selfgravity_t):: self
   class(patch_t):: patch
   real(kind=KindScalarVar), pointer :: ff(:,:,:,:)
@@ -61,53 +97,17 @@ SUBROUTINE init_extras (self, patch)
   namelist /selfgravity_params/ selfgravity, prediction, order, d0, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
-  !$omp critical (input_cr)
-  if (first_time) then
-    first_time = .false.
-    rewind (io%input)
-    read (io%input, selfgravity_params, iostat=iostat)
-    if (io%master) write (io%output, selfgravity_params)
-  end if
-  !$omp end critical (input_cr)
-  if (selfgravity) then
-    self%selfgravity = selfgravity
-    if (patch%kind(1:4) /= 'zeus') patch%nv = patch%nv + 1
-    patch%idx%phi = patch%nv
-    if (patch%nw == 1) then
-      patch%nv = patch%nv + 1
-      patch%idx%dphi = patch%nv
-    end if
-    call patch%init
-    call self%poisson%init
-  else
-    patch%idx%phi = -1
-    call patch%init
-  end if
+
   if (patch%kind(1:4) /= 'zeus') &
     allocate (patch%force_per_unit_volume(patch%gn(1),patch%gn(2),patch%gn(3),3))
   self%d0 = d0
   !$omp critical (poisson_cr)
   if (first_poisson) then
     first_poisson = .false.
-    if (patch%use_data_hub) then
-      !call data_hub%test
-    else
-      call download%test
-    end if
+    call download%test
   end if
   !$omp end critical (poisson_cr)
   if (selfgravity) then
-    !-------------------------------------------------------------------------
-    ! Sum up the total mass and total volume, to get the average density d0.
-    ! FIXME: This needs to be modified for MPI
-    !-------------------------------------------------------------------------
-    if (patch%id==1) then
-      d => patch%mem(:,:,:,patch%idx%d,patch%it,1)
-      !$omp atomic
-      total_mass = total_mass + patch%fsum(d)*product(patch%ds)
-      !$omp atomic
-      total_volume = total_volume + product(patch%size)
-    end if
     !-------------------------------------------------------------------------
     ! Sum up the total mass and total volume, to get the average density d0.
     ! FIXME: This needs to be modified for MPI
@@ -121,7 +121,7 @@ SUBROUTINE init_extras (self, patch)
     end if
   end if
   call trace%end()
-END SUBROUTINE init_extras
+END SUBROUTINE init
 
 !===============================================================================
 !> Prepare the external forces for the pde call, in particular selfgravity. At
