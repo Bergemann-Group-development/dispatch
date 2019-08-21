@@ -15,7 +15,6 @@ MODULE list_mod
   USE link_mod
   !USE load_balance_mod
   USE timer_mod
-  USE counters_mod
   implicit none
   private
   type, public:: list_t
@@ -300,11 +299,7 @@ SUBROUTINE remove_and_reset (self, link)
   !$omp atomic update
   timer%levelpop (link%task%level) = &     ! decrement level population count
   timer%levelpop (link%task%level) - 1
-  count = counters%decrement &             ! decrement I/O task counter
-    (link%task%iout+1, io%ntask)
   call link%garbage_collect (link)         ! add to garbage bin
-  !$omp atomic write
-  io%dtime = huge(1d0)
   call trace%end
 END SUBROUTINE remove_and_reset
 
@@ -1118,8 +1113,6 @@ SUBROUTINE add_new_link (self, link)
   ! Increment task counters on the rank
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%virtual)) then
-    !$omp atomic update
-    io%ntask = io%ntask+1                     ! increment local task count
     !$omp atomic update
     timer%levelpop (task%level) = &          ! increment level population count
     timer%levelpop (task%level) + 1

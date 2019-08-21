@@ -43,6 +43,7 @@ MODULE patch_mod
     type(connect_t):: connect
     class(mesh_t), dimension(:), pointer:: mesh => null()
     real:: courant                      ! courant number
+    real(8):: pdf_next=0.0              ! next PDF output time
     real(8):: gamma=1.4                 ! gas gamma
     real(8):: dt_fixed                  ! for fixed time step Courant condition
     real:: u_fixed, u_max               ! for fixed time step Courant condition
@@ -419,7 +420,8 @@ SUBROUTINE init_default (self)
   namelist /patch_params/ n, nv, ng, nt, u_fixed, dt_fixed, &
     grace, extrapolate_gz, no_mans_land, use_data_hub, do_check_nan, &
     zero_order_extrap, limit_dtime
-  namelist /out_params/ out_time, end_time, print_time, print_every, max_files
+  namelist /out_params/ out_time, end_time, print_time, print_every, &
+    max_files
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init_default')

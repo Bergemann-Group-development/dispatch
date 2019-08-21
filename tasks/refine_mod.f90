@@ -183,8 +183,8 @@ MODULE refine_mod
   USE extras_mod
   USE scene_mod
   USE download_mod
-  USE counters_mod
   USE timer_mod
+  USE data_io_mod
   implicit none
   private
   !
@@ -581,9 +581,9 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
       !-----------------------------------------------------------------------
       if (verbose > 0) then
         associate (unit => merge (stdout, io_unit%output, verbose > 1))
-        write (io_unit%output,'(1x,a,i6,":",i2,2x,"B:",l1,3x,a,i6)') &
+        write (io_unit%output,'(1x,a,i6,":",i2,2x,"B:",l1,3x,a,i6,3x,a,f12.6)') &
           'derefine', patch%id, patch%level, patch%is_set (bits%boundary), &
-          'istep:', patch%istep
+          'istep:', patch%istep, 'time:', patch%time
         flush (unit)
         end associate
       end if
@@ -592,6 +592,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
       ! includes calling set_init_nbors(), queueing all nbors for immediate
       ! update of their nbor lists.
       !-------------------------------------------------------------------------
+      call data_io%update_counters (patch, -1)
       call tasklist%remove_and_reset (link)
       was_derefined = .true.
     end if
@@ -895,6 +896,13 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child%t(:) = child%time                            ! sinle time
   child%parentid = parent%id                         ! for debugging
   child%check_refine_next = 0                        ! allow recursive refine
+  child%iout = child%time/io%out_time+1              ! previous output index
+  child%out_next = child%iout*io%out_time            ! next output time
+  child%dnload_time = -1.0                           ! for duplicate call test
+  !-----------------------------------------------------------------------------
+  ! Increment I/O write counter, to avoid repeated writing of metadata
+  !-----------------------------------------------------------------------------
+  call data_io%update_counters (child, +1)
   !-----------------------------------------------------------------------------
   if (verbose > 0) &
     write (io_unit%log,'(f12.5,2x,a,2i6,1p,g14.5)') &
@@ -928,15 +936,16 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child_nbor%task => parent
   nullify (child_link%nbor)
   child_link%nbors_by_level => child_nbor
-  !-----------------------------------------------------------------------------
-  ! FIXME: Why is the n_needed of the parent task incremented here??
-  !-----------------------------------------------------------------------------
+  !------------------------------------------------------------------------
+  ! Download values from parent and neighbors, except at time = 0, to allow
+  ! recursive refinement there. If time = 0, patch should have been filled
+  ! with values during `child%init()` call.
+  !------------------------------------------------------------------------
   !$omp atomic update
   parent%n_needed = parent%n_needed + 2
-  !-----------------------------------------------------------------------------
-  ! Increment I/O write counter, to avoid repeated writing of metadata
-  !-----------------------------------------------------------------------------
-  count = counters%increment (parent%iout+1, io%ntask)
+  if (parent%time > 0.0 .and. child%restart <= 0) then
+    call download%download_link (child_link, all_cells=.true.)
+  end if
   !-----------------------------------------------------------------------------
   ! Add the child task to the task list, including giving it an nbor list etc,
   ! and add it also to the ready queue

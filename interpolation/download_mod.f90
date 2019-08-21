@@ -496,7 +496,7 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
   integer, save           :: itimer=0
   logical                 :: all_cells_l, no
   !-----------------------------------------------------------------------------
-  call timer%begin('download_t%same_linear', itimer=itimer)
+  call trace%begin('download_t%same_linear', itimer=itimer)
   if (target%id == id_debug) &
     write(io_unit%log,'(a,1p,e14.5,i7,e14.5)') &
       'dbg download_t%same_linear: time, source =', &
@@ -832,7 +832,7 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
       end if
     end if
   end do
-  call timer%end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE same_linear
 
 !===============================================================================

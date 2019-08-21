@@ -23,6 +23,7 @@ MODULE data_io_mod
   USE legacy_io_mod
   USE parallel_io_mod
   USE buffered_io_mod
+  USE pdf_io_mod
   USE counters_mod
   USE index_mod
   USE dll_mod
@@ -38,8 +39,10 @@ MODULE data_io_mod
     logical:: initialized=.false.
     type(dll_t):: kind_list
     type(lock_t):: lock
+    type(counters_t):: counters
   contains
     procedure:: init
+    procedure:: update_counters
     procedure:: register_kind
     procedure:: output
     procedure, nopass:: output_txt
@@ -58,40 +61,77 @@ SUBROUTINE init (self, task)
   class(data_io_t):: self
   class(patch_t):: task
   !.............................................................................
+  logical:: first_time=.true.
   character(len=120):: id = &
   '$Id$ io/dat_io_mod.f90'
   !-----------------------------------------------------------------------------
-  if (self%initialized) return
+  call trace%begin('data_io_t%init')
   call trace%print_id (id)
   call self%lock%init ('data')
-  call self%lock%set
-  if (.not.self%initialized) then
-    call trace%begin('data_io_t%init')
-    if (io%do_output) then
-      select type (task)
-      class is (patch_t)
-        if      (io%method=='direct') then
-          call direct_io%init (task)
-        else if (io%method=='pan') then
-          call parallel_io%init (task)
-        else if (io%method=='parallel') then
-          call parallel_io%init (task)
-        else if (io%method=='snapshot') then
-          call parallel_io%init (task)
-        end if
-      end select
+  if (first_time) then
+    call self%lock%set
+    if (first_time) then
+      first_time=.false.
+      if (io%do_output) then
+        select type (task)
+        class is (patch_t)
+          if      (io%method=='direct') then
+            call direct_io%init (task)
+          else if (io%method=='pan') then
+            call parallel_io%init (task)
+          else if (io%method=='parallel') then
+            call parallel_io%init (task)
+          else if (io%method=='snapshot') then
+            call parallel_io%init (task)
+          end if
+        end select
+      end if
+      call self%kind_list%init
+      self%initialized = .true.
+      if (io%master) print *,'data_io_t%init: io%nwrite =', io%nwrite
     end if
-    call self%kind_list%init
-    self%initialized = .true.
-    if (io%master) print *,'data_io_t%init: io%nwrite =', io%nwrite
-    call trace%end()
+    call self%lock%unset
   end if
-  call self%lock%unset
-  END SUBROUTINE init
+  !-----------------------------------------------------------------------------
+  call self%counters%init
+  select type (task)
+  class is (patch_t)
+  call pdf_io%init (task)
+  end select
+  call trace%end()
+END SUBROUTINE init
 
-  !===============================================================================
-  !> Register one type of task, for output into separate file
-  !===============================================================================
+!===============================================================================
+!> Update I/O counters, when tasks are added or removed by refine_mod.
+!===============================================================================
+SUBROUTINE update_counters (self, patch, incr)
+  class(data_io_t):: self
+  class(patch_t):: patch
+  integer:: incr, count1, count2, iout
+  !-----------------------------------------------------------------------------
+  ! Update the active counters, which may or may not already have been altered.
+  ! The relevant counter index is most reliably determined by the very value
+  ! that gets incremented in pdf_io_t%update(); i.e., patch%pdf_next.
+  !-----------------------------------------------------------------------------
+  !$omp critical (update_counters_cr)
+  iout = nint(patch%pdf_next/pdf_io%out_time)
+  call pdf_io%counters%update (      iout+1, io%nwrite, incr, count1)
+  call   self%counters%update (patch%iout+1, io%nwrite, incr, count2)
+  !-----------------------------------------------------------------------------
+  ! When tasks are added or removed, the number of tasks to reset the counters
+  ! to should be correspondingly updated.
+  !-----------------------------------------------------------------------------
+  io%ntask = io%ntask+incr
+  io%nwrite = io%ntask
+write(stdout,'(a,i6,6i4)') &
+'update_counters: patch, incr, io%nwrite, count, iout =', &
+patch%id, incr, io%nwrite, count1, count2, patch%iout, iout
+  !$omp end critical (update_counters_cr)
+END SUBROUTINE update_counters
+
+!===============================================================================
+!> Register one type of task, for output into separate file
+!===============================================================================
 SUBROUTINE register_kind (self, patch)
   class(data_io_t):: self
   class(patch_t), pointer:: patch
@@ -128,6 +168,7 @@ SUBROUTINE output (self, patch, experiment_name)
   integer:: it, count, np
   real(8):: t
   !-----------------------------------------------------------------------------
+  call pdf_io%update (patch)
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
   !-----------------------------------------------------------------------------
@@ -144,7 +185,6 @@ SUBROUTINE output (self, patch, experiment_name)
   if (io%verbose > 1) &
     write (io_unit%log,*) 'io%nwrite =', io%nwrite
   !-----------------------------------------------------------------------------
-  call self%init (patch)
   if (io%method=='legacy') then
     np = 1
   else
@@ -174,12 +214,14 @@ SUBROUTINE output (self, patch, experiment_name)
         call os%mkdir (trim(io%outputname))
       end if
       call os%mkdir_no (patch%iout)
-      !---------------------------------------------------------------------------
-      count = counters%decrement (patch%iout+1, io%nwrite)
+      !-------------------------------------------------------------------------
+      count = self%counters%decrement (patch%iout+1, io%nwrite)
       if (io%verbose > 0) &
         write (io_unit%log,*) 'count, nwrite =', count, io%nwrite
+!write (stdout,*) 'id, time, iout, count, nwrite =', patch%id, patch%time, &
+!patch%iout, count, io%nwrite
       append = (count < io%nwrite-1)
-      !---------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       if      (io%method=='direct') then
         call direct_io%output (patch)
       else if (io%method=='legacy') then
@@ -202,7 +244,7 @@ SUBROUTINE output (self, patch, experiment_name)
       else
         call mpi%abort ('unknown io%method = '//io%method)
       end if
-      !---------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       if (count==0 .and. .not.io_unit%do_validate) then
         if (io%out_time > 0d0) then
           write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,2g14.5)') &
@@ -214,19 +256,21 @@ SUBROUTINE output (self, patch, experiment_name)
             'snapshot '//trim(io%outputname), patch%iout, patch%time
         end if
       end if
-      !---------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       ! Output aux file, and namelist file with metadata 
-      !---------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       call patch%aux%output (patch%iout, patch%id)
       call output_nml (patch, append)
-      !---------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       patch%iout = patch%iout+1
       if (io%out_time==0.0) exit
       patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
       !---------------------------------------------------------------------------
-      if (io%verbose > 1) & 
-        write (io%output,*) 'io_t%output: id, iout, out_next, count =', &
-          patch%id, patch%iout, patch%out_next, count
+      !if (io%verbose > 1) & 
+        write (io%output,'(a,i6,3f12.6,3i4)') &
+          'io_t%output: id, iout, time, out_next, count =', &
+          patch%id, patch%time, patch%time-patch%dtime, patch%out_next, &
+          patch%iout, io%nwrite, count
       !---------------------------------------------------------------------------
       call os%mkdir_no (patch%iout)
     end do
@@ -278,7 +322,7 @@ SUBROUTINE input (self, patch, ok)
     end if
   end if
   if (ok) then
-    count = counters%decrement (io%restart+1, io%nwrite)
+    count = self%counters%decrement (io%restart+1, io%nwrite)
     if (count==0 .and. io%master) then
       write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)') &
         trim(io%method)//'_io:input', &

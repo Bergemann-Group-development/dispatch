@@ -32,6 +32,7 @@ MODULE counters_mod
     procedure:: init
     procedure:: decrement ! (id, start)
     procedure:: increment ! (id, start)
+    procedure:: update    ! (id, incr)
     procedure:: remove    ! (id)
   end type
   integer:: verbose=0
@@ -44,17 +45,23 @@ CONTAINS
 SUBROUTINE init(self)
   class(counters_t):: self
   integer:: iostat
+  logical, save:: first_time=.true.
   namelist /counters_params/ verbose
   !-----------------------------------------------------------------------------
-  !$omp critical (input_cr)
-  if (self%id == -1) then
-    self%id = 0
-    rewind (io_unit%input)
-    read (io_unit%input, counters_params, iostat=iostat)
-    write (io_unit%output, counters_params)
-    call self%lock%init ('coun')
+  if (first_time) then
+    call trace%begin ('counters_t%init')
+    !$omp critical (input_cr)
+    if (first_time) then
+      first_time = .false.
+      self%id = 0
+      rewind (io_unit%input)
+      read (io_unit%input, counters_params, iostat=iostat)
+      write (io_unit%output, counters_params)
+      call self%lock%init ('coun')
+    end if
+    !$omp end critical (input_cr)
+    call trace%end
   end if
-  !$omp end critical (input_cr)
 END SUBROUTINE init
 
 !===============================================================================
@@ -89,7 +96,7 @@ END FUNCTION decrement
 
 !===============================================================================
 !> Find the counter instance with a given id and decrement counter.  If a
-!> counter with that id is not in the list, create one, and increment it
+!> counter with that id is not in the list, create one, with count=start.
 !===============================================================================
 FUNCTION increment (self, id, start) RESULT (count)
   integer:: count
@@ -114,6 +121,27 @@ FUNCTION increment (self, id, start) RESULT (count)
   call self%lock%unset ('counters_t%increment')
   call trace%end()
 END FUNCTION increment
+
+!===============================================================================
+!> Find the counter instance with a given id and update counter.  If a counter
+!> with the given ID does not exist, create one with count=start initially.
+!===============================================================================
+SUBROUTINE update (self, id, start, incr, count)
+  class(counters_t):: self
+  integer:: id, start, incr, count
+  !.............................................................................
+  type(counter_t), pointer:: counter
+  !-----------------------------------------------------------------------------
+  call trace%begin ('counters_t%update')
+  call self%lock%set ('counters_t%update')
+  counter => find (self, id, start)
+  counter%count = counter%count + incr
+  count = counter%count
+  if (verbose > 0) &
+    write (stdout,*) 'counter_t%update: id, start, count =', id, start, count
+  call self%lock%unset ('counters_t%update')
+  call trace%end()
+END SUBROUTINE update
 
 !===============================================================================
 !> Find a counter with the given id, or create one
@@ -147,11 +175,14 @@ FUNCTION find (self, id, start) RESULT (counter)
       self%id = id
     end if
     call io%assert (present(start), &
-      'counters_t%find: start parameter must be present')
+      'counters_t%find: start parameter must be present on new counters')
     counter%id    = self%id
     counter%start = start
     counter%count = start
     call append (self, counter)
+    if (verbose > 0) then
+      write (stdout,*) 'counters_t%find: new id, start =', counter%id, start
+    end if
   end if
   call trace%end()
 END FUNCTION find
