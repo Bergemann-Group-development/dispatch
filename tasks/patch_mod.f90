@@ -1480,7 +1480,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     !---------------------------------------------------------------------------
     !$omp atomic read
     iprint_l = iprint
-    if (iprint_l >= print_every) then
+    if (iprint_l >= print_every .and. print_every > 0) then
       !$omp atomic write
       iprint = 1
       print_it = .true.
