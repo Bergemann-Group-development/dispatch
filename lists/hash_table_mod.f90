@@ -16,7 +16,7 @@ MODULE hash_table_mod
   ! General module parameters
   !-----------------------------------------------------------------------------
   integer, parameter :: key_length = ndim * 8
-  integer, dimension(0:3), parameter :: constants = (/5, -1640531527, 97, 1003313/)
+  integer(kind=8), dimension(0:3), parameter :: constants = (/5, -1640531527, 97, 1003313/)
   !-----------------------------------------------------------------------------
   ! Define a bucket as a derived type (sequence statement!) for better
   ! cache efficiency.
