@@ -203,7 +203,6 @@ SUBROUTINE update (self, task_list, test)
   !$omp atomic read
   nq = task_list%nq
   if (nq == 0) then
-    if (detailed_timer) call trace%end(itimer(i))
     call stall_handler
     call trace%end(itimer(i))
     return
@@ -378,11 +377,9 @@ SUBROUTINE update (self, task_list, test)
   ! that hit the sync time last of all threads has set this flag, and will clear
   ! it as soon as all other ranks have arrived at the same time.
   !-----------------------------------------------------------------------------
-  if (detailed_timer) then
-    call trace%end (itimer(i))
-  end if
   if (associated(head)) then
     if (detailed_timer) then
+      call trace%end (itimer(i))
       i = i+1
       call trace%begin('dispatcher0_t%update(4)', itimer=itimer(i))
     end if
@@ -421,6 +418,7 @@ subroutine stall_handler
     !$omp atomic update
     n_spin = n_spin+1
     if (detailed_timer) then
+      call trace%end (itimer(i))
       i = i+1
       call trace%begin('dispatcher0_t%update(5)', itimer=itimer(i))
     end if
