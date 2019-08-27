@@ -203,6 +203,7 @@ SUBROUTINE update (self, task_list, test)
   !$omp atomic read
   nq = task_list%nq
   if (nq == 0) then
+    if (detailed_timer) call trace%end(itimer(i))
     call stall_handler
     call trace%end(itimer(i))
     return
