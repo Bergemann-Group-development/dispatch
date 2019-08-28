@@ -19,7 +19,7 @@ MODULE initial_mod
   type, public:: initial_t
     integer:: id
     character(len=20) :: initial_condition
-    real:: b0(3), d0
+    real:: b0(3)
     real:: gamma
     real(8):: size(3)
     logical:: mhd = .false.
@@ -30,7 +30,6 @@ MODULE initial_mod
   end type
   logical, save:: test=.false.
   public planet_atmosphere
-  type(lagrange_t):: interp
 CONTAINS
 
 !===============================================================================
@@ -52,12 +51,14 @@ SUBROUTINE init (self, solver, gamma)
    !----------------------------------------------------------------------------
    call trace%begin('initial_t%init')
    call scaling%init
+   !$omp critical (init_cr)
    if (first_time) then
      first_time = .false.
      initial_condition = self%initial_condition
      rewind (io%input); read (io%input, initial_params, iostat=iostat)
      if (io%master) write (*, initial_params)
    end if
+   !$omp end critical (init_cr)
    self%initial_condition = initial_condition
    self%solver = trim(solver)
    select case(trim(self%initial_condition))
@@ -136,8 +137,8 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
         xp = x  - planet%position(1)
         xs = xp - ds2(1)
         rp = sqrt(xp**2+yp**2+zp**2)
-        d = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
-        p = interpolate (rp, nr, atmosphere%rr, atmosphere%pg)
+        d = lagrange%interpolate1d (rp, nr ,atmosphere%rr, atmosphere%rho)
+        p = lagrange%interpolate1d (rp, nr, atmosphere%rr, atmosphere%pg)
         !-----------------------------------------------------------------------
         ! Vertical stratification is added by adding Gaussian profile and
         ! subtracting off the otherwise constant external density
@@ -174,15 +175,15 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
         ! Momenta from (possibly) staggered densities
         !-----------------------------------------------------------------------
         rp = sqrt(xs**2+yp**2+zp**2)
-        ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        ds = lagrange%interpolate1d (rp, nr ,atmosphere%rr, atmosphere%rho)
         ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xs**2)/T0))
         mem(ix,iy,iz,idx%px) = ds*ux
         rp = sqrt(xp**2+ys**2+zp**2)
-        ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        ds = lagrange%interpolate1d (rp, nr ,atmosphere%rr, atmosphere%rho)
         ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xp**2)/T0))
         mem(ix,iy,iz,idx%py) = ds*uy
         rp = sqrt(xp**2+yp**2+zs**2)
-        ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        ds = lagrange%interpolate1d (rp, nr ,atmosphere%rr, atmosphere%rho)
         ds = ds*exp(-(planet%omega(3)**2*0.5*(zs**2+2.*planet%trap*xp**2)/T0))
         mem(ix,iy,iz,idx%pz) = ds*uz
         if (self%solver(1:7)=='ramses_') then
@@ -204,8 +205,6 @@ SUBROUTINE planet_atmosphere (self, m, mem, idx)
     end do
   end do
   end associate
-  if (self%id==io%id_debug) &
-    print *, self%id, 'XX time, mem:', 0d0, mem(3,19,36,1), 'in initial%condition'
   call trace%end (itimer)
 END SUBROUTINE planet_atmosphere
 
@@ -228,7 +227,7 @@ SUBROUTINE disk (self, m, mem, idx)
   namelist /planet_atm_params/ omega, gamma, b0, v_head_cgs, v_accrete_cgs
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin('initial_t%planet_atmosphere', itimer=itimer)
+  call trace%begin('initial_t%disk', itimer=itimer)
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -294,15 +293,15 @@ SUBROUTINE disk (self, m, mem, idx)
         ! Momenta from (possibly) staggered densities
         !-----------------------------------------------------------------------
         !rp = sqrt(xs**2+yp**2+zp**2)
-        !ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        !ds = lagrange%interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
         !ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xs**2)/T0))
         mem(ix,iy,iz,idx%px) = d*ux
         !rp = sqrt(xp**2+ys**2+zp**2)
-        !ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        !ds = lagrange%interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
         !ds = ds*exp(-(planet%omega(3)**2*0.5*(zp**2+2.*planet%trap*xp**2)/T0))
         mem(ix,iy,iz,idx%py) = d*uy
         !rp = sqrt(xp**2+yp**2+zs**2)
-        !ds = interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
+        !ds = lagrange%interpolate (rp, nr ,atmosphere%rr, atmosphere%rho)
         !ds = ds*exp(-(planet%omega(3)**2*0.5*(zs**2+2.*planet%trap*xp**2)/T0))
         mem(ix,iy,iz,idx%pz) = d*uz
         if (self%solver(1:7)=='ramses_') then
@@ -326,23 +325,5 @@ SUBROUTINE disk (self, m, mem, idx)
   end associate
   call trace%end (itimer)
 END SUBROUTINE disk
-
-!===============================================================================
-!> Use default Lagrange interpolation
-!===============================================================================
-FUNCTION interpolate (x0, n, x, y) RESULT(f)
-  implicit none
-  integer:: n
-  real(kind=8):: x0, x(n), y(n), f
-  !.............................................................................
-  interp%verbose = max(io%verbose-4,0)
-  if (x0 < x(1)) then
-    f = y(1)
-  else if (x0 > x(n)) then
-    f = y(n)
-  else
-    f = interp%sequence (x0, x, y)
-  end if
-END FUNCTION
 
 END MODULE

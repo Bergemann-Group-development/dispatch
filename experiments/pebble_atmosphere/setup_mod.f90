@@ -11,7 +11,6 @@ MODULE setup_mod
   USE units_mod
   USE scaling_mod
   USE planet_mod
-  USE star_mod
   USE atmosphere_mod
   USE eos_mod
   USE experiment_mod
@@ -51,7 +50,6 @@ SUBROUTINE init (self, label)
   class(experiment_t), pointer:: patch
   !-----------------------------------------------------------------------------
   call trace_begin ('setup_t%init')
-  call star%init
   call planet%init
   call atmosphere%init
   self%size = planet%radius*2.4

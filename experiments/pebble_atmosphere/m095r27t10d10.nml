@@ -7,9 +7,7 @@
 &force_params   /
 
 &timer_params sec_per_report=10 /
-!&task_list_params
-! sync_time=0.5
-!/
+
 &io_params
  verbose=0
  do_trace=f
@@ -17,14 +15,13 @@
  do_debug=f
  do_output=t
  do_legacy=t
-!id_debug=204
- !datadir='./data
+ guard_zones=t
+ time_derivs=0
+ namelist_errors=t
 /
 &out_params
- end_time=10000 out_time=100 !1-100
- print_time=0
- guard_zones=t
- time_derivs=f
+ end_time=10000. out_time=100.
+ print_time=10.
  max_files=90000
 /
 &rubiks_params
@@ -36,6 +33,7 @@
 /
 &eos_params                         ! For ideal gas EOS
  gamma=1.4
+ do_rt=f
 /
 &pebble_params
  detailed_timer=f
@@ -77,20 +75,17 @@
  v_head_cgs=0.0                     ! headwind speed
  v_accrete_cgs=0.0                  ! accretion speed
  omega = 0.0,0.0,1.0
-!test=t
 /
 &patch_params
  use_data_hub=f
  no_mans_land=f
- periodic=f,t,f
- n=3*33
+ !n=3*33
+ n=3*17
  nt=5
  grace=0.20
- courant=0.2
-!dt_fixed=0.001
 /
 
-&mhd_params
+&stagger_params
  gamma=1.4
  nu=  0.20, 1.0, 1.0, 0.0, 1.0, 1.0
  !     cs   pa   ofd  mas  kap  eta

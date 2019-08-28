@@ -1378,6 +1378,8 @@ SUBROUTINE remove_parents (self)
       if (associated(parent)) then
         write (*,'(2(1x,a,i9,5x))') &
           'removing parent task', parent%task%id, 'level', parent%task%level
+        io%nwrite = io%nwrite - 1
+        io%ntask  = io%ntask - 1
         call parent%remove_from_nbors (parent)
         call self%remove_link (parent)
       end if

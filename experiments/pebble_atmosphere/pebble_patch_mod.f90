@@ -24,7 +24,6 @@ MODULE pebble_patch_mod
   USE rmhd_mod
   USE planet_mod
   USE atmosphere_mod
-  USE star_mod
   USE scaling_mod
   USE units_mod
   USE random_mod
@@ -105,7 +104,7 @@ SUBROUTINE init (self)
   ! Make sure to initialize, but only once
   !-----------------------------------------------------------------------------
   call trace_begin ('pebble_patch_t%init')
-  call self%mhd_t%init
+  call self%rmhd_t%init
   allocate (self%pebbles,self%not_done)
   call self%pebbles%init (self%id)
   call self%not_done%init (self%id)

@@ -9,14 +9,16 @@ PROGRAM dispatch
   USE eos_mod
   USE download_mod
   USE setup_mod
+  USE dispatcher_mod
   !.............................................................................
   call mpi%init
   call io%init ('pebble_atmosphere')
   call scaling%init
   call eos%init
   call download%init
+  call dispatcher%init
   call setup%init                       ! initialize the patch list and patches
-  call setup%task_list%execute          ! execute the list = update member patches
+  call dispatcher%execute (setup%task_list) ! Run the dispatcher
   call setup%close                      ! close the experiment
   print*,'stopping: all tasks finished'
 !===============================================================================

@@ -7,12 +7,12 @@ MODULE planet_mod
   USE units_mod
   USE scaling_mod
   USE task_mod
-  USE particle_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
-  type, public, extends(particles_t):: planet_t
+  type, public:: planet_t
     real(8):: mass, radius, temperature
+    real(8), dimension(3):: position
     real(8):: t_growth= 0d0
     real:: orbit_radius, hill_radius
     real:: bondi_radius = 0.0
@@ -77,9 +77,9 @@ FUNCTION newton (self, rad, sp) RESULT (out)
   !.....................................................................
   ! --------------------------------------------------------------------
   if (rad > self%r_smooth) then
-    out = planet%mass*scaling%grav/rad**2
+    out = self%mass*scaling%grav/rad**2
   else
-    out = planet%mass*scaling%grav/self%r_smooth**2*(4.*(rad/self%r_smooth)-3.*(rad/self%r_smooth)**2)
+    out = self%mass*scaling%grav/self%r_smooth**2*(4.*(rad/self%r_smooth)-3.*(rad/self%r_smooth)**2)
   end if
   if (sp >= 0) out = -out
 
