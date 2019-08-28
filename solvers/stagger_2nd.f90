@@ -15,8 +15,8 @@ MODULE stagger_mod
   logical, save:: hardwire=.false.
   type, public:: stagger_t
     real(8):: ds(3)
-    integer:: flops=0
-    integer:: count=0
+    integer(kind=8):: flops=0
+    integer(kind=8):: count=0
   contains
     procedure, nopass:: ddxdn1
     procedure, nopass:: ddydn1
