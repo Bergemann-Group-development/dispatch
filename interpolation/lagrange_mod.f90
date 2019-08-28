@@ -42,6 +42,9 @@ MODULE lagrange_mod
     procedure test
     procedure debug
     procedure init
+    procedure interpolate1d4
+    procedure interpolate1d8
+    generic:: interpolate1d => interpolate1d4, interpolate1d8
   end type
   type(lagrange_t), public:: lagrange
 CONTAINS
@@ -725,5 +728,36 @@ SUBROUTINE init (self)
   end if
   !$omp end critical (lagrange_cr)
 END SUBROUTINE init
+
+!> =============================================================================
+!> Use default 1-D Lagrange interpolation
+!> =============================================================================
+FUNCTION interpolate1d4 (self,x0, n, x, y) RESULT(f)
+  class(lagrange_t):: self
+  integer:: n
+  real(kind=4):: x0, x(n), y(n), f
+  !.............................................................................
+  if (x0 < x(1)) then
+    f = y(1)
+  else if (x0 > x(n)) then
+    f = y(n)
+  else
+    f = self%sequence (x0, x, y)
+  end if
+END FUNCTION interpolate1d4
+
+FUNCTION interpolate1d8 (self,x0, n, x, y) RESULT(f)
+  class(lagrange_t):: self
+  integer:: n
+  real(kind=8):: x0, x(n), y(n), f
+  !.............................................................................
+  if (x0 < x(1)) then
+    f = y(1)
+  else if (x0 > x(n)) then
+    f = y(n)
+  else
+    f = self%sequence (x0, x, y)
+  end if
+END FUNCTION interpolate1d8
 
 END MODULE
