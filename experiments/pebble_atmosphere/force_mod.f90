@@ -108,7 +108,7 @@ FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet)
   real(8):: rp, newton
   real(8):: x, y, z, xs, ys, zs, xp, yp, zp, ds2(3), uxx, uyy
   !-----------------------------------------------------------------------------
-  call trace_begin('force_t:star_and_planet')
+  call trace_begin('force_t%disk_perhaps_with_planet')
   if (self%solver(1:7)=='ramses_') then
     ds2 = 0.
   else if (self%solver(1:7)=='stagger') then
@@ -119,56 +119,102 @@ FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet)
     error stop 'force'
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+
   if (present(with_planet)) then
     newton = planet%mass*scaling%grav
   else
     newton = 0.0
   end if
   ff = 0.0
-  do iz=m(3)%lb,m(3)%ub
-    z = m(3)%p + r3(iz)
-    zp = z  - planet%position(3)
-    zs = zp - ds2(3)
-    do iy=m(2)%lb,m(2)%ub
-      y = m(2)%p + r2(iy)
-      yp = y  - planet%position(2)
-      ys = yp - ds2(2)
-      do ix=m(1)%lb,m(1)%ub
-        x = m(1)%p + r1(ix)
-        xp = x  - planet%position(1)
-        xs = xp - ds2(1)
-        !---------------------------------------------------------------
-        ! The force from the planet is included explicitly, and is oriented
-        ! away from the planet, which is at the center of the local coordinates.
-        ! The L1 and L2 Lagrange points are the result of net centrifugal
-        ! forces that point in the opposite direction to the force of gravity,
-        ! cancelling at a distance where $\Omega^2 r$ is equal to $GM/r^2$
-        !---------------------------------------------------------------
-        rp = sqrt(xs**2+yp**2+zp**2)
-        rp = max(rp,planet%radius*0.1)
-        ff(ix,iy,iz,1) = -newton*xs/rp**3
-        rp = sqrt(xp**2+ys**2+zp**2)
-        rp = max(rp,planet%radius*0.1)
-        ff(ix,iy,iz,2) = -newton*ys/rp**3
-        rp = sqrt(xp**2+yp**2+zs**2)
-        rp = max(rp,planet%radius*0.1)
-        ff(ix,iy,iz,3) = -newton*zs/rp**3
-        !---------------------------------------------------------------
-        ! Add the vertical and radial rotating coordinate frame accelerations.
-        ! The net force in the radial direction increases with increasing x,
-        ! giving that x now points in the radial direction.  It has two
-        ! contributions:  The centripetal force \Omega^2 x, and the reduction
-        ! of the force of gravity from the central star, which contributes a
-        ! factor of 2 more, for a total factor of 3.  Vertically, there
-        ! is a net force that comes from the projection of the force of
-        ! gravity onto the z-axis, and has the same scaling constant as the
-        ! radial force, but the opposite sign.
-        !---------------------------------------------------------------
-        ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xs
-        ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zs
+  if (planet%r_smooth <=0.0) then
+    do iz=m(3)%lb,m(3)%ub
+      z = m(3)%p + r3(iz)
+      zp = z  - planet%position(3)
+      zs = zp - ds2(3)
+      do iy=m(2)%lb,m(2)%ub
+        y = m(2)%p + r2(iy)
+        yp = y  - planet%position(2)
+        ys = yp - ds2(2)
+        do ix=m(1)%lb,m(1)%ub
+          x = m(1)%p + r1(ix)
+          xp = x  - planet%position(1)
+          xs = xp - ds2(1)
+          !---------------------------------------------------------------
+          ! The force from the planet is included explicitly, and is oriented
+          ! away from the planet, which is at the center of the local coordinates.
+          ! The L1 and L2 Lagrange points are the result of net centrifugal
+          ! forces that point in the opposite direction to the force of gravity,
+          ! cancelling at a distance where $\Omega^2 r$ is equal to $GM/r^2$
+          !---------------------------------------------------------------
+          rp = sqrt(xs**2+yp**2+zp**2)
+          rp = max(rp,planet%radius*0.1)
+          ff(ix,iy,iz,1) = -newton*xs/rp**3
+          rp = sqrt(xp**2+ys**2+zp**2)
+          rp = max(rp,planet%radius*0.1)
+          ff(ix,iy,iz,2) = -newton*ys/rp**3
+          rp = sqrt(xp**2+yp**2+zs**2)
+          rp = max(rp,planet%radius*0.1)
+          ff(ix,iy,iz,3) = -newton*zs/rp**3
+          !---------------------------------------------------------------
+          ! Add the vertical and radial rotating coordinate frame accelerations.
+          ! The net force in the radial direction increases with increasing x,
+          ! giving that x now points in the radial direction.  It has two
+          ! contributions:  The centripetal force \Omega^2 x, and the reduction
+          ! of the force of gravity from the central star, which contributes a
+          ! factor of 2 more, for a total factor of 3.  Vertically, there
+          ! is a net force that comes from the projection of the force of
+          ! gravity onto the z-axis, and has the same scaling constant as the
+          ! radial force, but the opposite sign.
+          !---------------------------------------------------------------
+          ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xs
+          ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zs
+        end do
       end do
     end do
-  end do
+  else
+    do iz=m(3)%lb,m(3)%ub
+      z = m(3)%p + r3(iz)
+      zp = z  - planet%position(3)
+      zs = zp - ds2(3)
+      do iy=m(2)%lb,m(2)%ub
+        y = m(2)%p + r2(iy)
+        yp = y  - planet%position(2)
+        ys = yp - ds2(2)
+        do ix=m(1)%lb,m(1)%ub
+          x = m(1)%p + r1(ix)
+          xp = x  - planet%position(1)
+          xs = xp - ds2(1)
+          !---------------------------------------------------------------
+          ! The force from the planet is included explicitly, and is oriented
+          ! away from the planet, which is at the center of the local coordinates.
+          ! The L1 and L2 Lagrange points are the result of net centrifugal
+          ! forces that point in the opposite direction to the force of gravity,
+          ! cancelling at a distance where $\Omega^2 r$ is equal to $GM/r^2$
+          !---------------------------------------------------------------
+          rp = sqrt(xs**2+yp**2+zp**2)
+          ff(ix,iy,iz,1) = planet%newton(rp,xs)
+          rp = sqrt(xp**2+ys**2+zp**2)
+          ff(ix,iy,iz,2) = planet%newton(rp,ys)
+          rp = sqrt(xp**2+yp**2+zs**2)
+          ff(ix,iy,iz,3) = planet%newton(rp,zs)
+          !---------------------------------------------------------------
+          ! Add the vertical and radial rotating coordinate frame accelerations.
+          ! The net force in the radial direction increases with increasing x,
+          ! giving that x now points in the radial direction.  It has two
+          ! contributions:  The centripetal force \Omega^2 x, and the reduction
+          ! of the force of gravity from the central star, which contributes a
+          ! factor of 2 more, for a total factor of 3.  Vertically, there
+          ! is a net force that comes from the projection of the force of
+          ! gravity onto the z-axis, and has the same scaling constant as the
+          ! radial force, but the opposite sign.
+          !---------------------------------------------------------------
+          ff(ix,iy,iz,1) = ff(ix,iy,iz,1) + 3.0*planet%omega(3)**2*xs
+          ff(ix,iy,iz,3) = ff(ix,iy,iz,3) -     planet%omega(3)**2*zs
+        end do
+      end do
+    end do
+  end if
+
   !---------------------------------------------------------------------
   ! Friction term, to damp out initial sloshing motions, relative to the
   ! average shear.
@@ -234,9 +280,6 @@ FUNCTION disk_perhaps_with_planet (self, time, d, p, Ux, Uy, Uz, m, with_planet)
     ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*st_dn(st_up(Uz,3),1) - planet%omega(3)*st_dn(st_up(Uy,2),1))
     ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*st_dn(st_up(Ux,1),2) - planet%omega(1)*st_dn(st_up(Uz,3),2))
     ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*st_dn(st_up(Uy,2),3) - planet%omega(2)*st_dn(st_up(Ux,1),3))
-!    ff(:,:,:,1) = ff(:,:,:,1) - 2.*(planet%omega(2)*Uz - planet%omega(3)*Uy)
-!    ff(:,:,:,2) = ff(:,:,:,2) - 2.*(planet%omega(3)*Ux - planet%omega(1)*Uz)
-!    ff(:,:,:,3) = ff(:,:,:,3) - 2.*(planet%omega(1)*Uy - planet%omega(2)*Ux)
   else
     print *, trim(self%solver)
     error stop "force_mod(2) :: unknown solver"
