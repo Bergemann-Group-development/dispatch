@@ -255,6 +255,11 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, refine_params, iostat=iostat)
     write (io%output, refine_params)
+    if (on) then
+      omp_lock%links = .true.
+    else
+      omp_lock%links = .false.
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! If AMR is active, we must use check_filled, since nbor levels are in

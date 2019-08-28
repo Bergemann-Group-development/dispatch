@@ -849,7 +849,7 @@ SUBROUTINE check_ready (self, link, lock)
   ! lock in cases where task is the active task, but in other cases we need to
   ! lock the nbor list, so it isn't changed during the loop
   !-----------------------------------------------------------------------------
-  if (present(lock)) &
+  if (present(lock) .and. omp_lock%links) &
     call link%lock%set ('check_ready')
   !-----------------------------------------------------------------------------
   ! Tasks that are frozen or removed should not be used in the loop
@@ -883,7 +883,7 @@ SUBROUTINE check_ready (self, link, lock)
     end if
     nbor => nbor%next                                   ! next nbor
   end do
-  if (present(lock)) &
+  if (present(lock) .and. omp_lock%links) &
     call link%lock%unset ('check_ready')
   if (ok) then
     !$omp atomic write
