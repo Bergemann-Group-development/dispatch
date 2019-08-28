@@ -129,8 +129,11 @@ SUBROUTINE init_hierarchy (self, label)
   !-----------------------------------------------------------------------------
   call self%task_list%reset_status
   call self%task_list%count_status
+  io%nwrite = self%task_list%na
+  io%ntotal = scene%n_patch_total
   call self%task_list%init_bdries
   call self%task_list%init_all_nbors
+  call self%task_list%print_tasks
   call trace%end
 END SUBROUTINE init_hierarchy
 
