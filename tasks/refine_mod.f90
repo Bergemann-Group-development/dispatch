@@ -641,8 +641,8 @@ SUBROUTINE check_support (self, tlist, new, n_added)
   if (new%task%level <= self%levelmin+1) return
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_support', itimer=itimer, detailed_timer=detailed_timer)
-write (io_unit%log,*) 'unexpected call to check_support for', new%task%id, &
-new%task%is_set(bits%boundary),  new%task%is_set(bits%virtual)
+!write (io_unit%log,*) 'unexpected call to check_support for', new%task%id, &
+!new%task%is_set(bits%boundary),  new%task%is_set(bits%virtual)
   !-----------------------------------------------------------------------------
   ! Select patch-based tasks, and assume for now it is OK for updates
   !-----------------------------------------------------------------------------

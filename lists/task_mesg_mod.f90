@@ -276,9 +276,9 @@ SUBROUTINE recv_irecv (self, n_unpk)
   ! Step 1-3: receive, move, and unpack
   !-----------------------------------------------------------------------------
   n = 0
-if (verbose > 0) &
-write (io_unit%log,*) wallclock(), &
-'recv_irecv: n =', mpi_mesg%recv_list%n, mpi_mesg%max_recv
+  if (verbose > 0) &
+    write (io_unit%log,*) wallclock(), &
+     'recv_irecv: n =', mpi_mesg%recv_list%n, mpi_mesg%max_recv
   do while (mpi_mesg%recv_list%n < mpi_mesg%max_recv)
     call mpi_mesg%iget (mesg)
     if (mesg%is_complete('recv_irecv')) then
@@ -292,9 +292,9 @@ write (io_unit%log,*) wallclock(), &
   end do
   call self%move_mesgs
   call self%unpk_mesgs (n_unpk)
-if (verbose > 0) &
-write (io_unit%log,*) wallclock(), &
-'recv_irecv: n =', mpi_mesg%recv_list%n
+  if (verbose > 0) &
+    write (io_unit%log,*) wallclock(), &
+      'recv_irecv: n =', mpi_mesg%recv_list%n
   call trace%end (itimer)
 END SUBROUTINE recv_irecv
 

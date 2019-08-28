@@ -123,9 +123,9 @@ SUBROUTINE update_counters (self, patch, incr)
   !-----------------------------------------------------------------------------
   io%ntask = io%ntask+incr
   io%nwrite = io%ntask
-write(stdout,'(a,i6,6i4)') &
-'update_counters: patch, incr, io%nwrite, count, iout =', &
-patch%id, incr, io%nwrite, count1, count2, patch%iout, iout
+!write(stdout,'(a,i6,6i4)') &
+!'update_counters: patch, incr, io%nwrite, count, iout =', &
+!patch%id, incr, io%nwrite, count1, count2, patch%iout, iout
   !$omp end critical (update_counters_cr)
 END SUBROUTINE update_counters
 

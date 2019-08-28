@@ -76,8 +76,8 @@ MODULE patch_mod
     !--- used in extras ---
     logical, allocatable:: mask(:,:,:)
     !--- used in refine ---
-    integer(int8), allocatable:: irefine(:,:,:), xrefine(:,:,:)
-    type(lock_t):: xrefine_lock
+    integer(int8), allocatable:: irefine(:,:,:)
+    type(lock_t), pointer:: mem_lock(:)
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
@@ -729,11 +729,6 @@ SUBROUTINE dealloc (self)
                       product(shape(self%mask)), '-mask')
     deallocate (self%mask)
   end if
-  if (allocated(self%xrefine)) then
-    call io%bits_mem (-storage_size(self%xrefine), &
-                      product(shape(self%xrefine)), '-xrefine')
-    deallocate (self%xrefine)
-  end if
   if (allocated(self%irefine)) then
     call io%bits_mem (-storage_size(self%irefine), &
                       product(shape(self%irefine)), '-irefine')
@@ -748,9 +743,6 @@ SUBROUTINE clone_mem_accounting (self)
   if (allocated(self%mask)) &
     call io%bits_mem (storage_size(self%mask), &
                      product(shape(self%mask)), 'mask')
-  if (allocated(self%xrefine)) &
-    call io%bits_mem (storage_size(self%xrefine), &
-                     product(shape(self%xrefine)), 'xrefine')
   if (allocated(self%irefine)) &
     call io%bits_mem (storage_size(self%irefine), &
                      product(shape(self%irefine)), 'irefine')
