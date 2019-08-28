@@ -1331,14 +1331,14 @@ SUBROUTINE output_legacy_rt (self, experiment_name)
     l = self%mesh%li
     u = self%mesh%ui
   end if
-  if (io%time_derivs) then
+  if (io%time_derivs>0) then
     no = min(2,self%nw)
   else
     no = 1
   end if
   if (io%out_time==0.0) then
     time = self%time
-  else if (io%time_derivs) then
+  else if (io%time_derivs>0) then
     time = self%t(self%nt-2)
   else
     time = self%out_next

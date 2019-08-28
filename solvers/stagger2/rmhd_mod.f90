@@ -46,7 +46,7 @@ SUBROUTINE init (self)
   !---------------------------------------------------------------------
   ! Initialize the MHD data type, and allocate arrays for RT
   !---------------------------------------------------------------------
-  call self%mhd_t%init
+  call self%solver_t%init
   !---------------------------------------------------------------------
   ! Initialize the rt_mod object (one could create more than one).
   ! Copy parameters that may be different for various reasons
@@ -67,9 +67,11 @@ SUBROUTINE update (self)
   real:: u_max
   !---------------------------------------------------------------------
   call trace%begin ('rmhd_t%update', itimer=itimer)
+  call self%mhd_t%pre_update
   call self%output
+
   if (self%id==285) print *, self%id, 'update', self%time, self%dtime
-!
+
   if (eos%do_rt.and.associated(self%rt)) then
     call self%rt%update
     call self%pde
@@ -119,9 +121,11 @@ SUBROUTINE update (self)
   call self%courant_condition
   if (io%verbose>2) &
     call self%check_density('before timestep')
-  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
+  call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh, self%lock)
   call self%check_density(' after timestep')
   !end if
+  call self%counter_update
+  call self%mhd_t%post_update
   call trace%end (itimer)
 END SUBROUTINE update
 

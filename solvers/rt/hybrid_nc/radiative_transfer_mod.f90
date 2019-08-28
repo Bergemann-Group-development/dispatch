@@ -415,13 +415,13 @@ SUBROUTINE connect_nbors(self, nbor)
   link1%parent => self%parent
   link1%needed   = .true.
   link1%needs_me = .true.
-  call nbor%add_nbor_by_rank(link1)
+  call nbor%add_nbor_by_rank(nbor%nbor,link1)
   link2%task   => nbor%task
   link2%link   => nbor
   link2%parent => nbor%parent
   link2%needed   = .true.
   link2%needs_me = .true.
-  call self%add_nbor_by_rank(link2)
+  call self%add_nbor_by_rank(self%nbor,link2)
 END SUBROUTINE connect_nbors
 
 !=======================================================================
