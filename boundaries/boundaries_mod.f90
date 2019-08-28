@@ -20,6 +20,8 @@ MODULE boundaries_mod
     class(mesh_t), pointer:: m(:)
     real(8):: position(3)=0d0, radius=0d0
     real:: vmax
+    logical(kind=2), pointer:: filled(:,:,:,:)
+    logical:: check_filled=.false.
   contains
     procedure:: init
     procedure:: set
@@ -37,6 +39,7 @@ MODULE boundaries_mod
     procedure:: spherical_p_ns
     procedure:: spherical_ns
     procedure:: spherical_jagged_d
+    procedure:: spherical_jagged_s0
     procedure:: spherical_jagged_s
     procedure:: spherical_jagged_p
     generic:: spherical => spherical0, spherical3
@@ -47,17 +50,38 @@ MODULE boundaries_mod
 CONTAINS
 
 !===============================================================================
-!> Initialize the boundary data type
+!> Initialize the boundary data type, while testing also if the patch contains
+!> a spherical boundary, or possibly is completely immersed in such a boundary.
 !===============================================================================
 SUBROUTINE init (self, mesh, position, radius)
   class(boundaries_t)              :: self
   class(mesh_t), pointer, optional :: mesh(:)
   real(8), optional                :: position(3), radius
+  !.............................................................................
+  real(8)                          :: size(3), p(3)
+  integer                          :: i, j, k
+  logical                          :: one_inside, all_inside
   !-----------------------------------------------------------------------------
   call trace%begin ('boundaries_t%init')
-  if (present(mesh))     self%m        => mesh
-  if (present(position)) self%position =  position
-  if (present(radius))   self%radius   =  radius
+  if (present(radius))   self%radius   = radius
+  if (present(position)) self%position = position
+  if (present(mesh)) then
+    self%m => mesh
+    if (present(position).and.present(radius))   then
+      one_inside = .false.
+      all_inside = .true.
+      size(:) = mesh(:)%s
+      do k=-1,1; do j=-1,1; do i=-1,1
+        p(:) = position(:) + 0.5*size(:)*[i,j,k]
+        if (sum(p**2) < radius**2) then
+          one_inside = .true.
+        else
+          all_inside = .false.
+        end if
+      end do; end do; end do
+      if (one_inside) call self%set (bits%spherical)
+    end if
+  end if
   self%unset = .false.
   call trace%end()
 END SUBROUTINE init
@@ -161,6 +185,7 @@ SUBROUTINE condition (self, f, iv, operator, value, select)
   return
 contains
   subroutine x_condition
+    if (self%check_filled) call trace_begin ('x_condition')
     if (self%id==io%id_debug) &
       print *, 'MK BOUNDARY CONDITION: x-direction', self%bits, present(value)
     m1 => self%m(2)
@@ -169,8 +194,18 @@ contains
       call operator (self, f(:,:,i),m1,m2,iv,lower=self%is_set(bits%xl), &
         upper=self%is_set(bits%xu), transpose=.true., value=value)
     end do
+    if (self%check_filled) then
+      if (self%is_set(bits%xl)) then
+        self%filled(self%m(1)%lb:self%m(1)%lo,:,:,iv) = .true.
+      end if
+      if (self%is_set(bits%xu)) then
+        self%filled(self%m(1)%uo:self%m(1)%ub,:,:,iv) = .true.
+      end if
+    end if
+    if (self%check_filled) call trace_end
   end subroutine x_condition
   subroutine y_condition
+    if (self%check_filled) call trace_begin ('y_condition')
     if (self%id==io%id_debug) &
       print *, 'MK BOUNDARY CONDITION: y-direction', self%bits, present(value)
     m1 => self%m(1)
@@ -179,8 +214,18 @@ contains
       call operator (self, f(:,:,i),m1,m2,iv,lower=self%is_set(bits%yl), &
         upper=self%is_set(bits%yu), transpose=.false., value=value)
     end do
+    if (self%check_filled) then
+      if (self%is_set(bits%yl)) then
+        self%filled(:,self%m(2)%lb:self%m(2)%lo,:,iv) = .true.
+      end if
+      if (self%is_set(bits%yu)) then
+        self%filled(:,self%m(2)%uo:self%m(2)%ub,:,iv) = .true.
+      end if
+    end if
+    if (self%check_filled) call trace_end
   end subroutine y_condition
   subroutine z_condition
+    if (self%check_filled) call trace_begin ('z_condition')
     if (self%id==io%id_debug) &
       print *, 'MK BOUNDARY CONDITION: z-direction', self%bits, present(value)
     m1 => self%m(1)
@@ -189,6 +234,15 @@ contains
       call operator (self, f(:,i,:),m1,m2,iv,lower=self%is_set(bits%zl), &
         upper=self%is_set(bits%zu), transpose=.false., value=value)
     end do
+    if (self%check_filled) then
+      if (self%is_set(bits%zl)) then
+        self%filled(:,:,self%m(3)%lb:self%m(3)%lo,iv) = .true.
+      end if
+      if (self%is_set(bits%zu)) then
+        self%filled(:,:,self%m(3)%uo:self%m(3)%ub,iv) = .true.
+      end if
+    end if
+    if (self%check_filled) call trace_end
   end subroutine z_condition
 END SUBROUTINE condition
 
@@ -638,7 +692,7 @@ SUBROUTINE spherical_p_ns (self, p, m, position, radius)
   real                                         :: h(3), r(3)
   class(mesh_t), pointer                       :: mm
   !-----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%spherical0_ns')
+  call trace_begin('boundaries_t%spherical_p_ns')
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iv=1,3
     do i=1,3
@@ -675,7 +729,7 @@ SUBROUTINE spherical_ns (self, mem, v, m, iv, maxfill)
   real(8)      :: x, y, z, r, h(3)
   real(8)      :: d1, dw, x1, rp, p1, p2
   !-----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%spherical0')
+  call trace_begin('boundaries_t%spherical_ns')
   call set_stagger (m, h, iv)
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -825,41 +879,26 @@ SUBROUTINE spherical_jagged_d (self, mem, m, iv, it, new)
   !............................................................................
   integer      :: ix, iy, iz
   real(8)      :: x1, x2, y1, y2, z1, z2
-  real(8)      :: r2
+  real(8)      :: r(3)
   logical      :: inside(8)
   !-----------------------------------------------------------------------------
   call trace_begin('boundaries_t%spherical_jagged_d')
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
-  r2 = self%radius**2
-  if (iv == idx%d) then
-    do iz = m3%lb, m3%ub
-      do iy = m2%lb, m2%ub
-        do ix = m1%lb, m1%ub
-          x1 = m1%p - self%position(1) + m1%r(ix) + 0.5*m1%d
-          x2 = m1%p - self%position(1) + m1%r(ix) - 0.5*m1%d
-          y1 = m2%p - self%position(2) + m2%r(iy) + 0.5*m2%d
-          y2 = m2%p - self%position(2) + m2%r(iy) - 0.5*m2%d
-          z1 = m3%p - self%position(3) + m3%r(iz) + 0.5*m3%d
-          z2 = m3%p - self%position(3) + m3%r(iz) - 0.5*m3%d
-          inside(1) = x1**2+y1**2+z1**2 < r2
-          inside(2) = x2**2+y1**2+z1**2 < r2
-          inside(3) = x1**2+y2**2+z1**2 < r2
-          inside(4) = x2**2+y2**2+z1**2 < r2
-          inside(5) = x1**2+y1**2+z2**2 < r2
-          inside(6) = x2**2+y1**2+z2**2 < r2
-          inside(7) = x1**2+y2**2+z2**2 < r2
-          inside(8) = x2**2+y2**2+z2**2 < r2
-          if (all(inside)) mem(ix,iy,iz,new) = &
-                           mem(ix,iy,iz,it)
-        end do
-      end do
-    end do
-  else
-    print *, 'iv passed',iv, 'iv required', idx%d
-    call mpi%abort ("boundaries_mod::spherical_jagged_d:: invalid memory index iv")
-  end if
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+  do iy=m(2)%lb,m(2)%ub
+  do ix=m(1)%lb,m(1)%ub
+    r(1) = m(1)%p - self%position(1) + r1(ix)
+    r(2) = m(2)%p - self%position(2) + r2(iy)
+    r(3) = m(3)%p - self%position(3) + r3(iz)
+    if (sum(r**2) < self%radius**2) mem(ix,iy,iz,new) = &
+                         mem(ix,iy,iz,it)
+  end do
+  end do
+  end do
+  end associate
   nullify (m1, m2, m3)
   call trace_end
 END SUBROUTINE spherical_jagged_d
@@ -867,7 +906,41 @@ END SUBROUTINE spherical_jagged_d
 !===============================================================================
 !> Impose spherical density boundary condition, assuming that the sphere is jagged.
 !===============================================================================
-SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
+SUBROUTINE spherical_jagged_s (self, new, old, m)
+  class(boundaries_t)                        :: self
+  real(kind=KindScalarVar), dimension(:,:,:) :: old, new
+  class(mesh_t), pointer                     :: m(:), m1, m2, m3
+  !............................................................................
+  type(index_t):: idx
+  integer      :: ix, iy, iz
+  real(8)      :: r(3)
+  logical      :: inside(8)
+  !-----------------------------------------------------------------------------
+  call trace_begin('boundaries_t%spherical_jagged_s')
+  m1 => m(1)
+  m2 => m(2)
+  m3 => m(3)
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+  do iy=m(2)%lb,m(2)%ub
+  do ix=m(1)%lb,m(1)%ub
+    r(1) = m(1)%p - self%position(1) + r1(ix)
+    r(2) = m(2)%p - self%position(2) + r2(iy)
+    r(3) = m(3)%p - self%position(3) + r3(iz)
+    if (sum(r**2) < self%radius**2) new(ix,iy,iz) = &
+                         old(ix,iy,iz)
+  end do
+  end do
+  end do
+  end associate
+  nullify (m1, m2, m3)
+  call trace_end
+END SUBROUTINE spherical_jagged_s
+
+!> =============================================================================
+!> Impose spherical density boundary condition, assuming that the sphere is jagged.
+!> =============================================================================
+SUBROUTINE spherical_jagged_s0 (self, mem, m, iv, v)
   class(boundaries_t)                        :: self
   real(kind=KindScalarVar), dimension(:,:,:) :: mem
   class(mesh_t), pointer                     :: m(:), m1, m2, m3
@@ -879,7 +952,7 @@ SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
   real(8)      :: r2
   logical      :: inside(8)
   !-----------------------------------------------------------------------------
-  call trace_begin('boundaries_t%spherical_jagged_s')
+  call trace_begin('boundaries_t%spherical_jagged_s0')
   m1 => m(1)
   m2 => m(2)
   m3 => m(3)
@@ -912,7 +985,7 @@ SUBROUTINE spherical_jagged_s (self, mem, m, iv, v)
   end if
   nullify (m1, m2, m3)
   call trace_end
-END SUBROUTINE spherical_jagged_s
+END SUBROUTINE spherical_jagged_s0
 
 !===============================================================================
 !> Same as above, but for momentum
