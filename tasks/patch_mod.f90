@@ -320,13 +320,14 @@ SUBROUTINE header_to_patch (self, head)
   self%velocity   = head%velocity
   self%size       = head%size
   self%it         = head%it
+  self%new        = mod(self%it,self%nt) + 1
   self%nt         = head%nt
   nt              = head%nt
   if (nt > 0) then
     self%t          = head%t(1:nt)
     self%dt         = head%dt(1:nt)
     self%iit        = head%iit(1:nt)
-    self%new        = head%iit(nt)
+    !self%new        = head%iit(nt)
   else
     write (io_unit%log,*) omp%thread,'header_to_patch WARNING: nt non-positive', nt
     flush (io_unit%log)
@@ -1490,87 +1491,79 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       print_it = .false.
     end if
     !---------------------------------------------------------------------------
-    ! If print_every==0, then use instead print_time to control cadence
+    ! If print_every==0, then use instead print_time to control cadence, using
+    ! an if-lock-if sequence to ensure only one thread prints and updates
     !---------------------------------------------------------------------------
-    if (print_it .or. &
-        print_every == 0 .and. self%time >= io%print_next) then
-      !--------------------------------------------------------------------------
-      ! Use double if and a brief lock period to ensure only one thread prints
-      !--------------------------------------------------------------------------
-      if (io%print_time > 0.0) &
-        call lock%set ('print')
-      if (print_it .or. self%time >= io%print_next .or. &
-        io%verbose>0 .or. self%id==io%id) then
-        !-----------------------------------------------------------------------
-        ! If io%print_time is set, hold off printing until after print_next
-        !-----------------------------------------------------------------------
-        if (io%print_time > 0) then
-          print_next = (nint(self%time/io%print_time)+1)*io%print_time
-          !$omp atomic write
-          io%print_next = print_next
-          call lock%unset ('print')
-        end if
-        nv = 1
-        if (io%verbose>2) nv = self%nv
-        !-------------------------------------------------------------------------
-        counts_l = &
-          [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
-           mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  ]
-        do i=1,size(counts)
-          !$omp atomic update
-          counts(i) = counts(i) + counts_l(i)
-        end do
-        !$omp atomic update
-        timer%n_lines = timer%n_lines-1
-        if (timer%n_lines==0) then
-          !$omp critical (info_cr2)
-          !$omp atomic write
-          timer%n_lines = max_lines
-          write(io%output,'(a)') &
-          '0....+....1....+....2....+....3....+....4....+....5....+....' &
-          //'6....+....7....+....8....+....9....+....0....+....1  ntsk   nq ' &
-          //' chk  rdy   upd  snt  prb  unp  snq rcq unq  BV'
-          !$omp end critical (info_cr2)
-        end if
-        !-----------------------------------------------------------------------
-        ! time-dtime is the task time when update started; it is guaranteed to
-        ! be increasing monotomically, since the ready queue is time sorted.
-        ! To allow using the column for plotting, we show this time when all
-        ! times are printed.
-        !-----------------------------------------------------------------------
-        if (io%print_time == 0.0 .and. io%verbose > 0) then
-          time = self%time - self%dtime
-        else
-          time = self%time
-        end if
-        do iv=1,nv
-          write(io%output,fmt) &
-            'upd',self%id, self%level, iv, omp_mythread, time, &
-            self%dtime, log10(max(self%u_max,1e-30)), &
-            io%dmin, io%dmax, &
-            self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-            self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-            real(timer%n_update), ntask, nq, counts, &
-            mpi_mesg%nq_send, mpi_mesg%nq_recv, mpi_mesg%unpk_list%n, &
-            self%is_set(bits%boundary), self%is_set(bits%virtual)
-        end do
-        flush (io%output)
-        !$omp atomic write
-        io%dmin = huge(1.)
-        !$omp atomic write
-        io%dmax = tiny(1.)
-        !$omp atomic write
-        io%dtime = huge(1d0)
-        !$omp atomic write
-        id_prv = io%id
-        counts(:) = 0
-        !-----------------------------------------------------------------------
-        ! Reset the message counters after every timestep, if relevant
-        !-----------------------------------------------------------------------
-        mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0
-        mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_unpk=0
-        mpi_mesg%n_delay=0
+    if (print_every == 0 .and. self%time >= io%print_next) then
+      call lock%set ('print')
+      if (self%time >= io%print_next) then
+        print_it = .true.
+        print_next = (nint(self%time/io%print_time)+1)*io%print_time
+        io%print_next = print_next
       end if
+      call lock%unset ('print')
+    end if
+    if (print_it .or. io%verbose>0 .or. self%id==io%id) then
+      nv = 1
+      if (io%verbose>2) nv = self%nv
+      !-------------------------------------------------------------------------
+      counts_l = &
+        [mpi_mesg%n_check, mpi_mesg%n_ready, mpi_mesg%n_update, &
+         mpi_mesg%n_send , mpi_mesg%n_recv , mpi_mesg%n_unpk  ]
+      do i=1,size(counts)
+        !$omp atomic update
+        counts(i) = counts(i) + counts_l(i)
+      end do
+      !$omp atomic update
+      timer%n_lines = timer%n_lines-1
+      if (timer%n_lines==0) then
+        !$omp critical (info_cr2)
+        !$omp atomic write
+        timer%n_lines = max_lines
+        write(io%output,'(a)') &
+        '0....+....1....+....2....+....3....+....4....+....5....+....' &
+        //'6....+....7....+....8....+....9....+....0....+....1  ntsk   nq ' &
+        //' chk  rdy   upd  snt  prb  unp  snq rcq unq  BV'
+        !$omp end critical (info_cr2)
+      end if
+      !-----------------------------------------------------------------------
+      ! time-dtime is the task time when update started; it is guaranteed to
+      ! be increasing monotomically, since the ready queue is time sorted.
+      ! To allow using the column for plotting, we show this time when all
+      ! times are printed.
+      !-----------------------------------------------------------------------
+      if (io%print_time == 0.0 .and. io%verbose > 0) then
+        time = self%time - self%dtime
+      else
+        time = self%time
+      end if
+      do iv=1,nv
+        write(io%output,fmt) &
+          'upd',self%id, self%level, iv, omp_mythread, time, &
+          self%dtime, log10(max(self%u_max,1e-30)), &
+          io%dmin, io%dmax, &
+          self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+          self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+          real(timer%n_update), ntask, nq, counts, &
+          mpi_mesg%nq_send, mpi_mesg%nq_recv, mpi_mesg%unpk_list%n, &
+          self%is_set(bits%boundary), self%is_set(bits%virtual)
+      end do
+      flush (io%output)
+      !$omp atomic write
+      io%dmin = huge(1.)
+      !$omp atomic write
+      io%dmax = tiny(1.)
+      !$omp atomic write
+      io%dtime = huge(1d0)
+      !$omp atomic write
+      id_prv = io%id
+      counts(:) = 0
+      !-----------------------------------------------------------------------
+      ! Reset the message counters after every timestep, if relevant
+      !-----------------------------------------------------------------------
+      mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0
+      mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_unpk=0
+      mpi_mesg%n_delay=0
     end if
     !---------------------------------------------------------------------------
     ! Keep track of the shortest times step between updates of the io%id local
