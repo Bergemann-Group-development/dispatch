@@ -267,7 +267,7 @@ END SUBROUTINE patch_to_header
 SUBROUTINE header_to_patch (self, head)
   class(patch_t):: self
   type(header_t):: head
-  integer:: nt
+  integer:: nt, new
   !-----------------------------------------------------------------------------
   ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
   ! ready bit, which is an indicator of a patch being in the ready queue, which
@@ -319,8 +319,11 @@ SUBROUTINE header_to_patch (self, head)
   self%position   = head%position
   self%velocity   = head%velocity
   self%size       = head%size
+  !$omp atomic write
   self%it         = head%it
-  self%new        = mod(self%it,self%nt) + 1
+  new             = mod(head%it,head%nt) + 1
+  !$omp atomic write
+  self%new        = new
   self%nt         = head%nt
   nt              = head%nt
   if (nt > 0) then
@@ -532,6 +535,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   integer, optional :: nt, nv, nw
   !.............................................................................
   type(header_t):: header
+  character(len=4) kind
   integer:: i
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%setup')
@@ -639,6 +643,11 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
                        self%mesh(2)%gn, &
                        self%mesh(3)%gn, &
                        self%nv,self%nt,self%nw))
+    allocate (self%mem_lock(self%nt))
+    do i=1,self%nt
+      write (kind,'("mem",i1)') i
+      call self%mem_lock(i)%init (kind)
+    end do
     self%mem_allocated = .true.               ! mark
     call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
     allocate (self%unsigned (self%nv))
@@ -1347,10 +1356,7 @@ SUBROUTINE unpack (self, mesg)
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
-  call self%lock%set ('unpack')
   call self%header_to_patch (header)
-write (io_unit%log,'(f12.6,3x,a,i6,i4)') &
-wallclock(), 'patch_t%unpack: begin id =', self%id, self%it
 flush (io_unit%log)
   if (io%verbose > 1) &
     write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
@@ -1374,6 +1380,7 @@ flush (io_unit%log)
   ! Copy the variables from the output buffer.  If this is swap of patch roles
   ! expect at least one more time slot.
   !-----------------------------------------------------------------------------
+  call self%mem_lock(self%it)%set ('unpack')
   do iv=1,self%nv
     call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
 !write(io_unit%log,'(a,i6,2i4,1p,e14.5)') &
@@ -1392,10 +1399,7 @@ flush (io_unit%log)
       ibuf = ibuf + n_buf
     end do
   end if
-  call self%lock%unset ('unpack')
-write (io_unit%log,'(f12.6,3x,a,i6,1p,e14.5)') &
-wallclock(), 'patch_t%unpack:   end id =', self%id, minval(self%mem(:,:,:,1,self%it,1))
-flush (io_unit%log)
+  call self%mem_lock(self%it)%unset ('unpack')
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
   call self%clear (bits%busy)

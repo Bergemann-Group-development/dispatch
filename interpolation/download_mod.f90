@@ -107,7 +107,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !.............................................................................
   class(link_t), pointer:: nbor, sorted_head, nbors
   class(patch_t), pointer:: target, source
-  integer:: edges, l(3), u(3), ix, iy, iz, jt(2), new
+  integer:: edges, l(3), u(3), ix, iy, iz, jt(2)
   integer, save:: itimer=0
   real:: pt(2)
   character(len=64):: info
@@ -191,33 +191,19 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
         nbor%needed, nbor%download, source%n_needed
       flush (io_unit%output)
     end if
-    if (omp_lock%tasks) then
-      !-------------------------------------------------------------------------
-      ! If the source task is being actively updated, and the slot could become
-      ! the one after source%new, lock the task mem, so either it cannot change
-      ! during the guard zone loading or, if the lock is already set, access to
-      ! the source will have to wait until after the source update.
-      !-------------------------------------------------------------------------
-      call source%time_interval (target%time, jt, pt)
-      !$omp atomic read
-      new = source%new
-      new = mod(new,source%nt) + 1
-      lock_it = source%is_set(bits%busy) .and. (jt(1) == new)
-      if (use_locks) &
-        lock_it = .true.
-      if (lock_it) then
-        if (verbose > 0) &
-          write (io_unit%log,'(a,2i3,1x,2i3,2x,2f6.3,f12.6,2x,10f12.6)') &
-            'download_link: it, new, jt, pt, target%time, source%t =', &
-            source%it, source%new, jt, pt, target%time, source%t
-        !$omp atomic update
-        omp_lock%n_download(1) = omp_lock%n_download(1) + 1
-        call source%lock%set ('download_link')
-      else
-        !$omp atomic update
-        omp_lock%n_download(2) = omp_lock%n_download(2) + 1
-      end if
-    end if
+    !-------------------------------------------------------------------------
+    ! If the source task is being actively updated, and the slot could become
+    ! the one after source%new, lock the task mem, so either it cannot change
+    ! during the guard zone loading or, if the lock is already set, access to
+    ! the source will have to wait until after the source update.
+    !-------------------------------------------------------------------------
+    call source%time_interval (target%time, jt, pt)
+    call source%mem_lock(jt(1))%set ('download_link')
+    call source%mem_lock(jt(2))%set ('download_link')
+    if (verbose > 0) &
+      write (io_unit%log,'(a,2i3,1x,2i3,2x,2f6.3,f12.6,2x,10f12.6)') &
+        'download_link: it, new, jt, pt, target%time, source%t =', &
+        source%it, source%new, jt, pt, target%time, source%t
     if (verbose > 1) then
       write(io_unit%log,'(f12.6,i6,i3,3x,a,i6,i3,2x,2l1)') wallclock(), target%id, target%level, &
         'download_link: source, level =', &
@@ -233,28 +219,28 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
      if (trim(target%kind) /= 'rt_solver') then
        if (source%is_clear(bits%no_download)) then
          if (use_different == 2) then
-           call different (self, target, source, all_cells, only=only)
+           call different (self, target, source, jt, pt, all_cells, only=only)
          else if (use_different == 1) then
-           call different_prolong (self, target, source, all_cells, only=only)
+           call different_prolong (self, target, source, jt, pt, all_cells, only=only)
          else if (use_different == -1) then
-           call different_restrict (self, target, source, only=only)
+           call different_restrict (self, target, source, jt, pt, only=only)
          else if (source%level==target%level) then
-           call self%same (target, source, all_cells, only=only)
+           call self%same (target, source, jt, pt, all_cells, only=only)
          else if ((source%level-target%level) <= -1) then
            if (use_different == -2) then
-             call different (self, target, source, all_cells, only=only)
+             call different (self, target, source, jt, pt, all_cells, only=only)
            else if (use_different == -3) then
-             call prolong (self, target, source, all_cells, only=only)
+             call prolong (self, target, source, jt, pt, all_cells, only=only)
            else
-             call different_prolong (self, target, source, all_cells, only=only)
+             call different_prolong (self, target, source, jt, pt, all_cells, only=only)
            end if
          else if (source%level < target%level .and. present(all_cells)) then
-           call different_prolong (self, target, source, all_cells, only=only)
+           call different_prolong (self, target, source, jt, pt, all_cells, only=only)
          else if ((source%level-target%level) == 1) then
            if (use_different <= -2) then
-             call different (self, target, source, all_cells, only=only)
+             call different (self, target, source, jt, pt, all_cells, only=only)
            else
-             call different_restrict (self, target, source, only=only)
+             call different_restrict (self, target, source, jt, pt, only=only)
            end if
          end if
        end if
@@ -276,18 +262,16 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
        if (trim(source%kind)=='rt_solver') then
          if (abs(source%level-target%level) < 2) then
            if (source%level==target%level) then
-             call same_rt (self, target, source)
+             call same_rt (self, target, source, jt, pt)
            else
-             call different_rt (self, target, source)
+             call different_rt (self, target, source, jt, pt)
            end if
          end if
        end if
      end if
     end if
-    if (omp_lock%tasks) then
-      if (lock_it) &
-        call source%lock%unset ('download_link')
-    end if
+    call source%mem_lock(jt(2))%unset ('download_link')
+    call source%mem_lock(jt(1))%unset ('download_link')
     if (verbose > 1) then
       write(io_unit%log,'(f12.6,i6,i3,3x,a,i6,i3,2x,2l1)') wallclock(), target%id, target%level, &
         'download_link: source, level =', source%id, source%level
@@ -483,7 +467,7 @@ END SUBROUTINE dnload_range
 !>   dnload_range
 !>   time_interval
 !===============================================================================
-SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
+SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times)
   class(download_t):: self
   class(patch_t), pointer :: target, source
   logical, optional       :: all_cells, all_times
@@ -501,7 +485,6 @@ SUBROUTINE same_linear (self, target, source, all_cells, only, all_times)
     write(io_unit%log,'(a,1p,e14.5,i7,e14.5)') &
       'dbg download_t%same_linear: time, source =', &
       target%time, source%id, source%time
-  call source%time_interval (target%time, jt, pt, all=all_times)
   if (present(only)) then
     iv1 = only
     iv2 = only
@@ -842,11 +825,13 @@ END SUBROUTINE same_linear
 !>   dnload_range
 !>   time_interval
 !===============================================================================
-SUBROUTINE same_lagrange (self, target, source, all_cells, only, all_times)
+SUBROUTINE same_lagrange (self, target, source, jj, pt, all_cells, only, all_times)
   class(download_t):: self
   class(patch_t), pointer :: target, source
   logical, optional       :: all_cells, all_times
   integer, optional       :: only
+  integer                 :: jj(2)
+  real                    :: pt(2)
   !.............................................................................
   integer                 :: l(3), u(3), o(3), ii(3), jt, i
   real(8)                 :: position(3), xx, dist(3)
@@ -1086,7 +1071,7 @@ END SUBROUTINE same_lagrange
 !===============================================================================
 !> Same as above, but for RT_solver type patches
 !===============================================================================
-SUBROUTINE same_rt (self, target, source)
+SUBROUTINE same_rt (self, target, source, jt, pt)
   class(download_t):: self
   class(patch_t), pointer :: target, source
   !integer(int8), dimension(:,:,:,:), allocatable:: filled
@@ -1098,7 +1083,6 @@ SUBROUTINE same_rt (self, target, source)
   integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%same_rt', itimer=itimer)
-  call source%time_interval (target%time, jt, pt)
   call dnload_range (target, source, 1, l, u, o)
   li = target%mesh%li
   ui = target%mesh%ui
@@ -1129,7 +1113,7 @@ END SUBROUTINE same_rt
 !===============================================================================
 !> Interpolate guard zone info from source patch at a different level
 !===============================================================================
-SUBROUTINE different (self, target, source, all_cells, only)
+SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
   class(download_t):: self
   class(patch_t), pointer :: target, source
   logical, optional:: all_cells
@@ -1145,7 +1129,6 @@ SUBROUTINE different (self, target, source, all_cells, only)
   logical                 :: all_cells_l
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different', itimer=itimer)
-  call source%time_interval (target%time, jt, pt)
   if (present(only)) then
     iv1 = only
     iv2 = only
@@ -1222,7 +1205,7 @@ END SUBROUTINE different
 !===============================================================================
 !> Interpolate guard zone info from source patch at a lower level
 !===============================================================================
-SUBROUTINE different_prolong (self, target, source, all_cells, only)
+SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
   class(download_t):: self
   class(patch_t), pointer :: target, source
   logical, optional:: all_cells
@@ -1243,7 +1226,6 @@ SUBROUTINE different_prolong (self, target, source, all_cells, only)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_prolong', itimer=itimer)
   start = wallclock()
-  call source%time_interval (target%time, jt, pt)
   if (present(only)) then
     iv1 = only
     iv2 = only
@@ -1380,7 +1362,7 @@ END SUBROUTINE different_prolong
 !> =============================================================================
 !> Interpolate guard zone info from source patch at a lower level
 !> =============================================================================
-SUBROUTINE prolong (self, target, source, all_cells, only)
+SUBROUTINE prolong (self, target, source, jt, pt, all_cells, only)
   class(download_t):: self
   class(patch_t), pointer :: target, source
   logical, optional:: all_cells
@@ -1403,7 +1385,6 @@ SUBROUTINE prolong (self, target, source, all_cells, only)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%prolong', itimer=itimer)
   start = wallclock()
-  call source%time_interval (target%time, jt, pt)
   if (present(only)) then
     iv1 = only
     iv2 = only
@@ -1603,7 +1584,7 @@ END SUBROUTINE prolong
 !===============================================================================
 !> Same as above, but for RT_solver type patches
 !===============================================================================
-SUBROUTINE different_rt (self, target, source)
+SUBROUTINE different_rt (self, target, source, jt, pt)
   class(download_t):: self
   class(patch_t), pointer :: target, source
   !.............................................................................
@@ -1617,7 +1598,6 @@ SUBROUTINE different_rt (self, target, source)
   call trace%begin('download_t%different_rt', itimer=itimer)
   lb = target%mesh%lb
   ub = target%mesh%ub
-  call source%time_interval (target%time, jt, pt)
   call dnload_range (target, source, 1, l, u)
   li = target%mesh%li
   ui = target%mesh%ui
@@ -1642,7 +1622,7 @@ END SUBROUTINE different_rt
 !===============================================================================
 !> Restrict guard zone info from source patch at a higher level
 !===============================================================================
-SUBROUTINE different_restrict (self, target, source, only)
+SUBROUTINE different_restrict (self, target, source, jt, pt, only)
   class(download_t):: self
   class(patch_t), pointer :: target, source
   !integer(int8), dimension(:,:,:,:), allocatable:: filled
@@ -1662,7 +1642,6 @@ SUBROUTINE different_restrict (self, target, source, only)
   integer:: ilook(3)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_restrict', itimer=itimer)
-  call source%time_interval (target%time, jt, pt)
   rratio = target%ds / source%ds
   ilook = merge(floor(rratio)/2 + 1, 0, source%n>1)
   dVsource = product(source%ds) ! only valid for Cartesian
@@ -1773,7 +1752,7 @@ END SUBROUTINE different_restrict
 !===============================================================================
 !> Restrict guard zone info from source patch at a higher level
 !===============================================================================
-SUBROUTINE restrict_centered (self, target, source, only)
+SUBROUTINE restrict_centered (self, target, source, jt, pt, only)
   class(download_t):: self
   class(patch_t), pointer :: target, source
   !integer(int8), dimension(:,:,:,:), allocatable:: filled
@@ -1793,7 +1772,6 @@ SUBROUTINE restrict_centered (self, target, source, only)
   integer:: ilook(3)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_restrict', itimer=itimer)
-  call source%time_interval (target%time, jt, pt)
   rratio = target%ds / source%ds
   ilook = merge(floor(rratio)/2 + 1, 0, source%n>1)
   dVsource = product(source%ds) ! only valid for Cartesian
@@ -1890,7 +1868,8 @@ SUBROUTINE test (self)
   !.............................................................................
   class(patch_t), pointer :: source(:), target, src
   integer, dimension(3)  :: l, u, o, ii
-  integer                :: i, j, k, iv, dir, id_start, id_end
+  integer                :: i, j, k, iv, dir, id_start, id_end, jt(2)
+  real                   :: pt(2)
   real(8), dimension(3)  :: pos
   real(4), dimension(3)  :: pp
   class(mesh_t), pointer :: mesh
@@ -1983,7 +1962,8 @@ SUBROUTINE test (self)
       call set_values (src)
       call set_values (target)
       if (src%level==target%level) then
-        call self%same (target, src, all_cells=.false.)
+        call src%time_interval (target%time, jt, pt)
+        call self%same (target, src, jt, pt, all_cells=.false.)
         if (self%check_filled) then
           if (any(filled < 0)) then
             write (io_unit%log,*) target%id, &
@@ -1992,7 +1972,8 @@ SUBROUTINE test (self)
         end if
       else
         !call different_prolong (self, target, src, all_cells=.false.)
-        call prolong (self, target, src, all_cells=.false.)
+        call src%time_interval (target%time, jt, pt)
+        call prolong (self, target, src, jt, pt, all_cells=.false.)
       end if
       call check_values (target, ok)
       allok = allok.and.ok
