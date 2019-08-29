@@ -99,7 +99,6 @@ SUBROUTINE init (self, name)
   mpi_mesg%uniq_mesg = .true.
   select case (trim(method))
   case ('irecv')
-    mpi_mesg%max_recv = 5
     mpi_mesg%tag_type = 2
   case ('mirecv')
     mpi_mesg%max_recv = 5
@@ -318,7 +317,7 @@ SUBROUTINE recv_mirecv (self, n_unpk)
   logical:: ok
   !.............................................................................
   if (mpi_mesg%nbuf == 0) return
-  call trace%begin ('task_mesg_t%recv_irecv', 1, itimer=itimer)
+  call trace%begin ('task_mesg_t%recv_mirecv', 1, itimer=itimer)
   mpi_mesg%uniq_mesg = .true.
   !-----------------------------------------------------------------------------
   ! Check the thread private list, and accumulate completed mesgs in unpck_tmp
