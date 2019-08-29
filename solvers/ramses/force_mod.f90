@@ -84,9 +84,10 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   real(8)        :: kx, ky, kz
   logical, save  :: first_time=.true.
   real, save     :: t_turn=0.3, a0(3)=0.1, k(3)=1.0
+  integer, save  :: itimer=0
   namelist /force_solenoidal_params/ k, a0, t_turn
   !-----------------------------------------------------------------------------
-  call trace_begin('force_t%single_solenoidal')
+  call trace_begin('force_t%single_solenoidal', itimer=itimer)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
@@ -116,7 +117,7 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
     end do
   end do
   end associate
-  call trace_end
+  call trace_end (itimer)
 END FUNCTION single_solenoidal
 
 END MODULE
