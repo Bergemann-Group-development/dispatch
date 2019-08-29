@@ -200,7 +200,7 @@ if (verbose > 0) &
 write (io_unit%log,*) wallclock(), &
 'recv_improbe: n =', mpi_mesg%recv_list%n, mpi_mesg%max_recv
   call recv_mesgs
-  call self%move_mesgs
+  call self%move_mesgs (mpi_mesg%recv_list)
   call self%unpk_mesgs (n_unpk)
 if (verbose > 0) &
 write (io_unit%log,*) wallclock(), &
@@ -212,7 +212,7 @@ write (io_unit%log,*) wallclock(), &
   !-----------------------------------------------------------------------------
   if (self%nq < mpi_mesg%min_nq) then
     call recv_mesgs
-    call self%move_mesgs
+    call self%move_mesgs (mpi_mesg%recv_list)
     !---------------------------------------------------------------------------
     mesg => mpi_mesg%recv_list%head
     do while (associated(mesg) .and. self%nq < mpi_mesg%min_nq)
@@ -273,12 +273,12 @@ SUBROUTINE recv_irecv (self, n_unpk)
   call trace%begin ('task_mesg_t%recv_irecv', 1, itimer=itimer)
   mpi_mesg%uniq_mesg = .true.
   !-----------------------------------------------------------------------------
-  ! Step 1-3: receive, move, and unpack
+  ! Check existing recv_list for completed messages
   !-----------------------------------------------------------------------------
-  n = 0
-  if (verbose > 0) &
-    write (io_unit%log,*) wallclock(), &
-     'recv_irecv: n =', mpi_mesg%recv_list%n, mpi_mesg%max_recv
+  call self%move_mesgs (mpi_mesg%recv_list)
+  !-----------------------------------------------------------------------------
+  ! Refill the list
+  !-----------------------------------------------------------------------------
   do while (mpi_mesg%recv_list%n < mpi_mesg%max_recv)
     call mpi_mesg%iget (mesg)
     if (mesg%is_complete('recv_irecv')) then
@@ -286,26 +286,23 @@ SUBROUTINE recv_irecv (self, n_unpk)
     else
       call mpi_mesg%recv_list%add (mesg)
     end if
-    n = n + 1
-    if (verbose > 1) &
-      write (io_unit%log,*) 'recv_irecv: to recv_list', n, mpi_mesg%recv_list%n
   end do
-  call self%move_mesgs
+  !-----------------------------------------------------------------------------
+  ! Unpack
+  !-----------------------------------------------------------------------------
   call self%unpk_mesgs (n_unpk)
-  if (verbose > 0) &
-    write (io_unit%log,*) wallclock(), &
-      'recv_irecv: n =', mpi_mesg%recv_list%n
   call trace%end (itimer)
 END SUBROUTINE recv_irecv
 
 !===============================================================================
 !> Step 2: Move complete messages to unpk_list
 !===============================================================================
-SUBROUTINE move_mesgs (self)
+SUBROUTINE move_mesgs (self, msg_list)
   class(task_mesg_t):: self
+  type(mesg_list_t):: msg_list
   class(mesg_t), pointer:: mesg, next
   !-----------------------------------------------------------------------------
-  mesg => mpi_mesg%recv_list%head
+  mesg => msg_list%head
   do while (associated(mesg))
     next => mesg%next
     if (mesg%is_complete('recv_improbe')) then
@@ -314,7 +311,7 @@ SUBROUTINE move_mesgs (self)
       if (verbose > 1) &
         write (io_unit%log,*) 'recv_improbe: moved to unpk_list:', &
           mesg%id, mesg%seq, associated(next)
-      call mpi_mesg%recv_list%remove (mesg)
+      call msg_list%remove (mesg)
       call mpi_mesg%unpk_list%add (mesg)
     else
       if (verbose > 2) &
