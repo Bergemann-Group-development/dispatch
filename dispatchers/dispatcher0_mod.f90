@@ -34,7 +34,7 @@ MODULE dispatcher0_mod
     procedure:: update
   end type
   real(8):: stall_start=0d0, max_stalled=600d0, retry_stalled=30d0
-  integer, save:: mpi_only_master=21
+  integer, save:: mpi_only_master=100
   integer, save:: verbose=0
   integer, save:: stalled=0
   integer, save:: n_spin=0
