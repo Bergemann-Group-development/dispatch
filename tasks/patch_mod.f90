@@ -770,11 +770,12 @@ SUBROUTINE rotate (self)
   class(patch_t):: self
   integer:: iv, nv, new
   real(8):: time
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Periodic wrapping, time extrapolation
   !-----------------------------------------------------------------------------
   if (self%rotated) return
-  call trace%begin ('patch_t%rotate')
+  call trace%begin ('patch_t%rotate', itimer=itimer)
   if (self%is_periodic()) then
     call self%periodic_grid                     ! periodic root grid
   else if (extrapolate_gz) then
@@ -800,7 +801,7 @@ SUBROUTINE rotate (self)
   ! Task time slot rotation
   !-----------------------------------------------------------------------------
   call self%task_t%rotate
-  call trace%end()
+  call trace%end (itimer)
 END SUBROUTINE rotate
 
 !===============================================================================
@@ -902,7 +903,7 @@ SUBROUTINE periodic_grid (self, only)
   integer:: ix, iy, iz, i(3), j(3), lb(3), ub(3), li(3), ui(3), n(3)
   logical:: periodic(3)
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_t%periodic_grid')
+  call trace%begin ('patch_t%periodic_grid')
   periodic = self%periodic .and. self%size+self%ds > self%box
   if (.not.any(periodic)) call mpi%abort ('patch_t%periodic_grid')
   lb = self%mesh%lb
@@ -956,7 +957,7 @@ SUBROUTINE periodic_grid (self, only)
   end do
   if (io%verbose > 1) write(io%output,*) &
     'periodic_grid: id, it, new =', self%id, self%it, self%new
-  call trace_end
+  call trace%end
 END SUBROUTINE periodic_grid
 
 !===============================================================================
@@ -1113,7 +1114,7 @@ SUBROUTINE extrapolate_guards (self)
   integer, save         :: itimer=0
   real(8)               :: t(self%nt)
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_t%extrapolate_guards', 3, itimer=itimer)
+  call trace%begin ('patch_t%extrapolate_guards', 3, itimer=itimer)
   nt = self%nt
   call self%timeslots (iit, t)
   it0 = iit(nt)                                         ! current time slot
@@ -1209,7 +1210,7 @@ SUBROUTINE extrapolate_guards (self)
       end if
     end if
   end do
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE extrapolate_guards
 
 !===============================================================================
@@ -1241,7 +1242,7 @@ SUBROUTINE pack (self, mesg)
   !-----------------------------------------------------------------------------
   ! Compute size of buffer and allocate -- it will be freed by the writer
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_t%pack', itimer=itimer)
+  call trace%begin ('patch_t%pack', itimer=itimer)
   allocate (mesg)
   n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
   if (kind(self%mem)==8) &
@@ -1304,7 +1305,7 @@ SUBROUTINE pack (self, mesg)
   end if
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after pack', minval(self%mem(:,:,:,1,self%it,1))
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE pack
 
 !===============================================================================
@@ -1315,7 +1316,7 @@ INTEGER FUNCTION unpack_id (mesg)
   !.............................................................................
   type(header_t):: header
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_t%unpack_id')
+  call trace%begin ('patch_t%unpack_id')
   call anonymous_copy (n_header, mesg%buffer, header)
   unpack_id = header%id
   call trace%end ()
@@ -1335,7 +1336,7 @@ SUBROUTINE unpack (self, mesg)
   !-----------------------------------------------------------------------------
   ! Compute size of buffer
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_t%unpack', itimer=itimer)
+  call trace%begin ('patch_t%unpack', itimer=itimer)
   call self%set (bits%busy)
   self%unpack_time = wallclock()
   buffer => mesg%buffer
@@ -1395,7 +1396,7 @@ flush (io_unit%log)
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
   call self%clear (bits%busy)
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE unpack
 
 !===============================================================================
@@ -1421,8 +1422,9 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   real(8):: time, print_next
   logical:: print_it
   type(lock_t), save:: lock
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin ('patch_t%info')
+  call trace%begin ('patch_t%info', itimer=itimer)
   if (io_unit%do_validate) then
     it0 = merge (self%iit(self%nt-2), 1, self%nt>2)
     it1 = merge (self%iit(self%nt-1), 1, self%nt>1)
@@ -1450,7 +1452,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     if (self%nw==1) then
       deallocate (df)
     end if
-    call trace_end
+    call trace%end (itimer)
     return
   end if
   1 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,9i5,2i4,l3,l1,o12)
@@ -1574,7 +1576,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       io%dtime = self%dtime
     end if
   end if
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE info
 
 !===============================================================================
@@ -1727,7 +1729,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   integer, save:: itimer=0
   logical, parameter:: save_dbg=.false.
   !.............................................................................
-  call trace_begin('patch_t%courant_condition', itimer=itimer)
+  call trace%begin('patch_t%courant_condition', itimer=itimer)
   if (io%verbose>1) &
     write (io_unit%log,*) self%id, ' courant: u_max, ds', self%u_max, minval(self%ds)
   ds(1) = self%ds(1)
@@ -1793,7 +1795,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   if (io%verbose>3) &
     write(io%output,'(a,i7,f12.6,f8.4,1p,e10.2)') 'courant:', &
       self%id, self%dtime, self%courant, self%u_max
-  call trace_end (itimer)
+  call trace%end (itimer)
 END SUBROUTINE courant_condition
 
 !===============================================================================

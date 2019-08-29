@@ -242,12 +242,12 @@ SUBROUTINE rotate (self)
     if (io%grace    > 0.0) self%grace    = io%grace
   end if
   if (self%rotated) return
-  call trace_begin ('task_mod::rotate',itimer=itimer)
+  call trace_begin ('task_t%rotate',itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Call timestep update procedure to fill the next time slot with values
   !-----------------------------------------------------------------------------
   if (io%verbose > 1) then
-    write (io_unit%log,'(a,7i10)')   'task_mod::rotate iit =', self%iit
+    write (io_unit%log,'(a,7i10)')   'task_t%rotate iit =', self%iit
     flush (io_unit%log)
   end if
   if (omp_lock%tasks) then
