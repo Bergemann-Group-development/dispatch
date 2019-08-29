@@ -825,7 +825,7 @@ END SUBROUTINE sort_nbors_by_level
 SUBROUTINE nbor_info (self)
   class(link_t):: self
   !-----------------------------------------------------------------------------
-  write(io_unit%mpi,'(3x,a,i6,2i4,2x,3l1,2x,2l1,2x,3f9.3)') &
+  write(io_unit%mpi,'(3x,a,i6,2i4,2x,3l1,2x,2l1,2x,3f14.3)') &
     'pa_t%nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
     self%task%id, self%task%rank, self%task%level, self%needed, self%needs_me, &
     self%download, self%task%is_set(bits%boundary), &
