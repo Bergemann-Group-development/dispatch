@@ -49,6 +49,7 @@ MODULE task_mesg_mod
     procedure:: check_mpi
     procedure, private:: recv_improbe
     procedure, private:: recv_irecv
+    procedure, private:: recv_mirecv
     procedure, private:: move_mesgs
     procedure, private:: unpk_mesgs
     procedure:: init_virtual
@@ -58,8 +59,9 @@ MODULE task_mesg_mod
   end type
   integer, save:: verbose=0
   logical, save:: use_hashtable=.true.
+  type(mesg_list_t), save:: priv_list
   type(task_mesg_t), save:: private_list, master_list, remove_list
-  !$omp threadprivate (private_list)
+  !$omp threadprivate (private_list,priv_list)
   character(len=8), save:: method='irecv'
   public:: task2patch
   type(task_mesg_t), public:: task_mesg
@@ -97,6 +99,9 @@ SUBROUTINE init (self, name)
   mpi_mesg%uniq_mesg = .true.
   select case (trim(method))
   case ('irecv')
+    mpi_mesg%max_recv = 5
+    mpi_mesg%tag_type = 2
+  case ('mirecv')
     mpi_mesg%max_recv = 5
     mpi_mesg%tag_type = 2
   case ('improbe')
@@ -164,6 +169,8 @@ SUBROUTINE check_mpi (self, n_unpk)
   case ('irecv')
     if (omp%master) &
       call self%recv_irecv (n_unpk_l)
+  case ('mirecv')
+    call self%recv_mirecv (n_unpk_l)
   case ('virtual')
     if (omp%master) &
       call self%recv_virtual (master_list, n_unpk_l)
@@ -293,6 +300,65 @@ SUBROUTINE recv_irecv (self, n_unpk)
   call self%unpk_mesgs (n_unpk)
   call trace%end (itimer)
 END SUBROUTINE recv_irecv
+
+!===============================================================================
+!> Check for and unpack MPI messages, using all threads.  Each thread has a
+!> thread private recv_list, which the thread checks for completed messages,
+!> which are passed on to a shared unpk_list. Each thread checks -- in a critical
+!> region -- the unpk_list for messages in expected order; these are unpacked
+!> in the correct order.
+!===============================================================================
+SUBROUTINE recv_mirecv (self, n_unpk)
+  class(task_mesg_t):: self
+  integer:: n_unpk
+  class(mesg_t), pointer:: mesg, next
+  type(mesg_list_t):: unpk_tmp
+  integer, save:: itimer=0
+  integer:: n
+  logical:: ok
+  !.............................................................................
+  if (mpi_mesg%nbuf == 0) return
+  call trace%begin ('task_mesg_t%recv_irecv', 1, itimer=itimer)
+  mpi_mesg%uniq_mesg = .true.
+  !-----------------------------------------------------------------------------
+  ! Check the thread private list, and accumulate completed mesgs in unpck_tmp
+  !-----------------------------------------------------------------------------
+  mesg => priv_list%head
+  do while (associated(mesg))
+    next => mesg%next
+    if (mesg%is_complete('recv_mirecv')) then
+      call priv_list%remove (mesg)
+      call unpk_tmp%add (mesg)
+    end if
+    mesg => next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Issue additional IRECV requests, until there are max_recv in queue
+  !-----------------------------------------------------------------------------
+  do while (priv_list%n < mpi_mesg%max_recv)
+    call mpi_mesg%iget (mesg)
+    if (mesg%is_complete('recv_irecv')) then
+      call unpk_tmp%add (mesg)
+    else
+      call priv_list%add (mesg)
+    end if
+  end do
+  !-----------------------------------------------------------------------------
+  ! Add the messages accumulated in unpk_tmp to the unpk_list, and process that
+  ! list.  Since the unpk_list is shared this must be done in a critical region
+  !-----------------------------------------------------------------------------
+  !$omp critical (mirecv_cr)
+  mesg => unpk_tmp%head
+  do while (associated(mesg))
+    next => mesg%next
+    call unpk_tmp%remove (mesg)
+    call mpi_mesg%unpk_list%add (mesg)
+    mesg => next
+  end do
+  call self%unpk_mesgs (n_unpk)
+  !$omp end critical (mirecv_cr)
+  call trace%end (itimer)
+END SUBROUTINE recv_mirecv
 
 !===============================================================================
 !> Step 2: Move complete messages to unpk_list
