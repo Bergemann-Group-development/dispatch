@@ -1489,17 +1489,19 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       print_it = .false.
     end if
     !---------------------------------------------------------------------------
-    ! If print_every==0, then use instead print_time to control cadence, using
+    ! If print_every==0, then check if print_time controls cadence, using
     ! an if-lock-if sequence to ensure only one thread prints and updates
     !---------------------------------------------------------------------------
-    if (print_every == 0 .and. self%time >= io%print_next) then
-      call lock%set ('print')
-      if (self%time >= io%print_next) then
-        print_it = .true.
-        print_next = (nint(self%time/io%print_time)+1)*io%print_time
-        io%print_next = print_next
+    if (io%print_time > 0.0) then
+      if (print_every == 0 .and. self%time >= io%print_next) then
+        call lock%set ('print')
+        if (self%time >= io%print_next) then
+          print_it = .true.
+          print_next = (nint(self%time/io%print_time)+1)*io%print_time
+          io%print_next = print_next
+        end if
+        call lock%unset ('print')
       end if
-      call lock%unset ('print')
     end if
     if (print_it .or. io%verbose>0 .or. self%id==io%id) then
       nv = 1
