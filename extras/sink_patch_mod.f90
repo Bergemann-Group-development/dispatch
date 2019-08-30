@@ -25,6 +25,34 @@
 !>           dll_t
 !>           patch_force_t    ! An extension of a dll_note_t list node
 !>             dll_node_t
+!>
+!> Call sequences (relevant files: _t -> _mod.f90)
+!>
+!> extras_t%check_refine                             ! refine caused by extras
+!>   sink_patch_t%check_refine                       ! refine/derefine by sink
+!>     sink_patch_t%refine_check                     ! new sink needed?
+!>       sink_patch_t%check                          ! criteria for sink creation
+!>       sink_patch_t%init_sink                      ! initialize new sink
+!>       sink_patch_t%accete                         ! accrete to it
+!>
+!> extras_t%update
+!>   sink_patch_t%update                             ! update particles & patches
+!>     particle_solver_t%force_field                 ! fall-through
+!>       particle_list_t%force_field                 ! force from particles
+!>         patch_forces_t%force                      ! force from all patches
+!>     sink_patch_t%accrete                          ! accrete to particles
+!>       sink_patch_t%courant_condition              ! determine time step
+!>     sink_patch_t%nove                             ! move particles
+!>       particle_solver_t%update                    ! actual particle solver
+!>         particle_t%courant_time                   ! determine time step
+!>
+!> Related files:
+!>   lists/dll_mod.f90                               ! doubly-linked list
+!>   lists/hash_table_mod.f90                        ! hash table
+!>   solvers/particles/particle_mod.f90              ! particle data type
+!>   solvers/particles/patch_force_mod.f90           ! time slices of forces
+!>   solvers/particles/particle_list_mod.f98         ! handle
+!>   solvers/particles/KDK/particle_solver_mod.f90   ! KDK particle solver
 !===============================================================================
 MODULE sink_patch_mod
   USE io_mod
