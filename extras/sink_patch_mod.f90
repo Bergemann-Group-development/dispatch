@@ -35,7 +35,7 @@
 !>       sink_patch_t%init_sink                      ! initialize new sink
 !>       sink_patch_t%accete                         ! accrete to it
 !>
-!> extras_t%update
+!> extras_t%pre_update
 !>   sink_patch_t%update                             ! update particles & patches
 !>     particle_solver_t%force_field                 ! fall-through
 !>       particle_list_t%force_field                 ! force from particles

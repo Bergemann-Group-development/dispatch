@@ -128,7 +128,7 @@ SUBROUTINE pre_update (self)
   call trace%begin ('extras_t%pre_update')
   call self%forces%pre_update                                   ! forces
   call self%trace_particles%update                              ! tracep
-  call particle_solver%force_field (self)                       ! sinkp
+  call sink_patch%update                                        ! sinkp
   call trace%end
 END SUBROUTINE pre_update
 
