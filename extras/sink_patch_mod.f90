@@ -26,25 +26,58 @@
 !>           patch_force_t    ! An extension of a dll_note_t list node
 !>             dll_node_t
 !>
-!> Call sequences (relevant files: _t -> _mod.f90)
+!> Call sequences (relevant files: _t -> _mod.f90):
 !>
+!> AD HOC CREATION OF SINK PATCHES:
+!> ================================
+!> task_list_t%init_task_list_pointers               ! pass task list to tasks
+!>   extras_t%init_task_list                         ! pass task_list to extras
+!>     gpatch_t%init_task_list                       ! save task_list pointer
+!>     sink_patch_t%ad_hoc_add                       ! add ad hoc sink patches
+!>       sink_patch_t%init_sink                      ! initialize sink
+!>         particle_t%init                           ! initialize particle
+!>         particle_solver_t%append                  ! append particle to list
+!>         sink_patch_t%init_patch                   ! initialize accretion patch
+!>           patch_t%setup                           ! setup patch mesh & vars
+!>           idx_t%init                              ! set mem slot indices
+!>         sink_patch_t%init_task_list               ! set task list pointer
+!>         list_t%init_nbors                         ! make nbor lists
+!>         list_t%append                             ! add to task list
+!>         sink_patch_t%dnload                       ! download patch values
+!>       sink_patch_t%accrete                        ! first accrete
+!>
+!> NORMAL CREATION OF SINK PATCH:
+!> ==============================
 !> extras_t%check_refine                             ! refine caused by extras
 !>   sink_patch_t%check_refine                       ! refine/derefine by sink
 !>     sink_patch_t%refine_check                     ! new sink needed?
 !>       sink_patch_t%check                          ! criteria for sink creation
 !>       sink_patch_t%init_sink                      ! initialize new sink
+!>         particle_t%init                           ! initialize particle
+!>         particle_solver_t%append                  ! append particle to list
+!>         sink_patch_t%init_patch                   ! initialize accretion patch
+!>           patch_t%setup                           ! setup patch mesh & vars
+!>           idx_t%init                              ! set mem slot indices
+!>         sink_patch_t%init_task_list               ! set task list pointer
+!>         list_t%init_nbors                         ! make nbor lists
+!>         list_t%append                             ! add to task list
+!>         sink_patch_t%dnload                       ! download patch values
 !>       sink_patch_t%accete                         ! accrete to it
 !>
-!> extras_t%pre_update
-!>   sink_patch_t%update                             ! update particles & patches
-!>     particle_solver_t%force_field                 ! fall-through
-!>       particle_list_t%force_field                 ! force from particles
-!>         patch_forces_t%force                      ! force from all patches
-!>     sink_patch_t%accrete                          ! accrete to particles
-!>       sink_patch_t%courant_condition              ! determine time step
-!>     sink_patch_t%nove                             ! move particles
-!>       particle_solver_t%update                    ! actual particle solver
-!>         particle_t%courant_time                   ! determine time step
+!> UPATE OF SINK PATCH:
+!> ====================
+!> task_list_t%update
+!>   extras_t%dnload
+!>   extras_t%pre_update
+!>     sink_patch_t%update                             ! update particles & patches
+!>       particle_solver_t%force_field                 ! fall-through
+!>         particle_list_t%force_field                 ! force from particles
+!>           patch_forces_t%force                      ! force from all patches
+!>       sink_patch_t%accrete                          ! accrete to particles
+!>         sink_patch_t%courant_condition              ! determine time step
+!>       sink_patch_t%nove                             ! move particles
+!>         particle_solver_t%update                    ! actual particle solver
+!>           particle_t%courant_time                   ! determine time step
 !>
 !> Related files:
 !>   lists/dll_mod.f90                               ! doubly-linked list
@@ -411,6 +444,7 @@ SUBROUTINE ad_hoc_add (self, link)
   class(gpatch_t), pointer:: gpatch
   type(sink_patch_t), pointer:: task
   class(dll_node_t), pointer:: particle
+  class(link_t), pointer:: task_link
   integer:: iostat, i_sink, m(3)
   real(kind=8):: pos(3)
   type sinks_t
@@ -460,6 +494,7 @@ SUBROUTINE ad_hoc_add (self, link)
       if (patch%contains(pos)) then
         print *, 'adding ad hoc sink to', patch%id, i_sink
         allocate (task)
+        !-----------------------------------------------------------------------
         call task%init_sink (gpatch)
         task%mass = sinks(i_sink)%mass
         task%mom(1) = sinks(i_sink)%mass * sinks(i_sink)%vx
@@ -478,11 +513,18 @@ SUBROUTINE ad_hoc_add (self, link)
           particle%v(2,:) = sinks(i_sink)%vy
           particle%v(3,:) = sinks(i_sink)%vz
         end select
+        !-----------------------------------------------------------------------
+        ! Allocate a task link, set points, make an nbor list, append to task_list
+        !-----------------------------------------------------------------------
+        allocate (task_link)
+        task_link%task => task
+        task%link => task_link
+        call self%task_list%init_nbors (task_link)
+        call self%task_list%append (task_link)
         call task%accrete
       endif
     enddo
   end select
-  !-----------------------------------------------------------------------------
   call trace%end()
 END SUBROUTINE ad_hoc_add
 

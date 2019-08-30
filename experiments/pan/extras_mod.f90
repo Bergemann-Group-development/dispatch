@@ -100,8 +100,10 @@ SUBROUTINE init_task_list (self, task_list)
   class(extras_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
+  call trace%begin ('extras_t')
   call self%gpatch_t%init_task_list (task_list)                 ! keep
   call sink_patch%ad_hoc_add (self%link)                        ! sinkp
+  call trace%end ()
 END SUBROUTINE init_task_list
 
 !===============================================================================
@@ -128,7 +130,6 @@ SUBROUTINE pre_update (self)
   call trace%begin ('extras_t%pre_update')
   call self%forces%pre_update                                   ! forces
   call self%trace_particles%update                              ! tracep
-  call sink_patch%update                                        ! sinkp
   call trace%end
 END SUBROUTINE pre_update
 
