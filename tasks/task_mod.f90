@@ -9,7 +9,6 @@ MODULE task_mod
   USE mpi_mod
   USE bits_mod
   USE trace_mod
-  USE scene_mod
   USE mpi_mesg_mod
   USE random_mod
   USE dll_mod

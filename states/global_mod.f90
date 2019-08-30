@@ -1,5 +1,5 @@
 !===============================================================================
-!> Data type for computin global average, while using only nearest node nbor
+!> Data type for computing global average, while using only nearest node nbor
 !> communication
 !===============================================================================
 MODULE global_mod

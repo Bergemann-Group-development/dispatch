@@ -23,6 +23,7 @@ MODULE task_list_mod
   USE timer_mod
   USE validate_mod
   USE download_mod
+  USE shared_mod
   implicit none
   private
   type, public, extends(task_mesg_t):: task_list_t
@@ -153,6 +154,7 @@ SUBROUTINE init_levels (self)
   if (refine%levelmax > refine%levelmin) &
     download%check_filled = .true.
   call self%init_levelstats
+  shared%levelmax = levelmax
   call trace%end
 END SUBROUTINE init_levels
 

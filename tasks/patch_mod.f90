@@ -21,7 +21,7 @@ MODULE patch_mod
   USE mesh_mod
   USE boundaries_mod
   USE index_mod
-  USE scene_mod
+  USE shared_mod
   USE connect_mod
   implicit none
   private
@@ -548,9 +548,9 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   if (present(nv      )) self%nv       = nv
   if (present(nw      )) self%nw       = nw
   !-----------------------------------------------------------------------------
-  ! Pass the desired patch dimension via the scene_mod to refine_mod
+  ! Pass the desired patch dimension via the shared_mod to refine_mod
   !-----------------------------------------------------------------------------
-  scene%patch_n = self%n
+  shared%patch_n = self%n
   !-----------------------------------------------------------------------------
   self%llc_cart = self%position - 0.5 * self%size
   self%llc_nat = self%llc_cart

@@ -157,7 +157,7 @@
 !> copy.  Then, and only then, the task may be deleted.
 !>
 !> FIXME:  Care should be extended also to updates over MPI.
-!> FIXME:  Use of the deprecated scene_mod should be removed
+!> FIXME:  Use of the deprecated shared_mod should be removed
 !>
 !> MPI specific handling:  Boundary patches are always sent to vnbors, and if
 !> they are new on the recieving rank, new nbor lists are generated, so no new
@@ -181,7 +181,7 @@ MODULE refine_mod
   USE patch_mod
   USE solver_mod
   USE extras_mod
-  USE scene_mod
+  USE shared_mod
   USE download_mod
   USE timer_mod
   USE data_io_mod
@@ -866,7 +866,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   ! Force consistent resolution in new patches, overriding the resolution
   ! inherited from the parent patch.
   !-----------------------------------------------------------------------------
-  child%n = scene%patch_n
+  child%n = shared%patch_n
   !-----------------------------------------------------------------------------
   ! Clear flags -- explictly to show which ones are relevant
   !-----------------------------------------------------------------------------
@@ -987,7 +987,7 @@ FUNCTION check_cubical (self, patch) RESULT (refine_it)
   class(solver_t), pointer:: patch
   integer:: refine_it
   !.............................................................................
-  if (all(patch%n==scene%patch_n)) then
+  if (all(patch%n==shared%patch_n)) then
     refine_it = -1
   else
     refine_it = 1

@@ -5,11 +5,15 @@
 !>
 !> A particular quality level indicates to the download_mod that all cells from
 !> the sink particle patch should be downloaded to overlapping patches, thus
-!> communicating back the removal of accreted mass and momentum.
+!> communicating back the removal of accreted mass and momentum.  As a target,
+!> the sink_patch also should have values filled in from all overlapping patches,
+!> arranged so the values from the highest levels are preferred.
 !>
-!> The procedure is called from refine_t%extras%check_refine which handles
-!> creating a task list link, adding an nbor list, and adding the task to the
-!> task list.
+!> Often, there is only one patch that overlaps, and that patch must them be at
+!> levelmax, which means it is easy to arrange for a fast and mass conserving
+!> fill-in.  When a sink particle is close to a patch boundary there may be
+!> contributions from nbor patches, which may have a level lower by one (unless
+!> one enforces the level of all overlapping patches to be levelmax).
 !>
 !> Object hierarchy:
 !>
@@ -28,24 +32,6 @@
 !>
 !> Call sequences (relevant files: _t -> _mod.f90):
 !>
-!> AD HOC CREATION OF SINK PATCHES:
-!> ================================
-!> task_list_t%init_task_list_pointers               ! pass task list to tasks
-!>   extras_t%init_task_list                         ! pass task_list to extras
-!>     gpatch_t%init_task_list                       ! save task_list pointer
-!>     sink_patch_t%ad_hoc_add                       ! add ad hoc sink patches
-!>       sink_patch_t%init_sink                      ! initialize sink
-!>         particle_t%init                           ! initialize particle
-!>         particle_solver_t%append                  ! append particle to list
-!>         sink_patch_t%init_patch                   ! initialize accretion patch
-!>           patch_t%setup                           ! setup patch mesh & vars
-!>           idx_t%init                              ! set mem slot indices
-!>         sink_patch_t%init_task_list               ! set task list pointer
-!>         list_t%init_nbors                         ! make nbor lists
-!>         list_t%append                             ! add to task list
-!>         sink_patch_t%dnload                       ! download patch values
-!>       sink_patch_t%accrete                        ! first accrete
-!>
 !> NORMAL CREATION OF SINK PATCH:
 !> ==============================
 !> extras_t%check_refine                             ! refine caused by extras
@@ -62,30 +48,39 @@
 !>         list_t%init_nbors                         ! make nbor lists
 !>         list_t%append                             ! add to task list
 !>         sink_patch_t%dnload                       ! download patch values
-!>       sink_patch_t%accete                         ! accrete to it
+!>         sink_patch_t%accete                       ! accrete to it
+!>
+!> AD HOC CREATION OF SINK PATCHES:
+!> ================================
+!> task_list_t%init_task_list_pointers               ! pass task list to tasks
+!>   extras_t%init_task_list                         ! pass task_list to extras
+!>     gpatch_t%init_task_list                       ! save task_list pointer
+!>     sink_patch_t%ad_hoc_add                       ! add ad hoc sink patches
+!>       sink_patch_t%init_sink                      ! initialize sink
+!>       ...                                         ! same as above
 !>
 !> UPATE OF SINK PATCH:
 !> ====================
-!> task_list_t%update
-!>   extras_t%dnload
-!>   extras_t%pre_update
-!>     sink_patch_t%update                             ! update particles & patches
-!>       particle_solver_t%force_field                 ! fall-through
-!>         particle_list_t%force_field                 ! force from particles
-!>           patch_forces_t%force                      ! force from all patches
-!>       sink_patch_t%accrete                          ! accrete to particles
-!>         sink_patch_t%courant_condition              ! determine time step
-!>       sink_patch_t%nove                             ! move particles
-!>         particle_solver_t%update                    ! actual particle solver
-!>           particle_t%courant_time                   ! determine time step
+!> task_list_t%update                                 ! dispather select task
+!>   extras_t%dnload                                  ! standard call
+!>   extras_t%pre_update                              ! called from solver_t
+!>     sink_patch_t%update                            ! update particles & patches
+!>       particle_solver_t%force_field                ! fall-through
+!>         particle_list_t%force_field                ! force from particles
+!>           patch_forces_t%force                     ! force from all patches
+!>       sink_patch_t%accrete                         ! accrete to particles
+!>         sink_patch_t%courant_condition             ! determine time step
+!>       sink_patch_t%nove                            ! move particles
+!>         particle_solver_t%update                   ! actual particle solver
+!>           particle_t%courant_time                  ! determine time step
 !>
 !> Related files:
-!>   lists/dll_mod.f90                               ! doubly-linked list
-!>   lists/hash_table_mod.f90                        ! hash table
-!>   solvers/particles/particle_mod.f90              ! particle data type
-!>   solvers/particles/patch_force_mod.f90           ! time slices of forces
-!>   solvers/particles/particle_list_mod.f98         ! handle
-!>   solvers/particles/KDK/particle_solver_mod.f90   ! KDK particle solver
+!>   lists/dll_mod.f90                                ! doubly-linked list
+!>   lists/hash_table_mod.f90                         ! hash table
+!>   solvers/particles/particle_mod.f90               ! particle data type
+!>   solvers/particles/patch_force_mod.f90            ! time slices of forces
+!>   solvers/particles/particle_list_mod.f98          ! handle
+!>   solvers/particles/KDK/particle_solver_mod.f90    ! KDK particle solver
 !===============================================================================
 MODULE sink_patch_mod
   USE io_mod
@@ -107,6 +102,7 @@ MODULE sink_patch_mod
   USE particle_solver_mod
   USE hash_table_mod
   USE omp_timer_mod
+  USE shared_mod
 #ifdef HDF5
   USE h5_mod
   USE hdf5, only : HID_T
@@ -311,6 +307,7 @@ SUBROUTINE init_patch (self, patch, sink_position)
   self%nv = patch%nv
   self%nt = patch%nt
   self%nw = 1
+  self%level = shared%levelmax
   !-----------------------------------------------------------------------------
   ! We should use no_mans_land=.false., and an odd number for self%n
   !-----------------------------------------------------------------------------
