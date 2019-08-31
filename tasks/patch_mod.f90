@@ -1349,8 +1349,11 @@ SUBROUTINE unpack (self, mesg)
   ibuf = 1
   call anonymous_copy (n_header, buffer(ibuf), header)
   ibuf = ibuf + n_header
+  !-----------------------------------------------------------------------------
+  ! Lock the %new slot, which will become the %it slot after header_to_patch
+  !-----------------------------------------------------------------------------
+  call self%mem_lock(self%new)%set ('unpack')
   call self%header_to_patch (header)
-flush (io_unit%log)
   if (io%verbose > 1) &
     write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
       wallclock(), 'header_to_patch: id, nq, BVS, nsnd, nrcv, latency, time =', &
@@ -1373,7 +1376,6 @@ flush (io_unit%log)
   ! Copy the variables from the output buffer.  If this is swap of patch roles
   ! expect at least one more time slot.
   !-----------------------------------------------------------------------------
-  call self%mem_lock(self%it)%set ('unpack')
   do iv=1,self%nv
     call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
 !write(io_unit%log,'(a,i6,2i4,1p,e14.5)') &
@@ -1381,8 +1383,10 @@ flush (io_unit%log)
 !self%id, iv, self%it, minval(self%mem(:,:,:,iv,it,1))
     ibuf = ibuf + n_buf
   end do
+  call self%mem_lock(self%it)%unset ('unpack')
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then
     it = mod(self%it-1+self%nt-1,self%nt)+1
+    call self%mem_lock(it)%set ('unpack')
     if (io%verbose>0) then
       write (io_unit%log,*) self%id, 'extra time slot unpacked', it
       flush (io_unit%log)
@@ -1391,8 +1395,8 @@ flush (io_unit%log)
       call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,it,1))
       ibuf = ibuf + n_buf
     end do
+    call self%mem_lock(it)%unset ('unpack')
   end if
-  call self%mem_lock(self%it)%unset ('unpack')
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))
   call self%clear (bits%busy)

@@ -175,6 +175,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Godunov solver
   !-----------------------------------------------------------------------------
+  call self%mem_lock(self%new)%set ('update')
   call godunov (self)
   if (isothermal) &
     self%mem(:,:,:,self%idx%e,self%new,1) = &
@@ -372,7 +373,6 @@ subroutine godunov (self)
   ! Conservative update, looping over internal cells only
   !-----------------------------------------------------------------------------
   if (detailed_timer) call trace%begin ('hd_t%godunov', itimer=itimer)
-  call self%mem_lock(self%new)%set ('update')
   unew = uin
   do ivar=1,self%nv
     do idim=1,self%ndim
