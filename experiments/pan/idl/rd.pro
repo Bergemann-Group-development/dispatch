@@ -91,7 +91,7 @@ END
 ; Read a DISPATCH unigrid snapshot
 ; ==============================================================================
 FUNCTION rd,run,mpi=mpi,iv=iv,iout=iout,nn=n,gn=gn,nv=nv,order=order,time=time, $
-            hack=hack,verbose=verbose
+            data=data,hack=hack,verbose=verbose
   default,mpi,[1,1,1]
   default,iout,0L
   default,n,32L
@@ -101,11 +101,12 @@ FUNCTION rd,run,mpi=mpi,iv=iv,iout=iout,nn=n,gn=gn,nv=nv,order=order,time=time, 
   default,verbose,0
   default,order,0
   default,hack,0
+  default,data,'data'
   if keyword_set(time) then wc=systime(1)
   ;
   ; Open file for reading patch variables
-  file='data/'+run+'/snapshots.dat'
-  meta='data/'+run+'/'+string(iout,format='(i5.5)')+'/snapshot.nml'
+  file=data+'/'+run+'/snapshots.dat'
+  meta=data+'/'+run+'/'+string(iout,format='(i5.5)')+'/snapshot.nml'
   ioformat=long(read_str(meta,'format'))
   if verbose gt 0 then print,'ioformat:', ioformat
   openr,u,/get,file
