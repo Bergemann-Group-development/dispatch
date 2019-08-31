@@ -39,7 +39,13 @@ export KMP_STACKSIZE="30m"
 echo "KMP_AFFINITY=$KMP_AFFINITY"
 echo "threads=$OMP_NUM_THREADS"
 #srun --label --distribution=block:block $dir/dispatch_$time $in
-srun --distribution=block:block $dir/dispatch_$time $in
+
+# make sure previous srun are gone
+killall srun
+sleep 5
+killall srun
+sleep 5
+srun --label --distribution=block:block $dir/dispatch_$time $in
 
 # ad hoc
 #export OMP_NUM_THREADS=20
