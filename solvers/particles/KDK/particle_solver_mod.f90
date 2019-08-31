@@ -95,11 +95,11 @@ FUNCTION courant_time (self, p) RESULT (dt)
   ac = 1.0/sqrt(sum(a**2)+tiny(1.0_8))
   vc = 1.0/sqrt(sum(v**2)+tiny(1.0_8))
   dt1 = p%ds*vc*courant
-  dt2 = p%ds*ac/vc
+  dt2 = p%ds*(ac/vc)
   if (dt2 < dt1) then
     a = self%force(p)/p%mass
     ac = 1.0/sqrt(sum(a**2)+tiny(1.0_8))
-    dt2 = p%ds*ac/vc*courant
+    dt2 = p%ds*(ac/vc)*courant
   end if
   dt = min(dt1,dt2)
 print *, 'particle_solver_t%courant: dt1, dt2, a, v =', dt1, dt2, ac, vc

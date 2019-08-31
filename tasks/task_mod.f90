@@ -539,7 +539,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(task_t), pointer:: another
   logical:: needed, needs_me, download
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_t%nbor_relations')
+  call trace%begin ('task_t%nbor_relations', 2)
   !-----------------------------------------------------------------------------
   ! task is real
   !-----------------------------------------------------------------------------

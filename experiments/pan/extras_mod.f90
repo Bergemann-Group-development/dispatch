@@ -100,10 +100,9 @@ SUBROUTINE init_task_list (self, task_list)
   class(extras_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
-  call trace%begin ('extras_t')
+  call trace%begin ('extras_t%init_task_list')
   call self%gpatch_t%init_task_list (task_list)                 ! keep
-  sink_patch%task_list => task_list                             ! sinp
-  call sink_patch%ad_hoc_add (self%link)                        ! FIXME
+  call sink_patch%ad_hoc_add (self%link)                        ! sinkp
   call trace%end ()
 END SUBROUTINE init_task_list
 

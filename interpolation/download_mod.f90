@@ -147,6 +147,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   if (present(all_cells)) then
     all_cells_l = all_cells
+  else if (target%quality == 1024) then
+    all_cells_l = .true.
   else
     all_cells_l = .false.
   end if
@@ -163,8 +165,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
         src(l(1):u(1),l(2):u(2),l(3):u(3)) = target%id
     end if
   end if
-  if (target%is_clear(bits%no_density))call target%check_density ("before download")
-
+  if (target%is_clear(bits%no_density)) &
+    call target%check_density ("before download")
   if (target%is_periodic()) call target%periodic_grid
   !-----------------------------------------------------------------------------
   ! Use an nbor list sorted by decreasing level, recording in each cell the
@@ -184,6 +186,9 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       cycle
     end if
     source => task2patch(nbor%task)
+    if (source%quality == 1024) then
+      all_cells_l = .true.
+    end if
     if (verbose > 1) then
       write(io_unit%log,'(f12.6,2x,a,2(i6,i3),2x,2l1,i4)') &
         wallclock(), 'target, level, source, level, ND, n_needed =', &

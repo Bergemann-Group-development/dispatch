@@ -22,6 +22,7 @@ MODULE particle_list_mod
   !-----------------------------------------------------------------------------
   type, public, extends(dll_t):: particle_list_t
     real:: rsoft=1.0
+    real(8):: rsoft2=tiny(1d0)**(2./3.)
     integer:: verbose=0
     integer:: nt=4
     type(hash_table_t):: ht
@@ -75,9 +76,10 @@ FUNCTION force (self, p)
   !.............................................................................
   class(dll_node_t), pointer:: o
   integer:: i, i0, i1, j
-  real(8):: rp(3), pt, qt, r(3), r1, r2, r3
+  real(8):: rp(3), pt, qt, r(3), r1, r2, r3, r2s
   !-----------------------------------------------------------------------------
   call trace%begin ('particle_list_t%force')
+  r2s = self%rsoft2
   force = 0.0_8
   rp = p%r(:,p%it)
   o => self%head
@@ -92,11 +94,12 @@ FUNCTION force (self, p)
       i0 = o%iit(i-1)
       pt = (p%time-o%t(i0))/max(o%t(i1)-o%t(i0),tiny(1d0))
       qt = 1d0-pt
-      r2 = tiny(1d0)
+      r2 = 0d0
       do j=1,3
         r(j) = (qt*o%r(j,i0) + pt*o%r(j,i1)) - rp(j)
         r2 = r2 + r(j)**2
       end do
+      r2 = max(r2,r2s)
       r1 = 1.0/sqrt(r2)
       r3 = r1**3
       force = force - o%mass*r*r3
@@ -200,10 +203,8 @@ SUBROUTINE force_field (self, patch)
     class is (particle_t)
       print *, 'hash_table%get: key =', [p%id, patch%id]
       call hash_table%get ([p%id, patch%id], ptr)
-      print *, 'PP', ip, f(ip,:), associated(ptr)
       select type (ptr)
         class is (patch_force_t)
-        print *, 'PP', ip, ptr%it, p%time
         ptr%f(ptr%it,:) = f(ip,:)
       end select
     end select
