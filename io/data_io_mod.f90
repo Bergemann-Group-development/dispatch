@@ -61,36 +61,34 @@ SUBROUTINE init (self, task)
   class(data_io_t):: self
   class(patch_t):: task
   !.............................................................................
-  logical:: first_time=.true.
+  logical, save:: first_time=.true.
   character(len=120):: id = &
-  '$Id$ io/dat_io_mod.f90'
+  '$Id$ io/data_io_mod.f90'
   !-----------------------------------------------------------------------------
   call trace%begin('data_io_t%init')
   call trace%print_id (id)
-  call self%lock%init ('data')
   if (first_time) then
-    !$omp critical (input_cr)
+    !$omp critical (data_io_cr)
     if (first_time) then
-      first_time=.false.
+      first_time = .false.
       if (io%do_output) then
-        select type (task)
-        class is (patch_t)
-          if      (io%method=='direct') then
-            call direct_io%init (task)
-          else if (io%method=='pan') then
-            call parallel_io%init (task)
-          else if (io%method=='parallel') then
-            call parallel_io%init (task)
-          else if (io%method=='snapshot') then
-            call parallel_io%init (task)
-          end if
-        end select
+      select type (task)
+      class is (patch_t)
+        if      (io%method=='direct') then
+          call direct_io%init (task)
+        else if (io%method=='pan') then
+          call parallel_io%init (task)
+        else if (io%method=='parallel') then
+          call parallel_io%init (task)
+        else if (io%method=='snapshot') then
+          call parallel_io%init (task)
+        end if
+      end select
       end if
       call self%kind_list%init
       self%initialized = .true.
-      if (io%master) print *,'data_io_t%init: io%nwrite =', io%nwrite
     end if
-    !$omp end critical (input_cr)
+    !$omp end critical (data_io_cr)
   end if
   !-----------------------------------------------------------------------------
   call self%counters%init
@@ -299,7 +297,6 @@ SUBROUTINE input (self, patch, ok)
   integer:: count
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%input')
-  call self%init (patch)
   call self%lock%set ('data_io_t%input')
   ok = .false.
   if (io%restart >= 0) then

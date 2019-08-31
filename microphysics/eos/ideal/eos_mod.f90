@@ -43,7 +43,7 @@ SUBROUTINE init (self)
   namelist /eos_params/ gamma, do_rt, kappa
   !-----------------------------------------------------------------------------
   call trace%begin ('eos_t%init', itimer=itimer)
-  if (io%master) print *, &
+  if (io_unit%master) print *, &
  '------------------------ ideal equation-of-state -----------------------------'
   !$omp critical (init_cr)
   if (first_time) then

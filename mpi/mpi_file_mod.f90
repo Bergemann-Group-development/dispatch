@@ -138,7 +138,7 @@ SUBROUTINE openw (self, filename, recl)
   integer, optional:: recl
   integer mode
   !-----------------------------------------------------------------------------
-  call trace%begin ('mpi_io_t%openw')
+  call trace%begin ('mpi_file_t%openw')
 #ifdef MPI
   call self%open (filename, MPI_MODE_CREATE + MPI_MODE_RDWR)
 #endif
@@ -159,7 +159,7 @@ SUBROUTINE openr (self, filename)
   character(len=*) filename
   integer mode
   !-----------------------------------------------------------------------------
-  call trace%begin ('mpi_io_t%openr')
+  call trace%begin ('mpi_file_t%openr')
 #ifdef MPI
   call self%open (filename, MPI_MODE_RDONLY)
 #endif
@@ -188,7 +188,7 @@ SUBROUTINE close (self)
     end if
     if (io%verbose > 0) then
       write (io_unit%mpi,'(1x,a,i8)') &
-        'mpi_io_t%close: '//trim(self%filename)//'  err:', self%err
+        'mpi_file_t%close: '//trim(self%filename)//'  err:', self%err
       flush (io_unit%mpi)
     end if
     self%handle = 0

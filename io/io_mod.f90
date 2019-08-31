@@ -121,10 +121,9 @@ SUBROUTINE init (self, name)
     print'(a)', self%hl
     print'(a)', trim(ids)
   end if
-  self%master = self%master .and. (mpi%rank==0)
-  io%master = self%master
+  self%master = mpi%master
+  io%master   = mpi%master
   !$omp parallel
-  io_unit%master = io_unit%master.and.self%master
   !$omp end parallel
   !-----------------------------------------------------------------------------
   ! I/O unit numbers, for convenience and backwards compatibility.  All other
@@ -218,6 +217,10 @@ SUBROUTINE init (self, name)
       io_unit%output = io_unit%mpi
     end if
     !$omp end critical (open_cr)
+    io_unit%master = io%master .and. omp%master
+    write (io_unit%log,'(a,2i4,3l4)') &
+      'io_mod::init io_unit%log, omp%thread, io_unit%master, io_unit%verbose:', &
+      io_unit%log, omp%thread, io_unit%master, io_unit%verbose
     !$omp end parallel
     stdout = io_unit%output
     write (stdout,io_params)
@@ -226,9 +229,6 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     io%output    = io_unit%output
     io%data_unit = io_unit%data
-    write (io_unit%log,'(a,i4,2l4)') &
-      'io_mod::init io_unit%log, io_unit%master, io_unit%verbose:', &
-      io_unit%log, io_unit%master, io_unit%verbose
     write(io%output,*) 'logfile:', filename
     write(io%output,*) '======================================================================='
     write(io%output,*) 'NOTE: Reading parameters from '//trim(self%inputname)

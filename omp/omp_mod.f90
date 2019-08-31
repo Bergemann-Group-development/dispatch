@@ -49,7 +49,6 @@ SUBROUTINE init (self)
   omp%thread = omp_mythread
   omp%master = omp_master
   io_unit%master = io_unit%master .and. omp_master
-  !print *, omp_mythread, omp%thread, omp_master, omp_nthreads
   !$omp end parallel
 END SUBROUTINE init
 

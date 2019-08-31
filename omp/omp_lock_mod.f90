@@ -33,7 +33,6 @@ MODULE omp_lock_mod
     real(8):: start_time=0.0_8          ! start time
     real(8):: used_time=0.0_8           ! used time
     integer(8):: n_hold=0_8             ! number of times holding lock
-    integer(8):: n_download(2)=0_8      ! number of download locks
     logical:: links=.false.             ! lock nbor lists
     logical:: tasks=.false.             ! lock task memory updates
     type(lock_t), pointer:: next => null()
@@ -309,10 +308,6 @@ SUBROUTINE info (unit)
   !$omp atomic read
   time = wait_time
   write (unit,'(a,f10.3)') ' total lock waiting time =', time
-  write (unit,'(2(a,i7,7x))') &
-    ' download locked:', omp_lock%n_download(1), &
-            'unlocked:', omp_lock%n_download(2)
-  omp_lock%n_download(:) = 0
   !$omp atomic write
   wait_time = 0d0
 END SUBROUTINE info

@@ -92,17 +92,17 @@ SUBROUTINE init (patch)
     first_time = .false.
     rewind (io%input); read(io%input, parallel_io_params, iostat=iostat)
      write (io%output, parallel_io_params)
+    if (io%ntask==0) &
+      call io%abort ('parallel_io_t%init: io%ntask == 0')
+    call mpi_io%init
+    call mpi_io%set (nwrite=io%nwrite*(io%time_derivs+1))
+    if (io%method=='parallel') then
+      allocate (file_out)
+      write (filename,'(a,"/snapshots.dat")') trim(io%outputname)
+      call file_out%openw (filename)
+    end if
   end if
   !$omp end critical (input_cr)
-  if (io%ntask==0) &
-    call io%abort ('parallel_io_t%init: io%ntask == 0')
-  call mpi_io%init
-  call mpi_io%set (nwrite=io%nwrite*(io%time_derivs+1))
-  if (io%method=='parallel') then
-    allocate (file_out)
-    write (filename,'(a,"/snapshots.dat")') trim(io%outputname)
-    call file_out%openw (filename)
-  end if
   call time_slices%init (patch%nt)
   call trace%end
 END SUBROUTINE init
@@ -405,15 +405,13 @@ SUBROUTINE output_single (patch, count)
   ! Info
   !-----------------------------------------------------------------------------
   if (first_time) then
-    if (first_time) then
-      first_time = .false.
-      write(io%output,'(a,f8.3,a,i10,a)') &
-        ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
-        io%ntotal, ' patches'
-      write(io%output,'(a,4i6,2i12)') &
-        ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
-        patch%iout, n, snapshot_words, buffer_words
-    end if
+    first_time = .false.
+    write(io%output,'(a,f8.3,a,i10,a)') &
+      ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
+      io%ntotal, ' patches'
+    write(io%output,'(a,4i6,2i12)') &
+      ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
+      patch%iout, n, snapshot_words, buffer_words
   end if
   !-----------------------------------------------------------------------------
   call mpi_io%set (snapshot_words, buffer_words, 99)
@@ -799,6 +797,7 @@ SUBROUTINE input_single (patch, ok)
     !-----------------------------------------------------------------------------
     ! Info
     !-----------------------------------------------------------------------------
+    if (first_time) then
     !$omp critical (first_cr)
     if (first_time) then
       first_time = .false.
@@ -810,6 +809,7 @@ SUBROUTINE input_single (patch, ok)
         patch%iout, n, snapshot_words, buffer_words
     end if
     !$omp end critical (first_cr)
+    end if
     allocate (buffer(n(1),n(2),n(3)))
     !-----------------------------------------------------------------------------
     ! The previous number of ranks is equal to the product of the previous mpi_dims.
@@ -839,6 +839,7 @@ SUBROUTINE input_single (patch, ok)
     end do
     deallocate (buffer)
   else
+    if (first_time) then
     !$omp critical (read_first_cr)
     if (first_time) then
       first_time = .false.
@@ -875,6 +876,7 @@ SUBROUTINE input_single (patch, ok)
         write(io%output,*) 'io%input_single: read succeeded, snapshot', io%restart
     end if
     !$omp end critical (read_first_cr)
+    end if
     if (read_failed) then
       ok = .false.
       call trace%end (itimer)

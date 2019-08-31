@@ -125,14 +125,19 @@ SUBROUTINE init (self)
   namelist /mpi_io_params/ verbose, direct
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%init')
-  !$omp critical (input_cr)
+  !-----------------------------------------------------------------------------
+  ! Note that when this is called from mpi_io_t%init(), it is already in a
+  ! critical (input_cr) region, so must either use a different name, or no
+  ! critical region
+  !-----------------------------------------------------------------------------
+  !$omp critical (mpi_io_cr)
   if (first_time) then
     first_time = .false.
     rewind (io%input)
     read (io%input, mpi_io_params, iostat=iostat)
     if (io%master) write (io%output, mpi_io_params)
   end if
-  !$omp end critical (input_cr)
+  !$omp end critical (mpi_io_cr)
   !$omp critical (iwrite_cr)
   if (self%iwrite_list%first_time) then
     self%iwrite_list%first_time = .false.

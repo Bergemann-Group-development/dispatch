@@ -45,11 +45,10 @@ SUBROUTINE init (self, nt)
     write (io%output, time_slices_params)
     write (io_unit%nml, time_slices_params)
     flush (io_unit%nml)
+    call lagrange%test
   end if
   !$omp end critical (input_cr)
   self%order = order
-  if (io%master) &
-    call lagrange%test
   call trace%end
 END SUBROUTINE init
 
