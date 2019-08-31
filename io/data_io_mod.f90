@@ -69,7 +69,7 @@ SUBROUTINE init (self, task)
   call trace%print_id (id)
   call self%lock%init ('data')
   if (first_time) then
-    call self%lock%set
+    !$omp critical (input_cr)
     if (first_time) then
       first_time=.false.
       if (io%do_output) then
@@ -90,7 +90,7 @@ SUBROUTINE init (self, task)
       self%initialized = .true.
       if (io%master) print *,'data_io_t%init: io%nwrite =', io%nwrite
     end if
-    call self%lock%unset
+    !$omp end critical (input_cr)
   end if
   !-----------------------------------------------------------------------------
   call self%counters%init
@@ -205,7 +205,7 @@ SUBROUTINE output (self, patch, experiment_name)
     ! example legacy_io) may need to be protected by critical regions or a lock
     ! on data_io), but (FIXME) for now this is neglected.
     !---------------------------------------------------------------------------
-    call patch%lock%set ('data_io_t%output')
+    !$omp critical (data_io_cr)
     if (io%verbose > 1) &
       write (io%output,*) wallclock(),' thread',omp%thread,' locked output'
     do while (patch%t(it) >= patch%out_next)
@@ -266,7 +266,7 @@ SUBROUTINE output (self, patch, experiment_name)
       if (io%out_time==0.0) exit
       patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
       !---------------------------------------------------------------------------
-      !if (io%verbose > 1) & 
+      if (io%verbose > 1) & 
         write (io%output,'(a,i6,3f12.6,3i4)') &
           'io_t%output: id, iout, time, out_next, count =', &
           patch%id, patch%time, patch%time-patch%dtime, patch%out_next, &
@@ -274,7 +274,7 @@ SUBROUTINE output (self, patch, experiment_name)
       !---------------------------------------------------------------------------
       call os%mkdir_no (patch%iout)
     end do
-    call patch%lock%unset ('data_io_t%output')
+    !$omp end critical (data_io_cr)
     if (io%verbose > 1) &
       write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'
   end if
