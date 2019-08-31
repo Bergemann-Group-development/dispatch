@@ -84,8 +84,8 @@ SUBROUTINE update (self, patch)
   !.............................................................................
   character(len=80):: filename
   integer:: ix, iy, iz, l(3), u(3), i, ibin, jt(2), iout, count
-  real:: dv, bin, pt(2), d, px, py, pz, ux, uy, uz, u2
-  real:: v_tot, d_tot, px_tot, py_tot, pz_tot, u2_tot, rms(n_rms)
+  real:: dv, bin, pt(2), d, px, py, pz, ux, uy, uz, u2, rms(n_rms)
+  real(8):: v_tot, d_tot, px_tot, py_tot, pz_tot, u2_tot
   logical:: deallocated
   !-----------------------------------------------------------------------------
   if (.not.on) return
@@ -109,15 +109,16 @@ SUBROUTINE update (self, patch)
     px_tot = 0.0
     py_tot = 0.0
     pz_tot = 0.0
+    u2_tot = 0.0
     v_tot  = 0.0
-    l = patch%mesh(1)%li
-    u = patch%mesh(1)%ui
+    l = patch%mesh%li
+    u = patch%mesh%ui
     do iz=l(3),u(3)
     do iy=l(2),u(2)
     do ix=l(1),u(1)
       if (patch%irefine(ix,iy,iz) == 0) then
-        d = patch%mem(ix,iy,iz,patch%idx%d,jt(1),1)*pt(1) &
-          + patch%mem(ix,iy,iz,patch%idx%d,jt(2),1)*pt(2)
+        d =  patch%mem(ix,iy,iz,patch%idx%d ,jt(1),1)*pt(1) &
+           + patch%mem(ix,iy,iz,patch%idx%d ,jt(2),1)*pt(2)
         px = patch%mem(ix,iy,iz,patch%idx%px,jt(1),1)*pt(1) &
            + patch%mem(ix,iy,iz,patch%idx%px,jt(2),1)*pt(2)
         py = patch%mem(ix,iy,iz,patch%idx%py,jt(1),1)*pt(1) &
