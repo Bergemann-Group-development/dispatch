@@ -297,9 +297,9 @@ SUBROUTINE input (self, patch, ok)
   integer:: count
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%input')
-  call self%lock%set ('data_io_t%input')
   ok = .false.
   if (io%restart >= 0) then
+    !$omp critical (data_io_input_cr)
     if      (io%method=='direct') then
       call direct_io%input (patch, ok)
     else if (io%method=='legacy') then
@@ -317,17 +317,17 @@ SUBROUTINE input (self, patch, ok)
     else
       call mpi%abort ('unknown io%method = '//io%method)
     end if
-  end if
-  if (ok) then
-    count = self%counters%decrement (io%restart+1, io%nwrite)
-    if (count==0 .and. io%master) then
-      write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)') &
-        trim(io%method)//'_io:input', &
-        'snapshot '//trim(io%outputname), io%restart, patch%time
+    if (ok) then
+      count = self%counters%decrement (io%restart+1, io%nwrite)
+      if (count==0 .and. io%master) then
+        write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)') &
+          trim(io%method)//'_io:input', &
+          'snapshot '//trim(io%outputname), io%restart, patch%time
+      end if
+      patch%t(patch%it) = patch%time
     end if
-    patch%t(patch%it) = patch%time
+    !$omp end critical (data_io_input_cr)
   end if
-  call self%lock%unset ('data_io_t%input')
   call trace%end()
 END SUBROUTINE input
 
