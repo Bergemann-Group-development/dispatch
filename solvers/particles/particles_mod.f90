@@ -17,6 +17,7 @@ MODULE particles_mod
   USE patch_forces_mod
   USE hash_table_mod
   USE trace_mod
+  USE scaling_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -104,7 +105,7 @@ print *,'particles_t%force: it =', it
       r2 = max(r2,r2s)
       r1 = 1.0/sqrt(r2)
       r3 = r1**3
-      force = force - o%mass*r*r3
+      force = force - scaling%grav*o%mass*r*r3
       end select
     end if
     o => o%next
@@ -183,7 +184,7 @@ SUBROUTINE force_field (self, patch)
           r1 = 1d0/sqrt(r2)
           r3 = r1*r1*r1
           r = r*r3
-          force = force - m(ip)*r
+          force = force - m(ip)*r*scaling%grav
           f(ip,:) = f(ip,:) + dm*r
         end do
         patch%force_per_unit_mass(ix,iy,iz,:) = &

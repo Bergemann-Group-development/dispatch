@@ -28,6 +28,17 @@
 &lock_params            verbose=0 /
 
 !---------------------------------
+! Sink particle parameters
+!---------------------------------
+&particle_params        nt=5 /
+&sink_patch_params      verbose=1 on=t n_ad_hoc=2 /
+&sink_params            x=0.72 y=0.72 z=0.72 vx=0.1 mass=1e-4 /
+&sink_params            x=0.38 y=0.28 z=0.18 vx=0.2 mass=1e-4 /
+&sink_params            x=0.38 y=0.08 z=0.78 vx=0.2 mass=1e-4 /
+&sink_params            x=0.08 y=0.78 z=0.08 vx=0.2 mass=1e-4 /
+&kdk_params             verbose=2 /
+
+!---------------------------------
 ! Initial condition and forces
 !---------------------------------
 &initial_params         type='turbulence' /
@@ -45,14 +56,6 @@
 &stagger_params         gamma=1.0 nu=0.30,0.0,1.0,0.1,1.0,1.0 /
 &timestep_params        /
 &refine_params          on=f check_interval=2 /
-
-!---------------------------------
-! Sink particle parameters
-!---------------------------------
-&sink_patch_params      verbose=1 on=t n_ad_hoc=2 /
-&sink_params            x=0.72 y=0.72 z=0.72 vx=0.1 mass=1 /
-&sink_params            x=0.38 y=0.28 z=0.18 vx=0.2 mass=1 /
-&particle_params        verbose=2 /
 
 !----------------------------------------------------------------------------------
 ! MPI and loadbalancing parameters
