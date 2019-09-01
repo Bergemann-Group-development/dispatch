@@ -73,10 +73,11 @@ END SUBROUTINE append
 FUNCTION force (self, p, it)
   class(particles_t):: self
   class(particle_t), pointer:: p
+  integer:: it
   real(8):: force(3)
   !.............................................................................
   class(dll_node_t), pointer:: o
-  integer:: i, i0, i1, j
+  integer:: i, oit, i0, i1, j, iit(p%nt)
   real(8):: rp(3), pt, qt, r(3), r1, r2, r3, r2s
   !-----------------------------------------------------------------------------
   call trace%begin ('particles_t%force')
@@ -84,17 +85,19 @@ if (particles%verbose > 0) &
 print *,'particles_t%force: it =', it
   r2s = self%rsoft2
   force = 0.0_8
-  rp = p%r(:,p%it)
+  rp = p%r(:,it)
   o => self%head
   do while (associated(o))
     if (.not.associated (o, p)) then
       select type (o)
       class is (particle_t)
+      !$omp atomic read
+      oit = o%it
       do i=2,self%nt-1
-        i1 = o%iit(i)
-        if (o%t(i1) > p%time) exit
+        i0 = mod(oit+i-2,o%nt)+1
+        i1 = mod(i0,o%nt)+1
+        if (o%t(i1) > p%t(it)) exit
       end do
-      i0 = o%iit(i-1)
       pt = (p%time-o%t(i0))/max(o%t(i1)-o%t(i0),tiny(1d0))
       qt = 1d0-pt
       r2 = 0d0
@@ -106,10 +109,16 @@ print *,'particles_t%force: it =', it
       r1 = 1.0/sqrt(r2)
       r3 = r1**3
       force = force - scaling%grav*o%mass*r*r3
+if (particles%verbose > 2) &
+print '(a,2i6,1p,e10.2,2i3,2e10.2,2(2x,3e10.2))', &
+' particles_t%force: id,oid,om,i0,i1,pt,r,r3 =', &
+p%id, o%id, o%mass, i0, i1, pt, r3, r, force
       end select
     end if
     o => o%next
   end do
+if (particles%verbose > 0) &
+print *,'sink_patch_t%force: id, f(1) =', p%id, force
   !-----------------------------------------------------------------------------
   ! Add the force from patches, which is summed up by p%patch_forces
   !-----------------------------------------------------------------------------
@@ -117,6 +126,8 @@ print *,'particles_t%force: it =', it
   class is (particle_t)
     force = force + p%patch_forces%force (p%time)
   end select
+if (particles%verbose > 0) &
+print *,'sink_patch_t%force: id, f(2) =', p%id, force
   call trace%end ()
 END FUNCTION force
 
@@ -130,11 +141,12 @@ SUBROUTINE force_field (self, patch)
   !.............................................................................
   class(dll_node_t), pointer:: p
   real(8), allocatable:: rp(:,:), m(:), f(:,:)
-  real(8):: force(3), pt, qt, rc(3), r(3), r1, r3, dm, r2, rsoft2
-  integer:: i, i0, i1, ip, ix, iy, iz
+  real(8):: force(3), pt, qt, rc(3), r(3), r1, r3, dm, r2, rsoft2, f2, f2max
+  integer:: i, it, i0, i1, ip, ix, iy, iz
   class(*), pointer:: ptr
   class(dll_node_t), pointer:: dll_node
   type(patch_force_t), pointer:: patch_force
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Cache all particle position into array, in order to be able to loop over
   ! particles
@@ -147,9 +159,11 @@ SUBROUTINE force_field (self, patch)
     ip = ip+1
     select type (p)
     class is (particle_t)
+    !$omp atomic read
+    it = p%it
     do i=2,self%nt-1
-      i0 = p%iit(i-1)
-      i1 = p%iit(i)
+      i0 = mod(it+i-2,p%nt)+1
+      i1 = mod(i0,p%nt)+1
       if (p%t(i1) > patch%time) exit
     end do
     pt = (patch%time - p%t(i0))/max(p%t(i1)-p%t(i0),tiny(1d0))
@@ -170,6 +184,7 @@ SUBROUTINE force_field (self, patch)
   end if
   associate (m1=>patch%mesh(1), m2=>patch%mesh(2), m3=>patch%mesh(3))
   rsoft2 = (self%rsoft*minval(patch%ds))**2
+  f2max = 0.0
   do iz=m3%li,m3%ui
     rc(3) = m3%p + m3%r(iz)
     do iy=m2%li,m2%ui
@@ -186,7 +201,19 @@ SUBROUTINE force_field (self, patch)
           r = r*r3
           force = force - m(ip)*r*scaling%grav
           f(ip,:) = f(ip,:) + dm*r
+!print '(a,i6,2x,3i4,i5,1p,2(2x,3e11.2))', &
+!'particles_t: ix,iy,iz,ip,f(ip,:),force =', &
+!ix,iy,iz,ip,f(ip,:),force
         end do
+if (particles%verbose > 3) then
+f2 = sum(force**2)
+if (f2 > f2max) then
+ f2max = f2
+ print '(a,i6,2x,3i4,2x,1p,3e11.2)', &
+ 'particles_t: id,ix,iy,iz,force =', &
+ patch%id,ix,iy,iz,force
+end if
+end if
         patch%force_per_unit_mass(ix,iy,iz,:) = &
         patch%force_per_unit_mass(ix,iy,iz,:) + force
       end do
@@ -204,10 +231,15 @@ SUBROUTINE force_field (self, patch)
     ip = ip+1
     select type (p)
     class is (particle_t)
-      print *, 'hash_table%get: key =', [p%id, patch%id]
+if (particles%verbose > 0) &
+print *, 'hash_table%get: key =', [p%id, patch%id]
       call hash_table%get ([p%id, patch%id], ptr)
+if (particles%verbose > 0) &
+print *, 'force_field: ip, f', ip, f(ip,:), associated(ptr)
       select type (ptr)
-        class is (patch_force_t)
+      class is (patch_force_t)
+if (particles%verbose > 0) &
+print *, 'force_field: ip, it, time', ip, ptr%it, p%time
         ptr%f(ptr%it,:) = f(ip,:)
       end select
     end select
@@ -243,7 +275,8 @@ SUBROUTINE test (self)
     call self%append (node)
   end do
   used = wallclock()-used
-  print *, 'particle list n =', self%n, used/self%n
+if (particles%verbose > 0) &
+print *, 'particle list n =', self%n, used/self%n
   !-----------------------------------------------------------------------------
   ! Remove every 2nd particle
   !-----------------------------------------------------------------------------
@@ -264,7 +297,8 @@ SUBROUTINE test (self)
     node => next
   end do
   used = wallclock()-used
-  print *, 'particle list n =', self%n, used/self%n
+if (particles%verbose > 0) &
+print *, 'particle list n =', self%n, used/self%n
   !-----------------------------------------------------------------------------
   ! Add one new particle for every 2nd existing one
   !-----------------------------------------------------------------------------
@@ -282,7 +316,8 @@ SUBROUTINE test (self)
     node => next
   end do
   used = wallclock()-used
-  print *, 'particle list n =', self%n, used/self%n
+if (particles%verbose > 0) &
+print *, 'particle list n =', self%n, used/self%n
 END SUBROUTINE test
 
 !===============================================================================

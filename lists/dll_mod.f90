@@ -8,6 +8,7 @@ MODULE dll_mod
     class(dll_node_t), pointer:: prev => null()
     class(dll_node_t), pointer:: next => null()
     class(*), pointer:: car
+    integer:: id=0
   end type
   type, public:: dll_t
     class(dll_node_t), pointer:: head => null()

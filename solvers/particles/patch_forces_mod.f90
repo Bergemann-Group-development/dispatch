@@ -17,11 +17,13 @@ MODULE patch_forces_mod
   private
   !-----------------------------------------------------------------------------
   type, public, extends(dll_t):: patch_forces_t
+    integer:: verbose=0
   contains
     procedure:: init
     procedure:: remove
     procedure:: force
   end type
+  type(patch_forces_t), public:: patch_forces
 CONTAINS
 
 !===============================================================================
@@ -66,6 +68,8 @@ FUNCTION force (self, time)
     select type (node)
     class is (patch_force_t)
     force = force + node%force (time)
+if (patch_forces%verbose > 1) &
+print *, 'patch_forces_t%force: id, force =', node%id, force
     end select
     node => node%next
   end do
