@@ -174,7 +174,8 @@ MODULE sink_patch_mod
   real:: rho_fractionR=1e-6           ! The fration of rho_limit above which accretion happens
   real:: rho_cut=1.0                  ! ??
   real:: softening_length=1.0         ! Softening of gravitational potential
-  real(8):: out_time=0.1              ! cadence of output into sink.h5
+  real(8):: out_time=0.1              ! cadence of output
+  logical:: do_output=.true.          ! turn output on/off
   character(len=64):: file ='sink.h5' ! name of sink data file
   !-----------------------------------------------------------------------------
   integer, save:: n_sinks=0           ! counter
@@ -213,6 +214,7 @@ SUBROUTINE init (self)
   endif
   !$omp end critical (input_cr)
   self%on = on
+  self%out_next = out_time
   self%particle_solver => particle_solver
   call trace%end()
 END SUBROUTINE init
@@ -604,8 +606,10 @@ SUBROUTINE output (self)
   real(kind=8):: flush_frequency = 10. ! frequency with which data is flushed to disk
   !-----------------------------------------------------------------------------
   if (.not.self%on) return
+  if (self%time < self%out_next) return
   call trace%begin ('sink_patch_t%output')
 #ifdef HDF5
+  write (stdout,*) 'sink_patch_t%output: HDF5 output time =', self%out_next
   !-----------------------------------------------------------------------------
   ! Open file if needed
   !-----------------------------------------------------------------------------
@@ -650,8 +654,49 @@ SUBROUTINE output (self)
     endif
     !$omp end critical
   endif
+#else
+  call output_nml
 #endif
+  self%out_next = nint(self%out_next/out_time+1.0)*out_time
   call trace%end()
+  return
+contains
+  !=============================================================================
+  !> Namelist output format
+  !=============================================================================
+  subroutine output_nml
+    logical, save:: first_time=.true.
+    integer:: id
+    real(8):: time, mass, position(3)
+    real(4):: velocity(3)
+    namelist /sinks_nml/ id, time, mass, position, velocity
+    !---------------------------------------------------------------------------
+    ! Open file if needed
+    !---------------------------------------------------------------------------
+    if (first_time) then
+      !$omp critical (sinkp_output_cr)
+      if (first_time) then
+        first_time = .false.
+        write (stdout,*) 'sink_patch_t%output: file = ', &
+          trim(io%rundir)//'sink_particles.nml'
+        open (io_unit%sinks, file=trim(io%rundir)//'sink_particles.nml', &
+          form='formatted', status='unknown')
+      endif
+      !$omp end critical (sinkp_output_cr)
+    endif
+    if (verbose > 0) &
+      write (stdout,*) &
+        'sink_patch_t%output: namelist output time =', self%out_next
+    !---------------------------------------------------------------------------
+    ! Write out sinkparticle data in namelist form
+    !---------------------------------------------------------------------------
+    id       = self%particle%id
+    mass     = self%particle%mass
+    time     = self%particle%time
+    position = self%particle%r(:,particle%it)
+    velocity = self%particle%v(:,particle%it)
+    write (io_unit%sinks, sinks_nml)
+  end subroutine output_nml
 END SUBROUTINE output
 
 !===============================================================================
@@ -712,6 +757,7 @@ SUBROUTINE update (self)
   !.............................................................................
   if (.not.self%on) return
   call trace%begin ('sink_patch_t%update', itimer=itimer)
+  call self%output
   call self%move
   call self%accrete
   call trace%end (itimer)
