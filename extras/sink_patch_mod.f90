@@ -221,7 +221,7 @@ END SUBROUTINE init
 !> Initialize an instance of the sink_patch_t data type
 !===============================================================================
 SUBROUTINE init_sink (self, patch, sink_position)
-  type(sink_patch_t), pointer:: self
+  class(sink_patch_t), pointer:: self
   class(gpatch_t)    , pointer:: patch
   real(kind=8), dimension(3), optional :: sink_position
   !.............................................................................
@@ -478,7 +478,7 @@ SUBROUTINE ad_hoc_add (self, link)
   !.............................................................................
   class(task_t), pointer:: patch
   class(gpatch_t), pointer:: gpatch
-  type(sink_patch_t), pointer:: task
+  class(sink_patch_t), pointer:: task
   class(list_t), pointer:: task_list
   class(particle_t), pointer:: particle
   integer:: iostat, i_sink, m(3)
@@ -610,14 +610,14 @@ SUBROUTINE output (self)
   ! Open file if needed
   !-----------------------------------------------------------------------------
   if (sink_file_id==-1) then
-    !$omp critical
+    !$omp critical (sinkp_output_cr)
     if (sink_file_id==-1) then
       last_flush = wallclock()
       sink_file_id = h5%open (file, new, verbose=verbose)
       if (verbose > 0) &
-        print *, merge('creating ','updating ',new)//trim(file)
+        write(stdout,*) merge('creating ','updating ',new)//trim(file)
     endif
-    !$omp end critical
+    !$omp end critical (sinkp_output_cr)
   endif
   !-----------------------------------------------------------------------------
   ! Open group for sink if needed
@@ -669,11 +669,11 @@ FUNCTION check (self, patch)
   check = .true.
   check = check .and. patch%fmaxval(patch%idx%d) > rho_limit
   if (check) then
-    print *, 'sink_patch_t%check: dmax in', &
+    write(stdout,*) 'sink_patch_t%check: dmax in', &
       maxloc (patch%mem(:,:,:,patch%idx%d,patch%it,1))
     !$omp atomic
     n_sinks = n_sinks+1
-    print *,'n_sinks =', n_sinks
+    write(stdout,*)'n_sinks =', n_sinks
   end if
   call trace%end()
 END FUNCTION check
