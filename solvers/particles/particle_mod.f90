@@ -1,6 +1,6 @@
 !===============================================================================
 !> Particle data type, extends a dll_node data type, so it can become part of
-!> a particle_list_t data type
+!> a particles_t data type
 !===============================================================================
 MODULE particle_mod
   USE iso_fortran_env, only: int8

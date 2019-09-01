@@ -5,11 +5,11 @@ MODULE particle_solver_mod
   USE io_unit_mod
   USE trace_mod
   USE particle_mod
-  USE particle_list_mod
+  USE particles_mod
   USE dll_mod
   implicit none
   private
-  type, public, extends(particle_list_t):: particle_solver_t
+  type, public, extends(particles_t):: particle_solver_t
   contains
     procedure:: init
     procedure:: update
@@ -28,7 +28,7 @@ SUBROUTINE init (self, name)
   logical, save:: first_time=.true.
   namelist /kdk_params/ courant
   !-----------------------------------------------------------------------------
-  call self%particle_list_t%init
+  call self%particles_t%init
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
@@ -42,7 +42,7 @@ SUBROUTINE init (self, name)
 END SUBROUTINE init
 
 !===============================================================================
-!> KDK update, using the self%force() procedure provided by particle_list_t.
+!> KDK update, using the self%force() procedure provided by particles_t.
 !===============================================================================
 SUBROUTINE update (self, p)
   class(particle_solver_t):: self

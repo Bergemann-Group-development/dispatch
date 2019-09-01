@@ -7,7 +7,7 @@
 !> This could be reduced to half, by keeping only two previous positions and
 !> velocities in the data type.
 !===============================================================================
-MODULE particle_list_mod
+MODULE particles_mod
   USE io_unit_mod
   USE dll_mod
   USE omp_timer_mod
@@ -20,7 +20,7 @@ MODULE particle_list_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
-  type, public, extends(dll_t):: particle_list_t
+  type, public, extends(dll_t):: particles_t
     real:: rsoft=1.0
     real(8):: rsoft2=tiny(1d0)**(2./3.)
     integer:: verbose=0
@@ -33,7 +33,7 @@ MODULE particle_list_mod
     procedure:: test
     procedure:: print => print_list
   end type
-  type(particle_list_t):: particle_list
+  type(particles_t), public:: particles
   !-----------------------------------------------------------------------------
 CONTAINS
 
@@ -41,12 +41,11 @@ CONTAINS
 !> Initialize a particle list
 !===============================================================================
 SUBROUTINE init (self, name)
-  class (particle_list_t):: self
+  class (particles_t):: self
   character(len=*), optional:: name
   !-----------------------------------------------------------------------------
-  call trace%begin ('particle_list_t%init')
+  call trace%begin ('particles_t%init')
   call self%dll_t%init (name)
-  call particle%init
   !call self%ht%init                            ! either this ..
   !call hash_table%init                         ! .. or this
   call trace%end ()
@@ -56,21 +55,22 @@ END SUBROUTINE init
 !> Append a new particle_t data type to the particle list
 !===============================================================================
 SUBROUTINE append (self, new)
-  class (particle_list_t):: self
+  class (particles_t):: self
   class (particle_t), pointer:: new
   class (dll_node_t), pointer:: new_dll
   !-----------------------------------------------------------------------------
-  call trace%begin ('particle_list_t%append')
+  call trace%begin ('particles_t%append')
   new_dll => new
   call self%dll_t%append (new_dll)
   call trace%end ()
 END SUBROUTINE append
 
 !===============================================================================
-!> Compute force from other particles by direct summation
+!> Compute force from other particles by direct summation and add forces from
+!> patches
 !===============================================================================
-FUNCTION force (self, p)
-  class(particle_list_t):: self
+FUNCTION force (self, p, it)
+  class(particles_t):: self
   class(particle_t), pointer:: p
   real(8):: force(3)
   !.............................................................................
@@ -78,7 +78,9 @@ FUNCTION force (self, p)
   integer:: i, i0, i1, j
   real(8):: rp(3), pt, qt, r(3), r1, r2, r3, r2s
   !-----------------------------------------------------------------------------
-  call trace%begin ('particle_list_t%force')
+  call trace%begin ('particles_t%force')
+if (particles%verbose > 0) &
+print *,'particles_t%force: it =', it
   r2s = self%rsoft2
   force = 0.0_8
   rp = p%r(:,p%it)
@@ -122,7 +124,7 @@ END FUNCTION force
 !> also add up the opposite force (reaction) onto the particles from the cells.
 !===============================================================================
 SUBROUTINE force_field (self, patch)
-  class(particle_list_t):: self
+  class(particles_t):: self
   class(patch_t):: patch
   !.............................................................................
   class(dll_node_t), pointer:: p
@@ -136,7 +138,7 @@ SUBROUTINE force_field (self, patch)
   ! Cache all particle position into array, in order to be able to loop over
   ! particles
   !-----------------------------------------------------------------------------
-  call trace%begin ('particle_list_t%force_field')
+  call trace%begin ('particles_t%force_field', itimer=itimer)
   allocate (rp(self%n,3), m(self%n), f(self%n,3))
   ip = 0
   p => self%head
@@ -210,14 +212,14 @@ SUBROUTINE force_field (self, patch)
     end select
     p => p%next
   end do
-  call trace%end ()
+  call trace%end (itimer)
 END SUBROUTINE force_field
 
 !===============================================================================
 !> Test particle list functionality
 !===============================================================================
 SUBROUTINE test (self)
-  class(particle_list_t):: self
+  class(particles_t):: self
   integer:: id, n
   class(particle_t), pointer:: p
   class(dll_node_t), pointer :: node, next, new
@@ -286,7 +288,7 @@ END SUBROUTINE test
 !> Print a particle list
 !===============================================================================
 SUBROUTINE print_list (self)
-  class(particle_list_t):: self
+  class(particles_t):: self
   class(dll_node_t), pointer:: p
   p => self%head
   do while (associated(p))
@@ -298,4 +300,4 @@ SUBROUTINE print_list (self)
   end do
 END SUBROUTINE print_list
 
-END MODULE particle_list_mod
+END MODULE particles_mod

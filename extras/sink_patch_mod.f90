@@ -20,9 +20,9 @@
 !> sink_patch_t               ! Contains both a particle and a patch object
 !>   gpatch_t                 ! A grid-based task holding accretion related data
 !>   particle_t
-!>   particle_solver_t        ! Particle solvers use particle_list_t%force
+!>   particle_solver_t        ! Particle solvers use particles_t%force
 !>     particle_t
-!>     particle_list_t        ! A list of particle_t objects
+!>     particles_t        ! A list of particle_t objects
 !>       particle_t           ! Each particle_t has a patch_forces_t list
 !>         dll_node_t
 !>         patch_forces_t     ! A list of patch_force_t objects
@@ -62,25 +62,34 @@
 !>
 !> UPATE OF SINK PATCH:
 !> ====================
-!> task_list_t%update                                 ! dispather select task
-!>   extras_t%dnload                                  ! standard call
-!>   extras_t%pre_update                              ! called from solver_t
+!> task_list_t%update                                 ! dispatcher selects task
+!>   gpatch_t%dnload                                  ! standard call
+!>     download_t%download_link                       ! special case quality
 !>     sink_patch_t%update                            ! update particles & patches
-!>       particle_solver_t%force_field                ! fall-through
-!>         particle_list_t%force_field                ! force from particles
+!>     particle_solver_t%force                        ! fall-through
+!>       particles_t%force                        ! force from particles
 !>           patch_forces_t%force                     ! force from all patches
-!>       sink_patch_t%accrete                         ! accrete to particles
-!>         sink_patch_t%courant_condition             ! determine time step
+!>           patch_force_t%force                      ! force from one patches
 !>       sink_patch_t%nove                            ! move particles
 !>         particle_solver_t%update                   ! actual particle solver
-!>           particle_t%courant_time                  ! determine time step
+!>         particlesolver_t%courant_time              ! determine time step
+!>     sink_patch_t%accrete                           ! accrete to particles
+!>       sink_patch_t%courant_condition               ! copy particle time step
+!>
+!> UPDATE OF MHD PATCH:
+!> ====================
+!> experiment_t%update                                ! update MHD patch
+!>   solver_t%update                                  ! solver interface
+!>     extras_t%pre_update                            ! extras coupler
+!>       sink_patch%force_field                       ! interface
+!>         particles_t%force_field                ! force from all sinks
 !>
 !> Related files:
 !>   lists/dll_mod.f90                                ! doubly-linked list
 !>   lists/hash_table_mod.f90                         ! hash table
 !>   solvers/particles/particle_mod.f90               ! particle data type
 !>   solvers/particles/patch_force_mod.f90            ! time slices of forces
-!>   solvers/particles/particle_list_mod.f98          ! handle
+!>   solvers/particles/particles_mod.f98          ! handle
 !>   solvers/particles/KDK/particle_solver_mod.f90    ! KDK particle solver
 !===============================================================================
 MODULE sink_patch_mod
@@ -469,7 +478,7 @@ SUBROUTINE ad_hoc_add (self, link)
   class(gpatch_t), pointer:: gpatch
   type(sink_patch_t), pointer:: task
   class(list_t), pointer:: task_list
-  class(dll_node_t), pointer:: particle
+  class(particle_t), pointer:: particle
   integer:: iostat, i_sink, m(3)
   real(kind=8):: pos(3)
   type sinks_t
@@ -806,12 +815,12 @@ END SUBROUTINE accrete
 
 !===============================================================================
 !> Move the sink particle one time step, using the particle solver, which in
-!> turn uses the particle_list_t%force() procedure to calculate the force from
+!> turn uses the particles_t%force() procedure to calculate the force from
 !> other particles and from the patches.   Call hierarchy:
 !>
 !> move(self)
 !>   particle_solver%update (self%particle)
-!>     particle_list_t%force (self%particle)
+!>     particles_t%force (self%particle)
 !>       for other particles:
 !>         force = force - other%mass*r*r3
 !>       force = force + particle%patch_forces%force (particle%time)
