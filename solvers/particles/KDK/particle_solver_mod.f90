@@ -53,6 +53,7 @@ SUBROUTINE init (self, name)
     end if
     !$omp end critical (particle_solver_input_cr)
   end if
+  self%verbose = verbose
   self%courant = courant
 END SUBROUTINE init
 

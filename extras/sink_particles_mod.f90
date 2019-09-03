@@ -169,7 +169,7 @@ MODULE sink_particles_mod
   logical:: force_refine=.true.       ! insist on refining down to levelmax at star
   logical:: only_high_levels=.true.   ! only accrete at high levels
   integer:: center_star=0             ! index of star to zoom in to
-  integer:: verbose=2                 ! verbosity level
+  integer:: verbose=0                 ! verbosity level
   integer:: max_sinks=10000           ! for testing
   real:: accretion_rate=0.01          ! The rate of accretion, measured in Omega_Kepler
   real:: accretion_efficiency=0.5     ! The accretion radius, measured in cells
@@ -654,7 +654,6 @@ SUBROUTINE output (self)
   class(sink_particles_t):: self
   !.............................................................................
   logical:: new
-  integer:: verbose=1
   real(kind=8),save::last_flush
   real(kind=8):: flush_frequency = 10. ! frequency with which data is flushed to disk
   !-----------------------------------------------------------------------------
@@ -733,8 +732,10 @@ contains
       !$omp critical (sinkp_output_cr)
       if (first_time) then
         first_time = .false.
-        write (stdout,*) 'sink_particles_t%output: file = ', &
-          trim(io%rundir)//trim(file)
+        if (verbose >= 0) then
+          write (stdout,*) 'sink_particles_t%output: file = ', &
+            trim(io%rundir)//trim(file)
+        end if
         open (io_unit%sinks, file=trim(io%rundir)//trim(file), &
           form='formatted', status='unknown')
       endif
@@ -742,8 +743,7 @@ contains
     endif
     if (verbose > 0) &
       write (stdout,*) &
-        'sink_particles_t%output: id, time, namelist output time =', &
-        self%particle%id, self%time, self%out_next
+        'sink_particles_t%output: id, time =', self%particle%id, self%time
     !---------------------------------------------------------------------------
     ! Write out sinkparticle data in namelist form
     !---------------------------------------------------------------------------

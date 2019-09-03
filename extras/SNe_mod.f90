@@ -72,6 +72,7 @@ SUBROUTINE init (self, name)
   logical:: first_time=.true.
   namelist /sne_params/ on, verbose, file
   !-----------------------------------------------------------------------------
+  call trace%begin ('sne_t%init')
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -81,7 +82,8 @@ SUBROUTINE init (self, name)
     call SN_test
   end if
   !$omp end critical (input_cr)
-END SUBROUTINE init 
+  call trace%end
+END SUBROUTINE init
 
 !===============================================================================
 !> Initialize the SN lifetime table
@@ -90,6 +92,7 @@ SUBROUTINE read_table
   integer:: iostat, n, i
   real:: mass, lifetime
   !-----------------------------------------------------------------------------
+  call trace%begin ('sne_t%read_table')
   write (stdout,*) 'SNe_t%read_table: file =', 'input_data/'//trim(file)
   open (unit=io_unit%tmp, file='input_data/'//trim(file), form='formatted', status='old')
   !-----------------------------------------------------------------------------
@@ -104,6 +107,7 @@ SUBROUTINE read_table
   end do
   mass_limit = sn_table(1)%mass
   close (io_unit%tmp)
+  call trace%end
 END SUBROUTINE read_table
 
 !===============================================================================
@@ -113,7 +117,9 @@ SUBROUTINE init_task_list (self, task_list)
   class(sne_t):: self
   class(list_t), pointer:: task_list
   !.............................................................................
+  call trace%begin ('sne_t%init_task_list')
   self%task_list => task_list
+  call trace%end
 END SUBROUTINE init_task_list
 
 !===============================================================================
@@ -122,7 +128,9 @@ END SUBROUTINE init_task_list
 REAL FUNCTION lifetime (mass)
   real:: mass
   !.............................................................................
+  call trace%begin ('sne_t%lifetime')
   lifetime = lagrange%interpolate1d (mass, n_table, sn_table%mass, sn_table%lifetime)
+  call trace%end
 END FUNCTION lifetime
 
 !===============================================================================
@@ -134,6 +142,7 @@ SUBROUTINE courant (self, gpatch)
   class(gpatch_t):: gpatch
   class(dll_node_t), pointer:: sn
   !.............................................................................
+  call trace%begin ('sne_t%courant')
   sn => sn_list%head
   do while (associated(sn))
     select type (sn)
@@ -147,6 +156,7 @@ SUBROUTINE courant (self, gpatch)
     end select
     sn => sn%next
   end do
+  call trace%end
 END SUBROUTINE courant
 
 !===============================================================================
@@ -222,9 +232,11 @@ SUBROUTINE explode (sn, task)
   class(sn_t):: sn
   class(patch_t):: task
   !.............................................................................
+  call trace%begin ('sne_t%update')
   if (verbose > 0) &
     write (stdout,*) &
       'SNe_t%explode: time, mass', task%time, sn%mass*scaling%m/cgs%m_sun
+  call trace%end
 END SUBROUTINE explode
 
 !==============================================================================
