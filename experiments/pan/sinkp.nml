@@ -19,7 +19,7 @@
 !---------------------------------------------
 &patch_params           nt=5 grace=1e-4 n=3*16 no_mans_land=t /
 !&patch_params           nt=5 grace=0.1 n=3*21 no_mans_land=f /
-&out_params             end_time=0.124 out_time=0.025 print_every=1 /
+&out_params             end_time=0.250 out_time=0.025 print_every=200 /
 &io_params              verbose=0 do_trace=f omp_trace=f do_output=f restart=-2
                         method='parallel' format=11 guard_zones=f time_derivs=0 /
 &doẃnload_params        verbose=3 check_filled=t /
@@ -30,9 +30,9 @@
 !---------------------------------
 ! Sink particle parameters
 !---------------------------------
-&particle_params        verbose=2 nt=5 order=2 /
-&kdk_params             verbose=2 courant=0.2 /
-&sink_particles_params  verbose=2 on=t n_ad_hoc=2 out_time=0.01
+&particle_params        verbose=0 nt=5 order=2 /
+&kdk_params             verbose=0 courant=0.2 /
+&sink_particles_params  verbose=0 on=t n_ad_hoc=2 out_time=0.003
                         do_accrete=f do_force_field=f do_patch_forces=f /
 &sink_params            x=0.50 y=0.51 z=0.50 vx=+1 mass=3.984e-4 /
 &sink_params            x=0.50 y=0.49 z=0.50 vx=-1 mass=3.984e-4 /

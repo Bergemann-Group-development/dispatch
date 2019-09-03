@@ -187,6 +187,8 @@ SUBROUTINE update (self, mass, task, sn)
   type(sn_t), pointer:: sn
   class(dll_node_t), pointer:: dll_node
   !.............................................................................
+  if (.not.on) &
+    return
   call trace%begin ('sne_t%update')
   if (verbose > 1) &
     print *, 'SNe_t%update: mass, mass_limit =', mass, mass_limit
