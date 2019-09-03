@@ -24,6 +24,7 @@ MODULE particles_mod
   !-----------------------------------------------------------------------------
   type, public, extends(dll_t):: particles_t
     real:: rsoft=1.0
+    real(8):: courant=0.2
     real(8):: rsoft2=tiny(1d0)**(2./3.)
     integer:: verbose=0
     integer:: nt=4
@@ -32,6 +33,8 @@ MODULE particles_mod
     procedure:: init
     procedure:: force
     procedure:: force_field
+    procedure:: predict
+    procedure:: courant_time
     procedure:: test
     procedure:: print => print_list
   end type
@@ -258,6 +261,98 @@ SUBROUTINE force_field (self, patch)
   end do
   call trace%end (itimer)
 END SUBROUTINE force_field
+
+!===============================================================================
+!> Estimate the position and velocity at a future time -- by default the
+!> approximately reflexive half time step.
+!> 
+!> FIXME:  This could/should be used to put the other particles at preliminary
+!> positions during the first time step, when extrapolation of positions is not
+!> possible, since there are no particle histories.
+!===============================================================================
+SUBROUTINE predict (self, p, dt)
+  class(particles_t):: self
+  class(particle_t), pointer:: p
+  real(8), optional:: dt
+  !.............................................................................
+  integer:: prv, now, new, nstep, i
+  real(8):: x0, x(p%nt), a(3), dt_l
+  !-----------------------------------------------------------------------------
+  call trace%begin ('particle_t%predict')
+  !$omp atomic read
+  nstep = p%nstep
+  !$omp atomic read
+  now = p%it
+  new = mod(now,p%nt) + 1
+  !-----------------------------------------------------------------------------
+  ! The very first time there is no history to extrapolate from, so we need
+  ! a direct estimate, first of the timestep, then of the half-way position
+  !-----------------------------------------------------------------------------
+  if (nstep==1) then
+    if (present(dt)) then
+      dt_l = dt
+    else
+      dt_l = 0.5d0*self%courant_time (p)
+    end if
+    a = self%force (p, now)
+    p%r(:,new) = p%r(:,now) + dt_l*p%v(:,now) + 0.5d0*dt_l**2*a
+    p%v(:,new) = p%v(:,now) + dt_l*a
+    p%t(  new) = p%t(  now) + dt_l
+  else
+    prv = modulo(now-2,p%nt) + 1
+    p%r(:,new) = p%r(:,now)*1.5_8 - p%r(:,prv)*0.5_8
+    p%v(:,new) = p%v(:,now)*1.5_8 - p%v(:,prv)*0.5_8
+    p%t(  new) = p%t(  now)*1.5_8 - p%t(  prv)*0.5_8
+  end if
+  call trace%end()
+END SUBROUTINE predict
+
+!===============================================================================
+!> Courant conditions:  Estimate, as inexpensively as possible, an approximately
+!> reflexive time step. If an estimate of the acceleration results in it not
+!> being important for the timestep size, then choose a fraction of the cell
+!> travel time (whatever that means in this context)
+!===============================================================================
+FUNCTION courant_time (self, p) RESULT (dt)
+  class(particles_t):: self
+  class(particle_t), pointer:: p
+  real(8):: dt
+  !.............................................................................
+  real(8):: a(3), ac, vc, dt1, dt2
+  integer:: prv, now, new
+  !-----------------------------------------------------------------------------
+  call trace%begin('particle_solver_t%courant_time')
+  if (self%courant < 0.0) then
+    dt = -self%courant
+  else
+    now = p%it
+    new = mod   (now  ,p%nt) + 1
+    prv = modulo(now-2,p%nt) + 1
+    call p%predict()
+    call courant_expressions
+    if (p%nstep==1) then
+      dt = dt*0.5d0
+      p%r(:,new) = p%r(:,now) + dt*p%v(:,now) + 0.5d0*dt**2*a
+      call courant_expressions
+    end if
+    !-----------------------------------------------------------------------------
+    if (self%verbose > 0) &
+      print '(a,i4,1p,4e12.3)', &
+        'courant_time: id,dt1,dt2,ac,vc =', p%id, dt1, dt2, ac, vc
+  end if
+  call trace%end()
+contains
+  subroutine courant_expressions
+    associate (v=>p%v(:,new))
+    a = self%force(p,new)
+    ac = 1.0/sqrt(sum(a**2)+tiny(1.0_8))
+    vc = 1.0/sqrt(sum(v**2)+tiny(1.0_8))
+    dt1 = p%ds*vc*self%courant                ! one  cell  per step at courant=1      
+    dt2 = (ac/vc)*self%courant*0.2            ! 0.2 radian per step at courant=1
+    dt = min(dt1,dt2)
+    end associate
+  end subroutine courant_expressions
+END FUNCTION courant_time
 
 !===============================================================================
 !> Test particle list functionality

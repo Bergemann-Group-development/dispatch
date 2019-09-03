@@ -215,7 +215,12 @@ SUBROUTINE append_link (self, link)
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
   !-----------------------------------------------------------------------------
+  self%n = self%n + 1
+  if (self%verbose > 2) &
+    print *,'list_t%append: (1) n =', trim(self%name), self%n, link%task%id
   call self%count_status()
+  if (self%verbose > 1) &
+    print *,'list _t%append:(2) n =', trim(self%name), self%n, link%task%id
   call self%lock%unset ('list_t%append_link')
   if (self%verbose > 2) &
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(2)'

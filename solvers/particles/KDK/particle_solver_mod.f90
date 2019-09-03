@@ -23,7 +23,6 @@ MODULE particle_solver_mod
   contains
     procedure:: init
     procedure:: update
-    procedure:: courant_time
   end type
   integer, save:: verbose=0
   real(8), save:: courant=0.5
@@ -54,6 +53,7 @@ SUBROUTINE init (self, name)
     end if
     !$omp end critical (particle_solver_input_cr)
   end if
+  self%courant = courant
 END SUBROUTINE init
 
 !===============================================================================
@@ -125,47 +125,5 @@ SUBROUTINE update (self, p)
     print *, 'id, it, t, r =', p%id, p%it, p%t, p%r(:,p%it)
   call trace%end ()
 END SUBROUTINE update
-
-!===============================================================================
-!> Courant conditions:  Estimate, as inexpensively as possible, an approximately
-!> reflexive time step. If an estimate of the acceleration results in it not
-!> being important for the timestep size, then choose a fraction of the cell
-!> travel time (whatever that means in this context)
-!===============================================================================
-FUNCTION courant_time (self, p) RESULT (dt)
-  class(particle_solver_t):: self
-  class(particle_t), pointer:: p
-  real(8):: dt
-  !.............................................................................
-  real(8):: a(3), ac, vc, dt1, dt2
-  integer:: prv, now, new
-  !-----------------------------------------------------------------------------
-  call trace%begin('particle_solver_t%courant_time')
-  if (courant < 0.0) then
-    dt = -courant
-  else
-    now = p%it
-    new = mod   (now  ,p%nt) + 1
-    prv = modulo(now-2,p%nt) + 1
-    call p%predict()
-    call courant_expressions
-    !-----------------------------------------------------------------------------
-    if (particle_solver%verbose > 0) &
-      print '(a,i4,1p,4e12.3)', &
-        'courant_time: id,dt1,dt2,ac,vc =', p%id, dt1, dt2, ac, vc
-  end if
-  call trace%end()
-contains
-  subroutine courant_expressions
-    associate (v=>p%v(:,new))
-    a = self%force(p,new)
-    ac = 1.0/sqrt(sum(a**2)+tiny(1.0_8))
-    vc = 1.0/sqrt(sum(v**2)+tiny(1.0_8))
-    dt1 = p%ds*vc*courant                     ! one  cell  per step at courant=1      
-    dt2 = (ac/vc)*courant*0.2                 ! 0.2 radian per step at courant=1
-    dt = min(dt1,dt2)
-    end associate
-  end subroutine courant_expressions
-END FUNCTION courant_time
 
 END MODULE particle_solver_mod
