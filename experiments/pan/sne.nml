@@ -19,8 +19,8 @@
 !---------------------------------------------
 &patch_params           nt=5 grace=1e-4 n=3*16 no_mans_land=t /
 !&patch_params           nt=5 grace=0.1 n=3*21 no_mans_land=f /
-&out_params             end_time=0.124 out_time=0.025 print_every=100 /
-&io_params              verbose=0 do_trace=t omp_trace=t do_output=f restart=-2
+&out_params             end_time=0.200 out_time=0.025 print_every=100 /
+&io_params              verbose=0 do_trace=f omp_trace=f do_output=f restart=-2
                         method='parallel' format=11 guard_zones=f time_derivs=0 /
 &doẃnload_params        verbose=3 check_filled=t /
 &timer_params           sec_per_report=10 /
@@ -33,10 +33,10 @@
 &particle_params        verbose=0 nt=5 order=2 /
 &kdk_params             verbose=0 courant=0.2 /
 &sink_particles_params  verbose=0 on=t n_ad_hoc=2 out_time=0.01
-                        do_accrete=f do_force_field=f do_patch_force=f /
-&sink_params            x=0.38 y=0.08 z=0.78 vx=0.2 mass=0.09 /
-&sink_params            x=0.08 y=0.78 z=0.08 vx=0.2 mass=0.01 /
-&sne_params             verbose=2 on=t file='Schallerlife.tbl' /
+                        do_accrete=t do_force_field=f do_patch_forces=f /
+&sink_params            x=0.38 y=0.08 z=0.78 vx=0.2 mass=0.030 /
+&sink_params            x=0.08 y=0.78 z=0.08 vx=0.2 mass=0.001 /
+&sne_params             verbose=1 on=t file='Schallerlife.tbl' /
 
 !---------------------------------
 ! Initial condition and forces
@@ -68,6 +68,7 @@
 ! Method=2 uses a more complex master thread dispatcher
 !----------------------------------------------------------------------------------
 &dispatcher_params      method=0 test=f /
+&dispatcher0_params     verbose=0 retry_stalled=5 /
 &task_mesg_params       verbose=1 method='private' /    ! optimal for unigrid
 !&task_mesg_params       verbose=1 method='virtual' /    ! works for unigrid
 !&task_mesg_params       verbose=0 method='master' /     ! works for both AMR & unig

@@ -143,16 +143,17 @@ MODULE sink_particles_mod
     type(sn_t), pointer:: sn => null()
   contains
     procedure:: init
-    procedure:: init_patch
+    procedure, private:: init_patch
     procedure:: init_patch_forces
     procedure:: ad_hoc_add
     procedure:: dealloc
     procedure:: output
     procedure:: pre_update
     procedure:: update
-    procedure:: accrete
+    procedure, private:: accrete
     procedure:: check_refine
-    procedure:: check
+    procedure, private:: check
+    procedure, private:: refresh_nbor_lists
   end type
   !-----------------------------------------------------------------------------
 #ifdef HDF5
@@ -382,18 +383,20 @@ SUBROUTINE init_patch (self, patch, sink_position)
   !-----------------------------------------------------------------------------
   self%rank = patch%rank
   self%task_list => patch%task_list
+  ! -- self is the sink task, and self%link%nbor is its nbor list --
   call self%task_list%init_nbors (self%link)
   call self%link%info
   call self%task_list%append_link (self%link)
-  call self%task_list%init_nbors (patch%link)
+  ! -- refresh the nbor lists of the sink nbors ---
+  call self%refresh_nbor_lists  
   call patch%link%info
   if (verbose > 1) &
     write (stdout,*) &
-    'add  ',self%id,' to sink task list',sink_task_list%name,sink_task_list%n
+    'add  ',self%id,' to sink task list: ',sink_task_list%name,sink_task_list%n
   call sink_task_list%append_link (self%link)
   if (verbose > 0) &
     write (stdout,*) &
-    'added',self%id,' to sink task list',sink_task_list%name,sink_task_list%n
+    'added',self%id,' to sink task list: ',sink_task_list%name,sink_task_list%n
   if (do_patch_forces) then
     !-----------------------------------------------------------------------------
     ! Add the sink task as an nbor to the MHD task
@@ -775,7 +778,8 @@ END SUBROUTINE pre_update
 !> Update the sink particle task, by accreting mass, and by moving the sink
 !===============================================================================
 SUBROUTINE update (self)
-  class (sink_particles_t):: self
+  class(sink_particles_t):: self
+  class(task_t), pointer:: task
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin ('sink_particles_t%update', itimer=itimer)
@@ -783,8 +787,11 @@ SUBROUTINE update (self)
     call self%output
     call self%particle_solver%update (self%particle)
     self%dtime = self%particle%dtime
-    call self%accrete
-    call SNe%update (self%particle%mass, self%time, self%position, self%sn)
+    if (self%is_clear (bits%no_download)) &
+      call self%accrete
+    self%time = self%particle%time
+    task => self%link%task
+    call SNe%update (self%particle%mass, task, self%sn)
   end if
   call trace%end (itimer)
 END SUBROUTINE update
@@ -912,7 +919,9 @@ INTEGER FUNCTION check_refine (self, patch) RESULT (refine)
   select type (patch)
   class is (sink_particles_t)
     !---------------------------------------------------------------------------
-    ! For sink_particles_t tasks: refresh nbor list (FIXME: should this be here???)
+    ! For sink_particles_t tasks: refresh nbor lists.  Since they are moving,
+    ! their nbor lists may need to be updated.  The only possible nbors are the
+    ! nbors of the patch the sink is inside.
     !---------------------------------------------------------------------------
     call self%task_list%refresh_nbors (patch%link)
   class is (gpatch_t)
@@ -951,27 +960,22 @@ FUNCTION check (self, patch)
 END FUNCTION check
 
 !-------------------------------------------------------------------------------
-! Refresh the nbor lists of the parent and its nbors; the parent should
-! be done after the nbors, to avoid putting the child link on its nbor
-! list until the other ones are updated.  All nbors that happen to have
-! overlap with the sink particle patch will have it as an nbor
+! Refresh the nbor lists of the parent and its nbors.  All nbors will get the
+! sink patch as an nbor (could be doen cheaper ...)
 !-------------------------------------------------------------------------------
-SUBROUTINE refresh_nbor_list (link, task_list)
-  implicit none
-  class(link_t), pointer :: link
-  class(list_t), pointer :: task_list
+SUBROUTINE refresh_nbor_lists (self)
+  class(sink_particles_t):: self
   class(link_t), pointer :: nbor
   !-----------------------------------------------------------------------------
   ! FIXME: This is a rather expensive way of updating the nbor lists
   !-----------------------------------------------------------------------------
-  call trace%begin ('sink_particles_t%refresh_nbor_list')
-  nbor => link%nbor
+  call trace%begin ('sink_particles_t%refresh_nbor_lists')
+  nbor => self%link%nbor
   do while (associated(nbor))
-    call task_list%init_nbors (nbor%link)
+    call self%task_list%init_nbors (nbor%link)
     nbor => nbor%next
   end do
-  call task_list%init_nbors (link)
   call trace%end()
-END SUBROUTINE refresh_nbor_list
+END SUBROUTINE refresh_nbor_lists
 
 END MODULE sink_particles_mod

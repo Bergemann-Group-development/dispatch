@@ -21,6 +21,7 @@ MODULE SNe_mod
   USE scaling_mod
   USE lagrange_mod
   USE list_mod
+  USE bits_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -56,6 +57,7 @@ MODULE SNe_mod
   logical:: on=.false.
   integer:: verbose=0
   real:: mass_limit
+  real:: remnant_msun=1.2
   character(len=16):: file='Schallerlife.tbl'
   type(sne_t):: sn_list
   type(sne_t), public:: sne
@@ -170,72 +172,75 @@ SUBROUTINE pre_update (self, patch)
   class(dll_node_t), pointer:: sn
   !-----------------------------------------------------------------------------
   call trace%begin ('sne_t%pre_update')
-  if (on) then
-      if (verbose > 2) &
-        write (stdout,*) 'SNe_t%update: id', patch%id
-      sn => sn_list%head
-      do while (associated(sn))
-        !---------------------------------------------------------------------------
-        ! Check if the patch time has passed the explosion time, and impact the
-        ! patch with the explosion
-        !---------------------------------------------------------------------------
-        select type (sn)
-        class is (sn_t)
-        if (verbose > 2) &
-          write (stdout,*) &
-            'SNe_t%update: time, event', patch%time, sn%start+sn%lifetime
-        if (patch%time >= sn%start+sn%lifetime) then
-          call explode (sn, patch)
-        end if
-        end select
-        sn => sn%next
-      end do
-  end if
   call trace%end
 END SUBROUTINE pre_update
 
 !===============================================================================
 !> Add a star to the list of future SNe, if the mass is large enough. This gets
-!> call every time a sink patch updates, so should also be used to update the
+!> called every time a sink patch updates, so should also be used to update the
 !> SN position and time
 !===============================================================================
-SUBROUTINE update (self, mass, time, position, sn)
+SUBROUTINE update (self, mass, task, sn)
   class(sne_t):: self
+  class(task_t), pointer:: task
   real(4):: mass
-  real(8):: time, position(3)
   type(sn_t), pointer:: sn
   class(dll_node_t), pointer:: dll_node
   !.............................................................................
   call trace%begin ('sne_t%update')
   if (verbose > 1) &
-    print *, 'SNe_t%add: mass, mass_limit =', mass, mass_limit
+    print *, 'SNe_t%update: mass, mass_limit =', mass, mass_limit
+  select type (task)
+  class is (gpatch_t)
   if (associated(sn)) then
     sn%mass = mass
-    sn%time = time
-    sn%position = position
+    sn%time = task%time
+    sn%position = task%position
+    if (verbose > 0) &
+      write (stdout,'(a,i6,3f12.6,2x,3f12.6)') &
+        'SNe_t%update: id, time, remains, mass, pos =', &
+        sn%id, sn%time, sn%start+sn%lifetime-sn%time, sn%mass, sn%position
+    if (sn%time >= sn%start+sn%lifetime) then
+      call explode (sn)
+      mass = remnant_msun*cgs%m_sun/scaling%m
+      call task%set (bits%no_download)
+      deallocate (sn)
+      nullify (sn)
+    end if
+  !-----------------------------------------------------------------------------
+  ! If the mass exceeds the limiting mass, create a sn_t data type and append
+  ! to the sne_t list
+  !-----------------------------------------------------------------------------
   else if (mass > mass_limit) then
     allocate (sn)
+    sn%id = task%id
     sn%mass = mass
-    sn%start = time
+    sn%start = task%time
+    sn%position = task%position
+    sn%lifetime = lifetime (mass)
     dll_node => sn
     call sne%append (dll_node)
     if (verbose > 0) &
-      write (stdout,*) 'SNe_t%add: id, n', sne%n
+      write(stdout,*) 'SNe_t%update: id, mass, M_sun, lifetime, Myr =', sn%id, &
+        sn%mass, scaling%m_sun(sn%mass), sn%lifetime, scaling%myr(sn%lifetime)
   end if
+  end select
   call trace%end
 END SUBROUTINE update
 
 !===============================================================================
 !> Impart the explosion onto a patch
 !==============================================================================
-SUBROUTINE explode (sn, task)
-  class(sn_t):: sn
-  class(patch_t):: task
+SUBROUTINE explode (sn)
+  type(sn_t), pointer:: sn
   !.............................................................................
   call trace%begin ('sne_t%update')
   if (verbose > 0) &
     write (stdout,*) &
-      'SNe_t%explode: time, mass', task%time, sn%mass*scaling%m/cgs%m_sun
+      'SNe_t%explode: time, mass[M_Sun] =', sn%time, scaling%m_sun(sn%mass)
+  write (stderr,*) '***********************************************************'
+  write (stderr,*) '************************* BOOOM! **************************'
+  write (stderr,*) '***********************************************************'
   call trace%end
 END SUBROUTINE explode
 

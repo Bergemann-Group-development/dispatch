@@ -124,7 +124,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   ! requests dnload before the parent task
   !-----------------------------------------------------------------------------
   target => task2patch(link%task)
-  if (target%dnload_time >= target%time) then
+  if (target%dnload_time >= target%time .or. &
+      target%is_set(bits%no_download)) then
     call trace%end (itimer)
     return
   end if

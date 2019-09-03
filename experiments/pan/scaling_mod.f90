@@ -10,6 +10,8 @@ MODULE scaling_mod
     real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu
   contains
     procedure:: init
+    procedure:: m_sun
+    procedure:: myr
   end type
   type(scaling_t), public :: scaling
   !type(const_t), public:: code
@@ -54,5 +56,17 @@ SUBROUTINE init (self)
   end if
   call units%output
 END SUBROUTINE init
+
+REAL FUNCTION m_sun (self, mass)
+  class(scaling_t):: self
+  real(8):: mass
+  m_sun = mass*self%m/cgs%m_sun
+END FUNCTION m_sun
+
+REAL FUNCTION myr (self, time)
+  class(scaling_t):: self
+  real(8):: time
+  myr = time*self%t/cgs%myr
+END FUNCTION myr
 
 END MODULE scaling_mod
