@@ -782,6 +782,7 @@ SUBROUTINE update (self)
   if (self%on) then
     call self%output
     call self%particle_solver%update (self%particle)
+    self%dtime = self%particle%dtime
     call self%accrete
     call SNe%update (self%particle%mass, self%time, self%position, self%sn)
   end if
