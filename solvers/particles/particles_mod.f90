@@ -18,6 +18,7 @@ MODULE particles_mod
   USE hash_table_mod
   USE trace_mod
   USE scaling_mod
+  USE lagrange_mod
   implicit none
   private
   !-----------------------------------------------------------------------------
@@ -77,57 +78,60 @@ FUNCTION force (self, p, it)
   real(8):: force(3)
   !.............................................................................
   class(dll_node_t), pointer:: o
-  integer:: i, oit, i0, i1, j, iit(p%nt)
-  real(8):: rp(3), pt, qt, r(3), r1, r2, r3, r2s
+  real(8):: time, ro(3), rp(3), r(3), r1, r2, r3, r2s
+  integer:: i
   !-----------------------------------------------------------------------------
   call trace%begin ('particles_t%force')
-if (particles%verbose > 0) &
-print *,'particles_t%force: it =', it
   r2s = self%rsoft2
   force = 0.0_8
-  rp = p%r(:,it)
+  !-----------------------------------------------------------------------------
+  ! Copy relevant particle attributes atomically
+  !-----------------------------------------------------------------------------
+  !$omp atomic read
+  time = p%t(it)
+  do i=1,3
+    !$omp atomic read
+    rp(i) = p%r(i,it)
+  end do
   o => self%head
   do while (associated(o))
     if (.not.associated (o, p)) then
       select type (o)
       class is (particle_t)
-      !$omp atomic read
-      oit = o%it
-      do i=2,self%nt-1
-        i0 = mod(oit+i-2,o%nt)+1
-        i1 = mod(i0,o%nt)+1
-        if (o%t(i1) > p%t(it)) exit
-      end do
-      pt = (p%time-o%t(i0))/max(o%t(i1)-o%t(i0),tiny(1d0))
-      qt = 1d0-pt
-      r2 = 0d0
-      do j=1,3
-        r(j) = (qt*o%r(j,i0) + pt*o%r(j,i1)) - rp(j)
-        r2 = r2 + r(j)**2
-      end do
+      !-------------------------------------------------------------------------
+      ! Interpolate the other (o) particle position to time = p%t(it)
+      !-------------------------------------------------------------------------
+      ro = o%interpolate (time, o%r)
+      r = ro-rp
+      r2 = sum(r**2)
+      !-------------------------------------------------------------------------
+      ! r is the vector from p to o, so the force is in the same direction
+      !-------------------------------------------------------------------------
       r2 = max(r2,r2s)
       r1 = 1.0/sqrt(r2)
       r3 = r1**3
-      force = force - scaling%grav*o%mass*r*r3
-if (particles%verbose > 2) &
-print '(a,2i6,1p,e10.2,2i3,2e10.2,2(2x,3e10.2))', &
-' particles_t%force: id,oid,om,i0,i1,pt,r,r3 =', &
-p%id, o%id, o%mass, i0, i1, pt, r3, r, force
+      force = force + o%mass*r*r3
+      if (particles%verbose > 1) &
+        write (stdout,'(a,2i2,5(1x,3f8.5))') &
+          'force: id,oid,ro,rp,rm,r,f =', &
+          p%id, o%id, ro, rp, (ro+rp)/2d0, r, force
       end select
     end if
     o => o%next
   end do
-if (particles%verbose > 0) &
-print *,'sink_patch_t%force: id, f(1) =', p%id, force
   !-----------------------------------------------------------------------------
-  ! Add the force from patches, which is summed up by p%patch_forces
+  ! Scale by the gravitational constant in code units
   !-----------------------------------------------------------------------------
-  select type (p)
-  class is (particle_t)
-    force = force + p%patch_forces%force (p%time)
-  end select
-if (particles%verbose > 0) &
-print *,'sink_patch_t%force: id, f(2) =', p%id, force
+  force = force*scaling%grav
+  if (particles%verbose > 0) &
+    print *,'sink_patch_t%force: id, f(1) =', p%id, force
+  !-----------------------------------------------------------------------------
+  ! Add the force from patches, which is summed up by p%patch_forces; this
+  ! is already scaled by the gravitational constant when first evaluated
+  !-----------------------------------------------------------------------------
+  !force = force + p%patch_forces%force (time)
+  if (particles%verbose > 0) &
+    print *,'sink_patch_t%force: id, f(2) =', p%id, force
   call trace%end ()
 END FUNCTION force
 
@@ -148,8 +152,8 @@ SUBROUTINE force_field (self, patch)
   type(patch_force_t), pointer:: patch_force
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  ! Cache all particle position into array, in order to be able to loop over
-  ! particles
+  ! Cache all particle position at a given time into an array, in order to be
+  ! able to use a vectorized loop over particles
   !-----------------------------------------------------------------------------
   call trace%begin ('particles_t%force_field', itimer=itimer)
   allocate (rp(self%n,3), m(self%n), f(self%n,3))
@@ -161,11 +165,11 @@ SUBROUTINE force_field (self, patch)
     class is (particle_t)
     !$omp atomic read
     it = p%it
-    do i=2,self%nt-1
-      i0 = mod(it+i-2,p%nt)+1
-      i1 = mod(i0,p%nt)+1
+    do i=2,self%nt
+      i1 = mod(it+i-1,p%nt)+1
       if (p%t(i1) > patch%time) exit
     end do
+    i0 = modulo(i1-2,p%nt)+1
     pt = (patch%time - p%t(i0))/max(p%t(i1)-p%t(i0),tiny(1d0))
     qt = 1d0-pt
     rp(ip,:) = qt*p%r(:,i0) + pt*p%r(:,i1)
@@ -199,21 +203,28 @@ SUBROUTINE force_field (self, patch)
           r1 = 1d0/sqrt(r2)
           r3 = r1*r1*r1
           r = r*r3
-          force = force - m(ip)*r*scaling%grav
+          !---------------------------------------------------------------------
+          ! Force per unit mass on the cell from the sink particle
+          !---------------------------------------------------------------------
+          force = force - m(ip)*r
+          !---------------------------------------------------------------------
+          ! Force per unit mass on the sink particle from the cell
+          !---------------------------------------------------------------------
           f(ip,:) = f(ip,:) + dm*r
 !print '(a,i6,2x,3i4,i5,1p,2(2x,3e11.2))', &
 !'particles_t: ix,iy,iz,ip,f(ip,:),force =', &
 !ix,iy,iz,ip,f(ip,:),force
         end do
-if (particles%verbose > 3) then
-f2 = sum(force**2)
-if (f2 > f2max) then
- f2max = f2
- print '(a,i6,2x,3i4,2x,1p,3e11.2)', &
- 'particles_t: id,ix,iy,iz,force =', &
- patch%id,ix,iy,iz,force
-end if
-end if
+        force = force*scaling%grav
+        if (particles%verbose > 3) then
+          f2 = sum(force**2)
+          if (f2 > f2max) then
+            f2max = f2
+            write (stdout,'(a,i6,2x,3i4,2x,1p,3e11.2)') &
+              'particles_t: id,ix,iy,iz,force =', &
+              patch%id,ix,iy,iz,force
+          end if
+        end if
         patch%force_per_unit_mass(ix,iy,iz,:) = &
         patch%force_per_unit_mass(ix,iy,iz,:) + force
       end do
@@ -231,16 +242,16 @@ end if
     ip = ip+1
     select type (p)
     class is (particle_t)
-if (particles%verbose > 0) &
-print *, 'hash_table%get: key =', [p%id, patch%id]
       call hash_table%get ([p%id, patch%id], ptr)
-if (particles%verbose > 0) &
-print *, 'force_field: ip, f', ip, f(ip,:), associated(ptr)
       select type (ptr)
       class is (patch_force_t)
-if (particles%verbose > 0) &
-print *, 'force_field: ip, it, time', ip, ptr%it, p%time
+        f(ip,:) = f(ip,:)*scaling%grav
         ptr%f(ptr%it,:) = f(ip,:)
+        if (particles%verbose > 1) then
+          write(stdout,'(a,2(2i4,2x),1p,e12.4,2x,3e10.2)') &
+            'force_field: key,ip,it,time,f =', &
+            p%id, patch%id, ip, ptr%it, p%time, f(ip,:)
+        end if
       end select
     end select
     p => p%next

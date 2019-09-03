@@ -28,9 +28,9 @@ SUBROUTINE init (self)
   first_time = .false.
   call cgs%init
   !--------------------------- defining quantities -----------------------------
-  self%l  = 4.*cgs%pc                                   ! length = 40 pc
+  self%l  = 4.*cgs%pc                                   ! length = 4 pc
   self%d  = 800.*4d-24                                  ! mass density
-  self%u  = 0.18*cgs%kms                                ! speed = 1 km/s
+  self%u  = 0.18*cgs%kms                                ! speed = 0.18 km/s
   !--------------------------- derived quantities ------------------------------
   self%m  = self%d*self%l**3                            ! mass
   self%t  = self%l/self%u                               ! time ~ 6700 sec < 2 hours

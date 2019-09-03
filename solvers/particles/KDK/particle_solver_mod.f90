@@ -82,29 +82,35 @@ SUBROUTINE update (self, p)
     !$omp atomic read
     v(i) = p%v(i,now)                                 ! pick up
   end do
-  dv = 0.5_8*dt*self%force(p,now)/p%mass              ! kick 1
-if (particle_solver%verbose > 1) &
-print *,'K: dv =', p%id, dv
-  v = v + dv           ! kick 1
-if (particle_solver%verbose > 1) &
-print *,'K: v1 =', p%id, v
-if (particle_solver%verbose > 1) &
-print *,'D: r  =', p%id, r
-  r = r + v*dt                                        ! new pos
+  dv = 0.5_8*dt*self%force(p,now)
+  if (particle_solver%verbose > 1) &
+    print *,'K: dv =', p%id, dv
+  v = v + dv                                          ! kick 1
+  r = r + v*dt                                        ! drift
+  tnew => p%t(new)
+  !$omp atomic write
+  tnew = p%time + dt                                  ! t(new)
+  if (particle_solver%verbose > 0) then
+    print *,'K: v1 =', p%id, v
+    print *,'D: r  =', p%id, r
+  end if
   do i=1,3
     !$omp atomic write
     p%r(i,new) = r(i)                                 ! store
   end do
-  dv = 0.5_8*dt*self%force(p,new)/p%mass              ! kick 2
+  dv = 0.5_8*dt*self%force(p,new)
   v = v + dv                                          ! kick 2
-if (particle_solver%verbose > 1) &
-print *,'K: v2 =', p%id, v
+  if (particle_solver%verbose > 0) &
+    print *,'K: v2 =', p%id, v
   do i=1,3
     !$omp atomic write
     p%v(i,new) = v(i)                                 ! store
   end do
   !-----------------------------------------------------------------------------
-  ! Rotate the time slice slots for the particle
+  ! Rotate the time slice slots for the particle.  After the 1st update, p%it
+  ! takes the first value of new = 2, and nstep is incremented from 1 to 2.
+  ! Hence the latest time is stored in the slot with index nstep, as long as
+  ! nstep is less than or equal to nt.
   !-----------------------------------------------------------------------------
   !$omp atomic update
   p%time   = p%time+dt
@@ -113,6 +119,10 @@ print *,'K: v2 =', p%id, v
   tnew = p%time
   !$omp atomic write
   p%it     = new
+  !$omp atomic update
+  p%nstep = p%nstep+1
+  if (particle_solver%verbose > 1) &
+    print *, 'id, it, t, r =', p%id, p%it, p%t, p%r(:,p%it)
   call trace%end ()
 END SUBROUTINE update
 
@@ -130,20 +140,32 @@ FUNCTION courant_time (self, p) RESULT (dt)
   real(8):: a(3), ac, vc, dt1, dt2
   integer:: prv, now, new
   !-----------------------------------------------------------------------------
-  call p%predict()
-  now = p%it
-  new = mod   (now  ,p%nt) + 1
-  prv = modulo(now-2,p%nt) + 1
-  associate (v=>p%v(:,new))
-  a = self%force(p,new)/p%mass
-  ac = 1.0/sqrt(sum(a**2)+tiny(1.0_8))
-  vc = 1.0/sqrt(sum(v**2)+tiny(1.0_8))
-  dt1 = p%ds*vc*courant
-  dt2 = p%ds*(ac/vc)*courant
-  dt = min(dt1,dt2)
-if (particle_solver%verbose > 0) &
-print *, 'courant_time: dt1, dt2, ac, vc =', dt1, dt2, ac, vc
-  end associate
+  call trace%begin('particle_solver_t%courant_time')
+  if (courant < 0.0) then
+    dt = -courant
+  else
+    now = p%it
+    new = mod   (now  ,p%nt) + 1
+    prv = modulo(now-2,p%nt) + 1
+    call p%predict()
+    call courant_expressions
+    !-----------------------------------------------------------------------------
+    if (particle_solver%verbose > 0) &
+      print '(a,i4,1p,4e12.3)', &
+        'courant_time: id,dt1,dt2,ac,vc =', p%id, dt1, dt2, ac, vc
+  end if
+  call trace%end()
+contains
+  subroutine courant_expressions
+    associate (v=>p%v(:,new))
+    a = self%force(p,new)
+    ac = 1.0/sqrt(sum(a**2)+tiny(1.0_8))
+    vc = 1.0/sqrt(sum(v**2)+tiny(1.0_8))
+    dt1 = p%ds*vc*courant                     ! one  cell  per step at courant=1      
+    dt2 = (ac/vc)*courant*0.2                 ! 0.2 radian per step at courant=1
+    dt = min(dt1,dt2)
+    end associate
+  end subroutine courant_expressions
 END FUNCTION courant_time
 
 END MODULE particle_solver_mod
