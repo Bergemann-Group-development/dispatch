@@ -1,0 +1,244 @@
+!===============================================================================
+!> Supernovae module, which keeps track of the lifetime, and time since birth
+!> of massive stars that will eventually go supernova.  It needs these procs:
+!>
+!>     init: Read tables with SN life time as a function of mass
+!> lifetime: Interpolate in lifetime table
+!>   update: Update the time and decide whether to explode
+!>      add: Add a sink in the mass ranke to the SN list
+!>  explode: impart the SN energy onto a patch that the SN overlaps with
+!>  courant: Impose a timestep condition on overlapping patches
+!===============================================================================
+MODULE SNe_mod
+  USE io_mod
+  USE io_unit_mod
+  USE trace_mod
+  USE dll_mod
+  USE task_mod
+  USE patch_mod
+  USE gpatch_mod
+  USE units_mod
+  USE scaling_mod
+  USE lagrange_mod
+  USE list_mod
+  implicit none
+  private
+  !-----------------------------------------------------------------------------
+  ! SN table
+  !-----------------------------------------------------------------------------
+  integer:: n_table
+  type sn_table_t
+    real:: mass, lifetime
+  end type
+  type(sn_table_t), allocatable:: sn_table(:)
+  !-----------------------------------------------------------------------------
+  ! Supernova data type -- extendsion of doubly-linked list node
+  !-----------------------------------------------------------------------------
+  type, public, extends(dll_node_t):: sn_t
+    real(8):: position(3)
+    real(8):: start, time, lifetime, mass
+  contains
+  end type
+  !-----------------------------------------------------------------------------
+  ! Linked list of -- as of yet unexploded -- supernovae
+  !-----------------------------------------------------------------------------
+  type, public, extends(dll_t):: sne_t
+    class(list_t), pointer:: task_list
+  contains
+    procedure:: init
+    procedure:: init_task_list
+    procedure, nopass:: lifetime
+    procedure:: pre_update
+    procedure:: update
+    procedure:: courant
+    procedure, nopass:: SN_test
+  end type
+  logical:: on=.false.
+  integer:: verbose=0
+  real:: mass_limit
+  character(len=16):: file='Schallerlife.tbl'
+  type(sne_t):: sn_list
+  type(sne_t), public:: sne
+CONTAINS
+
+!===============================================================================
+!> Initialize
+!===============================================================================
+SUBROUTINE init (self, name)
+  class(sne_t):: self
+  character(len=*), optional:: name
+  !.............................................................................
+  integer:: iostat
+  logical:: first_time=.true.
+  namelist /sne_params/ on, verbose, file
+  !-----------------------------------------------------------------------------
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, sne_params, iostat=iostat)
+    call read_table
+    call SN_test
+  end if
+  !$omp end critical (input_cr)
+END SUBROUTINE init 
+
+!===============================================================================
+!> Initialize the SN lifetime table
+!===============================================================================
+SUBROUTINE read_table
+  integer:: iostat, n, i
+  real:: mass, lifetime
+  !-----------------------------------------------------------------------------
+  write (stdout,*) 'SNe_t%read_table: file =', 'input_data/'//trim(file)
+  open (unit=io_unit%tmp, file='input_data/'//trim(file), form='formatted', status='old')
+  !-----------------------------------------------------------------------------
+  ! Read data from simple text file, with mass(M_Sun), lifetime(Myr)
+  !-----------------------------------------------------------------------------
+  read (io_unit%tmp,*) n_table
+  allocate (sn_table(n_table))
+  do i=1,n_table
+    read (io_unit%tmp, *) mass, lifetime
+    sn_table(i)%mass = mass*cgs%m_sun/scaling%m
+    sn_table(i)%lifetime = lifetime*1e6*cgs%yr/scaling%t
+  end do
+  mass_limit = sn_table(1)%mass
+  close (io_unit%tmp)
+END SUBROUTINE read_table
+
+!===============================================================================
+!> Initialize task list pointer
+!===============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(sne_t):: self
+  class(list_t), pointer:: task_list
+  !.............................................................................
+  self%task_list => task_list
+END SUBROUTINE init_task_list
+
+!===============================================================================
+!> Interpolate in the table with SN lifetimes
+!===============================================================================
+REAL FUNCTION lifetime (mass)
+  real:: mass
+  !.............................................................................
+  lifetime = lagrange%interpolate1d (mass, n_table, sn_table%mass, sn_table%lifetime)
+END FUNCTION lifetime
+
+!===============================================================================
+!> Timestep condition imposed on a patch (selected for overlapping).  Make sure
+!> that the patch does not evolve beyond the next SN explosion time
+!===============================================================================
+SUBROUTINE courant (self, gpatch)
+  class(sne_t):: self
+  class(gpatch_t):: gpatch
+  class(dll_node_t), pointer:: sn
+  !.............................................................................
+  sn => sn_list%head
+  do while (associated(sn))
+    select type (sn)
+    class is (sn_t)
+    if (gpatch%contains (sn%position)) then
+      select type (sn)
+      class is (sn_t)
+      gpatch%dtime = min(gpatch%dtime, sn%start+sn%lifetime-gpatch%time)
+      end select
+    end if
+    end select
+    sn => sn%next
+  end do
+END SUBROUTINE courant
+
+!===============================================================================
+!> Update and manage explosion. This gets called for all MHD patches
+!===============================================================================
+SUBROUTINE pre_update (self, patch)
+  class(sne_t):: self
+  class(patch_t):: patch
+  !.............................................................................
+  class(link_t), pointer:: link
+  class(dll_node_t), pointer:: sn
+  !-----------------------------------------------------------------------------
+  call trace%begin ('sne_t%pre_update')
+  if (on) then
+      if (verbose > 2) &
+        write (stdout,*) 'SNe_t%update: id', patch%id
+      sn => sn_list%head
+      do while (associated(sn))
+        !---------------------------------------------------------------------------
+        ! Check if the patch time has passed the explosion time, and impact the
+        ! patch with the explosion
+        !---------------------------------------------------------------------------
+        select type (sn)
+        class is (sn_t)
+        if (verbose > 2) &
+          write (stdout,*) &
+            'SNe_t%update: time, event', patch%time, sn%start+sn%lifetime
+        if (patch%time >= sn%start+sn%lifetime) then
+          call explode (sn, patch)
+        end if
+        end select
+        sn => sn%next
+      end do
+  end if
+  call trace%end
+END SUBROUTINE pre_update
+
+!===============================================================================
+!> Add a star to the list of future SNe, if the mass is large enough. This gets
+!> call every time a sink patch updates, so should also be used to update the
+!> SN position and time
+!===============================================================================
+SUBROUTINE update (self, mass, time, position, sn)
+  class(sne_t):: self
+  real(4):: mass
+  real(8):: time, position(3)
+  type(sn_t), pointer:: sn
+  class(dll_node_t), pointer:: dll_node
+  !.............................................................................
+  call trace%begin ('sne_t%update')
+  if (verbose > 1) &
+    print *, 'SNe_t%add: mass, mass_limit =', mass, mass_limit
+  if (associated(sn)) then
+    sn%mass = mass
+    sn%time = time
+    sn%position = position
+  else if (mass > mass_limit) then
+    allocate (sn)
+    sn%mass = mass
+    sn%start = time
+    dll_node => sn
+    call sne%append (dll_node)
+    if (verbose > 0) &
+      write (stdout,*) 'SNe_t%add: id, n', sne%n
+  end if
+  call trace%end
+END SUBROUTINE update
+
+!===============================================================================
+!> Impart the explosion onto a patch
+!==============================================================================
+SUBROUTINE explode (sn, task)
+  class(sn_t):: sn
+  class(patch_t):: task
+  !.............................................................................
+  if (verbose > 0) &
+    write (stdout,*) &
+      'SNe_t%explode: time, mass', task%time, sn%mass*scaling%m/cgs%m_sun
+END SUBROUTINE explode
+
+!==============================================================================
+!> Test functionality
+!==============================================================================
+SUBROUTINE SN_test
+  real:: mass, life
+  mass = 6.0
+  do while (mass < 100.)
+    life = lifetime (real(mass*cgs%m_sun/scaling%m,kind=4))
+    print *, 'SNe_t%test: mass, lifetime =', &
+      mass, real(life*scaling%t/(1e6*cgs%yr))
+    mass = mass*1.5
+  end do
+END SUBROUTINE SN_test
+
+END MODULE SNe_mod

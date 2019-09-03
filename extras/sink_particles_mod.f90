@@ -116,6 +116,7 @@ MODULE sink_particles_mod
   USE hash_table_mod
   USE omp_timer_mod
   USE shared_mod
+  USE SNe_mod
 #ifdef HDF5
   USE h5_mod
   USE hdf5, only : HID_T
@@ -139,6 +140,7 @@ MODULE sink_particles_mod
     class(gpatch_t), pointer:: patch => null()
     logical:: on
     type(io_t):: io
+    type(sn_t), pointer:: sn => null()
   contains
     procedure:: init
     procedure:: init_patch
@@ -146,7 +148,7 @@ MODULE sink_particles_mod
     procedure:: ad_hoc_add
     procedure:: dealloc
     procedure:: output
-    procedure:: force_field
+    procedure:: pre_update
     procedure:: update
     procedure:: accrete
     procedure:: check_refine
@@ -226,6 +228,7 @@ SUBROUTINE init (self)
   self%on = on
   self%out_next = out_time
   self%particle_solver => particle_solver
+  call SNe%init
   call trace%end()
 END SUBROUTINE init
 
@@ -756,15 +759,17 @@ END SUBROUTINE output
 !===============================================================================
 !> Compute the force field from sink particles on the cells of a patch
 !===============================================================================
-SUBROUTINE force_field (self, patch)
+SUBROUTINE pre_update (self, patch)
   class(sink_particles_t):: self
   class(patch_t):: patch
   !.............................................................................
-  if (.not. (self%on .and. do_force_field)) return
-  call trace%begin ('sink_particles_t%force_field')
-  call self%particle_solver%force_field (patch)
+  call trace%begin ('sink_particles_t%pre_update')
+  call SNe%pre_update (patch)
+  if (self%on .and. do_force_field) then
+    call self%particle_solver%force_field (patch)
+  end if
   call trace%end()
-END SUBROUTINE force_field
+END SUBROUTINE pre_update
 
 !===============================================================================
 !> Update the sink particle task, by accreting mass, and by moving the sink
@@ -773,11 +778,13 @@ SUBROUTINE update (self)
   class (sink_particles_t):: self
   integer, save:: itimer=0
   !.............................................................................
-  if (.not.self%on) return
   call trace%begin ('sink_particles_t%update', itimer=itimer)
-  call self%output
-  call self%particle_solver%update (self%particle)
-  call self%accrete
+  if (self%on) then
+    call self%output
+    call self%particle_solver%update (self%particle)
+    call self%accrete
+    call SNe%update (self%particle%mass, self%time, self%position, self%sn)
+  end if
   call trace%end (itimer)
 END SUBROUTINE update
 

@@ -124,11 +124,13 @@ END SUBROUTINE dealloc
 !> The pre_update hierarchy is called before the solver updates
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(extras_t):: self
+  class(extras_t), target:: self
+  class(gpatch_t), pointer:: task
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
+  task => self                                                  ! keep
   call self%forces%pre_update                                   ! forces
-  call sink_particles%force_field (self)                        ! sinkp
+  call sink_particles%pre_update (self)                         ! sinkp
   call self%trace_particles%update                              ! tracep
   call trace%end
 END SUBROUTINE pre_update

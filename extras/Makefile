@@ -14,11 +14,9 @@ gravity_mod.o           : patch_mod.o units_mod.o scaling_mod.o link_mod.o io_mo
 trace_particles_mod.o   : io_mod.o trace_mod.o dll_mod.o omp_timer_mod.o random_mod.o \
                           mesh_mod.o link_mod.o patch_mod.o mpi_buffer_mod.o \
                           particle_mod.o particles_mod.o
-sinkparticles_mod.o     : io_unit_mod.o trace_mod.o download_mod.o data_hub_mod.o link_mod.o \
-                          list_mod.o particle_history_mod.o gpatch_mod.o
-sinkparticle_mod.o      : io_unit_mod.o trace_mod.o download_mod.o data_hub_mod.o link_mod.o \
-                          list_mod.o particle_history_mod.o gpatch_mod.o
 sink_particles_mod.o    : io_unit_mod.o trace_mod.o download_mod.o data_hub_mod.o link_mod.o \
-                          list_mod.o gpatch_mod.o particle_solver_mod.o h5_mod.o
+                          list_mod.o gpatch_mod.o particle_solver_mod.o h5_mod.o SNe_mod.o
 newton_mod.o            : io_unit_mod.o trace_mod.o link_mod.o gpatch_mod.o mesh_mod.o
+SNe_mod.o               : io_mod.o trace_mod.o gpatch_mod.o scaling_mod.o lagrange_mod.o \
+                          list_mod.o dll_mod.o
 connect_mod.o           :

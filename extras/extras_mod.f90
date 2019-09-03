@@ -182,7 +182,6 @@ SUBROUTINE dealloc (self)
   !call self%forces%dealloc                                             ! forces
   !call sink_particles%dealloc                                          ! sinkp
   !deallocate (self%trace_particles)                                    ! tracep
-  !call sink_patch%dealloc                                              ! sinkp
   call trace%end
 END SUBROUTINE dealloc
 
