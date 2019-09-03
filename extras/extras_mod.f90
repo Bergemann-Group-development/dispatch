@@ -71,8 +71,7 @@ MODULE extras_mod
   !USE trace_particles_mod                                              ! tracep
   !USE spitzer_mod                                                      ! spitzer
   !USE gravity_mod                                                      ! gravity
-  !USE sink_patch_mod                                                   ! sinkp
-  !USE particle_solver_mod                                              ! sinkp
+  !USE sink_particles_mod                                               ! sinkp
   !USE pic_mod                                                          ! PIC
   !-----------------------------------------------------------------------------
   implicit none
@@ -88,8 +87,6 @@ MODULE extras_mod
     !type(gravity_t):: gravity                                          ! gravity
     !class(rt_t), pointer:: rt => null()                                ! RT
     !type(newton_t):: newton                                            ! Newton
-    !type(sinkparticles_t):: sinkparticles                              ! sinkp
-    !class(patch_force_t), pointer:: patch_force                        ! sinkp
     !class(trace_particles_t), pointer:: trace_particles                ! tracep
     !real, dimension(:,:,:,:), pointer:: v                              ! tracep
     logical :: do_mhd = .true.
@@ -97,6 +94,7 @@ MODULE extras_mod
     procedure, nopass:: cast2extras
     procedure:: pre_init
     procedure:: init
+    procedure:: init_task_list
     procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
@@ -151,13 +149,28 @@ SUBROUTINE init (self)
   !call self%spitzer%init (self%link)                                   ! spitzer
   !call self%gravity%init (self%link)                                   ! gravity
   !call self%rt%init_task (self%rt)                                     ! RT
-  ! -- ensure consistency (a value is already set via rt%init)         ! experiment
+  ! -- ensure consistency (a value is already set via rt%init)          ! experiment
   !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
-  !call sink_patch%init (self%link)                                     ! sinkp
-  !allocate (self%patch_force)                                          ! sinkp
-  !call self%patch_force%init                                           ! sinkp 
+  !call sink_particles%init                                             ! sinkp
   call trace%end
 END SUBROUTINE init
+
+!===============================================================================
+!> This intercept is the correct place to add calls to extras 'underlings' that
+!> need information both about the corresponding MHD patch (self), AND the task
+!> list.  The procedure is called for every task on the task list, just before
+!> task list updates start.
+!===============================================================================
+SUBROUTINE init_task_list (self, task_list)
+  class(extras_t):: self
+  class(list_t), pointer:: task_list
+  !.............................................................................
+  call trace%begin ('extras_t%init_task_list')
+  call self%gpatch_t%init_task_list (task_list)                        ! keep
+  !call sink_particles%ad_hoc_add (self%link)                           ! sinkp
+  call trace%end ()
+END SUBROUTINE init_task_list
+
 
 !===============================================================================
 !> Deallocate allocated arrays
@@ -167,7 +180,7 @@ SUBROUTINE dealloc (self)
   !.............................................................................
   call trace%begin ('extras_t%dealloc')
   !call self%forces%dealloc                                             ! forces
-  !call trace_particles%dealloc                                         ! sinkp
+  !call sink_particles%dealloc                                          ! sinkp
   !deallocate (self%trace_particles)                                    ! tracep
   !call sink_patch%dealloc                                              ! sinkp
   call trace%end
@@ -198,7 +211,7 @@ SUBROUTINE pre_update (self)
   !call self%trace_particles%update                                     ! tracep
   !call self%spitzer%pre_update()                                       ! spitzer
   !call self%gravity%pre_update()                                       ! gravity
-  !call particle_solver%force_field (self)                              ! sinkp
+  !call sink_particles%force_field (self)                               ! sinkp
   !call self%pic%pre_update()                                           ! pic
   call trace%end
 END SUBROUTINE pre_update
@@ -224,6 +237,7 @@ SUBROUTINE output (self)
   !.............................................................................
   call self%gpatch_t%output                                            ! keep
   !call self%rt%output                                                  ! RT
+  !call sink_particles%output                                           ! sinkp
 END SUBROUTINE output
 
 !===============================================================================

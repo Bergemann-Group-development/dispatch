@@ -48,8 +48,7 @@ MODULE extras_mod
   !-----------------------------------------------------------------------------
   USE forces_mod                                                ! forces
   USE trace_particles_mod                                       ! tracep
-  USE sink_patch_mod                                            ! sinkp
-  USE particle_solver_mod                                       ! sinkp
+  USE sink_particles_mod                                        ! sinkp
   !USE selfgravity_mod                                           ! selfg
   !-----------------------------------------------------------------------------
   implicit none
@@ -86,7 +85,7 @@ SUBROUTINE init (self)
   allocate (self%trace_particles)                               ! tracep
   self%connect%trace_particles => self%trace_particles          ! tracep
   call self%trace_particles%add (self%link)                     ! tracep
-  call sink_patch%init                                          ! sinkp
+  call sink_particles%init                                      ! sinkp
   call trace%end
 END SUBROUTINE init
 
@@ -102,7 +101,7 @@ SUBROUTINE init_task_list (self, task_list)
   !.............................................................................
   call trace%begin ('extras_t%init_task_list')
   call self%gpatch_t%init_task_list (task_list)                 ! keep
-  call sink_patch%ad_hoc_add (self%link)                        ! sinkp
+  call sink_particles%ad_hoc_add (self%link)                    ! sinkp
   call trace%end ()
 END SUBROUTINE init_task_list
 
@@ -116,7 +115,7 @@ SUBROUTINE dealloc (self)
   call self%forces%dealloc                                      ! forces
   call self%trace_particles%dealloc                             ! tracep
   deallocate (self%trace_particles)                             ! tracep
-  call sink_patch%dealloc                                       ! sinkp
+  call sink_particles%dealloc                                   ! sinkp
   call self%gpatch_t%dealloc
   call trace%end
 END SUBROUTINE dealloc
@@ -129,7 +128,7 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
   call self%forces%pre_update                                   ! forces
-  call sink_patch%force_field (self)                            ! sinkp
+  call sink_particles%force_field (self)                        ! sinkp
   call self%trace_particles%update                              ! tracep
   call trace%end
 END SUBROUTINE pre_update
@@ -151,12 +150,12 @@ SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
   call self%gpatch_t%output                                     ! keep
-  call sink_patch%output                                        ! sinkp
+  call sink_particles%output                                    ! sinkp
 END SUBROUTINE output
 
 !===============================================================================
-!> Interface to refinement. This uses the static instance of sink_patch, where
-!> the check_refine may cause creation of dynamic sink_patch_t instances.
+!> Interface to refinement. This uses the static instance of sink_particles, where
+!> the check_refine may cause creation of dynamic sink_particles_t instances.
 !===============================================================================
 INTEGER function check_refine (self, patch)
   class(extras_t):: self
@@ -166,7 +165,7 @@ INTEGER function check_refine (self, patch)
   gpatch => patch
   check_refine = -1
   check_refine = max (check_refine, &                            ! sinkp
-    sink_patch%check_refine (gpatch))                            ! sinkp
+    sink_particles%check_refine (gpatch))                        ! sinkp
 END FUNCTION check_refine
 
 END MODULE extras_mod
