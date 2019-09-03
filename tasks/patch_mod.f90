@@ -1479,24 +1479,25 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       id_prv = 0
     end if
     !---------------------------------------------------------------------------
-    ! Allow print every print_every update, if > 0
+    ! Allow print every print_every update, if print_every > 0
     !---------------------------------------------------------------------------
-    !$omp atomic read
-    iprint_l = iprint
-    if (iprint_l >= print_every .and. print_every > 0) then
-      !$omp atomic write
-      iprint = 1
-      print_it = .true.
-    else
-      !$omp atomic update
-      iprint = iprint+1
-      print_it = .false.
-    end if
+    if (print_every > 0) then
+      !$omp atomic read
+      iprint_l = iprint
+      if (iprint_l >= print_every .and. print_every > 0) then
+        !$omp atomic write
+        iprint = 1
+        print_it = .true.
+      else
+        !$omp atomic update
+        iprint = iprint+1
+        print_it = .false.
+      end if
     !---------------------------------------------------------------------------
     ! If print_every==0, then check if print_time controls cadence, using
     ! an if-lock-if sequence to ensure only one thread prints and updates
     !---------------------------------------------------------------------------
-    if (io%print_time > 0.0) then
+    else if (io%print_time > 0.0) then
       if (print_every == 0 .and. self%time >= io%print_next) then
         call lock%set ('print')
         if (self%time >= io%print_next) then
@@ -1506,8 +1507,13 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         end if
         call lock%unset ('print')
       end if
+    !---------------------------------------------------------------------------
+    ! Otherwise, fall back on printing the task update with the smallest dt
+    !---------------------------------------------------------------------------
+    else if (self%id==io%id) then
+      print_it = .true.
     end if
-    if (print_it .or. io%verbose>0 .or. self%id==io%id) then
+    if (print_it .or. io%verbose>0) then
       nv = 1
       if (io%verbose>2) nv = self%nv
       !-------------------------------------------------------------------------
