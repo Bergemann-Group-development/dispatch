@@ -194,10 +194,12 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace%begin('experiment_t%update', itimer=itimer)
   call self%check_density ('before update')
+  call self%output
   !-----------------------------------------------------------------------------
   ! After MHD, if we are doing pebbles we have the gas pressure.  If not, get it
   !-----------------------------------------------------------------------------
-  call self%solver_t%update
+  call self%mhd_t%pre_update
+  call self%mhd_t%pde
   if (self%do_pebbles) then
     self%pg => self%pressure(:,:,:,self%it)
   else
@@ -248,7 +250,9 @@ SUBROUTINE update (self)
   else
     call deallocate_scalars (self%pg)
   end if
+  call self%mhd_t%post_update
   call self%check_nan ('after timestep', always=.true.)
+  call self%counter_update
   call trace%end (itimer)
 END SUBROUTINE update
 
