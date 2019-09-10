@@ -30,7 +30,7 @@ $(EXEC): setup_mod.o eos_mod.o dispatcher_mod.o scaling_mod.o download_mod.o
 # Dependencies
 initial_mod.o           : io_mod.o trace_mod.o scaling_mod.o mesh_mod.o lagrange_mod.o atmosphere_mod.o planet_mod.o units_mod.o kinds_mod.o index_mod.o
 force_mod.o             : io_mod.o trace_mod.o planet_mod.o scaling_mod.o mesh_mod.o
-setup_mod.o             : io_mod.o trace_mod.o units_mod.o scaling_mod.o atmosphere_mod.o rubiks_mod.o planet_mod.o omp_mod.o scene_mod.o list_mod.o \
+setup_mod.o             : io_mod.o trace_mod.o units_mod.o scaling_mod.o atmosphere_mod.o rubiks_mod.o planet_mod.o omp_mod.o shared_mod.o list_mod.o \
                           eos_mod.o radiative_transfer_mod.o
 atmosphere_mod.o        : io_mod.o trace_mod.o units_mod.o scaling_mod.o particle_mod.o planet_mod.o
 experiment_mod.o        : io_mod.o trace_mod.o units_mod.o scaling_mod.o pebble_patch_mod.o kinds_mod.o \
@@ -39,7 +39,7 @@ scaling_mod.o           : io_mod.o units_mod.o math_mod.o
 pebbles_mod.o           : io_mod.o trace_mod.o bits_mod.o omp_lock_mod.o pebble_mod.o
 pebble_trace_mod.o      : io_mod.o trace_mod.o bits_mod.o omp_lock_mod.o pebble_mod.o
 pebble_patch_mod.o      : io_mod.o trace_mod.o omp_mod.o omp_timer_mod.o task_mod.o $(PDE) link_mod.o planet_mod.o \
-                          scaling_mod.o units_mod.o random_mod.o scene_mod.o pebble_mod.o pebbles_mod.o \
+                          scaling_mod.o units_mod.o random_mod.o shared_mod.o pebble_mod.o pebbles_mod.o \
                           pebble_trace_mod.o solver_mod.o
 pebble_mod.o            :
 rt_boundaries_mod.o     : io_mod.o trace_mod.o mpi_mod.o bits_mod.o mesh_mod.o ray_geometry_v3_mod.o planet_mod.o \

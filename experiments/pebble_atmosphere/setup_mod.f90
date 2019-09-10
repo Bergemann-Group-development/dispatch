@@ -17,7 +17,7 @@ MODULE setup_mod
   USE pebble_trace_mod
   USE radiative_transfer_mod
   USE rubiks_mod
-  USE scene_mod
+  USE shared_mod
   USE list_mod
   USE task_mod
   implicit none
@@ -60,7 +60,7 @@ SUBROUTINE init (self, label)
   if (eos%do_rt) then
     call rt_setup (self%task_list,2)
   end if
-  print*, 'n_initial, n_add =', scene%n_initial, scene%n_add
+  print*, 'n_initial, n_add =', shared%n_initial, shared%n_add
   call trace_end
 END SUBROUTINE init
 

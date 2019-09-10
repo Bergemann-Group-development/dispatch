@@ -27,7 +27,7 @@ MODULE pebble_patch_mod
   USE scaling_mod
   USE units_mod
   USE random_mod
-  USE scene_mod
+  USE shared_mod
   USE pebble_mod
   USE pebbles_mod
   USE pebble_trace_mod
@@ -136,8 +136,8 @@ SUBROUTINE init (self)
       n = self%n
       n(3) = min(n(3), ceiling(z_max*2./self%mesh(3)%d))
       trace_every_min = ceiling( &
-        scene%n_patch_total*real(product(n))*ppc/real(pebble_trace%nbuffer))
-      print *, 'trace_every_min =', trace_every_min, scene%n_patch_total
+        shared%n_patch_total*real(product(n))*ppc/real(pebble_trace%nbuffer))
+      print *, 'trace_every_min =', trace_every_min, shared%n_patch_total
       if (trace_every < trace_every_min) then
         trace_every = trace_every_min
         print '("WARNING: trace_every has been increased to", i5)', trace_every
@@ -319,14 +319,14 @@ SUBROUTINE volume_add (self, n)
                 if (trace_any.and.mod(pebble%id,pebble_trace%every)==0) then
                   pebble%status = ior(pebble%status,bits%trace)               ! trace some
                   !$omp atomic
-                  scene%n_initial = scene%n_initial+1
+                  shared%n_initial = shared%n_initial+1
                 else
                   if (mod(pebble%id,pebble_trace%every)==0 .and. &
                 abs(pebble%p(1)) < 2.0*planet%hill_radius .and. &
                 abs(pebble%p(2)) < 2.0*planet%hill_radius) then
                     pebble%status = ior(pebble%status,bits%trace)               ! trace some
                     !$omp atomic
-                    scene%n_initial = scene%n_initial+1
+                    shared%n_initial = shared%n_initial+1
                   end if
                 end if
               end if
@@ -342,7 +342,7 @@ SUBROUTINE volume_add (self, n)
               real(self%size(3)/2.), real(self%position(3))
     if (verbose>2) &
       print '(a,i7,i3,2i6,1p,2e14.6)', 'pebble_patch%volume_add: id, level, n_initial, n_add =', &
-        self%id, self%level, scene%n_initial, scene%n_add, xmin, xmax
+        self%id, self%level, shared%n_initial, shared%n_add, xmin, xmax
     if (verbose>1) &
       print *, 'volume_add:', self%id, self%position(3), self%pebbles%n
     call self%pebbles%check_list ('after volume_add')
@@ -437,7 +437,7 @@ SUBROUTINE boundary_add (self, n)
     if (trace_any.and.mod(pebble%id,pebble_trace%every)==0) then
       pebble%status = ior(pebble%status,bits%trace)
       !$omp atomic
-      scene%n_add = scene%n_add+1
+      shared%n_add = shared%n_add+1
       xmin = min(xmin,x0)
       xmax = max(xmax,x0)
     else if (x0 > -3.0*planet%hill_radius .and. &
@@ -447,7 +447,7 @@ SUBROUTINE boundary_add (self, n)
       if (mod(pebble%id,pebble_trace%every)==0) then
         pebble%status = ior(pebble%status,bits%trace)
         !$omp atomic
-        scene%n_add = scene%n_add+1
+        shared%n_add = shared%n_add+1
         xmin = min(xmin,x0)
         xmax = max(xmax,x0)
       end if
@@ -1366,7 +1366,7 @@ SUBROUTINE output (self)
     end do
     if (io%master .and. verbose>1) &
       print '(a,a,i7,a)', 'pebble_patch_t%output: ', trim(filename), np, ' particles'
-    write (io%data_unit) np, n_var, scene%n_repeat, scene%n_patch, n_id
+    write (io%data_unit) np, n_var, shared%n_repeat, shared%n_patch, n_id
     write (io%data_unit) buffer
     write (io%data_unit) idbuf
     !

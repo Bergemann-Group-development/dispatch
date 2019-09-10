@@ -14,9 +14,8 @@ MODULE rubiks_mod
   USE experiment_mod
   USE units_mod
   USE scaling_mod
-  USE scene_mod
+  USE shared_mod
   USE link_mod
-  USE scene_mod
   implicit none
   private
   type, public:: rubiks_t
@@ -84,13 +83,13 @@ SUBROUTINE init_hierarchy (self, label)
     m_zoom(2) = m_zoom(1)
     m_zoom(3) = m_zoom(1)
   end if
-  scene%n_patch_total = product(n_patch)*(product(n_repeat)+n_levels-1)
+  shared%n_patch_total = product(n_patch)*(product(n_repeat)+n_levels-1)
   self%n_levels = n_levels
   self%position = position
   self%size = size
   self%n_patch = n_patch
   self%m_zoom = m_zoom
-  scene%f_zoom = m_zoom*f_zoom
+  shared%f_zoom = m_zoom*f_zoom
   !-----------------------------------------------------------------------------
   ! Save the outer size of the hierarchy as the task list size, for distance
   ! measurements.  The self%task_list%size is the full size of the objects in
@@ -99,9 +98,9 @@ SUBROUTINE init_hierarchy (self, label)
   !-----------------------------------------------------------------------------
   allocate (self%task_list)
   call self%task_list%init (label)
-  self%task_list%size = self%size*self%n_patch*scene%f_zoom**(n_levels-1)*n_repeat
+  self%task_list%size = self%size*self%n_patch*shared%f_zoom**(n_levels-1)*n_repeat
   n_repeat = (n_repeat/2)*2 + 1
-  scene%n_repeat = n_repeat
+  shared%n_repeat = n_repeat
   level = 1
   ! repeated grids at the coarsest resolution
   do krep=0,n_repeat(3)-1
@@ -130,7 +129,7 @@ SUBROUTINE init_hierarchy (self, label)
   call self%task_list%reset_status
   call self%task_list%count_status
   io%nwrite = self%task_list%na
-  io%ntotal = scene%n_patch_total
+  io%ntotal = shared%n_patch_total
   call self%task_list%init_bdries
   call self%task_list%init_all_nbors
   call self%task_list%print_tasks
@@ -172,7 +171,7 @@ SUBROUTINE init_level (self, level, position)
     ! is the level of the smallest, central patch.  The size of the largest
     ! patches is f_zoom**(n_levels-1) larger.
     !---------------------------------------------------------------------------
-    patch%size = self%size*real(scene%f_zoom,kind=8)**(self%n_levels-level)
+    patch%size = self%size*real(shared%f_zoom,kind=8)**(self%n_levels-level)
     patch%position = ([i,j,k]-(1.+self%n_patch)/2.0)*patch%size + position
     !print '(a,i4,1p,2(3x,3g15.5))', 'XX: level, size, pos', level, patch%size, &
     !  patch%position
