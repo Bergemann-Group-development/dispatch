@@ -7,6 +7,62 @@
 !> smaller than the patch level, then create a higher level DISPATCH patch there.
 !> The lowest level DISPATCH does not have to be fully populated (or even at all
 !> populated -- we could have an irregular collection.
+!>
+!> There are three overlap decisions that need to be consistent:
+!>
+!> 1) First the choice of RAMSES octs to add to the oct_list
+!> 2) The criterion for adding RAMSES octs to the DISPATCH nbor lists
+!> 3) The criterion for creating DISPATCH patches
+!>
+!> In the end, we should have
+!> A) some patches with resolution up to level=maxlvl
+!> B) Coverage up to that level within a cube of size cut_out_size
+!> C) Successively larger support levels doen to a frozen level=minlvl
+!>
+!>                                                                       cell level  RAMSES
+!>                         ........|........              32k              24          21   
+!>                         ........|........                .               .
+!>                         ........|........               64               .
+!>                         ........|........                8              20
+!>                         ........|........                1              19          16
+!>                .................|....................                   18          15
+!> ................................|....................................   17          14
+!>
+!> If, for example, we want full coverage of the innermost 120 AU, which 
+!> corresponds to a level 16 RAMSES cell, then that level must contain at least
+!> one DISPATCH 16x16x16 patch, which means a DISPATCH level 20 patch is needed.
+!> Level 28 would then contain up to 256 patches, which is fine for laptop work.
+!> 
+!> To include structures up to 1000 AU, we should have a single DISPATCH patch
+!> at levels 19 (240 AU), 18 (480 UA), and 17 (960 AU).  We could conveniently
+!> go to level 16 DISPATCH, at 2000 AU, and freeze that one patch.  The size of
+!> each level should then be constant (120 AU) from level 20 and up, with the
+!> formula size=0.5**min(level-4,16).  One should sample RAMSES grids from level
+!> 13 (where the cell size is large enough to over a level 16 DISPATCH patch. So,
+!> at level
+!> 13: sample RAMSES grids at level 13, out to distance 1 cell
+!> 14:                              14                  1 cell
+!> 17:                              17                  2 cells
+!> 20:                              20                 16 cells = 1 patch
+!> 24                               24                256 cells = 
+!>
+!> minlvl=17 input should mean the frozen cells are at level 17, and there are 16
+!> of them, corresponding to one level 13 cell (= 1000 AU).  To ensure support,
+!> level 18, 19, and 20 should be a factor of 2 smaller per level, so the size
+!> should contain the expression 16*min(level, minlvl+3), or 8*min() for half-size.
+!> init
+!>   read_snapshot                  ! read and amass RAMSES grids
+!>   create_cartesian               ! create Cartesian patches
+!>       cartesian_init             ! make one DISPATCH patch
+!>   download_values                ! pick up values from RAMSES
+!>   remove_ramses_octs             ! deallocate RAMSES oct list
+!>   init_all_nbors
+!>   reset_status
+!>   do while (associated(link))
+!>     patch%dnload
+!>     patch%update
+!>     patch%info
+!>   end do
 !===============================================================================
 MODULE ramses_mod
   USE io_mod
@@ -15,6 +71,8 @@ MODULE ramses_mod
   USE mpi_mod
   USE task_mod
   USE patch_mod
+  USE gpatch_mod
+  USE extras_mod
   USE mesh_mod
   USE mhd_mod
   USE scaling_mod
@@ -25,8 +83,10 @@ MODULE ramses_mod
   USE solver_mod
   USE experiment_mod
   USE download_mod
-  USE scene_mod
   USE index_mod
+  USE dll_mod
+  USE hash_table_mod
+  USE omp_timer_mod
   implicit none
   private
   integer, parameter :: dp=kind(1.0D0)                        ! double precision
@@ -47,50 +107,84 @@ MODULE ramses_mod
     real(dp) metal(nmetal)              ! metal density
     real(dp) dmetal(nmetal)             ! metal density
     real(dp) beta_create                ! Beta at creation
+    real(dp) dtold                      ! previous dt
     integer gid                         ! pointer to grid cell
     integer father                      ! pointer to father cell
     integer ilevel                      ! level of AMR hierachy where star lives
     integer old_ilevel                  ! level of hierachy star used to have, if changed
     integer owner                       ! owner thread
     integer has_moved
-    real(dp) dtold
   end type
+  !-----------------------------------------------------------------------------
+  ! Light-weight RAMSES oct, using 4*(2+4+3+8*12) = 4*105 = 420 bytes, which
+  ! means we can read in up to about 500 million octs on a frontend
+  !-----------------------------------------------------------------------------
+  type, public, extends(dll_node_t):: oct_t
+    real(kind=4):: u_max=0.0, cost=0.0
+    integer:: key(4)=0, ii(3)=0
+    real, allocatable:: var(:,:)
+  end type
+  !-----------------------------------------------------------------------------
+  ! List of RAMSES octs
+  !-----------------------------------------------------------------------------
+  type, public, extends(dll_t):: oct_list_t
+  end type
+  !-----------------------------------------------------------------------------
+  ! RAMSES data type
+  !-----------------------------------------------------------------------------
   type, public:: ramses_t
     logical:: big_endian, double_precision, quad_precision
     integer:: rank
-    integer:: nout, minlvl, maxlvl
+    integer:: nout, minlvl, maxlvl, rootlvl
     integer:: npatch, nmerged_max
     real(kind=4):: scale_l, scale_d, scale_t
     real(kind=8):: gamma
     real(kind=8):: rank_load
     real(kind=8):: xmin, xmax, ymin, ymax, zmin, zmax         ! corners of the cutout
     real(kind=8):: size, d_min, tt_min
-    logical :: centre_on_sink, merge_octs
+    real(kind=4):: u_min=huge(1.0), u_max=0.0
+    integer:: n_bins = 200
+    integer, allocatable:: u_bins(:)
+    logical :: centre_on_sink
     character(len=128):: path
+    integer n_cell                      ! number of cells per direction
+    type(oct_list_t), pointer:: oct_list
     type(task_list_t), pointer:: task_list
-    type(task_list_t), pointer:: ramses_task_list
     type(task_list_t), pointer:: dispatch_task_list
     type(sink_t), dimension(:), pointer:: sink
+    type(hash_table_t):: u_max_table
+    type(hash_table_t):: patch_table
   contains
     procedure :: init
     procedure :: read_snapshot
+    procedure :: phase_speed
+    procedure :: create_patches
+    procedure :: add_to
+    procedure :: add_to_task_list
+    procedure :: u_max_table_get
+    procedure :: count_costs
     procedure :: energy
     procedure :: read_sink
-    procedure :: merge_ramses_octs
     procedure :: evaluate
-    procedure :: create_cartesian
-    procedure :: create_level
     procedure :: cartesian_init
-    procedure :: download_values
-    procedure :: remove_ramses_patches
+    procedure :: initialize
+    procedure :: remove_ramses_octs
+    procedure :: check_support
+    procedure :: prolong
+    procedure :: check_filled
   end type
   logical, save:: make_cartesian        ! replace RAMSES patches
   logical, save:: centre_on_sink        ! centre on the last sink
-  logical, save:: merge_octs            ! merge octs into larger patches
   logical, save:: do_evaluate           ! evaluate costs
-  logical, save:: remove_b              ! remove B-field, for tests
+  logical, save:: remove_b=.false.      ! remove B-field, for tests
+  logical, save:: do_memtest=.false.    ! remove B-field, for tests
+  logical, save:: direct_load=.false.
+  logical, save:: detailed_timer=.false.
+  integer, save:: oct_size=700          ! oct_t overhead (ifort)
   integer, save:: verbose=0             ! verbosity
   real(8), save:: cut_out_size=1d0      ! full size of cutout
+  real(8), save:: start=0d0
+  integer, allocatable:: level_cost(:)
   type(ramses_t), public:: ramses
 CONTAINS
 
@@ -101,17 +195,19 @@ SUBROUTINE init (self, name)
   class(ramses_t):: self
   character(len=*), optional:: name
   logical, save:: first_time=.true.
+  integer, save:: hash_table_size=5000000, n_cell=16
   integer, save:: nout, minlvl, maxlvl, nmerged_max, patch_n
   real, save:: xmin, xmax, ymin, ymax, zmin, zmax, rank_load
   real, save:: d_min, tt_min, size, size_au
   character(len=64), save:: path='.'
-  namelist /ramses_reader_params/ nout, xmin, xmax, ymin, ymax, zmin, zmax, size, &
-    nmerged_max, minlvl, maxlvl, rank_load, path, centre_on_sink, merge_octs, &
-    make_cartesian, do_evaluate, patch_n, remove_b, cut_out_size, verbose
+  logical:: keep, load
+  namelist /ramses_reader_params/ nout, xmin, xmax, ymin, ymax, zmin, zmax, &
+    size, n_cell, nmerged_max, minlvl, maxlvl, rank_load, path, centre_on_sink, &
+    make_cartesian, do_evaluate, patch_n, remove_b, cut_out_size, d_min, &
+    detailed_timer, direct_load, do_memtest, verbose
   !.............................................................................
-  call trace_begin('ramses_t%init')
+  call trace%begin('ramses_t%init')
   call io%init ('ramses snapshot reader')
-
   !-----------------------------------------------------------------------------
   ! The first thread reads the namelist parameters and saves them
   !-----------------------------------------------------------------------------
@@ -126,14 +222,13 @@ SUBROUTINE init (self, name)
     minlvl = 1
     maxlvl = 1
     rank_load = 1.0
-    d_min = 1d-30 ! cgs
+    d_min = 1d-18 ! cgs (1e6 code units) 
     tt_min = 5.   ! K
     path = './'
     size = 1d0
     nmerged_max = 16
     make_cartesian = .true.
     centre_on_sink = .false.
-    merge_octs = .true.
     do_evaluate = .true.
     remove_b = .false.
     patch_n = 16
@@ -148,6 +243,7 @@ SUBROUTINE init (self, name)
   ! the parameters defined here.
   !-----------------------------------------------------------------------------
   call scaling%init()
+  self%n_cell    = n_cell
   self%d_min     = d_min/scaling%d
   self%tt_min    = tt_min/scaling%temp
   self%xmin      = xmin
@@ -169,33 +265,83 @@ SUBROUTINE init (self, name)
   ! Each rank reads the RAMSES grids belonging to it, filling in the data,
   ! and initializing the patch structure of every grid.
   !-----------------------------------------------------------------------------
-  allocate (self%ramses_task_list)
-  call self%ramses_task_list%init ('ramses_snapshot')
-  call self%read_snapshot()
-
-  ! attempt to merge RAMSES 2**3 octs into larger patches
-  if (merge_octs) call self%merge_ramses_octs(nmerged_max)
-
-  ! reorganize into refined, Cartesian patches
-  scene%patch_n = patch_n
-  if (make_cartesian) call self%create_cartesian
-
-  ! evaluate time step savings
-  if (do_evaluate) call ramses%evaluate
-
-  call trace_end
+  allocate (self%task_list, self%oct_list)
+  call self%task_list%init ('ramses_mod')
+  call self%oct_list%init ('ramses_snapshot')
+  if (do_memtest) &
+    call mem_test
+  !-----------------------------------------------------------------------------
+  ! If there is enough memory, read and keep the oct%var values and create
+  ! patches based on that
+  !-----------------------------------------------------------------------------
+  if (direct_load) then
+    call self%read_snapshot (keep=.true., load=.false.)
+    if (do_evaluate) then
+      call self%count_costs
+    end if
+    call self%create_patches
+  !-----------------------------------------------------------------------------
+  ! If not, read once to decide load distribution, and once again to load data
+  !-----------------------------------------------------------------------------
+  else
+    call self%read_snapshot (keep=.false., load=.false.)
+    if (do_evaluate) then
+      call self%count_costs
+    end if
+    call self%read_snapshot (keep=.false., load=.true.)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Delete the RAMSES octs, initialize nbor lists, and check filled
+  !-----------------------------------------------------------------------------
+  call self%remove_ramses_octs
+  call self%check_support
+  call self%task_list%init_all_nbors
+  call self%check_filled
+  call self%prolong
+  call self%check_filled
+  write(stdout,*) 'ramses_t%init: task_list%n, nq, na =', &
+    self%task_list%n, self%task_list%nq, self%task_list%na
+  call self%task_list%check_all
+  write(stdout,*) 'ramses_t%init: task_list%n, nq, na =', &
+    self%task_list%n, self%task_list%nq, self%task_list%na
+  call trace%end
 END SUBROUTINE init
+
+!===============================================================================
+!> Memory use test
+!===============================================================================
+SUBROUTINE mem_test
+  integer:: n=1000000
+  real:: ms=6e3
+  type(oct_t)       , allocatable:: oct(:)
+  type(task_t)      , allocatable:: task(:)
+  type(patch_t)     , allocatable:: patch(:)
+  type(gpatch_t)    , allocatable:: gpatch(:)
+  type(extras_t)    , allocatable:: extras(:)
+  type(mhd_t)       , allocatable:: mhd(:)
+  type(solver_t)    , allocatable:: solver(:)
+  type(experiment_t), allocatable:: experiment(:)
+  !-----------------------------------------------------------------------------
+  print*,'MEMORY TEST: Top GB gives kB per instance'  ; call mpi%delay(ms)
+  print*,'oct'    ; allocate (oct(n))        ; call mpi%delay(ms); deallocate(oct)
+  print*,'task'   ; allocate (task(n))       ; call mpi%delay(ms); deallocate(task)
+  print*,'patch'  ; allocate (patch(n))      ; call mpi%delay(ms); deallocate(patch)
+  print*,'extras' ; allocate (extras(n))     ; call mpi%delay(ms); deallocate(extras)
+  print*,'mhd'    ; allocate (mhd(n))        ; call mpi%delay(ms); deallocate(mhd)
+  print*,'solver' ; allocate (solver(n))     ; call mpi%delay(ms); deallocate(solver)
+END SUBROUTINE mem_test
 
 !===============================================================================
 !> Read a RAMSES snapshot (likely split across multiple files), and create a
 !> patch for each "grid".
 !===============================================================================
-SUBROUTINE read_snapshot (self)
+SUBROUTINE read_snapshot (self, keep, load)
   class(ramses_t):: self
-
+  logical:: keep, load
+  !
   !---- variables for reading the snapshot ----
   ! scalars
-  integer(kind=4):: ilun=10, ilun2=11, ilun3=12, nlevelmin, icpu, isentinel, ncpu, ndims, &
+  integer(kind=4):: ilun=10, ilun2=11, nlevelmin, icpu, isentinel, ncpu, ndims, &
                     nx, ny, nz, nlevelmax, nboundary, ngrids, noutput, iout, ifout, &
                     overload, ndomain, ilevel, i, j, k, l, ivar, ioerr, &
                     bit_length, maxdom, imin, imax, jmin, jmax, kmin, kmax, ngrid_act, &
@@ -203,8 +349,7 @@ SUBROUTINE read_snapshot (self)
                     ncells, max_dom, nvar_mhd, twotondim, ngrids_max, ngrids_k, it
   real(kind=8):: boxlen, dx, time, gamma_ramses, tmp_load, tot_load
   real(kind=16):: dmax, dkey, order_min, order_min_1d(1)
-  real(kind=8):: r
-
+  real(kind=8):: r, rr(3)
   ! arrays
   integer(kind=4), dimension(1:8):: idom, jdom, kdom, cpu_min, cpu_max
   integer(kind=4), allocatable, dimension(:):: cpu_domain, isub_domain, index_grid, iig, &
@@ -222,51 +367,51 @@ SUBROUTINE read_snapshot (self)
   real(kind=8), allocatable, dimension(:,:):: bound_key_dpx2
   real(kind=8), allocatable, dimension(:,:,:):: var
   real(kind=8), dimension(3):: pmin=1d30, pmax=-1d30
-
+  real(kind=8), pointer:: cost
   character(len=80):: ordering
   character(len=128):: filebase, filename, conv
-
+  !
   ! derived types
-  type level
+  type:: level_t
     integer(kind=4):: ngrid, imin, imax, jmin, jmax, kmin, kmax
-  end type level
-  type(level), allocatable, dimension(:):: levels
-
+  end type level_t
+  type(level_t), allocatable, dimension(:):: levels
+  !
   ! diagnostic variables
-  real:: d_min, d_min_level
+  real:: d_min, d_min_level, u_max
   integer, allocatable, dimension(:,:):: ncellsum
   integer, save:: nprint_f=1000
   integer(8), save:: n_passive=0, n_active=0, n_onrank=0, n_offrank=0, &
     n_d_min=0, n_tt_min=0, n_frozen=0, n_grid
-
+  !
   !---- dispatch variables ----
   class(task_t), pointer:: task, parent
   class(experiment_t), pointer:: patch
-
+  class(dll_node_t), pointer:: dll_node
+  type(oct_t), pointer:: oct
+  real(8):: cut, ds, size, position(3), total_cost, weight, patch_cost
+  integer, allocatable:: n_level(:)
+  integer:: hash_table_size
   integer, save:: itimer=0
   !.............................................................................
-  call trace_begin('read_ramses_snapshot', itimer=itimer)
-
-  if (self%centre_on_sink .and. cut_out_size > 0) then
-    call self%read_sink
-    self%xmin = star%position(1) - cut_out_size*0.5d0
-    self%xmax = star%position(1) + cut_out_size*0.5d0
-    self%ymin = star%position(2) - cut_out_size*0.5d0
-    self%ymax = star%position(2) + cut_out_size*0.5d0
-    self%zmin = star%position(3) - cut_out_size*0.5d0
-    self%zmax = star%position(3) + cut_out_size*0.5d0
-    write(stdout,*) 'xmin/max:', self%xmin, self%xmax
-    write(stdout,*) 'ymin/max:', self%ymin, self%ymax
-    write(stdout,*) 'zmin/max:', self%zmin, self%zmax
+  call trace%begin('read_snapshot', itimer=itimer)
+  start = wallclock()
+  !-----------------------------------------------------------------------------
+  ! In a second sweep we alread know the number of octs
+  !-----------------------------------------------------------------------------
+  if (direct_load) then
+    hash_table_size = 2000000
+    call self%u_max_table%init (hash_table_size, ndim=4)
+    call self%patch_table%init (hash_table_size, ndim=4)
+    hash_table_size=self%oct_list%n/50
   end if
   self%rank = 0
-  tmp_load = 0d0
-  tot_load = 0d0
-
+  self%rootlvl = nint(log(real(self%n_cell))/log(2.0))
+  !
   write(filebase, '(a,"/output_",i5.5,"/amr_",i5.5,".out")') trim(self%path), self%nout, self%nout
-
+  !
   ! We need some basic info about the snapshot; let's read the `info_` and `amr_` icpu = 1 files.
-
+  !
   !$omp master
     !------ read snapshot `info_` file ------
     ! note that the `info_` and `amr_` files contain some redundant information.
@@ -291,17 +436,17 @@ SUBROUTINE read_snapshot (self)
     read(ilun,'(13x,e23.15)') self%scale_d ! density scale factor
     read(ilun,'(13x,e23.15)') self%scale_t ! time scale factor
     close(ilun)
-
+    !
     !------ read `amr_` file for icpu = 1 ------
     icpu = 1
     write(filename, '(a,i5.5)') trim(filebase), icpu
-
+    !
 #if __INTEL_COMPILER || defined(__GFORTRAN__)
     open(unit=ilun,file=filename,status='old',form='unformatted',access='stream')
     read(ilun) isentinel
     self%big_endian = (isentinel .ne. 4)  ! the data is in big endian format.
     close(ilun)
-
+    !
     if (self%big_endian) then
       open(unit=ilun,file=filename,status='old',form='unformatted',convert='BIG_ENDIAN')
     else
@@ -310,7 +455,7 @@ SUBROUTINE read_snapshot (self)
 #else
     open(unit=ilun,file=filename,status='old',form='unformatted')
 #endif
-
+    !
     read(ilun) ncpu
     read(ilun) ndims
     if (ndims < 3) then
@@ -323,19 +468,19 @@ SUBROUTINE read_snapshot (self)
     read(ilun) ngrids_max
     read(ilun) nboundary
     read(ilun) ngrids
-
+    !
     ! Try to read `r_boxlength` as a double precision variable; if an error occurs,
     ! then the data is single precision.
     read(ilun,iostat=ioerr) boxlen
     self%double_precision = (ioerr == 0)
-
+    !
     ! At this time, only double precision RAMSES data is supported.
     if (.not. self%double_precision) then
       call mpi%abort('Only double-precision RAMSES data is supported at this time.')
       close(ilun)
       stop
     endif
-
+    !
     read(ilun) noutput, iout, ifout
     if (verbose > 2) &
       write(stdout,*)'noutput, iout, ifout:', noutput, iout, ifout
@@ -350,7 +495,7 @@ SUBROUTINE read_snapshot (self)
     read(ilun) ! SKIP omega_m, omega_l, omega_k, omega_b, h0, aexp_ini, boxlen_ini
     read(ilun) ! SKIP aexp, hexp, aexp_old, epot_tot_ini, epot_tot_old
     read(ilun) ! SKIP mass_sph
-
+    !
     ! levels variables
     allocate(head_list(1:ncpu,1:nlevelmax), tail_list(1:ncpu,1:nlevelmax), &
              numb_list(1:ncpu,1:nlevelmax), numb_tot(1:10,1:nlevelmax))
@@ -358,7 +503,7 @@ SUBROUTINE read_snapshot (self)
     read(ilun) tail_list
     read(ilun) numb_list
     read(ilun) numb_tot
-
+    !
     ! boundary linked lists
     if (nboundary > 0) then
       allocate(head_bndy(1:nboundary,1:nlevelmax), tail_bndy(1:nboundary,1:nlevelmax), &
@@ -367,7 +512,7 @@ SUBROUTINE read_snapshot (self)
       read(ilun) tail_bndy
       read(ilun) numb_bndy
     endif
-
+    !
     read(ilun) ! SKIP headf, tailf, numbf, used_mem, used_mem_tot
     read(ilun) ordering
     if (ordering == 'bisection') then
@@ -377,7 +522,7 @@ SUBROUTINE read_snapshot (self)
     endif
     read(ilun) overload, ndomain
     backspace(ilun) ! rewind one entry (why?)
-
+    !
     ! ------ read (double or quad precision) Peano-Hilbert keys ------
     ! includes precision and endianness checking.
     if (ndomain /= ncpu * overload .or. ndomain == 0 .or. overload == 0) then
@@ -427,7 +572,6 @@ SUBROUTINE read_snapshot (self)
         map_domain(1,i)= i
       enddo
       print *,'Using old format for key storage.'
-
     else
       ! "new" format
       allocate(bound_key(0:ndomain), bound_key_dp(0:ndomain), isub_domain(1:ndomain), &
@@ -467,15 +611,14 @@ SUBROUTINE read_snapshot (self)
         endif
         deallocate(bound_key_dpx2)
       endif
-
       print *,'Using new format for key storage.'
     endif
-    deallocate(bound_key_dp)
+    deallocate (bound_key_dp, isub_domain, map_domain)
     ! ------ finished reading Peano-Hilbert keys ------
-
+    !
     ! we have extracted enough information; close the file (for the time being).
     close(ilun)
-
+    !
     ! output info about snapshot to terminal
     write(stdout,*) 'Data is '//merge('double','single',self%double_precision)//' precision with '// &
              trim(merge('quad  ','double',self%quad_precision))//' precision hilbert keys'
@@ -485,7 +628,9 @@ SUBROUTINE read_snapshot (self)
     write(stdout,*) 'nlevelmax = ',nlevelmax
     write(stdout,*) 'boxlen = ',boxlen
     write(stdout,*) 'time = ',time
-
+    allocate (n_level(1:nlevelmax))
+    allocate (level_cost(nlevelmin:nlevelmax))
+    !
     !------ allocate arrays ------
     ! now that we have more information, we can set and allocate a few required variables.
     twotondim = 2**ndims
@@ -497,7 +642,7 @@ SUBROUTINE read_snapshot (self)
              father(1:ngrids_max), neighbour(1:ngrids_max,1:2*ndims), levels(1:nlevelmax), &
              ncellsum(1:nlevelmax,1:ncpu))
     if (nboundary > 0) allocate(ngrid_bound(1:nboundary,1:nlevelmax))
-
+    !
     !------ given limits, make preparations to cut a sub-volume from the box ------
     ! uses the Hilbert-Peano curve to select which CPUs contain the relevant data
     dmax = max(self%xmax - self%xmin, self%ymax - self%ymin, self%zmax - self%zmin)
@@ -509,7 +654,7 @@ SUBROUTINE read_snapshot (self)
     bit_length = ilevel - 1
     if (verbose > 0) &
       write(stdout,*) 'need to go to at least level', bit_length
-    self%minlvl = bit_length
+    !self%minlvl = bit_length
     max_dom = 2**bit_length
     imin=0; imax=0; jmin=0; jmax=0; kmin=0; kmax=0
     ndom = 1
@@ -523,7 +668,7 @@ SUBROUTINE read_snapshot (self)
       kmax = kmin + 1
       ndom = 8
     end if
-
+    !
     idom(1) = imin; idom(2) = imax
     idom(3) = imin; idom(4) = imax
     idom(5) = imin; idom(6) = imax
@@ -536,7 +681,7 @@ SUBROUTINE read_snapshot (self)
     kdom(3) = kmin; kdom(4) = kmin
     kdom(5) = kmax; kdom(6) = kmax
     kdom(7) = kmax; kdom(8) = kmax
-
+    !
     if (bit_length > 0) then
       do i=1,ndom
         call hilbert3d(idom(i),jdom(i),kdom(i),order_min_1d,bit_length,1)
@@ -548,7 +693,6 @@ SUBROUTINE read_snapshot (self)
       bounding_min = 0.0_16
       bounding_max = dkey
     endif
-
     ! generate list of CPUs/output files to read.
     cpu_min = 0; cpu_max = 0
     cpu_read = .false.
@@ -562,6 +706,7 @@ SUBROUTINE read_snapshot (self)
           cpu_max(i) = j
       enddo
     enddo
+    deallocate (bound_key)
     ncpu_read = 0
     do i=1,ndom
       do j=cpu_min(i),cpu_max(i)
@@ -572,7 +717,8 @@ SUBROUTINE read_snapshot (self)
         endif
       enddo
     enddo
-
+    deallocate (cpu_domain)
+    !
     ! calculate the full hierarchy
     do ilevel=1,nlevelmax
       nx_full = 2**ilevel
@@ -585,7 +731,7 @@ SUBROUTINE read_snapshot (self)
       levels(ilevel)%kmin = int(self%zmin * dble(nz_full)) + 1
       levels(ilevel)%kmax = int(self%zmax * dble(nz_full)) + 1
     enddo
-
+    !
     ! ------ loop over CPU files ------
     call mpi%barrier ('ncpu begin')
     if (verbose > 0) then
@@ -596,7 +742,10 @@ SUBROUTINE read_snapshot (self)
         write(stdout,*) k, trim(filename)
       end do
     end if
+    io%ntotal = 0
+    u_max = 0.0
     do k=1,ncpu_read
+    !do k=1,32
       icpu = cpu_list(k)
       ! open `amr_` file
       write(filename, '(a,i5.5)') trim(filebase), icpu
@@ -611,7 +760,7 @@ SUBROUTINE read_snapshot (self)
 #endif
       if (verbose > 2) &
         write(stdout,*) 'Reading file '//trim(filename)
-
+      !
       ! skip header
       do i=1,6
         read(ilun) ! SKIP
@@ -648,7 +797,7 @@ SUBROUTINE read_snapshot (self)
       read(ilun) ! SKIP son
       read(ilun) ! SKIP flag1
       read(ilun) ! SKIP cpu_map
-
+      !
       ! now we open the `hydro_` file to get access to the hydro data
       write(filename, '(a,"/output_",i5.5,"/hydro_",i5.5,".out",i5.5)') trim(self%path), &
             self%nout, self%nout, icpu
@@ -668,24 +817,7 @@ SUBROUTINE read_snapshot (self)
       read(ilun2) ! SKIP nboundary
       read(ilun2) gamma_ramses
       self%gamma = gamma_ramses
-
-      ! open the `grav_` file to get access to the hydro data
-      write(filename, '(a,"/output_",i5.5,"/grav_",i5.5,".out",i5.5)') trim(self%path), &
-            self%nout, self%nout, icpu
-#if __INTEL_COMPILER || defined(__GFORTRAN__)
-      if (self%big_endian) then
-        open(unit=ilun3,file=filename,status='old',form='unformatted',convert='BIG_ENDIAN')
-      else
-        open(unit=ilun3,file=filename,status='old',form='unformatted')
-      endif
-#else
-      open(unit=ilun3,file=filename,status='old',form='unformatted')
-#endif
-      read(ilun3) ! SKIP ncpu_dump
-      read(ilun3) ! SKIP ndims
-      read(ilun3) ! SKIP nlevelmax
-      read(ilun3) ! SKIP nboundary
-
+      !
       ! loop over levels for current file
       d_min = 1e30
       do ilevel=1,self%maxlvl
@@ -704,17 +836,17 @@ SUBROUTINE read_snapshot (self)
           xc(i,2) = (dble(iy) - 0.5_8) * dx
           xc(i,3) = (dble(iz) - 0.5_8) * dx
         enddo
-
+        !
         ! allocate worker/scratch arrays
         ngrid_act = ngrid_file(icpu,ilevel)
         levels(ilevel)%ngrid = ngrid_act
         if (ngrid_act > 0) allocate(xg(1:ngrid_act,1:ndims), son(1:ngrid_act,1:twotondim), &
                                     x(1:ndims,1:ngrid_act), var(1:ngrid_act,1:twotondim,1:nvar_mhd+1), ref(1:ngrid_act))
-
+        !
         ! loop over domains
         do j=1,nboundary+ncpu
           ncache = ngrid_file(j,ilevel)
-
+          !
           ! read relevant AMR tree data
           if (ncache > 0) then
             allocate(index_grid(1:ncache), iig(1:ncache))
@@ -762,7 +894,7 @@ SUBROUTINE read_snapshot (self)
             enddo
             deallocate(index_grid, iig)
           endif
-
+          !
           ! read HYDRO data
           read(ilun2) ! SKIP ilevel
           read(ilun2) ! SKIP ncache
@@ -777,204 +909,107 @@ SUBROUTINE read_snapshot (self)
               enddo
             enddo
           endif
-
-          ! read GRAV data
-          read(ilun3) ! SKIP ilevel
-          read(ilun3) ! SKIP ncache
-          if (ncache > 0) then
-            do i=1,twotondim
-              do ivar=1,4
-                if (j == icpu .and. i==4) then
-                  read(ilun3) var(:,i,nvar_mhd+1)
-                else
-                  read(ilun3) ! SKIP
-                endif
-              enddo
-            enddo
-          endif
-
         enddo ! end loop j=1,nboundary+ncpu
-
-        ! compute cut-out
         ncellsum(ilevel,k) = 0
-        if (ngrid_act > 0 .and. ilevel >= max(self%minlvl-7,nlevelmin)) then
-          do l=1,ngrid_act
-            ! the grid centre is given by the `xg` variable.
-            ! check if cell is in the cut-out region, or just outside
-            if (cut_out_size > 0d0 .and. self%centre_on_sink) then
-              r = sqrt(sum((xg(l,:)-star%position)**2))
-              ref(l) = r < cut_out_size + 16.*dx
-            else
-              ref(l) = (xg(l,1) > self%xmin .and. xg(l,1) < self%xmax .and. &
-                        xg(l,2) > self%ymin .and. xg(l,2) < self%ymax .and. &
-                        xg(l,3) > self%zmin .and. xg(l,3) < self%zmax)
-            end if
-            pmin = min(pmin,xg(l,:))
-            pmax = max(pmax,xg(l,:))
-            if (ref(l)) then
-              ! create a new DISPATCH patch/task for the current grid and fill with the
-              ! cells with data if we own the patch
+        position(:) = 0.0
+        if (ngrid_act > 0) then
+          if (ilevel >= self%rootlvl .and. ilevel <= self%maxlvl) then
+            do l=1,ngrid_act
               self%npatch = self%npatch+1
-              allocate (experiment_t :: task)
-              select type (task)
-              class is (experiment_t)
-                patch => task
-              end select
-              patch%nv = 8
-              patch%rank = self%rank
-              patch%level = ilevel
-              patch%position(:) = xg(l,:)
-              patch%n = 2
-              patch%llc_cart = patch%position - 0.5 * patch%size
-              patch%ng = 0
-              call patch%setup (ng=patch%ng, position=patch%position, size=patch%size)
-              patch%position(:) = xg(l,:)
-              patch%size = 2.0 * dx
-              patch%level = ilevel
-              n_grid = n_grid + 1
-              ! if the patch is at the very boundary, freeze it!
-              if (cut_out_size > 0d0 .and. self%centre_on_sink) then
-                if (r + 2d0 * dx > cut_out_size) then
-                  !patch%status = ior(patch%status,bits%frozen)
-                  !n_frozen = n_frozen + 1
-                  if (verbose>2 .and. nprint_f > 0) then
-                    nprint_f = nprint_f - 1
-                    write(stdout,'(a,i7.1,a,1e16.9,1x,i3.1)') &
-                      'patch', patch%id, ' frozen', r, ilevel
-                  end if
+              n_level(ilevel) = n_level(ilevel)+1
+              !-----------------------------------------------------------------
+              ! Save oct info in oct_list, optionally including oct data
+              !-----------------------------------------------------------------
+              allocate (oct)
+              call io%bits_mem (8, oct_size, 'oct')
+              position(:) = xg(l,:)
+              ds = 0.5d0**ilevel
+              size = self%n_cell*ds
+              oct%key(1) = ilevel
+              oct%key(2:4) = position/size
+              oct%ii = nint((position-ds-oct%key(2:4)*size)/ds)
+              if (keep) then
+                allocate (oct%var(8,nvar_mhd))
+                call io%bits_mem (storage_size(oct%var), product(shape(oct%var)), 'oct')
+                oct%var = var(l,:,:)
+              end if
+              if (load) then
+                if (.not. keep) then
+                  allocate (oct%var(8,nvar_mhd))
+                  oct%var = var(l,:,:)
                 end if
-              else if (xg(l,1) < self%xmin+2.*dx .or. xg(l,1) > self%xmax-2.*dx .or. &
-                       xg(l,2) < self%ymin+2.*dx .or. xg(l,2) > self%ymax-2.*dx .or. &
-                       xg(l,3) < self%zmin+2.*dx .or. xg(l,3) > self%zmax-2.*dx) then
-                !patch%status = ior(patch%status,bits%frozen)
-                !n_frozen = n_frozen + 1
-                if (verbose>2 .and. nprint_f>0) then
-                  nprint_f = nprint_f - 1
-                  write(stdout,'(a,i7.1,a,1p,3e16.9,i3.1)') &
-                  'patch', patch%id, ' frozen', xg(l,:), ilevel
+                call self%cartesian_init (oct%key, patch)
+                call self%add_to (patch, oct)
+                if (.not.keep) then
+                  deallocate (oct%var)
                 end if
               end if
-              patch%time = time
-              patch%out_next = 0.999 * time ! output to file immediately
-              patch%velocity = 0.0
-              call patch%set(bits%static)
-              tmp_load = tmp_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
-              tot_load = tot_load + 1d-6*product(patch%n)*0.5**(nlevelmax-ilevel)
-              if (patch%rank==mpi%rank) then
-                if (verbose>0 .and. mod(self%npatch,1000)==0) &
-                  write(stdout,'(1x,a,2i7,3x,a,1p,2e10.2)') &
-                  'npatch:',self%npatch,n_active,'load:',tot_load,tmp_load
-                !!!patch%offset = patch%position ! why did I put this here? it causes issues later...
-                ! loop over cells
-                j = 1
-                ! RAMSES variable mapping:
-                ! 1 = density; 2:4 = zone-centred velocity components;
-                ! 5:7 = "left" magnetic field components; 8:10 = "right" magnetic field components;
-                ! 11 = thermal pressure; 12:13 = passive scalars.
-                ! DISPATCH variable mapping:
-                ! 1 = density; 2 = entropy; 3 = grav. potential; 4:6 = momentum components
-                ! 7:9 = magnetic field components
-                it = patch%it
-                ! the RAMSES snapshot does not contain any information to fill boundary
-                ! cells; this needs to be done by DISPATCH. To prevent the boundary cells
-                ! from containing garbage, initialise them.
-                ! Note: should `patch%init()` do this by default?
-                patch%mem(:,:,:,:,:,:) = 0.0
-                do iz=patch%mesh(3)%li,patch%mesh(3)%ui
-                  do iy=patch%mesh(2)%li,patch%mesh(2)%ui
-                    do ix=patch%mesh(1)%li,patch%mesh(1)%ui
-                      ! note that ghost cells are left *empty* at this stage.
-                      if (var(l,j,1) < self%d_min) then
-                        var(l,j,1) = self%d_min
-                        n_d_min = n_d_min+1
-                      end if
-                      if (var(l,j,11) < self%tt_min*var(l,j,1)) then
-                        var(l,j,11) = self%tt_min*var(l,j,1)
-                        n_tt_min = n_tt_min+1
-                      end if
-                      d_min_level = min(d_min_level, var(l,j,1))
-                      if (remove_b) &
-                        var(l,j,5:7) = 0.0
-                      associate (idx=>patch%idx)
-                      patch%mem(ix,iy,iz,idx%d ,patch%it,1) = var(l,j,1) ! density
-                      patch%mem(ix,iy,iz,idx%e ,patch%it,1) = self%energy(var(l,j,:),patch) ! entropy / energy
-                      patch%mem(ix,iy,iz,idx%px,patch%it,1) = var(l,j,1) * var(l,j,2) ! convert to momentum
-                      patch%mem(ix,iy,iz,idx%py,patch%it,1) = var(l,j,1) * var(l,j,3)
-                      patch%mem(ix,iy,iz,idx%pz,patch%it,1) = var(l,j,1) * var(l,j,4)
-                      patch%mem(ix,iy,iz,idx%bx,patch%it,1) = var(l,j,5) ! only the "left" fields are kept
-                      patch%mem(ix,iy,iz,idx%by,patch%it,1) = var(l,j,6)
-                      patch%mem(ix,iy,iz,idx%bz,patch%it,1) = var(l,j,7)
-                      end associate
-                      !!!patch%mem(ix,iy,iz,3,patch%it,1) = var(l,j,nvar_mhd+1) ! grav. pot; SKIP!
-                      j = j + 1
-                    enddo
-                  enddo
-                enddo
-                ! note that neighbour lists still need to be determined (see below).
-                call self%ramses_task_list%append (task)
-
-                ! diagnostic info
-                ncellsum(ilevel,k) = ncellsum(ilevel,k) + twotondim
-                n_onrank = n_onrank + 1
-              else
-                n_offrank = n_offrank + 1
-              endif
-              n_active = n_active + 1
-            else
-              n_passive = n_passive + 1
-            endif
-          enddo
-        endif ! end ngrid_act > 0 .and. ilevel >= nlevelmin
-        if (ngrid_act > 0) deallocate(son, xg, var, ref, x)
-        if (verbose > 2) &
-          write(io_unit%output,'(a,i4,i8,1p,e12.3)') &
-            ' RAMSES: level, n_grid, d_min_level =', &
-            ilevel, n_grid, d_min_level
-        d_min = min(d_min, d_min_level)
-      enddo ! end loop ilevel=1,self%maxlvl
-      if (verbose > 2) &
-        write (stdout,*) 'd_min =', d_min
-
-      close(ilun) ! close `amr_` file
+              oct%u_max = self%phase_speed (var(l,:,:))
+              u_max = max(u_max,oct%u_max)
+              self%u_min = min(self%u_min,oct%u_max)
+              dll_node => oct
+              call self%oct_list%append (dll_node)
+              !-----------------------------------------------------------------
+              n_grid = n_grid + 1
+            end do
+            if (verbose > 1) &
+              write(stdout,'(1x,a,i10,i6,i4,1p,e12.3)') &
+                'n_oct, rank, level, u_max:',self%npatch, k, ilevel, u_max
+          endif
+          deallocate(xg,son,x,var,ref)
+        endif
+      end do ! end loop ilevel=1,self%maxlvl
+      self%u_max = u_max
+      if (verbose > 0) &
+        write(stdout,'(1x,a,i10,i6,1p,e12.3)') &
+          'n_oct, rank(in), u_max:',self%npatch, k, u_max
+      close(ilun)  ! close `amr_` file
       close(ilun2) ! close `hydro_` file
       if (verbose > 2) & 
         write (stdout,'(4(a,i8,3x),a,1p,e9.2)') &
         ' n_active:',n_active,'n_passive:',n_passive,'n_onrank:',n_onrank, &
-        ' n_offrank:',n_offrank,'tmp_load:',tmp_load
+        ' n_offrank:',n_offrank
       !
-      if (tmp_load > self%rank_load) then
-        if (self%rank<mpi%size-1) then
-          if (verbose > 0) &
-            write (stdout,*) 'bumping rank, with tmp_load =', tmp_load, n_active
-          self%rank = self%rank + 1
-          n_active=0
-          n_passive=0
-          n_onrank=0
-          n_offrank=0
-          tmp_load = 0d0
-        end if
-      end if
       call mpi%barrier ('ncpu loop')
     enddo ! end loop k=1,ncpu_read
     write (*,'(a)') ' =================================================='
-    write (*,'(a,2(i6.1,1x))') ' n_d_min, n_tt_min =',n_d_min,n_tt_min
-    write (*,'(a,i11.1)') ' n_frozen = ', n_frozen
-    write (*,'(a,i11.1)') ' n_patch = ',self%npatch
-
+    write (*,'(a,1p,e12.3)')   ' u_max =', u_max
+    !write (*,'(a,2(i6.1,1x))') ' n_d_min, n_tt_min =',n_d_min,n_tt_min
+    !write (*,'(a,i11.1)')      ' n_frozen = ', n_frozen
+    write (*,'(a,i11.1)')      ' n_oct = ',self%npatch
   !$omp end master
   !$omp barrier
-
+  !
   ! set scale factors (other scale factors will be calculated)
   scaling%l = self%scale_l
   scaling%t = self%scale_t
   scaling%d = self%scale_d
-
+  !
   ! output some diagnostics to the terminal.
   allocate (fill(self%maxlvl))
   do ilevel=nlevelmin,self%maxlvl
     fill(ilevel)=sum(ncellsum(ilevel,:))/2.0**(3*(ilevel-1))
   enddo
+  write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   write (*,'(a)') ' =================================================='
+  !-----------------------------------------------------------------------------
+  total_cost=0.0
+  self%minlvl = nlevelmin
+  self%maxlvl = nlevelmax
+  do ilevel=self%minlvl,self%maxlvl
+    ds = 0.5_8**ilevel
+    weight = 8./ds
+    patch_cost = n_level(ilevel)*weight
+    total_cost = total_cost + patch_cost
+  end do
+  write(stdout,*) ' level  n_patch  cost(%)'
+  do ilevel=self%minlvl,self%maxlvl
+    ds = 0.5_8**ilevel
+    weight = 8./ds
+    patch_cost = n_level(ilevel)*weight
+    write(stdout,'(i7,i9,f9.2)') ilevel, n_level(ilevel), patch_cost*100./total_cost
+  end do
+  !-----------------------------------------------------------------------------
   if (verbose > 1) then
     if (cut_out_size > 0 .and. self%centre_on_sink) then
       write (*,'(a,1p,3(1e14.7,2x))') 'pmin (AU) =', &
@@ -985,11 +1020,17 @@ SUBROUTINE read_snapshot (self)
     write (*,'(" fill (by level):",/,(1p,10g11.2))') fill(nlevelmin:self%maxlvl)
   end if
   deallocate (fill)
-
   deallocate(ngrid_file, ngrid_level, cpu_list, cpu_read, xc, father, &
              neighbour, levels, ncellsum)
-
-  call trace_end
+  !-----------------------------------------------------------------------------
+  ! If not doing direct_load, then setup the hash tables now
+  !-----------------------------------------------------------------------------
+  if (.not.direct_load) then
+    hash_table_size=self%oct_list%n/50
+    call self%u_max_table%init (hash_table_size, ndim=4)
+    call self%patch_table%init (hash_table_size, ndim=4)
+  end if
+  call trace%end
 END SUBROUTINE read_snapshot
 
 !===============================================================================
@@ -1030,7 +1071,6 @@ SUBROUTINE hilbert3d(x,y,z,order,bit_length,npoint)
                             &   6, 1, 7, 0, 5, 2, 4, 3 /), &
                             & (/8 ,2, 12 /) )
   !.............................................................................
-
   if(bit_length > bit_size(bit_length)) then
      print *,'Maximum bit length = ', bit_size(bit_length)
      print *,'ERROR in hilbert3d'
@@ -1072,28 +1112,499 @@ SUBROUTINE hilbert3d(x,y,z,order,bit_length,npoint)
 END SUBROUTINE hilbert3d
 
 !===============================================================================
+!> Compute max phase speed directly from RAMSES vars
+!===============================================================================
+FUNCTION phase_speed (self, var) RESULT (umax)
+  class(ramses_t):: self
+  real(kind=8):: var(:,:)
+  real(kind=8):: d, ux, uy, uz, bx, by, bz, pg, cf, ua
+  real:: umax
+  integer:: i
+  umax = 0.0
+  do i=1,size(var,1)
+    d  = var(i,1)
+    ux = var(i,2)
+    uy = var(i,3)
+    uz = var(i,4)
+    bx = 0.5*(var(i,5)+var(i,8))
+    by = 0.5*(var(i,6)+var(i,9))
+    bz = 0.5*(var(i,7)+var(i,10))
+    pg = var(i,11)
+    cf = sqrt((bx**2+by**2+bz**2+self%gamma*pg)/d)
+    ua = sqrt(ux**2+uy**2+uz**2)
+    umax = max(umax,ua+cf)
+  end do
+END FUNCTION phase_speed
+
+!===============================================================================
+!> Run through all RAMSES oct and insert their values into patches.  For each
+!> patch introduced at level L, there must be one also at the corresponding
+!> location at level L-1.  Carrying this through down to the minlvl, one can
+!> be sure to have support for prolongation, if only one proceeds from the
+!> bottom up with prolongation.
+!===============================================================================
+SUBROUTINE create_patches (self)
+  class(ramses_t):: self
+  class(dll_node_t), pointer:: oct
+  class(experiment_t), pointer:: patch
+  class(*), pointer:: ptr
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('ramses_t%create_patches', itimer=itimer)
+  write(stdout,*) &
+    '--------------------- create_patches: begin -----------------------'
+  oct => self%oct_list%head
+  do while (associated(oct))
+    select type (oct)
+    class is (oct_t)
+    call self%cartesian_init (oct%key, patch)
+    call self%add_to (patch, oct)
+    end select
+    oct => oct%next
+  end do
+  if (verbose > 0) then
+    write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
+    write (stdout,*) 'create_patches: exit in 5 sec'
+    call mpi%delay (5e3)
+  end if
+  write(stdout,*) &
+    '--------------------- create_patches: end -------------------------'
+  call trace%end (itimer)
+END SUBROUTINE create_patches
+
+!===============================================================================
+!> Add oct values to a patch, located via a hash table.  If the patch does not
+!> yet exist, create and initialize it, and add the address into the table.
+!===============================================================================
+SUBROUTINE add_to (self, patch, oct)
+  class(ramses_t):: self
+  class(experiment_t), pointer:: patch
+  class(oct_t):: oct
+  !.............................................................................
+  real:: enth, d, ux, uy, uz, bx, by, bz, e
+  integer:: i1, i2, i3, j1, j2, j3, j, level
+  logical:: new
+  !-----------------------------------------------------------------------------
+  ! Insert oct values into patch%mem.  FIXME: HLLD solver assumed
+  !-----------------------------------------------------------------------------
+  enth = 1d0/(self%gamma-1d0)
+  i1 = oct%ii(1)+1
+  i2 = oct%ii(2)+1
+  i3 = oct%ii(3)+1
+  level = oct%key(1)
+  j = 1
+  do j3=0,1
+  do j2=0,1
+  do j1=0,1
+    d  = oct%var(j,1)
+    ux = oct%var(j,2)
+    uy = oct%var(j,3)
+    uz = oct%var(j,4)
+    bx = (oct%var(j,5) + oct%var(j,8 ))*0.5
+    by = (oct%var(j,6) + oct%var(j,9 ))*0.5
+    bz = (oct%var(j,7) + oct%var(j,10))*0.5
+    e  = oct%var(j,11)*enth
+    e  = e + 0.5*(d*(ux**2+uy**2+uz**2) + bx**2 + by**2 + bz**2)
+    patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%d ,1,1) = d
+    patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%e ,1,1) = e
+    patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%px,1,1) = d*ux
+    patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%py,1,1) = d*uy
+    patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%pz,1,1) = d*uz
+    patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%bx,1,1) = oct%var(j,5)
+    patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%by,1,1) = oct%var(j,6)
+    patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%bz,1,1) = oct%var(j,7)
+    patch%filled(i1+j1,i2+j2,i3+j3) = level
+    j = j+1
+  end do
+  end do
+  end do
+END SUBROUTINE add_to
+
+!===============================================================================
+!> Add a patch to the task list
+!===============================================================================
+SUBROUTINE add_to_task_list (self, patch)
+  class(ramses_t):: self
+  class(experiment_t), pointer:: patch
+  class(link_t), pointer:: link
+  integer, save:: i=0
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  if (detailed_timer) &
+    call trace%begin ('add_to_task_list', itimer=itimer)
+  allocate (link)
+  link%task => patch
+  patch%link => link
+  call self%task_list%prepend_link (link)
+  if (verbose > 2) then
+    write (stdout,'(a,i7,2x,4i6)') &
+      'add_to_task_list: id, key =', patch%id, patch%key
+  else if (verbose > 0) then
+    i = i+1
+    if (mod(i,5000)==0) &
+      write (stdout,'(a,i7,2x,4i6)') &
+        'add_to_task_list: id, key =', patch%id, patch%key
+  end if
+  if (detailed_timer) &
+    call trace%end (itimer)
+END SUBROUTINE add_to_task_list
+
+!===============================================================================
+!> Count the costs of RAMSES and DISPATCH
+!===============================================================================
+SUBROUTINE count_costs (self)
+  class(ramses_t):: self
+  !.............................................................................
+  class(dll_node_t), pointer:: task
+  class(experiment_t), pointer:: patch
+  real(kind=8):: total_cost, max_cost, total_weight
+  real(kind=4), pointer:: value
+  real(kind=4):: ratio, weight, u_max, ds, oct_cost, patch_cost, c_bin
+  integer, allocatable:: n_level(:)
+  logical:: new
+  integer:: n(2), level, bin, i
+  !-----------------------------------------------------------------------------
+  write(stdout,*) &
+    '--------------------- count_costs: begin --------------------------'
+  allocate (self%u_bins(self%n_bins))
+  self%u_bins = 0
+  n = 0
+  u_max = 0.0
+  total_weight = 0d0
+  !-----------------------------------------------------------------------------
+  ! First loop over octs, to create hash table entries with patch costs
+  !-----------------------------------------------------------------------------
+  c_bin = 1.0/alog(self%u_max/self%u_min)*(self%n_bins-1)
+  task => self%oct_list%head
+  do while (associated(task))
+    select type (task)
+    class is (oct_t)
+      !-------------------------------------------------------------------------
+      ! Search for max phase speed over all octs, while summing up weights
+      !-------------------------------------------------------------------------
+      u_max = max(u_max,task%u_max)
+      bin = nint(alog(task%u_max/self%u_min)*c_bin) + 1
+      self%u_bins(bin) = self%u_bins(bin) + 1
+      level = task%key(1)
+      ds = 0.5_8**level
+      weight = 2.0**3/ds
+      total_weight = total_weight + weight
+      oct_cost = task%u_max*weight
+      call self%u_max_table_get (task%key, value, new)
+      n(1) = n(1)+1
+      if (mod(n(1),10000000)==0) then
+        write(stdout,*) n(1)
+      end if
+      if (new) then
+        n(2) = n(2)+1
+      end if
+      value = max(value,task%u_max)
+    end select
+    task => task%next
+  end do
+  write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
+  open (io_unit%tmp, file=trim(io%rundir)//'u_bins.dat', form='unformatted', &
+    status='unknown')
+  write (io_unit%tmp) self%n_bins
+  write (io_unit%tmp) alog10(self%u_min), alog10(self%u_max)
+  write (io_unit%tmp) self%u_bins
+  close (io_unit%tmp)
+  write (stdout,*) 'ramses_t%count_costs: n, n(1)/n(2) =', n, n(1)/n(2)
+  max_cost = u_max*total_weight
+  !-----------------------------------------------------------------------------
+  ! Second loop over octs, to sum up total patch costs
+  !-----------------------------------------------------------------------------
+  total_cost = 0d0
+  allocate (n_level(self%rootlvl:self%maxlvl))
+  task => self%oct_list%head
+  do while (associated(task))
+    select type (task)
+    class is (oct_t)
+      level = task%key(1)
+      if (level >= self%rootlvl) then
+        ds = 0.5_8**level
+        weight = self%n_cell**3/ds
+        call self%u_max_table_get (task%key, value, new)
+        if (mod(n(1),10000000)==0) then
+          write(stdout,*) n(1)
+        end if
+        if (value > 0.0) then
+          total_cost = total_cost + value*weight
+          n_level(level) = n_level(level)+1
+          value = 0.0
+        end if
+      end if
+    end select
+    task => task%next
+  end do
+  ratio = max_cost/total_cost
+  write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
+  !-----------------------------------------------------------------------------
+  ! Print a table with level costs for octs, and for patches
+  !-----------------------------------------------------------------------------
+  total_cost=0.0
+  do level=self%rootlvl,self%maxlvl
+    ds = 0.5_8**level
+    weight = self%n_cell**3/ds
+    patch_cost = n_level(level)*weight
+    total_cost = total_cost + patch_cost
+  end do
+  write(stdout,*) ' level  n_patch  cost(%)'
+  do level=self%minlvl,self%maxlvl
+    ds = 0.5_8**level
+    weight = self%n_cell**3/ds
+    patch_cost = n_level(level)*weight
+    write(stdout,'(i7,i9,f9.2)') level, n_level(level), patch_cost*100./total_cost
+  end do
+  write (stdout,*) 'ramses_t%count_costs:        ratio =', ratio
+  if (verbose > 0) &
+    write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
+  write(stdout,*) &
+    '--------------------- count_costs: end ----------------------------'
+  !-----------------------------------------------------------------------------
+END SUBROUTINE count_costs
+
+!===============================================================================
+!> Get a hash table pointer to a double precision cost variable
+!===============================================================================
+SUBROUTINE u_max_table_get (self, key, value, new)
+  class(ramses_t):: self
+  integer:: key(4)
+  real(kind=4), pointer:: value
+  class(*), pointer:: ptr
+  logical, optional:: new
+  !-----------------------------------------------------------------------------
+  call self%u_max_table%get (key, ptr)
+  if (.not. associated(ptr)) then
+    allocate (value)
+    ptr => value
+    call self%u_max_table%set (key, ptr)
+    value = 0d0
+    if (present(new)) then
+      new = .true.
+    end if
+  else if (present(new)) then
+    select type (ptr)
+    class is (real)
+    value => ptr
+    end select
+    new = .false.
+  end if
+END SUBROUTINE u_max_table_get
+
+!===============================================================================
 !> Convenience function to calculate the entropy (because the STAGGER solver in
 !> DISPATCH uses the entropy rather than the internal energy/pressure or total
 !> energy.)
 !===============================================================================
 FUNCTION energy (self, vars, patch) RESULT (e)
   class(ramses_t):: self
-  real(kind=8):: e
+  real(kind=8):: e, bx, by, bz
   real(kind=8), dimension(:):: vars
   class(experiment_t), pointer:: patch
   !.............................................................................
   if (patch%gamma==1d0) then
     e = vars(11)
   else if (patch%kind(1:6)=='ramses') then
+    bx = 0.5_8*(vars(5)+vars(8))
+    by = 0.5_8*(vars(6)+vars(9))
+    bz = 0.5_8*(vars(7)+vars(10))
     e = vars(11)/(patch%gamma-1d0) &
       + 0.5d0*vars(1)*(vars(2)**2+vars(3)**2+vars(4)**2) &
-      + 0.5d0        *(vars(5)**2+vars(6)**2+vars(7)**2)
+      + 0.5d0        *(bx**2+by**2+bz**2)
   else if (patch%kind(1:9)=='stagger2e') then
     e = vars(1)*(log(vars(11))-log(vars(1))*patch%gamma)/(patch%gamma-1.0)
   else
     e = vars(11)/(patch%gamma-1d0)
   end if
 END FUNCTION energy
+
+!===============================================================================
+!> Check, from the top and down, that every patch has support, on all sides
+!===============================================================================
+SUBROUTINE check_support (self)
+  class(ramses_t):: self
+  integer:: level, i1, i2, i3, key(4)
+  class(link_t), pointer:: link, nbor
+  class(task_t), pointer:: task, nbtask
+  class(experiment_t), pointer:: patch
+  real(kind=8):: position(3)
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('ramses_t%check_support', itimer=itimer)
+  write(stdout,*) &
+    '--------------------- check_support: begin ------------------------'
+  do level=self%maxlvl,self%minlvl+2,-1
+    link => self%task_list%head
+    do while (associated(link))
+      if (link%task%level == level) then
+        task => link%task
+        select type (task)
+        class is (patch_t)
+          do i3=-1,1
+          do i2=-1,1
+          do i1=-1,1
+            !-------------------------------------------------------------------
+            ! Position of level L nbors, and key for a L-1 patches there
+            !-------------------------------------------------------------------
+            position = task%position + [i1,i2,i3]*task%size
+            key(1) = task%level-1
+            key(2:4) = nint(position/(2d0*task%size))
+            !-------------------------------------------------------------------
+            ! Create a patch there if none exists; it will be prepended to the 
+            ! task list, to avoid problems with looping over the same list
+            !-------------------------------------------------------------------
+            call self%cartesian_init (key, patch)
+          end do
+          end do
+          end do
+        end select
+      end if
+      link => link%next
+    end do
+  end do
+  if (verbose > 0) then
+    write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
+  end if
+  write(stdout,*) &
+    '--------------------- check_support: end---------------------------'
+  call trace%end (itimer)
+END SUBROUTINE check_support
+
+!===============================================================================
+!> Starting one level about levelmin, prolong into those patches that are not
+!> properly filled by oct values
+!===============================================================================
+SUBROUTINE prolong (self)
+  class(ramses_t):: self
+  integer:: level, i1, i2, i3, key(4)
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  real:: dmin
+  class(experiment_t), pointer:: patch
+  integer:: n, n0
+  !-----------------------------------------------------------------------------
+  call trace%begin('ramses_t%prolong')
+  write(stdout,*) &
+    '--------------------- prolong: begin ------------------------------'
+  n = 0; n0 = 0
+  do level=self%minlvl+1,self%maxlvl
+    link => self%task_list%head
+    do while (associated(link))
+      if (link%task%level == level) then
+        task => link%task
+        select type (task)
+        class is (patch_t)
+          if (any(task%filled == -1)) then
+            n = n+1
+            if (verbose > 0 .and. mod(n,5000)==0) &
+              write(stdout,*) 'prolong: filling id, level =', &
+                task%id, task%level
+            call download%download_link (link)
+            dmin = patch%fminval (patch%idx%d)
+            if (dmin <= 0.0) then
+              n0 = n0+1
+              write(stderr,*) 'prolong: ERROR, id, dmin, n=', task%id, dmin, n0
+            end if
+            task%filled = task%level-1
+          end if
+        end select
+      end if
+      link => link%next
+    end do
+  end do
+  if (verbose > 0) then
+    write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
+  end if
+  write(stdout,*) &
+    '--------------------- prolong: end --------------------------------'
+  call trace%end ()
+END SUBROUTINE prolong
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE check_filled (self)
+  class(ramses_t):: self
+  integer:: level, gap, nok
+  class(link_t), pointer:: link, nbor
+  class(task_t), pointer:: task, nbtask
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('ramses_t%check_filled', itimer=itimer)
+  write(stdout,*) &
+    '--------------------- check_filled: begin -------------------------'
+  nok = 0
+  do level=self%maxlvl,self%minlvl+1,-1
+    link => self%task_list%head
+    do while (associated(link))
+      if (link%task%level == level) then
+        task => link%task
+        select type (task)
+        class is (patch_t)
+        if (any(task%filled == -1)) then
+          gap = 99
+          nbor => link%nbor
+          do while (associated(nbor))
+            nbtask => nbor%task
+            select type (nbtask)
+            class is (patch_t)
+            if (nbtask%level < task%level .and. &
+                nbtask%contains (task%position)) then
+              gap = min(gap,task%level-nbtask%level)
+            end if
+            end select
+            nbor => nbor%next
+          end do
+          if (gap > 1) then
+            nok = nok+1
+            if (verbose > 0 .and. mod(nok,5000)==0) &
+              write (stdout,'(a,i4,i7,i4,i7)') &
+                'ramses_t%check_filled: not filled level, id, gap, nok =', &
+                  task%level, task%id, gap, nok
+            call create_support (task)
+          end if
+        end if
+        end select
+      end if
+      link => link%next
+    end do
+  end do
+  call self%task_list%count_status()
+  if (verbose > 0) then
+    write(stdout,*) 'check_filled: nok =', nok
+    write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
+  end if
+  write(stdout,*) &
+    '--------------------- check_filled: end ---------------------------'
+  call trace%end (itimer)
+contains
+  !=============================================================================
+  !> Create a new patch as support to task
+  !=============================================================================
+  subroutine create_support (task)
+    class(patch_t):: task
+    class(experiment_t), pointer:: new
+    integer:: key(4)
+    class(link_t), pointer:: nbor
+    integer, save:: itimer=0
+    !...........................................................................
+    call trace%begin ('create_support', itimer=itimer)
+    !---------------------------------------------------------------------------
+    ! Create a task at the overlapping location on level L-1
+    !---------------------------------------------------------------------------
+    key = [task%level-1, nint(task%position/(2d0*task%size))]
+    call self%cartesian_init (key, new)
+    nbor => new%link%nbor
+    do while (associated(nbor))
+      write (stdout,'(a,i6,i4,i6,i4)') 'nbor list:', &
+        new%link%task%id, new%link%task%level, nbor%task%id, nbor%task%level
+      nbor => nbor%next
+    end do
+    call download%download_link (new%link, all_cells=.true.)
+    new%filled = new%level-1
+    call trace%end (itimer)
+  end subroutine create_support
+END SUBROUTINE check_filled
 
 !===============================================================================
 !> Read sink particle information; the zoom-in sink is the last one, generally
@@ -1108,8 +1619,7 @@ END FUNCTION energy
   real(8):: t8,tflush,r_translate(3),v_translate(3),x_refine,y_refine,z_refine
   type(sink_t), pointer:: sink
   !.............................................................................
-  call trace_begin('ramses_t%read_sink')
-
+  call trace%begin('ramses_t%read_sink')
   write(stdout,*) '=================================================='
   write (fname,'(a,a,i5.5,a)') trim(self%path), '/output_', self%nout, '/stars_output.dat'
   write(stdout,*) fname
@@ -1138,302 +1648,25 @@ END FUNCTION energy
   star%position = [sink%x,sink%y,sink%z]
   star%mass = sink%mass
   write(stdout,*) 'type(sink_t) :: star => center_star'
-  write(stdout,'(a,3(1e11.5,1x),a,1i3.1)') &
-    ' pos = ',star%position,'; level = ',sink%ilevel
+  write(stdout,'(a,"["2(f14.9,","),f14.9,"]",2x,a,1i3.1)') &
+    ' pos = ',star%position,', level = ',sink%ilevel
   write(stdout,*) '=================================================='
-
-  call trace_end
+  call trace%end
 END SUBROUTINE read_sink
-
-!===============================================================================
-!> Attempt to merge 2**3 RAMSES octs into large patches (up to nmax**3 cells).
-!>
-!> - This subroutine is specific to RAMSES data; it does not cover the possibility
-!>   of overlapping patches.
-!> - Only existing octs are used; no interpolation is performed.
-!> - It is assumed that the neighbour list only contains octs which abut the
-!>   current patch.
-!> - Even with `merge_nbor_lists`, the neighbour list will still need to be
-!>   reconstructed at the end of this procedure to ensure the new, merged patches
-!>   are properly accounted for.
-!===============================================================================
-SUBROUTINE merge_ramses_octs (self, n_max)
-  class(ramses_t) :: self
-  integer, intent(in) :: n_max
-  class(task_t), pointer :: task, nbor_task, merged_task
-  class(patch_t), pointer :: merged_patch
-  class(link_t), pointer :: link, nbor, old_link, new_link
-  integer :: n_now(3), n_nbor(3), n_updated(3), iterations, adir, n_merges=1, &
-             merge_count, patch_count, diff_count, tid
-  real :: dpos(3)
-  logical :: merged
-  !.............................................................................
-  call trace_begin('ramses_mod::merge_ramses_octs')
-
-  ! finish task list initialisation
-  write(stdout,*) 'Finishing oct list initialisation (including neighbour determination).'
-  write(stdout,*) 'This could take a while...'
-  call self%task_list%init_all_nbors()
-
-  patch_count = 0
-  merge_count = 0
-  iterations = 0
-
-  do while (n_merges > 0)
-    n_merges = 0
-    link => self%task_list%head
-    do while (associated(link))
-      merged = .false.
-      task => link%task
-      tid = task%id
-
-      ! all tasks should have their ready status reset to ensure the list and
-      ! queue can be properly reconstructed at the end of the merger process.
-      if (task%is_set(bits%ready)) then
-        call task%clear(bits%ready)
-        self%task_list%n_ready = self%task_list%n_ready - 1
-      end if
-
-      if (task%is_set(bits%remove)) then
-        if (verbose > 1) write(stdout,*) 'Skipping link ID = ',task%id
-        link => link%next
-        cycle
-      end if
-
-      select type (task)
-      class is (patch_t)
-        n_now = task%n
-      end select
-      patch_count = patch_count + 1
-
-      ! only proceed if no. of patch cells is less than `n_max`.
-      if (any(n_now >= n_max)) then
-        if (verbose > 1) write(stdout,*) 'Skipping link ID = ',task%id
-        link => link%next
-        cycle
-      end if
-
-      nbor => link%nbor
-      do while (associated(nbor))
-        nbor_task => nbor%task
-        if (nbor_task%is_set(bits%remove)) then
-          if (verbose > 1) write(stdout,*) 'Skipping nbor ID = ',nbor_task%id
-          nbor => nbor%next
-          cycle
-        end if
-
-        ! skip if neighbour is not at the same level
-        if (task%level /= nbor%task%level) then
-          if (verbose > 1) write(stdout,*) 'Skipping nbor ID = ',nbor_task%id
-          nbor => nbor%next
-          cycle
-        end if
-
-        ! only allow merges between octs that share a face.
-        dpos = task%position - nbor%task%position
-        if (count(abs(dpos) > 0.0) > 1) then
-          if (verbose > 1) write(stdout,*) 'Skipping nbor ID = ',nbor_task%id
-          nbor => nbor%next
-          cycle
-        end if
-        adir = maxloc(abs(dpos),dim=1)
-
-        select type (nbor_task)
-        class is (patch_t)
-          n_nbor = nbor_task%n
-        end select
-
-        diff_count = count(abs(n_nbor - n_now) > 0)
-        if (n_nbor(adir) - n_now(adir) > 0) diff_count = diff_count - 1
-        ! don't permit merges of patches with different sizes (except along
-        ! the direction of the proposed merge, that's okay).
-        if (diff_count > 0) then
-          if (verbose > 1) write(stdout,*) 'Skipping nbor ID = ',nbor_task%id
-          nbor => nbor%next
-          cycle
-        end if
-
-        ! double check that the two patches actually abut (!)
-        if (.not. task%overlaps(nbor%task)) then
-          if (verbose > 1) write(stdout,*) 'Skipping nbor ID = ',nbor_task%id
-          nbor => nbor%next
-          cycle
-        end if
-
-        if (all(n_nbor < n_max)) then
-          ! try to merge two patches; includes inheritence of existing neighbours
-          merged_patch => merge_neighbours(link, nbor, dpos)
-          ! add new merged patch to the *end* of the list
-          merged_task => merged_patch
-          call self%task_list%append(merged_task)
-          ! merge the neighbour lists of the merged patches (and give it the
-          ! result to the new task).
-          associate (back_link=>merged_patch%link)
-          select type (back_link)
-          type is (link_t)
-            new_link => back_link
-          end select
-          !!!call merge_nbor_lists(link, nbor, new_link)
-          end associate
-
-          ! prepare to remove neighbour and current patch from task list
-          merged = .true.
-          n_merges = n_merges + 1
-          merge_count = merge_count + 1
-          n_updated = merged_patch%n
-          write (*,'(a,i10.1,a,i10.1,a,i10.1,a,3(i3.1,1x),a)') 'patches merged: ids = ', &
-            link%task%id, ', ', nbor%task%id,' => ', merged_task%id, ' (', n_updated, ')'
-
-          ! let's be conservative: only allow one merge at a given time; this will
-          ! be slower, but safer.
-          call nbor%task%set(bits%remove)  ! flag task for removal.
-          exit ! exit do while over nbor
-        end if
-        nbor => nbor%next
-      end do
-      old_link => link
-      link => link%next
-      ! now it's safe to remove current link
-      if (merged) then
-        call old_link%task%set(bits%remove)  ! flag task for removal.
-      end if
-    end do
-
-    iterations = iterations + 1
-    write (*,'(a,i3.1)')  'iteration = ', iterations
-    write (*,'(a,i10.1)') 'no. of merges = ', n_merges
-    write (*,'(a,i10.1)') 'total no. of merges = ', merge_count
-    write (*,'(a,i10.1)') 'no. of patches examined = ', patch_count
-
-    ! Last but not least, tidy up. To ensure the merged patches have the
-    ! correct neighbours, we need to search for neighbours again.
-    call tidy_up(self%task_list)
-    write (*,'(a,i10.1)') 'current no. of patches = ', self%task_list%n
-    call self%task_list%init_all_nbors()
-  end do
-
-  ! Finished. Check the ready state of all patches.
-  call self%task_list%check_all()
-
-  call trace_end
-END SUBROUTINE merge_ramses_octs
-
-!===============================================================================
-!> Perform the actual merger of two patches; does not carry over the neighbour
-!> lists of the two patches.
-!===============================================================================
-FUNCTION merge_neighbours(link, nbor, dpos) RESULT(merger)
-  class(link_t), pointer :: link, nbor
-  class(patch_t), pointer :: patch, nbor_patch, merger
-  class(mesh_t), pointer :: pm, nm, mm
-  real, intent(in) :: dpos(3)
-  integer :: it, ix, iy, iz, iv, idir, adir, dum(1), o(3), mid
-  !.............................................................................
-  patch => task2patch(link%task)
-  nbor_patch => task2patch(nbor%task)
-
-  adir = maxloc(abs(dpos),dim=1)
-  idir = int(sign(float(adir), dpos(adir)))
-
-  ! create new patch
-  allocate (merger, source=patch)
-  merger%mem_allocated = .false.
-  nullify (merger%mem, merger%mesh)
-  ! the merged patch only grows in the `idir`-direction
-  merger%size(adir) = patch%size(adir) + nbor_patch%size(adir)
-  merger%llc_cart = min(patch%llc_cart, nbor_patch%llc_cart)
-  merger%position = merger%llc_cart + 0.5d0 * merger%size
-  merger%n(adir) = patch%n(adir) + nbor_patch%n(adir)
-  merger%id = 0 ! will force the assignment of an ID
-  call merger%clear(bits%ready) ! clear ready bit so that checks are made by `task_list%check_all`.
-  call merger%init()
-  mid = merger%id
-
-  ! fill variable array
-  it = merger%it
-  pm => patch%mesh(adir)
-  nm => nbor_patch%mesh(adir)
-  mm => merger%mesh(adir)
-  ! first copy over `patch`
-  ! this offset formula reasonably assumes edges of RAMSES octs are co-spatial.
-  o = 0
-  o(adir) = int(((pm%p + pm%r(pm%li)) - (mm%p + mm%r(mm%li)))/mm%d)
-  merger%mem(:,:,:,:,:,:) = 0.0
-  do iz=patch%mesh(3)%li,patch%mesh(3)%ui
-    do iy=patch%mesh(2)%li,patch%mesh(2)%ui
-      do ix=patch%mesh(1)%li,patch%mesh(1)%ui
-        do iv=1,patch%nv
-          merger%mem(ix+o(1),iy+o(2),iz+o(3),iv,it,1) = patch%mem(ix,iy,iz,iv,it,1)
-        end do
-      end do
-    end do
-  end do
-
-  ! then copy `nbor_patch`
-  o = 0
-  o(adir) = int(((nm%p + nm%r(nm%li)) - (mm%p + mm%r(mm%li)))/mm%d)
-  do iz=nbor_patch%mesh(3)%li,nbor_patch%mesh(3)%ui
-    do iy=nbor_patch%mesh(2)%li,nbor_patch%mesh(2)%ui
-      do ix=nbor_patch%mesh(1)%li,nbor_patch%mesh(1)%ui
-        do iv=1,patch%nv
-          merger%mem(ix+o(1),iy+o(2),iz+o(3),iv,it,1) = nbor_patch%mem(ix,iy,iz,iv,it,1)
-        end do
-      end do
-    end do
-  end do
-  ! done.
-  nullify (pm, nm, mm)
-
-END FUNCTION merge_neighbours
-
-!===============================================================================
-!> Walk through the task list, deallocating tasks which are flagged for removal
-!> (using `bits%remove`) while also removing the associated link in the task list.
-!===============================================================================
-SUBROUTINE tidy_up (task_list)
-  class(task_list_t) :: task_list
-  class(task_t), pointer :: task
-  class(link_t), pointer :: link, next
-  integer :: n_removed
-  integer, save:: itimer=0
-  !.............................................................................
-  call trace_begin('ramses_mod::tidy_up', itimer=itimer)
-
-  ! deallocate tasks (and associated links) that are marked for removal.
-  n_removed = 0
-  link => task_list%head
-  do while (associated(link))
-    task => link%task
-    next => link%next
-    if (task%is_set(bits%remove)) then
-      if (verbose > 1) write(stdout,*) 'removing task id ',task%id
-      call link%remove_nbor_list (link%nbor)
-      call task_list%remove_link (link)
-      deallocate(task)
-      n_removed = n_removed + 1
-    end if
-    link => next
-  end do
-  ! we want to remake the queue from scratch.
-  nullify(task_list%queue)
-  task_list%nq = 0
-
-  write (*,'(a,i8.1)') 'no. of tasks removed = ', n_removed
-
-  call trace_end
-END SUBROUTINE tidy_up
 
 !===============================================================================
 !> Evaluate update cost for all patches
 !===============================================================================
-SUBROUTINE evaluate (self)
+SUBROUTINE evaluate (self, task_list)
   class (ramses_t):: self
+  type (task_list_t), pointer:: task_list
   type (link_t), pointer:: link
   class (task_t), pointer:: task
   real, dimension(:,:,:,:), pointer:: mem
-  integer:: l(3), u(3), i, ix, iy, iz, nskip, level
+  integer:: l(3), u(3), i, ix, iy, iz, nskip, level, n, key(4), n_cost
   real:: ds, d, e, pg, ux, uy, uz, umax, bx, by, bz, p(3), cs, cf, ua, ub, ctmax, dsmin, ct
-  real(8):: cost1, cost2, cost3
+  real(8):: cost1, cost2, cost3, max_cost, sum_cost, cost1_l, cost2_l
+  real(4), pointer:: cost
   !.............................................................................
   call trace%begin('ramses_t%evaluate')
   cost1 = 0d0
@@ -1442,77 +1675,92 @@ SUBROUTINE evaluate (self)
   ctmax = 0d0
   level = 0
   dsmin = 0.5d0**self%maxlvl
-  link => self%task_list%head
+  link => task_list%head
+  i = 0
   do while (associated(link))
     task => link%task
+    i = i+1
+    if (mod(i,100000)==0) &
+      print *, i
     select type (task)
-    class is (patch_t)
-    if (verbose > 1) &
-    write (stdout,'(i6,o4,4(2x,3i4))') task%id, task%is_clear(bits%frozen), &
-      task%mesh%li, task%mesh%ui, task%mesh%lo, task%mesh%uo
-    if (task%is_clear(bits%frozen)) then
-      if (verbose > 3) &
-        write (stdout,*) 'PATCH:', task%id, &
-          task%level, task%mesh%n, task%mem(3,3,3,1,task%it,1), task%it
-      mem => task%mem(:,:,:,:,task%it,1)
-      l = task%mesh%li
-      u = task%mesh%ui
-      ds = task%mesh(1)%d
-      d = sum(mem(l(1):u(1),l(2):u(2),l(3):u(3),1))
-      if (d <= 0.0) then
-        write (stdout,*) 'SKIPPING', task%id
-        cycle
-      end if
-      do i=1,3
-        p(i) = sum(mem(l(1):u(1),l(2):u(2),l(3):u(3),i+2))/d
-      end do
-      nskip = 0
-      do iz=l(3),u(3)
-        do iy=l(2),u(2)
-          do ix=l(1),u(1)
-            d =  mem(ix,iy,iz,task%idx%d)
-            e =  mem(ix,iy,iz,task%idx%e)
-            if (d <= 0.0) then
-              nskip = nskip+1
-              cycle
-            end if
-            ux = mem(ix,iy,iz,task%idx%px)/d
-            uy = mem(ix,iy,iz,task%idx%py)/d
-            uz = mem(ix,iy,iz,task%idx%pz)/d
-            bx = mem(ix,iy,iz,task%idx%bx)
-            by = mem(ix,iy,iz,task%idx%by)
-            bz = mem(ix,iy,iz,task%idx%bz)
-            if (task%kind(1:6)=='ramses') then
-              pg = (e-0.5*d*((ux**2+uy**2+uz**2) &
-                            +(bx**2+by**2+bz**2)))*(task%gamma-1d0)
-            else if (task%kind(1:9)=='stagger2e') then
-              pg = d**task%gamma*exp(e/d*(task%gamma-1.0))
-            else
-              pg = e*(task%gamma-1d0)
-            end if
-            cs = sqrt(self%gamma*pg/d)
-            cf = sqrt((bx**2+by**2+bz**2+self%gamma*pg)/d)
-            ua = sqrt(ux**2+uy**2+uz**2)
-            ux = ux-p(1)
-            uy = uy-p(2)
-            uz = uz-p(3)
-            ub = sqrt(ux**2+uy**2+uz**2)
-            ct = (ua+cf)/dsmin
-            cost1 = cost1 + (ua+cf)/ds
-            cost2 = cost2 + (ub+cf)/ds
-            cost3 = cost3 + 1d0/ds
-            if (ct > ctmax) then
-              ctmax = ct
-              umax = ua+cf
-              level = task%level
-            end if
+    class is (experiment_t)
+      call self%u_max_table_get (task%key, cost)
+      if (verbose > 1) &
+        write (stdout,'(i6,o4,4(2x,3i4))') task%id, task%is_clear(bits%frozen), &
+          task%mesh%li, task%mesh%ui, task%mesh%lo, task%mesh%uo
+      if (task%is_clear(bits%frozen)) then
+        if (verbose > 3) &
+          write (stdout,*) 'PATCH:', task%id, &
+            task%level, task%mesh%n, task%mem(3,3,3,1,task%it,1), task%it
+        mem => task%mem(:,:,:,:,task%it,1)
+        l = task%mesh%li
+        u = task%mesh%ui
+        ds = task%mesh(1)%d
+        d = sum(mem(l(1):u(1),l(2):u(2),l(3):u(3),1))
+        if (d <= 0.0) then
+          write (stdout,*) 'SKIPPING', task%id
+          cycle
+        end if
+        do i=1,3
+          p(i) = sum(mem(l(1):u(1),l(2):u(2),l(3):u(3),task%idx%px+i-1))/d
+        end do
+        !-------------------------------------------------------------------------
+        ! Evaluate the Courant condition for the oct and compute the cost
+        !-------------------------------------------------------------------------
+        nskip = 0
+        cost1_l = 0.0
+        cost2_l = 0.0
+        do iz=l(3),u(3)
+          do iy=l(2),u(2)
+            do ix=l(1),u(1)
+              d =  mem(ix,iy,iz,task%idx%d)
+              e =  mem(ix,iy,iz,task%idx%e)
+              if (d <= 0.0) then
+                nskip = nskip+1
+                cycle
+              end if
+              ux = mem(ix,iy,iz,task%idx%px)/d
+              uy = mem(ix,iy,iz,task%idx%py)/d
+              uz = mem(ix,iy,iz,task%idx%pz)/d
+              bx = mem(ix,iy,iz,task%idx%bx)
+              by = mem(ix,iy,iz,task%idx%by)
+              bz = mem(ix,iy,iz,task%idx%bz)
+              if (task%kind(1:6)=='ramses') then
+                !pg = (e-0.5*d*((ux**2+uy**2+uz**2) &
+                !              +(bx**2+by**2+bz**2)))*(task%gamma-1d0)
+                pg = (e-0.5*d*((ux**2+uy**2+uz**2)))*(task%gamma-1d0)
+              else if (task%kind(1:9)=='stagger2e') then
+                pg = d**task%gamma*exp(e/d*(task%gamma-1.0))
+              else
+                pg = e*(task%gamma-1d0)
+              end if
+              cs = sqrt(self%gamma*pg/d)
+              cf = sqrt((bx**2+by**2+bz**2+self%gamma*pg)/d)
+              ua = sqrt(ux**2+uy**2+uz**2)
+              ux = ux-p(1)
+              uy = uy-p(2)
+              uz = uz-p(3)
+              ub = sqrt(ux**2+uy**2+uz**2)
+              ct = (ua+cf)/dsmin
+              cost1_l = max(cost1_l,(ua+cf)/ds)
+              cost2_l = max(cost1_l,(ub+cf)/ds)
+              cost3 = cost3 + 1d0/ds
+              if (ct > ctmax) then
+                ctmax = ct
+                umax = ua+cf
+                level = task%level
+              end if
+            end do
           end do
         end do
-      end do
-      if (nskip > 0) then
-        print *,'SKIPPING PATCH', task%id, nskip, product(u-l+1)
+        if (nskip > 0) then
+          print *,'SKIPPING PATCH', task%id, nskip, product(u-l+1)
+        else
+          cost  = cost  + cost1_l*product(u-l+1)
+          cost1 = cost1 + cost1_l*product(u-l+1)
+          cost2 = cost2 + cost2_l*product(u-l+1)
+        end if
       end if
-    end if
     end select
     link => link%next
   end do
@@ -1520,236 +1768,132 @@ SUBROUTINE evaluate (self)
   write(stdout,'(a,i4,1p,e12.4,i8)') ' level, umax:', level, umax
   write(stdout,'(a,1p,3e12.4)') ' costs:', cost1, cost2, cost3
   write(stdout,'(a,1p,3e12.4)') ' costs ratios:     ', cost3/max(tiny(1e0),cost1), cost3/max(tiny(1e0),cost2)
+  !-----------------------------------------------------------------------------
+  ! Sum up the cost over the larger, 16x16x16 DISPATCH patches by running threw
+  ! the task list, making sure to count each cost only once
+  !-----------------------------------------------------------------------------
+  link => task_list%head
+  level_cost = 0.0
+  max_cost = 0.0
+  sum_cost = 0.0
+  n_cost = 0
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (experiment_t)
+      call self%u_max_table_get (task%key, cost)
+      if (cost > 0.0) then
+        !level_cost(task%level) = level_cost(task%level) + cost
+        max_cost = max(cost,max_cost)
+        sum_cost = sum_cost+cost
+        cost = 0.0
+        n_cost = n_cost+1
+      end if
+    end select
+    link => link%next
+  end do
+  cost3 = n_cost*max_cost
+  write(stdout,'(a,1p,3e12.4)') ' costs ratios:     ', cost3/max(tiny(1e0),sum_cost)
   call trace%end
 END SUBROUTINE evaluate
-
-!===============================================================================
-!> Create a set of DISPATCH patches that cover the initial RAMSES patches
-!===============================================================================
-SUBROUTINE create_cartesian (self)
-  class (ramses_t):: self
-  !.............................................................................
-  integer:: l
-  integer, save:: itimer=0
-  real(8):: rmin(3), rmax(3), rtmp(3)
-  class(link_t), pointer:: link
-  !-----------------------------------------------------------------------------
-  call trace%begin ('ramses_t%create_cartesian', itimer=itimer)
-  allocate (self%task_list)                     ! allocate a new task list
-  call self%task_list%init                      ! initialize new task list
-  call set_levels                               ! respect initial RAMSES levels
-  !-----------------------------------------------------------------------------
-  ! Make patches
-  !-----------------------------------------------------------------------------
-  do l=self%minlvl,self%maxlvl                  ! for all levels
-    !---------------------------------------------------------------------------
-    ! Determine rmin, rmax, using all tasks at level l, inside margins
-    !---------------------------------------------------------------------------
-    rmin = self%size
-    rmax = 0d0
-    link => self%ramses_task_list%head
-    do while (associated(link))
-      if (link%task%level == l) then
-        rmin = min(rmin,link%task%position)
-        rmax = max(rmax,link%task%position)
-      end if
-      link => link%next
-    end do
-    !rmin = [self%xmin, self%ymin, self%zmin]
-    !rmax = [self%xmax, self%ymax, self%zmax]
-    call self%create_level (l, rmin, rmax)      ! create level patches
-  end do
-  call self%download_values                     ! fill values into new patches
-  call self%remove_ramses_patches               ! remove initial RAMSES patches
-  call self%task_list%init_all_nbors            ! initialize nbor lists
-  call self%task_list%reset_status              ! set status bits and count tasks
-  call trace%end (itimer)
-contains
-  subroutine set_levels
-  class(link_t), pointer:: link
-  !-----------------------------------------------------------------------------
-  self%minlvl = 100
-  self%maxlvl = 0
-  link => self%ramses_task_list%head
-  link%task%track = .true.
-  do while (associated(link))
-    self%minlvl = min (self%minlvl, link%task%level)
-    self%maxlvl = max (self%maxlvl, link%task%level)
-    link => link%next
-  end do
-  print *, 'minlvl, maxlvl found in RAMSES octs =',self%minlvl,self%maxlvl
-  end subroutine
-END SUBROUTINE create_cartesian
-
-!===============================================================================
-!> Create patches on the given level, at all Cartesian locations where there is
-!> overlap with a RAMSES patch with at least that level
-!===============================================================================
-SUBROUTINE create_level (self, level, rmin, rmax)
-  class (ramses_t):: self
-  real(8):: rmin(3), rmax(3)
-  integer:: level
-  !.............................................................................
-  integer:: ix, iy, iz, n, i(3)
-  integer(8):: l(3), u(3)
-  logical:: keep_this_patch
-  class(link_t), pointer:: link
-  class(task_t), pointer:: task
-  class(patch_t), pointer:: ramses_patch
-  integer(2), allocatable:: flag(:,:,:)
-  real(8):: size(3)
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('ramses_t%create_level', itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Create a flag-map, indicating where there should be patches
-  !-----------------------------------------------------------------------------
-  size = self%size/2**level*scene%patch_n
-  !-----------------------------------------------------------------------------
-  ! Compute bounds on flag and allocate
-  !-----------------------------------------------------------------------------
-  l = floor(rmin/size)
-  u = floor(rmax/size)
-  allocate (flag(l(1):u(1),l(2):u(2),l(3):u(3)))
-  flag = 0
-  link => self%ramses_task_list%head
-  do while (associated(link))
-    ramses_patch => task2patch (link%task)
-    if (ramses_patch%level >= level) then
-      i = floor(ramses_patch%position/size)
-      flag(i(1),i(2),i(3)) = 1
-    end if
-    link => link%next
-  end do
-  if (verbose > 0) &
-    write(stdout,*) 'level, count, max:', &
-      level, count(flag==1), product(shape(flag))
-  !-----------------------------------------------------------------------------
-  ! Create patches where the flag is set
-  !-----------------------------------------------------------------------------
-  allocate (self%dispatch_task_list)
-  do iz=l(3),u(3)
-    do iy=l(2),u(2)
-      do ix=l(1),u(1)
-        if (flag(ix,iy,iz)>0) then
-          call self%cartesian_init (level, ix, iy, iz)
-        end if
-      end do
-    end do
-  end do
-  deallocate (flag)
-  call trace%end (itimer)
-contains
-  !-----------------------------------------------------------------------------
-  ! Determine if two simple Cartesian patches overlap, using a minimum of info
-  !-----------------------------------------------------------------------------
-  logical function overlaps (patch1, patch2)
-  class(patch_t), pointer:: patch1, patch2
-  real(8):: distance(3)
-  !-----------------------------------------------------------------------------
-  distance = patch1%position - patch2%position
-  distance = mod (distance + 1.5_8*self%size, self%size) - 0.5_8*self%size
-  overlaps = all(abs(distance) < 0.5_8*(patch1%size + patch2%size + patch1%ds))
-  end function overlaps
-END SUBROUTINE create_level
 
 !===============================================================================
 !> Initialize a minimum amount of patch information in a Cartesian arrangement
 !> This assumes that positions lie btw 0.0 and self%size
 !===============================================================================
-SUBROUTINE cartesian_init (self, level, ix, iy, iz)
+SUBROUTINE cartesian_init (self, key, patch)
   class (ramses_t):: self
-  integer:: level, ix, iy, iz
+  integer:: key(4)
+  class (experiment_t), pointer:: patch
   !.............................................................................
+  integer:: level, ix, iy, iz
   class (task_t), pointer:: task
-  class (solver_t), pointer:: patch
-  integer, save:: itimer=0
+  class(*), pointer:: ptr
   !-----------------------------------------------------------------------------
-  call trace%begin ('ramses_t%cartesian_init', itimer=itimer)
-  allocate (experiment_t:: task)
-  patch => solver%cast2solver (task)
-  patch%level = level
-  patch%n = scene%patch_n
-  self%size = 1d0
-  patch%ds = self%size*0.5d0**level
-  patch%size = patch%ds*patch%n
-  patch%position = [(ix+0.5d0)*patch%size(1), &
-                    (iy+0.5d0)*patch%size(2), &
-                    (iz+0.5d0)*patch%size(3)]
-  patch%ng = 3
-  call patch%setup (ng=patch%ng, size=patch%size, position=patch%position)
-  patch%position = [(ix+0.5d0)*patch%size(1), &
-                    (iy+0.5d0)*patch%size(2), &
-                    (iz+0.5d0)*patch%size(3)]
-  !print '("c_init:",2i6,2x,3i4,4(2x,1p,3g12.3))', patch%id, level, patch%n, patch%size, patch%position, patch%ds
-  call self%task_list%append (task)
-  call trace%end (itimer)
+  call trace%begin ('ramses_t%cartesian_init')
+  !-----------------------------------------------------------------------------
+  ! Check if a patch already exists at the key
+  !-----------------------------------------------------------------------------
+  call self%patch_table%get (key, ptr)
+  if (associated(ptr)) then
+    select type (ptr)
+    class is (experiment_t)
+    patch => ptr
+    end select
+    if (verbose > 2) then
+      write (stdout,1) 'cartesian_init: patch already exists: id =', &
+        patch%id, key
+      1 format(a,i7,2x,4i5)
+    end if
+  else
+    allocate (patch)
+    ptr => patch
+    call self%patch_table%set (key, ptr)
+    level = key(1)
+    ix = key(2)
+    iy = key(3)
+    iz = key(4)
+    patch%key = key
+    patch%level = level
+    patch%n = 16
+    self%size = 1d0
+    patch%ds = self%size*0.5d0**level
+    patch%size = patch%ds*patch%n
+    patch%position = [(ix+0.5d0)*patch%size(1), &
+                      (iy+0.5d0)*patch%size(2), &
+                      (iz+0.5d0)*patch%size(3)]
+    patch%ng = 3
+    call patch%set_defaults (n=patch%n, ng=patch%ng, size=patch%size, &
+      position=patch%position)
+    call patch%init
+    patch%mhd = .true.
+    call self%initialize (patch)  
+    !-----------------------------------------------------------------------------
+    allocate (patch%filled(patch%n(1),patch%n(2),patch%n(3)))
+    call io%bits_mem (storage_size(patch%filled), product(shape(patch%filled)), 'fill')
+    patch%filled = -1
+    !---------------------------------------------------------------------------
+    ! Add the patch to the task list -- this creates the patch%link
+    !---------------------------------------------------------------------------
+    call self%add_to_task_list (patch)
+    if (verbose > 1) &
+      write (stdout,1) &
+        'cartesian_init: new patch created: id, key =', patch%id, key
+  end if
+  call trace%end ()
 END SUBROUTINE cartesian_init
 
 !===============================================================================
-!> Download values from the RAMSES octs to the DISPATCH patches
+!> Initialize reasonable default values, in case download has gaps
 !===============================================================================
-SUBROUTINE download_values (self)
-  class (ramses_t):: self
+SUBROUTINE initialize (self, patch)
+  class(ramses_t):: self
+  class(patch_t):: patch
+  integer:: iv
   !.............................................................................
-  class(link_t), pointer:: link
-  class(patch_t), pointer:: patch
-  real:: d_min, d_min1, d_min2
-  integer:: n_frozen, n_total
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('ramses_t%download_values', itimer=itimer)
-  call download%init
-  d_min = 1e30
-  !-----------------------------------------------------------------------------
-  ! First download as much as possible from the ramses_task_list nbors
-  !-----------------------------------------------------------------------------
-  link => self%task_list%head
-  do while (associated(link))
-    call init_nbors (self%ramses_task_list, link)
-    call download%download_link (link, all_cells=.true.)
-    link => link%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! Then do a download of only guard zones, from DISPATCH task list nbors
-  !-----------------------------------------------------------------------------
-  n_total = 0
-  n_frozen = 0
-  link => self%task_list%head
-  do while (associated(link))
-    call self%task_list%init_nbors (link)
-    call download%download_link (link)
-    patch => task2patch (link%task)
-    d_min1 =        minval(patch%mem(:,:,:,patch%idx%d,patch%it,1))
-    d_min2 = patch%fminval(patch%mem(:,:,:,patch%idx%d,patch%it,1))
-    d_min = min(d_min, d_min1)
-    if (d_min2 <= 0.0) then
-      call link%task%set (bits%frozen)
-      n_frozen = n_frozen+1
-      !io%verbose = 3
-      !io%id_debug = patch%id
-      !call download%download_link (link, all_cells=.true.)
-      !call mpi%abort ('density is not positive')
+  do iv=1,patch%nv
+    if      (iv==patch%idx%d) then
+      patch%mem(:,:,:,iv,:,:) = self%d_min
+    else if (iv==patch%idx%e) then
+      if (patch%gamma == 1d0) then
+        patch%mem(:,:,:,iv,:,:) = self%d_min
+      else
+        patch%mem(:,:,:,iv,:,:) = self%d_min*self%tt_min/(patch%gamma-1d0)
+      end if
+    else
+      patch%mem(:,:,:,iv,:,:) = 0.0
     end if
-    if (verbose > 1 .or. d_min2 < 0.0) then
-      write(stdout,*) 'after download: id, level, n_nbors, d_min, frozen =', &
-        patch%id, patch%level, patch%n_nbors, d_min1, d_min2, &
-        patch%is_set(bits%frozen)
-    end if
-    n_total = n_total+1
-    link => link%next
   end do
-  write(stdout,*) 'minimum density, n_frozen, n_total =', &
-    d_min, n_frozen, n_total
-  call trace%end (itimer)
-END SUBROUTINE download_values
+END SUBROUTINE initialize
 
 !===============================================================================
-!> Add all RAMES patches with lower level and within a good margin of overlap
+!> Add all patches with level <= L+1 and within a good margin of overlap
 !===============================================================================
 SUBROUTINE init_nbors (list, link)
   type(task_list_t), pointer:: list
-  class(link_t), pointer:: link, scan, nbor
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(link_t), pointer:: scan, nbor
   real(8):: dist(3)
   integer:: n
   !-----------------------------------------------------------------------------
@@ -1758,12 +1902,13 @@ SUBROUTINE init_nbors (list, link)
   n = 0
   scan => list%head
   do while (associated(scan))
-    if (scan%task%level <= link%task%level) then
+    !---------------------------------------------------------------------------
+    ! Include only patches at lower levels, for prolongation to initial values
+    !---------------------------------------------------------------------------
+    if (abs(scan%task%level-link%task%level) < 2) then
       n = n+1
       dist = abs(scan%task%position-link%task%position)
-      !print '("init_nb:",i6,i4,1p,2g12.3)', scan%task%id, scan%task%level, &
-      !  maxval(dist/link%task%size), maxval(dist/(scan%task%size + 0.5*link%task%size))
-      if (all(dist < scan%task%size + 0.5*link%task%size)) then
+      if (all(dist <= 0.5*(scan%task%size + link%task%size))) then
         allocate (nbor)
         nbor%link => scan
         nbor%task => scan%task
@@ -1778,30 +1923,70 @@ SUBROUTINE init_nbors (list, link)
 END SUBROUTINE init_nbors
 
 !===============================================================================
-!> Remove the initial RAMSES patches, and their links in the task list, and
-!> then renumber the remaining tasks, consistent with the general numbering 
-!> scheme.
+!> Update the nbor lists of the nbors at level L+1, to avoid generating several
+!> level L tasks at the same position.
 !===============================================================================
-SUBROUTINE remove_ramses_patches (self)
-  class (ramses_t):: self
-  !.............................................................................
-  class(link_t), pointer:: link, next
-  class(patch_t), pointer:: patch
-  integer:: id
+SUBROUTINE init_nbor_nbors (list, link)
+  type(task_list_t), pointer:: list
+  class(link_t), pointer:: link, nbor, scan
+  real(8):: dist(3)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('ramses_t%remove_ramses_patches', itimer=itimer)
-  link => self%ramses_task_list%head
-  do while (associated(link))
-    next => link%next
-    patch => task2patch (link%task)
-    call patch%dealloc
-    call link%remove_nbor_list (link%nbor)
-    deallocate (link%task)
-    deallocate (link)
-    link => next
+  call trace%begin ('ramses_t%init_nbor_nbors', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Refresh the nbor list of nbors at level L+1
+  !-----------------------------------------------------------------------------
+  call init_nbors (list, link)
+  nbor => link%nbor
+  do while (associated(nbor))
+    ! -- select tasks at level = L+1
+    if (nbor%task%level == link%task%level+1) then
+      ! -- select tasks that overlap
+      call init_nbors (list, nbor%link)
+    end if
+    nbor => nbor%next
   end do
+  !-----------------------------------------------------------------------------
+  ! Create an nbor list intended only for prolongation
+  !-----------------------------------------------------------------------------
   call trace%end (itimer)
-END SUBROUTINE remove_ramses_patches
+END SUBROUTINE init_nbor_nbors
+
+!===============================================================================
+!> Remove the initial RAMSES octs
+!===============================================================================
+SUBROUTINE remove_ramses_octs (self)
+  class (ramses_t):: self
+  !.............................................................................
+  class(dll_node_t), pointer:: oct, next
+  integer:: id
+  integer, save:: itimer=0, nprint=100
+  !-----------------------------------------------------------------------------
+  call trace%begin ('ramses_t%remove_ramses_octs', itimer=itimer)
+  write(stdout,*) &
+    '----------------- remove_ramses_octs begin -----------------------'
+  oct => self%oct_list%head
+  do while (associated(oct))
+    next => oct%next
+    select type (oct)
+    class is (oct_t)
+    if (allocated(oct%var)) then
+      call io%bits_mem (-storage_size(oct%var), product(shape(oct%var)), 'oct')
+      deallocate (oct%var)
+    end if
+    end select
+    call io%bits_mem (-8, oct_size, 'oct')
+    deallocate (oct)
+    oct => next
+  end do
+  if (verbose > 0) then
+    write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
+    write (stdout,*) 'remove_ramses_octs: exit in 5 sec'
+    call mpi%delay (5e3)
+  end if
+  write(stdout,*) &
+    '----------------- remove_ramses_octs done ------------------------'
+  call trace%end (itimer)
+END SUBROUTINE remove_ramses_octs
 
 END MODULE ramses_mod

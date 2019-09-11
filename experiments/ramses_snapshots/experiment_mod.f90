@@ -8,6 +8,7 @@ MODULE experiment_mod
   implicit none
   private
   type, public, extends(solver_t):: experiment_t
+    integer:: key(4)
   contains
     procedure init
     procedure update
@@ -18,8 +19,11 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
+  integer, save:: itimer=0
   !----------------------------------------------------------------------------
+  call trace%begin ('experiment_t%init', itimer=itimer)
   call self%solver_t%init
+  call trace%end (itimer)
 END SUBROUTINE init
 
 !===============================================================================

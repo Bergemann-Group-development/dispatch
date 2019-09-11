@@ -9,20 +9,20 @@
 MODULE hash_table_mod
   USE iso_c_binding, only: c_loc, c_ptr
   USE mpi_mod
+  USE trace_mod
+  USE io_mod
   implicit none
   private
-  integer, parameter:: ndim=2
   !-----------------------------------------------------------------------------
   ! General module parameters
   !-----------------------------------------------------------------------------
-  integer, parameter :: key_length = ndim * 8
   integer(kind=8), dimension(0:3), parameter :: constants = (/5, -1640531527, 97, 1003313/)
   !-----------------------------------------------------------------------------
   ! Define a bucket as a derived type (sequence statement!) for better
   ! cache efficiency.
   !-----------------------------------------------------------------------------
   type, public:: bucket_t
-    integer, dimension(1:ndim) :: key
+    integer, allocatable, dimension(:) :: key
     integer :: next_ibucket
     class(*), pointer :: value
   end type
@@ -31,6 +31,8 @@ MODULE hash_table_mod
   !-----------------------------------------------------------------------------
   type, public:: hash_table_t
     type(bucket_t), allocatable, dimension(:)  :: data
+    integer         :: ndim=2
+    integer         :: key_length
     integer         :: total_size, head_free, nfree_chain, nfree
     integer(kind=8) :: size
     integer(kind=8) :: bitmask
@@ -38,10 +40,13 @@ MODULE hash_table_mod
   contains
     procedure:: init
     procedure:: reset_entire_hash
+    procedure:: dealloc
     procedure:: set
     procedure:: get
     procedure:: free
     procedure:: stats
+    procedure:: same_keys
+    procedure:: reset_bucket
   end type
   type(hash_table_t), public:: hash_table
 CONTAINS
@@ -51,24 +56,31 @@ CONTAINS
 !> Chose size (excluding the chaining space) as the smallest
 !> power of two >= the required_size.
 !===============================================================================
-SUBROUTINE init (htable, req_size)
-  class(hash_table_t), intent(inout) :: htable
+SUBROUTINE init (self, req_size, ndim)
+  class(hash_table_t), intent(inout) :: self
   integer            , intent(in)    :: req_size
+  integer, optional  , intent(in)    :: ndim
   !-----------------------------------------------------------------------------
-  htable%size = 2
-  do while (htable%size < req_size*2)
-     htable%size = htable%size * 2
+  self%size = 2
+  if (present(ndim)) then
+    self%ndim = ndim
+  else
+    self%ndim = 2
+  end if
+  self%key_length = self%ndim*8
+  do while (self%size < req_size*2)
+     self%size = self%size * 2
   end do
-  call reset_entire_hash (htable, .false.)
+  call reset_entire_hash (self, .false.)
 END SUBROUTINE init
 
 !===============================================================================
 !> Hash function
 !===============================================================================
 PURE FUNCTION hash_func(key)
-  integer, dimension(1:ndim), intent(in) :: key
-  integer(kind=8)                        :: hash_func
-  hash_func = dot_product(key(1:ndim), constants(1:ndim))
+  integer, dimension(:), intent(in) :: key
+  integer(kind=8)                   :: hash_func
+  hash_func = dot_product(key(:), constants(1:size(key)))
 END FUNCTION hash_func
 
 !===============================================================================
@@ -86,9 +98,14 @@ SUBROUTINE reset_entire_hash (htable, resize)
      load_factor = real(htable%size - htable%nfree,kind=4) / real(htable%size,kind=4)
      if (load_factor > 0.6) then
         htable%size = htable%size * 2
+        call io%bits_mem (-storage_size(htable%data), product(shape(htable%data)))
+        call io%bits_mem (-storage_size(htable%next_free), &
+          product(shape(htable%next_free)), 'hash')
         deallocate(htable%data, htable%next_free)
      else if (load_factor < 0.2 .and. htable%size > 2)then
         htable%size = htable%size / 2
+        call io%bits_mem (-storage_size(htable%next_free), &
+          product(shape(htable%next_free)), 'hash')
         deallocate(htable%data, htable%next_free)
      end if
   end if
@@ -103,12 +120,16 @@ SUBROUTINE reset_entire_hash (htable, resize)
   if (.not. allocated(htable%data))then
      allocate(htable%data(1: htable%total_size))
      allocate(htable%next_free (htable%size + 1: htable%total_size))
+     call io%bits_mem (storage_size(htable%data), &
+       product(shape(htable%data)), 'hash')
+     call io%bits_mem (storage_size(htable%next_free), &
+       product(shape(htable%next_free)), 'hash')
   end if
   !-----------------------------------------------------------------------------
   ! Initialize data
   !-----------------------------------------------------------------------------
   do i = 1, int(htable%total_size,kind=4)
-     call reset_bucket(htable%data(i))
+     call htable%reset_bucket (htable%data(i))
   end do
   do i = int(htable%size,kind=4) + 1, htable%total_size - 1
      htable%next_free(i) = i + 1
@@ -117,11 +138,33 @@ SUBROUTINE reset_entire_hash (htable, resize)
 END SUBROUTINE reset_entire_hash
 
 !===============================================================================
+!> Subroutine to reset the entire hash table
+!> IMPORTANT: The new size of the hash table is adapted based on the
+!> load factor before resetting the hash table.
+!===============================================================================
+SUBROUTINE dealloc (htable, resize)
+  class(hash_table_t), intent(inout) :: htable
+  logical, intent(in)                :: resize
+  integer :: i
+  real :: load_factor
+  !-----------------------------------------------------------------------------
+  call io%bits_mem (-storage_size(htable%data), product(shape(htable%data)))
+  call io%bits_mem (-storage_size(htable%next_free), &
+    product(shape(htable%next_free)), 'hash')
+  deallocate (htable%data, htable%next_free)
+END SUBROUTINE dealloc
+
+!===============================================================================
 !> Reset the content of a bucket
 !===============================================================================
-SUBROUTINE reset_bucket(buck)
+SUBROUTINE reset_bucket (self, buck)
+  class(hash_table_t):: self
   type(bucket_t), intent(inout) :: buck
   !-----------------------------------------------------------------------------
+  if (allocated(buck%key)) then
+    deallocate(buck%key)
+  end if
+  allocate (buck%key(self%ndim))
   buck%next_ibucket = -1
   buck%key = 0
 END SUBROUTINE reset_bucket
@@ -132,20 +175,22 @@ END SUBROUTINE reset_bucket
 !===============================================================================
 SUBROUTINE set (htable, key, val)
   class(hash_table_t),         intent(inout) :: htable
-  integer, dimension(1:ndim),  intent(in)    :: key
+  integer, dimension(:)     ,  intent(in)    :: key
   class(*), pointer,           intent(in)    :: val
   integer(kind=8) :: full_hash
   integer(kind=8) :: ibucket
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Compute ibucket
   !-----------------------------------------------------------------------------
+  !call trace%begin ('hash_table_t%set', itimer=itimer)
   full_hash = hash_func(key)
   ibucket = IAND(full_hash, htable%bitmask) + 1
   if (htable%data(ibucket)%next_ibucket < 0) then          
      ! Bucket is empty, simply insert value       
      htable%data(ibucket)%next_ibucket = 0
      htable%data(ibucket)%value => val
-     htable%data(ibucket)%key(1:ndim) = key(1:ndim)
+     htable%data(ibucket)%key = key
      htable%nfree = htable%nfree - 1
   !-----------------------------------------------------------------------------
   ! Bucket is not empty, walk through linked list
@@ -153,7 +198,7 @@ SUBROUTINE set (htable, key, val)
   else if (htable%nfree_chain>0)then
      do while (htable%data(ibucket)%next_ibucket .ne. 0)
         ! Check if key already exists - abort if so
-        if (same_keys(htable%data(ibucket)%key(1:ndim),key(1:ndim)))then
+        if (htable%same_keys(htable%data(ibucket)%key,key)) then
           write(*,*) "hash_taable: trying to insert already existing key: ", key
           call mpi%abort ('hash_table: double insert')
         end if
@@ -162,7 +207,7 @@ SUBROUTINE set (htable, key, val)
      !--------------------------------------------------------------------------
      ! Check again (at the end of linked list)
      !--------------------------------------------------------------------------
-     if (same_keys(htable%data(ibucket)%key(1:ndim),key(1:ndim)))then
+     if (htable%same_keys(htable%data(ibucket)%key,key))then
         write(*,*) "trying to insert already existing key: ",key
         stop
      end if
@@ -173,7 +218,7 @@ SUBROUTINE set (htable, key, val)
      ibucket = htable%head_free
      htable%data(ibucket)%next_ibucket = 0
      htable%data(ibucket)%value => val
-     htable%data(ibucket)%key(1:ndim) = key(1:ndim)
+     htable%data(ibucket)%key = key
      !--------------------------------------------------------------------------
      ! remove bucket from head of free linked list
      !--------------------------------------------------------------------------
@@ -183,6 +228,7 @@ SUBROUTINE set (htable, key, val)
      write(*,*)"hash chaining space full "
      stop
   end if
+  !call trace%end (itimer)
 END SUBROUTINE set
 
 !===============================================================================
@@ -191,14 +237,17 @@ END SUBROUTINE set
 !===============================================================================
 SUBROUTINE get (htable, key, value)
   class(hash_table_t),            intent(in) :: htable
-  integer    , dimension(1:ndim), intent(in) :: key
+  integer    , dimension(:)     , intent(in) :: key
   class(*), pointer                          :: value
   integer(kind=8) :: ibucket, full_hash
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  !call trace%begin ('hash_table_t%get', itimer=itimer)
   full_hash = hash_func(key)
   ibucket = IAND(full_hash, htable%bitmask) + 1
-  if (same_keys(htable%data(ibucket)%key(1:ndim), key(1:ndim)))then
+  if (htable%same_keys(htable%data(ibucket)%key, key))then
      value => htable%data(ibucket)%value
+     !call trace%end (itimer)
      return
   end if
   !-----------------------------------------------------------------------------
@@ -206,8 +255,9 @@ SUBROUTINE get (htable, key, value)
   !-----------------------------------------------------------------------------
   do while( htable%data(ibucket)%next_ibucket > 0)
      ibucket = htable%data(ibucket)%next_ibucket
-     if (same_keys(htable%data(ibucket)%key(1:ndim), key(1:ndim)))then
+     if (htable%same_keys(htable%data(ibucket)%key, key))then
         value => htable%data(ibucket)%value
+        !call trace%end (itimer)
         return
      end if
   end do
@@ -215,6 +265,7 @@ SUBROUTINE get (htable, key, value)
   ! Nothing found...
   !-----------------------------------------------------------------------------
   nullify(value)
+  !call trace%end (itimer)
 END SUBROUTINE get
 
 !===============================================================================
@@ -222,18 +273,18 @@ END SUBROUTINE get
 !===============================================================================
 SUBROUTINE free (htable, key)
   class(hash_table_t),         intent(inout) :: htable
-  integer , dimension(1:ndim), intent(in)    :: key
+  integer , dimension(:)     , intent(in)    :: key
   integer(kind=8) :: ibucket, previous_ibucket=0, full_hash
   full_hash = hash_func(key)
   ibucket = IAND(full_hash, htable%bitmask) + 1
   ! No collision case
   if (htable%data(ibucket)%next_ibucket == 0) then     
      htable%data(ibucket)%next_ibucket = -1
-     htable%data(ibucket)%key(1:ndim) = 0
+     htable%data(ibucket)%key = 0
      htable%nfree = htable%nfree + 1
   else
      ! Collision case
-     do while (.not. same_keys(htable%data(ibucket)%key(1:ndim), key(1:ndim)))
+     do while (.not. htable%same_keys(htable%data(ibucket)%key, key))
         previous_ibucket=ibucket
         ibucket=htable%data(ibucket)%next_ibucket
      end do
@@ -256,13 +307,14 @@ END SUBROUTINE free
 !===============================================================================
 !> Check if keys are equivalent
 !===============================================================================
-PURE FUNCTION same_keys(key1, key2)
+PURE FUNCTION same_keys(self, key1, key2)
+  class(hash_table_t)       , intent(in) :: self
   logical :: same_keys
-  integer, dimension(1:ndim), intent(in) :: key1, key2
-  logical, dimension(1:ndim)             :: ok
+  integer, dimension(:)     , intent(in) :: key1, key2
+  logical, dimension(1:self%ndim)        :: ok
   integer                                :: i
   !-----------------------------------------------------------------------------
-  do i = 1, ndim
+  do i = 1, self%ndim
      ok(i) = (key1(i)==key2(i))
   end do
   same_keys = ALL(ok)

@@ -261,7 +261,7 @@ SUBROUTINE prepend_link (self, link)
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
   !-----------------------------------------------------------------------------
-  call self%count_status()
+  !call self%count_status()
   call self%lock%unset ('list_t%prepend_link')
   call trace%end
 END SUBROUTINE prepend_link

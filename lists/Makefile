@@ -19,4 +19,4 @@ task_list_mod.o     : omp_timer_mod.o mpi_mod.o list_mod.o task_mod.o bits_mod.o
 mesg_list_mod.o     : task_list_mod.o
 counters_mod.o      : io_mod.o trace_mod.o omp_lock_mod.o
 plist_mod.o         : omp_timer_mod.o dll_mod.o
-hash_table_mod.o    : mpi_mod.o
+hash_table_mod.o    : mpi_mod.o io_mod.o trace_mod.o

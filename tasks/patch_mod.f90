@@ -39,6 +39,7 @@ MODULE patch_mod
     real(kind=KindScalarVar), dimension(:,:,:,:),     allocatable:: force_per_unit_volume
     real(kind=KindScalarVar), dimension(:,:,:),       allocatable:: heating_per_unit_mass
     real(kind=KindScalarVar), dimension(:,:,:),       allocatable:: heating_per_unit_volume
+    integer(kind=int8)      , dimension(:,:,:),       allocatable:: filled
     !--- anonymous pointer, which may be used to connect extra info to the solvers
     type(connect_t):: connect
     class(mesh_t), dimension(:), pointer:: mesh => null()
@@ -103,6 +104,7 @@ MODULE patch_mod
     procedure:: init_default
     procedure:: init_bdries
     procedure:: setup
+    procedure:: set_defaults
     procedure:: dealloc
     procedure:: clone_mem_accounting
     procedure:: rotate
@@ -220,6 +222,7 @@ MODULE patch_mod
   logical, save:: do_check_nan=.false.              ! check for NaN?
   logical, save:: panic=.false.                     ! error handling
   logical, save:: zero_order_extrap=.true.          ! extrap to no-mans-land
+  type(patch_t), public:: patch_defaults
   public task2patch
 CONTAINS
 
@@ -415,7 +418,7 @@ END SUBROUTINE init
 SUBROUTINE init_default (self)
   class(patch_t):: self
   !.............................................................................
-  integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000
+  integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw=1, max_files=1000
   logical, save:: no_mans_land=.false., use_data_hub=.false., limit_dtime=.false.
   real, save:: u_fixed=-1.0, grace=0.0
   real(8), save:: end_time=1.0, out_time=0.1, print_time=0.1, dt_fixed=-1.0
@@ -452,6 +455,14 @@ SUBROUTINE init_default (self)
     if (mpi%rank > 0) &
       self%track = .true.
     iprint = print_every                        ! print 1st task
+    !---------------------------------------------------------------------------
+    patch_defaults%position = position
+    patch_defaults%size     = size
+    patch_defaults%n        = n
+    patch_defaults%ng       = ng
+    patch_defaults%nt       = nt
+    patch_defaults%nv       = nv
+    patch_defaults%nw       = nw
   end if
   !-----------------------------------------------------------------------------
   ! To allow patches to have n, ng, nv, and nt values that differ, values that
@@ -525,6 +536,29 @@ SUBROUTINE init_bdries (self)
 END SUBROUTINE init_bdries
 
 !===============================================================================
+!> Set defaults
+!===============================================================================
+SUBROUTINE set_defaults (self, position, size, n, ng, nt, nv, nw)
+  class(patch_t)    :: self
+  real(8), optional :: position(3), size(3)
+  integer, optional :: n(3), ng(3)
+  integer, optional :: nt, nv, nw
+  !.............................................................................
+  type(header_t):: header
+  integer:: i
+  !-----------------------------------------------------------------------------
+  call trace%begin ('patch_t%setup')
+  call self%init_default                        ! read default params
+  if (present(position)) patch_defaults%position = position
+  if (present(size    )) patch_defaults%size     = size
+  if (present(n       )) patch_defaults%n        = n
+  if (present(ng      )) patch_defaults%ng       = ng
+  if (present(nt      )) patch_defaults%nt       = nt
+  if (present(nv      )) patch_defaults%nv       = nv
+  if (present(nw      )) patch_defaults%nw       = nw
+END SUBROUTINE set_defaults
+
+!===============================================================================
 !> Setup a patch, possibly with non-standard parameters. First setup with
 !> defaults, then possibly override, then do the actual setup
 !===============================================================================
@@ -540,13 +574,21 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%setup')
   call self%init_default                        ! read default params
-  if (present(position)) self%position = position
-  if (present(size    )) self%size     = size
-  if (present(n       )) self%n        = n
-  if (present(ng      )) self%ng       = ng
-  if (present(nt      )) self%nt       = nt
-  if (present(nv      )) self%nv       = nv
-  if (present(nw      )) self%nw       = nw
+  if (present(position)) patch_defaults%position = position
+  if (present(size    )) patch_defaults%size     = size
+  if (present(n       )) patch_defaults%n        = n
+  if (present(ng      )) patch_defaults%ng       = ng
+  if (present(nt      )) patch_defaults%nt       = nt
+  if (present(nv      )) patch_defaults%nv       = nv
+  if (present(nw      )) patch_defaults%nw       = nw
+  !-----------------------------------------------------------------------------
+  self%position = patch_defaults%position
+  self%size     = patch_defaults%size
+  self%n        = patch_defaults%n
+  self%ng       = patch_defaults%ng
+  self%nt       = patch_defaults%nt
+  self%nv       = patch_defaults%nv
+  self%nw       = patch_defaults%nw
   !-----------------------------------------------------------------------------
   ! Pass the desired patch dimension via the shared_mod to refine_mod
   !-----------------------------------------------------------------------------
