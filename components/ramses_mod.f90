@@ -189,7 +189,7 @@ MODULE ramses_mod
 CONTAINS
 
 !===============================================================================
-!> Facilitate call to `ramses%read`.  All heavy lifting is done there
+!> Facilitate call to %read_snapshot().  All heavy lifting is done there
 !===============================================================================
 SUBROUTINE init (self, name)
   class(ramses_t):: self
@@ -406,7 +406,7 @@ SUBROUTINE read_snapshot (self, keep, load)
     hash_table_size=self%oct_list%n/50
   end if
   self%rank = 0
-  self%rootlvl = nint(log(real(self%n_cell))/log(2.0))
+  self%rootlvl = floor(log(real(self%n_cell))/log(2.0))
   !
   write(filebase, '(a,"/output_",i5.5,"/amr_",i5.5,".out")') trim(self%path), self%nout, self%nout
   !
@@ -927,15 +927,15 @@ SUBROUTINE read_snapshot (self, keep, load)
               size = self%n_cell*ds
               oct%key(1) = ilevel
               oct%key(2:4) = position/size
-              oct%ii = nint((position-ds-oct%key(2:4)*size)/ds)
+              oct%ii = floor((position-ds-oct%key(2:4)*size)/ds)
               if (keep) then
-                allocate (oct%var(8,nvar_mhd))
+                allocate (oct%var(8,nvar_mhd+1))
                 call io%bits_mem (storage_size(oct%var), product(shape(oct%var)), 'oct')
                 oct%var = var(l,:,:)
               end if
               if (load) then
                 if (.not. keep) then
-                  allocate (oct%var(8,nvar_mhd))
+                  allocate (oct%var(8,nvar_mhd+1))
                   oct%var = var(l,:,:)
                 end if
                 call self%cartesian_init (oct%key, patch)
@@ -990,7 +990,8 @@ SUBROUTINE read_snapshot (self, keep, load)
   do ilevel=nlevelmin,self%maxlvl
     fill(ilevel)=sum(ncellsum(ilevel,:))/2.0**(3*(ilevel-1))
   enddo
-  write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
+  if (verbose > 0) & 
+    write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   write (*,'(a)') ' =================================================='
   !-----------------------------------------------------------------------------
   total_cost=0.0
@@ -1030,8 +1031,18 @@ SUBROUTINE read_snapshot (self, keep, load)
     call self%u_max_table%init (hash_table_size, ndim=4)
     call self%patch_table%init (hash_table_size, ndim=4)
   end if
+  call memtest_delay
   call trace%end
 END SUBROUTINE read_snapshot
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE memtest_delay
+  if (do_memtest) then
+    write (stdout,*) 'create_patches: exit in 5 sec'
+    call mpi%delay (5e3)
+  end if
+END SUBROUTINE memtest_delay
 
 !===============================================================================
 !> Lifted directly from `amr2cell.f90`/`hilbert3d_qdp` (in the Copenhagen
@@ -1151,8 +1162,7 @@ SUBROUTINE create_patches (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('ramses_t%create_patches', itimer=itimer)
-  write(stdout,*) &
-    '--------------------- create_patches: begin -----------------------'
+  call io%header ('-create_patches: begin', left=25)
   oct => self%oct_list%head
   do while (associated(oct))
     select type (oct)
@@ -1164,11 +1174,9 @@ SUBROUTINE create_patches (self)
   end do
   if (verbose > 0) then
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
-    write (stdout,*) 'create_patches: exit in 5 sec'
-    call mpi%delay (5e3)
   end if
-  write(stdout,*) &
-    '--------------------- create_patches: end -------------------------'
+  call memtest_delay
+  call io%header ('-create_patches: end', left=25)
   call trace%end (itimer)
 END SUBROUTINE create_patches
 
@@ -1182,15 +1190,18 @@ SUBROUTINE add_to (self, patch, oct)
   class(oct_t):: oct
   !.............................................................................
   real:: enth, d, ux, uy, uz, bx, by, bz, e
-  integer:: i1, i2, i3, j1, j2, j3, j, level
+  integer:: i1, i2, i3, j1, j2, j3, j, k1, k2, k3, level
   logical:: new
   !-----------------------------------------------------------------------------
   ! Insert oct values into patch%mem.  FIXME: HLLD solver assumed
   !-----------------------------------------------------------------------------
   enth = 1d0/(self%gamma-1d0)
-  i1 = oct%ii(1)+1
-  i2 = oct%ii(2)+1
-  i3 = oct%ii(3)+1
+  i1 = patch%li(1) + oct%ii(1)
+  i2 = patch%li(2) + oct%ii(2)
+  i3 = patch%li(3) + oct%ii(3) 
+  k1 =           1 + oct%ii(1)
+  k2 =           1 + oct%ii(2)
+  k3 =           1 + oct%ii(3) 
   level = oct%key(1)
   j = 1
   do j3=0,1
@@ -1213,7 +1224,10 @@ SUBROUTINE add_to (self, patch, oct)
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%bx,1,1) = oct%var(j,5)
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%by,1,1) = oct%var(j,6)
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%bz,1,1) = oct%var(j,7)
-    patch%filled(i1+j1,i2+j2,i3+j3) = level
+    patch%filled(k1+j1,k2+j2,k3+j3) = level
+    if (verbose > 1) &
+      write(stdout,'("add_to:",i7,i4,2x,3i4,1p,e11.2)') &
+        patch%id, patch%level, i1+j1, i2+j2, i3+j3, d
     j = j+1
   end do
   end do
@@ -1264,8 +1278,7 @@ SUBROUTINE count_costs (self)
   logical:: new
   integer:: n(2), level, bin, i
   !-----------------------------------------------------------------------------
-  write(stdout,*) &
-    '--------------------- count_costs: begin --------------------------'
+  call io%header ('-count_costs: begin', left=25)
   allocate (self%u_bins(self%n_bins))
   self%u_bins = 0
   n = 0
@@ -1283,7 +1296,7 @@ SUBROUTINE count_costs (self)
       ! Search for max phase speed over all octs, while summing up weights
       !-------------------------------------------------------------------------
       u_max = max(u_max,task%u_max)
-      bin = nint(alog(task%u_max/self%u_min)*c_bin) + 1
+      bin = floor(alog(task%u_max/self%u_min)*c_bin) + 1
       self%u_bins(bin) = self%u_bins(bin) + 1
       level = task%key(1)
       ds = 0.5_8**level
@@ -1302,7 +1315,8 @@ SUBROUTINE count_costs (self)
     end select
     task => task%next
   end do
-  write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
+  if (verbose > 0) & 
+    write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   open (io_unit%tmp, file=trim(io%rundir)//'u_bins.dat', form='unformatted', &
     status='unknown')
   write (io_unit%tmp) self%n_bins
@@ -1338,7 +1352,8 @@ SUBROUTINE count_costs (self)
     task => task%next
   end do
   ratio = max_cost/total_cost
-  write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
+  if (verbose > 0) & 
+    write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   !-----------------------------------------------------------------------------
   ! Print a table with level costs for octs, and for patches
   !-----------------------------------------------------------------------------
@@ -1357,10 +1372,9 @@ SUBROUTINE count_costs (self)
     write(stdout,'(i7,i9,f9.2)') level, n_level(level), patch_cost*100./total_cost
   end do
   write (stdout,*) 'ramses_t%count_costs:        ratio =', ratio
-  if (verbose > 0) &
+  if (verbose > 0) & 
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
-  write(stdout,*) &
-    '--------------------- count_costs: end ----------------------------'
+  call io%header ('-count_costs: end', left=25)
   !-----------------------------------------------------------------------------
 END SUBROUTINE count_costs
 
@@ -1385,7 +1399,7 @@ SUBROUTINE u_max_table_get (self, key, value, new)
     end if
   else if (present(new)) then
     select type (ptr)
-    class is (real)
+    type is (real)
     value => ptr
     end select
     new = .false.
@@ -1432,8 +1446,7 @@ SUBROUTINE check_support (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('ramses_t%check_support', itimer=itimer)
-  write(stdout,*) &
-    '--------------------- check_support: begin ------------------------'
+  call io%header ('-check_support: begin', left=25)
   do level=self%maxlvl,self%minlvl+2,-1
     link => self%task_list%head
     do while (associated(link))
@@ -1449,7 +1462,7 @@ SUBROUTINE check_support (self)
             !-------------------------------------------------------------------
             position = task%position + [i1,i2,i3]*task%size
             key(1) = task%level-1
-            key(2:4) = nint(position/(2d0*task%size))
+            key(2:4) = floor(position/(2d0*task%size))
             !-------------------------------------------------------------------
             ! Create a patch there if none exists; it will be prepended to the 
             ! task list, to avoid problems with looping over the same list
@@ -1463,11 +1476,9 @@ SUBROUTINE check_support (self)
       link => link%next
     end do
   end do
-  if (verbose > 0) then
+  if (verbose > 0) & 
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
-  end if
-  write(stdout,*) &
-    '--------------------- check_support: end---------------------------'
+  call io%header ('-check_support: end', left=25)
   call trace%end (itimer)
 END SUBROUTINE check_support
 
@@ -1477,38 +1488,54 @@ END SUBROUTINE check_support
 !===============================================================================
 SUBROUTINE prolong (self)
   class(ramses_t):: self
-  integer:: level, i1, i2, i3, key(4)
   class(link_t), pointer:: link
-  class(task_t), pointer:: task
-  real:: dmin
-  class(experiment_t), pointer:: patch
-  integer:: n, n0
+  class(*), pointer:: patch
+  real:: dmin, dmin_all
+  real(8):: size(3)
+  integer:: level, n, n0, i, key(4)
   !-----------------------------------------------------------------------------
   call trace%begin('ramses_t%prolong')
-  write(stdout,*) &
-    '--------------------- prolong: begin ------------------------------'
+  call io%header ('-prolong: begin', left=25)
   n = 0; n0 = 0
   do level=self%minlvl+1,self%maxlvl
+    dmin_all=huge(1.0)
     link => self%task_list%head
     do while (associated(link))
       if (link%task%level == level) then
-        task => link%task
+        associate (task => link%task)
         select type (task)
         class is (patch_t)
           if (any(task%filled == -1)) then
             n = n+1
-            if (verbose > 0 .and. mod(n,5000)==0) &
-              write(stdout,*) 'prolong: filling id, level =', &
-                task%id, task%level
-            call download%download_link (link)
-            dmin = patch%fminval (patch%idx%d)
-            if (dmin <= 0.0) then
-              n0 = n0+1
-              write(stderr,*) 'prolong: ERROR, id, dmin, n=', task%id, dmin, n0
-            end if
+            call download%download_link (link, all_cells=.true.)
             task%filled = task%level-1
           end if
+          dmin = task%fminval (task%idx%d)
+          dmin_all = min(dmin,dmin_all)
+          if (dmin <= 0.0) then
+            n0 = n0+1
+            write(stderr,*) 'prolong: ERROR, id, dmin, n=', task%id, dmin, n0
+          end if
+          if (verbose > 1 .or. (verbose > 0 .and. mod(n,5000)==0)) &
+            write(stdout,'(a,i7,i4,1p,2e11.2)') &
+            'prolong: id, level, dmin, dmin_all =', task%id, task%level, dmin, dmin_all
+          if (verbose > 1 .and. task%id==88) then
+            call dump (task)
+            key(1) = task%level
+            size = task%size
+            do i=1,3
+              key(1) = key(1)-1
+              size = size*2.0
+              key(2:4) = floor(task%position/size)
+              call self%patch_table%get (key, patch)
+              select type (patch)
+              class is (patch_t)
+              call dump (patch)
+              end select
+            end do
+          end if
         end select
+        end associate
       end if
       link => link%next
     end do
@@ -1516,9 +1543,28 @@ SUBROUTINE prolong (self)
   if (verbose > 0) then
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   end if
-  write(stdout,*) &
-    '--------------------- prolong: end --------------------------------'
+  call io%header ('-prolong: end', left=20)
   call trace%end ()
+contains
+  subroutine dump (task)
+    class(patch_t):: task
+    class(link_t), pointer:: link, nbor
+    integer:: i1, i2, i3
+    print*,'nbors:'
+    nbor => task%link%nbor
+    do while (associated(nbor))
+      write(stdout,*) task%id, nbor%task%id, nbor%task%level
+      nbor => nbor%next
+    end do
+    do i3=4,19
+    do i2=4,19
+    do i1=4,19
+      write(stdout,'("p88:",i7,i4,2x,3i4,1p,e11.2)') &
+        task%id, task%level, i1, i2, i3, task%mem(i1,i2,i3,1,1,1)
+    end do
+    end do
+    end do
+  end subroutine dump
 END SUBROUTINE prolong
 
 !===============================================================================
@@ -1531,8 +1577,7 @@ SUBROUTINE check_filled (self)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('ramses_t%check_filled', itimer=itimer)
-  write(stdout,*) &
-    '--------------------- check_filled: begin -------------------------'
+  call io%header ('-check_filled: begin', left=20)
   nok = 0
   do level=self%maxlvl,self%minlvl+1,-1
     link => self%task_list%head
@@ -1574,8 +1619,7 @@ SUBROUTINE check_filled (self)
     write(stdout,*) 'check_filled: nok =', nok
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
   end if
-  write(stdout,*) &
-    '--------------------- check_filled: end ---------------------------'
+  call io%header ('-check_filled: end', left=20)
   call trace%end (itimer)
 contains
   !=============================================================================
@@ -1592,7 +1636,7 @@ contains
     !---------------------------------------------------------------------------
     ! Create a task at the overlapping location on level L-1
     !---------------------------------------------------------------------------
-    key = [task%level-1, nint(task%position/(2d0*task%size))]
+    key = [task%level-1, floor(task%position/(2d0*task%size))]
     call self%cartesian_init (key, new)
     nbor => new%link%nbor
     do while (associated(nbor))
@@ -1669,6 +1713,7 @@ SUBROUTINE evaluate (self, task_list)
   real(4), pointer:: cost
   !.............................................................................
   call trace%begin('ramses_t%evaluate')
+  call io%header ('-evaluate: begin', left=25)
   cost1 = 0d0
   cost2 = 0d0
   cost3 = 0d0
@@ -1794,6 +1839,7 @@ SUBROUTINE evaluate (self, task_list)
   end do
   cost3 = n_cost*max_cost
   write(stdout,'(a,1p,3e12.4)') ' costs ratios:     ', cost3/max(tiny(1e0),sum_cost)
+  call io%header ('-evaluate: end', left=25)
   call trace%end
 END SUBROUTINE evaluate
 
@@ -1923,36 +1969,6 @@ SUBROUTINE init_nbors (list, link)
 END SUBROUTINE init_nbors
 
 !===============================================================================
-!> Update the nbor lists of the nbors at level L+1, to avoid generating several
-!> level L tasks at the same position.
-!===============================================================================
-SUBROUTINE init_nbor_nbors (list, link)
-  type(task_list_t), pointer:: list
-  class(link_t), pointer:: link, nbor, scan
-  real(8):: dist(3)
-  integer, save:: itimer=0
-  !-----------------------------------------------------------------------------
-  call trace%begin ('ramses_t%init_nbor_nbors', itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Refresh the nbor list of nbors at level L+1
-  !-----------------------------------------------------------------------------
-  call init_nbors (list, link)
-  nbor => link%nbor
-  do while (associated(nbor))
-    ! -- select tasks at level = L+1
-    if (nbor%task%level == link%task%level+1) then
-      ! -- select tasks that overlap
-      call init_nbors (list, nbor%link)
-    end if
-    nbor => nbor%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! Create an nbor list intended only for prolongation
-  !-----------------------------------------------------------------------------
-  call trace%end (itimer)
-END SUBROUTINE init_nbor_nbors
-
-!===============================================================================
 !> Remove the initial RAMSES octs
 !===============================================================================
 SUBROUTINE remove_ramses_octs (self)
@@ -1963,8 +1979,7 @@ SUBROUTINE remove_ramses_octs (self)
   integer, save:: itimer=0, nprint=100
   !-----------------------------------------------------------------------------
   call trace%begin ('ramses_t%remove_ramses_octs', itimer=itimer)
-  write(stdout,*) &
-    '----------------- remove_ramses_octs begin -----------------------'
+  call io%header ('-remove_ramses_octs: begin', left=25)
   oct => self%oct_list%head
   do while (associated(oct))
     next => oct%next
@@ -1981,11 +1996,9 @@ SUBROUTINE remove_ramses_octs (self)
   end do
   if (verbose > 0) then
     write (stdout,'(" elapsed:",f8.1,"s")') wallclock()-start
-    write (stdout,*) 'remove_ramses_octs: exit in 5 sec'
-    call mpi%delay (5e3)
   end if
-  write(stdout,*) &
-    '----------------- remove_ramses_octs done ------------------------'
+  call memtest_delay
+  call io%header ('-remove_ramses_octs: end', left=25)
   call trace%end (itimer)
 END SUBROUTINE remove_ramses_octs
 

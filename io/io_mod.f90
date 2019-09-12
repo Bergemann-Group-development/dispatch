@@ -518,42 +518,71 @@ SUBROUTINE assert (ok, message)
 END SUBROUTINE assert
 
 !===============================================================================
-!> Interface to mpi%abort, for modules that do not otherwise USE mpi_mod
+!> Print a centered message, preceded and followed by full === lines, unless the
+!> first character is a '-', in which case print a singe ---- message ---- line
 !===============================================================================
-SUBROUTINE header (message)
-  character(len=*):: message
+SUBROUTINE header (str, left)
+  character(len=*):: str
+  integer, optional:: left
   !.............................................................................
   call timer%print()
   if (io%master) then
-    call line('')
-    call line(message)
-    call line('')
+    if (str(1:1) == '-') then
+      call line (str, left)
+    else
+      call line ('=', left)
+      call line (str, left)
+      call line ('=', left)
+    end if
   end if
 !===============================================================================
+!> Print a centered or left adjusted message, surrounded by repeated c chars
+!===============================================================================
 contains
-  subroutine line (s)
+  subroutine line (s, left)
     character(len=*):: s
+    integer, optional:: left
+    !...........................................................................
+    character(len=1):: c
     integer, parameter:: w=80
     character(len=w):: buf
     integer:: i, j, l1, l2, l
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     l = len_trim(s)
-    l1 = (w-l)/2-1
-    l2 = l1 + l + 1
-    j = 1
+    !---------------------------------------------------------------------------
+    ! Optionally, use a fixed left start, else center
+    !---------------------------------------------------------------------------
+    if (s(1:1)=='-') then
+      c = '-'
+      j = 2
+    else
+      c = '='
+      j = 1
+    end if
+    if (present(left)) then
+      l1 = left
+    else
+      l1 = (w-l)/2-1
+    end if
+    l2 = l1 + l
     do i=1,w
-      buf(i:i) = '='
-      if (l==0) then
-        buf(i:i) = '='
+      if (l <= 1) then
+        ! --- no message ---
+        buf(i:i) = c
       else if (i==l1 .or. i==l2) then
+        ! --- space before and after message ---
         buf(i:i) = ' '
       else if (i > l1 .and. i < l2 .and. j <= l) then
+        ! --- copy message ---
         buf(i:i) = s(j:j)
         j = j+1
+      else
+        ! --- surrounding char ---
+        buf(i:i) = c
       end if
     end do
     print '(a)', buf
-  end subroutine
+  end subroutine line
 END SUBROUTINE header
 
 !===============================================================================

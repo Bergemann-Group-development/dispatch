@@ -426,7 +426,7 @@ SUBROUTINE update_counts (self, link, delta)
 END SUBROUTINE update_counts 
 
 !===============================================================================
-!> Print a table with task id, positions, and all neighbors
+!> Count the number of internal, boundary, virtual, frozen, and external tasks
 !===============================================================================
 SUBROUTINE count_status (self, label)
   class (list_t):: self
@@ -1055,7 +1055,7 @@ SUBROUTINE init_nonleaf (self)
   class(link_t), pointer:: nbor
   integer:: n_add
   !.............................................................................
-  return
+  return                                                ! FIXME: remove call?
   call trace%begin('list_t%init_nonleaf ')
   call self%lock%set ('list_t%init_nonleaf')
   !-----------------------------------------------------------------------------
@@ -1338,6 +1338,8 @@ SUBROUTINE init_all_nbors (self)
   !.............................................................................
   call trace%begin('list_t%init_all_nbors', itimer=itimer)
   call init_nonleaf (self)                              ! set non_leaf bit
+  call self%reset_status                                ! update task bits
+  call self%count_status                                ! update task counts
   i2 = self%n/omp%nthreads + 1                          ! tasks per thread
   !$omp parallel private(i,i0,i1,link) shared(self,i2) default(none)
   i0 = omp%thread*i2
