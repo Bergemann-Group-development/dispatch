@@ -155,23 +155,25 @@ MODULE ramses_mod
     type(hash_table_t):: u_max_table
     type(hash_table_t):: patch_table
   contains
-    procedure :: init
-    procedure :: read_snapshot
-    procedure :: phase_speed
-    procedure :: create_patches
-    procedure :: add_to
-    procedure :: add_to_task_list
-    procedure :: u_max_table_get
-    procedure :: count_costs
-    procedure :: energy
-    procedure :: read_sink
-    procedure :: evaluate
-    procedure :: cartesian_init
-    procedure :: initialize
-    procedure :: remove_ramses_octs
-    procedure :: check_support
-    procedure :: prolong
-    procedure :: check_filled
+    procedure:: init
+    procedure:: read_snapshot
+    procedure:: phase_speed
+    procedure:: create_patches
+    procedure:: add_to
+    procedure:: add_to_task_list
+    procedure:: u_max_table_get
+    procedure:: count_costs
+    procedure:: energy
+    procedure:: read_sink
+    procedure:: evaluate
+    procedure:: cartesian_init
+    procedure:: initialize
+    procedure:: remove_ramses_octs
+    procedure:: check_support
+    procedure:: prolong
+    procedure:: download_link
+    procedure:: check_filled
+    procedure:: output
   end type
   logical, save:: make_cartesian        ! replace RAMSES patches
   logical, save:: centre_on_sink        ! centre on the last sink
@@ -296,6 +298,9 @@ SUBROUTINE init (self, name)
   call self%remove_ramses_octs
   call self%check_support
   call self%task_list%init_all_nbors
+  io%ntask  = self%task_list%na         ! FIXME
+  io%nwrite = self%task_list%na         ! FIXME
+  io%ntotal = self%task_list%na         ! FIXME
   call self%check_filled
   call self%prolong
   call self%check_filled
@@ -304,6 +309,7 @@ SUBROUTINE init (self, name)
   call self%task_list%check_all
   write(stdout,*) 'ramses_t%init: task_list%n, nq, na =', &
     self%task_list%n, self%task_list%nq, self%task_list%na
+  call self%output
   call trace%end
 END SUBROUTINE init
 
@@ -1225,7 +1231,7 @@ SUBROUTINE add_to (self, patch, oct)
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%by,1,1) = oct%var(j,6)
     patch%mem(i1+j1,i2+j2,i3+j3,patch%idx%bz,1,1) = oct%var(j,7)
     patch%filled(k1+j1,k2+j2,k3+j3) = level
-    if (verbose > 1) &
+    if (verbose > 2) &
       write(stdout,'("add_to:",i7,i4,2x,3i4,1p,e11.2)') &
         patch%id, patch%level, i1+j1, i2+j2, i3+j3, d
     j = j+1
@@ -1507,7 +1513,7 @@ SUBROUTINE prolong (self)
         class is (patch_t)
           if (any(task%filled == -1)) then
             n = n+1
-            call download%download_link (link, all_cells=.true.)
+            call self%download_link (link)
             task%filled = task%level-1
           end if
           dmin = task%fminval (task%idx%d)
@@ -1566,6 +1572,43 @@ contains
     end do
   end subroutine dump
 END SUBROUTINE prolong
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE download_link (self, link)
+  class(ramses_t):: self
+  class(link_t), pointer:: link, nbor
+  class(patch_t), pointer:: target, source
+  class(*), pointer:: ptr
+  integer:: jt(2), key(4)
+  real:: pt(2)
+  !-----------------------------------------------------------------------------
+  associate (task=>link%task)
+  select type(task)
+  class is (patch_t)
+    target => task
+    nbor => link%nbor
+    do while (associated(nbor))
+      if (nbor%task%level == link%task%level-1) then
+        associate(nbtask => nbor%task)
+        select type (nbtask)
+        class is (patch_t)
+          source => nbtask
+          jt = [1,1]
+          pt = [1.0,0.0]
+          if (nbtask%contains(task%position)) then
+            call download%different (target, source, jt, pt, all_cells=.true.)
+!          else
+!            call download%different (target, source, jt, pt,)
+          end if
+        end select
+        end associate
+      end if
+      nbor => nbor%next
+    end do
+  end select
+  end associate
+END SUBROUTINE download_link
 
 !===============================================================================
 !===============================================================================
@@ -2001,5 +2044,24 @@ SUBROUTINE remove_ramses_octs (self)
   call io%header ('-remove_ramses_octs: end', left=25)
   call trace%end (itimer)
 END SUBROUTINE remove_ramses_octs
+
+!===============================================================================
+!> Initial output of all tasks
+!===============================================================================
+SUBROUTINE output (self)
+  class(ramses_t):: self
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  link => self%task_list%head
+  do while (associated(link))
+    associate(task => link%task)
+    select type (task)
+    class is (experiment_t)
+    call task%output
+    end select
+    end associate
+    link => link%next
+  end do
+END SUBROUTINE output
 
 END MODULE ramses_mod

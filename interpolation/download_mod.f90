@@ -43,8 +43,11 @@ MODULE download_mod
     procedure(interpolator_interface), pointer, nopass:: interpolate => null()
     procedure(same_linear)           , pointer        :: same        => null()
   contains
-    procedure:: download_link
     procedure:: init
+    procedure:: download_link
+    procedure:: prolong
+    procedure:: different
+    procedure:: different_prolong
     procedure:: test
     procedure, nopass:: set_verbose
   end type
