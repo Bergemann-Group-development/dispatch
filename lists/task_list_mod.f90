@@ -384,10 +384,10 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     call task%rotate
   end if
   select type (task)
-  class is (patch_t)
+  class is (experiment_t)
   call validate%check (head, task%mem(:,:,:,task%idx%d,task%it,1), ' after update')
-  end select
   call task%info (self%nq, self%na)                   ! print info on stdout
+  end select
   if (io%log_sent > 0) then
     !$omp critical (log_sent_cr)
     call mpi_mesg%log_files ()

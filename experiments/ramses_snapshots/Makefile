@@ -18,5 +18,5 @@ VPATH := $(TOP)/particles/:$(VPATH)
 $(EXEC): setup_mod.o ramses_mod.o dispatcher_mod.o
 
 # Dependencies
-experiment_mod.o        : io_mod.o trace_mod.o scaling_mod.o solver_mod.o force_mod.o initial_mod.o units_mod.o
+experiment_mod.o        : io_mod.o trace_mod.o solver_mod.o shared_mod.o bits_mod.o
 scaling_mod.o           : io_mod.o trace_mod.o units_mod.o

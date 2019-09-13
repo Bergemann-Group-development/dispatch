@@ -190,8 +190,8 @@ MODULE refine_mod
   !
   type:: refine_t
     logical:: on                              ! allow external access
-    integer:: levelmin=1                      ! Min level of refinment
-    integer:: levelmax=1                      ! Max level of refinment
+    integer:: levelmin=0                      ! Min level of refinment
+    integer:: levelmax=0                      ! Max level of refinment
     integer:: ratio=2                         ! default
   contains
     procedure:: init
@@ -236,7 +236,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(refine_t):: self
   integer:: iostat
-  integer, save:: levelmin=99, levelmax=1
+  integer, save:: levelmin=0, levelmax=0
   integer, save:: ratio=2                     ! How does a patch split when it is refined
   logical, save:: first_time = .true.
   namelist /refine_params/ verbose, on, levelmin, levelmax, check_interval, &
@@ -252,6 +252,8 @@ SUBROUTINE init (self)
   !$omp critical (input_cr)
   if (first_time) then
     first_time=.false.
+    levelmin = shared%levelmin
+    levelmax = shared%levelmax
     rewind (io%input)
     read (io%input, refine_params, iostat=iostat)
     write (io%output, refine_params)
@@ -268,6 +270,8 @@ SUBROUTINE init (self)
   !$omp end critical (input_cr)
   self%levelmin = levelmin
   self%levelmax = levelmax
+  shared%levelmin = levelmin
+  shared%levelmax = levelmax
   self%ratio = ratio
   self%on = on
   !-----------------------------------------------------------------------------

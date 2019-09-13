@@ -8,7 +8,8 @@ MODULE shared_mod
   implicit none
   public
   type, public:: shared_t
-    integer:: levelmax=1
+    integer:: levelmin=99
+    integer:: levelmax=0
     integer:: n_repeat(3) = 1
     integer:: n_patch
     integer:: n_initial = 0
