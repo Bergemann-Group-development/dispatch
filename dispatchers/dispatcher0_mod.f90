@@ -430,14 +430,14 @@ subroutine stall_handler
     !---------------------------------------------------------------------------
     !$omp atomic read
     stalled_l = stalled
-    if (n_unpk > 0 .and. stalled_l > 0) then              ! unpack reset
-      write (io_unit%log,'(a,i7,i4,f12.6)') &
-        'dispatcher0_t%update: unpack reset, n, time =', &
-        stalled_l, n_unpk, wallclock()-stall_start
-      !$omp atomic write
-      stalled = 0                                         ! reset stalled
-      stalled_l = 0                                       ! new stall interval
-    end if
+    !if (n_unpk > 0 .and. stalled_l > 0) then              ! unpack reset
+    !  write (io_unit%log,'(a,i7,i4,f12.6)') &
+    !    'dispatcher0_t%update: unpack reset, n, time =', &
+    !    stalled_l, n_unpk, wallclock()-stall_start
+    !  !$omp atomic write
+    !  stalled = 0                                         ! reset stalled
+    !  stalled_l = 0                                       ! new stall interval
+    !end if
     if (stalled_l == 0) then
       !$omp atomic write
       stall_start = wallclock()
