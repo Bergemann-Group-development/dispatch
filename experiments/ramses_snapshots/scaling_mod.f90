@@ -22,15 +22,17 @@ CONTAINS
 SUBROUTINE init (self)
   class(scaling_t):: self
   logical, save:: first_time=.true.
+  real:: l_pc=40.0, d_cgs=4e-22, v_kms=1.0
+  namelist /scaling_params/ l_pc, d_cgs, v_kms
   !----------------------------------------------------------------------------
   if (.not.first_time) return
   call trace_begin('scaling_t%init')
   first_time = .false.
   call cgs%init
-  self%l = cgs%au                                       ! length = 1 AU
-  self%m = cgs%m_sun                                    ! mass
-  self%d = self%m/self%l**3                             ! mass density
-  self%u = cgs%kms                                      ! speed = 1 km/s
+  self%l = l_pc*cgs%pc                                  ! length in pc
+  self%d = d_cgs                                        ! mass density in cgs
+  self%u = v_kms*cgs%kms                                ! speed in km/s
+  self%m = self%d*self%l**3                             ! mass
   self%t = self%l/self%u                                ! time ~ 5 years
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
