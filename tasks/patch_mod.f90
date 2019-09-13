@@ -2453,7 +2453,7 @@ SUBROUTINE index_space (self, pos, iv, i, p)
   p = p + eps                                           ! ensure same points ok
   i = p                                                 ! integer part
   i = max(self%mesh%li, &
-      min(self%mesh%ui,i))                            ! valid range
+      min(self%mesh%ui-1,i))                            ! valid range
   p = p - eps - i                                       ! remaining fraction
   !-----------------------------------------------------------------------------
   ! The slight allowance for extrapolation below is to detect it in tests
