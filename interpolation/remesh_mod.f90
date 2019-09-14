@@ -1,6 +1,6 @@
 !===============================================================================
 !> This module handles remeshing, eg from lower resolution to higher resolution,
-!> with special attention to maximi3ing speed, by identifying cases where cells
+!> with special attention to maximizing speed, by identifying cases where cells
 !> are aligned (static meshes).  FIXME: initially assumed to always be the case.
 !===============================================================================
 MODULE remesh_mod

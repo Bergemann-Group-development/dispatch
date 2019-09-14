@@ -16,9 +16,9 @@
 !---------------------------------------------
 &scaling_params         l_pc=40 v_kms=1 d_cgs=4e-22
 &patch_params           nt=5 nv=8 grace=0.1 n=3*16 no_mans_land=t /
-&out_params             end_time=13e-4 out_time=4e-4 print_every=1 /
-&io_params              verbose=0 do_trace=f omp_trace=t do_output=t
-                        method='legacy' id_debug=54
+&out_params             end_time=13e-4 out_time=1e-4 print_every=1 /
+&io_params              verbose=1 do_trace=f omp_trace=f do_output=t
+                        method='legacy' id_debug=0
                         guard_zones=t time_derivs=0 /
 &timer_params           sec_per_report=15 /
 &validate_params        state='write' /
@@ -27,10 +27,10 @@
 ! Initial condition and forces
 !---------------------------------
 &ramses_reader_params   verbose=0
-                        path='gmc2' nout=9 minlvl=6 maxlvl=8 centre_on_sink=f
-                        !path='run22d' nout=1000 minlvl=7 maxlvl=29 cut_out_size=6e-8 centre_on_sink=t
+                        path='gmc2' nout=9 levelmin=6 levelmax=8 centre_on_sink=f
+                        !path='run22d' nout=1000 levelmin=7 levelmax=29 cut_out_size=6e-8 centre_on_sink=t
                         direct_load=t do_evaluate=f detailed_timer=f /
-&download_params        verbose=2 id_debug=54 /
+&download_params        verbose=2 use_different=0 id_debug=54 /
 &initial_params         /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 /
@@ -58,6 +58,6 @@
 !----------------------------------------------------------------------------------
 &dispatcher_params      method=0 test=f verbose=1 use_locks=t /
 &dispatcher0_params     verbose=2 retry_stalled=10. /
-&task_list_params       verbose=0 /
+&task_list_params       verbose=2 detailed_timer=t /
 &mpi_mesg_params        /
 

@@ -1606,7 +1606,8 @@ SUBROUTINE real_queue_by_time (self, this, error)
     return
   end if
   !-----------------------------------------------------------------------------
-  call timer%begin ('list_t%queue_by_time ', itimer=itimer)
+  if (self%detailed_timer) &
+    call trace%begin ('list_t%queue_by_time ', itimer=itimer)
   !$omp atomic
   mpi_mesg%n_ready = mpi_mesg%n_ready+1
   !-----------------------------------------------------------------------------
@@ -1628,7 +1629,8 @@ SUBROUTINE real_queue_by_time (self, this, error)
       if (nit > self%nq) then
         print *,'ERROR: hang in queue_by_time, nit =', nit
         error = .true.
-        call timer%end (itimer)
+        if (self%detailed_timer) &
+          call trace%end (itimer)
         return
       end if
       if (associated(next%task, task)) then
@@ -1694,7 +1696,8 @@ SUBROUTINE real_queue_by_time (self, this, error)
       ' found ready bit in queue_by_time for task', task%id, task%time
     flush (io_unit%log)
   end if
-  call timer%end (itimer)
+  if (self%detailed_timer) &
+    call trace%end (itimer)
 END SUBROUTINE real_queue_by_time
 
 !===============================================================================
@@ -1706,7 +1709,8 @@ SUBROUTINE queue_active (self, this)
   class(task_t), pointer:: task
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call timer%begin ('list_t%queue_active ', itimer=itimer)
+  if (self%detailed_timer) &
+    call trace%begin ('list_t%queue_active ', itimer=itimer)
   !-----------------------------------------------------------------------------
   task => this%task
   task%atime = task%time
@@ -1756,7 +1760,8 @@ SUBROUTINE queue_active (self, this)
   end if
   call self%aconsistency (1)
   !$omp end critical (active_cr)
-  call timer%end (itimer)
+  if (self%detailed_timer) &
+    call trace%end (itimer)
 END SUBROUTINE queue_active
 
 !===============================================================================
@@ -1900,16 +1905,7 @@ SUBROUTINE print_queue (self)
   class (list_t):: self
   class(link_t) , pointer:: link, nbor
   !.............................................................................
-  if (io%verbose < 1) return
-  call self%lock%set ('print_queue')
-  link => self%queue
-  write (io_unit%log,'(a,2i4,":",$)') 'ready_queue', self%nq, self%n
-  do while (associated(link))
-    write (io_unit%log,'(i4,$)') link%task%id
-    link => link%next_time
-  end do
-  call self%lock%unset ('print_queue')
-  if (io%master) write (io_unit%log,*)''
+  call self%print_queue_times ('print_queue')
 END SUBROUTINE print_queue
 
 !===============================================================================

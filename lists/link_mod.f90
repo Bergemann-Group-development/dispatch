@@ -822,14 +822,16 @@ END SUBROUTINE sort_nbors_by_level
 !===============================================================================
 !> Info for one nbor
 !===============================================================================
-SUBROUTINE nbor_info (self)
+SUBROUTINE nbor_info (self, task)
   class(link_t):: self
+  class(task_t):: task
   !-----------------------------------------------------------------------------
-  write(io_unit%mpi,'(3x,a,i6,2i4,2x,3l1,2x,2l1,2x,3f14.3)') &
+  write(io_unit%mpi,'(3x,a,i6,2i4,2x,3l1,2x,2l1,3x,3f9.3)') &
     'pa_t%nbor_info: id, rank, level, needed, needs_me, download, BV, pos =', &
     self%task%id, self%task%rank, self%task%level, self%needed, self%needs_me, &
     self%download, self%task%is_set(bits%boundary), &
-    self%task%is_set(bits%virtual), self%task%position
+    self%task%is_set(bits%virtual), self%task%distance(task)/ &
+    (0.5d0*(task%size+self%task%size))
 END SUBROUTINE nbor_info
 
 !===============================================================================
@@ -842,7 +844,7 @@ SUBROUTINE info (self)
   call self%task%task_info()
   nbor => self%nbor
   do while (associated(nbor))
-    call nbor%nbor_info
+    call nbor%nbor_info (self%task)
     nbor => nbor%next
   end do
 END SUBROUTINE info

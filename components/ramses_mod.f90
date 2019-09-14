@@ -87,6 +87,7 @@ MODULE ramses_mod
   USE dll_mod
   USE hash_table_mod
   USE omp_timer_mod
+  USE shared_mod
   implicit none
   private
   integer, parameter :: dp=kind(1.0D0)                        ! double precision
@@ -198,13 +199,13 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   logical, save:: first_time=.true.
   integer, save:: hash_table_size=5000000, n_cell=16
-  integer, save:: nout, minlvl, maxlvl, nmerged_max, patch_n
+  integer, save:: nout, levelmin, levelmax, nmerged_max, patch_n
   real, save:: xmin, xmax, ymin, ymax, zmin, zmax, rank_load
   real, save:: d_min, tt_min, size, size_au
   character(len=64), save:: path='.'
   logical:: keep, load
   namelist /ramses_reader_params/ nout, xmin, xmax, ymin, ymax, zmin, zmax, &
-    size, n_cell, nmerged_max, minlvl, maxlvl, rank_load, path, centre_on_sink, &
+    size, n_cell, nmerged_max, levelmin, levelmax, rank_load, path, centre_on_sink, &
     make_cartesian, do_evaluate, patch_n, remove_b, cut_out_size, d_min, &
     detailed_timer, direct_load, do_memtest, verbose
   !.............................................................................
@@ -221,10 +222,10 @@ SUBROUTINE init (self, name)
     xmin = 0.0; xmax = 1.0
     ymin = 0.0; ymax = 1.0
     zmin = 0.0; zmax = 1.0
-    minlvl = 1
-    maxlvl = 1
+    levelmin = shared%levelmin
+    levelmax = shared%levelmax
     rank_load = 1.0
-    d_min = 1d-18 ! cgs (1e6 code units) 
+    d_min = 1d-18 ! cgs (1e6 code units)
     tt_min = 5.   ! K
     path = './'
     size = 1d0
@@ -237,6 +238,8 @@ SUBROUTINE init (self, name)
     ! read namelist
     rewind (io%input); read (io%input,ramses_reader_params)
     if (io%master) write(*, ramses_reader_params)
+    shared%levelmin = levelmin
+    shared%levelmax = levelmax
   end if
   !$omp end critical (init_cr)
   !-----------------------------------------------------------------------------
@@ -254,8 +257,8 @@ SUBROUTINE init (self, name)
   self%ymax      = ymax
   self%zmin      = zmin
   self%zmax      = zmax
-  self%minlvl    = minlvl
-  self%maxlvl    = maxlvl
+  self%minlvl    = levelmin
+  self%maxlvl    = levelmax
   self%path      = path
   self%npatch    = 1
   self%rank_load = rank_load
@@ -293,23 +296,25 @@ SUBROUTINE init (self, name)
     call self%read_snapshot (keep=.false., load=.true.)
   end if
   !-----------------------------------------------------------------------------
-  ! Delete the RAMSES octs, initialize nbor lists, and check filled
+  ! Delete the RAMSES octs and check patch support
   !-----------------------------------------------------------------------------
   call self%remove_ramses_octs
   call self%check_support
+  !-----------------------------------------------------------------------------
+  ! Initialize nbor lists, which as a byproduct adds tasks to the ready queue
+  !-----------------------------------------------------------------------------
   call self%task_list%init_all_nbors
   io%ntask  = self%task_list%na         ! FIXME
   io%nwrite = self%task_list%na         ! FIXME
   io%ntotal = self%task_list%na         ! FIXME
+  !-----------------------------------------------------------------------------
+  ! Check that task interiors are actually filled, prolong if not and check again
+  !-----------------------------------------------------------------------------
   call self%check_filled
   call self%prolong
   call self%check_filled
-  write(stdout,*) 'ramses_t%init: task_list%n, nq, na =', &
-    self%task_list%n, self%task_list%nq, self%task_list%na
-  call self%task_list%check_all
-  write(stdout,*) 'ramses_t%init: task_list%n, nq, na =', &
-    self%task_list%n, self%task_list%nq, self%task_list%na
   call self%output
+  call self%task_list%print_queue
   call trace%end
 END SUBROUTINE init
 
@@ -946,15 +951,19 @@ SUBROUTINE read_snapshot (self, keep, load)
                 end if
                 call self%cartesian_init (oct%key, patch)
                 call self%add_to (patch, oct)
-                if (.not.keep) then
-                  deallocate (oct%var)
-                end if
               end if
-              oct%u_max = self%phase_speed (var(l,:,:))
-              u_max = max(u_max,oct%u_max)
-              self%u_min = min(self%u_min,oct%u_max)
-              dll_node => oct
-              call self%oct_list%append (dll_node)
+              !-----------------------------------------------------------------
+              ! Keep only octs at or below the LEVELMAX input parameter
+              !-----------------------------------------------------------------
+              if (keep .and. ilevel <= shared%levelmax) then
+                oct%u_max = self%phase_speed (var(l,:,:))
+                u_max = max(u_max,oct%u_max)
+                self%u_min = min(self%u_min,oct%u_max)
+                dll_node => oct
+                call self%oct_list%append (dll_node)
+              else
+                deallocate (oct%var)
+              end if
               !-----------------------------------------------------------------
               n_grid = n_grid + 1
             end do
@@ -1038,7 +1047,7 @@ SUBROUTINE read_snapshot (self, keep, load)
     call self%patch_table%init (hash_table_size, ndim=4)
   end if
   call memtest_delay
-  call trace%end
+  call trace%end (itimer)
 END SUBROUTINE read_snapshot
 
 !===============================================================================
@@ -1574,13 +1583,40 @@ contains
 END SUBROUTINE prolong
 
 !===============================================================================
+!> Find the patch that contains the link task and prolong from it
 !===============================================================================
 SUBROUTINE download_link (self, link)
   class(ramses_t):: self
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link
   class(patch_t), pointer:: target, source
   class(*), pointer:: ptr
   integer:: jt(2), key(4)
+  real:: pt(2)
+  !-----------------------------------------------------------------------------
+  associate (task=>link%task)
+  select type(task)
+  class is (experiment_t)
+    target => task
+    key = [task%key(1)-1, floor(target%position/(2d0*target%size))]
+    call self%patch_table%get (key, ptr)
+    select type(ptr)
+    class is (experiment_t)
+      source => ptr
+      jt = [1,1]
+      pt = [1.0,0.0]
+      call download%different (target, source, jt, pt, all_cells=.true.)
+    end select
+  end select
+  end associate
+END SUBROUTINE download_link
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE download_link2 (self, link)
+  class(ramses_t):: self
+  class(link_t), pointer:: link, nbor
+  class(patch_t), pointer:: target, source
+  integer:: jt(2)
   real:: pt(2)
   !-----------------------------------------------------------------------------
   associate (task=>link%task)
@@ -1598,8 +1634,6 @@ SUBROUTINE download_link (self, link)
           pt = [1.0,0.0]
           if (nbtask%contains(task%position)) then
             call download%different (target, source, jt, pt, all_cells=.true.)
-!          else
-!            call download%different (target, source, jt, pt,)
           end if
         end select
         end associate
@@ -1608,7 +1642,7 @@ SUBROUTINE download_link (self, link)
     end do
   end select
   end associate
-END SUBROUTINE download_link
+END SUBROUTINE download_link2
 
 !===============================================================================
 !===============================================================================
@@ -1937,7 +1971,14 @@ SUBROUTINE cartesian_init (self, key, patch)
     call patch%init
     patch%mhd = .true.
     call self%initialize (patch)  
-    !-----------------------------------------------------------------------------
+    !---------------------------------------------------------------------------
+    ! Patches below levelmin are needed for selfgravity, but for now we set the
+    ! frozen bit on them, to ignore them in dnload and update
+    !---------------------------------------------------------------------------
+    if (patch%level < shared%levelmin) then
+      call patch%set (bits%frozen)
+    end if
+    !---------------------------------------------------------------------------
     allocate (patch%filled(patch%n(1),patch%n(2),patch%n(3)))
     call io%bits_mem (storage_size(patch%filled), product(shape(patch%filled)), 'fill')
     patch%filled = -1
@@ -2057,7 +2098,9 @@ SUBROUTINE output (self)
     associate(task => link%task)
     select type (task)
     class is (experiment_t)
-    call task%output
+    if (task%is_clear(bits%frozen)) &
+      call task%output
+      task%out_next = 0d0
     end select
     end associate
     link => link%next

@@ -31,6 +31,8 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   !call particle_patch%init
   !call particle_patch%test
+  self%unsigned(self%idx%d) = .true.
+  self%unsigned(self%idx%e) = .true.
   call trace_end
 END SUBROUTINE init
 

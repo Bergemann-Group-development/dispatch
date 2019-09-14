@@ -35,6 +35,7 @@ MODULE task_list_mod
     procedure:: initialize
     procedure:: init_levels
     procedure:: startup
+    procedure:: init_queue
     procedure:: execute
     procedure:: update
     procedure:: average
@@ -208,6 +209,27 @@ SUBROUTINE startup (self)
   ! have not been received yet should have negative initial times, so should
   ! prevent boundary tasks from trying to update.
   !-----------------------------------------------------------------------------
+  call self%init_queue
+  !-----------------------------------------------------------------------------
+  ! Initialize the data I/O, and start timer
+  !-----------------------------------------------------------------------------
+  if (mpi%master) &
+    print '(a,f8.3,a)', ' Memory per process:', io%gb, ' GB'
+  call mpi%barrier ('self%execute')
+  call tic (time=sec)
+  call timer%print()
+  self%n_tasks = self%na
+  call trace%end (itimer)
+END SUBROUTINE startup
+
+!===============================================================================
+!> Initialize the queue
+!===============================================================================
+SUBROUTINE init_queue (self)
+  class(task_list_t):: self
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_list_t%init_queue')
   link => self%head
   do while (associated(link))
     call link%task%clear(bits%ready)
@@ -220,17 +242,10 @@ SUBROUTINE startup (self)
       link%task%sync_time = link%task%time + self%sync_time
     link => link%next
   end do
-  !-----------------------------------------------------------------------------
-  ! Initialize the data I/O, and start timer
-  !-----------------------------------------------------------------------------
-  if (mpi%master) &
-    print '(a,f8.3,a)', ' Memory per process:', io%gb, ' GB'
-  call mpi%barrier ('self%execute')
-  call tic (time=sec)
-  call timer%print()
-  self%n_tasks = self%na
-  call trace%end (itimer)
-END SUBROUTINE startup
+  if (self%verbose > 0) &
+    call self%print_queue_times ('init_queue')
+  call trace%end
+END SUBROUTINE init_queue
 
 !===============================================================================
 !> Execute the task list, updating it until it is empty.  With !$omp parallel here,

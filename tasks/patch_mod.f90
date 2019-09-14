@@ -547,7 +547,7 @@ SUBROUTINE set_defaults (self, position, size, n, ng, nt, nv, nw)
   type(header_t):: header
   integer:: i
   !-----------------------------------------------------------------------------
-  call trace%begin ('patch_t%setup')
+  call trace%begin ('patch_t%set_defaults')
   call self%init_default                        ! read default params
   if (present(position)) patch_defaults%position = position
   if (present(size    )) patch_defaults%size     = size
@@ -556,6 +556,7 @@ SUBROUTINE set_defaults (self, position, size, n, ng, nt, nv, nw)
   if (present(nt      )) patch_defaults%nt       = nt
   if (present(nv      )) patch_defaults%nv       = nv
   if (present(nw      )) patch_defaults%nw       = nw
+  call trace%end
 END SUBROUTINE set_defaults
 
 !===============================================================================
@@ -2607,45 +2608,51 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
   real                     :: p(3)
   integer, save            :: itimer=0
   !-----------------------------------------------------------------------------
-  pos = target%myposition (ii, iv)
-  call self%index_space (pos, iv, j, p)
-  !call trace%begin ('patch_t%interpolate', itimer=itimer)
-  if (self%unsigned(iv)) then
-    target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = exp( &
-     pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(1),1)))   + &
-                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(1),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(1),1))))  + &
-            (   p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(1),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(1),1)))   + &
-                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(1),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(1),1))))) + &
-     pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(2),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(2),1)))   + &
-                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(2),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(2),1))))  + &
-            (   p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(2),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(2),1)))   + &
-                       (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1))    + &
-                                  (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))))
+  if (self%pervolume(iv)) then
+    call self%interpolate_specific (target, ii, iv, jt, pt)
   else
-    target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
-     pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(1),1))   + &
-                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(1),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(1),1)))  + &
-            (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(1),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(1),1))   + &
-                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(1),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(1),1)))) + &
-     pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(2),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(2),1))   + &
-                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(2),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(2),1)))  + &
-            (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(2),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(2),1))   + &
-                       (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1)    + &
-                                  (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))
+    pos = target%myposition (ii, iv)
+    call self%index_space (pos, iv, j, p)
+    write(io_unit%log,'(a,2i6,2x,3i4,2x,3f7.3)') &
+      'interpolate: target, source, j, p =', target%id, self%id, j, p
+    !call trace%begin ('patch_t%interpolate', itimer=itimer)
+    if (self%unsigned(iv)) then
+      target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = exp( &
+       pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1))    + &
+                                    (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(1),1)))   + &
+                         (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(1),1))    + &
+                                    (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(1),1))))  + &
+              (   p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(1),1))    + &
+                                    (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(1),1)))   + &
+                         (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(1),1))    + &
+                                    (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(1),1))))) + &
+       pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(2),1))    + &
+                                    (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(2),1)))   + &
+                         (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(2),1))    + &
+                                    (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(2),1))))  + &
+              (   p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(2),1))    + &
+                                    (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(2),1)))   + &
+                         (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1))    + &
+                                    (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))))
+    else
+      target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
+       pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1)    + &
+                                    (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(1),1))   + &
+                         (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(1),1)    + &
+                                    (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(1),1)))  + &
+              (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(1),1)    + &
+                                    (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(1),1))   + &
+                         (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(1),1)    + &
+                                    (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(1),1)))) + &
+       pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(2),1)    + &
+                                    (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(2),1))   + &
+                         (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(2),1)    + &
+                                    (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(2),1)))  + &
+              (   p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(2),1)    + &
+                                    (    p(1))*self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(2),1))   + &
+                         (   p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1)    + &
+                                    (    p(1))*self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))
+    end if
   end if
   if (target%id==io%id_debug .and. io%verbose>2) &
     write(io%output,1) target%id, ii, iv, self%id, j, jt, p, pt, &

@@ -13,6 +13,7 @@ MODULE experiment_mod
     integer:: key(4)
   contains
     procedure init
+    procedure dnload
     procedure update
     procedure info
   end type
@@ -26,26 +27,36 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace%begin ('experiment_t%init', itimer=itimer)
   call self%solver_t%init
-  print *,'experiment_t%init: unisigned =', &
-    self%unsigned(self%idx%d), self%unsigned(self%idx%e)
-  self%unsigned(self%idx%d) = .true.
-  self%unsigned(self%idx%e) = .true.
   call trace%end (itimer)
 END SUBROUTINE init
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE dnload (self, only)
+  class(experiment_t):: self
+  integer, optional:: only
+  !----------------------------------------------------------------------------
+  call trace%begin('experiment_t%dnload')
+  if (self%level >= shared%levelmin) then
+    call self%solver_t%dnload
+  else if (self%is_clear (bits%frozen)) then
+    print *, 'WARNING: frozen bit not set on', self%id
+    call self%set (bits%frozen)
+  end if
+  call trace%end
+END SUBROUTINE dnload
 
 !===============================================================================
 !===============================================================================
 SUBROUTINE update (self)
   class(experiment_t):: self
   !----------------------------------------------------------------------------
-  call trace_begin('experiment_t%update')
+  call trace%begin('experiment_t%update')
   call self%output
-  if (self%level >= shared%levelmin) then
+  if (self%is_clear (bits%frozen)) then
     call self%solver_t%update
-  else
-    call self%set (bits%frozen)
   end if
-  call trace_end
+  call trace%end
 END SUBROUTINE update
 
 !===============================================================================
@@ -55,8 +66,11 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer, optional:: nq, ntask
   character(len=64), optional:: experiment_name
   !----------------------------------------------------------------------------
-  if (self%level >= shared%levelmin) &
+  call trace%begin('experiment_t%info')
+  if (self%is_clear (bits%frozen)) then
     call self%solver_t%info (nq, ntask, experiment_name)
+  end if
+  call trace%end
 END SUBROUTINE info
 
 END MODULE experiment_mod

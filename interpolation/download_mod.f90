@@ -33,6 +33,7 @@ MODULE download_mod
   USE validate_mod
   USE omp_lock_mod
   USE timer_mod
+  USE guard_zones_mod
   implicit none
   private
   type, public:: download_t
@@ -45,6 +46,7 @@ MODULE download_mod
   contains
     procedure:: init
     procedure:: download_link
+    procedure, nopass:: dnload_range
     procedure:: prolong
     procedure:: different
     procedure:: different_prolong
@@ -227,14 +229,23 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
        self%same => same_linear
      if (trim(target%kind) /= 'rt_solver') then
        if (source%is_clear(bits%no_download)) then
+         !----------------------------------------------------------------------
+         ! Test specific interpolation routine on all nbor cases
+         !----------------------------------------------------------------------
          if (use_different == 2) then
            call different (self, target, source, jt, pt, all_cells, only=only)
          else if (use_different == 1) then
            call different_prolong (self, target, source, jt, pt, all_cells, only=only)
          else if (use_different == -1) then
            call different_restrict (self, target, source, jt, pt, only=only)
+         !----------------------------------------------------------------------
+         ! Default same interpolation when target and source levels agree
+         !----------------------------------------------------------------------
          else if (source%level==target%level) then
            call self%same (target, source, jt, pt, all_cells, only=only)
+         !----------------------------------------------------------------------
+         ! Prolong cases
+         !----------------------------------------------------------------------
          else if ((source%level-target%level) <= -1) then
            if (use_different == -2) then
              call different (self, target, source, jt, pt, all_cells, only=only)
@@ -243,13 +254,20 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
            else
              call different_prolong (self, target, source, jt, pt, all_cells, only=only)
            end if
+         !----------------------------------------------------------------------
+         ! Prolong cases with all_cell
+         !----------------------------------------------------------------------
          else if (source%level < target%level .and. present(all_cells)) then
            call different_prolong (self, target, source, jt, pt, all_cells, only=only)
+         !----------------------------------------------------------------------
+         ! Restrict cases
+         !----------------------------------------------------------------------
          else if ((source%level-target%level) == 1) then
            if (use_different <= -2) then
              call different (self, target, source, jt, pt, all_cells, only=only)
            else
-             call different_restrict (self, target, source, jt, pt, only=only)
+             call guard_zones%restrict (target, source, jt, pt, verbose)
+             !call different_restrict (self, target, source, jt, pt, only=only)
            end if
          end if
        end if
