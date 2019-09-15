@@ -61,6 +61,7 @@ MODULE download_mod
   integer:: use_different=0
   logical:: sorted=.false.
   logical:: use_locks=.true.
+  character(len=16):: use_restrict='', use_prolong=''
   type(download_t), public:: download
 CONTAINS
 
@@ -74,7 +75,7 @@ SUBROUTINE init (self)
   logical, save:: check_filled=.false.
   logical, save:: first_time=.true.
   namelist /download_params/ order_interpolator, order_time, check_filled, &
-    use_different, sorted, use_locks, id_debug, verbose
+    use_prolong, use_restrict, sorted, use_locks, id_debug, verbose
   character(len=120):: id = &
     '$Id$ interpolation/download_mod.f90'
   !-----------------------------------------------------------------------------
@@ -231,30 +232,24 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
      if (trim(target%kind) /= 'rt_solver') then
        if (source%is_clear(bits%no_download)) then
          !----------------------------------------------------------------------
-         ! Test specific interpolation routine on all nbor cases
-         !----------------------------------------------------------------------
-         if (use_different == 2) then
-           call different (self, target, source, jt, pt, all_cells, only=only)
-         else if (use_different == 1) then
-           call different_prolong (self, target, source, jt, pt, all_cells, only=only)
-         else if (use_different == -1) then
-           call different_restrict (self, target, source, jt, pt, only=only)
-         !----------------------------------------------------------------------
          ! Default same interpolation when target and source levels agree
          !----------------------------------------------------------------------
-         else if (source%level==target%level) then
+         if (source%level==target%level) then
            call self%same (target, source, jt, pt, all_cells, only=only)
          !----------------------------------------------------------------------
          ! Prolong cases
          !----------------------------------------------------------------------
          else if ((source%level-target%level) <= -1) then
-           if (use_different == -2) then
+           select case (trim(use_prolong))
+           case ('different')
              call different (self, target, source, jt, pt, all_cells, only=only)
-           else if (use_different == -3) then
+           case ('prolong')
              call prolong (self, target, source, jt, pt, all_cells, only=only)
-           else
+           case ('guard_zones')
+             call guard_zones%interpolate (target, source, jt, pt)
+           case default
              call different_prolong (self, target, source, jt, pt, all_cells, only=only)
-           end if
+           end select
          !----------------------------------------------------------------------
          ! Prolong cases with all_cell
          !----------------------------------------------------------------------
@@ -264,12 +259,14 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
          ! Restrict cases
          !----------------------------------------------------------------------
          else if ((source%level-target%level) == 1) then
-           if (use_different <= -2) then
+           select case (trim(use_restrict))
+           case ('different')
              call different (self, target, source, jt, pt, all_cells, only=only)
-           else
-             call guard_zones%restrict (target, source, jt, pt)
-             !call different_restrict (self, target, source, jt, pt, only=only)
-           end if
+           case ('guard_zones')
+             call guard_zones%interpolate (target, source, jt, pt)
+           case default
+             call different_restrict (self, target, source, jt, pt, only=only)
+           end select
          end if
        end if
        if (target%id==id_debug) then

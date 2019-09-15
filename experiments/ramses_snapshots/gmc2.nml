@@ -10,21 +10,27 @@
 !---------------------------------------------
 &scaling_params         l_pc=40 v_kms=1 d_cgs=4e-22
 &patch_params           nt=5 nv=8 grace=0.1 n=3*16 no_mans_land=t /
-&out_params             end_time=101-4 out_time=10e-4 print_every=100 /
-&io_params              verbose=0 do_trace=f omp_trace=f do_output=t
+&out_params             end_time=101-4 out_time=10e-4 print_every=1 /
+&io_params              verbose=0 do_trace=f omp_trace=t do_output=f
                         method='legacy' id_debug=0
                         guard_zones=t time_derivs=0 /
-&timer_params           sec_per_report=30 /
+&timer_params           sec_per_report=1 /
 &validate_params        state='write' /
 
 !---------------------------------
 ! Initial condition and forces
 !---------------------------------
-&ramses_reader_params   verbose=0
-                        path='gmc2' nout=9 levelmin=6 levelmax=8 centre_on_sink=f
+&ramses_reader_params   verbose=2
+                        path='gmc2' nout=11 levelmin=5 levelmax=9 centre_on_sink=f
                         direct_load=t do_evaluate=f detailed_timer=f /
-&guard_zone_params      verbose=2 method='optimized' /
-&download_params        verbose=0 use_different=0 id_debug=0 /
+&guard_zone_params      verbose=0 method='opt' /
+&download_params        verbose=0 id_debug=0
+                        !use_restrict='different'
+                        use_restrict='guard_zones'
+                        use_prolong='different'
+                        !use_prolong='prolong'
+                        !use_prolong='guard_zones'
+                        /
 &initial_params         /
 &force_params           type='turbulence' /
 &turbulence_params      ampl_turb=2 t_turn=0.05 k1=1 k2=2 pk=0.0 seed=5 /
