@@ -61,7 +61,8 @@ MODULE download_mod
   integer:: use_different=0
   logical:: sorted=.false.
   logical:: use_locks=.true.
-  character(len=16):: use_restrict='', use_prolong=''
+  logical:: detailed_timer=.false.
+  character(len=16):: use_restrict='', use_prolong='', use_same=''
   type(download_t), public:: download
 CONTAINS
 
@@ -75,7 +76,8 @@ SUBROUTINE init (self)
   logical, save:: check_filled=.false.
   logical, save:: first_time=.true.
   namelist /download_params/ order_interpolator, order_time, check_filled, &
-    use_prolong, use_restrict, sorted, use_locks, id_debug, verbose
+    use_prolong, use_restrict, use_same, sorted, use_locks, id_debug, &
+    detailed_timer, verbose
   character(len=120):: id = &
     '$Id$ interpolation/download_mod.f90'
   !-----------------------------------------------------------------------------
@@ -235,7 +237,16 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
          ! Default same interpolation when target and source levels agree
          !----------------------------------------------------------------------
          if (source%level==target%level) then
-           call self%same (target, source, jt, pt, all_cells, only=only)
+           select case (trim(use_same))
+           case ('different')
+             call different (self, target, source, jt, pt, all_cells, only=only)
+           case ('guard_zones')
+             call guard_zones%method (target, source, jt, pt)
+           case ('guard_same')
+             call guard_zones%method (target, source, jt, pt, same=.true.)
+           case default
+             call self%same (target, source, jt, pt, all_cells, only=only)
+           end select
          !----------------------------------------------------------------------
          ! Prolong cases
          !----------------------------------------------------------------------
@@ -246,7 +257,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
            case ('prolong')
              call prolong (self, target, source, jt, pt, all_cells, only=only)
            case ('guard_zones')
-             call guard_zones%interpolate (target, source, jt, pt)
+             call guard_zones%method (target, source, jt, pt)
            case default
              call different_prolong (self, target, source, jt, pt, all_cells, only=only)
            end select
@@ -262,8 +273,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
            select case (trim(use_restrict))
            case ('different')
              call different (self, target, source, jt, pt, all_cells, only=only)
+           case ('diff_pro')
+             call different_prolong (self, target, source, jt, pt, all_cells, only=only)
            case ('guard_zones')
-             call guard_zones%interpolate (target, source, jt, pt)
+             call guard_zones%method (target, source, jt, pt)
            case default
              call different_restrict (self, target, source, jt, pt, only=only)
            end select
@@ -367,6 +380,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       deallocate (src)
   end if
   !-----------------------------------------------------------------------------
+  call guard_zones%info
   if (target%is_clear(bits%no_density)) &
     call validate%check (target%link, d, ' after download')
   call trace%end (itimer)
@@ -499,13 +513,17 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
   integer, optional       :: only
   !.............................................................................
   integer                 :: l(3), u(3), o(3), ii(3), jt(2), i
-  real(8)                 :: position(3), xx, dist(3)
+  real(8)                 :: position(3), xx, dist(3), start
   real                    :: pt(2), fmin
-  integer                 :: ix, iy, iz, iv, iv1, iv2, li(3), ui(3)
+  integer                 :: ix, iy, iz, iv, iv1, iv2, li(3), ui(3), cells
   integer, save           :: itimer=0
   logical                 :: all_cells_l, no
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%same_linear', itimer=itimer)
+  if (detailed_timer) then
+    cells = 0
+    start = wallclock()
+  end if
   if (target%id == id_debug) &
     write(io_unit%log,'(a,1p,e14.5,i7,e14.5)') &
       'dbg download_t%same_linear: time, source =', &
@@ -625,6 +643,7 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
       !-------------------------------------------------------------------------
       ! Special case, with nt==1
       !-------------------------------------------------------------------------
+      cells = product(u-l+1)
       if (source%nt == 1) then
         if (all_cells_l) then
           do iz=l(3),u(3)
@@ -840,6 +859,18 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
       end if
     end if
   end do
+  if (detailed_timer) then
+    if (cells > 0) then
+      write (stdout,'(a,6p,2(2x,i6,i3),i6," cells,",f9.3," mus/cell")') &
+        "download_t%dsame_linear: target, level, source, level,", &
+        target%id, target%level, source%id, source%level, cells, &
+        (wallclock()-start)/max(1,cells)
+    else
+      write (stdout,'(a,6p,2(2x,i6,i3),i6," cells,",f9.3," mus")') &
+        "download_t%same_linear: target, level, source, level,", &
+        target%id, target%level, source%id, source%level, cells, wallclock()-start
+    end if
+  end if
   call trace%end (itimer)
 END SUBROUTINE same_linear
 
@@ -1144,16 +1175,21 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
   logical, optional:: all_cells
   integer, optional:: only
   !.............................................................................
-  integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i
+  integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, cells
   integer, dimension(3)   :: l, u, ii, li, ui, jj
   real(8), dimension(3)   :: pos
   logical                 :: valid
-  integer, save           :: itimer=0
   real                    :: pt(2), pp(3)
   real(kind=KindScalarVar):: qint
   logical                 :: all_cells_l
+  real(8)                 :: start
+  integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different', itimer=itimer)
+  if (detailed_timer) then
+    cells = 0
+    start = wallclock()
+  end if
   if (present(only)) then
     iv1 = only
     iv2 = only
@@ -1188,6 +1224,7 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
         do ix=l(1),u(1)
           ii=[ix,iy,iz]
           if (all_cells_l .or. any((ii-li) < 0 .or. (ii-ui) > 0)) then
+            if (iv==1) cells = cells+1
             if (verbose > 1 .and. target%id==id_debug) &
               write (io_unit%log,*) &
                 target%id, 'DBG interpolate_t%different:    using', &
@@ -1224,6 +1261,18 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
       2 format(2(i6,i3),2x,a,i6,a,2(2x,3i4),1p,e14.4,2x,0p2f6.3)
     end if
   end do
+  if (detailed_timer) then
+    if (cells > 0) then
+      write (stdout,'(a,6p,2(2x,i6,i3),i6," cells,",f9.3," mus/cell")') &
+        "download_t%different: target, level, source, level,", &
+        target%id, target%level, source%id, source%level, cells, &
+        (wallclock()-start)/max(1,cells)
+    else
+      write (stdout,'(a,6p,2(2x,i6,i3),i6," cells,",f9.3," mus")') &
+        "download_t%different: target, level, source, level,", &
+        target%id, target%level, source%id, source%level, cells, wallclock()-start
+    end if
+  end if
   call trace%end (itimer)
 END SUBROUTINE different
 
@@ -1236,18 +1285,19 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
   logical, optional:: all_cells
   integer, optional:: only
   !.............................................................................
-  integer                 :: ntot, nskip, ninter, nint, nperv, nexp
+  integer                 :: ntot, nskip, cells, nint, nperv, nexp
   integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, n, srcid
   integer, dimension(3)   :: l, u, ii, li, ui, jj
   real(8), dimension(3)   :: pos
   real(4), dimension(3)   :: ot, os, ratio
   real(8)                 :: start
   logical                 :: valid
-  integer, save           :: itimer=0
   real                    :: pt(2), pp(3)
   real(kind=KindScalarVar):: qint, dint
   logical                 :: all_cells_l
   real(kind=KindScalarVar), pointer:: q1(:,:,:), q2(:,:,:), d1(:,:,:), d2(:,:,:)
+  real(kind=KindScalarVar), pointer:: q(:,:,:,:)
+  integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_prolong', itimer=itimer)
   start = wallclock()
@@ -1279,7 +1329,7 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
   nexp = 0
   nskip = 0
   nperv = 0
-  ninter = 0
+  cells = 0
   do iv=iv1,iv2
     ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
     if (iv == target%idx%dphi) cycle
@@ -1291,16 +1341,18 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
 !    do i=1,3
 !      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
 !    end do
-    if (verbose > 1 .or. target%id==id_debug) &
-      write (io_unit%log,1) &
-        source%id, (source%position-target%position)/target%size, l, u
-      1 format("download_t%different_prolong:", i6,"  displ:",3f11.6, &
-        "  l,u:",2(3i4,2x))
     d1 => source%mem(:,:,:,source%idx%d,jt(1),1)
     d2 => source%mem(:,:,:,source%idx%d,jt(2),1)
     q1 => source%mem(:,:,:,iv,jt(1),1)
     q2 => source%mem(:,:,:,iv,jt(2),1)
+    q  => source%mem(:,:,:,iv,:,1)
     all_cells_l = all_cells_l .or. all((l >= li) .and. (u <= ui))
+    if (verbose >  0 .or. target%id==id_debug) &
+      write (io_unit%log,1) &
+        source%id, source%distance(target)/(0.5*(target%size+source%size)), &
+        l, u, all_cells_l
+      1 format("download_t%different_prolong: source =", i6,"  displ:",3f11.6, &
+        "  l,u:",2(3i4,2x)," all_cells:",l2)
     n = 0
     do iz=l(3),u(3)
       do iy=l(2),u(2)
@@ -1320,7 +1372,7 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
                 else
                   srcid = -1
                 end if
-                if (verbose > 1 .and. target%id == id_debug) &
+                if (verbose > 2 .or. verbose > 1 .and. target%id == id_debug) &
                   write (io_unit%log,'(a,2(i6,i3),i4,2x,3i4,2x,i4,i6)') &
                     'different_prolong: skipping', target%id, target%level, &
                     source%id, source%level, iv,ii, filled(ix,iy,iz,iv), srcid
@@ -1328,7 +1380,7 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
                 cycle
               end if
             end if
-            ninter = ninter+1
+            if (iv==1) cells = cells+1
             if (verbose > 1 .and. target%id == id_debug) &
               write (io_unit%log,*) target%id, 'different_prolong:    using', &
                 iv,ii, present(all_cells), (ii-li) < 0
@@ -1342,6 +1394,7 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
               qint = exp( &
                   interpolator%trilinear_log (q1, jj(1), jj(2), jj(3), pp) * pt(1) &
                 + interpolator%trilinear_log (q2, jj(1), jj(2), jj(3), pp) * pt(2))
+              !qint = exp(interpolator%four_d_log (q, jj(1), jj(2), jj(3), jt, [pp,pt(2)])
             else if (source%pervolume(iv)) then
               nperv = nperv+1
               dint = exp( &
@@ -1352,18 +1405,17 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
                 + interpolator%trilinear_pv (q2, d2, jj(1), jj(2), jj(3), pp) * pt(2)
               qint = qint * dint
             else
-              qint = interpolator%interpolator (q1, jj(1), jj(2), jj(3), pp) * pt(1) &
-                   + interpolator%interpolator (q2, jj(1), jj(2), jj(3), pp) * pt(2)
+              qint = interpolator%four_d (q, jj(1), jj(2), jj(3), jt, [pp,pt(2)])
             end if
             n = n + 1
-            if (all((ii >= li.and.ii <= ui)) .and. .not. all_cells_l) then
+            if (all((ii >= li .and. ii <= ui)) .and. .not. all_cells_l) then
               write (io_unit%log,*) 'INTERNAL BREACH!', ii
             end if
             target%mem(ix,iy,iz,iv,target%it,1) = qint
             if (self%check_filled) filled(ix,iy,iz,iv) = source%level
           else
             nint = nint+1
-            if (verbose > 1 .and. target%id==id_debug) &
+            if (verbose > 1 .or. target%id==id_debug) &
               write (io_unit%log,'(i6,i3,2x,a,i6,i2,i3,2x,3i4,L2,2(1x,3L1))') &
                 target%id, target%level, 'different_prolong: skipping internal', &
                 source%id, source%level, iv, ii, all_cells_l, (ii-li) < 0, (ii-ui) > 0
@@ -1376,11 +1428,25 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
       if (iv == 1 .or. verbose > 2) &
         write (io_unit%log,2) target%id, target%level, source%id, source%level, &
         'diff_prol picked up', &
-        ninter, nskip, nint, ' values, l, u, mind, pt =', l, u, &
+        cells, nskip, nint, ' values, l, u, mind, pt =', l, u, &
         minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), pt
       2 format(2(i6,i3),2x,a,3i6,a,2(2x,3i4),1p,e14.4,2x,0p2f6.3)
     end if
   end do
+  if (detailed_timer) then
+    if (cells > 0) then
+      write (stdout,'(a,6p,2(2x,i6,i3),",",i6," cells,",f9.3," mus/cell")') &
+        "download_t%different_prolong: target, level, source, level =", &
+        target%id, target%level, source%id, source%level, cells, &
+        (wallclock()-start)/cells
+    else
+      write (stdout,'(a,2(2x,i6,i3),2x,3f8.3,",",i6," cells,",6p,f9.3," mus")') &
+        "download_t%different_prolong: target,lvl,source,lvl,rel=", &
+        target%id, target%level, source%id, source%level, &
+        source%distance(target)/(0.5d0*(target%size+source%size)), &
+        cells, wallclock()-start
+    end if
+  end if
   call trace%end (itimer)
 END SUBROUTINE different_prolong
 
@@ -1393,7 +1459,7 @@ SUBROUTINE prolong (self, target, source, jt, pt, all_cells, only)
   logical, optional:: all_cells
   integer, optional:: only
   !.............................................................................
-  integer                 :: ntot, nskip, ninter, nint, nperv, nexp
+  integer                 :: ntot, nskip, cells, nint, nperv, nexp
   integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, m, n, srcid
   integer, dimension(3)   :: l, u, ii, li, ui, jj, jjmin, jjmax, iimin, iimax
   real(8), dimension(3)   :: pos
@@ -1443,7 +1509,7 @@ SUBROUTINE prolong (self, target, source, jt, pt, all_cells, only)
   nexp = 0
   nskip = 0
   nperv = 0
-  ninter = 0
+  cells = 0
   do iv=iv1,iv2
     ! `dphi` is part of `mem` when `time_order` = 0; do not download it.
     if (iv == target%idx%dphi) cycle 
@@ -1484,7 +1550,7 @@ SUBROUTINE prolong (self, target, source, jt, pt, all_cells, only)
             !    cycle
             !  end if
             !end if
-            ninter = ninter+1
+            if (iv==1) cells = cells+1
             pos = target%myposition (ii, iv)
             call source%index_space (pos, iv, jj, pp)
             !pp = (ii-ot)*ratio + os
@@ -1542,6 +1608,18 @@ SUBROUTINE prolong (self, target, source, jt, pt, all_cells, only)
   !print '(a,2(2x,3i4))', 'prolong: iimin, iimax =', iimin, iimax
   !print '(a,2(2x,3i4))', 'prolong: jjmin, jjmax =', jjmin, jjmax
   deallocate (sbuf, pbuf, tbuf, sdbuf, tdbuf)
+  if (detailed_timer) then
+    if (cells > 0) then
+      write (stdout,'(a,6p,2(2x,i6,i3),i6," cells,",f9.3," mus/cell")') &
+        "download_t%prolong: target, level, source, level,", &
+        target%id, target%level, source%id, source%level, cells, &
+        (wallclock()-start)/max(1,cells)
+    else
+      write (stdout,'(a,6p,2(2x,i6,i3),i6," cells,",f9.3," mus")') &
+        "download_t%prolong: target, level, source, level,", &
+        target%id, target%level, source%id, source%level, cells, wallclock()-start
+    end if
+  end if
   call trace%end (itimer)
 contains
   subroutine mem_interp 
@@ -1662,11 +1740,17 @@ SUBROUTINE different_restrict (self, target, source, jt, pt, only)
   real                    :: pt(2), pp(3)
   real(kind=KindScalarVar):: qint
   logical                 :: qmask(3)
+  real(8)                 :: start
+  integer                 :: cells
   real(8):: rratio(3), dVsource, dVtarget, dWsource, dWtarget, filling_factor, &
             accumulate, filling_total, dWtargeti
   integer:: ilook(3)
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_restrict', itimer=itimer)
+  if (detailed_timer) then
+    cells = 0
+    start = wallclock()
+  end if
   rratio = target%ds / source%ds
   ilook = merge(floor(rratio)/2 + 1, 0, source%n>1)
   dVsource = product(source%ds) ! only valid for Cartesian
@@ -1709,6 +1793,7 @@ SUBROUTINE different_restrict (self, target, source, jt, pt, only)
       do iy=l(2),u(2)
         do ix=l(1),u(1)
           ii = [ix,iy,iz]
+          if (iv==1) cells = cells+1
           ! prefer same level for guard zone filling
           if (self%check_filled) then
             if (filled(ix,iy,iz,iv) == target%level .and. &
@@ -1771,6 +1856,10 @@ SUBROUTINE different_restrict (self, target, source, jt, pt, only)
       2 format(2(i6,i3),2x,a,i6,a,2(2x,3i4),1p,e14.4,2x,0p2f6.3)
     end if
   end do
+  if (detailed_timer) then
+    write (stdout,'(a,6p,f6.3," mus/cell")') &
+      "download_t%different_restrict:", (wallclock()-start)/cells
+  end if
   call trace%end (itimer)
 END SUBROUTINE different_restrict
 
