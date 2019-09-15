@@ -2576,7 +2576,7 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
   !.............................................................................
   real(8)                  :: pos(3)
   integer                  :: j(3)
-  real                     :: p(3)
+  real                     :: p(3), q(3)
   integer, save            :: itimer=0
   !-----------------------------------------------------------------------------
   if (self%pervolume(iv)) then
@@ -2584,28 +2584,29 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
   else
     pos = target%myposition (ii, iv)
     call self%index_space (pos, iv, j, p)
+    q = 1.0-p
     !if (io%verbose > 1) &
     !  write(io_unit%log,'(a,2i6,2x,3i4,2x,3f7.3)') &
     !    'interpolate: target, source, j, p =', target%id, self%id, j, p
     !call trace%begin ('patch_t%interpolate', itimer=itimer)
     if (self%unsigned(iv)) then
       target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = exp( &
-       pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1))    + &
-                                    (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(1),1)))   + &
-                         (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(1),1))    + &
-                                    (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(1),1))))  + &
-              (   p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(1),1))    + &
-                                    (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(1),1)))   + &
-                         (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(1),1))    + &
-                                    (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(1),1))))) + &
-       pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(2),1))    + &
-                                    (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(2),1)))   + &
-                         (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(2),1))    + &
-                                    (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(2),1))))  + &
-              (   p(3))*((1.-p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(2),1))    + &
-                                    (    p(1))*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(2),1)))   + &
-                         (   p(2))*((1.0-p(1))*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1))    + &
-                                    (    p(1))*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))))
+       pt(1)*(q(3)*(q(2)*(q(1)*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1))    + &
+                          p(1)*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(1),1)))   + &
+                    p(2)*(q(1)*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(1),1))    + &
+                          p(1)*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(1),1))))  + &
+              p(3)*(q(2)*(q(1)*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(1),1))    + &
+                          p(1)*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(1),1)))   + &
+                    p(2)*(q(1)*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(1),1))    + &
+                          p(1)*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(1),1))))) + &
+       pt(2)*(q(3)*(q(2)*(q(1)*log(self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(2),1))    + &
+                          p(1)*log(self%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(2),1)))   + &
+                    p(2)*(q(1)*log(self%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(2),1))    + &
+                          p(1)*log(self%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(2),1))))  + &
+              p(3)*(q(2)*(q(1)*log(self%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(2),1))    + &
+                          p(1)*log(self%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(2),1)))   + &
+                    p(2)*(q(1)*log(self%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1))    + &
+                          p(1)*log(self%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))))
     else
       target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
        pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*self%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1)    + &
