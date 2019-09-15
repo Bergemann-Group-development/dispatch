@@ -2470,26 +2470,33 @@ END SUBROUTINE index_space
 !> not informed about the target grid spacing it must be adjusted for staggering
 !> before the call.
 !===============================================================================
-FUNCTION index_only (self, pos, roundup) RESULT (ii)
+FUNCTION index_only (self, pos, iv, roundup) RESULT (ii)
   class(patch_t)      :: self
   real(8), intent(in) :: pos(3)
-  integer             :: ii(3)
+  integer, optional   :: iv
   logical, optional   :: roundup
+  integer             :: ii(3)
   !.............................................................................
   integer             :: i
-  real(8)             :: p(3)
+  real(8)             :: p(3), h(3)
+  class(mesh_t), pointer :: mesh
   !-----------------------------------------------------------------------------
+  if (present(iv)) &
+    h = self%index_stagger(iv)
   do i=1,3
+    mesh => self%mesh(i)
     p(i) = pos(i) - self%position(i)                            ! relative position
     if (self%periodic(i)) then
-      p(i) = modulo(p(i)+0.5_8*self%mesh(i)%b,self%mesh(i)%b) & ! wrap
-                        -0.5_8*self%mesh(i)%b
+      p(i) = modulo(p(i)+0.5_8*mesh%b, mesh%b)-0.5_8*mesh%b     ! periodic wrap
     end if
-    p(i) = p(i)/self%mesh(i)%d + self%offset(i)                 ! float index
+    p(i) = p(i)/mesh%d + self%offset(i)                         ! float index
+    if (present(iv)) then
+      p(i) = p(i) + mesh%h(iv)                                  ! staggering
+    end if
     if (present(roundup)) then
       ii(i) = ceiling(p(i))                                     ! round up
     else
-      ii(i) = p(i) + 0.0001                                     ! integer part
+      ii(i) = p(i) + 0.0001                                     ! floor w margin
     end if
   end do
 END FUNCTION index_only
@@ -2613,8 +2620,9 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
   else
     pos = target%myposition (ii, iv)
     call self%index_space (pos, iv, j, p)
-    write(io_unit%log,'(a,2i6,2x,3i4,2x,3f7.3)') &
-      'interpolate: target, source, j, p =', target%id, self%id, j, p
+    !if (io%verbose > 1) &
+    !  write(io_unit%log,'(a,2i6,2x,3i4,2x,3f7.3)') &
+    !    'interpolate: target, source, j, p =', target%id, self%id, j, p
     !call trace%begin ('patch_t%interpolate', itimer=itimer)
     if (self%unsigned(iv)) then
       target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = exp( &
