@@ -96,7 +96,7 @@ SUBROUTINE read_table
   !-----------------------------------------------------------------------------
   call trace%begin ('sne_t%read_table')
   write (stdout,*) 'SNe_t%read_table: file =', 'input_data/'//trim(file)
-  open (unit=io_unit%tmp, file='input_data/'//trim(file), form='formatted', status='old')
+  open (unit=io_unit%tmp, file=trim(io%top)//'data/SNe/'//trim(file), form='formatted', status='old')
   !-----------------------------------------------------------------------------
   ! Read data from simple text file, with mass(M_Sun), lifetime(Myr)
   !-----------------------------------------------------------------------------
