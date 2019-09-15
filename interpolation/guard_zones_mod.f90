@@ -1,7 +1,7 @@
 !===============================================================================
 !> Optimized restrict operations, intended for guard zones (not conservative)
 !>
-!>    1   2   3   4   5   6   7   8   9   0  11    17  18  19  20  21  22   
+!>    1   2   3   4   5   6   7   8   9   0  11    17  18  19  20  21  22
 !>    +---+---+-|-o---o---o---o---o---o---0---0-| --0---o---o---o-|-+---+---+
 !>  -o-o-o-o-o-o|+-+-+                          |            +-+-+|o-o-o-o-o-o
 !>   4 5 6 7 8 9 0 1 2                                       1 2 3 4 5 6 7 8 9
@@ -21,14 +21,16 @@ MODULE guard_zones_mod
   USE trace_mod
   USE patch_mod
   USE mesh_mod
+  USE omp_timer_mod
   implicit none
   private
   type, public:: guard_zones_t
-    procedure(restrict_simple), pointer:: restrict => null()
+    procedure(restrict_simple), pointer:: interpolate => null()
   contains
     procedure:: init
     procedure:: restrict_simple
-    procedure:: restrict_opt
+    procedure:: different_opt
+    procedure:: restrict_vect
   end type
   integer:: verbose=0
   type(guard_zones_t), public:: guard_zones
@@ -56,9 +58,11 @@ SUBROUTINE init (self)
   end if
   select case (method)
   case ('simple')
-    self%restrict => restrict_simple
+    self%interpolate => restrict_simple
   case ('opt')
-    self%restrict => restrict_opt
+    self%interpolate => different_opt
+  case ('vect')
+    self%interpolate => restrict_vect
   case default
     call io%abort ('guard zone method unknown')
   end select
@@ -76,7 +80,7 @@ SUBROUTINE restrict_simple (self, target, source, jt, pt)
   !.............................................................................
   real, dimension(:,:,:), pointer:: tmem, smem, td, sd
   class(mesh_t), pointer:: mesh
-  integer:: i1, i2, i3, iv, tl(3), tu(3), sl(3), su(3)
+  integer:: i1, i2, i3, iv, jv, tl(3), tu(3), sl(3), su(3)
   real(8):: tlc(3), tuc(3), slc(3), suc(3), dist(3)
   real(4):: pl(3), pu(3)
   integer, save:: itimer=0
@@ -86,27 +90,28 @@ SUBROUTINE restrict_simple (self, target, source, jt, pt)
   call trace%begin ('guard_zones_t%restrict_simple', itimer=itimer)
   call source%time_interval (target%time, jt, pt)
   do iv=1,target%nv
+    jv = 0
     !---------------------------------------------------------------------------
     ! Target lower and upper corner in real space
     !---------------------------------------------------------------------------
-    tlc = target%myposition (target%mesh%lb, iv)
-    tuc = target%myposition (target%mesh%ub, iv)
+    tlc = target%myposition (target%mesh%lb, jv)
+    tuc = target%myposition (target%mesh%ub, jv)
     !---------------------------------------------------------------------------
     ! Map to source index space and limit to source interior
     !---------------------------------------------------------------------------
-    sl = source%index_only (tlc)
-    su = source%index_only (tuc,roundup=.true.)
-    sl = max(sl,source%mesh%li)
-    su = min(su,source%mesh%ui)
+    sl = source%index_only (tlc, jv, nowrap=.true.)
+    su = source%index_only (tuc, jv, nowrap=.true.)
+    sl = min(max(sl,source%mesh%li),source%mesh%ui-1)
+    su = min(max(su,source%mesh%li),source%mesh%ui-1)
     !---------------------------------------------------------------------------
     ! Map source points to target legal index space
     !---------------------------------------------------------------------------
-    slc = source%myposition(sl, iv) + source%ds
-    suc = source%myposition(su, iv)
-    tl = target%index_only (slc, iv)
-    tu = target%index_only (suc, iv)
-    tl = max(tl,target%mesh%lb)
-    tu = min(tu,target%mesh%ub)
+    slc = source%myposition(sl, jv)
+    suc = source%myposition(su, jv)
+    tl = target%index_only (slc, jv, nowrap=.true., roundup=.true.)
+    tu = target%index_only (suc, jv, nowrap=.true., roundup=.true.)
+    tl = min(max(tl,target%mesh%lb),target%mesh%ub)
+    tu = min(max(tu,target%mesh%lb),target%mesh%ub)
     if (verbose > 0) &
       write(io_unit%log,'(a,i3,2(2x,3i4),2(2x,3f7.3))') &
         'guard_zones_t%restrict_simple1: iv, tl, tu =', iv, tl, tu
@@ -122,9 +127,79 @@ SUBROUTINE restrict_simple (self, target, source, jt, pt)
 END SUBROUTINE restrict_simple
 
 !===============================================================================
+!> Compute interpolated guard zone values by setting up interface to the
+!> slow but correct patch_t%interpolate() point-by-point interpolation.
+!===============================================================================
+SUBROUTINE different_opt (self, target, source, jt, pt)
+  class(guard_zones_t):: self
+  class(patch_t), pointer:: target, source
+  integer:: jt(2)
+  real(4):: pt(2)
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: tmem, smem, td, sd
+  class(mesh_t), pointer:: mesh
+  integer:: i, i1, i2, i3, iv, jv, tl(3), tu(3), sl(3), su(3)
+  real(8):: tlc, tuc, slc, suc, dist, box, tc
+  class(mesh_t), pointer:: tm, sm
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  ! Interpolate in time and space, point-by-point
+  !-----------------------------------------------------------------------------
+  call trace%begin ('guard_zones_t%different_opt', itimer=itimer)
+  call source%time_interval (target%time, jt, pt)
+  do iv=1,target%nv
+    jv = 0
+    !---------------------------------------------------------------------------
+    ! Source distance from target center
+    !---------------------------------------------------------------------------
+    do i=1,3
+      tm => target%mesh(i)
+      sm => source%mesh(i)
+      box = tm%b
+      dist = sm%p - tm%p
+      if (target%periodic(i)) &
+        dist = modulo(dist+0.5d0*box,box) - 0.5d0*box
+      !-------------------------------------------------------------------------
+      ! Target corner distances from center
+      !-------------------------------------------------------------------------
+      tlc = tm%r(tm%lb)
+      tuc = tm%r(tm%ub)
+      !-------------------------------------------------------------------------
+      ! Source lower and upper li and ui points, relative to target center
+      !-------------------------------------------------------------------------
+      slc = sm%r(sm%li  ) + dist
+      suc = sm%r(sm%ui-1) + dist
+      !-------------------------------------------------------------------------
+      ! Lower and upper index distance from target center
+      !-------------------------------------------------------------------------
+      tlc = max(tlc,slc)
+      tuc = min(tuc,suc)
+      !-------------------------------------------------------------------------
+      ! Target indices to lower and upper guard zone limits
+      !-------------------------------------------------------------------------
+      tc = 1d0/tm%d
+      tl(i) = ceiling(tlc*tc + tm%o)
+      tu(i) = ceiling(tuc*tc + tm%o)
+      if (verbose > 0) &
+        write(io_unit%log,'(a,i3,2x,5f8.3,2x,2i4)') &
+        'guard_zones_t%different_opt: i,dist,tlc,tuc,slc,suc,tl,tu =', &
+        i, dist, tlc, tuc, slc, suc, tl(i), tu(i)
+    end do
+    !call dnload_range (target, source, iv, tl, tu)
+    !if (verbose > 0) &
+    !  write(io_unit%log,'(a,i3,2(2x,3i4),2(2x,3f7.3))') &
+    !    'guard_zones_t%restrict_simple2: iv, tl, tu =', iv, tl, tu
+    do i3=tl(3),tu(3); do i2=tl(2),tu(2); do i1=tl(1),tu(1)
+      call source%interpolate (target, [i1,i2,i3], iv, jt, pt)
+    end do; end do; end do
+  end do
+  call trace%end (itimer)
+END SUBROUTINE different_opt
+
+!===============================================================================
 !> Compute interpolated guard zone values
 !===============================================================================
-SUBROUTINE restrict_opt (self, target, source, jt, pt)
+SUBROUTINE restrict_vect (self, target, source, jt, pt)
   class(guard_zones_t):: self
   class(patch_t), pointer:: target, source
   integer:: jt(2)
@@ -139,7 +214,7 @@ SUBROUTINE restrict_opt (self, target, source, jt, pt)
   !-----------------------------------------------------------------------------
   ! Map the source corners into target index space
   !-----------------------------------------------------------------------------
-  call trace%begin ('guard_zones_t%restrict_opt', itimer=itimer)
+  call trace%begin ('guard_zones_t%restrict_vect', itimer=itimer)
   !-----------------------------------------------------------------------------
   ! Interpolate in time and space
   !-----------------------------------------------------------------------------
@@ -162,38 +237,47 @@ SUBROUTINE restrict_opt (self, target, source, jt, pt)
     ! source points to the left of a target point, with the next source point to
     ! the right of the target point, and still inside the source interior.
     !---------------------------------------------------------------------------
-    sl = source%index_only (tlc, iv)
-    su = source%index_only (tuc, iv)
-    sl = max(sl,source%mesh%li)
-    su = min(su,source%mesh%ui-1)
+    sl = source%index_only (tlc, 1, nowrap=.true.)
+    su = source%index_only (tuc, 1, nowrap=.true.)
+    sl = min(max(sl,source%mesh%li),source%mesh%ui-1)
+    su = min(max(su,source%mesh%li),source%mesh%ui-1)
     !---------------------------------------------------------------------------
     ! Map those source points back to the target index space, rounding up to
     ! find the target points between the source points.
     !---------------------------------------------------------------------------
     slc = source%myposition(sl, iv)
     suc = source%myposition(su, iv)
-    tl = target%index_only (slc, iv, roundup=.true.)
-    tu = target%index_only (suc, iv, roundup=.true.)
+    !---------------------------------------------------------------------------
+    ! Compensate for periodic wrapping of corner points
+    !---------------------------------------------------------------------------
+    !where (target%position < source%position .and. slc > source%position)
+      !slc = slc - target%mesh%b
+    !end where
+    !where (target%position > source%position .and. suc < source%position)
+      !suc = suc + target%mesh%b
+    !end where
+    tl = target%index_only (slc, 1, roundup=.true., nowrap=.true.)
+    tu = target%index_only (suc, 1, roundup=.true., nowrap=.true.)
     !---------------------------------------------------------------------------
     ! The brackets below should not really be needed, since the points should
     ! all be inside the target legal range
     !---------------------------------------------------------------------------
-    tl = max(tl,target%mesh%lb)
-    tu = min(tu,target%mesh%ub)
+    tl = min(max(tl,target%mesh%lb),target%mesh%ub)
+    tu = min(max(tu,target%mesh%lb),target%mesh%ub)
     if (verbose > 0) then
       write(io_unit%log,1) &
-        'guard_zones_t%restrict_opt: iv, tlc, sl, slc, tl =', &
+        'guard_zones_t%restrict_vect: iv, tlc, sl, slc, tl =', &
         iv, tlc, sl, slc, tl
       1 format(a,i3,2(2(2x,3f8.4,2x,3i4)))
       write(io_unit%log,1) &
-        'guard_zones_t%restrict_opt: iv, tuc, su, suc, tu =', &
+        'guard_zones_t%restrict_vect: iv, tuc, su, suc, tu =', &
         iv, tuc, su, suc, tu
     end if
     !---------------------------------------------------------------------------
     ! Compute indices and interpolation weights for the first target point, and
     ! save the weights for the 8 nearest neighbor points in source space
     !---------------------------------------------------------------------------
-    call source%index_space (target%myposition(tl), iv, j0, p)
+    call source%index_space (target%myposition(tl), 1, j0, p)
     j = 0
     do i3=0,1
       p3 = merge (p(3), 1.0-p(3), i3==1)
@@ -209,7 +293,7 @@ SUBROUTINE restrict_opt (self, target, source, jt, pt)
     !---------------------------------------------------------------------------
     if (verbose > 0) &
       write(io_unit%log,'(a,i3,4(2x,3i4))') &
-        'guard_zones_t%restrict_opt: iv, tl, tu, j0 =', &
+        'guard_zones_t%restrict_vect: iv, tl, tu, j0 =', &
         iv, tl, tu, j0
     !---------------------------------------------------------------------------
     ! Map target and source memory to contiguous 3-D arrays
@@ -224,7 +308,7 @@ SUBROUTINE restrict_opt (self, target, source, jt, pt)
     end do
   end do
   call trace%end (itimer)
-END SUBROUTINE restrict_opt
+END SUBROUTINE restrict_vect
 
 !===============================================================================
 !> Update interpolated guard zone values by looping over target indices,
@@ -260,7 +344,7 @@ SUBROUTINE update (target, tmem, td, l, u, iv, source, smem, sd, j0, k, &
   i = 0
   j3 = j0(3)
   do i3=l(3),u(3)
-    j2 = j0(2) 
+    j2 = j0(2)
     do i2=l(2),u(2)
       j1 = j0(1)
       if (target%pervolume(iv)) then
@@ -362,93 +446,5 @@ SUBROUTINE update (target, tmem, td, l, u, iv, source, smem, sd, j0, k, &
   deallocate (f, tot)
   call trace%end
 END SUBROUTINE update
-
-!===============================================================================
-!> OBSOLETE
-!===============================================================================
-SUBROUTINE dnload_range (target, source, iv, l, u, offset)
-  class(patch_t), pointer :: target, source
-  integer                 :: iv, l(3), u(3), offset(3), li, ui
-  optional                :: offset
-  !.............................................................................
-  real(8), dimension(3)   :: h, dist, la, ua
-  integer                 :: i
-  class(mesh_t), pointer  :: sm, tm
-  logical                 :: debug
-  !-----------------------------------------------------------------------------
-  call trace%begin ('download_t%dnload_range', 2)
-  !-----------------------------------------------------------------------------
-  ! First take care of mapping the distance between the source and target
-  ! centers, periodically, so this can be ignored in the next steps.
-  !-----------------------------------------------------------------------------
-  dist = source%position - target%position
-  where (source%periodic)
-    dist = modulo(dist+0.5_8*source%mesh%b,source%mesh%b) - 0.5_8*source%mesh%b
-  end where
-  !-----------------------------------------------------------------------------
-  ! Add the distances from the source center to the start and end of the
-  ! authoritative domain of each variable.
-  !-----------------------------------------------------------------------------
-  debug = source%level /= target%level
-  la = dist - source%size/2d0
-  ua = dist + source%size/2d0
-  if (source%level /= target%level) then
-    do i=1,3
-      sm => source%mesh(i)
-      tm => target%mesh(i)
-      la(i) = la(i) + sm%h(iv)*sm%d - tm%h(iv)*tm%d
-      ua(i) = ua(i) + sm%h(iv)*sm%d - tm%h(iv)*tm%d
-    end do
-  end if
-  l = ceiling(la/target%mesh%d + target%mesh%o)
-  u =   floor(ua/target%mesh%d + target%mesh%o)
-  !-----------------------------------------------------------------------------
-  ! Make sure the range is legal.  The u index can become smaller than lb, which
-  ! means there is no overlap.  Likewise, the l index can become larger than ub
-  !-----------------------------------------------------------------------------
-  l = max(l,target%mesh%lb)
-  u = min(u,target%mesh%ub)
-  !-----------------------------------------------------------------------------
-  ! Account for collapsed dimensions
-  !-----------------------------------------------------------------------------
-  where (target%n == 1)
-    l = min(l,target%mesh%ub)
-    u = max(u,target%mesh%lb)
-  end where
-  !-----------------------------------------------------------------------------
-  ! For same level patch, the integer offset is what should be added to the
-  ! target index to get the source index.  For aligned meshes, offset=0.
-  !-----------------------------------------------------------------------------
-  if (present(offset)) then
-    if (source%level==target%level) then
-      offset = nint(-dist/target%ds + source%offset - target%offset)
-    else
-      write(io_unit%log,*) &
-        'ERROR: fixed offset not valid for different levels', &
-        target%id, target%level, source%id, source%level
-      !call mpi%abort('dnload_range')
-    end if
-  end if
-  call trace%end()
-contains
-!===============================================================================
-!> Local function that returns the index in target index space, given a position
-!> p, in relative target coordinates.
-!===============================================================================
-  function target_index (p, roundup, nearest) result (ii)
-    real(8)           :: p(3)
-    logical, optional :: roundup, nearest
-    integer           :: ii(3)
-    !---------------------------------------------------------------------------
-    p = p/target%mesh%d + target%offset                   ! float index
-    if (present(roundup)) then
-      ii = ceiling(p)                                     ! round up
-    else if (present(nearest)) then
-      ii = nint(p)                                        ! nearest int
-    else
-      ii = p + 0.0001                                     ! integer part
-    end if
-  end function target_index
-END SUBROUTINE dnload_range
 
 END MODULE guard_zones_mod
