@@ -31,7 +31,12 @@
 /
 &experiment_params      /
 &patch_params           nt=5 grace=0.3 n=3*24 no_mans_land=t do_check_nan=f use_data_hub=f /
-&download_params        order_time=1 /
+&download_params        order_time=1
+                        !use_same='different'
+                        !use_same='guard_zones'
+                        !use_same='guard_same'
+                        detailed_timer=f /
+&guard_zone_params      verbose=1 detailed_timer=f /
 &timestep_params        /
 
 &initial_params

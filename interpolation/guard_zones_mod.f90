@@ -25,14 +25,17 @@ MODULE guard_zones_mod
   implicit none
   private
   type, public:: guard_zones_t
-    procedure(restrict_simple), pointer:: interpolate => null()
+    procedure(restrict_simple), pointer:: method => null()
   contains
     procedure:: init
     procedure:: restrict_simple
     procedure:: different_opt
     procedure:: restrict_vect
+    procedure, nopass:: info
   end type
+  real(8):: update_t(3)=0d0
   integer:: verbose=0
+  logical:: detailed_timer=.false.
   type(guard_zones_t), public:: guard_zones
 CONTAINS
 
@@ -42,7 +45,7 @@ CONTAINS
 SUBROUTINE init (self)
   class(guard_zones_t):: self
   character(len=6):: method='opt'
-  namelist /guard_zone_params/ method, verbose
+  namelist /guard_zone_params/ method, detailed_timer, verbose
   integer:: iostat
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
@@ -56,13 +59,13 @@ SUBROUTINE init (self)
     end if
     !$omp end critical (init_cr)
   end if
-  select case (method)
+  select case (trim(method))
   case ('simple')
-    self%interpolate => restrict_simple
+    self%method => restrict_simple
   case ('opt')
-    self%interpolate => different_opt
+    self%method => different_opt
   case ('vect')
-    self%interpolate => restrict_vect
+    self%method => restrict_vect
   case default
     call io%abort ('guard zone method unknown')
   end select
@@ -72,22 +75,26 @@ END SUBROUTINE init
 !> Compute interpolated guard zone values by setting up interface to the
 !> slow but correct patch_t%interpolate() point-by-point interpolation.
 !===============================================================================
-SUBROUTINE restrict_simple (self, target, source, jt, pt)
+SUBROUTINE restrict_simple (self, target, source, jt, pt, same)
   class(guard_zones_t):: self
   class(patch_t), pointer:: target, source
   integer:: jt(2)
   real(4):: pt(2)
+  logical, optional:: same
   !.............................................................................
   real, dimension(:,:,:), pointer:: tmem, smem, td, sd
   class(mesh_t), pointer:: mesh
   integer:: i1, i2, i3, iv, jv, tl(3), tu(3), sl(3), su(3)
   real(8):: tlc(3), tuc(3), slc(3), suc(3), dist(3)
   real(4):: pl(3), pu(3)
+  real(8):: used
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Interpolate in time and space, point-by-point
   !-----------------------------------------------------------------------------
   call trace%begin ('guard_zones_t%restrict_simple', itimer=itimer)
+  if (detailed_timer) &
+    used = wallclock()
   call source%time_interval (target%time, jt, pt)
   do iv=1,target%nv
     jv = 0
@@ -120,9 +127,14 @@ SUBROUTINE restrict_simple (self, target, source, jt, pt)
     !  write(io_unit%log,'(a,i3,2(2x,3i4),2(2x,3f7.3))') &
     !    'guard_zones_t%restrict_simple2: iv, tl, tu =', iv, tl, tu
     do i3=tl(3),tu(3); do i2=tl(2),tu(2); do i1=tl(1),tu(1)
-      call source%interpolate (target, [i1,i2,i3], iv, jt, pt)
+      call interpolate (source, target, [i1,i2,i3], iv, jt, pt)
     end do; end do; end do
   end do
+  if (detailed_timer) then
+    used = wallclock()-used
+    write (stdout,'(a,6p,f6.3," mus/cell")') &
+      "guard_zone_t%restrict_simple:", used/product(tu-tl+1)
+  end if
   call trace%end (itimer)
 END SUBROUTINE restrict_simple
 
@@ -130,29 +142,36 @@ END SUBROUTINE restrict_simple
 !> Compute interpolated guard zone values by setting up interface to the
 !> slow but correct patch_t%interpolate() point-by-point interpolation.
 !===============================================================================
-SUBROUTINE different_opt (self, target, source, jt, pt)
+SUBROUTINE different_opt (self, target, source, jt, pt, same)
   class(guard_zones_t):: self
   class(patch_t), pointer:: target, source
   integer:: jt(2)
   real(4):: pt(2)
+  logical, optional:: same
   !.............................................................................
+  real, parameter:: eps=1e-4
   real, dimension(:,:,:), pointer:: tmem, smem, td, sd
   class(mesh_t), pointer:: mesh
-  integer:: i, i1, i2, i3, iv, jv, tl(3), tu(3), sl(3), su(3)
+  integer:: i, i1, i2, i3, iv, jv, tl(3), tu(3), sl(3), su(3), cells
+  real:: pi(16)
   real(8):: tlc, tuc, slc, suc, dist, box, tc
   class(mesh_t), pointer:: tm, sm
+  real(8):: start
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Interpolate in time and space, point-by-point
   !-----------------------------------------------------------------------------
   call trace%begin ('guard_zones_t%different_opt', itimer=itimer)
+  if (detailed_timer) then
+    start = wallclock()
+  end if
   call source%time_interval (target%time, jt, pt)
   do iv=1,target%nv
     jv = 0
-    !---------------------------------------------------------------------------
-    ! Source distance from target center
-    !---------------------------------------------------------------------------
     do i=1,3
+      !-------------------------------------------------------------------------
+      ! Source distance from target center
+      !-------------------------------------------------------------------------
       tm => target%mesh(i)
       sm => source%mesh(i)
       box = tm%b
@@ -167,8 +186,8 @@ SUBROUTINE different_opt (self, target, source, jt, pt)
       !-------------------------------------------------------------------------
       ! Source lower and upper li and ui points, relative to target center
       !-------------------------------------------------------------------------
-      slc = sm%r(sm%li  ) + dist
-      suc = sm%r(sm%ui-1) + dist
+      slc = sm%r(sm%li) + dist
+      suc = sm%r(sm%ui) + dist
       !-------------------------------------------------------------------------
       ! Lower and upper index distance from target center
       !-------------------------------------------------------------------------
@@ -178,8 +197,8 @@ SUBROUTINE different_opt (self, target, source, jt, pt)
       ! Target indices to lower and upper guard zone limits
       !-------------------------------------------------------------------------
       tc = 1d0/tm%d
-      tl(i) = ceiling(tlc*tc + tm%o)
-      tu(i) = ceiling(tuc*tc + tm%o)
+      tl(i) = ceiling(tlc*tc + tm%o - eps)
+      tu(i) = ceiling(tuc*tc + tm%o - eps)
       if (verbose > 0) &
         write(io_unit%log,'(a,i3,2x,5f8.3,2x,2i4)') &
         'guard_zones_t%different_opt: i,dist,tlc,tuc,slc,suc,tl,tu =', &
@@ -189,32 +208,50 @@ SUBROUTINE different_opt (self, target, source, jt, pt)
     !if (verbose > 0) &
     !  write(io_unit%log,'(a,i3,2(2x,3i4),2(2x,3f7.3))') &
     !    'guard_zones_t%restrict_simple2: iv, tl, tu =', iv, tl, tu
-    do i3=tl(3),tu(3); do i2=tl(2),tu(2); do i1=tl(1),tu(1)
-      call source%interpolate (target, [i1,i2,i3], iv, jt, pt)
-    end do; end do; end do
+    if (present(same)) then
+      call interpolate (source, target, [i1,i2,i3], iv, jt, pt, pi=pi, set=.true.)
+      do i3=tl(3),tu(3); do i2=tl(2),tu(2); do i1=tl(1),tu(1)
+        call interpolate (source, target, [i1,i2,i3], iv, jt, pt, pi=pi)
+      end do; end do; end do
+    else
+      do i3=tl(3),tu(3); do i2=tl(2),tu(2); do i1=tl(1),tu(1)
+        call interpolate (source, target, [i1,i2,i3], iv, jt, pt)
+      end do; end do; end do
+    end if
   end do
+  if (detailed_timer) then
+    cells = product(tu-tl+1)
+    write (stdout,'(a,6p,2(2x,i6,i3),i6," cells,",f9.3," mus/cell")') &
+      "guard_zones_t%different_opt: target, level, source, level,", &
+      target%id, target%level, source%id, source%level, cells, &
+      (wallclock()-start)/max(1,cells)
+  end if
   call trace%end (itimer)
 END SUBROUTINE different_opt
 
 !===============================================================================
 !> Compute interpolated guard zone values
 !===============================================================================
-SUBROUTINE restrict_vect (self, target, source, jt, pt)
+SUBROUTINE restrict_vect (self, target, source, jt, pt, same)
   class(guard_zones_t):: self
   class(patch_t), pointer:: target, source
   integer:: jt(2)
   real(4):: pt(2)
+  logical, optional:: same
   !.............................................................................
   real, dimension(:,:,:), pointer:: tmem, smem, td, sd
   class(mesh_t), pointer:: mesh
   integer:: i, i1, i2, i3, j, k, iv, tl(3), tu(3), sl(3), su(3), j0(3)
   real(8):: tlc(3), tuc(3), slc(3), suc(3)
   real(4):: p(3), p1, p2, p3, w(8)
+  real(8):: used
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   ! Map the source corners into target index space
   !-----------------------------------------------------------------------------
   call trace%begin ('guard_zones_t%restrict_vect', itimer=itimer)
+  if (detailed_timer) &
+    used = wallclock()
   !-----------------------------------------------------------------------------
   ! Interpolate in time and space
   !-----------------------------------------------------------------------------
@@ -307,6 +344,11 @@ SUBROUTINE restrict_vect (self, target, source, jt, pt)
                    pt(k), w, verbose)
     end do
   end do
+  if (detailed_timer) then
+    used = wallclock()-used
+    write (stdout,'(a,6p,f6.3," mus/cell")') &
+      "guard_zone_t%restrict_vect:", used/product(tu-tl+1)
+  end if
   call trace%end (itimer)
 END SUBROUTINE restrict_vect
 
@@ -332,10 +374,14 @@ SUBROUTINE update (target, tmem, td, l, u, iv, source, smem, sd, j0, k, &
   integer:: l(3), u(3), iv, j0(3), k, verbose
   real:: pt, w(8)
   !.............................................................................
+  real(8):: wc(4)
   real, allocatable:: f(:,:), tot(:)
   integer:: i, j, n, i1 , i2, i3, j1, j2, j3, jj(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('guard_zones_t%update')
+  if (detailed_timer) then
+    wc(1) = wallclock()
+  end if
   n = product(u-l+1)
   allocate (f(n,8), tot(n))
   !-----------------------------------------------------------------------------
@@ -394,6 +440,9 @@ SUBROUTINE update (target, tmem, td, l, u, iv, source, smem, sd, j0, k, &
     end do
     j3 = j3+2
   end do
+  if (detailed_timer) then
+    wc(2) = wallclock()
+  end if
   !-----------------------------------------------------------------------------
   ! Compute weighted results, vectorized
   !-----------------------------------------------------------------------------
@@ -411,6 +460,9 @@ SUBROUTINE update (target, tmem, td, l, u, iv, source, smem, sd, j0, k, &
       tot(i) = tot(i) + pt*w(j)*f(i,j)
     end do
     end do
+  end if
+  if (detailed_timer) then
+    wc(3) = wallclock()
   end if
   !-----------------------------------------------------------------------------
   ! Scatter, vectorized
@@ -444,7 +496,208 @@ SUBROUTINE update (target, tmem, td, l, u, iv, source, smem, sd, j0, k, &
     end do
   end if
   deallocate (f, tot)
+  if (detailed_timer) then
+    wc(4) = wallclock()
+    do i=1,3
+      !$omp atomic update
+      update_t(i) = update_t(i) + (wc(i+1)-wc(i))
+    end do
+  end if
   call trace%end
 END SUBROUTINE update
+
+!===============================================================================
+!> Interpolate in space and time, for a case where it is safe = the source point
+!> is inside the valid domain (inside a distance of half a cell from the source
+!> patch boundary for non-staggered points)
+!===============================================================================
+SUBROUTINE interpolate (source, target, ii, iv, jt, pt, pi, set)
+  class(patch_t)           :: source
+  class(patch_t), pointer  :: target
+  integer                  :: ii(3), iv, jt(2)
+  real                     :: pt(2)
+  real, optional           :: pi(:)
+  logical, optional        :: set
+  !.............................................................................
+  real(8)                  :: pos(3)
+  integer                  :: j(3)
+  real                     :: p(3)
+  integer, save            :: itimer=0
+  !-----------------------------------------------------------------------------
+  if (present(set)) then
+    pi(01) = pt(1)*(1.-p(3))*(1.-p(2))*(1.0-p(1))
+    pi(02) = pt(1)*(1.-p(3))*(1.-p(2))*(    p(1))
+    pi(03) = pt(1)*(1.-p(3))*(   p(2))*(1.0-p(1))
+    pi(04) = pt(1)*(1.-p(3))*(   p(2))*(    p(1))
+    pi(05) = pt(1)*(   p(3))*(1.-p(2))*(1.0-p(1))
+    pi(06) = pt(1)*(   p(3))*(1.-p(2))*(    p(1))
+    pi(07) = pt(1)*(   p(3))*(   p(2))*(1.0-p(1))
+    pi(08) = pt(1)*(   p(3))*(   p(2))*(    p(1))
+    pi(09) = pt(2)*(1.-p(3))*(1.-p(2))*(1.0-p(1))
+    pi(10) = pt(2)*(1.-p(3))*(1.-p(2))*(    p(1))
+    pi(11) = pt(2)*(1.-p(3))*(   p(2))*(1.0-p(1))
+    pi(12) = pt(2)*(1.-p(3))*(   p(2))*(    p(1))
+    pi(13) = pt(2)*(   p(3))*(1.-p(2))*(1.0-p(1))
+    pi(14) = pt(2)*(   p(3))*(1.-p(2))*(    p(1))
+    pi(15) = pt(2)*(   p(3))*(   p(2))*(1.0-p(1))
+    pi(16) = pt(2)*(   p(3))*(   p(2))*(    p(1))
+  else if (source%pervolume(iv)) then
+    call interpolate_specific (source, target, ii, iv, jt, pt)
+  else
+    pos = target%myposition (ii, iv)
+    call source%index_space (pos, iv, j, p)
+    !if (io%verbose > 1) &
+    !  write(io_unit%log,'(a,2i6,2x,3i4,2x,3f7.3)') &
+    !    'interpolate: target, source, j, p =', target%id, source%id, j, p
+    !call trace%begin ('patch_t%interpolate', itimer=itimer)
+    if (source%unsigned(iv)) then
+     if (present(pi)) then
+      target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = exp( &
+        pi(01)*log(source%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1)) + &
+        pi(02)*log(source%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(1),1)) + &
+        pi(03)*log(source%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(1),1)) + &
+        pi(04)*log(source%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(1),1)) + &
+        pi(05)*log(source%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(1),1)) + &
+        pi(06)*log(source%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(1),1)) + &
+        pi(07)*log(source%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(1),1)) + &
+        pi(08)*log(source%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(1),1)) + &
+        pi(09)*log(source%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(2),1)) + &
+        pi(10)*log(source%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(2),1)) + &
+        pi(11)*log(source%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(2),1)) + &
+        pi(12)*log(source%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(2),1)) + &
+        pi(13)*log(source%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(2),1)) + &
+        pi(14)*log(source%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(2),1)) + &
+        pi(15)*log(source%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1)) + &
+        pi(16)*log(source%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1)))
+     else
+      target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = exp( &
+       pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(source%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1))    + &
+                                    (    p(1))*log(source%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(1),1)))   + &
+                         (   p(2))*((1.0-p(1))*log(source%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(1),1))    + &
+                                    (    p(1))*log(source%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(1),1))))  + &
+              (   p(3))*((1.-p(2))*((1.0-p(1))*log(source%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(1),1))    + &
+                                    (    p(1))*log(source%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(1),1)))   + &
+                         (   p(2))*((1.0-p(1))*log(source%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(1),1))    + &
+                                    (    p(1))*log(source%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(1),1))))) + &
+       pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*log(source%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(2),1))    + &
+                                    (    p(1))*log(source%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(2),1)))   + &
+                         (   p(2))*((1.0-p(1))*log(source%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(2),1))    + &
+                                    (    p(1))*log(source%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(2),1))))  + &
+              (   p(3))*((1.-p(2))*((1.0-p(1))*log(source%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(2),1))    + &
+                                    (    p(1))*log(source%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(2),1)))   + &
+                         (   p(2))*((1.0-p(1))*log(source%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1))    + &
+                                    (    p(1))*log(source%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))))
+     end if
+    else
+     if (present(pi)) then
+      target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
+        pi(01)*source%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1) + &
+        pi(02)*source%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(1),1) + &
+        pi(03)*source%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(1),1) + &
+        pi(04)*source%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(1),1) + &
+        pi(05)*source%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(1),1) + &
+        pi(06)*source%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(1),1) + &
+        pi(07)*source%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(1),1) + &
+        pi(08)*source%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(1),1) + &
+        pi(09)*source%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(2),1) + &
+        pi(10)*source%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(2),1) + &
+        pi(11)*source%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(2),1) + &
+        pi(12)*source%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(2),1) + &
+        pi(13)*source%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(2),1) + &
+        pi(14)*source%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(2),1) + &
+        pi(15)*source%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1) + &
+        pi(16)*source%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1)
+     else
+      target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
+       pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*source%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(1),1)    + &
+                                    (    p(1))*source%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(1),1))   + &
+                         (   p(2))*((1.0-p(1))*source%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(1),1)    + &
+                                    (    p(1))*source%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(1),1)))  + &
+              (   p(3))*((1.-p(2))*((1.0-p(1))*source%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(1),1)    + &
+                                    (    p(1))*source%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(1),1))   + &
+                         (   p(2))*((1.0-p(1))*source%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(1),1)    + &
+                                    (    p(1))*source%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(1),1)))) + &
+       pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*source%mem(j(1)  ,j(2)  ,j(3)  ,iv,jt(2),1)    + &
+                                    (    p(1))*source%mem(j(1)+1,j(2)  ,j(3)  ,iv,jt(2),1))   + &
+                         (   p(2))*((1.0-p(1))*source%mem(j(1)  ,j(2)+1,j(3)  ,iv,jt(2),1)    + &
+                                    (    p(1))*source%mem(j(1)+1,j(2)+1,j(3)  ,iv,jt(2),1)))  + &
+              (   p(3))*((1.-p(2))*((1.0-p(1))*source%mem(j(1)  ,j(2)  ,j(3)+1,iv,jt(2),1)    + &
+                                    (    p(1))*source%mem(j(1)+1,j(2)  ,j(3)+1,iv,jt(2),1))   + &
+                         (   p(2))*((1.0-p(1))*source%mem(j(1)  ,j(2)+1,j(3)+1,iv,jt(2),1)    + &
+                                    (    p(1))*source%mem(j(1)+1,j(2)+1,j(3)+1,iv,jt(2),1))))
+     end if
+    end if
+  end if
+  if (target%id==io%id_debug .and. io%verbose>2) &
+    write(io%output,1) target%id, ii, iv, source%id, j, jt, p, pt, &
+      target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
+    1 format(i6,1x,3i3,i4,2x,"DBG patch_t%interpolate src:",i6, &
+      "   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2,"   out:",1p,e15.6)
+  !call trace%end (itimer)
+END SUBROUTINE interpolate
+
+!===============================================================================
+!> Interpolate in space and time, for a case where it is safe = the source point
+!> is inside the valid domain (inside a distance of half a cell from the source
+!> patch boundary for non-staggered points)
+!===============================================================================
+SUBROUTINE interpolate_specific (source, target, ii, iv, jt, pt)
+  class(patch_t)           :: source
+  class(patch_t), pointer  :: target
+  integer                  :: ii(3), iv, jt(2)
+  real                     :: pt(2)
+  real                     :: tmp(2,2,2,2)
+  !.............................................................................
+  real(8)                  :: pos(3)
+  integer                  :: j(3)
+  real                     :: p(3)
+  integer, save            :: itimer=0
+  !-----------------------------------------------------------------------------
+  pos = target%myposition (ii, iv)
+  call source%index_space (pos, iv, j, p)
+  !call trace%begin ('patch_t%interpolate', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! Pick up 16 values for tri-linear interpolation, divided by density
+  !-----------------------------------------------------------------------------
+  associate (id=>source%idx%d)
+  tmp(:,:,:,:) = source%mem(j(1):j(1)+1,j(2):j(2)+1,j(3):j(3)+1,iv,jt(1:2),1) &
+               / source%mem(j(1):j(1)+1,j(2):j(2)+1,j(3):j(3)+1,id,jt(1:2),1)
+  target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
+   pt(1)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*tmp(1,1,1,1)    + &
+                                (    p(1))*tmp(2,1,1,1))   + &
+                     (   p(2))*((1.0-p(1))*tmp(1,2,1,1)    + &
+                                (    p(1))*tmp(2,2,1,1)))  + &
+          (   p(3))*((1.-p(2))*((1.0-p(1))*tmp(1,1,2,1)    + &
+                                (    p(1))*tmp(2,1,2,1))   + &
+                     (   p(2))*((1.0-p(1))*tmp(1,2,2,1)    + &
+                                (    p(1))*tmp(2,2,2,1)))) + &
+   pt(2)*((1.-p(3))*((1.-p(2))*((1.0-p(1))*tmp(1,1,1,2)    + &
+                                (    p(1))*tmp(2,1,1,2))   + &
+                     (   p(2))*((1.0-p(1))*tmp(1,2,1,2)    + &
+                                (    p(1))*tmp(2,2,1,2)))  + &
+          (   p(3))*((1.-p(2))*((1.0-p(1))*tmp(1,1,2,2)    + &
+                                (    p(1))*tmp(2,1,2,2))   + &
+                     (   p(2))*((1.0-p(1))*tmp(1,2,2,2)    + &
+                                (    p(1))*tmp(2,2,2,2))))
+  !-----------------------------------------------------------------------------
+  ! Multiply by target denssity
+  !-----------------------------------------------------------------------------
+  target%mem(ii(1),ii(2),ii(3),iv,target%it,1) = &
+    target%mem(ii(1),ii(2),ii(3),iv,target%it,1) * &
+    target%mem(ii(1),ii(2),ii(3),id,target%it,1)
+  end associate
+  if (target%id==io%id_debug .and. io%verbose>2) &
+    write(io%output,1) target%id, ii, iv, source%id, j, jt, p, pt, &
+      target%mem(ii(1),ii(2),ii(3),iv,target%it,1)
+    1 format(i6,1x,3i3,i4,2x,"DBG patch_t%interpolate_specific src:", &
+      i6,"   j,p;",3i4,1x,2i4,3f6.2,1x,2f6.2,"   out:",1p,e15.6)
+  !call trace%end (itimer)
+END SUBROUTINE interpolate_specific
+
+SUBROUTINE info
+  if (verbose > 0) then
+    write (stdout,*) 'guard_zones_t%info: update-t =', update_t
+  end if
+END SUBROUTINE info
 
 END MODULE guard_zones_mod

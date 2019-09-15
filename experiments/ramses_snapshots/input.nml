@@ -30,7 +30,7 @@
                         path='gmc2' nout=9 levelmin=6 levelmax=8 centre_on_sink=f
                         !path='run22d' nout=1000 levelmin=7 levelmax=29 cut_out_size=6e-8 centre_on_sink=t
                         direct_load=t do_evaluate=f detailed_timer=f /
-&guard_zone_params      verbose=0 method='optimized' /
+&guard_zone_params      verbose=0 method='opt' /
 &download_params        verbose=0 use_different=0 id_debug=0 /
 &initial_params         /
 &force_params           type='turbulence' /
