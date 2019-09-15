@@ -126,7 +126,7 @@ SUBROUTINE init (self, mpi_dims, dims)
   self%master = mpi%master
   self%ok     = mpi%ok
   !-----------------------------------------------------------------------------
-  call mpi%id%init (0)
+  call mpi%id%init (1)
   call mpi%file_size%init (0_8)
   !-----------------------------------------------------------------------------
   ! Make sure output from startup is finished
@@ -497,15 +497,11 @@ contains
   call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
   call add(i)
   call MPI_Win_flush (master, self%window, mpi_err)
-#ifdef __INTEL_COMPILER
-    j = self%i
-#else
   if (mpi%rank == master) then
     j = self%i - i
   else
     j = self%i
   end if
-#endif
   if (io_unit%verbose > 0) &
     write (io_unit%log,'(a,2(2x,3i4))') &
       'mpi_counter_t%update(2):  val, sum, rank, size =', &
