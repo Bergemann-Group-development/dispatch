@@ -86,6 +86,7 @@ SUBROUTINE init (self)
     rewind (io%input)
     read (io%input, download_params, iostat=iostat)
     if (io%master) write (*, download_params)
+    call guard_zones%init
   end if
   if (order_time==1) then
     self%same => same_linear
@@ -266,7 +267,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
            if (use_different <= -2) then
              call different (self, target, source, jt, pt, all_cells, only=only)
            else
-             call guard_zones%restrict (target, source, jt, pt, verbose)
+             call guard_zones%restrict (target, source, jt, pt)
              !call different_restrict (self, target, source, jt, pt, only=only)
            end if
          end if

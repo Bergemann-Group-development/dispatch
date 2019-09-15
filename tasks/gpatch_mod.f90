@@ -14,6 +14,7 @@ MODULE gpatch_mod
   USE omp_timer_mod
   USE bits_mod
   USE data_io_mod
+  USE guard_zones_mod
   USE download_mod
   USE data_hub_mod
   USE validate_mod
@@ -122,6 +123,7 @@ SUBROUTINE init (self)
   call self%initial%init (self%kind, real(self%gamma))
   call self%patch_t%init
   call data_io%init (self)
+  call guard_zones%init
   !-----------------------------------------------------------------------------
   ! Try reading a restart snapshot.
   !-----------------------------------------------------------------------------
