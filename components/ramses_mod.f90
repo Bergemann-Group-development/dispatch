@@ -1541,21 +1541,6 @@ SUBROUTINE prolong (self)
           if (verbose > 1 .or. (verbose > 0 .and. mod(n,5000)==0)) &
             write(stdout,'(a,i7,i4,1p,2e11.2)') &
             'prolong: id, level, dmin, dmin_all =', task%id, task%level, dmin, dmin_all
-          if (verbose > 1 .and. task%id==88) then
-            call dump (task)
-            key(1) = task%level
-            size = task%size
-            do i=1,3
-              key(1) = key(1)-1
-              size = size*2.0
-              key(2:4) = floor(task%position/size)
-              call self%patch_table%get (key, patch)
-              select type (patch)
-              class is (patch_t)
-              call dump (patch)
-              end select
-            end do
-          end if
         end select
         end associate
       end if
@@ -1567,26 +1552,6 @@ SUBROUTINE prolong (self)
   end if
   call io%header ('-prolong: end', left=20)
   call trace%end ()
-contains
-  subroutine dump (task)
-    class(patch_t):: task
-    class(link_t), pointer:: link, nbor
-    integer:: i1, i2, i3
-    print*,'nbors:'
-    nbor => task%link%nbor
-    do while (associated(nbor))
-      write(stdout,*) task%id, nbor%task%id, nbor%task%level
-      nbor => nbor%next
-    end do
-    do i3=4,19
-    do i2=4,19
-    do i1=4,19
-      write(stdout,'("p88:",i7,i4,2x,3i4,1p,e11.2)') &
-        task%id, task%level, i1, i2, i3, task%mem(i1,i2,i3,1,1,1)
-    end do
-    end do
-    end do
-  end subroutine dump
 END SUBROUTINE prolong
 
 !===============================================================================
@@ -1973,8 +1938,8 @@ SUBROUTINE cartesian_init (self, key, patch)
                       (iy+0.5d0)*patch%size(2), &
                       (iz+0.5d0)*patch%size(3)]
     patch%ng = 3
-    call patch%set_defaults (n=patch%n, ng=patch%ng, size=patch%size, &
-      position=patch%position)
+    patch%nv = 8
+    patch%nw = 1
     call patch%init
     patch%mhd = .true.
     call self%initialize (patch)  
