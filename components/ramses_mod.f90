@@ -403,6 +403,7 @@ SUBROUTINE read_snapshot (self, keep, load)
   real(8):: cut, ds, size, position(3), total_cost, weight, patch_cost
   integer, allocatable:: n_level(:)
   integer:: hash_table_size
+  logical, save:: print_once=.true.
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin('read_snapshot', itimer=itimer)
@@ -631,14 +632,12 @@ SUBROUTINE read_snapshot (self, keep, load)
     close(ilun)
     !
     ! output info about snapshot to terminal
+    call io%header ('-RAMSES parameters from snapshot file')
     write(stdout,*) 'Data is '//merge('double','single',self%double_precision)//' precision with '// &
              trim(merge('quad  ','double',self%quad_precision))//' precision hilbert keys'
-    write(stdout,*) 'RAMSES snapshot time = ',time
-    write(stdout,*) 'ncpu = ',ncpu
-    write(stdout,*) 'nlevelmin = ',nlevelmin
-    write(stdout,*) 'nlevelmax = ',nlevelmax
-    write(stdout,*) 'boxlen = ',boxlen
-    write(stdout,*) 'time = ',time
+    write(stdout,*) '      ncpu =',ncpu
+    write(stdout,*) ' nlevelmin =',nlevelmin
+    write(stdout,*) ' nlevelmax =',nlevelmax
     allocate (n_level(1:nlevelmax))
     allocate (level_cost(nlevelmin:nlevelmax))
     !
@@ -828,6 +827,14 @@ SUBROUTINE read_snapshot (self, keep, load)
       read(ilun2) ! SKIP nboundary
       read(ilun2) gamma_ramses
       self%gamma = gamma_ramses
+      !
+      if (print_once) then
+        print_once = .false.
+        write(stdout,*) '      nvar =', nvar_mhd
+        write(stdout,*) '    boxlen =', boxlen
+        write(stdout,*) '      time =', time
+        write(stdout,*) '     gamma =', self%gamma
+      end if
       !
       ! loop over levels for current file
       d_min = 1e30

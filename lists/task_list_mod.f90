@@ -498,7 +498,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   !-----------------------------------------------------------------------------
   ! AMR level cost
   !-----------------------------------------------------------------------------
-  if (refine%on .and. .not.was_derefined) then
+  if (.not.was_derefined) then
     !$omp atomic
     timer%levelcost(task%level) = &
     timer%levelcost(task%level) + (wallclock() - levelstart)

@@ -295,7 +295,7 @@ contains
     integer:: unit, level, popu
     real:: cost, per_call
     logical:: warn, mesg
-    write (unit,'(23x,a,7x,a,10x,a,7x,a,5x,a)') 'procedure', 'calls', 'time', 'percent', 'ms/call'
+    write (unit,'(23x,a,7x,a,10x,a,7x,a,5x,a)') 'procedure', 'calls', 'time', 'percent', ' s/call'
     if (unit==io_unit%output) then
       !$omp atomic write
       timer%n_lines = 1
@@ -307,7 +307,7 @@ contains
           per_call = proc(i)/max(ncalls(i),1d0)
           warn = per_call < 0.5e-6
           mesg = mesg .or. warn
-          write (unit,'(a32,1p,2g15.3,0p,f10.1,3p,f12.6,1x,a1)') &
+          write (unit,'(a32,1p,2g15.3,0p,f10.1,0p,f12.6,1x,a1)') &
             trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., &
             per_call, merge('W',' ',warn)
         end if
