@@ -1286,7 +1286,7 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
   integer, optional:: only
   !.............................................................................
   integer                 :: ntot, nskip, cells, nint, nperv, nexp
-  integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, n, srcid
+  integer                 :: ix, iy, iz, iv, jt(2), iv1, iv2, i, n, srcid, m(3)
   integer, dimension(3)   :: l, u, ii, li, ui, jj
   real(8), dimension(3)   :: pos
   real(4), dimension(3)   :: ot, os, ratio
@@ -1296,7 +1296,8 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
   real(kind=KindScalarVar):: qint, dint
   logical                 :: all_cells_l
   real(kind=KindScalarVar), pointer:: q1(:,:,:), q2(:,:,:), d1(:,:,:), d2(:,:,:)
-  real(kind=KindScalarVar), pointer:: q(:,:,:,:), d(:,:,:,:)
+  real(kind=KindScalarVar), pointer:: q(:,:,:,:)
+  real(kind=KindScalarVar), allocatable:: dtmp(:,:,:)
   integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_prolong', itimer=itimer)
@@ -1330,6 +1331,9 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
   nskip = 0
   nperv = 0
   cells = 0
+  allocate (dtmp(target%gn(1),target%gn(2),target%gn(3)))
+  d1 => source%mem(:,:,:,source%idx%d,jt(1),1)
+  d2 => source%mem(:,:,:,source%idx%d,jt(2),1)
   do iv=iv1,iv2
     ! -- `dphi` is part of `mem` when `time_order` = 0; do not download it.
     if (iv == target%idx%dphi) cycle
@@ -1341,12 +1345,9 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
 !    do i=1,3
 !      if (target%mesh(i)%h(iv) /= 0.0) li(i) = li(i)+1
 !    end do
-    d1 => source%mem(:,:,:,source%idx%d,jt(1),1)
-    d2 => source%mem(:,:,:,source%idx%d,jt(2),1)
     q1 => source%mem(:,:,:,iv,jt(1),1)
     q2 => source%mem(:,:,:,iv,jt(2),1)
     q  => source%mem(:,:,:,iv,:,1)
-    d  => source%mem(:,:,:,source%idx%d,:,1)
     all_cells_l = all_cells_l .or. all((l >= li) .and. (u <= ui))
     if (verbose >  0 .or. target%id==id_debug) &
       write (io_unit%log,1) &
@@ -1387,34 +1388,23 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
                 iv,ii, present(all_cells), (ii-li) < 0
             pos = target%myposition (ii, iv)
             call source%index_space (pos, iv, jj, pp)
-            !pp = (ii-ot)*ratio + os
-            !jj = pp
-            !pp = pp - jj
+            !call source%index_space_of (target, ii, iv, jj, pp)
             if (source%unsigned(iv)) then
               nexp = nexp+1
-              !qint = exp( &
-                  !interpolator%trilinear_log (q1, jj(1), jj(2), jj(3), pp) * pt(1) &
-                !+ interpolator%trilinear_log (q2, jj(1), jj(2), jj(3), pp) * pt(2))
               qint = exp(interpolator%four_d_log (q, jj(1), jj(2), jj(3), jt, [pp,pt(2)]))
+              if (iv==target%idx%d) &
+                dtmp(ix,iy,iz) = qint
             else if (source%pervolume(iv)) then
               nperv = nperv+1
-              !dint = exp( &
-                  !interpolator%trilinear_log (d1, jj(1), jj(2), jj(3), pp) * pt(1) &
-                !+ interpolator%trilinear_log (d2, jj(1), jj(2), jj(3), pp) * pt(2))
-              dint = exp(interpolator%four_d_log (d, jj(1), jj(2), jj(3), jt, [pp,pt(2)]))
-              qint = &
-                  interpolator%trilinear_pv (q1, d1, jj(1), jj(2), jj(3), pp) * pt(1) &
-                + interpolator%trilinear_pv (q2, d2, jj(1), jj(2), jj(3), pp) * pt(2)
-              qint = qint * dint
+              qint = interpolator%four_d_pv (q, d1, d2, jj(1), jj(2), jj(3), jt, [pp,pt(2)])
+              qint = qint * dtmp(ix,iy,iz)
             else
               qint = interpolator%four_d (q, jj(1), jj(2), jj(3), jt, [pp,pt(2)])
-              !qint = interpolator%interpolator (q1, jj(1), jj(2), jj(3), pp) * pt(1) &
-                   !+ interpolator%interpolator (q2, jj(1), jj(2), jj(3), pp) * pt(2)
             end if
             n = n + 1
-            if (all((ii >= li .and. ii <= ui)) .and. .not. all_cells_l) then
-              write (io_unit%log,*) 'INTERNAL BREACH!', ii
-            end if
+            !if (all((ii >= li .and. ii <= ui)) .and. .not. all_cells_l) then
+            !  write (io_unit%log,*) 'INTERNAL BREACH!', ii
+            !end if
             target%mem(ix,iy,iz,iv,target%it,1) = qint
             if (self%check_filled) filled(ix,iy,iz,iv) = source%level
           else
@@ -1437,6 +1427,7 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
       2 format(2(i6,i3),2x,a,3i6,a,2(2x,3i4),1p,e14.4,2x,0p2f6.3)
     end if
   end do
+  deallocate (dtmp)
   if (detailed_timer) then
     if (cells > 0) then
       write (stdout,'(a,6p,2(2x,i6,i3),",",i6," cells,",f9.3," mus/cell")') &

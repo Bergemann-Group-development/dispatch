@@ -164,6 +164,7 @@ MODULE patch_mod
     procedure:: interpolate
     procedure:: interpolate_specific
     procedure:: index_space             ! full mapping to index space
+    procedure:: index_space_of
     procedure:: index_space2
     procedure:: index_only
     procedure:: index_only2
@@ -2426,6 +2427,40 @@ SUBROUTINE index_space (self, pos, iv, i, p)
     p = min(p,max(p,-0.01),1.01)                        ! 0th order extrapolation
   !call trace%end (itimer)
 END SUBROUTINE index_space
+
+!===============================================================================
+!> Optimized case, where it is known that target and source (self) overlap, so
+!> no periodic mapping is needed, and iv is always present
+!===============================================================================
+SUBROUTINE index_space_of (self, target, ii, iv, jj, pp)
+  class(patch_t)          :: self
+  class(patch_t), pointer :: target
+  integer                 :: ii(3)
+  integer                 :: iv
+  real                    :: pp(3)
+  integer                 :: jj(3)
+  !.............................................................................
+  class(mesh_t), pointer  :: mt, ms
+  integer                 :: i, j
+  real                    :: p
+  real, parameter         :: eps=0.001
+  integer, save           :: itimer=0
+  !-----------------------------------------------------------------------------
+  do i=1,3
+    mt => target%mesh(i)                                  ! target mesh
+    ms => self%mesh(i)                                    ! source mesh
+    p = mt%p - ms%p + (ii(i) - mt%o + mt%h(iv))*mt%d      ! real position
+    p = p/ms%d + ms%o - ms%h(iv) + eps                    ! float index
+    j = p                                                 ! integer part
+    j = max(ms%li, &
+        min(ms%ui-1,j))                                   ! valid range
+    p = p - eps - j                                       ! remaining fraction
+    if (zero_order_extrap .and. .not.io_unit%do_validate) &
+      p = min(max(p,-0.01),1.01)                          ! 0th order extrapolation
+    pp(i) = p
+    jj(i) = j
+  end do
+END SUBROUTINE index_space_of
 
 !===============================================================================
 !> Return only the index in self corresponding to a point in native space.

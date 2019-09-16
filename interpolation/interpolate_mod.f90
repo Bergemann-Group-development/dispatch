@@ -28,7 +28,7 @@ MODULE interpolate_mod
     procedure, nopass:: trilinear_pv
     procedure, nopass:: four_d
     procedure, nopass:: four_d_log
-    !procedure, nopass:: four_d_pv
+    procedure, nopass:: four_d_pv
   end type
   type(interpolator_t):: interpolator
 
@@ -310,6 +310,43 @@ FUNCTION four_d (q, i, j, k, l, w) RESULT (qtilde)
   !call trace_end (itimer)
 END FUNCTION four_d
 
+!===============================================================================
+!> Plain, un-limited, trilinear interpolation.
+!===============================================================================
+FUNCTION four_d_pv (q, d1, d2, i, j, k, l, w) RESULT (qtilde)
+  real(kind=KindScalarVar), intent(in)  :: q(:,:,:,:), d1(:,:,:), d2(:,:,:)
+  real(kind=KindScalarVar)              :: qtilde
+  integer, intent(in)                   :: i, j, k, l(2)
+  real, intent(in)                      :: w(4)
+  !.............................................................................
+  integer:: l1, l2
+  real(kind=KindScalarVar):: m(4)
+  integer:: itimer=0
+  !-----------------------------------------------------------------------------
+  !call trace_begin('interpolate_mod::trilinear', 2, itimer=itimer)
+  l1 = l(1)
+  l2 = l(2)
+  m = 1.0 - w
+   qtilde = &
+    m(4)*(m(3)*(m(2)*(m(1)*q(i  ,j  ,k  ,l1)/d1(i  ,j  ,k  )    + &
+                      w(1)*q(i+1,j  ,k  ,l1)/d1(i+1,j  ,k  ))   + &
+                w(2)*(m(1)*q(i  ,j+1,k  ,l1)/d1(i  ,j+1,k  )    + &
+                      w(1)*q(i+1,j+1,k  ,l1)/d1(i+1,j+1,k  )))  + &
+          w(3)*(m(2)*(m(1)*q(i  ,j  ,k+1,l1)/d1(i  ,j  ,k+1)    + &
+                      w(1)*q(i+1,j  ,k+1,l1)/d1(i+1,j  ,k+1))   + &
+                w(2)*(m(1)*q(i  ,j+1,k+1,l1)/d1(i  ,j+1,k+1)    + &
+                      w(1)*q(i+1,j+1,k+1,l1)/d1(i+1,j+1,k+1)))) + &
+    w(4)*(m(3)*(m(2)*(m(1)*q(i  ,j  ,k  ,l2)/d2(i  ,j  ,k  )    + &
+                      w(1)*q(i+1,j  ,k  ,l2)/d2(i+1,j  ,k  ))   + &
+                w(2)*(m(1)*q(i  ,j+1,k  ,l2)/d2(i  ,j+1,k  )    + &
+                      w(1)*q(i+1,j+1,k  ,l2)/d2(i+1,j+1,k  )))  + &
+          w(3)*(m(2)*(m(1)*q(i  ,j  ,k+1,l2)/d2(i  ,j  ,k+1)    + &
+                      w(1)*q(i+1,j  ,k+1,l2)/d2(i+1,j  ,k+1))   + &
+                w(2)*(m(1)*q(i  ,j+1,k+1,l2)/d2(i  ,j+1,k+1)    + &
+                      w(1)*q(i+1,j+1,k+1,l2)/d2(i+1,j+1,k+1))))
+  !call trace_end (itimer)
+END FUNCTION four_d_pv
+  
 !===============================================================================
 !> Plain, un-limited, trilinear interpolation.
 !===============================================================================
