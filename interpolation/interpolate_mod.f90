@@ -328,14 +328,14 @@ FUNCTION four_d_log (q, i, j, k, l, w) RESULT (qtilde)
   l2 = l(2)
   m = 1.0 - w
    qtilde = &
-    m(4)*(m(3)*(m(2)*(m(1)*log(q(i  ,j  ,k  ,l1) + w(1)*q(i+1,j  ,k  ,l1)))   + &
-                w(2)*(m(1)*log(q(i  ,j+1,k  ,l1) + w(1)*q(i+1,j+1,k  ,l1))))  + &
-          w(3)*(m(2)*(m(1)*log(q(i  ,j  ,k+1,l1) + w(1)*q(i+1,j  ,k+1,l1)))   + &
-                w(2)*(m(1)*log(q(i  ,j+1,k+1,l1) + w(1)*q(i+1,j+1,k+1,l1))))) + &
-    w(4)*(m(3)*(m(2)*(m(1)*log(q(i  ,j  ,k  ,l2) + w(1)*q(i+1,j  ,k  ,l2)))   + &
-                w(2)*(m(1)*log(q(i  ,j+1,k  ,l2) + w(1)*q(i+1,j+1,k  ,l2))))  + &
-          w(3)*(m(2)*(m(1)*log(q(i  ,j  ,k+1,l2) + w(1)*q(i+1,j  ,k+1,l2)))   + &
-                w(2)*(m(1)*log(q(i  ,j+1,k+1,l2) + w(1)*q(i+1,j+1,k+1,l2)))))
+    m(4)*(m(3)*(m(2)*(m(1)*log(q(i  ,j  ,k  ,l1)) + w(1)*log(q(i+1,j  ,k  ,l1)))   + &
+                w(2)*(m(1)*log(q(i  ,j+1,k  ,l1)) + w(1)*log(q(i+1,j+1,k  ,l1))))  + &
+          w(3)*(m(2)*(m(1)*log(q(i  ,j  ,k+1,l1)) + w(1)*log(q(i+1,j  ,k+1,l1)))   + &
+                w(2)*(m(1)*log(q(i  ,j+1,k+1,l1)) + w(1)*log(q(i+1,j+1,k+1,l1))))) + &
+    w(4)*(m(3)*(m(2)*(m(1)*log(q(i  ,j  ,k  ,l2)) + w(1)*log(q(i+1,j  ,k  ,l2)))   + &
+                w(2)*(m(1)*log(q(i  ,j+1,k  ,l2)) + w(1)*log(q(i+1,j+1,k  ,l2))))  + &
+          w(3)*(m(2)*(m(1)*log(q(i  ,j  ,k+1,l2)) + w(1)*log(q(i+1,j  ,k+1,l2)))   + &
+                w(2)*(m(1)*log(q(i  ,j+1,k+1,l2)) + w(1)*log(q(i+1,j+1,k+1,l2)))))
   !call trace_end (itimer)
 END FUNCTION four_d_log
 

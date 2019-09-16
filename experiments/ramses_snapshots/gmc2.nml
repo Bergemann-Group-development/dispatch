@@ -22,7 +22,7 @@
 !---------------------------------
 &ramses_reader_params   verbose=0
                        !path='gmc2' nout=11 levelmin=5 levelmax=9 centre_on_sink=f      ! steno
-                        path='gmc2' nout=9  levelmin=6 levelmax=8 centre_on_sink=f      ! laptop
+                        path='gmc2' nout=9  levelmin=6 levelmax=8 centre_on_sink=f      ! laptop, mn
                         direct_load=t do_evaluate=f detailed_timer=f /
 &guard_zone_params      verbose=0 method='opt' detailed_timer=f /
 &download_params        verbose=0 id_debug=0 detailed_timer=f

@@ -1296,7 +1296,7 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
   real(kind=KindScalarVar):: qint, dint
   logical                 :: all_cells_l
   real(kind=KindScalarVar), pointer:: q1(:,:,:), q2(:,:,:), d1(:,:,:), d2(:,:,:)
-  real(kind=KindScalarVar), pointer:: q(:,:,:,:)
+  real(kind=KindScalarVar), pointer:: q(:,:,:,:), d(:,:,:,:)
   integer, save           :: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%different_prolong', itimer=itimer)
@@ -1346,6 +1346,7 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
     q1 => source%mem(:,:,:,iv,jt(1),1)
     q2 => source%mem(:,:,:,iv,jt(2),1)
     q  => source%mem(:,:,:,iv,:,1)
+    d  => source%mem(:,:,:,source%idx%d,:,1)
     all_cells_l = all_cells_l .or. all((l >= li) .and. (u <= ui))
     if (verbose >  0 .or. target%id==id_debug) &
       write (io_unit%log,1) &
@@ -1391,21 +1392,24 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
             !pp = pp - jj
             if (source%unsigned(iv)) then
               nexp = nexp+1
-              qint = exp( &
-                  interpolator%trilinear_log (q1, jj(1), jj(2), jj(3), pp) * pt(1) &
-                + interpolator%trilinear_log (q2, jj(1), jj(2), jj(3), pp) * pt(2))
-              !qint = exp(interpolator%four_d_log (q, jj(1), jj(2), jj(3), jt, [pp,pt(2)])
+              !qint = exp( &
+                  !interpolator%trilinear_log (q1, jj(1), jj(2), jj(3), pp) * pt(1) &
+                !+ interpolator%trilinear_log (q2, jj(1), jj(2), jj(3), pp) * pt(2))
+              qint = exp(interpolator%four_d_log (q, jj(1), jj(2), jj(3), jt, [pp,pt(2)]))
             else if (source%pervolume(iv)) then
               nperv = nperv+1
-              dint = exp( &
-                  interpolator%trilinear_log (d1, jj(1), jj(2), jj(3), pp) * pt(1) &
-                + interpolator%trilinear_log (d2, jj(1), jj(2), jj(3), pp) * pt(2))
+              !dint = exp( &
+                  !interpolator%trilinear_log (d1, jj(1), jj(2), jj(3), pp) * pt(1) &
+                !+ interpolator%trilinear_log (d2, jj(1), jj(2), jj(3), pp) * pt(2))
+              dint = exp(interpolator%four_d_log (d, jj(1), jj(2), jj(3), jt, [pp,pt(2)]))
               qint = &
                   interpolator%trilinear_pv (q1, d1, jj(1), jj(2), jj(3), pp) * pt(1) &
                 + interpolator%trilinear_pv (q2, d2, jj(1), jj(2), jj(3), pp) * pt(2)
               qint = qint * dint
             else
               qint = interpolator%four_d (q, jj(1), jj(2), jj(3), jt, [pp,pt(2)])
+              !qint = interpolator%interpolator (q1, jj(1), jj(2), jj(3), pp) * pt(1) &
+                   !+ interpolator%interpolator (q2, jj(1), jj(2), jj(3), pp) * pt(2)
             end if
             n = n + 1
             if (all((ii >= li .and. ii <= ui)) .and. .not. all_cells_l) then
