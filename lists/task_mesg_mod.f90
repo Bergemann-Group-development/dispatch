@@ -814,6 +814,7 @@ SUBROUTINE unpack (self, mesg, link)
       !$omp atomic update
       self%nv = self%nv-1
       call self%init_nbors (link1)
+      call self%check_ready (link1)
       call task%clear (bits%swap_request+bits%ready)
       call self%update_nbor_status (link1)
       call self%count_status
@@ -835,6 +836,7 @@ SUBROUTINE unpack (self, mesg, link)
         write (io_unit%log,*) 'task_mesg_t%unpack: new virtual patch:', task%id
       self%nv = self%nv+1
       call self%init_nbors (link1)
+      call self%check_ready (link1)
       call task%clear (bits%swap_request+bits%ready)
       call self%update_nbor_status (link1)
       call self%count_status
@@ -872,6 +874,7 @@ SUBROUTINE unpack (self, mesg, link)
     !-----------------------------------------------------------------------------
     if (task%is_set (bits%init_nbors)) then
       call self%init_nbors (link1)
+      call self%check_ready (link1)
       if (verbose > 1) &
         write (io_unit%log,*) 'unpack: bits%init_nbors id =', task%id
     end if

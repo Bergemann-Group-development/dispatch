@@ -1198,7 +1198,6 @@ SUBROUTINE init_nbors (self, link)
   ! now should be added to the ready queue.
   !-----------------------------------------------------------------------------
   call link%task%clear (bits%init_nbors)
-  call self%check_nbors (link)
   call trace%end (itimer)
 END SUBROUTINE init_nbors
 
@@ -1244,6 +1243,7 @@ SUBROUTINE init_nbor_nbors (self, link)
   call trace%begin('list_t%init_nbor_nbors')
   call link%lock%set ('init_nbnbs')           ! lock the link while modifying
   call self%init_nbors (link)                 ! initialize for loop below
+  call self%check_nbors (link)
   call link%copy_nbor_list (link%nbor, nbors) ! copy to temporary nbor list
   call link%lock%unset ('init_nbnbs')         ! unlock the link
   !-----------------------------------------------------------------------------
@@ -1257,6 +1257,7 @@ SUBROUTINE init_nbor_nbors (self, link)
     if (self%verbose > 0) &
       write (io_unit%log,*) 'init_nbor_nbors: id =', nbor%link%task%id
     call self%init_nbors (nbor%link)
+    call self%check_nbors (nbor%link)
     nbor => nbor%next
   end do
   call link%remove_nbor_list (nbors)          ! remove the nbor list copy
@@ -1291,6 +1292,7 @@ SUBROUTINE refresh_nbors (self, link)
   if (.not.ok) then
     print *, link%task%id, 'list_t%refresh_nbors: init_nbprs'
     call self%init_nbors (link)
+    call self%check_nbors (link)
   end if
   call trace%end (itimer)
 END SUBROUTINE refresh_nbors

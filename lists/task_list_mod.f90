@@ -434,6 +434,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%init_nbors)) then
     call self%init_nbors (head)
+    call self%check_ready (head)
     if (self%verbose > 1) then
       call head%info
     else if (self%verbose > 0) then
