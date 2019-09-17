@@ -217,7 +217,7 @@ SUBROUTINE append_link (self, link)
   self%n = self%n + 1
   if (self%verbose > 2) &
     print *,'list_t%append: (1) n =', trim(self%name), self%n, link%task%id
-  call self%count_status()
+  call self%update_counts (link, +1)
   if (self%verbose > 1) &
     print *,'list _t%append:(2) n =', trim(self%name), self%n, link%task%id
   call self%lock%unset ('list_t%append_link')
@@ -254,13 +254,13 @@ SUBROUTINE prepend_link (self, link)
     class is (patch_t)
     task%link => link
     end select
+    call self%update_counts (link, +1)
   else
     call io%abort('prepend_link: no task associated')
   end if
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
   !-----------------------------------------------------------------------------
-  !call self%count_status()
   call self%lock%unset ('list_t%prepend_link')
   call trace%end
 END SUBROUTINE prepend_link
