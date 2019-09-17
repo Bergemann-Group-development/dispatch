@@ -16,6 +16,7 @@ MODULE link_mod
   USE task_mod
   USE omp_timer_mod
   USE omp_lock_mod
+  USE timer_mod
   implicit none
   private
 
@@ -393,7 +394,8 @@ SUBROUTINE remove_nbor_list (self, nbors)
   class(link_t), pointer:: nbors, nbor, next, link2, nbor2, next2, prev
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('link_t%remove_nbor_list', itimer=itimer)
+  if (timer%detailed > 0) &
+    call trace%begin ('link_t%remove_nbor_list', itimer=itimer)
   if (verbose > 1) &
     write (io_unit%mpi,'(f12.6,i4,2x,a)') wallclock(), omp%thread, 'remove_nbor_list'
     nbor => nbors
@@ -410,7 +412,8 @@ SUBROUTINE remove_nbor_list (self, nbors)
     nbor => next
   end do
   nullify (nbors)
-  call trace%end (itimer)
+  if (timer%detailed > 0) &
+    call trace%end (itimer)
 END SUBROUTINE remove_nbor_list
 
 !===============================================================================
@@ -718,8 +721,10 @@ SUBROUTINE sort_nbors_by_level (self, old_head, new_head)
   !.............................................................................
   class(link_t), pointer:: nbor, head, prev, find
   integer:: n_nbors
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('link_t%sort_nbors_by_level')
+  if (timer%detailed) &
+    call trace%begin ('link_t%sort_nbors_by_level', itimer=itimer)
   if (verbose > 3) call nbor_print (old_head)
   nullify (head)
   n_nbors = 0
@@ -733,7 +738,8 @@ SUBROUTINE sort_nbors_by_level (self, old_head, new_head)
   !-----------------------------------------------------------------------------
   if (verbose > 2) call nbor_print (head)
   if (verbose > 0) call nbor_check (new_head)
-  call trace%end()
+  if (timer%detailed) &
+    call trace%end (itimer)
 contains
   !-----------------------------------------------------------------------------
   ! Find a place to prepend a clone of nbor into chain with decreasing level.

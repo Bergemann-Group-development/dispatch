@@ -6,6 +6,7 @@ MODULE task_mod
   USE omp_mod
   USE omp_lock_mod
   USE omp_timer_mod
+  USE timer_mod
   USE mpi_mod
   USE bits_mod
   USE trace_mod
@@ -510,10 +511,13 @@ FUNCTION overlaps (self, task)
   class(task_t):: self
   class(task_t):: task
   logical:: overlaps
+  integer:: itimer=0
   !.............................................................................
-  call trace%begin ('task_t%overlaps', 2)
+  if (timer%detailed) &
+    call trace%begin ('task_t%overlaps', 2, itimer=itimer)
   overlaps = all(abs(distance(self,task)) <= 0.5_8*(self%size+task%size+self%ds+task%ds))
-  call trace%end ()
+  if (timer%detailed) &
+    call trace%end (itimer)
 END FUNCTION overlaps
 
 !===============================================================================
@@ -538,8 +542,10 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(task_t):: self
   class(task_t), pointer:: another
   logical:: needed, needs_me, download
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_t%nbor_relations', 2)
+  if (timer%detailed) &
+    call trace%begin ('task_t%nbor_relations', 2, itimer=itimer)
   !-----------------------------------------------------------------------------
   ! task is real
   !-----------------------------------------------------------------------------
@@ -618,7 +624,8 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
       another%is_set(bits%boundary), &
       another%is_set(bits%virtual)
   !-----------------------------------------------------------------------------
-  call trace%end
+  if (timer%detailed) &
+    call trace%end (itimer)
 END SUBROUTINE nbor_relations
 
 !===============================================================================

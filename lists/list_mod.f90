@@ -1334,9 +1334,11 @@ SUBROUTINE init_all_nbors (self)
   class(list_t):: self
   class(link_t), pointer:: link
   integer:: i, i0, i1, i2, n=0, nv=0, nb=0
+  real(8):: time
   integer, save:: itimer=0
   !.............................................................................
   call trace%begin('list_t%init_all_nbors', itimer=itimer)
+  call timer%tic (time)
   call init_nonleaf (self)                              ! set non_leaf bit
   call self%reset_status                                ! update task bits
   call self%count_status                                ! update task counts
@@ -1349,12 +1351,14 @@ SUBROUTINE init_all_nbors (self)
   do while (associated(link))
     if (i >= i0 .and. i<i1) then                        ! thread interval
       call self%init_nbors (link)
+      !write (io_unit%log,*) 'init_all_nbors:', wallclock(), i0, i, i1
     end if
     i = i+1                                             ! increment counter
     link => link%next                                   ! continue list
   end do
   !$omp end parallel
   !call self%reset_status                                ! set bits and count
+  call timer%toc ('init_all_nbors', 1, time)
   call trace%end (itimer)
 END SUBROUTINE init_all_nbors
 

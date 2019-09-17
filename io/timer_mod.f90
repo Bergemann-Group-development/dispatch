@@ -46,6 +46,7 @@ MODULE timer_mod
     integer(8), allocatable:: levelpop(:)
     integer:: levelmin, levelmax
     real:: dead_mans_hand=0.0
+    logical:: detailed=.false.
   contains
     procedure:: init
     procedure:: begin
@@ -78,10 +79,10 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self)
   class(timer_t):: self
-  logical, save:: first_time=.true.
+  logical, save:: first_time=.true., detailed=.false.
   integer:: ignore, i
   real(8):: sec_per_report=10.
-  namelist /timer_params/ sec_per_report, min_fraction, verbose
+  namelist /timer_params/ sec_per_report, min_fraction, verbose, detailed
   !.............................................................................
   !$omp critical (timer_cr)
   if (first_time) then
@@ -92,6 +93,7 @@ SUBROUTINE init (self)
     self%sec_per_report = sec_per_report
     next_report_sec = wallclock() + sec_per_report
     omp%nthreads = max(1,omp%nthreads)
+    timer%detailed = detailed
     allocate (timers(0:omp%nthreads-1))
   end if
   !$omp end critical (timer_cr)
