@@ -58,7 +58,6 @@ MODULE list_mod
     procedure:: remove_link
     generic:: remove => remove_task, remove_link
     procedure:: remove_and_reset
-    procedure:: remove_head
     procedure:: update_counts
     procedure:: count_status
     procedure:: reset_status
@@ -345,38 +344,9 @@ SUBROUTINE remove_link (self, link)
   !-----------------------------------------------------------------------------
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
   !-----------------------------------------------------------------------------
-  call self%count_status()
-  call trace%end
+  call self%update_counts (link, -1)
+  call trace_end
 END SUBROUTINE remove_link
-
-!===============================================================================
-!> Remove the head link
-!===============================================================================
-SUBROUTINE remove_head (self)
-  class(list_t):: self
-  class(link_t), pointer:: head, link, next
-  !.............................................................................
-  call trace%begin ('list_t%remove_head '//self%name)
-  head => self%head
-  next => head%next
-  !-------------------------------------------------------------------------
-  ! Check for tail task (only one task left)
-  !-------------------------------------------------------------------------
-  if (associated(next)) then
-    next%prev => head%prev                  ! point backwards, possibly null
-  else
-    self%tail => head%prev                  ! new tail link
-  end if
-  !-------------------------------------------------------------------------
-  ! Remove the head link
-  !-------------------------------------------------------------------------
-  self%head => next                         ! make head point to next
-  !-----------------------------------------------------------------------------
-  ! IMPORTANT: Some procedures depend on knowing the size of the list!
-  !-----------------------------------------------------------------------------
-  call self%count_status()
-  call trace%end
-END SUBROUTINE remove_head
 
 !===============================================================================
 !> Updating the status counts using the delta of a single task, which is faster
@@ -1167,13 +1137,13 @@ SUBROUTINE init_nbors (self, link)
       !-------------------------------------------------------------------------
       ! Potential nbors are other patches that overlap
       !-------------------------------------------------------------------------
-        if (io%verbose>2 .or. link%task%id==io%id_debug) &
-          write (io_unit%log, '(a,3(i6,2(3f7.4,1x)),2x,2l2)') &
-          'init_nbors:', &
-          link%task%id, link%task%position, link%task%size, &
-          scan%task%id, scan%task%position, scan%task%size, &
-          0, scan%task%distance (link%task), self%size, &
-          overlaps, scan%task%is_set(bits%virtual)
+      if (io%verbose>2 .or. link%task%id==io%id_debug) &
+        write (io_unit%log, '(a,3(i6,2(3f7.4,1x)),2x,2l2)') &
+        'init_nbors:', &
+        link%task%id, link%task%position, link%task%size, &
+        scan%task%id, scan%task%position, scan%task%size, &
+        0, scan%task%distance (link%task), self%size, &
+        overlaps, scan%task%is_set(bits%virtual)
       if (overlaps) then  ! if its task overlaps
         !-----------------------------------------------------------------------
         ! The ifs select to add nbors to a patch if either the patch is not a

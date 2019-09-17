@@ -251,13 +251,16 @@ END SUBROUTINE explode
 !==============================================================================
 SUBROUTINE SN_test
   real:: mass, life
-  mass = 6.0
-  do while (mass < 100.)
-    life = lifetime (real(mass*cgs%m_sun/scaling%m,kind=4))
-    print *, 'SNe_t%test: mass, lifetime =', &
-      mass, real(life*scaling%t/(1e6*cgs%yr))
-    mass = mass*1.5
-  end do
+  !----------------------------------------------------------------------------
+  if (io%master) then
+    mass = 6.0
+    do while (mass < 100.)
+      life = lifetime (real(mass*cgs%m_sun/scaling%m,kind=4))
+      write(stdout,*) 'SNe_t%test: mass, lifetime =', &
+        mass, real(life*scaling%t/(1e6*cgs%yr))
+      mass = mass*1.5
+    end do
+  end if
 END SUBROUTINE SN_test
 
 END MODULE SNe_mod
