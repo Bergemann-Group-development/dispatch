@@ -1625,15 +1625,29 @@ FUNCTION overlaps (self, task)
   class(patch_t):: self
   class(task_t):: task
   logical:: overlaps
+  real(8):: distance, box, limit
+  integer:: i
   !.............................................................................
-  call trace%begin ('patch_t%overlaps', 2)
+  !call trace%begin ('patch_t%overlaps', 2)
   select type (task)
   class is (patch_t)
-    overlaps = all(abs(self%distance(task)) <= 0.5_8*(self%size+task%size+self%ds+task%ds))
+    overlaps = .true.
+    do i=1,3
+      distance = self%centre_nat(i) - task%centre_nat(i)
+      box = self%box(i)
+      if (self%periodic(i)) then
+        distance = modulo (distance+0.5_8*box, box) - 0.5_8*box
+      end if
+      limit = 0.5_8*(self%size(i)+task%size(i)+self%ds(i)+task%ds(i))
+      if (abs(distance) > limit) then
+        overlaps = .false.
+        exit
+      end if
+    end do
   class default
     overlaps = self%task_t%overlaps(task)
   end select
-  call trace%end ()
+  !call trace%end ()
 END FUNCTION overlaps
 
 !===============================================================================
