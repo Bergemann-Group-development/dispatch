@@ -28,6 +28,7 @@ MODULE mhd_mod
   USE omp_lock_mod
   USE index_mod
   USE non_ideal_mod
+  USE flux_mod
   USE omp_timer_mod
   implicit none
   PRIVATE
@@ -76,7 +77,7 @@ SUBROUTINE init (self)
 !...............................................................................
   call trace%begin('mhd_mod%init')
   call trace%print_id (id)
-  self%nw = 1
+  self%nw = 2
   self%ng = 3
   self%nv = 8
   self%kind = 'ramses_mhd_patch'
@@ -132,7 +133,7 @@ SUBROUTINE update (self)
   integer, parameter:: ndim=3
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('mhd_t%update', itimer=itimer)
+  call trace%begin ('mhd_t%updateX', itimer=itimer)
   n = self%mesh%ui-self%mesh%li+1
   if (io%smallr > 0) smallr = io%smallr
   if (io%courant > 0) self%courant = io%courant
@@ -261,32 +262,38 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Update Bx 
   !-----------------------------------------------------------------------------
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) =  &
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
+  self%mem(i0:i1, j0:j1, k0:k1, self%idx%bx, self%it, 2) = &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
       em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,2) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
       em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,3) )
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) =  &
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,6) + &
+    self%mem(i0:i1, j0:j1, k0:k1, self%idx%bx, self%it, 2)
 
   !-----------------------------------------------------------------------------
   ! Update By 
   !-----------------------------------------------------------------------------
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = &
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
+  self%mem(i0:i1, j0:j1, k0:k1, self%idx%by, self%it, 2) = &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,3)   - &
       em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,3) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
       em(i0  :i1  ,j0  :j1  ,k0+1:k1+1,1) )
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) = &
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,7) + &
+    self%mem(i0:i1, j0:j1, k0:k1, self%idx%by, self%it, 2)
 
   !-----------------------------------------------------------------------------
   ! Update Bz 
   !-----------------------------------------------------------------------------
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = &
-  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
+  self%mem(i0:i1, j0:j1, k0:k1, self%idx%bz, self%it, 2) = &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,1)   - &
       em(i0  :i1  ,j0+1:j1+1,k0  :k1  ,1) ) - &
     ( em(i0  :i1  ,j0  :j1  ,k0  :k1  ,2)   - &
       em(i0+1:i1+1,j0  :j1  ,k0  :k1  ,2) )
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) = &
+  unew(i0  :i1  ,j0  :j1  ,k0  :k1  ,8) + &
+    self%mem(i0:i1, j0:j1, k0:k1, self%idx%bz, self%it, 2)
 
   if (verbose>0) print *, 'unew', self%id, minval(unew), maxval(unew)
   end associate
@@ -314,9 +321,13 @@ SUBROUTINE update (self)
   deallocate (fl,em,self%q,self%qp,self%qm,self%dq,self%dq2,self%bf,self%dbf, &
               self%qLT,self%qLB,self%qRT,self%qRB,self%c, &
               self%Ex,self%Ey,self%Ez)
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  ! Make flux corrections, based on flux information from nbors.
+  !-----------------------------------------------------------------------------
+  call flux%corrections (self)
+  !-----------------------------------------------------------------------------
   ! Use one of several methods to clean div(B) from guard zones
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   select case (divb_cleaner)
   case (1)
   call divb_clean1 (self)
