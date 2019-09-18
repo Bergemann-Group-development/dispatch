@@ -54,7 +54,8 @@ MODULE mhd_mod
   logical, save:: detailed_timer=.false.
   logical, save:: unsigned=.true.
   integer, save:: verbose=0
-  integer, save:: divb_cleaner=2
+  integer, save:: divb_cleaner=0
+  integer, save:: divb_iter=4
   integer, save:: b_slope_type=0
   integer, save:: u_slope_type=0
   character(len=16):: eqn='mhd'
@@ -70,8 +71,8 @@ SUBROUTINE init (self)
   integer:: i, iv
   namelist /ramses_params/ gamma, riemann, slope_type, b_slope_type, &
     u_slope_type, courant_factor, smallr, smallc, isothermal, csound, &
-    verbose, detailed_timer, unsigned, courant_type, max_dlogd, n_dump, &
-    divb_cleaner
+    detailed_timer, unsigned, courant_type, max_dlogd, n_dump, &
+    divb_cleaner, divb_iter, verbose
   character(len=120):: id = &
    '$Id$ solvers/ramses/mhd/mhd_mod.f90'
 !...............................................................................
@@ -329,6 +330,8 @@ SUBROUTINE update (self)
   ! Use one of several methods to clean div(B) from guard zones
   !-----------------------------------------------------------------------------
   select case (divb_cleaner)
+  case (0)
+  call divb_clean0 (self)
   case (1)
   call divb_clean1 (self)
   case (2)
@@ -345,6 +348,116 @@ SUBROUTINE update (self)
     rieman%nsolu = 0
   end if
 END SUBROUTINE update
+
+!===============================================================================
+!> Determine the guard zone values of the magnetic field components from the
+!> div(B)=0 condition.  As appreciated from the expressions below, the only
+!> external knowledge that is required are the perpendicular components of the
+!> magnetic field along cube edges, and values interpolated from nbors are used
+!> there.
+!===============================================================================
+SUBROUTINE divb_clean0 (self)
+  class(mhd_t):: self
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: b1, b2, b3
+  integer:: iter, i1, i2, i3, li(3), ui(3), lb(3), ub(3)
+  integer:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin('mhd_t%divb_clean0', itimer=itimer)
+  li = self%mesh%li
+  ui = self%mesh%ui
+  lb = self%mesh%lb
+  ub = self%mesh%ub
+  b1 => self%mem(:,:,:,self%idx%bx,self%it,1)
+  b2 => self%mem(:,:,:,self%idx%by,self%it,1)
+  b3 => self%mem(:,:,:,self%idx%bz,self%it,1)
+  do iter=1,divb_iter
+    call iter_x
+    call iter_y
+    call iter_z
+    call iter_y
+  end do
+  call trace%end (itimer)
+contains
+  subroutine iter_x
+    !---------------------------------------------------------------------------
+    ! Left x-face.  Initially un-constrained: b2(z) and b3(y) along edges
+    !---------------------------------------------------------------------------
+    do i1=li(1),lb(1),-1
+    do i3=lb(3),ub(3)-1
+    do i2=lb(2),ub(2)-1
+      b1(i1,i2,i3) = b1(i1+1,i2,i3)                 &
+                   + b2(i1,i2+1,i3) - b2(i1,i2,i3)  &
+                   + b3(i1,i2,i3+1) - b3(i1,i2,i3)
+    end do
+    end do
+    end do
+    !---------------------------------------------------------------------------
+    ! Right x-face.  Initially unconstrained: b2(z) and b3(y) along edges
+    !---------------------------------------------------------------------------
+    do i1=ui(1),ub(1)-1
+    do i3=lb(3),ub(3)-1
+    do i2=lb(2),ub(2)-1
+      b1(i1+1,i2,i3) =                + b1(i1,i2,i3) &
+                     - b2(i1,i2+1,i3) + b2(i1,i2,i3) &
+                     - b3(i1,i2,i3+1) + b3(i1,i2,i3)
+    end do
+    end do
+    end do
+  end subroutine iter_x
+  subroutine iter_y
+    !---------------------------------------------------------------------------
+    ! Left y-face.  .  Initially unconstrained: b3(y) along edges
+    !---------------------------------------------------------------------------
+    do i2=li(2),lb(2),-1
+    do i3=lb(3),ub(3)-1
+    do i1=lb(1),ub(1)-1
+      b2(i1,i2,i3) = b2(i1,i2+1,i3)                &
+                   + b3(i1,i2,i3+1) - b3(i1,i2,i3) &
+                   + b1(i1+1,i2,i3) - b1(i1,i2,i3)
+    end do
+    end do
+    end do
+    !---------------------------------------------------------------------------
+    ! Right y-face.
+    !---------------------------------------------------------------------------
+    do i2=ui(2),ub(2)-1
+    do i3=lb(3),ub(3)-1
+    do i1=lb(1),ub(1)-1
+      b2(i1,i2+1,i3) =                + b2(i1,i2,i3) &
+                     - b3(i1,i2,i3+1) + b3(i1,i2,i3) &
+                     - b1(i1+1,i2,i3) + b1(i1,i2,i3)
+    end do
+    end do
+    end do
+  end subroutine iter_y
+  subroutine iter_z
+    !---------------------------------------------------------------------------
+    ! Left z-face.  Not known: b3(:,:,l3)
+    !---------------------------------------------------------------------------
+    do i3=li(3),lb(3),-1
+    do i2=lb(2),ub(2)-1
+    do i1=lb(1),ub(1)-1
+      b3(i1,i2,i3) = b3(i1,i2,i3+1)                &
+                   + b1(i1+1,i2,i3) - b1(i1,i2,i3) &
+                   + b2(i1,i2+1,i3) - b2(i1,i2,i3)
+    end do
+    end do
+    end do
+    !---------------------------------------------------------------------------
+    ! Right z-face: Not known, b3(i1,i2,i3+1)
+    !---------------------------------------------------------------------------
+    do i3=ui(3),ub(3)-1
+    do i2=lb(2),ub(2)-1
+    do i1=lb(1),ub(1)-1
+      b3(i1,i2,i3+1) =                + b3(i1,i2,i3) &
+                     - b1(i1+1,i2,i3) + b1(i1,i2,i3) &
+                     - b2(i1,i2+1,i3) + b2(i1,i2,i3)
+    end do
+    end do
+    end do
+  end subroutine iter_z
+END SUBROUTINE divb_clean0
 
 !===============================================================================
 !> Perform a single iteration of a div(B) clean.  The limit of stability is
