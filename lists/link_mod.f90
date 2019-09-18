@@ -394,7 +394,7 @@ SUBROUTINE remove_nbor_list (self, nbors)
   class(link_t), pointer:: nbors, nbor, next, link2, nbor2, next2, prev
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (timer%detailed > 0) &
+  if (timer%detailed) &
     call trace%begin ('link_t%remove_nbor_list', itimer=itimer)
   if (verbose > 1) &
     write (io_unit%mpi,'(f12.6,i4,2x,a)') wallclock(), omp%thread, 'remove_nbor_list'
@@ -412,7 +412,7 @@ SUBROUTINE remove_nbor_list (self, nbors)
     nbor => next
   end do
   nullify (nbors)
-  if (timer%detailed > 0) &
+  if (timer%detailed) &
     call trace%end (itimer)
 END SUBROUTINE remove_nbor_list
 

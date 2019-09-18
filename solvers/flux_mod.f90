@@ -93,7 +93,7 @@ SUBROUTINE correct (self, patch, nbpatch, idir, iface)
   class(flux_t):: self
   class(patch_t):: patch, nbpatch
   character(len=2):: dir(3) = ['x-', 'y-', 'z-']
-  character(len=5):: face(-1:1) = ['left', '', 'right']
+  character(len=5):: face(-1:1) = ['left ', '     ', 'right']
   integer:: idir, iface
   !.............................................................................
   class(link_t), pointer:: nbor
