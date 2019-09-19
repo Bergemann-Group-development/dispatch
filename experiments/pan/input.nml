@@ -18,14 +18,14 @@
 !---------------------------------------------
 ! For unigrid run, use the no_mans_land=t line
 !---------------------------------------------
-&patch_params           nt=5 grace=0.5 n=3*16 no_mans_land=t /
+&patch_params           nt=5 grace=0.5 n=3*32 no_mans_land=t /
 !patch_params           nt=5 grace=0.1 n=3*21 no_mans_land=f /
-&out_params             end_time=0.050 out_time=0.025 print_time=0.0 /
+&out_params             end_time=0.200 out_time=0.025 print_time=0.0 /
 &io_params              verbose=0 do_trace=f omp_trace=f do_output=f restart=-2
                         method='parallel' format=11 guard_zones=f time_derivs=0 /
 &doẃnload_params        verbose=0 use_different=0 check_filled=t /
 &guard_zone_params      method='simple' verbose=0 /
-&timer_params           sec_per_report=10 /
+&timer_params           sec_per_report=5 /
 &time_slices_params     order=1 /
 &lock_params            verbose=0 /
 
@@ -45,7 +45,7 @@
 !---------------------------------
 &flux_params            on=f verbose=0 /
 &ramses_params          courant_factor=0.250 isothermal=t gamma=1.0 slope_type=3.5
-                        smallr=1e-3 smallc=1 detailed_timer=f /
+                        smallr=1e-3 smallc=1 detailed_timer=t /
 &stagger_params         gamma=1.0 nu=0.30,0.0,1.0,0.1,1.0,1.0 /
 &timestep_params        /
 &refine_params          on=f check_interval=2 /

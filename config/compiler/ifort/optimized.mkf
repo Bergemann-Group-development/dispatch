@@ -1,3 +1,3 @@
-OPT = -O2 -fpe:0
-HW = -xHost -align array64byte -qopt-assume-safe-padding
+OPT = -O3
+HW = -xHost -align array64byte -qopt-assume-safe-padding -vec-threshold0
 DEBUG = -traceback

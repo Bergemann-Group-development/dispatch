@@ -455,14 +455,17 @@ SUBROUTINE toc_r (label, n, time)
   character(len=*):: label
   real:: n
   real(8), optional:: time
-  real(8):: dtime
+  real(8):: dtime, now
   integer:: n_cores, n_threads
   !.............................................................................
   if (io_unit%do_validate) return
+  now = wallclock()
   if (present(time)) then
-    dtime = (wallclock() - time)
+    dtime = (now - time)
+    time = now
   else
-    dtime = (wallclock() - wt)
+    dtime = (now - wt)
+    wt = now
   end if
   n_cores = max(omp%ncores,1)
   n_threads = max(omp%nthreads,1)

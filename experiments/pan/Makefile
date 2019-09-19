@@ -7,8 +7,8 @@ OPTS = optimized
 # Default target and methods
 #PATCH           = dispatchers
 UPD             = adams_bashforth
-SOLVER          = ramses/hydro
-#SOLVER          = ramses/mhd
+#SOLVER          = ramses/hydro
+SOLVER          = ramses/mhd
 #SOLVER          = stagger2/e
 PARTICLE_SOLVER = KDK
 EXEC            = dispatch.x
