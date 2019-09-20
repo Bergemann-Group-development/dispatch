@@ -1130,6 +1130,7 @@ SUBROUTINE trace3d(self)
   do k=2,self%gn(3)-1
   do j=2,self%gn(2)-1
   if (allocated(self%force_per_unit_mass)) then
+    !dir$ simd
     do i=2,self%gn(2)-1
       ff(i,1) = self%force_per_unit_mass(i,j,k,1)
       ff(i,2) = self%force_per_unit_mass(i,j,k,2)
@@ -1138,7 +1139,8 @@ SUBROUTINE trace3d(self)
   else
       ff(:,:) = 0.0_dp
   end if
-  !!dir! simd
+  !dir$ simd
+  !dir$ ivdep
   do i=2,self%gn(1)-1
 !    associate ( &
     r=q(i,j,k,ir)
@@ -1476,10 +1478,12 @@ SUBROUTINE trace3d(self)
   !call trace%begin ('mhd_t%trace3d(3)', itimer=itimer(3))
   do k=2,self%gn(3)-1
   do j=2,self%gn(2)-1
+  !dir$ simd
+  !dir$ ivdep
   do i=2,self%gn(1)-1
     r = rho_t(i,j,k)
     p = p_t(i,j,k)
-
+    !
     ! X-edge averaged right-top corner state (RT->LL)
     !qRT(i,j,k,ir,1) = r + (+dry+drz)
     drx = sqrt(sqrt(r*rho_t(i,j+1,k)*rho_t(i,j,k+1)*rho_t(i,j+1,k+1))) - r
