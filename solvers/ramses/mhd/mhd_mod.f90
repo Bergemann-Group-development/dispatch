@@ -734,10 +734,10 @@ end subroutine ctoprim
 !===============================================================================
 subroutine uslope(self,bf,q,dq,dbf,rslope_type)
   class(mhd_t):: self
-  real, dimension(:,:,:,:):: q
-  real, dimension(:,:,:,:):: bf
-  real, dimension(:,:,:,:,:):: dq
-  real, dimension(:,:,:,:,:):: dbf
+  real, contiguous, dimension(:,:,:,:):: q
+  real, contiguous, dimension(:,:,:,:):: bf
+  real, contiguous, dimension(:,:,:,:,:):: dq
+  real, contiguous, dimension(:,:,:,:,:):: dbf
   real:: rslope_type
   integer::nv, islope_type
   integer::i, j, k, n, l(3), u(3)
@@ -759,6 +759,8 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
     do n = 1, nv
       do k = l(3),u(3)
         do j = l(2),u(2)
+          !dir$ ivdep
+          !dir$ simd
           do i = l(1),u(1)
             dq(i,j,k,n,1) = half*(q(i+1,j,k,n) - q(i-1,j,k,n))
             dq(i,j,k,n,2) = half*(q(i,j+1,k,n) - q(i,j-1,k,n))
@@ -774,6 +776,8 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
     do n = 1, nv
       do k = l(3),u(3)
         do j = l(2),u(2)
+          !dir$ ivdep
+          !dir$ simd
           do i = l(1),u(1)
             ! slopes in first coordinate direction
             dlft = q(i  ,j,k,n) - q(i-1,j,k,n)
@@ -796,6 +800,8 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
     do n = 1, nv
       do k = l(3),u(3)
         do j = l(2),u(2)
+          !dir$ ivdep
+          !dir$ simd
           do i = l(1),u(1)
             ! slopes in first coordinate direction
             dlft = (q(i  ,j,k,n) - q(i-1,j,k,n))          ! = dq
@@ -827,6 +833,8 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
 
     do k = l(3),u(3)
       do j = l(2),u(2)
+        !dir$ ivdep
+        !dir$ simd
         do i = l(1),u(1)
           ! Bx
           dlft = (bf(i,j  ,k,1) - bf(i,j-1,k,1))
@@ -887,6 +895,8 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
     do n = 1, nv
       do k = l(3),u(3)
         do j = l(2),u(2)
+          !dir$ ivdep
+          !dir$ simd
           do i = l(1),u(1)
             dflll = q(i-1,j-1,k-1,n)-q(i,j,k,n)
             dflml = q(i-1,j  ,k-1,n)-q(i,j,k,n)
@@ -950,6 +960,8 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
     end do
       do k = l(3),u(3)
         do j = l(2),u(2)
+          !dir$ ivdep
+          !dir$ simd
           do i = l(1),u(1)
             ! Bx
             dlft = (bf(i,j  ,k,1) - bf(i,j-1,k,1))
