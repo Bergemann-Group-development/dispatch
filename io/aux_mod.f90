@@ -45,7 +45,7 @@ MODULE aux_mod
     procedure:: output => output_item
   end type
   integer:: version=1, verbose=0, uniq=200, iout_prv=-1
-  logical:: first_time=.true., second_time=.true.
+  logical:: first_time=.true., second_time=.true., on=.false.
   character(len=32), allocatable:: select(:)
   !type(aux_t), public:: aux
 CONTAINS
@@ -189,6 +189,8 @@ SUBROUTINE output_aux (self, iout, id, testfile)
   ! Make sure only one output runs at a time, so there is no interference of
   ! reading stdin and deciding of to write messages only once
   !-----------------------------------------------------------------------------
+  if (.not. on) &
+    return
   call trace%begin ('aux_t%output')
   !$omp critical (aux_cr)
   call self%prepare (iout)
@@ -233,7 +235,7 @@ SUBROUTINE prepare (self, iout)
   class(aux_t):: self
   integer:: iout
   !.............................................................................
-  namelist /aux_params/ select, verbose
+  namelist /aux_params/ on, select, verbose
   integer:: iostat, i
   !-----------------------------------------------------------------------------
   call trace%begin ('aux_t%open')

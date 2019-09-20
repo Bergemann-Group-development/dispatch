@@ -1571,7 +1571,7 @@ END SUBROUTINE trace3d
 !===============================================================================
 !> Compute fluxes
 !===============================================================================
-subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
+SUBROUTINE cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   class(mhd_t):: self
   real(dp), dimension(:,:,:,:):: fl
   integer:: nx, ln, lt1, lt2, bn, bt1, bt2
@@ -1581,7 +1581,7 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   real(dp), dimension(nx):: bn_mean
   real(dp):: dtds(3)
   integer, save:: itimer=0
-  integer:: n
+  integer:: n, i0, i1
   associate (qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%cmpflxm', itimer=itimer, detailed_timer=detailed_timer)
@@ -1592,41 +1592,51 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   !
   ! Avoid using spurious values from allocated, but non-defined entries
   bn_mean=0d0
-
+  !
   if (xdim == 1) then
     do k = lb(3),ub(3)
       do j = lb(2),ub(2)
         ! Enforce continuity for normal magnetic field
         n = ub(1)-lb(1)+1
-        bn_mean(1:n) = half*(qm(lb(1)-1:ub(1)-1,j,k,bn,xdim)+qp(lb(1):ub(1),j,k,bn,xdim))
-        ! Left state
-        qleft (1:n,1) = qm(lb(1)-1:ub(1)-1,j,k,1  ,xdim) ! Mass density
-        qleft (1:n,2) = qm(lb(1)-1:ub(1)-1,j,k,5  ,xdim) ! Pressure
-        qleft (1:n,3) = qm(lb(1)-1:ub(1)-1,j,k,ln ,xdim) ! Normal velocity
-        qleft (1:n,4) = bn_mean(1:n)         ! Normal magnetic field
-        qleft (1:n,5) = qm(lb(1)-1:ub(1)-1,j,k,lt1,xdim) ! Tangential velocity 1
-        qleft (1:n,6) = qm(lb(1)-1:ub(1)-1,j,k,bt1,xdim) ! Tangential magnetic field 1
-        qleft (1:n,7) = qm(lb(1)-1:ub(1)-1,j,k,lt2,xdim) ! Tangential velocity 2
-        qleft (1:n,8) = qm(lb(1)-1:ub(1)-1,j,k,bt2,xdim) ! Tangential magnetic field 2
-        ! Right state
-        qright(1:n,1) = qp(lb(1):ub(1),j,k,1  ,xdim) ! Mass density
-        qright(1:n,2) = qp(lb(1):ub(1),j,k,5  ,xdim) ! Pressure
-        qright(1:n,3) = qp(lb(1):ub(1),j,k,ln ,xdim) ! Normal velocity
-        qright(1:n,4) = bn_mean(1:n)         ! Normal magnetic field
-        qright(1:n,5) = qp(lb(1):ub(1),j,k,lt1,xdim) ! Tangential velocity 1
-        qright(1:n,6) = qp(lb(1):ub(1),j,k,bt1,xdim) ! Tangential magnetic field 1
-        qright(1:n,7) = qp(lb(1):ub(1),j,k,lt2,xdim) ! Tangential velocity 2
-        qright(1:n,8) = qp(lb(1):ub(1),j,k,bt2,xdim) ! Tangential magnetic field 2
+        i0 = lb(1)-2
+        i1 = lb(1)-1
+        !dir$ simd
+        !dir$ ivdep
+        do i=1,n
+          bn_mean(i) = half*(qm(i0+i,j,k,bn,xdim)+qp(i1+i,j,k,bn,xdim))
+          ! Left state
+          qleft (i,1) = qm(i0+i,j,k,1  ,xdim) ! Mass density
+          qleft (i,2) = qm(i0+i,j,k,5  ,xdim) ! Pressure
+          qleft (i,3) = qm(i0+i,j,k,ln ,xdim) ! Normal velocity
+          qleft (i,4) = bn_mean(i)         ! Normal magnetic field
+          qleft (i,5) = qm(i0+i,j,k,lt1,xdim) ! Tangential velocity 1
+          qleft (i,6) = qm(i0+i,j,k,bt1,xdim) ! Tangential magnetic field 1
+          qleft (i,7) = qm(i0+i,j,k,lt2,xdim) ! Tangential velocity 2
+          qleft (i,8) = qm(i0+i,j,k,bt2,xdim) ! Tangential magnetic field 2
+          ! Right state
+          qright(i,1) = qp(i1+i,j,k,1  ,xdim) ! Mass density
+          qright(i,2) = qp(i1+i,j,k,5  ,xdim) ! Pressure
+          qright(i,3) = qp(i1+i,j,k,ln ,xdim) ! Normal velocity
+          qright(i,4) = bn_mean(i)         ! Normal magnetic field
+          qright(i,5) = qp(i1+i,j,k,lt1,xdim) ! Tangential velocity 1
+          qright(i,6) = qp(i1+i,j,k,bt1,xdim) ! Tangential magnetic field 1
+          qright(i,7) = qp(i1+i,j,k,lt2,xdim) ! Tangential velocity 2
+          qright(i,8) = qp(i1+i,j,k,bt2,xdim) ! Tangential magnetic field 2
+        end do
         call solver (self,qleft,qright,fgdnv,n)
         ! Output fluxes
-        fl(lb(1):ub(1),j,k,1  ) = fgdnv(1:n,1)  ! Mass density
-        fl(lb(1):ub(1),j,k,5  ) = fgdnv(1:n,2)  ! Total energy
-        fl(lb(1):ub(1),j,k,ln ) = fgdnv(1:n,3)  ! Normal momentum
-        fl(lb(1):ub(1),j,k,bn ) = fgdnv(1:n,4)  ! Normal magnetic field
-        fl(lb(1):ub(1),j,k,lt1) = fgdnv(1:n,5)  ! Transverse momentum 1
-        fl(lb(1):ub(1),j,k,bt1) = fgdnv(1:n,6)  ! Transverse magnetic field 1
-        fl(lb(1):ub(1),j,k,lt2) = fgdnv(1:n,7)  ! Transverse momentum 2
-        fl(lb(1):ub(1),j,k,bt2) = fgdnv(1:n,8)  ! Transverse magnetic field 2
+        !dir$ ivdep
+        !dir$ simd
+        do i=1,n
+          fl(i1+i,j,k,1  ) = fgdnv(i,1)  ! Mass density
+          fl(i1+i,j,k,5  ) = fgdnv(i,2)  ! Total energy
+          fl(i1+i,j,k,ln ) = fgdnv(i,3)  ! Normal momentum
+          fl(i1+i,j,k,bn ) = fgdnv(i,4)  ! Normal magnetic field
+          fl(i1+i,j,k,lt1) = fgdnv(i,5)  ! Transverse momentum 1
+          fl(i1+i,j,k,bt1) = fgdnv(i,6)  ! Transverse magnetic field 1
+          fl(i1+i,j,k,lt2) = fgdnv(i,7)  ! Transverse momentum 2
+          fl(i1+i,j,k,bt2) = fgdnv(i,8)  ! Transverse magnetic field 2
+        end do
       end do
     end do
   else if (xdim == 2) then
@@ -1634,35 +1644,45 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
       do k = lb(3),ub(3)
         ! Enforce continuity for normal magnetic field
         n = ub(2)-lb(2)+1
-        bn_mean(1:n) = half*(qm(i,lb(2)-1:ub(2)-1,k,bn,xdim)+qp(i,lb(2):ub(2),k,bn,xdim))
-        ! Left state
-        qleft (1:n,1) = qm(i,lb(2)-1:ub(2)-1,k,1  ,xdim) ! Mass density
-        qleft (1:n,2) = qm(i,lb(2)-1:ub(2)-1,k,5  ,xdim) ! Pressure
-        qleft (1:n,3) = qm(i,lb(2)-1:ub(2)-1,k,ln ,xdim) ! Normal velocity
-        qleft (1:n,4) = bn_mean(1:n)         ! Normal magnetic field
-        qleft (1:n,5) = qm(i,lb(2)-1:ub(2)-1,k,lt1,xdim) ! Tangential velocity 1
-        qleft (1:n,6) = qm(i,lb(2)-1:ub(2)-1,k,bt1,xdim) ! Tangential magnetic field 1
-        qleft (1:n,7) = qm(i,lb(2)-1:ub(2)-1,k,lt2,xdim) ! Tangential velocity 2
-        qleft (1:n,8) = qm(i,lb(2)-1:ub(2)-1,k,bt2,xdim) ! Tangential magnetic field 2
-        ! Right state
-        qright(1:n,1) = qp(i,lb(2):ub(2),k,1  ,xdim) ! Mass density
-        qright(1:n,2) = qp(i,lb(2):ub(2),k,5  ,xdim) ! Pressure
-        qright(1:n,3) = qp(i,lb(2):ub(2),k,ln ,xdim) ! Normal velocity
-        qright(1:n,4) = bn_mean(1:n)         ! Normal magnetic field
-        qright(1:n,5) = qp(i,lb(2):ub(2),k,lt1,xdim) ! Tangential velocity 1
-        qright(1:n,6) = qp(i,lb(2):ub(2),k,bt1,xdim) ! Tangential magnetic field 1
-        qright(1:n,7) = qp(i,lb(2):ub(2),k,lt2,xdim) ! Tangential velocity 2
-        qright(1:n,8) = qp(i,lb(2):ub(2),k,bt2,xdim) ! Tangential magnetic field 2
+        i0 = lb(2)-2
+        i1 = lb(2)-1
+        !dir$ ivdep
+        !dir$ simd
+        do j=1,n
+          bn_mean(j) = half*(qm(i,i0+j,k,bn,xdim)+qp(i,i1+j,k,bn,xdim))
+          ! Left state
+          qleft (j,1) = qm(i,i0+j,k,1  ,xdim) ! Mass density
+          qleft (j,2) = qm(i,i0+j,k,5  ,xdim) ! Pressure
+          qleft (j,3) = qm(i,i0+j,k,ln ,xdim) ! Normal velocity
+          qleft (j,4) = bn_mean(j)         ! Normal magnetic field
+          qleft (j,5) = qm(i,i0+j,k,lt1,xdim) ! Tangential velocity 1
+          qleft (j,6) = qm(i,i0+j,k,bt1,xdim) ! Tangential magnetic field 1
+          qleft (j,7) = qm(i,i0+j,k,lt2,xdim) ! Tangential velocity 2
+          qleft (j,8) = qm(i,i0+j,k,bt2,xdim) ! Tangential magnetic field 2
+          ! Right state
+          qright(j,1) = qp(i,i1+j,k,1  ,xdim) ! Mass density
+          qright(j,2) = qp(i,i1+j,k,5  ,xdim) ! Pressure
+          qright(j,3) = qp(i,i1+j,k,ln ,xdim) ! Normal velocity
+          qright(j,4) = bn_mean(j)         ! Normal magnetic field
+          qright(j,5) = qp(i,i1+j,k,lt1,xdim) ! Tangential velocity 1
+          qright(j,6) = qp(i,i1+j,k,bt1,xdim) ! Tangential magnetic field 1
+          qright(j,7) = qp(i,i1+j,k,lt2,xdim) ! Tangential velocity 2
+          qright(j,8) = qp(i,i1+j,k,bt2,xdim) ! Tangential magnetic field 2
+        end do
         call solver (self,qleft,qright,fgdnv,n)
-        ! Output fluxes
-        fl(i,lb(2):ub(2),k,1  ) = fgdnv(1:n,1)  ! Mass density
-        fl(i,lb(2):ub(2),k,5  ) = fgdnv(1:n,2)  ! Total energy
-        fl(i,lb(2):ub(2),k,ln ) = fgdnv(1:n,3)  ! Normal momentum
-        fl(i,lb(2):ub(2),k,bn ) = fgdnv(1:n,4)  ! Normal magnetic field
-        fl(i,lb(2):ub(2),k,lt1) = fgdnv(1:n,5)  ! Transverse momentum 1
-        fl(i,lb(2):ub(2),k,bt1) = fgdnv(1:n,6)  ! Transverse magnetic field 1
-        fl(i,lb(2):ub(2),k,lt2) = fgdnv(1:n,7)  ! Transverse momentum 2
-        fl(i,lb(2):ub(2),k,bt2) = fgdnv(1:n,8)  ! Transverse magnetic field 2
+        !dir$ ivdep
+        !dir$ simd
+        do j=1,n
+          ! Output fluxes
+          fl(i,i1+j,k,1  ) = fgdnv(j,1)  ! Mass density
+          fl(i,i1+j,k,5  ) = fgdnv(j,2)  ! Total energy
+          fl(i,i1+j,k,ln ) = fgdnv(j,3)  ! Normal momentum
+          fl(i,i1+j,k,bn ) = fgdnv(j,4)  ! Normal magnetic field
+          fl(i,i1+j,k,lt1) = fgdnv(j,5)  ! Transverse momentum 1
+          fl(i,i1+j,k,bt1) = fgdnv(j,6)  ! Transverse magnetic field 1
+          fl(i,i1+j,k,lt2) = fgdnv(j,7)  ! Transverse momentum 2
+          fl(i,i1+j,k,bt2) = fgdnv(j,8)  ! Transverse magnetic field 2
+        end do
       end do
     end do
   else if (xdim == 3) then
@@ -1670,43 +1690,52 @@ subroutine cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
       do i = lb(1),ub(1)
         ! Enforce continuity for normal magnetic field
         n = ub(3)-lb(3)+1
-        bn_mean(1:n) = half*(qm(i,j,lb(3)-1:ub(3)-1,bn,xdim)+qp(i,j,lb(3):ub(3),bn,xdim))
-        ! Left state
-        qleft (1:n,1) = qm(i,j,lb(3)-1:ub(3)-1,1  ,xdim) ! Mass density
-        qleft (1:n,2) = qm(i,j,lb(3)-1:ub(3)-1,5  ,xdim) ! Pressure
-        qleft (1:n,3) = qm(i,j,lb(3)-1:ub(3)-1,ln ,xdim) ! Normal velocity
-        qleft (1:n,4) = bn_mean(1:n)         ! Normal magnetic field
-        qleft (1:n,5) = qm(i,j,lb(3)-1:ub(3)-1,lt1,xdim) ! Tangential velocity 1
-        qleft (1:n,6) = qm(i,j,lb(3)-1:ub(3)-1,bt1,xdim) ! Tangential magnetic field 1
-        qleft (1:n,7) = qm(i,j,lb(3)-1:ub(3)-1,lt2,xdim) ! Tangential velocity 2
-        qleft (1:n,8) = qm(i,j,lb(3)-1:ub(3)-1,bt2,xdim) ! Tangential magnetic field 2
-        ! Right state
-        qright(1:n,1) = qp(i,j,lb(3):ub(3),1  ,xdim) ! Mass density
-        qright(1:n,2) = qp(i,j,lb(3):ub(3),5  ,xdim) ! Pressure
-        qright(1:n,3) = qp(i,j,lb(3):ub(3),ln ,xdim) ! Normal velocity
-        qright(1:n,4) = bn_mean(1:n)         ! Normal magnetic field
-        qright(1:n,5) = qp(i,j,lb(3):ub(3),lt1,xdim) ! Tangential velocity 1
-        qright(1:n,6) = qp(i,j,lb(3):ub(3),bt1,xdim) ! Tangential magnetic field 1
-        qright(1:n,7) = qp(i,j,lb(3):ub(3),lt2,xdim) ! Tangential velocity 2
-        qright(1:n,8) = qp(i,j,lb(3):ub(3),bt2,xdim) ! Tangential magnetic field 2
+        i0 = lb(3)-2
+        i1 = lb(3)-1
+        !dir$ ivdep
+        !dir$ simd
+        do k=1,n
+          bn_mean(k) = half*(qm(i,j,i0+k,bn,xdim)+qp(i,j,i1+k,bn,xdim))
+          ! Left state
+          qleft (k,1) = qm(i,j,i0+k,1  ,xdim) ! Mass density
+          qleft (k,2) = qm(i,j,i0+k,5  ,xdim) ! Pressure
+          qleft (k,3) = qm(i,j,i0+k,ln ,xdim) ! Normal velocity
+          qleft (k,4) = bn_mean(k)         ! Normal magnetic field
+          qleft (k,5) = qm(i,j,i0+k,lt1,xdim) ! Tangential velocity 1
+          qleft (k,6) = qm(i,j,i0+k,bt1,xdim) ! Tangential magnetic field 1
+          qleft (k,7) = qm(i,j,i0+k,lt2,xdim) ! Tangential velocity 2
+          qleft (k,8) = qm(i,j,i0+k,bt2,xdim) ! Tangential magnetic field 2
+          ! Right state
+          qright(k,1) = qp(i,j,i1+k,1  ,xdim) ! Mass density
+          qright(k,2) = qp(i,j,i1+k,5  ,xdim) ! Pressure
+          qright(k,3) = qp(i,j,i1+k,ln ,xdim) ! Normal velocity
+          qright(k,4) = bn_mean(k)         ! Normal magnetic field
+          qright(k,5) = qp(i,j,i1+k,lt1,xdim) ! Tangential velocity 1
+          qright(k,6) = qp(i,j,i1+k,bt1,xdim) ! Tangential magnetic field 1
+          qright(k,7) = qp(i,j,i1+k,lt2,xdim) ! Tangential velocity 2
+          qright(k,8) = qp(i,j,i1+k,bt2,xdim) ! Tangential magnetic field 2
+        end do
         call solver (self,qleft,qright,fgdnv,n)
-        ! Output fluxes
-        fl(i,j,lb(3):ub(3),1  ) = fgdnv(1:n,1)  ! Mass density
-        fl(i,j,lb(3):ub(3),5  ) = fgdnv(1:n,2)  ! Total energy
-        fl(i,j,lb(3):ub(3),ln ) = fgdnv(1:n,3)  ! Normal momentum
-        fl(i,j,lb(3):ub(3),bn ) = fgdnv(1:n,4)  ! Normal magnetic field
-        fl(i,j,lb(3):ub(3),lt1) = fgdnv(1:n,5)  ! Transverse momentum 1
-        fl(i,j,lb(3):ub(3),bt1) = fgdnv(1:n,6)  ! Transverse magnetic field 1
-        fl(i,j,lb(3):ub(3),lt2) = fgdnv(1:n,7)  ! Transverse momentum 2
-        fl(i,j,lb(3):ub(3),bt2) = fgdnv(1:n,8)  ! Transverse magnetic field 2
+        !dir$ ivdep
+        !dir$ simd
+        do k=1,n
+          ! Output fluxes
+          fl(i,j,i1+k,1  ) = fgdnv(k,1)  ! Mass density
+          fl(i,j,i1+k,5  ) = fgdnv(k,2)  ! Total energy
+          fl(i,j,i1+k,ln ) = fgdnv(k,3)  ! Normal momentum
+          fl(i,j,i1+k,bn ) = fgdnv(k,4)  ! Normal magnetic field
+          fl(i,j,i1+k,lt1) = fgdnv(k,5)  ! Transverse momentum 1
+          fl(i,j,i1+k,bt1) = fgdnv(k,6)  ! Transverse magnetic field 1
+          fl(i,j,i1+k,lt2) = fgdnv(k,7)  ! Transverse momentum 2
+          fl(i,j,i1+k,bt2) = fgdnv(k,8)  ! Transverse magnetic field 2
+        end do
       end do 
     end do
-      
   endif
-
+  !
   end associate
   call trace%end (itimer, detailed_timer=detailed_timer)
-end subroutine cmpflxm
+END SUBROUTINE cmpflxm
 
 !===============================================================================
 !> 2D solver for EMF
@@ -1764,6 +1793,8 @@ SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
       do j = self%mesh(2)%li,self%mesh(2)%uo
        l = self%mesh(1)%li
        u = self%mesh(1)%ui
+       !dir$ ivdep
+       !dir$ simd
        do i = l,u
         qLL (i,1) = max(qRT(i-iRT, j-jRT, k-kRT, 1, xdim), smallr)
         qRL (i,1) = max(qLT(i-iLT, j-jLT, k-kLT, 1, xdim), smallr)
@@ -1806,6 +1837,8 @@ SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
       do k = self%mesh(3)%li,self%mesh(3)%uo
        l = self%mesh(2)%li
        u = self%mesh(2)%ui
+       !dir$ ivdep
+       !dir$ simd
        do j = l,u
         qLL (j,1) = max(qRT(i-iRT, j-jRT, k-kRT, 1, xdim), smallr)
         qRL (j,1) = max(qLT(i-iLT, j-jLT, k-kLT, 1, xdim), smallr)
@@ -1848,6 +1881,8 @@ SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
       do i = self%mesh(1)%li,self%mesh(1)%uo
        l = self%mesh(3)%li
        u = self%mesh(3)%ui
+       !dir$ ivdep
+       !dir$ simd
        do k = l,u
         qLL (k,1) = max(qRT(i-iRT, j-jRT, k-kRT, 1, xdim), smallr)
         qRL (k,1) = max(qLT(i-iLT, j-jLT, k-kLT, 1, xdim), smallr)
@@ -1889,7 +1924,6 @@ SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
   call trace%end (itimer, detailed_timer=detailed_timer)
 !  end associate
 END SUBROUTINE cmp_mag_flx
-
 !===============================================================================
 !> Selection of 1-D solvers
 !===============================================================================
