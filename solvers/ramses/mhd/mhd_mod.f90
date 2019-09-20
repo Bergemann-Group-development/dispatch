@@ -1054,12 +1054,41 @@ SUBROUTINE trace3d(self)
   real(dp) :: ff(self%gn(1),3)
   integer, save:: itimer(4)=0
   !-----------------------------------------------------------------------------
-  associate(q=>self%q,bf=>self%bf,dq=>self%dq,dq2=>self%dq2,qm=>self%qm,qp=>self%qp, &
-    dbf=>self%dbf,qRT=>self%qRT,qRB=>self%qRB,qLT=>self%qLT,qLB=>self%qLB, &
-    Bx=>self%bf(:,:,:,1),By=>self%bf(:,:,:,2),Bz=>self%bf(:,:,:,3), &
-    Ux=>self%q(:,:,:,2),Uy=>self%q(:,:,:,3),Uz=>self%q(:,:,:,4), &
-    Ex=>self%Ex,Ey=>self%Ey,Ez=>self%Ez)
-  !
+  real(dp), dimension(:,:,:)    , pointer, contiguous:: Bx, By, Bz, Ux, Uy, Uz
+  real(dp), dimension(:,:,:)    , pointer, contiguous:: Ex, Ey, Ez
+  real(dp), dimension(:,:,:,:)  , pointer, contiguous:: q, bf, em, uin, unew
+  real(dp), dimension(:,:,:,:,:), pointer, contiguous:: qp, qm, dq, dq2, dbf
+  real(dp), dimension(:,:,:,:,:), pointer, contiguous:: qLB, qRB, qLT, qRT
+  !-----------------------------------------------------------------------------
+  !associate(q=>self%q,bf=>self%bf,dq=>self%dq,dq2=>self%dq2,qm=>self%qm,qp=>self%qp, &
+  !  dbf=>self%dbf,qRT=>self%qRT,qRB=>self%qRB,qLT=>self%qLT,qLB=>self%qLB, &
+  !  Bx=>self%bf(:,:,:,1),By=>self%bf(:,:,:,2),Bz=>self%bf(:,:,:,3), &
+  !  Ux=>self%q(:,:,:,2),Uy=>self%q(:,:,:,3),Uz=>self%q(:,:,:,4), &
+  !  Ex=>self%Ex,Ey=>self%Ey,Ez=>self%Ez)
+  !-----------------------------------------------------------------------------
+  uin => self%uin
+  unew=> self%unew
+  q   => self%q
+  bf  => self%bf
+  dq  => self%dq
+  dq2 => self%dq2
+  qm  => self%qm
+  qp  => self%qp
+  Bx  => self%bf(:,:,:,1)
+  By  => self%bf(:,:,:,2)
+  Bz  => self%bf(:,:,:,3)
+  Ux  => self%q(:,:,:,2)
+  Uy  => self%q(:,:,:,3)
+  Uz  => self%q(:,:,:,4)
+  Ex  => self%Ex
+  Ey  => self%Ey
+  Ez  => self%Ez
+  dbf => self%dbf
+  qRT => self%qRT
+  qRB => self%qRB
+  qLT => self%qLT
+  qLB => self%qLB
+  !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%trace3d', itimer=itimer(1), detailed_timer=detailed_timer)
   su0=0.0_dp; sv0=0.0_dp; sw0=0.0_dp
   !
@@ -1178,17 +1207,16 @@ SUBROUTINE trace3d(self)
     dARy = half * dbf(i+1,j  ,k  ,1,1)
     dALz = half * dbf(i  ,j  ,k  ,1,2)
     dARz = half * dbf(i+1,j  ,k  ,1,2)
-
+    !
     dBLx = half * dbf(i  ,j  ,k  ,2,1)
     dBRx = half * dbf(i  ,j+1,k  ,2,1)
     dBLz = half * dbf(i  ,j  ,k  ,2,2)
     dBRz = half * dbf(i  ,j+1,k  ,2,2)
-
+    !
     dCLx = half * dbf(i  ,j  ,k  ,3,1)
     dCRx = half * dbf(i  ,j  ,k+1,3,1)
     dCLy = half * dbf(i  ,j  ,k  ,3,2)
     dCRy = half * dbf(i  ,j  ,k+1,3,2)
-
     !
     ! Face-centered predicted states
     sAL0 = +(GLR-GLL)*dtdy*half -(FLR-FLL)*dtdz*half
@@ -1247,7 +1275,6 @@ SUBROUTINE trace3d(self)
 !       end if
 !    end if
     !
-
     ! Cell-centered predicted states
     r = r + sr0
     r = max(r,smallr)
@@ -1501,7 +1528,6 @@ SUBROUTINE trace3d(self)
     dpy = qRB(i,j,k,ip,2) - p
     qRB(i,j,k,ir,2) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qRB(i,j,k,ip,2) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-
     ! Y-edge averaged left-top corner state (LT->RL)
     !qLT(i,j,k,ir,2) = r + (-drx+drz)
     drx = sqrt(sqrt(r*rho_t(i-1,j,k)*rho_t(i,j,k+1)*rho_t(i-1,j,k+1))) - r
@@ -1556,7 +1582,6 @@ SUBROUTINE trace3d(self)
   !call trace%end (itimer(3))
   deallocate (rho_t, p_t)
   call trace%end (itimer(1), detailed_timer=detailed_timer)
-  end associate
 contains
   FUNCTION xdn(a) RESULT (b)
     real, dimension(:,:,:):: a
