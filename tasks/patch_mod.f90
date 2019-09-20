@@ -31,6 +31,7 @@ MODULE patch_mod
     real(kind=KindScalarVar), dimension(:,:,:,:,:),   pointer:: vgas     => null()
     real(kind=KindScalarVar), dimension(:,:,:,:),     pointer:: density  => null()
     real(kind=KindScalarVar), dimension(:,:,:,:),     pointer:: pressure => null()
+    !dir$ attributes align: 64 :: mem, vgas, density, pressure
     !---------------------------------------------------------------------------
     ! These allocatables are intended to deposite external forces and heating in,
     ! typically used by methods called from the extras_t data type procedures.
@@ -40,6 +41,9 @@ MODULE patch_mod
     real(kind=KindScalarVar), dimension(:,:,:),       allocatable:: heating_per_unit_mass
     real(kind=KindScalarVar), dimension(:,:,:),       allocatable:: heating_per_unit_volume
     integer(kind=int8)      , dimension(:,:,:),       allocatable:: filled
+    !dir$ attributes align: 64 :: force_per_unit_mass, force_per_unit_volume
+    !dir$ attributes align: 64 :: heating_per_unit_mass, heating_per_unit_volume
+    !dir$ attributes align: 64 :: filled
     !--- anonymous pointer, which may be used to connect extra info to the solvers
     type(connect_t):: connect
     class(mesh_t), dimension(:), pointer:: mesh => null()

@@ -46,6 +46,7 @@ MODULE mhd_mod
     real, pointer, dimension(:,:,:,:):: unew      ! new conserved
     real, pointer, dimension(:,:,:):: Ex,Ey,Ez
     real, pointer, dimension(:,:,:):: c
+    !dir$ attributes align:64 :: q,bf,em,qp,qm,dq,dq2,dbf,qLB,qRB,qLT,qRT,Ex,Ey,Ez,c
   contains
     procedure:: init
     procedure:: update
