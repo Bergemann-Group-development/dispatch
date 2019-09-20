@@ -1049,7 +1049,7 @@ SUBROUTINE trace3d(self)
   real(dp) :: dBLx, dBRx, dBLz, dBRz
   real(dp) :: dCLx, dCRx, dCLy, dCRy
   real(dp) :: sAL0, sAR0, sBL0, sBR0, sCL0, sCR0
-  real(dp), dimension(1:self%gn(1),1:self%gn(2),1:self%gn(3)):: rho_t, p_t
+  real(dp), dimension(:,:,:), allocatable:: rho_t, p_t
   real(dp) :: eff_gamma, off
   real(dp) :: ff(self%gn(1),3)
   integer, save:: itimer(4)=0
@@ -1072,15 +1072,32 @@ SUBROUTINE trace3d(self)
   Ex = ydn(zdn(Uy))*ydn(Bz) - zdn(ydn(Uz))*zdn(By) 
   Ey = zdn(xdn(Uz))*zdn(Bx) - xdn(zdn(Ux))*xdn(Bz) 
   Ez = xdn(ydn(Ux))*xdn(By) - ydn(xdn(Uy))*ydn(Bx) 
-
-  ! fill positive definite variables with reasonable values in "ghost-zones"
-  rho_t(:,:,:) = q(:,:,:,ir)
-  p_t(:,:,:)   = q(:,:,:,ip)
-
   !
   !call trace%end (itimer(1))
   !call trace%begin ('mhd_t%trace3d(2)', itimer=itimer(2))
   eff_gamma = gamma
+  !
+  allocate (rho_t(1:self%gn(1),1:self%gn(2),1:self%gn(3)))
+  allocate (  p_t(1:self%gn(1),1:self%gn(2),1:self%gn(3)))
+  !
+  ! Fill rho-t & p_t with non-zero values at guard zone edges,
+  ! to ! avoid arithmetic errors (internal values are set in loop)
+  rho_t(1,:,:) = q(1,:,:,ir)
+  rho_t(:,1,:) = q(:,1,:,ir)
+  rho_t(:,:,1) = q(:,:,1,ir)
+  p_t  (1,:,:)   = q(1,:,:,ip)
+  p_t  (:,1,:)   = q(:,1,:,ip)
+  p_t  (:,:,1)   = q(:,:,1,ip)
+  n = self%gn(1)
+  rho_t(n,:,:) = q(n,:,:,ir)
+  p_t  (n,:,:)   = q(n,:,:,ip)
+  n = self%gn(2)
+  rho_t(:,n,:) = q(:,n,:,ir)
+  p_t  (:,n,:)   = q(:,n,:,ip)
+  n = self%gn(3)
+  rho_t(:,:,n) = q(:,:,n,ir)
+  p_t  (:,:,n)   = q(:,:,n,ip)
+  !
   do k=2,self%gn(3)-1
   do j=2,self%gn(2)-1
   if (allocated(self%force_per_unit_mass)) then
@@ -1533,12 +1550,11 @@ SUBROUTINE trace3d(self)
     dpy = qLB(i,j,k,ip,3) - p
     qLB(i,j,k,ir,3) = merge(drx, dry, abs(drx) <= abs(dry) .or. dry+r<=0.) + r
     qLB(i,j,k,ip,3) = merge(dpx, dpy, abs(dpx) <= abs(dpy) .or. dpy+p<=0.) + p
-
-!    end associate
   end do
   end do
   end do
   !call trace%end (itimer(3))
+  deallocate (rho_t, p_t)
   call trace%end (itimer(1), detailed_timer=detailed_timer)
   end associate
 contains
