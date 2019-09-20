@@ -834,6 +834,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
 
     do k = l(3),u(3)
       do j = l(2),u(2)
+        !dir$ vector aligned
         !dir$ ivdep
         !dir$ simd
         do i = l(1),u(1)
@@ -896,6 +897,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
     do n = 1, nv
       do k = l(3),u(3)
         do j = l(2),u(2)
+          !dir$ vector aligned
           !dir$ ivdep
           !dir$ simd
           do i = l(1),u(1)
