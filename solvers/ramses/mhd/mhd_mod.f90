@@ -30,6 +30,7 @@ MODULE mhd_mod
   USE non_ideal_mod
   USE flux_mod
   USE omp_timer_mod
+  USE timer_mod
   implicit none
   PRIVATE
   type, public, extends(extras_t):: mhd_t
@@ -1898,9 +1899,9 @@ SUBROUTINE solver (self, qleft, qright, fgdnv, ub)
   integer :: lb, ub
   !.............................................................................
   if (self%riemann == 'hlld') then
-    call rieman%hlld (qleft, qright, fgdnv, ub)
+    call rieman%hlld (qleft, qright, fgdnv, ub, detailed_timer=detailed_timer)
   else if (self%riemann == 'llf')then
-    call rieman%llf (qleft, qright, fgdnv, ub)
+    call rieman%llf (qleft, qright, fgdnv, ub, detailed_timer=detailed_timer)
   else
     write(*,*)'unknown Riemann solver'
     stop
@@ -1980,7 +1981,7 @@ SUBROUTINE gravitational_force (self)
   allocate (gradphi1(self%gn(1),self%gn(2),self%gn(3)), &
             gradphi2(self%gn(1),self%gn(2),self%gn(3)), &
             gradphi3(self%gn(1),self%gn(2),self%gn(3)))
-
+  !
   do k=l(3),u(3)
     do j=l(2),u(2)
       do i=l(1),u(1)
@@ -2006,7 +2007,6 @@ SUBROUTINE gravitational_force (self)
       end do
     end do
   end do
-
   deallocate (gradphi1, gradphi2, gradphi3)
   end associate
 END SUBROUTINE gravitational_force

@@ -5,6 +5,7 @@ module riemann_mod
   USE io_mod
   USE mpi_mod
   USE trace_mod
+  USE timer_mod
   implicit none
   private
   type riemann_t
@@ -45,7 +46,8 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   logical:: flag
   integer, save:: itimer=0
   !.............................................................................
-  !call trace%begin('riemann_t%hlld',  itimer=itimer, detailed_timer=detailed_timer)
+  if (detailed_timer) &
+    call timer%begin('riemann_t%hlld',  itimer=itimer)
   !
   ! constants
   if (isothermal) then
@@ -266,7 +268,8 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   self%ndiff = self%ndiff + ndiff
   !$omp atomic
   self%nsolu = self%nsolu + ngrid
-  !call trace%end (itimer, detailed_timer=detailed_timer)
+  if (detailed_timer) &
+    call timer%end (itimer)
 end subroutine hlld
 
 !===============================================================================
@@ -296,7 +299,8 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
   !integer, save:: itimer(10)=0
   integer, save:: itimer=0
   !.............................................................................
-  !call trace%begin ('riemann_t%hlld_2d', itimer=itimer, detailed_timer=detailed_timer)
+  if (detailed_timer) &
+    call timer%begin ('riemann_t%hlld_2d', itimer=itimer)
   do l=l0,l1
     !call trace%begin ('hlld_2d find_fast_speed', itimer=itimer(1))
     rLL=qLL(l,1); pLL=qLL(l,2); uLL=qLL(l,3); vLL=qLL(l,4); ALL=qLL(l,6); BLL=qLL(l,7) ; CLL=qLL(l,8)
@@ -673,7 +677,8 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
        emf(j,k,l) = E
     endif
   end do
-  !call trace%end (itimer, detailed_timer=detailed_timer)
+  if (detailed_timer) &
+    call timer%end (itimer)
 END SUBROUTINE hlld_2d
 
 !===============================================================================
