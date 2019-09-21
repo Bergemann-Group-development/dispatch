@@ -761,7 +761,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
       do k = l(3),u(3)
         do j = l(2),u(2)
           !dir$ ivdep
-          !dir$ simd
+          !$omp simd
           do i = l(1),u(1)
             dq(i,j,k,n,1) = half*(q(i+1,j,k,n) - q(i-1,j,k,n))
             dq(i,j,k,n,2) = half*(q(i,j+1,k,n) - q(i,j-1,k,n))
@@ -778,7 +778,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
       do k = l(3),u(3)
         do j = l(2),u(2)
           !dir$ ivdep
-          !dir$ simd
+          !$omp simd private(dlft,drgt)
           do i = l(1),u(1)
             ! slopes in first coordinate direction
             dlft = q(i  ,j,k,n) - q(i-1,j,k,n)
@@ -802,7 +802,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
       do k = l(3),u(3)
         do j = l(2),u(2)
           !dir$ ivdep
-          !dir$ simd
+          !$omp simd private(dlft,drgt,dcen,dsgn,slop)
           do i = l(1),u(1)
             ! slopes in first coordinate direction
             dlft = (q(i  ,j,k,n) - q(i-1,j,k,n))          ! = dq
@@ -836,7 +836,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
       do j = l(2),u(2)
         !dir$ vector aligned
         !dir$ ivdep
-        !dir$ simd
+        !$omp simd private(dlft,drgt,dcen,dsgn,slop)
         do i = l(1),u(1)
           ! Bx
           dlft = (bf(i,j  ,k,1) - bf(i,j-1,k,1))
@@ -899,7 +899,10 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
         do j = l(2),u(2)
           !dir$ vector aligned
           !dir$ ivdep
-          !dir$ simd
+          !$omp simd private(dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml, &
+          !$omp    & dfrrl,dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm, &
+          !$omp    & dfrrm,dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr, &
+          !$omp    & dfrrr,vmin,vmax,dfx,dfy,dfz,idff,slop,dlim)
           do i = l(1),u(1)
             dflll = q(i-1,j-1,k-1,n)-q(i,j,k,n)
             dflml = q(i-1,j  ,k-1,n)-q(i,j,k,n)
@@ -964,7 +967,7 @@ subroutine uslope(self,bf,q,dq,dbf,rslope_type)
       do k = l(3),u(3)
         do j = l(2),u(2)
           !dir$ ivdep
-          !dir$ simd
+          !$omp simd private(dlft,drgt,dcen,dsgn,slop)
           do i = l(1),u(1)
             ! Bx
             dlft = (bf(i,j  ,k,1) - bf(i,j-1,k,1))
@@ -1142,10 +1145,14 @@ SUBROUTINE trace3d(self)
   else
       ff(:,:) = 0.0_dp
   end if
-  !dir$ simd
   !dir$ ivdep
+  !$omp simd private( &
+  !$omp & A,AL,AR,B,BL,BR,C,CL,CR,ELL,ELR,ERL,ERR,FLL,FLR,FRL,FRR,GLL,GLR,GRL,GRR, &
+  !$omp & dALy,dALz,dARy,dARz,dAy,dAz,dBLx,dBLz,dBRx,dBRz,dBx,dBz,dCLx,dCLy,dCRx, &
+  !$omp & dCRy,dCx,dCy,dpx,dpx2,dpy,dpy2,dpz,dpz2,drx,drx2,dry,dry2,drz,drz2,dux, &
+  !$omp & duy,duz,dvx,dvy,dvz,dwx,dwy,dwz,invr,p,r,sAL0,sAR0,sBL0,sBR0,sCL0,sCR0, &
+  !$omp & sp0,sr0,su0,sv0,sw0,u,v,w)
   do i=2,self%gn(1)-1
-!    associate ( &
     r=q(i,j,k,ir)
     u=q(i,j,k,iu)
     v=q(i,j,k,iv)
