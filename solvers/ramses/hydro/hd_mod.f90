@@ -37,13 +37,13 @@ MODULE hd_mod
     logical:: mhd=.false.
     integer:: idim=3
     character(len=10):: riemann='hllc'
-    real, pointer, dimension(:,:,:,:):: uin       ! conserved
-    real, pointer, dimension(:,:,:,:):: unew      ! new conserved
-    real, pointer, dimension(:,:,:,:):: q         ! primitive
-    real, pointer, dimension(:,:,:,:,:):: qp, qm  ! face centered
-    real, pointer, dimension(:,:,:,:,:):: dq      ! slopes
-    real, pointer, dimension(:,:,:,:,:):: fl      ! 3D fluxes
-    real, pointer, dimension(:,:,:):: c, s        ! scratch
+    real, pointer, contiguous, dimension(:,:,:,:):: uin       ! conserved
+    real, pointer, contiguous, dimension(:,:,:,:):: unew      ! new conserved
+    real, pointer, contiguous, dimension(:,:,:,:):: q         ! primitive
+    real, pointer, contiguous, dimension(:,:,:,:,:):: qp, qm  ! face centered
+    real, pointer, contiguous, dimension(:,:,:,:,:):: dq      ! slopes
+    real, pointer, contiguous, dimension(:,:,:,:,:):: fl      ! 3D fluxes
+    real, pointer, contiguous, dimension(:,:,:):: c, s        ! scratch
   contains
     procedure:: init
     procedure:: dealloc
@@ -126,9 +126,9 @@ SUBROUTINE update (self)
   class(hd_t):: self
   integer:: n(3), m, i, l(3), u(3)
   integer, save:: itimer=0
-  real, dimension(:,:,:,:), pointer:: p
-  real, dimension(:,:,:), pointer:: d, e, Ux=>null(), Uy=>null(), Uz=>null()
-  real, dimension(:,:,:), pointer:: tmp
+  real, contiguous, dimension(:,:,:,:), pointer:: p
+  real, contiguous, dimension(:,:,:), pointer:: d, e, Ux=>null(), Uy=>null(), Uz=>null()
+  real, contiguous, dimension(:,:,:), pointer:: tmp
   real:: error
   !-----------------------------------------------------------------------------
   call trace%begin ('hd_t%update', itimer=itimer)
@@ -208,17 +208,18 @@ END SUBROUTINE update
 !=======================================================================
 SUBROUTINE p2U(self, U, it)
   class(hd_t) :: self
-  real, dimension(:,:,:,:), pointer:: U
+  real, contiguous, dimension(:,:,:,:), pointer:: U
   integer:: it
   !.....................................................................
   integer:: i
+  real, contiguous, dimension(:,:,:)  , pointer:: d
+  real, contiguous, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d,           it,1), &
-            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
+  d => self%mem(:,:,:,self%idx%d,             it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
   do i=1,size(p,4)
   U(:,:,:,i) = p(:,:,:,i)/d
   end do
-  end associate
 END SUBROUTINE p2U
 
 !=======================================================================
@@ -226,17 +227,18 @@ END SUBROUTINE p2U
 !=======================================================================
 SUBROUTINE U2p(self, U, it)
   class(hd_t) :: self
-  real, dimension(:,:,:,:), pointer:: U
+  real, contiguous, dimension(:,:,:,:), pointer:: U
   integer:: it
   !.....................................................................
   integer:: i
+  real, contiguous, dimension(:,:,:)  , pointer:: d
+  real, contiguous, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
-            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
+  d => self%mem(:,:,:,self%idx%d             ,it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
   do i=1,size(p,4)
   p(:,:,:,i)= U(:,:,:,i)*d
   end do
-  end associate
 END SUBROUTINE U2p
 
 !=======================================================================
@@ -244,15 +246,16 @@ END SUBROUTINE U2p
 !=======================================================================
 SUBROUTINE e2E_th(self, E_th, it)
   class(hd_t) :: self
-  real, dimension(:,:,:), pointer:: E_th
+  real, contiguous, dimension(:,:,:), pointer:: E_th
   integer:: it
   !.....................................................................
-  real, dimension(:,:,:), pointer:: k
   integer :: i
+  real, contiguous, dimension(:,:,:), pointer:: k, d, e
+  real, contiguous, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
-            e => self%mem(:,:,:,self%idx%e           ,it,1), &
-            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
+  d => self%mem(:,:,:,self%idx%d             ,it,1)
+  e => self%mem(:,:,:,self%idx%e             ,it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
   allocate(k(size(d,1),size(d,2),size(d,3)))
   k = 0.0
   do i=1,size(p,4)
@@ -261,7 +264,6 @@ SUBROUTINE e2E_th(self, E_th, it)
   k = 0.5*k/d
   E_th = (e-k)/d
   deallocate(k)
-  end associate
 END SUBROUTINE e2E_th
 
 !=======================================================================
@@ -269,19 +271,20 @@ END SUBROUTINE e2E_th
 !=======================================================================
 SUBROUTINE e2S(self, s, it)
   class(hd_t) :: self
-  real, dimension(:,:,:), pointer:: s
+  real, contiguous, dimension(:,:,:), pointer:: s
   integer:: it
   !.....................................................................
-  real, dimension(:,:,:), pointer:: k
   integer :: i
+  real, contiguous, dimension(:,:,:), pointer:: k, d, e
+  real, contiguous, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
   if (isothermal) then
     s = 0.0
     return
   end if
-  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
-            e => self%mem(:,:,:,self%idx%e           ,it,1), &
-            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
+  d => self%mem(:,:,:,self%idx%d             ,it,1)
+  e => self%mem(:,:,:,self%idx%e             ,it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
   allocate(k(size(d,1),size(d,2),size(d,3)))
   k = 0.0
   do i=1,size(p,4)
@@ -290,7 +293,6 @@ SUBROUTINE e2S(self, s, it)
   k = 0.5*k/d
   s = log((e-k)*(gamma-1d0)/d**gamma)/(gamma-1d0)
   deallocate(k)
-  end associate
 END SUBROUTINE e2S
 
 !=======================================================================
@@ -298,15 +300,16 @@ END SUBROUTINE e2S
 !=======================================================================
 SUBROUTINE S2e (self, s, it)
   class(hd_t) :: self
-  real, dimension(:,:,:), pointer:: s
+  real, contiguous, dimension(:,:,:), pointer:: s
   integer:: it
   !.....................................................................
-  real, dimension(:,:,:), pointer:: k
   integer :: i
+  real, contiguous, dimension(:,:,:), pointer:: k, d, e
+  real, contiguous, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
-            e => self%mem(:,:,:,self%idx%e           ,it,1), &
-            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
+  d => self%mem(:,:,:,self%idx%d             ,it,1)
+  e => self%mem(:,:,:,self%idx%e             ,it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
   if (isothermal) then
     e = d*self%csound**2
     return
@@ -319,7 +322,6 @@ SUBROUTINE S2e (self, s, it)
   k = 0.5*k/d
   e = d**gamma*exp(s*(gamma-1d0)) + k
   deallocate(k)
-  end associate
 END SUBROUTINE S2e
 
 !=======================================================================
@@ -328,14 +330,15 @@ END SUBROUTINE S2e
 SUBROUTINE E_th2e(self, E_th, it)
   class(hd_t) :: self
   integer:: it
-  real, dimension(:,:,:), pointer:: E_th
+  real, contiguous, dimension(:,:,:), pointer:: E_th
   !.....................................................................
-  real, dimension(:,:,:), pointer:: k
   integer :: i
+  real, contiguous, dimension(:,:,:), pointer:: k, d, e
+  real, contiguous, dimension(:,:,:,:), pointer:: p
   !---------------------------------------------------------------------
-  associate(d => self%mem(:,:,:,self%idx%d           ,it,1), &
-            e => self%mem(:,:,:,self%idx%e           ,it,1), &
-            p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1))
+  d => self%mem(:,:,:,self%idx%d             ,it,1)
+  e => self%mem(:,:,:,self%idx%e             ,it,1)
+  p => self%mem(:,:,:,self%idx%px:self%idx%pz,it,1)
   allocate(k(size(d,1),size(d,2),size(d,3)))
   k = 0.0
   do i=1,size(p,4)
@@ -344,7 +347,6 @@ SUBROUTINE E_th2e(self, E_th, it)
   k = 0.5*k/d
   e = E_th*d+k
   deallocate(k)
-  end associate
 END SUBROUTINE E_th2e
 
 !===============================================================================
@@ -360,10 +362,14 @@ subroutine godunov (self)
   !-----------------------------------------------------------------------------
   integer::i0,j0,k0,i,j,k,idim,ivar,li(3),ui(3)
   integer,save:: itimer=0
-  associate (unew=>self%unew, uin=>self%uin, fl=>self%fl)
+  real, contiguous, dimension(:,:,:,:)  , pointer:: uin, unew
+  real, contiguous, dimension(:,:,:,:,:), pointer:: fl
   !-----------------------------------------------------------------------------
   ! Compute flux using second-order Godunov method
   !-----------------------------------------------------------------------------
+  unew => self%unew
+  uin  => self%uin
+  fl   => self%fl
   if (.not.detailed_timer) call trace%begin ('hd_t%godunov')
   li = self%mesh%li
   ui = self%mesh%ui
@@ -396,7 +402,6 @@ subroutine godunov (self)
   else
     call trace%end
   end if
-  end associate
 end subroutine godunov
 
 !===============================================================================
@@ -495,9 +500,13 @@ subroutine ctoprim (self)
   real(dp):: smallp, dtxhalf
   integer,save:: itimer=0
   integer:: l(3), u(3)
-  real, dimension(:,:,:), pointer:: d, e, pg
-  associate (uin=>self%uin, q=>self%q, c=>self%c, s=>self%s)
+  real, contiguous, dimension(:,:,:)  , pointer:: d, e, pg, c, s
+  real, contiguous, dimension(:,:,:,:), pointer:: uin, q
   !-----------------------------------------------------------------------------
+  uin => self%uin
+  q   => self%q
+  c   => self%c
+  s   => self%s
   if (detailed_timer) then
     call trace%begin ('hd_mod::ctoprim', itimer=itimer)
   else
@@ -542,7 +551,6 @@ subroutine ctoprim (self)
   else
     call trace%end
   end if
-  end associate
 end subroutine ctoprim
 
 !===============================================================================
@@ -558,9 +566,12 @@ subroutine uslope(self)
   real(dp)::dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm,dfrrm
   real(dp)::dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr,dfrrr
   real(dp)::vmin,vmax,dfx,dfy,dfz,dff,idff,xslope_type
+  real, dimension(:,:,:,:)  , pointer, contiguous:: q
+  real, dimension(:,:,:,:,:), pointer, contiguous:: dq
   integer,save:: itimer=0
-  associate (q=>self%q, dq=>self%dq)
   !-----------------------------------------------------------------------------
+  q  => self%q
+  dq => self%dq
   if (detailed_timer) then
     call trace%begin ('hd_mod::uslope', itimer=itimer)
   else
@@ -574,6 +585,8 @@ subroutine uslope(self)
     do n = 1, self%nv
       do k = l(3),u(3)
         do j = l(2),u(2)
+          !dir$ ivdep
+          !$omp simd
           do i = l(1),u(1)
             dq(i,j,k,n,1) = half*(q(i+1,j,k,n) - q(i-1,j,k,n))
             dq(i,j,k,n,2) = half*(q(i,j+1,k,n) - q(i,j-1,k,n))
@@ -594,6 +607,8 @@ subroutine uslope(self)
     do n = 1, self%nv
       do k = l(3),u(3)
         do j = l(2),u(2)
+          !dir$ ivdep
+          !$omp simd
           do i = l(1),u(1)
             ! slopes in first coordinate direction
             dlft = q(i  ,j,k,n) - q(i-1,j,k,n)
@@ -617,6 +632,8 @@ subroutine uslope(self)
     do n = 1, self%nv
       do k = l(3),u(3)
         do j = l(2),u(2)
+          !dir$ ivdep
+          !$omp simd private(dlft,drgt,dsgn,slop,dlim)
           do i = l(1),u(1)
             ! slopes in first coordinate direction
             dlft = c1*(q(i  ,j,k,n) - q(i-1,j,k,n))
@@ -626,8 +643,6 @@ subroutine uslope(self)
             slop = min(abs(dlft),abs(drgt))
             dlim = merge(zero,slop,(dlft*drgt)<=zero)
             dq(i,j,k,n,1) = dsgn*min(dlim,abs(dcen))
-!          end do
-!          do i = l(1),u(1)
             ! slopes in second coordinate direction
             dlft = c1*(q(i,j  ,k,n) - q(i,j-1,k,n))
             drgt = c1*(q(i,j+1,k,n) - q(i,j  ,k,n))
@@ -636,8 +651,6 @@ subroutine uslope(self)
             slop = min(abs(dlft),abs(drgt))
             dlim = merge(zero,slop,(dlft*drgt)<=zero)
             dq(i,j,k,n,2) = dsgn*min(dlim,abs(dcen))
-!          end do
-!          do i = l(1),u(1)
             ! slopes in third coordinate direction
             dlft = c1*(q(i,j,k  ,n) - q(i,j,k-1,n))
             drgt = c1*(q(i,j,k+1,n) - q(i,j,k  ,n))
@@ -655,6 +668,11 @@ subroutine uslope(self)
     do n = 1, self%nv
       do k = l(3),u(3)
         do j = l(2),u(2)
+          !dir$ ivdep
+          !$omp simd private(dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml, &
+          !$omp    & dfrrl,dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm, &
+          !$omp    & dfrrm,dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr, &
+          !$omp    & dfrrr,vmin,vmax,dfx,dfy,dfz,idff,slop,dlim)
           do i = l(1),u(1)
             dflll = q(i-1,j-1,k-1,n)-q(i,j,k,n)
             dflml = q(i-1,j  ,k-1,n)-q(i,j,k,n)
@@ -724,6 +742,11 @@ subroutine uslope(self)
           block
           real(dp):: adfx(self%nv), adfy(self%nv), adfz(self%nv)
           dlim = 1.0
+          !dir$ ivdep
+          !$omp simd private(dflll,dflml,dflrl,dfmll,dfmml,dfmrl,dfrll,dfrml, &
+          !$omp    & dfrrl,dfllm,dflmm,dflrm,dfmlm,dfmmm,dfmrm,dfrlm,dfrmm, &
+          !$omp    & dfrrm,dfllr,dflmr,dflrr,dfmlr,dfmmr,dfmrr,dfrlr,dfrmr, &
+          !$omp    & dfrrr,vmin,vmax,dfx,dfy,dfz,idff,slop,dlim)
           do n = 1, self%nv
             dflll = q(i-1,j-1,k-1,n)-q(i,j,k,n)
             dflml = q(i-1,j  ,k-1,n)-q(i,j,k,n)
@@ -789,6 +812,8 @@ subroutine uslope(self)
             adfy(n) = dfy
             adfz(n) = dfz
           end do
+          !dir$ ivdep
+          !$omp simd
           do n = 1, self%nv
             ! use saved fluxes, with common dlim
             dq(i,j,k,n,1) = dlim*adfx(n)
@@ -808,7 +833,6 @@ subroutine uslope(self)
   else
     call trace%end
   end if
-  end associate
 end subroutine uslope
 
 !===============================================================================
@@ -825,9 +849,14 @@ subroutine trace3d(self)
   real(dp)::drz, duz, dvz, dwz, dpz, daz
   real(dp)::sr0, su0, sv0, sw0, sp0, sa0
   real(dp)::ff(self%gn(1),3)
+  real(dp), dimension(:,:,:,:)  , pointer, contiguous:: q
+  real(dp), dimension(:,:,:,:,:), pointer, contiguous:: qp, qm, dq
   integer,save:: itimer=0
-  associate (q=>self%q, dq=>self%dq, qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
+  q  => self%q
+  dq => self%dq
+  qp => self%qp
+  qm => self%qm
   if (detailed_timer) then
     call trace%begin ('hd_mod::trace3d', itimer=itimer)
   else
@@ -850,6 +879,8 @@ subroutine trace3d(self)
       else
           ff(:,:) = 0.0_dp
       end if
+      !dir$ ivdep
+      !$omp simd
       do i = lb(1),ub(1)
         ! Cell centered values
         r   =  q(i,j,k,ir)
@@ -939,7 +970,6 @@ subroutine trace3d(self)
   else
     call trace%end
   end if
-  end associate
 end subroutine trace3d
 
 !===============================================================================
@@ -953,8 +983,11 @@ subroutine cmpflxm(self)
   real(dp):: dtds(3)
   logical:: error
   integer,save:: itimer=0
-  associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
+  real(dp), dimension(:,:,:,:,:), pointer, contiguous:: qp, qm, fl
   !-----------------------------------------------------------------------------
+  qp => self%qp
+  qm => self%qm
+  fl => self%fl
   if (detailed_timer) then
     call trace%begin ('hd_mod::cmpflxm', itimer=itimer)
   else
@@ -1036,7 +1069,6 @@ subroutine cmpflxm(self)
       end do
     end do
   end if
-  end associate
   if (detailed_timer) then
     call trace%end (itimer)
   else
@@ -1046,7 +1078,6 @@ contains
   subroutine cmpflxm_y
   ! local variables
   real(dp), dimension(self%mesh(2)%gn,self%nv):: qleft, qright, fgdnv
-  associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   !-----------------------------------------------------------------------------
   dtds = self%dtime/self%mesh%d       ! needed here
@@ -1071,14 +1102,12 @@ contains
       fl(i,:,k,self%idx%pz,2) = fgdnv(:,5)*dtds(2)
     end do
   end do
-  end associate
   end subroutine cmpflxm_y
   !-----------------------------------------------------------------------------
   !-----------------------------------------------------------------------------
   subroutine cmpflxm_z
   ! local variables
   real(dp), dimension(self%mesh(3)%gn,self%nv):: qleft, qright, fgdnv
-  associate (qp=>self%qp, qm=>self%qm, fl=>self%fl)
   !-----------------------------------------------------------------------------
   dtds = self%dtime/self%mesh%d       ! needed here
   lb = self%mesh%li
@@ -1102,7 +1131,6 @@ contains
       fl(i,j,:,self%idx%py,3) = fgdnv(:,5)*dtds(3)
     end do
   end do
-  end associate
   end subroutine cmpflxm_z
   !-----------------------------------------------------------------------------
   !-----------------------------------------------------------------------------
@@ -1175,26 +1203,26 @@ end subroutine solver
 FUNCTION gas_pressure (self) RESULT (pg)
   class(hd_t):: self
   real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  real, dimension(:,:,:), pointer, contiguous:: d, px, py, pz, e
   !-----------------------------------------------------------------------------
-  associate (d  => self%mem(:,:,:,self%idx%d ,self%it,1), &
-             px => self%mem(:,:,:,self%idx%px,self%it,1), &
-             py => self%mem(:,:,:,self%idx%py,self%it,1), &
-             pz => self%mem(:,:,:,self%idx%pz,self%it,1), &
-             e  => self%mem(:,:,:,self%idx%e ,self%it,1))
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  px => self%mem(:,:,:,self%idx%px,self%it,1)
+  py => self%mem(:,:,:,self%idx%py,self%it,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
   if (isothermal) then
     pg = d*self%csound**2
   else
     pg = (gamma-1d0)*(e-0.5*((px**2+py**2+pz**2)/d))
   end if
-  end associate
 END FUNCTION gas_pressure
 
 !===============================================================================
 !===============================================================================
 SUBROUTINE gravitational_force (self)
   class(hd_t):: self
-  real, dimension(:,:,:), pointer:: phi, d, et, gradphi1, gradphi2, gradphi3
-  real, dimension(:,:,:,:), pointer:: p
+  real, contiguous, dimension(:,:,:), pointer:: phi, d, et, gradphi1, gradphi2, gradphi3
+  real, contiguous, dimension(:,:,:,:), pointer:: p
   integer:: i,j,k
   real, dimension(3):: wtp1, wtm1
   real:: etemp
