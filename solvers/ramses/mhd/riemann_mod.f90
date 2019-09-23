@@ -312,40 +312,42 @@ SUBROUTINE hlld_vec (qleft, qright, fgdnv, n, detailed_timer)
   end if
   !
   ! Enforce continuity of normal component
-  A=half*(qleft(:,4)+qright(:,4))
-  sgnm=sign(one,A)
-  qleft(:,4)=A; qright(:,4)=A
-  !
-#ifdef KROME
-  ! Left and right adiabatic indexes
-  gammal=>qleft(:,ichem); gammar=>qright(:,ichem)
-#endif
-  !
-  ! Left variables
   rl=>qleft(:,1); Pl=>qleft(:,2); ul=>qleft(:,3)
   vl=>qleft(:,5); Bl=>qleft(:,6); wl=>qleft(:,7); Cl=>qleft(:,8)
-  ecinl = half*(ul*ul+vl*vl+wl*wl)*rl
-  emagl = half*(A*A+Bl*Bl+Cl*Cl)
-#ifdef KROME
-  etotl = Pl/(merge(gammal,gamma,chemistry)-one)+ecinl+emagl
-#else
-  etotl = Pl*entho+ecinl+emagl
-#endif
-  Ptotl = Pl + emagl
-  vdotBl= ul*A+vl*Bl+wl*cl
-  !
-  ! Right variables
   rr=>qright(:,1); Pr=>qright(:,2); ur=>qright(:,3)
   vr=>qright(:,5); Br=>qright(:,6); wr=>qright(:,7); Cr=>qright(:,8)
-  ecinr = half*(ur*ur+vr*vr+wr*wr)*rr
-  emagr = half*(A*A+Br*Br+Cr*Cr)
+  do i=1,n
+    A(i)=half*(qleft(i,4)+qright(i,4))
+    sgnm(i)=sign(one,A(i))
+    qleft(i,4)=A(i); qright(i,4)=A(i)
+    !
 #ifdef KROME
-  etotr = Pr/(merge(gammar,gamma,chemistry)-one)+ecinr+emagr
-#else
-  etotr = Pr*entho+ecinr+emagr
+    ! Left and right adiabatic indexes
+    gammal(i)=>qleft(i,ichem); gammar(i)=>qright(i,ichem)
 #endif
-  Ptotr = Pr + emagr
-  vdotBr= ur*A+vr*Br+wr*Cr
+    !
+    ! Left variables
+    ecinl(i) = half*(ul(i)*ul(i)+vl(i)*vl(i)+wl(i)*wl(i))*rl(i)
+    emagl(i) = half*(A(i)*A(i)+Bl(i)*Bl(i)+Cl(i)*Cl(i))
+#ifdef KROME
+    etotl(i) = Pl(i)/(merge(gammal(i),gamma(i),chemistry)-one)+ecinl(i)+emagl(i)
+#else
+    etotl(i) = Pl(i)*entho+ecinl(i)+emagl(i)
+#endif
+    Ptotl(i) = Pl(i) + emagl(i)
+    vdotBl(i)= ul(i)*A(i)+vl(i)*Bl(i)+wl(i)*cl(i)
+    !
+    ! Right variables
+    ecinr(i) = half*(ur(i)*ur(i)+vr(i)*vr(i)+wr(i)*wr(i))*rr(i)
+    emagr(i) = half*(A(i)*A(i)+Br(i)*Br(i)+Cr(i)*Cr(i))
+#ifdef KROME
+    etotr(i) = Pr(i)/(merge(gammar(i),gamma(i),chemistry)-one)+ecinr(i)+emagr(i)
+#else
+    etotr(i) = Pr(i)*entho+ecinr(i)+emagr(i)
+#endif
+    Ptotr(i) = Pr(i) + emagr(i)
+    vdotBr(i)= ur(i)*A(i)+vr(i)*Br(i)+wr(i)*Cr(i)
+  end do
   !
   ! Find the largest eigenvalues in the normal direction to the interface
   CALL find_speed_fast_vec (qleft , cfastl, n)
