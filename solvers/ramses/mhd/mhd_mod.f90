@@ -2017,6 +2017,8 @@ SUBROUTINE solver (self, qleft, qright, fgdnv, n)
   n1 = size(qleft,1)
   if (self%riemann == 'hlld') then
     call rieman%hlld (qleft, qright, fgdnv, n1, detailed_timer)
+  else if (self%riemann == 'hlld_vec') then
+    call rieman%hlld_vec (qleft, qright, fgdnv, n1, detailed_timer)
   else if (self%riemann == 'llf')then
     call rieman%llf (qleft, qright, fgdnv, n1, detailed_timer)
   else
@@ -2036,6 +2038,8 @@ SUBROUTINE solver_2d (self,qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer)
   logical, optional:: detailed_timer
   !.............................................................................
   if (self%riemann == 'hlld') then
+    call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer=detailed_timer)
+  else if (self%riemann == 'hlld_vec') then
     call rieman%hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer=detailed_timer)
   else if (self%riemann == 'llf')then
     call rieman%llf_2d (qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer=detailed_timer)

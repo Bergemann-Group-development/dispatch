@@ -13,6 +13,7 @@ module riemann_mod
     real:: max_dlogd=10.
   contains
     procedure:: hlld
+    procedure, nopass:: hlld_vec
     procedure, nopass:: hlld_2d
     procedure, nopass:: llf
     procedure, nopass:: llf_2d
@@ -274,9 +275,250 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
 end subroutine hlld
 
 !===============================================================================
+!> HLLD 2-D fluxes
+!===============================================================================
+SUBROUTINE hlld_vec (qleft, qright, fgdnv, n, detailed_timer)
+  IMPLICIT none
+  ! HLLD Riemann solver (Miyoshi & Kusano, 2005, JCP, 208, 315)
+  REAL(dp),DIMENSION(:,:), contiguous, target ::qleft,qright
+  REAL(dp),DIMENSION(:,:), contiguous         ::fgdnv
+  INTEGER:: n
+  LOGICAL:: detailed_timer
+  REAL(dp)::entho
+  REAL(dp),DIMENSION(:), contiguous, pointer ::rl,pl,ul,vl,wl,cl,bl
+  REAL(dp),DIMENSION(:), contiguous, pointer ::rr,pr,ur,vr,wr,cr,br
+  REAL(dp),DIMENSION(n)::SL,SR,SAL,SAR,A,sgnm
+  REAL(dp),DIMENSION(n)::ecinl,emagl,etotl,ptotl,vdotbl,el
+  REAL(dp),DIMENSION(n)::ecinr,emagr,etotr,ptotr,vdotbr,er
+  REAL(dp),DIMENSION(n)::cfastl,calfvenl,rcl,rstarl,vstarl,wstarl,bstarl,cstarl,vdotbstarl
+  REAL(dp),DIMENSION(n)::cfastr,calfvenr,rcr,rstarr,vstarr,wstarr,bstarr,cstarr,vdotbstarr
+  REAL(dp),DIMENSION(n)::sqrrstarl,etotstarl,etotstarstarl
+  REAL(dp),DIMENSION(n)::sqrrstarr,etotstarr,etotstarstarr
+  REAL(dp),DIMENSION(n)::ustar,ptotstar,estar,vstarstar,wstarstar,bstarstar,cstarstar,vdotbstarstar
+  REAL(dp),DIMENSION(n)::ro,uo,vo,wo,bo,co,ptoto,etoto,vdotbo
+  REAL(dp),DIMENSION(n)::lim,emago
+  INTEGER:: ivar, i
+  INTEGER, SAVE:: itimer=0
+#ifdef KROME
+  REAL(dp),DIMENSION(n), pointer ::gammal, gammar
+#endif
+  !-----------------------------------------------------------------------------
+  if (detailed_timer) &
+    call timer%begin('riemann_t%hlld_vec',  itimer=itimer)
+  if (gamma==1d0) then
+    entho=1d0
+  else
+    entho = one/(gamma-one)
+  end if
+  !
+  ! Enforce continuity of normal component
+  A=half*(qleft(:,4)+qright(:,4))
+  sgnm=sign(one,A)
+  qleft(:,4)=A; qright(:,4)=A
+  !
+#ifdef KROME
+  ! Left and right adiabatic indexes
+  gammal=>qleft(:,ichem); gammar=>qright(:,ichem)
+#endif
+  !
+  ! Left variables
+  rl=>qleft(:,1); Pl=>qleft(:,2); ul=>qleft(:,3)
+  vl=>qleft(:,5); Bl=>qleft(:,6); wl=>qleft(:,7); Cl=>qleft(:,8)
+  ecinl = half*(ul*ul+vl*vl+wl*wl)*rl
+  emagl = half*(A*A+Bl*Bl+Cl*Cl)
+#ifdef KROME
+  etotl = Pl/(merge(gammal,gamma,chemistry)-one)+ecinl+emagl
+#else
+  etotl = Pl*entho+ecinl+emagl
+#endif
+  Ptotl = Pl + emagl
+  vdotBl= ul*A+vl*Bl+wl*cl
+  !
+  ! Right variables
+  rr=>qright(:,1); Pr=>qright(:,2); ur=>qright(:,3)
+  vr=>qright(:,5); Br=>qright(:,6); wr=>qright(:,7); Cr=>qright(:,8)
+  ecinr = half*(ur*ur+vr*vr+wr*wr)*rr
+  emagr = half*(A*A+Br*Br+Cr*Cr)
+#ifdef KROME
+  etotr = Pr/(merge(gammar,gamma,chemistry)-one)+ecinr+emagr
+#else
+  etotr = Pr*entho+ecinr+emagr
+#endif
+  Ptotr = Pr + emagr
+  vdotBr= ur*A+vr*Br+wr*Cr
+  !
+  ! Find the largest eigenvalues in the normal direction to the interface
+  CALL find_speed_fast_vec (qleft , cfastl, n)
+  CALL find_speed_fast_vec (qright, cfastr, n)
+  !
+  ! Compute HLL wave speed
+  SL=min(ul,ur)-max(cfastl,cfastr)
+  SR=max(ul,ur)+max(cfastl,cfastr)
+  !
+  if (cmax2 > 0) then
+    lim = max(abs(SL),abs(SR)) ! use max speed for current limiter
+    lim = cmax2 / (cmax2 + lim*lim)
+  else
+    lim = 1.0_dp
+  endif
+  !
+!  SL=ul-cfastl
+!  SR=ur+cfastr
+  !
+  ! Compute lagrangian sound speed
+  rcl=rl*(ul-SL)
+  rcr=rr*(SR-ur)
+  !
+  ! Compute acoustic star state
+  ustar   =(rcr*ur   +rcl*ul   +  (Ptotl-Ptotr))/(rcr+rcl)
+  Ptotstar=(rcr*Ptotl+rcl*Ptotr+rcl*rcr*(ul-ur))/(rcr+rcl)
+  !
+  ! Left star region variables
+  rstarl=rl*(SL-ul)/(SL-ustar)
+  estar =rl*(SL-ul)*(SL-ustar)-A**2
+  el    =rl*(SL-ul)*(SL-ul   )-A**2
+  where(abs(estar) < 1d-4*A**2)
+     vstarl=vl
+     Bstarl=Bl
+     wstarl=wl
+     Cstarl=Cl
+  elsewhere
+     vstarl=vl-A*Bl*(ustar-ul)/estar
+     Bstarl=Bl*el/estar
+     wstarl=wl-A*Cl*(ustar-ul)/estar
+     Cstarl=Cl*el/estar
+  endwhere
+  vdotBstarl=ustar*A+vstarl*Bstarl+wstarl*Cstarl
+  etotstarl=((SL-ul)*etotl-Ptotl*ul+Ptotstar*ustar+A*(vdotBl-vdotBstarl))/(SL-ustar)
+  sqrrstarl=sqrt(rstarl)
+  calfvenl=abs(A)/sqrrstarl
+  SAL=ustar-calfvenl
+  !
+  ! Right star region variables
+  rstarr=rr*(SR-ur)/(SR-ustar)
+  estar =rr*(SR-ur)*(SR-ustar)-A**2
+  er    =rr*(SR-ur)*(SR-ur   )-A**2
+  where(abs(estar) < 1d-4*A**2)
+     vstarr=vr
+     Bstarr=Br
+     wstarr=wr
+     Cstarr=Cr
+  elsewhere
+     vstarr=vr-A*Br*(ustar-ur)/estar
+     Bstarr=Br*er/estar
+     wstarr=wr-A*Cr*(ustar-ur)/estar
+     Cstarr=Cr*er/estar
+  endwhere
+  vdotBstarr=ustar*A+vstarr*Bstarr+wstarr*Cstarr
+  etotstarr=((SR-ur)*etotr-Ptotr*ur+Ptotstar*ustar+A*(vdotBr-vdotBstarr))/(SR-ustar)
+  sqrrstarr=sqrt(rstarr)
+  calfvenr=abs(A)/sqrrstarr
+  SAR=ustar+calfvenr
+  !
+  ! Double star region variables
+  vstarstar=(sqrrstarl*vstarl+sqrrstarr*vstarr+sgnm*(Bstarr-Bstarl))/(sqrrstarl+sqrrstarr)
+  wstarstar=(sqrrstarl*wstarl+sqrrstarr*wstarr+sgnm*(Cstarr-Cstarl))/(sqrrstarl+sqrrstarr)
+  Bstarstar=(sqrrstarl*Bstarr+sqrrstarr*Bstarl+sgnm*sqrrstarl*sqrrstarr*(vstarr-vstarl))/(sqrrstarl+sqrrstarr)
+  Cstarstar=(sqrrstarl*Cstarr+sqrrstarr*Cstarl+sgnm*sqrrstarl*sqrrstarr*(wstarr-wstarl))/(sqrrstarl+sqrrstarr)
+  vdotBstarstar=ustar*A+vstarstar*Bstarstar+wstarstar*Cstarstar
+  etotstarstarl=etotstarl-sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)
+  etotstarstarr=etotstarr+sgnm*sqrrstarr*(vdotBstarr-vdotBstarstar)
+  !
+  ! Sample the solution at x/t=0
+  do i=1,n
+    if(SL(i)>zero)then
+       ro(i)=rl(i)
+       uo(i)=ul(i)
+       vo(i)=vl(i)
+       wo(i)=wl(i)
+       Bo(i)=Bl(i)
+       Co(i)=Cl(i)
+       Ptoto(i)=Ptotl(i)
+       etoto(i)=etotl(i)
+       vdotBo(i)=vdotBl(i)
+    else if(SAL(i)>zero)then
+       ro(i)=rstarl(i)
+       uo(i)=ustar(i)
+       vo(i)=vstarl(i)
+       wo(i)=wstarl(i)
+       Bo(i)=Bstarl(i)
+       Co(i)=Cstarl(i)
+       Ptoto(i)=Ptotstar(i)
+       etoto(i)=etotstarl(i)
+       vdotBo(i)=vdotBstarl(i)
+    else if(ustar(i)>zero)then
+       ro(i)=rstarl(i)
+       uo(i)=ustar(i)
+       vo(i)=vstarstar(i)
+       wo(i)=wstarstar(i)
+       Bo(i)=Bstarstar(i)
+       Co(i)=Cstarstar(i)
+       Ptoto(i)=Ptotstar(i)
+       etoto(i)=etotstarstarl(i)
+       vdotBo(i)=vdotBstarstar(i)
+    else if(SAR(i)>zero)then
+       ro(i)=rstarr(i)
+       uo(i)=ustar(i)
+       vo(i)=vstarstar(i)
+       wo(i)=wstarstar(i)
+       Bo(i)=Bstarstar(i)
+       Co(i)=Cstarstar(i)
+       Ptoto(i)=Ptotstar(i)
+       etoto(i)=etotstarstarr(i)
+       vdotBo(i)=vdotBstarstar(i)
+    else if (SR(i)>zero)then
+       ro(i)=rstarr(i)
+       uo(i)=ustar(i)
+       vo(i)=vstarr(i)
+       wo(i)=wstarr(i)
+       Bo(i)=Bstarr(i)
+       Co(i)=Cstarr(i)
+       Ptoto(i)=Ptotstar(i)
+       etoto(i)=etotstarr(i)
+       vdotBo(i)=vdotBstarr(i)
+    else
+       ro(i)=rr(i)
+       uo(i)=ur(i)
+       vo(i)=vr(i)
+       wo(i)=wr(i)
+       Bo(i)=Br(i)
+       Co(i)=Cr(i)
+       Ptoto(i)=Ptotr(i)
+       etoto(i)=etotr(i)
+       vdotBo(i)=vdotBr(i)
+    end if
+  end do
+  !
+  emago=half*(A*A+Bo*Bo+Co*Co)
+  !
+  ! Compute the Godunov flux
+  fgdnv(:,1) = ro*uo
+  fgdnv(:,2) = (etoto+Ptoto)*uo-A*vdotBo
+  fgdnv(:,3) = ro*uo*uo+Ptoto+emago*(lim-1.0_dp)-A*A*lim
+  fgdnv(:,4) = zero
+  fgdnv(:,5) = ro*uo*vo-A*Bo*lim
+  fgdnv(:,6) = Bo*uo-A*vo
+  fgdnv(:,7) = ro*uo*wo-A*Co*lim
+  fgdnv(:,8) = Co*uo-A*wo
+  do ivar = 9,nvar
+     where(fgdnv(:,1)>0)
+        fgdnv(:,ivar) = fgdnv(:,1)*qleft (:,ivar)
+     elsewhere
+        fgdnv(:,ivar) = fgdnv(:,1)*qright(:,ivar)
+     endwhere
+  end do
+#ifdef KROME
+  fgdnv(:,ichem) = 0.0_dp
+#endif
+  if (detailed_timer) &
+    call timer%end (itimer)
+END SUBROUTINE hlld_vec
+
+!===============================================================================
 !> HLLD 2D fluxes
 !===============================================================================
 SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
+  IMPLICIT none
   INTEGER, INTENT(IN) :: j,k,l0,l1,nvar,xdim
   REAL(dp), DIMENSION(:,:),INTENT(IN)::qLL,qRL,qLR,qRR
   REAL(dp), DIMENSION(:,:,:):: emf
@@ -925,5 +1167,31 @@ SUBROUTINE find_speed_info (qvar, vel_info)
   cf = sqrt( d2 + sqrt(d2**2-c2*A*A/d) )
   vel_info = cf+abs(u)
 END SUBROUTINE find_speed_info
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE find_speed_fast_vec (qvar, vel_info, n)
+  !! calculate the fast magnetosonic velocity
+  !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal,
+  !! Vtransverse1,Btransverse1,Vtransverse2,Btransverse2
+  IMPLICIT none
+  INTEGER :: n, i ,ib, iv
+  REAL(dp),DIMENSION(:,:),target:: qvar
+  REAL(dp),DIMENSION(:), pointer:: d, P, u, v, w, A, B, C
+  REAL(dp),DIMENSION(n):: vel_info
+  REAL(dp),DIMENSION(n):: B2, c2, d2, cf
+  !-----------------------------------------------------------------------------
+  d=>qvar(:,1); P=>qvar(:,2); u=>qvar(:,3); A=>qvar(:,4)
+  v=>qvar(:,5); B=>qvar(:,6); w=>qvar(:,7); C=>qvar(:,8)
+  B2 = A*A+B*B+C*C
+#ifdef KROME
+  c2 = merge(qvar(:,ichem),gamma,chemistry)*P/d
+#else
+  c2 = gamma*P/d
+#endif
+  d2 = half*(B2/d+c2)
+  cf = sqrt( d2 + sqrt(max(d2*d2-c2*A*A/d,zero)) )
+  vel_info = cf
+END SUBROUTINE find_speed_fast_vec
 
 END MODULE riemann_mod

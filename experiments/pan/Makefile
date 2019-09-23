@@ -2,7 +2,8 @@
 # Option groups
 #OPTS = debug
 #OPTS = full_debug
-OPTS = optimized
+#OPTS = optimized
+OPTS = optimized_diagnostics
 
 # Default target and methods
 #PATCH           = dispatchers
