@@ -23,10 +23,11 @@ contains
 !===============================================================================
 !===============================================================================
 subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
+  IMPLICIT none
   class(riemann_t):: self
   integer:: ngrid
   real(dp),dimension(:,:)::qleft,qright,fgdnv
-  LOGICAL, OPTIONAL:: detailed_timer
+  LOGICAL:: detailed_timer
   REAL(dp)::SL,SR
   REAL(dp)::entho,lim
   REAL(dp)::rl,pl,ul,ecinl,etotl,ptotl,Bl,Cl,wstarl,vtotBl,emagl,SAL,sqrrstarl,vl,wl
@@ -171,7 +172,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     vdotBstarstar=ustar*A+vstarstar*Bstarstar+wstarstar*Cstarstar
     etotstarstarl=etotstarl-sgnm*sqrrstarl*(vdotBstarl-vdotBstarstar)
     etotstarstarr=etotstarr+sgnm*sqrrstarr*(vdotBstarr-vdotBstarstar)
-
+    !
     ! Sample the solution at x/t=0
     if(SL>0d0)then
        icase=1
@@ -291,7 +292,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
   REAL(dp) :: rstarLL,rstarLR,rstarRL,rstarRR,AstarLL,AstarLR,AstarRL,AstarRR,BstarLL,BstarLR,BstarRL,BstarRR
   REAL(dp) :: EstarLLx,EstarLRx,EstarRLx,EstarRRx,EstarLLy,EstarLRy,EstarRLy,EstarRRy,EstarLL,EstarLR,EstarRL,EstarRR
   REAL(dp) :: AstarT,AstarB,BstarR,BstarL
-
+  !
   REAL(dp) :: rLL,rLR,rRL,rRR,pLL,pLR,pRL,pRR,uLL,uLR,uRL,uRR,vLL,vLR,vRL,vRR, &
                        ALL,ALR,ARL,ARR,BLL,BLR,BRL,BRR,CLL,CLR,CRL,CRR
   REAL(dp), DIMENSION(1:nvar) :: qtmp
@@ -307,108 +308,108 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     rLR=qLR(l,1); pLR=qLR(l,2); uLR=qLR(l,3); vLR=qLR(l,4); ALR=qLR(l,6); BLR=qLR(l,7) ; CLR=qLR(l,8)
     rRL=qRL(l,1); pRL=qRL(l,2); uRL=qRL(l,3); vRL=qRL(l,4); ARL=qRL(l,6); BRL=qRL(l,7) ; CRL=qRL(l,8)
     rRR=qRR(l,1); pRR=qRR(l,2); uRR=qRR(l,3); vRR=qRR(l,4); ARR=qRR(l,6); BRR=qRR(l,7) ; CRR=qRR(l,8)
-
+    !
     ! Compute 4 fast magnetosonic velocity relative to x direction
     qtmp(1)=qLL(l,1); qtmp(2)=qLL(l,2); qtmp(7)=qLL(l,5); qtmp(8)=qLL(l,8)
     qtmp(3)=qLL(l,3); qtmp(4)=qLL(l,6); qtmp(5)=qLL(l,4); qtmp(6)=qLL(l,7)
     !call find_speed_fast(qtmp,cfastLLx)
-
+    !
     B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
     d1 = 1./qtmp(1)
     c2 = gamma*qtmp(2)*d1
     d2 = half*(B2*d1+c2)
     cfastLLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
-
+    !
     qtmp(1)=qLR(l,1); qtmp(2)=qLR(l,2); qtmp(7)=qLR(l,5); qtmp(8)=qLR(l,8)
     qtmp(3)=qLR(l,3); qtmp(4)=qLR(l,6); qtmp(5)=qLR(l,4); qtmp(6)=qLR(l,7)
     !call find_speed_fast(qtmp,cfastLRx)
-
+    !
     B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
     d1 = 1./qtmp(1)
     c2 = gamma*qtmp(2)*d1
     d2 = half*(B2*d1+c2)
     cfastLRx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
-
+    !
     qtmp(1)=qRL(l,1); qtmp(2)=qRL(l,2); qtmp(7)=qRL(l,5); qtmp(8)=qRL(l,8)
     qtmp(3)=qRL(l,3); qtmp(4)=qRL(l,6); qtmp(5)=qRL(l,4); qtmp(6)=qRL(l,7)
     !call find_speed_fast(qtmp,cfastRLx)
-
+    !
     B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
     d1 = 1./qtmp(1)
     c2 = gamma*qtmp(2)*d1
     d2 = half*(B2*d1+c2)
 !    print*,'qtmp(4),qtmp(6),qtmp(8)',qtmp(4),qtmp(6),qtmp(8)
     cfastRLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
-
+    !
     qtmp(1)=qRR(l,1); qtmp(2)=qRR(l,2); qtmp(7)=qRR(l,5); qtmp(8)=qRR(l,8)
     qtmp(3)=qRR(l,3); qtmp(4)=qRR(l,6); qtmp(5)=qRR(l,4); qtmp(6)=qRR(l,7)
     qtmp(1)=max(qtmp(1),smallr)
     !call find_speed_fast(qtmp,cfastRRx)
-
+    !
     B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
     d1 = 1./qtmp(1)
     c2 = gamma*qtmp(2)*d1
     d2 = half*(B2*d1+c2)
     cfastRRx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
-
+    !
     ! Compute 4 fast magnetosonic velocity relative to y direction
     qtmp(1)=qLL(l,1); qtmp(2)=qLL(l,2); qtmp(7)=qLL(l,5); qtmp(8)=qLL(l,8)
     qtmp(3)=qLL(l,4); qtmp(4)=qLL(l,7); qtmp(5)=qLL(l,3); qtmp(6)=qLL(l,6)
     !call find_speed_fast(qtmp,cfastLLy)
-
+    !
     B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
     d1 = 1./qtmp(1)
     c2 = gamma*qtmp(2)*d1
     d2 = half*(B2*d1+c2)
     cfastLLy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
-
+    !
     qtmp(1)=qLR(l,1); qtmp(2)=qLR(l,2); qtmp(7)=qLR(l,5); qtmp(8)=qLR(l,8)
     qtmp(3)=qLR(l,4); qtmp(4)=qLR(l,7); qtmp(5)=qLR(l,3); qtmp(6)=qLR(l,6)
     !call find_speed_fast(qtmp,cfastLRy)
-
+    !
     B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
     d1 = 1./qtmp(1)
     c2 = gamma*qtmp(2)*d1
     d2 = half*(B2*d1+c2)
     cfastLRy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
-
+    !
     qtmp(1)=qRL(l,1); qtmp(2)=qRL(l,2); qtmp(7)=qRL(l,5); qtmp(8)=qRL(l,8)
     qtmp(3)=qRL(l,4); qtmp(4)=qRL(l,7); qtmp(5)=qRL(l,3); qtmp(6)=qRL(l,6)
     !call find_speed_fast(qtmp,cfastRLy)
-
+    !
     B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
     d1 = 1./qtmp(1)
     c2 = gamma*qtmp(2)*d1
     d2 = half*(B2*d1+c2)
     cfastRLy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
-
+    !
     qtmp(1)=qRR(l,1); qtmp(2)=qRR(l,2); qtmp(7)=qRR(l,5); qtmp(8)=qRR(l,8)
     qtmp(3)=qRR(l,4); qtmp(4)=qRR(l,7); qtmp(5)=qRR(l,3); qtmp(6)=qRR(l,6)
     !call find_speed_fast(qtmp,cfastRRy)
-
+    !
     B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
     d1 = 1./qtmp(1)
     c2 = gamma*qtmp(2)*d1
     d2 = half*(B2*d1+c2)
     cfastRRy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
-
+    !
     SL=min(uLL,uLR,uRL,uRR)-max(cfastLLx,cfastLRx,cfastRLx,cfastRRx)
     SR=max(uLL,uLR,uRL,uRR)+max(cfastLLx,cfastLRx,cfastRLx,cfastRRx)
     SB=min(vLL,vLR,vRL,vRR)-max(cfastLLy,cfastLRy,cfastRLy,cfastRRy)
     ST=max(vLL,vLR,vRL,vRR)+max(cfastLLy,cfastLRy,cfastRLy,cfastRRy)
     !call trace%end (itimer(1))
-
+    !
     if(SB>0d0)then
        if(SL>0d0)then
           !call trace%begin ('hlld_2d(2)', itimer=itimer(2))
           ELL=uLL*BLL-vLL*ALL
-
+    !
           E=ELL
           !call trace%end (itimer(2))
        else if(SR<0d0)then
           !call trace%begin ('hlld_2d(3)', itimer=itimer(3))
           ERL=uRL*BRL-vRL*ARL
-
+    !
           E=ERL
           !call trace%end (itimer(3))
        else
@@ -417,45 +418,45 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
           PtotLR=pLR+half*(ALR*ALR+BLR*BLR+CLR*CLR)
           PtotRL=pRL+half*(ARL*ARL+BRL*BRL+CRL*CRL)
           PtotRR=pRR+half*(ARR*ARR+BRR*BRR+CRR*CRR)
-
+    !
           rcLLx=rLL*(uLL-SL); rcRLx=rRL*(SR-uRL)
           rcLRx=rLR*(uLR-SL); rcRRx=rRR*(SR-uRR)
           rcLLy=rLL*(vLL-SB); rcLRy=rLR*(ST-vLR)
           rcRLy=rRL*(vRL-SB); rcRRy=rRR*(ST-vRR)
-
+    !
           ustar=(rcLLx*uLL+rcLRx*uLR+rcRLx*uRL+rcRRx*uRR+(PtotLL-PtotRL+PtotLR-PtotRR))/(rcLLx+rcLRx+rcRLx+rcRRx)
           vstar=(rcLLy*vLL+rcLRy*vLR+rcRLy*vRL+rcRRy*vRR+(PtotLL-PtotLR+PtotRL-PtotRR))/(rcLLy+rcLRy+rcRLy+rcRRy)
-
+    !
           rstarLLx=rLL*(SL-uLL)/(SL-ustar)
           rstarLL =rLL*(SL-uLL)/(SL-ustar)*(SB-vLL)/(SB-vstar)
           AstarLL=ALL*(SB-vLL)/(SB-vstar)
-
+    !
           rstarLRx=rLR*(SL-uLR)/(SL-ustar)
           rstarLR =rLR*(SL-uLR)/(SL-ustar)*(ST-vLR)/(ST-vstar)
           AstarLR=ALR*(ST-vLR)/(ST-vstar)
-
+    !
           rstarRLx=rRL*(SR-uRL)/(SR-ustar)
           rstarRL =rRL*(SR-uRL)/(SR-ustar)*(SB-vRL)/(SB-vstar)
           AstarRL=ARL*(SB-vRL)/(SB-vstar)
-
+    !
           rstarRRx=rRR*(SR-uRR)/(SR-ustar)
           rstarRR =rRR*(SR-uRR)/(SR-ustar)*(ST-vRR)/(ST-vstar)
           AstarRR=ARR*(ST-vRR)/(ST-vstar)
-
+    !
           calfvenL=max(abs(ALR)/sqrt(rstarLRx),abs(AstarLR)/sqrt(rstarLR), &
                        abs(ALL)/sqrt(rstarLLx),abs(AstarLL)/sqrt(rstarLL),smallc)
           calfvenR=max(abs(ARR)/sqrt(rstarRRx),abs(AstarRR)/sqrt(rstarRR), &
                        abs(ARL)/sqrt(rstarRLx),abs(AstarRL)/sqrt(rstarRL),smallc)
-
+    !
           SAL=min(ustar-calfvenL,zero)
           SAR=max(ustar+calfvenR,zero)
-
+    !
           BstarLL=BLL*(SL-uLL)/(SL-ustar)
           BstarRL=BRL*(SR-uRL)/(SR-ustar)
-
+    !
           EstarLLx=ustar*BstarLL-vLL*ALL
           EstarRLx=ustar*BstarRL-vRL*ARL
-
+    !
           E=(SAR*EstarLLx-SAL*EstarRLx+SAR*SAL*(BRL-BLL))/(SAR-SAL)
           !call trace%end (itimer(4))
        endif
@@ -463,13 +464,13 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
        if(SL>0d0)then
           !call trace%begin ('hlld_2d(5)', itimer=itimer(5))
           ELR=uLR*BLR-vLR*ALR
-
+    !
           E=ELR
           !call trace%end (itimer(5))
        else if(SR<0d0)then
           !call trace%begin ('hlld_2d(6)', itimer=itimer(6))
           ERR=uRR*BRR-vRR*ARR
-
+    !
           E=ERR
           !call trace%end (itimer(6))
        else
@@ -478,45 +479,45 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
           PtotLR=pLR+half*(ALR*ALR+BLR*BLR+CLR*CLR)
           PtotRL=pRL+half*(ARL*ARL+BRL*BRL+CRL*CRL)
           PtotRR=pRR+half*(ARR*ARR+BRR*BRR+CRR*CRR)
-
+    !
           rcLLx=rLL*(uLL-SL); rcRLx=rRL*(SR-uRL)
           rcLRx=rLR*(uLR-SL); rcRRx=rRR*(SR-uRR)
           rcLLy=rLL*(vLL-SB); rcLRy=rLR*(ST-vLR)
           rcRLy=rRL*(vRL-SB); rcRRy=rRR*(ST-vRR)
-
+    !
           ustar=(rcLLx*uLL+rcLRx*uLR+rcRLx*uRL+rcRRx*uRR+(PtotLL-PtotRL+PtotLR-PtotRR))/(rcLLx+rcLRx+rcRLx+rcRRx)
           vstar=(rcLLy*vLL+rcLRy*vLR+rcRLy*vRL+rcRRy*vRR+(PtotLL-PtotLR+PtotRL-PtotRR))/(rcLLy+rcLRy+rcRLy+rcRRy)
-
+    !
           rstarLLx=rLL*(SL-uLL)/(SL-ustar)
           rstarLL =rLL*(SL-uLL)/(SL-ustar)*(SB-vLL)/(SB-vstar)
           AstarLL=ALL*(SB-vLL)/(SB-vstar)
-
+    !
           rstarLRx=rLR*(SL-uLR)/(SL-ustar)
           rstarLR =rLR*(SL-uLR)/(SL-ustar)*(ST-vLR)/(ST-vstar)
           AstarLR=ALR*(ST-vLR)/(ST-vstar)
-
+    !
           rstarRLx=rRL*(SR-uRL)/(SR-ustar)
           rstarRL =rRL*(SR-uRL)/(SR-ustar)*(SB-vRL)/(SB-vstar)
           AstarRL=ARL*(SB-vRL)/(SB-vstar)
-
+    !
           rstarRRx=rRR*(SR-uRR)/(SR-ustar)
           rstarRR =rRR*(SR-uRR)/(SR-ustar)*(ST-vRR)/(ST-vstar)
           AstarRR=ARR*(ST-vRR)/(ST-vstar)
-
+    !
           calfvenL=max(abs(ALR)/sqrt(rstarLRx),abs(AstarLR)/sqrt(rstarLR), &
                        abs(ALL)/sqrt(rstarLLx),abs(AstarLL)/sqrt(rstarLL),smallc)
           calfvenR=max(abs(ARR)/sqrt(rstarRRx),abs(AstarRR)/sqrt(rstarRR), &
                        abs(ARL)/sqrt(rstarRLx),abs(AstarRL)/sqrt(rstarRL),smallc)
-
+    !
           SAL=min(ustar-calfvenL,zero)
           SAR=max(ustar+calfvenR,zero)
-
+    !
           BstarLR=BLR*(SL-uLR)/(SL-ustar)
           BstarRR=BRR*(SR-uRR)/(SR-ustar)
-
+    !
           EstarLRx=ustar*BstarLR-vLR*ALR
           EstarRRx=ustar*BstarRR-vRR*ARR
-
+    !
           E=(SAR*EstarLRx-SAL*EstarRRx+SAR*SAL*(BRR-BLR))/(SAR-SAL)
           !call trace%end (itimer(7))
        endif
@@ -526,45 +527,45 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
        PtotLR=pLR+half*(ALR*ALR+BLR*BLR+CLR*CLR)
        PtotRL=pRL+half*(ARL*ARL+BRL*BRL+CRL*CRL)
        PtotRR=pRR+half*(ARR*ARR+BRR*BRR+CRR*CRR)
-
+    !
        rcLLx=rLL*(uLL-SL); rcRLx=rRL*(SR-uRL)
        rcLRx=rLR*(uLR-SL); rcRRx=rRR*(SR-uRR)
        rcLLy=rLL*(vLL-SB); rcLRy=rLR*(ST-vLR)
        rcRLy=rRL*(vRL-SB); rcRRy=rRR*(ST-vRR)
-
+    !
        ustar=(rcLLx*uLL+rcLRx*uLR+rcRLx*uRL+rcRRx*uRR+(PtotLL-PtotRL+PtotLR-PtotRR))/(rcLLx+rcLRx+rcRLx+rcRRx)
        vstar=(rcLLy*vLL+rcLRy*vLR+rcRLy*vRL+rcRRy*vRR+(PtotLL-PtotLR+PtotRL-PtotRR))/(rcLLy+rcLRy+rcRLy+rcRRy)
-
+    !
        rstarLLy=rLL*(SB-vLL)/(SB-vstar)
        rstarLL =rLL*(SL-uLL)/(SL-ustar)*(SB-vLL)/(SB-vstar)
        BstarLL=BLL*(SL-uLL)/(SL-ustar)
-
+    !
        rstarLRy=rLR*(ST-vLR)/(ST-vstar)
        rstarLR =rLR*(SL-uLR)/(SL-ustar)*(ST-vLR)/(ST-vstar)
        BstarLR=BLR*(SL-uLR)/(SL-ustar)
-
+    !
        rstarRLy=rRL*(SB-vRL)/(SB-vstar)
        rstarRL =rRL*(SR-uRL)/(SR-ustar)*(SB-vRL)/(SB-vstar)
        BstarRL=BRL*(SR-uRL)/(SR-ustar)
-
+    !
        rstarRRy=rRR*(ST-vRR)/(ST-vstar)
        rstarRR =rRR*(SR-uRR)/(SR-ustar)*(ST-vRR)/(ST-vstar)
        BstarRR=BRR*(SR-uRR)/(SR-ustar)
-
+    !
        calfvenB=max(abs(BLL)/sqrt(rstarLLy),abs(BstarLL)/sqrt(rstarLL), &
                     abs(BRL)/sqrt(rstarRLy),abs(BstarRL)/sqrt(rstarRL),smallc)
        calfvenT=max(abs(BLR)/sqrt(rstarLRy),abs(BstarLR)/sqrt(rstarLR), &
                     abs(BRR)/sqrt(rstarRRy),abs(BstarRR)/sqrt(rstarRR),smallc)
-
+    !
        SAB=min(vstar-calfvenB,zero)
        SAT=max(vstar+calfvenT,zero)
-
+    !
        AstarLL=ALL*(SB-vLL)/(SB-vstar)
        AstarLR=ALR*(ST-vLR)/(ST-vstar)
-
+    !
        EstarLLy=uLL*BLL-vstar*AstarLL
        EstarLRy=uLR*BLR-vstar*AstarLR
-
+    !
        E=(SAT*EstarLLy-SAB*EstarLRy-SAT*SAB*(ALR-ALL))/(SAT-SAB)
        !call trace%end (itimer(8))
     else if(SR<0d0)then
@@ -573,45 +574,45 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
        PtotLR=pLR+half*(ALR*ALR+BLR*BLR+CLR*CLR)
        PtotRL=pRL+half*(ARL*ARL+BRL*BRL+CRL*CRL)
        PtotRR=pRR+half*(ARR*ARR+BRR*BRR+CRR*CRR)
-
+    !
        rcLLx=rLL*(uLL-SL); rcRLx=rRL*(SR-uRL)
        rcLRx=rLR*(uLR-SL); rcRRx=rRR*(SR-uRR)
        rcLLy=rLL*(vLL-SB); rcLRy=rLR*(ST-vLR)
        rcRLy=rRL*(vRL-SB); rcRRy=rRR*(ST-vRR)
-
+    !
        ustar=(rcLLx*uLL+rcLRx*uLR+rcRLx*uRL+rcRRx*uRR+(PtotLL-PtotRL+PtotLR-PtotRR))/(rcLLx+rcLRx+rcRLx+rcRRx)
        vstar=(rcLLy*vLL+rcLRy*vLR+rcRLy*vRL+rcRRy*vRR+(PtotLL-PtotLR+PtotRL-PtotRR))/(rcLLy+rcLRy+rcRLy+rcRRy)
-
+    !
        rstarLLy=rLL*(SB-vLL)/(SB-vstar)
        rstarLL =rLL*(SL-uLL)/(SL-ustar)*(SB-vLL)/(SB-vstar)
        BstarLL=BLL*(SL-uLL)/(SL-ustar)
-
+    !
        rstarLRy=rLR*(ST-vLR)/(ST-vstar)
        rstarLR =rLR*(SL-uLR)/(SL-ustar)*(ST-vLR)/(ST-vstar)
        BstarLR=BLR*(SL-uLR)/(SL-ustar)
-
+    !
        rstarRLy=rRL*(SB-vRL)/(SB-vstar)
        rstarRL =rRL*(SR-uRL)/(SR-ustar)*(SB-vRL)/(SB-vstar)
        BstarRL=BRL*(SR-uRL)/(SR-ustar)
-
+    !
        rstarRRy=rRR*(ST-vRR)/(ST-vstar)
        rstarRR =rRR*(SR-uRR)/(SR-ustar)*(ST-vRR)/(ST-vstar)
        BstarRR=BRR*(SR-uRR)/(SR-ustar)
-
+    !
        calfvenB=max(abs(BLL)/sqrt(rstarLLy),abs(BstarLL)/sqrt(rstarLL), &
                     abs(BRL)/sqrt(rstarRLy),abs(BstarRL)/sqrt(rstarRL),smallc)
        calfvenT=max(abs(BLR)/sqrt(rstarLRy),abs(BstarLR)/sqrt(rstarLR), &
                     abs(BRR)/sqrt(rstarRRy),abs(BstarRR)/sqrt(rstarRR),smallc)
-
+    !
        SAB=min(vstar-calfvenB,zero)
        SAT=max(vstar+calfvenT,zero)
-
+    !
        AstarRL=ARL*(SB-vRL)/(SB-vstar)
        AstarRR=ARR*(ST-vRR)/(ST-vstar)
-
+    !
        EstarRLy=uRL*BRL-vstar*AstarRL
        EstarRRy=uRR*BRR-vstar*AstarRR
-
+    !
        E=(SAT*EstarRLy-SAB*EstarRRy-SAT*SAB*(ARR-ARL))/(SAT-SAB)
        !call trace%end (itimer(9))
     else
@@ -620,31 +621,31 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
        PtotLR=pLR+half*(ALR*ALR+BLR*BLR+CLR*CLR)
        PtotRL=pRL+half*(ARL*ARL+BRL*BRL+CRL*CRL)
        PtotRR=pRR+half*(ARR*ARR+BRR*BRR+CRR*CRR)
-
+    !
        rcLLx=rLL*(uLL-SL); rcRLx=rRL*(SR-uRL)
        rcLRx=rLR*(uLR-SL); rcRRx=rRR*(SR-uRR)
        rcLLy=rLL*(vLL-SB); rcLRy=rLR*(ST-vLR)
        rcRLy=rRL*(vRL-SB); rcRRy=rRR*(ST-vRR)
-
+    !
        ustar=(rcLLx*uLL+rcLRx*uLR+rcRLx*uRL+rcRRx*uRR+(PtotLL-PtotRL+PtotLR-PtotRR))/(rcLLx+rcLRx+rcRLx+rcRRx)
        vstar=(rcLLy*vLL+rcLRy*vLR+rcRLy*vRL+rcRRy*vRR+(PtotLL-PtotLR+PtotRL-PtotRR))/(rcLLy+rcLRy+rcRLy+rcRRy)
-
+    !
        rstarLLx=rLL*(SL-uLL)/(SL-ustar); BstarLL=BLL*(SL-uLL)/(SL-ustar)
        rstarLLy=rLL*(SB-vLL)/(SB-vstar); AstarLL=ALL*(SB-vLL)/(SB-vstar)
        rstarLL =rLL*(SL-uLL)/(SL-ustar)*(SB-vLL)/(SB-vstar)
-
+    !
        rstarLRx=rLR*(SL-uLR)/(SL-ustar); BstarLR=BLR*(SL-uLR)/(SL-ustar)
        rstarLRy=rLR*(ST-vLR)/(ST-vstar); AstarLR=ALR*(ST-vLR)/(ST-vstar)
        rstarLR =rLR*(SL-uLR)/(SL-ustar)*(ST-vLR)/(ST-vstar)
-
+    !
        rstarRLx=rRL*(SR-uRL)/(SR-ustar); BstarRL=BRL*(SR-uRL)/(SR-ustar)
        rstarRLy=rRL*(SB-vRL)/(SB-vstar); AstarRL=ARL*(SB-vRL)/(SB-vstar)
        rstarRL =rRL*(SR-uRL)/(SR-ustar)*(SB-vRL)/(SB-vstar)
-
+    !
        rstarRRx=rRR*(SR-uRR)/(SR-ustar); BstarRR=BRR*(SR-uRR)/(SR-ustar)
        rstarRRy=rRR*(ST-vRR)/(ST-vstar); AstarRR=ARR*(ST-vRR)/(ST-vstar)
        rstarRR =rRR*(SR-uRR)/(SR-ustar)*(ST-vRR)/(ST-vstar)
-
+    !
        calfvenL=max(abs(ALR)/sqrt(rstarLRx),abs(AstarLR)/sqrt(rstarLR), &
                     abs(ALL)/sqrt(rstarLLx),abs(AstarLL)/sqrt(rstarLL),smallc)
        calfvenR=max(abs(ARR)/sqrt(rstarRRx),abs(AstarRR)/sqrt(rstarRR), &
@@ -661,10 +662,10 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
        EstarRL =ustar*BstarRL-vstar*AstarRL
        EstarLR =ustar*BstarLR-vstar*AstarLR
        EstarRR =ustar*BstarRR-vstar*AstarRR
-
+    !
        AstarT=(SAR*AstarRR-SAL*AstarLR)/(SAR-SAL); AstarB=(SAR*AstarRL-SAL*AstarLL)/(SAR-SAL)
        BstarR=(SAT*BstarRR-SAB*BstarRL)/(SAT-SAB); BstarL=(SAT*BstarLR-SAB*BstarLL)/(SAT-SAB)
-
+    !
        E=(SAL*SAB*EstarRR-SAL*SAT*EstarRL-SAR*SAB*EstarLR+SAR*SAT*EstarLL)/(SAR-SAL)/(SAT-SAB) &
             & -SAT*SAB/(SAT-SAB)*(AstarT-AstarB)+SAR*SAL/(SAR-SAL)*(BstarR-BstarL)
        !call trace%end (itimer(10))
@@ -685,6 +686,7 @@ END SUBROUTINE hlld_2d
 !> LLF 2D fluxes
 !===============================================================================
 SUBROUTINE llf_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
+  IMPLICIT none
   INTEGER, INTENT(IN) :: j,k,l0,l1,nvar,xdim
   REAL(dp), DIMENSION(:,:),INTENT(IN)::qLL,qRL,qLR,qRR
   REAL(dp), DIMENSION(:,:,:):: emf
@@ -792,9 +794,10 @@ END SUBROUTINE llf_2d
 !> LLF
 !===============================================================================
 SUBROUTINE llf (qleft, qright, fgdnv, ngrid,  detailed_timer)
+  IMPLICIT none
   real(DP), dimension(:,:):: qleft, qright, fgdnv
   integer:: ngrid, l
-  logical, optional:: detailed_timer
+  logical:: detailed_timer
   !-----------------------------------------------------------------------------
   do l=1,ngrid
     call lax_friedrich (qleft(l,:), qright(l,:), fgdnv(l,:))
@@ -805,6 +808,7 @@ END SUBROUTINE llf
 !> 1D local Lax-Friedrich Riemann solver
 !===============================================================================
 SUBROUTINE lax_friedrich (qleft, qright, fgdnv)
+  IMPLICIT none
   REAL(dp), DIMENSION(:):: qleft, qright, fgdnv
   REAL(dp), DIMENSION(size(qleft)):: fleft, fright, fmean
   REAL(dp), DIMENSION(size(qleft)):: uleft ,uright, udiff
@@ -884,6 +888,7 @@ SUBROUTINE find_speed_fast(qvar,vel_info)
   !! calculate the fast magnetosonic velocity
   !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal,
   !! Vtransverse1,Btransverse1,Vtransverse2,Btransverse2
+  IMPLICIT none
   REAL(dp), DIMENSION(:):: qvar
   REAL(dp) :: vel_info
   REAL(dp) :: d,P,u,v,w,A,B,C,B2,c2,d2,cf
@@ -907,7 +912,7 @@ SUBROUTINE find_speed_info (qvar, vel_info)
   !! at the interface
   !! the structure of qvar is : rho, Pressure, Vnormal, Bnormal,
   !! Vtransverse1,Btransverse1,Vtransverse2,Btransverse2
-  IMPLICIT NONE
+  IMPLICIT none
   REAL(dp), DIMENSION(:):: qvar
   REAL(dp):: vel_info
   REAL(dp):: d, P, u, v, w, A, B, C, B2, c2, d2, cf

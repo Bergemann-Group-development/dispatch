@@ -1638,44 +1638,47 @@ END SUBROUTINE trace3d
 !===============================================================================
 !> Compute fluxes
 !===============================================================================
-SUBROUTINE cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
+SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   class(mhd_t):: self
   real(dp), dimension(:,:,:,:):: fl
   integer:: nx, ln, lt1, lt2, bn, bt1, bt2
   ! local variables
   integer:: i, j, k, lb(3), ub(3), xdim, l(3), idim
-  real(dp), dimension(nx,self%nv):: qleft, qright, fgdnv
-  real(dp), dimension(nx):: bn_mean
+  real(dp), dimension(:,:), allocatable:: qleft, qright, fgdnv
   real(dp):: dtds(3)
   integer, save:: itimer=0
-  integer:: n, i0, i1
+  integer:: n, nvar, i0, i1
   associate (qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%cmpflxm', itimer=itimer, detailed_timer=detailed_timer)
   lb = self%mesh%lb+2
   ub = self%mesh%ub-1
+  nvar = self%nv
   xdim = ln-1
   if (verbose>0) print '(a,2(2x,3i4))', 'mhd_t%cmpflxm: lb, ub=', lb, ub
   !
   ! Avoid using spurious values from allocated, but non-defined entries
-  bn_mean=0d0
   !
   if (xdim == 1) then
+    n = ub(1)-lb(1)+1
+    allocate (qleft (n,nvar))
+    allocate (qright(n,nvar))
+    allocate (fgdnv (n,nvar))
     do k = lb(3),ub(3)
       do j = lb(2),ub(2)
         ! Enforce continuity for normal magnetic field
-        n = ub(1)-lb(1)+1
         i0 = lb(1)-2
         i1 = lb(1)-1
         !dir$ simd
         !dir$ ivdep
         do i=1,n
-          bn_mean(i) = half*(qm(i0+i,j,k,bn,xdim)+qp(i1+i,j,k,bn,xdim))
           ! Left state
           qleft (i,1) = qm(i0+i,j,k,1  ,xdim) ! Mass density
           qleft (i,2) = qm(i0+i,j,k,5  ,xdim) ! Pressure
           qleft (i,3) = qm(i0+i,j,k,ln ,xdim) ! Normal velocity
-          qleft (i,4) = bn_mean(i)         ! Normal magnetic field
+          qleft (i,4) = half*( &
+                        qm(i0+i,j,k,bn,xdim)+ &
+                        qp(i1+i,j,k,bn,xdim))
           qleft (i,5) = qm(i0+i,j,k,lt1,xdim) ! Tangential velocity 1
           qleft (i,6) = qm(i0+i,j,k,bt1,xdim) ! Tangential magnetic field 1
           qleft (i,7) = qm(i0+i,j,k,lt2,xdim) ! Tangential velocity 2
@@ -1684,7 +1687,7 @@ SUBROUTINE cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qright(i,1) = qp(i1+i,j,k,1  ,xdim) ! Mass density
           qright(i,2) = qp(i1+i,j,k,5  ,xdim) ! Pressure
           qright(i,3) = qp(i1+i,j,k,ln ,xdim) ! Normal velocity
-          qright(i,4) = bn_mean(i)         ! Normal magnetic field
+          qright(i,4) = qright(i,4)
           qright(i,5) = qp(i1+i,j,k,lt1,xdim) ! Tangential velocity 1
           qright(i,6) = qp(i1+i,j,k,bt1,xdim) ! Tangential magnetic field 1
           qright(i,7) = qp(i1+i,j,k,lt2,xdim) ! Tangential velocity 2
@@ -1706,22 +1709,27 @@ SUBROUTINE cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
         end do
       end do
     end do
+    deallocate (qleft, qright, fgdnv)
   else if (xdim == 2) then
+    n = ub(2)-lb(2)+1
+    allocate (qleft (n,nvar))
+    allocate (qright(n,nvar))
+    allocate (fgdnv (n,nvar))
     do i = lb(1),ub(1)
       do k = lb(3),ub(3)
         ! Enforce continuity for normal magnetic field
-        n = ub(2)-lb(2)+1
         i0 = lb(2)-2
         i1 = lb(2)-1
         !dir$ ivdep
         !dir$ simd
         do j=1,n
-          bn_mean(j) = half*(qm(i,i0+j,k,bn,xdim)+qp(i,i1+j,k,bn,xdim))
           ! Left state
           qleft (j,1) = qm(i,i0+j,k,1  ,xdim) ! Mass density
           qleft (j,2) = qm(i,i0+j,k,5  ,xdim) ! Pressure
           qleft (j,3) = qm(i,i0+j,k,ln ,xdim) ! Normal velocity
-          qleft (j,4) = bn_mean(j)         ! Normal magnetic field
+          qleft (j,4) = half*( &
+                        qm(i,i0+j,k,bn,xdim)+&
+                        qp(i,i1+j,k,bn,xdim))
           qleft (j,5) = qm(i,i0+j,k,lt1,xdim) ! Tangential velocity 1
           qleft (j,6) = qm(i,i0+j,k,bt1,xdim) ! Tangential magnetic field 1
           qleft (j,7) = qm(i,i0+j,k,lt2,xdim) ! Tangential velocity 2
@@ -1730,7 +1738,7 @@ SUBROUTINE cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qright(j,1) = qp(i,i1+j,k,1  ,xdim) ! Mass density
           qright(j,2) = qp(i,i1+j,k,5  ,xdim) ! Pressure
           qright(j,3) = qp(i,i1+j,k,ln ,xdim) ! Normal velocity
-          qright(j,4) = bn_mean(j)         ! Normal magnetic field
+          qright(j,4) = qleft (j,4)
           qright(j,5) = qp(i,i1+j,k,lt1,xdim) ! Tangential velocity 1
           qright(j,6) = qp(i,i1+j,k,bt1,xdim) ! Tangential magnetic field 1
           qright(j,7) = qp(i,i1+j,k,lt2,xdim) ! Tangential velocity 2
@@ -1752,7 +1760,12 @@ SUBROUTINE cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
         end do
       end do
     end do
+    deallocate (qleft, qright, fgdnv)
   else if (xdim == 3) then
+    n = ub(3)-lb(3)+1
+    allocate (qleft (n,nvar))
+    allocate (qright(n,nvar))
+    allocate (fgdnv (n,nvar))
     do j = lb(2),ub(2)
       do i = lb(1),ub(1)
         ! Enforce continuity for normal magnetic field
@@ -1762,12 +1775,13 @@ SUBROUTINE cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
         !dir$ ivdep
         !dir$ simd
         do k=1,n
-          bn_mean(k) = half*(qm(i,j,i0+k,bn,xdim)+qp(i,j,i1+k,bn,xdim))
           ! Left state
           qleft (k,1) = qm(i,j,i0+k,1  ,xdim) ! Mass density
           qleft (k,2) = qm(i,j,i0+k,5  ,xdim) ! Pressure
           qleft (k,3) = qm(i,j,i0+k,ln ,xdim) ! Normal velocity
-          qleft (k,4) = bn_mean(k)         ! Normal magnetic field
+          qleft (k,4) = half*( &
+                        qm(i,j,i0+k,bn,xdim)+ &
+                        qp(i,j,i1+k,bn,xdim))
           qleft (k,5) = qm(i,j,i0+k,lt1,xdim) ! Tangential velocity 1
           qleft (k,6) = qm(i,j,i0+k,bt1,xdim) ! Tangential magnetic field 1
           qleft (k,7) = qm(i,j,i0+k,lt2,xdim) ! Tangential velocity 2
@@ -1776,7 +1790,7 @@ SUBROUTINE cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qright(k,1) = qp(i,j,i1+k,1  ,xdim) ! Mass density
           qright(k,2) = qp(i,j,i1+k,5  ,xdim) ! Pressure
           qright(k,3) = qp(i,j,i1+k,ln ,xdim) ! Normal velocity
-          qright(k,4) = bn_mean(k)         ! Normal magnetic field
+          qright(k,4) = qleft (k,4)
           qright(k,5) = qp(i,j,i1+k,lt1,xdim) ! Tangential velocity 1
           qright(k,6) = qp(i,j,i1+k,bt1,xdim) ! Tangential magnetic field 1
           qright(k,7) = qp(i,j,i1+k,lt2,xdim) ! Tangential velocity 2
@@ -1798,6 +1812,7 @@ SUBROUTINE cmpflxm(self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
         end do
       end do 
     end do
+    deallocate (qleft, qright, fgdnv)
   endif
   !
   end associate
@@ -1994,15 +2009,16 @@ END SUBROUTINE cmp_mag_flx
 !===============================================================================
 !> Selection of 1-D solvers
 !===============================================================================
-SUBROUTINE solver (self, qleft, qright, fgdnv, ub)
+SUBROUTINE solver (self, qleft, qright, fgdnv, n)
   class(mhd_t):: self
   real(dp),dimension(:,:):: qleft,qright,fgdnv
-  integer :: lb, ub
+  integer :: n, n1
   !.............................................................................
+  n1 = size(qleft,1)
   if (self%riemann == 'hlld') then
-    call rieman%hlld (qleft, qright, fgdnv, ub, detailed_timer=detailed_timer)
+    call rieman%hlld (qleft, qright, fgdnv, n1, detailed_timer)
   else if (self%riemann == 'llf')then
-    call rieman%llf (qleft, qright, fgdnv, ub, detailed_timer=detailed_timer)
+    call rieman%llf (qleft, qright, fgdnv, n1, detailed_timer)
   else
     write(*,*)'unknown Riemann solver'
     stop
