@@ -224,7 +224,6 @@ MODULE patch_mod
   integer, save:: print_every=0, iprint=0           ! print cadence
   logical, save:: extrapolate_gz=.false.            ! extrapolate guard zones?
   logical, save:: do_check_nan=.false.              ! check for NaN?
-  logical, save:: panic=.false.                     ! error handling
   logical, save:: zero_order_extrap=.true.          ! extrap to no-mans-land
   public task2patch
 CONTAINS
@@ -1987,10 +1986,12 @@ END FUNCTION fminval8
 !===============================================================================
 !> Check for NaN
 !===============================================================================
-SUBROUTINE check_nan (self, label, always)
+SUBROUTINE check_nan (self, panic, label, always)
   class(patch_t):: self
+  logical:: panic
   character(len=*), optional:: label
   logical, optional:: always
+  !.............................................................................
   integer:: ix, iy, iz, iv, ii(3)
   logical:: nan
   integer, save:: itimer=0
@@ -2068,7 +2069,7 @@ SUBROUTINE check_density (self, label)
   real(kind=KindScalarVar):: mind, posd
   real:: tiny = 1.0e-32
   integer:: ix, iy, iz, iv, ii(3), ntot, nins, l(3), u(3), it, jt, iw
-  logical:: inside, nan
+  logical:: inside, nan, panic
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if ((io%verbose < 2 .or. io%print_time > 0.0 .or. print_every > 1) .and. &
@@ -2080,6 +2081,7 @@ SUBROUTINE check_density (self, label)
   u = self%mesh%ub
   mind = minval(self%mem(l(1):u(1),l(2):u(2),l(3):u(3),self%idx%d,self%it,1))
   if (present(label) .and. io%verbose>1) write (io_unit%log,*) label, self%id, mind
+  panic = .false.
   if (mind <= 0.0) then
     panic = .true.
     !---------------------------------------------------------------------------
@@ -2093,7 +2095,7 @@ SUBROUTINE check_density (self, label)
     do iy=1,self%gn(2)
     do ix=1,self%gn(1)
       ii = [ix,iy,iz]
-      inside = all([ix,iy,iz]>self%mesh%lo.and.ii<self%mesh%uo)
+      inside = all(ii>self%mesh%lo .and. ii<self%mesh%uo)
       posd = merge (posd, max(posd,self%mem(ix,iy,iz,self%idx%d,self%it,1)), inside)
       ntot = ntot + merge(1,0,self%mem(ix,iy,iz,self%idx%d,self%it,1)<=0.0)
       nins = nins + merge(1,0,self%mem(ix,iy,iz,self%idx%d,self%it,1)<=0.0 .and. inside)
@@ -2129,7 +2131,7 @@ SUBROUTINE check_density (self, label)
     if (nins > 0) &
       panic = .true.
   end if
-  call self%check_nan (label)
+  call self%check_nan (panic, label)
   !-----------------------------------------------------------------------------
   ! If error indicated by check_density or check_nan, dump the patch and abort
   !-----------------------------------------------------------------------------
@@ -2145,8 +2147,17 @@ SUBROUTINE check_density (self, label)
     end do
     end do
     !$omp end critical (panic_cr)
-    print *, mpi%rank, 'WARNING: found non-positive density points -- check rank and thread logs'
-    !call io%abort ('found non-positive density points -- check rank and thread logs')
+    if (nins > 0 .or. io%verbose > 0) &
+      print *, mpi%rank, self%id, &
+      'WARNING: found non-positive density points -- check rank and thread logs'
+    if (nins > 0) then
+      write (stderr,*) 'check dump, rank and thread logs for rank', mpi%rank
+      flush (stdout)
+      flush (stderr)
+      flush (io_unit%log)
+      flush (io_unit%dump)
+      call io%abort ('found non-positive internal density points')
+    end if
   end if
   call timer%end (itimer)
 END SUBROUTINE check_density
