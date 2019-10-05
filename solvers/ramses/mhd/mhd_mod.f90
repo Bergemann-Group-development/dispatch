@@ -1651,8 +1651,8 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
   associate (qp=>self%qp, qm=>self%qm)
   !-----------------------------------------------------------------------------
   call trace%begin ('mhd_t%cmpflxm', itimer=itimer, detailed_timer=detailed_timer)
-  lb = self%mesh%lb+2
-  ub = self%mesh%ub-1
+  lb = self%mesh%li
+  ub = self%mesh%uo
   nvar = self%nv
   xdim = ln-1
   if (verbose>0) print '(a,2(2x,3i4))', 'mhd_t%cmpflxm: lb, ub=', lb, ub
@@ -1676,9 +1676,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qleft (i,1) = qm(i0+i,j,k,1  ,xdim) ! Mass density
           qleft (i,2) = qm(i0+i,j,k,5  ,xdim) ! Pressure
           qleft (i,3) = qm(i0+i,j,k,ln ,xdim) ! Normal velocity
-          qleft (i,4) = half*( &
-                        qm(i0+i,j,k,bn,xdim)+ &
-                        qp(i1+i,j,k,bn,xdim))
+          qleft (i,4) = qm(i0+i,j,k,bn ,xdim) ! Normal magnetic field
           qleft (i,5) = qm(i0+i,j,k,lt1,xdim) ! Tangential velocity 1
           qleft (i,6) = qm(i0+i,j,k,bt1,xdim) ! Tangential magnetic field 1
           qleft (i,7) = qm(i0+i,j,k,lt2,xdim) ! Tangential velocity 2
@@ -1687,7 +1685,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qright(i,1) = qp(i1+i,j,k,1  ,xdim) ! Mass density
           qright(i,2) = qp(i1+i,j,k,5  ,xdim) ! Pressure
           qright(i,3) = qp(i1+i,j,k,ln ,xdim) ! Normal velocity
-          qright(i,4) = qright(i,4)
+          qright(i,4) = qp(i1+i,j,k,bn ,xdim) ! Normal magnetic field
           qright(i,5) = qp(i1+i,j,k,lt1,xdim) ! Tangential velocity 1
           qright(i,6) = qp(i1+i,j,k,bt1,xdim) ! Tangential magnetic field 1
           qright(i,7) = qp(i1+i,j,k,lt2,xdim) ! Tangential velocity 2
@@ -1727,9 +1725,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qleft (j,1) = qm(i,i0+j,k,1  ,xdim) ! Mass density
           qleft (j,2) = qm(i,i0+j,k,5  ,xdim) ! Pressure
           qleft (j,3) = qm(i,i0+j,k,ln ,xdim) ! Normal velocity
-          qleft (j,4) = half*( &
-                        qm(i,i0+j,k,bn,xdim)+&
-                        qp(i,i1+j,k,bn,xdim))
+          qleft (j,4) = qm(i,i0+j,k,bn ,xdim) ! Normal magnetic field
           qleft (j,5) = qm(i,i0+j,k,lt1,xdim) ! Tangential velocity 1
           qleft (j,6) = qm(i,i0+j,k,bt1,xdim) ! Tangential magnetic field 1
           qleft (j,7) = qm(i,i0+j,k,lt2,xdim) ! Tangential velocity 2
@@ -1738,7 +1734,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qright(j,1) = qp(i,i1+j,k,1  ,xdim) ! Mass density
           qright(j,2) = qp(i,i1+j,k,5  ,xdim) ! Pressure
           qright(j,3) = qp(i,i1+j,k,ln ,xdim) ! Normal velocity
-          qright(j,4) = qleft (j,4)
+          qright(j,4) = qp(i,i1+j,k,bn ,xdim) ! Normal magnetic field
           qright(j,5) = qp(i,i1+j,k,lt1,xdim) ! Tangential velocity 1
           qright(j,6) = qp(i,i1+j,k,bt1,xdim) ! Tangential magnetic field 1
           qright(j,7) = qp(i,i1+j,k,lt2,xdim) ! Tangential velocity 2
@@ -1779,9 +1775,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qleft (k,1) = qm(i,j,i0+k,1  ,xdim) ! Mass density
           qleft (k,2) = qm(i,j,i0+k,5  ,xdim) ! Pressure
           qleft (k,3) = qm(i,j,i0+k,ln ,xdim) ! Normal velocity
-          qleft (k,4) = half*( &
-                        qm(i,j,i0+k,bn,xdim)+ &
-                        qp(i,j,i1+k,bn,xdim))
+          qleft (k,4) = qm(i,j,i0+k,bn ,xdim) ! Normal magnetic field
           qleft (k,5) = qm(i,j,i0+k,lt1,xdim) ! Tangential velocity 1
           qleft (k,6) = qm(i,j,i0+k,bt1,xdim) ! Tangential magnetic field 1
           qleft (k,7) = qm(i,j,i0+k,lt2,xdim) ! Tangential velocity 2
@@ -1790,7 +1784,7 @@ SUBROUTINE cmpflxm (self, nx, ln, lt1, lt2, bn, bt1, bt2, fl)
           qright(k,1) = qp(i,j,i1+k,1  ,xdim) ! Mass density
           qright(k,2) = qp(i,j,i1+k,5  ,xdim) ! Pressure
           qright(k,3) = qp(i,j,i1+k,ln ,xdim) ! Normal velocity
-          qright(k,4) = qleft (k,4)
+          qright(k,4) = qp(i,j,i1+k,bn ,xdim) ! Normal magnetic field
           qright(k,5) = qp(i,j,i1+k,lt1,xdim) ! Tangential velocity 1
           qright(k,6) = qp(i,j,i1+k,bt1,xdim) ! Tangential magnetic field 1
           qright(k,7) = qp(i,j,i1+k,lt2,xdim) ! Tangential velocity 2
