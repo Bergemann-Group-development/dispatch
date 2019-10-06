@@ -1902,139 +1902,57 @@ SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
     iLB = 0; jLB = 0; kLB = 0
   endif 
   !
-  if (xdim == 1) then
-    do k = self%mesh(3)%li,self%mesh(3)%uo
-      do j = self%mesh(2)%li,self%mesh(2)%uo
-       l = self%mesh(1)%li
-       u = self%mesh(1)%ui
-       !dir$ ivdep
-       !dir$ simd
-       do i = l,u
-        qLL (i,1) = max(qRT(i-iRT, j-jRT, k-kRT, 1, xdim), smallr)
-        qRL (i,1) = max(qLT(i-iLT, j-jLT, k-kLT, 1, xdim), smallr)
-        qLR (i,1) = max(qRB(i-iRB, j-jRB, k-kRB, 1, xdim), smallr)
-        qRR (i,1) = max(qLB(i-iLB, j-jLB, k-kLB, 1, xdim), smallr)
-        qLL (i,2) = max(qRT(i-iRT, j-jRT, k-kRT, 5, xdim), smallp)
-        qRL (i,2) = max(qLT(i-iLT, j-jLT, k-kLT, 5, xdim), smallp)
-        qLR (i,2) = max(qRB(i-iRB, j-jRB, k-kRB, 5, xdim), smallp)
-        qRR (i,2) = max(qLB(i-iLB, j-jLB, k-kLB, 5, xdim), smallp)
-        qLL (i,3) = qRT(i-iRT, j-jRT, k-kRT, lp1, xdim)
-        qRL (i,3) = qLT(i-iLT, j-jLT, k-kLT, lp1, xdim)
-        qLR (i,3) = qRB(i-iRB, j-jRB, k-kRB, lp1, xdim)
-        qRR (i,3) = qLB(i-iLB, j-jLB, k-kLB, lp1, xdim)
-        qLL (i,4) = qRT(i-iRT, j-jRT, k-kRT, lp2, xdim)
-        qRL (i,4) = qLT(i-iLT, j-jLT, k-kLT, lp2, xdim)
-        qLR (i,4) = qRB(i-iRB, j-jRB, k-kRB, lp2, xdim)
-        qRR (i,4) = qLB(i-iLB, j-jLB, k-kLB, lp2, xdim)
-        qLL (i,6) = half*(qRT(i-iRT, j-jRT, k-kRT, bp1, xdim) + qLT(i-iLT, j-jLT, k-kLT, bp1, xdim))
-        qRL (i,6) = half*(qRT(i-iRT, j-jRT, k-kRT, bp1, xdim) + qLT(i-iLT, j-jLT, k-kLT, bp1, xdim))
-        qLR (i,6) = half*(qRB(i-iRB, j-jRB, k-kRB, bp1, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp1, xdim))
-        qRR (i,6) = half*(qRB(i-iRB, j-jRB, k-kRB, bp1, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp1, xdim))
-        qLL (i,7) = half*(qRT(i-iRT, j-jRT, k-kRT, bp2, xdim) + qRB(i-iRB, j-jRB, k-kRB, bp2, xdim))
-        qRL (i,7) = half*(qLT(i-iLT, j-jLT, k-kLT, bp2, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp2, xdim))
-        qLR (i,7) = half*(qRT(i-iRT, j-jRT, k-kRT, bp2, xdim) + qRB(i-iRB, j-jRB, k-kRB, bp2, xdim))
-        qRR (i,7) = half*(qLT(i-iLT, j-jLT, k-kLT, bp2, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp2, xdim))
-        qLL (i,5) = qRT(i-iRT, j-jRT, k-kRT, lor, xdim)
-        qRL (i,5) = qLT(i-iLT, j-jLT, k-kLT, lor, xdim)
-        qLR (i,5) = qRB(i-iRB, j-jRB, k-kRB, lor, xdim)
-        qRR (i,5) = qLB(i-iLB, j-jLB, k-kLB, lor, xdim)
-        qLL (i,8) = qRT(i-iRT, j-jRT, k-kRT, bor, xdim)
-        qRL (i,8) = qLT(i-iLT, j-jLT, k-kLT, bor, xdim)
-        qLR (i,8) = qRB(i-iRB, j-jRB, k-kRB, bor, xdim)
-        qRR (i,8) = qLB(i-iLB, j-jLB, k-kLB, bor, xdim)
-       end do
-       call solver_2d (self,qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer=detailed_timer)
-      end do
-    end do
-  else if (xdim == 2) then
-    do i = self%mesh(1)%li,self%mesh(1)%uo
-      do k = self%mesh(3)%li,self%mesh(3)%uo
-       l = self%mesh(2)%li
-       u = self%mesh(2)%ui
-       !dir$ ivdep
-       !dir$ simd
-       do j = l,u
-        qLL (j,1) = max(qRT(i-iRT, j-jRT, k-kRT, 1, xdim), smallr)
-        qRL (j,1) = max(qLT(i-iLT, j-jLT, k-kLT, 1, xdim), smallr)
-        qLR (j,1) = max(qRB(i-iRB, j-jRB, k-kRB, 1, xdim), smallr)
-        qRR (j,1) = max(qLB(i-iLB, j-jLB, k-kLB, 1, xdim), smallr)
-        qLL (j,2) = max(qRT(i-iRT, j-jRT, k-kRT, 5, xdim), smallp)
-        qRL (j,2) = max(qLT(i-iLT, j-jLT, k-kLT, 5, xdim), smallp)
-        qLR (j,2) = max(qRB(i-iRB, j-jRB, k-kRB, 5, xdim), smallp)
-        qRR (j,2) = max(qLB(i-iLB, j-jLB, k-kLB, 5, xdim), smallp)
-        qLL (j,3) = qRT(i-iRT, j-jRT, k-kRT, lp1, xdim)
-        qRL (j,3) = qLT(i-iLT, j-jLT, k-kLT, lp1, xdim)
-        qLR (j,3) = qRB(i-iRB, j-jRB, k-kRB, lp1, xdim)
-        qRR (j,3) = qLB(i-iLB, j-jLB, k-kLB, lp1, xdim)
-        qLL (j,4) = qRT(i-iRT, j-jRT, k-kRT, lp2, xdim)
-        qRL (j,4) = qLT(i-iLT, j-jLT, k-kLT, lp2, xdim)
-        qLR (j,4) = qRB(i-iRB, j-jRB, k-kRB, lp2, xdim)
-        qRR (j,4) = qLB(i-iLB, j-jLB, k-kLB, lp2, xdim)
-        qLL (j,6) = half*(qRT(i-iRT, j-jRT, k-kRT, bp1, xdim) + qLT(i-iLT, j-jLT, k-kLT, bp1, xdim))
-        qRL (j,6) = half*(qRT(i-iRT, j-jRT, k-kRT, bp1, xdim) + qLT(i-iLT, j-jLT, k-kLT, bp1, xdim))
-        qLR (j,6) = half*(qRB(i-iRB, j-jRB, k-kRB, bp1, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp1, xdim))
-        qRR (j,6) = half*(qRB(i-iRB, j-jRB, k-kRB, bp1, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp1, xdim))
-        qLL (j,7) = half*(qRT(i-iRT, j-jRT, k-kRT, bp2, xdim) + qRB(i-iRB, j-jRB, k-kRB, bp2, xdim))
-        qRL (j,7) = half*(qLT(i-iLT, j-jLT, k-kLT, bp2, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp2, xdim))
-        qLR (j,7) = half*(qRT(i-iRT, j-jRT, k-kRT, bp2, xdim) + qRB(i-iRB, j-jRB, k-kRB, bp2, xdim))
-        qRR (j,7) = half*(qLT(i-iLT, j-jLT, k-kLT, bp2, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp2, xdim))
-        qLL (j,5) = qRT(i-iRT, j-jRT, k-kRT, lor, xdim)
-        qRL (j,5) = qLT(i-iLT, j-jLT, k-kLT, lor, xdim)
-        qLR (j,5) = qRB(i-iRB, j-jRB, k-kRB, lor, xdim)
-        qRR (j,5) = qLB(i-iLB, j-jLB, k-kLB, lor, xdim)
-        qLL (j,8) = qRT(i-iRT, j-jRT, k-kRT, bor, xdim)
-        qRL (j,8) = qLT(i-iLT, j-jLT, k-kLT, bor, xdim)
-        qLR (j,8) = qRB(i-iRB, j-jRB, k-kRB, bor, xdim)
-        qRR (j,8) = qLB(i-iLB, j-jLB, k-kLB, bor, xdim)
-       end do
-       call solver_2d (self,qLL,qRL,qLR,qRR,emf,k,i,l,u,nvar,xdim,detailed_timer=detailed_timer)
-      end do
-    end do
-  else if (xdim == 3) then    
+  do k = self%mesh(3)%li,self%mesh(3)%uo
     do j = self%mesh(2)%li,self%mesh(2)%uo
-      do i = self%mesh(1)%li,self%mesh(1)%uo
-       l = self%mesh(3)%li
-       u = self%mesh(3)%ui
-       !dir$ ivdep
-       !dir$ simd
-       do k = l,u
-        qLL (k,1) = max(qRT(i-iRT, j-jRT, k-kRT, 1, xdim), smallr)
-        qRL (k,1) = max(qLT(i-iLT, j-jLT, k-kLT, 1, xdim), smallr)
-        qLR (k,1) = max(qRB(i-iRB, j-jRB, k-kRB, 1, xdim), smallr)
-        qRR (k,1) = max(qLB(i-iLB, j-jLB, k-kLB, 1, xdim), smallr)
-        qLL (k,2) = max(qRT(i-iRT, j-jRT, k-kRT, 5, xdim), smallp)
-        qRL (k,2) = max(qLT(i-iLT, j-jLT, k-kLT, 5, xdim), smallp)
-        qLR (k,2) = max(qRB(i-iRB, j-jRB, k-kRB, 5, xdim), smallp)
-        qRR (k,2) = max(qLB(i-iLB, j-jLB, k-kLB, 5, xdim), smallp)
-        qLL (k,3) = qRT(i-iRT, j-jRT, k-kRT, lp1, xdim)
-        qRL (k,3) = qLT(i-iLT, j-jLT, k-kLT, lp1, xdim)
-        qLR (k,3) = qRB(i-iRB, j-jRB, k-kRB, lp1, xdim)
-        qRR (k,3) = qLB(i-iLB, j-jLB, k-kLB, lp1, xdim)
-        qLL (k,4) = qRT(i-iRT, j-jRT, k-kRT, lp2, xdim)
-        qRL (k,4) = qLT(i-iLT, j-jLT, k-kLT, lp2, xdim)
-        qLR (k,4) = qRB(i-iRB, j-jRB, k-kRB, lp2, xdim)
-        qRR (k,4) = qLB(i-iLB, j-jLB, k-kLB, lp2, xdim)
-        qLL (k,6) = half*(qRT(i-iRT, j-jRT, k-kRT, bp1, xdim) + qLT(i-iLT, j-jLT, k-kLT, bp1, xdim))
-        qRL (k,6) = half*(qRT(i-iRT, j-jRT, k-kRT, bp1, xdim) + qLT(i-iLT, j-jLT, k-kLT, bp1, xdim))
-        qLR (k,6) = half*(qRB(i-iRB, j-jRB, k-kRB, bp1, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp1, xdim))
-        qRR (k,6) = half*(qRB(i-iRB, j-jRB, k-kRB, bp1, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp1, xdim))
-        qLL (k,7) = half*(qRT(i-iRT, j-jRT, k-kRT, bp2, xdim) + qRB(i-iRB, j-jRB, k-kRB, bp2, xdim))
-        qRL (k,7) = half*(qLT(i-iLT, j-jLT, k-kLT, bp2, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp2, xdim))
-        qLR (k,7) = half*(qRT(i-iRT, j-jRT, k-kRT, bp2, xdim) + qRB(i-iRB, j-jRB, k-kRB, bp2, xdim))
-        qRR (k,7) = half*(qLT(i-iLT, j-jLT, k-kLT, bp2, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp2, xdim))
-        qLL (k,5) = qRT(i-iRT, j-jRT, k-kRT, lor, xdim)
-        qRL (k,5) = qLT(i-iLT, j-jLT, k-kLT, lor, xdim)
-        qLR (k,5) = qRB(i-iRB, j-jRB, k-kRB, lor, xdim)
-        qRR (k,5) = qLB(i-iLB, j-jLB, k-kLB, lor, xdim)
-        qLL (k,8) = qRT(i-iRT, j-jRT, k-kRT, bor, xdim)
-        qRL (k,8) = qLT(i-iLT, j-jLT, k-kLT, bor, xdim)
-        qLR (k,8) = qRB(i-iRB, j-jRB, k-kRB, bor, xdim)
-        qRR (k,8) = qLB(i-iLB, j-jLB, k-kLB, bor, xdim)
+     l = self%mesh(1)%li
+     u = self%mesh(1)%ui
+     !dir$ ivdep
+     !dir$ simd
+     do i = l,u
+      qLL (i,1) = max(qRT(i-iRT, j-jRT, k-kRT, 1, xdim), smallr)
+      qRL (i,1) = max(qLT(i-iLT, j-jLT, k-kLT, 1, xdim), smallr)
+      qLR (i,1) = max(qRB(i-iRB, j-jRB, k-kRB, 1, xdim), smallr)
+      qRR (i,1) = max(qLB(i-iLB, j-jLB, k-kLB, 1, xdim), smallr)
+      qLL (i,2) = max(qRT(i-iRT, j-jRT, k-kRT, 5, xdim), smallp)
+      qRL (i,2) = max(qLT(i-iLT, j-jLT, k-kLT, 5, xdim), smallp)
+      qLR (i,2) = max(qRB(i-iRB, j-jRB, k-kRB, 5, xdim), smallp)
+      qRR (i,2) = max(qLB(i-iLB, j-jLB, k-kLB, 5, xdim), smallp)
+      qLL (i,3) = qRT(i-iRT, j-jRT, k-kRT, lp1, xdim)
+      qRL (i,3) = qLT(i-iLT, j-jLT, k-kLT, lp1, xdim)
+      qLR (i,3) = qRB(i-iRB, j-jRB, k-kRB, lp1, xdim)
+      qRR (i,3) = qLB(i-iLB, j-jLB, k-kLB, lp1, xdim)
+      qLL (i,4) = qRT(i-iRT, j-jRT, k-kRT, lp2, xdim)
+      qRL (i,4) = qLT(i-iLT, j-jLT, k-kLT, lp2, xdim)
+      qLR (i,4) = qRB(i-iRB, j-jRB, k-kRB, lp2, xdim)
+      qRR (i,4) = qLB(i-iLB, j-jLB, k-kLB, lp2, xdim)
+      qLL (i,6) = half*(qRT(i-iRT, j-jRT, k-kRT, bp1, xdim) + qLT(i-iLT, j-jLT, k-kLT, bp1, xdim))
+      qRL (i,6) = half*(qRT(i-iRT, j-jRT, k-kRT, bp1, xdim) + qLT(i-iLT, j-jLT, k-kLT, bp1, xdim))
+      qLR (i,6) = half*(qRB(i-iRB, j-jRB, k-kRB, bp1, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp1, xdim))
+      qRR (i,6) = half*(qRB(i-iRB, j-jRB, k-kRB, bp1, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp1, xdim))
+      qLL (i,7) = half*(qRT(i-iRT, j-jRT, k-kRT, bp2, xdim) + qRB(i-iRB, j-jRB, k-kRB, bp2, xdim))
+      qRL (i,7) = half*(qLT(i-iLT, j-jLT, k-kLT, bp2, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp2, xdim))
+      qLR (i,7) = half*(qRT(i-iRT, j-jRT, k-kRT, bp2, xdim) + qRB(i-iRB, j-jRB, k-kRB, bp2, xdim))
+      qRR (i,7) = half*(qLT(i-iLT, j-jLT, k-kLT, bp2, xdim) + qLB(i-iLB, j-jLB, k-kLB, bp2, xdim))
+      qLL (i,5) = qRT(i-iRT, j-jRT, k-kRT, lor, xdim)
+      qRL (i,5) = qLT(i-iLT, j-jLT, k-kLT, lor, xdim)
+      qLR (i,5) = qRB(i-iRB, j-jRB, k-kRB, lor, xdim)
+      qRR (i,5) = qLB(i-iLB, j-jLB, k-kLB, lor, xdim)
+      qLL (i,8) = qRT(i-iRT, j-jRT, k-kRT, bor, xdim)
+      qRL (i,8) = qLT(i-iLT, j-jLT, k-kLT, bor, xdim)
+      qLR (i,8) = qRB(i-iRB, j-jRB, k-kRB, bor, xdim)
+      qRR (i,8) = qLB(i-iLB, j-jLB, k-kLB, bor, xdim)
+     end do
+     call solver_2d (self,qLL,qRL,qLR,qRR,emf,j,k,l,u,nvar,xdim,detailed_timer=detailed_timer)
+     if (self%id == io%id_debug .and. j==8 .and. k==8) then
+       do i=1,8
+         write (io%output,'("LL",i1,f10.6,i4,1p,10e12.3)') xdim, self%time, i, qLL(l:l+9,i)
+         write (io%output,'("RL",i1,f10.6,i4,1p,10e12.3)') xdim, self%time, i, qRL(l:l+9,i)
+         write (io%output,'("LR",i1,f10.6,i4,1p,10e12.3)') xdim, self%time, i, qLR(l:l+9,i)
+         write (io%output,'("RR",i1,f10.6,i4,1p,10e12.3)') xdim, self%time, i, qRR(l:l+9,i)
        end do
-       call solver_2d (self,qLL,qRL,qLR,qRR,emf,i,j,l,u,nvar,xdim,detailed_timer=detailed_timer)
-      end do
+     end if
     end do
-  endif
+  end do
   call trace%end (itimer, detailed_timer=detailed_timer)
 !  end associate
 END SUBROUTINE cmp_mag_flx

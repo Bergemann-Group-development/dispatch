@@ -914,13 +914,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
             & -SAT*SAB/(SAT-SAB)*(AstarT-AstarB)+SAR*SAL/(SAR-SAL)*(BstarR-BstarL)
        !call trace%end (itimer(10))
     endif
-    if (xdim == 1) then
-       emf(l,j,k) = E
-    else if (xdim == 2) then
-       emf(k,l,j) = E
-    else if (xdim == 3) then
-       emf(j,k,l) = E
-    endif
+    emf(l,j,k) = E
   end do
   if (detailed_timer) &
     call timer%end (itimer)
