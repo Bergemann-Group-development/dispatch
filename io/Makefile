@@ -21,3 +21,4 @@ aux_mod.o:              io_unit_mod.o trace_mod.o dll_mod.o
 h5_mod.o:		            io_mod.o trace_mod.o omp_lock_mod.o
 pdf_io_mod.o:           io_mod.o trace_mod.o patch_mod.o counters_mod.o mpi_mod.o \
                         bits_mod.o
+used_mod.o:		io_unit_mod.o omp_timer_mod.o
