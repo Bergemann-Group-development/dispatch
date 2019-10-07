@@ -58,8 +58,16 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     entho = one/max(gamma-one,1e-6)
   end if
   !
-  fgdnv      = 0d0
   ndiff = 0
+  !$omp simd private(sgnm,d,P,u,v,w,A,B,C,B2,c2,d2,cf,Ptotstar,estar, &
+  !$omp &  rl,vl,ecinl,emagl,etotl,Ptotl,vdotBl,Bl,Cl,cfastl,SL, &
+  !$omp &  rr,vr,ecinr,emagr,etotr,Ptotr,vdotBr,Br,Cr,cfastr,SR, &
+  !$omp &  rcl,rstarl,el,Bstarl,Cstarl,vstarl,wstarl, &
+  !$omp &  rcr,rstarr,er,Bstarr,Cstarr,vstarr,wstarr, &
+  !$omp &  vdotBstarl,etotstarl,sqrrstarl,calfvenl,SAR, &
+  !$omp &  vdotBstarr,etotstarr,sqrrstarr,calfvenr,SAL, &
+  !$omp &  vstarstar,wstarstar,Bstarstar,Cstarstar,vdotBstarstar, &
+  !$omp &  icase,ro,uo,vo,wo,Bo,Co,Ptoto,etoto,vdotBo,emago,ustar)
   do i=1,ngrid
     !print '(i3,1p,8e10.2,2x,8e10.2)',i,qleft(i,:),qright(i,:)
     !
@@ -159,6 +167,8 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
        Cstarr=Cr*er/estar
     endif
     !
+
+
     vdotBstarr=ustar*A+vstarr*Bstarr+wstarr*Cstarr
     etotstarr=((SR-ur)*etotr-Ptotr*ur+Ptotstar*ustar+A*(vdotBr-vdotBstarr))/(SR-ustar)
     sqrrstarr=sqrt(rstarr)
@@ -254,6 +264,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     ustar = alog(rl/rr)*max(0.0, alog10((10.*smallr)/min(rl,rr)))
     ustar = 0.25*max(cfastr,cfastl)*min(1.0, max(-1.0, ustar))
     uo = uo + ustar
+
     ndiff = ndiff + merge(1,0,abs(ustar)>0.0)
     !
     ! Compute the Godunov flux
@@ -539,125 +550,117 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
   !
   REAL(dp) :: rLL,rLR,rRL,rRR,pLL,pLR,pRL,pRR,uLL,uLR,uRL,uRR,vLL,vLR,vRL,vRR, &
                        ALL,ALR,ARL,ARR,BLL,BLR,BRL,BRR,CLL,CLR,CRL,CRR
-  REAL(dp), DIMENSION(1:nvar) :: qtmp
+  REAL(dp) :: qtmp1,qtmp2,qtmp3,qtmp4,qtmp5,qtmp6,qtmp7,qtmp8
   REAL(dp) :: B2, c2, d2, d1
-  !integer, save:: itimer(10)=0
   integer, save:: itimer=0
   !.............................................................................
   if (detailed_timer) &
     call timer%begin ('riemann_t%hlld_2d', itimer=itimer)
   do l=l0,l1
-    !call trace%begin ('hlld_2d find_fast_speed', itimer=itimer(1))
     rLL=qLL(l,1); pLL=qLL(l,2); uLL=qLL(l,3); vLL=qLL(l,4); ALL=qLL(l,6); BLL=qLL(l,7) ; CLL=qLL(l,8)
     rLR=qLR(l,1); pLR=qLR(l,2); uLR=qLR(l,3); vLR=qLR(l,4); ALR=qLR(l,6); BLR=qLR(l,7) ; CLR=qLR(l,8)
     rRL=qRL(l,1); pRL=qRL(l,2); uRL=qRL(l,3); vRL=qRL(l,4); ARL=qRL(l,6); BRL=qRL(l,7) ; CRL=qRL(l,8)
     rRR=qRR(l,1); pRR=qRR(l,2); uRR=qRR(l,3); vRR=qRR(l,4); ARR=qRR(l,6); BRR=qRR(l,7) ; CRR=qRR(l,8)
     !
     ! Compute 4 fast magnetosonic velocity relative to x direction
-    qtmp(1)=qLL(l,1); qtmp(2)=qLL(l,2); qtmp(7)=qLL(l,5); qtmp(8)=qLL(l,8)
-    qtmp(3)=qLL(l,3); qtmp(4)=qLL(l,6); qtmp(5)=qLL(l,4); qtmp(6)=qLL(l,7)
+    qtmp1=qLL(l,1); qtmp2=qLL(l,2); qtmp7=qLL(l,5); qtmp8=qLL(l,8)
+    qtmp3=qLL(l,3); qtmp4=qLL(l,6); qtmp5=qLL(l,4); qtmp6=qLL(l,7)
     !call find_speed_fast(qtmp,cfastLLx)
     !
-    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    d1 = 1./qtmp(1)
-    c2 = gamma*qtmp(2)*d1
+    B2 = qtmp4**2+qtmp6**2+qtmp8**2
+    d1 = 1./qtmp1
+    c2 = gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
-    cfastLLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    cfastLLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
-    qtmp(1)=qLR(l,1); qtmp(2)=qLR(l,2); qtmp(7)=qLR(l,5); qtmp(8)=qLR(l,8)
-    qtmp(3)=qLR(l,3); qtmp(4)=qLR(l,6); qtmp(5)=qLR(l,4); qtmp(6)=qLR(l,7)
+    qtmp1=qLR(l,1); qtmp2=qLR(l,2); qtmp7=qLR(l,5); qtmp8=qLR(l,8)
+    qtmp3=qLR(l,3); qtmp4=qLR(l,6); qtmp5=qLR(l,4); qtmp6=qLR(l,7)
     !call find_speed_fast(qtmp,cfastLRx)
     !
-    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    d1 = 1./qtmp(1)
-    c2 = gamma*qtmp(2)*d1
+    B2 = qtmp4**2+qtmp6**2+qtmp8**2
+    d1 = 1./qtmp1
+    c2 = gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
-    cfastLRx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    cfastLRx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
-    qtmp(1)=qRL(l,1); qtmp(2)=qRL(l,2); qtmp(7)=qRL(l,5); qtmp(8)=qRL(l,8)
-    qtmp(3)=qRL(l,3); qtmp(4)=qRL(l,6); qtmp(5)=qRL(l,4); qtmp(6)=qRL(l,7)
+    qtmp1=qRL(l,1); qtmp2=qRL(l,2); qtmp7=qRL(l,5); qtmp8=qRL(l,8)
+    qtmp3=qRL(l,3); qtmp4=qRL(l,6); qtmp5=qRL(l,4); qtmp6=qRL(l,7)
     !call find_speed_fast(qtmp,cfastRLx)
     !
-    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    d1 = 1./qtmp(1)
-    c2 = gamma*qtmp(2)*d1
+    B2 = qtmp4**2+qtmp6**2+qtmp8**2
+    d1 = 1./qtmp1
+    c2 = gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
-!    print*,'qtmp(4),qtmp(6),qtmp(8)',qtmp(4),qtmp(6),qtmp(8)
-    cfastRLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+!    print*,'qtmp4,qtmp6,qtmp8',qtmp4,qtmp6,qtmp8
+    cfastRLx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
-    qtmp(1)=qRR(l,1); qtmp(2)=qRR(l,2); qtmp(7)=qRR(l,5); qtmp(8)=qRR(l,8)
-    qtmp(3)=qRR(l,3); qtmp(4)=qRR(l,6); qtmp(5)=qRR(l,4); qtmp(6)=qRR(l,7)
-    qtmp(1)=max(qtmp(1),smallr)
+    qtmp1=qRR(l,1); qtmp2=qRR(l,2); qtmp7=qRR(l,5); qtmp8=qRR(l,8)
+    qtmp3=qRR(l,3); qtmp4=qRR(l,6); qtmp5=qRR(l,4); qtmp6=qRR(l,7)
+    qtmp1=max(qtmp1,smallr)
     !call find_speed_fast(qtmp,cfastRRx)
     !
-    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    d1 = 1./qtmp(1)
-    c2 = gamma*qtmp(2)*d1
+    B2 = qtmp4**2+qtmp6**2+qtmp8**2
+    d1 = 1./qtmp1
+    c2 = gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
-    cfastRRx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    cfastRRx=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
     ! Compute 4 fast magnetosonic velocity relative to y direction
-    qtmp(1)=qLL(l,1); qtmp(2)=qLL(l,2); qtmp(7)=qLL(l,5); qtmp(8)=qLL(l,8)
-    qtmp(3)=qLL(l,4); qtmp(4)=qLL(l,7); qtmp(5)=qLL(l,3); qtmp(6)=qLL(l,6)
+    qtmp1=qLL(l,1); qtmp2=qLL(l,2); qtmp7=qLL(l,5); qtmp8=qLL(l,8)
+    qtmp3=qLL(l,4); qtmp4=qLL(l,7); qtmp5=qLL(l,3); qtmp6=qLL(l,6)
     !call find_speed_fast(qtmp,cfastLLy)
     !
-    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    d1 = 1./qtmp(1)
-    c2 = gamma*qtmp(2)*d1
+    B2 = qtmp4**2+qtmp6**2+qtmp8**2
+    d1 = 1./qtmp1
+    c2 = gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
-    cfastLLy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    cfastLLy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
-    qtmp(1)=qLR(l,1); qtmp(2)=qLR(l,2); qtmp(7)=qLR(l,5); qtmp(8)=qLR(l,8)
-    qtmp(3)=qLR(l,4); qtmp(4)=qLR(l,7); qtmp(5)=qLR(l,3); qtmp(6)=qLR(l,6)
+    qtmp1=qLR(l,1); qtmp2=qLR(l,2); qtmp7=qLR(l,5); qtmp8=qLR(l,8)
+    qtmp3=qLR(l,4); qtmp4=qLR(l,7); qtmp5=qLR(l,3); qtmp6=qLR(l,6)
     !call find_speed_fast(qtmp,cfastLRy)
     !
-    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    d1 = 1./qtmp(1)
-    c2 = gamma*qtmp(2)*d1
+    B2 = qtmp4**2+qtmp6**2+qtmp8**2
+    d1 = 1./qtmp1
+    c2 = gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
-    cfastLRy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    cfastLRy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
-    qtmp(1)=qRL(l,1); qtmp(2)=qRL(l,2); qtmp(7)=qRL(l,5); qtmp(8)=qRL(l,8)
-    qtmp(3)=qRL(l,4); qtmp(4)=qRL(l,7); qtmp(5)=qRL(l,3); qtmp(6)=qRL(l,6)
+    qtmp1=qRL(l,1); qtmp2=qRL(l,2); qtmp7=qRL(l,5); qtmp8=qRL(l,8)
+    qtmp3=qRL(l,4); qtmp4=qRL(l,7); qtmp5=qRL(l,3); qtmp6=qRL(l,6)
     !call find_speed_fast(qtmp,cfastRLy)
     !
-    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    d1 = 1./qtmp(1)
-    c2 = gamma*qtmp(2)*d1
+    B2 = qtmp4**2+qtmp6**2+qtmp8**2
+    d1 = 1./qtmp1
+    c2 = gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
-    cfastRLy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    cfastRLy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
-    qtmp(1)=qRR(l,1); qtmp(2)=qRR(l,2); qtmp(7)=qRR(l,5); qtmp(8)=qRR(l,8)
-    qtmp(3)=qRR(l,4); qtmp(4)=qRR(l,7); qtmp(5)=qRR(l,3); qtmp(6)=qRR(l,6)
+    qtmp1=qRR(l,1); qtmp2=qRR(l,2); qtmp7=qRR(l,5); qtmp8=qRR(l,8)
+    qtmp3=qRR(l,4); qtmp4=qRR(l,7); qtmp5=qRR(l,3); qtmp6=qRR(l,6)
     !call find_speed_fast(qtmp,cfastRRy)
     !
-    B2 = qtmp(4)**2+qtmp(6)**2+qtmp(8)**2
-    d1 = 1./qtmp(1)
-    c2 = gamma*qtmp(2)*d1
+    B2 = qtmp4**2+qtmp6**2+qtmp8**2
+    d1 = 1./qtmp1
+    c2 = gamma*qtmp2*d1
     d2 = half*(B2*d1+c2)
-    cfastRRy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp(4)**2*d1,zero)))
+    cfastRRy=sqrt(d2 + sqrt(max(d2*d2-c2*qtmp4**2*d1,zero)))
     !
     SL=min(uLL,uLR,uRL,uRR)-max(cfastLLx,cfastLRx,cfastRLx,cfastRRx)
     SR=max(uLL,uLR,uRL,uRR)+max(cfastLLx,cfastLRx,cfastRLx,cfastRRx)
     SB=min(vLL,vLR,vRL,vRR)-max(cfastLLy,cfastLRy,cfastRLy,cfastRRy)
     ST=max(vLL,vLR,vRL,vRR)+max(cfastLLy,cfastLRy,cfastRLy,cfastRRy)
-    !call trace%end (itimer(1))
     !
     if(SB>0d0)then
        if(SL>0d0)then
-          !call trace%begin ('hlld_2d(2)', itimer=itimer(2))
           ELL=uLL*BLL-vLL*ALL
     !
           E=ELL
-          !call trace%end (itimer(2))
        else if(SR<0d0)then
-          !call trace%begin ('hlld_2d(3)', itimer=itimer(3))
           ERL=uRL*BRL-vRL*ARL
     !
           E=ERL
-          !call trace%end (itimer(3))
        else
-          !call trace%begin ('hlld_2d(4)', itimer=itimer(4))
           PtotLL=pLL+half*(ALL*ALL+BLL*BLL+CLL*CLL)
           PtotLR=pLR+half*(ALR*ALR+BLR*BLR+CLR*CLR)
           PtotRL=pRL+half*(ARL*ARL+BRL*BRL+CRL*CRL)
@@ -702,23 +705,17 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
           EstarRLx=ustar*BstarRL-vRL*ARL
     !
           E=(SAR*EstarLLx-SAL*EstarRLx+SAR*SAL*(BRL-BLL))/(SAR-SAL)
-          !call trace%end (itimer(4))
        endif
     else if (ST<0d0)then
        if(SL>0d0)then
-          !call trace%begin ('hlld_2d(5)', itimer=itimer(5))
           ELR=uLR*BLR-vLR*ALR
     !
           E=ELR
-          !call trace%end (itimer(5))
        else if(SR<0d0)then
-          !call trace%begin ('hlld_2d(6)', itimer=itimer(6))
           ERR=uRR*BRR-vRR*ARR
     !
           E=ERR
-          !call trace%end (itimer(6))
        else
-          !call trace%begin ('hlld_2d(7)', itimer=itimer(7))
           PtotLL=pLL+half*(ALL*ALL+BLL*BLL+CLL*CLL)
           PtotLR=pLR+half*(ALR*ALR+BLR*BLR+CLR*CLR)
           PtotRL=pRL+half*(ARL*ARL+BRL*BRL+CRL*CRL)
@@ -763,10 +760,8 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
           EstarRRx=ustar*BstarRR-vRR*ARR
     !
           E=(SAR*EstarLRx-SAL*EstarRRx+SAR*SAL*(BRR-BLR))/(SAR-SAL)
-          !call trace%end (itimer(7))
        endif
     else if(SL>0d0)then
-       !call trace%begin ('hlld_2d(8)', itimer=itimer(8))
        PtotLL=pLL+half*(ALL*ALL+BLL*BLL+CLL*CLL)
        PtotLR=pLR+half*(ALR*ALR+BLR*BLR+CLR*CLR)
        PtotRL=pRL+half*(ARL*ARL+BRL*BRL+CRL*CRL)
@@ -811,9 +806,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
        EstarLRy=uLR*BLR-vstar*AstarLR
     !
        E=(SAT*EstarLLy-SAB*EstarLRy-SAT*SAB*(ALR-ALL))/(SAT-SAB)
-       !call trace%end (itimer(8))
     else if(SR<0d0)then
-       !call trace%begin ('hlld_2d(9)', itimer=itimer(9))
        PtotLL=pLL+half*(ALL*ALL+BLL*BLL+CLL*CLL)
        PtotLR=pLR+half*(ALR*ALR+BLR*BLR+CLR*CLR)
        PtotRL=pRL+half*(ARL*ARL+BRL*BRL+CRL*CRL)
@@ -858,9 +851,7 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
        EstarRRy=uRR*BRR-vstar*AstarRR
     !
        E=(SAT*EstarRLy-SAB*EstarRRy-SAT*SAB*(ARR-ARL))/(SAT-SAB)
-       !call trace%end (itimer(9))
     else
-       !call trace%begin ('hlld_2d(10)', itimer=itimer(10))
        PtotLL=pLL+half*(ALL*ALL+BLL*BLL+CLL*CLL)
        PtotLR=pLR+half*(ALR*ALR+BLR*BLR+CLR*CLR)
        PtotRL=pRL+half*(ARL*ARL+BRL*BRL+CRL*CRL)
@@ -912,7 +903,6 @@ SUBROUTINE hlld_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
     !
        E=(SAL*SAB*EstarRR-SAL*SAT*EstarRL-SAR*SAB*EstarLR+SAR*SAT*EstarLL)/(SAR-SAL)/(SAT-SAB) &
             & -SAT*SAB/(SAT-SAB)*(AstarT-AstarB)+SAR*SAL/(SAR-SAL)*(BstarR-BstarL)
-       !call trace%end (itimer(10))
     endif
     emf(l,j,k) = E
   end do
@@ -934,7 +924,6 @@ SUBROUTINE llf_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
   REAL(dp) :: E, EV, ELL, ERL, ELR, ERR, qleft(8), qright(8), fmean_x(8), fmean_y(8)
   integer, save:: itimer=0
   !.............................................................................
-  !call trace%begin ('riemann_t%hlld_2d', itimer=itimer, detailed_timer=detailed_timer)
   !
   do l=l0,l1
     ! vx*by - vy*bx at the four edge centers
@@ -1025,7 +1014,6 @@ SUBROUTINE llf_2d (qLL,qRL,qLR,qRR,emf,j,k,l0,l1,nvar,xdim,detailed_timer)
       emf(j,k,l) = E
     endif
   end do
-  !call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE llf_2d
 
 !===============================================================================
