@@ -1081,6 +1081,7 @@ SUBROUTINE trace3d(self)
   real(dp), dimension(:,:,:), allocatable:: rho_t, p_t
   real(dp) :: eff_gamma, off
   real(dp) :: ff(self%gn(1),3)
+  integer:: lo(3), uo(3)
   integer, save:: itimer(4)=0
   !-----------------------------------------------------------------------------
   real(dp), dimension(:,:,:)    , pointer, contiguous:: Bx, By, Bz, Ux, Uy, Uz
@@ -1155,9 +1156,15 @@ SUBROUTINE trace3d(self)
   n = self%gn(3)
   rho_t(:,:,n) = q(:,:,n,ir)
   p_t  (:,:,n)   = q(:,:,n,ip)
-  !
-  do k=2,self%gn(3)-1
-  do j=2,self%gn(2)-1
+  !-----------------------------------------------------------------------------
+  ! This loop needs to produce data in the interval (lo-1,uo+1), since the loop
+  ! below accesses {i,j,k}+-1, and needs to be good in (lo,uo).  With ng=3, the
+  ! loop limits are (lo-1,uo+1) = (2,gn-1)
+  !-----------------------------------------------------------------------------
+  lo = self%mesh%lo-1
+  uo = self%mesh%uo+1
+  do k=lo(3),uo(3)
+  do j=lo(2),uo(2)
   if (allocated(self%force_per_unit_mass)) then
     !dir$ simd
     do i=2,self%gn(2)-1
@@ -1175,7 +1182,7 @@ SUBROUTINE trace3d(self)
   !$omp & dCRy,dCx,dCy,dpx,dpx2,dpy,dpy2,dpz,dpz2,drx,drx2,dry,dry2,drz,drz2,dux, &
   !$omp & duy,duz,dvx,dvy,dvz,dwx,dwy,dwz,invr,p,r,sAL0,sAR0,sBL0,sBR0,sCL0,sCR0, &
   !$omp & sp0,sr0,su0,sv0,sw0,u,v,w)
-  do i=2,self%gn(1)-1
+  do i=lo(1),uo(1)
     r=q(i,j,k,ir)
     u=q(i,j,k,iu)
     v=q(i,j,k,iv)
@@ -1506,14 +1513,20 @@ SUBROUTINE trace3d(self)
   end do
   end do
   end do
-    !
+  !
   !call trace%end (itimer(2))
   !call trace%begin ('mhd_t%trace3d(3)', itimer=itimer(3))
-  do k=2,self%gn(3)-1
-  do j=2,self%gn(2)-1
-  !dir$ simd
+  !-----------------------------------------------------------------------------
+  ! This loop needs to produce data in the interval (lo,uo), since the loop
+  ! in cmp_mag_flux uses {i,j,k}-1
+  !-----------------------------------------------------------------------------
+  lo = self%mesh%lo
+  uo = self%mesh%uo
+  do k=lo(3),uo(3)
+  do j=lo(2),uo(2)
+  !$omp simd private(drx,dry,drz,dpx,dpy,dpz)
   !dir$ ivdep
-  do i=2,self%gn(1)-1
+  do i=lo(1),uo(1)
     r = rho_t(i,j,k)
     p = p_t(i,j,k)
     !
@@ -1852,7 +1865,7 @@ end if
 END SUBROUTINE cmpflxm
 
 !===============================================================================
-!> 2D solver for EMF
+!> Interface to 2D solver for EMF
 !===============================================================================
 SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor, emf, ngrid, nvar)
   class(mhd_t):: self
@@ -1864,7 +1877,7 @@ SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
   real(dp),DIMENSION(:,:,:):: emf
   real(dp),DIMENSION(:,:,:,:,:):: qRT, qLT, qRB, qLB
   ! local variables
-  integer:: i, j, k, n, xdim, l, u
+  integer:: i, j, k, n, xdim, l, u, lo(3), uo(3)
   real(dp),DIMENSION(1:ngrid,nvar)::qLL,qRL,qLR,qRR
   real(dp):: smallp
   integer, save:: itimer=0
@@ -1901,11 +1914,17 @@ SUBROUTINE cmp_mag_flx (self, qRT, qRB, qLT, qLB, lp1 ,lp2 ,lor ,bp1 , bp2, bor,
     iLT = 0; jLT = 0; kLT = 1
     iLB = 0; jLB = 0; kLB = 0
   endif 
-  !
-  do k = self%mesh(3)%li,self%mesh(3)%uo
-    do j = self%mesh(2)%li,self%mesh(2)%uo
-     l = self%mesh(1)%li
-     u = self%mesh(1)%ui
+  !-----------------------------------------------------------------------------
+  ! This loop produces the EMFs, which are accessed at {i,j,k}+1, so it needs to
+  ! use the interval (li,uo).  It accesses input arrays at {i,j,k}-1, so the
+  ! input data is needed in the interval (lo,uo).
+  !-----------------------------------------------------------------------------
+  lo = self%mesh%li
+  uo = self%mesh%uo
+  l = lo(1)
+  u = uo(1)
+  do k = lo(3),uo(3)
+    do j = lo(2),uo(2)
      !dir$ ivdep
      !dir$ simd
      do i = l,u
