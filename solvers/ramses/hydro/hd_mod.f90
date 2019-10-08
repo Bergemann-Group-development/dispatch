@@ -151,7 +151,7 @@ SUBROUTINE update (self)
   allocate (self%q (n(1),n(2),n(3),self%nv))
   allocate (self%qp(n(1),self%nv,ndim,n(2),n(3)))
   allocate (self%qm(n(1),self%nv,ndim,n(2),n(3)))
-  allocate (self%dq(n(1),n(2),n(3),self%nv,ndim))
+  allocate (self%dq(n(1),self%nv,ndim,n(2),n(3)))
   allocate (self%fl(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%c(n(1),n(2),n(3)))
   allocate (self%s(n(1),n(2),n(3)))
@@ -588,9 +588,9 @@ subroutine uslope(self)
           !dir$ ivdep
           !$omp simd
           do i = l(1),u(1)
-            dq(i,j,k,n,1) = half*(q(i+1,j,k,n) - q(i-1,j,k,n))
-            dq(i,j,k,n,2) = half*(q(i,j+1,k,n) - q(i,j-1,k,n))
-            dq(i,j,k,n,3) = half*(q(i,j,k+1,n) - q(i,j,k-1,n))
+            dq(i,n,1,j,k) = half*(q(i+1,j,k,n) - q(i-1,j,k,n))
+            dq(i,n,2,j,k) = half*(q(i,j+1,k,n) - q(i,j-1,k,n))
+            dq(i,n,3,j,k) = half*(q(i,j,k+1,n) - q(i,j,k-1,n))
           end do
         end do
       end do
@@ -613,15 +613,15 @@ subroutine uslope(self)
             ! slopes in first coordinate direction
             dlft = q(i  ,j,k,n) - q(i-1,j,k,n)
             drgt = q(i+1,j,k,n) - q(i  ,j,k,n)
-            dq(i,j,k,n,1) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+            dq(i,n,1,j,k) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
             ! slopes in second coordinate direction
             dlft = q(i,j  ,k,n) - q(i,j-1,k,n)
             drgt = q(i,j+1,k,n) - q(i,j  ,k,n)
-            dq(i,j,k,n,2) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+            dq(i,n,2,j,k) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
             ! slopes in third coordinate direction
             dlft = q(i,j,k  ,n) - q(i,j,k-1,n)
             drgt = q(i,j,k+1,n) - q(i,j,k  ,n)
-            dq(i,j,k,n,3) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
+            dq(i,n,3,j,k) = merge(zero,merge(min(dlft,drgt),max(dlft,drgt),dlft>0),(dlft*drgt)<=zero)
           end do
         end do
       end do
@@ -642,7 +642,7 @@ subroutine uslope(self)
             dsgn = sign(one, dcen)
             slop = min(abs(dlft),abs(drgt))
             dlim = merge(zero,slop,(dlft*drgt)<=zero)
-            dq(i,j,k,n,1) = dsgn*min(dlim,abs(dcen))
+            dq(i,n,1,j,k) = dsgn*min(dlim,abs(dcen))
             ! slopes in second coordinate direction
             dlft = c1*(q(i,j  ,k,n) - q(i,j-1,k,n))
             drgt = c1*(q(i,j+1,k,n) - q(i,j  ,k,n))
@@ -650,7 +650,7 @@ subroutine uslope(self)
             dsgn = sign(one,dcen)
             slop = min(abs(dlft),abs(drgt))
             dlim = merge(zero,slop,(dlft*drgt)<=zero)
-            dq(i,j,k,n,2) = dsgn*min(dlim,abs(dcen))
+            dq(i,n,2,j,k) = dsgn*min(dlim,abs(dcen))
             ! slopes in third coordinate direction
             dlft = c1*(q(i,j,k  ,n) - q(i,j,k-1,n))
             drgt = c1*(q(i,j,k+1,n) - q(i,j,k  ,n))
@@ -658,7 +658,7 @@ subroutine uslope(self)
             dsgn = sign(one,dcen)
             slop = min(abs(dlft),abs(drgt))
             dlim = merge(zero,slop,(dlft*drgt)<=zero)
-            dq(i,j,k,n,3) = dsgn*min(dlim,abs(dcen))
+            dq(i,n,3,j,k) = dsgn*min(dlim,abs(dcen))
           end do
         end do
       end do
@@ -727,9 +727,9 @@ subroutine uslope(self)
             ! idff > 0, so 1/dff = idff < 0.001 * huge is equivalent to dff > 0
             slop = merge(min(one,min(abs(vmin),abs(vmax))*idff), one, idff<0.001_dp * huge(1.0_dp))
             dlim = slop
-            dq(i,j,k,n,1) = dlim*dfx
-            dq(i,j,k,n,2) = dlim*dfy
-            dq(i,j,k,n,3) = dlim*dfz
+            dq(i,n,1,j,k) = dlim*dfx
+            dq(i,n,2,j,k) = dlim*dfy
+            dq(i,n,3,j,k) = dlim*dfz
           end do
         end do
       end do
@@ -816,9 +816,9 @@ subroutine uslope(self)
           !$omp simd
           do n = 1, self%nv
             ! use saved fluxes, with common dlim
-            dq(i,j,k,n,1) = dlim*adfx(n)
-            dq(i,j,k,n,2) = dlim*adfy(n)
-            dq(i,j,k,n,3) = dlim*adfz(n)
+            dq(i,n,1,j,k) = dlim*adfx(n)
+            dq(i,n,2,j,k) = dlim*adfy(n)
+            dq(i,n,3,j,k) = dlim*adfz(n)
           end do
           end block
         end do
@@ -890,23 +890,23 @@ subroutine trace3d(self)
         p   =  q(i,j,k,ip)
 
         ! TVD slopes in all 3 directions
-        drx = dq(i,j,k,ir,1)
-        dpx = dq(i,j,k,ip,1)
-        dux = dq(i,j,k,iu,1)
-        dvx = dq(i,j,k,iv,1)
-        dwx = dq(i,j,k,iw,1)
+        drx = dq(i,ir,1,j,k)
+        dpx = dq(i,ip,1,j,k)
+        dux = dq(i,iu,1,j,k)
+        dvx = dq(i,iv,1,j,k)
+        dwx = dq(i,iw,1,j,k)
 
-        dry = dq(i,j,k,ir,2)
-        dpy = dq(i,j,k,ip,2)
-        duy = dq(i,j,k,iu,2)
-        dvy = dq(i,j,k,iv,2)
-        dwy = dq(i,j,k,iw,2)
+        dry = dq(i,ir,2,j,k)
+        dpy = dq(i,ip,2,j,k)
+        duy = dq(i,iu,2,j,k)
+        dvy = dq(i,iv,2,j,k)
+        dwy = dq(i,iw,2,j,k)
 
-        drz = dq(i,j,k,ir,3)
-        dpz = dq(i,j,k,ip,3)
-        duz = dq(i,j,k,iu,3)
-        dvz = dq(i,j,k,iv,3)
-        dwz = dq(i,j,k,iw,3)
+        drz = dq(i,ir,3,j,k)
+        dpz = dq(i,ip,3,j,k)
+        duz = dq(i,iu,3,j,k)
+        dvz = dq(i,iv,3,j,k)
+        dwz = dq(i,iw,3,j,k)
 
         ! Source terms (including transverse derivatives)
         sr0 = -u*drx-v*dry-w*drz - (dux+dvy+dwz)*r
