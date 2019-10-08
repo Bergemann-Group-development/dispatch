@@ -1,7 +1,5 @@
 module riemann_mod
-  USE amr_parameters
   USE hydro_parameters
-  USE const
   USE io_mod
   USE mpi_mod
   USE trace_mod
@@ -18,6 +16,7 @@ module riemann_mod
     procedure, nopass:: llf
     procedure, nopass:: llf_2d
   end type
+  real, parameter:: half=0.5_dp, zero=0.0_dp, one=1.0_dp, forth=0.25_dp
   type(riemann_t), public:: rieman
 contains
 
@@ -59,6 +58,8 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   end if
   !
   ndiff = 0
+!define PRIVATE
+#ifdef PRIVATE
   !$omp simd private(sgnm,d,P,u,v,w,A,B,C,B2,c2,d2,cf,Ptotstar,estar, &
   !$omp &  rl,vl,ecinl,emagl,etotl,Ptotl,vdotBl,Bl,Cl,cfastl,SL, &
   !$omp &  rr,vr,ecinr,emagr,etotr,Ptotr,vdotBr,Br,Cr,cfastr,SR, &
@@ -68,6 +69,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
   !$omp &  vdotBstarr,etotstarr,sqrrstarr,calfvenr,SAL, &
   !$omp &  vstarstar,wstarstar,Bstarstar,Cstarstar,vdotBstarstar, &
   !$omp &  icase,ro,uo,vo,wo,Bo,Co,Ptoto,etoto,vdotBo,emago,ustar)
+#endif
   do i=1,ngrid
     !print '(i3,1p,8e10.2,2x,8e10.2)',i,qleft(i,:),qright(i,:)
     !
@@ -277,10 +279,13 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
   end do
+#define ATOMIC
+#ifdef ATOMIC
   !$omp atomic
   self%ndiff = self%ndiff + ndiff
   !$omp atomic
   self%nsolu = self%nsolu + ngrid
+#endif
   if (detailed_timer) &
     call timer%end (itimer)
 end subroutine hlld
@@ -368,12 +373,7 @@ SUBROUTINE hlld_vec (qleft, qright, fgdnv, n, detailed_timer)
   SL=min(ul,ur)-max(cfastl,cfastr)
   SR=max(ul,ur)+max(cfastl,cfastr)
   !
-  if (cmax2 > 0) then
-    lim = max(abs(SL),abs(SR)) ! use max speed for current limiter
-    lim = cmax2 / (cmax2 + lim*lim)
-  else
-    lim = 1.0_dp
-  endif
+  lim = 1.0_dp
   !
 !  SL=ul-cfastl
 !  SR=ur+cfastr
