@@ -149,8 +149,8 @@ SUBROUTINE update (self)
   n = self%mesh%gn
   m = n(1)
   allocate (self%q (n(1),n(2),n(3),self%nv))
-  allocate (self%qp(n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%qm(n(1),n(2),n(3),self%nv,ndim))
+  allocate (self%qp(n(1),self%nv,ndim,n(2),n(3)))
+  allocate (self%qm(n(1),self%nv,ndim,n(2),n(3)))
   allocate (self%dq(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%fl(n(1),n(2),n(3),self%nv,ndim))
   allocate (self%c(n(1),n(2),n(3)))
@@ -916,52 +916,52 @@ subroutine trace3d(self)
         sw0 = -u*dwx-v*dwy-w*dwz - dpz/r + ff(i,3)
 
         ! Right state at left interface
-        qp(i,j,k,ir,1) = r - half*drx + sr0*dtdx*half
-        qp(i,j,k,ip,1) = p - half*dpx + sp0*dtdx*half
-        qp(i,j,k,iu,1) = u - half*dux + su0*dtdx*half
-        qp(i,j,k,iv,1) = v - half*dvx + sv0*dtdx*half
-        qp(i,j,k,iw,1) = w - half*dwx + sw0*dtdx*half
-        qp(i,j,k,ir,1) = max(smallr, qp(i,j,k,ir,1))
+        qp(i,ir,1,j,k) = r - half*drx + sr0*dtdx*half
+        qp(i,ip,1,j,k) = p - half*dpx + sp0*dtdx*half
+        qp(i,iu,1,j,k) = u - half*dux + su0*dtdx*half
+        qp(i,iv,1,j,k) = v - half*dvx + sv0*dtdx*half
+        qp(i,iw,1,j,k) = w - half*dwx + sw0*dtdx*half
+        qp(i,ir,1,j,k) = max(smallr, qp(i,ir,1,j,k))
 
         ! Left state at right interface
-        qm(i+1,j,k,ir,1) = r + half*drx + sr0*dtdx*half
-        qm(i+1,j,k,ip,1) = p + half*dpx + sp0*dtdx*half
-        qm(i+1,j,k,iu,1) = u + half*dux + su0*dtdx*half
-        qm(i+1,j,k,iv,1) = v + half*dvx + sv0*dtdx*half
-        qm(i+1,j,k,iw,1) = w + half*dwx + sw0*dtdx*half
-        qm(i+1,j,k,ir,1) = max(smallr, qm(i+1,j,k,ir,1))
+        qm(i+1,ir,1,j,k) = r + half*drx + sr0*dtdx*half
+        qm(i+1,ip,1,j,k) = p + half*dpx + sp0*dtdx*half
+        qm(i+1,iu,1,j,k) = u + half*dux + su0*dtdx*half
+        qm(i+1,iv,1,j,k) = v + half*dvx + sv0*dtdx*half
+        qm(i+1,iw,1,j,k) = w + half*dwx + sw0*dtdx*half
+        qm(i+1,ir,1,j,k) = max(smallr, qm(i+1,ir,1,j,k))
 
         ! Top state at bottom interface
-        qp(i,j,k,ir,2) = r - half*dry + sr0*dtdy*half
-        qp(i,j,k,ip,2) = p - half*dpy + sp0*dtdy*half
-        qp(i,j,k,iu,2) = u - half*duy + su0*dtdy*half
-        qp(i,j,k,iv,2) = v - half*dvy + sv0*dtdy*half
-        qp(i,j,k,iw,2) = w - half*dwy + sw0*dtdy*half
-        qp(i,j,k,ir,2) = max(smallr, qp(i,j,k,ir,2))
+        qp(i,ir,2,j,k) = r - half*dry + sr0*dtdy*half
+        qp(i,ip,2,j,k) = p - half*dpy + sp0*dtdy*half
+        qp(i,iu,2,j,k) = u - half*duy + su0*dtdy*half
+        qp(i,iv,2,j,k) = v - half*dvy + sv0*dtdy*half
+        qp(i,iw,2,j,k) = w - half*dwy + sw0*dtdy*half
+        qp(i,ir,2,j,k) = max(smallr, qp(i,ir,2,j,k))
 
         ! Bottom state at top interface
-        qm(i,j+1,k,ir,2) = r + half*dry + sr0*dtdy*half
-        qm(i,j+1,k,ip,2) = p + half*dpy + sp0*dtdy*half
-        qm(i,j+1,k,iu,2) = u + half*duy + su0*dtdy*half
-        qm(i,j+1,k,iv,2) = v + half*dvy + sv0*dtdy*half
-        qm(i,j+1,k,iw,2) = w + half*dwy + sw0*dtdy*half
-        qm(i,j+1,k,ir,2) = max(smallr, qm(i,j+1,k,ir,2))
+        qm(i,ir,2,j+1,k) = r + half*dry + sr0*dtdy*half
+        qm(i,ip,2,j+1,k) = p + half*dpy + sp0*dtdy*half
+        qm(i,iu,2,j+1,k) = u + half*duy + su0*dtdy*half
+        qm(i,iv,2,j+1,k) = v + half*dvy + sv0*dtdy*half
+        qm(i,iw,2,j+1,k) = w + half*dwy + sw0*dtdy*half
+        qm(i,ir,2,j+1,k) = max(smallr, qm(i,ir,2,j+1,k))
 
         ! Back state at front interface
-        qp(i,j,k,ir,3) = r - half*drz + sr0*dtdz*half
-        qp(i,j,k,ip,3) = p - half*dpz + sp0*dtdz*half
-        qp(i,j,k,iu,3) = u - half*duz + su0*dtdz*half
-        qp(i,j,k,iv,3) = v - half*dvz + sv0*dtdz*half
-        qp(i,j,k,iw,3) = w - half*dwz + sw0*dtdz*half
-        qp(i,j,k,ir,3) = max(smallr, qp(i,j,k,ir,3))
+        qp(i,ir,3,j,k) = r - half*drz + sr0*dtdz*half
+        qp(i,ip,3,j,k) = p - half*dpz + sp0*dtdz*half
+        qp(i,iu,3,j,k) = u - half*duz + su0*dtdz*half
+        qp(i,iv,3,j,k) = v - half*dvz + sv0*dtdz*half
+        qp(i,iw,3,j,k) = w - half*dwz + sw0*dtdz*half
+        qp(i,ir,3,j,k) = max(smallr, qp(i,ir,3,j,k))
 
         ! Front state at back interface
-        qm(i,j,k+1,ir,3) = r + half*drz + sr0*dtdz*half
-        qm(i,j,k+1,ip,3) = p + half*dpz + sp0*dtdz*half
-        qm(i,j,k+1,iu,3) = u + half*duz + su0*dtdz*half
-        qm(i,j,k+1,iv,3) = v + half*dvz + sv0*dtdz*half
-        qm(i,j,k+1,iw,3) = w + half*dwz + sw0*dtdz*half
-        qm(i,j,k+1,ir,3) = max(smallr, qm(i,j,k+1,ir,3))
+        qm(i,ir,3,j,k+1) = r + half*drz + sr0*dtdz*half
+        qm(i,ip,3,j,k+1) = p + half*dpz + sp0*dtdz*half
+        qm(i,iu,3,j,k+1) = u + half*duz + su0*dtdz*half
+        qm(i,iv,3,j,k+1) = v + half*dvz + sv0*dtdz*half
+        qm(i,iw,3,j,k+1) = w + half*dwz + sw0*dtdz*half
+        qm(i,ir,3,j,k+1) = max(smallr, qm(i,ir,3,j,k+1))
       end do
     end do
   end do
@@ -1001,11 +1001,11 @@ subroutine cmpflxm(self)
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
       do i = lb(1),ub(1)
-        qleft (i,1) = qm(i,j,k,1,1); qright(i,1) = qp(i,j,k,1,1)
-        qleft (i,2) = qm(i,j,k,2,1); qright(i,2) = qp(i,j,k,2,1)
-        qleft (i,3) = qm(i,j,k,5,1); qright(i,3) = qp(i,j,k,5,1)
-        qleft (i,4) = qm(i,j,k,3,1); qright(i,4) = qp(i,j,k,3,1)
-        qleft (i,5) = qm(i,j,k,4,1); qright(i,5) = qp(i,j,k,4,1)
+        qleft (i,1) = qm(i,1,1,j,k); qright(i,1) = qp(i,1,1,j,k)
+        qleft (i,2) = qm(i,2,1,j,k); qright(i,2) = qp(i,2,1,j,k)
+        qleft (i,3) = qm(i,5,1,j,k); qright(i,3) = qp(i,5,1,j,k)
+        qleft (i,4) = qm(i,3,1,j,k); qright(i,4) = qp(i,3,1,j,k)
+        qleft (i,5) = qm(i,4,1,j,k); qright(i,5) = qp(i,4,1,j,k)
       end do
       call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('x', j, k, lb(1), ub(1))
@@ -1017,11 +1017,11 @@ subroutine cmpflxm(self)
         fl(i,j,k,self%idx%pz,1) = fgdnv(i,5)*dtds(1)
       end do
       do i = lb(1),ub(1)
-        qleft (i,1) = qm(i,j,k,1,2); qright(i,1) = qp(i,j,k,1,2)
-        qleft (i,2) = qm(i,j,k,3,2); qright(i,2) = qp(i,j,k,3,2)
-        qleft (i,3) = qm(i,j,k,5,2); qright(i,3) = qp(i,j,k,5,2)
-        qleft (i,4) = qm(i,j,k,2,2); qright(i,4) = qp(i,j,k,2,2)
-        qleft (i,5) = qm(i,j,k,4,2); qright(i,5) = qp(i,j,k,4,2)
+        qleft (i,1) = qm(i,1,2,j,k); qright(i,1) = qp(i,1,2,j,k)
+        qleft (i,2) = qm(i,3,2,j,k); qright(i,2) = qp(i,3,2,j,k)
+        qleft (i,3) = qm(i,5,2,j,k); qright(i,3) = qp(i,5,2,j,k)
+        qleft (i,4) = qm(i,2,2,j,k); qright(i,4) = qp(i,2,2,j,k)
+        qleft (i,5) = qm(i,4,2,j,k); qright(i,5) = qp(i,4,2,j,k)
       end do
       call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('y', j, k, lb(1), ub(1))
@@ -1033,11 +1033,11 @@ subroutine cmpflxm(self)
         fl(i,j,k,self%idx%pz,2) = fgdnv(i,5)*dtds(2)
       end do
       do i = lb(1),ub(1)
-        qleft (i,1) = qm(i,j,k,1,3); qright(i,1) = qp(i,j,k,1,3)
-        qleft (i,2) = qm(i,j,k,4,3); qright(i,2) = qp(i,j,k,4,3)
-        qleft (i,3) = qm(i,j,k,5,3); qright(i,3) = qp(i,j,k,5,3)
-        qleft (i,4) = qm(i,j,k,2,3); qright(i,4) = qp(i,j,k,2,3)
-        qleft (i,5) = qm(i,j,k,3,3); qright(i,5) = qp(i,j,k,3,3)
+        qleft (i,1) = qm(i,1,3,j,k); qright(i,1) = qp(i,1,3,j,k)
+        qleft (i,2) = qm(i,4,3,j,k); qright(i,2) = qp(i,4,3,j,k)
+        qleft (i,3) = qm(i,5,3,j,k); qright(i,3) = qp(i,5,3,j,k)
+        qleft (i,4) = qm(i,2,3,j,k); qright(i,4) = qp(i,2,3,j,k)
+        qleft (i,5) = qm(i,3,3,j,k); qright(i,5) = qp(i,3,3,j,k)
       end do
       call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('z', j, k, lb(1), ub(1))
