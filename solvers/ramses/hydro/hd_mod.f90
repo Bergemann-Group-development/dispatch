@@ -126,7 +126,7 @@ SUBROUTINE update (self)
   class(hd_t):: self
   integer:: n(3), m, i, l(3), u(3)
   integer, save:: itimer=0
-  real, contiguous, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:,:), pointer:: p
   real, contiguous, dimension(:,:,:), pointer:: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real, contiguous, dimension(:,:,:), pointer:: tmp
   real:: error
@@ -1007,9 +1007,7 @@ subroutine cmpflxm(self)
         qleft (i,4) = qm(i,j,k,3,1); qright(i,4) = qp(i,j,k,3,1)
         qleft (i,5) = qm(i,j,k,4,1); qright(i,5) = qp(i,j,k,4,1)
       end do
-      if (detailed_timer) call trace_end (itimer)
       call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv,error,detailed_timer)
-      if (detailed_timer) call trace_begin ('hd_mod::cmpflxm', itimer=itimer)
       if (error) call error_handler('x', j, k, lb(1), ub(1))
       do i = lb(1),ub(1)
         fl(i,j,k,self%idx%d ,1) = fgdnv(i,1)*dtds(1)
@@ -1018,120 +1016,46 @@ subroutine cmpflxm(self)
         fl(i,j,k,self%idx%py,1) = fgdnv(i,4)*dtds(1)
         fl(i,j,k,self%idx%pz,1) = fgdnv(i,5)*dtds(1)
       end do
+      do i = lb(1),ub(1)
+        qleft (i,1) = qm(i,j,k,1,2); qright(i,1) = qp(i,j,k,1,2)
+        qleft (i,2) = qm(i,j,k,3,2); qright(i,2) = qp(i,j,k,3,2)
+        qleft (i,3) = qm(i,j,k,5,2); qright(i,3) = qp(i,j,k,5,2)
+        qleft (i,4) = qm(i,j,k,2,2); qright(i,4) = qp(i,j,k,2,2)
+        qleft (i,5) = qm(i,j,k,4,2); qright(i,5) = qp(i,j,k,4,2)
+      end do
+      call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv,error,detailed_timer)
+      if (error) call error_handler('y', j, k, lb(1), ub(1))
+      do i = lb(1),ub(1)
+        fl(i,j,k,self%idx%d ,2) = fgdnv(i,1)*dtds(2)
+        fl(i,j,k,self%idx%py,2) = fgdnv(i,2)*dtds(2)
+        fl(i,j,k,self%idx%e ,2) = fgdnv(i,3)*dtds(2)
+        fl(i,j,k,self%idx%px,2) = fgdnv(i,4)*dtds(2)
+        fl(i,j,k,self%idx%pz,2) = fgdnv(i,5)*dtds(2)
+      end do
+      do i = lb(1),ub(1)
+        qleft (i,1) = qm(i,j,k,1,3); qright(i,1) = qp(i,j,k,1,3)
+        qleft (i,2) = qm(i,j,k,4,3); qright(i,2) = qp(i,j,k,4,3)
+        qleft (i,3) = qm(i,j,k,5,3); qright(i,3) = qp(i,j,k,5,3)
+        qleft (i,4) = qm(i,j,k,2,3); qright(i,4) = qp(i,j,k,2,3)
+        qleft (i,5) = qm(i,j,k,3,3); qright(i,5) = qp(i,j,k,3,3)
+      end do
+      call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv,error,detailed_timer)
+      if (error) call error_handler('z', j, k, lb(1), ub(1))
+      do i = lb(1),ub(1)
+        fl(i,j,k,self%idx%d ,3) = fgdnv(i,1)*dtds(3)
+        fl(i,j,k,self%idx%pz,3) = fgdnv(i,2)*dtds(3)
+        fl(i,j,k,self%idx%e ,3) = fgdnv(i,3)*dtds(3)
+        fl(i,j,k,self%idx%px,3) = fgdnv(i,4)*dtds(3)
+        fl(i,j,k,self%idx%py,3) = fgdnv(i,5)*dtds(3)
+      end do
     end do
   end do
-  if (any(self%mesh%gn/=self%mesh(1)%gn)) then
-    call cmpflxm_y
-    call cmpflxm_z
-  else
-    do k = lb(3),ub(3)
-      do i = lb(1),ub(1)
-        do j = lb(2),ub(2)
-          qleft (j,1) = qm(i,j,k,1,2); qright(j,1) = qp(i,j,k,1,2)
-          qleft (j,2) = qm(i,j,k,3,2); qright(j,2) = qp(i,j,k,3,2)
-          qleft (j,3) = qm(i,j,k,5,2); qright(j,3) = qp(i,j,k,5,2)
-          qleft (j,4) = qm(i,j,k,2,2); qright(j,4) = qp(i,j,k,2,2)
-          qleft (j,5) = qm(i,j,k,4,2); qright(j,5) = qp(i,j,k,4,2)
-        end do
-        if (detailed_timer) call trace_end (itimer)
-        call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv,error,detailed_timer)
-        if (detailed_timer) call trace_begin ('hd_mod::cmpflxm', itimer=itimer)
-        if (error) call error_handler('y', i, k, lb(2), ub(2))
-        do j = lb(2),ub(2)
-          fl(i,j,k,self%idx%d ,2) = fgdnv(j,1)*dtds(2)
-          fl(i,j,k,self%idx%py,2) = fgdnv(j,2)*dtds(2)
-          fl(i,j,k,self%idx%e ,2) = fgdnv(j,3)*dtds(2)
-          fl(i,j,k,self%idx%px,2) = fgdnv(j,4)*dtds(2)
-          fl(i,j,k,self%idx%pz,2) = fgdnv(j,5)*dtds(2)
-        end do
-      end do
-    end do
-    do j = lb(2),ub(2)
-      do i = lb(1),ub(1)
-        do k = lb(3),ub(3)
-          qleft (k,1) = qm(i,j,k,1,3); qright(k,1) = qp(i,j,k,1,3)
-          qleft (k,2) = qm(i,j,k,4,3); qright(k,2) = qp(i,j,k,4,3)
-          qleft (k,3) = qm(i,j,k,5,3); qright(k,3) = qp(i,j,k,5,3)
-          qleft (k,4) = qm(i,j,k,2,3); qright(k,4) = qp(i,j,k,2,3)
-          qleft (k,5) = qm(i,j,k,3,3); qright(k,5) = qp(i,j,k,3,3)
-        end do
-        if (detailed_timer) call trace_end (itimer)
-        call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv,error,detailed_timer)
-        if (detailed_timer) call trace_begin ('hd_mod::cmpflxm', itimer=itimer)
-        if (error) call error_handler('z', i, j, lb(3), ub(3))
-        do k = lb(3),ub(3)
-          fl(i,j,k,self%idx%d ,3) = fgdnv(k,1)*dtds(3)
-          fl(i,j,k,self%idx%pz,3) = fgdnv(k,2)*dtds(3)
-          fl(i,j,k,self%idx%e ,3) = fgdnv(k,3)*dtds(3)
-          fl(i,j,k,self%idx%px,3) = fgdnv(k,4)*dtds(3)
-          fl(i,j,k,self%idx%py,3) = fgdnv(k,5)*dtds(3)
-        end do
-      end do
-    end do
-  end if
   if (detailed_timer) then
     call trace%end (itimer)
   else
     call trace%end
   end if
 contains
-  subroutine cmpflxm_y
-  ! local variables
-  real(dp), dimension(self%mesh(2)%gn,self%nv):: qleft, qright, fgdnv
-  !-----------------------------------------------------------------------------
-  !-----------------------------------------------------------------------------
-  dtds = self%dtime/self%mesh%d       ! needed here
-  lb = self%mesh%li
-  ub = self%mesh%uo
-  qleft=0.0; qright=0.0
-  do k = lb(3),ub(3)
-    do i = lb(1),ub(1)
-      qleft (:,1) = qm(i,:,k,1,2); qright(:,1) = qp(i,:,k,1,2)
-      qleft (:,2) = qm(i,:,k,3,2); qright(:,2) = qp(i,:,k,3,2)
-      qleft (:,3) = qm(i,:,k,5,2); qright(:,3) = qp(i,:,k,5,2)
-      qleft (:,4) = qm(i,:,k,2,2); qright(:,4) = qp(i,:,k,2,2)
-      qleft (:,5) = qm(i,:,k,4,2); qright(:,5) = qp(i,:,k,4,2)
-      if (detailed_timer) call trace_end (itimer)
-      call solver (self,self%mesh(2)%gn,qleft,qright,fgdnv,error,detailed_timer)
-      if (error) call error_handler('y', i, k, lb(2), ub(2))
-      if (detailed_timer) call trace_begin ('hd_mod::cmpflxm', itimer=itimer)
-      fl(i,:,k,self%idx%d ,2) = fgdnv(:,1)*dtds(2)
-      fl(i,:,k,self%idx%py,2) = fgdnv(:,2)*dtds(2)
-      fl(i,:,k,self%idx%e ,2) = fgdnv(:,3)*dtds(2)
-      fl(i,:,k,self%idx%px,2) = fgdnv(:,4)*dtds(2)
-      fl(i,:,k,self%idx%pz,2) = fgdnv(:,5)*dtds(2)
-    end do
-  end do
-  end subroutine cmpflxm_y
-  !-----------------------------------------------------------------------------
-  !-----------------------------------------------------------------------------
-  subroutine cmpflxm_z
-  ! local variables
-  real(dp), dimension(self%mesh(3)%gn,self%nv):: qleft, qright, fgdnv
-  !-----------------------------------------------------------------------------
-  dtds = self%dtime/self%mesh%d       ! needed here
-  lb = self%mesh%li
-  ub = self%mesh%uo
-  qleft=0.0; qright=0.0
-  do j = lb(2),ub(2)
-    do i = lb(1),ub(1)
-      qleft (:,1) = qm(i,j,:,1,3); qright(:,1) = qp(i,j,:,1,3)
-      qleft (:,2) = qm(i,j,:,4,3); qright(:,2) = qp(i,j,:,4,3)
-      qleft (:,3) = qm(i,j,:,5,3); qright(:,3) = qp(i,j,:,5,3)
-      qleft (:,4) = qm(i,j,:,2,3); qright(:,4) = qp(i,j,:,2,3)
-      qleft (:,5) = qm(i,j,:,3,3); qright(:,5) = qp(i,j,:,3,3)
-      if (detailed_timer) call trace_end (itimer)
-      call solver (self,self%mesh(3)%gn,qleft,qright,fgdnv,error,detailed_timer)
-      if (error) call error_handler('z', i, j, lb(3), ub(3))
-      if (detailed_timer) call trace_begin ('hd_mod::cmpflxm', itimer=itimer)
-      fl(i,j,:,self%idx%d ,3) = fgdnv(:,1)*dtds(3)
-      fl(i,j,:,self%idx%pz,3) = fgdnv(:,2)*dtds(3)
-      fl(i,j,:,self%idx%e ,3) = fgdnv(:,3)*dtds(3)
-      fl(i,j,:,self%idx%px,3) = fgdnv(:,4)*dtds(3)
-      fl(i,j,:,self%idx%py,3) = fgdnv(:,5)*dtds(3)
-    end do
-  end do
-  end subroutine cmpflxm_z
   !-----------------------------------------------------------------------------
   !-----------------------------------------------------------------------------
   subroutine error_handler (label, i1, i2, lb, ub)

@@ -46,7 +46,7 @@
 &flux_params            on=f verbose=0 /
 &ramses_params          courant_factor=0.250 isothermal=t gamma=1.0 slope_type=3.5
                         !riemann='hlld_vec'
-                        smallr=1e-3 smallc=1 detailed_timer=t /
+                        smallr=1e-3 smallc=1 detailed_timer=f /
 &stagger_params         gamma=1.0 nu=0.30,0.0,1.0,0.1,1.0,1.0 /
 &timestep_params        /
 &refine_params          on=f check_interval=2 /
