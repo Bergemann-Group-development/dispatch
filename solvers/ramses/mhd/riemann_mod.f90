@@ -279,7 +279,7 @@ subroutine hlld (self, qleft, qright, fgdnv, ngrid, detailed_timer)
     fgdnv(i,7) = ro*uo*wo-A*Co*lim
     fgdnv(i,8) = Co*uo-A*wo
   end do
-#define ATOMIC
+!#define ATOMIC
 #ifdef ATOMIC
   !$omp atomic
   self%ndiff = self%ndiff + ndiff
