@@ -120,14 +120,14 @@ SUBROUTINE execute (self, task_list, test)
   call mpi%barrier ('end')
   write (io%output,*) "task list finished, min_nq =", min_nq
   if (validate%mode == "write") then
-    call io%print_hl
+    call io%print_hl()
     write (io%output,'(a)') &
       ' validate file '//trim(io%outputname)//'/rank_00000.val written'
-    call io%print_hl
+    call io%print_hl()
   else if (validate%mode == "compare") then
-    call io%print_hl
+    call io%print_hl()
     write (io%output,*) "validate%ok =", validate%ok
-    call io%print_hl
+    call io%print_hl()
   end if
   call trace%end (itimer)
   write (io_unit%mpi,*) 'end dispatcher0_t%execute'

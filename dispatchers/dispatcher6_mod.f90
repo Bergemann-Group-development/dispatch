@@ -571,6 +571,7 @@ SUBROUTINE unpack (self, mesg, link)
   if (.not. failed) then
     !$omp atomic
     mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
+    !$omp end atomic
     !---------------------------------------------------------------------------
     ! If the boundary+swap bits are set, this is a task that has just changed
     ! rank, and it needs to have its nbor relations re-initialized. This includes

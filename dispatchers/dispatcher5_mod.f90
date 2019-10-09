@@ -90,6 +90,7 @@ SUBROUTINE execute (self, task_list, test)
     if (task_list%na == task_list%n_tasks) then
       !$omp atomic
       min_nq = min(min_nq,task_list%nq)
+      !$omp end atomic
     end if
   end do
   write (io_unit%log,*) 'thread',omp%thread,' arrived'
@@ -146,6 +147,7 @@ SUBROUTINE update_list (task_list, test)
   if (mpi%size > 1) then
     !$omp atomic read
     nq = task_list%nq
+    !$omp end atomic
     call mpi_mesg%sent_list%check_sent (nq)
   end if
   call mpi_io%iwrite_list%check                         ! I/O check
@@ -224,6 +226,7 @@ SUBROUTINE update_list (task_list, test)
         call task_list%queue_active (head)
       !$omp atomic
       task_list%nq = task_list%nq-1                          ! decrement queue count
+      !$omp end atomic
       task%nq = task_list%nq                                 ! for info print
       if (io%verbose >= 0) then
         if (track_active) then
@@ -233,8 +236,10 @@ SUBROUTINE update_list (task_list, test)
             write (*,'(a,2(f12.6,i6))') 'TIME ERROR: otime, oid, time, id =', otime, oid, time, otask%id
           !$omp atomic write
           otime = time
+          !$omp end atomic
           !$omp atomic write
           oid = otask%id
+          !$omp end atomic
           if (omp%master) then
             write (io_unit%queue,'(f12.6,i6,2f12.6,2i5)') &
               wallclock(), task%istep, task%time, &
@@ -298,6 +303,7 @@ SUBROUTINE update_list (task_list, test)
       call check_nbors (task_list, head)                ! any nbors ready?
       !$omp atomic write
       stalled = 0
+      !$omp end atomic
     end if
   !-----------------------------------------------------------------------------
   ! If the queue is empty, check all tasks; this may be due to late packages
@@ -355,6 +361,7 @@ SUBROUTINE update_task (self, head, test, was_refined)
     if (task%is_set(bits%ready)) then
       !$omp atomic
       self%na = self%na - 1
+      !$omp end atomic
     end if
     call trace%end (itimer)
     return
@@ -373,6 +380,7 @@ SUBROUTINE update_task (self, head, test, was_refined)
   call task%update                                  ! update the task
   !$omp atomic
   mpi_mesg%n_update = mpi_mesg%n_update+1
+  !$omp end atomic
   if (io%verbose>1) &
     write (io_unit%log,'(a,i4,2x,a,i7,2x,a,2x,a,i7,2x,a,1p,2g14.6,2x,a,2i5,l3)') &
     'thread', omp_mythread, 'task', task%id, trim(task%type), &
@@ -607,6 +615,7 @@ SUBROUTINE unpack (self, mesg, link)
   if (.not. failed) then
     !$omp atomic
     mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
+    !$omp end atomic
     !---------------------------------------------------------------------------
     ! If the boundary+swap bits are set, this is a task that has just changed
     ! rank, and it needs to have its nbor relations re-initialized. This includes
