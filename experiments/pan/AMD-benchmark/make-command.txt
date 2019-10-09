@@ -22,3 +22,20 @@ srun -p demo --constraint=epyc7452 --nodes=1 --cpus-per-task=128 --ntasks-per-co
 Then run the experiment:
 
 srun taskset -c 0-15 env OMP_NUM_THREADS=16 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x 512_bench.nml
+
+
+**** new setup *****
+First compile with:
+
+make SOLVER=ramses/mhd COMPILER=ifort -j HW='-march=core-avx2 -align array64byte -qopt-assume-safe-padding -vec-threshold1' OPT='-O3 -ip' DEBUG='-g -traceback -check pointers' -j 64
+rm build/mhd_mod.o
+make SOLVER=ramses/mhd COMPILER=ifort -j HW='-march=core-avx2 -align array64byte -qopt-assume-safe-padding -vec-threshold1' OPT='-O3 -ip' DEBUG='-g -traceback -check pointers' -j 64 mhd_mod.o
+make SOLVER=ramses/mhd COMPILER=ifort -j HW='-march=core-avx2 -align array64byte -qopt-assume-safe-padding -vec-threshold1' OPT='-O3 -ip' DEBUG='-g -traceback -check pointers' -j 64
+
+then use the input_512.nml input file. E.g.
+
+srun -p demo --constraint=epyc7302 --nodes=1 --cpus-per-task=64 --ntasks-per-core=2 --pty /bin/tcsh
+
+... get on to node ...
+
+srun taskset -c 0-7 env OMP_NUM_THREADS=8 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
