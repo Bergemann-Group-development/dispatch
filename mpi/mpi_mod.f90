@@ -527,6 +527,11 @@ contains
                               1, MPI_INTEGER8, MPI_SUM, self%window, mpi_err)
   call mpi%assert ('MPI_Accumulate', mpi_err)
   end subroutine
+#else
+  !$omp atomic capture
+  j = self%i
+  self%i = self%i + i
+  !$omp end atomic
 #endif
 END FUNCTION update8
 
