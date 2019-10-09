@@ -10,9 +10,11 @@ rm build/mhd_mod.o
 make SOLVER=ramses/mhd COMPILER=ifort -j HW='-march=core-avx2 -align array64byte -qopt-assume-safe-padding -vec-threshold1' OPT='-O3 -ip' DEBUG='-g -traceback -check pointers' -j 64 mhd_mod.o
 make SOLVER=ramses/mhd COMPILER=ifort -j HW='-march=core-avx2 -align array64byte -qopt-assume-safe-padding -vec-threshold1' OPT='-O3 -ip' DEBUG='-g -traceback -check pointers' -j 64
 
-AMD 7302
+#####################################
+# AMD 7302
+#####################################
 cores threads mus/pt  run line
-4     1       1.91    srun taskset -c 0-3 env OMP_NUM_THREADS=8 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+4     1       1.91    srun taskset -c 0-3 env OMP_NUM_THREADS=4 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
 8     1       1.90    srun taskset -c 0-7 env OMP_NUM_THREADS=8 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
 16    1       2.03    srun taskset -c 0-15 env OMP_NUM_THREADS=16 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
 32    1       5.52    srun taskset -c 0-31 env OMP_NUM_THREADS=32 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
@@ -21,3 +23,89 @@ cores threads mus/pt  run line
 8     2       3.26    srun taskset -c 0-7,32-39  env OMP_NUM_THREADS=16 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
 16    2       3.50    srun taskset -c 0-15,32-47 env OMP_NUM_THREADS=32 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
 32    2       5.60    srun taskset -c 0-63 env OMP_NUM_THREADS=64 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+
+
+#####################################
+# AMD 7452
+#####################################
+cores threads mus/pt  run line
+4     1       1.96    srun taskset -c 0-3 env OMP_NUM_THREADS=4 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+8     1       2.50    srun taskset -c 0-7 env OMP_NUM_THREADS=8 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+16    1       2.63    srun taskset -c 0-15 env OMP_NUM_THREADS=16 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+32    1       3.26    srun taskset -c 0-31 env OMP_NUM_THREADS=32 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+64    1      10.0     srun taskset -c 0-63 env OMP_NUM_THREADS=64 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+
+4     2       3.30    srun taskset -c 0-3,64-67  env OMP_NUM_THREADS=8  KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+8     2       4.44    srun taskset -c 0-7,64-71  env OMP_NUM_THREADS=16 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+16    2       4.83    srun taskset -c 0-15,64-79 env OMP_NUM_THREADS=32 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+32    2       7.02    srun taskset -c 0-31,64-95 env OMP_NUM_THREADS=64 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+64    1      11.3     srun taskset -c 0-127 env OMP_NUM_THREADS=128 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+
+# use only 4 cores per NUMA domain / chiplet. Effectively like a 7302
+4     2       3.30    srun taskset -c 0-3,64-67  env OMP_NUM_THREADS=8  KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+8     2       3.34    srun taskset -c 0-3,8-11,64-67,72-75 env OMP_NUM_THREADS=16 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+16    2       3.62    srun taskset -c 0-3,8-11,16-19,24-27,64-67,72-75,80-83,88-91 env OMP_NUM_THREADS=32 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_512.nml
+
+# use only 4 cores per NUMA domain / chiplet. Effectively like a 7302. Optimize without "-check pointers"
+16    2       3.20    srun taskset -c 0-3,8-11,16-19,24-27,64-67,72-75,80-83,88-91 env OMP_NUM_THREADS=32 KMP_AFFINITY="verbose,granularity=thread,scatter,1,0" ./dispatch.x input_4096.nml
+
+
+#####################################
+# AMD 7452
+#####################################
+# Git version: ce3a0fbc5a7335d9c15735bd8606232d2ec98985
+# Optimized binary. Intel compiler 18.0.3. Make line:
+# make SOLVER=ramses/mhd COMPILER=ifort -j HW='-march=core-avx2 -align array64byte -qopt-assume-safe-padding -vec-threshold0' OPT='-O3 -ip' DEBUG='-g -traceback' -j 64
+#
+# WEAK Scaling test with 32^3 patch size and 64 patches / core. mus/pt is on a core basis. Pure OpenMP test, no MPI
+cores threads  mus/pt  patches  log file
+1     1        1.00    4x4x4    weak_1_core_1t_7452.txt
+2     1        1.13    4x4x8    weak_2_core_1t_7452.txt
+4     1        1.40    4x8x8    weak_4_core_1t_7452.txt
+8     1        2.09    8x8x8    weak_8_core_1t_7452.txt_opt
+16    1        2.22    8x8x16   weak_16_core_1t_7452.txt_opt
+32    1        2.45    8x16x16  weak_32_core_1t_7452.txt_opt
+
+# Only use 4 cores per chiplet, like a 7302.
+# Notice that 16 spread out active cores is essentially as good as running on all 32 cores
+8     1        1.50    8x8x8    weak_8_core_1t_4c_7452.txt
+16    1        1.65    8x8x16   weak_16_core_1t_4c_7452.txt 
+16    1        1.63    8x16x16  weak_16_core_1t_4c_big_7452.txt 
+
+cores threads  mus/pt  patches  log file
+1     2        0.83    4x4x4    weak_1_core_2t_7452.txt
+2     2        0.92    4x4x8    weak_2_core_2t_7452.txt
+4     2        1.22    4x8x8    weak_4_core_2t_7452.txt
+8     2        2.04    8x8x8    weak_8_core_2t_7452.txt_opt
+16    2        2.30    8x8x16   weak_16_core_2t_7452.txt_opt
+32    2        2.58    8x16x16  weak_32_core_2t_7452.txt_opt
+
+#####################################
+# AMD 7302
+#####################################
+# Git version: ce3a0fbc5a7335d9c15735bd8606232d2ec98985
+# Optimized binary. Intel compiler 18.0.3. Make line:
+# make SOLVER=ramses/mhd COMPILER=ifort -j HW='-march=core-avx2 -align array64byte -qopt-assume-safe-padding -vec-threshold0' OPT='-O3 -ip' DEBUG='-g -traceback' -j 64
+#
+# WEAK Scaling test with 32^3 patch size and 80 patches / core. mus/pt is on a core basis. Pure OpenMP test, no MPI
+cores threads  mus/pt  patches  log file
+1     1        1.15    4x5x4    weak_1_core_1t_7302.txt
+2     1        1.15    4x5x8    weak_2_core_1t_7302.txt
+4     1        1.36    4x10x8   weak_4_core_1t_7302.txt
+8     1        1.40    8x10x8   weak_8_core_1t_7302.txt_opt
+16    1        1.46    8x10x16  weak_16_core_1t_7302.txt_opt
+
+cores threads  mus/pt  patches  log file
+1     2        0.91    4x5x4    weak_1_core_2t_7302.txt
+2     2        0.93    4x5x8    weak_2_core_2t_7302.txt
+4     2        1.20    4x10x8   weak_4_core_2t_7302.txt
+8     2        1,24    8x10x8   weak_8_core_2t_7302.txt_opt
+16    2        1.28    8x10x16  weak_16_core_2t_7302.txt_opt
+
+
+# WEAK Scaling test with 32^3 patch size and 80 patches / core. mus/pt is on a core basis. MPIxOpenMP test
+ranks cores tot-cores threads  mus/pt  patches  log file
+2     8     16        2        1.28    8x10x16  weak_2m_8c_2t_7302.txt
+2     16    32        2        1.35    16x10x16 weak_2m_16c_2t_7302.txt
+4     4     16        2        1.30    8x10x16  weak_4m_4c_2t_7302.txt
+4     8     32        2        1.34    16x10x16 weak_4m_8c_2t_7302.txt
