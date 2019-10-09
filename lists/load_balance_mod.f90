@@ -100,6 +100,9 @@ CONTAINS
 SUBROUTINE init (self)
   class(load_balance_t):: self
   logical, save:: on=.false.
+#ifndef _CRAYFTN
+  type(io_rank_info_t):: io_rank_info
+#endif
   namelist /load_balance_params/ on, cadence, threshold, grace, &
     duration, only_initial, q_min, q_max
   integer:: iostat
@@ -111,14 +114,11 @@ SUBROUTINE init (self)
   self%on = on
   next_info = cadence
 #ifndef _CRAYFTN
-  block
-  type(io_rank_info_t):: io_rank_info
   if (n_io_rank_info*4 /= storage_size(io_rank_info)/8) then
     print *, n_io_rank_info*4, storage_size(io_rank_info)/8
     error stop 'The hardwired loadbalance_mod::n_io_rank_info is incorrect'
   end if
   n_io_rank_info = storage_size(io_rank_info)/32
-  end block
 #endif
 END SUBROUTINE init
 

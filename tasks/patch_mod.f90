@@ -1540,6 +1540,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         !$omp critical (info_cr2)
         !$omp atomic write
         timer%n_lines = max_lines
+        !$omp end atomic
         write(io%output,'(a)') &
         '0....+....1....+....2....+....3....+....4....+....5....+....' &
         //'6....+....7....+....8....+....9....+....0....+....1  ntsk   nq ' &
@@ -2055,8 +2056,9 @@ SUBROUTINE check_nan (self, panic, label, always)
 END SUBROUTINE check_nan
 
 LOGICAL FUNCTION isinf(a)
+  use ieee_arithmetic, only : ieee_is_nan
   real(kind=KindScalarVar):: a
-  isinf = isnan(a) .or. (abs(a) > huge(1.0_KindScalarVar))
+  isinf = ieee_is_nan(a) .or. (abs(a) > huge(1.0_KindScalarVar))
 END FUNCTION isinf
 
 !===============================================================================
@@ -2143,6 +2145,7 @@ SUBROUTINE check_density (self, label)
     do it=1,self%nt
       !$omp atomic read
       jt = self%iit(it)
+      !$omp end atomic
       write (io_unit%dump) self%mem(:,:,:,:,jt,iw)
     end do
     end do

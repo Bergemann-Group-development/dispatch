@@ -139,6 +139,7 @@ SUBROUTINE open_and_close ()
     if (check_files) then
       !$omp atomic write
       check_files = .false.
+      !$omp end atomic
       call trace%begin ('parallel_io_t%open_and_close')
       if (associated(files_out)) then
         do i=io0,io1

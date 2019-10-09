@@ -658,6 +658,7 @@ SUBROUTINE unpack (self, mesg, link)
   logical:: found, failed, new
   integer:: id, n_added
   integer, save:: itimer=0
+  real(8):: wc
   !-----------------------------------------------------------------------------
   call trace%begin ('task_mesg_t%unpack', itimer=itimer)
   if (mesg%nbuf < 40) then
@@ -738,12 +739,9 @@ SUBROUTINE unpack (self, mesg, link)
   !-----------------------------------------------------------------------------
   ! Measure the update cadence for this virtual task
   !-----------------------------------------------------------------------------
-  block
-  real(8):: wc
   wc = wallclock()
   task%update_cadence = wc - task%update_last
   task%update_last = wc
-  end block
   !-----------------------------------------------------------------------------
   ! Unpack a patch message (which includes swapping the roles of boundary bits).
   ! Since an already existing patch may, at any one time, be under investigation

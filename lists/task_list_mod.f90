@@ -648,6 +648,7 @@ SUBROUTINE init_levelstats (self)
       !$omp atomic update
       timer%levelpop(link%task%level) = &
       timer%levelpop(link%task%level) + 1
+      !$omp end atomic
       link => link%next
     end do
     allocate (timer%levelcost(refine%levelmin:refine%levelmax))

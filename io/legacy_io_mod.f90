@@ -62,12 +62,15 @@ SUBROUTINE output (self, experiment_name)
   if (io%out_time==0.0) then
     !$omp atomic read
     time = self%time
+    !$omp end atomic
   else if (io%time_derivs>0) then
     !$omp atomic read
     time = self%t(self%nt-2)
+    !$omp end atomic
   else
     !$omp atomic read
     time = self%out_next
+    !$omp end atomic
   end if
   !-----------------------------------------------------------------------------
   ! Set io%format
@@ -93,8 +96,10 @@ SUBROUTINE output (self, experiment_name)
       !-------------------------------------------------------------------------
       !$omp atomic read
       it1 = self%iit(self%nt-2)
+      !$omp end atomic
       !$omp atomic read
       it2 = self%iit(self%nt-1)
+      !$omp end atomic
       if (io%out_time == 0.0) then
         buf = self%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,self%it,jo)
       !-------------------------------------------------------------------------
@@ -105,8 +110,10 @@ SUBROUTINE output (self, experiment_name)
       else
         !$omp atomic read
         t1 = self%t(it1)
+        !$omp end atomic
         !$omp atomic read
         t2 = self%t(it2)
+        !$omp end atomic
         pt = (time-t1)/max(t2-t1,1d-30)
         if (t2==t1) pt=0.0
         qt = 1.0-pt

@@ -837,22 +837,22 @@ END SUBROUTINE file_append
 !===============================================================================
 !> Close the data I/O
 !===============================================================================
-SUBROUTINE close
+SUBROUTINE close()
   !.............................................................................
   if (.not.io%do_output) return
   call trace%begin('patch_t%close')
   if      (io%method=='legacy') then
-    !call legacy_io%close
+    !call legacy_io%close()
   else if (io%method=='direct') then
-    call direct_io%close
+    call direct_io%close()
   else if (io%method=='buffered') then
-    call buffered_io%close
+    call buffered_io%close()
   else if (io%method=='pan') then
-    call parallel_io%close
+    call parallel_io%close()
   else if (io%method=='parallel') then
-    call parallel_io%close
+    call parallel_io%close()
   else if (io%method=='snapshot') then
-    call parallel_io%close
+    call parallel_io%close()
   end if
   call trace%end()
 END SUBROUTINE close
