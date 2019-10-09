@@ -121,6 +121,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   real:: pt(2)
   character(len=64):: info
   logical:: all_cells_l, lock_it
+  integer:: n_not
   !-----------------------------------------------------------------------------
   call trace%begin('download_t%download_link', itimer=itimer)
   if (.not.associated(link)) then
@@ -239,13 +240,13 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
          if (source%level==target%level) then
            select case (trim(use_same))
            case ('different')
-             call different (self, target, source, jt, pt, all_cells, only=only)
+             call different (self, target, source, jt, pt, all_cells_l, only=only)
            case ('guard_zones')
              call guard_zones%method (target, source, jt, pt)
            case ('guard_same')
              call guard_zones%method (target, source, jt, pt, same=.true.)
            case default
-             call self%same (target, source, jt, pt, all_cells, only=only)
+             call self%same (target, source, jt, pt, all_cells_l, only=only)
            end select
          !----------------------------------------------------------------------
          ! Prolong cases
@@ -253,28 +254,28 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
          else if ((source%level-target%level) <= -1) then
            select case (trim(use_prolong))
            case ('different')
-             call different (self, target, source, jt, pt, all_cells, only=only)
+             call different (self, target, source, jt, pt, all_cells_l, only=only)
            case ('prolong')
-             call prolong (self, target, source, jt, pt, all_cells, only=only)
+             call prolong (self, target, source, jt, pt, all_cells_l, only=only)
            case ('guard_zones')
              call guard_zones%method (target, source, jt, pt)
            case default
-             call different_prolong (self, target, source, jt, pt, all_cells, only=only)
+             call different_prolong (self, target, source, jt, pt, all_cells_l, only=only)
            end select
          !----------------------------------------------------------------------
          ! Prolong cases with all_cell
          !----------------------------------------------------------------------
          else if (source%level < target%level .and. present(all_cells)) then
-           call different_prolong (self, target, source, jt, pt, all_cells, only=only)
+           call different_prolong (self, target, source, jt, pt, all_cells_l, only=only)
          !----------------------------------------------------------------------
          ! Restrict cases
          !----------------------------------------------------------------------
          else if ((source%level-target%level) == 1) then
            select case (trim(use_restrict))
            case ('different')
-             call different (self, target, source, jt, pt, all_cells, only=only)
+             call different (self, target, source, jt, pt, all_cells_l, only=only)
            case ('diff_pro')
-             call different_prolong (self, target, source, jt, pt, all_cells, only=only)
+             call different_prolong (self, target, source, jt, pt, all_cells_l, only=only)
            case ('guard_zones')
              call guard_zones%method (target, source, jt, pt)
            case default
@@ -332,8 +333,6 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       l = target%mesh%lb
       u = target%mesh%ub
     end if
-    block
-    integer:: n_not
     n_not = 0
     if (any(filled(l(1):u(1),l(2):u(2),l(3):u(3),:) == -1)) then
       !-------------------------------------------------------------------------
@@ -374,13 +373,12 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     task%not_filled = n_not
     end select
     end associate
-    end block
     deallocate (filled)
     if (verbose > 0) &
       deallocate (src)
   end if
   !-----------------------------------------------------------------------------
-  call guard_zones%info
+  call guard_zones%info()
   if (target%is_clear(bits%no_density)) &
     call validate%check (target%link, d, ' after download')
   call trace%end (itimer)
