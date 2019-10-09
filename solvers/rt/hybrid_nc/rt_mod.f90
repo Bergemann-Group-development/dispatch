@@ -881,7 +881,7 @@ SUBROUTINE finish(self)
   end if
   self%mem(:,:,:,:,self%new,1) = self%mem(:,:,:,:,self%it,1)            ! predict
   deallocate (self%d, self%e, self%rk, self%src)                        ! deallocate scratch
-  call trace%end
+  call trace%end()
 END SUBROUTINE finish
 
 SUBROUTINE solve_integral (self, link, q_in_fw, q_in_re, q_out_fw, q_out_re)

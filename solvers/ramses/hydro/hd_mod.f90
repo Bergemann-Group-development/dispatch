@@ -106,7 +106,7 @@ SUBROUTINE init (self)
   self%pervolume(self%idx%px) = unsigned
   self%pervolume(self%idx%py) = unsigned
   self%pervolume(self%idx%pz) = unsigned
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -117,7 +117,7 @@ SUBROUTINE dealloc (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('hd_t%dealloc')
   call self%extras_t%dealloc
-  call trace%end
+  call trace%end()
 END SUBROUTINE dealloc
 
 !===============================================================================
@@ -400,7 +400,7 @@ subroutine godunov (self)
   if (detailed_timer) then
     call trace%end (itimer)
   else
-    call trace%end
+    call trace%end()
   end if
 end subroutine godunov
 
@@ -488,7 +488,7 @@ subroutine unsplit(self)
   call uslope(self)                   ! TVD slopes
   call trace3d(self)                  ! predictor step
   call cmpflxm(self)                  ! Solve for 1D flux in X direction
-  call trace%end
+  call trace%end()
 end subroutine unsplit
 
 !===============================================================================
@@ -549,7 +549,7 @@ subroutine ctoprim (self)
   if (detailed_timer) then
     call trace%end (itimer)
   else
-    call trace%end
+    call trace%end()
   end if
 end subroutine ctoprim
 
@@ -600,7 +600,7 @@ subroutine uslope(self)
     if (detailed_timer) then
       call trace%end (itimer)
     else
-      call trace%end
+      call trace%end()
     end if
     return
   else if (islope_type==1) then  ! minmod
@@ -831,7 +831,7 @@ subroutine uslope(self)
   if (detailed_timer) then
     call trace%end (itimer)
   else
-    call trace%end
+    call trace%end()
   end if
 end subroutine uslope
 
@@ -968,7 +968,7 @@ subroutine trace3d(self)
   if (detailed_timer) then
     call trace%end (itimer)
   else
-    call trace%end
+    call trace%end()
   end if
 end subroutine trace3d
 
@@ -1053,7 +1053,7 @@ subroutine cmpflxm(self)
   if (detailed_timer) then
     call trace%end (itimer)
   else
-    call trace%end
+    call trace%end()
   end if
 contains
   !-----------------------------------------------------------------------------

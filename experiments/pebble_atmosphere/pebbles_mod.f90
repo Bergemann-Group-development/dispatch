@@ -86,7 +86,7 @@ SUBROUTINE init (self, id)
       print*,'pebbles_t%init', self%id
   end if
   self%initialized = .true.
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================

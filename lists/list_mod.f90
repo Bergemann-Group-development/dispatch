@@ -126,7 +126,7 @@ SUBROUTINE init (self, name)
     sequence(:) = 0
   end if
   !$omp end critical (sequence_alloc_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -152,7 +152,7 @@ SUBROUTINE reset (self)
   end do
   nullify (self%head)
   nullify (self%tail)
-  call trace%end
+  call trace%end()
 END SUBROUTINE reset
 
 !===============================================================================
@@ -173,7 +173,7 @@ SUBROUTINE append_task (self, task, nbor, needed, needs_me)
   if (present(needed))   link%needed   = needed
   if (present(needs_me)) link%needs_me = needs_me
   call self%append_link (link)
-  call trace%end
+  call trace%end()
 END SUBROUTINE append_task
 
 !===============================================================================
@@ -223,7 +223,7 @@ SUBROUTINE append_link (self, link)
   call self%lock%unset ('list_t%append_link')
   if (self%verbose > 2) &
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(2)'
-  call trace%end
+  call trace%end()
 END SUBROUTINE append_link
 
 !===============================================================================
@@ -262,7 +262,7 @@ SUBROUTINE prepend_link (self, link)
   ! IMPORTANT: Some procedures depend on knowing the size of the list!
   !-----------------------------------------------------------------------------
   call self%lock%unset ('list_t%prepend_link')
-  call trace%end
+  call trace%end()
 END SUBROUTINE prepend_link
 
 !===============================================================================
@@ -304,7 +304,7 @@ SUBROUTINE remove_and_reset (self, link)
   timer%levelpop (link%task%level) = &     ! decrement level population count
   timer%levelpop (link%task%level) - 1
   call link%garbage_collect (link)         ! add to garbage bin
-  call trace%end
+  call trace%end()
 END SUBROUTINE remove_and_reset
 
 !===============================================================================
@@ -549,7 +549,7 @@ SUBROUTINE check_nbor_nbors (self, link)
     nbor => nbor%next
   end do
   call self%check_ready(link)
-  call trace%end
+  call trace%end()
 END SUBROUTINE check_nbor_nbors
 
 !===============================================================================
@@ -676,7 +676,7 @@ SUBROUTINE resend_bdry (self)
     link => link%next
   end do
   call self%lock%unset ('resend_bdry')
-  call trace%end
+  call trace%end()
 END SUBROUTINE resend_bdry
 
 !===============================================================================
@@ -793,7 +793,7 @@ SUBROUTINE check_oldest (self)
       end do
     end if
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE check_oldest
 
 !===============================================================================
@@ -898,7 +898,7 @@ SUBROUTINE consistency (self, link, i)
 !    write (io_unit%log,*) task%id, 'consistent', id1, id2, i
   end if
   call self%lock%unset ('list_t%consistency')
-  call trace%end
+  call trace%end()
 END SUBROUTINE consistency
 
 !===============================================================================
@@ -955,7 +955,7 @@ SUBROUTINE qconsistency (self, ident)
     end do
     !call mpi%abort ('ERROR: qconsistency size')
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE qconsistency
 
 !===============================================================================
@@ -1013,7 +1013,7 @@ SUBROUTINE aconsistency (self, ident)
       if (n > self%nac+2) exit
     end do
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE aconsistency
 
 !===============================================================================
@@ -1054,7 +1054,7 @@ SUBROUTINE init_nonleaf (self)
     link => link%next                                   ! continue list
   end do
   call self%lock%unset ('list_t%init_nonleaf')
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_nonleaf
 
 !===============================================================================
@@ -1261,7 +1261,7 @@ SUBROUTINE init_nbor_nbors (self, link)
     nbor => nbor%next
   end do
   call link%remove_nbor_list (nbors)          ! remove the nbor list copy
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_nbor_nbors
 
 !===============================================================================
@@ -1370,7 +1370,7 @@ SUBROUTINE remove_parents (self)
     link => link%next                                   ! continue list
   end do
   call self%lock%unset ('remove_parent')
-  call trace%end
+  call trace%end()
 END SUBROUTINE remove_parents
 
 !===============================================================================
@@ -1428,7 +1428,7 @@ SUBROUTINE append_list (self, task_list)
   else
     write (io_unit%log,*) trim(self%name)//': inconsistent append of '//task_list%name
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE append_list
 
 !===============================================================================
@@ -1466,7 +1466,7 @@ SUBROUTINE remove_task (self, task)
   call self%lock%unset ('remove_task')
   if (self%verbose > 1) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(3)'
-  call trace%end
+  call trace%end()
 END SUBROUTINE remove_task
 
 !===============================================================================
@@ -1871,7 +1871,7 @@ SUBROUTINE insert (self, old, new)
   !-----------------------------------------------------------------------------
   call self%count_status()
   call self%lock%unset ('insert')
-  call trace%end
+  call trace%end()
 END SUBROUTINE insert
 
 !===============================================================================
@@ -1966,7 +1966,7 @@ SUBROUTINE print_list (self, label)
     link => link%next
   end do
   call self%lock%unset ('print_list')
-  call trace%end
+  call trace%end()
 END SUBROUTINE print_list
 
 !===============================================================================
@@ -2024,7 +2024,7 @@ SUBROUTINE init_bdries (self)
     self%urc = max(self%urc, link%task%position+0.5000000001_8*link%task%size)
     link => link%next
   end do
-  call trace%end
+  call trace%end()
 contains
   !-----------------------------------------------------------------------------
   function formatted (task) result (out)
@@ -2164,7 +2164,7 @@ SUBROUTINE update_nbor_status (self, link)
     call nbor%task%clear (bits%swap_request)
   end if
   call link%lock%unset ('update_nbor_status')
-  call trace%end
+  call trace%end()
 END SUBROUTINE update_nbor_status
 
 !===============================================================================

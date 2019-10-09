@@ -92,7 +92,7 @@ SUBROUTINE init (self)
   call bifrost%get (self%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,self%it,1), self%mesh, self%time, self%dtime)
   call self%bifrost_rt%init
   call self%bifrost_rt%get
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -104,7 +104,7 @@ SUBROUTINE get (self)
   call trace%begin ('solver_t%get')
   call bifrost%get (self%mem(:,:,:,:,self%new,1), self%mesh, self%time, self%dtime)
   call self%bifrost_rt%get
-  call trace%end
+  call trace%end()
 END SUBROUTINE get
 
 !===============================================================================
@@ -117,7 +117,7 @@ SUBROUTINE put (self)
   call self%bifrost_mesh%put
   call bifrost%put (self%mem(:,:,:,:,self%it,1), self%mesh, self%time)
   call self%bifrost_rt%put
-  call trace%end
+  call trace%end()
 END SUBROUTINE put
 
 !===============================================================================
@@ -129,7 +129,7 @@ SUBROUTINE dnload (self, only)
   !-----------------------------------------------------------------------------
   call trace%begin ('solver_t%dnload')
   call download%download_link (self%link)
-  call trace%end
+  call trace%end()
 END SUBROUTINE dnload
 
 !===============================================================================
@@ -147,7 +147,7 @@ SUBROUTINE update (self)
   call self%get
   call bifrost%dealloc_scratches
   call self%post_update
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 !===============================================================================
@@ -161,7 +161,7 @@ SUBROUTINE pack (self, mesg)
   call trace%begin ('solver_t%pack')
   call self%patch_t%pack (mesg)
   ! ...
-  call trace%end
+  call trace%end()
 END SUBROUTINE pack
 
 !===============================================================================
@@ -176,7 +176,7 @@ SUBROUTINE unpack (self, mesg)
   call trace%begin ('solver_t%unpack')
   call self%patch_t%unpack (mesg)
   ! ...
-  call trace%end
+  call trace%end()
 END SUBROUTINE unpack
 
 !===============================================================================

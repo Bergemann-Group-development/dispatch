@@ -194,7 +194,7 @@ SUBROUTINE init (self)
   call self%task_list%init_all_nbors
   call self%task_list%print_tasks
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 END MODULE experiment_setup_mod

@@ -78,7 +78,7 @@ SUBROUTINE init (self)
   !$omp end critical (particle_patch_cr)
   self%id = id
   self%size = size
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -104,7 +104,7 @@ SUBROUTINE create (self, n)
   end do
   if (verbose>0) &
     print *, 'ppatch created: id, n, mass =', history%id, self%particles%n, self%mass
-  call trace%end
+  call trace%end()
 END SUBROUTINE create
 
 !===============================================================================
@@ -149,7 +149,7 @@ SUBROUTINE force_on (self, particle)
     end select
     item => item%next
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE force_on
 
 !===============================================================================
@@ -230,7 +230,7 @@ SUBROUTINE move_past (self, time)
     end select
     item => item%next
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE move_past
 
 !===============================================================================
@@ -254,7 +254,7 @@ SUBROUTINE randomize (self)
     end select
     item => item%next
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE randomize
 
 !===============================================================================
@@ -284,7 +284,7 @@ SUBROUTINE info (self)
   if (verbose>0) &
     print *,'total moves:', real(moves)
   self%moves = moves
-  call trace%end
+  call trace%end()
 END SUBROUTINE info
 
 !===============================================================================
@@ -361,7 +361,7 @@ SUBROUTINE test (self)
   call delete_ppatch_list (self%other)
   call self%delete
   print *, '===================== TEST: Done ==================================='
-  call trace%end
+  call trace%end()
   !$omp end critical (test_cr)
 END SUBROUTINE test
 

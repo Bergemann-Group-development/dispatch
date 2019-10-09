@@ -104,7 +104,7 @@ SUBROUTINE init (mhd)
     needs=.true.; needs_me=.false.; download=.false.
     call init_nbor_pair (mhd, needs, omega, needs_me, download)
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -155,7 +155,7 @@ SUBROUTINE init_nbor_pair (task1, needed, task2, needs_me, download)
     nbor1%needed = .false.
     nbor2%needs_me = .false.
     if (.not.nbor1%needs_me) then
-      call trace%end
+      call trace%end()
       return
     end if
   end if
@@ -169,7 +169,7 @@ SUBROUTINE init_nbor_pair (task1, needed, task2, needs_me, download)
     nbor2%needs_me = .false.
     nbor1%needed = .false.
     if (.not.nbor2%needed) then
-      call trace%end
+      call trace%end()
       return
     end if
   end if
@@ -178,7 +178,7 @@ SUBROUTINE init_nbor_pair (task1, needed, task2, needs_me, download)
   !-----------------------------------------------------------------------------
   call link1%add_nbor_by_rank (link1%nbor, nbor1)
   call link2%add_nbor_by_rank (link2%nbor, nbor2)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_nbor_pair
 
 END MODULE rt_nbors_mod

@@ -104,7 +104,7 @@ SUBROUTINE execute (self, task_list)
   ! Call the selected dispatcher method
   !-----------------------------------------------------------------------------
   call self%method (task_list)
-  call trace%end
+  call trace%end()
 END SUBROUTINE execute
 
 !===============================================================================

@@ -216,7 +216,7 @@ SUBROUTINE init (self)
     io%iodir = self%iout
     !$omp end master
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -309,7 +309,7 @@ SUBROUTINE gravity_update (self)
     if (verbose>1) &
       print *, self%id, 'gpatch_t%update updated self%poisson_time to', self%poisson_time
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE gravity_update
 
 !===============================================================================

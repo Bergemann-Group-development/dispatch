@@ -97,7 +97,7 @@ SUBROUTINE init (self)
       end do
     end do
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 END MODULE cylinder_mod

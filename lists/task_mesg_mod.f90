@@ -179,7 +179,7 @@ SUBROUTINE check_mpi (self, n_unpk)
   if (present(n_unpk)) then
     n_unpk = n_unpk_l
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE check_mpi
 
 !===============================================================================
@@ -497,7 +497,7 @@ SUBROUTINE init_virtual_list (self, list, i1, i2)
     write (io_unit%log,'(a,2i5,2x,2i4)') &
       'task_mesg_t%init_virtual_list: n, thread, i1, i2 =', &
       list%n, omp%thread, i1, i2
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_virtual_list
 
 !===============================================================================

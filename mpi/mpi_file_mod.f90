@@ -50,7 +50,7 @@ SUBROUTINE request_open (self, filename)
     self%closed = .false.
   end if
 #endif
-  call trace%end
+  call trace%end()
 END SUBROUTINE request_open
 
 !===============================================================================
@@ -61,7 +61,7 @@ SUBROUTINE request_close (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_file_t%request_close')
   self%closed = .true.
-  call trace%end
+  call trace%end()
 END SUBROUTINE request_close
 
 !===============================================================================
@@ -82,7 +82,7 @@ SUBROUTINE open_and_close (self)
       'mpi_file_t%open_and_close: opened '//trim(self%filename)
     flush (io_unit%mpi)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE open_and_close
 
 !===============================================================================
@@ -195,7 +195,7 @@ SUBROUTINE close (self)
   end if
   !$omp end critical (close_cr)
 #endif MPI
-  call trace%end
+  call trace%end()
 END SUBROUTINE close
 
 !===============================================================================

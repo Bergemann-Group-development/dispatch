@@ -73,7 +73,7 @@ SUBROUTINE init (self)
     self%mesh(i)%h(5+i) = -0.5
   end do
   call self%force%init (self%kind)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================

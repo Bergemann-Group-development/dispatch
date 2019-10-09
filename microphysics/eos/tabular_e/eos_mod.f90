@@ -131,7 +131,7 @@ SUBROUTINE init (self,nv)
   !-----------------------------------------------------------------------------
   deallocate (eos_reader%table)
   call timer%toc ('eos_t%init')
-  call trace%end
+  call trace%end()
   end associate
 END SUBROUTINE init
 

@@ -81,7 +81,7 @@ SUBROUTINE conditions (self, patch, it)
     end do
   end if
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE conditions
 
 END MODULE pboundary_mod

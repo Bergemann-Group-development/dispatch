@@ -52,7 +52,7 @@ SUBROUTINE init (self)
   self%order_interpolator = order_interpolator
   self%interpolate => SelectInterpolator(order_interpolator)
   !$omp end critical (download_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -185,7 +185,7 @@ SUBROUTINE test (self)
   call target%init_id_reset
   deallocate (target, source)
   self%interpolate => SelectInterpolator(self%order_interpolator)
-  call trace%end
+  call trace%end()
 contains
 !===============================================================================
 !> Set position systematically
@@ -450,7 +450,7 @@ SUBROUTINE dnload_range (target, source, iv, l, u, offset)
     if (io%verbose>3.or.io_unit%do_validate.or.target%id==io%id_debug) &
       print 1, target%id, target%level, iv, source%id, source%level, l, u
   end if
-  call trace%end
+  call trace%end()
 contains
 !===============================================================================
 !> Local function that returns the index in target index space, given a position

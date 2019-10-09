@@ -74,7 +74,7 @@ SUBROUTINE init (self, solver)
    case default
      print*,'UNKNOWN FORCING TYPE'
    end select
-   call trace%end
+   call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -248,7 +248,7 @@ FUNCTION dust_gas_interaction (self, time, d, mem, Ux, Uy, Uz, m) RESULT (ff)
     self%i=1
     deallocate(self%ff_drag)
   end if
-  call trace%end
+  call trace%end()
 END FUNCTION dust_gas_interaction
 
 END MODULE

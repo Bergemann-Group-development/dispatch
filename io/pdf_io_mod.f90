@@ -72,7 +72,7 @@ SUBROUTINE init (self, patch)
       patch%pdf_next = out_time
     call self%counters%init
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -176,7 +176,7 @@ SUBROUTINE update (self, patch)
     patch%pdf_next = (iout+1)*out_time
     !$omp end critical (update_counters_cr)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 !===============================================================================
@@ -211,7 +211,7 @@ SUBROUTINE output (self)
     write (stdout,*) trim(file)
   counts(:) = 0.0
   self%rms(:) = 0.0
-  call trace%end
+  call trace%end()
 END SUBROUTINE output
 
 !===============================================================================

@@ -47,7 +47,7 @@ SUBROUTINE init (self, link)
   call trace%begin ('forces_t%init')
   self%patch => task2patch (link%task)
   call self%force%init (self%patch%kind, self%patch%id, self%patch%mesh)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -58,7 +58,7 @@ SUBROUTINE dealloc (self)
   !.............................................................................
   call trace%begin ('forces_t%dealloc')
   call self%force%dealloc
-  call trace%end
+  call trace%end()
 END SUBROUTINE dealloc
 
 !===============================================================================

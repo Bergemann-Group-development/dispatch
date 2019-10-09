@@ -135,7 +135,7 @@ SUBROUTINE init (self)
   eos%i_kappa = eos%nv+1
   eos%nv = eos%nv+self%nv
   call timer%toc ('opacity_reader%init')
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !-------------------------------------------------------------------------------

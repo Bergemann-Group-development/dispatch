@@ -73,7 +73,7 @@ SUBROUTINE init (self)
   allocate (self%qq(mx,my,mz))
   self%qq = 0.0
   first_time = .false.
-  call trace%end
+  call trace%end()
   end associate
 END SUBROUTINE init
 
@@ -116,7 +116,7 @@ SUBROUTINE solve (self)
   end do
   end do
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE solve
 
 END MODULE radiation_mod

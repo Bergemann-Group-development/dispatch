@@ -315,7 +315,7 @@ SUBROUTINE init (self, name)
   call self%check_filled
   call self%output
   call self%task_list%print_queue
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -1744,7 +1744,7 @@ END SUBROUTINE check_filled
   write(stdout,'(a,"["2(f14.9,","),f14.9,"]",2x,a,1i3.1)') &
     ' pos = ',star%position,', level = ',sink%ilevel
   write(stdout,*) '=================================================='
-  call trace%end
+  call trace%end()
 END SUBROUTINE read_sink
 
 !===============================================================================
@@ -1889,7 +1889,7 @@ SUBROUTINE evaluate (self, task_list)
   cost3 = n_cost*max_cost
   write(stdout,'(a,1p,3e12.4)') ' costs ratios:     ', cost3/max(tiny(1e0),sum_cost)
   call io%header ('-evaluate: end', left=25)
-  call trace%end
+  call trace%end()
 END SUBROUTINE evaluate
 
 !===============================================================================

@@ -80,7 +80,7 @@ SUBROUTINE update (self)
   call self%courant_condition
   call self%output
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 !===============================================================================
@@ -94,7 +94,7 @@ SUBROUTINE boundary_conditions (self)
   self%mem(:,  01:06,:,:,:,2) = 0.0
   self%mem(:,my-4:my,:,:,:,2) = 0.0
   end associate
-  call trace%end
+  call trace%end()
 END SUBROUTINE boundary_conditions
 
 END MODULE

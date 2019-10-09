@@ -109,7 +109,7 @@ SUBROUTINE init (self)
   self%unsigned(self%idx%d)  = .true.
   self%pervolume(self%idx%s) = .true.
   call self%force%init(self%kind)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -680,7 +680,7 @@ SUBROUTINE nonideal_MHD_courant_condition (self,dt_Ohm_inp,dt_AD_inp)
       self%id, self%dtime, self%courant, self%u_max
   call self%lock%unset ('nonideal_MHD_courant')
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE nonideal_MHD_courant_condition
 
 !===============================================================================

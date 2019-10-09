@@ -98,7 +98,7 @@ SUBROUTINE update (self)
   call validate%check (self, d, ' after update')
   call self%mhd_t%post_update
   end associate
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 !===============================================================================

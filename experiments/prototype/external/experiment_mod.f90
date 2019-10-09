@@ -62,7 +62,7 @@ SUBROUTINE begin (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%init')
   call code_begin
-  call trace%end
+  call trace%end()
 END SUBROUTINE begin
 
 !===============================================================================
@@ -81,7 +81,7 @@ SUBROUTINE init (self)
   call self%connect
   call code_init                                ! ICs, from scratch or snapshot
   call timestep%init
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -112,7 +112,7 @@ SUBROUTINE connect (self)
   interface%mpi_rank   =  mpi%rank
   interface%log_unit   =  io_unit%log
   interface%input_unit =  io%input
-  call trace%end
+  call trace%end()
 END SUBROUTINE connect
 
 !===============================================================================
@@ -125,7 +125,7 @@ SUBROUTINE disconnect (self)
   self%time     = interface%time
   self%dtime    = interface%dtime
   self%u_max    = interface%u_max
-  call trace%end
+  call trace%end()
 END SUBROUTINE disconnect
 
 !===============================================================================
@@ -136,7 +136,7 @@ SUBROUTINE dnload (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%dnload')
   call download%download_link (self%link)
-  call trace%end
+  call trace%end()
 END SUBROUTINE dnload
 
 !===============================================================================
@@ -154,7 +154,7 @@ SUBROUTINE update (self)
   call self%disconnect
   call self%patch_t%courant_condition
   call timestep%update (self%id, self%iit, self%dt, self%mem, self%mesh)
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 !===============================================================================
@@ -168,7 +168,7 @@ SUBROUTINE output (self, experiment_name)
   call trace%begin ('experiment_t%output')
   call code_output (io%out_time)
   call self%patch_t%output
-  call trace%end
+  call trace%end()
 END SUBROUTINE output
 
 !===============================================================================
@@ -181,7 +181,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%info')
   call code_info
-  call trace%end
+  call trace%end()
 END SUBROUTINE info
 
 !===============================================================================
@@ -195,7 +195,7 @@ SUBROUTINE pack (self, mesg)
   call trace%begin ('experiment_t%pack')
   call self%patch_t%pack (mesg)
   call code_pack (mesg%buffer, mesg%nbuf, mesg%ibuf)
-  call trace%end
+  call trace%end()
 END SUBROUTINE pack
 
 !===============================================================================
@@ -210,7 +210,7 @@ SUBROUTINE unpack (self, mesg)
   call trace%begin ('experiment_t%unpack')
   call self%patch_t%unpack (mesg)
   call code_unpack (mesg%buffer, mesg%nbuf, mesg%ibuf)
-  call trace%end
+  call trace%end()
 END SUBROUTINE unpack
 
 
@@ -220,7 +220,7 @@ SUBROUTINE end (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%end')
   call code_end
-  call trace%end
+  call trace%end()
 END SUBROUTINE end
 
 !===============================================================================

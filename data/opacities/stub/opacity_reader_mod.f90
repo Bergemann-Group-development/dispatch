@@ -28,7 +28,7 @@ SUBROUTINE init (self)
   integer:: iT, id, iw
   !-----------------------------------------------------------------------------
   call trace%begin ('opac_reader_t%init (void)')
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 END MODULE opacity_reader_mod

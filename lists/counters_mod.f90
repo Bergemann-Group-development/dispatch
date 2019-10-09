@@ -60,7 +60,7 @@ SUBROUTINE init(self)
       call self%lock%init ('coun')
     end if
     !$omp end critical (input_cr)
-    call trace%end
+    call trace%end()
   end if
 END SUBROUTINE init
 
@@ -230,7 +230,7 @@ SUBROUTINE remove (self, id)
   nullify (counter)
   counters%n = counters%n-1
   call self%lock%unset ('counters_t%remove')
-  call trace%end
+  call trace%end()
 END SUBROUTINE remove
 
 END MODULE counters_mod

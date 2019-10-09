@@ -51,7 +51,7 @@ SUBROUTINE init (self)
   call trace%begin ('solver_t%init')
   call self%hd_t%init
   call self%extras_t%init
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -63,7 +63,7 @@ SUBROUTINE dealloc (self)
   !.............................................................................
   call trace%begin ('solver_t%dealloc')
   call self%hd_t%dealloc
-  call trace%end
+  call trace%end()
 END SUBROUTINE dealloc
 
 !===============================================================================

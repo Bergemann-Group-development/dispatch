@@ -34,7 +34,7 @@ SUBROUTINE init (self, m, idx, star_mass, ff)
   ! select implementation for the potential source term
   call central_star_potential(m, idx, star_mass, ff)
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE
 
 !===============================================================================
@@ -79,7 +79,7 @@ SUBROUTINE central_star_potential(m, idx, star_mass, ff)
   end do
 
   nullify (m1, m2, m3)
-  call trace%end
+  call trace%end()
 END SUBROUTINE central_star_potential
 
 END MODULE

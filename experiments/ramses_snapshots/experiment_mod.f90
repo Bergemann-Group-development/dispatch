@@ -43,7 +43,7 @@ SUBROUTINE dnload (self, only)
     print *, 'WARNING: frozen bit not set on', self%id
     call self%set (bits%frozen)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE dnload
 
 !===============================================================================
@@ -56,7 +56,7 @@ SUBROUTINE update (self)
   if (self%is_clear (bits%frozen)) then
     call self%solver_t%update
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 !===============================================================================
@@ -70,7 +70,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   if (self%is_clear (bits%frozen)) then
     call self%solver_t%info (nq, ntask, experiment_name)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE info
 
 END MODULE experiment_mod

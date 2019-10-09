@@ -43,7 +43,7 @@ SUBROUTINE init (self)
   case default
     call io%abort ('unknown method in dispatcher_mod')
   end select
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================

@@ -80,7 +80,7 @@ SUBROUTINE init (self)
     if (self%nv > 5) self%mesh(i)%h(5+i) = -0.5
   end do
   call self%force%init (self%kind)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -392,7 +392,7 @@ SUBROUTINE gas_pressure (self, pg)
   call eos%lookup(dim=shape(pg),d=d,ee=e,pg=pg)
   
   nullify(d,e)
-  call trace%end
+  call trace%end()
 END SUBROUTINE gas_pressure
 
 FUNCTION cell_gas_pressure(self, c) RESULT (pg)

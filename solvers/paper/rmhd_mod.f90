@@ -52,7 +52,7 @@ SUBROUTINE init (self)
   ! Copy parameters that may be different for various reasons
   !---------------------------------------------------------------------
   self%mesh%p      = self%position
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !=======================================================================

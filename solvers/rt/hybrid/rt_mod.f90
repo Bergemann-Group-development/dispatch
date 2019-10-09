@@ -414,7 +414,7 @@ SUBROUTINE init_nbors (self)
   end do
     if (verbose > 2) &
       write(io%output,*) self%id, 'rt_t%init_nbors: n_nbor=', n_nbor
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_nbors
 
 

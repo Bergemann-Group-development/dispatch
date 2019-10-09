@@ -238,7 +238,7 @@ SUBROUTINE condition (self, m, f, idx)
     end do
   end do
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE condition
 
 END MODULE initial_mod

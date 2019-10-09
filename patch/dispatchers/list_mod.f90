@@ -838,7 +838,7 @@ SUBROUTINE remove_active (self, this)
     next => next%next_active
   end do
   !$omp end critical (active_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE remove_active
 
 !===============================================================================

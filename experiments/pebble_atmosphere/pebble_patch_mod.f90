@@ -1403,7 +1403,7 @@ SUBROUTINE input (self, ok)
     if (verbose>1) print *, trim(filename), ' found'
   else
     if (verbose>0) print *, trim(filename), ' not found'
-    call trace%end
+    call trace%end()
     return
   end if
   !
@@ -1433,7 +1433,7 @@ SUBROUTINE input (self, ok)
   deallocate (buffer,idbuf)
   !$omp end critical (out_cr)
   ok = .true.
-  call trace%end
+  call trace%end()
 END SUBROUTINE input
 
 END MODULE pebble_patch_mod

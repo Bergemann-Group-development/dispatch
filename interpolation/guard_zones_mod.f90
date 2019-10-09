@@ -503,7 +503,7 @@ SUBROUTINE update (target, tmem, td, l, u, iv, source, smem, sd, j0, k, &
       update_t(i) = update_t(i) + (wc(i+1)-wc(i))
     end do
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 !===============================================================================

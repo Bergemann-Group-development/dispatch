@@ -89,7 +89,7 @@ SUBROUTINE init (self)
   !$omp end critical (input_cr)
   self%mode = mode
   self%verbose = verbose
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -335,7 +335,7 @@ SUBROUTINE check2 (self, patch, f1, label1)
     1 format(a,i12,3x,a)
     2 format(a,1pe12.3,3x,a,1pe12.3)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE check2
 
 !===============================================================================
@@ -441,7 +441,7 @@ SUBROUTINE check3 (self, patch, f1, label1)
     1 format(a,i12,3x,a)
     2 format(a,1pe12.3,3x,a,1pe12.3)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE check3
 
 !===============================================================================
@@ -549,7 +549,7 @@ SUBROUTINE check4 (self, patch, f1, label1)
     1 format(a,i12,i4,3x,a)
     2 format(a,1pe12.3,3x,a,1pe12.3)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE check4
 
 !===============================================================================

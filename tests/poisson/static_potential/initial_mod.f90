@@ -45,7 +45,7 @@ SUBROUTINE init (self, solver, gamma)
   global_r0 = r0
   self%solver = solver
   
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -89,7 +89,7 @@ SUBROUTINE condition (self, m, f, idx)
     end do
   end do
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE condition
 
 !===============================================================================

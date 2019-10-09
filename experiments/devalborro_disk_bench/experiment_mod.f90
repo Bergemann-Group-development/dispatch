@@ -123,7 +123,7 @@ SUBROUTINE initial_conditions (patch)
   deallocate (vkep)
   end associate
   nullify (m1, m2, m3)
-  call trace%end
+  call trace%end()
 END SUBROUTINE initial_conditions
 
 END MODULE experiment_mod

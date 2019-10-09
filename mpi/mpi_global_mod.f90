@@ -54,7 +54,7 @@ SUBROUTINE init (self, n)
 #endif
   end if
   !$omp end critical (mpi_global_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -121,7 +121,7 @@ FUNCTION update8_real (self, a) RESULT (b)
   call MPI_Win_unlock (master, self%window, mpi_err)
 #endif
   !$omp end critical (mpi_global_cr)
-  call trace%end
+  call trace%end()
 END FUNCTION update8_real
 
 END MODULE mpi_global_mod

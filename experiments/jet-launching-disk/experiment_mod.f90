@@ -41,7 +41,7 @@ SUBROUTINE init_experiment (self)
   call self%density_floor(self%it)
   call self%check_density()
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_experiment
 
 !===============================================================================
@@ -65,7 +65,7 @@ SUBROUTINE update_experiment (self)
   call self%density_floor(self%new)
   if (self%do_pebbles) call self%pebble_patch_t%update_pebbles()
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE update_experiment
 
 !===============================================================================
@@ -96,7 +96,7 @@ SUBROUTINE enforce_d_floor (self, cit)
   end do
 
   nullify (d)
-  call trace%end
+  call trace%end()
 END SUBROUTINE enforce_d_floor
 
 END MODULE experiment_mod

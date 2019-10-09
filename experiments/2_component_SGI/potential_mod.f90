@@ -71,7 +71,7 @@ FUNCTION star (self, m) RESULT (gp)
     end do
   end do
   nullify (m1, m2, m3)
-  call trace%end
+  call trace%end()
 END FUNCTION star
 
 END MODULE

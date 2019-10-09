@@ -40,7 +40,7 @@ SUBROUTINE init_bdries (self, mesh, position, indices)
   ! we need the variable indices to properly set the BCs
   self%idx = indices
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_bdries
 
 !===============================================================================
@@ -116,7 +116,7 @@ SUBROUTINE apply_bcs (self, patch, mhd, cit, previt)
     call mpi%abort('Only cylindrical and spherical coords. are currently supported for this experiment.')
   end if
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE apply_bcs
 
 !===============================================================================
@@ -260,7 +260,7 @@ SUBROUTINE outflow (self, mem, iv, select)
   end select
 
   nullify (m1, m2, m3)
-  call trace%end
+  call trace%end()
 END SUBROUTINE outflow
 
 !===============================================================================
@@ -373,7 +373,7 @@ SUBROUTINE axis_reflection (self, mem, iv, select)
   end select
 
   nullify (m1, m2, m3)
-  call trace%end
+  call trace%end()
 END SUBROUTINE axis_reflection
 
 !===============================================================================
@@ -431,7 +431,7 @@ SUBROUTINE update_b (patch, cit, pit, select)
 
   deallocate(dbdt, b_copy)
   nullify(emfs, b_old, b_new)
-  call trace%end
+  call trace%end()
 END SUBROUTINE update_b
 
 END MODULE pboundaries_mod

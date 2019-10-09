@@ -96,7 +96,7 @@ SUBROUTINE initialize (self)
   call self%init_all_nbors      ! make nbor lists, based on position
   call self%reset_status        ! set status buts, based on nbor lists
   call self%count_status        ! count number of different tasks
-  call trace%end
+  call trace%end()
 END SUBROUTINE initialize
 
 !===============================================================================
@@ -156,7 +156,7 @@ SUBROUTINE init_levels (self)
     download%check_filled = .true.
   call self%init_levelstats
   shared%levelmax = levelmax
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_levels
 
 !===============================================================================
@@ -244,7 +244,7 @@ SUBROUTINE init_queue (self)
   end do
   if (self%verbose > 0) &
     call self%print_queue_times ('init_queue')
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_queue
 
 !===============================================================================
@@ -654,7 +654,7 @@ SUBROUTINE init_levelstats (self)
     timer%levelcost = 0d0
   end if
   !$omp end critical (levelstat_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_levelstats
 
 !===============================================================================
@@ -680,7 +680,7 @@ SUBROUTINE init_task_list_pointers (self, task_list)
     end associate
     link => link%next
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE
 
 END MODULE task_list_mod

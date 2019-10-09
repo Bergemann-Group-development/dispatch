@@ -411,7 +411,7 @@ SUBROUTINE energy (self, m, idx, ff)
     !maxval(ff(m(1)%lb:m(1)%ub,m(2)%lb:m(2)%ub,m(3)%lb:m(3)%ub,idx%d)), &
     !minval(ff(m(1)%lb:m(1)%ub,m(2)%lb:m(2)%ub,m(3)%lb:m(3)%ub,idx%e)), &
     !maxval(ff(m(1)%lb:m(1)%ub,m(2)%lb:m(2)%ub,m(3)%lb:m(3)%ub,idx%e))
-  call trace%end
+  call trace%end()
 END SUBROUTINE energy
 
 END MODULE

@@ -648,7 +648,7 @@ SUBROUTINE pre_update (self)
   ! Now we can call the extras_t%pre_update, which may need the temperature
   !-----------------------------------------------------------------------------
   call self%extras_t%pre_update
-  call trace%end
+  call trace%end()
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -815,7 +815,7 @@ SUBROUTINE output (self)
     end if
   !$omp end critical (out_cr)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE output
 
 !===============================================================================

@@ -125,7 +125,7 @@ SUBROUTINE condition (self, m, mem, i)
     end do
   end do
   nullify (mx, my, mz, mem)
-  call trace%end
+  call trace%end()
 END SUBROUTINE condition
 
 END MODULE

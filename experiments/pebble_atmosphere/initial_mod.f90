@@ -71,7 +71,7 @@ SUBROUTINE init (self, solver, gamma)
      case default
        error stop "initial condition not understood"
      end select
-   call trace%end
+   call trace%end()
 END SUBROUTINE init
 
 !===============================================================================

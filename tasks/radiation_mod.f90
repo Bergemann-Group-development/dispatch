@@ -47,7 +47,7 @@ SUBROUTINE init (self)
   end if
   allocate (self%qq(mx,my,mz))
   self%qq = 0.0
-  call trace%end
+  call trace%end()
   end associate
 END SUBROUTINE init
 
@@ -64,7 +64,7 @@ SUBROUTINE solve (self)
   ! solve the full problem
   !-----------------------------------------------------------------------------
   self%qq = 0.0
-  call trace%end
+  call trace%end()
 END SUBROUTINE solve
 
 END MODULE radiation_mod

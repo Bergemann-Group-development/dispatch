@@ -88,7 +88,7 @@ SUBROUTINE dealloc (self)
     call io%bits_mem (-storage_size(self%fran), product(shape(self%fran)), '-fran')
     deallocate (self%fran)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE dealloc
 
 !===============================================================================

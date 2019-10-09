@@ -49,7 +49,7 @@ SUBROUTINE remove (self, old)
   call old%dealloc
   end select
   call self%dll_t%remove (old)
-  call trace%end
+  call trace%end()
 END SUBROUTINE remove
 
 !===============================================================================
@@ -73,7 +73,7 @@ print *, 'patch_forces_t%force: id, force =', node%id, force
     end select
     node => node%next
   end do
-  call trace%end
+  call trace%end()
 END FUNCTION force
 
 END MODULE patch_forces_mod

@@ -49,7 +49,7 @@ SUBROUTINE init (self, nt)
   end if
   !$omp end critical (input_cr)
   self%order = order
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================

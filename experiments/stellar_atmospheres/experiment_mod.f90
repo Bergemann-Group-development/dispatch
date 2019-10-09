@@ -111,7 +111,7 @@ SUBROUTINE init_task_list (self, task_list)
       call self%rt%add_to_task_list
     end if
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_task_list
 
 !===============================================================================

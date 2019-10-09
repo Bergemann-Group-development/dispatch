@@ -63,7 +63,7 @@ self%do_rt = .true.
   if (allocated(S)) then
     n=shape(S)           ; allocate (self%S(n(1),n(2),n(3),n(4)))
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -85,7 +85,7 @@ SUBROUTINE put (self)
     trad         = self%trad
     nrefine      = self%nrefine
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE put
 
 !===============================================================================
@@ -107,7 +107,7 @@ SUBROUTINE get (self)
     self%trad         = trad
     self%nrefine      = nrefine
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE get
 
 SUBROUTINE refine (self)

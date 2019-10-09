@@ -641,7 +641,7 @@ SUBROUTINE garbage_collect (link)
     call garbage_remove
     call garbage%lock%unset ('garbage')
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE garbage_collect
 
 !===============================================================================
@@ -670,7 +670,7 @@ SUBROUTINE garbage_remove
     end if
     link => next
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE garbage_remove
 
 !===============================================================================

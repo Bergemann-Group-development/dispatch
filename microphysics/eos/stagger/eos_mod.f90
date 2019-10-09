@@ -99,7 +99,7 @@ SUBROUTINE init (self)
   self%kappa = kappa
   !$omp end critical (eos_cr)
   !$omp barrier
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !-------------------------------------------------------------------------------

@@ -87,7 +87,7 @@ SUBROUTINE conditions (self, mesh, mem, idx)
     print *, 'UNKNOWN INITIAL CONDITION TYPE'
     call mpi%abort ('initial_mod')
   end select
-  call trace%end
+  call trace%end()
 END SUBROUTINE conditions
 
 !===============================================================================
@@ -145,7 +145,7 @@ SUBROUTINE sedov (self, mesh, mem, idx)
       end do
     end do
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE sedov
 
 !===============================================================================
@@ -205,7 +205,7 @@ SUBROUTINE advection (self, mesh, mem, idx)
       end do
     end do
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE advection
 
 END MODULE initial_mod

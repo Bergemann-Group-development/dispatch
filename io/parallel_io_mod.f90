@@ -104,7 +104,7 @@ SUBROUTINE init (patch)
   end if
   !$omp end critical (input_cr)
   call time_slices%init (patch%nt)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -145,7 +145,7 @@ SUBROUTINE open_and_close ()
           call files_out(i)%open_and_close()
         end do
       end if
-      call trace%end
+      call trace%end()
     end if
     !$omp end critical (files_out_cr)
     if (verbose > 1) then
@@ -288,7 +288,7 @@ contains
     else
       mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1)
     end if
-    call trace%end
+    call trace%end()
   end subroutine
   !-----------------------------------------------------------------------------
   subroutine io_write (slot, ider)
@@ -557,7 +557,7 @@ contains
     else
       mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1)
     end if
-    call trace%end
+    call trace%end()
   end subroutine
 END SUBROUTINE output_single
 
@@ -950,7 +950,7 @@ contains
       patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,:,1) * &
       patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,:,1)
     end if
-    call trace%end
+    call trace%end()
   end subroutine
 END SUBROUTINE input_single
 

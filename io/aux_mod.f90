@@ -111,7 +111,7 @@ SUBROUTINE register3r (self, name, r)
     if (verbose > 2) &
       write (stdout,*) self%n, ' items registered'
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE register3r
 
 !===============================================================================
@@ -134,7 +134,7 @@ SUBROUTINE register4r (self, name, r)
     if (verbose > 2) &
       write (stdout,*) self%n, ' items registered'
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE
 
 !===============================================================================
@@ -227,7 +227,7 @@ SUBROUTINE output_aux (self, iout, id, testfile)
   iout_prv = iout
   close (self%unit)
   !$omp end critical (aux_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE output_aux
 
 !===============================================================================
@@ -267,7 +267,7 @@ SUBROUTINE prepare (self, iout)
       read (stdin, aux_params, iostat=iostat)
     end if
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE prepare
 
 !===============================================================================
@@ -306,7 +306,7 @@ SUBROUTINE output_item (self, unit)
     end if
   end select
   flush (unit)
-  call trace%end
+  call trace%end()
 !===============================================================================
 contains
 subroutine write1 (c)
@@ -333,7 +333,7 @@ subroutine write3 (unit, r)
   if (verbose > 2) write (stdout,*) 'r3', shape(r)
   write (unit) 'r3'
   write (unit) r
-  call trace%end
+  call trace%end()
 end subroutine write3
 
 subroutine write4 (unit, r)
@@ -344,7 +344,7 @@ subroutine write4 (unit, r)
   if (verbose > 2) write (stdout,*) 'r4', shape(r)
   write (unit) 'r4'
   write (unit) r
-  call trace%end
+  call trace%end()
 end subroutine write4
 
 !===============================================================================

@@ -152,7 +152,7 @@ SUBROUTINE init (self)
   ! -- ensure consistency (a value is already set via rt%init)          ! experiment
   !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
   !call sink_particles%init                                             ! sinkp
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -182,7 +182,7 @@ SUBROUTINE dealloc (self)
   !call self%forces%dealloc                                             ! forces
   !call sink_particles%dealloc                                          ! sinkp
   !deallocate (self%trace_particles)                                    ! tracep
-  call trace%end
+  call trace%end()
 END SUBROUTINE dealloc
 
 !===============================================================================
@@ -212,7 +212,7 @@ SUBROUTINE pre_update (self)
   !call self%gravity%pre_update()                                       ! gravity
   !call sink_particles%force_field (self)                               ! sinkp
   !call self%pic%pre_update()                                           ! pic
-  call trace%end
+  call trace%end()
 END SUBROUTINE pre_update
 
 !===============================================================================

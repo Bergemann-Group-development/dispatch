@@ -27,7 +27,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%init')
   call self%solver_t%init
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -41,7 +41,7 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%update')
   call self%solver_t%update
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 !===============================================================================
@@ -54,7 +54,7 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%output')
   !call self%solver_t%output
-  call trace%end
+  call trace%end()
 END SUBROUTINE output
 
 END MODULE experiment_mod

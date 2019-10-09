@@ -590,7 +590,7 @@ Contains
      call MPI_BUFFER_ATTACH(mpi_buf,nsize*nr,ierr)
 
   endif
-  call trace%end
+  call trace%end()
 end subroutine init_parallel
 
 ! ***********************************************************************
@@ -644,7 +644,7 @@ end subroutine init_parallel
     ioerr=1
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine output_params_parallel
 
 ! ***********************************************************************
@@ -924,7 +924,7 @@ end subroutine init_parallel
     exist_xdnydnzdn=.true.
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine find_neighb
 
 ! ***********************************************************************
@@ -1186,7 +1186,7 @@ end subroutine init_parallel
 
   ngridpoints=xr*yr*zr
 
-  call trace%end
+  call trace%end()
  end subroutine setup_grid
 
 ! ********************************************************
@@ -1237,7 +1237,7 @@ subroutine setup_bcgrid
 
   init_bcgrid=.true.
 
-  call trace%end
+  call trace%end()
 end subroutine setup_bcgrid
 
 ! ***********************************************************************
@@ -1250,7 +1250,7 @@ end subroutine setup_bcgrid
 
   call MPI_BARRIER(who,ierr)
 
-  call trace%end
+  call trace%end()
  end subroutine barrier
 
 ! ***********************************************************************
@@ -1488,7 +1488,7 @@ end subroutine setup_bcgrid
     end do
   end do
 
-  call trace%end
+  call trace%end()
  end subroutine dims_create3
 
 
@@ -1531,7 +1531,7 @@ end subroutine setup_bcgrid
 
   end select
 
-  call trace%end
+  call trace%end()
  end subroutine resolve_params_parallel
 
 ! ***********************************************************************
@@ -1554,7 +1554,7 @@ end subroutine setup_bcgrid
 !  call comm_xyz(f)
 
 !  call barrier(C_CART,ierr)
-  call trace%end
+  call trace%end()
  end subroutine update4
 
 ! ***********************************************************************
@@ -1576,7 +1576,7 @@ subroutine update8 (f)
 
 !  call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update8
 
 ! ***********************************************************************
@@ -1599,7 +1599,7 @@ subroutine update2 (f)
 
 !  call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update2
 ! ***********************************************************************
  subroutine updatec (f)
@@ -1623,7 +1623,7 @@ subroutine update2 (f)
 
 
 !  call barrier(C_CART,ierr)
-  call trace%end
+  call trace%end()
  end subroutine updatec
 
 ! ************************************************************************
@@ -1642,7 +1642,7 @@ subroutine update2 (f)
 
   call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update4_x
 
 ! ************************************************************************
@@ -1661,7 +1661,7 @@ subroutine update2 (f)
 
   call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update8_x
 
 ! ************************************************************************
@@ -1680,7 +1680,7 @@ subroutine update2 (f)
 
   call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update2_x
 
 ! ************************************************************************
@@ -1699,7 +1699,7 @@ subroutine update2 (f)
 
   call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine updatec_x
 
 ! ************************************************************************
@@ -1715,7 +1715,7 @@ subroutine update2 (f)
 
   call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update4_xy
 
 ! ************************************************************************
@@ -1731,7 +1731,7 @@ subroutine update2 (f)
 
   call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update8_xy
 
 ! ************************************************************************
@@ -1747,7 +1747,7 @@ subroutine update2 (f)
 
   call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update2_xy
 
 ! ************************************************************************
@@ -1763,7 +1763,7 @@ subroutine update2 (f)
 
   call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine updatec_xy
 
 ! ***********************************************************************
@@ -1783,7 +1783,7 @@ subroutine update2 (f)
   call comm_xyz(f)
 
 
-  call trace%end
+  call trace%end()
  end subroutine update4_y
 
 ! ***********************************************************************
@@ -1803,7 +1803,7 @@ subroutine update2 (f)
   call comm_xyz(f)
 
 
-  call trace%end
+  call trace%end()
  end subroutine update8_y
 
 ! ***********************************************************************
@@ -1822,7 +1822,7 @@ subroutine update2 (f)
 
   call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update2_y
 
 ! ***********************************************************************
@@ -1842,7 +1842,7 @@ subroutine update2 (f)
   call comm_xyz(f)
 
 
-  call trace%end
+  call trace%end()
  end subroutine updatec_y
 
 ! ***********************************************************************
@@ -1862,7 +1862,7 @@ subroutine update2 (f)
   call comm_xyz(f)
 
 
-  call trace%end
+  call trace%end()
  end subroutine update4_z
 
 ! ***********************************************************************
@@ -1881,7 +1881,7 @@ subroutine update2 (f)
 
   call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update8_z
 
 ! ***********************************************************************
@@ -1900,7 +1900,7 @@ subroutine update2 (f)
 
   call comm_xyz(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update2_z
 
 ! ***********************************************************************
@@ -1920,7 +1920,7 @@ subroutine update2 (f)
   call comm_xyz(f)
 
 
-  call trace%end
+  call trace%end()
  end subroutine updatec_z
 
 
@@ -1935,7 +1935,7 @@ subroutine update2 (f)
 
   call comm2d_xy(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update2d4_xy
 
 ! ************************************************************************
@@ -1949,7 +1949,7 @@ subroutine update2 (f)
 
   call comm2d_xy(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update2d8_xy
 
 ! ************************************************************************
@@ -1963,7 +1963,7 @@ subroutine update2 (f)
 
   call comm2d_xy(f)
 
-  call trace%end
+  call trace%end()
  end subroutine update2d2_xy
 
 ! ************************************************************************
@@ -1977,7 +1977,7 @@ subroutine update2 (f)
 
   call comm2d_xy(f)
 
-  call trace%end
+  call trace%end()
  end subroutine updatec2d_xy
 
 ! ***********************************************************************
@@ -2005,7 +2005,7 @@ subroutine update2 (f)
   call print_check(f,"XYZ")
 
 
-  call trace%end
+  call trace%end()
  end subroutine check_update
 
 ! ***********************************************************************
@@ -2041,7 +2041,7 @@ subroutine update2 (f)
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine comm4_x
 
 ! ***********************************************************************
@@ -2089,7 +2089,7 @@ subroutine update2 (f)
 !  call MPI_BARRIER(C_CART,ierr)
 !  print*,myid,'out of comm_x'
 
-  call trace%end
+  call trace%end()
  end subroutine comm4_x2
 
 ! ***********************************************************************
@@ -2137,7 +2137,7 @@ subroutine update2 (f)
 !  call MPI_BARRIER(C_CART,ierr)
 !  print*,myid,'out of comm_x'
 
-  call trace%end
+  call trace%end()
  end subroutine comm4_x3
 
 ! ***********************************************************************
@@ -2174,7 +2174,7 @@ subroutine update2 (f)
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine comm8_x
 
 ! ***********************************************************************
@@ -2211,7 +2211,7 @@ subroutine update2 (f)
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine comm2_x
 
 ! ***********************************************************************
@@ -2248,7 +2248,7 @@ subroutine update2 (f)
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine commc_x
 
 ! ***********************************************************************
@@ -2291,7 +2291,7 @@ subroutine update2 (f)
   end if
 !  call MPI_GET_ADDRESS(f,address,ierr)
 
-  call trace%end
+  call trace%end()
  end subroutine comm4_y2
 
 ! ***********************************************************************
@@ -2334,7 +2334,7 @@ subroutine update2 (f)
   end if
 !  call MPI_GET_ADDRESS(f,address,ierr)
 
-  call trace%end
+  call trace%end()
  end subroutine comm4_y3
 
 ! ***********************************************************************
@@ -2372,7 +2372,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine comm4_y
 
 ! ***********************************************************************
@@ -2410,7 +2410,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine comm8_y
 
 ! ***********************************************************************
@@ -2448,7 +2448,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine comm2_y
 
 ! ***********************************************************************
@@ -2486,7 +2486,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine commc_y
 
 ! ***********************************************************************
@@ -2531,7 +2531,7 @@ subroutine update2 (f)
   end if
 !  call MPI_GET_ADDRESS(f,address,ierr)
 
-  call trace%end
+  call trace%end()
  end subroutine comm4_z2
 
 ! ***********************************************************************
@@ -2575,7 +2575,7 @@ subroutine update2 (f)
   end if
 !  call MPI_GET_ADDRESS(f,address,ierr)
 
-  call trace%end
+  call trace%end()
  end subroutine comm4_z3
 
 ! ***********************************************************************
@@ -2615,7 +2615,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine comm4_z
 
 ! ***********************************************************************
@@ -2653,7 +2653,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine comm8_z
 
 ! ***********************************************************************
@@ -2691,7 +2691,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine comm2_z
 
 ! ***********************************************************************
@@ -2731,7 +2731,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine commc_z
 
 !************************************************************************
@@ -2792,7 +2792,7 @@ subroutine update2 (f)
 
       end if
     end if
-  call trace%end
+  call trace%end()
    end subroutine comm4_xy
 
 ! ***********************************************************************
@@ -2853,7 +2853,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine comm8_xy
 
 ! ***********************************************************************
@@ -2914,7 +2914,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine comm2_xy
 
 !************************************************************************
@@ -2975,7 +2975,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine commc_xy
 
 !************************************************************************
@@ -3028,7 +3028,7 @@ subroutine update2 (f)
 
       end if
     end if
-  call trace%end
+  call trace%end()
    end subroutine comm2d4_xy
 
 ! ***********************************************************************
@@ -3081,7 +3081,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine comm2d8_xy
 
 ! ***********************************************************************
@@ -3134,7 +3134,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine comm2d2_xy
 
 !************************************************************************
@@ -3187,7 +3187,7 @@ subroutine update2 (f)
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine commc2d_xy
 
 ! ***********************************************************************
@@ -3251,7 +3251,7 @@ subroutine update2 (f)
 
   end if
 endif
-  call trace%end
+  call trace%end()
  end subroutine comm4_xz
 
 ! ***********************************************************************
@@ -3313,7 +3313,7 @@ endif
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine comm8_xz
 
 ! ***********************************************************************
@@ -3375,7 +3375,7 @@ endif
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine comm2_xz
 
 ! ***********************************************************************
@@ -3437,7 +3437,7 @@ endif
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine commc_xz
 
 ! ***********************************************************************
@@ -3499,7 +3499,7 @@ endif
 
   end if
 end if
-  call trace%end
+  call trace%end()
  end subroutine comm4_yz
 
 ! ***********************************************************************
@@ -3560,7 +3560,7 @@ end if
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine comm8_yz
 
 ! ***********************************************************************
@@ -3621,7 +3621,7 @@ end if
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine comm2_yz
 
 ! ***********************************************************************
@@ -3682,7 +3682,7 @@ end if
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine commc_yz
 
 ! ***********************************************************************
@@ -3791,7 +3791,7 @@ end if
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine comm4_xyz
 
 ! ***********************************************************************
@@ -3900,7 +3900,7 @@ end if
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine comm8_xyz
 
 ! ***********************************************************************
@@ -4009,7 +4009,7 @@ end if
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine comm2_xyz
 
 ! ***********************************************************************
@@ -4118,7 +4118,7 @@ end if
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine commc_xyz
 
 ! ***********************************************************************
@@ -4183,7 +4183,7 @@ end if
 
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine comm_bdry_x
 ! ***********************************************************************
  subroutine comm_bdry_y (f)
@@ -4246,7 +4246,7 @@ end if
 
     end if
 
-  call trace%end
+  call trace%end()
    end subroutine comm_bdry_y
 
 !************************************************************************
@@ -4366,7 +4366,7 @@ subroutine comm_bdry_xy (f)
 
 
 
-  call trace%end
+  call trace%end()
 end subroutine comm_bdry_xy
 
 ! ***********************************************************************
@@ -4392,7 +4392,7 @@ subroutine update_mg (f,sx,ex,sy,ey,sz,ez,sxgp,exgp,sygp,eygp,szgp,ezgp)
 
  call barrier(c_cart,ierr)
 
-  call trace%end
+  call trace%end()
 end subroutine update_mg
 
 ! *************************************************
@@ -4431,7 +4431,7 @@ if (exist_xup.or.exist_xdn) then
 
 end if
 
-  call trace%end
+  call trace%end()
 end subroutine comm_x_mg
 
 ! ***********************************************************************
@@ -4468,7 +4468,7 @@ if (exist_yup.or.exist_ydn) then
 
 end if
 
-  call trace%end
+  call trace%end()
 end subroutine comm_y_mg
 
 ! ***********************************************************************
@@ -4506,7 +4506,7 @@ if (exist_zup.or.exist_zdn) then
 
 end if
 
-  call trace%end
+  call trace%end()
 end subroutine comm_z_mg
 
 !************************************************************************
@@ -4566,7 +4566,7 @@ if ((exist_xup.and.exist_ydn).or.(exist_xdn.and.exist_yup)) then
 
 end if
 
-  call trace%end
+  call trace%end()
 end subroutine comm_xy_mg
 
 ! ***********************************************************************
@@ -4628,7 +4628,7 @@ if ((exist_xup.and.exist_zdn).or.(exist_xdn.and.exist_zup)) then
 
 end if
 
-  call trace%end
+  call trace%end()
 end subroutine comm_xz_mg
 
 ! ***********************************************************************
@@ -4690,7 +4690,7 @@ if ((exist_yup.and.exist_zdn).or.(exist_ydn.and.exist_zup)) then
 
 end if
 
-  call trace%end
+  call trace%end()
 end subroutine comm_yz_mg
 
 
@@ -4801,7 +4801,7 @@ if ((exist_xup.and.exist_ydn.and.exist_zdn).or.(exist_xdn.and.exist_yup.and.exis
 
 end if
 
-  call trace%end
+  call trace%end()
 end subroutine comm_xyz_mg
 
 ! ***********************************************************************
@@ -4913,7 +4913,7 @@ end subroutine comm_xyz_mg
     end if
   end do
 
-  call trace%end
+  call trace%end()
  end subroutine print_check
 
 ! ***********************************************************************
@@ -5094,7 +5094,7 @@ end subroutine comm_xyz_mg
     call MPI_RECV(arrnew(:,:,zetmp),xrb*yrb,OSC_REAL,R_ZUP,1014,C_CART,status,ierr)
   end if
 
-  call trace%end
+  call trace%end()
  end subroutine adjust_array
 
 ! ***********************************************************************
@@ -5176,7 +5176,7 @@ end subroutine comm_xyz_mg
 !***    call MPI_RECV(arrnew(:,:,zetmp),xrb*yrb,OSC_REAL,R_ZUP,1014,C_CART,status,ierr)
 !***  end if
 
-  call trace%end
+  call trace%end()
  end subroutine adjust_array2_4
 
 ! ***********************************************************************
@@ -5225,7 +5225,7 @@ end subroutine comm_xyz_mg
   end if
 
 
-  call trace%end
+  call trace%end()
  end subroutine adjust_array2_8
  ! *********************************************************************
 
@@ -5239,7 +5239,7 @@ end subroutine comm_xyz_mg
 
   call trace%begin ('mpi.f90::allocate_arrays_parallel')
 
-  call trace%end
+  call trace%end()
  end subroutine allocate_arrays_parallel
 
 ! ***********************************************************************

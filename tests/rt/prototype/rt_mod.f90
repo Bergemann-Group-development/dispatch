@@ -396,7 +396,7 @@ SUBROUTINE boundary_conditions (self)
   self%mem(:,  01:06,:,:,:,2) = 0.0
   self%mem(:,my-4:my,:,:,:,2) = 0.0
   end associate
-  call trace%end
+  call trace%end()
 END SUBROUTINE boundary_conditions
 
 END MODULE rt_mod

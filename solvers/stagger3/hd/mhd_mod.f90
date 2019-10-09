@@ -94,7 +94,7 @@ SUBROUTINE init(self)
   self%s => self%mem(:,:,:,self%idx%s ,self%it,1)
   self%p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
   !-----------------------------------------------------------------------------
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -279,7 +279,7 @@ SUBROUTINE log_density (self, out)
   !...............................................................................
   call trace%begin ('mhd_t%log_density')
   out = log(self%d)
-  call trace%end
+  call trace%end()
 END SUBROUTINE log_density
 !===============================================================================
 SUBROUTINE log_pressure (self, out)

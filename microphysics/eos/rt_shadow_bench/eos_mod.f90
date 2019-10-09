@@ -64,7 +64,7 @@ SUBROUTINE init (self)
     self%do_rt = do_rt
   end if
   !$omp end critical (init_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !-------------------------------------------------------------------------------

@@ -73,7 +73,7 @@ SUBROUTINE init (self, solver)
    case default
      print*,'UNKNOWN FORCING TYPE'
    end select
-   call trace%end
+   call trace%end()
 END SUBROUTINE init
 
 !===============================================================================

@@ -40,7 +40,7 @@ SUBROUTINE init (self)
   self%dtime = 1.0
   self%d0 = 0.0
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -53,7 +53,7 @@ SUBROUTINE update (self)
   call trace%begin('experiment_t%update')
   call self%gpatch_t%update
   call self%output
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 END MODULE experiment_mod

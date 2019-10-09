@@ -54,7 +54,7 @@ FUNCTION grad_dn_scalar (mesh, in) RESULT (out)
   end do
 
   end associate
-  call trace%end
+  call trace%end()
 END FUNCTION grad_dn_scalar
 
 !===============================================================================
@@ -121,7 +121,7 @@ FUNCTION vector_curl_dn_vector (mesh, in) RESULT (out)
   end do
 
   end associate
-  call trace%end
+  call trace%end()
 END FUNCTION vector_curl_dn_vector
 
 !===============================================================================
@@ -190,7 +190,7 @@ FUNCTION vector_curl_up_vector (mesh, in) RESULT (out)
   end do
 
   end associate
-  call trace%end
+  call trace%end()
 END FUNCTION vector_curl_up_vector
 
 !===============================================================================
@@ -257,7 +257,7 @@ FUNCTION dbdt_curl_up_emfs (mesh, in) RESULT (out)
   end do
 
   end associate
-  call trace%end
+  call trace%end()
 END FUNCTION dbdt_curl_up_emfs
 
 !===============================================================================
@@ -294,7 +294,7 @@ FUNCTION divergence_up_vector (mesh, in) RESULT (out)
   end do
 
   end associate
-  call trace%end
+  call trace%end()
 END FUNCTION divergence_up_vector
 
 END MODULE vector_ops

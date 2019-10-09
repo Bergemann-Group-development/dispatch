@@ -133,7 +133,7 @@ SUBROUTINE init (self)
   self%unsigned(self%idx%d)  = unsigned
   self%pervolume(self%idx%s) = unsigned
   call self%force%init (self%kind, self%id, self%mesh)
- call trace%end
+ call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -557,7 +557,7 @@ SUBROUTINE output (self)
     end if
   !$omp end critical (out_cr)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE output
 
 !===============================================================================

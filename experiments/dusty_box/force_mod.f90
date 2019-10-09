@@ -75,7 +75,7 @@ SUBROUTINE init (self, solver, id, mesh)
    case default
      print*,'UNKNOWN FORCING TYPE'
    end select
-   call trace%end
+   call trace%end()
 END SUBROUTINE init
 
 !===============================================================================

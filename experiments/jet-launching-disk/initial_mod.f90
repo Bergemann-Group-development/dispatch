@@ -89,7 +89,7 @@ SUBROUTINE init (self, solver, gamma)
   self%rotating_disk = rotating_disk
   self%solver = trim(solver)
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -265,7 +265,7 @@ SUBROUTINE condition (self, m, ff, idx)
 
   nullify (m1, m2, m3)
   deallocate (psi)
-  call trace%end
+  call trace%end()
 END SUBROUTINE condition
 
 END MODULE initial_mod

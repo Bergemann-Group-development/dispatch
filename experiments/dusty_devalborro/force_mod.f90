@@ -86,7 +86,7 @@ SUBROUTINE init (self, solver)
      print*,'UNKNOWN FORCING TYPE'
    end select
    call potential%init()
-   call trace%end
+   call trace%end()
 END SUBROUTINE init
 
 !===============================================================================

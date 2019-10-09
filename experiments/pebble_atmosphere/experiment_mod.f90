@@ -175,7 +175,7 @@ SUBROUTINE init (self)
   if (self%level >= track_level) self%track = .true.
   self%initial%id = self%id
   rt_boundaries%diffuse_radius = diffuse_radius
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 
@@ -299,7 +299,7 @@ SUBROUTINE radius2 (self, r2)
     end do
   end do
   end associate
-  call trace%end
+  call trace%end()
 END SUBROUTINE radius2
 
 !> =============================================================================
@@ -780,7 +780,7 @@ SUBROUTINE density_boundary_condition (self, it)
   !    self%boundaries%is_set(bits%zu), lx,ux, ly,uy, lz,uz
   call self%check_density ('after density BC')
   end associate
-  call trace%end
+  call trace%end()
   return
 contains
   subroutine apply_x
@@ -813,7 +813,7 @@ contains
         end do
       end do
     end if
-    if (self%boundaries%check_filled) call trace%end
+    if (self%boundaries%check_filled) call trace%end()
   end subroutine apply_x
   subroutine apply_y
     if (self%boundaries%check_filled) call trace%begin ('apply_y')
@@ -840,7 +840,7 @@ contains
         end do
       end do
     end if
-    if (self%boundaries%check_filled) call trace%end
+    if (self%boundaries%check_filled) call trace%end()
   end subroutine apply_y
   subroutine apply_z
     if (self%boundaries%check_filled) call trace%begin ('apply_z')
@@ -878,7 +878,7 @@ contains
         end do
      end do
     end if
-    if (self%boundaries%check_filled) call trace%end
+    if (self%boundaries%check_filled) call trace%end()
   end subroutine apply_z
 END SUBROUTINE density_boundary_condition
 
@@ -976,7 +976,7 @@ SUBROUTINE apply_sponge_boundaries (self)
       end do
     end do
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE apply_sponge_boundaries
 
 !===============================================================================

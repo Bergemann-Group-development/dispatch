@@ -94,7 +94,7 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   !-----------------------------------------------------------------------------
   call trace%begin ('trace_particles_t%init')
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -109,7 +109,7 @@ SUBROUTINE dealloc (self)
                       product(shape(self%v)), '-tracep%v')
     deallocate (self%v)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE dealloc
 
 !===============================================================================

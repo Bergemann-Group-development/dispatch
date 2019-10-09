@@ -84,7 +84,7 @@ SUBROUTINE init (self, name)
     call SN_test
   end if
   !$omp end critical (input_cr)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -109,7 +109,7 @@ SUBROUTINE read_table
   end do
   mass_limit = sn_table(1)%mass
   close (io_unit%tmp)
-  call trace%end
+  call trace%end()
 END SUBROUTINE read_table
 
 !===============================================================================
@@ -121,7 +121,7 @@ SUBROUTINE init_task_list (self, task_list)
   !.............................................................................
   call trace%begin ('sne_t%init_task_list')
   self%task_list => task_list
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_task_list
 
 !===============================================================================
@@ -132,7 +132,7 @@ REAL FUNCTION lifetime (mass)
   !.............................................................................
   call trace%begin ('sne_t%lifetime')
   lifetime = lagrange%interpolate1d (mass, n_table, sn_table%mass, sn_table%lifetime)
-  call trace%end
+  call trace%end()
 END FUNCTION lifetime
 
 !===============================================================================
@@ -158,7 +158,7 @@ SUBROUTINE courant (self, gpatch)
     end select
     sn => sn%next
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE courant
 
 !===============================================================================
@@ -172,7 +172,7 @@ SUBROUTINE pre_update (self, patch)
   class(dll_node_t), pointer:: sn
   !-----------------------------------------------------------------------------
   call trace%begin ('sne_t%pre_update')
-  call trace%end
+  call trace%end()
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -227,7 +227,7 @@ SUBROUTINE update (self, mass, task, sn)
         sn%mass, scaling%m_sun(sn%mass), sn%lifetime, scaling%myr(sn%lifetime)
   end if
   end select
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 !===============================================================================
@@ -243,7 +243,7 @@ SUBROUTINE explode (sn)
   write (stderr,*) '***********************************************************'
   write (stderr,*) '************************* BOOOM! **************************'
   write (stderr,*) '***********************************************************'
-  call trace%end
+  call trace%end()
 END SUBROUTINE explode
 
 !==============================================================================

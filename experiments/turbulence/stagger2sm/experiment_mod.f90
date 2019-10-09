@@ -48,7 +48,7 @@ SUBROUTINE init (self)
   !call self%periodic_grid
   call particle_patch%init
   call particle_patch%test
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -73,7 +73,7 @@ SUBROUTINE update (self)
     !$omp end critical (cleanup_cr)
   end if
   call self%solver_t%update
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 END MODULE

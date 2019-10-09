@@ -83,7 +83,7 @@ SUBROUTINE init (self, solver)
    case default
      print*,'UNKNOWN FORCING TYPE'
    end select
-   call trace%end
+   call trace%end()
 END SUBROUTINE init
 
 !>==============================================================================
@@ -98,7 +98,7 @@ FUNCTION stopping_time (self, d_gas, cs, m) RESULT (t_stop)
   call trace%begin('force_t%stopping_time')
   v_therm = sqrt(8.0/(self%pi*self%gamma))*cs
   t_stop  = (self%da)/(d_gas*v_therm)
-  call trace%end
+  call trace%end()
 END FUNCTION stopping_time
 
 !===============================================================================

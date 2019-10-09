@@ -221,7 +221,7 @@ FUNCTION find_task (self, id) RESULT (link)
       if (io%verbose>1) &
         write (io_unit%log,*) mpi%rank,' find task: match', id, associated(patch%mem)
       flush(io_unit%log)
-      call trace%end
+      call trace%end()
       return
     end if
     link => link%next
@@ -244,7 +244,7 @@ FUNCTION find_task (self, id) RESULT (link)
   !-----------------------------------------------------------------------------
   call task%set (bits%virtual)
   call self%append_link (link)
-  call trace%end
+  call trace%end()
 END FUNCTION find_task
 
 !===============================================================================
@@ -785,7 +785,7 @@ SUBROUTINE output (self)
     !call link%task%output(self%name)
     link => link%next
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE output
 
 !===============================================================================
@@ -804,7 +804,7 @@ SUBROUTINE print_table (self, label)
     link => link%next
   end do
   !call self%print_queue
-  call trace%end
+  call trace%end()
 END SUBROUTINE print_table
 
 END MODULE task_list_mod

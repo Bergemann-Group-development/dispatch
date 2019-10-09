@@ -70,7 +70,7 @@ SUBROUTINE init_task_list (self, task_list)
   !.............................................................................
   call trace%begin ('gpatch_t%init_task_list')
   self%task_list => task_list
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_task_list
 
 !===============================================================================
@@ -174,7 +174,7 @@ SUBROUTINE counter_update (self)
   call trace%begin ('gpatch_t%counter_update')
   !$omp atomic
   timer%n_update = timer%n_update + product(self%n)
-  call trace%end
+  call trace%end()
 END SUBROUTINE counter_update
 
 !===============================================================================

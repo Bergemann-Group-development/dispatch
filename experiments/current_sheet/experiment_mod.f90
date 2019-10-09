@@ -35,7 +35,7 @@ SUBROUTINE init (self)
   !end if
   !
   self%unsigned(self%idx%d) = .true.
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================

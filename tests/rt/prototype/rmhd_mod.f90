@@ -56,7 +56,7 @@ SUBROUTINE init (self)
   call self%rt%init                                                     ! allocate weights
   self%rt%position = self%position
   self%mesh%p      = self%position
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !=======================================================================

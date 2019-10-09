@@ -147,7 +147,7 @@ SUBROUTINE init (self)
   end if
   self%unsigned(self%idx%d)  = unsigned
   self%pervolume(self%idx%e) = unsigned
- call trace%end
+ call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -663,7 +663,7 @@ SUBROUTINE output (self)
     end if
   !$omp end critical (out_cr)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE output
 
 !===============================================================================

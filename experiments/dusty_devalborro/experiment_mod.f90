@@ -150,7 +150,7 @@ SUBROUTINE dnload (self, only)
   !-----------------------------------------------------------------------------
   call trace%begin ('experiment_t%dnload')
   call download%download_link (self%link, .true., only=only)
-  call trace%end
+  call trace%end()
 END SUBROUTINE dnload
 
 END MODULE experiment_mod

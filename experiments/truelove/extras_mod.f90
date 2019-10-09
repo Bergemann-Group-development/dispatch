@@ -160,7 +160,7 @@ SUBROUTINE init (self)
   !call sink_patch%init (self%link)                                     ! sinkp
   !allocate (self%patch_force)                                          ! sinkp
   !call self%patch_force%init                                           ! sinkp 
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -174,7 +174,7 @@ SUBROUTINE dealloc (self)
   !call trace_particles%dealloc                                         ! sinkp
   !deallocate (self%trace_particles)                                    ! tracep
   !call sink_patch%dealloc                                              ! sinkp
-  call trace%end
+  call trace%end()
 END SUBROUTINE dealloc
 
 !===============================================================================
@@ -205,7 +205,7 @@ SUBROUTINE pre_update (self)
   !call particle_solver%force_field (self)                              ! sinkp
   !call self%pic%pre_update()                                           ! pic
   call self%selfgravity%pre_update (self)
-  call trace%end
+  call trace%end()
 END SUBROUTINE pre_update
 
 !===============================================================================

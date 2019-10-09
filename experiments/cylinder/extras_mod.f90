@@ -86,7 +86,7 @@ SUBROUTINE init (self)
   !self%connect%trace_particles => self%trace_particles          ! tracep
   !call self%trace_particles%add (self%link)                     ! tracep
   !call sink_patch%init                                          ! sinkp
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -101,7 +101,7 @@ SUBROUTINE dealloc (self)
   !deallocate (self%trace_particles)                             ! tracep
   !call sink_patch%dealloc                                       ! sinkp
   call self%gpatch_t%dealloc
-  call trace%end
+  call trace%end()
 END SUBROUTINE dealloc
 
 !===============================================================================

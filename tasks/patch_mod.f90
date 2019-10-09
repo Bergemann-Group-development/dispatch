@@ -745,7 +745,7 @@ SUBROUTINE dealloc (self)
     deallocate (self%irefine)
   end if
   call self%task_t%dealloc
-  call trace%end
+  call trace%end()
 END SUBROUTINE dealloc
 
 SUBROUTINE clone_mem_accounting (self)
@@ -967,7 +967,7 @@ SUBROUTINE periodic_grid (self, only)
   end do
   if (io%verbose > 1) write(io%output,*) &
     'periodic_grid: id, it, new =', self%id, self%it, self%new
-  call trace%end
+  call trace%end()
 END SUBROUTINE periodic_grid
 
 !===============================================================================

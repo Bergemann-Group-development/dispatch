@@ -46,7 +46,7 @@ SUBROUTINE init (self)
   ! --------------------------------------------------------------------
   call trace%begin ('rt_bundle_t%init')
   call rt_solver%init
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !=======================================================================
@@ -71,7 +71,7 @@ SUBROUTINE forward (dtau, exp0, s, qin, q, qout)
     q1    => q   (:,:,iz)               ! output surface values
     call rt_solver%forward (dtau1, ex0, s1, qfw0, q1, qfw1)
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE forward
 
 !=======================================================================
@@ -96,7 +96,7 @@ SUBROUTINE reverse (dtau, exp0, s, qin, q, qout)
     q1    => q   (:,:,iz)               ! output surface values
     call rt_solver%reverse (dtau1, ex0, s1, qrv1, q1, qrv0)
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE reverse
 
 !=======================================================================
@@ -126,7 +126,7 @@ SUBROUTINE transfer (dtau, s, Ifw0, Ifw1, q, Irv1, Irv0)
   end do
 
   deallocate(xi)
-  call trace%end
+  call trace%end()
 END SUBROUTINE transfer
 
 

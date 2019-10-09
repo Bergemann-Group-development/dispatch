@@ -133,7 +133,7 @@ SUBROUTINE init_hierarchy (self, label)
   call self%task_list%init_bdries
   call self%task_list%init_all_nbors
   call self%task_list%print_tasks
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_hierarchy
 
 !===============================================================================

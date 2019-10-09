@@ -648,7 +648,7 @@ SUBROUTINE startup (task_list)
   ! This may not be needed, but might avoid initial load balance excursions
   !-----------------------------------------------------------------------------
   call mpi%barrier ('task_list%execute')
-  call trace%end
+  call trace%end()
 END SUBROUTINE startup
 
 !===============================================================================

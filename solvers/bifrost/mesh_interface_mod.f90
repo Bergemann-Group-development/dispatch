@@ -57,7 +57,7 @@ SUBROUTINE init (self, mesh)
   self%mesh => mesh
   call self%read_bifrost_mesh
   call self%init_bifrost_vars
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !=======================================================================
@@ -102,7 +102,7 @@ SUBROUTINE init_bifrost_vars (self)
     a1st = 0.5
     !$omp end critical (init_cr)
   end if
-  call trace%end
+  call trace%end()
 
 END SUBROUTINE init_bifrost_vars
 
@@ -161,7 +161,7 @@ SUBROUTINE put (self)
   dzlincoeff = m%dzlincoeff
   zuincoeff  = m%zuincoeff
   dzuincoeff = m%dzuincoeff
-  call trace%end
+  call trace%end()
 
 END SUBROUTINE put
 
@@ -232,7 +232,7 @@ SUBROUTINE check (self)
   if (any(zuincoeff/=m%zuincoeff)) print *, 'zuincoeff/=m%zuincoeff'
   if (any(dzuincoeff/=m%dzuincoeff)) print *, 'dzuincoeff/=m%dzuincoeff'
 
-  call trace%end
+  call trace%end()
 
 END SUBROUTINE check
 
@@ -279,7 +279,7 @@ SUBROUTINE get (self)
   self%ze         = ze
   self%zsb        = zsb
   self%zeb        = zeb
-  call trace%end
+  call trace%end()
 END SUBROUTINE get
 
 !=======================================================================
@@ -408,7 +408,7 @@ SUBROUTINE read_bifrost_mesh (self)
   allocate(m%zuincoeff (m%b_sb:m%b_eb,0:5))
   allocate(m%dzuincoeff(m%b_sb:m%b_eb,0:5))
   call self%one_sided_coeff(m,mz)
-  call trace%end
+  call trace%end()
 END SUBROUTINE read_bifrost_mesh
 
 SUBROUTINE setup_mesh(self,m,i, mx, xm, xmdn,dxidxup,dxidxdn,dx1d)

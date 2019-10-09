@@ -39,7 +39,7 @@ SUBROUTINE init (self, solver)
   self%y_grav_acc = y_grav_acc
   self%selected => vertical_acceleration
   self%solver = trim(solver)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -58,7 +58,7 @@ FUNCTION vertical_acceleration (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   ff(:,:,:,2) = self%y_grav_acc
   ff(:,:,:,3) = 0.0
 
-  call trace%end
+  call trace%end()
 END FUNCTION vertical_acceleration
 
 END MODULE force_mod

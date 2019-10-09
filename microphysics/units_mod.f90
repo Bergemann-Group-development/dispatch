@@ -121,7 +121,7 @@ SUBROUTINE output (self)
     write (io_unit%nml, units_nml)
     !$omp end critical (write_nml_cr)
   end if
-  call trace%end
+  call trace%end()
 END SUBROUTINE output
 
 END MODULE units_mod

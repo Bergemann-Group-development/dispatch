@@ -109,7 +109,7 @@ SUBROUTINE init (self)
   end do
   call self%force%init(self%kind, self%id, self%mesh)
   call self%viscosity%init(self%kind)
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================

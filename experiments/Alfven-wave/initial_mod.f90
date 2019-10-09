@@ -39,7 +39,7 @@ SUBROUTINE init (self, solver, gamma)
   call trace_begin('initial_t%init')
   self%solver = trim(solver)
   
-  call trace%end
+  call trace%end()
 END subroutine init
 
 
@@ -96,7 +96,7 @@ SUBROUTINE condition (self, m, ff, idx)
       end do
     end do
   end do
-  call trace%end
+  call trace%end()
 END SUBROUTINE condition
 
 END MODULE initial_mod

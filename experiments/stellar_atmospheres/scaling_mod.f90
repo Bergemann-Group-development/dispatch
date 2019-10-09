@@ -59,7 +59,7 @@ SUBROUTINE init (self)
   1 format(1x,a,1p,e11.3)
   end if
   call self%output
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 END MODULE scaling_mod

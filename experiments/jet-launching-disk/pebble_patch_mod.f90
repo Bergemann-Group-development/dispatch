@@ -197,7 +197,7 @@ SUBROUTINE init (self)
     call self%volume_add
   end if
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -320,7 +320,7 @@ SUBROUTINE volume_add (self, n)
       print *, 'volume_add:', self%id, self%position(3), self%pebbles%n
     call self%pebbles%check_list ('after volume_add')
 
-    call trace%end
+    call trace%end()
 END SUBROUTINE volume_add
 
 !===============================================================================
@@ -1401,7 +1401,7 @@ SUBROUTINE input (self, ok)
     if (verbose>1) print *, trim(filename), ' found'
   else
     if (verbose>0) print *, trim(filename), ' not found'
-    call trace%end
+    call trace%end()
     return
   end if
 
@@ -1432,7 +1432,7 @@ SUBROUTINE input (self, ok)
   !$omp end critical (out_cr)
   ok = .true.
 
-  call trace%end
+  call trace%end()
 END SUBROUTINE input
 
 END MODULE pebble_patch_mod

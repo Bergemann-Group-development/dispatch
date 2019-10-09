@@ -37,7 +37,7 @@ SUBROUTINE init (self, n, label)
   allocate (self%buffer(n))
   self%position = 1
   call self%append (label)
-  !call trace%end
+  !call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
@@ -47,7 +47,7 @@ SUBROUTINE reset (self)
   !-----------------------------------------------------------------------------
   !call trace%begin ('mpi_buffer_t%reset')
   self%position = 1
-  !call trace%end
+  !call trace%end()
 END SUBROUTINE reset
 
 !===============================================================================
@@ -69,7 +69,7 @@ SUBROUTINE append_c (self, label)
   call mpi_buffer_copy (text, ni, self%buffer, self%position)
   self%position = self%position + ni
   deallocate (text)
-  !call trace%end
+  !call trace%end()
 END SUBROUTINE append_c
 
 !===============================================================================
@@ -84,7 +84,7 @@ SUBROUTINE append_0 (self, a)
   self%position = self%position + 1
   call mpi_buffer_copy (a, 1, 1, self%buffer, self%position)
   self%position = self%position + 1
-  !call trace%end
+  !call trace%end()
 END SUBROUTINE append_0
 
 !===============================================================================
@@ -100,7 +100,7 @@ SUBROUTINE append_1 (self, a)
   self%position = self%position + 1
   call mpi_buffer_copy (a, 1, 1, self%buffer, self%position)
   self%position = self%position + na
-  !call trace%end
+  !call trace%end()
 END SUBROUTINE append_1
 
 !===============================================================================
@@ -116,7 +116,7 @@ SUBROUTINE append_2 (self, a)
   self%position = self%position + 1
   call mpi_buffer_copy (a, 1, na, self%buffer, self%position)
   self%position = self%position + na
-  !call trace%end
+  !call trace%end()
 END SUBROUTINE append_2
 
 !===============================================================================
@@ -132,7 +132,7 @@ SUBROUTINE append_3 (self, a)
   self%position = self%position + 1
   call mpi_buffer_copy (a, 1, na, self%buffer, self%position)
   self%position = self%position + na
-  !call trace%end
+  !call trace%end()
 END SUBROUTINE append_3
 
 !===============================================================================
@@ -151,7 +151,7 @@ SUBROUTINE read_c (self, label)
   !call mpi_buffer_copy (self%buffer, self%position, a, 1, ni)
   self%position = self%position + ni
   !deallocate (a)
-  !call trace%end
+  !call trace%end()
 END SUBROUTINE read_c
 
 !===============================================================================
@@ -165,7 +165,7 @@ SUBROUTINE read_0 (self, a)
   self%position = self%position + 1
   call mpi_buffer_copy (self%buffer, self%position, a, 1, 1)
   self%position = self%position + 1
-  !call trace%end
+  !call trace%end()
 END SUBROUTINE read_0
 
 !===============================================================================
@@ -180,7 +180,7 @@ SUBROUTINE read_1 (self, a)
   self%position = self%position + 1
   call mpi_buffer_copy (self%buffer, self%position, a, 1, na)
   self%position = self%position + na
-  !call trace%end
+  !call trace%end()
 END SUBROUTINE read_1
 
 !===============================================================================
@@ -196,7 +196,7 @@ SUBROUTINE read_2 (self, a)
   self%position = self%position + 1
   call mpi_buffer_copy (self%buffer, self%position, a, 1, na)
   self%position = self%position + na
-  !call trace%end
+  !call trace%end()
 END SUBROUTINE read_2
 
 !===============================================================================
@@ -211,7 +211,7 @@ SUBROUTINE read_3 (self, a)
   self%position = self%position + 1
   call mpi_buffer_copy (self%buffer, self%position, a, 1, na)
   self%position = self%position + na
-  !call trace%end
+  !call trace%end()
 END SUBROUTINE read_3
 
 END MODULE mpi_buffer_mod

@@ -129,7 +129,7 @@ SUBROUTINE add_cr_heating (self, time)
                q => self%q(l(1):u(1),l(2):u(2),l(3):u(3),self%it))
   q = q + rho * microphysics%cr_heating
   end associate
-  call trace%end
+  call trace%end()
 END SUBROUTINE add_cr_heating
 
 !=======================================================================

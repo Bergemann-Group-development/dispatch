@@ -33,7 +33,7 @@ SUBROUTINE init_rt (self)
   self%type = 'mhd_rt_t'
   ! --- initialise heating tables ---
   call self%mhd_t%init
-  call trace%end
+  call trace%end()
 END SUBROUTINE init_rt
 
 !===============================================================================
@@ -50,7 +50,7 @@ SUBROUTINE update (self)
   q => self%rt_data%q(:,:,:,self%it)  ! FIXME: should be interpolation in time
   call self%mhd_t%apply_heating (q)
   call self%output
-  call trace%end
+  call trace%end()
 END SUBROUTINE update
 
 

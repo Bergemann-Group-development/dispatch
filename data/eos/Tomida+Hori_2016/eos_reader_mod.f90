@@ -90,7 +90,7 @@ SUBROUTINE init (self)
     print *,'log(U):', maxval(self%table(1,:,2)), minval(self%table(nT,:,2))
   end if
   call timer%toc ('eos_reader%init')
-  call trace%end
+  call trace%end()
   end associate
 END SUBROUTINE init
 

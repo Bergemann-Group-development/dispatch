@@ -69,7 +69,7 @@ SUBROUTINE init (self)
   close (u)
   print 1, 'min(P), max(P) =', exp(minval(self%table(:,:,1))), exp(maxval(self%table(:,:,1)))
   print 1, 'min(E), max(E) =', exp(minval(self%table(:,:,2))), exp(maxval(self%table(:,:,2)))
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 END MODULE eos_reader_mod

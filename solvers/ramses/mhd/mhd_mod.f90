@@ -119,7 +119,7 @@ SUBROUTINE init (self)
   self%pervolume(self%idx%px) = unsigned
   self%pervolume(self%idx%py) = unsigned
   self%pervolume(self%idx%pz) = unsigned
-  call trace%end
+  call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
