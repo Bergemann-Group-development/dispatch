@@ -7,9 +7,10 @@
  !size=1,1,1 dims=4,4,8 mpi_dims=1,1,1                !  2 processes  1 node     128 patches    2 cores    128x128x256  64 patches/core
  !size=1,2,2 dims=4,8,8 mpi_dims=1,1,1                !  4 processes  1 node     256 patches    4 cores    128x256x256  64 patches/core
  !size=2,2,2 dims=8,8,8 mpi_dims=1,1,1                !  8 processes  1 node     512 patches    8 cores    256x256x256  64 patches/core
- !size=2,2.25,4 dims=8,10,16 mpi_dims=1,2,2             ! 16 processes  1 node    1280 patches   16 cores    256x320x512  80 patches/core
- size=4,2.25,4 dims=16,10,16 mpi_dims=1,1,2             ! 32 processes  1 node    2560 patches   32 cores    512x320x512  80 patches/core
- !size=4,2.25,4 dims=16,10,16 mpi_dims=2,1,2             ! 32 processes  1 node    2560 patches   32 cores    512x320x512  80 patches/core
+ !size=2,2.25,4 dims=8,10,16 mpi_dims=1,2,2           ! 16 processes  1 node    1280 patches   16 cores    256x320x512  80 patches/core
+ !size=4,2.25,4 dims=16,10,16 mpi_dims=1,1,2          ! 32 processes  1 node    2560 patches   32 cores    512x320x512  80 patches/core
+ !size=4,2.25,4 dims=16,10,16 mpi_dims=2,1,2          ! 32 processes  1 node    2560 patches   32 cores    512x320x512  80 patches/core
+ size=2,4,4 dims=8,16,16 mpi_dims=1,1,2              ! 32 processes  1 node    2048 patches   32 cores    256x512x512  64 patches/core
  origin=0,0,0
 /
 
