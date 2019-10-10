@@ -67,7 +67,6 @@ cores threads  mus/pt  patches  log file
 32    1        2.45    8x16x16  weak_32_core_1t_7452.txt_opt
 
 # Only use 4 cores per chiplet, like a 7302.
-# Notice that 16 spread out active cores is essentially as good as running on all 32 cores
 8     1        1.50    8x8x8    weak_8_core_1t_4c_7452.txt
 16    1        1.65    8x8x16   weak_16_core_1t_4c_7452.txt 
 16    1        1.63    8x16x16  weak_16_core_1t_4c_big_7452.txt 
@@ -79,6 +78,13 @@ cores threads  mus/pt  patches  log file
 8     2        2.04    8x8x8    weak_8_core_2t_7452.txt_opt
 16    2        2.30    8x8x16   weak_16_core_2t_7452.txt_opt
 32    2        2.58    8x16x16  weak_32_core_2t_7452.txt_opt
+
+# WEAK Scaling test with 32^3 patch size and 64 patches / core. mus/pt is on a core basis. MPIxOpenMP test
+ranks cores tot-cores threads  mus/pt  patches  log file
+2     16    32        2        2.63    8x8x16   weak_2m_16c_2t_7452.txt
+2     32    64        2        3.20    8x16x16  weak_2m_32c_2t_7452.txt
+4     8     32        2        2.17    8x16x16  weak_4m_8c_2t_7452.txt
+4     16    64        2        3.50    16x16x16 weak_4m_16c_2t_7452.txt
 
 #####################################
 # AMD 7302
