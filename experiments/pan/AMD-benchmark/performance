@@ -141,7 +141,7 @@ ranks cores tot-cores threads  mus/pt  patches  log file
 8     24    192       1        1.74    24x20x32 weak_8m_24c_2t_7402.txt
 
 #####################################
-# Xeon 6230 Cascade-lake demo machine on Steno 
+# Intel Xeon Gold 6230 CPU @ 2.10GHz Cascade-lake demo machine on Steno 
 # 
 # Git version: ce3a0fbc5a7335d9c15735bd8606232d2ec98985
 # Optimized binary. Intel compiler 2018u3. Make line:
@@ -153,10 +153,10 @@ cores threads  mus/pt  patches  log file
 1     1        0.88    4x5x4    weak_1_core_1t_6230.txt
 2     1        0.96    4x5x8    weak_2_core_1t_6230.txt
 4     1        1.03    8x5x8    weak_4_core_1t_6230.txt
-8     1        1.13    8x10x8   weak_8_core_1t_6230.txt_opt
-16    1        1.50    8x10x16  weak_16_core_1t_6230.txt_opt
-#20    1        2.45    10x10x16 weak_20_core_1t_6230.txt_opt
-#40    1        2.45    20x10x16 weak_40_core_1t_6230.txt_opt
+8     1        1.13    8x10x8   weak_8_core_1t_6230.txt
+16    1        1.50    8x10x16  weak_16_core_1t_6230.txt
+20    1        1.74    10x10x16 weak_20_core_1t_6230.txt
+40    1        2.90    20x10x16 weak_40_core_1t_6230.txt
 
 cores threads  mus/pt  patches  log file
 1     2        0.74    4x5x4    weak_1_core_2t_6230.txt
@@ -164,12 +164,12 @@ cores threads  mus/pt  patches  log file
 4     2        0.82    8x5x8    weak_4_core_2t_6230.txt
 8     2        0.95    8x10x8   weak_8_core_2t_6230.txt_opt
 16    2        1.38    8x10x16  weak_16_core_2t_6230.txt_opt
-#20    2        2.45    16x10x16 weak_20_core_2t_6230.txt_opt
-#40    2        2.45    16x10x16 weak_40_core_2t_6230.txt_opt
+20    2        1.70    16x10x16 weak_20_core_2t_6230.txt_opt
+40    2        1.40    16x10x16 weak_40_core_2t_6230.txt_opt
 
 # WEAK Scaling test with 32^3 patch size and 80 patches / core. mus/pt is on a core basis. MPIxOpenMP test
 ranks cores tot-cores threads  mus/pt  patches  log file
-#2     10    20        2        2.63    8x10x16  weak_2m_16c_2t_6230.txt
-#2     20    40        2        3.20    16x10x16 weak_2m_32c_2t_6230.txt
-#4     5     20        2        2.17    16x10x16 weak_4m_8c_2t_6230.txt
-#4     10    40        2        3.50    16x20x16 weak_4m_16c_2t_6230.txt
+2     10    20        2        1.74    8x10x16  weak_2m_10c_2t_6230.txt
+2     20    40        2        1.82    16x10x16 weak_2m_20c_2t_6230.txt
+4     5     20        2        1.77    16x10x16 weak_4m_5c_2t_6230.txt
+4     10    40        2        1.71    16x20x16 weak_4m_20c_2t_6230.txt
