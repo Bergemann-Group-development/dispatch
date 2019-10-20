@@ -9,6 +9,7 @@ import dispatch.graphics as dg
 from time import time
 from dispatch._dispatch_grid import GeometricFactors
 from dispatch._aux import aux
+from scipy.io import FortranFile
 
 class _timer():
     def __init__(self):
@@ -510,6 +511,8 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
                 d['level']=int(items[1])
             elif items[0]=='DTIME':
                 d['dtime']=float(items[1])
+            elif items[0]=='TIME':
+                d['time']=float(items[1])
             elif items[0]=='ISTEP':
                 d['istep']=int(items[1])
             elif items[0]=='DS':
@@ -703,6 +706,23 @@ def attributes(patch):
     for k,v in d.items():
         if k != 'data':
             print ('{:>12}:  {}'.format(k,v))
+
+def pdf(iout=1,run='',data='data'):
+    """ Read and accumulate PDF output files from all ranks """
+    rundir=data+'/'+run+'/'
+    assert os.path.isdir(rundir), 'the directory {} does not exist'.format(rundir)
+    files=os.listdir(rundir)
+    pattern='pdf_{:05d}'.format(iout)
+    files=[f for f in files if f.startswith(pattern)]
+    assert len(files) > 0, 'there are no {}_* files in {}'.format(pattern,rundir)
+    counts=0
+    for file in files:
+        with FortranFile(rundir+file,'r') as ff:
+            ioformat,nbins=ff.read_ints()
+            time=ff.read_reals('<f8')[0]
+            bins=ff.read_reals('<f4')/np.log(10)
+            counts+=ff.read_reals('<f4')
+    return _obj({'ioformat':ioformat,'time':time,'bins':bins,'counts':counts})
 
 if __name__ == "__main__":
     pass

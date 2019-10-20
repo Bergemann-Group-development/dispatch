@@ -162,7 +162,7 @@ def pdf(iout,run='',data='data',iv='d',i4=0,nbin=100,xlim=[-4,3],lnd=False):
     for p in s.patches:
         i += 1
         if i%1000==0:
-            print('{:.0f%}'.format(i/len(s.patches)*100.0))
+            print('{:.1f}%'.format(i/len(s.patches)*100.0))
         d = p.var(iv,i4=i4)
         if lnd:
             logd = d/np.log(10.)
@@ -176,3 +176,7 @@ def pdf(iout,run='',data='data',iv='d',i4=0,nbin=100,xlim=[-4,3],lnd=False):
 def unigrid_plane(sn,**kw):
     import dispatch.select as dse
     imshow(dse.unigrid_plane(sn,**kw))
+
+def plot_pdf(pdf):
+    pl.hist(pdf.bins,bins=pdf.bins,weight=pdf.counts)
+    return pdf.time
