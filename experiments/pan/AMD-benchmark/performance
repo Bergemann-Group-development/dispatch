@@ -86,27 +86,6 @@ ranks cores tot-cores threads  mus/pt  patches  log file
 #####################################
 
 #####################################
-# AMD 7452 -- 32 cores, 2.35 GHz
-#####################################
-#
-# WEAK Scaling test with 32^3 patch size and 64 patches / core. mus/pt is on a core basis. Pure OpenMP test, no MPI
-cores mus/pt  patches  log file
-1     0.96    4x4x4    weak_1_core_1t_7452.txt
-2     1.08    4x4x8    weak_2_core_1t_7452.txt
-4     1.28    4x8x8    weak_4_core_1t_7452.txt
-8     1.80    8x8x8    weak_8_core_1t_7452.txt
-16    1.91    8x8x16   weak_16_core_1t_7452.txt
-32    2.05    8x16x16  weak_32_core_1t_7452.txt
-
-# WEAK Scaling test with 32^3 patch size and 64 patches / core. mus/pt is on a core basis. MPIxOpenMP test
-ranks cores tot-cores threads  mus/pt  patches  log file
-2     16    32        1        2.00    8x8x16   weak_2m_16c_2t_7452.txt
-2     32    64        1        2.15    8x16x16  weak_2m_32c_2t_7452.txt
-4     8     32        1        2.05    8x16x16  weak_4m_8c_2t_7452.txt
-4     16    64        1        2.25    16x16x16 weak_4m_16c_2t_7452.txt
-4     32    128       1        2.20    16x16x32 weak_4m_32c_2t_7452.txt
-
-#####################################
 # AMD 7302 -- 16 cores, 3.0 GHz
 #####################################
 #
@@ -139,6 +118,40 @@ ranks cores tot-cores threads  mus/pt  patches  log file
 #4     8     32        1        1.34    16x10x16 weak_4m_8c_2t_7302.txt
 4     16    96        1        1.75    24x20x16 weak_4m_24c_1t_7402.txt
 8     24    192       1        1.74    24x20x32 weak_8m_24c_2t_7402.txt
+
+#####################################
+# AMD 7452 -- 32 cores, 2.35 GHz
+#####################################
+#
+# WEAK Scaling test with 32^3 patch size and 64 patches / core. mus/pt is on a core basis. Pure OpenMP test, no MPI
+cores mus/pt  patches  log file
+1     0.96    4x4x4    weak_1_core_1t_7452.txt
+2     1.08    4x4x8    weak_2_core_1t_7452.txt
+4     1.28    4x8x8    weak_4_core_1t_7452.txt
+8     1.80    8x8x8    weak_8_core_1t_7452.txt
+16    1.91    8x8x16   weak_16_core_1t_7452.txt
+32    2.05    8x16x16  weak_32_core_1t_7452.txt
+
+# WEAK Scaling test with 32^3 patch size and 64 patches / core. mus/pt is on a core basis. MPIxOpenMP test
+ranks cores tot-cores threads  mus/pt  patches  log file
+2     16    32        1        2.00    8x8x16   weak_2m_16c_2t_7452.txt
+2     32    64        1        2.15    8x16x16  weak_2m_32c_2t_7452.txt
+4     8     32        1        2.05    8x16x16  weak_4m_8c_2t_7452.txt
+4     16    64        1        2.25    16x16x16 weak_4m_16c_2t_7452.txt
+4     32    128       1        2.20    16x16x32 weak_4m_32c_2t_7452.txt
+
+#####################################
+# AMD 7702 -- 64 cores, 2.00 GHz
+#####################################
+
+# WEAK Scaling test with 32^3 patch size and 64 patches / core. mus/pt is on a core basis. MPIxOpenMP test
+ranks cores tot-cores threads  mus/pt  patches  log file
+2     16    32        1        3.05    8x16x16  weak_2m_16c_1t_7702.txt
+2     32    64        1        3.60    16x16x16 weak_2m_32c_1t_7702.txt
+4     8     32        1        3.10    8x16x16  weak_4m_08c_1t_7702.txt
+4     16    64        1        3.32    16x16x16 weak_4m_16c_1t_7702.txt
+4     32    128       1        3.80    16x16x32 weak_4m_32c_1t_7702.txt
+8     16    128       1        3.40    16x16x32 weak_8m_16c_1t_7702.txt
 
 #####################################
 # Intel Xeon Gold 6230 CPU @ 2.10GHz Cascade-lake demo machine on Steno 
