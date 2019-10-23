@@ -14,8 +14,12 @@ MODULE remesh_mod
   contains
     procedure:: init
     procedure:: prolong
+    procedure:: scatter_0th
+    procedure:: scatter_1st
     procedure, nopass:: weights
   end type
+  integer:: verbose=0
+  integer:: order=0
   type(remesh_t), public:: remesh
 CONTAINS
 
@@ -24,16 +28,138 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self)
   class(remesh_t):: self
+  !.............................................................................
+  integer:: iostat
+  logical, save:: first_time=.true.
+  namelist /remesh_params/ verbose, order
+  !-----------------------------------------------------------------------------
+  if (first_time) then
+    call trace%begin ('remesh_t%init')
+    !$omp critical (input_cr)
+    if (first_time) then
+      first_time = .false.
+      rewind (io_unit%input)
+      read (io_unit%input, remesh_params, iostat=iostat)
+      write (io_unit%output, remesh_params)
+    end if
+    !$omp end critical (input_cr)
+    call trace%end
+  end if
 END SUBROUTINE init
 
 !===============================================================================
-!> Prolong = remesh from coarse to fine mesh.  The index corner ll gives the
+!> Interface btw prolong and scatter.  In the basic case with no_mans_land=T,
+!> the lower left corner in source space is the index point to the left of the
+!> target index point; i.e., the source%index_only point corresponding to
+!> target%myposition (target%mesh%li).
+!===============================================================================
+SUBROUTINE prolong (self, target, source, jt, pt, all_cells)
+  class(remesh_t):: self
+  class(patch_t), pointer:: target, source
+  integer:: jt(2)
+  real:: pt(2)
+  logical:: all_cells
+  !.............................................................................
+  real(8):: pnt(3)
+  integer:: ll(3), nn(3)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('remesh_t%prolong')
+  call self%init
+  if (all_cells) then
+    pnt = target%myposition (target%mesh%li)
+    if (order==0) then
+      ll = source%index_only (pnt, roundup=.true.)
+      nn = source%mesh%n/2
+      call self%scatter_0th (source, target, ll, nn)
+    else
+      ll = source%index_only (pnt)
+      nn = source%mesh%n/2+1
+      call self%scatter_1st (source, target, ll, nn)
+    end if
+    if (verbose > 0) then
+      write (io_unit%output,'(a,2i6,3f10.6,2(2x,3i4))') &
+        'remesh_t%prolong: source, target, pnt, ll, nn =', &
+        source%id, target%id, pnt, ll, nn
+    end if
+  else
+    call io%abort('remesh_t%prolong: cannot handle all_cells=.false.')
+  end if
+  call trace%end ()
+END SUBROUTINE prolong
+
+!===============================================================================
+!> Scatter = remesh from coarse to fine mesh.  The index corner ll gives the
+!> lower left corner in index space.  If this is, for example, mesh%li, the
+!> region covered will start at li1 for the coarse mesh, and at li for the
+!> fine mesh.
+!===============================================================================
+SUBROUTINE scatter_0th (self, coarse, fine, ll, nn)
+  class(remesh_t):: self
+  class(patch_t), pointer:: coarse, fine
+  integer:: ll(3), nn(3)
+  optional:: nn
+  !.............................................................................
+  integer:: i1, i2, i3, j1, j2, j3, iv, lc(3), uc(3), lf(3), uf(3)
+  real, dimension(:,:,:), pointer:: c, f
+  real:: s(2)
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('remesh_t%scatter_0th', itimer=itimer)
+  lc = ll
+  if (present(nn)) then
+    uc = ll + nn - 1
+  else
+    uc = ll + coarse%mesh%n/2 - 1
+  end if
+  lf = fine%mesh%li
+  uf = fine%mesh%ui
+  !-----------------------------------------------------------------------------
+  ! Loop over variables, duplicating the coarse value in all three directions
+  !-----------------------------------------------------------------------------
+  do iv=1,fine%nv
+    c => coarse%mem(:,:,:,iv,coarse%it,1)
+    f =>   fine%mem(:,:,:,iv,  fine%it,1)
+    j3 = lf(3)
+    do i3=lc(3),uc(3)
+      j2 = lf(2)
+      do i2=lc(2),uc(2)
+        !-----------------------------------------------------------------------
+        !-----------------------------------------------------------------------
+        j1 = lf(1)
+        do i1=lc(1),uc(1)
+          f(j1  ,j2  ,j3  ) = c(i1,i2,i3)
+          f(j1+1,j2  ,j3  ) = c(i1,i2,i3)
+          f(j1  ,j2+1,j3  ) = c(i1,i2,i3)
+          f(j1+1,j2+1,j3  ) = c(i1,i2,i3)
+          f(j1  ,j2  ,j3+1) = c(i1,i2,i3)
+          f(j1+1,j2  ,j3+1) = c(i1,i2,i3)
+          f(j1  ,j2+1,j3+1) = c(i1,i2,i3)
+          f(j1+1,j2+1,j3+1) = c(i1,i2,i3)
+          j1 = j1+2
+        end do
+        j2 = j2+2
+      end do
+      j3 = j3+2
+    end do
+    if (verbose > 1) then
+      s(1) = sum(c(lc(1):uc(1),lc(2):uc(2),lc(3):uc(3)))*product(coarse%ds)
+      s(2) = sum(f(lf(1):uf(1),lf(2):uf(2),lf(3):uf(3)))*product(  fine%ds)
+      write (io_unit%output,'(a,i4,1p,3e12.3,4(2x,3i4))') &
+        'remesh_t%scatter_0th: iv, sum_c, sum_f =', &
+        iv, s, fine%fmaxval(f), lc, uc, lf, uf
+    end if
+  end do
+  call trace%end (itimer)
+END SUBROUTINE scatter_0th
+
+!===============================================================================
+!> Scatter = remesh from coarse to fine mesh.  The index corner ll gives the
 !> lower left corner in index space.  If this is, for example, mesh%li, the
 !> region covered will start at li-1 for the coarse mesh, and at li-2 for the
 !> fine mesh.  The li-2 point will lack contributions, so the the fine mesh will
 !> only be valid from lo=li-1 to uo=ui+1.
 !===============================================================================
-SUBROUTINE prolong (self, coarse, fine, ll, nn)
+SUBROUTINE scatter_1st (self, coarse, fine, ll, nn)
   class(remesh_t):: self
   class(patch_t), pointer:: coarse, fine
   integer:: ll(3), nn(3)
@@ -44,7 +170,7 @@ SUBROUTINE prolong (self, coarse, fine, ll, nn)
   real, allocatable:: out(:,:), w(:,:)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('remesh_t%prolong', itimer=itimer)
+  call trace%begin ('remesh_t%scatter_1st', itimer=itimer)
   ic = coarse%mesh%li
   lc = ll
   if (present(nn)) then
@@ -108,7 +234,7 @@ SUBROUTINE prolong (self, coarse, fine, ll, nn)
   end do
   deallocate (out)
   call trace%end (itimer)
-END SUBROUTINE prolong
+END SUBROUTINE scatter_1st
 
 !===============================================================================
 !> Weight factors for RAMSES type arrangement of coarse / fine (no_mans_land=t).

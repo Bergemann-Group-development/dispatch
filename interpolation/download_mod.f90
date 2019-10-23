@@ -34,6 +34,7 @@ MODULE download_mod
   USE omp_lock_mod
   USE timer_mod
   USE guard_zones_mod
+  USE remesh_mod
   implicit none
   private
   type, public:: download_t
@@ -249,6 +250,11 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
              call self%same (target, source, jt, pt, all_cells_l, only=only)
            end select
          !----------------------------------------------------------------------
+         ! Prolong with one level difference and all_cells
+         !----------------------------------------------------------------------
+         else if (source%level==target%level-1 .and. present(all_cells)) then
+           call remesh%prolong (target, source, jt, pt, all_cells)
+         !----------------------------------------------------------------------
          ! Prolong cases
          !----------------------------------------------------------------------
          else if ((source%level-target%level) <= -1) then
@@ -259,6 +265,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
              call prolong (self, target, source, jt, pt, all_cells_l, only=only)
            case ('guard_zones')
              call guard_zones%method (target, source, jt, pt)
+           case ('remesh')
+             call remesh%prolong (target, source, jt, pt, all_cells_l)
            case default
              call different_prolong (self, target, source, jt, pt, all_cells_l, only=only)
            end select
