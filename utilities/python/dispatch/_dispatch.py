@@ -484,9 +484,8 @@ def _parse_namelist (items):
 
     return np.array(pos)
 
-def parse_patches(file='data/00000/rank_00000_patches.nml'):
+def parse_patches(snap,file='data/00000/rank_00000_patches.nml'):
     """ Optimized parsing of patch namelist entries.
-        Asssumes that ID is the first item and LEVEL is the last
     """
     prop_dict={}
     class props():
@@ -507,6 +506,7 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
                 d['position'] = _parse_namelist(items)
             elif items[0]=='SIZE':
                 d['size'] = _parse_namelist(items)
+                d['ds'] = d['size']/snap.n
             elif items[0]=='LEVEL':
                 d['level']=int(items[1])
             elif items[0]=='DTIME':
@@ -526,7 +526,6 @@ def parse_patches(file='data/00000/rank_00000_patches.nml'):
             elif items[0]=='/' and watch_block: # the final entry of a namelist is always "/"
                 prop_dict[id]=d
                 watch_block = False
-
     return prop_dict
 
 class snapshot():
@@ -600,7 +599,7 @@ class snapshot():
             file=_file(datadir,f)
             if verbose==1:
                 print ('parsing',file)
-            patch_dict=parse_patches(file)
+            patch_dict=parse_patches(self,file)
             """ 
                 At this point all metadata about patches is available in the
                 patch_dict, with patch IDs as keys.  This makes it possible to
