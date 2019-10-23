@@ -1,2 +1,3 @@
 *.f90 ident
 *.nml ident
+* text=auto
