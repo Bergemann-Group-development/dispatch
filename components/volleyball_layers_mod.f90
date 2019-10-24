@@ -13,7 +13,6 @@ MODULE volleyball_layers_mod
     integer:: ntheta=10
     real(8):: theta0, dtheta, radius
     type(dll_t):: list
-  contains
   end type
   !.............................................................................
   type, public:: volleyball_layers_t
@@ -21,7 +20,6 @@ MODULE volleyball_layers_mod
     type(dll_t):: list
   contains
     procedure:: init
-    procedure:: init_layer
   end type
   !.............................................................................
   integer:: verbose=0
@@ -53,7 +51,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   do i=1,nlayer
     allocate (layer, dll_node)
-    call self%init_layer (layer, radius)
+    call init_layer (self, layer, radius)
   end do
   write (io_unit%output,*) 'layers:', self%list%n
   call trace%end
