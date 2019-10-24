@@ -14,7 +14,6 @@ MODULE volleyball_layers_mod
     real(8):: theta0, dtheta, radius
     type(dll_t):: list
   contains
-    procedure:: init_layer
   end type
   !.............................................................................
   type, public:: volleyball_layers_t
@@ -22,6 +21,7 @@ MODULE volleyball_layers_mod
     type(dll_t):: list
   contains
     procedure:: init
+    procedure:: init_layer
   end type
   !.............................................................................
   integer:: verbose=0
@@ -35,7 +35,7 @@ SUBROUTINE init (self)
   class(volleyball_layers_t):: self
   !.............................................................................
   type(sphere_points_t), pointer:: point, save, tmp
-  class(dll_node_t), pointer:: dll_node
+  class(dll_node_t), pointer:: dll_node, layer_node
   type(volleyball_layer_t), pointer:: layer
   integer:: nlayer=2, iostat, i
   real(8):: radius=1d0
@@ -53,10 +53,7 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   do i=1,nlayer
     allocate (layer, dll_node)
-    call layer%init_layer (radius)
-    dll_node%car => layer
-    call self%list%append (dll_node)
-    write (io_unit%output,*) 'layer points, radius:', layer%list%n, radius
+    call self%init_layer (layer, radius)
   end do
   write (io_unit%output,*) 'layers:', self%list%n
   call trace%end
@@ -66,8 +63,9 @@ END SUBROUTINE init
 !> Given the number of intervals in the theta direction, generate the patch
 !> positions, saving the point information in a dll_t data type
 !===============================================================================
-SUBROUTINE init_layer (self, radius)
-  class(volleyball_layer_t):: self
+SUBROUTINE init_layer (self, layer, radius)
+  class(volleyball_layers_t):: self
+  class(volleyball_layer_t):: layer
   real(8):: radius
   !.............................................................................
   type(sphere_points_t), pointer:: point, save
@@ -83,10 +81,10 @@ SUBROUTINE init_layer (self, radius)
   !-----------------------------------------------------------------------------
   ! Construct a set of patch positions that define a volleyball front face
   !-----------------------------------------------------------------------------
-  self%radius = radius
-  self%ntheta = ntheta
-  self%theta0 = atan(sqrt(0.5d0))
-  self%dtheta = self%theta0/self%ntheta
+  layer%radius = radius
+  layer%ntheta = ntheta
+  layer%theta0 = atan(sqrt(0.5d0))
+  layer%dtheta = layer%theta0/layer%ntheta
   allocate (point)
   call point%init
   if (verbose > 0) &
@@ -95,19 +93,22 @@ SUBROUTINE init_layer (self, radius)
   !-----------------------------------------------------------------------------
   ! March in the theta direction
   !-----------------------------------------------------------------------------
-  do while (point%is_inside(self%theta0))
+  do while (point%is_inside (layer%theta0, layer%dtheta))
+    point%r = radius
+    point%size = radius*layer%dtheta
+    write (stdout,*) point%size, 'size'
     !---------------------------------------------------------------------------
     ! Add half a patch size north-east offset
     !---------------------------------------------------------------------------
-    call point%go_north (0.5d0*self%dtheta)
-    call point%go_east (0.5d0*self%dtheta)
+    call point%go_north (0.5d0*layer%dtheta)
+    call point%go_east (0.5d0*layer%dtheta)
     if (verbose > 0) &
       call point%info ('row start')
     !---------------------------------------------------------------------------
     ! March in the phi direction while patches are inside the front section,
     ! while appending a point and its three mirror images to the list of points
     !---------------------------------------------------------------------------
-    do while (point%is_inside(self%theta0))
+    do while (point%is_inside (layer%theta0, layer%dtheta))
       call append
       point%y = -point%y
       call append
@@ -116,25 +117,25 @@ SUBROUTINE init_layer (self, radius)
       point%y = -point%y
       call append
       point%z = -point%z
-      call point%go_east (self%dtheta)
+      call point%go_east (layer%dtheta)
       if (verbose > 1) &
         call point%info ('east')
     end do
     point = save
-    call point%go_north (self%dtheta)
+    call point%go_north (layer%dtheta)
     if (verbose > 0) &
       call point%info ('north')
     save = point
   end do
   deallocate (save)
-  radius = radius*(1d0-self%dtheta)
+  radius = radius*(1d0-layer%dtheta)
   call trace%end
 contains
   !-----------------------------------------------------------------------------
   ! Append a (copy of a) point to the list of points
   !-----------------------------------------------------------------------------
   subroutine append
-    type(sphere_points_t), pointer:: tmp
+    class(sphere_points_t), pointer:: tmp
     allocate (tmp, source=point)
     allocate (dll_node)
     dll_node%car => tmp

@@ -7,6 +7,7 @@ MODULE sphere_points_mod
   implicit none
   private
   type, public:: sphere_points_t
+    real(8):: size=1d0
     real(8):: x=0d0, y=0d0, z=0d0
     real(8):: theta=0d0, phi=0d0, r=0d0
   contains
@@ -134,19 +135,32 @@ SUBROUTINE permute (self)
 END SUBROUTINE permute
 
 !===============================================================================
-!> Check if a patch is fully inside the front face
+!> Check if a patch is fully inside the front face, by checking that the patch
+!> is inside the latitude limit of the central VB section, and that its lower
+!> south west corner is outside the east VB section
 !===============================================================================
-FUNCTION is_inside (self, limit) RESULT (out)
+FUNCTION is_inside (self, theta0, dtheta) RESULT (out)
   class(sphere_points_t):: self
-  real(8):: limit
+  real(8):: theta0, dtheta
   logical:: out
   type(sphere_points_t):: tmp
   !-----------------------------------------------------------------------------
+  ! Check if inside latitude theta0
+  !-----------------------------------------------------------------------------
   call trace%begin ('sphere_points_t%is_inside')
-  out = self%theta < limit
+  out = self%theta < theta0
   tmp = self
+  !-----------------------------------------------------------------------------
+  ! Move point to south-west lower corner before converting to east VB coords
+  !-----------------------------------------------------------------------------
+  tmp%theta = tmp%theta - dtheta/2d0
+  tmp%phi   = tmp%phi   - dtheta/(2d0*cos(tmp%theta))
+  tmp%r     = tmp%r*(1d0- dtheta/2d0)
   call tmp%permute ()
-  out = self%theta < limit .and. tmp%theta > limit
+  !-----------------------------------------------------------------------------
+  ! Check if outside east VB section latitude limits
+  !-----------------------------------------------------------------------------
+  out = self%theta < theta0 .and. tmp%theta > theta0
   call trace%end
 END FUNCTION is_inside
 

@@ -21,3 +21,5 @@ ramses_mod.o            : io_mod.o trace_mod.o scaling_mod.o mhd_mod.o force_mod
 cylinder_mod.o          : io_mod.o io_unit_mod.o trace_mod.o task_list_mod.o solver_mod.o cpatch_mod.o
 sphere_points_mod.o     : io_mod.o io_unit_mod.o trace_mod.o
 volleyball_layers_mod.o : sphere_points_mod.o dll_mod.o
+cartesian_vb_mod.o      : io_mod.o trace_mod.o experiment_mod.o  task_list_mod.o \
+                          mpi_coords_mod.o omp_mod.o volleyball_layers_mod.o
