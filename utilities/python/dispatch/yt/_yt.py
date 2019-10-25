@@ -84,8 +84,9 @@ def patch(p,copy=True):
             #    dict[key]=p.var(iv,copy=copy)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
             #else:
             dict[key]=p.var(iv,copy=copy)
-    for k in p.keys['aux']:
-        dict[k]=p.var(k,copy=copy)
+    if 'aux' in p.keys.keys():
+        for k in p.keys['aux']:
+            dict[k]=p.var(k,copy=copy)
     return dict
 
 def patches(s,copy=True):
