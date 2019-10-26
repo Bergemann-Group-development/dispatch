@@ -23,7 +23,7 @@
 &out_params             end_time=0.200 out_time=0.025 print_time=0.0 /
 &io_params              verbose=0 do_trace=f omp_trace=f do_output=f restart=-2
                         method='parallel' format=11 guard_zones=f time_derivs=0 /
-&doẃnload_params        verbose=0 use_different=0 check_filled=t /
+&download_params        verbose=0 use_different=0 check_filled=t /
 &guard_zone_params      method='simple' verbose=0 /
 &timer_params           sec_per_report=5 /
 &time_slices_params     order=1 /
