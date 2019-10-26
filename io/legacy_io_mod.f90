@@ -83,7 +83,13 @@ SUBROUTINE output (self, experiment_name)
   !-----------------------------------------------------------------------------
   ! Write a binary file with the data cube.
   !-----------------------------------------------------------------------------
-  write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, self%id
+  if (self%id < 100000) then
+    write (filename,'(a,i5.5,"/",i5.5)') trim(io%outputname), self%iout, self%id
+  else if (self%id < 1000000) then
+    write (filename,'(a,i5.5,"/",i6.6)') trim(io%outputname), self%iout, self%id
+  else
+    write (filename,'(a,i5.5,"/",i7.7)') trim(io%outputname), self%iout, self%id
+  end if
   n = u-l+1
   open (io_unit%data, file=trim(filename)//'.dat', form='unformatted', access='direct', &
     status='unknown', recl=kind(buf)*product(n))
@@ -209,7 +215,13 @@ SUBROUTINE input (self, ok)
   !---------------------------------------------------------------------------
   ! Read the binary file with the data cube.
   !---------------------------------------------------------------------------
-  write (filename,'(a,"/",i5.5,"/",i5.5)') trim(io%inputdir), self%restart, self%id
+  if (self%id < 100000) then
+    write (filename,'(a,i5.5,"/",i5.5)') trim(io%inputdir), self%restart, self%id
+  else if (self%id < 1000000) then
+    write (filename,'(a,i5.5,"/",i6.6)') trim(io%inputdir), self%restart, self%id
+  else
+    write (filename,'(a,i5.5,"/",i7.7)') trim(io%inputdir), self%restart, self%id
+  end if
   inquire (file=trim(filename)//'.dat', exist=ok)
   if (.not.ok) then
     call io%abort('MK input_legacy: no .dat file'//trim(filename)//'.dat')
