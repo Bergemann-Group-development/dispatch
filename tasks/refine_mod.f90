@@ -193,6 +193,7 @@ MODULE refine_mod
     integer:: levelmin=0                      ! Min level of refinment
     integer:: levelmax=0                      ! Max level of refinment
     integer:: ratio=2                         ! default
+    real:: safe_ratio=2.1                     ! safe derefine ratio
   contains
     procedure:: init
     procedure:: refine_needed
@@ -204,6 +205,7 @@ MODULE refine_mod
     procedure:: shock_and_cd_detector
     procedure:: refine_region
     procedure:: gradient_detector
+    procedure:: sanity_check
   end type
   !
   integer:: check_interval=10                 ! Number of steps betwen checks
@@ -1000,7 +1002,7 @@ FUNCTION check_cubical (self, patch) RESULT (refine_it)
 END FUNCTION check_cubical
 
 !===============================================================================
-!> Refine / derefine on ratio of cell size to Jeans lenght (max_jeans/min_jeans)
+!> Refine / derefine on ratio of Jeans length to cell size (max_jeans/min_jeans)
 !===============================================================================
 FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   USE math_mod
@@ -1011,17 +1013,17 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   !.............................................................................
   integer:: imin(3), l(3), u(3)
   real:: Jeans_num, dmin, c
-  real, dimension(:,:,:), allocatable:: c_sound2, pg
+  real, dimension(:,:,:), allocatable:: pg
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
   real, allocatable:: test(:,:,:)
   logical:: masked
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_jeans')
+  call self%sanity_check (min_jeans, max_jeans, 'check_Jeans')
   l = 1
   u = patch%gn
   d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
-  allocate(c_sound2(size(d,1),size(d,2),size(d,3)), &
-           pg(patch%gn(1),patch%gn(2),patch%gn(3)))
+  allocate(pg(patch%gn(1),patch%gn(2),patch%gn(3)))
   select type (patch)
   class is (solver_t)
     pg = patch%gas_pressure() + tiny(1.0)
@@ -1037,29 +1039,29 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   else
     allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
     c =  minval(patch%mesh%d)*sqrt(scaling%grav/(math%pi*patch%gamma))
-    test = c*d/sqrt(pg)
+    test = sqrt(pg)/(c*d)
     !---------------------------------------------------------------------------
     ! The Jeans number if the unrefined part
     !---------------------------------------------------------------------------
-    Jeans_num = maxval(test, mask=patch%irefine <= 0)
+    Jeans_num = minval(test, mask=patch%irefine <= 0)
     !---------------------------------------------------------------------------
     ! Compute a per-cell criterion, which sets patch%irefine to +1 where it
     ! needs refinement, and sets it to 0 where the current resolution is needed.
     ! By implication, where it does not set patch%irefine, and where it remains
     ! at the intial -1 value, derefinement is allowed
     !---------------------------------------------------------------------------
-    where (test > max_jeans)
+    where (test < min_jeans)
       patch%irefine = +1
     !---------------------------------------------------------------------------
     ! Jeans number not small enough, or overlying refinement
     !---------------------------------------------------------------------------
-    else where (test > min_jeans)
+    else where (test < max_jeans)
       patch%irefine = max (patch%irefine, 0)
     end where
     deallocate (test)
     refine_it = 0
-    if (Jeans_num > max_jeans) refine_it = +1
-    if (Jeans_num < min_jeans) refine_it = -1
+    if (Jeans_num > max_jeans) refine_it = -1
+    if (Jeans_num < min_jeans) refine_it = +1
     !---------------------------------------------------------------------------
     if (verbose > 2 .or. &
        (verbose > 1 .and. patch%level < self%levelmax .and. refine_it > 0) .or. &
@@ -1469,5 +1471,32 @@ FUNCTION refine_region (self, patch) RESULT (refine)
   refine = merge(1,0,refine_it)
   call trace%end()
 END FUNCTION refine_region
+
+!===============================================================================
+!> Check that the derefinement criterion is sane
+!===============================================================================
+SUBROUTINE sanity_check (self, min, max, label, reverse)
+  class(refine_t):: self
+  real:: min, max
+  character(len=*):: label
+  logical, optional:: reverse
+  !.............................................................................
+  if (max == 0.0) then
+    if (present(reverse)) then
+      min = max/self%safe_ratio
+    else
+      max = min*self%safe_ratio
+    end if
+  else if (max < min*2.0) then
+    if (present(reverse)) then
+      min = max/2.0
+    else
+      max = min*2.0
+    end if
+    if (io%master) then
+      write (stdout,*) 'WARNING: '//trim(label)//' max value set to', max
+    end if
+  end if
+END SUBROUTINE sanity_check
 
 END MODULE refine_mod
