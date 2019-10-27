@@ -75,6 +75,7 @@ MODULE io_mod
   end type
   character(len=64), save:: inputname, outputname
   type(io_t), public:: io
+  !$omp threadprivate (io)
   public mch, io_unit, stderr, stdout, stdin
 CONTAINS
 
@@ -123,8 +124,6 @@ SUBROUTINE init (self, name)
   end if
   self%master = mpi%master
   io%master   = mpi%master
-  !$omp parallel
-  !$omp end parallel
   !-----------------------------------------------------------------------------
   ! I/O unit numbers, for convenience and backwards compatibility.  All other
   ! unit numbers should be taken directly from io_unit_mod
@@ -218,17 +217,19 @@ SUBROUTINE init (self, name)
     end if
     !$omp end critical (open_cr)
     io_unit%master = io%master .and. omp%master
+    !---------------------------------------------------------------------------
+    ! Backwards compatibility
+    !---------------------------------------------------------------------------
+    io%output    = io_unit%output
+    io%data_unit = io_unit%data
+    io%master = io%master .and. omp%master
+    self%master = io%master .and. omp%master
     write (io_unit%log,'(a,2i4,3l4)') &
       'io_mod::init io_unit%log, omp%thread, io_unit%master, io_unit%verbose:', &
       io_unit%log, omp%thread, io_unit%master, io_unit%verbose
     !$omp end parallel
     stdout = io_unit%output
     write (stdout,io_params)
-    !---------------------------------------------------------------------------
-    ! Backwards compatibility
-    !---------------------------------------------------------------------------
-    io%output    = io_unit%output
-    io%data_unit = io_unit%data
     write(io%output,*) 'logfile:', filename
     write(io%output,*) '======================================================================='
     write(io%output,*) 'NOTE: Reading parameters from '//trim(self%inputname)
