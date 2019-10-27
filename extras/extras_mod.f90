@@ -74,6 +74,7 @@ MODULE extras_mod
   !USE gravity_mod                                                      ! gravity
   !USE sink_particles_mod                                               ! sinkp
   !USE pic_mod                                                          ! PIC
+  !USE cooling_mod                                                      ! PIC
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -90,6 +91,7 @@ MODULE extras_mod
     !type(newton_t):: newton                                            ! Newton
     !class(trace_particles_t), pointer:: trace_particles                ! tracep
     !real, dimension(:,:,:,:), pointer:: v                              ! tracep
+    !type(cooling_t):: cooling                                          ! cool
     logical :: do_mhd = .true.
   contains
     procedure, nopass:: cast2extras
@@ -154,6 +156,7 @@ SUBROUTINE init (self)
   ! -- ensure consistency (a value is already set via rt%init)          ! experiment
   !self%rt%rt_boundaries%grav = self%gravity%const_grav                 ! experiment
   !call sink_particles%init                                             ! sinkp
+  !call self%cooling%init (self)                                        ! cool
   call trace%end()
 END SUBROUTINE init
 
@@ -215,6 +218,7 @@ SUBROUTINE pre_update (self)
   !call sink_particles%force_field (self)                               ! sinkp
   !call self%pic%pre_update()                                           ! pic
   !call self%selfgravity%post_update (self)                             ! selfg
+  !call self%cooling%pre_update (self)                                  ! cool
   call trace%end()
 END SUBROUTINE pre_update
 

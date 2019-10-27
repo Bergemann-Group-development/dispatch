@@ -5,6 +5,7 @@
 #
 VPATH := $(VPATH):$(SOLVER)/extras:$(TOP)/solvers/$(SOLVER)/extras:$(TOP)/extras
 include $(TOP)/extras/spitzer_conductivity/Makefile
+include $(TOP)/extras/cooling/Makefile
 
 # Dependencies
 extras_mod.o            : io_mod.o trace_mod.o patch_mod.o gpatch_mod.o connect_mod.o \

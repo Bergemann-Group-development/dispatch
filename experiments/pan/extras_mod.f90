@@ -50,6 +50,7 @@ MODULE extras_mod
   USE trace_particles_mod                                       ! tracep
   USE sink_particles_mod                                        ! sinkp
   USE selfgravity_mod                                           ! selfg
+  USE cooling_mod                                               ! cool
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -62,6 +63,7 @@ MODULE extras_mod
     class(trace_particles_t), pointer:: trace_particles         ! tracep
     real, dimension(:,:,:,:), pointer:: v                       ! tracep
     type(selfgravity_t):: selfgravity                           ! selfg
+    type(cooling_t):: cooling                                   ! cool
   contains
     procedure:: init
     procedure:: init_task_list
@@ -97,6 +99,7 @@ SUBROUTINE init (self)
   self%connect%trace_particles => self%trace_particles          ! tracep
   call self%trace_particles%add (self%link)                     ! tracep
   call sink_particles%init                                      ! sinkp
+  call self%cooling%init                                        ! cool
   call trace%end()
 END SUBROUTINE init
 
@@ -144,6 +147,7 @@ SUBROUTINE pre_update (self)
   call sink_particles%pre_update (self)                         ! sinkp
   call self%trace_particles%update                              ! tracep
   call self%selfgravity%pre_update (self)                       ! selfg
+  call self%cooling%pre_update (task)                           ! cool
   call trace%end()
 END SUBROUTINE pre_update
 
