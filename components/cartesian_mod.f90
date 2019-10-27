@@ -202,7 +202,7 @@ SUBROUTINE init (self, label)
     write(stdout,*) 'cartesian_t%init: init boundaries'
   call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
-  if (io%master) then
+  if (io_unit%master) then
     write (io_unit%nml, cartesian_params)
     flush (io_unit%nml)
   end if
