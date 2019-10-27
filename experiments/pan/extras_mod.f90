@@ -49,7 +49,7 @@ MODULE extras_mod
   USE forces_mod                                                ! forces
   USE trace_particles_mod                                       ! tracep
   USE sink_particles_mod                                        ! sinkp
-  !USE selfgravity_mod                                           ! selfg
+  USE selfgravity_mod                                           ! selfg
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -61,7 +61,7 @@ MODULE extras_mod
     type(forces_t):: forces                                     ! forces
     class(trace_particles_t), pointer:: trace_particles         ! tracep
     real, dimension(:,:,:,:), pointer:: v                       ! tracep
-    !type(selfgravity_t) :: selfgravity                         ! selfg
+    type(selfgravity_t):: selfgravity                           ! selfg
   contains
     procedure:: init
     procedure:: init_task_list
@@ -77,6 +77,17 @@ CONTAINS
 !===============================================================================
 !> Initialize the modules that are to be included and used
 !===============================================================================
+SUBROUTINE pre_init (self)
+  class(extras_t):: self
+  !.............................................................................
+  call trace%begin ('extras_t%pre_init')
+  call self%selfgravity%pre_init(self)                          ! selfg
+  call trace%end()
+END SUBROUTINE pre_init
+
+ !===============================================================================
+ !> Initialize the modules that are to be included and used
+ !===============================================================================
 SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
@@ -132,6 +143,7 @@ SUBROUTINE pre_update (self)
   call self%forces%pre_update                                   ! forces
   call sink_particles%pre_update (self)                         ! sinkp
   call self%trace_particles%update                              ! tracep
+  call self%selfgravity%pre_update (self)                       ! selfg
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -143,6 +155,7 @@ SUBROUTINE post_update (self)
   !.............................................................................
   call self%forces%post_update                                  ! forces
   call self%trace_particles%post_update                         ! tracep
+  call self%selfgravity%post_update (self)                      ! selfg
 END SUBROUTINE post_update
 
 !===============================================================================

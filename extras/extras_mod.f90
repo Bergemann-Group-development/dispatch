@@ -62,6 +62,7 @@ MODULE extras_mod
   USE io_mod
   USE trace_mod
   USE connect_mod
+  !USE selfgravity_mod
   !-----------------------------------------------------------------------------
   ! Optional modules start here.
   !-----------------------------------------------------------------------------
@@ -120,12 +121,13 @@ SUBROUTINE pre_init (self)
   ! Allocate a trace_particles data type, connect a pointer, and initialize
   !-----------------------------------------------------------------------------
   !allocate(self%rt)                                                    ! RT
-  !call self%rt%pre_init(self%link)                                     ! RT
+  !call self%rt%pre_init (self%link)                                    ! RT
   !allocate (self%trace_particles)                                      ! tracep
   !self%connect%trace_particles => self%trace_particles                 ! tracep
-  !allocate(self%pic)                                                   ! pic
+  !allocate (self%pic)                                                  ! pic
   !self%connect%pic_patch => self%pic                                   ! pic
-  !call self%pic%pre_init(self%link)                                    ! pic
+  !call self%pic%pre_init (self%link)                                   ! pic
+  !call self%selfgravity%pre_init (self)                                ! selfg
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -212,6 +214,7 @@ SUBROUTINE pre_update (self)
   !call self%gravity%pre_update()                                       ! gravity
   !call sink_particles%force_field (self)                               ! sinkp
   !call self%pic%pre_update()                                           ! pic
+  !call self%selfgravity%post_update (self)                             ! selfg
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -226,6 +229,7 @@ SUBROUTINE post_update (self)
   !call self%forces%post_update                                         ! forces
   !call self%trace_particles%post_update (self)                         ! tracep
   !call self%pic%post_update()                                          ! pic
+  !call self%selfgravity%post_update (self)                             ! selfg
 END SUBROUTINE post_update
 
 !===============================================================================
