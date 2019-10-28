@@ -6,9 +6,9 @@
 !---------------------------------------------
 ! For unigrid run, use the no_mans_land=t line
 !---------------------------------------------
-&patch_params           nt=5 grace=0.3 n=3*32 no_mans_land=t /
-!&patch_params           nt=5 grace=0.3 n=3*16 no_mans_land=t /
-&out_params             end_time=0.511 out_time=0.020 print_every=1 /
+!&patch_params           nt=5 grace=0.3 n=3*32 no_mans_land=t /
+&patch_params           nt=5 grace=0.3 n=3*16 no_mans_land=t /
+&out_params             end_time=0.111 out_time=0.020 print_every=1 /
 &io_params              verbose=0 do_trace=f omp_trace=f do_output=f restart=-2
                         method='legacy' format=10 guard_zones=t time_derivs=0 /
 &pdf_io_params          on=t verbose=1 out_time=0.01 nbins=201 bin_min=-12. bin_max=8. /
@@ -16,7 +16,7 @@
 &validate_params        mode='' /
 &time_slices_params     order=1 /
 &download_params        verbose=0 use_locks=f use_different=-2 sorted=t check_filled=t id_debug=0 /
-&counters_params        verbose=1 /
+&counters_params        verbose=0 /
 &lock_params            verbose=0 verbose_time=000 tasks=t /
 &refine_params          on=t verbose=1 levelmin=7 levelmax=9 check_interval=5
                         !max_jeans=0.15 min_jeans=0.06

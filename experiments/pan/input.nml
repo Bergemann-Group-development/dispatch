@@ -43,6 +43,8 @@
 !---------------------------------
 ! Solver specific parameters
 !---------------------------------
+&scaling_params         l_pc=40. d_cgs=50e-24, v_kms=1.0 mu=2.4 /
+&cooling_params         on=f verbose=1 type=0 /
 &flux_params            on=f verbose=0 /
 &ramses_params          courant_factor=0.250 isothermal=t gamma=1.0 slope_type=3.5
                         !riemann='hlld_vec'

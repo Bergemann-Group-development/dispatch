@@ -64,6 +64,7 @@ MODULE extras_mod
     real, dimension(:,:,:,:), pointer:: v                       ! tracep
     type(selfgravity_t):: selfgravity                           ! selfg
     type(cooling_t):: cooling                                   ! cool
+    class(gpatch_t), pointer:: gpatch => null()                 ! keep
   contains
     procedure:: init
     procedure:: init_task_list
@@ -72,6 +73,7 @@ MODULE extras_mod
     procedure:: post_update
     procedure:: output
     procedure:: check_refine
+    procedure:: courant_condition
   end type
   type(extras_t), public:: extras
 CONTAINS
@@ -139,15 +141,14 @@ END SUBROUTINE dealloc
 !===============================================================================
 SUBROUTINE pre_update (self)
   class(extras_t), target:: self
-  class(gpatch_t), pointer:: task
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
-  task => self                                                  ! keep
+  self%gpatch => self                                           ! keep
   call self%forces%pre_update                                   ! forces
   call sink_particles%pre_update (self)                         ! sinkp
   call self%trace_particles%update                              ! tracep
   call self%selfgravity%pre_update (self)                       ! selfg
-  call self%cooling%pre_update (task)                           ! cool
+  call self%cooling%pre_update (self%gpatch)                    ! cool
   call trace%end()
 END SUBROUTINE pre_update
 
@@ -186,5 +187,18 @@ INTEGER function check_refine (self, patch)
   check_refine = max (check_refine, &                            ! sinkp
     sink_particles%check_refine (gpatch))                        ! sinkp
 END FUNCTION check_refine
+
+!===============================================================================
+!> Intercept courant_condition() call
+!===============================================================================
+SUBROUTINE courant_condition (self, detailed_timer)
+  class(extras_t):: self
+  logical, optional:: detailed_timer
+  !-----------------------------------------------------------------------------
+  call trace%begin ('extras_t%courant_condition')
+  call self%gpatch_t%courant_condition (detailed_timer)          ! keep
+  call self%cooling%courant_condition (self%gpatch)              ! cool
+  call trace%end()
+END SUBROUTINE courant_condition
 
 END MODULE extras_mod

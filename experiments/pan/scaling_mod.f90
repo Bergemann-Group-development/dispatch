@@ -23,13 +23,21 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self)
   class(scaling_t):: self
+  integer:: iostat
   logical, save:: first_time=.true.
-  real:: l_pc=4.0, d_cgs=3200e-22, v_kms=0.18
-  namelist /scaling_params/ l_pc, d_cgs, v_kms
+  real:: l_pc=4.0, d_cgs=3200e-22, v_kms=0.18, mu
+  namelist /scaling_params/ l_pc, d_cgs, v_kms, mu
   !----------------------------------------------------------------------------
   if (.not.first_time) return
   call trace_begin('scaling_t%init')
-  first_time = .false.
+  !$omp critical (input_cr)
+  if (first_time) then
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, scaling_params, iostat=iostat)
+    write (io%output, scaling_params)
+  end if
+  !$omp end critical (input_cr)
   call cgs%init
   self%l = l_pc*cgs%pc                                  ! length in pc
   self%d = d_cgs                                        ! mass density in cgs
@@ -38,8 +46,8 @@ SUBROUTINE init (self)
   self%t = self%l/self%u                                ! time ~ 5 years
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
-  self%mu = 2d0
-  self%temp = self%mu*(cgs%m_u/self%m)/(cgs%k_b/self%e) ! temperature for given mu
+  self%mu = mu                                          ! menan molecular weight
+  self%temp = self%mu*(cgs%m_u*self%u**2)/cgs%k_b       ! temperature for given mu
   code%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
   code%r_earth = cgs%r_earth/self%l
   if (io%master) then

@@ -87,12 +87,10 @@ END FUNCTION cast2solver
 !===============================================================================
 SUBROUTINE update (self)
   class(solver_t) :: self
-  associate (d=>self%mem(:,:,:,self%idx%d,self%it,1))
   !.............................................................................
   call self%extras_t%pre_update
   call self%hd_t%update
   call self%extras_t%post_update
-  end associate
 END SUBROUTINE update
 
 !===============================================================================

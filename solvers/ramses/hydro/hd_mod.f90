@@ -127,6 +127,7 @@ SUBROUTINE update (self)
   integer:: n(3), m, i, l(3), u(3)
   integer, save:: itimer=0
   real, dimension(:,:,:,:), pointer:: p
+  real, dimension(:,:,:), pointer:: px, py, pz, eth
   real, contiguous, dimension(:,:,:), pointer:: d, e, Ux=>null(), Uy=>null(), Uz=>null()
   real, contiguous, dimension(:,:,:), pointer:: tmp
   real:: error
@@ -172,10 +173,19 @@ SUBROUTINE update (self)
   d => self%mem(:,:,:,          self%idx%d ,self%it,1)
   e => self%mem(:,:,:,          self%idx%e ,self%it,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%it,1)
+  call self%mem_lock(self%new)%set ('update')
+  !-----------------------------------------------------------------------------
+  ! Add the external heating per unit mass as a source term
+  !-----------------------------------------------------------------------------
+  if (allocated(self%heating_per_unit_mass)) then
+    e = e + self%dtime*self%heating_per_unit_mass*d
+  end if
+  if (allocated(self%heating_per_unit_volume)) then
+    e = e + self%dtime*self%heating_per_unit_volume
+  end if
   !-----------------------------------------------------------------------------
   ! Godunov solver
   !-----------------------------------------------------------------------------
-  call self%mem_lock(self%new)%set ('update')
   call godunov (self)
   if (isothermal) &
     self%mem(:,:,:,self%idx%e,self%new,1) = &
@@ -184,7 +194,18 @@ SUBROUTINE update (self)
   !-----------------------------------------------------------------------------
   ! Add the external force per unit mass as a source term
   !-----------------------------------------------------------------------------
+  d => self%mem(:,:,:,self%idx%d,self%new,1)
+  e => self%mem(:,:,:,self%idx%e,self%new,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
+  print *, self%fminval(d), self%fmaxval(d), 'd'
+  print *, self%fminval(e), self%fmaxval(e), 'e'
+  allocate (eth(self%gn(1),self%gn(2),self%gn(3)))
+  px => self%mem(:,:,:,self%idx%px,self%new,1)
+  py => self%mem(:,:,:,self%idx%py,self%new,1)
+  pz => self%mem(:,:,:,self%idx%pz,self%new,1)
+  eth = e - 0.5*(px**2+py**2+pz**2)/d
+  print *, self%fminval(eth), self%fmaxval(eth), 'eth'
+  deallocate (eth)
   if (allocated(self%force_per_unit_mass)) then
     do i=1,3
       p(:,:,:,i) = p(:,:,:,i) + self%dtime*self%force_per_unit_mass(:,:,:,i)*d
@@ -848,7 +869,8 @@ subroutine trace3d(self)
   real(dp)::dry, duy, dvy, dwy, dpy, day
   real(dp)::drz, duz, dvz, dwz, dpz, daz
   real(dp)::sr0, su0, sv0, sw0, sp0, sa0
-  real(dp)::ff(self%gn(1),3)
+  real(dp)::ff(self%gn(1),3), qq(self%gn(1))
+  real(dp), dimension(:,:,:)    , pointer, contiguous:: d
   real(dp), dimension(:,:,:,:)  , pointer, contiguous:: q
   real(dp), dimension(:,:,:,:,:), pointer, contiguous:: qp, qm, dq
   integer,save:: itimer=0
@@ -878,6 +900,18 @@ subroutine trace3d(self)
         end do
       else
           ff(:,:) = 0.0_dp
+      end if
+      if (allocated(self%heating_per_unit_volume)) then
+        d => self%mem(:,:,:,self%idx%d,self%it,1)
+        do i=lb(1),ub(1)
+          qq(i) = self%heating_per_unit_volume(i,j,k)/d(i,j,k)
+        end do
+      else if (allocated(self%heating_per_unit_mass)) then
+        do i=lb(1),ub(1)
+          qq(i) = self%heating_per_unit_mass(i,j,k)
+        end do
+      else
+          qq(:) = 0.0
       end if
       !dir$ ivdep
       !$omp simd
@@ -910,7 +944,7 @@ subroutine trace3d(self)
 
         ! Source terms (including transverse derivatives)
         sr0 = -u*drx-v*dry-w*drz - (dux+dvy+dwz)*r
-        sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p
+        sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p !    + (gamma-1d0)*qq(i)
         su0 = -u*dux-v*duy-w*duz - dpx/r + ff(i,1)
         sv0 = -u*dvx-v*dvy-w*dvz - dpy/r + ff(i,2)
         sw0 = -u*dwx-v*dwy-w*dwz - dpz/r + ff(i,3)
