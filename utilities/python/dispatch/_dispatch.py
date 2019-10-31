@@ -124,9 +124,9 @@ class memmap2(np.memmap):
 
     def __new__(subtype, *args, **kwargs):
         obj = super(memmap2, subtype).__new__(subtype,  *args, **kwargs)
-        obj._saved = {'len':obj._mmap.__len__(),'off':obj.offset,'file':obj.filename}
+        obj._saved = {'len':obj._mmap.__len__(),'off':obj.offset,
+                      'file':obj.filename}
         fd=open(obj.filename,'rb+')
-        saved=(fd.fileno(),obj._mmap.__len__(),obj.offset)
         obj._mmap.close()
         return obj
 
@@ -150,10 +150,63 @@ class memmap2(np.memmap):
         obj = super(memmap2, subtype).__array_prepare__(subtype, *args, **kwargs)
         return obj
 
+class memmap3(np.memmap):
+
+    def __new__(subtype, file, dtype=np.float32, mode='r+', offset=0, 
+                shape=(10,), order='F'):
+        self = super(memmap3, subtype).__new__(subtype, file, dtype=dtype, 
+                    mode=mode, offset=offset, shape=shape, order=order)
+        #print('-> memmap3.__new__')
+        length = self._mmap.__len__()
+        offset = self.offset
+        saved = (file,length,offset)
+        self._saved = saved
+        self._mmap.close()
+        return self
+
+    def reopen(self):
+        (file,length,offset)=self._saved
+        #print("-> memmap3.reopen")
+        if self._mmap.closed:
+            #print('--> was closed, reopen')
+            fd=open(file,'rb+')
+            self._mmap=mmap.mmap(fd.fileno(),length,offset=offset)
+
+    def __array_wrap__(self, arr, context=None):
+        #print('-> memmap3.__array_wrap__')
+        arr = super(memmap3, self).__array_wrap__(arr, context)
+        return arr
+
+    def __array_prepare__ (self, obj, context=None):
+        #print('-> memmap3.__array_prepare__')
+        self.reopen()
+        obj = super(memmap3, self).__array_prepare__(obj, context)
+        return obj
+
+    def __array_finalize__ (self, obj):
+        #print('-> memmap3.__array_finalize__')
+        super(memmap3,self).__array_finalize__(obj)
+        if obj is None:
+            return
+        self._saved = obj._saved
+        self._mmap = obj._mmap
+
+    def __repr__(self):
+        #print('-> memmap3.__repr__')
+        self.reopen()
+        output = super(memmap3,self).__repr__()
+        return output
+
+    def __str__(self):
+        #print('-> memmap3.__str__')
+        self.reopen()
+        output = super(memmap3,self).__str__()
+        return output
+
 def _var(patch,filed,snap,verbose=0,copy=None):
     """ Too avoid the "too many file open" problem (Python on steno allows
-        "only" about 800 files, patch.data is defined as a function, which
-        returns a memmap.  The function takes numeric or alphbetic arguments,
+        "only" about 800 files), patch.var is defined as a function, which
+        returns a memmap.  The function takes numeric or alphabetic arguments,
         so patch.data(0) and patch.data('d') is typically the density.
     """
     if _p2():
@@ -191,11 +244,18 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             print (' iv, offset:',iv,patch.iout,patch.ntotal,patch.nv,offset)
 
     def mem(iv):
-        """ Translage alphabetic variable keys to numeric """
+        """ Translate alphabetic variable keys to numeric """
         if type(iv)==type('d'):
             iv=patch.idx.dict[iv]
-        return np.memmap(filed, dtype=np.float32, offset=patch.offset[iv], 
-                         mode='r', order='F', shape=shape)
+        if patch.memmap==2:
+            return memmap2(filed, dtype=np.float32, offset=patch.offset[iv],
+                           mode='r', order='F', shape=shape)
+        elif patch.memmap==3:
+            return memmap3(filed, dtype=np.float32, offset=patch.offset[iv],
+                           mode='r', order='F', shape=shape)
+        else:
+            return np.memmap(filed, dtype=np.float32, offset=patch.offset[iv],
+                             mode='r', order='F', shape=shape)
 
     def average_down(iv, axis=0):
         q = mem(iv)
@@ -340,6 +400,7 @@ class _patch():
     def __init__(self,id,patch_dict,snap,rank,verbose=0):
         self.id=id
         self.rank=rank
+        self.memmap=3
         # add general attributes from snapshot_nml
         for k,v in snap.dict.items():
             setattr(self,k,v)
