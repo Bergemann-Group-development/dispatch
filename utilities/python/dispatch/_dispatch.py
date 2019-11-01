@@ -152,35 +152,38 @@ class memmap2(np.memmap):
 
 class memmap3(np.memmap):
 
-    def __new__(subtype, file, dtype=np.float32, mode='r+', offset=0, 
-                shape=(10,), order='F'):
-        self = super(memmap3, subtype).__new__(subtype, file, dtype=dtype, 
-                    mode=mode, offset=offset, shape=shape, order=order)
+    def __new__(subtype, file, *args, **kwargs):
+        self = super(memmap3, subtype).__new__(subtype, file, *args, **kwargs)
         #print('-> memmap3.__new__')
         length = self._mmap.__len__()
         offset = self.offset
         saved = (file,length,offset)
+        print('-> memmap3.__new__: saved=',saved)
         self._saved = saved
         self._mmap.close()
         return self
 
     def reopen(self):
+        print("-> memmap3.reopen")
+        print(self._saved)
         (file,length,offset)=self._saved
-        #print("-> memmap3.reopen")
         if self._mmap.closed:
-            #print('--> was closed, reopen')
+            print('--> was closed, reopen')
             fd=open(file,'rb+')
-            self._mmap=mmap.mmap(fd.fileno(),length,offset=offset)
+            print('--> was closed, mmap',length,offset)
+            #offset=0
+            self._mmap=mmap.mmap(fd.fileno(),length=length,offset=offset)
+            print('--> reopen: closed=',self._mmap.closed)
 
-    def __array_wrap__(self, arr, context=None):
+    def __array_wrap__(self, arr, *args, **kwargs):
         #print('-> memmap3.__array_wrap__')
-        arr = super(memmap3, self).__array_wrap__(arr, context)
+        arr = super(memmap3, self).__array_wrap__(arr, *args, **kwargs)
         return arr
 
-    def __array_prepare__ (self, obj, context=None):
+    def __array_prepare__ (self, obj, *args, **kwargs):
         #print('-> memmap3.__array_prepare__')
         self.reopen()
-        obj = super(memmap3, self).__array_prepare__(obj, context)
+        obj = super(memmap3, self).__array_prepare__(obj, *args, **kwargs)
         return obj
 
     def __array_finalize__ (self, obj):
@@ -400,7 +403,7 @@ class _patch():
     def __init__(self,id,patch_dict,snap,rank,verbose=0):
         self.id=id
         self.rank=rank
-        self.memmap=3
+        self.memmap=1
         # add general attributes from snapshot_nml
         for k,v in snap.dict.items():
             setattr(self,k,v)

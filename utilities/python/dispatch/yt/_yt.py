@@ -18,11 +18,11 @@ def parameters(s):
                'sim_time': s.time,
       'domain_dimensions': s.cartesian.dims,
             'periodicity': p.periodic,
-            'length_unit': s.units.l,
-              'time_unit': s.units.t,
-              'mass_unit': s.units.m,
-          'magnetic_unit': magnetic_unit(s)*4.0*np.pi,#s.units.b,
-          'velocity_unit': s.units.l/s.units.t,
+            'length_unit': 1.0,
+              'time_unit': 1.0,
+              'mass_unit': 1.0,
+          'magnetic_unit': 1.0,
+          'velocity_unit': 1.0,
             'unit_system': 'cgs',
             #'unit_system': s.units.system,
                    'bbox': domain_bbox(s),
@@ -46,7 +46,7 @@ tr={'d':'density',
               'unit_system': p.units.system,
 """
 
-def patch(p,copy=True):
+def patch(p,copy=False):
     p_void=(np.array([]),'code_length')
     #if p.guard_zones:
     #    l=p.li
@@ -84,7 +84,7 @@ def patch(p,copy=True):
             #    dict[key]=p.var(iv,copy=copy)[l[0]:u[0],l[1]:u[1],l[2]:u[2]]
             #else:
             dict[key]=p.var(iv,copy=copy)
-    if 'aux' in p.keys.keys():
+    if 'aux' in p.keys:
         for k in p.keys['aux']:
             dict[k]=p.var(k,copy=copy)
     return dict
@@ -112,9 +112,11 @@ def snapshot(iout=1,run='.',data='data',verbose=0,copy=True):
         Open snapshot iout in directory data/run/, returning a YT data set
     """
     s=dispatch.snapshot(iout,run,data)
+    if verbose>1:
+        print('time:',s.time)
     #
     if verbose:
-        print('      yt patches:',len(dispatch.yt.patches(s)))
+        print('      yt patches:',len(s.patches))
         print('domain_dimesions:',dispatch.yt.domain_dimensions(s))
     #
     parameters=dispatch.yt.parameters(s)
