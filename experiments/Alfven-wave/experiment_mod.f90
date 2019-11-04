@@ -55,9 +55,9 @@ END SUBROUTINE init
 
 !===============================================================================
 !> The update procedure calls a (generic name) MHD update procedure, whose
-!> actual implementation is in $(TOP)/solvers/$(SOLVER)/mhd_mod.f90.  It then
+!> actual implementation is in $(TOP)/solvers/$(SOLVER)/solver_mod.f90.  It then
 !> calls a courant_condition procedure, which if not overloaded is the one in
-!> the patch_t object (but one can replace it at the mhd_t or experiment_t
+!> the patch_t object (but one can replace it at the solver_t or experiment_t
 !> level, by simply adding a courant_condition procedure there).  The next step
 !> is to call a timestep%udpate, whose actual implementation is in a file
 !> $(TOP)/timestep/$(UPD)/timestep_mod.f90 -- currently an Adams-Bashforth
@@ -104,7 +104,7 @@ SUBROUTINE update (self)
     end do 
   endif
 
-  call self%mhd_t%update
+  call self%solver_t%update
   
   call trace_end
 END SUBROUTINE update

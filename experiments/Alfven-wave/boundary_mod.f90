@@ -5,7 +5,7 @@ MODULE boundary_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
-  USE mhd_mod
+  USE solver_mod
   USE index_mod
   implicit none
   private

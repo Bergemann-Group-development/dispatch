@@ -83,6 +83,7 @@ MODULE extras_mod
   ! states, must be accessed via a private instance in the extras_t data type
   !-----------------------------------------------------------------------------
   type, public, extends(gpatch_t):: extras_t
+    class(gpatch_t), pointer:: gpatch => null()                         ! keep
     !type(forces_t):: forces                                            ! forces
     !class(pic_t), pointer:: pic                                        ! pic
     !type (spitzer_t):: spitzer                                         ! spitzer
@@ -116,7 +117,7 @@ CONTAINS
 !> periodicity, etc.
 !===============================================================================
 SUBROUTINE pre_init (self)
-  class(extras_t):: self
+  class(extras_t), target:: self
   !.............................................................................
   !call self%forces%init (self)                                         ! forces
   !-----------------------------------------------------------------------------
@@ -257,7 +258,7 @@ INTEGER function check_refine (self, patch)
   !.............................................................................
   check_refine = -1                                                    ! keep
   !check_refine = max (check_refine, &                                  ! sinkp
-  !  sinkparticles%check_refine (gpatch))                               ! sinkp
+  !  sinkparticles%check_refine (patch))                                ! sinkp
 END FUNCTION check_refine
 
 !===============================================================================
@@ -270,10 +271,10 @@ FUNCTION cast2extras (task) RESULT(extras)
   !.............................................................................
   select type (task)
   class is (extras_t)
-  extras => task
+    extras => task
   class default
-  nullify(extras)
-  call io%abort ('extras_t%cast: failed to cast a task to extras_t')
+    nullify(extras)
+    call io%abort ('extras_t%cast: failed to cast a task to extras_t')
   end select
 END FUNCTION cast2extras
 
@@ -287,7 +288,6 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   logical:: needed, needs_me, download
   !-----------------------------------------------------------------------------
   call trace%begin ('rt_t%nbor_relations')
-  !
   !-----------------------------------------------------------------------------
   ! First check the main relations, then specific ones
   !-----------------------------------------------------------------------------

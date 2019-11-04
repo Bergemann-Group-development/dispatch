@@ -25,6 +25,10 @@ MODULE solver_mod
     procedure:: U2p
     procedure:: e2E_th
     procedure:: E_th2e
+    procedure:: s2e
+    procedure:: e2s
+    procedure:: ss2e
+    procedure:: e2ss
     procedure:: log_density => void
     procedure:: log_pressure => void
     procedure:: gas_pressure_ngz
@@ -172,6 +176,74 @@ SUBROUTINE E_th2e(self, E_th, it)
   e = d*E_th
   end associate
 END SUBROUTINE E_th2e
+
+!===============================================================================
+!> Get entropy per unit volume from energy per unit volume
+!===============================================================================
+SUBROUTINE e2s(self, s, it)
+  class(solver_t) :: self
+  integer:: it
+  !.............................................................................
+  real, dimension(:,:,:):: s
+  real:: g1
+  !-----------------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%s,it,1))
+  g1 = self%gamma-1.0
+  s = d*log(e*g1/d**self%gamma)/g1
+  end associate
+END SUBROUTINE e2s
+
+!===============================================================================
+!> Get entropy per unit mass from energy per unit volume
+!===============================================================================
+SUBROUTINE e2ss(self, ss, it)
+  class(solver_t) :: self
+  integer:: it
+  !.............................................................................
+  real, dimension(:,:,:):: ss
+  real:: g1
+  !-----------------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%s,it,1))
+  g1 = self%gamma-1.0
+  ss = log(e*g1/d**self%gamma)/g1
+  end associate
+END SUBROUTINE e2ss
+
+!===============================================================================
+!> Get thermal energy per unit volume from entropy per unit volume
+!===============================================================================
+SUBROUTINE s2e(self, s, it)
+  class(solver_t) :: self
+  integer:: it
+  !.............................................................................
+  real, dimension(:,:,:):: s
+  real:: g1
+  !-----------------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%s,it,1))
+  g1 = self%gamma-1.0
+  e = d**self%gamma*exp(s/d*g1)/g1
+  end associate
+END SUBROUTINE s2e
+
+!===============================================================================
+!> Get thermal energy per unit volume from entropy per unit mass
+!===============================================================================
+SUBROUTINE ss2e(self, ss, it)
+  class(solver_t) :: self
+  integer:: it
+  !.............................................................................
+  real, dimension(:,:,:):: ss
+  real:: g1
+  !-----------------------------------------------------------------------------
+  associate(d => self%mem(:,:,:,self%idx%d,it,1), &
+            e => self%mem(:,:,:,self%idx%s,it,1))
+  g1 = self%gamma-1.0
+  e = d**self%gamma*exp(ss*g1)/g1
+  end associate
+END SUBROUTINE ss2e
 
 !===============================================================================
 FUNCTION up(f,i) RESULT (g)

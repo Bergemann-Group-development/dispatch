@@ -66,7 +66,7 @@ CONTAINS
 !> (HD or MHD) and set the indices.
 !===============================================================================
 SUBROUTINE pre_init (self)
-  class(mhd_t) :: self
+  class(mhd_t), target:: self
   type(index_t):: idx
   integer:: i, iv
   real, save:: nu(6)=[0.1,1.0,0.0,0.5,0.5,0.5], csound=1.0, cdtd=0.5, courant=0.2
@@ -621,7 +621,7 @@ END SUBROUTINE pde
 !> This procedure is called by solver_t%update, before it calls mhd_t%update
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(mhd_t):: self
+  class(mhd_t), target:: self
   real, dimension(:,:,:), pointer:: d, s, lnd, ss
   integer:: iz
   !-----------------------------------------------------------------------------
