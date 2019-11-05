@@ -221,7 +221,7 @@ SUBROUTINE output (patch, count)
       patch%iout, n, snapshot_words, buffer_words
   end if
   !-----------------------------------------------------------------------------
-  ! Time interpolation to exaxt out_next
+  ! Time interpolation to exact out_next
   !-----------------------------------------------------------------------------
   allocate (mem(n(1),n(2),n(3),patch%nt))
   allocate (buffer(n(1),n(2),n(3),io%nv))
@@ -306,7 +306,7 @@ contains
     !---------------------------------------------------------------------------
     ! This ordering has the derivative order added to the patch%id, which is
     ! in turn causing an increment by (io%time_derivs+1), so effectively adding
-    ! nv additional variables for each derivative ordre, making it easy to
+    ! nv additional variables for each derivative order, making it easy to
     ! address the derivatives, while using snapshot numbers incremented by 1.
     !---------------------------------------------------------------------------
     else

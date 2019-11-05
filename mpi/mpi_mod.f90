@@ -46,8 +46,7 @@ MODULE mpi_mod
   !-----------------------------------------------------------------------------
   type, public:: mpi_counter_t
     integer:: window
-    integer(8):: i=0
-    integer(8):: n=0
+    integer(8):: i=0            ! current value of the counter (before update)
   contains
     procedure, private:: init4
     procedure, private:: init8
@@ -426,7 +425,6 @@ SUBROUTINE init4 (self, n)
   integer:: mpi_err
   !----------------------------------------------------------------------------
   self%i = n
-  self%n = n
   call MPI_Win_create (self%i, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
                        self%window, mpi_err)
   call mpi%assert ('MPI_Win_create', mpi_err)
@@ -445,7 +443,6 @@ SUBROUTINE init8 (self, n)
   integer:: mpi_err
   !----------------------------------------------------------------------------
   self%i = n
-  self%n = n
   call MPI_Win_create (self%i, nbytes, 8, MPI_INFO_NULL, MPI_COMM_WORLD, &
                        self%window, mpi_err)
   call mpi%assert ('MPI_Win_create', mpi_err)
@@ -488,6 +485,11 @@ FUNCTION update8 (self, i, n) RESULT (j)
     call accumulate (i)
     !$omp end critical (mpi_cr)
   end if
+  if (i+j==0) then
+    if (present(n)) then
+      self%i = n
+    end if
+  end if
   return
 contains
   !-----------------------------------------------------------------------------
@@ -497,40 +499,33 @@ contains
   call MPI_Win_lock (MPI_LOCK_EXCLUSIVE, master, 0, self%window, mpi_err)
   call add(i)
   call MPI_Win_flush (master, self%window, mpi_err)
-  if (mpi%rank == master) then
-    j = self%i - i
-  else
-    j = self%i
-  end if
+  !-----------------------------------------------------------------------------
+  ! The window value is incremented by "i", but the return value "j" reflects
+  ! the value of the window variable BEFORE the update, and this is what the
+  ! exposed value %i should reflect, on all ranks
+  !-----------------------------------------------------------------------------
   if (io_unit%verbose > 0) &
     write (io_unit%log,'(a,2(2x,3i4))') &
       'mpi_counter_t%update(2):  val, sum, rank, size =', &
       j, self%i, mpi%rank, mpi%size
-  !-----------------------------------------------------------------------------
-  ! If / when the (actual) counter hits zero, add n to it, if present
-  !-----------------------------------------------------------------------------
-  if (j+i == 0) then
-    if (present(n)) then
-      call add (n)
-    else
-      call add (self%n)
-    end if
-  end if
   call MPI_Win_unlock (master, self%window, mpi_err)
   !$omp end critical (mpi_win_cr)
   end subroutine accumulate
   !-----------------------------------------------------------------------------
+  ! The MPI call returns, in the j argument, the value of the counter in the
+  ! window, BEFORE the update.
+  !-----------------------------------------------------------------------------
   subroutine add (i)
   integer(8):: i
   call MPI_Get_accumulate (i, 1, MPI_INTEGER8, &
-                      self%i, 1, MPI_INTEGER8, master, offset, &
+                           j, 1, MPI_INTEGER8, master, offset, &
                               1, MPI_INTEGER8, MPI_SUM, self%window, mpi_err)
   call mpi%assert ('MPI_Accumulate', mpi_err)
   end subroutine
 #else
   !$omp atomic capture
-  j = self%i
-  self%i = self%i + i
+  self%i = j
+  self%v = self%v + i
   !$omp end atomic
 #endif
 END FUNCTION update8

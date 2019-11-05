@@ -19,6 +19,7 @@ MODULE data_io_mod
   USE trace_mod
   USE task_mod
   USE patch_mod
+  USE amr_io_mod
   USE direct_io_mod
   USE legacy_io_mod
   USE parallel_io_mod
@@ -76,6 +77,8 @@ SUBROUTINE init (self, task)
       class is (patch_t)
         if      (io%method=='direct') then
           call direct_io%init (task)
+        else if (io%method=='amr') then
+          call amr_io%init (task)
         else if (io%method=='pan') then
           call parallel_io%init (task)
         else if (io%method=='parallel') then
@@ -170,112 +173,126 @@ SUBROUTINE output (self, patch, experiment_name)
   if (.not.io%do_output) return
   call trace%begin('data_io_t%output', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! io%nwrite is the number of task writes this process is doing per snapshot --
-  ! it is given a default value here, which may be modified elsewhere in 
-  ! data_io_mod, if more than one write per task is being performed.
+  ! If io%needs_check is set, this rank needs to check if all other ranks are
+  ! ready to do I/O, and if so, call the relevant I/O routine
   !-----------------------------------------------------------------------------
-  if (io%ntask<=0) then
-    call mpi%abort ('io%ntask, which should be the number of active tasks, is zero')
-  end if
-  if (io%ntotal<=0) then
-    call mpi%abort ('io%ntotal, which should be the total number of tasks, is zero')
-  end if
-  if (io%verbose > 1) &
-    write (io_unit%log,*) 'io%nwrite =', io%nwrite
-  !-----------------------------------------------------------------------------
-  if (io%method=='legacy') then
-    np = 1
+  if (io%needs_check) then
+    if (io%method=='amr') then
+      !$omp critical (data_io_cr)
+      call amr_io%check
+      !$omp end critical (data_io_cr)
+    end if
   else
-    np = (time_slices%order+1)/2
-  end if
-  !$omp atomic read
-  it = patch%iit(patch%nt-np)
-  !$omp atomic read
-  t = patch%t(it)
-  if (t >= patch%out_next) then
-    if (io%verbose > 1) &
-      write (io%output,*) wallclock(),' thread',omp%thread,' waitfor output'
     !---------------------------------------------------------------------------
-    ! The data io refers to task_t%iit(:) and task_t%t(:), and either all of
-    ! these places need to be protected wuth omp atomic read, or (simpler) the
-    ! occasional visit here to do I/O need to block other accesses (mainly in
-    ! download_mod) vi the task lock.  Certain types of output (but not for 
-    ! example legacy_io) may need to be protected by critical regions or a lock
-    ! on data_io), but (FIXME) for now this is neglected.
+    ! io%nwrite is the number of task writes this process is doing per snapshot 
+    ! it is given a default value here, which may be modified elsewhere in 
+    ! data_io_mod, if more than one write per task is being performed.
     !---------------------------------------------------------------------------
-    !$omp critical (data_io_cr)
+    if (io%ntask<=0) then
+      call mpi%abort ('io%ntask, which should be the number of active tasks, is zero')
+    end if
+    if (io%ntotal<=0) then
+      call mpi%abort ('io%ntotal, which should be the total number of tasks, is zero')
+    end if
     if (io%verbose > 1) &
-      write (io%output,*) wallclock(),' thread',omp%thread,' locked output'
-    do while (patch%t(it) >= patch%out_next)
-      if (created < patch%iout) then
-        created = patch%iout
-        call os%mkdir (trim(io%outputname))
-      end if
-      call os%mkdir_no (patch%iout)
+      write (io_unit%log,*) 'io%nwrite =', io%nwrite
+    !---------------------------------------------------------------------------
+    if (io%method=='legacy') then
+      np = 1
+    else
+      np = (time_slices%order+1)/2
+    end if
+    !$omp atomic read
+    it = patch%iit(patch%nt-np)
+    !$omp atomic read
+    t = patch%t(it)
+    if (t >= patch%out_next) then
+      if (io%verbose > 1) &
+        write (io%output,*) wallclock(),' thread',omp%thread,' waitfor output'
       !-------------------------------------------------------------------------
-      count = self%counters%decrement (patch%iout+1, io%nwrite)
-      if (io%verbose > 0) &
-        write (io_unit%log,*) 'count, nwrite =', count, io%nwrite
-!write (stdout,*) 'id, time, iout, count, nwrite =', patch%id, patch%time, &
-!patch%iout, count, io%nwrite
-      append = (count < io%nwrite-1)
+      ! The data io refers to task_t%iit(:) and task_t%t(:), and either all of
+      ! these places need to be protected wuth omp atomic read, or (simpler) the
+      ! occasional visit here to do I/O need to block other accesses (mainly in
+      ! download_mod) vi the task lock.  Certain types of output (but not for 
+      ! example legacy_io) may need to be protected by critical regions or a lock
+      ! on data_io), but (FIXME) for now this is neglected.
       !-------------------------------------------------------------------------
-      if      (io%method=='direct') then
-        call direct_io%output (patch)
-      else if (io%method=='legacy') then
-        call legacy_io%output (patch)
-        !call output_txt (patch, append)
-      else if (io%method=='buffered') then
-        call buffered_io%output (patch)
-      else if (io%method=='pan') then
-        if (io%format == 0) &
-          io%format = 6
-        call parallel_io%output (patch, count)
-      else if (io%method=='parallel') then
-        if (io%format == 0) &
-          io%format = 6
-        call parallel_io%output (patch, count)
-      else if (io%method=='snapshot') then
-        if (io%format == 0) &
-          io%format = 10
-        call parallel_io%output (patch, count)
-      else
-        call mpi%abort ('unknown io%method = '//io%method)
-      end if
-      !-------------------------------------------------------------------------
-      if (count==0 .and. .not.io_unit%do_validate) then
-        if (io%out_time > 0d0) then
-          write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,2g14.5)') &
-            trim(io%method)//'_io:output', &
-            'snapshot '//trim(io%outputname), patch%iout, patch%out_next, patch%time
-        else
-          write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)') &
-            trim(io%method)//'_io:output', &
-            'snapshot '//trim(io%outputname), patch%iout, patch%time
+      !$omp critical (data_io_cr)
+      if (io%verbose > 1) &
+        write (io%output,*) wallclock(),' thread',omp%thread,' locked output'
+      do while (patch%t(it) >= patch%out_next)
+        if (created < patch%iout) then
+          created = patch%iout
+          call os%mkdir (trim(io%outputname))
         end if
-      end if
-      !-------------------------------------------------------------------------
-      ! Output aux file, and namelist file with metadata 
-      !-------------------------------------------------------------------------
-      call patch%aux%output (patch%iout, patch%id)
-      call output_nml (patch, append)
-      !-------------------------------------------------------------------------
-      patch%iout = patch%iout+1
-      if (io%out_time==0.0) exit
-      patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
-      !---------------------------------------------------------------------------
-      if (io%verbose > 1) & 
-        write (io%output,'(a,i6,3f12.6,3i4)') &
-          'io_t%output: id, iout, time, out_next, count =', &
-          patch%id, patch%time, patch%time-patch%dtime, patch%out_next, &
-          patch%iout, io%nwrite, count
-      !---------------------------------------------------------------------------
-      call os%mkdir_no (patch%iout)
-    end do
-    !$omp end critical (data_io_cr)
-    if (io%verbose > 1) &
-      write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'
-  end if
+        call os%mkdir_no (patch%iout)
+        !-----------------------------------------------------------------------
+        count = self%counters%decrement (patch%iout+1, io%nwrite)
+        if (io%verbose > 0) &
+          write (io_unit%log,*) 'count, nwrite =', count, io%nwrite
+  !write (stdout,*) 'id, time, iout, count, nwrite =', patch%id, patch%time, &
+  !patch%iout, count, io%nwrite
+        append = (count < io%nwrite-1)
+        !-----------------------------------------------------------------------
+        if      (io%method=='direct') then
+          call direct_io%output (patch)
+        else if (io%method=='amr') then
+          call amr_io%output (patch, count)
+        else if (io%method=='legacy') then
+          call legacy_io%output (patch)
+          !call output_txt (patch, append)
+        else if (io%method=='buffered') then
+          call buffered_io%output (patch)
+        else if (io%method=='pan') then
+          if (io%format == 0) &
+            io%format = 6
+          call parallel_io%output (patch, count)
+        else if (io%method=='parallel') then
+          if (io%format == 0) &
+            io%format = 6
+          call parallel_io%output (patch, count)
+        else if (io%method=='snapshot') then
+          if (io%format == 0) &
+            io%format = 10
+          call parallel_io%output (patch, count)
+        else
+          call mpi%abort ('unknown io%method = '//io%method)
+        end if
+        !-----------------------------------------------------------------------
+        if (count==0 .and. .not.io_unit%do_validate) then
+          if (io%out_time > 0d0) then
+            write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,2g14.5)') &
+              trim(io%method)//'_io:output', &
+              'snapshot '//trim(io%outputname), patch%iout, patch%out_next, patch%time
+          else
+            write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)') &
+              trim(io%method)//'_io:output', &
+              'snapshot '//trim(io%outputname), patch%iout, patch%time
+          end if
+        end if
+        !-----------------------------------------------------------------------
+        ! Output aux file, and namelist file with metadata 
+        !-----------------------------------------------------------------------
+        call patch%aux%output (patch%iout, patch%id)
+        call output_nml (patch, append)
+        !-----------------------------------------------------------------------
+        patch%iout = patch%iout+1
+        if (io%out_time==0.0) exit
+        patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
+        !-----------------------------------------------------------------------
+        if (io%verbose > 1) & 
+          write (io%output,'(a,i6,3f12.6,3i4)') &
+            'io_t%output: id, iout, time, out_next, count =', &
+            patch%id, patch%time, patch%time-patch%dtime, patch%out_next, &
+            patch%iout, io%nwrite, count
+        !-----------------------------------------------------------------------
+        call os%mkdir_no (patch%iout)
+      end do
+      !$omp end critical (data_io_cr)
+      if (io%verbose > 1) &
+        write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'
+    end if
+  end if    ! (io%needs_check)
   call trace%end (itimer)
 END SUBROUTINE output
 

@@ -27,8 +27,14 @@ MODULE mpi_file_mod
     procedure:: openw
     procedure:: openr
     procedure:: close
+    procedure, private:: write1
+    procedure, private:: write5
+    generic, public :: write => write1, write5
     procedure:: assert
   end type
+#ifndef MPI
+  integer:: MPI_REAL=1, MPI_STATUS_SIZE=8
+#endif
   integer, save:: verbose=2
 CONTAINS
 
@@ -197,6 +203,34 @@ SUBROUTINE close (self)
 #endif MPI
   call trace%end()
 END SUBROUTINE close
+
+!===============================================================================
+!> Write out a buffer at a given offset into the file
+!===============================================================================
+SUBROUTINE write1 (self, off, size, buffer)
+  class(mpi_file_t):: self
+  integer(8):: off
+  integer:: size, status(MPI_STATUS_SIZE), err
+  integer:: buffer(:)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_t%write1')
+  call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, status, err)
+  call trace%end ()
+END SUBROUTINE write1
+
+!===============================================================================
+!> Write out a buffer at a given offset into the file
+!===============================================================================
+SUBROUTINE write5 (self, off, size, buffer)
+  class(mpi_file_t):: self
+  integer(8):: off
+  integer:: size, status(MPI_STATUS_SIZE), err
+  real:: buffer(:,:,:,:,:)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_t%write5')
+  call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, status, err)
+  call trace%end ()
+END SUBROUTINE write5
 
 !===============================================================================
 !> Assert no error

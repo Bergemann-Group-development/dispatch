@@ -37,6 +37,7 @@ MODULE io_mod
     logical:: do_stop=.false.
     logical:: guard_zones=.false.
     logical:: namelist_errors=.true.
+    logical:: needs_check=.false.
     integer:: log_sent=0
     integer:: time_derivs=0
     integer:: id_debug=0
@@ -196,6 +197,7 @@ SUBROUTINE init (self, name)
     else
       io_unit%verbose = -2
     end if
+write(*,*) 'thread, master, verbose =', omp%thread, omp%master, verbose, io_unit%verbose
     !---------------------------------------------------------------------------
     ! Open MPI rank and OMP thread-specific log files, if omp_trace is true,
     ! else fall back io_unit%log being just MPI rank-specific
