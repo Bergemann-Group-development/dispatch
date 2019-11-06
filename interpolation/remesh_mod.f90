@@ -33,8 +33,8 @@ SUBROUTINE init (self)
   logical, save:: first_time=.true.
   namelist /remesh_params/ verbose, order
   !-----------------------------------------------------------------------------
+  call trace%begin ('remesh_t%init')
   if (first_time) then
-    call trace%begin ('remesh_t%init')
     !$omp critical (input_cr)
     if (first_time) then
       first_time = .false.
@@ -43,8 +43,8 @@ SUBROUTINE init (self)
       write (io_unit%output, remesh_params)
     end if
     !$omp end critical (input_cr)
-    call trace%end
   end if
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================

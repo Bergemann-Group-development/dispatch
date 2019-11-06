@@ -3,6 +3,7 @@
 !===============================================================================
 MODULE lagrange_mod
   USE io_mod
+  USE trace_mod
   implicit none
   private
   type, public:: lagrange_t
@@ -717,7 +718,8 @@ SUBROUTINE init (self)
   integer:: verbose=0, order=2
   namelist /lagrange_params/ verbose, order
   !-----------------------------------------------------------------------------
-  !$omp critical (lagrange_cr)
+  call trace%begin ('lagrange_t%init')
+  !$omp critical (input_cr)
   if (.not.self%initialized) then
     self%initialized = .true.
     rewind (io_unit%input)
@@ -726,7 +728,8 @@ SUBROUTINE init (self)
     self%verbose = verbose
     self%order = order
   end if
-  !$omp end critical (lagrange_cr)
+  !$omp end critical (input_cr)
+  call trace%end ()
 END SUBROUTINE init
 
 !> =============================================================================

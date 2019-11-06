@@ -49,6 +49,7 @@ SUBROUTINE init (self)
   integer:: iostat
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
+  call trace%begin ('guard_zones_t%init')
   if (first_time) then
     !$omp critical (init_cr)
     if (first_time) then
@@ -69,6 +70,7 @@ SUBROUTINE init (self)
   case default
     call io%abort ('guard zone method unknown')
   end select
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================

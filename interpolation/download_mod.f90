@@ -91,6 +91,8 @@ SUBROUTINE init (self)
     read (io%input, download_params, iostat=iostat)
     if (io%master) write (*, download_params)
     call guard_zones%init
+    call remesh%init
+    call lagrange%init
   end if
   if (order_time==1) then
     self%same => same_linear
