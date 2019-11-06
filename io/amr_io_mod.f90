@@ -22,7 +22,7 @@
 !>
 !> experiment_t%output                  ! request patch output
 !>   gpatch_t%output                    ! catch output request
-!>     data_io_t%outpout                ! select output method
+!>     data_io_t%output                 ! select output method
 !>       amr_io_t%output                ! check if final thread & rank
 !>         amr_io_t%output_list         ! run through list
 !>           mpi_file_t%open            ! open data/run/IOUT/snapshot.dat
@@ -30,6 +30,19 @@
 !>             mpi_file_t%write         ! compute offset and size
 !>               MPI_File_write_at      ! write out
 !>           mpi_file_t%close           ! close file
+!>
+!> OpenMPI aspects:  All threads call experiment_t%output repeatedly, but most
+!> of the time they return from data_io%output, after finding that the time has
+!> not advanced enough.  When reaching a time where they should add their data
+!> to the output list, they must operate one-at-a-time, so that part should be
+!> inside a unique critical region (or should use a lock).
+!>
+!> data_io%output indeed has name critical regions around all calls that end up
+!> inside amr_io_mod, so only one thread can ever be inside the procedures below.
+!> But we must also make sure that when that thread decides to do collective MPI
+!> calls, which may only be done by one thread on some systems (laptops), all
+!> other threads must be held up at the very same critical region (data_io_cr).
+!> This is arranged by using an OMP lock in data_io_mod -- cf. comments there.
 !===============================================================================
 MODULE amr_io_mod
   USE io_mod
@@ -52,6 +65,7 @@ MODULE amr_io_mod
     integer:: var_size                       ! words per variable in the run
     integer:: rank_size                      ! words per variable in the rank
     integer(8):: rank_offset                 ! offset from variable start
+    integer(8):: task_offset=0_8             ! offset in buffer
     type(mpi_counter_t):: ranks_counter      ! number of ranks not ready
     type(mpi_counter_t):: offset_counter     ! rank offset in variable
     type(list_t), pointer:: list => null()
@@ -120,6 +134,7 @@ SUBROUTINE output (self, patch, count)
   ! and with a size that optionally include the guard zones.
   !-----------------------------------------------------------------------------
   allocate (out)
+  out%id = patch%id
   out%nt = nt
   out%nv = patch%nv
   out%nw = 1
@@ -167,6 +182,9 @@ SUBROUTINE output (self, patch, count)
     end do
     deallocate (tmp)
   end if
+  self%task_size = product(n)*nt
+  self%task_offset = self%task_offset + self%task_size
+  patch%amr_offset = self%task_offset
   !-----------------------------------------------------------------------------
   ! Append the task copy to a list_t instance
   !-----------------------------------------------------------------------------
@@ -195,17 +213,12 @@ SUBROUTINE output (self, patch, count)
     ! If other ranks remain, set a flag forcing data_io_t%output() to make
     ! repeated calls to self%check
     !---------------------------------------------------------------------------
+    if (verbose > 1) &
+      write (stdout,"('amr_io_t%output: ',a,i6)") &
+       'remains =', remains
+    self%iout = patch%iout
+    self%rank_size = self%task_size*self%list%n
     if (remains == 0) then
-      self%iout = patch%iout
-      self%task_size = product(n)*nt
-      self%rank_size = self%task_size*self%list%n
-      self%rank_offset = self%offset_counter%update (self%rank_size)
-      self%var_size = self%offset_counter%update (0_8)
-      io%gb_out = self%var_size*self%nv*4.0/1024.**3
-      if (verbose > 0) &
-        write (stdout,"('amr_io_t%output: ',a,5i10)") &
-         'remains, task_size, rank_size, var_size, rank_offset =', &
-          remains, self%task_size, self%rank_size, self%var_size, self%rank_offset
       call self%check
     else
       io%needs_check = .true.
@@ -223,6 +236,9 @@ SUBROUTINE check (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('amr_io_t%check')
   remains = self%ranks_counter%update(0)
+  if (verbose > 1) &
+    write (stdout,"('amr_io_t%check: ',a,i6)") &
+     'remains =', remains
   if (remains == 0) then
     !---------------------------------------------------------------------------
     ! Now that all ranks are ready, the total size per variable may be computed,
@@ -238,9 +254,12 @@ SUBROUTINE check (self)
     !---------------------------------------------------------------------------
     call self%list%reset
     io%needs_check = .false.
+    self%task_offset = 0_8
     if (mpi%master) then
-      call self%ranks_counter%init (mpi%size)
-      call self%offset_counter%init (0_8)
+      call trace%begin ('counter_t%begin')
+      call self%ranks_counter%reset (mpi%size)
+      call self%offset_counter%reset (0_8)
+      call trace%end ()
     end if
   end if
   call trace%end ()
@@ -256,7 +275,9 @@ SUBROUTINE output_list (self)
   class(task_t), pointer:: task
   class(patch_t), pointer:: patch
   integer:: i, iv, n(5)
+  integer(8):: rank_offset, var_size
   character(len=64):: filename
+  namelist /offset_nml/ rank_offset, var_size
   !-----------------------------------------------------------------------------
   ! For each variable, allocate output buffer, fill it, and write it out
   !-----------------------------------------------------------------------------
@@ -265,6 +286,16 @@ SUBROUTINE output_list (self)
   n(4) = nt
   n(5) = self%list%n
   allocate (self%buffer(n(1),n(2),n(3),n(4),n(5)))
+  !-----------------------------------------------------------------------------
+  ! Compute offset and size
+  !-----------------------------------------------------------------------------
+  self%rank_offset = self%offset_counter%update (self%rank_size)
+  self%var_size = self%offset_counter%update (0_8)
+  io%gb_out = self%var_size*self%nv*4.0/1024.**3
+   if (verbose > 0) &
+    write (stdout,"('amr_io_t%output: ',a,5i10)") &
+     'task_size, rank_size, var_size, rank_offset =', &
+      self%task_size, self%rank_size, self%var_size, self%rank_offset
   !-----------------------------------------------------------------------------
   ! Open the output file and loop over variables
   !-----------------------------------------------------------------------------
@@ -275,6 +306,9 @@ SUBROUTINE output_list (self)
   if (verbose > 0) &
     write (stdout,"('amr_io_t%fill_buffer: ',a)") &
       'filename = '//trim(filename)
+  !$omp atomic write
+  io%halt = .true.
+  !$omp end atomic
   call self%file%openw (filename)
   do iv=1,self%nv
     i = 1
@@ -293,7 +327,23 @@ SUBROUTINE output_list (self)
     call self%output_buffer (iv)
   end do
   deallocate (self%buffer)
+  !-----------------------------------------------------------------------------
+  ! Close the file, which ends the critical collective call section, so we can
+  ! now remove the io%halt trap, which prevents other threads from getting into
+  ! trouble in the mean time.
+  !-----------------------------------------------------------------------------
   call self%file%close
+  !$omp atomic write
+  io%halt = .false.
+  !$omp end atomic
+  !-----------------------------------------------------------------------------
+  ! Open the file "data/run/rank_rrrrr_patches.nml", appending offset
+  !-----------------------------------------------------------------------------
+  rank_offset = self%rank_offset
+  var_size = self%var_size
+  flush (io_unit%nml2)
+  write (io_unit%nml2, offset_nml)
+  flush (io_unit%nml2)
   call trace%end ()
 END SUBROUTINE output_list
 

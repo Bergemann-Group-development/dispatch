@@ -107,16 +107,10 @@ SUBROUTINE open (self, filename, mode)
 #endif
   !-----------------------------------------------------------------------------
 #ifdef MPI
-  !$omp critical (mpi_io_cr)
+  !call mp%barrier ('mpi_file_t%open')
   if (self%handle == 0) then
     self%filename = filename
-    if (mp%mode == MPI_THREAD_MULTIPLE) then
-      call MPI_File_open (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
-    else
-      !$omp critical (mpi_cr)
-      call MPI_File_open (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
-      !$omp end critical (mpi_cr)
-    end if
+    call MPI_File_open (mp%comm, filename, mode, MPI_INFO_NULL, self%handle, self%err)
     if (io%verbose > 0) then
       write(io_unit%mpi,'(a," status:",i4)') &
         ' MPI_File_open: file='//trim(filename)//'  mode='// &
@@ -130,7 +124,6 @@ SUBROUTINE open (self, filename, mode)
     end if
   end if
   self%closed = .false.
-  !$omp end critical (mpi_io_cr)
 #endif
 END SUBROUTINE open
 
@@ -146,7 +139,13 @@ SUBROUTINE openw (self, filename, recl)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_file_t%openw')
 #ifdef MPI
-  call self%open (filename, MPI_MODE_CREATE + MPI_MODE_RDWR)
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call self%open (filename, MPI_MODE_CREATE + MPI_MODE_RDWR)
+  else
+    !$omp critical (mpi_cr)
+    call self%open (filename, MPI_MODE_CREATE + MPI_MODE_RDWR)
+    !$omp end critical (mpi_cr)
+  end if
 #endif
   if (present(recl)) then
     write (io%output,*) 'open:', trim(filename), recl
@@ -167,7 +166,13 @@ SUBROUTINE openr (self, filename)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_file_t%openr')
 #ifdef MPI
-  call self%open (filename, MPI_MODE_RDONLY)
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call self%open (filename, MPI_MODE_RDONLY)
+  else
+    !$omp critical (mpi_cr)
+    call self%open (filename, MPI_MODE_RDONLY)
+    !$omp end critical (mpi_cr)
+  end if
 #endif
   call trace%end()
 END SUBROUTINE openr
@@ -183,7 +188,6 @@ SUBROUTINE close (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_file_t%close')
 #ifdef MPI
-  !$omp critical (close_cr)
   if (self%handle /= 0) then
     if (mp%mode == MPI_THREAD_MULTIPLE) then
       call MPI_File_close (self%handle, self%err)
@@ -199,7 +203,6 @@ SUBROUTINE close (self)
     end if
     self%handle = 0
   end if
-  !$omp end critical (close_cr)
 #endif MPI
   call trace%end()
 END SUBROUTINE close
@@ -210,11 +213,17 @@ END SUBROUTINE close
 SUBROUTINE write1 (self, off, size, buffer)
   class(mpi_file_t):: self
   integer(8):: off
-  integer:: size, status(MPI_STATUS_SIZE), err
+  integer:: size, st(MPI_STATUS_SIZE), err
   integer:: buffer(:)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%write1')
-  call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, status, err)
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
+    !$omp end critical (mpi_cr)
+  end if
   call trace%end ()
 END SUBROUTINE write1
 
@@ -224,11 +233,17 @@ END SUBROUTINE write1
 SUBROUTINE write5 (self, off, size, buffer)
   class(mpi_file_t):: self
   integer(8):: off
-  integer:: size, status(MPI_STATUS_SIZE), err
+  integer:: size, st(MPI_STATUS_SIZE), err
   real:: buffer(:,:,:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%write5')
-  call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, status, err)
+  if (mp%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
+  else
+    !$omp critical (mpi_cr)
+    call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
+    !$omp end critical (mpi_cr)
+  end if
   call trace%end ()
 END SUBROUTINE write5
 

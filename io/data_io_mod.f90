@@ -7,6 +7,12 @@
 !> and it is the responsibility of each sub-module here (e.g. parallel_io_mod)
 !> to introduce critical regions to protect agains simultaneus calls to non-
 !> threadsafe procedures, or if/when accessing modified shared data.
+!>
+!> To prevent other threads from getting into trouble while collective MPI calls
+!> are being made, the io%halt flag is set while this is happening, and since
+!> the data_io%open_and_close() procedure is called in every task_list%update
+!> iteration, trap can be activated there, causing all threads except the one
+!> doing collective MPI I/O calls to wait.
 !===============================================================================
 MODULE data_io_mod
   USE io_mod
@@ -50,7 +56,7 @@ MODULE data_io_mod
     procedure, nopass:: output_nml
     procedure:: input
     procedure, nopass:: close
-    procedure, nopass:: open_and_close
+    procedure:: open_and_close
   end type
   type(data_io_t), public:: data_io
 CONTAINS
@@ -89,6 +95,7 @@ SUBROUTINE init (self, task)
           end if
         end select
       end if
+      call self%lock%init ('data_io')
       call self%kind_list%init
       self%initialized = .true.
     end if
@@ -177,13 +184,14 @@ SUBROUTINE output (self, patch, experiment_name)
   ! If io%needs_check is set, this rank needs to check if all other ranks are
   ! ready to do I/O, and if so, call the relevant I/O routine
   !-----------------------------------------------------------------------------
+  call self%lock%set ('output1')
   if (io%needs_check) then
     if (io%method=='amr') then
-      !$omp critical (data_io_cr)
       call amr_io%check
-      !$omp end critical (data_io_cr)
     end if
+    call self%lock%unset ('output1')
   else
+    call self%lock%unset ('output1')
     !---------------------------------------------------------------------------
     ! io%nwrite is the number of task writes this process is doing per snapshot 
     ! it is given a default value here, which may be modified elsewhere in 
@@ -218,7 +226,6 @@ SUBROUTINE output (self, patch, experiment_name)
       ! example legacy_io) may need to be protected by critical regions or a lock
       ! on data_io), but (FIXME) for now this is neglected.
       !-------------------------------------------------------------------------
-      !$omp critical (data_io_cr)
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' locked output'
       do while (patch%t(it) >= patch%out_next)
@@ -235,6 +242,7 @@ SUBROUTINE output (self, patch, experiment_name)
   !patch%iout, count, io%nwrite
         append = (count < io%nwrite-1)
         !-----------------------------------------------------------------------
+        call self%lock%set ('output2')
         if      (io%method=='direct') then
           call direct_io%output (patch)
         else if (io%method=='amr') then
@@ -259,6 +267,7 @@ SUBROUTINE output (self, patch, experiment_name)
         else
           call mpi%abort ('unknown io%method = '//io%method)
         end if
+        call self%lock%unset ('output2')
         !-----------------------------------------------------------------------
         if (count==0 .and. .not.io_unit%do_validate) then
           if (io%out_time > 0d0) then
@@ -293,7 +302,6 @@ SUBROUTINE output (self, patch, experiment_name)
         !-----------------------------------------------------------------------
         call os%mkdir_no (patch%iout)
       end do
-      !$omp end critical (data_io_cr)
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'
     end if
@@ -302,11 +310,19 @@ SUBROUTINE output (self, patch, experiment_name)
 END SUBROUTINE output
 
 !===============================================================================
-SUBROUTINE open_and_close ()
+SUBROUTINE open_and_close (self)
+  class(data_io_t):: self
   !-----------------------------------------------------------------------------
+  call trace%begin ('data_io_t%open_and_close')
   if (io%method == 'snapshot') then
     call parallel_io%open_and_close ()
+  else if (io%method == 'amr') then
+    if (io%halt) then
+      call self%lock%set ('halt')
+      call self%lock%unset ('halt')
+    end if
   end if
+  call trace%end ()
 END SUBROUTINE open_and_close 
 
 !===============================================================================
@@ -455,7 +471,6 @@ SUBROUTINE output_nml_v1 (patch, append)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%output_nml')
-  !$omp critical (output_cr)
   !-----------------------------------------------------------------------------
   ! Write snapshot_nml to the file "data/run/NNNNN/snapshot.nml"
   !-----------------------------------------------------------------------------
@@ -552,7 +567,6 @@ SUBROUTINE output_nml_v1 (patch, append)
   end if
   write (io_unit%nml2, patch_nml)
   flush (io_unit%nml2)
-  !$omp end critical (output_cr)
   call trace%end()
 END SUBROUTINE output_nml_v1
 
@@ -582,7 +596,6 @@ SUBROUTINE output_nml_v2 (patch, append)
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%output_nml')
-  !$omp critical (output_cr)
   !-----------------------------------------------------------------------------
   ! Write snapshot_nml to the file "data/run/NNNNN/snapshot.nml"
   !-----------------------------------------------------------------------------
@@ -681,7 +694,6 @@ SUBROUTINE output_nml_v2 (patch, append)
   end if
   write (io_unit%nml2, patch_nml)
   flush (io_unit%nml2)
-  !$omp end critical (output_cr)
   call trace%end()
 END SUBROUTINE output_nml_v2
 
@@ -700,6 +712,7 @@ SUBROUTINE output_nml_v3 (patch, append)
   real(8), dimension(3):: size, position, ds, box, velocity, &
                           llc_nat, llc_cart, centre_nat
   integer              :: time_derivs, now, prv
+  integer(8)           :: task_offset
   logical              :: guard_zones, no_mans_land, periodic(3)
   integer, save        :: last_snapshot=-1
   character(len=16)    :: kind, eos, opacity, method
@@ -708,12 +721,12 @@ SUBROUTINE output_nml_v3 (patch, append)
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
     no_mans_land
-  namelist /patch_nml/ id, time, position, size, level, dtime, times, dtimes
+  namelist /patch_nml/ id, time, position, size, level, dtime, times, dtimes, &
+    task_offset
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
   call trace%begin ('data_io_t%output_nml')
-  !$omp critical (output_cr)
   !-----------------------------------------------------------------------------
   ! Write snapshot_nml to the file "data/run/NNNNN/snapshot.nml"
   !-----------------------------------------------------------------------------
@@ -728,6 +741,7 @@ SUBROUTINE output_nml_v3 (patch, append)
   time        = merge (patch%time, patch%out_next, io%out_time==0)
   dtime       = patch%dtime
   now         = patch%it
+  task_offset = patch%amr_offset
   if (patch%istep > 1) then
     prv       = modulo(now-2,patch%nt) + 1
   else
@@ -820,7 +834,6 @@ SUBROUTINE output_nml_v3 (patch, append)
   end if
   write (io_unit%nml2, patch_nml)
   flush (io_unit%nml2)
-  !$omp end critical (output_cr)
   call trace%end()
 END SUBROUTINE output_nml_v3
 

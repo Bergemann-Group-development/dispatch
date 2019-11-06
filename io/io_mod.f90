@@ -38,6 +38,7 @@ MODULE io_mod
     logical:: guard_zones=.false.
     logical:: namelist_errors=.true.
     logical:: needs_check=.false.
+    logical:: halt=.false.      ! used in data_io and amr_io
     integer:: log_sent=0
     integer:: time_derivs=0
     integer:: id_debug=0

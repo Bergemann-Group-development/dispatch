@@ -83,6 +83,7 @@ MODULE task_mod
     type(lock_t):: lock                 ! OMP lock
     type(random_t):: random             ! pseudo-random number generator
     type(aux_t):: aux
+    integer(8):: amr_offset=0_8         ! byte offset in amr_io
   contains
     procedure:: init
     procedure:: init_unique

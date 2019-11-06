@@ -51,6 +51,9 @@ MODULE mpi_mod
     procedure, private:: init4
     procedure, private:: init8
     generic:: init => init4, init8
+    procedure, private:: reset4
+    procedure, private:: reset8
+    generic:: reset => reset4, reset8
     procedure, private:: update4
     procedure, private:: update8
     generic:: update => update4, update8
@@ -448,6 +451,28 @@ SUBROUTINE init8 (self, n)
   call mpi%assert ('MPI_Win_create', mpi_err)
 #endif
 END SUBROUTINE init8
+
+!===============================================================================
+!> Reset the counter to n
+!===============================================================================
+SUBROUTINE reset4 (self, n)
+  class(mpi_counter_t):: self
+  integer:: n, i
+  !.............................................................................
+  i = self%update(0)
+  i = self%update(n-i)
+END SUBROUTINE reset4
+
+!===============================================================================
+!> Reset the counter to n
+!===============================================================================
+SUBROUTINE reset8 (self, n)
+  class(mpi_counter_t):: self
+  integer(8):: n, i
+  !.............................................................................
+  i = self%update(0_8)
+  i = self%update(n-i)
+END SUBROUTINE reset8
 
 !===============================================================================
 !> Add a value i to the counter on master.  If the value reaches 0, return 0,
