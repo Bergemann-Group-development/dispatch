@@ -7,7 +7,7 @@ MODULE mpi_buffer_mod
   type, public:: mpi_buffer_t
     integer:: n
     integer, allocatable:: buffer(:)
-    integer(8):: position
+    integer(8):: position=0
   contains
     procedure:: init
     procedure:: reset
@@ -27,30 +27,32 @@ MODULE mpi_buffer_mod
 CONTAINS
 
 !===============================================================================
+!> Initialize a buffer and optionally push a label onto it
 !===============================================================================
-SUBROUTINE init (self, n, label)
+SUBROUTINE init (self, n)
   class (mpi_buffer_t):: self
   integer:: n
-  character(len=*):: label
   !-----------------------------------------------------------------------------
   !call trace%begin ('mpi_buffer_t%init')
   allocate (self%buffer(n))
   self%position = 1
-  call self%append (label)
   !call trace%end()
 END SUBROUTINE init
 
 !===============================================================================
+!> Deallocate buffer and clear counter
 !===============================================================================
 SUBROUTINE reset (self)
   class (mpi_buffer_t):: self
   !-----------------------------------------------------------------------------
   !call trace%begin ('mpi_buffer_t%reset')
-  self%position = 1
+  if (allocated(self%buffer)) deallocate(self%buffer)
+  self%position = 0
   !call trace%end()
 END SUBROUTINE reset
 
 !===============================================================================
+!> Push a text label onto the buffer (must know the size when retrieving)
 !===============================================================================
 SUBROUTINE append_c (self, label)
   class (mpi_buffer_t):: self
