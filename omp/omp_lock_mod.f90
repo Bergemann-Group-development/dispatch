@@ -51,8 +51,9 @@ MODULE omp_lock_mod
   integer, save:: id_save=-1, n_lock=0
   logical, save:: on = .true.
   character(len=6):: log='queue'
+  character(len=6):: ext, ext1, ext2
   integer:: unit
-  real(8):: wait_time=0d0
+  real(8):: wait_time=0d0, alternate_time=0d0, alternate_next=0d0
   type(lock_t), save, public:: omp_lock
 CONTAINS
 
@@ -63,12 +64,14 @@ SUBROUTINE init (self, kind, id)
   class(lock_t), target:: self
   integer, optional:: id
   character(len=4), optional:: kind
+  character(len=64):: filename
   logical omp_in_parallel
   logical, save:: tasks=.true., links=.false.
   integer:: iostat
   logical:: set_id
   logical:: first_time=.true.
-  namelist /lock_params/ on, verbose, verbose_time, log, tasks, links
+  namelist /lock_params/ on, verbose, verbose_time, log, tasks, links, &
+    alternate_time
   !-----------------------------------------------------------------------------
   if (.not.on) return
 #ifdef TRACE 
@@ -87,6 +90,16 @@ SUBROUTINE init (self, kind, id)
         unit = io_unit%log
       else
         unit = io_unit%output
+      end if
+      if (alternate_time > 0d0) then
+        close (unit)
+        ext = '.lock1'
+        ext1 = '.lock1'
+        ext2 = '.lock2'
+        filename = trim(io_unit%rankbase)//ext
+        open (unit, file=trim(filename), form='formatted', &
+              status='unknown')
+        alternate_next = wallclock() + alternate_time
       end if
     end if
     call omp_init_nest_lock (self%lock)
@@ -151,7 +164,8 @@ SUBROUTINE set (self, label)
   !-----------------------------------------------------------------------------
   ! Wait with the (possibly disturbing) output of log info until the lock is set
   !-----------------------------------------------------------------------------
-  if (wc < verbose_time .or. verbose > 1) then
+  call alternate_log (self)
+  if (wc < verbose_time .or. verbose > 1 .or. alternate_time > 0d0) then
     if (present(label)) then
       write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, &
@@ -171,7 +185,7 @@ SUBROUTINE set (self, label)
   self%thread = thread
   self%level = self%level+1
   !$omp flush
-  if (wc < verbose_time .or. verbose > 1) then
+  if (wc < verbose_time .or. verbose > 1 .or. alternate_time > 0d0) then
     write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
       ' lock kind, id, level, thread = ', self%kind, self%id, &
       self%level, thread, '   set'
@@ -180,6 +194,27 @@ SUBROUTINE set (self, label)
   call trace%end()
 #endif
 END SUBROUTINE set
+
+!===============================================================================
+!> Alternate between two log files
+!===============================================================================
+SUBROUTINE alternate_log (self)
+  class(lock_t):: self
+  real(8):: wc
+  !-----------------------------------------------------------------------------
+  if (alternate_time > 0d0) then
+    wc = wallclock()
+    if (wc > alternate_next) then
+      ext = ext2
+      ext2 = ext1
+      ext1 = ext
+      close (unit)
+      open (unit, file=trim(io_unit%rankbase)//ext, form='formatted', &
+            status='unknown')
+      alternate_next = wc + alternate_time
+    end if
+  end if
+END SUBROUTINE alternate_log
 
 !===============================================================================
 !> Return true if we already have the lock, or if we get it now
@@ -208,9 +243,10 @@ FUNCTION test (self) RESULT (out)
       self%thread = thread
       self%level = self%level+1
       wc = wallclock()
-      if (wc < verbose_time .or. verbose > 1) &
-        write (io_unit%log,'(f10.6,i4,a,i6,i3,a)') wc, thread, ' lock id', self%id, self%level, '  test'
-      !print *, thread, ' test has lock id', self%id, self%thread
+      if (wc < verbose_time .or. verbose > 1 .or. alternate_time > 0d0) then
+        write (io_unit%log,'(f10.6,i4,a,i6,i3,a)') wc, thread, ' lock id', &
+          self%id, self%level, '  test'
+      end if
     else
       !print *, thread, ' failed to acquire lock id', self%id, self%thread
     end if
@@ -259,7 +295,8 @@ SUBROUTINE unset (self, label)
   self%hold_time = self%hold_time + self%used_time
   !write(unit,*) &
   !  'lock%unset: kind, id, thread, level = ', self%kind, self%id, self%thread, self%level
-  if (wc < verbose_time .or. verbose > 1) then
+  call alternate_log (self)
+  if (wc < verbose_time .or. verbose > 1 .or. alternate_time > 0d0) then
     if (present(label)) then
       write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
         ' lock kind, id, level, thread = ', self%kind, self%id, level, thread, ' unset at '//label

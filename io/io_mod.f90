@@ -207,10 +207,15 @@ write(*,*) 'thread, master, verbose =', omp%thread, omp%master, verbose, io_unit
     io_unit%do_validate = do_validate
     write (filename,'(a,i5.5,"/")') trim(io%outputname), 0
     call os%mkdir (trim(filename))
+    write (io_unit%threadbase,'(a,"thread_",i5.5,"_",i3.3)') &
+      trim(self%outputname), mpi%rank, omp%thread
+    write (io_unit%rankbase,'(a,"rank_",i5.5)') &
+      trim(self%outputname), mpi%rank
     if (omp_trace .and. omp%nthreads>1) then
       io_unit%log = 110+omp%mythread()
-      write (filename,'(a,"thread_",i5.5,"_",i3.3,".log")') trim(self%outputname), mpi%rank, omp%thread
-      open (unit=io_unit%log, file=filename, form='formatted', status='unknown')
+      write (stdout,*) trim(io_unit%rankbase), 'rankbase'
+      filename = trim(io_unit%threadbase)//".log"
+      open (io_unit%log, file=filename, form='formatted', status='unknown')
     else
       io_unit%log = io_unit%mpi
     end if

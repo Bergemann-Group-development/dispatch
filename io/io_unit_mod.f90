@@ -14,6 +14,7 @@ MODULE io_unit_mod
     integer:: iodir = -1
     character(len=64):: inputname, outputname, datadir='data', top
     character(len=64):: rundir, inputdir
+    character(len=64):: rankbase, threadbase
   end type
   integer, parameter, public:: mch=120
   type(io_unit_t), public:: io_unit
