@@ -695,7 +695,8 @@ SUBROUTINE dealloc (self)
   integer                  :: i
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%dealloc')
-  call MeshRecycler (self%mesh)
+  if (associated(self%mesh)) &
+    call MeshRecycler (self%mesh)
   call io%bits_mem (-storage_size(self%mem), product(shape(self%mem)),'-mem')
   if (associated(self%mem)) deallocate (self%mem)
   nullify (self%mem)

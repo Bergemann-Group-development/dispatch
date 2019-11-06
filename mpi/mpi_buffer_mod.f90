@@ -29,9 +29,10 @@ CONTAINS
 !===============================================================================
 !> Initialize a buffer and optionally push a label onto it
 !===============================================================================
-SUBROUTINE init (self, n)
+SUBROUTINE init (self, n, label)
   class (mpi_buffer_t):: self
   integer:: n
+  character(len=*), optional:: label
   !-----------------------------------------------------------------------------
   !call trace%begin ('mpi_buffer_t%init')
   allocate (self%buffer(n))

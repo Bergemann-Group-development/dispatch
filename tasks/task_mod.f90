@@ -62,16 +62,16 @@ MODULE task_mod
     real(8):: unpack_time=0d0
     real(8):: dnload_time=-1d0          ! last dnload time
     real(4):: quality = 0.0
-    integer, dimension(:), pointer:: iit
-    real(8), dimension(:), pointer:: t
-    real(8), dimension(:), pointer:: dt
-    character(len=64), pointer:: name
-    class(task_t), pointer:: parent
+    integer, dimension(:), pointer:: iit => null()
+    real(8), dimension(:), pointer:: t   => null()
+    real(8), dimension(:), pointer:: dt  => null()
+    character(len=64), pointer:: name    => null()
+    class(task_t), pointer:: parent      => null()
+    class(mesg_t), pointer:: mesg        => null()
     character(len=64):: kind='task'     ! solver name
     character(len=12):: type='task_t'   ! task type
     real:: latency=0.0                  ! MPI message latency
     real(8):: wc_last=0.0_8
-    class(mesg_t), pointer:: mesg=>null()
     real(8):: sync_time=0d0
     real(8):: update_last=0.0_8
     real:: update_cadence=0.0

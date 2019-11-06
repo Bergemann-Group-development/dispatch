@@ -152,6 +152,7 @@ SUBROUTINE reset (self)
   end do
   nullify (self%head)
   nullify (self%tail)
+  self%n = 0
   call trace%end()
 END SUBROUTINE reset
 

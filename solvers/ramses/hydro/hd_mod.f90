@@ -197,14 +197,14 @@ SUBROUTINE update (self)
   d => self%mem(:,:,:,self%idx%d,self%new,1)
   e => self%mem(:,:,:,self%idx%e,self%new,1)
   p => self%mem(:,:,:,self%idx%px:self%idx%pz,self%new,1)
-  print *, self%fminval(d), self%fmaxval(d), 'd'
-  print *, self%fminval(e), self%fmaxval(e), 'e'
+!print *, self%fminval(d), self%fmaxval(d), 'd'
+!print *, self%fminval(e), self%fmaxval(e), 'e'
   allocate (eth(self%gn(1),self%gn(2),self%gn(3)))
   px => self%mem(:,:,:,self%idx%px,self%new,1)
   py => self%mem(:,:,:,self%idx%py,self%new,1)
   pz => self%mem(:,:,:,self%idx%pz,self%new,1)
   eth = e - 0.5*(px**2+py**2+pz**2)/d
-  print *, self%fminval(eth), self%fmaxval(eth), 'eth'
+!print *, self%fminval(eth), self%fmaxval(eth), 'eth'
   deallocate (eth)
   if (allocated(self%force_per_unit_mass)) then
     do i=1,3
