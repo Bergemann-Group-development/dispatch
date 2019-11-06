@@ -441,7 +441,7 @@ SUBROUTINE output_single (patch, count)
   end if
   allocate (mem(n(1),n(2),n(3),patch%nt-1))
   !-----------------------------------------------------------------------------
-  ! Time interpolation to exaxt out_next
+  ! Time interpolation to exact time = out_next.
   !-----------------------------------------------------------------------------
   if (verbose > 1) then
     write (io_unit%log,*) wallclock(), patch%id, patch%time, '  convert var, interpolate'
@@ -527,7 +527,8 @@ contains
   !-----------------------------------------------------------------------------
   ! Copy variables from `patch%mem` to `mem` array, converting variables based
   ! on the I/O format parameter.  This procedure is internal to the 'output_single'
-  ! procedure, and as such only supports io%format in the range 10-13.
+  ! procedure, and as such only supports io%format in the range 10-13.  In the
+  ! process, the time slot ordering is rearranged into increasing time.
   !-----------------------------------------------------------------------------
   subroutine convert_variables
     integer:: nt1, l(3), u(3), i, j, k

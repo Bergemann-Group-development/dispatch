@@ -40,13 +40,13 @@ MODULE amr_io_mod
   USE list_mod
   USE mpi_file_mod
   USE mpi_mod
+  USE time_slices_mod
   implicit none
   private
   !.............................................................................
   type, public:: amr_io_t
     integer:: iout                           ! snapshot number
     integer:: n(3)                           ! 3-D array dims in output
-    integer:: nt=2                           ! number of time slots in output
     integer:: nv                             ! number of variables in output
     integer:: task_size                      ! words per variable in a task
     integer:: var_size                       ! words per variable in the run
@@ -66,8 +66,9 @@ MODULE amr_io_mod
     procedure:: input
   end type
   !.............................................................................
-  integer:: verbose=0
-  type(amr_io_t), public:: amr_io
+  integer:: verbose=0                        ! verbosity of log info
+  integer:: nt=2                             ! number of time slots in output
+  type(amr_io_t), public:: amr_io            ! global instance
 CONTAINS
 
 !===============================================================================
@@ -77,7 +78,7 @@ CONTAINS
 SUBROUTINE init (self, patch)
   class(amr_io_t):: self
   class(patch_t):: patch
-  namelist /amr_io_params/ verbose
+  namelist /amr_io_params/ verbose, nt
   integer:: iostat
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
@@ -106,7 +107,8 @@ SUBROUTINE output (self, patch, count)
   class(patch_t):: patch
   class(task_t), pointer:: task
   class(patch_t), pointer:: out
-  integer:: count, l(3), u(3), n(3), prv, now, remains
+  integer:: count, l(3), u(3), n(3), prv, now, remains, it, iv
+  real, allocatable:: tmp(:,:,:,:)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('amr_io_t%output')
@@ -115,7 +117,7 @@ SUBROUTINE output (self, patch, count)
   ! and with a size that optionally include the guard zones.
   !-----------------------------------------------------------------------------
   allocate (out)
-  out%nt = 2
+  out%nt = nt
   out%nv = patch%nv
   out%nw = 1
   if (io%guard_zones) then
@@ -136,15 +138,32 @@ SUBROUTINE output (self, patch, count)
     prv = now
   end if
   allocate (out%t(2), out%dt(2))
-  !-----------------------------------------------------------------------------
-  ! Copy the two bracketing time slots to the output task
-  !-----------------------------------------------------------------------------
-  out%mem(:,:,:,:,1,1) = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,prv,1)
-  out%mem(:,:,:,:,2,1) = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),:,now,1)
-  out%t(1)  = patch%t(prv)
-  out%t(2)  = patch%t(now)
-  out%dt(1) = patch%dt(prv)
-  out%dt(2) = patch%dt(now)
+  if (nt == 2) then
+    io%nml_version = 3
+    !---------------------------------------------------------------------------
+    ! Copy the two bracketing time slots to the output task
+    !---------------------------------------------------------------------------
+    do iv=1,patch%nv
+      call convert_variables (patch, out%mem(:,:,:,iv,1,1), iv, prv)
+      call convert_variables (patch, out%mem(:,:,:,iv,2,1), iv, now)
+    end do
+    out%t(1)  = patch%t(prv)
+    out%t(2)  = patch%t(now)
+    out%dt(1) = patch%dt(prv)
+    out%dt(2) = patch%dt(now)
+  else
+    !---------------------------------------------------------------------------
+    ! Alternatively, use time-slice interpolation to a single output time
+    !---------------------------------------------------------------------------
+    allocate (tmp(n(1),n(2),n(3),patch%nt-1))
+    do iv=1,patch%nv
+      do it=1,patch%nt-1
+        call convert_variables (patch, tmp(:,:,:,it), iv, it)
+      end do
+      call time_slices%interpolate (patch, tmp, out%mem(:,:,:,iv,1,1))
+    end do
+    deallocate (tmp)
+  end if
   !-----------------------------------------------------------------------------
   ! Append the task copy to a list_t instance
   !-----------------------------------------------------------------------------
@@ -175,10 +194,11 @@ SUBROUTINE output (self, patch, count)
     !---------------------------------------------------------------------------
     if (remains == 0) then
       self%iout = patch%iout
-      self%task_size = product(n)*self%nt
+      self%task_size = product(n)*nt
       self%rank_size = self%task_size*self%list%n
       self%rank_offset = self%offset_counter%update (self%rank_size)
       self%var_size = self%offset_counter%update (0_8)
+      io%gb_out = self%var_size*self%nv*4.0/1024.**3
       if (verbose > 0) &
         write (stdout,"('amr_io_t%output: ',a,5i10)") &
          'remains, task_size, rank_size, var_size, rank_offset =', &
@@ -239,7 +259,7 @@ SUBROUTINE output_list (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('amr_io_t%fill_buffer')
   n(1:3) = self%n
-  n(4) = self%nt
+  n(4) = nt
   n(5) = self%list%n
   allocate (self%buffer(n(1),n(2),n(3),n(4),n(5)))
   !-----------------------------------------------------------------------------
@@ -309,5 +329,48 @@ SUBROUTINE input (self, patch)
   call trace%begin ('amr_io_t%input')
   call trace%end ()
 END SUBROUTINE input
+
+!===============================================================================
+! Copy variables from `patch%mem` to `mem` array, converting variables based
+! on the I/O format parameter.  In the process, the time slot ordering is
+! rearranged into increasing time order.
+!===============================================================================
+SUBROUTINE convert_variables (patch, mem, iv, it)
+  class(patch_t):: patch
+  real:: mem(:,:,:)
+  integer:: iv, it, jt
+  integer:: io_format, l(3), u(3), i, j, k
+  !...........................................................................
+  call trace%begin ('amr_io-t%convert_variables')
+  if (io%guard_zones) then
+    l = patch%mesh%lb
+    u = max(patch%mesh%ub,patch%mesh%gn)
+  else
+    l = patch%mesh%li
+    u = patch%mesh%ui
+  end if
+  io_format = io%format
+  if (io_format >= 10) then
+    io_format = io_format-10
+  else if (io_format >= 6) then
+    io_format = io_format-6
+  end if
+  jt = patch%iit(it)
+  if (io_format >= 2 .and. iv==patch%idx%d) then
+    ! --- Convert density to log density ---
+    mem(:,:,:) = log( &
+        patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv         ,jt,1))
+  else if ((io%format == 0 .or. io%format==2) .and. patch%solver_is('ramses') &
+      .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
+    ! --- Convert momentum to velocity ---
+    mem(:,:,:) &
+      = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv         ,jt,1) &
+      / patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,jt,1)
+  else
+    mem(:,:,:) = &
+        patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv         ,jt,1)
+  end if
+  call trace%end()
+END SUBROUTINE convert_variables
 
 END MODULE amr_io_mod

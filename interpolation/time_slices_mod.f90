@@ -53,7 +53,8 @@ SUBROUTINE init (self, nt)
 END SUBROUTINE init
 
 !===============================================================================
-!> Time interpolation
+!> Time interpolation.  mem() is assumed to contain nt time slices of a 3-D
+!> variable, with times consistent with the times produced by patch%timeslots()
 !===============================================================================
 SUBROUTINE interpolate (patch, mem, buffer)
   class(patch_t):: patch

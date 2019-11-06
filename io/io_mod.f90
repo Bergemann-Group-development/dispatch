@@ -61,6 +61,7 @@ MODULE io_mod
     real:: courant=0.0
     real:: dmin=1.0
     real:: dmax=1.0
+    real:: gb_out=0.0
   contains
     procedure:: init
     procedure:: debug
