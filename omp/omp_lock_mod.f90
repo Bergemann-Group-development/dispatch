@@ -63,7 +63,7 @@ CONTAINS
 SUBROUTINE init (self, kind, id)
   class(lock_t), target:: self
   integer, optional:: id
-  character(len=4), optional:: kind
+  character(len=*), optional:: kind
   character(len=64):: filename
   logical omp_in_parallel
   logical, save:: tasks=.true., links=.false.
@@ -114,7 +114,7 @@ SUBROUTINE init (self, kind, id)
       self%id = id_save
       set_id = .false.
     end if
-    if (present(kind)) self%kind = kind
+    if (present(kind)) self%kind = kind(1:4)
     if (wallclock() < verbose_time .or. verbose > 1) &
       write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
         self%kind, self%id, set_id
@@ -158,13 +158,11 @@ SUBROUTINE set (self, label)
   call trace%begin('lock_t%set')
 #endif
   thread = omp_get_thread_num()
-  wc = wallclock()
-  self%start_time = wc
-  call omp_set_nest_lock (self%lock)
   !-----------------------------------------------------------------------------
-  ! Wait with the (possibly disturbing) output of log info until the lock is set
+  ! Must print log info before the lock, to reveal dead-locks
   !-----------------------------------------------------------------------------
   call alternate_log (self)
+  wc = wallclock()
   if (wc < verbose_time .or. verbose > 1 .or. alternate_time > 0d0) then
     if (present(label)) then
       write (unit,'(f10.6,a,a4,i6,i3,i4,2x,a)') wc, &
@@ -177,12 +175,16 @@ SUBROUTINE set (self, label)
     end if
   end if
   wc = wallclock()
+  self%start_time = wc
+  call omp_set_nest_lock (self%lock)
+  wc = wallclock()
   self%used_time = wc - self%start_time
   self%wait_time = self%wait_time + self%used_time
   self%n_hold = self%n_hold + 1
   !$omp atomic update
   wait_time = wait_time + self%used_time
   self%thread = thread
+  !$omp atomic update
   self%level = self%level+1
   !$omp flush
   if (wc < verbose_time .or. verbose > 1 .or. alternate_time > 0d0) then
@@ -241,6 +243,7 @@ FUNCTION test (self) RESULT (out)
     out =  omp_test_nest_lock (self%lock)
     if (out) then
       self%thread = thread
+      !$omp atomic update
       self%level = self%level+1
       wc = wallclock()
       if (wc < verbose_time .or. verbose > 1 .or. alternate_time > 0d0) then
@@ -283,6 +286,7 @@ SUBROUTINE unset (self, label)
   call trace%begin('lock_t%unset')
 #endif
   thread = omp_get_thread_num()
+  !$omp atomic update
   self%level = self%level-1
   level = self%level
   if (self%level==0) then

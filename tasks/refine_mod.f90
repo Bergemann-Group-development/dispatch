@@ -860,6 +860,8 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child%mem_allocated = .false.                      ! make sure to get ..
   nullify (child%mem)                                ! .. new mem
   nullify (child%mesh)                               ! .. new mesh
+  nullify (child%lock)                               ! .. new lock
+  nullify (child%mem_lock)                           ! .. new mem_lock
   child%id = 0                                       ! ensure a new ID
   child%size = child_size                            ! new size
   child%position = pos                               ! patch position

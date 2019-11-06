@@ -82,7 +82,7 @@ MODULE patch_mod
     logical, allocatable:: mask(:,:,:)
     !--- used in refine ---
     integer(int8), allocatable:: irefine(:,:,:)
-    type(lock_t), pointer:: mem_lock(:)
+    type(lock_t), pointer:: mem_lock(:) => null()
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME
     !---------------------------------------------------------------------------
@@ -1364,7 +1364,6 @@ SUBROUTINE unpack (self, mesg)
   !-----------------------------------------------------------------------------
   ! Lock the %new slot, which will become the %it slot after header_to_patch
   !-----------------------------------------------------------------------------
-  call self%mem_lock(self%new)%set ('unpack')
   call self%header_to_patch (header)
   if (io%verbose > 1) &
     write (io_unit%log,'(f12.6,3x,a,i7,2i4,2x,3l1,2i4,f8.4,f11.6)') &
@@ -1388,6 +1387,7 @@ SUBROUTINE unpack (self, mesg)
   ! Copy the variables from the output buffer.  If this is swap of patch roles
   ! expect at least one more time slot.
   !-----------------------------------------------------------------------------
+  call self%mem_lock(self%it)%set ('unpack')
   do iv=1,self%nv
     call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
 !write(io_unit%log,'(a,i6,2i4,1p,e14.5)') &

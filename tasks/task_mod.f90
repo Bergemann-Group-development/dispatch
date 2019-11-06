@@ -80,7 +80,7 @@ MODULE task_mod
     logical:: periodic(3)=.true.
     logical:: rotated=.false.
     logical:: limit_dtime=.false.
-    type(lock_t):: lock                 ! OMP lock
+    type(lock_t), pointer:: lock        ! OMP lock
     type(random_t):: random             ! pseudo-random number generator
     type(aux_t):: aux
     integer(8):: amr_offset=0_8         ! byte offset in amr_io
@@ -147,6 +147,7 @@ SUBROUTINE init (self)
   if (self%id == 0) then
     call init_unique (self)
   end if
+  allocate (self%lock)
   call self%lock%init (self%kind(1:4), id=self%id+2)
   call self%random%init
   call trace_end ()
