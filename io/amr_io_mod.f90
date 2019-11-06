@@ -88,9 +88,12 @@ SUBROUTINE init (self, patch)
     rewind (io%input)
     read (io%input, amr_io_params, iostat=iostat)
     write (io%output, amr_io_params)
+    call self%ranks_counter%init (mpi%size)
+    call self%offset_counter%init (0_8)
+    if (nt == 2) then
+      time_slices%order = 2
+    end if
   end if
-  call self%ranks_counter%init (mpi%size)
-  call self%offset_counter%init (0_8)
   if (verbose > 0) &
     write (stdout,"('amr_io_t%init: ',a,i6)") &
      'ranks%i =', self%ranks_counter%i

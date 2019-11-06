@@ -73,20 +73,21 @@ SUBROUTINE init (self, task)
     if (first_time) then
       first_time = .false.
       if (io%do_output) then
-      select type (task)
-      class is (patch_t)
-        if      (io%method=='direct') then
-          call direct_io%init (task)
-        else if (io%method=='amr') then
-          call amr_io%init (task)
-        else if (io%method=='pan') then
-          call parallel_io%init (task)
-        else if (io%method=='parallel') then
-          call parallel_io%init (task)
-        else if (io%method=='snapshot') then
-          call parallel_io%init (task)
-        end if
-      end select
+        call time_slices%init (task%nt)
+        select type (task)
+        class is (patch_t)
+          if      (io%method=='direct') then
+            call direct_io%init (task)
+          else if (io%method=='amr') then
+            call amr_io%init (task)
+          else if (io%method=='pan') then
+            call parallel_io%init (task)
+          else if (io%method=='parallel') then
+            call parallel_io%init (task)
+          else if (io%method=='snapshot') then
+            call parallel_io%init (task)
+          end if
+        end select
       end if
       call self%kind_list%init
       self%initialized = .true.
@@ -166,7 +167,7 @@ SUBROUTINE output (self, patch, experiment_name)
   integer, save:: created=-1
   integer, save:: itimer=0
   logical:: append
-  integer:: it, count, np
+  integer:: it, count, np, prv
   real(8):: t
   !-----------------------------------------------------------------------------
   call pdf_io%update (patch)
@@ -261,11 +262,12 @@ SUBROUTINE output (self, patch, experiment_name)
         !-----------------------------------------------------------------------
         if (count==0 .and. .not.io_unit%do_validate) then
           if (io%out_time > 0d0) then
-            write(io%output,'(1x,a,2x,a,i5.5,6x,a,f9.3,6x,a,1p,2g14.5)') &
+            prv = modulo(patch%it-2,patch%nt) + 1
+            write(io%output,'(1x,a,2x,a,i5.5,6x,a,f9.3,6x,a,1p,3g14.5)') &
               trim(io%method)//'_io:output', &
               'snapshot '//trim(io%outputname), patch%iout, &
               'size(GB):', io%gb_out, &
-              'time:', patch%out_next, patch%time
+              'time:', patch%t(prv), patch%out_next, patch%time
           else
             write(io%output,'(1x,a,2x,a,i5.5,6x,a,f9.3,6x,a,1p,g14.5)') &
               trim(io%method)//'_io:output', &
