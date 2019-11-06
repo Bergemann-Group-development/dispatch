@@ -22,6 +22,7 @@ MODULE counters_mod
   type:: counter_t
     type(counter_t), pointer:: prev=>null(), next=>null()
     integer:: id=0, count=0, start=0
+    type(lock_t):: lock
   end type
   type, public:: counters_t
     type(counter_t), pointer:: head=>null(), tail=>null()
@@ -81,16 +82,20 @@ FUNCTION decrement (self, id, start) RESULT (count)
   !-----------------------------------------------------------------------------
   call self%lock%set ('counters_t%decrement')
   counter => find (self, id, start)
+  call self%lock%unset ('counters_t%decrement')
   !-----------------------------------------------------------------------------
   ! Decrement to zero
   !-----------------------------------------------------------------------------
   if (counter%count>0) then
+    !$omp atomic capture
     counter%count = counter%count-1    
+    count = counter%count
+    !$omp end atomic
+  else
+    count = counter%count
   end if
-  count = counter%count
   if (verbose > 0) &
     write (io_unit%output,*) 'counter_t%decrement: id, count =', counter%id, count
-  call self%lock%unset ('counters_t%decrement')
   call trace%end()
 END FUNCTION decrement
 
@@ -111,14 +116,16 @@ FUNCTION increment (self, id, start) RESULT (count)
   !-----------------------------------------------------------------------------
   call self%lock%set ('counters_t%increment')
   counter => find (self, id, start)
+  call self%lock%unset ('counters_t%increment')
   !-----------------------------------------------------------------------------
   ! Increment away from zero
   !-----------------------------------------------------------------------------
+  !$omp atomic capture
   counter%count = counter%count+1    
   count = counter%count
+  !$omp end atomic
   if (verbose > 0) &
     write (io_unit%output,*) 'counter_t%increment: id, count =', counter%id, count
-  call self%lock%unset ('counters_t%increment')
   call trace%end()
 END FUNCTION increment
 
@@ -135,11 +142,13 @@ SUBROUTINE update (self, id, start, incr, count)
   call trace%begin ('counters_t%update')
   call self%lock%set ('counters_t%update')
   counter => find (self, id, start)
+  call self%lock%unset ('counters_t%update')
+  !$omp atomic capture
   counter%count = counter%count + incr
   count = counter%count
+  !$omp end atomic
   if (verbose > 0) &
     write (stdout,*) 'counter_t%update: id, start, count =', id, start, count
-  call self%lock%unset ('counters_t%update')
   call trace%end()
 END SUBROUTINE update
 
@@ -165,6 +174,8 @@ FUNCTION find (self, id, start) RESULT (counter)
   !-----------------------------------------------------------------------------
   if (.not.associated(counter)) then
     allocate (counter)
+    call counter%lock%init ('counter')
+    call counter%lock%set ('init')
     !---------------------------------------------------------------------------
     ! If id is zero on entry, give it a unique value, otherwise use the given id
     !---------------------------------------------------------------------------
@@ -179,6 +190,7 @@ FUNCTION find (self, id, start) RESULT (counter)
     counter%id    = self%id
     counter%start = start
     counter%count = start
+    call counter%lock%set ('init')
     call append (self, counter)
     if (verbose > 0) then
       write (stdout,*) 'counters_t%find: new id, start =', counter%id, start
@@ -195,6 +207,7 @@ SUBROUTINE append (self, counter)
   type(counter_t), pointer:: counter
   !-----------------------------------------------------------------------------
   call trace%begin ('counters_t%append')
+  call self%lock%set ('append')
   counter%prev => self%tail
   if (associated(self%tail)) then
     self%tail%next => counter
@@ -202,6 +215,7 @@ SUBROUTINE append (self, counter)
   self%tail => counter
   self%n = self%n+1
   if (.not.associated(self%head)) self%head => counter
+  call self%lock%unset ('append')
   call trace%end()
 END SUBROUTINE append
 

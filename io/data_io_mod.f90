@@ -122,9 +122,9 @@ SUBROUTINE update_counters (self, patch, incr)
   ! The relevant counter index is most reliably determined by the very value
   ! that gets incremented in pdf_io_t%update(); i.e., patch%pdf_next.
   !-----------------------------------------------------------------------------
-  !$omp critical (update_counters_cr)
-  iout = nint(patch%pdf_next/pdf_io%out_time)
-  call pdf_io%counters%update (      iout+1, io%nwrite, incr, count1)
+  !!omp critical (update_counters_cr)
+    iout = nint(patch%pdf_next/pdf_io%out_time)
+    call pdf_io%counters%update (      iout+1, io%nwrite, incr, count1)
   call   self%counters%update (patch%iout+1, io%nwrite, incr, count2)
   !-----------------------------------------------------------------------------
   ! When tasks are added or removed, the number of tasks to reset the counters
@@ -135,7 +135,7 @@ SUBROUTINE update_counters (self, patch, incr)
 !write(stdout,'(a,i6,6i4)') &
 !'update_counters: patch, incr, io%nwrite, count, iout =', &
 !patch%id, incr, io%nwrite, count1, count2, patch%iout, iout
-  !$omp end critical (update_counters_cr)
+  !!omp end critical (update_counters_cr)
 END SUBROUTINE update_counters
 
 !===============================================================================
