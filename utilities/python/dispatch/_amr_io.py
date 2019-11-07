@@ -53,22 +53,24 @@ class amr_io(object):
     def _datafile(self):
         """ open datafile """
         file=self.snapdir+'snapshot.dat'
-        if self.verbose > 0:
+        if self.verbose > 2:
             print('opening',file)
         self.datafile_object=open(file,'rb')
 
-    def _patches(self,verbose=0):
+    def _patches(self):
         """ get list of patches with metadata """
         sn=self.snapshot_nml
         files=[f for f in os.listdir(self.snapdir) if f.endswith('patches.nml')]
-        if verbose > 1:
+        if self.verbose > 1:
             print('files:',files)
         pp=[]
         for file in files:
-            if verbose > 2:
+            if self.verbose > 2:
                 print('reading',file)
             d=f90nml.read(self.snapdir+file)
             o=d['offset_nml']
             for p in d['patch_nml']:
                 pp.append(patch(p,o,sn,self.datafile_object))
         self.patches=pp
+        if self.verbose > 1:
+            print('patch_nml keys:',p.keys())
