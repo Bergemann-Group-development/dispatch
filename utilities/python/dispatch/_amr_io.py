@@ -12,15 +12,15 @@ import f90nml
 
 class patch(object):
     def __init__(self,patch_nml,offset_nml,snapshot_nml,file_obj):
-        sn=snapshot_nml
+        self.patch_nml=patch_nml
         self.rank_offset=offset_nml['rank_offset']
         self.task_offset=patch_nml['task_offset']
         self.var_offset=offset_nml['var_size']
         self.file_obj=file_obj
-        if sn['guard_zones']:
-            self.shape=tuple(sn['gn'])
+        if snapshot_nml['guard_zones']:
+            self.shape=tuple(snapshot_nml['gn'])
         else:
-            self.shape=tuple(sn['n'])
+            self.shape=tuple(snapshot_nml['n'])
 
     def var(self,iv=0):
         offset=self.task_offset+self.rank_offset+iv*self.var_offset
