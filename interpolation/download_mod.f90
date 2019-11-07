@@ -133,7 +133,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     call io%abort('download_t%download_link: link%task not associated')
   end if
   !-----------------------------------------------------------------------------
-  ! Guard againt download twice, which could happen if an extras (e.g. RT) task
+  ! Guard against download twice, which could happen if an extras (e.g. RT) task
   ! requests dnload before the parent task
   !-----------------------------------------------------------------------------
   target => task2patch(link%task)
@@ -195,8 +195,9 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !-----------------------------------------------------------------------------
   do while (associated(nbor))
     if (.not.associated(nbor%task)) then
-      write (io_unit%output,*) 'WARNING: nbor task not associated'
-      flush (io_unit%output)
+      write (io_unit%log,*) 'WARNING: nbor task not associated'
+      flush (io_unit%log)
+      nbor => nbor%next
       cycle
     end if
     source => task2patch(nbor%task)
@@ -208,7 +209,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
         wallclock(), 'target, level, source, level, ND, n_needed =', &
         target%id, target%level, source%id, source%level, &
         nbor%needed, nbor%download, source%n_needed
-      flush (io_unit%output)
+      flush (io_unit%log)
     end if
     !-------------------------------------------------------------------------
     ! If the source task is being actively updated, and the slot could become
@@ -218,7 +219,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     !-------------------------------------------------------------------------
     call source%time_interval (target%time, jt, pt)
     call source%mem_lock(jt(1))%set ('download_link1')
-    call source%mem_lock(jt(2))%set ('download_link2')
+    if (jt(2) /= jt(1)) &
+      call source%mem_lock(jt(2))%set ('download_link2')
     if (verbose > 0) &
       write (io_unit%log,'(a,2i3,1x,2i3,2x,2f6.3,f12.6,2x,10f12.6)') &
         'download_link: it, new, jt, pt, target%time, source%t =', &
@@ -319,7 +321,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
        end if
      end if
     end if
-    call source%mem_lock(jt(2))%unset ('download_link2')
+    if (jt(2) /= jt(1)) &
+      call source%mem_lock(jt(2))%unset ('download_link2')
     call source%mem_lock(jt(1))%unset ('download_link1')
     if (verbose > 1) then
       write(io_unit%log,'(f12.6,i6,i3,3x,a,i6,i3,2x,2l1)') wallclock(), target%id, target%level, &
