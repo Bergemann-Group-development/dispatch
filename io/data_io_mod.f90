@@ -123,8 +123,10 @@ SUBROUTINE update_counters (self, patch, incr)
   ! that gets incremented in pdf_io_t%update(); i.e., patch%pdf_next.
   !-----------------------------------------------------------------------------
   !!omp critical (update_counters_cr)
+  if (pdf_io%on) then
     iout = nint(patch%pdf_next/pdf_io%out_time)
     call pdf_io%counters%update (      iout+1, io%nwrite, incr, count1)
+  end if
   call   self%counters%update (patch%iout+1, io%nwrite, incr, count2)
   !-----------------------------------------------------------------------------
   ! When tasks are added or removed, the number of tasks to reset the counters

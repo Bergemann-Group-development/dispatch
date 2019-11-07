@@ -17,6 +17,7 @@ MODULE pdf_io_mod
   !.............................................................................
   integer, parameter:: n_rms=6
   type, public:: pdf_io_t
+    logical:: on=.false.
     integer:: iout=0
     real(8):: time, out_time
     real:: rms(n_rms)=0.0
@@ -66,6 +67,7 @@ SUBROUTINE init (self, patch)
     end if
     !$omp end critical (input_cr)
   end if
+  self%on = on
   if (on) then
     self%out_time = out_time
     if (patch%pdf_next==0d0) &
