@@ -38,7 +38,6 @@ class amr_io(object):
         self.rundir=self.datadir+self.run
         self.snapdir=self.rundir+'{:05d}/'.format(self.io)
         self._snapshot()
-        self._datafile()
         self._patches()
 
     def _snapshot(self):
@@ -50,27 +49,22 @@ class amr_io(object):
         if self.verbose > 1:
             print('snapshot_nml keys:',self.snapshot_nml.keys())
 
-    def _datafile(self):
-        """ open datafile """
-        file=self.snapdir+'snapshot.dat'
-        if self.verbose > 2:
-            print('opening',file)
-        self.datafile_object=open(file,'rb')
-
     def _patches(self):
         """ get list of patches with metadata """
-        sn=self.snapshot_nml
         files=[f for f in os.listdir(self.snapdir) if f.endswith('patches.nml')]
-        if self.verbose > 1:
-            print('files:',files)
+        file=self.snapdir+'snapshot.dat'
+        if self.verbose > 2:
+            print('patch files:',files)
+            print('  data file:',file)
+        self.datafile_object=open(file,'rb')
         pp=[]
         for file in files:
-            if self.verbose > 2:
+            if self.verbose > 3:
                 print('reading',file)
             d=f90nml.read(self.snapdir+file)
             o=d['offset_nml']
             for p in d['patch_nml']:
-                pp.append(patch(p,o,sn,self.datafile_object))
+                pp.append(patch(p,o,self.snapshot_nml,self.datafile_object))
         self.patches=pp
         if self.verbose > 1:
             print('patch_nml keys:',p.keys())
