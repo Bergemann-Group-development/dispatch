@@ -178,7 +178,8 @@ def unigrid_plane(sn,**kw):
     imshow(dse.unigrid_plane(sn,**kw))
 
 
-def amr_plane(sn,z,iv='d',log=False,mesh=False,ident=False,cmap='coolwarm',verbose=0):
+def amr_plane(sn,iv='d',z=0.5,log=False,mesh=False,ident=False,cmap=None,
+              title=None,verbose=0):
     def contains(p,z):
         return p.level >= 6 and abs(z-p.position[2]) <= p.size[2]/2
     def outline(e):
@@ -211,7 +212,6 @@ def amr_plane(sn,z,iv='d',log=False,mesh=False,ident=False,cmap='coolwarm',verbo
         vmax=max(vmax,d.max())
         if verbose>0:
             print(p.id,d.min(),d.max())
-    pl.clf()
     pl.xlim(0,1); pl.ylim(0,1)
     if log:
         vmin=np.log10(vmin)
@@ -230,7 +230,10 @@ def amr_plane(sn,z,iv='d',log=False,mesh=False,ident=False,cmap='coolwarm',verbo
             x0,x1,y0,y1=p.extent[2]
             pl.text(x0,y0,'{}'.format(p.id))
     pl.colorbar()
-    pl.title('iv={},  z={:.2f},  t={:.4f}'.format(iv,z,sn.time))
+    if title:
+        pl.title(title)
+    else:
+        pl.title('iv={},  z={:.2f},  t={:.4f}'.format(iv,z,sn.time))
     pl.tight_layout()
 
 def plot_pdf(pdf):
