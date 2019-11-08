@@ -46,7 +46,8 @@ MODULE mpi_mod
   !-----------------------------------------------------------------------------
   type, public:: mpi_counter_t
     integer:: window
-    integer(8):: i=0            ! current value of the counter (before update)
+    integer(8):: i=0            ! shared window value
+    integer(8):: v=0            ! value of %i before update
   contains
     procedure, private:: init4
     procedure, private:: init8
