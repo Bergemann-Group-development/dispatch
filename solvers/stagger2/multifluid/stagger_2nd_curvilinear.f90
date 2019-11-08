@@ -4,16 +4,10 @@
 MODULE stagger_mod
   USE trace_mod
   USE omp_timer_mod
-  USE stagger_16
-  USE stagger_20
-  USE stagger_24
-  USE stagger_32
-  USE stagger_36
   USE mesh_mod
   implicit none
   public
   integer, private:: verbose=0
-  logical, save:: hardwire=.false.
   type, public:: stagger_t
     real(8):: ds(3)
   contains
@@ -215,19 +209,7 @@ FUNCTION ddxdn (s1, a) RESULT (b)
 !...............................................................................
   call trace%begin ('stagger_mod::ddxdn', itimer=itimer)
   n = shape(a)
-  if (hardwire) then
-    if (all(n==[16,16,16])) then
-      !call dxdn_16 (ds,a,b)
-    else if (all(n==[20,20,20])) then
-      !call dxdn_20 (ds,a,b)
-    else if (all(n==[24,24,24])) then
-      !call dxdn_24 (ds,a,b)
-    else if (all(n==[32,32,32])) then
-      !call dxdn_32 (ds,a,b)
-    else if (all(n==[36,36,36])) then
-      !call dxdn_36 (ds,a,b)
-    end if
-  else if (n(1) > 1) then
+  if (n(1) > 1) then
     b(1,:,:) = 0.0
     do iz=1,n(3)
     do iy=1,n(2)
@@ -251,19 +233,7 @@ FUNCTION ddydn (s2, a) RESULT (b)
 !...............................................................................
   call trace%begin ('stagger_mod::ddydn', itimer=itimer)
   n = shape(a)
-  if (hardwire) then
-    if (all(n==[16,16,16])) then
-      !call dydn_16 (ds,a,b)
-    else if (all(n==[20,20,20])) then
-      !call dydn_20 (ds,a,b)
-    else if (all(n==[24,24,24])) then
-      !call dydn_24 (ds,a,b)
-    else if (all(n==[32,32,32])) then
-      !call dydn_32 (ds,a,b)
-    else if (all(n==[36,36,36])) then
-      !call dydn_36 (ds,a,b)
-    end if
-  else if (n(2) > 1) then
+  if (n(2) > 1) then
     b(:,1,:) = 0.0
     do iz=1,n(3)
     do iy=2,n(2)
@@ -287,19 +257,7 @@ FUNCTION ddzdn (s3, a) RESULT (b)
 !...............................................................................
   call trace%begin ('stagger_mod::ddzdn', itimer=itimer)
   n = shape(a)
-  if (hardwire) then
-    if (all(n==[16,16,16])) then
-      !call dzdn_16 (ds,a,b)
-    else if (all(n==[20,20,20])) then
-      !call dzdn_20 (ds,a,b)
-    else if (all(n==[24,24,24])) then
-      !call dzdn_24 (ds,a,b)
-    else if (all(n==[32,32,32])) then
-      !call dzdn_32 (ds,a,b)
-    else if (all(n==[36,36,36])) then
-      !call dzdn_36 (ds,a,b)
-    end if
-  else if (n(3) > 1) then
+  if (n(3) > 1) then
     b(:,:,1) = 0.0
     do iz=2,n(3)
     do iy=1,n(2)
@@ -324,19 +282,7 @@ FUNCTION ddxup (s1, a) RESULT (b)
   n = shape(a)
   if (itimer==0) print *,'stagger: n =', n
   call trace%begin ('stagger_mod::ddxup', itimer=itimer)
-  if (hardwire) then
-    if (all(n==[16,16,16])) then
-      !call dxup_16 (ds,a,b)
-    else if (all(n==[20,20,20])) then
-      !call dxup_20 (ds,a,b)
-    else if (all(n==[24,24,24])) then
-      !call dxup_24 (ds,a,b)
-    else if (all(n==[32,32,32])) then
-      !call dxup_32 (ds,a,b)
-    else if (all(n==[36,36,36])) then
-      !call dxup_36 (ds,a,b)
-    end if
-  else if (n(1) > 1) then
+  if (n(1) > 1) then
     b(n(1),:,:) = 0.0
     do iz=1,n(3)
     do iy=1,n(2)
@@ -361,19 +307,7 @@ FUNCTION ddyup (s2, a) RESULT (b)
 !...............................................................................
   call trace%begin ('stagger_mod::ddyup', itimer=itimer)
   n = shape(a)
-  if (hardwire) then
-    if (all(n==[16,16,16])) then
-      !call dyup_16 (ds,a,b)
-    else if (all(n==[20,20,20])) then
-      !call dyup_20 (ds,a,b)
-    else if (all(n==[24,24,24])) then
-      !call dyup_24 (ds,a,b)
-    else if (all(n==[32,32,32])) then
-      !call dyup_32 (ds,a,b)
-    else if (all(n==[36,36,36])) then
-      !call dyup_36 (ds,a,b)
-    end if
-  else if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,n(2),:) = 0.0
     do iz=1,n(3)
     do iy=1,n(2)-1
@@ -397,19 +331,7 @@ FUNCTION ddzup (s3, a) RESULT (b)
 !...............................................................................
   call trace%begin ('stagger_mod::ddzup', itimer=itimer)
   n = shape(a)
-  if (hardwire) then
-    if (all(n==[16,16,16])) then
-      !call dzup_16 (ds,a,b)
-    else if (all(n==[20,20,20])) then
-      !call dzup_20 (ds,a,b)
-    else if (all(n==[24,24,24])) then
-      !call dzup_24 (ds,a,b)
-    else if (all(n==[32,32,32])) then
-      !call dzup_32 (ds,a,b)
-    else if (all(n==[36,36,36])) then
-      !call dzup_36 (ds,a,b)
-    end if
-  else if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     b(:,:,n(3)) = 0.0
     do iz=1,n(3)-1
     do iy=1,n(2)
@@ -434,19 +356,7 @@ FUNCTION xdn (a) RESULT (b)
 !...............................................................................
 !  call trace%begin ('stagger_mod::xdn', itimer=itimer)
   n = shape(a)
-  if (hardwire) then
-    if (all(n==[16,16,16])) then
-      call xdn_16 (a, b)
-    else if (all(n==[20,20,20])) then
-      call xdn_20 (a, b)
-    else if (all(n==[24,24,24])) then
-      call xdn_24 (a, b)
-    else if (all(n==[32,32,32])) then
-      call xdn_32 (a, b)
-    else if (all(n==[36,36,36])) then
-      call xdn_36 (a, b)
-    end if
-  else if (n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c = 0.5
     b(1,:,:) = a(1,:,:)
     do iz=1,n(3)
@@ -472,19 +382,7 @@ FUNCTION ydn (a) RESULT (b)
 !...............................................................................
 !  call trace%begin ('stagger_mod::ydn', itimer=itimer)
   n = shape(a)
-  if (hardwire) then
-    if (all(n==[16,16,16])) then
-      call ydn_16 (a, b)
-    else if (all(n==[20,20,20])) then
-      call ydn_20 (a, b)
-    else if (all(n==[24,24,24])) then
-      call ydn_24 (a, b)
-    else if (all(n==[32,32,32])) then
-      call ydn_32 (a, b)
-    else if (all(n==[36,36,36])) then
-      call ydn_36 (a, b)
-    end if
-  else if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c = 0.5
     b(:,1,:) = a(:,1,:)
     do iz=1,n(3)
@@ -510,19 +408,7 @@ FUNCTION zdn (a) RESULT (b)
 !...............................................................................
 !  call trace%begin ('stagger_mod::zdn', itimer=itimer)
   n = shape(a)
-  if (hardwire) then
-    if (all(n==[16,16,16])) then
-      call zdn_16 (a, b)
-    else if (all(n==[20,20,20])) then
-      call zdn_20 (a, b)
-    else if (all(n==[24,24,24])) then
-      call zdn_24 (a, b)
-    else if (all(n==[32,32,32])) then
-      call zdn_32 (a, b)
-    else if (all(n==[36,36,36])) then
-      call zdn_36 (a, b)
-    end if
-  else if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c = 0.5
     b(:,:,1) = a(:,:,1)
     do iz=2,n(3)
@@ -548,19 +434,7 @@ FUNCTION xup (a) RESULT (b)
 !...............................................................................
 !  call trace%begin ('stagger_mod::xup', itimer=itimer)
   n = shape(a)
-  if (hardwire) then
-    if (all(n==[16,16,16])) then
-      call xup_16 (a, b)
-    else if (all(n==[20,20,20])) then
-      call xup_20 (a, b)
-    else if (all(n==[24,24,24])) then
-      call xup_24 (a, b)
-    else if (all(n==[32,32,32])) then
-      call xup_32 (a, b)
-    else if (all(n==[36,36,36])) then
-      call xup_36 (a, b)
-    end if
-  else if (n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (n(1) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c = 0.5
     b(n(1),:,:) = a(n(1),:,:)
     do iz=1,n(3)
@@ -586,19 +460,7 @@ FUNCTION yup (a) RESULT (b)
 !...............................................................................
 !  call trace%begin ('stagger_mod::yup', itimer=itimer)
   n = shape(a)
-  if (hardwire) then
-    if (all(n==[16,16,16])) then
-      call yup_16 (a, b)
-    else if (all(n==[20,20,20])) then
-      call yup_20 (a, b)
-    else if (all(n==[24,24,24])) then
-      call yup_24 (a, b)
-    else if (all(n==[32,32,32])) then
-      call yup_32 (a, b)
-    else if (all(n==[36,36,36])) then
-      call yup_36 (a, b)
-    end if
-  else if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (n(2) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c = 0.5
     b(:,n(2),:) = a(:,n(2),:)
     do iz=1,n(3)
@@ -624,19 +486,7 @@ FUNCTION zup (a) RESULT (b)
 !...............................................................................
 !  call trace%begin ('stagger_mod::zup', itimer=itimer)
   n = shape(a)
-  if (hardwire) then
-    if (all(n==[16,16,16])) then
-      call zup_16 (a, b)
-    else if (all(n==[20,20,20])) then
-      call zup_20 (a, b)
-    else if (all(n==[24,24,24])) then
-      call zup_24 (a, b)
-    else if (all(n==[32,32,32])) then
-      call zup_32 (a, b)
-    else if (all(n==[36,36,36])) then
-      call zup_36 (a, b)
-    end if
-  else if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
+  if (n(3) > 1) then ! x-derivative only non-zero iff x-dimension larger than 1
     c = 0.5
     b(:,:,n(3)) = a(:,:,n(3))
     do iz=1,n(3)-1
