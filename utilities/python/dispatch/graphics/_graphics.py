@@ -177,6 +177,62 @@ def unigrid_plane(sn,**kw):
     import dispatch.select as dse
     imshow(dse.unigrid_plane(sn,**kw))
 
+
+def amr_plane(sn,z,iv='d',log=False,mesh=False,ident=False,cmap='coolwarm',verbose=0):
+    def contains(p,z):
+        return p.level >= 6 and abs(z-p.position[2]) <= p.size[2]/2
+    def outline(e):
+        x=[e[0],e[0],e[1],e[1],e[0]]
+        y=[e[2],e[3],e[3],e[2],e[2]]
+        pl.plot(x,y,color='grey')
+    def interpolate(p,iv,z,log=False):
+        n=p.n[2]
+        dz=p.size[2]/n
+        z0=p.position[2]-p.size[2]/2+dz/2
+        w=(z-z0)/dz
+        i=int(w)
+        i=max(0,min(i,n-2))
+        w=w-i
+        f=p.var(iv)
+        if iv==0 or iv==4 or iv=='d' or iv=='e':
+            log=True
+        if log:
+            f=np.log(f)
+        f=(1-w)*f[:,:,i]+w*f[:,:,i+1]
+        if log:
+            f=np.exp(f)
+        return f
+    pp=[p for p in sn.patches if contains(p,z)]
+    vmin=1e20
+    vmax=0.0
+    for p in pp:
+        d=interpolate(p,iv,z)
+        vmin=min(vmin,d.min())
+        vmax=max(vmax,d.max())
+        if verbose>0:
+            print(p.id,d.min(),d.max())
+    pl.clf()
+    pl.xlim(0,1); pl.ylim(0,1)
+    if log:
+        vmin=np.log10(vmin)
+        vmax=np.log10(vmax)
+    for p in pp:
+        e=p.extent[2]
+        d=interpolate(p,iv,z)
+        if log:
+            d=np.log10(interpolate(p,iv,z))
+        pl.imshow(d.transpose(),extent=e,
+              vmin=vmin,vmax=vmax,origin='lower',cmap=cmap)
+        x0,x1,y0,y1=p.extent[2]
+        if mesh:
+            outline(p.extent[2])
+        if ident:
+            x0,x1,y0,y1=p.extent[2]
+            pl.text(x0,y0,'{}'.format(p.id))
+    pl.colorbar()
+    pl.title('iv={},  z={:.2f},  t={:.4f}'.format(iv,z,sn.time))
+    pl.tight_layout()
+
 def plot_pdf(pdf):
     pl.hist(pdf.bins,bins=pdf.bins,weight=pdf.counts)
     return pdf.time
