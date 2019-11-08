@@ -25,7 +25,7 @@ SUBROUTINE init (self)
   class(scaling_t):: self
   integer:: iostat
   logical, save:: first_time=.true.
-  real:: l_pc=4.0, d_cgs=3200e-22, v_kms=0.18, mu
+  real:: l_pc=4.0, d_cgs=3200e-22, v_kms=0.18, mu=2.4
   namelist /scaling_params/ l_pc, d_cgs, v_kms, mu
   !----------------------------------------------------------------------------
   if (.not.first_time) return
