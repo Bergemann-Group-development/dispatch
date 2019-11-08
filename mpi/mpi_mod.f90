@@ -47,7 +47,6 @@ MODULE mpi_mod
   type, public:: mpi_counter_t
     integer:: window
     integer(8):: i=0            ! shared window value
-    integer(8):: v=0            ! value of %i before update
   contains
     procedure, private:: init4
     procedure, private:: init8
@@ -550,8 +549,8 @@ contains
   end subroutine
 #else
   !$omp atomic capture
-  self%i = j
-  self%v = self%v + i
+  j = self%i
+  self%i = self%i + i
   !$omp end atomic
 #endif
 END FUNCTION update8
