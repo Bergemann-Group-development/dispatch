@@ -217,6 +217,7 @@ SUBROUTINE write1 (self, off, size, buffer)
   integer:: buffer(:)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%write1')
+#ifdef MPI
   if (mp%mode == MPI_THREAD_MULTIPLE) then
     call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
   else
@@ -224,6 +225,7 @@ SUBROUTINE write1 (self, off, size, buffer)
     call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
     !$omp end critical (mpi_cr)
   end if
+#endif MPI
   call trace%end ()
 END SUBROUTINE write1
 
@@ -237,6 +239,7 @@ SUBROUTINE write5 (self, off, size, buffer)
   real:: buffer(:,:,:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%write5')
+#ifdef MPI
   if (mp%mode == MPI_THREAD_MULTIPLE) then
     call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
   else
@@ -244,6 +247,7 @@ SUBROUTINE write5 (self, off, size, buffer)
     call MPI_File_write_at (self%handle, off, buffer, size, MPI_REAL, st, err)
     !$omp end critical (mpi_cr)
   end if
+#endif MPI
   call trace%end ()
 END SUBROUTINE write5
 
