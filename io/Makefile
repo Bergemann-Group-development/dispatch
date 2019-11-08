@@ -19,7 +19,7 @@ data_io_mod.o:          io_mod.o trace_mod.o patch_mod.o os_mod.o omp_mod.o omp_
 validate_mod.o:         io_mod.o io_unit_mod.o patch_mod.o link_mod.o kinds_mod.o
 h5a_mod.o:              omp_lock_mod.o
 aux_mod.o:              io_unit_mod.o trace_mod.o dll_mod.o
-h5_mod.o:		            io_mod.o trace_mod.o omp_lock_mod.o
+h5_mod.o:               io_mod.o trace_mod.o omp_lock_mod.o
 pdf_io_mod.o:           io_mod.o trace_mod.o patch_mod.o counters_mod.o mpi_mod.o \
                         bits_mod.o
 used_mod.o:             io_unit_mod.o omp_timer_mod.o

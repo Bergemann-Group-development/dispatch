@@ -17,7 +17,7 @@
 MODULE data_io_mod
   USE io_mod
   USE os_mod
-  USE aux_mod
+  !USE aux_mod
   USE mpi_mod
   USE omp_mod
   USE omp_timer_mod
@@ -269,7 +269,6 @@ SUBROUTINE output (self, patch, experiment_name)
         else
           call mpi%abort ('unknown io%method = '//io%method)
         end if
-        call self%lock%unset ('output2')
         !-----------------------------------------------------------------------
         if (count==0 .and. .not.io_unit%do_validate) then
           if (io%out_time > 0d0) then
@@ -291,6 +290,7 @@ SUBROUTINE output (self, patch, experiment_name)
         !-----------------------------------------------------------------------
         call patch%aux%output (patch%iout, patch%id)
         call output_nml (patch, append)
+        call self%lock%unset ('output2')
         !-----------------------------------------------------------------------
         patch%iout = patch%iout+1
         if (io%out_time==0.0) exit
