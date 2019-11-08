@@ -176,10 +176,10 @@ SUBROUTINE register2 (self, name, c)
 END SUBROUTINE register2
 
 !===============================================================================
-SUBROUTINE output_aux (self, iout, id, testfile)
+SUBROUTINE output_aux (self, iout, id, singlefile)
   class(aux_t):: self
   integer:: iout, id
-  character(len=*), optional:: testfile
+  character(len=*), optional:: singlefile
   !.............................................................................
   character(len=64):: filename
   class(dll_node_t), pointer:: item
@@ -194,13 +194,15 @@ SUBROUTINE output_aux (self, iout, id, testfile)
   call trace%begin ('aux_t%output')
   !$omp critical (aux_cr)
   call self%prepare (iout)
-  if (present(testfile)) then
-    filename = testfile
+  if (present(singlefile)) then
+    filename = singlefile
+    open (self%unit, file=trim(singlefile), form='unformatted', &
+      access='sequential', status='unknown')
   else
     write (filename,'(a,i5.5"/",i5.5,".aux")') trim(io%outputname), iout, id
+    open (self%unit, file=trim(filename), form='unformatted', &
+      access='sequential', status='unknown')
   end if
-  open (self%unit, file=filename, form='unformatted', access='sequential', &
-    status='unknown')
   if (verbose > 2) &
     write (io_unit%log,*) filename
   write (self%unit) version, id
