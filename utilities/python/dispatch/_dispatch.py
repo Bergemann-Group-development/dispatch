@@ -13,6 +13,7 @@ from dispatch._aux import aux
 from scipy.io import FortranFile
 
 class _timer():
+    """ timer functionality """
     def __init__(self):
         self.dict={}
         self._start=time()
@@ -459,15 +460,18 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
 class _patch():
     def __init__(self,id,patch_dict,snap,rank,verbose=0):
+        #timer.add('_patch(0)')
         self.id=id
         self.rank=rank
         self.memmap=1
         # add general attributes from snapshot_nml
         for k,v in snap.dict.items():
             setattr(self,k,v)
+        timer.add('attrib-from-snapshot_nml')
         # add per-patch attributes from parsing
         for k,v in patch_dict.items():
             setattr(self,k,v)
+        #timer.add('_patch(2)')
         if not self.guard_zones:
             self.li[:]=0
             self.ui[:]=self.n-1
@@ -475,6 +479,7 @@ class _patch():
         if hasattr(snap,'idx'):
             self.idx=snap.idx
             self.idx.h=self._h()
+        timer.add('add-idx-attr')
         # reconstruct items pruned from patch_nml
         if hasattr(self,'size') and hasattr(self,'position') :
             llc=self.position-self.size/2.0
@@ -483,10 +488,12 @@ class _patch():
                                   (llc[2],urc[2],llc[0],urc[0]),
                                   (llc[0],urc[0],llc[1],urc[1])))
             self.llc_cart=llc
+        timer.add('llc-urc-extent')
         if not hasattr(self,'units'):
             if hasattr(snap,'units'):
                 self.units=snap.units
         # modify `mesh_type` from integer to string for readability
+        #timer.add('_patch(6)')
         if hasattr(self,'mesh_type'):
             if self.mesh_type == 1:
                 self.mesh_type = "Cartesian"
@@ -495,32 +502,42 @@ class _patch():
             elif self.mesh_type == 3:
                 self.mesh_type = "cylindrical"
         # support for legacy I/O method filenames
+        #timer.add('_patch(7))')
         if snap.io.method.strip()=='legacy':
             self.filename=snap.rundir+'/{:05d}/{:05d}.dat'.format(self.iout,self.id)
             self.var=_var(self,self.filename,snap)
         else:
             self.var=_var(self,snap.datafiled,snap)
+        timer.add('_var')   # 1.8s
             
         """ add a comprehensive set of variable keys """
         self.keys={}
         self.keys['letters']=list(snap.idx.dict.keys())
+        timer.add('letters')
         self.keys['numbers']=list(snap.idx.dict.values())
+        timer.add('numbers')
         self.keys['expressions']=['ux','uy','uz','u1','u2','u3','ee','E']
+        timer.add('expressions')
         # attach an aux filaname, if it exists
         auxfile='{:05d}.aux'.format(id)
+        #timer.add('_patch(9c))')
         auxfile=_pathjoin(snap.datadir,auxfile)
-        if os.path.isfile(auxfile):
-            self.auxfile=auxfile
-            self.aux=aux(id=id,io=snap.iout,file=auxfile)
-            self.keys['aux']=self.aux.vars.keys()
-        elif verbose>0:
-            print(auxfile,'does not exist')
+        timer.add('auxfile')
+        if 1:
+            if os.path.isfile(auxfile):
+                self.auxfile=auxfile
+                self.aux=aux(id=id,io=snap.iout,file=auxfile)
+                self.keys['aux']=self.aux.vars.keys()
+            elif verbose>0:
+                print(auxfile,'does not exist')
+            timer.add('read-aux')
         
         """ Now collect all keys in a single list """
         all=[]
         for key_list in self.keys.values():
             all.extend(key_list)
         self.all_keys=all
+        timer.add('all-values')
 
     def _h(self):
         idx=self.idx
@@ -710,10 +727,12 @@ class snapshot():
         for k,v in self.dict.items():
             if isinstance(v,list):
                 self.dict[k]=np.array(v)
+        timer.add('lists-to-arrays')
 
         # add patches as a list of dicts
         self.patches=[]
         files=[f for f in os.listdir(datadir) if f.endswith('_patches.nml')]
+        save=[]
         for f in files:
             # split name to get rank number
             rank=np.int(f.split('_')[1])
@@ -722,16 +741,22 @@ class snapshot():
             if verbose==1:
                 print ('parsing',file)
             patch_dict=parse_patches(self,file)
+            save.append(patch_dict)
+        timer.add('parse_patches')   # 0.7s
+        for patch_dict in save:
             """ 
                 At this point all metadata about patches is available in the
                 patch_dict, with patch IDs as keys.  This makes it possible to
                 scan for files that can supply both regular and auxiliary data 
             """
-            for id in sorted(patch_dict.keys()):
+            ids=sorted(patch_dict.keys())
+            timer.add('sorted-keys')
+            for id in ids:
                 """ The _patch procedure collects all information about a patch
                     into an instancc of the _patch class, and appends it to
                     the snapshot.patches list """
                 p=_patch(id,patch_dict[id],self,rank,verbose=verbose)
+                timer.add('snapshot(1)')
                 self._add_axes(p)
                 # Append to array of patch instances
                 self.patches.append(p)
@@ -751,6 +776,7 @@ class snapshot():
                             p.idx.vars[iv], vmin, vmax))
                 elif verbose==4:
                     attributes(p)
+                timer.add('append+verbose')
             if verbose==1:
                 print('  added',len(self.patches),'patches')
         timer.add('_patches')
@@ -765,6 +791,7 @@ class snapshot():
         patch.x=first[0]+patch.ds[0]*np.arange(n[0])
         patch.y=first[1]+patch.ds[1]*np.arange(n[1])
         patch.z=first[2]+patch.ds[2]*np.arange(n[2])
+        timer.add('_add_axes(1)')  # 6.9s
         patch.xi=patch.x[ng[0]:-ng[0]]
         patch.yi=patch.y[ng[0]:-ng[0]]
         patch.zi=patch.z[ng[0]:-ng[0]]
@@ -773,8 +800,13 @@ class snapshot():
         patch.zs=patch.z-0.5*patch.ds[2]
         patch.xyz=[patch.x,patch.y,patch.z]
         patch.xyzi=[patch.xi,patch.yi,patch.zi]
+        timer.add('_add_axes(2)')  # 6.9s
         # add geometric factors to patch (important for spherical/cylindrical coords.)
-        patch.geometric_factors = GeometricFactors(patch)
+        if self.mesh_type==1:
+            patch.geometric_factors=None
+        else:
+            patch.geometric_factors=GeometricFactors(patch)
+            timer.add('geometric_factors')  # 6.9s
 
     def patches_in (self, x=None, y=None, z=None):
         pp=self.patches
