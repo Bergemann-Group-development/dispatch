@@ -42,11 +42,14 @@ MODULE mpi_mod
   integer:: output=2
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
-  ! Object that support atomic incremental counting across MPI ranks
+  ! Object that support atomic incremental counting across MPI ranks.  The
+  ! counter value %v reflects the actual counter value, but only at the very
+  ! moment when it was upated, not at the moment when it happens to be accessed.
   !-----------------------------------------------------------------------------
   type, public:: mpi_counter_t
     integer:: window
     integer(8):: i=0            ! shared window value
+    integer(8):: value=0        ! actual counter value, after update
   contains
     procedure, private:: init4
     procedure, private:: init8
@@ -232,10 +235,10 @@ SUBROUTINE end_mpi (self, label)
     end if
   end if
 #ifdef MPI
-  write (io_unit%mpi,*) 'calling MPI_Finalize'
+  write (io_unit%mpi,*) self%rank, wallclock(), 'calling MPI_Finalize'
   flush (io_unit%mpi)
   call MPI_Finalize (mpi_err)
-  write (io_unit%mpi,*) 'returned from MPI_Finalize'
+  write (io_unit%mpi,*) self%rank, wallclock(), 'returned from MPI_Finalize'
   flush (io_unit%mpi)
 #endif
   !call exit        ! avoid "stop" which may produce one output line per process
@@ -510,6 +513,8 @@ FUNCTION update8 (self, i, n) RESULT (j)
     call accumulate (i)
     !$omp end critical (mpi_cr)
   end if
+  !$omp atomic write
+  self%value = j + i
   if (i+j==0) then
     if (present(n)) then
       self%i = n
@@ -546,13 +551,13 @@ contains
                            j, 1, MPI_INTEGER8, master, offset, &
                               1, MPI_INTEGER8, MPI_SUM, self%window, mpi_err)
   call mpi%assert ('MPI_Accumulate', mpi_err)
-  end subroutine
 #else
   !$omp atomic capture
   j = self%i
   self%i = self%i + i
   !$omp end atomic
 #endif
+  end subroutine
 END FUNCTION update8
 
 END MODULE mpi_mod
