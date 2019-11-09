@@ -149,8 +149,10 @@ SUBROUTINE init (self, name)
       self%inputname = 'input.nml'
       self%rundir = trim(datadir)//self%sep                     ! data/
     end if
-    self%outputname = self%rundir                               ! compatibility
     call os%mkdir (trim(self%rundir))
+    self%outputname = self%rundir                               ! compatibility
+    write (filename,'(a,i5.5,"/")') trim(self%outputname), 0
+    call os%mkdir (trim(filename))
     !---------------------------------------------------------------------------
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
     open (io_unit%hash, file=trim(self%rundir)//'hash.log', form='formatted', status='unknown')
@@ -173,6 +175,29 @@ SUBROUTINE init (self, name)
     call ensure_dirname (self%inputdir)
     call ensure_dirname (self%outputname)
     !---------------------------------------------------------------------------
+    ! OMP specific setup; need to set io_unit in all threadprivate instances
+    !---------------------------------------------------------------------------
+    !$omp parallel
+    !$omp critical (open_cr)
+    if (omp%master) then
+      io_unit%verbose = verbose
+    else
+      io_unit%verbose = -2
+    end if
+    io_unit%rundir = self%rundir
+    io_unit%inputdir = self%inputdir    
+    io_unit%outputname = self%outputname
+    io_unit%do_validate = do_validate
+    !---------------------------------------------------------------------------
+    ! Open MPI rank and OMP thread-specific log files if omp_trace is true,
+    ! else fall back to io_unit%log being just MPI rank-specific
+    !---------------------------------------------------------------------------
+    if (omp_trace .and. omp%nthreads>1) then
+      io_unit%log = 110 + omp%mythread()
+    else
+      io_unit%log = io_unit%mpi
+    end if
+    !---------------------------------------------------------------------------
     ! Log-file names:
     ! -- io_unit%output     : stdout on rank 0, same as io_unit%mpi on rank 1-n
     ! -- io_unit%mpi        : data/run/rank_rrrrr.log
@@ -186,39 +211,7 @@ SUBROUTINE init (self, name)
     call open_rank_file (io_unit%dump      , ".dump" , 'unformatted')
     call open_rank_file (io_unit%validate  , ".val"  , 'unformatted')
     call open_rank_file (io_unit%dispatcher, ".disp" , 'formatted')
-    !---------------------------------------------------------------------------
-    ! OMP specific setup; need to set io_unit in all threadprivate instances
-    !---------------------------------------------------------------------------
-    !$omp parallel
-    !$omp critical (open_cr)
-    io_unit%rundir = self%rundir
-    io_unit%inputdir = self%inputdir    
-    io_unit%outputname = self%outputname
-    if (omp%master) then
-      io_unit%verbose = verbose
-    else
-      io_unit%verbose = -2
-    end if
-write(*,*) 'thread, master, verbose =', omp%thread, omp%master, verbose, io_unit%verbose
-    !---------------------------------------------------------------------------
-    ! Open MPI rank and OMP thread-specific log files, if omp_trace is true,
-    ! else fall back io_unit%log being just MPI rank-specific
-    !---------------------------------------------------------------------------
-    io_unit%do_validate = do_validate
-    write (filename,'(a,i5.5,"/")') trim(io%outputname), 0
-    call os%mkdir (trim(filename))
-    write (io_unit%threadbase,'(a,"thread_",i5.5,"_",i3.3)') &
-      trim(self%outputname), mpi%rank, omp%thread
-    write (io_unit%rankbase,'(a,"rank_",i5.5)') &
-      trim(self%outputname), mpi%rank
-    if (omp_trace .and. omp%nthreads>1) then
-      io_unit%log = 110+omp%mythread()
-      write (stdout,*) trim(io_unit%rankbase), 'rankbase'
-      filename = trim(io_unit%threadbase)//".log"
-      open (io_unit%log, file=filename, form='formatted', status='unknown')
-    else
-      io_unit%log = io_unit%mpi
-    end if
+    call open_rank_file (io_unit%log       , ".log"  , 'formatted', omp%mythread())
     !---------------------------------------------------------------------------
     ! For non-master MPI ranks, redirect log file output to rundir/rank_rrrrr.log
     !---------------------------------------------------------------------------
@@ -231,6 +224,9 @@ write(*,*) 'thread, master, verbose =', omp%thread, omp%master, verbose, io_unit
       'io_mod::init io_unit%log, omp%thread, io_unit%master, io_unit%verbose:', &
       io_unit%log, omp%thread, io_unit%master, io_unit%verbose
     !$omp end parallel
+    !---------------------------------------------------------------------------
+    ! stdout is the same as the the %output unit, and is not threadprivate
+    !---------------------------------------------------------------------------
     stdout = io_unit%output
     write (stdout,io_params)
     !---------------------------------------------------------------------------
@@ -278,11 +274,22 @@ contains
     l = len(trim(s))
     if (s(l:l) /= '/') s(l+1:l+1)='/'
   end subroutine
-  subroutine open_rank_file (unit, ext, form)
+  subroutine open_rank_file (unit, ext, form, thread)
     integer:: unit
+    integer, optional:: thread
     character(len=*):: ext, form
+    character(len=64):: filename
     !-----------------------------------------------------------------------------
-    write (filename,'(a,"rank_",i5.5,a)') trim(self%outputname), mpi%rank, ext
+    if (present(thread)) then
+      open (unit=unit, file=trim(filename), form=form, status='unknown')
+      write (io_unit%threadbase,'(a,"thread_",i5.5,"_",i3.3)') &
+        trim(self%outputname), mpi%rank, thread
+      filename = trim(io_unit%threadbase)//ext
+    else
+      write (io_unit%rankbase,'(a,"rank_",i5.5)') &
+        trim(self%outputname), mpi%rank
+      filename = trim(io_unit%rankbase)//ext
+    end if
     open (unit=unit, file=trim(filename), form=form, status='unknown')
   end subroutine
 END SUBROUTINE init
