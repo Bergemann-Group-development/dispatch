@@ -551,13 +551,13 @@ contains
                            j, 1, MPI_INTEGER8, master, offset, &
                               1, MPI_INTEGER8, MPI_SUM, self%window, mpi_err)
   call mpi%assert ('MPI_Accumulate', mpi_err)
+  end subroutine add
 #else
   !$omp atomic capture
   j = self%i
   self%i = self%i + i
   !$omp end atomic
 #endif
-  end subroutine
 END FUNCTION update8
 
 END MODULE mpi_mod
