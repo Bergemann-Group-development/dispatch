@@ -15,7 +15,6 @@ MODULE scaling_mod
     procedure:: myr
   end type
   type(scaling_t), public :: scaling
-  type(const_t), public:: code
 CONTAINS
 
 !===============================================================================
@@ -48,8 +47,7 @@ SUBROUTINE init (self)
   self%e = self%m*self%u**2                             ! energy
   self%mu = mu                                          ! menan molecular weight
   self%temp = self%mu*(cgs%m_u*self%u**2)/cgs%k_b       ! temperature for given mu
-  code%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
-  code%r_earth = cgs%r_earth/self%l
+  self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
     print 1,'     length: ',self%l
@@ -59,7 +57,7 @@ SUBROUTINE init (self)
     print 1,'    density: ',self%d
     print 1,'   pressure: ',self%p
     print 1,'     energy: ',self%e
-    print 1,'    gravity: ',code%grav
+    print 1,'    gravity: ',self%grav
     print 1,'temperature: ',self%temp
   1 format(1x,a,1p,e11.3)
   end if

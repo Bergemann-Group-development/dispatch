@@ -1041,9 +1041,12 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   else
     allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
     c =  minval(patch%mesh%d)*sqrt(scaling%grav/(math%pi*patch%gamma))
+    !print *, patch%id, scaling%grav, 'grav'
     test = sqrt(pg)/(c*d)
+    !print *, patch%id, patch%fminval(d), patch%fmaxval(d), 'min/max d'
+    !print *, patch%id, patch%fminval(test), patch%fmaxval(test), 'min/max L_J/ds'
     !---------------------------------------------------------------------------
-    ! The Jeans number if the unrefined part
+    ! The Jeans number in the unrefined part
     !---------------------------------------------------------------------------
     Jeans_num = minval(test, mask=patch%irefine <= 0)
     !---------------------------------------------------------------------------
