@@ -189,15 +189,6 @@ SUBROUTINE init (self, name)
     io_unit%outputname = self%outputname
     io_unit%do_validate = do_validate
     !---------------------------------------------------------------------------
-    ! Open MPI rank and OMP thread-specific log files if omp_trace is true,
-    ! else fall back to io_unit%log being just MPI rank-specific
-    !---------------------------------------------------------------------------
-    if (omp_trace .and. omp%nthreads>1) then
-      io_unit%log = 110 + omp%mythread()
-    else
-      io_unit%log = io_unit%mpi
-    end if
-    !---------------------------------------------------------------------------
     ! Log-file names:
     ! -- io_unit%output     : stdout on rank 0, same as io_unit%mpi on rank 1-n
     ! -- io_unit%mpi        : data/run/rank_rrrrr.log
@@ -211,7 +202,16 @@ SUBROUTINE init (self, name)
     call open_rank_file (io_unit%dump      , ".dump" , 'unformatted')
     call open_rank_file (io_unit%validate  , ".val"  , 'unformatted')
     call open_rank_file (io_unit%dispatcher, ".disp" , 'formatted')
-    call open_rank_file (io_unit%log       , ".log"  , 'formatted', omp%mythread())
+    !---------------------------------------------------------------------------
+    ! Open MPI rank and OMP thread-specific log files if omp_trace is true,
+    ! else fall back to io_unit%log being just MPI rank-specific
+    !---------------------------------------------------------------------------
+    if (omp_trace .and. omp%nthreads>1) then
+      io_unit%log = 110 + omp%mythread()
+      call open_rank_file (io_unit%log     , ".log"  , 'formatted', omp%mythread())
+    else
+      io_unit%log = io_unit%mpi
+    end if
     !---------------------------------------------------------------------------
     ! For non-master MPI ranks, redirect log file output to rundir/rank_rrrrr.log
     !---------------------------------------------------------------------------
