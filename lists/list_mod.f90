@@ -363,8 +363,6 @@ SUBROUTINE update_counts (self, link, delta)
   ! The counter updates below do not need to be atomic if the list is locked,
   ! but the penalty is minimal
   !-----------------------------------------------------------------------------
-  !$omp atomic update
-  self%n = self%n + delta
   if      (link%task%is_set (bits%virtual)) then
     !$omp atomic update
     self%nv = self%nv + delta
@@ -387,8 +385,8 @@ SUBROUTINE update_counts (self, link, delta)
     na = self%na
     call self%count_status ()
     if (n /= self%n .or. na /= self%na) then
-      write (stdout,*) &
-        'list_t%update_counts WARNING: inconsisten counts', &
+      write (stdout,'(a,2(2i6,2x))') &
+        'list_t%update_counts WARNING: inconsistent counts', &
         n, self%n, na, self%na
       self%n  = n
       self%na = na
