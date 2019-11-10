@@ -1121,6 +1121,7 @@ SUBROUTINE init_nbors (self, link)
   call trace%begin('list_t%init_nbors ', itimer=itimer)
   nullify (new_head, new_sort)
   n_add = 0
+  call self%lock%set ('init_nbors')
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
     !---------------------------------------------------------------------------
@@ -1160,6 +1161,7 @@ SUBROUTINE init_nbors (self, link)
     end if
     scan => scan%next                               ! continue search
   end do
+  call self%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
   if (self%verbose > 1 .or. link%task%id == io%id_debug) &
     write(io_unit%log,'(a,i6,i4,3x,3l1)') &
