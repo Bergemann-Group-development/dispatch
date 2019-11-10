@@ -17,6 +17,7 @@ MODULE solver_mod
   implicit none
   private
   type, public, extends(mhd_t):: solver_t
+    logical:: do_mhd=.false.
   contains
     procedure:: init
     procedure:: update

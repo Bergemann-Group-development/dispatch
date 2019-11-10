@@ -3,7 +3,7 @@
 #OPTS = debug
 #OPTS = full_debug
 #OPTS = optimized
-OPTS = optimized_diagnostics
+#OPTS = optimized_diagnostics
 
 # Default target and methods
 #PATCH           = dispatchers

@@ -221,6 +221,7 @@ SUBROUTINE output (self, patch, experiment_name)
     !$omp atomic read
     t = patch%t(it)
     if (t >= patch%out_next) then
+      call self%lock%set ('output2')
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' waitfor output'
       !-------------------------------------------------------------------------
@@ -234,7 +235,6 @@ SUBROUTINE output (self, patch, experiment_name)
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' locked output'
       do while (patch%t(it) >= patch%out_next)
-        call self%lock%set ('output2')
         if (created < patch%iout) then
           created = patch%iout
           call os%mkdir (trim(io%outputname))
@@ -306,10 +306,10 @@ SUBROUTINE output (self, patch, experiment_name)
             patch%iout, io%nwrite, count
         !-----------------------------------------------------------------------
         call os%mkdir_no (patch%iout)
-        call self%lock%unset ('output2')
       end do
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'
+      call self%lock%unset ('output2')
     end if
   end if    ! (io%needs_check)
   call trace%end (itimer)

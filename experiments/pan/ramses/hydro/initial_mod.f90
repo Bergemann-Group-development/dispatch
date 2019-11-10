@@ -58,6 +58,8 @@ SUBROUTINE init (self, solver, gamma)
     self%condition => single_solenoidal
   case ('single_compressive')
     self%condition => single_compressive
+  case ('compressive_shear')
+    self%condition => compressive_shear
   case ('single_advection')
     self%condition => single_advection
   case ('turbulence')
@@ -95,7 +97,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /initial_solenoidal_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /IC_solenoidal_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
@@ -104,9 +106,9 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     if (first_time) then
       first_time = .false.
       rewind (io%input)
-      read (io%input, initial_solenoidal_params)
+      read (io%input, IC_solenoidal_params)
       mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, initial_solenoidal_params)
+      if (io%master) write (*, IC_solenoidal_params)
     end if
     !$omp end critical (input_cr)
   end if
@@ -152,7 +154,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /initial_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /IC_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
@@ -161,9 +163,9 @@ SUBROUTINE single_compressive (self, m, ff, idx)
     if (first_time) then
       first_time = .false.
       rewind (io%input)
-      read (io%input, initial_compressive_params)
+      read (io%input, IC_compressive_params)
       mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, initial_compressive_params)
+      if (io%master) write (*, IC_compressive_params)
     end if
     !$omp end critical (input_cr)
   end if
@@ -193,6 +195,63 @@ SUBROUTINE single_compressive (self, m, ff, idx)
 END SUBROUTINE single_compressive
 
 !===============================================================================
+!> Initialize a single 3-D wavenumber, with non-random amplitude and zero phase
+!===============================================================================
+SUBROUTINE compressive_shear (self, m, ff, idx)
+  class(initial_t) :: self
+  type(index_t):: idx
+  class(mesh_t)    :: m(3)
+  real, dimension(:,:,:,:) :: ff
+  !.............................................................................
+  type(random_t) :: random
+  integer        :: ix, iy, iz
+  real(8)        :: kx, ky, kz
+  integer, save  :: seed=-33
+  logical, save  :: mhd=.false.
+  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
+  real(8), save  :: t_turn=0.1
+  logical, save  :: first_time=.true.
+  namelist /IC_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  integer, save  :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t:single_compressive', itimer=itimer)
+  if (first_time) then
+    !$omp critical (input_cr)
+    if (first_time) then
+      first_time = .false.
+      rewind (io%input)
+      read (io%input, IC_compressive_params)
+      mhd = mhd .and. any(b0 /= 0.0)
+      if (io%master) write (*, IC_compressive_params)
+    end if
+    !$omp end critical (input_cr)
+  end if
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+    kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
+    do iy=m(2)%lb,m(2)%ub
+      ky   =  pi2*k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + phi(2)
+      do ix=m(1)%lb,m(1)%ub
+        kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
+        ff(ix,iy,iz,idx%d ) = d0
+        ff(ix,iy,iz,idx%px) = u0(1)*sin(kx)
+        ff(ix,iy,iz,idx%py) = u0(2)*sin(kx)
+        ff(ix,iy,iz,idx%pz) = u0(3)*sin(kx)
+        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
+          half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
+        if (self%mhd) then
+          ff(ix,iy,iz,idx%bx) = b0(1)
+          ff(ix,iy,iz,idx%by) = b0(2)
+          ff(ix,iy,iz,idx%bz) = b0(3)
+        end if
+      end do
+    end do
+  end do
+  end associate
+  call trace_end (itimer)
+END SUBROUTINE compressive_shear
+
+!===============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
 !===============================================================================
 SUBROUTINE single_advection (self, m, ff, idx)
@@ -208,7 +267,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
-  namelist /initial_advection_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma
+  namelist /IC_advection_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_advection', itimer=itimer)
@@ -217,9 +276,9 @@ SUBROUTINE single_advection (self, m, ff, idx)
     if (first_time) then
       first_time = .false.
       rewind (io%input)
-      read (io%input, initial_advection_params)
+      read (io%input, IC_advection_params)
       mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, initial_advection_params)
+      if (io%master) write (*, IC_advection_params)
     end if
     !$omp end critical (input_cr)
   end if

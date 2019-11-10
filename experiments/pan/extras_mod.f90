@@ -66,6 +66,7 @@ MODULE extras_mod
     type(cooling_t):: cooling                                   ! cool
     class(gpatch_t), pointer:: gpatch => null()                 ! keep
   contains
+    procedure:: pre_init
     procedure:: init
     procedure:: init_task_list
     procedure:: dealloc
@@ -82,7 +83,7 @@ CONTAINS
 !> Initialize the modules that are to be included and used
 !===============================================================================
 SUBROUTINE pre_init (self)
-  class(extras_t):: self
+  class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   call self%selfgravity%pre_init(self)                          ! selfg
@@ -97,9 +98,9 @@ SUBROUTINE init (self)
   !.............................................................................
   call trace%begin ('extras_t%init')
   call self%forces%init (self%link)                             ! forces
-  allocate (self%trace_particles)                               ! tracep
-  self%connect%trace_particles => self%trace_particles          ! tracep
-  call self%trace_particles%add (self%link)                     ! tracep
+  !allocate (self%trace_particles)                               ! tracep
+  !self%connect%trace_particles => self%trace_particles          ! tracep
+  !call self%trace_particles%add (self%link)                     ! tracep
   call sink_particles%init                                      ! sinkp
   call self%cooling%init                                        ! cool
   call trace%end()
@@ -129,8 +130,8 @@ SUBROUTINE dealloc (self)
   !.............................................................................
   call trace%begin ('extras_t%dealloc')
   call self%forces%dealloc                                      ! forces
-  call self%trace_particles%dealloc                             ! tracep
-  deallocate (self%trace_particles)                             ! tracep
+  !call self%trace_particles%dealloc                             ! tracep
+  !deallocate (self%trace_particles)                             ! tracep
   call sink_particles%dealloc                                   ! sinkp
   call self%gpatch_t%dealloc
   call trace%end()
@@ -146,7 +147,7 @@ SUBROUTINE pre_update (self)
   self%gpatch => self                                           ! keep
   call self%forces%pre_update                                   ! forces
   call sink_particles%pre_update (self)                         ! sinkp
-  call self%trace_particles%update                              ! tracep
+  !call self%trace_particles%update                              ! tracep
   call self%selfgravity%pre_update (self)                       ! selfg
   call self%cooling%pre_update (self%gpatch)                    ! cool
   call trace%end()
@@ -159,7 +160,7 @@ SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
   call self%forces%post_update                                  ! forces
-  call self%trace_particles%post_update                         ! tracep
+  !call self%trace_particles%post_update                         ! tracep
   call self%selfgravity%post_update (self)                      ! selfg
 END SUBROUTINE post_update
 
