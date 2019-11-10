@@ -10,12 +10,12 @@ POSTCOMPILE = mv -f $(DEPDIR)/$*.Td $(DEPDIR)/$*.d
 
 # Depending on MPI use mpif90 or not
 ifeq ($(strip $(MPI)),mpi)
-  FC = mpiifort -module $(BUILD)
+  FC = mpiifort
 else
-  FC = ifort -module $(BUILD)
+  FC = ifort
 endif
-F90 = $(FC) -cpp -assume byterecl -diag-disable remark
-LD  = $(FC)
+F90 = $(FC) -cpp -assume byterecl -diag-disable remark -module $(BUILD)
+LD  = $(FC) -module $(BUILD)
 
 # Set openmp compiler flags if needed
 ifeq ($(strip $(OMP)),yes)
