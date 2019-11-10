@@ -118,11 +118,13 @@ SUBROUTINE update_counters (self, patch, incr)
   class(patch_t):: patch
   integer:: incr, count1, count2, iout
   !-----------------------------------------------------------------------------
+  call trace%begin ('data_io_t%update_counters')
+  call self%lock%set ('update_counters')
+  !-----------------------------------------------------------------------------
   ! Update the active counters, which may or may not already have been altered.
   ! The relevant counter index is most reliably determined by the very value
   ! that gets incremented in pdf_io_t%update(); i.e., patch%pdf_next.
   !-----------------------------------------------------------------------------
-  !!omp critical (update_counters_cr)
   if (pdf_io%on) then
     iout = nint(patch%pdf_next/pdf_io%out_time)
     call pdf_io%counters%update (      iout+1, io%nwrite, incr, count1)
@@ -134,10 +136,11 @@ SUBROUTINE update_counters (self, patch, incr)
   !-----------------------------------------------------------------------------
   io%ntask = io%ntask+incr
   io%nwrite = io%ntask
-!write(stdout,'(a,i6,6i4)') &
-!'update_counters: patch, incr, io%nwrite, count, iout =', &
-!patch%id, incr, io%nwrite, count1, count2, patch%iout, iout
-  !!omp end critical (update_counters_cr)
+!write(io_unit%log,'(a,f12.6,9i7)') &
+!'update_counters: clk, thread, id, incr, io%nwrite, counts, iouts =', &
+!wallclock(), omp%thread, patch%id, incr, io%nwrite, count1, count2, patch%iout, iout
+  call self%lock%unset ('update_counters')
+  call trace%end ()
 END SUBROUTINE update_counters
 
 !===============================================================================
@@ -231,6 +234,7 @@ SUBROUTINE output (self, patch, experiment_name)
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' locked output'
       do while (patch%t(it) >= patch%out_next)
+        call self%lock%set ('output2')
         if (created < patch%iout) then
           created = patch%iout
           call os%mkdir (trim(io%outputname))
@@ -240,11 +244,11 @@ SUBROUTINE output (self, patch, experiment_name)
         count = self%counters%decrement (patch%iout+1, io%nwrite)
         if (io%verbose > 0) &
           write (io_unit%log,*) 'count, nwrite =', count, io%nwrite
-  !write (stdout,*) 'id, time, iout, count, nwrite =', patch%id, patch%time, &
-  !patch%iout, count, io%nwrite
         append = (count < io%nwrite-1)
         !-----------------------------------------------------------------------
-        call self%lock%set ('output2')
+!write (io_unit%log,'(a,f12.6,2i6,f10.6,2i6,l4)') &
+!'io_data_t%output: clk, thread, id, time, count, nwrite, append =', &
+!wallclock(), omp%thread, patch%id, patch%time, count, io%nwrite, append
         if      (io%method=='direct') then
           call direct_io%output (patch)
         else if (io%method=='amr') then
@@ -290,7 +294,6 @@ SUBROUTINE output (self, patch, experiment_name)
         !-----------------------------------------------------------------------
         call patch%aux%output (patch%iout, patch%id)
         call output_nml (patch, append)
-        call self%lock%unset ('output2')
         !-----------------------------------------------------------------------
         patch%iout = patch%iout+1
         if (io%out_time==0.0) exit
@@ -303,6 +306,7 @@ SUBROUTINE output (self, patch, experiment_name)
             patch%iout, io%nwrite, count
         !-----------------------------------------------------------------------
         call os%mkdir_no (patch%iout)
+        call self%lock%unset ('output2')
       end do
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'
