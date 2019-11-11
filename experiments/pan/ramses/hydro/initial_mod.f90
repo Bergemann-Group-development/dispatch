@@ -92,7 +92,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
-  real(8)        :: kx, ky, kz
+  real(8)        :: kx, ky, kz, gamma_factor
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
@@ -112,6 +112,11 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
       if (io%master) write (*, IC_solenoidal_params)
     end if
     !$omp end critical (input_cr)
+  end if
+  if (self%gamma == 1d0) then
+    gamma_factor = csound**2
+  else
+    gamma_factor = csound**2/(self%gamma*(self%gamma-1d0))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -149,7 +154,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
-  real(8)        :: kx, ky, kz
+  real(8)        :: kx, ky, kz, gamma_factor
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
@@ -169,6 +174,11 @@ SUBROUTINE single_compressive (self, m, ff, idx)
       if (io%master) write (*, IC_compressive_params)
     end if
     !$omp end critical (input_cr)
+  end if
+  if (self%gamma == 1d0) then
+    gamma_factor = csound**2
+  else
+    gamma_factor = csound**2/(self%gamma*(self%gamma-1d0))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -230,9 +240,9 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
     !$omp end critical (input_cr)
   end if
   if (self%gamma == 1d0) then
-    gamma_factor = 1.0
+    gamma_factor = csound**2
   else
-    gamma_factor = 1.0/(gamma*(gamma-1))
+    gamma_factor = csound**2/(self%gamma*(self%gamma-1d0))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -265,7 +275,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
-  real(8)        :: kx, ky, kz
+  real(8)        :: kx, ky, kz, gamma_factor
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
@@ -284,6 +294,11 @@ SUBROUTINE single_advection (self, m, ff, idx)
       if (io%master) write (*, IC_advection_params)
     end if
     !$omp end critical (input_cr)
+  end if
+  if (self%gamma == 1d0) then
+    gamma_factor = csound**2
+  else
+    gamma_factor = csound**2/(self%gamma*(self%gamma-1d0))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub

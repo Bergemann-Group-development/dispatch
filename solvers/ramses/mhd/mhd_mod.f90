@@ -85,7 +85,7 @@ SUBROUTINE init (self)
   self%nv = 8
   self%kind = 'ramses_mhd_patch'
   call self%idx%init (5, self%mhd)
-  call self%gpatch_t%init
+  call self%patch_t%init
   !-----------------------------------------------------------------------------
   ! Read solver-relevant parameters and store in the task instance
   !-----------------------------------------------------------------------------
@@ -114,6 +114,7 @@ SUBROUTINE init (self)
     self%mesh(i)%h(self%idx%bx+i-1) = -0.5
   end do
   call non_ideal%init  
+  call self%gpatch_t%init
   self%unsigned(self%idx%d) = unsigned
   self%unsigned(self%idx%e) = unsigned
   self%pervolume(self%idx%px) = unsigned

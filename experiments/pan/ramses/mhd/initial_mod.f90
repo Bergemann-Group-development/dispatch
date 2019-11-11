@@ -18,9 +18,9 @@ MODULE initial_mod
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     integer:: seed
-    real:: gamma
     real:: d0
     logical:: mhd
+    real(8):: gamma=1d0
     real(8):: time=0d0
     character(len=64):: solver
     procedure(single_solenoidal), pointer:: condition=>null()
@@ -28,6 +28,7 @@ MODULE initial_mod
     procedure:: init
     procedure, nopass:: cleanup
   end type
+  integer, save:: verbose=0
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
   real, save:: csound=1.
 CONTAINS
@@ -52,12 +53,16 @@ SUBROUTINE init (self, solver, gamma)
     if (io%master) write (*, initial_params)
   end if
   !$omp end critical (input_cr)
+  if (present(gamma)) &
+    self%gamma = gamma
   self%solver = trim(solver)
   select case (type)
   case ('single_solenoidal')
     self%condition => single_solenoidal
   case ('single_compressive')
     self%condition => single_compressive
+  case ('compressive_shear')
+    self%condition => compressive_shear
   case ('single_advection')
     self%condition => single_advection
   case ('turbulence')
@@ -89,7 +94,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
-  real(8)        :: kx, ky, kz
+  real(8)        :: kx, ky, kz, gamma, gamma_factor
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
@@ -102,6 +107,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
+      gamma = self%gamma
       first_time = .false.
       rewind (io%input)
       read (io%input, initial_solenoidal_params)
@@ -109,6 +115,12 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
       if (io%master) write (*, initial_solenoidal_params)
     end if
     !$omp end critical (input_cr)
+  end if
+  self%gamma = gamma
+  if (self%gamma == 1d0) then
+    gamma_factor = csound**2
+  else
+    gamma_factor = csound**2/(self%gamma*(self%gamma-1d0))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -121,13 +133,16 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,idx%py) = a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,idx%pz) = a0(3)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
-          half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
-        if (self%mhd) then
-          ff(ix,iy,iz,idx%bx) = b0(1)*(sin(kx)+sin(ky))
-          ff(ix,iy,iz,idx%by) = b0(2)*(sin(kx)+sin(ky))
-          ff(ix,iy,iz,idx%bz) = b0(3)*(sin(kx)+sin(ky))
-        end if
+        ff(ix,iy,iz,idx%bx) = b0(1)
+        ff(ix,iy,iz,idx%by) = b0(2)
+        ff(ix,iy,iz,idx%bz) = b0(3)
+        ff(ix,iy,iz,idx%e ) = d0*csound**2*gamma_factor + &
+          half*(ff(ix,iy,iz,idx%d)*(ff(ix,iy,iz,idx%px)**2 + &
+                                    ff(ix,iy,iz,idx%py)**2 + &
+                                    ff(ix,iy,iz,idx%pz)**2)  &
+                                   +ff(ix,iy,iz,idx%bx)**2 + &
+                                   +ff(ix,iy,iz,idx%by)**2 + &
+                                   +ff(ix,iy,iz,idx%bz)**2)
       end do
     end do
   end do
@@ -146,7 +161,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
-  real(8)        :: kx, ky, kz
+  real(8)        :: kx, ky, kz, gamma, gamma_factor
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
@@ -159,6 +174,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
+      gamma = self%gamma
       first_time = .false.
       rewind (io%input)
       read (io%input, initial_compressive_params)
@@ -166,6 +182,12 @@ SUBROUTINE single_compressive (self, m, ff, idx)
       if (io%master) write (*, initial_compressive_params)
     end if
     !$omp end critical (input_cr)
+  end if
+  self%gamma = gamma
+  if (self%gamma == 1d0) then
+    gamma_factor = csound**2
+  else
+    gamma_factor = csound**2/(self%gamma*(self%gamma-1d0))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -178,19 +200,94 @@ SUBROUTINE single_compressive (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = u0(1)*sin(kx)
         ff(ix,iy,iz,idx%py) = u0(2)*sin(ky)
         ff(ix,iy,iz,idx%pz) = u0(3)*sin(kz)
-        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
-          half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
-        if (self%mhd) then
-          ff(ix,iy,iz,idx%bx) = b0(1)
-          ff(ix,iy,iz,idx%by) = b0(2)
-          ff(ix,iy,iz,idx%bz) = b0(3)
-        end if
+        ff(ix,iy,iz,idx%bx) = b0(1)
+        ff(ix,iy,iz,idx%by) = b0(2)
+        ff(ix,iy,iz,idx%bz) = b0(3)
+        ff(ix,iy,iz,idx%e ) = d0*csound**2*gamma_factor + &
+          half*(ff(ix,iy,iz,idx%d)*(ff(ix,iy,iz,idx%px)**2 + &
+                                    ff(ix,iy,iz,idx%py)**2 + &
+                                    ff(ix,iy,iz,idx%pz)**2)  &
+                                   +ff(ix,iy,iz,idx%bx)**2 + &
+                                   +ff(ix,iy,iz,idx%by)**2 + &
+                                   +ff(ix,iy,iz,idx%bz)**2)
       end do
     end do
   end do
   end associate
   call trace_end (itimer)
 END SUBROUTINE single_compressive
+
+!===============================================================================
+!> Initialize a single 3-D wavenumber, with non-random amplitude and zero phase
+!===============================================================================
+SUBROUTINE compressive_shear (self, m, ff, idx)
+  class(initial_t) :: self
+  type(index_t):: idx
+  class(mesh_t)    :: m(3)
+  real, dimension(:,:,:,:) :: ff
+  !.............................................................................
+  type(random_t) :: random
+  integer        :: ix, iy, iz
+  real(8)        :: kx, ky, kz,gamma_factor
+  integer, save  :: seed=-33
+  logical, save  :: mhd=.false.
+  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0
+  real, save     :: u0(0:3)=0.0, phi(3)=0.0
+  real(8), save  :: t_turn=0.1
+  logical, save  :: first_time=.true.
+  namelist /IC_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, &
+                                   t_turn, verbose
+  integer, save  :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t:single_compressive', itimer=itimer)
+  if (first_time) then
+    !$omp critical (input_cr)
+    if (first_time) then
+      first_time = .false.
+      gamma = self%gamma
+      rewind (io%input)
+      read (io%input, IC_compressive_params)
+      mhd = mhd .and. any(b0 /= 0.0)
+      if (io%master) write (*, IC_compressive_params)
+    end if
+    !$omp end critical (input_cr)
+  end if
+  self%gamma = gamma
+  if (self%gamma == 1d0) then
+    gamma_factor = csound**2
+  else
+    gamma_factor = csound**2/(self%gamma*(self%gamma-1d0))
+  end if
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+  do iz=m(3)%lb,m(3)%ub
+    do iy=m(2)%lb,m(2)%ub
+      do ix=m(1)%lb,m(1)%ub
+        kx   =  pi2*k(1)*(r1(ix)+m(1)%p)/m(1)%b + phi(1)
+        ff(ix,iy,iz,idx%d ) = d0
+        ff(ix,iy,iz,idx%px) = d0*(u0(1)*cos(kx) + u0(0))
+        ff(ix,iy,iz,idx%py) = d0*(u0(2)*cos(kx))
+        ff(ix,iy,iz,idx%pz) = d0*(u0(3)*cos(kx))
+        ff(ix,iy,iz,idx%bx) = b0(1)
+        ff(ix,iy,iz,idx%by) = b0(2)
+        ff(ix,iy,iz,idx%bz) = b0(3)
+        ff(ix,iy,iz,idx%e ) = d0*csound**2*gamma_factor + &
+          half*(ff(ix,iy,iz,idx%d)*(ff(ix,iy,iz,idx%px)**2 + &
+                                    ff(ix,iy,iz,idx%py)**2 + &
+                                    ff(ix,iy,iz,idx%pz)**2)  &
+                                   +ff(ix,iy,iz,idx%bx)**2 + &
+                                   +ff(ix,iy,iz,idx%by)**2 + &
+                                   +ff(ix,iy,iz,idx%bz)**2)
+      end do
+    end do
+  end do
+print *, shape(ff)
+print *, m(1)%lb,m(1)%ub, d0, u0(1), idx%px
+print *, m(2)%lb,m(2)%ub, d0, u0(2), idx%py
+print *, m(3)%lb,m(3)%ub, d0, u0(3), idx%pz
+print *, gamma_factor, minval(ff(:,:,:,idx%px)), maxval(ff(:,:,:,idx%px))
+  end associate
+  call trace_end (itimer)
+END SUBROUTINE compressive_shear
 
 !===============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase
@@ -203,7 +300,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
-  real(8)        :: kx, ky, kz
+  real(8)        :: kx, ky, kz, gamma, gamma_factor
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
   logical, save  :: first_time=.true.
@@ -216,12 +313,19 @@ SUBROUTINE single_advection (self, m, ff, idx)
     !$omp critical (input_cr)
     if (first_time) then
       first_time = .false.
+      gamma = self%gamma
       rewind (io%input)
       read (io%input, initial_advection_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, initial_advection_params)
     end if
     !$omp end critical (input_cr)
+  end if
+  self%gamma = gamma
+  if (self%gamma == 1d0) then
+    gamma_factor = csound**2
+  else
+    gamma_factor = csound**2/(self%gamma*(self%gamma-1d0))
   end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -234,13 +338,16 @@ SUBROUTINE single_advection (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = d0*u0(1)
         ff(ix,iy,iz,idx%py) = d0*u0(2)
         ff(ix,iy,iz,idx%pz) = d0*u0(3)
-        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
-          half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
-        if (self%mhd) then
-          ff(ix,iy,iz,idx%bx) = b0(3)*sin(kz)
-          ff(ix,iy,iz,idx%by) = b0(1)*sin(kx)
-          ff(ix,iy,iz,idx%bz) = b0(2)*sin(ky)
-        end if
+        ff(ix,iy,iz,idx%bx) = b0(1)
+        ff(ix,iy,iz,idx%by) = b0(2)
+        ff(ix,iy,iz,idx%bz) = b0(3)
+        ff(ix,iy,iz,idx%e ) = d0*csound**2*gamma_factor + &
+          half*(ff(ix,iy,iz,idx%d)*(ff(ix,iy,iz,idx%px)**2 + &
+                                    ff(ix,iy,iz,idx%py)**2 + &
+                                    ff(ix,iy,iz,idx%pz)**2)  &
+                                   +ff(ix,iy,iz,idx%bx)**2 + &
+                                   +ff(ix,iy,iz,idx%by)**2 + &
+                                   +ff(ix,iy,iz,idx%bz)**2)
       end do
     end do
   end do
