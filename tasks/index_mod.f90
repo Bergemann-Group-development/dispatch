@@ -6,6 +6,7 @@
 !===============================================================================
 MODULE index_mod
   USE io_mod
+  USE trace_mod
   implicit none
   private
   type, public:: index_t
@@ -29,6 +30,7 @@ SUBROUTINE init (self, ie, mhd)
   integer:: ie
   logical:: mhd
   !-----------------------------------------------------------------------------
+  call trace%begin ('index_t%init')
   if (ie==2) then
     self%d  = 1
     self%e  = 2
@@ -54,6 +56,7 @@ SUBROUTINE init (self, ie, mhd)
     self%bz = -1
   end if
   call self%copy
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================

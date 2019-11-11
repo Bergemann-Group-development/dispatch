@@ -53,8 +53,10 @@ SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
   call trace%begin ('solver_t%init')
+  call self%hd_t%pre_init
   call self%hd_t%init
   call self%extras_t%init
+  call self%hd_t%post_init
   call trace%end()
 END SUBROUTINE init
 

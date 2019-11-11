@@ -79,8 +79,14 @@ SUBROUTINE init (self)
   self%ng = 2
   self%kind = 'ramses_hd_patch'
   if (self%nv == 0) self%nv = 5
+  !-----------------------------------------------------------------------------
+  ! Here we call patch_t%init directly, to initialize %mem and %mesh
+  !-----------------------------------------------------------------------------
   call self%idx%init (5, self%mhd)
-  call self%gpatch_t%init
+  call self%patch_t%init
+  !-----------------------------------------------------------------------------
+  ! Ramses specific things
+  !-----------------------------------------------------------------------------
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -106,6 +112,11 @@ SUBROUTINE init (self)
   self%pervolume(self%idx%px) = unsigned
   self%pervolume(self%idx%py) = unsigned
   self%pervolume(self%idx%pz) = unsigned
+  !-----------------------------------------------------------------------------
+  ! Calling gpatch_t%init, which may call ICs, must wait until all properties
+  ! of patches (mesh, idx, patch_t%h staggering) are in place.
+  !-----------------------------------------------------------------------------
+  call self%gpatch_t%init
   call trace%end()
 END SUBROUTINE init
 

@@ -53,6 +53,7 @@ MODULE mhd_mod
     procedure:: gas_pressure_sub
   end type
   logical, save:: unsigned=.true.
+  logical, save:: do_test=.false.
   logical, save:: do_smooth=.false.
   logical, save:: do_maxwell = .true.
   logical, save:: do_temperature = .false.
@@ -74,7 +75,8 @@ SUBROUTINE pre_init (self)
   logical, save:: mhd=.false.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner
+    do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner, &
+    do_test
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
   !$omp critical (input_cr)
@@ -143,7 +145,6 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
-  call self%gpatch_t%init
   self%type = 'mhd_t'
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
@@ -154,6 +155,7 @@ SUBROUTINE init (self)
       print '("h:",8f5.2)', self%mesh(i)%h
     end do
   end if
+  call self%patch_t%init
   select case(divb_cleaner)
   case(1)
     self%divb_clean => divb_clean1
@@ -162,6 +164,7 @@ SUBROUTINE init (self)
   case default
     call io%abort('mhd_mod:: divb cleaner method not understood')
   end select
+  call self%gpatch_t%init
   self%unsigned(self%idx%d)  = unsigned
   self%pervolume(self%idx%e) = unsigned
  call trace%end()

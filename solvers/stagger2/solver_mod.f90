@@ -34,8 +34,8 @@ MODULE solver_mod
     procedure:: log_pressure => void
     !procedure:: gas_pressure_ngz
     !procedure:: cell_gas_pressure
-    procedure:: gas_pressure
-    procedure:: gas_temperature
+    !procedure:: gas_pressure
+    !procedure:: gas_temperature
     !procedure:: gas_temperature_ngz
     !procedure:: cell_gas_temperature
     procedure:: velocity_magnitude => void
@@ -52,16 +52,16 @@ MODULE solver_mod
 CONTAINS
 
 !===============================================================================
-!> Organize calls to the extras and the hydro solver
+!> Organize calls to the extras and the hydro solver. 
 !===============================================================================
 SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
+  call self%mhd_t%pre_init              ! calls self%mhd_t%pre_init
   call self%mhd_t%pre_init
-  call self%extras_t%pre_init
-  !
-  call self%mhd_t%init
+  call self%mhd_t%init                  ! calls self%gpatch_t%init
   call self%extras_t%init
+  call self%mhd_t%post_init
   call validate%init
 END SUBROUTINE init
 
@@ -91,11 +91,7 @@ SUBROUTINE update (self)
   call trace%begin ('solver_t%update')
   call self%mhd_t%pre_update
   call validate%check (self, d, 'before update')
-  if (self%do_mhd) then
-    call self%mhd_t%update
-  else
-    call self%output
-  end if
+  call self%mhd_t%update
   call validate%check (self, d, ' after update')
   call self%mhd_t%post_update
   end associate
@@ -256,39 +252,39 @@ END SUBROUTINE ss2e
 !> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
 !===============================================================================
-FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
-  class(solver_t):: self
-  real, dimension(:,:,:), pointer:: lnd, ss, d, s
-  optional:: lnd, ss
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-  !-----------------------------------------------------------------------------
-  if (present(lnd)) then
-    pg = exp(lnd*self%gamma)*exp(ss*(self%gamma-1d0))
-  else
-    d => self%mem(:,:,:,self%idx%d,self%it,1)
-    s => self%mem(:,:,:,self%idx%s,self%it,1)
-    pg = d**self%gamma*exp(s/d*(self%gamma-1d0))
-  end if
-END FUNCTION gas_pressure
+!FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
+!  class(solver_t):: self
+!  real, dimension(:,:,:), pointer:: lnd, ss, d, s
+!  optional:: lnd, ss
+!  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+!  !-----------------------------------------------------------------------------
+!  if (present(lnd)) then
+!    pg = exp(lnd*self%gamma)*exp(ss*(self%gamma-1d0))
+!  else
+!    d => self%mem(:,:,:,self%idx%d,self%it,1)
+!    s => self%mem(:,:,:,self%idx%s,self%it,1)
+!    pg = d**self%gamma*exp(s/d*(self%gamma-1d0))
+!  end if
+!END FUNCTION gas_pressure
 
 !===============================================================================
 !> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
 !===============================================================================
-FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
-  class(solver_t):: self
-  real, dimension(:,:,:), pointer:: lnd, ss
-  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
-  !-----------------------------------------------------------------------------
-  associate (d => self%mem(:,:,:,  1,self%it,1))
-  tmp = self%gas_pressure()/d
-  if (io%verbose > 2) then
-    if (any(tmp<0)) then
-      call io%abort ("solver_t%gas_temperature: T<0")
-    end if
-  end if
-  end associate
-END FUNCTION gas_temperature
+!FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
+!  class(solver_t):: self
+!  real, dimension(:,:,:), pointer:: lnd, ss
+!  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: tmp
+!  !-----------------------------------------------------------------------------
+!  associate (d => self%mem(:,:,:,  1,self%it,1))
+!  tmp = self%gas_pressure()/d
+!  if (io%verbose > 2) then
+!    if (any(tmp<0)) then
+!      call io%abort ("solver_t%gas_temperature: T<0")
+!    end if
+!  end if
+!  end associate
+!END FUNCTION gas_temperature
 
 !===============================================================================
 SUBROUTINE log_density (self, v)

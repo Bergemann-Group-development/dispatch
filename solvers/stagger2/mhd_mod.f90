@@ -54,6 +54,7 @@ MODULE mhd_mod
   integer:: verbose=0
   logical, save:: flop_count=.false.
   logical, save:: unsigned=.true.
+  logical, save:: do_test=.false.
   logical, save:: do_2nd_div=.true.
   logical, save:: do_smooth=.false.
   logical, save:: do_maxwell=.true.
@@ -75,7 +76,8 @@ SUBROUTINE pre_init (self)
   logical, save:: mhd=.false.
   character(len=16), save:: eos
   namelist /stagger_params/ nu, courant, gamma, csound, cdtd, hardwire, eos, &
-    do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner
+    do_smooth, unsigned, do_maxwell, do_temperature, verbose, divb_cleaner, &
+    do_test
   !----------------------------------------------------------------------------
   call trace%begin('mhd_t%pre_init')
   !$omp critical (input_cr)
@@ -146,7 +148,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
-  call self%gpatch_t%init
+  call self%idx%init (5,self%mhd)
+  call self%patch_t%init
   self%type = 'mhd_t'
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
@@ -160,13 +163,19 @@ SUBROUTINE init (self)
   self%unsigned(self%idx%d)  = unsigned
   self%pervolume(self%idx%s) = unsigned
   !-----------------------------------------------------------------------------
+  ! Now the setup is complete enough to call gpatch_t%init, for possible ICs
+  !-----------------------------------------------------------------------------
+  call self%gpatch_t%init
+  !-----------------------------------------------------------------------------
   ! Self tests, only on one thread
   !-----------------------------------------------------------------------------
   !$omp critical (test_cr)
   if (first_time) then
     first_time = .false.
-    call stagger_test
-    call self%test
+    if (do_test) then
+      call stagger_test
+      call self%test
+    end if
   end if
   !$omp end critical (test_cr)
   call trace%end()

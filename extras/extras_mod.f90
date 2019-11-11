@@ -120,9 +120,6 @@ SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
   !call self%forces%init (self)                                         ! forces
-  !-----------------------------------------------------------------------------
-  ! Allocate a trace_particles data type, connect a pointer, and initialize
-  !-----------------------------------------------------------------------------
   !allocate(self%rt)                                                    ! RT
   !call self%rt%pre_init (self%link)                                    ! RT
   !allocate (self%trace_particles)                                      ! tracep
@@ -140,10 +137,10 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
+  !-----------------------------------------------------------------------------
+  ! Optional inits
+  !-----------------------------------------------------------------------------
   !call self%forces%init (self)                                         ! forces
-  !-----------------------------------------------------------------------------
-  ! Allocate a trace_particles data type, connect a pointer, and initialize
-  !-----------------------------------------------------------------------------
   !call self%newton%init (self%link)                                    ! Newton
   !allocate (self%trace_particles)                                      ! tracep
   !self%connect%trace_particles => self%trace_particles                 ! tracep

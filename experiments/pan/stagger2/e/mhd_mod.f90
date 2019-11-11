@@ -119,7 +119,7 @@ SUBROUTINE init (self)
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
   call self%idx%init (5, self%mhd)
-  call self%gpatch_t%init
+  call self%patch_t%init
   self%type = 'mhd_t'
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
@@ -132,6 +132,7 @@ SUBROUTINE init (self)
   end if
   self%unsigned(self%idx%d)  = unsigned
   self%pervolume(self%idx%s) = unsigned
+  call self%gpatch_t%init
   call self%force%init (self%kind, self%id, self%mesh)
  call trace%end()
 END SUBROUTINE init
@@ -505,6 +506,10 @@ SUBROUTINE update (self)
   ! conditions. If another call is placed at an earlier point in the task handling
   ! the call here will have no effect, since out_next has already been updated.
   !-----------------------------------------------------------------------------
+!print *, self%id, self%fmaxval(self%mem(:,:,:,1,1,1)), 'mhd_t%update 1'
+!print *, self%id, self%fmaxval(self%mem(:,:,:,2,1,1)), 'mhd_t%update 2'
+!print *, self%id, self%fmaxval(self%mem(:,:,:,3,1,1)), 'mhd_t%update 3'
+!print *, self%id, self%fmaxval(self%mem(:,:,:,4,1,1)), 'mhd_t%update 4'
   call self%output
   if (self%gamma==1d0) then
     self%mem(:,:,:,self%idx%e,self%it,1) = &

@@ -277,6 +277,7 @@ SUBROUTINE init_zeus (self)
   self%idx%tt=-1 ; self%idx%s=-1; self%idx%dphi=-1
   self%idx%ex=11 ; self%idx%ey=12; self%idx%ez=13
   io%nv = 10 ! do not write EMFs to output
+  call self%patch_t%init()
   call self%gpatch_t%init()
   self%idx%phi=10 ! ZEUS always has a slot for the grav. pot. included (even if not used).
   do i=1,3

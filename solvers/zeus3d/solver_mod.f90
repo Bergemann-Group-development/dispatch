@@ -66,8 +66,10 @@ CONTAINS
 SUBROUTINE init (self)
   class(solver_t) :: self
   !.....................................................................
+  call self%mhd_t%pre_init
   call self%mhd_t%init
   call self%extras_t%init
+  call self%mhd_t%post_init
   call validate%init
 END SUBROUTINE init
 
