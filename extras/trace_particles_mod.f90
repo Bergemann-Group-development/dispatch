@@ -104,7 +104,7 @@ SUBROUTINE dealloc (self)
   class(trace_particles_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('trace_particles_t%dealloc')
-  if (allocated(self%v)) then
+  if (self%on .and. allocated(self%v)) then
     call io%bits_mem (-storage_size(self%v), &
                       product(shape(self%v)), '-tracep%v')
     deallocate (self%v)
@@ -443,6 +443,7 @@ SUBROUTINE post_update (self)
   ! protect the import lists with OMP locks, while they are being updated, and
   ! while they are being read.
   !----------------------------------------------------------------------------
+  if (.not. self%on) return
   associate (patch => self%patch)
   if (self%export%n > 0) then
     if (self%verbose > 0) &

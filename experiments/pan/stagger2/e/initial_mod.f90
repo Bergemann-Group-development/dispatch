@@ -61,6 +61,8 @@ SUBROUTINE init (self, solver, gamma)
     self%condition => single_solenoidal
   case ('single_compressive')
     self%condition => single_compressive
+  case ('compressive_shear')
+    self%condition => compressive_shear
   case ('single_advection')
     self%condition => single_advection
   case ('turbulence')
@@ -201,6 +203,83 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   end associate
   call trace_end (itimer)
 END SUBROUTINE single_compressive
+
+!===============================================================================
+!> Initialize a single 3-D wavenumber, with non-random amplitude and zero phase
+!===============================================================================
+SUBROUTINE compressive_shear (self, m, ff, idx)
+  class(initial_t) :: self
+  type(index_t):: idx
+  class(mesh_t)    :: m(3)
+  real, dimension(:,:,:,:) :: ff
+  !.............................................................................
+  type(random_t) :: random
+  integer        :: ix, iy, iz
+  real(8)        :: kx, ky, kz, gamma, gamma_factor
+  integer, save  :: seed=-33, verbose=0
+  logical, save  :: mhd=.false.
+  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
+  real(8), save  :: t_turn=0.1
+  logical, save  :: first_time=.true.
+  namelist /IC_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, &
+                                   t_turn, verbose
+  integer, save  :: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace_begin('initial_t:compressive_shear', itimer=itimer)
+  gamma = self%gamma
+  if (first_time) then
+    !$omp critical (input_cr)
+    if (first_time) then
+      rewind (io%input)
+      read (io%input, IC_compressive_params)
+      mhd = mhd .and. any(b0 /= 0.0)
+      if (io%master) write (*, IC_compressive_params)
+      write(stdout,'(a,1p,10g12.4)') 'compressive_shear: pi2, box, stag =', &
+        pi2, m(1)%b, m(1)%h
+    end if
+    !$omp end critical (input_cr)
+  end if
+  self%gamma = gamma
+  if (gamma==1.00) then
+    gamma_factor = 1.0
+  else
+    gamma_factor = 1.0/(gamma*(gamma-1))
+  end if
+  associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
+print *, idx%d, idx%px, m(1)%h
+  do iz=m(3)%lb,m(3)%ub
+    do iy=m(2)%lb,m(2)%ub
+      do ix=m(1)%lb,m(1)%ub
+        kx   =  pi2*k(1)*(r1(ix)+m(1)%p+m(1)%h(idx%px)*m(1)%d)/m(1)%b + phi(1)
+        ff(ix,iy,iz,idx%d ) = d0
+        ff(ix,iy,iz,idx%px) = u0(1)*cos(kx)
+        kx   =  pi2*k(1)*(r1(ix)+m(1)%p)/m(1)%b + phi(1)
+        ff(ix,iy,iz,idx%py) = u0(2)*cos(kx)
+        ff(ix,iy,iz,idx%pz) = u0(3)*cos(kx)
+        ff(ix,iy,iz,idx%e ) = d0*csound**2*gamma_factor + &
+          0.5*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
+        if (self%mhd) then
+          ff(ix,iy,iz,idx%bx) = b0(1)
+          ff(ix,iy,iz,idx%by) = b0(2)
+          ff(ix,iy,iz,idx%bz) = b0(3)
+        end if
+        if (first_time .and. verbose > 1 .and. iy==m(2)%li .and. iz==m(3)%li) &
+          write (stdout,'(a,i4,1p,4g12.3,l4)') 'compressive_shear:', &
+            ix, ff(ix,iy,iz,idx%d), ff(ix,iy,iz,idx%px), ff(ix,iy,iz,idx%py), &
+            ff(ix,iy,iz,idx%e), self%mhd
+      end do
+    end do
+  end do
+  end associate
+  if (first_time) then
+    !$omp critical (input_cr)
+    if (first_time) then
+      first_time = .false.
+    end if
+    !$omp end critical (input_cr)
+  end if
+  call trace_end (itimer)
+END SUBROUTINE compressive_shear
 
 !===============================================================================
 !> Initialize a single 3-D wavenumber, with random amplitude and phase

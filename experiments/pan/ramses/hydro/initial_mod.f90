@@ -28,6 +28,7 @@ MODULE initial_mod
     procedure:: init
     procedure, nopass:: cleanup
   end type
+  integer, save:: verbose=0
   real, save, pointer, dimension(:,:,:,:):: buffer => null()
   real, save:: csound=1.
 CONTAINS
@@ -205,13 +206,15 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   !.............................................................................
   type(random_t) :: random
   integer        :: ix, iy, iz
-  real(8)        :: kx, ky, kz
+  real(8)        :: kx, ky, kz,gamma_factor
   integer, save  :: seed=-33
   logical, save  :: mhd=.false.
-  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0, u0(3)=0.0, phi(3)=0.0
+  real, save     :: a0(3)=0.1, k(3)=1.0, d0=1.0, s0=0.0, b0(3)=0.0
+  real, save     :: u0(0:3)=0.0, phi(3)=0.0
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
-  namelist /IC_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
+  namelist /IC_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, &
+                                   t_turn, verbose
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
@@ -226,24 +229,24 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
     end if
     !$omp end critical (input_cr)
   end if
+  if (self%gamma == 1d0) then
+    gamma_factor = 1.0
+  else
+    gamma_factor = 1.0/(gamma*(gamma-1))
+  end if
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
-    kz   =  pi2*k(3)*(r3(iz)+m(3)%p-0.5d0*m(3)%s)/m(3)%b + phi(3)
     do iy=m(2)%lb,m(2)%ub
-      ky   =  pi2*k(2)*(r2(iy)+m(2)%p-0.5d0*m(2)%s)/m(2)%b + phi(2)
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*k(1)*(r1(ix)+m(1)%p-0.5d0*m(1)%s)/m(1)%b + phi(1)
+        kx   =  pi2*k(1)*(r1(ix)+m(1)%p)/m(1)%b + phi(1)
         ff(ix,iy,iz,idx%d ) = d0
-        ff(ix,iy,iz,idx%px) = u0(1)*sin(kx)
-        ff(ix,iy,iz,idx%py) = u0(2)*sin(kx)
-        ff(ix,iy,iz,idx%pz) = u0(3)*sin(kx)
-        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
-          half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
-        if (self%mhd) then
-          ff(ix,iy,iz,idx%bx) = b0(1)
-          ff(ix,iy,iz,idx%by) = b0(2)
-          ff(ix,iy,iz,idx%bz) = b0(3)
-        end if
+        ff(ix,iy,iz,idx%px) = u0(1)*cos(kx) + u0(0)
+        ff(ix,iy,iz,idx%py) = u0(2)*cos(kx)
+        ff(ix,iy,iz,idx%pz) = u0(3)*cos(kx)
+        ff(ix,iy,iz,idx%e ) = d0*csound**2*gamma_factor + &
+          half*ff(ix,iy,iz,idx%d)*(ff(ix,iy,iz,idx%px)**2 + &
+                                   ff(ix,iy,iz,idx%py)**2 + &
+                                   ff(ix,iy,iz,idx%pz)**2)
       end do
     end do
   end do
