@@ -2858,7 +2858,7 @@ END FUNCTION get_overlap
 SUBROUTINE init_level (self)
   class(patch_t):: self
   !-----------------------------------------------------------------------------
-  self%level = minval(nint(log(self%box/self%ds) / &
+  self%level = maxval(nint(log(self%box/self%ds) / &
     log(real(self%refine_ratio))), mask=self%n > 1)
 END SUBROUTINE init_level
 

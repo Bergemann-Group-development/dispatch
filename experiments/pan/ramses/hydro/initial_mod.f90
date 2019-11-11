@@ -224,7 +224,7 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
   namelist /IC_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, &
-                                   t_turn, verbose
+                                   phi, t_turn, verbose
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)

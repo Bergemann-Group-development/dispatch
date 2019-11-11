@@ -1052,6 +1052,10 @@ subroutine cmpflxm(self)
         qleft (i,4) = qm(i,3,1,j,k); qright(i,4) = qp(i,3,1,j,k)
         qleft (i,5) = qm(i,4,1,j,k); qright(i,5) = qp(i,4,1,j,k)
       end do
+if (j==4 .and. k==4) then
+print '(a,i4,1p,20g10.2)', 'd', self%id, qleft(lb(1):ub(1),1)
+print '(a,i4,1p,20g10.2)', 'p', self%id, qleft(lb(1):ub(1),3)
+end if
       call solver (self,self%mesh(1)%gn,qleft,qright,fgdnv,error,detailed_timer)
       if (error) call error_handler('x', j, k, lb(1), ub(1))
       do i = lb(1),ub(1)
