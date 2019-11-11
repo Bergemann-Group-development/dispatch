@@ -56,7 +56,6 @@ SUBROUTINE init (self)
   call self%hd_t%pre_init
   call self%hd_t%init
   call self%extras_t%init
-  call self%hd_t%post_init
   call trace%end()
 END SUBROUTINE init
 
