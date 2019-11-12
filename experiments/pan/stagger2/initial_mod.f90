@@ -148,11 +148,11 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io%input)
       read (io%input, IC_solenoidal_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, IC_solenoidal_params)
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if
@@ -211,11 +211,11 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io%input)
       read (io%input, IC_compressive_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, IC_compressive_params)
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if
@@ -275,13 +275,13 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io%input)
       read (io%input, IC_compressive_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, IC_compressive_params)
       write(stdout,'(a,1p,10g12.4)') 'compressive_shear: pi2, box, stag =', &
         pi2, m(1)%b, m(1)%h
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if
@@ -338,11 +338,11 @@ SUBROUTINE single_advection (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io%input)
       read (io%input, IC_advection_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, IC_advection_params)
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if

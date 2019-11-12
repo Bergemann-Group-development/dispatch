@@ -243,12 +243,12 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       gamma = self%gamma
       rewind (io%input)
       read (io%input, IC_compressive_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, IC_compressive_params)
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if
@@ -321,12 +321,12 @@ SUBROUTINE single_advection (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       gamma = self%gamma
       rewind (io%input)
       read (io%input, initial_advection_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, initial_advection_params)
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if
@@ -385,11 +385,13 @@ SUBROUTINE exa256 (self, m, ff, idx)
   ff(:,:,:,:) = 0.0
   allocate (u(m(1)%n))
   allocate (d(m(1)%n))
+  !$omp critical (input_cr)
   if (first_time) then
-    first_time = .false.
     open (io_unit%data, file='data/exa256/t0.02.raw', form='unformatted', &
       access='direct', recl=m(1)%n*4)
+    first_time = .false.
   end if
+  !$omp end critical (input_cr)
   self%time = 0.02
   ix=m(1)%p/m(1)%d+0.5-m(1)%n/2
   iy=m(2)%p/m(2)%d+0.5-m(2)%n/2
@@ -458,7 +460,6 @@ SUBROUTINE raw (self, m, ff, idx)
   ! will be made, so the buffer can be deallocated when all patches are done
   !-----------------------------------------------------------------------------
   if (first_time) then
-    first_time = .false.
     n = nint(m%b/m%d)
     allocate (buffer(n(1),n(2),n(3),mv))
     open (io_unit%data, file='data/exa256/t0.02.raw', form='unformatted', &
@@ -467,6 +468,7 @@ SUBROUTINE raw (self, m, ff, idx)
       read (io_unit%data, rec=iv) buffer(:,:,:,iv)
     end do
     close (io_unit%data)
+    first_time = .false.
   end if
   i = 1 + nint(m%p/m%d) - m%n/2                         ! index offsets
   jv(1) = idx%d                                           ! variable index translation

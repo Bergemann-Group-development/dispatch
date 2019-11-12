@@ -64,14 +64,12 @@ SUBROUTINE update (self)
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
+  !$omp critical (cleanup_cr)
   if (first_time) then
-    !$omp critical (cleanup_cr)
-    if (first_time) then
-      first_time = .false.
-      call self%initial%cleanup
-    end if
-    !$omp end critical (cleanup_cr)
+    first_time = .false.
+    call self%initial%cleanup
   end if
+ !$omp end critical (cleanup_cr)
   call self%solver_t%update
   call trace%end()
 END SUBROUTINE update

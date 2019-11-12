@@ -34,10 +34,10 @@ SUBROUTINE init (self)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io_unit%input)
       read (io%input, flux_params, iostat=iostat)
       write (io%output, flux_params)
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if

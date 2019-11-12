@@ -85,16 +85,14 @@ FUNCTION single_solenoidal (self, time, d, p, Ux, Uy, Uz, m) RESULT (ff)
   namelist /force_solenoidal_params/ k, a0, t_turn
   !-----------------------------------------------------------------------------
   call trace_begin('force_t%single_solenoidal')
+  !$omp critical (input_cr)
   if (first_time) then
-    !$omp critical (input_cr)
-    if (first_time) then
-      first_time = .false.
-      rewind (io%input)
-      read (io%input, force_solenoidal_params, iostat=iostat)
-      if (io%master) write (*, force_solenoidal_params)
-    end if
-    !$omp end critical (input_cr)
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, force_solenoidal_params, iostat=iostat)
+    if (io%master) write (*, force_solenoidal_params)
   end if
+  !$omp end critical (input_cr)
   if (time >= self%t_save) then
     self%t_save = self%t_save + t_turn
     self%a = a0*2./3.*(1.0+0.1*self%random%ran3())/t_turn

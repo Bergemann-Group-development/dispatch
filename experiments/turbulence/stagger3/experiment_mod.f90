@@ -74,13 +74,11 @@ SUBROUTINE update (self)
   class(link_t), pointer:: link
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
+  !$omp critical (init_cr)
   if (first_time) then
-    !$omp critical (init_cr)
-    if (first_time) then
-      first_time = .false.
-      call self%initial%cleanup
-    end if
-    !$omp end critical (init_cr)
+    first_time = .false.
+    call self%initial%cleanup
+  end if
   end if
   call self%mhd_t%update
   call trace_end

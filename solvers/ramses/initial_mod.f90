@@ -106,17 +106,15 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
+  !$omp critical (input_cr)
   if (first_time) then
-    !$omp critical (input_cr)
-    if (first_time) then
-      first_time = .false.
-      rewind (io%input)
-      read (io%input, initial_solenoidal_params)
-      mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, initial_solenoidal_params)
-    end if
-    !$omp end critical (input_cr)
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, initial_solenoidal_params)
+    mhd = mhd .and. any(b0 /= 0.0)
+    if (io%master) write (*, initial_solenoidal_params)
   end if
+  !$omp end critical (input_cr)
   self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -161,17 +159,15 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
+  !$omp critical (input_cr)
   if (first_time) then
-    !$omp critical (input_cr)
-    if (first_time) then
-      first_time = .false.
-      rewind (io%input)
-      read (io%input, initial_compressive_params)
-      mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, initial_compressive_params)
-    end if
-    !$omp end critical (input_cr)
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, initial_compressive_params)
+    mhd = mhd .and. any(b0 /= 0.0)
+    if (io%master) write (*, initial_compressive_params)
   end if
+  !$omp end critical (input_cr)
   self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub
@@ -215,17 +211,15 @@ SUBROUTINE single_advection (self, m, ff, idx)
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_advection', itimer=itimer)
+  !$omp critical (input_cr)
   if (first_time) then
-    !$omp critical (input_cr)
-    if (first_time) then
-      first_time = .false.
-      rewind (io%input)
-      read (io%input, initial_advection_params)
-      mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, initial_advection_params)
-    end if
-    !$omp end critical (input_cr)
+    first_time = .false.
+    rewind (io%input)
+    read (io%input, initial_advection_params)
+    mhd = mhd .and. any(b0 /= 0.0)
+    if (io%master) write (*, initial_advection_params)
   end if
+  !$omp end critical (input_cr)
   self%mhd = mhd
   associate (r1=>m(1)%r, r2=>m(2)%r, r3=>m(3)%r)
   do iz=m(3)%lb,m(3)%ub

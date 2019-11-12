@@ -109,11 +109,11 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io%input)
       read (io%input, initial_solenoidal_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, initial_solenoidal_params)
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if
@@ -167,11 +167,11 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io%input)
       read (io%input, initial_compressive_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, initial_compressive_params)
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if
@@ -305,11 +305,11 @@ SUBROUTINE single_advection (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io%input)
       read (io%input, initial_advection_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, initial_advection_params)
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if

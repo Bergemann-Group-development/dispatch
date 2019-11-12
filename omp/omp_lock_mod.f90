@@ -80,7 +80,6 @@ SUBROUTINE init (self, kind, id)
   !$omp critical (lock_cr)
   if (self%id == -1) then
     if (first_time) then
-      first_time = .false.
       rewind (io_unit%input)
       read (io_unit%input, lock_params, iostat=iostat)
       write (io_unit%output, lock_params)
@@ -101,6 +100,7 @@ SUBROUTINE init (self, kind, id)
               status='unknown')
         alternate_next = wallclock() + alternate_time
       end if
+      first_time = .false.
     end if
     call omp_init_nest_lock (self%lock)
     omp_lock%tasks = tasks
