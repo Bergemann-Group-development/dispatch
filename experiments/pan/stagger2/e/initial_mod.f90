@@ -227,18 +227,17 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:compressive_shear', itimer=itimer)
   gamma = self%gamma
+  !$omp critical (input_cr)
   if (first_time) then
-    !$omp critical (input_cr)
-    if (first_time) then
-      rewind (io%input)
-      read (io%input, IC_compressive_params)
-      mhd = mhd .and. any(b0 /= 0.0)
-      if (io%master) write (*, IC_compressive_params)
-      write(stdout,'(a,1p,10g12.4)') 'compressive_shear: pi2, box, stag =', &
-        pi2, m(1)%b, m(1)%h
-    end if
-    !$omp end critical (input_cr)
+    rewind (io%input)
+    read (io%input, IC_compressive_params)
+    mhd = mhd .and. any(b0 /= 0.0)
+    if (io%master) write (*, IC_compressive_params)
+    write(stdout,'(a,1p,10g12.4)') 'compressive_shear: pi2, box, stag =', &
+      pi2, m(1)%b, m(1)%h
+    first_time = .false.
   end if
+  !$omp end critical (input_cr)
   self%gamma = gamma
   if (gamma==1.00) then
     gamma_factor = 1.0
@@ -263,21 +262,10 @@ print *, idx%d, idx%px, m(1)%h
           ff(ix,iy,iz,idx%by) = b0(2)
           ff(ix,iy,iz,idx%bz) = b0(3)
         end if
-        if (first_time .and. verbose > 1 .and. iy==m(2)%li .and. iz==m(3)%li) &
-          write (stdout,'(a,i4,1p,4g12.3,l4)') 'compressive_shear:', &
-            ix, ff(ix,iy,iz,idx%d), ff(ix,iy,iz,idx%px), ff(ix,iy,iz,idx%py), &
-            ff(ix,iy,iz,idx%e), self%mhd
       end do
     end do
   end do
   end associate
-  if (first_time) then
-    !$omp critical (input_cr)
-    if (first_time) then
-      first_time = .false.
-    end if
-    !$omp end critical (input_cr)
-  end if
   call trace_end (itimer)
 END SUBROUTINE compressive_shear
 

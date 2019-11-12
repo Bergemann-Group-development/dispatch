@@ -67,8 +67,8 @@ SUBROUTINE update (self)
   if (first_time) then
     !$omp critical (cleanup_cr)
     if (first_time) then
-      first_time = .false.
       call self%initial%cleanup
+      first_time = .false.
     end if
     !$omp end critical (cleanup_cr)
   end if

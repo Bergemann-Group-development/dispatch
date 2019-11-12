@@ -741,7 +741,7 @@ contains
         open (io_unit%sinks, file=trim(io%rundir)//trim(file), &
           form='formatted', status='unknown')
         first_time = .false.
-      endif
+      end if
       !$omp end critical (sinkp_output_cr)
     endif
     if (verbose > 0) &
