@@ -77,7 +77,6 @@ SUBROUTINE init (self, task)
   if (first_time) then
     !$omp critical (data_io_cr)
     if (first_time) then
-      first_time = .false.
       if (io%do_output) then
         call time_slices%init (task%nt)
         select type (task)
@@ -98,6 +97,7 @@ SUBROUTINE init (self, task)
       call self%lock%init ('data_io')
       call self%kind_list%init
       self%initialized = .true.
+      first_time = .false.
     end if
     !$omp end critical (data_io_cr)
   end if

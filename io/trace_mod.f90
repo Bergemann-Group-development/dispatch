@@ -73,7 +73,7 @@ SUBROUTINE trace_begin (id, set_verbose, itimer, detailed_timer)
     level = level+1
     indent = indent + 3
   end if
-  write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
+  write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.6,',indent,'x,a,i5)'
   if (io%verbose>=verbose) then
     wc = wallclock()
     if (io_unit%do_validate) wc = 0d0
@@ -112,7 +112,7 @@ SUBROUTINE trace_tag (id)
   if (.not.io%do_trace) return
   verbose = verbosity(level)
   if (io%verbose>=verbose) then
-    write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a)'
+    write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.6,',indent,'x,a)'
     wc = wallclock()
     level  = max(level-1,1)
     if (io%omp_trace) then
@@ -154,7 +154,7 @@ SUBROUTINE trace_end (itimer, detailed_timer)
   indent = max(indent,4)
   verbose = verbosity(level)
   if (io%verbose>=verbose) then
-    write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.3,',indent,'x,a,i5)'
+    write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.6,',indent,'x,a,i5)'
     wc = wallclock()
     if (io_unit%do_validate) wc = 0d0
     if (io%omp_trace) then

@@ -105,11 +105,11 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io%input)
       read (io%input, IC_solenoidal_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, IC_solenoidal_params)
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if
@@ -167,11 +167,11 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io%input)
       read (io%input, IC_compressive_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, IC_compressive_params)
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if
@@ -226,19 +226,18 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   namelist /IC_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, &
                                    phi, t_turn, verbose
   integer, save  :: itimer=0
+  integer, save  :: n=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
+  !$omp critical (input_cr)
   if (first_time) then
-    !$omp critical (input_cr)
-    if (first_time) then
-      first_time = .false.
+    first_time = .false.
       rewind (io%input)
       read (io%input, IC_compressive_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, IC_compressive_params)
-    end if
-    !$omp end critical (input_cr)
   end if
+  !$omp end critical (input_cr)
   if (self%gamma == 1d0) then
     gamma_factor = csound**2
   else
@@ -287,11 +286,11 @@ SUBROUTINE single_advection (self, m, ff, idx)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io%input)
       read (io%input, IC_advection_params)
       mhd = mhd .and. any(b0 /= 0.0)
       if (io%master) write (*, IC_advection_params)
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if

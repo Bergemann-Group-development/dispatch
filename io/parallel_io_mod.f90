@@ -802,13 +802,13 @@ SUBROUTINE input_single (patch, ok)
     if (first_time) then
     !$omp critical (first_cr)
     if (first_time) then
-      first_time = .false.
       write(io%output,'(a,f8.3,a,i10,a)') &
         ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
         io%ntotal, ' patches'
         write(io%output,'(a,4i6,2i12)') &
       ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
         patch%iout, n, snapshot_words, buffer_words
+      first_time = .false.
     end if
     !$omp end critical (first_cr)
     end if
@@ -844,7 +844,6 @@ SUBROUTINE input_single (patch, ok)
     if (first_time) then
     !$omp critical (read_first_cr)
     if (first_time) then
-      first_time = .false.
       !---------------------------------------------------------------------------
       ! Info
       !---------------------------------------------------------------------------
@@ -876,6 +875,7 @@ SUBROUTINE input_single (patch, ok)
       end do
       if (.not.read_failed) &
         write(io%output,*) 'io%input_single: read succeeded, snapshot', io%restart
+      first_time = .false.
     end if
     !$omp end critical (read_first_cr)
     end if

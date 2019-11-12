@@ -734,13 +734,13 @@ contains
     if (first_time) then
       !$omp critical (sinkp_output_cr)
       if (first_time) then
-        first_time = .false.
         if (verbose >= 0) then
           write (stdout,*) 'sink_particles_t%output: file = ', &
             trim(io%rundir)//trim(file)
         end if
         open (io_unit%sinks, file=trim(io%rundir)//trim(file), &
           form='formatted', status='unknown')
+        first_time = .false.
       endif
       !$omp end critical (sinkp_output_cr)
     endif

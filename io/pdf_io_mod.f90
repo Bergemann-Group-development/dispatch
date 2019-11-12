@@ -52,7 +52,6 @@ SUBROUTINE init (self, patch)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io%input)
       read (io%input, pdf_io_params, iostat=iostat)
       write (io%output, pdf_io_params)
@@ -64,6 +63,7 @@ SUBROUTINE init (self, patch)
           counts(i) = 0.0
         end do
       end if
+      first_time = .false.
     end if
     !$omp end critical (input_cr)
   end if

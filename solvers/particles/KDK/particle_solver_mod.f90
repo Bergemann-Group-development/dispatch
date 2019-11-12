@@ -43,13 +43,13 @@ SUBROUTINE init (self, name)
   if (first_time) then
     !$omp critical (particle_solver_input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io_unit%input)
       read (io_unit%input, kdk_params, iostat=iostat)
       write (io_unit%output, kdk_params)
       call particles%init ('solv')
       particle_solver%verbose = verbose
       particles%verbose = verbose
+      first_time = .false.
     end if
     !$omp end critical (particle_solver_input_cr)
   end if

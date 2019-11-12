@@ -50,11 +50,11 @@ SUBROUTINE init (self)
   if (first_time) then
     !$omp critical (particle_input_cr)
     if (first_time) then
-      first_time = .false.
       rewind (io_unit%input)
       read (io_unit%input, particle_params,iostat=iostat)
       write (io_unit%output, particle_params)
       patch_forces%verbose = verbose
+      first_time = .false.
     end if
     !$omp end critical (particle_input_cr)
   end if
