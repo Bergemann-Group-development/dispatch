@@ -667,7 +667,8 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     self%pervolume(:) = .false.
   end if
   self%dt = 0.0
-  self%t =  0.0
+  self%t = -1.0                                 ! mark as "no guard zones"
+  self%time = -1.0                              ! mark as "no guard zones"
   self%iit = 1                                  ! initial memory slots
   self%it = 1                                   ! short-hand (=1 initially)
   self%new = min(2,self%nt)                     ! slot for updates

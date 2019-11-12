@@ -134,13 +134,18 @@ SUBROUTINE init (self)
     !---------------------------------------------------------------------------
     ! Make sure the default time for patches with IC values is zero, to ensure 
     ! boundary tasks are not considered ready for updating until their virtual
-    ! task nbors have been updated.
+    ! task nbors have been updated, in evolved cases.
     !---------------------------------------------------------------------------
     restart_time = 0.0
-    self%time = 0.0
     self%mem = 0.0
     ff => self%mem(:,:,:,:,1,1)
     call self%initial%condition (self%mesh, ff, self%idx)
+    !---------------------------------------------------------------------------
+    ! patch_t%setup sets time = -1, to prevent downloading until nbors have been
+    ! initialized, and their time has been set to 0.0 here
+    !---------------------------------------------------------------------------
+    self%time = 0.0
+    self%t = 0.0
   end if
   !-----------------------------------------------------------------------------
   ! If restart succeeded for some patch, use it to set time and output cadence.
@@ -185,6 +190,7 @@ SUBROUTINE dnload (self, only)
   integer, optional:: only
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%dnload')
+  if (self%id==1) print'("dnload",1p,22e9.1)',self%mem(10,1:15,15,5,1,1)-self%mem(10,10,10,5,1,1)
   if (self%is_clear (bits%frozen)) then
     if (self%use_data_hub) then
       call self%data_hub%update (self%link, only=only)
@@ -192,6 +198,7 @@ SUBROUTINE dnload (self, only)
       call download%download_link (self%link, only=only)
     end if
   end if
+  if (self%id==1) print'("dnload",1p,22e9.1)',self%mem(10,1:15,15,5,1,1)-self%mem(10,10,10,5,1,1)
   call trace%end()
 END SUBROUTINE dnload
 
