@@ -190,7 +190,7 @@ SUBROUTINE dnload (self, only)
   integer, optional:: only
   !-----------------------------------------------------------------------------
   call trace%begin ('gpatch_t%dnload')
-  if (self%id==1) print'("dnload",1p,22e9.1)',self%mem(10,1:15,15,5,1,1)-self%mem(10,10,10,5,1,1)
+!if (self%id==1) print'("dnload",1p,22e9.1)',self%mem(10,1:15,15,5,1,1)-self%mem(10,10,10,5,1,1)
   if (self%is_clear (bits%frozen)) then
     if (self%use_data_hub) then
       call self%data_hub%update (self%link, only=only)
@@ -198,7 +198,7 @@ SUBROUTINE dnload (self, only)
       call download%download_link (self%link, only=only)
     end if
   end if
-  if (self%id==1) print'("dnload",1p,22e9.1)',self%mem(10,1:15,15,5,1,1)-self%mem(10,10,10,5,1,1)
+!if (self%id==1) print'("dnload",1p,22e9.1)',self%mem(10,1:15,15,5,1,1)-self%mem(10,10,10,5,1,1)
   call trace%end()
 END SUBROUTINE dnload
 
