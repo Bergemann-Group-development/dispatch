@@ -103,7 +103,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   namelist /initial_solenoidal_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t:single_solenoidal', itimer=itimer)
+  call trace_begin('initial_t%single_solenoidal', itimer=itimer)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
@@ -170,7 +170,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   namelist /initial_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, t_turn
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t:single_compressive', itimer=itimer)
+  call trace_begin('initial_t%single_compressive', itimer=itimer)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
@@ -236,10 +236,10 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   real(8), save  :: t_turn=0.1
   logical, save  :: first_time=.true.
   namelist /IC_compressive_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma, &
-                                   t_turn, verbose
+                                   phi, t_turn, verbose
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t:single_compressive', itimer=itimer)
+  call trace_begin('initial_t%compressive_shear', itimer=itimer)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
@@ -262,7 +262,7 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   do iz=m(3)%lb,m(3)%ub
     do iy=m(2)%lb,m(2)%ub
       do ix=m(1)%lb,m(1)%ub
-        kx   =  pi2*k(1)*(r1(ix)+m(1)%p)/m(1)%b + phi(1)
+        kx   =  pi2*k(1)*(r1(ix)+m(1)%p)/m(1)%b - phi(1)
         ff(ix,iy,iz,idx%d ) = d0
         ff(ix,iy,iz,idx%px) = d0*(u0(1)*cos(kx) + u0(0))
         ff(ix,iy,iz,idx%py) = d0*(u0(2)*cos(kx))
@@ -280,11 +280,20 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
       end do
     end do
   end do
+if (m(1)%id==1) then
+print *,idx%e,idx%bx,idx%by,idx%bz,'idx'
 print *, shape(ff)
 print *, m(1)%lb,m(1)%ub, d0, u0(1), idx%px
 print *, m(2)%lb,m(2)%ub, d0, u0(2), idx%py
 print *, m(3)%lb,m(3)%ub, d0, u0(3), idx%pz
 print *, gamma_factor, minval(ff(:,:,:,idx%px)), maxval(ff(:,:,:,idx%px))
+print *, gamma_factor, minval(ff(:,:,:,idx%e )), maxval(ff(:,:,:,idx%e ))
+print *, gamma_factor, minval(ff(:,:,:,idx%bx)), maxval(ff(:,:,:,idx%bx))
+print *, gamma_factor, minval(ff(:,:,:,idx%by)), maxval(ff(:,:,:,idx%by))
+print *, gamma_factor, minval(ff(:,:,:,idx%bz)), maxval(ff(:,:,:,idx%bz))
+print '(1p,22e9.2)', ff(10,1:19,15,5)-ff(10,10,10,5)
+print '(1p,22e9.2)', ff(10,15,1:19,5)-ff(10,10,10,5)
+end if
   end associate
   call trace_end (itimer)
 END SUBROUTINE compressive_shear
@@ -308,7 +317,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   namelist /initial_advection_params/ seed, k, a0, u0, b0, d0, s0, mhd, gamma
   integer, save  :: itimer=0
   !-----------------------------------------------------------------------------
-  call trace_begin('initial_t:single_advection', itimer=itimer)
+  call trace_begin('initial_t%single_advection', itimer=itimer)
   if (first_time) then
     !$omp critical (input_cr)
     if (first_time) then
