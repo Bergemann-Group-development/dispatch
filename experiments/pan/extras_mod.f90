@@ -51,7 +51,7 @@ MODULE extras_mod
   USE sink_particles_mod                                        ! sinkp
   USE selfgravity_mod                                           ! selfg
   USE cooling_mod                                               ! cool
-  USE moving_mesh_mod                                           ! move
+  USE lagrangian_mod                                            ! move
   !-----------------------------------------------------------------------------
   implicit none
   private
@@ -65,7 +65,7 @@ MODULE extras_mod
     real, dimension(:,:,:,:), pointer:: v                       ! tracep
     type(selfgravity_t):: selfgravity                           ! selfg
     type(cooling_t):: cooling                                   ! cool
-    type(moving_mesh_t):: moving_mesh                           ! move
+    type(lagrangian_t):: lagrangian                             ! move
     class(gpatch_t), pointer:: gpatch => null()                 ! keep
   contains
     procedure:: pre_init
@@ -89,7 +89,7 @@ SUBROUTINE pre_init (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
   call self%selfgravity%pre_init(self)                          ! selfg
-  !call self%moving_mesh%pre_init                                ! move
+  !call self%lagrangian%pre_init                                ! move
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -165,7 +165,7 @@ SUBROUTINE post_update (self)
   call self%forces%post_update                                  ! forces
   !call self%trace_particles%post_update                         ! tracep
   call self%selfgravity%post_update (self)                      ! selfg
-  !call self%moving_mesh%post_update                             ! move
+  !call self%lagrangian%post_update                              ! move
 END SUBROUTINE post_update
 
 !===============================================================================

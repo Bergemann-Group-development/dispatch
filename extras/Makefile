@@ -20,5 +20,5 @@ sink_particles_mod.o    : io_unit_mod.o trace_mod.o download_mod.o data_hub_mod.
 newton_mod.o            : io_unit_mod.o trace_mod.o link_mod.o gpatch_mod.o mesh_mod.o
 SNe_mod.o               : io_mod.o trace_mod.o gpatch_mod.o scaling_mod.o lagrange_mod.o \
                           list_mod.o dll_mod.o bits_mod.o
-moving_mesh_mod.o       : io_mod.o trace_mod.o patch_mod.o link_mod.o
+lagrangian_mod.o        : io_mod.o trace_mod.o patch_mod.o link_mod.o
 connect_mod.o           :
