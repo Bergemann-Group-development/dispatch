@@ -53,7 +53,7 @@ PROGRAM TEST
     deallocate (patch%mem)
   end do
   ntotal = product(n(1:3))*ni
-  print *, total, ntotal, total*1e9/ntotal, 'ns/pt allocate'
+  print '(f6.3,"s",i12,f10.1,2x,a)', total, ntotal, total*1e9/ntotal, 'ns/pt allocate'
   total = 0d0
   do i=1,ni
     n = [20,20,20,5,5]
@@ -64,5 +64,5 @@ PROGRAM TEST
     deallocate (patch%mem)
   end do
   ntotal = product(n(1:3))*ni
-  print *, total, ntotal, total*1e9/ntotal, 'ns/pt deallocate'
+  print '(f6.3,"s",i12,f10.1,2x,a)', total, ntotal, total*1e9/ntotal, 'ns/pt deallocate'
 END PROGRAM
