@@ -8,7 +8,7 @@
 ! For unigrid run, use the no_mans_land=t line
 !---------------------------------------------
 &patch_params           nt=5 grace=0.1 n=3*16 no_mans_land=t dt_fixed=2.0e-3 /
-&out_params             end_time=1.22 out_time=0.10 print_every=100 /
+&out_params             end_time=2.04 out_time=0.10 print_every=100 /
 &io_params              verbose=0 do_trace=f omp_trace=f do_output=t restart=-2
                         method='legacy' format=10 guard_zones=t time_derivs=0 /
 &time_slices_params     order=3 /
