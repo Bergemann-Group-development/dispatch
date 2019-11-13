@@ -26,13 +26,6 @@ SUBROUTINE init (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   call self%solver_t%init
-  !----------------------------------------------------------------------------
-  ! Support (disabled for now) for particle patches (carrying sink particles)
-  !----------------------------------------------------------------------------
-  !call particle_patch%init
-  !call particle_patch%test
-  self%unsigned(self%idx%d) = .true.
-  self%unsigned(self%idx%e) = .true.
   call trace_end
 END SUBROUTINE init
 
