@@ -18,10 +18,9 @@ MODULE initial_mod
   real(8), parameter:: pi2=8d0*atan(1d0)
   type, public:: initial_t
     integer:: seed
-    real:: gamma
     real:: d0
     logical:: mhd
-    real(8):: time=0d0
+    real(8):: gamma=1d0, time=0d0
     character(len=64):: solver
     procedure(single_solenoidal), pointer:: condition=>null()
   contains
@@ -53,6 +52,8 @@ SUBROUTINE init (self, solver, gamma)
     if (io%master) write (*, initial_params)
   end if
   !$omp end critical (input_cr)
+  if (present(gamma)) &
+    self%gamma = gamma
   self%solver = trim(solver)
   select case (type)
   case ('single_solenoidal')
@@ -104,6 +105,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
   call trace_begin('initial_t:single_solenoidal', itimer=itimer)
   !$omp critical (input_cr)
   if (first_time) then
+    gamma = self%gamma
     rewind (io%input)
     read (io%input, IC_solenoidal_params)
     mhd = mhd .and. any(b0 /= 0.0)
@@ -111,6 +113,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
     first_time = .false.
   end if
   !$omp end critical (input_cr)
+  self%gamma = gamma
   if (self%gamma == 1d0) then
     gamma_factor = csound**2
   else
@@ -127,7 +130,7 @@ SUBROUTINE single_solenoidal (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = a0(1)*(sin(ky)+sin(kz))
         ff(ix,iy,iz,idx%py) = a0(2)*(sin(kz)+sin(kx))
         ff(ix,iy,iz,idx%pz) = a0(3)*(sin(kx)+sin(ky))
-        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
+        ff(ix,iy,iz,idx%e ) = d0*csound**2*gamma_factor + &
           half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(1)*(sin(kx)+sin(ky))
@@ -164,6 +167,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
   call trace_begin('initial_t:single_compressive', itimer=itimer)
   !$omp critical (input_cr)
   if (first_time) then
+    gamma = self%gamma
     rewind (io%input)
     read (io%input, IC_compressive_params)
     mhd = mhd .and. any(b0 /= 0.0)
@@ -171,6 +175,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
     first_time = .false.
   end if
   !$omp end critical (input_cr)
+  self%gamma = gamma
   if (self%gamma == 1d0) then
     gamma_factor = csound**2
   else
@@ -187,7 +192,7 @@ SUBROUTINE single_compressive (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = u0(1)*sin(kx)
         ff(ix,iy,iz,idx%py) = u0(2)*sin(ky)
         ff(ix,iy,iz,idx%pz) = u0(3)*sin(kz)
-        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
+        ff(ix,iy,iz,idx%e ) = d0*csound**2*gamma_factor + &
           half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(1)
@@ -205,6 +210,7 @@ END SUBROUTINE single_compressive
 !> Initialize a single 3-D wavenumber, with non-random amplitude and zero phase
 !===============================================================================
 SUBROUTINE compressive_shear (self, m, ff, idx)
+  implicit none
   class(initial_t) :: self
   type(index_t):: idx
   class(mesh_t)    :: m(3)
@@ -225,15 +231,18 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   integer, save  :: n=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
+  print *,'XXXX', gamma
   !$omp critical (input_cr)
   if (first_time) then
-    first_time = .false.
+    gamma = self%gamma
     rewind (io%input)
     read (io%input, IC_compressive_params)
     mhd = mhd .and. any(b0 /= 0.0)
     if (io%master) write (*, IC_compressive_params)
+    first_time = .false.
   end if
   !$omp end critical (input_cr)
+  self%gamma = gamma
   if (self%gamma == 1d0) then
     gamma_factor = csound**2
   else
@@ -281,6 +290,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
   call trace_begin('initial_t:single_advection', itimer=itimer)
   !$omp critical (input_cr)
   if (first_time) then
+    gamma = self%gamma
     rewind (io%input)
     read (io%input, IC_advection_params)
     mhd = mhd .and. any(b0 /= 0.0)
@@ -288,6 +298,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
     first_time = .false.
   end if
   !$omp end critical (input_cr)
+  self%gamma = gamma
   if (self%gamma == 1d0) then
     gamma_factor = csound**2
   else
@@ -304,7 +315,7 @@ SUBROUTINE single_advection (self, m, ff, idx)
         ff(ix,iy,iz,idx%px) = d0*u0(1)
         ff(ix,iy,iz,idx%py) = d0*u0(2)
         ff(ix,iy,iz,idx%pz) = d0*u0(3)
-        ff(ix,iy,iz,idx%e ) = d0*csound**2/(gamma*(gamma-1)) + &
+        ff(ix,iy,iz,idx%e ) = d0*csound**2*gamma_factor + &
           half*ff(ix,iy,iz,1)*(ff(ix,iy,iz,2)**2+ff(ix,iy,iz,3)**2+ff(ix,iy,iz,4)**2)
         if (self%mhd) then
           ff(ix,iy,iz,idx%bx) = b0(3)*sin(kz)
