@@ -179,7 +179,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
         src(l(1):u(1),l(2):u(2),l(3):u(3)) = target%id
     end if
   end if
-  if (target%is_clear(bits%no_density)) &
+  if (target%is_clear(bits%no_density) .and. .not.all_cells_l) &
     call target%check_density ("before download")
   if (target%is_periodic()) call target%periodic_grid
   !-----------------------------------------------------------------------------
