@@ -688,6 +688,7 @@ SUBROUTINE delete (self, link)
   call trace%begin ('link_t%delete')
   !-----------------------------------------------------------------------------
   call link%lock%set ('link_t%delete')
+  call link%task%log ('delete')
   do while (link%lock%level > 1)
     write (io_unit%output,*) 'delete_link unlocking lock level', link%lock%level
     call link%lock%unset

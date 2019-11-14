@@ -604,6 +604,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
       ! update of their nbor lists.
       !-------------------------------------------------------------------------
       call data_io%update_counters (patch, -1)
+      call patch%log ('remove')
       call tasklist%remove_and_reset (link)
       was_derefined = .true.
     end if
@@ -918,6 +919,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   ! Increment I/O write counter, to avoid repeated writing of metadata
   !-----------------------------------------------------------------------------
   call data_io%update_counters (child, +1)
+  call child%log ('created')
   !-----------------------------------------------------------------------------
   if (verbose > 0) &
     write (io_unit%log,'(f12.5,2x,a,2i6,1p,g14.5)') &

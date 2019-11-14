@@ -251,6 +251,7 @@ SUBROUTINE update (self, task_list, test)
     else
       task => head%task
     end if
+    call task%log ('dispatcher')
     if (debug) then
       !$omp critical (wrt_cr)
       write (io_unit%queue,'(f12.6,2i7,3i5,f12.6,i6,2i9,7i7)') &

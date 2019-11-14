@@ -39,6 +39,7 @@ MODULE io_mod
     logical:: namelist_errors=.true.
     logical:: needs_check=.false.
     logical:: halt=.false.      ! used in data_io and amr_io
+    integer:: task_logging=0
     integer:: log_sent=0
     integer:: time_derivs=0
     integer:: id_debug=0
@@ -106,7 +107,7 @@ SUBROUTINE init (self, name)
   character(len=64), save:: top='../../'
   character(len=8), save:: method='legacy'
   integer, save:: id_debug=-1, restart=-9, format=0, time_derivs=0, nml_version=1
-  integer, save:: log_sent=0
+  integer, save:: log_sent=0, task_logging=0
   logical, save:: first_time=.true., omp_trace=.false., do_validate=.false.
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.false., do_flags=.false., do_direct=.false., guard_zones=.false.
@@ -114,7 +115,7 @@ SUBROUTINE init (self, name)
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
     do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, top, &
     datadir, inputdir, method, restart, format, guard_zones, time_derivs, log_sent, &
-    namelist_errors, nml_version
+    task_logging, namelist_errors, nml_version
   real:: test
   integer:: iostat
   character(len=120):: ids = &
@@ -169,6 +170,7 @@ SUBROUTINE init (self, name)
       print'(a,i4)', '   n_core =', omp%ncores
       print'(a,i4)', ' n_thread =', omp_nthreads
     end if
+    self%task_logging = task_logging
     self%format = format
     self%nml_version = nml_version
     self%inputdir = inputdir
@@ -198,6 +200,7 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     call open_rank_file (io_unit%queue     , ".nq"   , 'formatted')
     call open_rank_file (io_unit%mpi       , ".log"  , 'formatted')
+    call open_rank_file (io_unit%task      , ".task" , 'formatted')
     call open_rank_file (io_unit%dbg       , ".dbg"  , 'unformatted')
     call open_rank_file (io_unit%dump      , ".dump" , 'unformatted')
     call open_rank_file (io_unit%validate  , ".val"  , 'unformatted')

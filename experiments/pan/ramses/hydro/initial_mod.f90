@@ -231,7 +231,6 @@ SUBROUTINE compressive_shear (self, m, ff, idx)
   integer, save  :: n=0
   !-----------------------------------------------------------------------------
   call trace_begin('initial_t:single_compressive', itimer=itimer)
-  print *,'XXXX', gamma
   !$omp critical (input_cr)
   if (first_time) then
     gamma = self%gamma

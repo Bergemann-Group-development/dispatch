@@ -2230,6 +2230,7 @@ SUBROUTINE send_to_vnbors (self, link)
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
   class(mesg_t), pointer:: mesg
+  character(len=24):: label
   integer:: ierr, rank, tag, seq
   integer, save:: itimer=0
   !.............................................................................
@@ -2282,6 +2283,10 @@ SUBROUTINE send_to_vnbors (self, link)
         seq = sequence(rank)
         !$omp end atomic
         tag = mod(seq,100) + 100*task%id
+      end if
+      if (task%logging > 1) then
+        write (label,'(a,i4,i8)') 'vnbor  ', rank, tag
+        call task%log (label)
       end if
       call mesg%send (rank, tag=tag)                            ! send it
       !write (stdout,*) 'send: ', task%id, mesg%id, tag, mesg%tag, rank

@@ -137,6 +137,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   ! requests dnload before the parent task
   !-----------------------------------------------------------------------------
   target => task2patch(link%task)
+  call target%log ('download', 2)
   if (target%dnload_time >= target%time .or. &
       target%is_set(bits%no_download)) then
     call trace%end (itimer)
@@ -201,6 +202,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       cycle
     end if
     source => task2patch(nbor%task)
+    call source%log ('download', 3)
     if (source%quality == 1024) then
       all_cells_l = .true.
     end if

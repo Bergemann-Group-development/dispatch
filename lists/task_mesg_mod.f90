@@ -658,9 +658,14 @@ SUBROUTINE unpack (self, mesg, link)
   logical:: found, failed, new
   integer:: id, n_added
   integer, save:: itimer=0
+  character(len=24):: label
   real(8):: wc
   !-----------------------------------------------------------------------------
   call trace%begin ('task_mesg_t%unpack', itimer=itimer)
+  if (task%logging > 1) then
+    write (label,'(a,i4,i8)') 'unpack ', mesg%sender, mesg%id
+    call task%log (label)
+  end if
   if (mesg%nbuf < 40) then
     call load_balance%unpack (mesg%buffer)
     return

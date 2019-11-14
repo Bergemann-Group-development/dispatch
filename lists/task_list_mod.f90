@@ -426,6 +426,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     if (task%id == io%id_debug) &
       write(io_unit%mpi,*) &
         'DBG task_list_t%update: calling send_to_vnbors', task%id
+    call task%log ('send')
     call self%send_to_vnbors (head)                   ! send to virtual nbors
   end if
   !-----------------------------------------------------------------------------

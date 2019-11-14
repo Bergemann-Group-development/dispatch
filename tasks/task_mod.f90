@@ -44,6 +44,7 @@ MODULE task_mod
     integer:: n_needed=1                ! number of tasks that needs it
     integer:: seq=0                     ! incremental sequence number
     integer:: n_failed                  ! number of times check_ready() failed
+    integer:: logging=0                 ! level of logging
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
     real(8):: out_next = 0d0
@@ -116,6 +117,7 @@ MODULE task_mod
     procedure:: solver_is
     procedure:: debug
     procedure:: task_info
+    procedure:: log
   end type
   integer, dimension(:), pointer, save:: id => null()
   type(dll_t), pointer:: deleted_list
@@ -245,6 +247,7 @@ SUBROUTINE rotate (self)
   end if
   if (self%rotated) return
   call trace_begin ('task_t%rotate',itimer=itimer)
+  call self%log ('rotate', 3)
   !-----------------------------------------------------------------------------
   ! Call timestep update procedure to fill the next time slot with values
   !-----------------------------------------------------------------------------
@@ -728,5 +731,23 @@ SUBROUTINE task_info (self)
     'patch_t%task_info: id, BV, pos =', self%id, self%rank, self%level, &
     self%is_set(bits%boundary), self%is_set(bits%virtual), self%position
 END SUBROUTINE task_info
+
+!===============================================================================
+SUBROUTINE log (self, label, level)
+  class(task_t):: self
+  character(len=*):: label
+  integer, optional:: level
+  !-----------------------------------------------------------------------------
+  if (io%task_logging > 0) then
+    if (present(level)) then
+      if (level > io%task_logging) &
+        return
+    end if
+    !$omp critical (tasklog_cr)
+    write(io_unit%task,'(f12.6,i4,i6,f12.6,4x,a)') &
+      wallclock(), omp%thread, self%id, self%time, trim(label)
+    !$omp end critical (tasklog_cr)
+  end if
+END SUBROUTINE log
 
 END MODULE task_mod
