@@ -119,6 +119,9 @@ SUBROUTINE init (self)
   logical                           :: ok
   real(kind=KindScalarVar), pointer :: d(:,:,:)
   !-----------------------------------------------------------------------------
+  if (self%is_set(bits%frozen)) &
+    return
+  print *, 'gpath_t%init: time =', self%time
   call trace%begin ('gpatch_t%init')
   call self%initial%init (self%kind, real(self%gamma))
   call data_io%init (self)
