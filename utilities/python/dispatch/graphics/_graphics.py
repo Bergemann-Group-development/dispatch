@@ -152,7 +152,7 @@ def image_plane(snap,x=None,y=None,z=None,iv=0,verbose=1):
     pl.xlabel(labels[i][0])
     pl.ylabel(labels[i][1])
 
-def pdf(iout,run='',data='../data',iv='d',i4=0,nbin=100,xlim=[-4,3],lnd=False):
+def pdf_d(iout,run='',data='../data',iv='d',i4=0,nbin=100,xlim=[-4,3],lnd=False):
     """ Plot the PDF of the density """
     s = di.snapshot(iout,run=run,data=data)
     n = nbin
@@ -236,6 +236,13 @@ def amr_plane(sn,iv='d',z=0.5,log=False,mesh=False,ident=False,cmap=None,
         pl.title('iv={},  z={:.2f},  t={:.4f}'.format(iv,z,sn.time))
     pl.tight_layout()
 
-def plot_pdf(pdf):
-    pl.hist(pdf.bins,bins=pdf.bins,weight=pdf.counts)
+def plot_pdf(pdf,**kwargs):
+    """ Plot the output of the dispatch.pdf() procedure """
+    pl.hist(pdf.bins,bins=pdf.bins,weights=pdf.counts,**kwargs)
     return pdf.time
+
+def pdf(io,run,data,log=True,**kwargs):
+    """ Shortcut of dispatch.graphics.plot_pdf(dispatch.pdf(io,run,data)) """
+    tmp=di.pdf(io,run,data,**kwargs)
+    plot_pdf(tmp,**kwargs)
+
