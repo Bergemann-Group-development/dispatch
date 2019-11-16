@@ -152,7 +152,7 @@ def image_plane(snap,x=None,y=None,z=None,iv=0,verbose=1):
     pl.xlabel(labels[i][0])
     pl.ylabel(labels[i][1])
 
-def pdf(iout,run='',data='data',iv='d',i4=0,nbin=100,xlim=[-4,3],lnd=False):
+def pdf(iout,run='',data='../data',iv='d',i4=0,nbin=100,xlim=[-4,3],lnd=False):
     """ Plot the PDF of the density """
     s = di.snapshot(iout,run=run,data=data)
     n = nbin

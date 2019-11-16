@@ -12,7 +12,7 @@ import dispatch.select
 
 from dispatch.graphics._graphics import *
 
-def demo(iout=1,run='.',data='data',dir=0,iv=1):
+def demo(iout=1,run='.',data='../data',dir=0,iv=1):
     snapfile=os.path.join(data,run,'snapshots.dat')
     assert os.path.isfile(snapfile), 'the file '+snapfile+' must exist'
     #

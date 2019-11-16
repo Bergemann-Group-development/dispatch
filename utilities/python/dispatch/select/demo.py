@@ -14,7 +14,7 @@ import numpy as np
 import dispatch
 import dispatch.select as ds
 
-def demo(iout=1,run='',data='data'):
+def demo(iout=1,run='',data='../data'):
     """ Demonstrates the use of packet procedures"""
     snapfile=os.path.join(data,run,'snapshots.dat')
     assert os.path.isfile(snapfile), 'the file '+snapfile+' must exist'

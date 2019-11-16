@@ -623,7 +623,7 @@ def _parse_namelist (items):
 
     return np.array(pos)
 
-def parse_patches(snap,file='data/00000/rank_00000_patches.nml'):
+def parse_patches(snap,file='../data/00000/rank_00000_patches.nml'):
     """ Optimized parsing of patch namelist entries.
     """
     prop_dict={}
@@ -670,7 +670,7 @@ def parse_patches(snap,file='data/00000/rank_00000_patches.nml'):
 class snapshot():
     """ Return a snapshot worth of metadata, including memory mapped variables
     """
-    def __init__(self, iout=0, run='', data='data', datadir='', verbose=0, copy=False, timeit=False):
+    def __init__(self, iout=0, run='', data='../data', datadir='', verbose=0, copy=False, timeit=False):
         # Set the max number of open files to the hard limit
         try:
             import resource
@@ -834,7 +834,7 @@ class snapshot():
     def plane(self,x=None,y=None,z=None,iv=0,verbose=0):
         dg.image_plane(self,x=x,y=y,z=z,iv=iv,verbose=1)
 
-def snapshots(run='',data='data', verbose=0):
+def snapshots(run='',data='../data', verbose=0):
     """ Return a list of all snapshots in the data/run/ directory
     """
     rund=_dir(data,run)
@@ -860,7 +860,7 @@ def attributes(patch):
         if k != 'data':
             print ('{:>12}:  {}'.format(k,v))
 
-def pdf(iout=1,run='',data='data'):
+def pdf(iout=1,run='',data='../data'):
     """ Read and accumulate PDF output files from all ranks """
     rundir=data+'/'+run+'/'
     assert os.path.isdir(rundir), 'the directory {} does not exist'.format(rundir)

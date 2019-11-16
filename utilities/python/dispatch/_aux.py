@@ -18,7 +18,7 @@ def to_str(ii):
 
 class aux():
   """ aux format file object """
-  def __init__(self,id=1,io=0,run='',data='data',file=None,verbose=0):
+  def __init__(self,id=1,io=0,run='',data='../data',file=None,verbose=0):
     if os.path.isfile(file):
         self.filename=file
     else:
