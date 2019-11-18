@@ -17,7 +17,6 @@ MODULE solver_mod
   implicit none
   private
   type, public, extends(mhd_t):: solver_t
-    logical:: do_mhd=.false.
   contains
     procedure:: init
     procedure:: update
@@ -58,9 +57,7 @@ SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
   call self%mhd_t%pre_init              ! calls self%mhd_t%pre_init
-  call self%mhd_t%pre_init
   call self%mhd_t%init                  ! calls self%gpatch_t%init
-  call self%extras_t%init
   call self%mhd_t%post_init
   call validate%init
 END SUBROUTINE init

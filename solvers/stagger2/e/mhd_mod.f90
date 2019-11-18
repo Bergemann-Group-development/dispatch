@@ -130,6 +130,10 @@ SUBROUTINE pre_init (self)
   case default
   end select
   call self%idx%init (5, self%mhd)
+  ! ----------------------------------------------------------------------------
+  ! Call extras pre-init
+  ! ----------------------------------------------------------------------------
+  call self%extras_t%pre_init
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -167,8 +171,25 @@ SUBROUTINE init (self)
   call self%gpatch_t%init
   self%unsigned(self%idx%d)  = unsigned
   self%pervolume(self%idx%e) = unsigned
+  ! ----------------------------------------------------------------------------
+  ! init extras
+  ! ----------------------------------------------------------------------------
+  call self%extras_t%init
  call trace%end()
 END SUBROUTINE init
+
+!> =============================================================================
+!> Post init, whatever is required
+!> =============================================================================
+SUBROUTINE post_init (self)
+  class(mhd_t):: self
+  ! ----------------------------------------------------------------------------
+  ! ----------------------------------------------------------------------------
+  ! Call extras post-init
+  ! ----------------------------------------------------------------------------
+  call self%extras_t%post_init
+ call trace%end()
+END SUBROUTINE popst_init
 
 !===============================================================================
 SUBROUTINE pde (self)
