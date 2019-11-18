@@ -46,10 +46,12 @@ MODULE mhd_mod
   contains
     procedure:: pre_init
     procedure:: init
+    procedure:: post_init
     procedure:: pde
     procedure:: pre_update
     procedure:: update
     procedure:: output
+    procedure:: gas_pressure
     procedure:: gas_pressure_sub
   end type
   logical, save:: unsigned=.true.
@@ -189,7 +191,7 @@ SUBROUTINE post_init (self)
   ! ----------------------------------------------------------------------------
   call self%extras_t%post_init
  call trace%end()
-END SUBROUTINE popst_init
+END SUBROUTINE post_init
 
 !===============================================================================
 SUBROUTINE pde (self)
@@ -730,6 +732,44 @@ SUBROUTINE output (self)
   end if
   call trace%end()
 END SUBROUTINE output
+
+!===============================================================================
+FUNCTION gas_pressure (self) result(pg)
+  class(mhd_t):: self
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  real, dimension(:,:,:), pointer:: d, lnd, e, ee
+  integer, save:: nprint=1
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mhd_t%gas_pressure_sub')
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  call allocate_scalars(self%gn,ee)
+  ee = e/d
+  if (trim(self%eos)=='ideal') then
+    if (self%gamma==1d0) then
+      pg = d*self%csound**2
+    else
+      pg = d*ee*(self%gamma-1)
+    end if
+  else
+    if (do_temperature) then
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt)
+    else
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg)
+    end if
+    if (verbose > 1 .or. nprint > 0) then
+      nprint = nprint-1
+      write(io%output,*) self%id, 'lookup_table: lnd =', minval(lnd), maxval(lnd)
+      write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
+      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
+      if (do_temperature) &
+        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), &
+          maxval(self%tt)
+    end if
+  end if
+  call deallocate_scalars(ee)
+  call trace%end()
+END FUNCTION gas_pressure
 
 !===============================================================================
 SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)

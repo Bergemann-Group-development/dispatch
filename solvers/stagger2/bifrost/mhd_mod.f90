@@ -49,10 +49,12 @@ MODULE mhd_mod
   contains
     procedure:: init
     procedure:: pre_init
+    procedure:: post_init
     procedure:: pde
     procedure:: pre_update
     procedure:: update
     procedure:: output
+    procedure:: gas_pressure
     procedure:: gas_pressure_sub
     procedure :: smooth_loc
     procedure :: cowboy_hat
@@ -198,8 +200,25 @@ SUBROUTINE init (self)
     call stagger_test
     first_time = .false.
   end if
+  ! ----------------------------------------------------------------------------
+  ! init extras
+  ! ----------------------------------------------------------------------------
+  call self%extras_t%init
  call trace%end()
 END SUBROUTINE init
+
+!> =============================================================================
+!> Post init, whatever that means
+!> =============================================================================
+SUBROUTINE post_init (self)
+  class(mhd_t):: self
+  ! ----------------------------------------------------------------------------
+  ! ----------------------------------------------------------------------------
+  ! Call extras post-init
+  ! ----------------------------------------------------------------------------
+  call self%extras_t%post_init
+ call trace%end()
+END SUBROUTINE post_init
 
 !> =============================================================================
 SUBROUTINE pde (self)
@@ -927,6 +946,44 @@ SUBROUTINE gas_pressure_sub (self, d, lnd, ee, pg)
   end if
   call trace%end()
 END SUBROUTINE gas_pressure_sub
+
+!===============================================================================
+FUNCTION gas_pressure (self) result(pg)
+  class(mhd_t):: self
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  real, dimension(:,:,:), pointer:: d, lnd, e, ee
+  integer, save:: nprint=1
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mhd_t%gas_pressure_sub')
+  d  => self%mem(:,:,:,self%idx%d ,self%it,1)
+  e  => self%mem(:,:,:,self%idx%e ,self%it,1)
+  call allocate_scalars(self%gn,ee)
+  ee = e/d
+  if (trim(self%eos)=='ideal') then
+    if (self%gamma==1d0) then
+      pg = d*self%csound**2
+    else
+      pg = d*ee*(self%gamma-1)
+    end if
+  else
+    if (do_temperature) then
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg, tt=self%tt)
+    else
+      call eos%lookup_table (shape(d), d=d, ee=ee, pg=pg)
+    end if
+    if (verbose > 1 .or. nprint > 0) then
+      nprint = nprint-1
+      write(io%output,*) self%id, 'lookup_table: lnd =', minval(lnd), maxval(lnd)
+      write(io%output,*) self%id, 'lookup_table:  ee =', minval(ee) , maxval(ee)
+      write(io%output,*) self%id, 'lookup_table:  pg =', minval(pg) , maxval(pg)
+      if (do_temperature) &
+        write(io%output,*) self%id, 'lookup_table:  tt =', minval(self%tt), &
+          maxval(self%tt)
+    end if
+  end if
+  call deallocate_scalars(ee)
+  call trace%end()
+END FUNCTION gas_pressure
 
 !> =============================================================================
 !> =============================================================================
