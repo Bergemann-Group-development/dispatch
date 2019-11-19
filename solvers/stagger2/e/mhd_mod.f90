@@ -152,6 +152,7 @@ SUBROUTINE init (self)
   ! Allocate memory and mesh, etc
   !-----------------------------------------------------------------------------
   self%type = 'mhd_t'
+  call self%patch_t%init
   do i=1,3
     self%mesh(i)%h(self%idx%px+i-1) = -0.5
     if (self%mhd) self%mesh(i)%h(self%idx%bx+i-1) = -0.5
