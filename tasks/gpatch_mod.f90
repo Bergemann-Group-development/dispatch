@@ -57,7 +57,7 @@ FUNCTION cast2gpatch (task) RESULT(gpatch)
   gpatch => task
   class default
   nullify(gpatch)
-  call io%abort ('patch_t%cast: failed to cast a task to patch_t')
+  call io%abort ('gpatch_t%cast: failed to cast a task to patch_t')
   end select
 END FUNCTION cast2gpatch
 

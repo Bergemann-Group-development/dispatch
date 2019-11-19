@@ -74,7 +74,7 @@ FUNCTION cast2solver (task) RESULT(solver)
   solver => task
   class default
   nullify(solver)
-  call io%abort ('patch_t%cast: failed to cast a task to patch_t')
+  call io%abort ('solver_t%cast2solver: failed to cast a task to solver_t')
   end select
 END FUNCTION cast2solver
 

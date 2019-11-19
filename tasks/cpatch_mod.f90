@@ -43,7 +43,7 @@ FUNCTION cast2cpatch (task) RESULT(patch)
   patch => task
   class default
   nullify(patch)
-  call io%abort ('patch_t%cast: failed to cast a task to patch_t')
+  call io%abort ('cpatch_t%cast: failed to cast a task to patch_t')
   end select
 END FUNCTION cast2cpatch
 
