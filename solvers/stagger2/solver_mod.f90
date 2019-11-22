@@ -58,7 +58,6 @@ SUBROUTINE init (self)
   !.............................................................................
   call self%mhd_t%pre_init              ! calls self%mhd_t%pre_init
   call self%mhd_t%init                  ! calls self%gpatch_t%init
-  call self%mhd_t%post_init
   call validate%init
 END SUBROUTINE init
 
