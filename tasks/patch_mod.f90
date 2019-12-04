@@ -106,6 +106,7 @@ MODULE patch_mod
   contains
     procedure, nopass:: cast2patch
     procedure:: init
+    procedure:: pre_update
     procedure:: init_default
     procedure:: init_bdries
     procedure:: setup
@@ -393,6 +394,21 @@ SUBROUTINE init (self)
   call self%setup
   call trace%end()
 END SUBROUTINE init
+
+!===============================================================================
+!> Post-initialize
+!===============================================================================
+SUBROUTINE pre_update (self)
+  class(patch_t):: self
+  if (allocated (self%force_per_unit_mass)) &
+    self%force_per_unit_mass = 0.0
+  if (allocated (self%force_per_unit_volume)) &
+    self%force_per_unit_volume = 0.0
+  if (allocated (self%heating_per_unit_mass)) &
+    self%heating_per_unit_mass = 0.0
+  if (allocated (self%heating_per_unit_volume)) &
+    self%heating_per_unit_volume = 0.0
+END SUBROUTINE pre_update
 
 !===============================================================================
 !> Initialize default values for the patch memory and patch dimensions. The 
