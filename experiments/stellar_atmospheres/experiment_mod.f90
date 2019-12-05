@@ -161,7 +161,7 @@ SUBROUTINE boundary_condition (self)
     !---------------------------------------------------------------------------
     ! Clamp the energy per unit mass at the table limit
     !---------------------------------------------------------------------------
-    e = max(e,3.5*d)
+    !e = max(e,3.5*d)
     !---------------------------------------------------------------------------
     ! Boundary conditions need the gas pressure in one layer
     !---------------------------------------------------------------------------
@@ -261,8 +261,8 @@ SUBROUTINE boundary_condition (self)
           ! pressure = pg(d_bot,e_bot), while keeping ee=e/d unchanged
           !---------------------------------------------------------------------
           if (iz == ui(3)) then
-            d1(ix,iy,1) = d(iz,iy,iz)*(p1(ix,iy,1)/pg(ix,iy,1))
-            e1(ix,iy,1) = e(iz,iy,iz)*(p1(ix,iy,1)/pg(ix,iy,1))
+            d1(ix,iy,1) = d(ix,iy,iz)*(p1(ix,iy,1)/pg(ix,iy,1))
+            e1(ix,iy,1) = e(ix,iy,iz)*(p1(ix,iy,1)/pg(ix,iy,1))
             associate (w => bottom_bc_rate)
             d(ix,iy,iz) = w*d1(ix,iy,1) + (1.0-w)*d(ix,iy,iz)
             e(ix,iy,iz) = w*e1(ix,iy,1) + (1.0-w)*e(ix,iy,iz)
