@@ -7,6 +7,7 @@ MODULE remesh_mod
   USE io_mod
   USE trace_mod
   USE omp_timer_mod
+  USE kinds_mod
   USE patch_mod
   implicit none
   private
@@ -100,7 +101,7 @@ SUBROUTINE scatter_0th (self, coarse, fine, ll, nn)
   optional:: nn
   !.............................................................................
   integer:: i1, i2, i3, j1, j2, j3, iv, lc(3), uc(3), lf(3), uf(3)
-  real, dimension(:,:,:), pointer:: c, f
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: c, f
   real:: s(2)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -166,7 +167,7 @@ SUBROUTINE scatter_1st (self, coarse, fine, ll, nn)
   optional:: nn
   !.............................................................................
   integer:: i1, i2, i3, j1, j2, j3, iv, j, lc(3), uc(3), lf(3), ic(3)
-  real, dimension(:,:,:), pointer:: c, f
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: c, f
   real, allocatable:: out(:,:), w(:,:)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------

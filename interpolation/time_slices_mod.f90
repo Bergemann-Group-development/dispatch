@@ -15,7 +15,9 @@
     integer:: order=3
   contains
     procedure:: init
-    procedure, nopass:: interpolate
+    procedure, nopass:: interpolate4
+    procedure, nopass:: interpolate8
+    generic:: interpolate => interpolate4, interpolate8
     procedure, nopass:: derivative1
     procedure, nopass:: derivative2
   end type
@@ -56,7 +58,9 @@ END SUBROUTINE init
 !> Time interpolation.  mem() is assumed to contain nt time slices of a 3-D
 !> variable, with times consistent with the times produced by patch%timeslots()
 !===============================================================================
-SUBROUTINE interpolate (patch, mem, buffer)
+!> Single precision buffer version
+!===============================================================================
+SUBROUTINE interpolate4 (patch, mem, buffer)
   class(patch_t):: patch
   integer:: iv
   real(kind=KindScalarVar), dimension(:,:,:,:):: mem
@@ -70,8 +74,25 @@ SUBROUTINE interpolate (patch, mem, buffer)
   if (verbose > 0) write(io_unit%log,*) patch%id, 'time_slices_t%interpolate'
   call patch%timeslots (iit, times)
   call lagrange%sequence_weights (patch%out_next, times, i1, i2, w, order)
-  call weighted_sum (patch, times, w, i1, i2, mem, buffer)
-END SUBROUTINE interpolate
+  call weighted_sum4 (patch, times, w, i1, i2, mem, buffer)
+END SUBROUTINE interpolate4
+
+SUBROUTINE interpolate8(patch, mem, buffer)
+  class(patch_t):: patch
+  integer:: iv
+  real(kind=KindScalarVar), dimension(:,:,:,:):: mem
+  real(kind=8), dimension(:,:,:):: buffer
+  !.............................................................................
+  real(8):: times(patch%nt-1)
+  integer:: iit(patch%nt-1)
+  real(8), dimension(order+1):: w
+  integer:: i1, i2
+  !-----------------------------------------------------------------------------
+  if (verbose > 0) write(io_unit%log,*) patch%id, 'time_slices_t%interpolate'
+  call patch%timeslots (iit, times)
+  call lagrange%sequence_weights (patch%out_next, times, i1, i2, w, order)
+  call weighted_sum8 (patch, times, w, i1, i2, mem, buffer)
+END SUBROUTINE interpolate8
 
 !===============================================================================
 !> First time derivate
@@ -89,7 +110,7 @@ SUBROUTINE derivative1 (patch, mem, buffer)
   if (verbose > 0) write(io_unit%log,*) patch%id, 'time_slices_t%derivative1'
   times = patch%t(patch%iit(1:patch%nt-1))
   call lagrange%deriv_sequence_weights (patch%out_next, times, i1, i2, w, order)
-  call weighted_sum (patch, times, w, i1, i2, mem, buffer)
+  call weighted_sum4 (patch, times, w, i1, i2, mem, buffer)
 END SUBROUTINE derivative1
 
 !===============================================================================
@@ -108,13 +129,13 @@ SUBROUTINE derivative2 (patch, mem, buffer)
   if (verbose > 0) write(io_unit%log,*) patch%id, 'time_slices_t%derivative2'
   times = patch%t(patch%iit(1:patch%nt-1))
   call lagrange%deriv2_sequence_weights (patch%out_next, times, i1, i2, w, order)
-  call weighted_sum (patch, times, w, i1, i2, mem, buffer)
+  call weighted_sum4 (patch, times, w, i1, i2, mem, buffer)
 END SUBROUTINE derivative2
 
 !===============================================================================
 !> Weighted sum of time slice values
 !===============================================================================
-SUBROUTINE weighted_sum (patch, times, w, i1, i2, mem, buffer)
+SUBROUTINE weighted_sum4 (patch, times, w, i1, i2, mem, buffer)
   class(patch_t):: patch
   real(8), dimension(:):: times, w
   integer:: i1, i2
@@ -132,6 +153,26 @@ SUBROUTINE weighted_sum (patch, times, w, i1, i2, mem, buffer)
   do i=i1,i2
     buffer = buffer + w(1+i-i1)*mem(:,:,:,i)
   end do
-END SUBROUTINE weighted_sum
+END SUBROUTINE weighted_sum4
+
+SUBROUTINE weighted_sum8 (patch, times, w, i1, i2, mem, buffer)
+  class(patch_t):: patch
+  real(8), dimension(:):: times, w
+  integer:: i1, i2
+  real(kind=KindScalarVar), dimension(:,:,:,:):: mem
+  real(kind=8), dimension(:,:,:):: buffer
+  !.............................................................................
+  integer:: i
+  !-----------------------------------------------------------------------------
+  if (verbose>0 .or. patch%id==id_debug) then
+    write (io_unit%output,'(a,2i4,2x,10i4)')      'indices:', i1, i2, patch%iit(i1:i2)
+    write (io_unit%output,'(a,f12.6,2x,10f14.6)') '  times:', patch%out_next, times(i1:i2)
+    write (io_unit%output,'(a,f12.6,2x,10f14.3)') 'weights:', sum(w), w
+  end if
+  buffer = 0.0
+  do i=i1,i2
+    buffer = buffer + w(1+i-i1)*mem(:,:,:,i)
+  end do
+END SUBROUTINE weighted_sum8
 
 END MODULE time_slices_mod

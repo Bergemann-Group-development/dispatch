@@ -47,6 +47,7 @@
 MODULE amr_io_mod
   USE io_mod
   USE trace_mod
+  USE kinds_mod
   USE task_mod
   USE patch_mod
   USE link_mod
@@ -125,7 +126,7 @@ SUBROUTINE output (self, patch, count)
   class(task_t), pointer:: task
   class(patch_t), pointer:: out
   integer:: count, l(3), u(3), n(3), prv, now, remains, it, iv
-  real, allocatable:: tmp(:,:,:,:)
+  real(kind=KindScalarVar), allocatable:: tmp(:,:,:,:)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('amr_io_t%output')
@@ -390,7 +391,7 @@ END SUBROUTINE input
 !===============================================================================
 SUBROUTINE convert_variables (patch, mem, iv, it)
   class(patch_t):: patch
-  real:: mem(:,:,:)
+  real(kind=KindScalarVar):: mem(:,:,:)
   integer:: iv, it, jt
   integer:: io_format, l(3), u(3), i, j, k
   !...........................................................................

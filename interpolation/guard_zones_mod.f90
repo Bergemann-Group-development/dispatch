@@ -19,6 +19,7 @@ MODULE guard_zones_mod
   USE io_mod
   USE io_unit_mod
   USE trace_mod
+  USE kinds_mod
   USE patch_mod
   USE mesh_mod
   USE omp_timer_mod
@@ -241,7 +242,7 @@ SUBROUTINE restrict_vect (self, target, source, jt, pt, same)
   real(4):: pt(2)
   logical, optional:: same
   !.............................................................................
-  real, dimension(:,:,:), pointer:: tmem, smem, td, sd
+  real(kind=KindScalarVar), dimension(:,:,:), pointer:: tmem, smem, td, sd
   class(mesh_t), pointer:: mesh
   integer:: i, i1, i2, i3, j, k, iv, tl(3), tu(3), sl(3), su(3), j0(3)
   real(8):: tlc(3), tuc(3), slc(3), suc(3)
@@ -370,9 +371,9 @@ END SUBROUTINE restrict_vect
 SUBROUTINE update (target, tmem, td, l, u, iv, source, smem, sd, j0, k, &
                    pt, w, verbose)
   class(patch_t), pointer:: target, source
-  real, dimension(:,:,:), contiguous, intent(out):: tmem
-  real, dimension(:,:,:), contiguous, intent(in):: smem
-  real, dimension(:,:,:), contiguous, intent(inout):: td, sd
+  real(kind=KindScalarVar), dimension(:,:,:), contiguous, intent(out):: tmem
+  real(kind=KindScalarVar), dimension(:,:,:), contiguous, intent(in):: smem
+  real(kind=KindScalarVar), dimension(:,:,:), contiguous, intent(inout):: td, sd
   integer:: l(3), u(3), iv, j0(3), k, verbose
   real:: pt, w(8)
   !.............................................................................
