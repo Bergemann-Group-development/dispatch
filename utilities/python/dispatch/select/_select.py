@@ -127,7 +127,7 @@ def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,i4=0,var=None,verbose=0,all=0):
     ss=[]
     ff=[]
     ii,w=indices_and_weights(p,point,iv)
-    data=p.var(iv,i4=i4)
+    data=p.var(iv,i4=i4,all=all)
     ione = (0,1)[p.gn[0] > 1]
     jone = (0,1)[p.gn[1] > 1]
     kone = (0,1)[p.gn[2] > 1]
@@ -135,15 +135,15 @@ def values_in(p,point=[0.5,0.5,0.5],dir=0,iv=0,i4=0,var=None,verbose=0,all=0):
     if verbose:
         print('{:3d} {}   {} {:5.1f} {:4.1f} {:4.1f}'.\
           format(p.id,iv,ii,w[0],w[1],w[2]))
-    if not p.guard_zones:
+    if not p.guard_zones or not all:
         m=np.zeros(3,dtype=np.int32)
         n=p.n
     elif all:
         m=np.zeros(3,dtype=np.int32)
         n=p.gn
-    else:
-        m=p.ng
-        n=p.n
+    #else:
+    #    m=p.ng
+    #    n=p.n
     if type(var)==str:
         iv=p.idx.dict[var]
     if dir==0:
