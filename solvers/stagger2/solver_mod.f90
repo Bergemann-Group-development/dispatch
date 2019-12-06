@@ -248,25 +248,6 @@ END SUBROUTINE ss2e
 !> temperature from ideal gas law, taking into account that the temperature is
 !> normalised by k_B and mu (so that specific gas constant = 1)
 !===============================================================================
-!FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
-!  class(solver_t):: self
-!  real, dimension(:,:,:), pointer:: lnd, ss, d, s
-!  optional:: lnd, ss
-!  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
-!  !-----------------------------------------------------------------------------
-!  if (present(lnd)) then
-!    pg = exp(lnd*self%gamma)*exp(ss*(self%gamma-1d0))
-!  else
-!    d => self%mem(:,:,:,self%idx%d,self%it,1)
-!    s => self%mem(:,:,:,self%idx%s,self%it,1)
-!    pg = d**self%gamma*exp(s/d*(self%gamma-1d0))
-!  end if
-!END FUNCTION gas_pressure
-
-!===============================================================================
-!> temperature from ideal gas law, taking into account that the temperature is
-!> normalised by k_B and mu (so that specific gas constant = 1)
-!===============================================================================
 !FUNCTION gas_temperature (self, lnd, ss) RESULT (tmp)
 !  class(solver_t):: self
 !  real, dimension(:,:,:), pointer:: lnd, ss

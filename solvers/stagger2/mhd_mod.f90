@@ -49,6 +49,7 @@ MODULE mhd_mod
     procedure:: pre_update
     procedure:: update
     procedure:: output
+    procedure:: gas_pressure
     procedure:: gas_pressure_sub
   end type
   integer:: verbose=0
@@ -826,6 +827,25 @@ SUBROUTINE output (self)
   end if
   call trace%end()
 END SUBROUTINE output
+
+!===============================================================================
+!> temperature from ideal gas law, taking into account that the temperature is
+!> normalised by k_B and mu (so that specific gas constant = 1)
+!===============================================================================
+FUNCTION gas_pressure (self, lnd, ss) RESULT (pg)
+  class(mhd_t):: self
+  real, dimension(:,:,:), pointer:: lnd, ss, d, s
+  optional:: lnd, ss
+  real, dimension(self%gn(1),self%gn(2),self%gn(3)):: pg
+  !-----------------------------------------------------------------------------
+  if (present(lnd)) then
+    pg = exp(lnd*self%gamma)*exp(ss*(self%gamma-1d0))
+  else
+    d => self%mem(:,:,:,self%idx%d,self%it,1)
+    s => self%mem(:,:,:,self%idx%s,self%it,1)
+    pg = d**self%gamma*exp(s/d*(self%gamma-1d0))
+  end if
+END FUNCTION gas_pressure
 
 !===============================================================================
 SUBROUTINE gas_pressure_sub (self, d, lnd, ss, pg)
