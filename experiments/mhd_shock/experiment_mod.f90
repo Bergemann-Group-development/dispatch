@@ -52,7 +52,7 @@ SUBROUTINE init (self)
   call trace_begin ('experiment_t%init')
   ! intialise solver
   self%mhd = .true.
-  call self%mhd_t%init
+  call self%solver_t%init
   self%periodic = [.false., .true., .true.]
 
   !$omp critical (input_cr)
