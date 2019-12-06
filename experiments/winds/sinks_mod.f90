@@ -26,6 +26,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%init')
   self%mass = mass_msun*cgs%m_sun/scaling%m
+  self%nt = 5
+  call self%task_t%init
   call trace%end ()
 END SUBROUTINE init
 
@@ -35,6 +37,7 @@ SUBROUTINE update (self)
   class(sinks_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%update')
+  self%dtime = 1.0
   call trace%end ()
 END SUBROUTINE update
 

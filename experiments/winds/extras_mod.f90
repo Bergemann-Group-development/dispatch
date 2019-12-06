@@ -53,7 +53,7 @@ MODULE extras_mod
     procedure, nopass:: cast2extras
     procedure:: pre_init
     procedure:: init
-    procedure:: dealloc
+    !procedure:: dealloc
     procedure:: pre_update
     procedure:: post_update
     procedure:: output
@@ -71,8 +71,9 @@ CONTAINS
 SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
-  call self%winds%init (self)
+  call trace%begin ('extras_t%pre_init')
   self%patch => self
+  call trace%end ()
 END SUBROUTINE pre_init
 
 !===============================================================================
@@ -82,19 +83,9 @@ SUBROUTINE init (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%init')
-  call self%winds%init (self%patch)                                      ! wind 
-  call trace%end()
+  call self%winds%init (self%patch)
+  call trace%end ()
 END SUBROUTINE init
-
-!===============================================================================
-!> Deallocate allocated arrays
-!===============================================================================
-SUBROUTINE dealloc (self)
-  class(extras_t):: self
-  !.............................................................................
-  call trace%begin ('extras_t%dealloc')
-  call trace%end()
-END SUBROUTINE dealloc
 
 !===============================================================================
 !> The pre_update hierarchy is called before the solver updates. To allow for
@@ -103,11 +94,11 @@ END SUBROUTINE dealloc
 !> force can be added separately, and to prevent these contributions to pile up.
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(extras_t):: self
+  class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
   call self%patch_t%pre_update                                          ! reset
-  call trace%end()
+  call trace%end ()
 END SUBROUTINE pre_update
 
 !===============================================================================
@@ -117,7 +108,9 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
+  call trace%begin ('extras_t%post_update')
   call self%winds%update (self%patch)
+  call trace%end ()
 END SUBROUTINE post_update
 
 !===============================================================================
@@ -126,7 +119,9 @@ END SUBROUTINE post_update
 SUBROUTINE output (self)
   class(extras_t):: self
   !.............................................................................
+  call trace%begin ('extras_t%output')
   call self%gpatch_t%output                                             ! keep
+  call trace%end ()
 END SUBROUTINE output
 
 !===============================================================================
@@ -138,7 +133,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
   !-----------------------------------------------------------------------------
   call trace%begin ('extras_t%courant_condition')
   call self%gpatch_t%courant_condition (detailed_timer)                 ! keep
-  call trace%end()
+  call trace%end ()
 END SUBROUTINE courant_condition
 
 !===============================================================================
@@ -177,14 +172,9 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   class(task_t), pointer:: another
   logical:: needed, needs_me, download
   !-----------------------------------------------------------------------------
-  call trace%begin ('rt_t%nbor_relations')
-  !
-  !-----------------------------------------------------------------------------
-  ! First check the main relations, then specific ones
-  !-----------------------------------------------------------------------------
-  call self%task_t%nbor_relations(another, needed, needs_me, download) ! keep
-  !
-  call trace%end()
+  call trace%begin ('extras_t%nbor_relations')
+  call self%task_t%nbor_relations(another, needed, needs_me, download)  ! keep
+  call trace%end ()
 END SUBROUTINE nbor_relations
 
 END MODULE extras_mod

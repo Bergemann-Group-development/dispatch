@@ -19,11 +19,11 @@ PROGRAM dispatch
   call scaling%init                             ! Scaling to code units
   call download%init                            ! Downloading and interpolation parameters
   call dispatcher%init                          ! Initialize the dispatcher
-  call cartesian%init
-  task_list => cartesian%task_list
-  call setup (task_list)                        ! Populate task list
+  call cartesian%init                           ! Cartesian patches
+  task_list => cartesian%task_list              ! Initial task list
+  call setup (task_list)                        ! Add sinks
   call dispatcher%execute (task_list)           ! Run the dispatcher
-  call mpi%end
+  call mpi%end                                  ! MPI finalize
 END PROGRAM dispatch
 
 !===============================================================================
@@ -44,8 +44,12 @@ SUBROUTINE setup (task_list)
   do i=1,n_sink
     allocate (sink)
     call sink%init
-    sink%position = (i-(n_sink+1)/2.0)*0.25
+    sink%ds    = 0d0
+    sink%size  = task_list%head%task%size*0.5
+    sink%level = task_list%head%task%level
+    sink%position = (i-(n_sink+1)/2.0)*0.25 + 0.5d0
     task => sink
     call task_list%append_task (task)
   end do
+  call task_list%init_all_nbors
 END SUBROUTINE setup
