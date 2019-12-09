@@ -505,9 +505,9 @@ class _patch():
         #timer.add('_patch(7))')
         if snap.io.method.strip()=='legacy':
             self.filename=snap.rundir+'/{:05d}/{:05d}.dat'.format(self.iout,self.id)
-            self.var=_var(self,self.filename,snap)
+            self.var=_var(self,self.filename,snap,verbose=verbose)
         else:
-            self.var=_var(self,snap.datafiled,snap)
+            self.var=_var(self,snap.datafiled,snap,verbose=verbose)
         timer.add('_var')   # 1.8s
             
         """ add a comprehensive set of variable keys """
@@ -551,11 +551,11 @@ class _patch():
             if idx.b3>=0: h[2,idx.b3]=-0.5
         return h
 
-    def cache(self,verbose=0):
+    def cache(self,all=False,verbose=0):
         setattr(self,'o',_param())
         self.data={}
         for k,v in self.idx.vars.items():
-            self.data[k]=self.var(v)
+            self.data[k]=self.var(v,all=all)
             self.data[v]=self.data[k]
             setattr(self.o,v,self.data[v])
         if verbose:
