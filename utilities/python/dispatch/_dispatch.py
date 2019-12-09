@@ -634,7 +634,7 @@ def parse_patches(snap,file='../data/00000/rank_00000_patches.nml'):
         watch_block = False
         for line in fo:
             # strip commas and equal sign from line and split
-            line=line.replace('=','').replace(',','').replace('"',' ')
+            line=line.replace('=',' ').replace(',','').replace('"',' ')
             items=line.split()
             if items[0] == "&PATCH_NML":
                 d={}
