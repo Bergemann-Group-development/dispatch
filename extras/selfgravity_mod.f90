@@ -175,14 +175,12 @@ END SUBROUTINE pre_update
 SUBROUTINE post_update (self, patch)
   class(selfgravity_t):: self
   class(patch_t):: patch
+  integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   if (.not. selfgravity) return
-  call trace%begin ('selfgravity_t%post_update')
+  call trace%begin ('selfgravity_t%post_update', itimer=itimer)
   if (selfgravity) then
     if (self%poisson_time == patch%time) then
-      !call timestep%update(patch%id, patch%iit, patch%dt, patch%mem, patch%mesh)
-      call patch%rotate
-      patch%rotated = .true.
       if (verbose>0) &
         print *, patch%id, 'selfgravity_t%update updated patch%time to', patch%time
     else
@@ -190,12 +188,11 @@ SUBROUTINE post_update (self, patch)
       call patch%dnload (only=patch%idx%phi)
       call self%pre_update (patch)
       self%poisson_time = patch%time
-      patch%rotated = .true.
       if (verbose>0) &
         print *, patch%id, 'selfgravity_t%update updated self%poisson_time to', self%poisson_time
     end if
   end if
-  call trace%end()
+  call trace%end(itimer)
 END SUBROUTINE post_update
 
 !===============================================================================
