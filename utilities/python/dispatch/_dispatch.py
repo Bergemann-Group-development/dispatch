@@ -645,7 +645,11 @@ def parse_patches(snap,file='../data/00000/rank_00000_patches.nml'):
                 d['position'] = _parse_namelist(items)
             elif items[0]=='SIZE':
                 d['size'] = _parse_namelist(items)
-                d['ds'] = d['size']/snap.n
+                if not d.has_key('ds'):
+                    if snap.no_mans_land:
+                        d['ds'] = d['size']/snap.n
+                    else:
+                        d['ds'] = d['size']/(np.array(snap.n)-1).clip(min=1)
             elif items[0]=='LEVEL':
                 d['level']=int(items[1])
             elif items[0]=='DTIME':
