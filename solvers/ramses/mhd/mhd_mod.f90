@@ -1081,12 +1081,12 @@ SUBROUTINE trace3d(self)
   real(dp) :: sAL0, sAR0, sBL0, sBR0, sCL0, sCR0
   real(dp), dimension(:,:,:), allocatable:: rho_t, p_t
   real(dp) :: eff_gamma, off
-  real(dp) :: ff(self%gn(1),3)
+  real(dp) :: ff(self%gn(1),3), qq(self%gn(1))
   integer:: lo(3), uo(3)
   integer, save:: itimer(4)=0
   !-----------------------------------------------------------------------------
   real(dp), dimension(:,:,:)    , pointer, contiguous:: Bx, By, Bz, Ux, Uy, Uz
-  real(dp), dimension(:,:,:)    , pointer, contiguous:: Ex, Ey, Ez
+  real(dp), dimension(:,:,:)    , pointer, contiguous:: Ex, Ey, Ez, d
   real(dp), dimension(:,:,:,:)  , pointer, contiguous:: q, bf, em, uin, unew
   real(dp), dimension(:,:,:,:,:), pointer, contiguous:: qp, qm, dq, dq2, dbf
   real(dp), dimension(:,:,:,:,:), pointer, contiguous:: qLB, qRB, qLT, qRT
@@ -1164,6 +1164,7 @@ SUBROUTINE trace3d(self)
   !-----------------------------------------------------------------------------
   lo = self%mesh%lo-1
   uo = self%mesh%uo+1
+  d => self%mem(:,:,:,self%idx%d,self%it,1)
   do k=lo(3),uo(3)
   do j=lo(2),uo(2)
   if (allocated(self%force_per_unit_mass)) then
@@ -1173,8 +1174,25 @@ SUBROUTINE trace3d(self)
       ff(i,2) = self%force_per_unit_mass(i,j,k,2)
       ff(i,3) = self%force_per_unit_mass(i,j,k,3)
     end do
+  else if (allocated(self%force_per_unit_volume)) then
+    do i=lb(1),ub(1)
+      ff(i,1) = self%force_per_unit_mass(i,j,k,1)/d(i,j,k)
+      ff(i,2) = self%force_per_unit_mass(i,j,k,2)/d(i,j,k)
+      ff(i,3) = self%force_per_unit_mass(i,j,k,3)/d(i,j,k)
+    end do
   else
-      ff(:,:) = 0.0_dp
+    ff(:,:) = 0.0_dp
+  end if
+  if (allocated(self%heating_per_unit_volume)) then
+    do i=lb(1),ub(1)
+      qq(i) = self%heating_per_unit_volume(i,j,k)
+    end do
+  else if (allocated(self%heating_per_unit_mass)) then
+    do i=lb(1),ub(1)
+      qq(i) = self%heating_per_unit_mass(i,j,k)*d(i,j,k)
+    end do
+  else
+      qq(:) = 0.0
   end if
   !dir$ ivdep
   !$omp simd private( &
@@ -1282,12 +1300,17 @@ SUBROUTINE trace3d(self)
     su0 = (-u*dux-(dpx+B*dBx+C*dCx)*invr)*dtdx + (-v*duy+B*dAy*invr)*dtdy + (-w*duz+C*dAz*invr)*dtdz
     sv0 = (-u*dvx+A*dBx*invr)*dtdx + (-v*dvy-(dpy+A*dAy+C*dCy)*invr)*dtdy + (-w*dvz+C*dBz*invr)*dtdz
     sw0 = (-u*dwx+A*dCx*invr)*dtdx + (-v*dwy+B*dCy*invr)*dtdy + (-w*dwz-(dpz+A*dAz+B*dBz)*invr)*dtdz
-    sp0 = (-u*dpx-dux*eff_gamma*p)*dtdx + (-v*dpy-dvy*eff_gamma*p)*dtdy + (-w*dpz-dwz*eff_gamma*p)*dtdz
+    sp0 = (-u*dpx-dux*eff_gamma*p)*dtdx &
+        + (-v*dpy-dvy*eff_gamma*p)*dtdy &
+        + (-w*dpz-dwz*eff_gamma*p)*dtdz
     !
     ! Add external force
     su0 = su0 + ff(i,1)*half*self%dtime
     sv0 = sv0 + ff(i,2)*half*self%dtime
     sw0 = sw0 + ff(i,3)*half*self%dtime
+    !
+    ! Add external heating
+    sp0 = sp0  + (eff_gamma-1d0)*qq(i)*self%dtime
     !
     ! Evolve entropy instead of pressure
     !sS0 = (-u*dSx)*dtdx + (-v*dSy)*dtdy + (-w*dSz)*dtdz
