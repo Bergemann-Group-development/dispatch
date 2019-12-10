@@ -1,9 +1,9 @@
 ! cooling_Casiana.f90 $Id$
 !***********************************************************************
-FUNCTION cooling_Casiana (self, temp)
+FUNCTION cooling_Casiana (temp)
   implicit none
-  class(cooling_t):: self
-  real(kind=dp) cooling_Casiana, temp, qq  
+  real(kind=dp), intent(in):: temp
+  real(kind=dp) cooling_Casiana, qq  
   real(kind=dp), parameter:: &
     TEm=1e1, &
     TE0=1e3, &

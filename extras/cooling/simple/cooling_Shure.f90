@@ -1,7 +1,7 @@
-FUNCTION cooling_Shure (self, temp)
+FUNCTION cooling_Shure (temp)
   implicit none
-  class(cooling_t):: self
-  real(kind=dp) cooling_Shure, temp  
+  real(kind=dp), intent(in):: temp  
+  real(kind=dp):: cooling_Shure 
   real(kind=dp), save:: Ttab2(110), Ttab3(76)
   real(kind=dp), save, dimension(3,110):: table2
   data table2 / &

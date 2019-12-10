@@ -1,14 +1,14 @@
 ! cooling_Dalgarno.f90 $Id$
 !***********************************************************************
-FUNCTION cooling_Dalgarno (self, temp)
+FUNCTION cooling_Dalgarno (temp)
 !
 ! Fit to cooling profile, merged between Dalgarno & McCray(1972)
 ! for low temp, and Raymond, Cox & Smith(1976) for high temp.
 ! C4/H4 corrected relative to sncool.pro to make it smooth at T=1e5.
 
   implicit none
-  class(cooling_t):: self
-  real(kind=dp) cooling_Dalgarno, temp, qq  
+  real(kind=dp), intent(in):: temp
+  real(kind=dp) cooling_Dalgarno, qq  
   real(kind=dp), parameter:: &
     TE1=10.0, &
     TE2=2000.0, &

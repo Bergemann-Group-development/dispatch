@@ -1,9 +1,9 @@
 ! cooling_Rosen_etal.f90 $Id$
 !***********************************************************************
-FUNCTION cooling_Rosen_etal (self, temp)
+FUNCTION cooling_Rosen_etal (temp)
   implicit none
-  class(cooling_t):: self
-  real(kind=dp) cooling_Rosen_etal, temp, qq
+  real(kind=dp), intent(in):: temp
+  real(kind=dp) cooling_Rosen_etal, qq
   real(kind=dp), parameter:: &
     TE1=10.0, &                ! extended down to 10 K from 300 K.
     TE2=2000.0, &

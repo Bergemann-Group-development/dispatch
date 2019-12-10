@@ -1,10 +1,10 @@
 ! cooling_Gnedin.f90 $Id$
 !-------------------------------------------------------------------------------
-FUNCTION cooling_Gnedin (self, temp)
+FUNCTION cooling_Gnedin (temp)
   implicit none
-  class(cooling_t):: self
-  real(kind=dp) cooling_Gnedin, temp, p
-  integer i
+  real(kind=dp), intent(in):: temp
+  real(kind=dp):: cooling_Gnedin, p
+  integer:: i
   real, parameter:: dlgT=0.1, lgT0=1.0
   integer, parameter:: ntab=81
   real(kind=dp), parameter, dimension(ntab):: ln25 = (/ &
