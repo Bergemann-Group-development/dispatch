@@ -65,7 +65,7 @@ SUBROUTINE condition (self, m, f, idx)
   real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: f
   class(mesh_t), pointer:: m(:), m1, m2, m3
   integer:: i1, i2, i3
-  real:: x, y ,z
+  real(kind=KindScalarVar):: x, y ,z
   !----------------------------------------------------------------------------
   call trace%begin('initial_t%condition')
 
@@ -96,8 +96,8 @@ END SUBROUTINE condition
 !> Function to calculate the exact potential (eq. 4 of Guillet & Teyssier)
 !===============================================================================
 FUNCTION func_phi0 (x, y) result (phi0)
-  real, intent(in):: x, y
-  real:: r, phi0
+  real(kind=KindScalarVar), intent(in):: x, y
+  real(kind=KindScalarVar):: r, phi0
   !----------------------------------------------------------------------------
   r = sqrt(x**2 + y**2)
   phi0 = log((r / global_r0)**2 + 1.0) + 1.0
@@ -108,8 +108,8 @@ END FUNCTION func_phi0
 !> Function to calculate the density that matches the exact potential
 !===============================================================================
 FUNCTION func_d0 (x, y) result (d0)
-  real, intent(in):: x, y
-  real:: r, d0
+  real(kind=KindScalarVar), intent(in):: x, y
+  real(kind=KindScalarVar):: r, d0
   !----------------------------------------------------------------------------
   r = sqrt(x**2 + y**2)
   d0 = 4.0 * global_r0**2 / (r**2 + global_r0**2)**2

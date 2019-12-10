@@ -4,6 +4,7 @@
 MODULE pboundary_mod
   USE io_mod
   USE trace_mod
+  USE kinds_mod
   USE mesh_mod
   USE patch_mod
   USE bits_mod
@@ -28,7 +29,7 @@ SUBROUTINE conditions (self, patch, it)
   class(patch_t), target :: patch
   class(mesh_t), pointer :: m1, m2, m3
   integer:: it, ix, iy
-  real:: x, y
+  real(kind=KindScalarVar):: x, y
   !-----------------------------------------------------------------------------
   call trace%begin('pboundary_t%conditions')
 
