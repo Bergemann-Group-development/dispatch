@@ -14,7 +14,7 @@ MODULE experiment_mod
     procedure:: update
     procedure:: dnload
   end type
-  real(8), save:: density_cgs=1e-20, cs_kms=0.18
+  real, save:: density_cgs=1e-20, cs_kms=0.18
 CONTAINS
 
 !===============================================================================

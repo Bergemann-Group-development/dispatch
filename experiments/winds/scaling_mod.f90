@@ -8,7 +8,7 @@ MODULE scaling_mod
   implicit none
   private
   type, public:: scaling_t
-    real(kind=8):: l, t, m, d, e, p, u, temp, grav, mu
+    real(kind=8):: l, t, m, d, e, ee, p, u, temp, grav, mu
   contains
     procedure:: init
     procedure:: m_sun
@@ -45,8 +45,9 @@ SUBROUTINE init (self)
   self%t = self%l/self%u                                ! time ~ 5 years
   self%p = self%d*self%u**2                             ! pressure = energy density
   self%e = self%m*self%u**2                             ! energy
+  self%ee = self%u**2                                   ! energy per unit mass
   self%mu = mu                                          ! mean molecular weight
-  self%temp = self%mu*(cgs%m_u*self%u**2)/cgs%k_b       ! temperature for given mu
+  self%temp = (cgs%m_u*self%u**2)/cgs%k_b               ! temperature for mu=1
   self%grav = cgs%grav*(self%m/self%l**3)*self%t**2     ! constant of gravity
   if (io%master) then
     print 1,' CODE UNITS:   (cgs):'
