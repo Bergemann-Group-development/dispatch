@@ -947,82 +947,109 @@ subroutine trace3d(self)
         p   =  q(i,j,k,ip)
 
         ! TVD slopes in all 3 directions
-        drx = dq(i,ir,1,j,k)
-        dpx = dq(i,ip,1,j,k)
-        dux = dq(i,iu,1,j,k)
-        dvx = dq(i,iv,1,j,k)
-        dwx = dq(i,iw,1,j,k)
+        drx = dq(i,ir,1,j,k)*half*dtdx
+        dpx = dq(i,ip,1,j,k)*half*dtdx
+        dux = dq(i,iu,1,j,k)*half*dtdx
+        dvx = dq(i,iv,1,j,k)*half*dtdx
+        dwx = dq(i,iw,1,j,k)*half*dtdx
 
-        dry = dq(i,ir,2,j,k)
-        dpy = dq(i,ip,2,j,k)
-        duy = dq(i,iu,2,j,k)
-        dvy = dq(i,iv,2,j,k)
-        dwy = dq(i,iw,2,j,k)
+        dry = dq(i,ir,2,j,k)*half*dtdy
+        dpy = dq(i,ip,2,j,k)*half*dtdy
+        duy = dq(i,iu,2,j,k)*half*dtdy
+        dvy = dq(i,iv,2,j,k)*half*dtdy
+        dwy = dq(i,iw,2,j,k)*half*dtdy
 
-        drz = dq(i,ir,3,j,k)
-        dpz = dq(i,ip,3,j,k)
-        duz = dq(i,iu,3,j,k)
-        dvz = dq(i,iv,3,j,k)
-        dwz = dq(i,iw,3,j,k)
+        drz = dq(i,ir,3,j,k)*half*dtdz
+        dpz = dq(i,ip,3,j,k)*half*dtdz
+        duz = dq(i,iu,3,j,k)*half*dtdz
+        dvz = dq(i,iv,3,j,k)*half*dtdz
+        dwz = dq(i,iw,3,j,k)*half*dtdz
 
         ! Source terms (including transverse derivatives)
         sr0 = -u*drx-v*dry-w*drz - (dux+dvy+dwz)*r
-        sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p !    + (gamma-1d0)*qq(i)
+        sp0 = -u*dpx-v*dpy-w*dpz - (dux+dvy+dwz)*gamma*p + (gamma-1d0)*qq(i)
+
+        ! Uncomment to use unconstrained pressure gradients
+        !dpx = half*(q(i+1,j,k,ip)-q(i-1,j,k,ip))*half*dtdx
+        !dpy = half*(q(i,j+1,k,ip)-q(i,j-1,k,ip))*half*dtdy
+        !dpz = half*(q(i,j,k+1,ip)-q(i,j,k-1,ip))*half*dtdz
         su0 = -u*dux-v*duy-w*duz - dpx/r + ff(i,1)
         sv0 = -u*dvx-v*dvy-w*dvz - dpy/r + ff(i,2)
         sw0 = -u*dwx-v*dwy-w*dwz - dpz/r + ff(i,3)
 
+        ! Add predictor step in time
+        r = r + sr0
+        p = p + sp0
+        u = u + su0
+        v = v + sv0
+        w = w + sw0
+
         ! Right state at left interface
-        qp(i,ir,1,j,k) = r - half*drx + sr0*dtdx*half
-        qp(i,ip,1,j,k) = p - half*dpx + sp0*dtdx*half
-        qp(i,iu,1,j,k) = u - half*dux + su0*dtdx*half
-        qp(i,iv,1,j,k) = v - half*dvx + sv0*dtdx*half
-        qp(i,iw,1,j,k) = w - half*dwx + sw0*dtdx*half
+        drx = dq(i,ir,1,j,k)*half
+        dpx = dq(i,ip,1,j,k)*half
+        dux = dq(i,iu,1,j,k)*half
+        dvx = dq(i,iv,1,j,k)*half
+        dwx = dq(i,iw,1,j,k)*half
+        qp(i,ir,1,j,k) = r - drx
+        qp(i,ip,1,j,k) = p - dpx
+        qp(i,iu,1,j,k) = u - dux
+        qp(i,iv,1,j,k) = v - dvx
+        qp(i,iw,1,j,k) = w - dwx
         qp(i,ir,1,j,k) = max(smallr, qp(i,ir,1,j,k))
         qp(i,ip,1,j,k) = max(smallp, qp(i,ip,1,j,k))
 
         ! Left state at right interface
-        qm(i+1,ir,1,j,k) = r + half*drx + sr0*dtdx*half
-        qm(i+1,ip,1,j,k) = p + half*dpx + sp0*dtdx*half
-        qm(i+1,iu,1,j,k) = u + half*dux + su0*dtdx*half
-        qm(i+1,iv,1,j,k) = v + half*dvx + sv0*dtdx*half
-        qm(i+1,iw,1,j,k) = w + half*dwx + sw0*dtdx*half
+        qm(i+1,ir,1,j,k) = r + drx
+        qm(i+1,ip,1,j,k) = p + dpx
+        qm(i+1,iu,1,j,k) = u + dux
+        qm(i+1,iv,1,j,k) = v + dvx
+        qm(i+1,iw,1,j,k) = w + dwx
         qm(i+1,ir,1,j,k) = max(smallr, qm(i+1,ir,1,j,k))
         qm(i+1,ip,1,j,k) = max(smallp, qm(i+1,ip,1,j,k))
 
         ! Top state at bottom interface
-        qp(i,ir,2,j,k) = r - half*dry + sr0*dtdy*half
-        qp(i,ip,2,j,k) = p - half*dpy + sp0*dtdy*half
-        qp(i,iu,2,j,k) = u - half*duy + su0*dtdy*half
-        qp(i,iv,2,j,k) = v - half*dvy + sv0*dtdy*half
-        qp(i,iw,2,j,k) = w - half*dwy + sw0*dtdy*half
+        dry = dq(i,ir,2,j,k)*half
+        dpy = dq(i,ip,2,j,k)*half
+        duy = dq(i,iu,2,j,k)*half
+        dvy = dq(i,iv,2,j,k)*half
+        dwy = dq(i,iw,2,j,k)*half
+        qp(i,ir,2,j,k) = r - dry
+        qp(i,ip,2,j,k) = p - dpy
+        qp(i,iu,2,j,k) = u - duy
+        qp(i,iv,2,j,k) = v - dvy
+        qp(i,iw,2,j,k) = w - dwy
         qp(i,ir,2,j,k) = max(smallr, qp(i,ir,2,j,k))
         qp(i,ip,2,j,k) = max(smallp, qp(i,ip,2,j,k))
 
         ! Bottom state at top interface
-        qm(i,ir,2,j+1,k) = r + half*dry + sr0*dtdy*half
-        qm(i,ip,2,j+1,k) = p + half*dpy + sp0*dtdy*half
-        qm(i,iu,2,j+1,k) = u + half*duy + su0*dtdy*half
-        qm(i,iv,2,j+1,k) = v + half*dvy + sv0*dtdy*half
-        qm(i,iw,2,j+1,k) = w + half*dwy + sw0*dtdy*half
+        qm(i,ir,2,j+1,k) = r + dry
+        qm(i,ip,2,j+1,k) = p + dpy
+        qm(i,iu,2,j+1,k) = u + duy
+        qm(i,iv,2,j+1,k) = v + dvy
+        qm(i,iw,2,j+1,k) = w + dwy
         qm(i,ir,2,j+1,k) = max(smallr, qm(i,ir,2,j+1,k))
         qm(i,ip,2,j+1,k) = max(smallp, qm(i,ip,2,j+1,k))
 
         ! Back state at front interface
-        qp(i,ir,3,j,k) = r - half*drz + sr0*dtdz*half
-        qp(i,ip,3,j,k) = p - half*dpz + sp0*dtdz*half
-        qp(i,iu,3,j,k) = u - half*duz + su0*dtdz*half
-        qp(i,iv,3,j,k) = v - half*dvz + sv0*dtdz*half
-        qp(i,iw,3,j,k) = w - half*dwz + sw0*dtdz*half
+        drz = dq(i,ir,3,j,k)*half
+        dpz = dq(i,ip,3,j,k)*half
+        duz = dq(i,iu,3,j,k)*half
+        dvz = dq(i,iv,3,j,k)*half
+        dwz = dq(i,iw,3,j,k)*half
+        qp(i,ir,3,j,k) = r - drz
+        qp(i,ip,3,j,k) = p - dpz
+        qp(i,iu,3,j,k) = u - duz
+        qp(i,iv,3,j,k) = v - dvz
+        qp(i,iw,3,j,k) = w - dwz
         qp(i,ir,3,j,k) = max(smallr, qp(i,ir,3,j,k))
         qp(i,ip,3,j,k) = max(smallp, qp(i,ip,3,j,k))
 
         ! Front state at back interface
-        qm(i,ir,3,j,k+1) = r + half*drz + sr0*dtdz*half
-        qm(i,ip,3,j,k+1) = p + half*dpz + sp0*dtdz*half
-        qm(i,iu,3,j,k+1) = u + half*duz + su0*dtdz*half
-        qm(i,iv,3,j,k+1) = v + half*dvz + sv0*dtdz*half
-        qm(i,iw,3,j,k+1) = w + half*dwz + sw0*dtdz*half
+        qm(i,ir,3,j,k+1) = r + drz
+        qm(i,ip,3,j,k+1) = p + dpz
+        qm(i,iu,3,j,k+1) = u + duz
+        qm(i,iv,3,j,k+1) = v + dvz
+        qm(i,iw,3,j,k+1) = w + dwz
         qm(i,ir,3,j,k+1) = max(smallr, qm(i,ir,3,j,k+1))
         qm(i,ip,3,j,k+1) = max(smallp, qm(i,ip,3,j,k+1))
       end do
