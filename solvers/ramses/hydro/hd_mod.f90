@@ -429,6 +429,7 @@ subroutine godunov (self)
       end do
     end do
   end do
+  call check_small (self, unew)
   if (detailed_timer) then
     call trace%end (itimer)
   else
@@ -442,7 +443,7 @@ subroutine check_small (self, uu)
   class(hd_t):: self
   real, dimension(:,:,:,:):: uu
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
-  real(dp):: c,d,u,v,w,p,ekin
+  real(dp):: c,d,u,v,w,p,ekin,smallp
   integer, save:: nprint=10
   integer, save:: itimer=0
   integer:: it, jt, iw
@@ -451,6 +452,7 @@ subroutine check_small (self, uu)
   if (detailed_timer) call trace%begin ('hd_t%check_small', itimer=itimer)
   n_smalld = 0
   n_smallp = 0
+  smallp = smallr*smallc**2/gamma
   panic = .false.
   lo = self%mesh%lb
   uo = self%mesh%ub
@@ -473,11 +475,11 @@ subroutine check_small (self, uu)
     w =  uu(i,j,k,self%idx%pz)*c
     ekin = 0.5*d*(u**2+v**2+w**2)
     if (isothermal) then
-      uu(i,j,k,self%idx%e) = max(uu(i,j,k,self%idx%e), smallr*smallc**2)
+      uu(i,j,k,self%idx%e) = max(uu(i,j,k,self%idx%e), smallp)
     else
       p = (uu(i,j,k,self%idx%e)-ekin)*(gamma-one)
-      if (p < smallr*smallc**2) then
-        p = smallr*smallc**2
+      if (p < smallp) then
+        p = smallp
         uu(i,j,k,self%idx%e) = p/(gamma-one)+ekin
         n_smallp = n_smallp+1
       end if
