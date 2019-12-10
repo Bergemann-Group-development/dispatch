@@ -518,7 +518,8 @@ subroutine unsplit(self)
   !-----------------------------------------------------------------------------
   call trace%begin ('hd_t%unsplit')
   call ctoprim(self)                  ! Primitive variables, sound speeds
-  call self%courant_condition (detailed_timer)
+  call self%patch_t%courant_condition (detailed_timer)
+  call self%extras_t%pre_update       ! Cooling and other extras
   call uslope(self)                   ! TVD slopes
   call trace3d(self)                  ! predictor step
   call cmpflxm(self)                  ! Solve for 1D flux in X direction
@@ -886,6 +887,7 @@ subroutine trace3d(self)
   real(dp), dimension(:,:,:)    , pointer, contiguous:: d
   real(dp), dimension(:,:,:,:)  , pointer, contiguous:: q
   real(dp), dimension(:,:,:,:,:), pointer, contiguous:: qp, qm, dq
+  real(8):: dt2
   integer,save:: itimer=0
   !-----------------------------------------------------------------------------
   q  => self%q
@@ -906,23 +908,30 @@ subroutine trace3d(self)
   ub = self%mesh%uo
   do k = lb(3),ub(3)
     do j = lb(2),ub(2)
+      d => self%mem(:,:,:,self%idx%d,self%it,1)
+      dt2 = half*self%dtime
       if (allocated(self%force_per_unit_mass)) then
         do i=lb(1),ub(1)
-          ff(i,1) = self%force_per_unit_mass(i,j,k,1)*self%mesh(1)%d
-          ff(i,2) = self%force_per_unit_mass(i,j,k,2)*self%mesh(2)%d
-          ff(i,3) = self%force_per_unit_mass(i,j,k,3)*self%mesh(3)%d
+          ff(i,1) = self%force_per_unit_mass(i,j,k,1)*dt2
+          ff(i,2) = self%force_per_unit_mass(i,j,k,2)*dt2
+          ff(i,3) = self%force_per_unit_mass(i,j,k,3)*dt2
+        end do
+      else if (allocated(self%force_per_unit_volume)) then
+        do i=lb(1),ub(1)
+          ff(i,1) = self%force_per_unit_volume(i,j,k,1)*dt2/d(i,j,k)
+          ff(i,2) = self%force_per_unit_volume(i,j,k,2)*dt2/d(i,j,k)
+          ff(i,3) = self%force_per_unit_volume(i,j,k,3)*dt2/d(i,j,k)
         end do
       else
-          ff(:,:) = 0.0_dp
+        ff(:,:) = 0.0_dp
       end if
       if (allocated(self%heating_per_unit_volume)) then
-        d => self%mem(:,:,:,self%idx%d,self%it,1)
         do i=lb(1),ub(1)
-          qq(i) = self%heating_per_unit_volume(i,j,k)/d(i,j,k)
+          qq(i) = self%heating_per_unit_volume(i,j,k)*dt2
         end do
       else if (allocated(self%heating_per_unit_mass)) then
         do i=lb(1),ub(1)
-          qq(i) = self%heating_per_unit_mass(i,j,k)
+          qq(i) = self%heating_per_unit_mass(i,j,k)*d(i,j,k)*dt2
         end do
       else
           qq(:) = 0.0
