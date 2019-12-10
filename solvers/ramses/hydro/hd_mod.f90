@@ -876,7 +876,7 @@ subroutine trace3d(self)
   class(hd_t):: self
   integer ::i, j, k, lb(3), ub(3)
   integer ::ir=1, iu=2, iv=3, iw=4, ip=5
-  real(dp)::dtdx, dtdy, dtdz
+  real(dp)::dtdx, dtdy, dtdz, smallp
   real(dp)::r, u, v, w, p, a
   real(dp)::drx, dux, dvx, dwx, dpx, dax
   real(dp)::dry, duy, dvy, dwy, dpy, day
@@ -900,6 +900,7 @@ subroutine trace3d(self)
   dtdx = self%dtime/self%mesh(1)%d
   dtdy = self%dtime/self%mesh(2)%d
   dtdz = self%dtime/self%mesh(3)%d
+  smallp = smallr*smallc**2/gamma
   !-----------------------------------------------------------------------------
   lb = self%mesh%lo
   ub = self%mesh%uo
@@ -969,6 +970,7 @@ subroutine trace3d(self)
         qp(i,iv,1,j,k) = v - half*dvx + sv0*dtdx*half
         qp(i,iw,1,j,k) = w - half*dwx + sw0*dtdx*half
         qp(i,ir,1,j,k) = max(smallr, qp(i,ir,1,j,k))
+        qp(i,ip,1,j,k) = max(smallp, qp(i,ip,1,j,k))
 
         ! Left state at right interface
         qm(i+1,ir,1,j,k) = r + half*drx + sr0*dtdx*half
@@ -977,6 +979,7 @@ subroutine trace3d(self)
         qm(i+1,iv,1,j,k) = v + half*dvx + sv0*dtdx*half
         qm(i+1,iw,1,j,k) = w + half*dwx + sw0*dtdx*half
         qm(i+1,ir,1,j,k) = max(smallr, qm(i+1,ir,1,j,k))
+        qm(i+1,ip,1,j,k) = max(smallp, qm(i+1,ip,1,j,k))
 
         ! Top state at bottom interface
         qp(i,ir,2,j,k) = r - half*dry + sr0*dtdy*half
@@ -985,6 +988,7 @@ subroutine trace3d(self)
         qp(i,iv,2,j,k) = v - half*dvy + sv0*dtdy*half
         qp(i,iw,2,j,k) = w - half*dwy + sw0*dtdy*half
         qp(i,ir,2,j,k) = max(smallr, qp(i,ir,2,j,k))
+        qp(i,ip,2,j,k) = max(smallp, qp(i,ip,2,j,k))
 
         ! Bottom state at top interface
         qm(i,ir,2,j+1,k) = r + half*dry + sr0*dtdy*half
@@ -993,6 +997,7 @@ subroutine trace3d(self)
         qm(i,iv,2,j+1,k) = v + half*dvy + sv0*dtdy*half
         qm(i,iw,2,j+1,k) = w + half*dwy + sw0*dtdy*half
         qm(i,ir,2,j+1,k) = max(smallr, qm(i,ir,2,j+1,k))
+        qm(i,ip,2,j+1,k) = max(smallp, qm(i,ip,2,j+1,k))
 
         ! Back state at front interface
         qp(i,ir,3,j,k) = r - half*drz + sr0*dtdz*half
@@ -1001,6 +1006,7 @@ subroutine trace3d(self)
         qp(i,iv,3,j,k) = v - half*dvz + sv0*dtdz*half
         qp(i,iw,3,j,k) = w - half*dwz + sw0*dtdz*half
         qp(i,ir,3,j,k) = max(smallr, qp(i,ir,3,j,k))
+        qp(i,ip,3,j,k) = max(smallp, qp(i,ip,3,j,k))
 
         ! Front state at back interface
         qm(i,ir,3,j,k+1) = r + half*drz + sr0*dtdz*half
@@ -1009,6 +1015,7 @@ subroutine trace3d(self)
         qm(i,iv,3,j,k+1) = v + half*dvz + sv0*dtdz*half
         qm(i,iw,3,j,k+1) = w + half*dwz + sw0*dtdz*half
         qm(i,ir,3,j,k+1) = max(smallr, qm(i,ir,3,j,k+1))
+        qm(i,ip,3,j,k+1) = max(smallp, qm(i,ip,3,j,k+1))
       end do
     end do
   end do
