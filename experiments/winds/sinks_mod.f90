@@ -11,33 +11,57 @@ MODULE sinks_mod
   implicit none
   private
   type, public, extends(task_t):: sinks_t
-    real(8):: mass=0d0
+    real:: mass, radius
+    real(8), allocatable:: pos(:,:)
   contains
     procedure:: init
     procedure:: update
   end type
+  integer:: verbose=0
+  real:: radius_au=4e3
   real:: mass_msun=30
 CONTAINS
 
 !===============================================================================
+!> Initialize sink task
 !===============================================================================
 SUBROUTINE init (self)
   class(sinks_t):: self
+  integer:: iostat
+  logical, save:: first_time=.true.
+  namelist /sinks_params/ verbose, mass_msun, radius_au  
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%init')
+  !$omp critical (input_cr)
+  if (first_time) then
+    rewind (io%input)
+    read (io%input, sinks_params, iostat=iostat)
+    write (io%output, sinks_params)
+    first_time = .false.
+  end if
+  !$omp end critical (input_cr)
   self%mass = mass_msun*cgs%m_sun/scaling%m
+  self%radius = radius_au*cgs%au/scaling%l
+  if (verbose > 0) &
+    print *,'radius',self%radius
   self%nt = 5
+  allocate (self%pos(3,self%nt))
   call self%task_t%init
+  self%size = 2d0*self%radius
   call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================
+!> Update sink task
 !===============================================================================
 SUBROUTINE update (self)
   class(sinks_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('sinks_t%update')
-  self%dtime = 1.0
+  self%dtime = 0.01
+  self%position = self%position + self%dtime*self%velocity
+  if (verbose > 0) &
+    print *, self%id, 'sinks_t: moved to', real(self%position,kind=4)
   call trace%end ()
 END SUBROUTINE update
 
