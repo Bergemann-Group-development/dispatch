@@ -31,6 +31,7 @@ MODULE cooling_mod
   real(dp):: G2 = 0.0                              ! heating prop to nH1^0 (disabled)
   real(dp):: G_MC = 1.e-24                         ! heating below T_MC
   real(dp):: T_MC = 10.                            ! stable low (MC) temperature
+  real(dp):: T_lim = 1e8                           ! limiting temperature
   real(dp):: N_crit = 500.                         ! cut-off number density
   real(dp):: max_fraction = 0.2                    ! max fractional cooling per iteration step
   real(dp):: end_fraction = 0.01                   ! max fractional cooling per iteration step
@@ -38,7 +39,7 @@ MODULE cooling_mod
   real(dp):: courant = 0.5                         ! Cooling Courant number 
   integer:: niter_max = 1000                   ! Iteration limit
   integer:: verbose=0
-  logical:: do_cool=.true., do_heat=.true., do_subcycle=.false.
+  logical:: on=.true., do_heat=.true., do_subcycle=.true.
   character(len=16):: type='Gnedin'
 CONTAINS
 
@@ -50,7 +51,7 @@ SUBROUTINE init (self)
   integer:: iostat
   logical, save:: first_time=.true.
   namelist /cooling_params/ verbose, type, courant, &
-    do_cool, do_heat, do_subcycle, G0, G1, G2, G_MC, T_G0, T_MC, N_crit, &
+    on, do_heat, do_subcycle, G0, G1, G2, G_MC, T_G0, T_MC, N_crit, &
     niter_max, max_fraction, end_fraction, mu
   !-----------------------------------------------------------------------------
   call trace%begin ('simple/cooling_t%init')
@@ -91,13 +92,13 @@ SUBROUTINE pre_update (self, patch)
   class (gpatch_t):: patch
   integer:: i1, i2, i3, l(3), u(3)
   real(dp):: q1, q2, eth, eth0, T, qq, d, e, px, py, pz, v, ekin, eth_MC
-  real(dp):: crate, hrate
+  real(dp):: crate, hrate, eth_lim
   real(dp):: T_min, T_max, Q_min, Q_max, r_min, r_max
   integer, save:: itimer=0
   logical, save:: info=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('cooling_t%pre_update', itimer=itimer)
-  if (do_cool .or. do_heat) then
+  if (on) then
     if (.not.allocated(patch%heating_per_unit_volume)) then
       u = patch%gn
       allocate (patch%heating_per_unit_volume(u(1),u(2),u(3)))
@@ -116,6 +117,7 @@ SUBROUTINE pre_update (self, patch)
       self%dtime = huge(1.0)
     end if
     eth_MC = T_MC/(scaling%temp*mu)
+    eth_lim = T_lim/(scaling%temp*mu)
     T_min = huge(1.)
     T_max = 0.0
     Q_min = huge(1.)
@@ -150,7 +152,13 @@ SUBROUTINE pre_update (self, patch)
         if (abs(patch%dtime*qq)/eth > max_fraction) then
           eth0 = eth
           call self%subcycle (d, eth, patch%dtime)
+          eth = min(eth,eth_lim)
           qq = (eth-eth0)/patch%dtime
+        else
+          eth0 = eth
+          eth = eth + patch%dtime*qq
+          eth = min(eth,eth_lim)
+          qq = (eth-eth0)/patch%dtime          
         end if
       else
         self%dtime = min(self%dtime, courant*eth/max(crate,hrate))
@@ -188,7 +196,7 @@ SUBROUTINE courant_condition (self, patch)
   real(dp), dimension(:,:,:), pointer:: e
   !----------------------------------------------------------------------------
   call trace%begin ('cooling_t%courant_condition')
-  if (do_cool .or. do_heat) then
+  if (on) then
     if (self%dtime < patch%dtime) then
       unit = merge (stdout, io_unit%log, verbose > 1)
       if (verbose > 0) then
@@ -212,7 +220,7 @@ FUNCTION cool (self, d, ee) RESULT (crate)
   real(kind=dp), intent(in):: d, ee
   real(kind=dp):: crate, nH1, temp
   !-----------------------------------------------------------------------------
-  if (do_cool) then
+  if (on) then
     nH1 = d*scaling%d/(mu*cgs%amu)
     temp = ee*scaling%temp*mu
     crate = nH1**2*self%function(temp)
@@ -316,8 +324,8 @@ SUBROUTINE test (self)
   logical:: save(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('simple/cooling_t%test')
-  save = [do_heat, do_cool, do_subcycle]
-  do_heat = .true.; do_cool = .true.; do_subcycle = .true.
+  save = [on, do_heat, do_subcycle]
+  on = .true.; do_heat = .true.; do_subcycle = .true.
   n = 1e3
   write (io_unit%log,'(1x,a,1p,3e11.2)') 'simple/cooling_t%test: n, scale =', &
     n, scaling%t, scaling%ee
@@ -350,7 +358,7 @@ SUBROUTINE test (self)
     d = 1e1*cgs%amu*mu/scaling%d
     call self%subcycle (d, eth, dt)
   end if
-  do_heat = save(1); do_cool = save(2); do_subcycle = save(3)
+  on = save(1); do_heat = save(2); do_subcycle = save(3)
   call trace%end ()
 END SUBROUTINE test
 

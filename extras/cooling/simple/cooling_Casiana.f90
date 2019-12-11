@@ -47,7 +47,7 @@ FUNCTION cooling_Casiana (temp)
     H4=2.7123742e-30, &
     H5=8.2298862e-28, &
     H6=1.9497e-22, &
-    H7=1.1749e+0*4e-28, &
+    H7=4.46670e-23, &
     H8=3.5155e-27, &
     H9=4.982757e-19, &
     H10=1.7379e-25, &
@@ -78,7 +78,7 @@ FUNCTION cooling_Casiana (temp)
     else if (temp .le. TE7) then
       qq = H6*temp**C6
     else if (temp .le. TE8) then
-      qq = (H7*temp**C7)*2.5e27
+      qq = (H7*(temp/TE8)**C7)
     else if (temp .le. TE9) then
       qq = H8*temp**C8
     else if (temp .le. TE10) then

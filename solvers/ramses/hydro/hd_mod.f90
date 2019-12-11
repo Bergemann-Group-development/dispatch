@@ -443,7 +443,7 @@ subroutine check_small (self, uu)
   class(hd_t):: self
   real, dimension(:,:,:,:):: uu
   integer:: i,j,k,lo(3),uo(3),n_smalld,n_smallp
-  real(dp):: c,d,u,v,w,p,ekin,smallp
+  real(dp):: c, d, u, v, w, p, ekin, eth
   integer, save:: nprint=10
   integer, save:: itimer=0
   integer:: it, jt, iw
@@ -452,7 +452,11 @@ subroutine check_small (self, uu)
   if (detailed_timer) call trace%begin ('hd_t%check_small', itimer=itimer)
   n_smalld = 0
   n_smallp = 0
-  smallp = smallr*smallc**2/gamma
+  if (isothermal .or. self%gamma==1d0) then
+    self%ee_min = smallc**2
+  else
+    self%ee_min = smallc**2/(gamma-1d0)
+  end if
   panic = .false.
   lo = self%mesh%lb
   uo = self%mesh%ub
@@ -475,12 +479,11 @@ subroutine check_small (self, uu)
     w =  uu(i,j,k,self%idx%pz)*c
     ekin = 0.5*d*(u**2+v**2+w**2)
     if (isothermal) then
-      uu(i,j,k,self%idx%e) = max(uu(i,j,k,self%idx%e), smallp)
+      uu(i,j,k,self%idx%e) = max(uu(i,j,k,self%idx%e), self%ee_min)
     else
-      p = (uu(i,j,k,self%idx%e)-ekin)*(gamma-one)
-      if (p < smallp) then
-        p = smallp
-        uu(i,j,k,self%idx%e) = p/(gamma-one)+ekin
+      eth = uu(i,j,k,self%idx%e)-ekin
+      if (eth < d*self%ee_min) then
+        uu(i,j,k,self%idx%e) = d*self%ee_min + ekin
         n_smallp = n_smallp+1
       end if
     end if
