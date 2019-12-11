@@ -53,10 +53,10 @@ SUBROUTINE init (self)
   class(solver_t) :: self
   !.............................................................................
   call trace%begin ('solver_t%init')
-  call self%hd_t%pre_init
+  call self%extras_t%pre_init
   call self%hd_t%init
   call self%extras_t%init
-  call trace%end()
+  call trace%end ()
 END SUBROUTINE init
 
 !===============================================================================
@@ -68,7 +68,7 @@ SUBROUTINE dealloc (self)
   !.............................................................................
   call trace%begin ('solver_t%dealloc')
   call self%hd_t%dealloc
-  call trace%end()
+  call trace%end ()
 END SUBROUTINE dealloc
 
 !===============================================================================
@@ -105,7 +105,9 @@ SUBROUTINE dnload (self, only)
   class(solver_t) :: self
   integer, optional:: only
   !.............................................................................
-  call self%extras_t%dnload (only)
+  call trace%begin ('solver_t%dnload')
+  call self%hd_t%dnload (only)
+  call trace%end ()
 END SUBROUTINE dnload
 
 !===============================================================================
