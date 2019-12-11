@@ -95,6 +95,7 @@ MODULE mpi_io_mod
     procedure, private:: read3
     procedure, private:: read4
     generic, public :: read => read3, read4
+    procedure:: sync
     procedure:: assert
   end type
   character(len=32), save:: fmt='(1x,a,4i8,1p,5e12.3)'
@@ -441,6 +442,18 @@ SUBROUTINE assert (self, label, err)
     call mp%abort (label)
   end if
 END SUBROUTINE assert
+
+!===============================================================================
+!> Flush to disk
+!===============================================================================
+SUBROUTINE sync (self)
+  class(mpi_io_t):: self
+  logical:: err
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mpi_io_t%sync')
+  call MPI_File_sync (self%file%handle, err)
+  call trace%end ()
+END SUBROUTINE sync
 
 !===============================================================================
 !> Check for queued I/O, and do it all with one single thread, to avoid

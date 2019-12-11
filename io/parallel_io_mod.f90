@@ -67,6 +67,7 @@ MODULE parallel_io_mod
   type(parallel_io_t), public:: parallel_io
   integer, save:: io0, io1
   integer, save:: opened=-1, closed=-1
+  integer, save:: id_debug=0
 CONTAINS
 
 !===============================================================================
@@ -81,7 +82,7 @@ SUBROUTINE init (patch)
   logical:: exists
   integer:: i, iostat
   logical:: first_time=.true.
-  namelist /parallel_io_params/ verbose
+  namelist /parallel_io_params/ verbose, id_debug
   character(len=120):: id = &
   '$Id$ io/parallel_io_mod.f90'
   !-----------------------------------------------------------------------------
@@ -216,18 +217,33 @@ SUBROUTINE output (patch, count)
     write(io%output,'(a,f8.3,a,i10,a)') &
       ' output snapshot size =', snapshot_words*4d0/1024d0**3, ' GB, in', &
       io%ntotal, ' patches'
-    write(io%output,'(a,4i6,2i12)') &
-      ' parallel_io_t%output: iout, n, snapshot_words, buffer_words =', &
-      patch%iout, n, snapshot_words, buffer_words
+  end if
+  if (verbose > 0) then
+    write(io%output,'(1x,a,6i6,2i12,l3)') &
+      'parallel_io_t%output: id, ip, iout, n, snapshot_words, buffer_words =', &
+      patch%id, patch%ip, patch%iout, n, snapshot_words, buffer_words, &
+      associated(parallel_io%buffer)
+    flush (io%output)
   end if
   !-----------------------------------------------------------------------------
-  ! Time interpolation to exact out_next
+  ! Time interpolation to exact out_next, by first transferring the values in
+  ! patch%mem to the mem(:,:,:,:) temporary, resorting into increasing time
+  ! order and optionally also converting to a different representation.
   !-----------------------------------------------------------------------------
   allocate (mem(n(1),n(2),n(3),patch%nt))
   allocate (buffer(n(1),n(2),n(3),io%nv))
   do iv=1,io%nv
     call convert_variables ! copy `patch%mem` into `mem`, converting if desired
     call time_slices%interpolate (patch, mem, buffer(:,:,:,iv))
+    if (patch%id==id_debug) then
+      write (io_unit%output,'(1x,a,i6,i5,i4,1p,g14.6,3(2x,2e11.2))') &
+        'parallel_io_t%output: id, io, iv, time, minval, maxval =', &
+        patch%id, patch%iout, iv, patch%time, &
+        minval(patch%mem(:,:,:,iv,patch%it,1)), &
+        maxval(patch%mem(:,:,:,iv,patch%it,1)), &
+        minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv)), &
+        minval(mem(:,:,:,patch%nt-1)), maxval(mem(:,:,:,patch%nt-1))
+    end if
   end do
   call io_write ((io%time_derivs+1)*patch%iout, 0)
   !-----------------------------------------------------------------------------
@@ -247,12 +263,15 @@ SUBROUTINE output (patch, count)
       call io_write ((io%time_derivs+1)*patch%iout, 2)
     end if
   end if
+  if (count == 0) then
+    call mpi_io%sync ()
+  end if
   !-----------------------------------------------------------------------------
-  ! Deallocate mem, but do NOT deallocate buffer.  Since io_write uses non-
+  ! Deallocate mem, but do NOT deallocate buffer.  If io_write uses non-
   ! blocking MPI_File_iwrite calls, the buffer must remain allocated, until a
   ! later call to check_io finds that it is no longer needed, and deallocates it
   !-----------------------------------------------------------------------------
-  deallocate (mem)
+  deallocate (mem, buffer)
   call trace%end (itimer)
 contains
   !-----------------------------------------------------------------------------
@@ -302,7 +321,7 @@ contains
     ! difficult). Introduced for compatibility with Paolo's analysis scripts.
     !---------------------------------------------------------------------------
     if (io%method == 'pan') then
-      call mpi_io%iwrite (buffer, 1+ider+slot, patch%id)
+      call mpi_io%write (buffer, 1+ider+slot, patch%id)
     !---------------------------------------------------------------------------
     ! This ordering has the derivative order added to the patch%id, which is
     ! in turn causing an increment by (io%time_derivs+1), so effectively adding
@@ -310,7 +329,7 @@ contains
     ! address the derivatives, while using snapshot numbers incremented by 1.
     !---------------------------------------------------------------------------
     else
-      call mpi_io%iwrite (buffer, 1+slot, 1+ider+(patch%id-1)*(io%time_derivs+1))
+      call mpi_io%write (buffer, 1+slot, 1+ider+(patch%id-1)*(io%time_derivs+1))
     end if
   end subroutine
 END SUBROUTINE output
@@ -517,6 +536,7 @@ SUBROUTINE output_single (patch, count)
         check_files = .true.
       end if
     end if
+    call mpi_io%sync ()
   end if
   if (verbose > 1) then
     write (io_unit%log,*) wallclock(), patch%id, patch%time, ' END'
