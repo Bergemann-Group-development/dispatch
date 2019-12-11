@@ -699,7 +699,7 @@ END SUBROUTINE interpolate_specific
 
 SUBROUTINE info
   if (verbose > 0) then
-    write (stdout,*) 'guard_zones_t%info: update-t =', update_t
+    write (stdout,*) 'guard_zones_t%info: update_t =', update_t
   end if
 END SUBROUTINE info
 

@@ -48,6 +48,7 @@ SUBROUTINE setup (task_list)
     sink%size  = task_list%head%task%size*0.5
     sink%level = task_list%head%task%level
     sink%position = (i-(n_sink+1)/2.0)*0.25 + 0.5d0
+    sink%velocity = [0.0,0.0,0.0]
     task => sink
     call task_list%append_task (task)
   end do

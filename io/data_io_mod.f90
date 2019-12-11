@@ -226,7 +226,7 @@ SUBROUTINE output (self, patch, experiment_name)
         write (io%output,*) wallclock(),' thread',omp%thread,' waitfor output'
       !-------------------------------------------------------------------------
       ! The data io refers to task_t%iit(:) and task_t%t(:), and either all of
-      ! these places need to be protected wuth omp atomic read, or (simpler) the
+      ! these places need to be protected with omp atomic read, or (simpler) the
       ! occasional visit here to do I/O need to block other accesses (mainly in
       ! download_mod) vi the task lock.  Certain types of output (but not for 
       ! example legacy_io) may need to be protected by critical regions or a lock
@@ -297,7 +297,7 @@ SUBROUTINE output (self, patch, experiment_name)
         !-----------------------------------------------------------------------
         patch%iout = patch%iout+1
         if (io%out_time==0.0) exit
-        patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
+        patch%out_next = patch%out_next + io%out_time
         !-----------------------------------------------------------------------
         if (io%verbose > 1) & 
           write (io%output,'(a,i6,3f12.6,3i4)') &

@@ -197,7 +197,8 @@ SUBROUTINE write3 (self, f, rec, id)
   call self%check_init
   pos = 4_8*((rec-1_8)*self%rec_words + (id-1_8)*self%chunk_words)
   if (verbose>1) &
-    write (io_unit%output, '(a,3i8,i15,1p,2e14.6)') ' mpi_io_t%write3: rec, id, words, pos =', &
+    write (io_unit%output, '(a,3i8,i15,1p,2e14.6)') &
+     ' mpi_io_t%write3: rec, id, words, pos =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
   if (mp%mode == MPI_THREAD_MULTIPLE) then
     call MPI_file_write_at (self%file%handle, pos, f, self%chunk_words, MPI_REAL, &
@@ -273,7 +274,7 @@ SUBROUTINE iwrite3 (self, f, rec, id)
       unit = io_unit%mpi
     end if
     write (unit,'(a,3i8,i15,1p,2e14.6)') &
-      ' mpi_io_t%read3: rec, id, words, pos =', &
+      ' mpi_io_t%iwrite3: rec, id, words, pos, min, max =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
   end if
   !-----------------------------------------------------------------------------
@@ -292,7 +293,7 @@ SUBROUTINE iwrite3 (self, f, rec, id)
   n = self%iwrite_list%n
   !$omp end critical (iwrite_cr)
   if (verbose>1) &
-    write(io%output,'(f12.6,i5,2x,a,i7,i4)') &
+    write(io%output,'(f12.6,i5,2x,a,i8,i6)') &
       wallclock(), omp%thread, 'appended req, n =', item%req, n
   call trace%end (itimer)
 #endif
@@ -322,7 +323,7 @@ SUBROUTINE iwrite4 (self, f, rec, id)
       unit = io_unit%mpi
     end if
     write (unit,'(a,3i8,i15,1p,2e14.6)') &
-      ' mpi_io_t%read3: rec, id, words, pos =', &
+      ' mpi_io_t%iwrite4: rec, id, words, pos, min, max =', &
       rec, id, self%chunk_words, pos, minval(f), maxval(f)
   end if
   !-----------------------------------------------------------------------------
@@ -341,7 +342,7 @@ SUBROUTINE iwrite4 (self, f, rec, id)
   n = self%iwrite_list%n
   !$omp end critical (iwrite_cr)
   if (verbose>1) &
-    write(io%output,'(f12.6,i5,2x,a,i7,i4)') &
+    write(io%output,'(f12.6,i5,2x,a,i8,i6)') &
       wallclock(), omp%thread, 'appended req, n =', item%req, n
   call trace%end (itimer)
 #endif
