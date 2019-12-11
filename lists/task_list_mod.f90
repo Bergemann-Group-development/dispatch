@@ -322,8 +322,12 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   ! Note that this needs to be done before the AMR refinement tests, for which
   ! guard zones may be needed
   !-----------------------------------------------------------------------------
-  if (.not.test) &
+  if (.not.test) then
+    select type (task)
+    class is (experiment_t)
     call task%dnload                                  ! download nbor info
+    end select
+  end if
   !-----------------------------------------------------------------------------
   ! Check if refinement is needed on the task; if so this will push new tasks
   ! onto the queue, with the same task time; i.e., to the head of the queue.

@@ -152,6 +152,7 @@ SUBROUTINE init (self)
   allocate (self%lock)
   call self%lock%init (self%kind(1:4), id=self%id+2)
   call self%random%init
+  allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
   call trace_end ()
 END SUBROUTINE init
 

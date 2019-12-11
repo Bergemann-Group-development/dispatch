@@ -399,7 +399,7 @@ END SUBROUTINE init
 !> Post-initialize
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(patch_t):: self
+  class(patch_t), target:: self
   if (allocated (self%force_per_unit_mass)) &
     self%force_per_unit_mass = 0.0
   if (allocated (self%force_per_unit_volume)) &
@@ -451,7 +451,6 @@ SUBROUTINE init_default (self)
   logical, save:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%init_default')
-  call self%task_t%init                         ! sets unique id
   !-----------------------------------------------------------------------------
   ! Read and set patch parameters; the preferred defalts may have been set by
   ! the calling code -- typically in experiment_mod.f90
@@ -483,6 +482,7 @@ SUBROUTINE init_default (self)
   if (any(self%ng == 0)) self%ng = ng           ! patch guard zones
   if (    self%nv == 0 ) self%nv = nv           ! number of variables
   if (    self%nt == 0 ) self%nt = nt           ! number of time slices
+  call self%task_t%init                         ! sets unique id
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
@@ -663,7 +663,6 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
   ! Allocate memory, if not already allocated
   !-----------------------------------------------------------------------------
   if (.not.self%mem_allocated) then
-    allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
 !print '(a,3(2x,3i4))', &
 !'patch_t: gn, nv, nt, nw =', self%gn, self%mesh%gn, self%nv, self%nt, self%nw
     allocate (self%mem(self%mesh(1)%gn, &
