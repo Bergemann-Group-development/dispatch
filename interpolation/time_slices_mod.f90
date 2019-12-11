@@ -150,12 +150,12 @@ SUBROUTINE weighted_sum4 (patch, times, w, i1, i2, mem, buffer)
                 .or. patch%id==id_debug-1 &
                 .or. patch%id==id_debug+1) then
     t = patch%t(patch%iit)
-    write (io_unit%output,'(a,i6,2i4)')           'id,i1,i2:', patch%id, i1, i2
-    write (io_unit%output,'(a,9i4)')              '    iit:', patch%iit
-    write (io_unit%output,'(a,9f14.6)')           '      t:', patch%t
-    write (io_unit%output,'(a,f12.6,2x,10f14.6)') ' t(iit):', patch%out_next, t(i1:i2)
-    write (io_unit%output,'(a,f12.6,2x,10f14.6)') '  times:', patch%out_next, times(i1:i2)
-    write (io_unit%output,'(a,f12.6,2x,10f14.3)') 'weights:', sum(w), w
+    write (io_unit%output,'(a,i6,2i4)')  'id,i1,i2:', patch%id, i1, i2
+    write (io_unit%output,'(a,9i4)')     '     iit:', patch%iit
+    write (io_unit%output,'(a,9f14.6)')  '       t:', patch%t
+    write (io_unit%output,'(a,11f14.6)') '  t(iit):', patch%out_next, t(i1:i2)
+    write (io_unit%output,'(a,11f14.6)') '   times:', patch%out_next, times(i1:i2)
+    write (io_unit%output,'(a,11f14.3)') ' weights:', sum(w), w
   end if
   buffer = 0.0
   do i=i1,i2

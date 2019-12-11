@@ -166,8 +166,8 @@ SUBROUTINE output (patch, count)
   !.............................................................................
   integer(8):: snapshot_words, buffer_words, pos
   integer:: iv, n(3), jt(2), iw, nw
-  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: mem
-  real(kind=4), dimension(:,:,:,:), pointer:: buffer
+  real(kind=KindScalarVar), dimension(:,:,:,:,:), allocatable, target:: mem
+  real(kind=4),             dimension(:,:,:,:)  , allocatable, target:: buffer
   character(len=120):: filename
   real:: pt(2)
   logical, save:: first_time=.true.
@@ -230,11 +230,11 @@ SUBROUTINE output (patch, count)
   ! patch%mem to the mem(:,:,:,:) temporary, resorting into increasing time
   ! order and optionally also converting to a different representation.
   !-----------------------------------------------------------------------------
-  allocate (mem(n(1),n(2),n(3),patch%nt))
+  allocate (mem(n(1),n(2),n(3),patch%nt-1,io%nv))
   allocate (buffer(n(1),n(2),n(3),io%nv))
+  call prepare_time_slices
   do iv=1,io%nv
-    call convert_variables ! copy `patch%mem` into `mem`, converting if desired
-    call time_slices%interpolate (patch, mem, buffer(:,:,:,iv))
+    call time_slices%interpolate (patch, mem(:,:,:,:,iv), buffer(:,:,:,iv))
     if (patch%id==id_debug) then
       write (io_unit%output,'(1x,a,i6,i5,i4,1p,g14.6,3(2x,2e11.2))') &
         'parallel_io_t%output: id, io, iv, time, minval, maxval =', &
@@ -242,7 +242,7 @@ SUBROUTINE output (patch, count)
         minval(patch%mem(:,:,:,iv,patch%it,1)), &
         maxval(patch%mem(:,:,:,iv,patch%it,1)), &
         minval(buffer(:,:,:,iv)), maxval(buffer(:,:,:,iv)), &
-        minval(mem(:,:,:,patch%nt-1)), maxval(mem(:,:,:,patch%nt-1))
+        minval(mem(:,:,:,patch%nt-1,iv)), maxval(mem(:,:,:,patch%nt-1,iv))
     end if
   end do
   call io_write ((io%time_derivs+1)*patch%iout, 0)
@@ -251,14 +251,12 @@ SUBROUTINE output (patch, count)
   !-----------------------------------------------------------------------------
   if (io%time_derivs>0) then
     do iv=1,io%nv
-      call convert_variables ! copy `patch%mem` into `mem`, converting if desired
-      call time_slices%derivative1 (patch, mem, buffer(:,:,:,iv))
+      call time_slices%derivative1 (patch, mem(:,:,:,:,iv), buffer(:,:,:,iv))
     end do
     call io_write ((io%time_derivs+1)*patch%iout, 1)
     if (io%time_derivs==2) then
       do iv=1,io%nv
-        call convert_variables ! copy `patch%mem` into `mem`, converting if desired
-        call time_slices%derivative2 (patch, mem, buffer(:,:,:,iv))
+        call time_slices%derivative2 (patch, mem(:,:,:,:,iv), buffer(:,:,:,iv))
       end do
       call io_write ((io%time_derivs+1)*patch%iout, 2)
     end if
@@ -267,49 +265,65 @@ SUBROUTINE output (patch, count)
     call mpi_io%sync ()
   end if
   !-----------------------------------------------------------------------------
-  ! Deallocate mem, but do NOT deallocate buffer.  If io_write uses non-
-  ! blocking MPI_File_iwrite calls, the buffer must remain allocated, until a
-  ! later call to check_io finds that it is no longer needed, and deallocates it
+  ! Deallocate mem, and buffer.  If io_write uses non-blocking MPI_File_iwrite 
+  ! calls, the buffer must remain allocated, until a later call to check_io
+  ! finds that it is no longer needed, and deallocates it
   !-----------------------------------------------------------------------------
   deallocate (mem, buffer)
   call trace%end (itimer)
 contains
   !-----------------------------------------------------------------------------
-  ! Copy variables from `patch%mem` to `mem` array, converting variables based
-  ! on the I/O format parameter.  This procedure is internal to the 'output'
-  ! procedure, and as such only supports io%format in the range 6-9.
+  ! Copy variables from `patch%mem` to `mem` array, converting to unsigned (log)
+  ! or pervolume representation, if requested
   !-----------------------------------------------------------------------------
-  subroutine convert_variables
-    integer:: nt1, l(3), u(3), i, j, k
+  subroutine prepare_time_slices
+    integer:: l1(3), u1(3), l2(3), u2(3), n(3), it, iit
+    real, dimension(:,:,:), pointer:: d, e, p1, p2, p3
+    real, dimension(:,:,:), pointer:: b1d, b2d, b3d, b1u, b2u, b3u
     !...........................................................................
-    call trace%begin ('parallel_io-t%output::convert_variables')
+    call trace%begin ('parallel_io-t%output::prepare_time_slices')
+    io%format = 15
     if (io%guard_zones) then
-      l = patch%mesh%lb
-      u = max(patch%mesh%ub,patch%mesh%gn)
+      l1 = patch%mesh%lb
+      u1 = max(patch%mesh%ub,patch%mesh%gn)-1
     else
-      l = patch%mesh%li
-      u = patch%mesh%ui
+      l1 = patch%mesh%li
+      u1 = patch%mesh%ui
     end if
-    nt1 = patch%nt-1
-    if (io%format >= 8 .and. iv==patch%idx%d) then
-      ! --- Convert density to log density ---
-      do k=l(3),u(3); do j=l(2),u(2); do i=l(1),u(1)
-        mem(i-l(1)+1,j-l(2)+1,k-l(3)+1,1:nt1) &
-        = log(patch%mem(i,j,k,iv,patch%iit(1:nt1),1))
-      end do; end do; end do
-    else if ((io%format == 6 .or. io%format==8) .and. patch%solver_is('ramses') &
-        .and. iv >= patch%idx%px .and. iv <= patch%idx%pz) then
-      ! --- Convert momentum to velocity ---
-      do k=l(3),u(3); do j=l(2),u(2); do i=l(1),u(1)
-        mem(i-l(1)+1,j-l(2)+1,k-l(3)+1,1:nt1) &
-          = patch%mem(i,j,k,iv,patch%iit(1:nt1),1) &
-          / patch%mem(i,j,k,patch%idx%d,patch%iit(1:nt1),1)
-      end do; end do; end do
-    else
-      mem = patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),iv,patch%iit(1:nt1),1)
-    end if
+    n = u1-l1+1
+    l2 = l1+1
+    u2 = u1+1
+    associate (idx=>patch%idx)
+    do it=1,patch%nt-1
+      iit = patch%iit(it)
+      d  => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%d ,iit,1)
+      e  => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%e ,iit,1)
+      p1 => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%px,iit,1)
+      p2 => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%py,iit,1)
+      p3 => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%pz,iit,1)
+      mem(:,:,:,it,idx%d ) = log(d)
+      mem(:,:,:,it,idx%px) = p1/d
+      mem(:,:,:,it,idx%py) = p2/d
+      mem(:,:,:,it,idx%pz) = p3/d
+      if (patch%nv > 5) then
+        mem(:,:,:,it,idx%e) = patch%ee_min
+        b1d => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%bx,iit,1)
+        b2d => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%by,iit,1)
+        b3d => patch%mem(l1(1):u1(1),l1(2):u1(2),l1(3):u1(3),idx%bz,iit,1)
+        b1u => patch%mem(l2(1):u2(1),l2(2):u2(2),l2(3):u2(3),idx%bx,iit,1)
+        b2u => patch%mem(l2(1):u2(1),l2(2):u2(2),l2(3):u2(3),idx%by,iit,1)
+        b3u => patch%mem(l2(1):u2(1),l2(2):u2(2),l2(3):u2(3),idx%bz,iit,1)
+        mem(1:n(1),1:n(2),1:n(3),it,idx%e) = &
+          (e - 0.125*((b1d+b1u)**2+(b2d+b2u)**2+(b3d+b3u)**2) &
+             - 0.5*(p1**2+p2**2+p3**2)/d)/d
+      else
+        mem(:,:,:,it,idx%e) = (e - 0.5*(p1**2+p2**2+p3**2)/d)/d
+      end if
+      mem(:,:,:,it,idx%e) = max(mem(:,:,:,it,idx%e),patch%ee_min)
+    end do
+    end associate
     call trace%end()
-  end subroutine
+  end subroutine prepare_time_slices
   !-----------------------------------------------------------------------------
   subroutine io_write (slot, ider)
     integer:: slot, ider
