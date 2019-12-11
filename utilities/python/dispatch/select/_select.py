@@ -50,7 +50,7 @@ def count_inside(p,point=[0.5,0.5,0.5],verbose=0):
 def patches_along(pp,point=[0.5,0.5,0.5],dir=0,verbose=0):
     ''' Get the patches along a given direction through a point
     '''
-    if isinstance(pp,dispatch._dispatch.snapshot):
+    if hasattr(pp,'patches'):
         pp=pp.patches
     pt=np.copy(point)
     if verbose>0:

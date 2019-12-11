@@ -26,6 +26,7 @@
 """
 
 from ._dispatch import *
+from ._expr import *
 from .demo import demo
 
 #__all__ = "snapshot,snapshots,attributes,select,yt"

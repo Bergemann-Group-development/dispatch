@@ -10,6 +10,7 @@ import dispatch.graphics as dg
 from time import time
 from dispatch._dispatch_grid import GeometricFactors
 from dispatch._aux import aux
+from dispatch._expr import expression_parser
 from scipy.io import FortranFile
 
 class _timer():
@@ -289,18 +290,18 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         if patch.ioformat==5:
             offset = patch.ip + iv*patch.ntotal
             offset += patch.iout*patch.ntotal*patch.nv
+        elif patch.ioformat>=6 or patch.ioformat==15:
+            offset = iv + patch.ip*patch.nv
+            offset += patch.iout*patch.ntotal*patch.nv
         elif patch.ioformat>=10:
             offset = patch.ip + iv*patch.ntotal
-            offset += patch.iout*patch.ntotal*patch.nv
-        elif patch.ioformat>=6:
-            offset = iv + patch.ip*patch.nv
             offset += patch.iout*patch.ntotal*patch.nv
         else:
             offset = iv
         offset *= bytes
         patch.offset.append(offset)
-        if verbose==5:
-            print (' iv, offset:',iv,patch.iout,patch.ntotal,patch.nv,offset)
+        #if verbose==5:
+        #print (' iv, offset:',iv,patch.iout,patch.ntotal,patch.nv,offset)
 
     def mem(iv):
         """ Translate alphabetic variable keys to numeric """
@@ -425,35 +426,79 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
         """ Check special cases """
         if iv in patch.keys['expressions']:
-            if iv=='ee' or iv=='E':
-                """ Expressions common to all solvers """
-                v=mem('e')/mem('d')
-            elif patch.kind[0:6]=='ramses':
-                """ Ramses solver expression """
-                if   iv=='ux' or iv=='u1' or iv=='vx':
-                    v=mem('p1')/mem('d')
-                elif iv=='uy' or iv=='u2' or iv=='vy':
-                    v=mem('p2')/mem('d')
-                elif iv=='uz' or iv=='u3' or iv=='vz':
-                    v=mem('p3')/mem('d')
-            else:
+            if verbose:
+                print('expression')
+            if patch.kind[0:6]=='stagge':
                 """ Stagger-like solver expressions """
                 if iv=='u1' or iv=='ux' or iv=='vx':
-                    v=mem('p1')/xdown('d')
+                     return mem('p1')/xdown('d')
                 elif iv=='u2' or iv=='uy' or iv=='vy':
                     if patch.mesh_type != 'Cartesian':
-                        v=mem('p2')/ydown('d') \
-                          /patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
+                         return mem('p2')/ydown('d') \
+                                /patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
                     else:
-                        v=mem('p2')/ydown('d')
+                        return mem('p2')/ydown('d')
                 elif iv=='u3' or iv=='uz' or iv=='vz':
                     if patch.mesh_type != 'Cartesian':
                         gf = patch.geometric_factors # shorthand
-                        v=mem('p3')/zdown('d')/gf['h31c'][:,np.newaxis,np.newaxis] \
-                         /gf['h32c'][np.newaxis,:,np.newaxis]
+                        return mem('p3')/zdown('d')/gf['h31c'][:,np.newaxis,np.newaxis] \
+                                /gf['h32c'][np.newaxis,:,np.newaxis]
                     else:
-                        v=mem('p3')/zdown('d')
+                         return mem('p3')/zdown('d')
+            if patch.kind[0:6]=='ramses':
+                """ Ramses solver expression """
+                is_ln = (patch.ioformat-6)/2==1 \
+                     or (patch.ioformat-10)/2==1 \
+                     or patch.ioformat==15
+                is_v  = (patch.ioformat-6)%2==0 or patch.ioformat==15
+                def fd():
+                    return np.exp(mem('d')) if is_ln else mem('d')
+                if iv=='d':
+                    return fd()
+                if iv=='lnd':
+                    return mem('d') if is_ln else np.log(mem('d'))
+                if iv=='logd':
+                    return mem('d')/np.log(10) if is_ln else np.log10(mem('d'))
+                if iv=='ux' or iv=='u1' or iv=='vx':
+                    return mem('p1') if is_v else mem('p1')/fd()
+                if iv=='uy' or iv=='u2' or iv=='vy':
+                    return mem('p2') if is_v else mem('p2')/fd()
+                if iv=='uz' or iv=='u3' or iv=='vz':
+                    return mem('p3') if is_v else mem('p3')/fd()
+                if iv=='tt' or iv=='T':
+                    if patch.ioformat==15:
+                        eth=mem('e')
+                    else:
+                        if is_ln:
+                            d=np.exp(mem('d'))
+                        else:
+                            d=mem('d')
+                        print('d:',d.min(),d.max(),is_v,is_ln,patch.ioformat)
+                        #is_v=False
+                        if is_v:
+                            u1=mem('p1')
+                            u2=mem('p2')
+                            u3=mem('p3')
+                        else:
+                            u1=mem('p1')/d
+                            u2=mem('p2')/d
+                            u3=mem('p3')/d
+                        print('u1:',u1.min(),u1.max())
+                        eth=mem('e')/d-0.5*(u1**2+u2**2+u3**2)
+                    if hasattr(patch,'scaling'):
+                        return eth*patch.scaling.temp
+                    else:
+                        return eth
+                if iv=='ee' or iv=='E':
+                    """ Expressions common to all other solvers """
+                    if patch.ioformat==15:
+                        return mem('e')
+                    else:
+                        return mem('e')/mem('d')
+            return expression_parser(patch,iv)
         else:
+            if verbose:
+                print('mem')
             v=mem(iv)
         return post_process(v,copy=copy,all=all,i4=i4)
     return var
@@ -516,7 +561,7 @@ class _patch():
         timer.add('letters')
         self.keys['numbers']=list(snap.idx.dict.values())
         timer.add('numbers')
-        self.keys['expressions']=['ux','uy','uz','u1','u2','u3','ee','E']
+        self.keys['expressions']=['d','lnd','ux','uy','uz','u1','u2','u3','ee','E','T']
         timer.add('expressions')
         # attach an aux filaname, if it exists
         auxfile='{:05d}.aux'.format(id)
@@ -602,7 +647,6 @@ object takes both numeric and text key values: Examples:\n\
             print('plane: i, p = {:d} {:.3f}'.format(i,p))
         return f
             
-
 def _parse_namelist (items):
     pos=items[1:]
     if len(pos)==1:
