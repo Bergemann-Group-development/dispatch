@@ -126,7 +126,7 @@ CONTAINS
 !> Read parameters
 !===============================================================================
 SUBROUTINE pre_init (self, link)
-  class (rt_t):: self
+  class (rt_t), target:: self
   class (link_t), pointer :: link
   !-----------------------------------------------------------------------------
   integer:: dir, i_mu, i_phi, i_omega, n_omega, iostat, n
@@ -615,7 +615,7 @@ END SUBROUTINE setup_boundaries
 !> heating per unit volume.
 !===============================================================================
 SUBROUTINE pre_update (self)
-  class(rt_t):: self
+  class(rt_t), target:: self
   !.............................................................................
   class(rt_t), pointer:: omega
   integer:: l(3), u(3), i_omega, i_bin

@@ -149,7 +149,7 @@ SUBROUTINE pre_update (self)
   call trace%begin ('extras_t%pre_update')
   self%gpatch => self                                           ! keep
   call self%forces%pre_update                                   ! forces
-  call sink_particles%pre_update (self)                         ! sinkp
+  call sink_particles%pre_update                                ! sinkp
   !call self%trace_particles%update                              ! tracep
   call self%selfgravity%pre_update (self)                       ! selfg
   call self%cooling%pre_update (self%gpatch)                    ! cool

@@ -1175,7 +1175,7 @@ SUBROUTINE trace3d(self)
       ff(i,3) = self%force_per_unit_mass(i,j,k,3)
     end do
   else if (allocated(self%force_per_unit_volume)) then
-    do i=lb(1),ub(1)
+    do i=lo(1),uo(1)
       ff(i,1) = self%force_per_unit_mass(i,j,k,1)/d(i,j,k)
       ff(i,2) = self%force_per_unit_mass(i,j,k,2)/d(i,j,k)
       ff(i,3) = self%force_per_unit_mass(i,j,k,3)/d(i,j,k)
@@ -1184,11 +1184,11 @@ SUBROUTINE trace3d(self)
     ff(:,:) = 0.0_dp
   end if
   if (allocated(self%heating_per_unit_volume)) then
-    do i=lb(1),ub(1)
+    do i=lo(1),uo(1)
       qq(i) = self%heating_per_unit_volume(i,j,k)
     end do
   else if (allocated(self%heating_per_unit_mass)) then
-    do i=lb(1),ub(1)
+    do i=lo(1),uo(1)
       qq(i) = self%heating_per_unit_mass(i,j,k)*d(i,j,k)
     end do
   else

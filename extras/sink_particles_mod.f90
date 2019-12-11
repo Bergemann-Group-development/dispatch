@@ -762,14 +762,13 @@ END SUBROUTINE output
 !===============================================================================
 !> Compute the force field from sink particles on the cells of a patch
 !===============================================================================
-SUBROUTINE pre_update (self, patch)
-  class(sink_particles_t):: self
-  class(patch_t):: patch
+SUBROUTINE pre_update (self)
+  class(sink_particles_t), target:: self
   !.............................................................................
   call trace%begin ('sink_particles_t%pre_update')
-  call SNe%pre_update (patch)
+  call SNe%pre_update (self)
   if (self%on .and. do_force_field) then
-    call self%particle_solver%force_field (patch)
+    call self%particle_solver%force_field (self)
   end if
   call trace%end()
 END SUBROUTINE pre_update
