@@ -125,7 +125,7 @@ SUBROUTINE wind (self, patch, sink)
   m_sun = cgs%m_sun/scaling%m
   t = patch%time/self%ramp_time
   ramp = 1.0-(1.0+t+0.5*t**2)*exp(-t)
-  mdot = log10(sink%mass/(7.*m_sun))**5*self%mdot*ramp
+  mdot = ramp*1.19e-10*(sink%mass/m_sun-7.57)**2.60
   !-----------------------------------------------------------------------------
   ! Distances from sink
   !-----------------------------------------------------------------------------
