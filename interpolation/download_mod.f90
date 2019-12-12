@@ -53,6 +53,7 @@ MODULE download_mod
     procedure:: different_prolong
     procedure:: test
     procedure, nopass:: set_verbose
+    procedure, nopass:: cast2patch
   end type
   integer(kind=int8), dimension(:,:,:,:), allocatable:: filled
   integer(kind=4), dimension(:,:,:), allocatable:: src
@@ -136,7 +137,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   ! Guard against download twice, which could happen if an extras (e.g. RT) task
   ! requests dnload before the parent task
   !-----------------------------------------------------------------------------
-  target => task2patch(link%task)
+  target => self%cast2patch (link%task)
   if (.not.associated(target)) then
     call trace%end (itimer)
     return
@@ -205,7 +206,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       nbor => nbor%next
       cycle
     end if
-    source => task2patch(nbor%task)
+    source => self%cast2patch (nbor%task)
     if (.not.associated(source)) then
       nbor => nbor%next
       cycle
@@ -2241,5 +2242,20 @@ subroutine check_values (patch, ok)
 end subroutine check_values
 !===============================================================================
 END SUBROUTINE test
+
+!===============================================================================
+!> Cast a generic task_t to patch_t
+!===============================================================================
+FUNCTION cast2patch (task) RESULT(patch)
+  class(task_t), pointer:: task
+  class(patch_t), pointer:: patch
+  !.............................................................................
+  select type (task)
+  class is (patch_t)
+    patch => task
+  class default
+    nullify(patch)
+  end select
+END FUNCTION cast2patch
 
 END MODULE
