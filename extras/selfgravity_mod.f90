@@ -61,6 +61,7 @@ SUBROUTINE pre_init (self, patch)
     first_time = .false.
     rewind (io%input)
     read (io%input, selfgravity_params, iostat=iostat)
+    if (iostat > 0 .and. io%master) call io%namelist_warning('selfgravity_params')
     if (io%master) write (io%output, selfgravity_params)
   end if
   !$omp end critical (input_cr)

@@ -258,6 +258,7 @@ SUBROUTINE init (self)
     levelmax = shared%levelmax
     rewind (io%input)
     read (io%input, refine_params, iostat=iostat)
+    if (iostat > 0 .and. io%master) call io%namelist_warning ('refine_params')
     write (io%output, refine_params)
     if (on) then
       omp_lock%links = .true.
