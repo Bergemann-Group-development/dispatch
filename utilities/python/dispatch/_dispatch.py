@@ -310,58 +310,72 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         #if verbose==5:
         #print (' iv, offset:',iv,patch.iout,patch.ntotal,patch.nv,offset)
 
-    def mem(iv):
+    def mem(iv,verbose=0):
         """ Translate alphabetic variable keys to numeric """
+        if verbose:
+            print('mem({})'.format(iv))
         if type(iv)==type('d'):
             iv=patch.idx.dict[iv]
         if patch.memmap==2:
-            return memmap2(filed, dtype=np.float32, offset=patch.offset[iv],
+            v=memmap2(filed, dtype=np.float32, offset=patch.offset[iv],
                            mode='r', order='F', shape=shape)
         elif patch.memmap==3:
-            return memmap3(filed, dtype=np.float32, offset=patch.offset[iv],
+            v=memmap3(filed, dtype=np.float32, offset=patch.offset[iv],
                            mode='r', order='F', shape=shape)
         elif patch.memmap==4:
-            return memmap4(filed, dtype=np.float32, offset=patch.offset[iv],
+            v=memmap4(filed, dtype=np.float32, offset=patch.offset[iv],
                            mode='r', order='F', shape=shape)
         else:
-            return np.memmap(filed, dtype=np.float32, offset=patch.offset[iv],
+            v=np.memmap(filed, dtype=np.float32, offset=patch.offset[iv],
                              mode='r', order='F', shape=shape)
+        return v
 
-    def average_down(iv, axis=0):
-        q = mem(iv)
-        n = 2 # 2-point average (equivalent to average over i-1 and i)
-        x = np.cumsum(q,axis=axis,dtype=np.float)
-        if axis == 0 and q.shape[0] > 1:
-            x[n:,:,:] = x[n:,:,:] - x[:-n,:,:]
-            x[n - 1:,:,:] = x[n - 1:,:,:] / n
-            x[-1,:,:] = q[-2,:,:] # first and last element of average are copied from original
-        elif axis == 1 and q.shape[1] > 1:
-            x[:,n:,:] = x[:,n:,:] - x[:,:-n,:]
-            x[:,n - 1:,:] = x[:,n - 1:,:] / n
-            x[:,-1,:] = q[:,-2,:]
+    def dnup(q, shift=1, axis=0):
+        i = 0 if shift==1 else -1
+        if axis == 0 and q.shape[0] > 1: 
+            f = (q+np.roll(q,shift,axis))*0.5
+            f[i,:,:] = q[i,:,:]
+        elif axis == 1 and q.shape[1] > 1: 
+            f = (q+np.roll(q,shift,axis))*0.5
+            f[:,i,:] = q[:,i,:]
         elif axis == 2 and q.shape[2] > 1:
-            x[:,:,n:] = x[:,:,n:] - x[:,:,:-n]
-            x[:,:,n - 1:] = x[:,:,n - 1:] / n
-            x[:,:,-1] = q[:,:,-2]
+            f = (q+np.roll(q,shift,axis))*0.5
+            f[:,:,i] = q[:,:,i]
         else:
-            x = q.copy()
-        return x
+            f = q
+        return f
 
-    def xdown(iv):
+    def xdn(f):
         if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
-            return average_down(iv, axis=0)
+            return dnup(f,1,0)
         else:
-            return mem(iv)
-    def ydown(iv):
+            return f
+    def ydn(f):
         if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
-            return average_down(iv, axis=1)
+            return dnup(f,1,1)
         else:
-            return mem(iv)
-    def zdown(iv):
+            return f
+    def zdn(f):
         if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
-            return average_down(iv, axis=2)
+            return dnup(f,1,2)
         else:
-            return mem(iv)
+            return f
+
+    def xup(f):
+        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
+            return dnup(f,-1,0)
+        else:
+            return f
+    def yup(f):
+        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
+            return dnup(f,-1,1)
+        else:
+            return f
+    def zup(f):
+        if patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger':
+            return dnup(f,-1,2)
+        else:
+            return f
 
     def internal(v,all=False):
         if all:
@@ -404,7 +418,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             v=v[:,:,:,i4]
         return internal(v,all=all)
 
-    def var(iv,all=False,copy=None,i4=0):
+    def var(iv,all=False,copy=None,i4=0,verbose=0):
         """
         Special logic to calculate velocities from momenta on the fly.
         If the data is in spherical or cylindrical coords., then it is the angular
@@ -416,96 +430,132 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         """
         if type(iv)==int:
             assert(iv in patch.keys['numbers']),'variable index unknown'
-        else:
-            assert(iv in patch.all_keys),'variable key "'+iv+'" unknown'
+
+        # Determine data representation
+        is_ln = (patch.ioformat-6)/2==1 \
+             or (patch.ioformat-10)/2==1 \
+             or patch.ioformat==15
+        is_v  = (patch.ioformat-6)%2==0 or patch.ioformat==15
+        is_st = patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger'
+        v = None
 
         """ Check if the index is numeric and corresponds to a cached array """
         if hasattr(patch,'data'):
             if iv in patch.data.keys():
                 v=patch.data[iv]
-                return post_process(v,all=all,copy=copy)
 
         """ Check if the key corresponds to aux data """
         if hasattr(patch,'aux'):
             if iv in patch.aux.vars.keys():
                 v=patch.aux.var(iv)
-                return post_process(v,copy=copy,all=all)
 
-        """ Check special cases """
-        if iv in patch.keys['expressions']:
+        # Numbers
+        if iv in patch.keys['numbers']:
             if verbose:
-                print('expression')
-            if patch.kind[0:6]=='stagge':
-                """ Stagger-like solver expressions """
-                if iv=='u1' or iv=='ux' or iv=='vx':
-                     return mem('p1')/xdown('d')
-                elif iv=='u2' or iv=='uy' or iv=='vy':
-                    if patch.mesh_type != 'Cartesian':
-                         return mem('p2')/ydown('d') \
-                                /patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
+                print('iv is a number:',iv)
+            if iv >= 0:
+                v=mem(iv,verbose=verbose)
+
+       # Letters
+        elif iv in patch.keys['letters']:
+            if verbose:
+                print('iv is a letter:',iv)
+            iv=patch.idx.dict[iv]
+            v=mem(iv)
+
+        # Known variables
+        elif iv in patch.keys['known']:
+            if verbose:
+                print('iv is a known name:',iv)
+
+            # Density
+            def fd():
+                 return np.exp(mem('d')) if is_ln else mem('d')
+            if iv=='d':
+                v=fd()
+            elif iv=='lnd':
+                v=mem('d') if is_ln else np.log(mem('d'))
+            elif iv=='logd':
+                v=mem('d')/np.log(10) if is_ln else np.log10(mem('d'))
+
+            # Velocity
+            elif iv=='u1' or iv=='ux' or iv=='vx':
+                if is_v:
+                    v=mem('p1')
+                elif is_st:
+                    v=xup(mem('p1')/ \
+                          np.exp(xdn(var('lnd',all=True,verbose=verbose))))
+                else:
+                    v=mem('p1')/var('d',all=True,verbose=verbose)
+            elif iv=='u2' or iv=='uy' or iv=='vy':
+                if is_v:
+                    v=mem('p2')
+                elif patch.mesh_type != 'Cartesian':
+                     v=mem('p2')/ydn('d') \
+                            /patch.geometric_factors['h2c'][:,np.newaxis,np.newaxis]
+                else:
+                    if is_st:
+                        v=yup(mem('p2')/ \
+                              np.exp(ydn(var('lnd',all=True,verbose=verbose))))
                     else:
-                        return mem('p2')/ydown('d')
-                elif iv=='u3' or iv=='uz' or iv=='vz':
-                    if patch.mesh_type != 'Cartesian':
-                        gf = patch.geometric_factors # shorthand
-                        return mem('p3')/zdown('d')/gf['h31c'][:,np.newaxis,np.newaxis] \
-                                /gf['h32c'][np.newaxis,:,np.newaxis]
+                        v=mem('p2')/var('d',all=True,verbose=verbose)
+            elif iv=='u3' or iv=='uz' or iv=='vz':
+                if is_v:
+                    v=mem('p3')
+                elif patch.mesh_type != 'Cartesian':
+                    gf = patch.geometric_factors # shorthand
+                    v=mem('p3')/zdn('d')/gf['h31c'][:,np.newaxis,np.newaxis] \
+                            /gf['h32c'][np.newaxis,:,np.newaxis]
+                else:
+                    if is_st:
+                        v=zup(mem('p3')/ \
+                              np.exp(zdn(var('lnd',all=True,verbose=verbose))))
                     else:
-                         return mem('p3')/zdown('d')
-            if patch.kind[0:6]=='ramses':
-                """ Ramses solver expression """
-                is_ln = (patch.ioformat-6)/2==1 \
-                     or (patch.ioformat-10)/2==1 \
-                     or patch.ioformat==15
-                is_v  = (patch.ioformat-6)%2==0 or patch.ioformat==15
-                def fd():
-                    return np.exp(mem('d')) if is_ln else mem('d')
-                if iv=='d':
-                    return fd()
-                if iv=='lnd':
-                    return mem('d') if is_ln else np.log(mem('d'))
-                if iv=='logd':
-                    return mem('d')/np.log(10) if is_ln else np.log10(mem('d'))
-                if iv=='ux' or iv=='u1' or iv=='vx':
-                    return mem('p1') if is_v else mem('p1')/fd()
-                if iv=='uy' or iv=='u2' or iv=='vy':
-                    return mem('p2') if is_v else mem('p2')/fd()
-                if iv=='uz' or iv=='u3' or iv=='vz':
-                    return mem('p3') if is_v else mem('p3')/fd()
-                if iv=='tt' or iv=='T':
-                    if patch.ioformat==15:
-                        eth=mem('e')
-                    else:
-                        if is_ln:
-                            d=np.exp(mem('d'))
-                        else:
-                            d=mem('d')
-                        #is_v=False
-                        if is_v:
-                            u1=mem('p1')
-                            u2=mem('p2')
-                            u3=mem('p3')
-                        else:
-                            u1=mem('p1')/d
-                            u2=mem('p2')/d
-                            u3=mem('p3')/d
-                        eth=mem('e')/d-0.5*(u1**2+u2**2+u3**2)
-                    if hasattr(snap,'scaling'):
-                        return eth*snap.scaling.temp
-                    else:
-                        return eth
-                if iv=='ee' or iv=='E':
-                    """ Expressions common to all other solvers """
-                    if patch.ioformat==15:
-                        return mem('e')
-                    else:
-                        return mem('e')/mem('d')
-            return expression_parser(patch,iv)
+                        v=mem('p3')/var('d',all=True,verbose=verbose)
+
+            # Energy per unit mass
+            elif iv=='ee' or iv=='E':
+                """ Expressions common to all other solvers """
+                if patch.ioformat==15:
+                    v=mem('e')
+                else:
+                    v=mem('e')/mem('d')
+
+            # Kinetic energy
+            elif iv=='ekin':
+                v=0.5*var('d',all=True)*(
+                        var('ux',all=True,verbose=verbose)**2+
+                        var('uy',all=True,verbose=verbose)**2+
+                        var('uz',all=True,verbose=verbose)**2)
+
+            # Thermal energy
+            elif iv=='eth':
+                if patch.ioformat==15 or is_st:
+                    v=mem('e')
+                else:
+                    v=mem('e')-var('ekin',all=True,verbose=verbose)
+
+            # Temperature
+            elif iv=='tt' or iv=='T':
+                v=var('eth',all=True,verbose=verbose)
+                if hasattr(snap,'scaling'):
+                    v=v*snap.scaling.temp
+
+        # Unknown expression
         else:
             if verbose:
-                print('mem')
-            v=mem(iv)
-        return post_process(v,copy=copy,all=all,i4=i4)
+                print('unknown expression',iv)
+            v=expression_parser(patch,iv)
+
+        # Success or failure
+        if not v is None:
+            """ A value v was produced, so post-process """
+            return post_process(v,copy=copy,all=all,i4=i4)
+        else:
+            """ None of the above worked, so the iv key is not known """
+            print('variable exoression not understood:',iv)
+            return None
+    # THe _var() funcion returns the var() functions
     return var
 
 class _patch():
@@ -566,8 +616,9 @@ class _patch():
         timer.add('letters')
         self.keys['numbers']=list(snap.idx.dict.values())
         timer.add('numbers')
-        self.keys['expressions']=['d','lnd','ux','uy','uz','u1','u2','u3','ee','E','T']
-        timer.add('expressions')
+        self.keys['known']=['d','lnd','logd','ux','uy','uz','u1','u2','u3',
+                 'ee','E','T','eth','ekin']
+        timer.add('known')
         # attach an aux filaname, if it exists
         auxfile='{:05d}.aux'.format(id)
         #timer.add('_patch(9c))')

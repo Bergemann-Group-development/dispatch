@@ -15,6 +15,7 @@ class Expressions(object):
         self.ops=' +-*/()'
         self.known=[]
         self.pvars=[]
+        self.patch=patch
         
         """ If a patch is given, collect all keys it accepts, except integers """
         if patch:
@@ -71,6 +72,7 @@ class Expressions(object):
             print('EVALUATE:')
         ll=locals()
         results={}
+        p=self.patch
         for lhs,rhs in self.expressions:
             for word in self.split(rhs):
                 if not (word in self.known or word in ll):
