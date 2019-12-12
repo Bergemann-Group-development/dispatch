@@ -278,8 +278,8 @@ contains
   !-----------------------------------------------------------------------------
   subroutine prepare_time_slices
     integer:: l1(3), u1(3), l2(3), u2(3), n(3), it, iit
-    real, dimension(:,:,:), pointer:: d, e, p1, p2, p3
-    real, dimension(:,:,:), pointer:: b1d, b2d, b3d, b1u, b2u, b3u
+    real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e, p1, p2, p3
+    real(kind=KindScalarVar), dimension(:,:,:), pointer:: b1d, b2d, b3d, b1u, b2u, b3u
     !...........................................................................
     call trace%begin ('parallel_io-t%output::prepare_time_slices')
     io%format = 15
