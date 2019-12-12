@@ -61,19 +61,23 @@ def _pathjoin(d,f):
     p=p.replace('\\','/')
     return p
 
-def _file(d,f):
+def _file(d,f,Assert=None):
     """ Join a dir and a filename, and check that the file exists
     """
+    p=d+f if d.endswith('/') else d+'/'+f
     p=os.path.join(d,f)
-    assert (os.path.isfile(p)), 'the file {} does not exist'.format(p)
+    if Assert:
+        assert (os.path.isfile(p)), 'the file {} does not exist'.format(p)
     return p
 
-def _dir(d,subd):
-    """ Join a dir and subdir, and check that the dir exists
+def _dir(d,subd,Assert=False):
+    """ Join a dir and subdir, and check that the dir exists.  Not using
+        os.path.join(), to avoid awkward names in Windows
     """
-    p=os.path.join(d,subd)
-    assert (os.path.isdir(p)), 'the directory {} does not exist'.format(p)
-    return p
+    p=d+subd if d.endswith('/') else d+'/'+subd
+    if Assert:
+        assert (os.path.isdir(p)), 'the directory {} does not exist'.format(p)
+    return p if p.endswith('/') else p+'/'
 
 class _obj(object):
     """ Transform a namelist dict to an object, turning lists into numpy arrays
@@ -100,14 +104,17 @@ def map_var(p,iv):
 class _param():
     pass
 
-def _add_nml_list_to(obj,nml_list,verbose=0):
-    """ add all namelists as object attributes
+def _repair(obj,nml_list,verbose=0):
+    """ Repair strange interpretation of ntotal
     """
-    # Repair strange interpretation of ntotal
     snap_dict=nml_list['snapshot_nml']
     if 'ntotal' in snap_dict:
         if type(snap_dict['ntotal'])==list:
             snap_dict['ntotal']=snap_dict['ntotal'][0]
+
+def _add_nml_list_to(obj,nml_list,verbose=0):
+    """ add all namelists as object attributes
+    """
     for key,nml_dict in nml_list.items():
         if (verbose==1):
             print('  parsing',key)
@@ -127,7 +134,7 @@ class memmap2(np.memmap):
         obj = super(memmap2, subtype).__new__(subtype,  *args, **kwargs)
         obj._saved = {'len':obj._mmap.__len__(),'off':obj.offset,
                       'file':obj.filename}
-        fo=open(obj.filename,'rb+')
+        #fo=open(obj.filename,'rb+')
         obj._mmap.close()
         return obj
     def reopen(self):
@@ -176,12 +183,12 @@ class memmap3(np.memmap):
             self._mmap=mmap.mmap(fo.fileno(),length,offset=o)
     def __array_wrap__(self, arr, context=None):
         #print('-> memmap3.__array_wrap__')
-        arr = super(memmap3, self).__array_wrap__(arr, *args, **kwargs)
+        arr = super(memmap3, self).__array_wrap__(arr)
         return arr
     def __array_prepare__ (self, obj, context=None):
         #print('-> memmap3.__array_prepare__')
         self.reopen()
-        obj = super(memmap3, self).__array_prepare__(obj, *args, **kwargs)
+        obj = super(memmap3, self).__array_prepare__(obj)
         return obj
     def __array_finalize__ (self, obj):
         #print('-> memmap3.__array_finalize__')
@@ -473,7 +480,6 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                             d=np.exp(mem('d'))
                         else:
                             d=mem('d')
-                        print('d:',d.min(),d.max(),is_v,is_ln,patch.ioformat)
                         #is_v=False
                         if is_v:
                             u1=mem('p1')
@@ -483,10 +489,9 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                             u1=mem('p1')/d
                             u2=mem('p2')/d
                             u3=mem('p3')/d
-                        print('u1:',u1.min(),u1.max())
                         eth=mem('e')/d-0.5*(u1**2+u2**2+u3**2)
-                    if hasattr(patch,'scaling'):
-                        return eth*patch.scaling.temp
+                    if hasattr(snap,'scaling'):
+                        return eth*snap.scaling.temp
                     else:
                         return eth
                 if iv=='ee' or iv=='E':
@@ -689,7 +694,7 @@ def parse_patches(snap,file='../data/00000/rank_00000_patches.nml'):
                 d['position'] = _parse_namelist(items)
             elif items[0]=='SIZE':
                 d['size'] = _parse_namelist(items)
-                if not d.has_key('ds'):
+                if not 'ds' in d.keys():
                     if snap.no_mans_land:
                         d['ds'] = d['size']/snap.n
                     else:
@@ -730,12 +735,29 @@ class snapshot():
         # Start time measurement
         timer.start()
         rundir=_dir(data,run)
+        if not os.path.isdir(rundir):
+            print('directory {} does not exist'.format(rundir))
+            return None
         if datadir=='':
             datadir=_dir(rundir,'{:05d}'.format(iout))
             self.datadir=datadir
         self.rundir=rundir
+        if not os.path.isdir(datadir):
+            print('directory {} does not exist'.format(datadir))
+            return None
+
+        # add properties from params.nml
+        file=_file(rundir,'params.nml')
+        self.params_list=f90nml.read(file)
+        _add_nml_list_to(self,self.params_list,verbose=verbose)
 
         files=[f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
+        if verbose:
+            print('number of snapshot.nml files in {}: {}'.format(
+                    datadir,len(files)))
+        if len(files)==0:
+            print('directory {} has no snapshot.nml file'.format(datadir))
+            return None
         for f in files:
             # add parameter groups from data/run/NNNNN/*snapshot.nml
             file=_file(datadir,f)
@@ -743,6 +765,7 @@ class snapshot():
                 print ('parsing',file)
             nml_list=f90nml.read(file)
             self.nml_list=nml_list
+            _repair(self,nml_list,verbose=verbose)
             _add_nml_list_to(self,nml_list,verbose=verbose)
             if 'idx_nml' in nml_list.keys():
                 idx_dict = nml_list['idx_nml']
