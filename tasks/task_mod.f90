@@ -119,6 +119,8 @@ MODULE task_mod
     procedure:: task_info
     procedure:: log
   end type
+  logical:: first_time=.true.
+  integer:: track_id=0
   integer, dimension(:), pointer, save:: id => null()
   type(dll_t), pointer:: deleted_list
 CONTAINS
@@ -143,9 +145,20 @@ SUBROUTINE init (self)
   class (task_t):: self
   character(len=120):: ids= &
     '$Id$ tasks/task_mod.f90'
+  integer:: iostat
+  namelist /task_params/ track_id
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init')
   call trace%print_id (ids)
+  !$omp critical (input_cr)
+  if (first_time) then
+    rewind (io%input)
+    read (io%input, task_params, iostat=iostat)
+    write (io%output, task_params)
+    call io%namelist_warning ('task_params', iostat)
+    first_time = .false.
+  end if
+  !$omp end critical (input_cr)
   if (self%id == 0) then
     call init_unique (self)
   end if
@@ -153,6 +166,9 @@ SUBROUTINE init (self)
   call self%lock%init (self%kind(1:4), id=self%id+2)
   call self%random%init
   allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
+  if (self%id == track_id) then
+    self%track = .true.
+  end if
   call trace_end ()
 END SUBROUTINE init
 

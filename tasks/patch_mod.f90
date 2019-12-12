@@ -483,7 +483,6 @@ SUBROUTINE init_default (self)
   if (any(self%ng == 0)) self%ng = ng           ! patch guard zones
   if (    self%nv == 0 ) self%nv = nv           ! number of variables
   if (    self%nt == 0 ) self%nt = nt           ! number of time slices
-  call self%task_t%init                         ! sets unique id
   !-----------------------------------------------------------------------------
   ! Output related parameters
   !-----------------------------------------------------------------------------
@@ -493,6 +492,7 @@ SUBROUTINE init_default (self)
   if (io%nv==0) &
     io%nv = self%nv
   !$omp end critical (input_cr)
+  call self%task_t%init                         ! sets unique id
   self%restart     = io%restart                 ! restart snapshot
   self%grace       = grace                      ! grace fraction of dtime
   self%dt_fixed    = dt_fixed
@@ -1542,6 +1542,10 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     else if (self%id==io%id) then
       print_it = .true.
     end if
+    !---------------------------------------------------------------------------
+    ! Print info for selected task, or tracked task
+    !---------------------------------------------------------------------------
+    print_it = print_it .or. self%track
     if (print_it .or. io%verbose>0) then
       nv = 1
       if (io%verbose>2) nv = self%nv
