@@ -451,7 +451,9 @@ SUBROUTINE sync (self)
   logical:: err
   !-----------------------------------------------------------------------------
   call trace%begin ('mpi_io_t%sync')
+#ifdef MPI
   call MPI_File_sync (self%file%handle, err)
+#endif
   call trace%end ()
 END SUBROUTINE sync
 
