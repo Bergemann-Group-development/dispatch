@@ -12,22 +12,16 @@
 !scaling_params         v_kms=1.0 l_pc=0.50 d_cgs=2e-23 /               ! increase l_pc
 &scaling_params         v_kms=1.0 l_pc=2.00 d_cgs=2e-23 /               ! increase l_pc
 &experiment_params      density_cgs=6e-23 cs_kms=0.18 /
-!sinks_params           verbose=0 radius_au=2.60e3 mass_msun=30 /        ! increase radius_au
-!sinks_params           verbose=0 radius_au=10.4e3 mass_msun=30 /       ! increase radius_au
-&sinks_params           verbose=0 radius_au=12.0e3 mass_msun=30 /       ! increase radius_au
-&winds_params           verbose=0 velocity_kms=2e3 msun_per_yr=1e-5
-                        incremental=f
-                       !ramp_time_myr=0.0012 cs_kms=0.18                ! increase ramp_time_myr
-                        ramp_time_myr=0.0050 cs_kms=180.                ! increase ramp_time_myr
-/
+&sinks_params           verbose=0 radius_au=5.0e3 mass_msun=30 /        ! increase radius_au
 &io_params              verbose=0 do_trace=f omp_trace=f id_debug=13
                         do_output=t guard_zones=f time_derivs=0
                         method='parallel' format=8
                         !method='legacy'
 /
-!out_params             end_time=0.07 out_time=0.0005 print_every=100   ! increase out_time
-&out_params             end_time=0.011 out_time=0.0005 print_every=100   ! increase out_time
+&out_params             end_time=51e-5 out_time=1e-5 print_every=100   ! increase out_time
                         print_time=0 /
+&cooling_params         verbose=1 type='Casiana'
+                        on=f do_heat=t do_subcycle=t /
 &mpi_io_params          verbose=0 /
 &parallel_io_params     verbose=0 id_debug=2457 /
 &time_slices_params     verbose=0 order=1 id_debug=-1 /

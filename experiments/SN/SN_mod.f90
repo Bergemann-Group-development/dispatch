@@ -33,7 +33,7 @@ MODULE SN_mod
   implicit none
   private
   type, public:: SN_t
-    real:: velocity, mdot, ramp_time, energy
+    real:: velocity, mdot, energy
     class(patch_t), pointer:: patch => null()
   contains
     procedure:: init
@@ -42,7 +42,6 @@ MODULE SN_mod
   end type
   integer::     verbose = 0
   real::   velocity_kms = 2e3
-  real::  ramp_time_myr = 0.1
   real::    msun_per_yr = 1e-5
   real::         cs_kms = 0.18
   logical:: incremental = .false.
@@ -56,7 +55,7 @@ SUBROUTINE init (self, patch)
   class(patch_t), target:: patch
   integer:: iostat
   logical, save:: first_time=.true.
-  namelist /SN_params/ verbose, velocity_kms, ramp_time_myr, msun_per_yr, &
+  namelist /SN_params/ verbose, velocity_kms, msun_per_yr, &
                           cs_kms, incremental
   !-----------------------------------------------------------------------------
   call trace%begin ('SN_t%init')
@@ -70,7 +69,6 @@ SUBROUTINE init (self, patch)
   !$omp end critical (input_cr)
   self%velocity = velocity_kms*1e5/scaling%u
   self%mdot = msun_per_yr*cgs%m_sun/scaling%m/(cgs%yr/scaling%t)
-  self%ramp_time = ramp_time_myr*cgs%yr*1e6/scaling%t
   self%energy = (cs_kms*cgs%kms/scaling%u)**2/(patch%gamma*(patch%gamma-1d0))
   call trace%end ()
 END SUBROUTINE init
@@ -109,13 +107,12 @@ SUBROUTINE SN (self, patch, sink)
   real(8):: m_sun               ! solar mass in code units
   real(4):: dm                  ! change in mass per cell
   real(4):: dd                  ! change in mass density
-  real(4):: ramp                ! ramp profile
   real(4):: mdot                ! mass loss rate
   real, pointer, dimension(:,:,:):: d, px, py, pz, e
   real, allocatable, dimension(:,:,:):: x, y, z, r
   logical, allocatable:: inside(:,:,:)
   integer:: i, i1, i2, i3, m(6), n_inside
-  real:: ee, ee_min, t, foe
+  real:: ee, ee_min, foe
   logical:: first_time = .true.
   !-----------------------------------------------------------------------------
   call trace%begin ('SN_t%SN')
@@ -123,9 +120,6 @@ SUBROUTINE SN (self, patch, sink)
   ! Fitting formula for the mass loss rate (Paolo)
   !-----------------------------------------------------------------------------
   m_sun = cgs%m_sun/scaling%m
-  t = patch%time/self%ramp_time
-  ramp = 1.0-(1.0+t+0.5*t**2)*exp(-t)
-  mdot = log10(sink%mass/(7.*m_sun))**5*self%mdot*ramp
   !-----------------------------------------------------------------------------
   ! Distances from sink
   !-----------------------------------------------------------------------------
@@ -150,7 +144,7 @@ SUBROUTINE SN (self, patch, sink)
   allocate (inside(m(1),m(2),m(3)))
   inside = (r < sink%radius)
   dm = sink%mass
-  foe = 1e51/scaling%e
+  foe = 1d51/scaling%e
   ee = foe/dm
   n_inside = count(inside)
   !$omp critical (input_cr)
@@ -164,31 +158,18 @@ SUBROUTINE SN (self, patch, sink)
     !---------------------------------------------------------------------------
     d  => patch%mem(:,:,:,patch%idx%d ,patch%new,1)
     e  => patch%mem(:,:,:,patch%idx%e ,patch%new,1)
-    px => patch%mem(:,:,:,patch%idx%px,patch%new,1)
-    py => patch%mem(:,:,:,patch%idx%py,patch%new,1)
-    pz => patch%mem(:,:,:,patch%idx%pz,patch%new,1)
-    ee_min = (smallc*cgs%kms/scaling%u)**2/(patch%gamma*(patch%gamma-1d0))
-    if (verbose > 1) &
-      write (io_unit%output,*) &
-        'before:', patch%id, patch%fmaxval(abs(px/d)), maxval(abs(px/d))
-    if (incremental) then
-      ee = self%energy
-      where (inside)
-        d  = d  + dd
-        e  = e  + dd*ee
-      end where
-    else
-      ee = max(ee_min,ramp*self%energy)
-      where (inside)
-        d  = d  + dd
-        e  = d*ee
-      end where
-    end if
+    i = patch%n(1)/2
+    print *, d(i,i,i), dd
+    print *, e(i,i,i)/d(i,i,i), ee
+    where (inside)
+      d  = d  + dd
+      e  = e  + dd*ee
+    end where
+    print *, e(i,i,i)/d(i,i,i)*scaling%temp
     if (verbose > 1) &
       write (io_unit%output,*) &
         ' after:', patch%id, patch%fmaxval(abs(px/d)), maxval(abs(px/d))
     first_time = .false.
-    i = patch%n(1)/2
     write (io_unit%output,'(1x,a,i5,i8,i4,1p,2e11.2)') &
       'SN_t: id, n, i, e, T =', patch%id, n_inside, i, e(i,i,i), &
       e(i,i,i)/d(i,i,i)*(patch%gamma-1.0)*scaling%temp
