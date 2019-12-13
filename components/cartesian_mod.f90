@@ -41,7 +41,7 @@ SUBROUTINE init (self, label)
   class(link_t), pointer:: link, next
   class(experiment_t), pointer:: patch
   class(task_t), pointer:: task
-  integer:: i, j, k, id, ip
+  integer:: i, j, k, id, ip, iostat
   integer:: dims(3) = [4,4,4]
   integer:: patches_per_mpi(3)
   integer:: mpi_dims(3) = [1,1,1]
@@ -61,8 +61,11 @@ SUBROUTINE init (self, label)
   call io%header('begin cartesian_t%init: Cartesian patch arrangement')
   call trace%print_id (ids)
   !-----------------------------------------------------------------------------
-  rewind (io%input); read (io%input, cartesian_params)
+  rewind (io%input)
+  read (io%input, cartesian_params, iostat=iostat)
   write (io%output, cartesian_params)
+  call io%namelist_warning ('cartesian_params', iostat)
+  write (io%namelist, cartesian_params)
   if (any(per_rank/=0)) then
     where (per_rank/=0) dims=per_rank*mpi_dims
   end if

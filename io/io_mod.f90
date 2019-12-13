@@ -12,7 +12,7 @@ MODULE io_mod
   private
   logical:: mpi_trace=.false.
   type io_t
-    integer:: verbose=0, input, output, data_unit
+    integer:: verbose=0, input, output, data_unit, namelist
     logical:: master=.true.
     logical:: do_legacy, do_direct, omp_trace
     character(len=16):: method='legacy'
@@ -134,6 +134,7 @@ SUBROUTINE init (self, name)
   ! unit numbers should be taken directly from io_unit_mod
   !-----------------------------------------------------------------------------
   self%input     = io_unit%input
+  self%namelist  = io_unit%nml
   !-----------------------------------------------------------------------------
   ! Use serial region to avoid threads using the input file simultaneously
   !-----------------------------------------------------------------------------
@@ -162,9 +163,9 @@ SUBROUTINE init (self, name)
     ! Read io_params namelist
     !---------------------------------------------------------------------------
     inputdir = self%rundir
-    rewind (io_unit%input)
-    read (io_unit%input, io_params, iostat=iostat)
-    if (iostat > 0) call self%namelist_warning ('io_params')
+    rewind (io%input)
+    read (io%input, io_params, iostat=iostat)
+    call self%namelist_warning ('io_params', iostat)
     if (mpi%master .and. .not. do_validate) then
       print'(a,i4)', ' n_socket =', omp%nsockets
       print'(a,i4)', '   n_core =', omp%ncores
@@ -489,19 +490,36 @@ END SUBROUTINE check_flags
 !===============================================================================
 !> Issue message for missing namelist in input file
 !===============================================================================
-SUBROUTINE namelist_warning (self, namelist, error)
+SUBROUTINE namelist_warning (self, namelist, iostat, error)
   class(io_t):: self
   character(len=*):: namelist
+  integer, optional:: iostat
   logical, optional:: error
+  integer:: iostat_l
   !.............................................................................
   if (io%master) then
+    if (present(iostat)) then
+      iostat_l = iostat
+    else
+      iostat_l = 0
+    end if
+    if (.not.present(error) .and. iostat_l < 0) return
+    if (iostat_l == 0) return
     write(stdout,'(a)') ''
     write(stdout,'(a)') '*************************************************************************************'
     write(stdout,'(a)') '*************************************************************************************'
-    if (self%namelist_errors) then
-      write(stdout,'(a)') '           ERROR: namelist '//trim(namelist)//' had read error'
+    if (iostat_l < 0) then
+      if (self%namelist_errors) then
+        write(stdout,'(a)') '           ERROR: namelist '//trim(namelist)//' missing'
+      else
+        write(stdout,'(a)') '           WARNING: namelist '//trim(namelist)//' missing'
+      end if
     else
-      write(stdout,'(a)') '           WARNING: namelist '//trim(namelist)//' had read error'
+      if (self%namelist_errors) then
+        write(stdout,'(a)') '           ERROR: namelist '//trim(namelist)//' had read error'
+      else
+        write(stdout,'(a)') '           WARNING: namelist '//trim(namelist)//' had read error'
+      end if
     end if
     write(stdout,'(a)') '*************************************************************************************'
     write(stdout,'(a)') '*************************************************************************************'

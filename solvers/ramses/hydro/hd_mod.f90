@@ -65,7 +65,7 @@ SUBROUTINE init (self)
   class(hd_t):: self
   character(len=10):: riemann='hllc'
   real, save:: csound=1.
-  integer:: i, iv
+  integer:: i, iv, iostat
   namelist /ramses_params/ gamma, riemann, slope_type, courant_factor, smallr, &
     smallc, isothermal, csound, detailed_timer, unsigned, courant_type, debug
   type(index_t):: idx
@@ -90,9 +90,11 @@ SUBROUTINE init (self)
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
-    rewind (io_unit%input)
-    read (io_unit%input, ramses_params)
-    if (mpi%rank==0) write (*, ramses_params)
+    rewind (io%input)
+    read (io%input, ramses_params, iostat=iostat)
+    call io%namelist_warning ('ramses_params', iostat)
+    write (io%output, ramses_params)
+    write (io%namelist, ramses_params)
   end if
   if (gamma == 1d0) &
     isothermal = .true.

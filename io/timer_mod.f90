@@ -89,7 +89,7 @@ SUBROUTINE init (self)
     first_time = .false.
     rewind (io_unit%input)
     read (io_unit%input, timer_params, iostat=ignore)
-    if (io_unit%master) write (*, timer_params)
+    write (io_unit%output, timer_params)
     self%sec_per_report = sec_per_report
     next_report_sec = wallclock() + sec_per_report
     omp%nthreads = max(1,omp%nthreads)

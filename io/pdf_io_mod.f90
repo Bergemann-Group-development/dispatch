@@ -54,6 +54,7 @@ SUBROUTINE init (self, patch)
     if (first_time) then
       rewind (io%input)
       read (io%input, pdf_io_params, iostat=iostat)
+      call io%namelist_warning ('pdf_io_params', iostat)
       write (io%output, pdf_io_params)
       if (on) then
         allocate (bins(nbins), counts(nbins))

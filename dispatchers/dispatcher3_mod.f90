@@ -68,7 +68,9 @@ SUBROUTINE init (self, task_list)
   !.............................................................................
   rewind (io%input)
   read (io%input, dispatcher3_params, iostat=iostat)
+  call io%namelist_warning ('dispatcher3_params', iostat)
   write (io%output, dispatcher3_params)
+  write (io%namelist, dispatcher3_params)
 END SUBROUTINE init
 
 !===============================================================================

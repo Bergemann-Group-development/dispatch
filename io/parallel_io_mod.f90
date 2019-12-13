@@ -91,8 +91,11 @@ SUBROUTINE init (patch)
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
-    rewind (io%input); read(io%input, parallel_io_params, iostat=iostat)
-     write (io%output, parallel_io_params)
+    rewind (io%input)
+    read(io%input, parallel_io_params, iostat=iostat)
+    call io%namelist_warning ('parallel_io_params', iostat)
+    write (io%output, parallel_io_params)
+    write (io%namelist, parallel_io_params)
     if (io%ntask==0) &
       call io%abort ('parallel_io_t%init: io%ntask == 0')
     call mpi_io%init

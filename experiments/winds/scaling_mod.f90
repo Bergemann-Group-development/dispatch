@@ -36,6 +36,7 @@ SUBROUTINE init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, scaling_params, iostat=iostat)
+    call io%namelist_warning ('scaling_params', iostat)
     write (io%output, scaling_params)
     call cgs%init
     u = v_kms*cgs%kms
@@ -50,7 +51,7 @@ SUBROUTINE init (self)
     mu = mu                                          ! mean molecular weight
     temp = (cgs%m_u*u**2)/cgs%k_b                    ! temperature for mu=1
     grav = cgs%grav*(m/l**3)*t**2                    ! constant of gravity
-    write (io_unit%nml, scaling_nml)
+    write (io%namelist, scaling_nml)
     first_time = .false.
   end if
   !$omp end critical (input_cr)

@@ -121,7 +121,9 @@ SUBROUTINE init (self, name)
   call mpi_mesg%init
   rewind (io%input)
   read(io%input, dispatcher6_params, iostat=iostat)
+  call io%namelist_warning ('dispatcher6_params', iostat)
   write (io%output, dispatcher6_params)
+  write (io%namelist, dispatcher6_params)
   call trace_end
 END SUBROUTINE init
 

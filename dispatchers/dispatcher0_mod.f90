@@ -72,7 +72,9 @@ SUBROUTINE init (self, name)
   call trace%begin('dispatcher0_t%init')
   rewind (io%input)
   read(io%input, dispatcher0_params, iostat=iostat)
+  call io%namelist_warning ('dispatcher0_params', iostat)
   write (io%output, dispatcher0_params)
+  write (io%namelist, dispatcher0_params)
   call mpi_mesg%init
   call self%lock%init ('disp')
   call self%lock%append

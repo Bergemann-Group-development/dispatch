@@ -41,12 +41,12 @@ SUBROUTINE init (self, nt)
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
-    rewind (io_unit%input)
-    read (io_unit%input, time_slices_params, iostat=iostat)
+    rewind (io%input)
+    read (io%input, time_slices_params, iostat=iostat)
+    call io%namelist_warning ('time_slices_params', iostat)
     order = min(order,nt-2)
     write (io%output, time_slices_params)
-    write (io_unit%nml, time_slices_params)
-    flush (io_unit%nml)
+    write (io%namelist, time_slices_params)
     call lagrange%test
   end if
   !$omp end critical (input_cr)

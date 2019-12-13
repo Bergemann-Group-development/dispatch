@@ -59,7 +59,9 @@ SUBROUTINE init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, cooling_params, iostat=iostat)
+    call io%namelist_warning ('cooling_params', iostat)
     write (io%output, cooling_params)
+    write (io%namelist, cooling_params)
     if (verbose > 0) then
       self%function => cooling_Gnedin
       call self%test

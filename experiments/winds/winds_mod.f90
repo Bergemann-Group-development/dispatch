@@ -66,6 +66,8 @@ SUBROUTINE init (self, patch)
     rewind (io%input)
     read (io%input, winds_params, iostat=iostat)
     write (io%output, winds_params)
+    call io%namelist_warning ('winds_params', iostat)
+    write (io%namelist, winds_params)
     first_time = .false.
   end if
   !$omp end critical (input_cr)

@@ -722,9 +722,11 @@ SUBROUTINE init (self)
   !$omp critical (input_cr)
   if (.not.self%initialized) then
     self%initialized = .true.
-    rewind (io_unit%input)
-    read (io_unit%input, lagrange_params, iostat=iostat)
-    if (io_unit%master) write (io_unit%output, lagrange_params)
+    rewind (io%input)
+    read (io%input, lagrange_params, iostat=iostat)
+    call io%namelist_warning ('lagrange_params', iostat)
+    call io%namelist_warning ('lagrange_params', iostat)
+    write (io%output, lagrange_params)
     self%verbose = verbose
     self%order = order
   end if

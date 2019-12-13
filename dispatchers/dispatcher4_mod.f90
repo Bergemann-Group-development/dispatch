@@ -99,8 +99,11 @@ SUBROUTINE init (self, task_list)
   namelist /dispatcher4_params/ use_locks, use_critical, use_taskyield, f_over, &
     master_works, n_write, verbose
   !.............................................................................
-  rewind (io%input); read (io%input, dispatcher4_params, iostat=iostat)
-  if (io%master) write (io%output, dispatcher4_params)
+  rewind (io%input)
+  read (io%input, dispatcher4_params, iostat=iostat)
+  call io%namelist_warning ('dispatcher4_params', iostat)
+  write (io%output, dispatcher4_params)
+  write (io%namelist, dispatcher4_params)
   self%verbose = verbose
 END SUBROUTINE init
 

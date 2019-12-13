@@ -36,7 +36,9 @@ SUBROUTINE init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, sinks_params, iostat=iostat)
+    call io%namelist_warning ('sinks_params', iostat)
     write (io%output, sinks_params)
+    write (io%namelist, sinks_params)
     first_time = .false.
   end if
   !$omp end critical (input_cr)
