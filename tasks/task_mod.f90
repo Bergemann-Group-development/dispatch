@@ -337,7 +337,8 @@ SUBROUTINE rotate (self)
 END SUBROUTINE rotate
 
 !===============================================================================
-!> Derotate task time slots, effectively backing up one time step
+!> Derotate task time slots, effectively backing up one time step.  Task locking
+!> should be done by the calling procedure.
 !===============================================================================
 SUBROUTINE derotate (self)
   class(task_t):: self
@@ -349,9 +350,11 @@ SUBROUTINE derotate (self)
     self%dt(i) = self%dt(i-1)
     self%t(i) = self%t(i-1)
   end do
-  self%time = self%t(self%nt-1)
+  self%istep = self%istep - 1
   self%it = self%iit(self%nt-1)
   self%new = self%iit(self%nt)
+  self%time = self%t(self%nt-1)
+  self%dtime = self%dt(self%nt-1)
   call trace%end ()
 END SUBROUTINE derotate
 

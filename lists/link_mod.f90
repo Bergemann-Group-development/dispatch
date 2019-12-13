@@ -33,6 +33,7 @@ MODULE link_mod
     type(lock_t):: lock, qlock
     logical:: initialized = .false.
     logical:: check = .true.
+    real:: u_max
     !---------------------------------------------------------------------------
     ! Flags making it possible to distinguish between nbors needed for link%task,
     ! and nbors that need link%task.  These flags are only used in nbor lists,

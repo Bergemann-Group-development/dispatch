@@ -43,7 +43,10 @@ MODULE task_list_mod
     procedure:: print => print1
     procedure:: init_levelstats
     procedure:: init_task_list_pointers
+    procedure:: check_mulligan
+    procedure:: mulligan
   end type
+  integer, save:: mulligan_level=0
   real(8), save:: dead_mans_hand=60d0, first_finished=0d0
   public:: task2patch
   type(task_list_t), target:: task_list
@@ -63,7 +66,7 @@ SUBROUTINE init (self, name)
   logical, save:: detailed_timer=.false.
   integer, save:: verbose=0
   namelist /task_list_params/ verbose, job_seconds, dead_mans_hand, sync_time, &
-    detailed_timer
+    detailed_timer, mulligan_level
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -73,6 +76,7 @@ SUBROUTINE init (self, name)
   call mpi_mesg%init
   rewind (io%input)
   read(io%input, task_list_params, iostat=iostat)
+  call io%namelist_warning ('task_list_params', iostat)
   write (io%output, task_list_params)
   if (sync_time > 0.0) &
     self%sync_next = sync_time
@@ -370,6 +374,8 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     io%ntask  = self%na                                        ! Authoritative !
     !---------------------------------------------------------------------------
     call task%update                                  ! update the task
+    if (mulligan_level > 0) &
+      call self%check_mulligan (head)                 ! check for nbor do-over
     if (self%verbose > 0) then
       associate (unit => merge (io_unit%log, io_unit%mpi, self%verbose > 1))
       write (unit,'(f12.6,2x,a,i6,1p,g14.6)') &
@@ -687,6 +693,96 @@ SUBROUTINE init_task_list_pointers (self, task_list)
     link => link%next
   end do
   call trace%end()
-END SUBROUTINE
+END SUBROUTINE init_task_list_pointers
+
+!===============================================================================
+!> Check if any nbor of the link task should do a mulligan.  The criterion is
+!> triggered if an nbor task is leading the current task with more than a factor
+!> (1.0+grace) times the maximum time step it would currently take, based on
+!> the Courant condition computed from the u_phase(:,:,:) values in its guard
+!> cells, owned by the link task.
+!===============================================================================
+SUBROUTINE check_mulligan (self, link)
+  class(task_list_t):: self
+  class(link_t), pointer:: link, nbor
+  class(task_t), pointer:: task
+  real:: ds, dt
+  !-----------------------------------------------------------------------------
+  ! First, call on the task to compute the nbor%u_max of its nbors
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%check_mulligan')
+  task => link%task
+  select type (task)
+  class is (patch_t)
+    call task%nbor_courant_conditions ()
+    ds = minval(task%ds,mask=task%mesh%n > 1)
+    if (task%track) &
+      write(io_unit%log,*) 'list_t%check_mulligan: id, u_phase =', &
+        task%id, maxval(task%u_phase)
+  end select
+  !-----------------------------------------------------------------------------
+  ! Then check if the nbor%u_max calls for a do-over of the nbor task
+  !-----------------------------------------------------------------------------
+  nbor => link%nbor
+  do while (associated(nbor))
+    task => nbor%task
+    select type (task)
+    class is (patch_t)
+      dt = merge (ds/nbor%u_max, huge(1.0), nbor%u_max > 0.0)
+      if (nbor%task%time - link%task%time > dt*(1d0+link%task%grace)) then
+        if (mulligan_level > 1) &
+          call self%mulligan (link)
+        if (mulligan_level == 1 .or. mulligan_level > 2) &
+          write (stdout,'(1x,a,2i6,1p,4e12.2)') &
+            'list_t%check_mulligan: id, nbor, time, lead/dt, dt, u_max =', &
+            link%task%id, nbor%task%id, link%task%time, &
+            (nbor%task%time-link%task%time)/dt, dt, nbor%u_max
+      end if
+      if (link%task%track) then
+        write (io_unit%log,'(1x,a,2i6,1p,4e12.2)') &
+          'list_t%check_mulligan: id, nbor, time, lead/dt, dt, u_max =', &
+          link%task%id, nbor%task%id, link%task%time, &
+          (nbor%task%time-link%task%time)/dt, dt, nbor%u_max
+      end if
+    end select
+    nbor => nbor%next
+  end do
+  call trace%end ()
+END SUBROUTINE check_mulligan
+
+!===============================================================================
+!> Do-over on a task; lock the task list, and if the task is in the ready queue,
+!> remove it from there.  Deroate the time slots, which makes the task out-of-
+!> date. The guard zone values are still OK in the now current time slot, so
+!> we can add the task directly to the ready queue, even though some nbors may
+!> no longer have a time interval that contains the old time slot.
+!===============================================================================
+SUBROUTINE mulligan (self, link)
+  class(task_list_t):: self
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  ! Lock the task list, nbor list, and task
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%mulligan')
+  call self%lock%set ('mulligan')
+  call link%lock%set ('mulligan')
+  call link%task%lock%set ('mulligan')
+  !-----------------------------------------------------------------------------
+  ! If the task is in the ready queue, remove it
+  !-----------------------------------------------------------------------------
+  if (link%task%is_set (bits%ready)) then
+    call self%remove (link)
+    call link%task%clear (bits%ready)
+  end if
+  !-----------------------------------------------------------------------------
+  ! De-rotate the task, effectively backing up one timestep
+  !-----------------------------------------------------------------------------
+  call link%task%derotate ()
+  call self%check_ready (link)
+  call link%task%lock%unset ('mulligan')
+  call link%lock%unset ('mulligan')
+  call self%lock%unset ('mulligan')
+  call trace%end ()
+END SUBROUTINE mulligan 
 
 END MODULE task_list_mod

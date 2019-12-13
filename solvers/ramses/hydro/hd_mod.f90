@@ -43,7 +43,7 @@ MODULE hd_mod
     real, pointer, contiguous, dimension(:,:,:,:,:):: qp, qm  ! face centered
     real, pointer, contiguous, dimension(:,:,:,:,:):: dq      ! slopes
     real, pointer, contiguous, dimension(:,:,:,:,:):: fl      ! 3D fluxes
-    real, pointer, contiguous, dimension(:,:,:):: c, s        ! scratch
+    real, pointer, contiguous, dimension(:,:,:):: s           ! scratch
   contains
     procedure:: init
     procedure:: dealloc
@@ -167,7 +167,6 @@ SUBROUTINE update (self)
   allocate (self%qm(n(1),self%nv,ndim,n(2),n(3)))
   allocate (self%dq(n(1),self%nv,ndim,n(2),n(3)))
   allocate (self%fl(n(1),n(2),n(3),self%nv,ndim))
-  allocate (self%c(n(1),n(2),n(3)))
   allocate (self%s(n(1),n(2),n(3)))
   !self%q=0.0; self%qp=0.0; self%qm=0.0; self%dq=0.0; self%fl=0.; self%c=0.0; self%s=0.0
   if (detailed_timer) call trace_end (itimer)
@@ -233,7 +232,7 @@ SUBROUTINE update (self)
   ! Deallocate
   !-----------------------------------------------------------------------------
   call self%counter_update
-  deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%c,self%s)
+  deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%s)
   call trace%end (itimer)
 END SUBROUTINE update
 
@@ -545,7 +544,7 @@ subroutine ctoprim (self)
   !-----------------------------------------------------------------------------
   uin => self%uin
   q   => self%q
-  c   => self%c
+  c   => self%u_phase
   s   => self%s
   if (detailed_timer) then
     call trace%begin ('hd_mod::ctoprim', itimer=itimer)
@@ -583,8 +582,8 @@ subroutine ctoprim (self)
   else
     c = c + (abs(q(:,:,:,2)) + abs(q(:,:,:,3)) + abs(q(:,:,:,4)))/3.0
   end if
-  l = self%mesh%lo
-  u = self%mesh%uo
+  l = self%mesh%lb
+  u = self%mesh%ub
   self%u_max = maxval(c(l(1):u(1),l(2):u(2),l(3):u(3)))
   if (detailed_timer) then
     call trace%end (itimer)

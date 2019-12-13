@@ -116,7 +116,8 @@ def _add_nml_list_to(obj,nml_list,verbose=0):
     """ add all namelists as object attributes
     """
     for key,nml_dict in nml_list.items():
-        if (verbose==1):
+        #print(key,type(nml_dict))
+        if (verbose>1):
             print('  parsing',key)
         if key=='snapshot_nml':
             _add_nml_to(obj,nml_dict)
@@ -126,6 +127,9 @@ def _add_nml_list_to(obj,nml_list,verbose=0):
                 print('    adding property',name)
             setattr(obj,name,_param())
             subobj=getattr(obj,name)
+            if type(nml_dict) is list:
+                print('WARNING: more than one',key)
+                nml_dict=nml_dict[0]
             _add_nml_to(subobj,nml_dict,verbose=verbose)
 
 class memmap2(np.memmap):
@@ -629,7 +633,7 @@ class _patch():
                 self.auxfile=auxfile
                 self.aux=aux(id=id,io=snap.iout,file=auxfile)
                 self.keys['aux']=self.aux.vars.keys()
-            elif verbose>0:
+            elif verbose>1:
                 print(auxfile,'does not exist')
             timer.add('read-aux')
         
@@ -798,12 +802,14 @@ class snapshot():
             return None
 
         # add properties from params.nml
-        file=_file(rundir,'params.nml')
-        self.params_list=f90nml.read(file)
-        _add_nml_list_to(self,self.params_list,verbose=verbose)
+        #file=_file(rundir,'params.nml')
+        #if verbose>0:
+        #    print('reading file',file)
+        #self.params_list=f90nml.read(file)
+        #_add_nml_list_to(self,self.params_list,verbose=verbose)
 
         files=[f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
-        if verbose:
+        if verbose > 1:
             print('number of snapshot.nml files in {}: {}'.format(
                     datadir,len(files)))
         if len(files)==0:
@@ -812,11 +818,11 @@ class snapshot():
         for f in files:
             # add parameter groups from data/run/NNNNN/*snapshot.nml
             file=_file(datadir,f)
-            if verbose==1:
-                print ('parsing',file)
+            if verbose>0:
+                print('reading file',file)
             nml_list=f90nml.read(file)
             self.nml_list=nml_list
-            _repair(self,nml_list,verbose=verbose)
+            #_repair(self,nml_list,verbose=verbose)
             _add_nml_list_to(self,nml_list,verbose=verbose)
             if 'idx_nml' in nml_list.keys():
                 idx_dict = nml_list['idx_nml']
@@ -860,7 +866,7 @@ class snapshot():
             rank=np.int(f.split('_')[1])
             # add parameter groups from data/run/NNNNN/*patches.nml
             file=_file(datadir,f)
-            if verbose==1:
+            if verbose>1:
                 print ('parsing',file)
             patch_dict=parse_patches(self,file)
             save.append(patch_dict)

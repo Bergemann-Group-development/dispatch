@@ -65,7 +65,6 @@ SUBROUTINE init (self, label)
   read (io%input, cartesian_params, iostat=iostat)
   write (io%output, cartesian_params)
   call io%namelist_warning ('cartesian_params', iostat)
-  write (io%namelist, cartesian_params)
   if (any(per_rank/=0)) then
     where (per_rank/=0) dims=per_rank*mpi_dims
   end if
@@ -206,8 +205,8 @@ SUBROUTINE init (self, label)
   call self%task_list%init_bdries
   !-----------------------------------------------------------------------------
   if (io_unit%master) then
-    write (io_unit%nml, cartesian_params)
-    flush (io_unit%nml)
+    write (io%namelist, cartesian_params)
+    flush (io%namelist)
   end if
   if (io%verbose > 0) &
     write(stdout,*) 'cartesian_t%init: diagnostics'

@@ -227,7 +227,7 @@ SUBROUTINE courant_condition (self, detailed_timer)
     write(io_unit%log,'(a,i6,1p,2g10.2)') &
       'gpatch_t%courant_condition WARNING: id, self%dtime, dtime =', &
       self%id, self%dtime, dtime
-    self%dtime = dtime
+    !self%dtime = dtime
   end if
   call trace%end()
 END SUBROUTINE courant_condition
