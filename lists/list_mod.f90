@@ -97,6 +97,7 @@ MODULE list_mod
     procedure:: send_to_vnbors
     procedure:: test_nbor_status
     procedure:: info
+    procedure:: mulligan
   end type
   integer, dimension(:), allocatable:: sequence
   integer, parameter:: mnbor=100
@@ -2393,5 +2394,40 @@ SUBROUTINE info (self)
   end do
   call trace%end()
 END SUBROUTINE info
+
+!===============================================================================
+!> Do-over on a task; lock the task list, and if the task is in the ready queue,
+!> remove it from there.  Deroate the time slots, which makes the task out-of-
+!> date. The guard zone values are still OK in the now current time slot, so
+!> we can add the task directly to the ready queue, even though some nbors may
+!> no longer have a time interval that contains the old time slot.
+!===============================================================================
+SUBROUTINE mulligan (self, link)
+  class(list_t):: self
+  class(link_t), pointer:: link
+  !-----------------------------------------------------------------------------
+  ! Lock the task list, nbor list, and task
+  !-----------------------------------------------------------------------------
+  call trace%begin ('list_t%mulligan')
+  call self%lock%set ('mulligan')
+  call link%lock%set ('mulligan')
+  call link%task%lock%set ('mulligan')
+  !-----------------------------------------------------------------------------
+  ! If the task is in the ready queue, remove it
+  !-----------------------------------------------------------------------------
+  if (link%task%is_set (bits%ready)) then
+    call self%remove (link)
+    call link%task%clear (bits%ready)
+  end if
+  !-----------------------------------------------------------------------------
+  ! De-rotate the task, effectively backing up one timestep
+  !-----------------------------------------------------------------------------
+  call link%task%derotate ()
+  call self%check_ready (link)
+  call link%task%lock%unset ('mulligan')
+  call link%lock%unset ('mulligan')
+  call self%lock%unset ('mulligan')
+  call trace%end ()
+END SUBROUTINE mulligan 
 
 END MODULE list_mod

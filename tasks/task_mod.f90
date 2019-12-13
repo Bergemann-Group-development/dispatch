@@ -92,6 +92,7 @@ MODULE task_mod
     procedure:: dnload
     procedure:: update => void
     procedure:: rotate
+    procedure:: derotate
     procedure:: info
     procedure:: timeslots
     procedure:: is_ahead_of
@@ -334,6 +335,25 @@ SUBROUTINE rotate (self)
   end if
   call trace_end (itimer)
 END SUBROUTINE rotate
+
+!===============================================================================
+!> Derotate task time slots, effectively backing up one time step
+!===============================================================================
+SUBROUTINE derotate (self)
+  class(task_t):: self
+  integer:: i
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_t%deroate')
+  do i=self%nt,2,-1
+    self%iit(i) = self%iit(i-1)
+    self%dt(i) = self%dt(i-1)
+    self%t(i) = self%t(i-1)
+  end do
+  self%time = self%t(self%nt-1)
+  self%it = self%iit(self%nt-1)
+  self%new = self%iit(self%nt)
+  call trace%end ()
+END SUBROUTINE derotate
 
 !===============================================================================
 !> Print info to stdout
