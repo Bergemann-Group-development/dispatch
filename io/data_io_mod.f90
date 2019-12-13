@@ -25,6 +25,7 @@ MODULE data_io_mod
   USE trace_mod
   USE task_mod
   USE patch_mod
+  USE link_mod
   USE amr_io_mod
   USE direct_io_mod
   USE legacy_io_mod
@@ -450,6 +451,34 @@ SUBROUTINE output_nml (patch, append)
   end if
 CONTAINS
 
+!===============================================================================
+SUBROUTINE get_ids (nbor_ids, parent_id)
+  integer, allocatable:: nbor_ids(:)
+  integer:: parent_id, n
+  class(link_t), pointer:: nbor
+  !.............................................................................
+  n = 0
+  nbor => patch%link%nbor
+  do while (associated(nbor))
+    n = n+1
+    nbor => nbor%next
+  end do
+  allocate (nbor_ids(n))
+  n = 0
+  nbor => patch%link%nbor
+  do while (associated(nbor))
+    n = n+1
+    nbor_ids(n) = nbor%task%id
+    nbor => nbor%next
+  end do
+  if (associated(patch%parent)) then
+    parent_id  = patch%parent%id
+  else
+    parent_id  = 0
+  end if
+END SUBROUTINE get_ids
+
+!===============================================================================
 SUBROUTINE output_nml_v1 (patch, append)
   class(patch_t):: patch
   logical :: append
@@ -595,9 +624,13 @@ SUBROUTINE output_nml_v2 (patch, append)
   character(len=32)    :: kind, eos, opacity, method
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method, nml_version
   namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, &
-    nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land
+    nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land, &
+    mesh_type
   namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, nw, &
     velocity, quality, mesh_type, kind
+  integer, allocatable :: nbor_ids(:)
+  integer              :: parent_id
+  namelist /nbor_nml/ id, parent_id, nbor_ids
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
@@ -699,7 +732,10 @@ SUBROUTINE output_nml_v2 (patch, append)
     call patch%idx%output (io_unit%nml2)
   end if
   write (io_unit%nml2, patch_nml)
+  call get_ids (nbor_ids, parent_id)
+  write (io_unit%nml2, nbor_nml)
   flush (io_unit%nml2)
+  deallocate (nbor_ids)
   call trace%end()
 END SUBROUTINE output_nml_v2
 
@@ -729,6 +765,9 @@ SUBROUTINE output_nml_v3 (patch, append)
     no_mans_land
   namelist /patch_nml/ id, time, position, size, level, dtime, times, dtimes, &
     task_offset
+  integer, allocatable :: nbor_ids(:)
+  integer              :: parent_id
+  namelist /nbor_nml/ id, parent_id, nbor_ids
   !-----------------------------------------------------------------------------
   ! Write a small text file with info
   !-----------------------------------------------------------------------------
@@ -839,7 +878,10 @@ SUBROUTINE output_nml_v3 (patch, append)
     call patch%idx%output (io_unit%nml2)
   end if
   write (io_unit%nml2, patch_nml)
+  call get_ids (nbor_ids, parent_id)
+  write (io_unit%nml2, nbor_nml)
   flush (io_unit%nml2)
+  deallocate (nbor_ids)
   call trace%end()
 END SUBROUTINE output_nml_v3
 
