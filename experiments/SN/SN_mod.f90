@@ -148,6 +148,7 @@ SUBROUTINE SN (self, patch, sink)
   dm = sink%mass
   foe = 1d51/scaling%e
   ee = foe/dm
+  self%velocity = sqrt(2.0*ee)
   n_inside = count(inside)
   !$omp critical (input_cr)
   if (n_inside > 0 .and. first_time) then
@@ -160,14 +161,20 @@ SUBROUTINE SN (self, patch, sink)
     !---------------------------------------------------------------------------
     d  => patch%mem(:,:,:,patch%idx%d ,patch%new,1)
     e  => patch%mem(:,:,:,patch%idx%e ,patch%new,1)
+    px => patch%mem(:,:,:,patch%idx%px,patch%new,1)
+    py => patch%mem(:,:,:,patch%idx%py,patch%new,1)
+    pz => patch%mem(:,:,:,patch%idx%pz,patch%new,1)
     i = patch%n(1)/2
     print *, d(i,i,i), dd
     print *, e(i,i,i)/d(i,i,i), ee
     where (inside)
+      e  = e - 0.5*(px**2+py**2+pz**2)/d
       d  = d  + dd
-      e  = e  + dd*ee
+      px = px + dd*(self%velocity*x/sink%radius + sink%velocity(1))
+      py = py + dd*(self%velocity*y/sink%radius + sink%velocity(2))
+      pz = pz + dd*(self%velocity*z/sink%radius + sink%velocity(3))
+      e  = e + 0.5*(px**2+py**2+pz**2)/d
     end where
-    print *, e(i,i,i)/d(i,i,i)*scaling%temp
     if (verbose > 1) &
       write (io_unit%output,*) &
         ' after:', patch%id, patch%fmaxval(abs(px/d)), maxval(abs(px/d))
