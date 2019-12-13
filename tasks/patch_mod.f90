@@ -443,7 +443,7 @@ SUBROUTINE init_default (self)
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000
   logical, save:: no_mans_land=.false., use_data_hub=.false., limit_dtime=.false.
   real, save:: u_fixed=-1.0, grace=0.0
-  real(8), save:: end_time=1.0, out_time=0.1, print_time=0.1, dt_fixed=-1.0
+  real(8), save:: end_time=1.0, out_time=0.1, print_time=0.0, dt_fixed=-1.0
   real(8):: position(3), size(3)
   integer:: iostat, i, n_alloc=0, n_ext=0
   namelist /patch_params/ n, nv, ng, nt, u_fixed, dt_fixed, &
@@ -1577,7 +1577,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       ! To allow using the column for plotting, we show this time when all
       ! times are printed.
       !-----------------------------------------------------------------------
-      if (io%print_time == 0.0 .and. io%verbose > 0) then
+      if (io%print_time == 0.0 .and. io%verbose == 0) then
         time = self%time - self%dtime
       else
         time = self%time
@@ -1813,30 +1813,30 @@ SUBROUTINE courant_condition (self, detailed_timer)
   endif
   !$omp atomic write
   self%dtime = dtime
-  if (self%nt > 1 .and. self%istep > 5) then
-    if (dtime < 0.5*self%dt(self%iit(self%nt-1)) .and. self%dt_fixed < 0.0) then
-      self%safety_factor = 0.5
-    end if
-    if (self%safety_factor < 0.6 .and. save_dbg) then
-      !$omp critical (fort88_cr)
-      if (self%safety_factor == 0.5) then
-        write (io_unit%dbg) self%id, self%gn, self%ipos
-        write (io_unit%dbg) self%t(self%nt-3), self%mem(:,:,:,:,self%iit(self%nt-3),1)
-        write (io_unit%dbg) self%id, self%gn, self%ipos
-        write (io_unit%dbg) self%t(self%nt-2), self%mem(:,:,:,:,self%iit(self%nt-2),1)
-      end if
-      write (io_unit%dbg) self%id, self%gn, self%ipos
-      write (io_unit%dbg) self%time, self%mem(:,:,:,:,self%it,1)
-      flush (io_unit%dbg)
-      if (io%verbose>2 .or. (self%istep>5)) &
-        write(io%output,'(a,i6,i3,f12.6,1p,3g11.2,0p,1x,3f12.6,1x,1p,7g12.3)') &
-          ' courant: ', self%id, self%it, &
-          self%time, dtime, courant, self%u_max, self%position, self%dt(self%iit)
-      !$omp end critical (fort88_cr)
-    end if
-    self%safety_factor = self%safety_factor**0.9
-    self%get_umax_location = (self%safety_factor < 0.9)
-  end if
+  !if (self%nt > 1 .and. self%istep > 5) then
+  !  if (dtime < 0.5*self%dt(self%iit(self%nt-1)) .and. self%dt_fixed < 0.0) then
+  !    self%safety_factor = 0.5
+  !  end if
+  !  if (self%safety_factor < 0.6 .and. save_dbg) then
+  !    !$omp critical (fort88_cr)
+  !    if (self%safety_factor == 0.5) then
+  !      write (io_unit%dbg) self%id, self%gn, self%ipos
+  !      write (io_unit%dbg) self%t(self%nt-3), self%mem(:,:,:,:,self%iit(self%nt-3),1)
+  !      write (io_unit%dbg) self%id, self%gn, self%ipos
+  !      write (io_unit%dbg) self%t(self%nt-2), self%mem(:,:,:,:,self%iit(self%nt-2),1)
+  !    end if
+  !    write (io_unit%dbg) self%id, self%gn, self%ipos
+  !    write (io_unit%dbg) self%time, self%mem(:,:,:,:,self%it,1)
+  !    flush (io_unit%dbg)
+  !    if (io%verbose>2 .or. (self%istep>5)) &
+  !      write(io%output,'(a,i6,i3,f12.6,1p,3g11.2,0p,1x,3f12.6,1x,1p,7g12.3)') &
+  !        ' courant: ', self%id, self%it, &
+  !        self%time, dtime, courant, self%u_max, self%position, self%dt(self%iit)
+  !    !$omp end critical (fort88_cr)
+  !  end if
+  !  self%safety_factor = self%safety_factor**0.9
+  !  self%get_umax_location = (self%safety_factor < 0.9)
+  !end if
   !-----------------------------------------------------------------------------
   ! Force the time step to give exactly sync_time if within reach
   !-----------------------------------------------------------------------------

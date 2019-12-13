@@ -9,16 +9,15 @@
 
 ! To make the box 2 times larger:
 
-!scaling_params         v_kms=1.0 l_pc=0.50 d_cgs=2e-23 /               ! increase l_pc
 &scaling_params         v_kms=1.0 l_pc=2.00 d_cgs=2e-23 /               ! increase l_pc
-&experiment_params      density_cgs=6e-20 cs_kms=0.18 /
+&experiment_params      density_cgs=6e-22 cs_kms=0.18 /
 &sinks_params           verbose=0 radius_au=15.0e3 mass_msun=30 /       ! increase radius_au
-&io_params              verbose=0 do_trace=f omp_trace=f id_debug=13
+&io_params              verbose=1 do_trace=f omp_trace=f id_debug=13
                         do_output=t guard_zones=f time_derivs=0
                         method='parallel' format=8
                         !method='legacy'
 /
-&out_params             end_time=101e-5 out_time=20e-5 print_every=100   ! increase out_time
+&out_params             end_time=17e-5 out_time=4e-5 print_every=100   ! increase out_time
                         print_time=0 /
 &cooling_params         verbose=1 type='Casiana'
                         on=f do_heat=t do_subcycle=t /
@@ -33,7 +32,7 @@
  size=1,1,1 dims=3*05     mpi_dims=2,1,1                !  1-2 processes
  origin=0,0,0                                           ! Cartesian system origin
 /
-&task_list_params       mulligan_level=1 /
+&task_list_params       mulligan_level=3 /
 &task_params            track_id=63 /
 &patch_params           nt=5 grace=0.1 n=3*32 no_mans_land=t do_check_nan=f /
 &download_params        verbose=0 order_time=1

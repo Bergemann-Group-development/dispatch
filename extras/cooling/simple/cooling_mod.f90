@@ -162,8 +162,8 @@ SUBROUTINE pre_update (self, patch)
           eth = min(eth,eth_lim)
           qq = (eth-eth0)/patch%dtime          
         end if
-      else
-        self%dtime = min(self%dtime, courant*eth/max(crate,hrate))
+      else if (patch%dt_fixed < 0d0) then
+          self%dtime = min(self%dtime, courant*eth/max(crate,hrate))
       end if
       patch%heating_per_unit_volume(i1,i2,i3) = d*qq
       T = eth*scaling%temp*mu

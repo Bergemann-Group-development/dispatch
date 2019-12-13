@@ -85,6 +85,7 @@ MODULE list_mod
     procedure:: queue_by_time
     procedure:: queue_active
     procedure:: remove_active
+    procedure:: remove_from_queue
     procedure:: print_queue
     procedure:: print_queue_until
     procedure:: print_queue_times
@@ -1772,6 +1773,39 @@ SUBROUTINE remove_active (self, this)
   !$omp end critical (active_cr)
   call trace%end()
 END SUBROUTINE remove_active
+
+!===============================================================================
+!> Remove a task link from the active queue
+!===============================================================================
+SUBROUTINE remove_from_queue (self, this)
+  class(list_t):: self
+  class(link_t), pointer:: this
+  class(link_t), pointer:: next, prev
+  !-----------------------------------------------------------------------------
+  if (.not.associated(self%active)) return
+  call trace%begin ('list_t%remove_from_queue')
+  !$omp critical (active_cr)
+  nullify (prev)
+  next => self%queue
+  do while (associated(next))
+    if (associated(next%task, this%task)) then
+print *,'remove_from_queue: found it'
+      if (associated(prev)) then
+        prev%next_time => next%next_time
+      else
+        self%queue => next%next_time
+      end if
+      self%nq = self%nq-1
+      !if (io%verbose > 1) &
+        write (io_unit%mpi,*) 'remove_from_queue: id, nq =', this%task%id, self%nq
+      exit
+    end if
+    prev => next
+    next => next%next_time
+  end do
+  !$omp end critical (active_cr)
+  call trace%end()
+END SUBROUTINE remove_from_queue
 
 !===============================================================================
 !> Add a link node into the task list, in increasing quality order

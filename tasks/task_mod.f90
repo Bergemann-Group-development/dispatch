@@ -345,16 +345,16 @@ SUBROUTINE derotate (self)
   integer:: i
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%deroate')
-  do i=self%nt,2,-1
-    self%iit(i) = self%iit(i-1)
-    self%dt(i) = self%dt(i-1)
-    self%t(i) = self%t(i-1)
-  end do
-  self%istep = self%istep - 1
-  self%it = self%iit(self%nt-1)
-  self%new = self%iit(self%nt)
-  self%time = self%t(self%nt-1)
-  self%dtime = self%dt(self%nt-1)
+  if (self%time > 0d0 .and. self%istep > 0) then
+    do i=self%nt,2,-1
+      self%iit(i) = self%iit(i-1)
+    end do
+    self%istep = self%istep - 1
+    self%it = self%iit(self%nt-1)
+    self%new = self%iit(self%nt)
+    self%time = self%t(self%it)
+    self%dtime = self%dt(self%it)
+  end if
   call trace%end ()
 END SUBROUTINE derotate
 
