@@ -9,7 +9,7 @@ MODULE initial_mod
   USE io_mod
   USE trace_mod
   USE mesh_mod
-  USE hydro_parameters
+  USE parameters_mod
   USE omp_mod
   USE index_mod
   implicit none

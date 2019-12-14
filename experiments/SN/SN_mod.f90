@@ -29,7 +29,7 @@ MODULE SN_mod
   USE sinks_mod
   USE scaling_mod
   USE units_mod
-  USE hydro_parameters, only: smallc
+  USE parameters_mod, only: smallc
   implicit none
   private
   type, public:: SN_t
