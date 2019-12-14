@@ -64,7 +64,9 @@ MODULE download_mod
   logical:: sorted=.false.
   logical:: use_locks=.true.
   logical:: detailed_timer=.false.
-  character(len=16):: use_restrict='', use_prolong='', use_same=''
+  character(len=20):: use_restrict='different'
+  character(len=20):: use_prolong='different_prolong'
+  character(len=20):: use_same='same'
   type(download_t), public:: download
 CONTAINS
 
@@ -263,8 +265,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
              call guard_zones%method (target, source, jt, pt)
            case ('guard_same')
              call guard_zones%method (target, source, jt, pt, same=.true.)
-           case default
+           case ('same')
              call self%same (target, source, jt, pt, all_cells_l, only=only)
+           case default
+             call io%abort ('unknown use_same ='//trim(use_same))
            end select
          !----------------------------------------------------------------------
          ! Prolong with one level difference and all_cells
@@ -284,8 +288,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
              call guard_zones%method (target, source, jt, pt)
            case ('remesh')
              call remesh%prolong (target, source, jt, pt, all_cells_l)
-           case default
+           case ('different_prolong')
              call different_prolong (self, target, source, jt, pt, all_cells_l, only=only)
+           case default
+             call io%abort ('unknown use_prolong='//trim(use_prolong))
            end select
          !----------------------------------------------------------------------
          ! Prolong cases with all_cell
@@ -299,12 +305,14 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
            select case (trim(use_restrict))
            case ('different')
              call different (self, target, source, jt, pt, all_cells_l, only=only)
-           case ('diff_pro')
+           case ('diff_prolong')
              call different_prolong (self, target, source, jt, pt, all_cells_l, only=only)
            case ('guard_zones')
              call guard_zones%method (target, source, jt, pt)
-           case default
+           case ('different_restrict')
              call different_restrict (self, target, source, jt, pt, only=only)
+           case default
+             call io%abort ('unknown use_restrict='//trim(use_restrict))
            end select
          end if
        end if
