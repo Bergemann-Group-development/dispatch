@@ -963,6 +963,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   parent%n_needed = parent%n_needed + 2
   if (parent%time > 0.0 .and. child%restart <= 0) then
     call download%download_link (child_link, all_cells=.true.)
+    child%dnload_time = -1.0
   end if
   !-----------------------------------------------------------------------------
   ! Add the child task to the task list, including giving it an nbor list etc,
