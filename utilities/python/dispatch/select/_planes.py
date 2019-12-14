@@ -89,7 +89,8 @@ def corner_indices(sn,p,dir=-1):
     else:
         return i[0],i[0]+n[0],i[1],i[1]+n[1],i[2],i[2]+n[2]
 
-def unigrid_plane(snap,iv=0,x=None,y=None,z=None,point=0.5,dir=2,all=False,i4=0,verbose=0):
+def unigrid_plane(snap,iv=0,x=None,y=None,z=0.5,point=0.5,dir=2,
+                  all=False,i4=0,patches=False,verbose=0):
     pp=snap.patches
     p=pp[0]
     dim=list(snap.cartesian.dims*p.n)
@@ -128,7 +129,10 @@ def unigrid_plane(snap,iv=0,x=None,y=None,z=None,point=0.5,dir=2,all=False,i4=0,
         else:
             if verbose>1:
                 print('patch:',p.id,'range:',k,'shape: None')
-    return ff
+    if patches:
+        return ff,pp
+    else:
+        return ff
 
 def unigrid_volume(snap,iv=0,i4=0,verbose=0):
     """

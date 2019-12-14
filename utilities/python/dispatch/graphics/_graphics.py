@@ -116,10 +116,26 @@ def pause(time=1e-6):
     pl.draw()
     pl.gcf().canvas.start_event_loop(time)
 
-def image_plane(snap,x=None,y=None,z=None,iv=0,verbose=1):
-    if x: i=0
-    if y: i=1
-    if z: i=2
+def image_plane(snap,x=None,y=None,z=0.5,iv=0,grids=False,cbar=None,zoom=None,
+                title=None,verbose=1):
+    o=np.array(snap.cartesian.origin)
+    s=np.array(snap.cartesian.size)
+    c=o+0.5*s
+    if x: 
+        i=0
+        x=x*snap.cartesian.size[i]
+        c=c[[1,2]]
+        s=s[[1,2]]
+    elif y: 
+        i=1
+        y=y*snap.cartesian.size[i]
+        c=c[[0,2]]
+        s=s[[0,2]]
+    elif z: 
+        i=2
+        z=z*snap.cartesian.size[i]
+        c=c[[0,1]]
+        s=s[[0,1]]
     xyz=(x,y,z)
     sdir=['x','y','z']
     labels=[('y','z'),('z','x'),('y','z')]
@@ -141,16 +157,30 @@ def image_plane(snap,x=None,y=None,z=None,iv=0,verbose=1):
         emin=np.minimum(emin,np.array((e[0],e[2])))
         emax=np.maximum(emax,np.array((e[1],e[3])))
         ll[p.id]=(im,e,p.level)
+    cmap='coolwarm' if fmin<0 else None
     for id in sorted(ll.keys()):
         im,e,level=ll[id]
-        print(id,level)
-        imshow(im,extent=e,vmin=fmin,vmax=fmax,hold=True)
+        pl.imshow(im.T,origin='lower',extent=e,vmin=fmin,vmax=fmax,cmap=cmap)
     pl.colorbar()
     pl.xlim(emin[0],emax[0])
     pl.ylim(emin[1],emax[1])
-    pl.title('{}={:.3f}'.format(sdir[i],xyz[i]))
+    if title:
+        pl.title(title)
+    else:
+        pl.title('{}={:.3f}'.format(sdir[i],xyz[i]))
     pl.xlabel(labels[i][0])
     pl.ylabel(labels[i][1])
+    if grids:
+        for p in pp:
+            e=p.extent[i]
+            x=[e[0],e[0],e[1],e[1],e[0]]
+            y=[e[2],e[3],e[3],e[2],e[2]]
+            pl.plot(x,y,color='gray')
+    if zoom:
+        w=zoom*s*0.5
+        pl.xlim(c[0]-w[0],c[0]+w[0])
+        pl.ylim(c[1]-w[1],c[1]+w[1])
+    pl.tight_layout()
 
 def pdf_d(iout,run='',data='../data',iv='d',i4=0,nbin=100,xlim=[-4,3],lnd=False):
     """ Plot the PDF of the density """
@@ -175,7 +205,8 @@ def pdf_d(iout,run='',data='../data',iv='d',i4=0,nbin=100,xlim=[-4,3],lnd=False)
 
 def unigrid_plane(sn,**kw):
     import dispatch.select as dse
-    imshow(dse.unigrid_plane(sn,**kw))
+    ff,pp=dse.unigrid_plane(sn,patches=True,**kw)
+    imshow(ff)
 
 
 def amr_plane(sn,iv='d',z=0.5,log=False,mesh=False,ident=False,cmap=None,

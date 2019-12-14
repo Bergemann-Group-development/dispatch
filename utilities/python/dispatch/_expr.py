@@ -79,7 +79,6 @@ class Expressions(object):
                     if word in self.pvars:
                         cmd="p.var('{}')".format(word)
                         try:
-                                print('  {}={}'.format(word,cmd))
                                 ll[word]=eval(cmd)
                         except:
                             print('ERROR: {}'.format(cmd))

@@ -116,7 +116,6 @@ def _add_nml_list_to(obj,nml_list,verbose=0):
     """ add all namelists as object attributes
     """
     for key,nml_dict in nml_list.items():
-        #print(key,type(nml_dict))
         if (verbose>1):
             print('  parsing',key)
         if key=='snapshot_nml':
@@ -301,11 +300,13 @@ def _var(patch,filed,snap,verbose=0,copy=None):
         if patch.ioformat==5:
             offset = patch.ip + iv*patch.ntotal
             offset += patch.iout*patch.ntotal*patch.nv
-        elif patch.ioformat>=6 or patch.ioformat==15:
+        elif patch.ioformat>=6 and patch.ioformat<10 or patch.ioformat==15:
             offset = iv + patch.ip*patch.nv
+            print(patch.ioformat,patch.ip,iv,patch.ntotal,offset)
             offset += patch.iout*patch.ntotal*patch.nv
         elif patch.ioformat>=10:
             offset = patch.ip + iv*patch.ntotal
+            print(patch.ioformat,patch.ip,iv,patch.ntotal,offset)
             offset += patch.iout*patch.ntotal*patch.nv
         else:
             offset = iv
@@ -436,10 +437,13 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             assert(iv in patch.keys['numbers']),'variable index unknown'
 
         # Determine data representation
-        is_ln = (patch.ioformat-6)/2==1 \
-             or (patch.ioformat-10)/2==1 \
-             or patch.ioformat==15
-        is_v  = (patch.ioformat-6)%2==0 or patch.ioformat==15
+        is_ln = ((patch.ioformat-6)/2==1
+                 or (patch.ioformat-10)/2==1
+                 or patch.ioformat==15
+                 or patch.ioformat==14)
+        is_v  = ((patch.ioformat-6)%2==0 
+                 or patch.ioformat==15
+                 or patch.ioformat==14)
         is_st = patch.kind[0:4] == 'zeus' or patch.kind[0:7] == 'stagger'
         v = None
 
@@ -520,7 +524,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             # Energy per unit mass
             elif iv=='ee' or iv=='E':
                 """ Expressions common to all other solvers """
-                if patch.ioformat==15:
+                if patch.ioformat==14 or patch.ioformat==15:
                     v=mem('e')
                 else:
                     v=mem('e')/mem('d')
@@ -534,7 +538,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
             # Thermal energy
             elif iv=='eth':
-                if patch.ioformat==15 or is_st:
+                if patch.ioformat==14 or patch.ioformat==15 or is_st:
                     v=mem('e')
                 else:
                     v=mem('e')-var('ekin',all=True,verbose=verbose)
@@ -675,12 +679,12 @@ object takes both numeric and text key values: Examples:\n\
     d=p.d[0]\n\
     d=p.d['d']")
 
-    def plane(self,x=None,y=None,z=None,iv=0):
+    def plane(self,x=None,y=None,z=0.5,iv=0,verbose=0):
         if self.guard_zones:
             li=self.li
             ui=self.ui
         else:
-            li=np.zeros(3)
+            li=np.zeros(3,dtype=int)
             ui=self.n-1
         if x:
             p=(x-self.x[0])/self.ds[0]
@@ -689,21 +693,21 @@ object takes both numeric and text key values: Examples:\n\
             p=p-i
             f = self.var(iv)[i  ,li[1]:ui[1],li[2]:ui[2]]*(1.0-p) \
               + self.var(iv)[i+1,li[1]:ui[1],li[2]:ui[2]]*p
-        if y:
+        elif y:
             p=(y-self.y[0])/self.ds[1]
             i=np.int(p)
             i=np.minimum(i,ui[1]-2)
             p=p-i
             f = (self.var(iv)[li[0]:ui[0],i  ,li[2]:ui[2]]*(1.0-p) \
               +  self.var(iv)[li[0]:ui[0],i+1,li[2]:ui[2]]*p).transpose()
-        if z:
+        elif z:
             p=(z-self.z[2])/self.ds[2]
             i=np.int(p)
             i=np.minimum(i,ui[2]-2)
             p=p-i
             f = self.var(iv)[li[0]:ui[0],li[1]:ui[1],i  ]*(1.0-p) \
               + self.var(iv)[li[0]:ui[0],li[1]:ui[1],i+1]*p
-        if self.verbose:
+        if verbose:
             print('plane: i, p = {:d} {:.3f}'.format(i,p))
         return f
             
