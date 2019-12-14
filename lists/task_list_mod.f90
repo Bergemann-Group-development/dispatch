@@ -739,9 +739,10 @@ SUBROUTINE check_mulligan (self, link)
           ! Verbose output to rank log, if the condition is triggered
           !---------------------------------------------------------------------
           if (.not.triggered) then
-            write (io_unit%log,'(1x,a,i6,f10.6,2x,7f10.6)') &
-              'check_mulligan: id, time, times =', &
-              task%id, task%time, task%t(task%iit(1:task%nt-1))
+            write (io_unit%log,'(1x,a,2(i6,f12.6),1p,4e12.2)') &
+              'list_t%check_mulligan: id, time, nbor, time, lead/dt, dt, u_max =', &
+              task%id, task%time, nbtask%id, nbtask%time, &
+              (nbtask%time-task%time)/dt, dt, nbor%u_max
             triggered = .true.
           end if
           if (task%track .and. mulligan_verbose > 0) then
