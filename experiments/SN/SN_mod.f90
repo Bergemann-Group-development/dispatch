@@ -152,18 +152,18 @@ SUBROUTINE SN (self, patch, sink)
   n_inside = count(inside)
   !$omp critical (input_cr)
   if (n_inside > 0 .and. first_time) then
-    print *, 'BOOOOOOOOOOOOOOOOOOOOOOOOOK'
+    print *, 'BOOOOOOOOOOOOOOOOOOOOOOOOOM'
     dm = dm/n_inside
     dd = dm/product(patch%ds)
     !---------------------------------------------------------------------------
     ! Add mass and momentum inside the given radius, letting the velocity approach
     ! a pattern with constant divergence
     !---------------------------------------------------------------------------
-    d  => patch%mem(:,:,:,patch%idx%d ,patch%new,1)
-    e  => patch%mem(:,:,:,patch%idx%e ,patch%new,1)
-    px => patch%mem(:,:,:,patch%idx%px,patch%new,1)
-    py => patch%mem(:,:,:,patch%idx%py,patch%new,1)
-    pz => patch%mem(:,:,:,patch%idx%pz,patch%new,1)
+    d  => patch%mem(:,:,:,patch%idx%d ,patch%it,1)
+    e  => patch%mem(:,:,:,patch%idx%e ,patch%it,1)
+    px => patch%mem(:,:,:,patch%idx%px,patch%it,1)
+    py => patch%mem(:,:,:,patch%idx%py,patch%it,1)
+    pz => patch%mem(:,:,:,patch%idx%pz,patch%it,1)
     i = patch%n(1)/2
     print *, d(i,i,i), dd
     print *, e(i,i,i)/d(i,i,i), ee

@@ -101,6 +101,7 @@ SUBROUTINE pre_update (self)
   !.............................................................................
   call trace%begin ('extras_t%pre_update')
   call self%patch_t%pre_update                                          ! reset
+  call self%SN%update (self%patch)                                      ! SN
   call self%cooling%pre_update (self)                                   ! cool
   call trace%end ()
 END SUBROUTINE pre_update
@@ -113,7 +114,6 @@ SUBROUTINE post_update (self)
   class(extras_t):: self
   !.............................................................................
   call trace%begin ('extras_t%post_update')
-  call self%SN%update (self%patch)                                      ! SN
   call trace%end ()
 END SUBROUTINE post_update
 
