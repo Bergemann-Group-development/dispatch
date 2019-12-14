@@ -2,11 +2,11 @@
 !> non-ideal MHD module
 !===============================================================================
 MODULE non_ideal_mod
-  USE const
+  !USE const
   USE io_mod
   USE io_unit_mod
   USE link_mod
-  use hydro_parameters
+  USE parameters_mod
   USE trace_mod
   USE mpi_mod
   USE omp_mod

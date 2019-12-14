@@ -1,5 +1,6 @@
+
 module riemann_mod
-  USE hydro_parameters
+  USE parameters_mod
   USE io_mod
   USE mpi_mod
   USE trace_mod
@@ -16,7 +17,6 @@ module riemann_mod
     procedure, nopass:: llf
     procedure, nopass:: llf_2d
   end type
-  real, parameter:: half=0.5_dp, zero=0.0_dp, one=1.0_dp, forth=0.25_dp
   type(riemann_t), public:: rieman
 contains
 
@@ -293,12 +293,12 @@ end subroutine hlld
 !===============================================================================
 !> HLLD 2-D fluxes
 !===============================================================================
-SUBROUTINE hlld_vec (qleft, qright, fgdnv, n, detailed_timer)
+SUBROUTINE hlld_vec (qleft, qright, fgdnv, n, nvar, detailed_timer)
   IMPLICIT none
   ! HLLD Riemann solver (Miyoshi & Kusano, 2005, JCP, 208, 315)
   REAL(dp),DIMENSION(:,:), contiguous, target ::qleft,qright
   REAL(dp),DIMENSION(:,:), contiguous         ::fgdnv
-  INTEGER:: n
+  INTEGER:: n, nvar
   LOGICAL:: detailed_timer
   REAL(dp)::entho
   REAL(dp),DIMENSION(:), contiguous, pointer ::rl,pl,ul,vl,wl,cl,bl

@@ -16,13 +16,12 @@
 !===============================================================================
 MODULE hd_mod
   !.............................................................................
-  USE const
   USE io_mod
   USE io_unit_mod
   USE extras_mod
   USE link_mod
+  USE parameters_mod
   USE riemann_mod
-  USE hydro_parameters
   USE trace_mod
   USE mpi_mod
   USE omp_mod
@@ -50,6 +49,9 @@ MODULE hd_mod
     procedure:: update
     procedure:: gas_pressure
   end type
+  integer, parameter:: ndim=3
+  real, save:: slope_type=2.0
+  real, save:: courant_factor=0.25
   integer, save:: courant_type=0
   logical, save:: debug=.false.
   logical, save:: first_time=.true.

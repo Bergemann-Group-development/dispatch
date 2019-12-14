@@ -3,12 +3,12 @@
 !> module, where the standard forcing we have been using in RAMSES is implemented
 !===============================================================================
 MODULE initial_mod
-  USE const
+  !USE const
   USE io_mod
   USE trace_mod
   USE mesh_mod
   USE random_mod
-  USE hydro_parameters
+  USE parameters_mod
   USE omp_mod
   USE index_mod
   USE io_unit_mod
@@ -372,7 +372,7 @@ SUBROUTINE exa256 (self, m, ff, idx)
   !.............................................................................
   integer:: ix, iy, iz, jy, jz, rec, iv, li(3), ui(3)
   integer(8):: nx, ny, nz
-  real(dp):: umax, dt
+  real(dp):: umax
   logical, save:: first_time=.true.
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -422,8 +422,6 @@ SUBROUTINE exa256 (self, m, ff, idx)
   do iv=idx%px,idx%pz
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
-  dt = courant_factor*m(1)%d/umax
-  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,courant_factor,gamma,umax
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &

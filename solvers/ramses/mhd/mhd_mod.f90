@@ -15,13 +15,13 @@
 !===============================================================================
 MODULE mhd_mod
   !.............................................................................
-  USE const
+  !USE const
   USE io_mod
   USE io_unit_mod
   USE extras_mod
   USE link_mod
   USE riemann_mod
-  use hydro_parameters
+  use parameters_mod
   USE trace_mod
   USE mpi_mod
   USE omp_mod
@@ -52,6 +52,8 @@ MODULE mhd_mod
     procedure:: update
     procedure:: gas_pressure
   end type
+  real, save:: slope_type=2.0
+  real, save:: courant_factor=0.25
   logical, save:: first_time=.true.
   logical, save:: detailed_timer=.false.
   logical, save:: unsigned=.true.
@@ -60,6 +62,7 @@ MODULE mhd_mod
   integer, save:: divb_iter=4
   integer, save:: b_slope_type=0
   integer, save:: u_slope_type=0
+  integer, save:: courant_type=0
   character(len=16):: eqn='mhd'
 CONTAINS
 
@@ -1757,7 +1760,7 @@ if (self%id==io%id_debug .and. j==8 .and. k==8) then
     write (io%output,'("R3",f10.6,i4,1p,10e12.3)') self%time, i, qright(1:10,i)
   end do
 end if
-        call solver (self,qleft,qright,fgdnv,n)
+        call solver (self,qleft,qright,fgdnv,n,nvar)
         ! Output fluxes
         !dir$ ivdep
         !dir$ simd
@@ -1811,7 +1814,7 @@ if (self%id==io%id_debug .and. j==8 .and. k==8) then
     write (io%output,'("R4",f10.6,i4,1p,10e12.3)') self%time, i, qright(1:10,i)
   end do
 end if
-        call solver (self,qleft,qright,fgdnv,n)
+        call solver (self,qleft,qright,fgdnv,n,nvar)
         !dir$ ivdep
         !dir$ simd
         do i=1,n
@@ -1865,7 +1868,7 @@ if (self%id==io%id_debug .and. j==8 .and. k==8) then
     write (io%output,'("R5",f10.6,i4,1p,10e12.3)') self%time, i, qright(1:10,i)
   end do
 end if
-        call solver (self,qleft,qright,fgdnv,n)
+        call solver (self,qleft,qright,fgdnv,n,nvar)
         !dir$ ivdep
         !dir$ simd
         do i=1,n
@@ -2002,16 +2005,16 @@ END SUBROUTINE cmp_mag_flx
 !===============================================================================
 !> Selection of 1-D solvers
 !===============================================================================
-SUBROUTINE solver (self, qleft, qright, fgdnv, n)
+SUBROUTINE solver (self, qleft, qright, fgdnv, n, nvar)
   class(mhd_t):: self
   real(dp),dimension(:,:):: qleft,qright,fgdnv
-  integer :: n, n1
+  integer :: n, nvar, n1
   !.............................................................................
   n1 = size(qleft,1)
   if (self%riemann == 'hlld') then
     call rieman%hlld (qleft, qright, fgdnv, n1, detailed_timer)
   else if (self%riemann == 'hlld_vec') then
-    call rieman%hlld_vec (qleft, qright, fgdnv, n1, detailed_timer)
+    call rieman%hlld_vec (qleft, qright, fgdnv, n1, nvar, detailed_timer)
   else if (self%riemann == 'llf')then
     call rieman%llf (qleft, qright, fgdnv, n1, detailed_timer)
   else
