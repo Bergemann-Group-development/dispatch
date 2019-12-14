@@ -791,8 +791,8 @@ SUBROUTINE log (self, label, level)
         return
     end if
     !$omp critical (tasklog_cr)
-    write(io_unit%task,'(f12.6,i4,i6,f12.6,4x,a)') &
-      wallclock(), omp%thread, self%id, self%time, trim(label)
+    write(io_unit%task,'(f12.6,i4,i6,i4,f12.6,1p,e11.2,4x,a)') &
+      wallclock(), omp%thread, self%id, self%level, self%time, self%dtime, trim(label)
     !$omp end critical (tasklog_cr)
   end if
 END SUBROUTINE log

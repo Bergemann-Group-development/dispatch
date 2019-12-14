@@ -24,8 +24,12 @@ MODULE io_mod
     integer:: restart=-1
     integer:: nwrite=0, ntask=0, ntotal=0
     integer:: dims(3)=0, mpi_dims(3), mpi_odims(3)=1
-    character(len=64):: inputname, outputname, datadir='data', top
-    character(len=64):: rundir='data', inputdir='data'
+    character(len=64):: inputname               ! input namelist file (e.g. run.nml)
+    character(len=64):: datadir='data'          ! top output directory (e.g. data)
+    character(len=64):: rundir='data'           ! experiment output directory (data/run/)
+    character(len=64):: outputname              ! same as rundir, kept only for compatibily
+    character(len=64):: inputdir='data'         ! directory containing run to restart from
+    character(len=64):: top                     ! base name, allows referring to any repos file
     character(len=1):: sep = '/'
     character(len=72):: hl='-------------------------------------------------------------------------'
     character(len=72):: hs='*************************************************************************'
@@ -77,7 +81,6 @@ MODULE io_mod
     procedure, nopass:: header
     procedure, nopass:: print_hl
   end type
-  character(len=64), save:: inputname, outputname
   type(io_t), public:: io
   public mch, io_unit, stderr, stdout, stdin
 CONTAINS
@@ -153,7 +156,7 @@ SUBROUTINE init (self, name)
     end if
     call os%mkdir (trim(self%rundir))
     self%outputname = self%rundir                               ! compatibility
-    write (filename,'(a,i5.5,"/")') trim(self%outputname), 0
+    write (filename,'(a,i5.5,"/")') trim(self%rundir), 0
     call os%mkdir (trim(filename))
     !---------------------------------------------------------------------------
     open (io_unit%nml, file=trim(self%rundir)//'params.nml', form='formatted', status='unknown')
@@ -176,7 +179,7 @@ SUBROUTINE init (self, name)
     self%nml_version = nml_version
     self%inputdir = inputdir
     call ensure_dirname (self%inputdir)
-    call ensure_dirname (self%outputname)
+    call ensure_dirname (self%rundir)
     !---------------------------------------------------------------------------
     ! OMP specific setup; need to set io_unit in all threadprivate instances
     !---------------------------------------------------------------------------
@@ -189,7 +192,6 @@ SUBROUTINE init (self, name)
     end if
     io_unit%rundir = self%rundir
     io_unit%inputdir = self%inputdir    
-    io_unit%outputname = self%outputname
     io_unit%do_validate = do_validate
     !---------------------------------------------------------------------------
     ! Log-file names:
@@ -260,7 +262,6 @@ SUBROUTINE init (self, name)
   self%omp_trace = omp_trace
   self%log_sent  = log_sent
   self%levelmax  = levelmax
-  self%inputname = inputname
   self%top       = top
   self%method    = method
   self%namelist_errors = namelist_errors
@@ -287,11 +288,11 @@ contains
     if (present(thread)) then
       open (unit=unit, file=trim(filename), form=form, status='unknown')
       write (io_unit%threadbase,'(a,"thread_",i5.5,"_",i3.3)') &
-        trim(self%outputname), mpi%rank, thread
+        trim(self%rundir), mpi%rank, thread
       filename = trim(io_unit%threadbase)//ext
     else
       write (io_unit%rankbase,'(a,"rank_",i5.5)') &
-        trim(self%outputname), mpi%rank
+        trim(self%rundir), mpi%rank
       filename = trim(io_unit%rankbase)//ext
     end if
     open (unit=unit, file=trim(filename), form=form, status='unknown')
@@ -402,7 +403,7 @@ contains
   logical:: remove
   !.............................................................................
   !$omp critical (flag_cr)
-  file = trim(io%outputname)//'flag'
+  file = trim(io%rundir)//'flag'
   inquire (file=trim(file), exist=exists)
   if (exists) then
     !---------------------------------------------------------------------------
@@ -461,7 +462,7 @@ contains
   integer           :: iostat
   character(len=80) :: f
   !.............................................................................
-  f = trim(io%outputname)//trim(file)
+  f = trim(io%rundir)//trim(file)
   if (remove) then
     inquire (file=trim(f), exist=exists)
     if (exists) then

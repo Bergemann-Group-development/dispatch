@@ -118,7 +118,7 @@ SUBROUTINE mkdir_no (iout)
   !-----------------------------------------------------------------------------
   !$omp critical (mkdir_no_cr)
   if (iout > checked) then
-    write (filename,'(a,i5.5,"/")') trim(io_unit%outputname), iout
+    write (filename,'(a,i5.5,"/")') trim(io_unit%rundir), iout
     if (io_unit%iodir/=iout) call os%mkdir (trim(filename))
     io_unit%iodir = iout
     checked = iout

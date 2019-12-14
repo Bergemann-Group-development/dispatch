@@ -12,7 +12,7 @@ MODULE io_unit_mod
       validate=16, dispatcher=17, nml=18, copy1=19, copy2=20, datain=21, &
       nml1=22, nml2=23, dbg=24, hash=25, sinks=26, task=27, tmp=50, sent=150
     integer:: iodir = -1
-    character(len=64):: inputname, outputname, datadir='data', top
+    character(len=64):: inputname, datadir='data', top
     character(len=64):: rundir, inputdir
     character(len=64):: rankbase, threadbase
   end type
