@@ -235,7 +235,7 @@ SUBROUTINE init (self, name)
     !---------------------------------------------------------------------------
     stdout = io_unit%output
     write (stdout,io_params)
-    write (io_unit%namelist,io_params)
+    write (self%namelist,io_params)
     !---------------------------------------------------------------------------
     ! Backwards compatibility
     !---------------------------------------------------------------------------

@@ -795,7 +795,7 @@ END SUBROUTINE check_mulligan
 SUBROUTINE mulligan (self, link, patch)
   class(task_list_t):: self
   class(link_t), pointer:: link
-  class(patch_t), pointer:: patch
+  class(patch_t):: patch
   class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
   ! Lock the task list, nbor list, and task
