@@ -227,6 +227,7 @@ MODULE refine_mod
   logical:: on=.false.                        ! Flag to turn the entire process on or off
   logical:: force_cubical=.false.             ! Force cubical patches
   logical:: detailed_timer=.false.            ! Lump all AMR together when false
+  logical:: do_dump=.false.                   ! dump parent & child
   integer:: n_locks=1                         ! number of locks to use
   integer:: verbose=0                         ! Noise level
   type(refine_t), public:: refine
@@ -245,7 +246,8 @@ SUBROUTINE init (self)
     ratio, refine_from_t, refine_until_t, min_dx, max_dx, max_jeans, min_jeans, &
     max_shock, min_shock, max_contact, min_contact, max_grad, min_grad, &
     max_vorticity, min_vorticity, max_compress, min_compress, &
-    grad_var, region_llc, region_urc, force_cubical, n_locks, detailed_timer
+    grad_var, region_llc, region_urc, force_cubical, n_locks, detailed_timer, &
+    do_dump
   character(len=120):: id = &
     '$Id$ tasks/refine_mod.f90'
   !-----------------------------------------------------------------------------
@@ -560,13 +562,13 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
                   l(1),u(1),l(2),u(2),l(3),u(3)
               call make_child_patch (self, tasklist, patch, pos, size, child)
               !-----------------------------------------------------------------
+              write (io_unit%log,'(2(3x,a,i6,":",i2),2x,a,2l1)')  &
+                'refine'    ,  patch%id, patch%level, &
+                'to'        ,  child%id, child%level, &
+                'BV:', child%is_set(bits%boundary), child%is_set(bits%virtual)
+              flush (io_unit%log)
               if (verbose > 0) then
                 associate (unit => merge (stdout, io_unit%output, verbose>1))
-                write (unit,'(2(3x,a,i6,":",i2),2x,a,2l1)')  &
-                  'refine'    ,  patch%id, patch%level, &
-                  'to'        ,  child%id, child%level, &
-                  'BV:', child%is_set(bits%boundary), child%is_set(bits%virtual)
-                flush (unit)
                 end associate
               end if
               !----------------------------------------------------------------- 
@@ -964,6 +966,8 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   if (parent%time > 0.0 .and. child%restart <= 0) then
     call download%download_link (child_link, all_cells=.true.)
     child%dnload_time = -1.0
+    if (do_dump) &
+      call dump (child, parent)
   end if
   !-----------------------------------------------------------------------------
   ! Add the child task to the task list, including giving it an nbor list etc,
@@ -1509,5 +1513,32 @@ SUBROUTINE sanity_check (self, min, max, label, reverse)
     end if
   end if
 END SUBROUTINE sanity_check
+
+!===============================================================================
+!> Dump
+!===============================================================================
+SUBROUTINE dump (child, parent)
+  class (patch_t):: child, parent
+  character(len=64):: file
+  !-----------------------------------------------------------------------------
+  call trace%begin('refine_t%dump')
+  write (file,'(a,"child_",i5.5,".dat")') trim(io%rundir), child%id
+  write (io_unit%log,*) trim(file), child%time
+  open (io_unit%tmp, file=file, form='unformatted', status='unknown')
+  call dump1 (child)
+  call dump1 (parent)
+  close (io_unit%tmp)
+  call trace%end ()
+contains
+  !-----------------------------------------------------------------------------
+  ! Dump one patch
+  !-----------------------------------------------------------------------------
+  subroutine dump1 (patch)
+    class(patch_t):: patch
+    write (io_unit%tmp) patch%id, patch%gn, patch%n
+    write (io_unit%tmp) patch%time, patch%position, patch%ds
+    write (io_unit%tmp) patch%mem(:,:,:,:,patch%it,1)
+  end subroutine
+END SUBROUTINE dump
 
 END MODULE refine_mod
