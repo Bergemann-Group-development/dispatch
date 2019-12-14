@@ -5,6 +5,8 @@ MODULE experiment_mod
   USE io_mod
   USE trace_mod
   USE solver_mod
+  USE omp_mod
+  USE omp_timer_mod
   !USE particle_patch_mod
   implicit none
   private
@@ -12,6 +14,8 @@ MODULE experiment_mod
   contains
     procedure:: init
     procedure:: update
+    procedure:: dnload
+    procedure:: task_log
   end type
   !type (particle_patch_t):: particle_patch
 CONTAINS
@@ -36,7 +40,47 @@ SUBROUTINE update (self)
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%update')
   call self%solver_t%update
+  call self%task_log ('aft upd')
   call trace_end
 END SUBROUTINE update
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE dnload (self, only)
+  class(experiment_t):: self
+  integer, optional:: only
+  !----------------------------------------------------------------------------
+  call trace_begin('experiment_t%dnload')
+  call self%task_log ('bef dnl')
+  call self%solver_t%dnload (only)
+  call self%task_log ('aft dnl')
+  call trace_end
+END SUBROUTINE dnload
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE task_log (self, l)
+  class(experiment_t):: self
+  character(len=*):: l
+  real:: vmax(self%nv)
+  real:: vmin(self%nv)
+  integer:: iv
+  !----------------------------------------------------------------------------
+  if (io%task_logging > 0) then
+    do iv=1,self%nv
+      !if (iv==self%idx%d .or. iv==self%idx%e) then
+        vmax(iv) = self%fmaxval(self%mem(:,:,:,iv,self%it,1))
+        vmin(iv) = self%fminval(self%mem(:,:,:,iv,self%it,1))
+      !else
+      !  vmax(iv) = self%fmaxval(self%mem(:,:,:,iv,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1))
+      !  vmin(iv) = self%fminval(self%mem(:,:,:,iv,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1))
+      !end if
+    end do
+    write(io_unit%task,'(f12.6,i4,i6,i4,f12.6,1p,e11.2,2(2x,5e10.2),2x,a)') &
+      wallclock(), omp%thread, self%id, self%level, self%time, self%dtime, &
+      vmin, vmax, l
+    flush (io_unit%task)
+  end if
+END SUBROUTINE task_log
 
 END MODULE
