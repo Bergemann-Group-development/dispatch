@@ -47,6 +47,7 @@ MODULE task_list_mod
     procedure:: mulligan
   end type
   integer, save:: mulligan_level=2
+  integer, save:: mulligan_verbose=0
   real(8), save:: dead_mans_hand=60d0, first_finished=0d0
   public:: task2patch
   type(task_list_t), target:: task_list
@@ -66,7 +67,7 @@ SUBROUTINE init (self, name)
   logical, save:: detailed_timer=.false.
   integer, save:: verbose=0
   namelist /task_list_params/ verbose, job_seconds, dead_mans_hand, sync_time, &
-    detailed_timer, mulligan_level
+    detailed_timer, mulligan_level, mulligan_verbose
   !-----------------------------------------------------------------------------
   ! An optional namelist can be used to turn debugging on
   !-----------------------------------------------------------------------------
@@ -727,6 +728,12 @@ SUBROUTINE check_mulligan (self, link)
       select type (nbtask)
       class is (patch_t)
         dt = merge (ds/nbor%u_max, huge(1.0), nbor%u_max > 0.0)
+        if (task%track .and. mulligan_verbose > 1) then
+          write (io_unit%log,'(1x,a,2(i6,f12.6),1p,4e12.2)') &
+            'list_t%check_mulligan: id, time, nbor, time, lead/dt, dt, u_max =', &
+            task%id, task%time, nbtask%id, nbtask%time, &
+            (nbtask%time-task%time)/dt, dt, nbor%u_max
+        end if
         if (nbtask%time - task%time > dt*(1d0+task%grace)) then
           !---------------------------------------------------------------------
           ! Verbose output to rank log, if the condition is triggered
@@ -737,12 +744,12 @@ SUBROUTINE check_mulligan (self, link)
               task%id, task%time, task%t(task%iit(1:task%nt-1))
             triggered = .true.
           end if
-          if (self%verbose > 0) then
-            write (io_unit%log,'(1x,a,2i6,1p,4e12.2)') &
-              'list_t%check_mulligan: id, nbor, time, lead/dt, dt, u_max =', &
-              task%id, nbtask%id, task%time, &
+          if (task%track .and. mulligan_verbose > 0) then
+            write (io_unit%log,'(1x,a,2(i6,f12.6),1p,4e12.2)') &
+              'list_t%check_mulligan: id, time, nbor, time, lead/dt, dt, u_max =', &
+              task%id, task%time, nbtask%id, nbtask%time, &
               (nbtask%time-task%time)/dt, dt, nbor%u_max
-            if (self%verbose > 1) then
+            if (task%track .and. mulligan_verbose > 1) then
               write (io_unit%log,'(1x,a,i6,f10.6,2x,7f10.6)') &
                 'check_mulligan: nbor, time, times =', &
                 nbtask%id, nbtask%time, &
@@ -752,7 +759,7 @@ SUBROUTINE check_mulligan (self, link)
           !---------------------------------------------------------------------
           ! Write diagnostics if level is 1, or actually do a mulligan if 2
           !---------------------------------------------------------------------
-          if (mulligan_level == 1) then
+          if (task%track .and. mulligan_level == 1) then
             write (stdout,'(1x,a,2i6,1p,4e12.2)') &
               'list_t%check_mulligan: id, nbor, time, lead/dt, dt, u_max =', &
               task%id, nbtask%id, task%time, &
@@ -763,7 +770,7 @@ SUBROUTINE check_mulligan (self, link)
           !---------------------------------------------------------------------
           ! Diagnostics of outcome
           !---------------------------------------------------------------------
-          if (self%verbose > 1) then
+          if (task%track .and. mulligan_verbose > 1) then
             write (io_unit%log,'(1x,a,i6,f10.6,2x,7f10.6)') &
               'check_mulligan: nbor, time, times =', &
               nbtask%id, nbtask%time, &
@@ -803,17 +810,17 @@ SUBROUTINE mulligan (self, link, patch)
     ! If the task is in the ready queue, remove it
     !-----------------------------------------------------------------------------
     if (self%verbose > 0) &
-      write (io_unit%log) &
+      write (io_unit%log,*) &
         'task_list_t%mulligan: begin', task%id, task%time, task%is_set (bits%ready)
     if (task%is_set (bits%ready)) then
       if (self%verbose > 1) &
-        write (io_unit%log) &
+        write (io_unit%log,*) &
           'mulligan: remove_from_queue', task%id
       call self%remove_from_queue (link)
       call task%clear (bits%ready)
     else
       if (self%verbose > 1) &
-        write (io_unit%log) &
+        write (io_unit%log,*) &
           'mulligan:      not in queue', task%id
     end if
     !-----------------------------------------------------------------------------
@@ -828,7 +835,7 @@ SUBROUTINE mulligan (self, link, patch)
     ! Update the task, which already has OK guard zones in the time slot
     !-----------------------------------------------------------------------------
     if (self%verbose > 1) &
-      write (io_unit%log) &
+      write (io_unit%log,*) &
         'mulligan: before update', task%id, task%time, task%dt_fixed
     task%rotated = .false.
     call task%update ()
@@ -839,7 +846,7 @@ SUBROUTINE mulligan (self, link, patch)
     !-----------------------------------------------------------------------------
     call self%check_ready (link)
     if (self%verbose > 0) &
-      write (io_unit%log) &
+      write (io_unit%log,*) &
         'task_list_t%mulligan:   end', task%id, task%time, task%is_set (bits%ready)
   end select
   call link%task%lock%unset ('mulligan')

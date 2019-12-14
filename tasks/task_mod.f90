@@ -343,6 +343,7 @@ END SUBROUTINE rotate
 SUBROUTINE derotate (self)
   class(task_t):: self
   integer:: i
+  real(8):: out_next
   !-----------------------------------------------------------------------------
   call trace%begin ('task_t%deroate')
   if (self%time > 0d0 .and. self%istep > 0) then
@@ -354,6 +355,12 @@ SUBROUTINE derotate (self)
     self%new = self%iit(self%nt)
     self%time = self%t(self%it)
     self%dtime = self%dt(self%it)
+    out_next = self%out_next
+    self%out_next = (floor(self%time/io%out_time)+1)*io%out_time
+    if (self%out_next < out_next) then
+      self%iout = self%iout - nint((out_next-self%out_next)/io%out_time)
+      write (stderr,*) 'derotate: id, iout =', self%id, self%iout
+    end if
   end if
   call trace%end ()
 END SUBROUTINE derotate

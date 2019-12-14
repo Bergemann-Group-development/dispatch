@@ -1868,59 +1868,57 @@ SUBROUTINE nbor_courant_conditions (self)
   !.............................................................................
   class(link_t), pointer:: nbor
   class(task_t), pointer:: nbtask
-  class(mesh_t), pointer:: m1, m2, m3
   integer:: i1, i2, i3, l(3), u(3)
-  real(8):: ds, r1, r2, r3
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%nbor_courant_conditions', itimer=itimer)
   !-----------------------------------------------------------------------------
-  ! Reset nbor%u_max
-  !-----------------------------------------------------------------------------
   nbor => self%link%nbor
   do while (associated(nbor))
-    nbor%u_max = 0.0
-    nbor => nbor%next
-  end do
-  !-----------------------------------------------------------------------------
-  ! Evaluate nbor%u_max; the largest phase velocity the nbor should respect, in
-  ! order to be aware of rapid changes in its Courant condition, stemming from
-  ! changes in the guard zones coming from the current task
-  !-----------------------------------------------------------------------------
-  ds = self%courant*minval(self%ds, mask=self%mesh%n>1)
-  m1 => self%mesh(1)
-  m2 => self%mesh(2)
-  m3 => self%mesh(3)
-  l = self%mesh%li
-  u = self%mesh%ui
-  do i3=l(3),u(3)
-  if (i3-l(3) < m3%ng .or. u(3)-i3 < m3%ng) then
-    r3 = m3%p + m3%r(i3)
-    do i2=l(2),u(2)
-    if (i2-l(2) < m2%ng .or. u(2)-i2 < m2%ng) then
-      r2 = m2%p + m2%r(i2)
-      do i1=l(1),u(1)
-      if (i1-l(1) < m1%ng .or. u(1)-i1 < m1%ng) then
-        r1 = m1%p + m1%r(i1)
-        nbor => self%link%nbor
-        do while (associated(nbor))
-          nbtask => nbor%task
-          select type (nbtask)
-          class is (patch_t)
-            if (all(abs([r1,r2,r3]-nbtask%position) < 0.5_8*nbtask%gsize)) then
-              nbor%u_max = max(nbor%u_max, self%u_phase(i1,i2,i3))
-            end if
-          end select
-          nbor => nbor%next
-        end do
+    nbtask => nbor%task
+    select type (nbtask)
+    class is (patch_t)
+      call overlap_range (self, nbtask, l, u)
+      nbor%u_max = maxval(self%u_phase(l(1):u(1),l(2):u(2),l(3):u(3)))
+      if (self%id==63) then
+        write(io_unit%log,'(1x,a,2(i6,f12.6),2(2x,3i4),1p,2e12.2)') &
+         'overlap_range:', self%id, self%time, nbtask%id, nbtask%time, &
+          l, u, nbor%u_max, maxval(self%u_phase)
       end if
-      end do
-    end if
-    end do
-  end if
+    end select
+    nbor => nbor%next
   end do
   call trace%end (itimer)
 END SUBROUTINE nbor_courant_conditions
+
+!===============================================================================
+!> Find the self index ranges that correspond to the overlap region, for
+!> self with respect to source.
+!===============================================================================
+SUBROUTINE overlap_range (self, source, l, u)
+  class(patch_t)          :: self, source
+  integer                 :: l(3), u(3)
+  !.............................................................................
+  real(8), dimension(3)   :: dist, la, ua
+  integer                 :: i
+  !-----------------------------------------------------------------------------
+  call trace%begin ('patch_t%overlap_range', 2)
+  dist = source%position - self%position
+  where (source%periodic)
+    dist = modulo(dist+0.5_8*source%mesh%b,source%mesh%b) - 0.5_8*source%mesh%b
+  end where
+  la = dist - source%gsize/2d0
+  ua = dist + source%gsize/2d0
+  l = ceiling(la/self%mesh%d + self%mesh%o)
+  u =   floor(ua/self%mesh%d + self%mesh%o)
+  l = max(l,self%mesh%li)
+  u = min(u,self%mesh%ui)
+  where (self%n == 1)
+    l = min(l,self%mesh%ui)
+    u = max(u,self%mesh%li)
+  end where
+  call trace%end()
+END SUBROUTINE overlap_range
 
 !===============================================================================
 FUNCTION fsum4 (self, f) RESULT (out)
