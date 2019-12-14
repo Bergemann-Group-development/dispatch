@@ -214,21 +214,6 @@ SUBROUTINE courant_condition (self, detailed_timer)
   call trace%begin ('gpatch_t%courant_condition')
   call validate%check (self%link, self%u_max, 'courant')
   call self%patch_t%courant_condition (detailed_timer)
-  nbor => self%link%nbor
-  dtime = huge(1d0)
-  do while (associated(nbor))
-    !$omp atomic read
-    nbdtime = nbor%task%dtime
-    dtime = min(dtime,nbdtime)
-    nbor => nbor%next
-  end do
-  dtime = 3d0*dtime
-  if (self%dtime > dtime .and. dtime > 0d0) then
-    write(io_unit%log,'(a,i6,1p,2g10.2)') &
-      'gpatch_t%courant_condition WARNING: id, self%dtime, dtime =', &
-      self%id, self%dtime, dtime
-    !self%dtime = dtime
-  end if
   call trace%end()
 END SUBROUTINE courant_condition
 

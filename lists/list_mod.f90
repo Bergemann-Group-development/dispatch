@@ -1,5 +1,22 @@
 !*******************************************************************************
-!> Module with list handling for generic class task_t objects
+!> Module with list handling for generic class task_t objects.
+!>
+!> Currently, this module depends on patch_t in the following procedures.
+!> If that depedence could be removed, list_mod could lie btw extras_t and
+!> patch_t, with no need for gpatch_t.
+!>
+!> PROCEDURE            USED IN                 POTENTIALLY MOVE TO
+!> -----------------------------------------------------------------------------
+!> append_link          sink_particles          not needed -- use local code
+!> prepend_link         short_characteristics   not needed -- use local code
+!> add_new_link         refine_mod              not needed -- use local code
+!> print_list                                   task_list_mod
+!> init_bdries                                  task_list_mod
+!> check_nbor_lists                             task_list_mod
+!> send_to_vnbors       list_mod                problem: called from remove_and_reset
+!>
+!> The problem is that refine_t is used by task_list_t, and refine_t needs to
+!> be able to deal with removing tasks, and sending messages about that to nbors
 !*******************************************************************************
 MODULE list_mod
   USE io_mod
