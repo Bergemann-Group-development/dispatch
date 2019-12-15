@@ -18,25 +18,26 @@
 &timer_params           sec_per_report=10 min_fraction=5e-3 /
 &validate_params        mode='' /
 &download_params        verbose=0 use_locks=f sorted=t check_filled=t
-                        use_prolong='different_prolong'     ! ~0.8 ms
-                        !use_prolong='prolong'               ! ~1.4 ms (T430s)
-                        !use_prolong='different'             ! ~1.7 ms (T430s)
-                        !use_prolong='guard_zones'           ! ~1.6 ms (T430s)
-                        !use_prolong='remesh'                ! not operational
-                        use_restrict='different'            ! ~0.4 ms (T430s)
-                        !use_restrict='guard_zones'          ! ~0.4 ms (problem)
-                        !use_restrict='different_restrict'   ! ~3.5 ms (T430s)
+ !use_prolong='different_prolong'     ! ~0.8 ms (T430s) 0.4 (steno) [default]
+ !use_prolong='prolong'               ! ~1.4 ms (T430s) 0.9 (steno)
+ !use_prolong='guard_zones'           ! ~1.6 ms (T430s)
+ !use_prolong='different'             ! ~1.7 ms (T430s)
+ !use_prolong='remesh'                ! not operational
+ !use_restrict='different'            ! ~0.4 ms (T430s) [default]
+ !use_restrict='guard_zones'          ! ~0.4 ms (problem)
+ !use_restrict='different_restrict'   ! ~3.5 ms (T430s)
                         id_debug=0 /
 &counters_params        verbose=0 /
 !&lock_params            verbose=0 alternate_time=5 verbose_time=00 tasks=t /
 &lock_params            verbose=0 log='log' tasks=t /
 &remesh_params          verbose=0 order=0 /
-&refine_params          on=t verbose=0 levelmin=6 levelmax=9 check_interval=5
-                        !max_jeans=0.15 min_jeans=0.06
-                        !max_vorticity=8 min_vorticity=3.2
-                        max_vorticity=12 min_vorticity=4.8
-                        !max_compress=20 min_compress=6.4
-                        /
+&refine_params          on=t verbose=2 levelmin=6 levelmax=9
+                        min_jeans=30
+                        max_vorticity=8
+                        max_compress=8 max_compress_level=8
+                        check_interval=5 /
+&task_list_params       verbose=0 mulligan_level=0 mulligan_verbose=0
+                        detailed_timer=f dead_mans_hand=60 /
 !---------------------------------
 ! Initial condition and forces
 !---------------------------------
@@ -61,11 +62,10 @@
 &dispatcher_params      method=0 test=f /
 &dispatcher0_params     verbose=0 debug=f do_delay=t retry_stalled=20 max_stalled=19 /
 &load_balance_params    /
-&task_list_params       verbose=0 mulligan_level=1 mulligan_verbose=0 job_seconds=1e6 detailed_timer=t dead_mans_hand=60 /
 &task_mesg_params       verbose=0 method='improbe' /
 !&task_mesg_params       verbose=0 method='irecv' /
 !&task_mesg_params       verbose=0 method='private' /
 !&mpi_mesg_params        verbose=0 /
 !&mpi_mesg_params        verbose=0 send_priv=f max_send=5 max_sent=1000 min_nq=0 max_recv=1000 max_probe=1000 /
-&mpi_mesg_params        verbose=1 send_priv=f max_sent=30 min_nq=0 max_recv=1000 max_probe=1000 delay_ms=0.1 /
+&mpi_mesg_params        verbose=0 send_priv=f max_sent=30 min_nq=0 max_recv=1000 max_probe=1000 delay_ms=0.1 /
 !&mpi_mesg_params        verbose=0 send_priv=t max_sent=30 min_nq=0 max_recv=1000 max_probe=1000 delay_ms=0.1 /
