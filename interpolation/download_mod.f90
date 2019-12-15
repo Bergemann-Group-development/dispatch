@@ -1215,9 +1215,13 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
   real(kind=KindScalarVar):: qint
   logical                 :: all_cells_l
   real(8)                 :: start
-  integer, save           :: itimer=0
+  integer, save           :: itimer(1)=0
   !-----------------------------------------------------------------------------
-  call trace%begin('download_t%different', itimer=itimer)
+  if (present(all_cells)) then
+    call trace%begin('download_t%different(all)', itimer=itimer(1))
+  else
+    call trace%begin('download_t%different', itimer=itimer(2))
+  end if
   if (detailed_timer) then
     cells = 0
     start = wallclock()
@@ -1305,7 +1309,11 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
         target%id, target%level, source%id, source%level, cells, wallclock()-start
     end if
   end if
-  call trace%end (itimer)
+  if (present(all_cells)) then
+    call trace%end (itimer(1))
+  else
+    call trace%end (itimer(2))
+  end if
 END SUBROUTINE different
 
 !===============================================================================
