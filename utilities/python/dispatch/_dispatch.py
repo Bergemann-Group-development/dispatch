@@ -302,11 +302,9 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             offset += patch.iout*patch.ntotal*patch.nv
         elif patch.ioformat>=6 and patch.ioformat<10 or patch.ioformat==15:
             offset = iv + patch.ip*patch.nv
-            print(patch.ioformat,patch.ip,iv,patch.ntotal,offset)
             offset += patch.iout*patch.ntotal*patch.nv
         elif patch.ioformat>=10:
             offset = patch.ip + iv*patch.ntotal
-            print(patch.ioformat,patch.ip,iv,patch.ntotal,offset)
             offset += patch.iout*patch.ntotal*patch.nv
         else:
             offset = iv
@@ -806,11 +804,24 @@ class snapshot():
             return None
 
         # add properties from params.nml
-        #file=_file(rundir,'params.nml')
-        #if verbose>0:
-        #    print('reading file',file)
-        #self.params_list=f90nml.read(file)
-        #_add_nml_list_to(self,self.params_list,verbose=verbose)
+        file=_file(rundir,'params.nml')
+        if verbose>0:
+            print('reading file',file)
+        self.params_list=f90nml.read(file)
+        _add_nml_list_to(self,self.params_list,verbose=verbose)
+        if not hasattr(self.io,'method'):
+            print('\nsnap.io.method attribute missing -- this is an f90nml problem')
+            tmp='/tmp/'+os.environ['USER']+'.tmp'
+            with open(file,'r') as fin:
+                with open(tmp,'w') as fout:
+                    for line in fin:
+                        if not line.find('/') > 2:
+                            fout.write(line)
+            self.params_list=f90nml.read(tmp)
+            _add_nml_list_to(self,self.params_list,verbose=verbose)
+            if hasattr(self.io,'method'):
+                print('fixed by re-reading a filtered copy of the file')
+                os.remove(tmp)
 
         files=[f for f in os.listdir(datadir) if f.endswith('snapshot.nml')]
         if verbose > 1:
