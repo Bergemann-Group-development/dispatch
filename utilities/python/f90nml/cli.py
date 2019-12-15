@@ -5,6 +5,7 @@
 """
 from __future__ import print_function
 
+import warnings
 import argparse
 import json
 import os
@@ -41,11 +42,17 @@ def parse():
     parser.add_argument('--version', action='version',
                         version='f90nml {0}'.format(f90nml.__version__))
 
-    parser.add_argument('--group', '-g', action='store')
-    parser.add_argument('--variable', '-v', action='append')
-    parser.add_argument('--patch', '-p', action='store_true')
-    parser.add_argument('--format', '-f', action='store')
-    parser.add_argument('--output', '-o', action='store')
+    parser.add_argument('--group', '-g', action='store',
+                        help="specify namelist group to modify. "
+                        "When absent, the first group is used")
+    parser.add_argument('--variable', '-v', action='append',
+                        help="specify the namelist variable to add or modify, "
+                        "followed by the new value. Expressions are of the "
+                        "form `VARIABLE=VALUE`")
+    parser.add_argument('--patch', '-p', action='store_true',
+                        help="modify the existing namelist as a patch")
+    parser.add_argument('--format', '-f', action='store',
+                        help="specify the output format (json, yaml, or nml)")
 
     parser.add_argument('input', nargs='?')
     parser.add_argument('output', nargs='?')
@@ -99,6 +106,8 @@ def parse():
     if (input_fmt == 'yaml' or output_fmt == 'yaml') and not has_yaml:
         print('f90nml: error: YAML module could not be found.',
               file=sys.stderr)
+        print('  To enable YAML support, install PyYAML or use the '
+              'f90nml[yaml] package.', file=sys.stderr)
         sys.exit(-1)
 
     # Do not patch non-namelist output
@@ -129,8 +138,10 @@ def parse():
         if not args.group:
             # Use the first available group
             grp = list(input_data.keys())[0]
-            print('f90nml: warning: Assuming variables are in group \'{0}\'.'
-                  ''.format(grp), file=sys.stderr)
+            warnings.warn(
+                'f90nml: warning: Assuming variables are in group \'{g}\'.'
+                ''.format(g=grp)
+            )
         else:
             grp = args.group
 

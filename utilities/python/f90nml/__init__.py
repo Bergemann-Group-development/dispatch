@@ -3,10 +3,10 @@
 :copyright: Copyright 2014 Marshall Ward, see AUTHORS for details.
 :license: Apache License, Version 2.0, see LICENSE for details.
 """
-from f90nml.parser import Parser
 from f90nml.namelist import Namelist
+from f90nml.parser import Parser
 
-__version__ = '1.0.2'
+__version__ = '1.1.2'
 
 
 def read(nml_path):
@@ -28,8 +28,23 @@ def read(nml_path):
     >>> nml = parser.read(nml_file)
     """
     parser = Parser()
-
     return parser.read(nml_path)
+
+
+def reads(nml_string):
+    """Parse a Fortran namelist string and return its contents.
+
+    >>> nml_str = '&data_nml x=1 y=2 /'
+    >>> nml = f90nml.reads(nml_str)
+
+    This function is equivalent to the ``reads`` function of the ``Parser``
+    object.
+
+    >>> parser = f90nml.Parser()
+    >>> nml = parser.reads(nml_str)
+    """
+    parser = Parser()
+    return parser.reads(nml_string)
 
 
 def write(nml, nml_path, force=False, sort=False):

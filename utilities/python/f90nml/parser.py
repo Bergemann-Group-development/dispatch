@@ -8,13 +8,15 @@ hierarchy of Python dicts containing equivalent intrinsic Python data types.
 """
 from __future__ import print_function
 
+import warnings
 import copy
-from string import whitespace
 import sys
+from string import whitespace
+import itertools
 
+from f90nml.findex import FIndex
 from f90nml.fpy import pyfloat, pycomplex, pybool, pystr
 from f90nml.namelist import Namelist
-from f90nml.findex import FIndex
 from f90nml.tokenizer import Tokenizer
 
 
@@ -51,7 +53,7 @@ class Parser(object):
 
         >>> parser = f90nml.Parser()
         >>> parser.comment_tokens += '#'
-        >>> nml = Parser.read('sample.nml')
+        >>> nml = parser.read('sample.nml')
 
         Be aware that this is non-standard Fortran and could mangle any strings
         using the ``#`` characters.  Characters inside string delimiters should
@@ -191,7 +193,7 @@ class Parser(object):
         """Validate and set row-major format for multidimensional arrays."""
         if value is not None:
             if not isinstance(value, bool):
-                raise ValueError(
+                raise TypeError(
                     'f90nml: error: row_major must be a logical value.')
             else:
                 self._row_major = value
@@ -220,7 +222,7 @@ class Parser(object):
         """Validate and set the strict logical flag."""
         if value is not None:
             if not isinstance(value, bool):
-                raise ValueError(
+                raise TypeError(
                     'f90nml: error: strict_logical must be a logical value.')
             else:
                 self._strict_logical = value
@@ -236,9 +238,9 @@ class Parser(object):
         patch_is_path = not hasattr(patch_fname, 'read')
 
         # Convert patch data to a Namelist object
-        if nml_patch_in:
+        if nml_patch_in is not None:
             if not isinstance(nml_patch_in, dict):
-                raise ValueError('Input patch must be a dict or a Namelist.')
+                raise TypeError('Input patch must be a dict or a Namelist.')
 
             nml_patch = copy.deepcopy(Namelist(nml_patch_in))
 
@@ -269,8 +271,18 @@ class Parser(object):
             if self.pfile and patch_is_path:
                 self.pfile.close()
 
-    def _readstream(self, nml_file, nml_patch):
+    def reads(self, nml_string):
+        """Parse a namelist string and return an equivalent Namelist object.
+
+        >>> parser = f90nml.Parser()
+        >>> data_nml = parser.reads('&data_nml x=1 y=2 /')
+        """
+        return self._readstream(iter(nml_string.splitlines()))
+
+    def _readstream(self, nml_file, nml_patch_in=None):
         """Parse an input stream containing a Fortran namelist."""
+        nml_patch = nml_patch_in if nml_patch_in is not None else Namelist()
+
         tokenizer = Tokenizer()
         f90lex = []
         for line in nml_file:
@@ -330,7 +342,7 @@ class Parser(object):
             v_name = None
 
             # TODO: Edit `Namelist` to support case-insensitive `get` calls
-            grp_patch = nml_patch.get(g_name.lower(), {})
+            grp_patch = nml_patch.get(g_name.lower(), Namelist())
 
             # Populate the namelist group
             while g_name:
@@ -364,7 +376,9 @@ class Parser(object):
                         g_vars[v_name] = v_val
                         v_strs = nmls._var_strings(v_name, v_val)
                         for v_str in v_strs:
-                            self.pfile.write('    {0}\n'.format(v_str))
+                            self.pfile.write(
+                                '{0}{1}\n'.format(nml_patch.indent, v_str)
+                            )
 
                     # Append the grouplist to the namelist
                     if g_name in nmls:
@@ -423,11 +437,8 @@ class Parser(object):
                     v_idx.first[idx] = i_first
 
                 # Resize vector based on starting index
-                for i_p, i_v in zip(p_idx, v_idx.first):
-                    if i_p is not None and i_v is not None and i_v < i_p:
-                        pad = [None for _ in range(i_p - i_v)]
-                        parent[v_name] = pad + parent[v_name]
-
+                parent[v_name] = prepad_array(parent[v_name], p_idx,
+                                              v_idx.first)
             else:
                 # If variable already existed without an index, then assume a
                 #   1-based index
@@ -481,7 +492,11 @@ class Parser(object):
             if parent:
                 vpar = parent.get(v_name.lower())
                 if vpar and isinstance(vpar, list):
-                    assert dt_idx is not None
+                    # If new element is not a list, then assume it's the first
+                    # element of the list.
+                    if dt_idx is None:
+                        dt_idx = self.default_start_index
+
                     try:
                         v_parent = vpar[dt_idx]
                     except IndexError:
@@ -568,8 +583,29 @@ class Parser(object):
                 if self.token in ('/', '&', '$', '='):
                     break
                 else:
+                    # Get the remaining length of the unpatched vector?
+
+                    # NOTE: it is probably very inefficient to keep re-creating
+                    # iterators upon every element; this solution reflects the
+                    # absence of mature lookahead in the script.
+                    #
+                    # This is a temporary fix to address errors caused by
+                    # patches of different length from the original value, and
+                    # represents a direction to fully rewrite the parser using
+                    # `tee`.
+
+                    self.tokens, lookahead = itertools.tee(self.tokens)
+                    n_vals_remain = count_values(lookahead)
+
                     if patch_values:
+                        # XXX: The (p_idx - 1) <= n_vals_remain test is dodgy
+                        # and does not really make sense to me, but it appears
+                        # to work.
+
+                        # TODO: Patch indices that are not set in the namelist
+
                         if (p_idx < len(patch_values) and
+                                (p_idx - 1) <= n_vals_remain and
                                 len(patch_values) > 0 and self.token != ','):
                             p_val = patch_values[p_idx]
                             p_repr = patch_nml._f90repr(patch_values[p_idx])
@@ -582,7 +618,6 @@ class Parser(object):
                                 self._update_tokens(write_token=False)
                                 self._update_tokens(write_token=False)
                                 self._update_tokens(write_token=False)
-
                         else:
                             # Skip any values beyond the patch size
                             skip = (p_idx >= len(patch_values))
@@ -750,9 +785,11 @@ class Parser(object):
                     # Repeating commas are null-statements and can be ignored
                     # Otherwise, we warn the user that this is a bad namelist
                     if next_value is not None:
-                        print('f90nml: warning: Value {0} is not assigned to '
-                              'any variable and has been removed.'
-                              ''.format(next_value), file=sys.stderr)
+                        warnings.warn(
+                            'f90nml: warning: Value {v} is not assigned to '
+                            'any variable and has been removed.'
+                            ''.format(v=next_value)
+                        )
 
                     # There are more values than indices, so we stop here
                     break
@@ -795,6 +832,27 @@ class Parser(object):
 
 
 # Support functions
+def prepad_array(var, v_start_idx, new_start_idx):
+    # NOTE: May be some way to use `pop` to avoid copying of index arrays...
+    prior_var = var[:]
+
+    # Read the outer values
+    i_p = v_start_idx[-1]
+    i_v = new_start_idx[-1]
+
+    # Compute the outer index padding
+    if i_p is not None and i_v is not None and i_v < i_p:
+        pad = [None for _ in range(i_p - i_v)]
+    else:
+        pad = []
+
+    # Apply prepad rules to interior arrays
+    for i, v in enumerate(var):
+        if isinstance(v, list):
+            prior_var[i] = prepad_array(v, v_start_idx[:-1],
+                                        new_start_idx[:-1])
+    return pad + prior_var
+
 
 def pad_array(v, idx):
     """Expand lists in multidimensional arrays to pad unset values."""
@@ -867,3 +925,19 @@ def delist(values):
         return values[0]
 
     return values
+
+
+def count_values(tokens):
+    """Identify the number of values ahead of the current token."""
+    ntoks = 0
+    for tok in tokens:
+        if tok in ('=', '/', '$', '&'):
+            if ntoks > 0 and tok == '=':
+                ntoks -= 1
+            break
+        elif tok in whitespace + ',':
+            continue
+        else:
+            ntoks += 1
+
+    return ntoks

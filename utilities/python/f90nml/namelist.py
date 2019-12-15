@@ -8,6 +8,7 @@ a Python environment.
 """
 from __future__ import print_function
 
+import copy
 import numbers
 import os
 import platform
@@ -73,9 +74,13 @@ class Namelist(OrderedDict):
         self._uppercase = False
         self._float_format = ''
         self._logical_repr = {False: '.false.', True: '.true.'}
+        self._index_spacing = False
 
         # Namelist group spacing flag
         self._newline = False
+
+        # Check for pre-set indentation
+        self.indent = self.pop('_indent', self.indent)
 
         # PyPy 2 is dumb and does not use __setitem__() inside __init__()
         # This loop will explicitly convert any internal dicts to Namelists.
@@ -94,7 +99,12 @@ class Namelist(OrderedDict):
 
     def __getitem__(self, key):
         """Case-insensitive interface to OrderedDict."""
-        return super(Namelist, self).__getitem__(key.lower())
+        if isinstance(key, basestring):
+            return super(Namelist, self).__getitem__(key.lower())
+        else:
+            keyiter = iter(key)
+            grp, var = next(keyiter).lower(), next(keyiter).lower()
+            return super(Namelist, self).__getitem__(grp).__getitem__(var)
 
     def __setitem__(self, key, value):
         """Case-insensitive interface to OrderedDict.
@@ -171,7 +181,7 @@ class Namelist(OrderedDict):
         """Validate and set the indent width."""
         # Explicit indent setting
         if isinstance(value, str):
-            if value.isspace():
+            if value.isspace() or len(value) == 0:
                 self._indent = value
             else:
                 raise ValueError('String indentation can only contain '
@@ -205,6 +215,18 @@ class Namelist(OrderedDict):
         if not isinstance(value, bool):
             raise TypeError('end_comma attribute must be a logical type.')
         self._end_comma = value
+
+    @property
+    def index_spacing(self):
+        """Apply a space between indexes of multidimensional vectors."""
+        return self._index_spacing
+
+    @index_spacing.setter
+    def index_spacing(self, value):
+        """Validate and set the index_spacing flag."""
+        if not isinstance(value, bool):
+            raise TypeError('index_spacing attribute must be a logical type.')
+        self._index_spacing = value
 
     @property
     def uppercase(self):
@@ -395,6 +417,18 @@ class Namelist(OrderedDict):
                 self[sec] = Namelist()
             self[sec].update(nml_patch[sec])
 
+    def groups(self):
+        """Return an iterator that spans values with group and variable names.
+
+        Elements of the iterator consist of a tuple containing two values.  The
+        first is internal tuple containing the current namelist group and its
+        variable name.  The second element of the returned tuple is the value
+        associated with the current group and variable.
+        """
+        for key, value in self.items():
+            for inner_key, inner_value in value.items():
+                yield (key, inner_key), inner_value
+
     def _writestream(self, nml_file, sort=False):
         """Output Namelist to a streamable file object."""
         # Reset newline flag
@@ -535,8 +569,9 @@ class Namelist(OrderedDict):
                     v_idx_repr += ':'
 
                 if v_idx:
-                    v_idx_repr += ', '
-                    v_idx_repr += ', '.join(str(i) for i in v_idx[::-1])
+                    idx_delim = ', ' if self._index_spacing else ','
+                    v_idx_repr += idx_delim
+                    v_idx_repr += idx_delim.join(str(i) for i in v_idx[::-1])
 
                 v_idx_repr += ')'
 
@@ -607,7 +642,8 @@ class Namelist(OrderedDict):
         # TODO: Move repeated stuff to new functions
         for key, value in self.items():
             if isinstance(value, Namelist):
-                nmldict[key] = value.todict(complex_tuple)
+                nml = copy.deepcopy(value)
+                nmldict[key] = nml.todict(complex_tuple)
 
             elif isinstance(value, complex) and complex_tuple:
                 nmldict[key] = [value.real, value.imag]
@@ -620,7 +656,8 @@ class Namelist(OrderedDict):
                 complex_list = False
                 for idx, entry in enumerate(value):
                     if isinstance(entry, Namelist):
-                        nmldict[key][idx] = entry.todict(complex_tuple)
+                        nml = copy.deepcopy(entry)
+                        nmldict[key][idx] = nml.todict(complex_tuple)
 
                     elif isinstance(entry, complex) and complex_tuple:
                         nmldict[key][idx] = [entry.real, entry.imag]
