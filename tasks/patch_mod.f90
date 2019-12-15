@@ -83,7 +83,7 @@ MODULE patch_mod
     !--- used in extras ---
     logical, allocatable:: mask(:,:,:)
     !--- used in refine ---
-    integer(int8), allocatable:: irefine(:,:,:)
+    real, allocatable:: irefine(:,:,:)
     type(lock_t), pointer:: mem_lock(:) => null()
     !---------------------------------------------------------------------------
     ! HACKs below:  FIXME

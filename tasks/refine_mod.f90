@@ -1,8 +1,5 @@
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!> This module handles checking max change between neighboring points.  Each
-!> instance of it needs an index to the variable, whether to take the log, and
-!> a value for the max allowed change.  It might be applied to log density, log
-!> pressure, log opacity, velocity amplitude, magnetic field amplitude, etc.
+!> This module handles checkinga various refinement criterua.  Call hierarchy:
 !>
 !> task_list_t%update
 !>   check_current
@@ -203,21 +200,22 @@ MODULE refine_mod
     procedure:: check_cubical
     procedure:: check_jeans
     procedure:: shock_and_cd_detector
+    procedure:: evaluate
     procedure:: refine_region
     procedure:: gradient_detector
-    procedure:: sanity_check
   end type
   !
   integer:: check_interval=10                 ! Number of steps betwen checks
   real:: min_dx=0.0, max_dx=1e32              ! Min and max grid size
   real:: refine_from_t=0.0                    ! Time limits for occurence of refinement
   real:: refine_until_t=1e30                  ! Time limits for occurence of refinement
-  real:: max_jeans=0.0                        ! Jeans number below which a patch is flagged for refinement
   real:: min_jeans=0.0                        ! Jeans number above which a patch is flagged for derefinement
   real:: max_shock=0.0, max_contact=0.0       ! Tolerance values for shock/discontinuity detector refinement
   real:: min_shock=0.0, min_contact=0.0       ! Tolerance values for shock/discontinuity detector derefinement
-  real:: min_compress=0.0, max_compress=0.0   ! Tolerance values for compression (negative divergence)
-  real:: min_vorticity=0.0, max_vorticity=0.0 ! Tolerance values for vorticity
+  real:: max_compress=0.0                     ! Tolerance value for compression (negative divergence)
+  integer:: max_compress_level=-1             ! Max refinement level on compression
+  real:: max_vorticity=0.0                    ! Tolerance value for vorticity
+  real:: derefine_limit=0.8                   ! Fraction of criterion to allow derefinement
   integer, parameter:: ngradvar=10            ! Number of gradient variables
   real, dimension(3):: region_llc=0.0         ! Sometimes you want to refine a region (manually)
   real, dimension(3):: region_urc=0.0
@@ -230,6 +228,8 @@ MODULE refine_mod
   logical:: do_dump=.false.                   ! dump parent & child
   integer:: n_locks=1                         ! number of locks to use
   integer:: verbose=0                         ! Noise level
+  integer:: n_criteria=0                      ! Number of active criteria
+  logical:: quadrature=.false.                ! Combine criteria in quadrature
   type(refine_t), public:: refine
 CONTAINS
 
@@ -243,9 +243,9 @@ SUBROUTINE init (self)
   integer, save:: ratio=2                     ! How does a patch split when it is refined
   logical, save:: first_time = .true.
   namelist /refine_params/ verbose, on, levelmin, levelmax, check_interval, &
-    ratio, refine_from_t, refine_until_t, min_dx, max_dx, max_jeans, min_jeans, &
-    max_shock, min_shock, max_contact, min_contact, max_grad, min_grad, &
-    max_vorticity, min_vorticity, max_compress, min_compress, &
+    ratio, refine_from_t, refine_until_t, min_dx, max_dx, derefine_limit, &
+    min_jeans, max_shock, min_shock, max_contact, min_contact, max_grad, &
+    min_grad, max_vorticity, max_compress, max_compress_level, quadrature, &
     grad_var, region_llc, region_urc, force_cubical, n_locks, detailed_timer, &
     do_dump
   character(len=120):: id = &
@@ -260,13 +260,20 @@ SUBROUTINE init (self)
     levelmax = shared%levelmax
     rewind (io%input)
     read (io%input, refine_params, iostat=iostat)
-    if (iostat > 0 .and. io%master) call io%namelist_warning ('refine_params')
+    call io%namelist_warning ('refine_params', iostat)
+    if (max_compress_level == -1) &
+      max_compress_level = levelmax
     write (io%output, refine_params)
+    write (io%namelist, refine_params)
     if (on) then
       omp_lock%links = .true.
     else
       omp_lock%links = .false.
     end if
+    if (min_jeans     > 0.0) n_criteria = n_criteria+1
+    if (max_compress  > 0.0) n_criteria = n_criteria+1
+    if (max_vorticity > 0.0) n_criteria = n_criteria+1
+    write (io%output,*) 'n_criteria =', n_criteria
   end if
   !-----------------------------------------------------------------------------
   ! If AMR is active, we must use check_filled, since nbor levels are in
@@ -321,7 +328,7 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'cubical'
   !
   ! Jeans criterion
-  if (max_jeans > 0.0) refine = max (refine, self%check_Jeans(patch))
+  if (min_jeans > 0.0) refine = max (refine, self%check_Jeans(patch))
   if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'Jeans'
   !
@@ -421,11 +428,13 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     if (verbose > 3) &
       tasklist%verbose = verbose
     !---------------------------------------------------------------------------
-    ! Before testing any criteria, check if patch%irefine is set
+    ! Before testing any criteria, check if patch%irefine is allocated, and
+    ! set to -derefine_limit, where the value should be less than 1.0, to give
+    ! some hysteresis to refinement/derefinement
     !---------------------------------------------------------------------------
     if (.not.allocated(patch%irefine)) &
       allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
-    patch%irefine = -1
+    patch%irefine = -derefine_limit
     l = patch%mesh%li
     u = patch%mesh%ui
     refine = maxval(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)))
@@ -511,7 +520,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
       !-------------------------------------------------------------------------
       refined(l(1):u(1),l(2):u(2),l(3):u(3)) = 1
       patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = &
-        max(0,patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)))
+        max(0.0,patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)))
       !-------------------------------------------------------------------------
       if (verbose > 2) then
         write (io_unit%output,'(a,i6,a,i6,2(3x,3i4))') &
@@ -526,7 +535,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
   ! First, consider if any part should be refined
   !-----------------------------------------------------------------------------
   if (patch%level < self%levelmax .and. refine > 0) then
-    if (any(patch%irefine > 0)) then
+    if (any(patch%irefine > 0.0)) then
       do k=1,self%ratio
         do j=1,self%ratio
           do i=1,self%ratio
@@ -591,7 +600,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
       .not.was_refined) then                            ! not after a refine!
     l = patch%mesh%li
     u = patch%mesh%ui
-    if (all(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) == -1)) then
+    if (all(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) == -1.0)) then
       !-----------------------------------------------------------------------
       if (verbose > 0) then
         associate (unit => merge (stdout, io_unit%output, verbose > 1))
@@ -758,7 +767,7 @@ FUNCTION need_to_support (self, tlist, link) RESULT (refine)
       nbtask => patch%cast2patch (nbor1%task)
       guards = .true.
       if (task%get_overlap (nbtask, guards, l, u)) then
-        task%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 1
+        task%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 1.0
       end if
     end if
     nbor1 => nbor1%next
@@ -773,7 +782,7 @@ FUNCTION need_to_support (self, tlist, link) RESULT (refine)
       nbtask => patch%cast2patch (nbor1%task)
       guards = .false.
       if (task%get_overlap (nbtask, guards, l, u)) then
-        task%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 0
+        task%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 0.0
       end if
     end if
     nbor1 => nbor1%next
@@ -818,7 +827,7 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
     end if
     nbor => nbor%next
   end do
-  if (verbose > 2) &
+  if (verbose > 4) &
     write (stdout,*) link%task%id, 'check_derefine_support =', refine
   !-----------------------------------------------------------------------------
   ! Release lock
@@ -1014,7 +1023,7 @@ FUNCTION check_cubical (self, patch) RESULT (refine_it)
 END FUNCTION check_cubical
 
 !===============================================================================
-!> Refine / derefine on ratio of Jeans length to cell size (max_jeans/min_jeans)
+!> Refine / derefine on ratio of Jeans length to cell size
 !===============================================================================
 FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   USE math_mod
@@ -1024,14 +1033,13 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   integer:: refine_it
   !.............................................................................
   integer:: imin(3), l(3), u(3)
-  real:: Jeans_num, dmin, c
+  real:: Jeans_num, dmin, ds, c
   real, dimension(:,:,:), allocatable:: pg
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
   real, allocatable:: test(:,:,:)
   logical:: masked
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_jeans')
-  call self%sanity_check (min_jeans, max_jeans, 'check_Jeans')
   l = 1
   u = patch%gn
   d => patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)
@@ -1049,45 +1057,17 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
       'check_Jeans ERROR: id, dmin, imin =', patch%id, dmin, imin
     Jeans_num = min_jeans
   else
+    !-------------------------------------------------------------------------
+    ! Evaluate a per-cell criterion, which adds to patch%irefine
+    !-------------------------------------------------------------------------
     allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
-    c =  minval(patch%mesh%d)*sqrt(scaling%grav/(math%pi*patch%gamma))
-    !print *, patch%id, scaling%grav, 'grav'
-    test = sqrt(pg)/(c*d)
-    !print *, patch%id, patch%fminval(d), patch%fmaxval(d), 'min/max d'
-    !print *, patch%id, patch%fminval(test), patch%fmaxval(test), 'min/max L_J/ds'
+    ds = maxval(patch%mesh%d, mask=patch%mesh%n > 1)
+    c =  ds*sqrt(scaling%grav/(math%pi*patch%gamma))
+    test = min_jeans*c*d/sqrt(pg)
     !---------------------------------------------------------------------------
-    ! The Jeans number in the unrefined part
+    ! Combine with previous tests and evaluate
     !---------------------------------------------------------------------------
-    Jeans_num = minval(test, mask=patch%irefine <= 0)
-    !---------------------------------------------------------------------------
-    ! Compute a per-cell criterion, which sets patch%irefine to +1 where it
-    ! needs refinement, and sets it to 0 where the current resolution is needed.
-    ! By implication, where it does not set patch%irefine, and where it remains
-    ! at the intial -1 value, derefinement is allowed
-    !---------------------------------------------------------------------------
-    where (test < min_jeans)
-      patch%irefine = +1
-    !---------------------------------------------------------------------------
-    ! Jeans number not small enough, or overlying refinement
-    !---------------------------------------------------------------------------
-    else where (test < max_jeans)
-      patch%irefine = max (patch%irefine, 0)
-    end where
-    deallocate (test)
-    refine_it = 0
-    if (Jeans_num > max_jeans) refine_it = -1
-    if (Jeans_num < min_jeans) refine_it = +1
-    !---------------------------------------------------------------------------
-    if (verbose > 2 .or. &
-       (verbose > 1 .and. patch%level < self%levelmax .and. refine_it > 0) .or. &
-       (verbose > 1 .and. patch%level > self%levelmin .and. refine_it < 0)) then
-      masked = any(patch%irefine >= 0)
-      write (io_unit%output,'(a,i6,1p,3e9.2,i4,e9.2,l3)') &
-        'Jeans criterion: id, max, num, min, refine, maxval(d)', &
-        patch%id, max_jeans, Jeans_num, min_jeans, refine_it, maxval(d), &
-        masked
-    end if
-    !---------------------------------------------------------------------------
+    call self%evaluate ('Jeans', patch, test, refine_it)
   end if
   deallocate (pg)
   call trace%end()
@@ -1104,14 +1084,12 @@ FUNCTION check_compress (self, patch) RESULT(refine_it)
   integer:: refine_it
   !.............................................................................
   integer:: imin(3), l(3), u(3)
-  real:: w_num, wmin
+  real:: w_num, wmin, c, ds, cut_off
   real(kind=KindScalarVar), dimension(:,:,:), allocatable:: test
   logical:: masked
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_compress', itimer=itimer, detailed_timer=detailed_timer)
-  l = 1
-  u = patch%gn
   allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
   select type (patch)
   class is (solver_t)
@@ -1119,36 +1097,20 @@ FUNCTION check_compress (self, patch) RESULT(refine_it)
   class default
     call mpi%abort("Unrecognised patch type. Abort!")
   end select
-  test = minval(patch%mesh%d)*test
-  w_num = maxval(test, mask=patch%irefine <= 0)
   !---------------------------------------------------------------------------
-  ! Evaluate a per-cell criterion, which sets patch%irefine to +1 where it
-  ! needs refinement, and sets it to 0 where the current resolution is needed.
-  ! By implication, where it does not set patch%irefine, and where it remains
-  ! at the intial -1 value, derefinement is allowed
+  ! Evaluate a normalized criterion, which becomes 2.0 at max_compress, and
+  ! is reduced with a factor 0.5 for each level at or above max_compress_level,
+  ! allowing only maintenance of refinement at max_compress_level, if / when
+  ! this is the only criterion
   !---------------------------------------------------------------------------
-  where (test > max_compress)
-    patch%irefine = +1
+  ds = maxval(patch%mesh%d, mask=patch%mesh%n > 1)
+  cut_off = min(1.0,0.5**(1+patch%level-max_compress_level))
+  c = ds/max_compress*cut_off
+  test = test*c
   !---------------------------------------------------------------------------
-  ! compression number not small enough, or overlying refinement
+  ! Combine with previous tests and evaluate
   !---------------------------------------------------------------------------
-  else where (test > min_compress)
-    patch%irefine = max (patch%irefine, 0)
-  end where
-  refine_it = 0
-  if (w_num > max_compress) refine_it = +1
-  if (w_num < min_compress) refine_it = -1
-  !---------------------------------------------------------------------------
-  if (verbose > 2 .or. &
-     (verbose > 1 .and. patch%level < self%levelmax .and. refine_it > 0) .or. &
-     (verbose > 1 .and. patch%level > self%levelmin .and. refine_it < 0)) then
-    masked = any(patch%irefine >= 0)
-    write (io_unit%output,'(a,i6,1p,3e9.2,i4,e9.2,l3)') &
-      'compression criterion: id, max, num, min, refine, maxval(test)', &
-      patch%id, max_compress, w_num, min_compress, refine_it, maxval(test), &
-      masked
-  end if
-  deallocate (test)
+  call self%evaluate ('compress', patch, test, refine_it)
   call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION check_compress
 
@@ -1163,14 +1125,15 @@ FUNCTION check_vorticity (self, patch) RESULT(refine_it)
   integer:: refine_it
   !.............................................................................
   integer:: imin(3), l(3), u(3)
-  real:: w_num, wmin
+  real:: w_num, wmin, c, ds, max_test
   real(kind=KindScalarVar), dimension(:,:,:), allocatable:: test
   logical:: masked
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_vorticity', itimer=itimer, detailed_timer=detailed_timer)
-  l = 1
-  u = patch%gn
+  !---------------------------------------------------------------------------
+  ! Compute vorticity
+  !---------------------------------------------------------------------------
   allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
   select type (patch)
   class is (solver_t)
@@ -1178,36 +1141,17 @@ FUNCTION check_vorticity (self, patch) RESULT(refine_it)
   class default
     call mpi%abort("Unrecognised patch type. Abort!")
   end select
-  test = minval(patch%mesh%d)*test
-  w_num = maxval(test, mask=patch%irefine <= 0)
   !---------------------------------------------------------------------------
-  ! Evaluate a per-cell criterion, which sets patch%irefine to +1 where it
-  ! needs refinement, and sets it to 0 where the current resolution is needed.
-  ! By implication, where it does not set patch%irefine, and where it remains
-  ! at the intial -1 value, derefinement is allowed
+  ! Evaluate a per-cell criterion, which adds to patch%irefine
   !---------------------------------------------------------------------------
-  where (test > max_vorticity)
-    patch%irefine = +1
+  ds = maxval(patch%mesh%d, mask=patch%mesh%n > 1)
+  c = ds/max_vorticity
+  test = test*c
+  max_test = maxval(test)
   !---------------------------------------------------------------------------
-  ! vorticity number not small enough, or overlying refinement
+  ! Combine with previous tests and evaluate
   !---------------------------------------------------------------------------
-  else where (test > min_vorticity)
-    patch%irefine = max (patch%irefine, 0)
-  end where
-  refine_it = 0
-  if (w_num > max_vorticity) refine_it = +1
-  if (w_num < min_vorticity) refine_it = -1
-  !---------------------------------------------------------------------------
-  if (verbose > 2 .or. &
-     (verbose > 1 .and. patch%level < self%levelmax .and. refine_it > 0) .or. &
-     (verbose > 1 .and. patch%level > self%levelmin .and. refine_it < 0)) then
-    masked = any(patch%irefine >= 0)
-    write (io_unit%output,'(a,i6,1p,3e9.2,i4,e9.2,l3)') &
-      'vorticity criterion: id, max, num, min, refine, maxval(test)', &
-      patch%id, max_vorticity, w_num, min_vorticity, refine_it, maxval(test), &
-      masked
-  end if
-  deallocate (test)
+  call self%evaluate ('vorticity', patch, test, refine_it)
   call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION check_vorticity
 
@@ -1435,6 +1379,57 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
 END FUNCTION gradient_detector
 
 !===============================================================================
+!> Add test and evaluate, renormalizing with (by default) a factor 2.5,
+!> allowing derefine below 0.0 and refininig for values above 1.5, on a scale
+!> starting at -1.0
+!===============================================================================
+SUBROUTINE evaluate (self, label, patch, test, refine_it)
+  class(refine_t):: self
+  character(len=*):: label
+  class(solver_t), pointer:: patch
+  real, dimension(:,:,:), allocatable:: test
+  integer:: refine_it
+  !...........................................................................
+  real:: max_crit, max_test, norm
+  integer:: l(3), u(3)
+  !---------------------------------------------------------------------------
+  ! Add to previous values of patch%irefine, with a normalization such that
+  ! test > 1.0 triggers refinement, independent of if quadrature is used when
+  ! combining crieria.
+  !---------------------------------------------------------------------------
+  call trace%begin ('refine_t%evaluate')
+  l = patch%mesh%lo
+  u = patch%mesh%uo
+  norm = (1.+derefine_limit)/n_criteria
+  max_test = maxval(test(l(1):u(1),l(2):u(2),l(3):u(3)))
+  if (quadrature) then
+    patch%irefine = patch%irefine + norm*test**2
+  else
+    patch%irefine = patch%irefine + norm*test
+  end if
+  !---------------------------------------------------------------------------
+  ! Starting out at 0.0. as long as refine remains < 0.4 derefinement is
+  ! allowed, and if it exceeds 1.0, refinement is needed
+  !---------------------------------------------------------------------------
+  max_crit = maxval(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)))
+  refine_it = 0
+  if (max_crit <= 0.0) refine_it = -1
+  if (max_crit >= 1.0) refine_it = +1
+  !---------------------------------------------------------------------------
+  if (verbose > 2 .or. &
+     (verbose > 1 .and. patch%level < self%levelmax .and. refine_it > 0) .or. &
+     (verbose > 1 .and. patch%level > self%levelmin .and. refine_it < 0)) then
+    write (io_unit%output,'(a20,3x,a,f12.6,i6,2f7.3,i4,2x,a1)') &
+      label//' criterion: ', 'time, id, max_test, max_crit, refine', &
+      patch%time, patch%id, max_test, max_crit, refine_it, merge ('R',' ',refine_it==1)
+  end if
+  deallocate (test)
+  if (patch%level <= self%levelmin) refine_it = max(0,refine_it)
+  if (patch%level >= self%levelmax) refine_it = min(0,refine_it)
+  call trace%end ()
+END SUBROUTINE evaluate
+
+!===============================================================================
 !> Given a box defined by its lower and upper corners, flag a patch for refinement
 !> if it lies inside this box, up to a maximum level.
 !> This particular criteria is primarily used for testing and debugging.
@@ -1486,33 +1481,6 @@ FUNCTION refine_region (self, patch) RESULT (refine)
   refine = merge(1,0,refine_it)
   call trace%end()
 END FUNCTION refine_region
-
-!===============================================================================
-!> Check that the derefinement criterion is sane
-!===============================================================================
-SUBROUTINE sanity_check (self, min, max, label, reverse)
-  class(refine_t):: self
-  real:: min, max
-  character(len=*):: label
-  logical, optional:: reverse
-  !.............................................................................
-  if (max == 0.0) then
-    if (present(reverse)) then
-      min = max/self%safe_ratio
-    else
-      max = min*self%safe_ratio
-    end if
-  else if (max < min*2.0) then
-    if (present(reverse)) then
-      min = max/2.0
-    else
-      max = min*2.0
-    end if
-    if (io%master) then
-      write (stdout,*) 'WARNING: '//trim(label)//' max value set to', max
-    end if
-  end if
-END SUBROUTINE sanity_check
 
 !===============================================================================
 !> Dump
