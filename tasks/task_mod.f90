@@ -784,6 +784,9 @@ SUBROUTINE log (self, label, level)
   class(task_t):: self
   character(len=*):: label
   integer, optional:: level
+  real(8):: now
+  real(8), save:: last=0d0
+  integer, save:: ilog=0
   !-----------------------------------------------------------------------------
   if (io%task_logging > 0) then
     if (present(level)) then
@@ -791,6 +794,19 @@ SUBROUTINE log (self, label, level)
         return
     end if
     !$omp critical (tasklog_cr)
+    now = wallclock()
+    if (now-last > io%log_interval) then
+      write (io_unit%task,'(f12.6,4x,a)') now, 'swapping task log file'
+      close (io_unit%task)
+      if (ilog==0) then
+        call io%open_rank_file (io_unit%task, ".task1", 'formatted')
+        ilog = 1
+      else
+        call io%open_rank_file (io_unit%task, ".task0", 'formatted')
+        ilog = 0
+      end if
+      last = now
+    end if
     write(io_unit%task,'(f12.6,i4,i6,i4,f12.6,1p,e11.2,4x,a)') &
       wallclock(), omp%thread, self%id, self%level, self%time, self%dtime, trim(label)
     !$omp end critical (tasklog_cr)

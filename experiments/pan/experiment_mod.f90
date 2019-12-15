@@ -68,18 +68,15 @@ SUBROUTINE task_log (self, l)
   !----------------------------------------------------------------------------
   if (io%task_logging > 0) then
     do iv=1,self%nv
-      !if (iv==self%idx%d .or. iv==self%idx%e) then
         vmax(iv) = self%fmaxval(self%mem(:,:,:,iv,self%it,1))
         vmin(iv) = self%fminval(self%mem(:,:,:,iv,self%it,1))
-      !else
-      !  vmax(iv) = self%fmaxval(self%mem(:,:,:,iv,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1))
-      !  vmin(iv) = self%fminval(self%mem(:,:,:,iv,self%it,1)/self%mem(:,:,:,self%idx%d,self%it,1))
-      !end if
     end do
+    !$omp critical (tasklog_cr)
     write(io_unit%task,'(f12.6,i4,i6,i4,f12.6,1p,e11.2,2(2x,5e10.2),2x,a)') &
       wallclock(), omp%thread, self%id, self%level, self%time, self%dtime, &
       vmin, vmax, l
     flush (io_unit%task)
+    !$omp end critical (tasklog_cr)
   end if
 END SUBROUTINE task_log
 

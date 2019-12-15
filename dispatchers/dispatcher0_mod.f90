@@ -170,6 +170,7 @@ SUBROUTINE update (self, task_list, test)
   integer, save:: oid=0
   integer:: i, id, nq, n_unpk
   integer:: stalled_l
+  integer, save:: n_stalled=0
   integer, save:: itimer(5)=0
   !.............................................................................
   i = 1
@@ -409,8 +410,12 @@ SUBROUTINE update (self, task_list, test)
     end if
     !$omp atomic update
     timer%busy_time = timer%busy_time + (wallclock()-start)
-  else
+  else if (n_stalled >= 1000) then
     call stall_handler
+    n_stalled = 0
+  else
+    !$omp atomic update
+    n_stalled = n_stalled+1
   end if
   call trace%end (itimer(i))
 contains
@@ -418,6 +423,7 @@ contains
 !> Stall handling, when the queue is empty
 !-------------------------------------------------------------------------------
 subroutine stall_handler
+    real(8):: now
     !$omp atomic update
     n_spin = n_spin+1
     if (detailed_timer) then
@@ -449,15 +455,32 @@ subroutine stall_handler
     end if
     !$omp atomic update
     stalled = stalled+1
-    if (wallclock()-stall_start > max_stalled) then
+    now = wallclock()
+    !---------------------------------------------------------------------------
+    ! To avoid that the task log is overwritten during a stall, stop task
+    ! loggin towards the of a log_interval
+    !---------------------------------------------------------------------------
+    write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'schedule stall'
+    if (now-stall_start > io%log_interval*0.9) then
+      write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'shutting down logging'
+      flush (io_unit%task)
+      write (stderr,*) 'task logging stopped on rank', mpi%rank
+      !$omp critical (tasklog_cr)
+      io%task_logging = .false.
+      write (stderr,*) 'task logging stopped on rank', mpi%rank
+      !$omp end critical (tasklog_cr)
+    end if
+    if (now-stall_start > max_stalled) then
+      write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'max_stalled reached'
       print *, mpi%rank, 'STALLED diagnostics'
       call mpi_mesg%diagnostics (1)
       print *, mpi%rank, 'STALLED bailing out'
       call mpi%abort ('exceeded max_stalled')
     else if (wallclock()-stall_start > retry_stalled) then
+      write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'retry_stalled reached'
       !$omp critical (stall_cr)
       if (wallclock()-stall_start > retry_stalled) then
-        !print *, mpi%rank, 'STALLED:'
+        print *, mpi%rank, 'STALLED:'
         call task_list%check_all
         if (associated(task_list%queue)) then
           write(stderr,1) mpi%rank, omp%thread, 'check_all', wallclock()

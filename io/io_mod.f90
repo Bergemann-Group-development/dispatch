@@ -59,6 +59,7 @@ MODULE io_mod
     real(8):: gb=0.0
     real(8):: job_seconds=1d30
     real(8):: processing=0d0
+    real(8):: log_interval
     real:: flag_time=1.
     real:: flag_max=10.
     real:: ampl=0.0
@@ -70,6 +71,7 @@ MODULE io_mod
     real:: gb_out=0.0
   contains
     procedure:: init
+    procedure:: open_rank_file
     procedure:: debug
     procedure:: check_flags
     procedure:: bits_mem
@@ -115,10 +117,11 @@ SUBROUTINE init (self, name)
   logical, save:: do_debug=.false., do_trace=.false., do_output=.false., exist, &
     do_legacy=.false., do_flags=.false., do_direct=.false., guard_zones=.false.
   logical ,save:: namelist_errors=.true.
+  real(8):: log_interval=5d0
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
-    do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, top, &
-    datadir, inputdir, method, restart, format, guard_zones, time_derivs, log_sent, &
-    task_logging, namelist_errors, nml_version
+    do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, &
+    method, restart, format, guard_zones, time_derivs, log_sent, task_logging, &
+    namelist_errors, nml_version, log_interval, top, datadir, inputdir
   real:: test
   integer:: iostat
   character(len=120):: ids = &
@@ -138,6 +141,7 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   self%input     = io_unit%input
   self%namelist  = io_unit%nml
+  self%log_interval = log_interval
   !-----------------------------------------------------------------------------
   ! Use serial region to avoid threads using the input file simultaneously
   !-----------------------------------------------------------------------------
@@ -201,20 +205,21 @@ SUBROUTINE init (self, name)
     ! -- io_unit%dispatcher : data/run/rank_rrrrr.disp
     ! -- io_unit%log        : data/run/thread_rrrrr_ttt.log
     !---------------------------------------------------------------------------
-    call open_rank_file (io_unit%queue     , ".nq"   , 'formatted')
-    call open_rank_file (io_unit%mpi       , ".log"  , 'formatted')
-    call open_rank_file (io_unit%task      , ".task" , 'formatted')
-    call open_rank_file (io_unit%dbg       , ".dbg"  , 'unformatted')
-    call open_rank_file (io_unit%dump      , ".dump" , 'unformatted')
-    call open_rank_file (io_unit%validate  , ".val"  , 'unformatted')
-    call open_rank_file (io_unit%dispatcher, ".disp" , 'formatted')
+    call self%open_rank_file (io_unit%queue     , ".nq"   , 'formatted')
+    call self%open_rank_file (io_unit%mpi       , ".log"  , 'formatted')
+    call self%open_rank_file (io_unit%dbg       , ".dbg"  , 'unformatted')
+    call self%open_rank_file (io_unit%dump      , ".dump" , 'unformatted')
+    call self%open_rank_file (io_unit%validate  , ".val"  , 'unformatted')
+    call self%open_rank_file (io_unit%dispatcher, ".disp" , 'formatted')
+    if (self%task_logging > 0) &
+    call self%open_rank_file (io_unit%task      , ".task0", 'formatted')
     !---------------------------------------------------------------------------
     ! Open MPI rank and OMP thread-specific log files if omp_trace is true,
     ! else fall back to io_unit%log being just MPI rank-specific
     !---------------------------------------------------------------------------
     if (omp_trace .and. omp%nthreads>1) then
       io_unit%log = 110 + omp%mythread()
-      call open_rank_file (io_unit%log     , ".log"  , 'formatted', omp%mythread())
+      call self%open_rank_file (io_unit%log     , ".log"  , 'formatted', omp%mythread())
     else
       io_unit%log = io_unit%mpi
     end if
@@ -280,25 +285,27 @@ contains
     l = len(trim(s))
     if (s(l:l) /= '/') s(l+1:l+1)='/'
   end subroutine
-  subroutine open_rank_file (unit, ext, form, thread)
-    integer:: unit
-    integer, optional:: thread
-    character(len=*):: ext, form
-    character(len=64):: filename
-    !-----------------------------------------------------------------------------
-    if (present(thread)) then
-      open (unit=unit, file=trim(filename), form=form, status='unknown')
-      write (io_unit%threadbase,'(a,"thread_",i5.5,"_",i3.3)') &
-        trim(self%rundir), mpi%rank, thread
-      filename = trim(io_unit%threadbase)//ext
-    else
-      write (io_unit%rankbase,'(a,"rank_",i5.5)') &
-        trim(self%rundir), mpi%rank
-      filename = trim(io_unit%rankbase)//ext
-    end if
-    open (unit=unit, file=trim(filename), form=form, status='unknown')
-  end subroutine
 END SUBROUTINE init
+
+SUBROUTINE open_rank_file (self, unit, ext, form, thread)
+  class(io_t):: self
+  integer:: unit
+  integer, optional:: thread
+  character(len=*):: ext, form
+  character(len=64):: filename
+  !-----------------------------------------------------------------------------
+  if (present(thread)) then
+    open (unit=unit, file=trim(filename), form=form, status='unknown')
+    write (io_unit%threadbase,'(a,"thread_",i5.5,"_",i3.3)') &
+      trim(self%rundir), mpi%rank, thread
+    filename = trim(io_unit%threadbase)//ext
+  else
+    write (io_unit%rankbase,'(a,"rank_",i5.5)') &
+      trim(self%rundir), mpi%rank
+    filename = trim(io_unit%rankbase)//ext
+  end if
+  open (unit=unit, file=trim(filename), form=form, status='unknown')
+END SUBROUTINE open_rank_file
 
 !===============================================================================
 !> Register increase of memory, counted in storage_size bits, times a count
