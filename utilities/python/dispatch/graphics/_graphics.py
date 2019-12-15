@@ -272,8 +272,8 @@ def plot_pdf(pdf,**kwargs):
     pl.hist(pdf.bins,bins=pdf.bins,weights=pdf.counts,**kwargs)
     return pdf.time
 
-def pdf(io,run,data,log=True,**kwargs):
+def pdf(io,run='',data='../data',log=True,**kwargs):
     """ Shortcut of dispatch.graphics.plot_pdf(dispatch.pdf(io,run,data)) """
     tmp=di.pdf(io,run,data,**kwargs)
-    plot_pdf(tmp,**kwargs)
+    plot_pdf(tmp,log=log,**kwargs)
 

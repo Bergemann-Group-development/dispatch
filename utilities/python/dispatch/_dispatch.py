@@ -7,6 +7,7 @@ import mmap
 import f90nml
 import numpy as np
 import dispatch.graphics as dg
+import dispatch.select as dse
 from time import time
 from dispatch._dispatch_grid import GeometricFactors
 from dispatch._aux import aux
@@ -950,6 +951,9 @@ class snapshot():
         else:
             patch.geometric_factors=GeometricFactors(patch)
             timer.add('geometric_factors')  # 6.9s
+
+    def stat(*arg,**kwarg):
+        return dse.stat(*arg,**kwarg)
 
     def patches_in (self, x=None, y=None, z=None):
         pp=self.patches

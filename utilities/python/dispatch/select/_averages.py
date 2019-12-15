@@ -62,50 +62,6 @@ def _patches(s):
         pp=s
     return pp
 
-def stat(s,iv=0,i4=0):
-    f=0.0
-    v=0.0
-    pp=_patches(s)
-    p=pp[0]
-    data=p.var(iv,i4=i4)
-    d=data
-    m=maxloc(d)
-    dmin=float(d.min())
-    dmax=float(d.max())
-    rmax=[p.x[m[0]],p.y[m[1]],p.z[m[2]]]
-    m=minloc(d)
-    rmin=[p.x[m[0]],p.y[m[1]],p.z[m[2]]]
-    for p in pp:
-        if iv in p.all_keys:
-            data=p.var(iv)
-            dv=np.product(p.ds)
-            v=v+dv
-            d=data
-            dmx=float(d.max())
-            dmn=float(d.min())
-            if dmx>dmax:
-                dmax=dmx
-                m=maxloc(d)
-                rmax=[p.x[m[0]],p.y[m[1]],p.z[m[2]]]
-            if dmn < dmin:
-                dmin=dmn
-                m=minloc(d)
-                rmin=[p.x[m[0]],p.y[m[1]],p.z[m[2]]]
-            f=f+dv*np.sum(d)
-    av=float(f/v)
-    f=0.0
-    for p in pp:
-        if iv in p.all_keys:
-            data=p.var(iv)
-            dv=np.product(p.ds)
-            v=v+dv
-            f=f+dv*np.sum((data-av)**2)
-    rm=np.sqrt(float(f/v))
-    print('average: {:12.4e}'.format(av))
-    print('    rms: {:12.4e}'.format(rm))
-    print('    max: {:12.4e}, at {}'.format(dmax,rmax))
-    print('    min: {:12.4e}, at {}'.format(dmin,rmin))
-
 def haver1(s,iv=0,point=0.0,dir=2,x=None,y=None,z=None,all=False,i4=0,verbose=0):
     """ Horizontal average in one plane """
     pp=_patches(s)

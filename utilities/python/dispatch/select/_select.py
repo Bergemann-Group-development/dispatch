@@ -7,6 +7,16 @@ import numpy as np
 from time import time
 import dispatch
 
+def _patches(s):
+    """ Allow a snapshot, a patch, or a list of patches """
+    if hasattr(s,'dict'):
+        pp=s.patches
+    elif isinstance(s,dispatch._dispatch._patch):
+        pp=[s]
+    else:
+        pp=s
+    return pp
+
 def minloc(a):
     ''' Return the 3-D index with the minimum of array a'''
     i = a.argmin()
@@ -352,3 +362,51 @@ class shell_values:
         dv=self.var['dv']
         return np.sum(self.var['pr']*dv)/np.sum(dv)
 
+
+def stat(s,iv=0,i4=0,verbose=0):
+    f=0.0
+    v=0.0
+    pp=_patches(s)
+    p=pp[0]
+    data=p.var(iv,i4=i4)
+    d=data
+    m=maxloc(d)
+    dmin=float(d.min())
+    dmax=float(d.max())
+    rmax=[p.x[m[0]],p.y[m[1]],p.z[m[2]]]
+    m=minloc(d)
+    rmin=[p.x[m[0]],p.y[m[1]],p.z[m[2]]]
+    for p in pp:
+        if iv in p.all_keys:
+            data=p.var(iv)
+            dv=np.product(p.ds)
+            v=v+dv
+            d=data
+            dmx=float(d.max())
+            dmn=float(d.min())
+            if dmx>dmax:
+                dmax=dmx
+                m=maxloc(d)
+                rmax=[p.xi[m[0]],p.yi[m[1]],p.zi[m[2]]]
+                pmax=p
+            if dmn < dmin:
+                dmin=dmn
+                m=minloc(d)
+                rmin=[p.xi[m[0]],p.yi[m[1]],p.zi[m[2]]]
+                pmin=p
+            f=f+dv*np.sum(d)
+    av=float(f/v)
+    f=0.0
+    for p in pp:
+        if iv in p.all_keys:
+            data=p.var(iv)
+            dv=np.product(p.ds)
+            v=v+dv
+            f=f+dv*np.sum((data-av)**2)
+    rm=np.sqrt(float(f/v))
+    if verbose:
+        print('average: {:12.4e}'.format(av))
+        print('    rms: {:12.4e}'.format(rm))
+        print('    max: {:12.4e}, id={} at {}'.format(dmax,pmax.id,rmax))
+        print('    min: {:12.4e}, id={} at {}'.format(dmin,pmin.id,rmin))
+    return {'max':dmax, 'min':dmin, 'maxloc':rmax, 'minloc':rmin, 'pmax':pmax, 'pmin':pmin, 'rms':rm, 'av':av}
