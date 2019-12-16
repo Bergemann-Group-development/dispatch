@@ -436,8 +436,8 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             assert(iv in patch.keys['numbers']),'variable index unknown'
 
         # Determine data representation
-        is_ln = ((patch.ioformat-6)/2==1
-                 or (patch.ioformat-10)/2==1
+        is_ln = ((patch.ioformat-6)/2==0
+                 or (patch.ioformat-10)//2==0
                  or patch.ioformat==15
                  or patch.ioformat==14)
         is_v  = ((patch.ioformat-6)%2==0 
@@ -463,13 +463,6 @@ def _var(patch,filed,snap,verbose=0,copy=None):
             if iv >= 0:
                 v=mem(iv,verbose=verbose)
 
-       # Letters
-        elif iv in patch.keys['letters']:
-            if verbose:
-                print('iv is a letter:',iv)
-            iv=patch.idx.dict[iv]
-            v=mem(iv)
-
         # Known variables
         elif iv in patch.keys['known']:
             if verbose:
@@ -477,7 +470,7 @@ def _var(patch,filed,snap,verbose=0,copy=None):
 
             # Density
             def fd():
-                 return np.exp(mem('d')) if is_ln else mem('d')
+                return np.exp(mem('d')) if is_ln else mem('d')
             if iv=='d':
                 v=fd()
             elif iv=='lnd':
@@ -547,6 +540,13 @@ def _var(patch,filed,snap,verbose=0,copy=None):
                 v=var('eth',all=True,verbose=verbose)
                 if hasattr(snap,'scaling'):
                     v=v*snap.scaling.temp
+
+       # Letters
+        elif iv in patch.keys['letters']:
+            if verbose:
+                print('iv is a letter:',iv)
+            iv=patch.idx.dict[iv]
+            v=mem(iv)
 
         # Unknown expression
         else:
@@ -737,6 +737,31 @@ def parse_patches(snap,file='../data/00000/rank_00000_patches.nml'):
     class props():
         pass
 
+    # Determine nml_version
+    nml_version=1
+    if hasattr(snap,'params_list'):
+        params_list=snap.params_list
+        if 'io_params' in params_list:
+            io_params=params_list['io_params']
+            if 'nml_version' in io_params:
+                nml_version=io_params['nml_version']
+    # Inform about nbor_nml, if present
+    if nml_version>1:
+        patches_nml=f90nml.read(file)
+        if 'nbor_nml' in patches_nml:
+            start=time()
+            nbor_nml=patches_nml['nbor_nml']
+            nbor_info={}
+            for nb in nbor_nml:
+                id=nb['id']
+                parent_id=nb['parent_id']
+                nbor_ids=nb['nbor_ids']
+                nbor_info[id]={'parent_id':parent_id,'nbor_ids':nbor_ids}
+            print('snapshot nbor_nml info ({:.3f}s):'.format(time()-start))
+            print(nbor_nml[0].keys())
+        else:
+            nbor_info=None
+
     with open(file,'r') as fo:
         watch_block = False
         for line in fo:
@@ -752,9 +777,13 @@ def parse_patches(snap,file='../data/00000/rank_00000_patches.nml'):
                 d['position'] = _parse_namelist(items)
             elif items[0]=='SIZE':
                 d['size'] = _parse_namelist(items)
+                if hasattr(snap,'n'):
+                    n=snap.n
+                else:
+                    n=1
                 if not 'ds' in d.keys():
                     if snap.no_mans_land:
-                        d['ds'] = d['size']/snap.n
+                        d['ds'] = d['size']/n
                     else:
                         d['ds'] = d['size']/(np.array(snap.n)-1).clip(min=1)
             elif items[0]=='LEVEL':
@@ -774,6 +803,9 @@ def parse_patches(snap,file='../data/00000/rank_00000_patches.nml'):
             elif items[0]=='KIND':
                 d['kind']=items[1]
             elif items[0]=='/' and watch_block: # the final entry of a namelist is always "/"
+                if nbor_info:
+                    d['parent_id']=nbor_info[id]['parent_id']
+                    d['nbor_ids']=nbor_info[id]['nbor_ids']
                 prop_dict[id]=d
                 watch_block = False
     return prop_dict

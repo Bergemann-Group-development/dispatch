@@ -121,17 +121,17 @@ def image_plane(snap,x=None,y=None,z=0.5,iv=0,grids=False,cbar=None,zoom=None,
     o=np.array(snap.cartesian.origin)
     s=np.array(snap.cartesian.size)
     c=o+0.5*s
-    if x: 
+    if x:
         i=0
         x=x*snap.cartesian.size[i]
         c=c[[1,2]]
         s=s[[1,2]]
-    elif y: 
+    elif y:
         i=1
         y=y*snap.cartesian.size[i]
         c=c[[0,2]]
         s=s[[0,2]]
-    elif z: 
+    elif z:
         i=2
         z=z*snap.cartesian.size[i]
         c=c[[0,1]]
