@@ -19,7 +19,7 @@ MODULE cartesian_mod
   type, public:: cartesian_t
     real(8):: size(3)
     integer:: dims(3)
-    type(task_list_t), pointer:: task_list
+    type(task_list_t), pointer:: task_list => null()
   contains
     procedure init
     procedure, nopass:: diagnostics
@@ -33,8 +33,9 @@ CONTAINS
 !===============================================================================
 !> Distribute patches in a Cartesian arrangement in a box
 !===============================================================================
-SUBROUTINE init (self, label)
+SUBROUTINE init (self, task_list, label)
   class(cartesian_t):: self
+  type(task_list_t), optional, pointer:: task_list
   character(len=*), optional:: label
   !.............................................................................
   type(task_list_t), pointer:: patch_list
@@ -57,6 +58,12 @@ SUBROUTINE init (self, label)
   character(len=120):: ids = &
     '$Id$ components/cartesian_mod.f90'
   !-----------------------------------------------------------------------------
+  if (present (task_list)) then
+    if (associated(task_list)) then
+      write (stdout,*) 'cartesian_t%init: return -- task_list already allocated'
+      return
+    end if 
+  end if
   call trace%begin ('cartesian_t%init')
   call io%header('begin cartesian_t%init: Cartesian patch arrangement')
   call trace%print_id (ids)
@@ -102,7 +109,8 @@ SUBROUTINE init (self, label)
   !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------
-  allocate (self%task_list)
+  allocate (task_list)
+  self%task_list => task_list
   call self%task_list%init ('tlist')
   self%task_list%size = self%size
   self%task_list%dims = self%dims
