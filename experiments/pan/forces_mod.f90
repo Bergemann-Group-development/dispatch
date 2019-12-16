@@ -79,6 +79,12 @@ SUBROUTINE pre_update (self)
     call io%bits_mem (storage_size(patch%force_per_unit_mass), &
                      product(shape(patch%force_per_unit_mass)), 'fpm')
   end if
+  !-----------------------------------------------------------------------------
+  ! These are not used, but need to point to something valid
+  !-----------------------------------------------------------------------------
+  self%Ux => self%patch%mem(:,:,:,patch%idx%px,patch%it,1)
+  self%Uy => self%patch%mem(:,:,:,patch%idx%py,patch%it,1)
+  self%Uz => self%patch%mem(:,:,:,patch%idx%pz,patch%it,1)
   patch%force_per_unit_mass = &
   self%force%selected(patch%time, d, p, self%Ux, self%Uy, self%Uz, patch%mesh)
   end associate

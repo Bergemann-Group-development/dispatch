@@ -141,7 +141,6 @@ SUBROUTINE init (self, name)
   !-----------------------------------------------------------------------------
   self%input     = io_unit%input
   self%namelist  = io_unit%nml
-  self%log_interval = log_interval
   !-----------------------------------------------------------------------------
   ! Use serial region to avoid threads using the input file simultaneously
   !-----------------------------------------------------------------------------
@@ -179,6 +178,7 @@ SUBROUTINE init (self, name)
       print'(a,i4)', ' n_thread =', omp_nthreads
     end if
     self%task_logging = task_logging
+    self%log_interval = log_interval
     self%format = format
     self%nml_version = nml_version
     self%inputdir = inputdir

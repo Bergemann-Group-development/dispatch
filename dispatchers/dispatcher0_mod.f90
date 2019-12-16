@@ -462,25 +462,30 @@ subroutine stall_handler
     ! To avoid that the task log is overwritten during a stall, stop task
     ! loggin towards the of a log_interval
     !---------------------------------------------------------------------------
-    write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'schedule stall'
+    !!$omp critical (tasklog_cr)
+    !write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'schedule stall'
+    !!$omp end critical (tasklog_cr)
     if (io%task_logging) then
       if (stall_start > 0d0 .and. now-stall_start > io%log_interval*0.9) then
-        write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'shutting down logging'
-        flush (io_unit%task)
-        write (stderr,*) 'task logging stopped on rank', mpi%rank
         !$omp critical (tasklog_cr)
-        io%task_logging = .false.
-        write (stderr,*) 'task logging stopped on rank', mpi%rank
+        if (io%task_logging) then
+          write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'shutting down logging'
+          flush (io_unit%task)
+          write (stderr,'(1x,a,i5,3f12.5)') 'task logging stopped on rank', &
+            mpi%rank, now, stall_start, io%log_interval*0.9
+          write (stderr,*) 'task logging stopped on rank', mpi%rank
+          io%task_logging = .false.
+        end if
         !$omp end critical (tasklog_cr)
       end if
     end if
-    if (now-stall_start > max_stalled) then
+    if (stall_start > 0d0 .and. now-stall_start > max_stalled) then
       write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'max_stalled reached'
       print *, mpi%rank, 'STALLED diagnostics'
       call mpi_mesg%diagnostics (1)
       print *, mpi%rank, 'STALLED bailing out'
       call mpi%abort ('exceeded max_stalled')
-    else if (wallclock()-stall_start > retry_stalled) then
+    else if (stall_start > 0d0 .and. wallclock()-stall_start > retry_stalled) then
       write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'retry_stalled reached'
       !$omp critical (stall_cr)
       if (wallclock()-stall_start > retry_stalled) then
@@ -491,14 +496,14 @@ subroutine stall_handler
         1 format("rank:",i5,2x,"thread:",i4,3x,"STALL revived by ",a," at",f12.3)
           if (verbose > 1) &
             call io%abort ('STALLED revided by check_all -- check thread log')
-          stall_start = wallclock()
+          stall_start = 0d0
         else
           call task_list%check_oldest
           if (associated(task_list%queue)) then
             write(stderr,1) mpi%rank, omp%thread, 'check_oldest', wallclock()
             if (verbose > 1) &
               call io%abort ('STALLED revided by check_oldest -- check thread log')
-            stall_start = wallclock()
+            stall_start = 0d0
           else
             write (stderr,*) mpi%rank, omp%thread, 'STALLED, revived FAILED'
             call io%abort ('STALLED, revived FAILED')

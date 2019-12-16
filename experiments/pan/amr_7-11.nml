@@ -9,7 +9,7 @@
 !---------------------------------------------
 &patch_params           nt=5 grace=0.3 n=3*32 no_mans_land=t /
 &out_params             end_time=0.201 out_time=0.010 print_every=100 /
-&io_params              verbose=0 do_trace=f omp_trace=f do_output=t restart=-2
+&io_params              verbose=0 do_trace=f omp_trace=f do_output=f restart=-2
                         task_logging=1 guard_zones=t time_derivs=0
                         method='legacy' format=10 /
 &time_slices_params     order=3 /
@@ -55,10 +55,10 @@
 &dispatcher_params      method=0 test=f /
 &dispatcher0_params     verbose=0 debug=f do_delay=t retry_stalled=20 max_stalled=19 /
 &load_balance_params    /
-&task_mesg_params       verbose=0 method='improbe' /
-!&task_mesg_params       verbose=0 method='irecv' /
+!&task_mesg_params       verbose=0 method='improbe' /
+&task_mesg_params       verbose=0 method='irecv' /
 !&task_mesg_params       verbose=0 method='private' /
 !&mpi_mesg_params        verbose=0 /
 !&mpi_mesg_params        verbose=0 send_priv=f max_send=5 max_sent=1000 min_nq=0 max_recv=1000 max_probe=1000 /
-&mpi_mesg_params        verbose=0 send_priv=f max_sent=30 min_nq=0 max_recv=1000 max_probe=1000 delay_ms=0.1 /
+!&mpi_mesg_params        verbose=0 send_priv=f max_sent=30 min_nq=0 max_recv=1000 max_probe=1000 delay_ms=0.1 /
 !&mpi_mesg_params        verbose=0 send_priv=t max_sent=30 min_nq=0 max_recv=1000 max_probe=1000 delay_ms=0.1 /
