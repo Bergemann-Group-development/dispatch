@@ -465,10 +465,10 @@ subroutine stall_handler
     !!$omp critical (tasklog_cr)
     !write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'schedule stall'
     !!$omp end critical (tasklog_cr)
-    if (io%task_logging) then
+    if (io%task_logging > 0) then
       if (stall_start > 0d0 .and. now-stall_start > io%log_interval*0.9) then
         !$omp critical (tasklog_cr)
-        if (io%task_logging) then
+        if (io%task_logging > 0) then
           write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'shutting down logging'
           flush (io_unit%task)
           write (stderr,'(1x,a,i5,3f12.5)') 'task logging stopped on rank', &
