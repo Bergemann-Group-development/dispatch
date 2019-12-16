@@ -1,5 +1,5 @@
 &cartesian_params                         !  ranks   nodes    patches    cores   rootgr   initial-patches/core 
- size=1,1,1 dims=3*4  mpi_dims=1,1,2      !    2       1         64        20     64^3          3
+ size=1,1,1 dims=3*4  mpi_dims=2,2,2      !    2       1         64        20     64^3          3
 !size=1,1,1 dims=3*8  mpi_dims=1,2,2      !    4       2        512        40    128^3         12
 !size=1,1,1 dims=3*16 mpi_dims=2,2,2      !    8       4       2048        80    256^3         25
 !size=1,1,1 dims=3*32 mpi_dims=4,4,4      !   64      32        16k       640    512^3         25

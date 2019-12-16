@@ -1215,7 +1215,7 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
   real(kind=KindScalarVar):: qint
   logical                 :: all_cells_l
   real(8)                 :: start
-  integer, save           :: itimer(1)=0
+  integer, save           :: itimer(2)=0
   !-----------------------------------------------------------------------------
   if (present(all_cells)) then
     call trace%begin('download_t%different(all)', itimer=itimer(1))

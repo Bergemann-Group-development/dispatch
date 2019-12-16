@@ -662,10 +662,6 @@ SUBROUTINE unpack (self, mesg, link)
   real(8):: wc
   !-----------------------------------------------------------------------------
   call trace%begin ('task_mesg_t%unpack', itimer=itimer)
-  if (task%logging > 1) then
-    write (label,'(a,i4,i8)') 'unpack ', mesg%sender, mesg%id
-    call task%log (label)
-  end if
   if (mesg%nbuf < 40) then
     call load_balance%unpack (mesg%buffer)
     return
@@ -698,8 +694,13 @@ SUBROUTINE unpack (self, mesg, link)
   task => ltask
   end select
   end associate
-  failed = .false.
   !-----------------------------------------------------------------------------
+  if (task%logging > 1) then
+    write (label,'(a,i4,i8)') 'unpack ', mesg%sender, mesg%id
+    call task%log (label)
+  end if
+  !-----------------------------------------------------------------------------
+  failed = .false.
   if (associated(link1%task)) then
    if (verbose > 1) &
     write (io_unit%log,'(a,i6,2x,5l1)') 'unpack: id, bits BVRES =', mesg%id, &

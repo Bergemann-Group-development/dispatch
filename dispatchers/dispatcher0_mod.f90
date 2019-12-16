@@ -274,6 +274,8 @@ SUBROUTINE update (self, task_list, test)
     end if
     !$omp atomic write
     stalled = 0
+    !$omp atomic write
+    stall_start = 0d0
     !---------------------------------------------------------------------------
     task%atime = task%time
     if (verbose > 1) then
@@ -410,7 +412,7 @@ SUBROUTINE update (self, task_list, test)
     end if
     !$omp atomic update
     timer%busy_time = timer%busy_time + (wallclock()-start)
-  else if (n_stalled >= 1000) then
+  else if (n_stalled >= 10000) then
     call stall_handler
     n_stalled = 0
   else
@@ -461,14 +463,16 @@ subroutine stall_handler
     ! loggin towards the of a log_interval
     !---------------------------------------------------------------------------
     write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'schedule stall'
-    if (now-stall_start > io%log_interval*0.9) then
-      write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'shutting down logging'
-      flush (io_unit%task)
-      write (stderr,*) 'task logging stopped on rank', mpi%rank
-      !$omp critical (tasklog_cr)
-      io%task_logging = .false.
-      write (stderr,*) 'task logging stopped on rank', mpi%rank
-      !$omp end critical (tasklog_cr)
+    if (io%task_logging) then
+      if (stall_start > 0d0 .and. now-stall_start > io%log_interval*0.9) then
+        write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'shutting down logging'
+        flush (io_unit%task)
+        write (stderr,*) 'task logging stopped on rank', mpi%rank
+        !$omp critical (tasklog_cr)
+        io%task_logging = .false.
+        write (stderr,*) 'task logging stopped on rank', mpi%rank
+        !$omp end critical (tasklog_cr)
+      end if
     end if
     if (now-stall_start > max_stalled) then
       write (io_unit%task,'(f12.6,i4,4x,a)') now, omp%thread, 'max_stalled reached'
