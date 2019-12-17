@@ -61,11 +61,12 @@ SUBROUTINE pre_init (self, patch)
     first_time = .false.
     rewind (io%input)
     read (io%input, selfgravity_params, iostat=iostat)
-    if (iostat > 0 .and. io%master) call io%namelist_warning('selfgravity_params')
+    call io%namelist_warning('selfgravity_params', iostat)
     if (io%master) write (io%output, selfgravity_params)
   end if
   !$omp end critical (input_cr)
 
+  self%d0 = d0
   if (selfgravity) then
     self%selfgravity = selfgravity
     if (patch%kind(1:4) /= 'zeus') patch%nv = patch%nv + 1
@@ -92,10 +93,8 @@ SUBROUTINE init (self, patch)
   character(len=64)                 :: filename
   logical                           :: ok
   integer                           :: iostat
-  logical, save                     :: first_time=.true., first_poisson=.true.
-  real, save                        :: d0=-1.0
+  logical, save                     :: first_poisson=.true.
   real(kind=KindScalarVar), pointer :: d(:,:,:)
-  namelist /selfgravity_params/ selfgravity, prediction, order, d0, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
 
