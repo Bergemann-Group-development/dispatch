@@ -62,7 +62,12 @@ SUBROUTINE init (self, task_list, label)
     if (associated(task_list)) then
       write (stdout,*) 'cartesian_t%init: return -- task_list already allocated'
       return
-    end if 
+    else
+      allocate(task_list)
+      self%task_list => task_list
+    end if
+  else
+    allocate(self%task_list)
   end if
   call trace%begin ('cartesian_t%init')
   call io%header('begin cartesian_t%init: Cartesian patch arrangement')
@@ -109,8 +114,6 @@ SUBROUTINE init (self, task_list, label)
   !-----------------------------------------------------------------------------
   ! Begin on task list
   !-----------------------------------------------------------------------------
-  allocate (task_list)
-  self%task_list => task_list
   call self%task_list%init ('tlist')
   self%task_list%size = self%size
   self%task_list%dims = self%dims
