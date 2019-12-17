@@ -61,7 +61,7 @@ SUBROUTINE init (self, task_list)
     call self%read_metadata (task_list)
     !call self%select_tasks
     !call self%read_tasks
-    call self%dealloc (task_list)
+    !call self%dealloc (task_list)
   end if
   !-----------------------------------------------------------------------------
   call trace%end ()
@@ -153,6 +153,7 @@ SUBROUTINE read_metadata (self, task_list)
   ! Read metadata for all tasks
   !-----------------------------------------------------------------------------
   allocate (task_list)
+  self%task_list => task_list
   do rank=0,self%mpi%size-1
     write (file,'(a,"rank_",i5.5,"_patches.nml")') trim(fromdir), rank
     if (self%verbose > 0) &
@@ -161,9 +162,9 @@ SUBROUTINE read_metadata (self, task_list)
     do while (.true.)
       allocate (link)
       allocate (patch)
+      link%task => patch
+      patch%link => link
       if (self%read_patch_metadata (patch)) then
-        link%task => patch
-        patch%link => link
         patch%rank = rank
         call task_list%append_link (link)
       else
@@ -173,6 +174,16 @@ SUBROUTINE read_metadata (self, task_list)
     close (io_unit%data)
   end do
   close (io_unit%data)
+  !-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  call self%task_list%init_all_nbors
+  call self%task_list%reset_status
+  call self%task_list%count_status
+  !-----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
+  io%ntask = self%task_list%na
+  io%nwrite = self%task_list%na
+  io%ntotal = product(self%dims)
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE read_metadata
@@ -203,12 +214,19 @@ FUNCTION read_patch_metadata (self, patch) RESULT (ok)
     patch%dtime = dtime
     patch%size = size
     patch%position = position
+    if (self%verbose > 2) &
+      print 1, patch%id, patch%size, patch%ds, 'before'
+      1 format(i6,2(2x,1p,3e12.3),4x,a)
     call patch%init
+    if (self%verbose > 2) &
+      print 2, patch%id, patch%size, patch%ds, patch%mesh%d, 'after'
+      2 format(i6,3(2x,1p,3e12.3),4x,a)
     patch%id = id
     patch%level = level
     patch%time = time
     patch%dtime = dtime
     patch%size = size
+    print 2, patch%id, patch%size, patch%ds, patch%mesh%d, 'reset'
     patch%position = position
     if (self%verbose > 1) &
       write (stdout,patch_nml)

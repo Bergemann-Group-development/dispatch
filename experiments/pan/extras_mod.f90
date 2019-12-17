@@ -88,6 +88,7 @@ SUBROUTINE pre_init (self)
   class(extras_t), target:: self
   !.............................................................................
   call trace%begin ('extras_t%pre_init')
+  self%gpatch => self
   call self%selfgravity%pre_init(self)                          ! selfg
   !call self%lagrangian%pre_init                                ! move
   call trace%end()
