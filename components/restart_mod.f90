@@ -11,6 +11,7 @@ MODULE restart_mod
   USE experiment_mod
   USE link_mod
   USE task_list_mod
+  USE data_io_mod
   implicit none
   private
   type, public:: restart_t
@@ -26,6 +27,7 @@ MODULE restart_mod
     procedure:: read_cartesian_metadata
     procedure:: read_amr_metadata
     procedure:: read_patch_metadata
+    procedure:: read_task_data
   end type
   integer:: verbose=1
   integer:: snapshot=-1
@@ -44,11 +46,16 @@ SUBROUTINE init (self, task_list)
   integer:: iostat
   namelist /restart_params/ run, snapshot, verbose
   !-----------------------------------------------------------------------------
-  if (present(task_list)) then
+  if (present (task_list)) then
     if (associated(task_list)) then
       write (stdout,*) 'restart_t%init: return -- task_list already allocated'
       return
+    else
+      allocate(task_list)
+      self%task_list => task_list
     end if
+  else
+    allocate(self%task_list)
   end if
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%init')
@@ -58,10 +65,9 @@ SUBROUTINE init (self, task_list)
   if (iostat >= 0 .and. snapshot > 0) then
     write (io%output, restart_params)
     self%verbose = verbose
-    call self%read_metadata (task_list)
+    call self%read_metadata
     !call self%select_tasks
-    !call self%read_tasks
-    !call self%dealloc (task_list)
+    call self%read_task_data
   end if
   !-----------------------------------------------------------------------------
   call trace%end ()
@@ -70,15 +76,14 @@ END SUBROUTINE init
 !===============================================================================
 !> Deallocate task_list, if populated
 !===============================================================================
-SUBROUTINE dealloc (self, task_list)
+SUBROUTINE dealloc (self)
   class(restart_t):: self
-  type(task_list_t), pointer:: task_list
   class(link_t), pointer:: link, next
   class(task_t), pointer:: task
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%dealloc')
-  if (associated(task_list)) then
-    link => task_list%head
+  if (associated(self%task_list)) then
+    link => self%task_list%head
     do while (associated(link))
       next => link%next
       task => link%task
@@ -94,8 +99,8 @@ SUBROUTINE dealloc (self, task_list)
       deallocate (link)
       link => next
     end do
-    deallocate (task_list)
-    nullify (task_list)
+    deallocate (self%task_list)
+    nullify (self%task_list)
   end if
   call trace%end ()
 END SUBROUTINE dealloc
@@ -103,28 +108,53 @@ END SUBROUTINE dealloc
 !===============================================================================
 !> Read metadata for all tasks, collecting into a task_list data type
 !===============================================================================
-SUBROUTINE read_metadata (self, task_list)
+SUBROUTINE read_metadata (self)
   class(restart_t):: self
-  type(task_list_t), pointer:: task_list
   type(experiment_t), pointer:: patch
   class(link_t), pointer:: link
-  integer:: iostat, rank
+  integer:: iostat, rank, n_patch
+  !-----------------------------------------------------------------------------
+  integer:: format, time_derivs, verbose
   logical:: do_debug, do_trace, do_output, do_flags
-  namelist /io_nml/ verbose, do_debug, do_trace, do_output, do_flags
+  character(len=16):: method
+  namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method
   namelist /snapshot_nml/ verbose, do_debug, do_trace, do_output, do_flags
-  namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags
+  !-----------------------------------------------------------------------------
+  integer:: ioformat, iout, ntotal, istep, mesh_type, level, ncell(3), &
+    li(3), ui(3), n(3), ng(3), gn(3), nv, nw, nt
+  real(8):: position(3), size(3), ds(3), box(3), velocity(3), gamma, time, &
+    out_time
+  real(4):: quality
+  character(len=16):: kind, eos, opacity
+  logical:: periodic(3), guard_zones, no_mans_land
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, istep, mesh_type, &
+    position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
+    ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
+    no_mans_land, top
+  !-----------------------------------------------------------------------------
+  logical:: do_validate, do_legacy, do_direct, omp_trace, namelist_errors
+  integer:: id_debug, restart, nml_version, levelmax, log_sent, task_logging
+  real(8):: log_interval
+  character(len=64):: top, datadir, inputdir
+  namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
+    do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, &
+    method, restart, format, guard_zones, time_derivs, log_sent, task_logging, &
+    namelist_errors, nml_version, log_interval, top, datadir, inputdir
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_metadata')
   write (fromdir,'(a,"/",a,"/")') trim(io%datadir), trim(run)
+  io%inputdir = trim(fromdir)
   file = trim(fromdir)//'params.nml'
   if (self%verbose > 0) &
-    write(stdout,*) 'reading '//trim(file)
+    write(stdout,*) 'restart_t: reading '//trim(file)
   open (io_unit%data,file=file,form='formatted',status='old',iostat=iostat)
   if (iostat /= 0) then
     write (stdout,*) 'restart_t%init: return -- did not find '//trim(file)
     return
   end if
   read (io_unit%data, io_params, iostat=iostat)
+  if (self%verbose > 2) &
+    write (stdout, io_params)
   call namelist_assert ('io_params', file, iostat)
   !-----------------------------------------------------------------------------
   ! Try a cartesian setup
@@ -140,25 +170,29 @@ SUBROUTINE read_metadata (self, task_list)
   write (fromdir,'(a,i5.5,"/")') trim(fromdir), snapshot
   file = trim(fromdir)//'/snapshot.nml'
   if (self%verbose > 0) &
-    write (stdout,*) 'reading '//trim(file)
+    write (stdout,*) 'restart_t: reading '//trim(file)
   open (io_unit%data,file=file,form='formatted',status='old')
   !-----------------------------------------------------------------------------
   !> Read the io_nml and snapshot_nml namelists
   !-----------------------------------------------------------------------------
   read (io_unit%data, io_nml, iostat=iostat)
+  if (self%verbose > 2) &
+    write (stdout, io_nml)
   call namelist_assert ('io_nml', file, iostat)
+  io%method = method
   read (io_unit%data, snapshot_nml, iostat=iostat)
+  if (self%verbose > 2) &
+    write (stdout, snapshot_nml)
   call namelist_assert ('snapshot_nml', file, iostat)
   !-----------------------------------------------------------------------------
   ! Read metadata for all tasks
   !-----------------------------------------------------------------------------
-  allocate (task_list)
-  self%task_list => task_list
   do rank=0,self%mpi%size-1
     write (file,'(a,"rank_",i5.5,"_patches.nml")') trim(fromdir), rank
     if (self%verbose > 0) &
-      write (stdout,*) 'reading '//trim(file)
+      write (stdout,*) 'restart_t: reading '//trim(file)
     open (io_unit%data,file=file,form='formatted',status='old')
+    n_patch = 0
     do while (.true.)
       allocate (link)
       allocate (patch)
@@ -166,23 +200,19 @@ SUBROUTINE read_metadata (self, task_list)
       patch%link => link
       if (self%read_patch_metadata (patch)) then
         patch%rank = rank
-        call task_list%append_link (link)
+        call self%task_list%append_link (link)
       else
         exit
       end if
+      n_patch = n_patch+1
     end do
+    if (self%verbose > 1) &
+      write (stdout,*) n_patch, 'patches'
     close (io_unit%data)
   end do
   close (io_unit%data)
   !-----------------------------------------------------------------------------
-  !-----------------------------------------------------------------------------
-  call self%task_list%init_all_nbors
-  call self%task_list%reset_status
-  call self%task_list%count_status
-  !-----------------------------------------------------------------------------
-  !-----------------------------------------------------------------------------
-  io%ntask = self%task_list%na
-  io%nwrite = self%task_list%na
+  call self%task_list%initialize
   io%ntotal = product(self%dims)
   !-----------------------------------------------------------------------------
   call trace%end ()
@@ -203,8 +233,8 @@ FUNCTION read_patch_metadata (self, patch) RESULT (ok)
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_patch_metadata')
   read (io_unit%data, patch_nml, iostat=iostat)
-  if (self%verbose > 2) &
-    write (stdout,*) iostat
+  if (self%verbose > 3) &
+    write (stdout, patch_nml)
   call namelist_assert ('patch_nml', file, 0)
   ok = iostat >= 0
   if (ok) then
@@ -215,21 +245,22 @@ FUNCTION read_patch_metadata (self, patch) RESULT (ok)
     patch%size = size
     patch%position = position
     if (self%verbose > 2) &
-      print 1, patch%id, patch%size, patch%ds, 'before'
-      1 format(i6,2(2x,1p,3e12.3),4x,a)
+      print 1, patch%id, patch%position, patch%size, patch%ds, 'before'
+      1 format(i6,3(2x,1p,3e10.2),3x,a)
     call patch%init
     if (self%verbose > 2) &
-      print 2, patch%id, patch%size, patch%ds, patch%mesh%d, 'after'
-      2 format(i6,3(2x,1p,3e12.3),4x,a)
+      print 2, patch%id, patch%position, patch%mesh%p, patch%size, &
+        patch%mesh%s, patch%ds, patch%mesh%d, 'after'
+      2 format(i6,6(2x,1p,3e10.2),3x,a)
     patch%id = id
     patch%level = level
     patch%time = time
     patch%dtime = dtime
     patch%size = size
-    print 2, patch%id, patch%size, patch%ds, patch%mesh%d, 'reset'
-    patch%position = position
     if (self%verbose > 1) &
-      write (stdout,patch_nml)
+      print 2, patch%id, patch%position, patch%mesh%p, patch%size, &
+        patch%mesh%s, patch%ds, patch%mesh%d, 'reset'
+    patch%position = position
   end if
   call trace%end ()
   !-----------------------------------------------------------------------------
@@ -244,11 +275,15 @@ FUNCTION read_cartesian_metadata (self) RESULT (ok)
   logical:: ok
   integer:: iostat, rank
   real(8), dimension(3):: size, origin
-  integer, dimension(3):: mpi_dims, dims
-  namelist /cartesian_params/ size, origin, mpi_dims, dims, rank
+  integer, dimension(3):: mpi_dims, dims, per_rank(3)
+  logical:: omp_init, periodic(3), face_nbors(3)
+  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, &
+    face_nbors, omp_init, periodic
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_cartesian_metadata')
   read (io_unit%data, cartesian_params, iostat=iostat)
+  if (self%verbose > 2) &
+    write (stdout, cartesian_params)
   call namelist_assert ('cartesian_params', file, iostat)
   ok = (iostat >= 0)
   if (ok) then
@@ -271,12 +306,16 @@ FUNCTION read_amr_metadata (self) RESULT (ok)
   type(patch_t), pointer:: patch
   logical:: ok
   integer:: iostat, rank
-  real(8), dimension(3):: size
-  integer, dimension(3):: mpi_dims, dims
-  namelist /cartesian_params/ size, mpi_dims, dims, rank
+  real(8), dimension(3):: size, origin
+  integer, dimension(3):: mpi_dims, dims, per_rank(3)
+  logical:: omp_init, periodic(3), face_nbors(3)
+  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, &
+    face_nbors, omp_init, periodic
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_cartesian_metadata')
   read (io_unit%data, cartesian_params, iostat=iostat)
+  if (self%verbose > 2) &
+    write (stdout, cartesian_params)
   call namelist_assert ('amr_params', file, iostat)
   ok = iostat==0
   if (ok) then
@@ -288,10 +327,42 @@ END FUNCTION read_amr_metadata
 !===============================================================================
 !> Issue messages about namelists -- missing or with errors
 !===============================================================================
+SUBROUTINE read_task_data (self)
+  class(restart_t):: self
+  class(link_t), pointer:: link
+  class(task_t), pointer:: task
+  logical:: ok
+  !-----------------------------------------------------------------------------
+  if (self%verbose > 0) &
+    write (stdout, *) 'restart_t: reading task data from '//trim(io%inputdir)
+  link => self%task_list%head
+  do while (associated(link))
+    task => link%task
+    select type (task)
+    class is (experiment_t)
+      if (self%verbose > 1) &
+        write (stdout,*) 'reading experiment data for task', task%id
+      call data_io%input (task, ok)
+    class is (patch_t)
+      if (self%verbose > 1) &
+        write (stdout,*) 'reading patch data for task', task%id
+      call data_io%input (task, ok)
+    class default
+      if (self%verbose > 1) &
+        write (stdout,*) 'no data for task', task%id
+    end select
+    link => link%next
+  end do
+END SUBROUTINE read_task_data
+
+!===============================================================================
+!> Issue messages about namelists -- missing or with errors
+!===============================================================================
 SUBROUTINE namelist_assert (label, file, iostat)
   character(len=*):: label
   character(len=64):: file
   integer:: iostat
+  !-----------------------------------------------------------------------------
   if (iostat < 0) then
     call io%abort (trim(label)//' missing in '//trim(file))
   else if (iostat > 0) then

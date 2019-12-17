@@ -99,8 +99,13 @@ SUBROUTINE initialize (self)
   call trace%begin ('task_list_t%initialize')
   call self%init_bdries         ! initialize boundaries, based on position
   call self%init_all_nbors      ! make nbor lists, based on position
-  call self%reset_status        ! set status buts, based on nbor lists
+  call self%reset_status        ! set status bits, based on nbor lists
   call self%count_status        ! count number of different tasks
+  !-----------------------------------------------------------------------------
+  ! Initialize counters used in data_io_mod
+  !-----------------------------------------------------------------------------
+  io%ntask = self%na
+  io%nwrite = self%na
   call trace%end()
 END SUBROUTINE initialize
 

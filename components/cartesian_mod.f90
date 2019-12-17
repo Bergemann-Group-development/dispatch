@@ -69,6 +69,7 @@ SUBROUTINE init (self, task_list, label)
   else
     allocate(self%task_list)
   end if
+  !-----------------------------------------------------------------------------
   call trace%begin ('cartesian_t%init')
   call io%header('begin cartesian_t%init: Cartesian patch arrangement')
   call trace%print_id (ids)
