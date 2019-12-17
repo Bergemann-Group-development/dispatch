@@ -5,7 +5,6 @@
 !> via the hydro_parameters module.
 !===============================================================================
 MODULE initial_mod
-  USE const
   USE io_mod
   USE trace_mod
   USE mesh_mod
@@ -303,8 +302,7 @@ SUBROUTINE exa256 (self, m, ff, idx)
     ff(:,:,:,iv) = ff(:,:,:,idx%d)*ff(:,:,:,iv)
   end do
   call energy (self, m, idx, ff)
-  dt = courant_factor*m(1)%d/umax
-  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,courant_factor,gamma,umax
+  if (io%verbose > 2) write (io_unit%log,*) 'initial dt:',dt,gamma,umax
   if (io%verbose > 2) &
     write (io_unit%log,'(a,3i4,1p,2g12.3)') 'ix,iy,iz,dmin,dmax =', ix, iy, iz, &
       minval(ff(m(1)%li:m(1)%ui,m(2)%li:m(2)%ui,m(3)%li:m(3)%ui,1)), &
