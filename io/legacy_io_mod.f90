@@ -201,11 +201,14 @@ SUBROUTINE input (self, ok)
   real(8):: time
   logical, save:: do_print=.true.
   !-----------------------------------------------------------------------------
+  call trace%begin('legacy_io_t%input')
   ok = .false.
   if (self%id==io%id_debug) &
     print *,'MK input', self%id, self%restart
-  if (self%restart < 0) return
-  call trace_begin('legacy_io_t%input')
+  if (self%restart < 0) then
+    call trace%end ()
+    return
+  end if
   !$omp critical (output_cr)
   !---------------------------------------------------------------------------
   ! If guard_zones is true, include the guard zones.
@@ -227,6 +230,9 @@ SUBROUTINE input (self, ok)
     call io%abort('MK input_legacy: no .dat file'//trim(filename)//'.dat')
   end if
   if (ok) then
+    if (io%verbose > 0) &
+      write (stdout,*) 'legacy_io_t%input: id, restart, it', &
+        self%id, self%restart, self%it
     open (io_unit%data, file=trim(filename)//'.dat', form='unformatted', &
       access='direct', status='unknown', recl=kind(self%mem)*product(u-l+1))
     do iv=1,self%nv
@@ -243,7 +249,7 @@ SUBROUTINE input (self, ok)
     self%out_next = (int(self%time/io%out_time)+1)*io%out_time
   end if
   !$omp end critical (output_cr)
-  call trace_end
+  call trace%end ()
 END SUBROUTINE input
 
 END MODULE legacy_io_mod

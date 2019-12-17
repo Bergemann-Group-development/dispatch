@@ -4,6 +4,7 @@
 !===============================================================================
 MODULE restart_mod
   USE io_mod
+  USE mpi_mod
   USE mpi_coords_mod
   USE trace_mod
   USE task_mod
@@ -28,9 +29,12 @@ MODULE restart_mod
     procedure:: read_amr_metadata
     procedure:: read_patch_metadata
     procedure:: read_task_data
+    procedure:: select_tasks
   end type
+  !-- locals -------------------------------------------------------------------
   integer:: verbose=1
   integer:: snapshot=-1
+  integer:: nml_version
   character(len=32):: run
   character(len=64):: file
   character(len=64):: fromdir
@@ -50,23 +54,20 @@ SUBROUTINE init (self, task_list)
     if (associated(task_list)) then
       write (stdout,*) 'restart_t%init: return -- task_list already allocated'
       return
-    else
-      allocate(task_list)
-      self%task_list => task_list
     end if
-  else
-    allocate(self%task_list)
   end if
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%init')
   rewind (io%input)
   read (io%input, restart_params, iostat=iostat)
   !-----------------------------------------------------------------------------
-  if (iostat >= 0 .and. snapshot > 0) then
+  if (iostat >= 0 .and. snapshot >= 0) then
+    allocate (self%task_list)
+    task_list => self%task_list
     write (io%output, restart_params)
     self%verbose = verbose
     call self%read_metadata
-    !call self%select_tasks
+    call self%select_tasks
     call self%read_task_data
   end if
   !-----------------------------------------------------------------------------
@@ -113,14 +114,13 @@ SUBROUTINE read_metadata (self)
   type(experiment_t), pointer:: patch
   class(link_t), pointer:: link
   integer:: iostat, rank, n_patch
-  !-----------------------------------------------------------------------------
+  !-- io_nml -------------------------------------------------------------------
   integer:: format, time_derivs, verbose
   logical:: do_debug, do_trace, do_output, do_flags
   character(len=16):: method
   namelist /io_nml/ format, ntotal, out_time, guard_zones, time_derivs, method
-  namelist /snapshot_nml/ verbose, do_debug, do_trace, do_output, do_flags
-  !-----------------------------------------------------------------------------
-  integer:: ioformat, iout, ntotal, istep, mesh_type, level, ncell(3), &
+  !-- snapshot_nml -------------------------------------------------------------
+  integer:: ioformat, restart, iout, ntotal, istep, mesh_type, level, ncell(3), &
     li(3), ui(3), n(3), ng(3), gn(3), nv, nw, nt
   real(8):: position(3), size(3), ds(3), box(3), velocity(3), gamma, time, &
     out_time
@@ -131,15 +131,17 @@ SUBROUTINE read_metadata (self)
     position, size, ds, box, velocity, level, quality, gamma, ncell, li, ui, n, &
     ng, gn, nv, nt, nw, kind, eos, opacity, periodic, guard_zones, time_derivs, &
     no_mans_land, top
-  !-----------------------------------------------------------------------------
+  !-- io_params ----------------------------------------------------------------
   logical:: do_validate, do_legacy, do_direct, omp_trace, namelist_errors
-  integer:: id_debug, restart, nml_version, levelmax, log_sent, task_logging
+  integer:: id_debug, levelmax, log_sent, task_logging
   real(8):: log_interval
   character(len=64):: top, datadir, inputdir
   namelist /io_params/ verbose, do_debug, do_trace, do_output, do_flags, &
     do_validate, do_legacy, do_direct, levelmax, omp_trace, id_debug, &
     method, restart, format, guard_zones, time_derivs, log_sent, task_logging, &
     namelist_errors, nml_version, log_interval, top, datadir, inputdir
+  !-----------------------------------------------------------------------------
+  ! Read namelists from params.nml and nnnnnn/snapshot.nml
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_metadata')
   write (fromdir,'(a,"/",a,"/")') trim(io%datadir), trim(run)
@@ -152,6 +154,9 @@ SUBROUTINE read_metadata (self)
     write (stdout,*) 'restart_t%init: return -- did not find '//trim(file)
     return
   end if
+  !-----------------------------------------------------------------------------
+  ! io_params
+  !-----------------------------------------------------------------------------
   read (io_unit%data, io_params, iostat=iostat)
   if (self%verbose > 2) &
     write (stdout, io_params)
@@ -211,6 +216,8 @@ SUBROUTINE read_metadata (self)
     close (io_unit%data)
   end do
   close (io_unit%data)
+  !-----------------------------------------------------------------------------
+  ! Initialize the task_list
   !-----------------------------------------------------------------------------
   call self%task_list%initialize
   io%ntotal = product(self%dims)
@@ -327,32 +334,86 @@ END FUNCTION read_amr_metadata
 !===============================================================================
 !> Issue messages about namelists -- missing or with errors
 !===============================================================================
+SUBROUTINE select_tasks (self)
+  class(restart_t):: self
+  class(link_t), pointer:: link, nbor
+  class(task_t), pointer:: task
+  logical:: keep
+  !-----------------------------------------------------------------------------
+  call trace%begin ('restart_t%select_tasks')
+  if (self%verbose > 0) &
+    write (stdout, *) 'restart_t: reading task data from '//trim(io%inputdir)
+  !-----------------------------------------------------------------------------
+  ! Keep real and virtual tasks on this rank
+  !-----------------------------------------------------------------------------
+  keep = .false.
+  link => self%task_list%head
+  do while (associated(link))
+    if (link%task%rank == mpi%rank) then
+      keep = .true.
+      exit
+    end if
+    nbor => link%nbor
+    do while (associated (nbor))
+      if (nbor%task%rank == mpi%rank) then
+        keep = .true.
+        exit
+      end if
+      nbor => nbor%next
+    end do
+    link => link%next
+  end do
+  !-----------------------------------------------------------------------------
+  ! Deallocate and remove other tasks, with their nbor_lists
+  !-----------------------------------------------------------------------------
+  if (.not. keep) then
+    task => link%task
+    if (self%verbose > 1) &
+      write (stdout,*) 'restart_t: remove task', task%id
+    select type (task)
+    class is (experiment_t)
+    call task%dealloc
+    end select
+    call link%remove_nbor_list2 (link%nbor)
+    call self%task_list%remove (link)
+  end if
+  call trace%end ()
+END SUBROUTINE select_tasks
+
+!===============================================================================
+!> Issue messages about namelists -- missing or with errors
+!===============================================================================
 SUBROUTINE read_task_data (self)
   class(restart_t):: self
-  class(link_t), pointer:: link
+  class(link_t), pointer:: link, nbor
   class(task_t), pointer:: task
   logical:: ok
   !-----------------------------------------------------------------------------
+  call trace%begin ('restart_t%read_task_data')
   if (self%verbose > 0) &
-    write (stdout, *) 'restart_t: reading task data from '//trim(io%inputdir)
+    write (stdout, *) 'restart_t: reading task data from '//trim(io%inputdir), &
+      snapshot, nml_version
+  io%restart = snapshot
+  io%nml_version = nml_version
   link => self%task_list%head
   do while (associated(link))
     task => link%task
     select type (task)
     class is (experiment_t)
       if (self%verbose > 1) &
-        write (stdout,*) 'reading experiment data for task', task%id
-      call data_io%input (task, ok)
-    class is (patch_t)
-      if (self%verbose > 1) &
         write (stdout,*) 'reading patch data for task', task%id
+      task%restart = snapshot
+      task%iout = snapshot
+      io%do_trace = .true.
       call data_io%input (task, ok)
+      io%do_trace = .false.
     class default
       if (self%verbose > 1) &
         write (stdout,*) 'no data for task', task%id
     end select
     link => link%next
   end do
+  call trace%end ()
 END SUBROUTINE read_task_data
 
 !===============================================================================

@@ -7,7 +7,7 @@
 !---------------------------------------------
 ! For unigrid run, use the no_mans_land=t line
 !---------------------------------------------
-&restart_params         verbose=1 snapshot=5 run='amr_6-9' /
+&restart_params         verbose=2 snapshot=1 run='amr_6-9' /
 &patch_params           nt=5 grace=0.3 n=3*16 no_mans_land=t /
 &out_params             end_time=0.081 out_time=0.010 print_every=1 /
 &io_params              verbose=0 do_trace=f omp_trace=f do_output=f restart=-2
