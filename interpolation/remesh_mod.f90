@@ -72,7 +72,7 @@ SUBROUTINE prolong (self, target, source, jt, pt, all_cells)
     pnt = target%myposition (target%mesh%li)
     if (order==0) then
       ll = source%index_only (pnt, roundup=.true.)
-      nn = source%mesh%n/2
+      nn = max(1,source%mesh%n/2)
       call self%scatter_0th (source, target, ll, nn)
     else
       ll = source%index_only (pnt)
@@ -102,7 +102,7 @@ SUBROUTINE scatter_0th (self, coarse, fine, ll, nn)
   integer:: ll(3), nn(3)
   optional:: nn
   !.............................................................................
-  integer:: i1, i2, i3, j1, j2, j3, iv, lc(3), uc(3), lf(3), uf(3)
+  integer:: i1, i2, i3, j1, j2, j3, iv, lc(3), uc(3), lf(3), uf(3), ione, jone, kone
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: c, f
   real:: s(2)
   integer, save:: itimer=0
@@ -114,6 +114,10 @@ SUBROUTINE scatter_0th (self, coarse, fine, ll, nn)
   else
     uc = ll + coarse%mesh%n/2 - 1
   end if
+  ione = merge(1,0,coarse%n(1) > 1)
+  jone = merge(1,0,coarse%n(2) > 1)
+  kone = merge(1,0,coarse%n(3) > 1)
+
   lf = fine%mesh%li
   uf = fine%mesh%ui
   !-----------------------------------------------------------------------------
@@ -130,14 +134,14 @@ SUBROUTINE scatter_0th (self, coarse, fine, ll, nn)
         !-----------------------------------------------------------------------
         j1 = lf(1)
         do i1=lc(1),uc(1)
-          f(j1  ,j2  ,j3  ) = c(i1,i2,i3)
-          f(j1+1,j2  ,j3  ) = c(i1,i2,i3)
-          f(j1  ,j2+1,j3  ) = c(i1,i2,i3)
-          f(j1+1,j2+1,j3  ) = c(i1,i2,i3)
-          f(j1  ,j2  ,j3+1) = c(i1,i2,i3)
-          f(j1+1,j2  ,j3+1) = c(i1,i2,i3)
-          f(j1  ,j2+1,j3+1) = c(i1,i2,i3)
-          f(j1+1,j2+1,j3+1) = c(i1,i2,i3)
+          f(j1     ,j2     ,j3     ) = c(i1,i2,i3)
+          f(j1+ione,j2     ,j3     ) = c(i1,i2,i3)
+          f(j1     ,j2+jone,j3     ) = c(i1,i2,i3)
+          f(j1+ione,j2+jone,j3     ) = c(i1,i2,i3)
+          f(j1     ,j2     ,j3+kone) = c(i1,i2,i3)
+          f(j1+ione,j2     ,j3+kone) = c(i1,i2,i3)
+          f(j1     ,j2+jone,j3+kone) = c(i1,i2,i3)
+          f(j1+ione,j2+jone,j3+kone) = c(i1,i2,i3)
           j1 = j1+2
         end do
         j2 = j2+2
@@ -168,7 +172,7 @@ SUBROUTINE scatter_1st (self, coarse, fine, ll, nn)
   integer:: ll(3), nn(3)
   optional:: nn
   !.............................................................................
-  integer:: i1, i2, i3, j1, j2, j3, iv, j, lc(3), uc(3), lf(3), ic(3)
+  integer:: i1, i2, i3, j1, j2, j3, iv, j, lc(3), uc(3), lf(3), ic(3), ione, jone, kone
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: c, f
   real, allocatable:: out(:,:), w(:,:)
   integer, save:: itimer=0
@@ -177,10 +181,14 @@ SUBROUTINE scatter_1st (self, coarse, fine, ll, nn)
   ic = coarse%mesh%li
   lc = ll
   if (present(nn)) then
-    uc = ll + nn
+    uc = ll + nn - 1
   else
     uc = ll + coarse%mesh%n/2 - 1
   end if
+  ione = merge(1,0, coarse%n(1) > 1)
+  jone = merge(1,0, coarse%n(2) > 1)
+  kone = merge(1,0, coarse%n(3) > 1)
+
   lf = fine%mesh%li
   allocate (out(fine%gn(1),8), w(8,fine%gn(1)))
   !-----------------------------------------------------------------------------
@@ -191,45 +199,45 @@ SUBROUTINE scatter_1st (self, coarse, fine, ll, nn)
     f =>   fine%mem(:,:,:,iv,  fine%it,1)
     w = weights(iv)
     f = 0.0
-    do i3=lc(3)-1,uc(3)+1
-    do i2=lc(2)-1,uc(2)+1
+    do i3=lc(3)-kone,uc(3)+kone
+    do i2=lc(2)-jone,uc(2)+jone
       !-------------------------------------------------------------------------
       ! Loop over the 8 fine points for each coarse point, and over coarse points
       ! in the x-direction (this loop vectorizes)
       !-------------------------------------------------------------------------
       do j=1,8
-        do i1=lc(1)-1,uc(1)+1
-          out(i1,j) = w(1,j)*c(i1,i2  ,i3  ) + w(2,j)*c(i1+1,i2  ,i3  ) &
-                    + w(3,j)*c(i1,i2+1,i3  ) + w(4,j)*c(i1+1,i2+1,i3  ) &
-                    + w(5,j)*c(i1,i2  ,i3+1) + w(6,j)*c(i1+1,i2  ,i3+1) &
-                    + w(7,j)*c(i1,i2+1,i3+1) + w(8,j)*c(i1+1,i2+1,i3+1)
+        do i1=lc(1)-ione,uc(1)+ione
+          out(i1,j) = w(1,j)*c(i1,i2     ,i3     ) + w(2,j)*c(i1+ione,i2     ,i3     ) &
+                    + w(3,j)*c(i1,i2+jone,i3     ) + w(4,j)*c(i1+ione,i2+jone,i3     ) &
+                    + w(5,j)*c(i1,i2     ,i3+kone) + w(6,j)*c(i1+ione,i2     ,i3+kone) &
+                    + w(7,j)*c(i1,i2+jone,i3+kone) + w(8,j)*c(i1+ione,i2+jone,i3+kone)
         end do
       end do
       !-------------------------------------------------------------------------
       ! Add up the contributions to the 8 fine points for each coarse point.
       ! This loop does not vectorize, but has a significant load per iteration
       !-------------------------------------------------------------------------
-      i1 = lc(1)-1
+      i1 = lc(1)-ione
       j1 = lf(1) + (i1-ic(1))*2
       j2 = lf(2) + (i2-ic(2))*2
       j3 = lf(3) + (i3-ic(3))*2
-      do i1=lc(1)-1,uc(1)+2
+      do i1=lc(1)-ione,uc(1)+2*ione
         !if (i1 >= lc(1) .and. i2 >= lc(2) .and. i3 >= lc(3)) &
-          f(j1  ,j2  ,j3  ) = f(j1  ,j2  ,j3  ) + out(i1,1)
+          f(j1     ,j2     ,j3     ) = f(j1     ,j2     ,j3     ) + out(i1,1)
         !if (i1 <= uc(2) .and. i2 >= lc(2) .and. i3 >= lc(3)) &
-          f(j1+1,j2  ,j3  ) = f(j1+1,j2  ,j3  ) + out(i1,2)
+          f(j1+ione,j2     ,j3     ) = f(j1+ione,j2     ,j3     ) + out(i1,2)
         !if (i1 >= lc(1) .and. i2 <= uc(2) .and. i3 >= lc(3)) &
-          f(j1  ,j2+1,j3  ) = f(j1  ,j2+1,j3  ) + out(i1,3)
+          f(j1     ,j2+jone,j3     ) = f(j1     ,j2+jone,j3     ) + out(i1,3)
         !if (i1 <= uc(1) .and. i2 <= uc(2) .and. i3 >= lc(3)) &
-          f(j1+1,j2+1,j3  ) = f(j1+1,j2+1,j3  ) + out(i1,4)
+          f(j1+ione,j2+jone,j3     ) = f(j1+ione,j2+jone,j3     ) + out(i1,4)
         !if (i1 >= lc(1) .and. i2 >= lc(2) .and. i3 <= uc(3)) &
-          f(j1  ,j2  ,j3+1) = f(j1  ,j2  ,j3+1) + out(i1,5)
+          f(j1     ,j2     ,j3+kone) = f(j1     ,j2     ,j3+kone) + out(i1,5)
         !if (i1 <= uc(1) .and. i2 >= lc(2) .and. i3 <= uc(3)) &
-          f(j1+1,j2  ,j3+1) = f(j1+1,j2  ,j3+1) + out(i1,6)
+          f(j1+ione,j2     ,j3+kone) = f(j1+ione,j2     ,j3+kone) + out(i1,6)
         !if (i1 >= lc(1) .and. i2 <= uc(2) .and. i3 <= uc(3)) &
-          f(j1  ,j2+1,j3+1) = f(j1  ,j2+1,j3+1) + out(i1,7)
+          f(j1     ,j2+jone,j3+kone) = f(j1     ,j2+jone,j3+kone) + out(i1,7)
         !if (i1 <= uc(1) .and. i2 <= uc(2) .and. i3 <= uc(3)) &
-          f(j1+1,j2+1,j3+1) = f(j1+1,j2+1,j3+1) + out(i1,8)
+          f(j1+ione,j2+jone,j3+kone) = f(j1+ione,j2+jone,j3+kone) + out(i1,8)
         j1 = j1+2
       end do
     end do
