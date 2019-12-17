@@ -33,7 +33,7 @@ MODULE selfgravity_mod
     procedure:: ahead_of
   end type
   real(8), save :: total_mass=0d0, total_volume=0d0
-  real(8), save :: restart_time = 0d0
+  real(8), save :: restart_time = 010
   logical, save :: selfgravity=.false., prediction=.true., detailed_timer=.false.
   integer, save :: verbose=0
   integer, save :: order=1
@@ -55,7 +55,7 @@ SUBROUTINE pre_init (self, patch)
   namelist /selfgravity_params/ selfgravity, prediction, order, d0, verbose
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%pre_init')
-
+  !
   !$omp critical (input_cr)
   if (first_time) then
     first_time = .false.
@@ -65,7 +65,7 @@ SUBROUTINE pre_init (self, patch)
     if (io%master) write (io%output, selfgravity_params)
   end if
   !$omp end critical (input_cr)
-
+  !
   self%d0 = d0
   if (selfgravity) then
     self%selfgravity = selfgravity
@@ -79,7 +79,7 @@ SUBROUTINE pre_init (self, patch)
   else
     patch%idx%phi = -1
   end if
-
+  !
   call trace%end()
 END SUBROUTINE pre_init
 
@@ -97,10 +97,8 @@ SUBROUTINE init (self, patch)
   real(kind=KindScalarVar), pointer :: d(:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin ('selfgravity_t%init')
-
   if (patch%kind(1:4) /= 'zeus') &
     allocate (patch%force_per_unit_volume(patch%gn(1),patch%gn(2),patch%gn(3),3))
-  self%d0 = d0
   !$omp critical (poisson_cr)
   if (first_poisson) then
     first_poisson = .false.
