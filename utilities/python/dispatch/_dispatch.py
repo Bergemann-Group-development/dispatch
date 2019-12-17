@@ -739,6 +739,7 @@ def parse_patches(snap,file='../data/00000/rank_00000_patches.nml'):
 
     # Determine nml_version
     nml_version=1
+    nbor_info=None
     if hasattr(snap,'params_list'):
         params_list=snap.params_list
         if 'io_params' in params_list:
@@ -759,8 +760,6 @@ def parse_patches(snap,file='../data/00000/rank_00000_patches.nml'):
                 nbor_info[id]={'parent_id':parent_id,'nbor_ids':nbor_ids}
             print('snapshot nbor_nml info ({:.3f}s):'.format(time()-start))
             print(nbor_nml[0].keys())
-        else:
-            nbor_info=None
 
     with open(file,'r') as fo:
         watch_block = False
