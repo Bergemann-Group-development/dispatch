@@ -848,6 +848,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   !.............................................................................
   class(link_t), pointer :: child_link, child_nbor
   integer:: j, count, l(3), u(3), n_added
+  real(kind=KindScalarVar), dimension(:,:,:,:), pointer:: ff
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('refine_t%make_child_patch', itimer=itimer, detailed_timer=detailed_timer)
@@ -972,11 +973,15 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   !------------------------------------------------------------------------
   !$omp atomic update
   parent%n_needed = parent%n_needed + 2
-  if (parent%time > 0.0 .and. child%restart <= 0) then
-    call download%download_link (child_link, all_cells=.true.)
-    child%dnload_time = -1.0
-    if (do_dump) &
-      call dump (child, parent)
+  if (child%restart <= 0) then
+    if (parent%time > 0.0) then
+      call download%download_link (child_link, all_cells=.true.)
+      child%dnload_time = -1.0
+    else
+      ff => child%mem(:,:,:,:,child%it,1)
+      call child%initial%condition (child%mesh, ff, child%idx)
+    end if
+    if (do_dump) call dump (child, parent)
   end if
   !-----------------------------------------------------------------------------
   ! Add the child task to the task list, including giving it an nbor list etc,
