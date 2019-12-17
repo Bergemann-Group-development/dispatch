@@ -490,7 +490,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
   integer, dimension(3):: l, u, n, ii
   real(8), dimension(3):: size, pos
   logical:: not_already_refined
-  integer:: refine_it, n_added
+  integer:: refine_it, n_added, ratio_per_dim(3)
   integer(int8), allocatable:: refined(:,:,:)
   integer:: itimer=0
   !-----------------------------------------------------------------------------
@@ -502,6 +502,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
   nbors => link%nbor
   tail => tasklist%tail
   nbor => patch%link%nbor
+  ratio_per_dim = merge(self%ratio, 1, patch%n>1)
   !-----------------------------------------------------------------------------
   ! As preparation, mark all points that already are refined
   !-----------------------------------------------------------------------------
@@ -524,7 +525,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
       !-------------------------------------------------------------------------
       if (verbose > 2) then
         write (io_unit%output,'(a,i6,a,i6,2(3x,3i4))') &
-          'derefine: patch', patch%id, ' contains', nbpatch%id, l, u
+          'derefine?: patch', patch%id, ' contains', nbpatch%id, l, u
       end if
       !-------------------------------------------------------------------------
     end if
@@ -536,20 +537,20 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
   !-----------------------------------------------------------------------------
   if (patch%level < self%levelmax .and. refine > 0) then
     if (any(patch%irefine > 0.0)) then
-      do k=1,self%ratio
-        do j=1,self%ratio
-          do i=1,self%ratio
+      do k=1,ratio_per_dim(3)
+        do j=1,ratio_per_dim(2)
+          do i=1,ratio_per_dim(1)
             !-------------------------------------------------------------------
             ! Size and position
             !-------------------------------------------------------------------
-            size = patch%size/self%ratio
-            pos = patch%position + ([i,j,k]-(self%ratio+1)*0.5)*size
+            size = patch%size/ratio_per_dim
+            pos = patch%position + ([i,j,k]-(ratio_per_dim+1)*0.5)*size
             !-------------------------------------------------------------------
             ! Lower and upper index in parent patch
             !-------------------------------------------------------------------
-            n = patch%mesh%n/self%ratio
+            n = patch%mesh%n/ratio_per_dim
             l = patch%mesh%li + ([i,j,k]-1)*n
-            u = l + n - 1
+            u = max(1, l + n - 1)
             !-------------------------------------------------------------------
             ! Should this part be refined or not?
             !-------------------------------------------------------------------
@@ -558,7 +559,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
             ! Is this part refined before, or should it be now?
             !-------------------------------------------------------------------
             ii = (l+u)/2
-            not_already_refined = refined(ii(1),ii(2),ii(3)) == 0
+            not_already_refined = (refined(ii(1),ii(2),ii(3)) == 0)
             if (not_already_refined .and. refine_it > 0) then
               !io%do_trace = .true.
               !-----------------------------------------------------------------
@@ -601,7 +602,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
       if (verbose > 0) then
         associate (unit => merge (stdout, io_unit%output, verbose > 1))
         write (io_unit%output,'(1x,a,i6,":",i2,2x,"B:",l1,3x,a,i6,3x,a,f12.6)') &
-          'derefine', patch%id, patch%level, patch%is_set (bits%boundary), &
+          'derefining!:', patch%id, patch%level, patch%is_set (bits%boundary), &
           'istep:', patch%istep, 'time:', patch%time
         flush (unit)
         end associate
