@@ -1442,7 +1442,7 @@ FUNCTION refine_region (self, patch) RESULT (refine)
   integer:: refine
   class(mesh_t), pointer:: m1, m2, m3, m(:)
   logical :: intersect
-  logical :: refine_it
+  logical :: refine_it, refine_this_one
   integer :: ix, iy, iz
   real :: x, y, z
   real, dimension(3) :: p_llc, p_urc, b_llc, b_urc
@@ -1473,9 +1473,11 @@ FUNCTION refine_region (self, patch) RESULT (refine)
       y = m2%p + m2%r(iy)
       do ix=m1%li,m1%ui
         x = m1%p + m1%r(ix)
-        refine_it = refine_it .or. (x >= b_llc(1) .and. x <= b_urc(1) .and. &
-                                    y >= b_llc(2) .and. y <= b_urc(2) .and. &
-                                    z >= b_llc(3) .and. z <= b_urc(3) )
+        refine_this_one = (x >= b_llc(1) .and. x <= b_urc(1) .and. &
+                           y >= b_llc(2) .and. y <= b_urc(2) .and. &
+                           z >= b_llc(3) .and. z <= b_urc(3) )
+        refine_it = refine_it .or. refine_this_one
+        if (refine_this_one) patch%irefine(ix,iy,iz) = +1
       end do
     end do
   end do
