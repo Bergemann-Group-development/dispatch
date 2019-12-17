@@ -2599,6 +2599,10 @@ FUNCTION index_only (self, pos, iv, roundup, nowrap) RESULT (ii)
   if (present(iv)) &
     h = self%index_stagger(iv)
   do i=1,3
+    if (self%n(i) == 1) then
+      ii(i) = 1
+      cycle
+    end if
     mesh => self%mesh(i)
     p(i) = pos(i) - self%position(i)                            ! relative position
     if (self%periodic(i)) then
