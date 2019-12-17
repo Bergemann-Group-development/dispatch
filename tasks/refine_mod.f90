@@ -872,6 +872,8 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   nullify (child%mesh)                               ! .. new mesh
   nullify (child%lock)                               ! .. new lock
   nullify (child%mem_lock)                           ! .. new mem_lock
+  if (allocated(child%force_per_unit_volume)) deallocate(child%force_per_unit_volume)
+  if (allocated(child%force_per_unit_mass)) deallocate(child%force_per_unit_mass)
   child%id = 0                                       ! ensure a new ID
   child%size = child_size                            ! new size
   child%position = pos                               ! patch position
@@ -987,14 +989,16 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
     u = parent%index_only (child%position + child%mesh%uf)
     l = max(l,parent%mesh%li)
     u = min(u,parent%mesh%ui)
-    print 1,'make_child_patch: parent, level, iout, time, size(3), position(3) =', &
-      parent%id, parent%level, parent%time, parent%size, parent%position , &
-      maxval(parent%mem(l(1):u(1),l(2):u(2),l(3):u(3),parent%idx%d,parent%it,1)), &
+    print 1,'make_child_patch: parent id, level, time, size(3), position(3), max(d) =', &
+      parent%id, parent%level, parent%time, parent%size, parent%position, &
+      maxval(parent%mem(l(1):u(1),l(2):u(2),l(3):u(3),parent%idx%d,parent%it,1))
+    print 2,'                      l, u, contains(child) =', &
       l, u, parent%contains(child)
-    1 format(a,i6,i3,f9.6,2(1x,3f8.4),1pe12.2,2(1x,3i3),l2)
+    1 format(a,i6,i3,f9.6,2(1x,3f8.4),1pe12.2)
+    2 format(a,2(1x,3i3),l2)
     l(:) = parent%mesh(:)%li
     u(:) = parent%mesh(:)%ui
-    print 1,'                   child, level, iout, time, size(3), position(3) =', &
+    print 1,'                   child id, level, time, size(3), position(3), max(d) =', &
       child%id, child%level, child%time, child%size, child%position , &
       maxval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1))
     flush (io%output)
