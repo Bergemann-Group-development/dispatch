@@ -1,5 +1,5 @@
 !|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-!> This module handles checkinga various refinement criterua.  Call hierarchy:
+!> This module handles checking various refinement criteria.  Call hierarchy:
 !>
 !> task_list_t%update
 !>   check_current
@@ -576,10 +576,6 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
                 'to'        ,  child%id, child%level, &
                 'BV:', child%is_set(bits%boundary), child%is_set(bits%virtual)
               flush (io_unit%log)
-              if (verbose > 0) then
-                associate (unit => merge (stdout, io_unit%output, verbose>1))
-                end associate
-              end if
               !----------------------------------------------------------------- 
               was_refined= .true.
             end if
@@ -1036,7 +1032,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   real:: Jeans_num, dmin, ds, c
   real, dimension(:,:,:), allocatable:: pg
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
-  real, allocatable:: test(:,:,:)
+  real(kind=KindScalarVar), allocatable:: test(:,:,:)
   logical:: masked
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_jeans')
@@ -1387,7 +1383,7 @@ SUBROUTINE evaluate (self, label, patch, test, refine_it)
   class(refine_t):: self
   character(len=*):: label
   class(solver_t), pointer:: patch
-  real, dimension(:,:,:), allocatable:: test
+  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: test
   integer:: refine_it
   !...........................................................................
   real:: max_crit, max_test, norm
