@@ -229,6 +229,7 @@ MODULE refine_mod
   integer:: n_locks=1                         ! number of locks to use
   integer:: verbose=0                         ! Noise level
   integer:: n_criteria=0                      ! Number of active criteria
+  integer:: wait_refine_nsteps=3              ! How many time steps to wait before allowing refinement
   logical:: quadrature=.false.                ! Combine criteria in quadrature
   type(refine_t), public:: refine
 CONTAINS
@@ -246,8 +247,8 @@ SUBROUTINE init (self)
     ratio, refine_from_t, refine_until_t, min_dx, max_dx, derefine_limit, &
     min_jeans, max_shock, min_shock, max_contact, min_contact, max_grad, &
     min_grad, max_vorticity, max_compress, max_compress_level, quadrature, &
-    grad_var, region_llc, region_urc, force_cubical, n_locks, detailed_timer, &
-    do_dump
+    grad_var, region_llc, region_urc, force_cubical, n_locks, wait_refine_nsteps, &
+    detailed_timer, do_dump
   character(len=120):: id = &
     '$Id$ tasks/refine_mod.f90'
   !-----------------------------------------------------------------------------
@@ -396,7 +397,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   ! Punt on refinement if the task is very new, or has the init_nbors bit set
   !-----------------------------------------------------------------------------
   if (.not.on .or. &
-      link%task%istep < 3 .or. &
+      link%task%istep < wait_refine_nsteps .or. &
       link%task%is_set (bits%init_nbors)) &
         return
   !---------------------------------------------------------------------------
