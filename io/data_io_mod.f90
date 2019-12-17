@@ -888,20 +888,26 @@ END SUBROUTINE output_nml_v3
 END SUBROUTINE output_nml
 
 !===============================================================================
-!> Read in the basic, common meta-data from the snapshot.nml file.
+!> Read in the basic, common meta-data from the snapshot.nml file.  If the
+!> patch%time is already set, assume that the metadata has been read already.
 !===============================================================================
 SUBROUTINE input_nml (patch)
   class(patch_t):: patch
   !.............................................................................
-  if (io%nml_version == 1) then
-    call input_nml_v1(patch)
-  else if (io%nml_version == 2) then
-    call input_nml_v2(patch)
-  else
-    print*,io%nml_version
-    call mpi%abort ('unknown nml_version!')
+  call trace%begin ('data_io_t%input_nml')
+  if (patch%time <= 0d0) then
+    if (io%nml_version == 1) then
+      call input_nml_v1(patch)
+    else if (io%nml_version == 2) then
+      call input_nml_v2(patch)
+    else if (io%nml_version == 3) then
+      call input_nml_v3(patch)
+    else
+      print*,io%nml_version
+      call mpi%abort ('unknown nml_version!')
+    end if
   end if
-
+  call trace%end()
 CONTAINS
 !===============================================================================
 !> Read snapshot namelists, version 1.
@@ -936,7 +942,7 @@ SUBROUTINE input_nml_v1 (patch)
   !-----------------------------------------------------------------------------
   ! Read info from namelist
   !-----------------------------------------------------------------------------
-  call trace%begin ('data_io_t%input_nml')
+  call trace%begin ('data_io_t%input_nml_v1')
   !$omp critical (output_cr)
   if (first_time) then
     first_time = .false.
@@ -958,8 +964,6 @@ SUBROUTINE input_nml_v1 (patch)
   !$omp end critical (output_cr)
   call trace%end()
 END SUBROUTINE input_nml_v1
-
-END SUBROUTINE input_nml
 
 !===============================================================================
 !> Read snapshot namelists, version 2.
@@ -994,7 +998,7 @@ SUBROUTINE input_nml_v2 (patch)
   !-----------------------------------------------------------------------------
   ! Read info from namelist
   !-----------------------------------------------------------------------------
-  call trace%begin ('data_io_t%input_nml')
+  call trace%begin ('data_io_t%input_nml_v2')
   !$omp critical (output_cr)
   patch%iout = io%restart
   if (first_time) then
@@ -1041,6 +1045,89 @@ SUBROUTINE input_nml_v2 (patch)
   !$omp end critical (output_cr)
   call trace%end()
 END SUBROUTINE input_nml_v2
+
+!===============================================================================
+!> Read snapshot namelists, version 3.
+!===============================================================================
+SUBROUTINE input_nml_v3 (patch)
+  class(patch_t):: patch
+  !.............................................................................
+  character(len=128)   :: filename
+  character(len=128), save:: filename1='', filename2=''
+  integer, save        :: ioformat, id, iout, istep, mesh_type, level,nv, nt, &
+                          nw, ntotal, format
+  integer, dimension(3):: ncell, li, ui, n, ng, gn, l, u
+  real   , save        :: gamma, quality
+  real(8), save        :: time, dtime, out_next, out_time, ms
+  real(8), dimension(3):: size, position, ds, box, velocity, &
+                          llc_nat, llc_cart, centre_nat
+  integer, save        :: time_derivs
+  logical, save        :: guard_zones, no_mans_land, periodic(3)
+  character(len=32)    :: kind, eos, opacity, method
+  integer              :: iostat
+  namelist /snapshot_nml/ ioformat, iout, time, ntotal, box, li, ui, ng, gn, &
+    nv, nt, gamma, eos, opacity, periodic, guard_zones, time_derivs, no_mans_land
+  !-----------------------------------------------------------------------------
+  real(8), save        :: origin(3)
+  integer, save        :: dims(3), mpi_dims(3), per_rank(3)
+  logical, save        :: face_nbors, fast_nbors, omp_init
+  namelist /cartesian_params/ size, dims, mpi_dims, per_rank, origin, face_nbors, &
+    fast_nbors, omp_init
+  namelist /patch_nml/ id, position, size, level, dtime, istep, ds, ncell, n, nw, &
+    velocity, quality, mesh_type, kind
+  logical, save:: first_time=.true.
+  !-----------------------------------------------------------------------------
+  ! Read info from namelist
+  !-----------------------------------------------------------------------------
+  call trace%begin ('data_io_t%input_nml_v3')
+  !$omp critical (output_cr)
+  patch%iout = io%restart
+  if (first_time) then
+    first_time = .false.
+    write (filename,'(a,i5.5,"/snapshot.nml")') trim(io%inputdir), patch%iout
+    open  (unit=io_unit%nml1, file=filename, form='formatted', status='old')
+    read  (io_unit%nml1, snapshot_nml, iostat=iostat)
+    read  (io_unit%nml1, cartesian_params, iostat=iostat)
+    close (io_unit%nml1)
+    io%mpi_odims = mpi_dims
+    io%format = ioformat
+    io%ntotal = ntotal
+    io%time_derivs = time_derivs
+    io%guard_zones = guard_zones
+  end if
+  patch%time  = time
+  patch%t     = time
+  patch%guard_zones = guard_zones
+  patch%time_derivs = time_derivs
+  !-----------------------------------------------------------------------------
+  ! Open the file "data/run/rank_rrrrr_patches.nml" for reading
+  !-----------------------------------------------------------------------------
+  write (filename,'(a,i5.5,"/rank_",i5.5,"_patches.nml")') &
+         trim(io%inputdir), patch%iout, mpi%rank
+  if (filename /= filename2) then
+    if (filename2 /= '') close (io_unit%nml2)
+    open (io_unit%nml2, file=trim(filename), form='formatted', status='old')
+    filename2 = filename
+  end if
+  rewind (io_unit%nml2)
+  do
+    read (io_unit%nml2, patch_nml, iostat=iostat)
+    if (id == patch%id) exit
+    if (iostat < 0) then
+      print*,'ID = ',patch%id
+      call mpi%abort('input_nml: patch_nml not found! Abort!')
+    end if
+  end do
+  patch%dt    = dtime
+  patch%dtime = dtime
+  patch%istep = istep
+  patch%out_next = (floor(patch%time/io%out_time+1.0+1e-6))*io%out_time
+  patch%velocity = velocity
+  !$omp end critical (output_cr)
+  call trace%end()
+END SUBROUTINE input_nml_v3
+
+END SUBROUTINE input_nml
 
 !===============================================================================
 !> Copy one text file to another
