@@ -15,11 +15,12 @@ MODULE sinks_mod
     type(link_t), pointer:: link
     real:: radius
     real(8):: mass
-    real(8):: px, py, pz
+    real(8):: mom(3)
     real(8), allocatable:: pos(:,:)
   contains
     procedure:: init
     procedure:: update
+    procedure:: move
     procedure:: accrete
   end type
   integer:: verbose=0
@@ -92,7 +93,7 @@ SUBROUTINE update (self)
       ! Move to the mean patch time
       !----------------------------------------------------------------------
       self%dtime = task%time - 0.5_8*task%dtime - self%time
-        !call self%move
+      call self%move
       !----------------------------------------------------------------------
       ! Accrete over the last patch time interval
       !----------------------------------------------------------------------
@@ -102,6 +103,18 @@ SUBROUTINE update (self)
   end do
   call trace%end ()
 END SUBROUTINE update
+
+!===============================================================================
+!> Move the sink from self%time to self%time + self%dtime.  This skeleton
+!> version uses simpe 1st oder time stepping, as a demo for now
+!===============================================================================
+SUBROUTINE move (self)
+  class(sinks_t):: self
+  !-----------------------------------------------------------------------------
+  self%position = self%position + self%mom/self%mass * self%dtime
+  self%pos(:,self%it) = self%position
+  call self%rotate
+END SUBROUTINE move
 
 !===============================================================================
 !> Accrete from the patch, at the exact patch%time
@@ -156,9 +169,9 @@ SUBROUTINE accrete (self, patch, dtime)
         py(i1,i2,i3)  = py(i1,i2,i3) - dpy
         pz(i1,i2,i3)  = pz(i1,i2,i3) - dpz
         self%mass = self%mass + dv*dd
-        self%px   = self%px   + dv*dpx
-        self%py   = self%py   + dv*dpy
-        self%pz   = self%pz   + dv*dpz
+        self%mom(1) = self%mom(1) + dv*dpx
+        self%mom(2) = self%mom(2) + dv*dpy
+        self%mom(3) = self%mom(3) + dv*dpz
       end if
     end do
     end do
