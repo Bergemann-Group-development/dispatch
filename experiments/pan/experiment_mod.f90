@@ -5,6 +5,7 @@ MODULE experiment_mod
   USE io_mod
   USE trace_mod
   USE solver_mod
+  USE data_io_mod
   USE omp_mod
   USE omp_timer_mod
   !USE particle_patch_mod
@@ -13,6 +14,7 @@ MODULE experiment_mod
   type, public, extends(solver_t):: experiment_t
   contains
     procedure:: init
+    procedure:: input
     procedure:: update
     procedure:: dnload
     procedure:: task_log
@@ -25,13 +27,24 @@ CONTAINS
 !===============================================================================
 SUBROUTINE init (self)
   class(experiment_t):: self
-  real, pointer:: d(:,:,:), p(:,:,:,:)
-  integer:: i
   !----------------------------------------------------------------------------
   call trace_begin('experiment_t%init')
   call self%solver_t%init
   call trace_end
 END SUBROUTINE init
+
+!===============================================================================
+!> Setup a uniform initial state
+!===============================================================================
+SUBROUTINE input (self, ok)
+  class(experiment_t):: self
+  logical:: ok
+  !----------------------------------------------------------------------------
+  call trace_begin('experiment_t%input')
+  call data_io%input (self, ok)
+print *, 'experiment%input:', self%id, self%idx%d, self%it, self%fminval(self%idx%d), minval(self%mem(:,:,:,self%idx%d,self%it,1))
+  call trace_end
+END SUBROUTINE input
 
 !===============================================================================
 !===============================================================================

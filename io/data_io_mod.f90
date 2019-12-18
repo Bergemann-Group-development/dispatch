@@ -363,13 +363,9 @@ SUBROUTINE input (self, patch, ok)
       call mpi%abort ('unknown io%method = '//io%method)
     end if
     if (ok) then
-      count = self%counters%decrement (io%restart+1, io%nwrite)
-      if (count==0 .and. io%master) then
-        write(io%output,'(1x,a,2x,a,i5.5,5x,"time:",1p,g14.5)') &
-          trim(io%method)//'_io:input', &
-          'snapshot '//trim(io%outputname), io%restart, patch%time
-      end if
+      patch%iout = patch%restart+1
       patch%t(patch%it) = patch%time
+      call self%update_counters (patch, 0)
     end if
     !$omp end critical (data_io_input_cr)
   end if

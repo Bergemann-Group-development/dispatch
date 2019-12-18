@@ -46,7 +46,7 @@ MODULE task_list_mod
     procedure:: check_mulligan
     procedure:: mulligan
   end type
-  integer, save:: mulligan_level=2
+  integer, save:: mulligan_level=0
   integer, save:: mulligan_verbose=0
   real(8), save:: dead_mans_hand=60d0, first_finished=0d0
   public:: task2patch

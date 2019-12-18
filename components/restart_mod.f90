@@ -6,30 +6,33 @@ MODULE restart_mod
   USE io_mod
   USE mpi_mod
   USE mpi_coords_mod
+  USE data_io_mod
   USE trace_mod
   USE task_mod
+  USE bits_mod
   USE patch_mod
   USE experiment_mod
   USE link_mod
   USE task_list_mod
-  USE data_io_mod
   implicit none
   private
   type, public:: restart_t
     integer:: verbose
+    integer:: istep
     type(task_list_t), pointer:: task_list => null()
     type(mpi_coords_t):: mpi
-    real(8):: size(3), origin(3)
+    real(8):: size(3), origin(3), velocity(3)
     integer:: dims(3)
+    logical:: periodic(3)
   contains
     procedure:: init
-    procedure:: dealloc
     procedure:: read_metadata
     procedure:: read_cartesian_metadata
     procedure:: read_amr_metadata
     procedure:: read_patch_metadata
     procedure:: read_task_data
     procedure:: select_tasks
+    procedure:: dealloc
   end type
   !-- locals -------------------------------------------------------------------
   integer:: verbose=1
@@ -64,47 +67,17 @@ SUBROUTINE init (self, task_list)
   if (iostat >= 0 .and. snapshot >= 0) then
     allocate (self%task_list)
     task_list => self%task_list
+    call self%task_list%init
     write (io%output, restart_params)
     self%verbose = verbose
-    call self%read_metadata
-    call self%select_tasks
-    call self%read_task_data
+    call self%read_metadata                     ! get size & position
+    call self%task_list%initialize              ! build nbor lists
+    call self%select_tasks                      ! select tasks by MPI rank
+    call self%read_task_data                    ! read task data
   end if
   !-----------------------------------------------------------------------------
   call trace%end ()
 END SUBROUTINE init
-
-!===============================================================================
-!> Deallocate task_list, if populated
-!===============================================================================
-SUBROUTINE dealloc (self)
-  class(restart_t):: self
-  class(link_t), pointer:: link, next
-  class(task_t), pointer:: task
-  !-----------------------------------------------------------------------------
-  call trace%begin ('restart_t%dealloc')
-  if (associated(self%task_list)) then
-    link => self%task_list%head
-    do while (associated(link))
-      next => link%next
-      task => link%task
-      select type (task)
-      class is (experiment_t)
-        call task%dealloc
-      class is (patch_t)
-        call task%dealloc
-      class default
-        call task%dealloc
-      end select
-      deallocate (link%task)
-      deallocate (link)
-      link => next
-    end do
-    deallocate (self%task_list)
-    nullify (self%task_list)
-  end if
-  call trace%end ()
-END SUBROUTINE dealloc
 
 !===============================================================================
 !> Read metadata for all tasks, collecting into a task_list data type
@@ -158,6 +131,7 @@ SUBROUTINE read_metadata (self)
   ! io_params
   !-----------------------------------------------------------------------------
   read (io_unit%data, io_params, iostat=iostat)
+  !...................=========................
   if (self%verbose > 2) &
     write (stdout, io_params)
   call namelist_assert ('io_params', file, iostat)
@@ -181,14 +155,26 @@ SUBROUTINE read_metadata (self)
   !> Read the io_nml and snapshot_nml namelists
   !-----------------------------------------------------------------------------
   read (io_unit%data, io_nml, iostat=iostat)
+  !...................======................
   if (self%verbose > 2) &
     write (stdout, io_nml)
   call namelist_assert ('io_nml', file, iostat)
   io%method = method
   read (io_unit%data, snapshot_nml, iostat=iostat)
+  !...................============................
   if (self%verbose > 2) &
     write (stdout, snapshot_nml)
   call namelist_assert ('snapshot_nml', file, iostat)
+  !-----------------------------------------------------------------------------
+  ! Parameters used while reading task data, later reset for writing
+  !-----------------------------------------------------------------------------
+  self%periodic  = periodic
+  self%velocity  = velocity
+  self%istep     = istep
+  io%format      = ioformat
+  io%ntotal      = ntotal
+  io%time_derivs = time_derivs
+  io%guard_zones = guard_zones
   !-----------------------------------------------------------------------------
   ! Read metadata for all tasks
   !-----------------------------------------------------------------------------
@@ -219,7 +205,6 @@ SUBROUTINE read_metadata (self)
   !-----------------------------------------------------------------------------
   ! Initialize the task_list
   !-----------------------------------------------------------------------------
-  call self%task_list%initialize
   io%ntotal = product(self%dims)
   !-----------------------------------------------------------------------------
   call trace%end ()
@@ -234,53 +219,88 @@ FUNCTION read_patch_metadata (self, patch) RESULT (ok)
   logical:: ok
   integer:: iostat
   !.............................................................................
-  integer:: id, level
+  integer:: id, level, istep
   real(8):: size(3), position(3), time, dtime
-  namelist /patch_nml/ id, level, size, position, time, dtime
+  real(8), save:: velocity(3)=0d0
+  namelist /patch_nml/ id, level, size, position, time, dtime, velocity, istep
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_patch_metadata')
+  !-----------------------------------------------------------------------------
+  ! Read, after setting defaults values that may not exist in patch_nml
+  !-----------------------------------------------------------------------------
+  velocity = self%velocity
+  istep = self%istep
   read (io_unit%data, patch_nml, iostat=iostat)
+  !...................=========................
   if (self%verbose > 3) &
     write (stdout, patch_nml)
   call namelist_assert ('patch_nml', file, 0)
+  !-----------------------------------------------------------------------------
+  ! Pick up values and use them to initialize the patch task
+  !-----------------------------------------------------------------------------
   ok = iostat >= 0
   if (ok) then
-    patch%id = id
-    patch%level = level
-    patch%time = time
-    patch%dtime = dtime
-    patch%size = size
+    patch%id       = id
+    patch%time     = time
+    patch%size     = size
     patch%position = position
+    patch%origin   = position - size/2d0
+    !...........................................................................
     if (self%verbose > 2) &
       print 1, patch%id, patch%position, patch%size, patch%ds, 'before'
       1 format(i6,3(2x,1p,3e10.2),3x,a)
+    !...........................................................................
     call patch%init
+    !...........................................................................
     if (self%verbose > 2) &
       print 2, patch%id, patch%position, patch%mesh%p, patch%size, &
         patch%mesh%s, patch%ds, patch%mesh%d, 'after'
       2 format(i6,6(2x,1p,3e10.2),3x,a)
-    patch%id = id
-    patch%level = level
-    patch%time = time
-    patch%dtime = dtime
-    patch%size = size
+    !...........................................................................
+    patch%id       = id
+    patch%level    = level
+    patch%time     = time
+    patch%t        = time
+    patch%dtime    = dtime
+    patch%dt       = dtime
+    patch%istep    = istep
+    patch%size     = size
+    patch%size     = size
+    patch%position = position
+    patch%origin   = position - size/2d0
+    patch%velocity = velocity
+    patch%iit      = 1
+    patch%it       = 1
+    patch%new      = 2
+    patch%iit(patch%nt) = 2
+    patch%out_next = (ceiling(patch%time/io%out_time+1e-6))*io%out_time
+    !---------------------------------------------------------------------------
+    ! Derived
+    !---------------------------------------------------------------------------
+    patch%guard_zones = io%guard_zones
+    patch%time_derivs = io%time_derivs
+    patch%llc_cart    = patch%origin
+    patch%centre_nat  = patch%position
+    patch%llc_nat     = patch%llc_cart
+    patch%periodic    = self%periodic
+    call patch%set(bits%static)
+    !...........................................................................
     if (self%verbose > 1) &
       print 2, patch%id, patch%position, patch%mesh%p, patch%size, &
         patch%mesh%s, patch%ds, patch%mesh%d, 'reset'
-    patch%position = position
   end if
   call trace%end ()
-  !-----------------------------------------------------------------------------
 END FUNCTION read_patch_metadata
 
 !===============================================================================
-!> Try reading a cartesian_params namelist, and the corresponding tasks
+!> Try reading a cartesian_params namelist, and the corresponding tasks, saving
+!> useful information in self
 !===============================================================================
 FUNCTION read_cartesian_metadata (self) RESULT (ok)
   class(restart_t):: self
   type(patch_t), pointer:: patch
   logical:: ok
-  integer:: iostat, rank
+  integer:: iostat
   real(8), dimension(3):: size, origin
   integer, dimension(3):: mpi_dims, dims, per_rank(3)
   logical:: omp_init, periodic(3), face_nbors(3)
@@ -289,17 +309,17 @@ FUNCTION read_cartesian_metadata (self) RESULT (ok)
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_cartesian_metadata')
   read (io_unit%data, cartesian_params, iostat=iostat)
+  !...................================................
   if (self%verbose > 2) &
     write (stdout, cartesian_params)
   call namelist_assert ('cartesian_params', file, iostat)
   ok = (iostat >= 0)
   if (ok) then
-    self%size = size
-    self%origin = origin
-    self%dims = dims
-    self%mpi%dims = mpi_dims
-    self%mpi%size = product(mpi_dims)
-    self%mpi%rank = rank
+    self%size     = size                        ! size of the box
+    self%origin   = origin                      ! origin of the box
+    self%dims     = dims                        ! patch arrangement
+    self%mpi%dims = mpi_dims                    ! MPI split
+    self%mpi%size = product(mpi_dims)           ! number of MPI ranks
     close (io_unit%data)
   end if
   call trace%end ()
@@ -388,6 +408,7 @@ SUBROUTINE read_task_data (self)
   class(link_t), pointer:: link, nbor
   class(task_t), pointer:: task
   logical:: ok
+  integer:: i
   !-----------------------------------------------------------------------------
   call trace%begin ('restart_t%read_task_data')
   if (self%verbose > 0) &
@@ -402,11 +423,13 @@ SUBROUTINE read_task_data (self)
     class is (experiment_t)
       if (self%verbose > 1) &
         write (stdout,*) 'reading patch data for task', task%id
+      !-------------------------------------------------------------------------
+      ! The experiment input procedure should always work, for any task, but
+      ! may rely on task%iout or task%restart being set correctly
+      !-------------------------------------------------------------------------
       task%restart = snapshot
-      task%iout = snapshot
-      io%do_trace = .true.
-      call data_io%input (task, ok)
-      io%do_trace = .false.
+      task%iout    = snapshot
+      call task%input (ok)
     class default
       if (self%verbose > 1) &
         write (stdout,*) 'no data for task', task%id
@@ -430,5 +453,37 @@ SUBROUTINE namelist_assert (label, file, iostat)
     write (stdout,*) ' some read error in '//trim(label)//' in '//trim(file)
   end if
 END SUBROUTINE namelist_assert 
+
+!===============================================================================
+!> Deallocate task_list, if populated
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(restart_t):: self
+  class(link_t), pointer:: link, next
+  class(task_t), pointer:: task
+  !-----------------------------------------------------------------------------
+  call trace%begin ('restart_t%dealloc')
+  if (associated(self%task_list)) then
+    link => self%task_list%head
+    do while (associated(link))
+      next => link%next
+      task => link%task
+      select type (task)
+      class is (experiment_t)
+        call task%dealloc
+      class is (patch_t)
+        call task%dealloc
+      class default
+        call task%dealloc
+      end select
+      deallocate (link%task)
+      deallocate (link)
+      link => next
+    end do
+    deallocate (self%task_list)
+    nullify (self%task_list)
+  end if
+  call trace%end ()
+END SUBROUTINE dealloc
 
 END MODULE restart_mod
