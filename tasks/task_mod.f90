@@ -392,20 +392,33 @@ END SUBROUTINE info
 !===============================================================================
 SUBROUTINE timeslots (self, slots, times)
   class(task_t):: self
-  real(8):: times(self%nt-1)
+  real(8):: times(self%nt-1), t(self%nt)
   integer:: slots(self%nt-1)
-  integer:: i, j, it
+  integer:: i, j, o, it, nt
+  !-----------------------------------------------------------------------------
+  ! Cache the current slot index, and the times.  If the times happen to
+  ! advance in the middle of the loop, the time may jump over one slot
   !-----------------------------------------------------------------------------
   !$omp atomic read
   it = self%it
-  do j=1,self%nt-1
-    i = 1 + mod(j+it,self%nt)
-    if (j < self%nt-self%istep) then
-      i = 1
-    end if
-    slots(j) = i
+  do j=1,self%nt
     !$omp atomic read
-    times(j)  = self%t(i)
+    t(j)  = self%t(j)
+  end do
+  nt = self%nt
+  i = it                                ! current slot
+  do j=nt-1,1,-1
+    slots(j) = i                        ! slot value
+    times(j) = t(i)                     ! time value
+    i = 1 + modulo(i-2,nt)              ! decrease, wrapping
+  end do
+  !-----------------------------------------------------------------------------
+  ! Check if the times are actually equal; if so, the slots should be as well
+  !-----------------------------------------------------------------------------
+  do j=nt-2,1,-1
+    if (times(j)==times(j+1)) then
+      slots(j) = slots(j+1)
+    end if
   end do
 END SUBROUTINE timeslots
 
