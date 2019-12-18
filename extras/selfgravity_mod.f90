@@ -33,7 +33,7 @@ MODULE selfgravity_mod
     procedure:: ahead_of
   end type
   real(8), save :: total_mass=0d0, total_volume=0d0
-  real(8), save :: restart_time = 010
+  real(8), save :: restart_time = 0d0
   logical, save :: selfgravity=.false., prediction=.true., detailed_timer=.false.
   integer, save :: verbose=0
   integer, save :: order=1
