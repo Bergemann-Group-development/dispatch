@@ -147,6 +147,7 @@ SUBROUTINE init (self)
   character(len=120):: ids= &
     '$Id$ tasks/task_mod.f90'
   integer:: iostat
+  integer, save:: id_max=0
   namelist /task_params/ track_id
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init')
@@ -162,6 +163,13 @@ SUBROUTINE init (self)
   !$omp end critical (input_cr)
   if (self%id == 0) then
     call init_unique (self)
+  else
+    !---------------------------------------------------------------------------
+    ! If a task already has an id, update the MPI counter to at least that value
+    !---------------------------------------------------------------------------
+    id_max = mpi%id%update(0)
+    id_max = max(id_max,self%id+1)
+    call mpi%id%reset(id_max)
   end if
   allocate (self%lock)
   call self%lock%init (self%kind(1:4), id=self%id+2)
