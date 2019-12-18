@@ -107,6 +107,8 @@ SUBROUTINE init (self)
     duration, only_initial, q_min, q_max
   integer:: iostat
   !.............................................................................
+  if (mpi%size==1) &
+    return
   call self%lock%init ('load')
   rewind (io%input)
   read(io%input, load_balance_params, iostat=iostat)

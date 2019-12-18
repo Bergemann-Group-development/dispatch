@@ -80,6 +80,8 @@ SUBROUTINE init (self, name)
   character(len=120):: id = &
     '$Id$ lists/task_mesg_mod.f90'
   !-----------------------------------------------------------------------------
+  if (mpi%size == 1) &
+    return
   call trace%begin ('task_mesg_t%init')
   call trace%print_id (id)
   rewind (io%input)
