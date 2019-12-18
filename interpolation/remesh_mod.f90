@@ -80,9 +80,20 @@ SUBROUTINE prolong (self, target, source, jt, pt, all_cells)
       call self%scatter_1st (source, target, ll, nn)
     end if
     if (verbose > 0) then
-      write (io_unit%output,'(a,2i6,3f10.6,2(2x,3i4))') &
+      write (io_unit%output,'(a,2i6,3f10.6,2(2x,3i4),1p,2e11.2)') &
         'remesh_t%prolong: source, target, pnt, ll, nn =', &
-        source%id, target%id, pnt, ll, nn
+        source%id, target%id, pnt, ll, nn, &
+        target%fminval(target%idx%d), &
+        minval(target%mem(:,:,:,target%idx%d,target%it,1))
+      write (io_unit%output,*) target%mesh%ng, 'ng'
+      write (io_unit%output,*) target%mesh%n,  'n'
+      write (io_unit%output,*) target%mesh%gn, 'gn'
+      write (io_unit%output,*) target%mesh%lb, 'lb'
+      write (io_unit%output,*) target%mesh%lo, 'lo'
+      write (io_unit%output,*) target%mesh%li, 'li'
+      write (io_unit%output,*) target%mesh%ui, 'ui'
+      write (io_unit%output,*) target%mesh%uo, 'uo'
+      write (io_unit%output,*) target%mesh%ub, 'ub'
     end if
   else
     call io%abort('remesh_t%prolong: cannot handle all_cells=.false.')
@@ -172,7 +183,8 @@ SUBROUTINE scatter_1st (self, coarse, fine, ll, nn)
   integer:: ll(3), nn(3)
   optional:: nn
   !.............................................................................
-  integer:: i1, i2, i3, j1, j2, j3, iv, j, lc(3), uc(3), lf(3), ic(3), ione, jone, kone
+  integer:: i1, i2, i3, j1, j2, j3, iv, j, lc(3), uc(3), lf(3), ic(3), m(3), &
+    ione, jone, kone
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: c, f
   real, allocatable:: out(:,:), w(:,:)
   integer, save:: itimer=0
@@ -199,14 +211,15 @@ SUBROUTINE scatter_1st (self, coarse, fine, ll, nn)
     f =>   fine%mem(:,:,:,iv,  fine%it,1)
     w = weights(iv)
     f = 0.0
-    do i3=lc(3)-kone,uc(3)+kone
-    do i2=lc(2)-jone,uc(2)+jone
+    m = coarse%mesh%ub
+    do i3=lc(3)-kone,min(uc(3)+kone,coarse%mesh(3)%ub-1)
+    do i2=lc(2)-jone,min(uc(2)+jone,coarse%mesh(2)%ub-1)
       !-------------------------------------------------------------------------
       ! Loop over the 8 fine points for each coarse point, and over coarse points
       ! in the x-direction (this loop vectorizes)
       !-------------------------------------------------------------------------
       do j=1,8
-        do i1=lc(1)-ione,uc(1)+ione
+        do i1=lc(1)-ione,min(uc(1)+ione,coarse%mesh(1)%ub-1)
           out(i1,j) = w(1,j)*c(i1,i2     ,i3     ) + w(2,j)*c(i1+ione,i2     ,i3     ) &
                     + w(3,j)*c(i1,i2+jone,i3     ) + w(4,j)*c(i1+ione,i2+jone,i3     ) &
                     + w(5,j)*c(i1,i2     ,i3+kone) + w(6,j)*c(i1+ione,i2     ,i3+kone) &
@@ -221,23 +234,18 @@ SUBROUTINE scatter_1st (self, coarse, fine, ll, nn)
       j1 = lf(1) + (i1-ic(1))*2
       j2 = lf(2) + (i2-ic(2))*2
       j3 = lf(3) + (i3-ic(3))*2
-      do i1=lc(1)-ione,uc(1)+2*ione
-        !if (i1 >= lc(1) .and. i2 >= lc(2) .and. i3 >= lc(3)) &
-          f(j1     ,j2     ,j3     ) = f(j1     ,j2     ,j3     ) + out(i1,1)
-        !if (i1 <= uc(2) .and. i2 >= lc(2) .and. i3 >= lc(3)) &
-          f(j1+ione,j2     ,j3     ) = f(j1+ione,j2     ,j3     ) + out(i1,2)
-        !if (i1 >= lc(1) .and. i2 <= uc(2) .and. i3 >= lc(3)) &
-          f(j1     ,j2+jone,j3     ) = f(j1     ,j2+jone,j3     ) + out(i1,3)
-        !if (i1 <= uc(1) .and. i2 <= uc(2) .and. i3 >= lc(3)) &
-          f(j1+ione,j2+jone,j3     ) = f(j1+ione,j2+jone,j3     ) + out(i1,4)
-        !if (i1 >= lc(1) .and. i2 >= lc(2) .and. i3 <= uc(3)) &
-          f(j1     ,j2     ,j3+kone) = f(j1     ,j2     ,j3+kone) + out(i1,5)
-        !if (i1 <= uc(1) .and. i2 >= lc(2) .and. i3 <= uc(3)) &
-          f(j1+ione,j2     ,j3+kone) = f(j1+ione,j2     ,j3+kone) + out(i1,6)
-        !if (i1 >= lc(1) .and. i2 <= uc(2) .and. i3 <= uc(3)) &
-          f(j1     ,j2+jone,j3+kone) = f(j1     ,j2+jone,j3+kone) + out(i1,7)
-        !if (i1 <= uc(1) .and. i2 <= uc(2) .and. i3 <= uc(3)) &
-          f(j1+ione,j2+jone,j3+kone) = f(j1+ione,j2+jone,j3+kone) + out(i1,8)
+      if (j2 < 1 .or. j2 >= m(2)) cycle
+      if (j3 < 1 .or. j3 >= m(3)) cycle
+      do i1=lc(1)-1,uc(1)+2
+        if (j1 < 1 .or. j1 >= m(1)) cycle
+        f(j1  ,j2  ,j3  ) = f(j1  ,j2  ,j3  ) + out(i1,1)
+        f(j1+1,j2  ,j3  ) = f(j1+1,j2  ,j3  ) + out(i1,2)
+        f(j1  ,j2+1,j3  ) = f(j1  ,j2+1,j3  ) + out(i1,3)
+        f(j1+1,j2+1,j3  ) = f(j1+1,j2+1,j3  ) + out(i1,4)
+        f(j1  ,j2  ,j3+1) = f(j1  ,j2  ,j3+1) + out(i1,5)
+        f(j1+1,j2  ,j3+1) = f(j1+1,j2  ,j3+1) + out(i1,6)
+        f(j1  ,j2+1,j3+1) = f(j1  ,j2+1,j3+1) + out(i1,7)
+        f(j1+1,j2+1,j3+1) = f(j1+1,j2+1,j3+1) + out(i1,8)
         j1 = j1+2
       end do
     end do

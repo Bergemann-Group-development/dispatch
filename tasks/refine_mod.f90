@@ -573,10 +573,12 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
                   l(1),u(1),l(2),u(2),l(3),u(3)
               call make_child_patch (self, tasklist, patch, pos, size, child)
               !-----------------------------------------------------------------
-              write (io_unit%log,'(2(3x,a,i6,":",i2),2x,a,2l1)')  &
-                'refine'    ,  patch%id, patch%level, &
-                'to'        ,  child%id, child%level, &
-                'BV:', child%is_set(bits%boundary), child%is_set(bits%virtual)
+              if (verbose > 0) &
+                write (io_unit%log,'(2(3x,a,i6,":",i2),2x,a,2l1,1p,e14.5)')  &
+                  'refine:'   ,  patch%id, patch%level, &
+                  'to'        ,  child%id, child%level, &
+                  'BV:', child%is_set(bits%boundary), child%is_set(bits%virtual), &
+                  child%time
               flush (io_unit%log)
               !----------------------------------------------------------------- 
               was_refined= .true.
@@ -600,7 +602,7 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
     u = patch%mesh%ui
     if (all(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) == -1.0)) then
       !-----------------------------------------------------------------------
-      if (verbose > 0) then
+      if (verbose > 1) then
         associate (unit => merge (stdout, io_unit%output, verbose > 1))
         write (io_unit%output,'(1x,a,i6,":",i2,2x,"B:",l1,3x,a,i6,3x,a,f12.6)') &
           'derefining!:', patch%id, patch%level, patch%is_set (bits%boundary), &
@@ -608,6 +610,10 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
         flush (unit)
         end associate
       end if
+      if (verbose > 0) &
+        write (io_unit%log,'(1x,a,i6,":",i2,16x,a,2l1,1p,e14.5)') &
+          'derefine:' ,  patch%id, patch%level, 'BV:', &
+          patch%is_set(bits%boundary), patch%is_set(bits%virtual), patch%time
       !-------------------------------------------------------------------------
       ! If task is to be removed, call the comprehensive remove procedure, which
       ! includes calling set_init_nbors(), queueing all nbors for immediate
@@ -934,11 +940,6 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   call data_io%update_counters (child, +1)
   call child%log ('created')
   !-----------------------------------------------------------------------------
-  if (verbose > 0) &
-    write (io_unit%log,'(f12.5,2x,a,2i6,1p,g14.5)') &
-      wallclock(), 'refine_t%make_child_patch, parent, child, time =', &
-      parent%id, child%id, child%time
-  !-----------------------------------------------------------------------------
   ! Check if the new patch, which might have been created to support another
   ! patch, possibly should be immediately frozen. If that is the case, it still
   ! needs to be added to the task list, in case it is needed for support, but by
@@ -973,15 +974,11 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   !------------------------------------------------------------------------
   !$omp atomic update
   parent%n_needed = parent%n_needed + 2
-  if (child%restart <= 0) then
-    if (parent%time > 0.0) then
-      call download%download_link (child_link, all_cells=.true.)
-      child%dnload_time = -1.0
-    else
-      ff => child%mem(:,:,:,:,child%it,1)
-      call child%initial%condition (child%mesh, ff, child%idx)
-    end if
-    if (do_dump) call dump (child, parent)
+  if (parent%time > 0.0) then
+    call download%download_link (child_link, all_cells=.true.)
+    child%dnload_time = -1.0
+    if (do_dump) &
+      call dump (child, parent)
   end if
   !-----------------------------------------------------------------------------
   ! Add the child task to the task list, including giving it an nbor list etc,

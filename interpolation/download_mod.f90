@@ -237,13 +237,21 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     if (jt(2) /= jt(1)) &
       call source%mem_lock(jt(2))%set ('download_link2')
     if (verbose > 0) &
-      write (io_unit%log,'(a,2i3,1x,2i3,2x,2f6.3,f12.6,2x,10f12.6)') &
-        'download_link: it, new, jt, pt, target%time, source%t =', &
-        source%it, source%new, jt, pt, target%time, source%t
+      write (io_unit%log,'(a,2i3,1x,2i3,2x,2f6.3,i5,f12.6,i5,10f12.6)') &
+        'download_link: it, new, jt, pt, tgt, time, src, t =', &
+        source%it, source%new, jt, pt, target%id, target%time, &
+        source%id, source%t
     if (verbose > 1) then
-      write(io_unit%log,'(f12.6,i6,i3,3x,a,i6,i3,2x,2l1)') wallclock(), target%id, target%level, &
-        'download_link: source, level =', &
-        source%id, source%level, nbor%download, lock_it
+      write(io_unit%log,'(f12.6,i6,i3,3x,a,i6,i3,2x,2l1,i4,1p,2e10.2)') &
+        wallclock(), target%id, target%level, &
+        'download_link: source, level, download, lock_it, it, minval(d) =', &
+        source%id, source%level, nbor%download, lock_it, source%it, &
+        minval(source%mem(:,:,:,1,jt(1),1)), &
+        minval(source%mem(:,:,:,1,jt(2),1))
+      if (verbose > 2) then
+        write(io_unit%log,'(a,9i10  )') 'download_link: iit =', source%iit
+        write(io_unit%log,'(a,9f10.4)') 'download_link:   t =', source%t
+      end if
       flush (io_unit%log)
     end if
     !---------------------------------------------------------------------------
@@ -275,6 +283,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
          !----------------------------------------------------------------------
          else if (source%level==target%level-1 .and. present(all_cells)) then
            call remesh%prolong (target, source, jt, pt, all_cells)
+           filled = .true.
          !----------------------------------------------------------------------
          ! Prolong cases
          !----------------------------------------------------------------------
@@ -352,6 +361,12 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     end if
     nbor => nbor%next
   end do
+  if (verbose > 1) then
+    write(io_unit%log,'(f12.6,3x,a,i6,i3,f12.5,1p,2e12.3)') &
+      wallclock(), 'download_link: target, level, time, fminval, minval =', &
+      target%id, target%level, target%time, target%fminval(target%idx%d), &
+      minval(target%mem(:,:,:,target%idx%d,target%it,1))
+  end if
   if (present(only)) then
     if (only==target%idx%d) then
       call target%check_density (" after download")
@@ -558,7 +573,7 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
   end if
   if (target%id == id_debug) &
     write(io_unit%log,'(a,1p,e14.5,i7,e14.5)') &
-      'dbg download_t%same_linear: time, source =', &
+      ' download_t%same_linear: time, source id, time =', &
       target%time, source%id, source%time
   if (present(only)) then
     iv1 = only
@@ -589,10 +604,12 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
       fmin = min(minval(source%mem(:,:,:,iv,jt(1),1)), &
                  minval(source%mem(:,:,:,iv,jt(2),1)))
       if (fmin <= 0.0) then
-        write(io_unit%log,*) 'iv, jt, pt / minval, minloc =', iv, jt, pt
-        write(io_unit%log,*) minval(source%mem(:,:,:,iv,jt(1),1)), &
+        write(io_unit%log,*) 'same_linear: iv, jt, pt =', iv, jt, pt
+        write(io_unit%log,*) 'same_linear: source minval, minloc (1) = ', &
+                             minval(source%mem(:,:,:,iv,jt(1),1)), &
                              minloc(source%mem(:,:,:,iv,jt(1),1))
-        write(io_unit%log,*) minval(source%mem(:,:,:,iv,jt(2),1)), &
+        write(io_unit%log,*) 'same_linear: source minval, minloc (2) = ', &
+                             minval(source%mem(:,:,:,iv,jt(2),1)), &
                              minloc(source%mem(:,:,:,iv,jt(2),1))
         flush(io_unit%log)
       end if
@@ -614,13 +631,13 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
     ui = target%mesh%ui
     call dnload_range (target, source, iv, l, u, o)
     if (target%id==id_debug .or. verbose > 1) &
-      write(io_unit%log,'(2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') &
-        target%id,source%id,l,u,o
+      write(io_unit%log,'(a,2i7," a l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') &
+        ' same_linear:', target%id,source%id, l, u, o
     l = max(l,source%mesh%lb-o)
     u = min(u,source%mesh%ub-o)
     if (target%id==id_debug .or. verbose > 1) then
-      write(io_unit%log,'(2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') &
-        target%id,source%id,l,u,o
+      write(io_unit%log,'(a,2i7," b l:",3i3,3x,"u:",3i3,3x,"o:",3i3)') &
+        ' same_linear:', target%id,source%id, l, u, o
       flush(io_unit%log)
     end if
     if (product(max(0,u-l+1))>0) then
@@ -884,7 +901,7 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
       if (verbose > 0 .or. target%id==id_debug) then
         if (iv == 1 .or. verbose > 2) &
           write (io_unit%log,2) target%id, target%level, source%id, source%level, &
-          'same_line picked up', &
+          ' same_lin: picked up', &
           product(u-l+1), ' values, l, u, mind, pt =', l, u, &
           minval(target%mem(l(1):u(1),l(2):u(2),l(3):u(3),1,target%it,1)), pt
         2 format(2(i6,i3),2x,a,i6,a,2(2x,3i4),1p,e14.4,2x,0p2f6.3)
@@ -894,12 +911,12 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
   if (detailed_timer) then
     if (cells > 0) then
       write (stdout,'(a,6p,2(2x,i6,i3),i6," cells,",f9.3," mus/cell")') &
-        "download_t%dsame_linear: target, level, source, level,", &
+        " same_linear: target, level, source, level,", &
         target%id, target%level, source%id, source%level, cells, &
         (wallclock()-start)/max(1,cells)
     else
       write (stdout,'(a,6p,2(2x,i6,i3),i6," cells,",f9.3," mus")') &
-        "download_t%same_linear: target, level, source, level,", &
+        " same_linear: target, level, source, level,", &
         target%id, target%level, source%id, source%level, cells, wallclock()-start
     end if
   end if
@@ -1449,7 +1466,7 @@ SUBROUTINE different_prolong (self, target, source, jt, pt, all_cells, only)
             if (self%check_filled) filled(ix,iy,iz,iv) = source%level
           else
             nint = nint+1
-            if (verbose > 1 .or. target%id==id_debug) &
+            if (verbose > 2 .or. target%id==id_debug) &
               write (io_unit%log,'(i6,i3,2x,a,i6,i2,i3,2x,3i4,L2,2(1x,3L1))') &
                 target%id, target%level, 'different_prolong: skipping internal', &
                 source%id, source%level, iv, ii, all_cells_l, (ii-li) < 0, (ii-ui) > 0
@@ -1559,7 +1576,7 @@ SUBROUTINE prolong (self, target, source, jt, pt, all_cells, only)
     if (verbose > 1 .or. target%id==id_debug) &
       write (io_unit%log,1) &
         source%id, (source%position-target%position)/target%size, l, u
-      1 format("download_t%different_prolong:", i6,"  displ:",3f11.6,"  l,u:", &
+      1 format("download_t%prolong:", i6,"  displ:",3f11.6,"  l,u:", &
         2(3i4,2x))
     all_cells_l = all_cells_l .or. all((l >= li) .and. (u <= ui))
     n = 0

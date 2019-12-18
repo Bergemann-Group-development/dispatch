@@ -2486,9 +2486,13 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
     end if
   end if
   pt(1) = 1.-pt(2)
-  if ((io%verbose>3 .or. io_unit%do_validate) .and. pt(2)>0.0) then
-    write(io%output,'(a,i6,i6,1p,e14.6,i3,0p,2f8.4,2x,1p,7e14.6)') &
-      'time_interval: times  =', self%id, self%istep, time, j, pt, t
+  if (io%verbose > 3) then
+    if (io%verbose > 4 .or. (io_unit%do_validate .and. pt(2)>0.0)) then
+      write(io%output,'(a,i6,i6,1p,e14.6,i3,0p,2f8.4,2x,1p,7e14.6)') &
+        'time_interval: times  =', self%id, self%istep, time, j, pt, t
+      write(io%output,'(a,9i10  )') 'time_interval: iit =', iit
+      write(io%output,'(a,9f10.4)') 'time_interval:   t =', t
+    end if
   end if
   !call trace%end (itimer)
 END SUBROUTINE time_interval

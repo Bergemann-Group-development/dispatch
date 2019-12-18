@@ -2431,12 +2431,20 @@ END SUBROUTINE test_status
 !===============================================================================
 !> Dump nbor relations, flags and status bits for the list
 !===============================================================================
-SUBROUTINE info (self)
+SUBROUTINE info (self, label)
   class(list_t):: self
-  class(link_t), pointer:: link, nbor
+  class(link_t), pointer:: link
+  character(len=*), optional:: label
+  !.............................................................................
+  class(link_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_list_t%info')
+  call trace%begin ('list_t%info')
+  if (present(label)) then
+    write (io_unit%log,*) 'list_t%info: '//trim(label)
+  else
+    write (io_unit%log,*) 'list_t%info: '
+  end if
   link => self%head
   do while (associated(link))
     call link%info
