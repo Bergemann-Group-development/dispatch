@@ -979,6 +979,11 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
     child%dnload_time = -1.0
     if (do_dump) &
       call dump (child, parent)
+  else
+    ff => child%mem(:,:,:,:,child%it,1)
+    call child%initial%condition (child%mesh, ff, child%idx)
+    if (do_dump) &
+      call dump (child, parent)
   end if
   !-----------------------------------------------------------------------------
   ! Add the child task to the task list, including giving it an nbor list etc,
