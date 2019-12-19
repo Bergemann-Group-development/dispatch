@@ -13,15 +13,35 @@ SOLVER     ?= VOID
 RT_SOLVER  ?= VOID
 PREC       ?= SINGLE
 RT_PREC    ?= RT_SINGLE
-BUILD      ?= build
 
 #############################################################################
-# Check for options
-CONFIG = $(TOP)/config
 # sinclude files that are likely to change $(COMPILER)
 sinclude options.mkf
+sinclude $(TOP)/options.mkf
 sinclude $(CONFIG)/host/$(HOST)/Makefile
-# check that the $(OPTS) file is present (typo trap)
+
+#############################################################################
+# Optional separate build directories
+SEPARATE_BUILDS ?= $(SEPARATE_BUILD)
+ifeq ($(SEPARATE_BUILDS),)
+  BUILD    ?= build
+else
+  ifeq ($(OPTS),)
+    BUILD    ?= build
+  else
+    BUILD    ?= build_$(OPTS)
+  endif
+endif
+$(shell mkdir -p $(BUILD) >/dev/null)
+
+#############################################################################
+# Infrastructure to automatically determine dependencies
+DEPDIR := $(BUILD)/.d
+$(shell mkdir -p $(DEPDIR) >/dev/null)
+
+#############################################################################
+# Check for options, and check that the $(OPTS) file is present (typo trap)
+CONFIG = $(TOP)/config
 ifeq ($(OPTS),)
   target: default
 else
@@ -94,11 +114,6 @@ sinclude $(CONFIG)/Makefile.dep
 # Macro to hide compiler output
 E = @
 
-#############################################################################
-# Infrastructure to automatically determine dependencies
-DEPDIR := .d
-$(shell mkdir -p $(DEPDIR) >/dev/null)
-
 # Remove default rule for .f files.
 %.o: %.f
 %.o: %.mod
@@ -150,9 +165,9 @@ cleanlog:
 cleandata:
 	rm -f *.dat fort.*
 cleandirs:
-	rm -rf data .d $(BUILD)
+	rm -rf data $(DEPDIR) $(BUILD)
 clean-deps:
-	rm -f .d/*.*d
+	rm -f .$(DEPDIR)*.*d
 cleaner: clean cleandata
 	rm -f *.x *.bak *.optrpt *.exe *.pyc
 cleanest: cleaner cleandata cleanlog clean-deps cleandirs
