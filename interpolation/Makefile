@@ -12,3 +12,4 @@ central_mod.o:          patch_mod.o lagrange_mod.o kinds_mod.o
 time_slices_mod.o:      io_mod.o omp_mod.o trace_mod.o patch_mod.o kinds_mod.o lagrange_mod.o
 remesh_mod.o:           io_mod.o trace_mod.o omp_timer_mod.o patch_mod.o
 guard_zones_mod.o:      io_mod.o trace_mod.o omp_timer_mod.o patch_mod.o omp_timer_mod.o
+prolong_mod.o:          io_mod.o

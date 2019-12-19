@@ -1,7 +1,7 @@
 # Option groups
 #OPTS = debug
-#OPTS = full_debug
-OPTS = optimized
+OPTS = full_debug
+#OPTS = optimized
 
 default: test.x
 
@@ -9,4 +9,5 @@ default: test.x
 TOP = ../../..
 include $(TOP)/config/Makefile
 
-test.x:
+test.x         : prolong_mod.o
+prolong_mod.o  : io_mod.o
