@@ -4,6 +4,7 @@
 PROGRAM test
   USE io_mod
   USE prolong_mod
+  type(prolong_t):: prolong
   !-----------------------------------------------------------------------------
   call io%init
   call prolong%test
