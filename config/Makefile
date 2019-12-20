@@ -16,6 +16,7 @@ RT_PREC    ?= RT_SINGLE
 
 #############################################################################
 # sinclude files that are likely to change $(COMPILER)
+CONFIG = $(TOP)/config
 sinclude options.mkf
 sinclude $(TOP)/options.mkf
 sinclude $(CONFIG)/host/$(HOST)/Makefile
@@ -41,7 +42,6 @@ $(shell mkdir -p $(DEPDIR) >/dev/null)
 
 #############################################################################
 # Check for options, and check that the $(OPTS) file is present (typo trap)
-CONFIG = $(TOP)/config
 ifeq ($(OPTS),)
   target: default
 else
