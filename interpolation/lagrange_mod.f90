@@ -662,6 +662,7 @@ SUBROUTINE test (self)
   real(8):: x0, y0
   !-----------------------------------------------------------------------------
   if (.not. io_unit%master) return
+  call trace%begin ('lagrange_t%test')
   print *,'--------------- lagrange_t%test ------------------'
   x = 0.0
   y = 1.0
@@ -696,6 +697,7 @@ SUBROUTINE test (self)
     print '(3g12.4,i6)', x0, y0, x0**order, i1-i0
   end do
   print *,'--------------------------------------------------'
+  call trace%end ()
 END SUBROUTINE test
 
 !> -----------------------------------------------------------------------------
@@ -719,18 +721,19 @@ SUBROUTINE init (self)
   namelist /lagrange_params/ verbose, order
   !-----------------------------------------------------------------------------
   call trace%begin ('lagrange_t%init')
-  !$omp critical (input_cr)
   if (.not.self%initialized) then
-    self%initialized = .true.
-    rewind (io%input)
-    read (io%input, lagrange_params, iostat=iostat)
-    call io%namelist_warning ('lagrange_params', iostat)
-    call io%namelist_warning ('lagrange_params', iostat)
-    write (io%output, lagrange_params)
-    self%verbose = verbose
-    self%order = order
+    !$omp critical (input_cr)
+    if (.not.self%initialized) then
+      rewind (io%input)
+      read (io%input, lagrange_params, iostat=iostat)
+      call io%namelist_warning ('lagrange_params', iostat)
+      write (io%output, lagrange_params)
+      self%verbose = verbose
+      self%order = order
+      self%initialized = .true.
+    end if
+    !$omp end critical (input_cr)
   end if
-  !$omp end critical (input_cr)
   call trace%end ()
 END SUBROUTINE init
 

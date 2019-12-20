@@ -38,9 +38,9 @@ SUBROUTINE init (self, nt)
   logical, save:: first_time=.true.
   !-----------------------------------------------------------------------------
   call trace%begin ('time_slices_t%init')
+  call lagrange%init
   !$omp critical (input_cr)
   if (first_time) then
-    first_time = .false.
     rewind (io%input)
     read (io%input, time_slices_params, iostat=iostat)
     call io%namelist_warning ('time_slices_params', iostat)
@@ -48,6 +48,7 @@ SUBROUTINE init (self, nt)
     write (io%output, time_slices_params)
     write (io%namelist, time_slices_params)
     call lagrange%test
+    first_time = .false.
   end if
   !$omp end critical (input_cr)
   self%order = order
