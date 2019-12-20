@@ -108,7 +108,6 @@ SUBROUTINE init (self, n, ng)
         outside(i1,i2,i3) = i1 <= ng .or. i1 >= uo .or. &
                             i2 <= ng .or. i2 >= uo .or. &
                             i3 <= ng .or. i3 >= uo
-      write (io_unit%log,*) 'outside shape:', shape(outside)
       end do
       end do
       end do
@@ -243,7 +242,7 @@ SUBROUTINE interpolate (self, source, target, ipos, all_cells)
   !-----------------------------------------------------------------------------
   ! Cf. the sketch at top for index choices
   !-----------------------------------------------------------------------------
-  call trace%begin ('prolong_t%interpolagte',itimer=itimer)
+  call trace%begin ('prolong_t%interpolate',itimer=itimer)
   if (verbose > 0) &
     print *, 'interpolate', ipos
   n  = self%n
@@ -309,7 +308,6 @@ SUBROUTINE interpolate (self, source, target, ipos, all_cells)
   if (present(all_cells) .and. all_cells) then
     call self%interp (source, ls, us, target, lt, ut)
   else
-    write (io_unit%log,*) 'mask=outside shape:', shape(outside)
     call self%interp (source, ls, us, target, lt, ut, mask=outside)
   end if
   call trace%end (itimer)
@@ -324,10 +322,10 @@ SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
   real, intent(out):: target(:,:,:)
   integer, intent(in):: lt(3), ut(3), ls(3), us(3)
   logical, optional:: mask(:,:,:)
-  !............................................................................
+  !.............................................................................
   integer:: m(3), l(3), u(3)
   real, allocatable:: target1(:,:,:), target2(:,:,:)
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace%begin ('prolong_t%interp')
   if (verbose > 3) &
     print *, 'interp'
@@ -400,9 +398,9 @@ SUBROUTINE x_interp3 (self, in, w, ls, out, l, u)
   real, contiguous, intent(in)  :: in(:,:,:), w(:,:,:)
   real, contiguous, intent(out) :: out(:,:,:)
   integer, intent(in)           :: l(3), u(3), ls
-  !............................................................................
+  !.............................................................................
   integer                       :: i1, i2, i3, j1, k1
-  !----------------------------------------------------------------------------
+  !----------------------------------------------------------------------------.
   if (verbose > 3) &
     print *, 'x_interp3'
   j1 = ls
@@ -437,9 +435,9 @@ SUBROUTINE y_interp1 (self, in, w, ls, out, l, u)
   real, contiguous, intent(in)  :: in(:,:,:), w(:)
   real, contiguous, intent(out) :: out(:,:,:)
   integer, intent(in)           :: l(3), u(3), ls
-  !............................................................................
+  !.............................................................................
   integer                       :: i1, i2, i3, j2, k2
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (verbose > 3) &
     print *, 'y_interp1'
   j2 = ls
@@ -467,9 +465,9 @@ SUBROUTINE y_interp3 (self, in, w, ls, out, l, u)
   real, contiguous, intent(in)  :: in(:,:,:), w(:,:,:)
   real, contiguous, intent(out) :: out(:,:,:)
   integer, intent(in)           :: l(3), u(3), ls
-  !............................................................................
+  !.............................................................................
   integer                       :: i1, i2, i3, j2, k2
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   j2 = ls
   if (verbose > 3) &
     print *, 'y_interp3'
@@ -540,10 +538,10 @@ SUBROUTINE z_interp3 (self, in, w, ls, out, l, u, mask)
   real, contiguous, intent(out) :: out(:,:,:)
   logical, intent(in), optional :: mask(:,:,:)
   integer, intent(in)           :: l(3), u(3), ls
-  !............................................................................
+  !.............................................................................
   integer                       :: i1, i2, i3, j3, k3
   real:: tmp
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (verbose > 3) &
     print *, 'z_interp3'
   j3 = ls

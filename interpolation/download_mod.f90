@@ -35,6 +35,7 @@ MODULE download_mod
   USE timer_mod
   USE guard_zones_mod
   USE remesh_mod
+  USE prolong_mod
   implicit none
   private
   type, public:: download_t
@@ -68,6 +69,7 @@ MODULE download_mod
   character(len=20):: use_prolong='different_prolong'
   character(len=20):: use_same='same'
   type(download_t), public:: download
+  type(prolong_t), save:: prolng
 CONTAINS
 
 !===============================================================================
@@ -97,7 +99,6 @@ SUBROUTINE init (self)
     write (io%namelist, download_params)
     call guard_zones%init
     call remesh%init
-    call lagrange%init
   end if
   if (order_time==1) then
     self%same => same_linear
@@ -257,6 +258,12 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     !---------------------------------------------------------------------------
     ! Skip nbor not marked for download
     !---------------------------------------------------------------------------
+    if (nbor%download .and. source%level < target%level-1) then
+      nbor%download = .false.
+      !write (stderr,'(2(1x,a,i6,i3,2x))') &
+      !  'preventing download of', source%id, source%level, &
+      !  'to', target%id, target%level
+    end if
     if (nbor%download) then
      if (source%nt == 1) &
        self%same => same_linear
@@ -265,6 +272,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
          !----------------------------------------------------------------------
          ! Default same interpolation when target and source levels agree
          !----------------------------------------------------------------------
+         !write (io_unit%log,'(2(a,":",i5,i3,2(1x,3f8.3,2x)),1x,3f8.3)') &
+         !  'target', target%id, target%level, target%position, target%size, &
+         !  'source', source%id, source%level, source%position, source%size, &
+         !  target%distance(source)*2./target%size
          if (source%level==target%level) then
            select case (trim(use_same))
            case ('different')
@@ -282,12 +293,18 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
          ! Prolong with one level difference and all_cells
          !----------------------------------------------------------------------
          else if (source%level==target%level-1 .and. present(all_cells)) then
-           call remesh%prolong (target, source, jt, pt, all_cells)
+           select case (trim(use_prolong))
+           case ('prolong_mod')
+             call prolong_it (target, source, jt, pt, all_cells_l)
+           case default
+             call remesh%prolong (target, source, jt, pt, all_cells_l)
+           end select
            filled = .true.
+         end if
          !----------------------------------------------------------------------
          ! Prolong cases
          !----------------------------------------------------------------------
-         else if ((source%level-target%level) <= -1) then
+         if ((source%level-target%level) <= -1) then
            select case (trim(use_prolong))
            case ('different')
              call different (self, target, source, jt, pt, all_cells_l, only=only)
@@ -299,6 +316,12 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
              call remesh%prolong (target, source, jt, pt, all_cells_l)
            case ('different_prolong')
              call different_prolong (self, target, source, jt, pt, all_cells_l, only=only)
+           case ('prolong_mod')
+             if (source%level==target%level-1) then
+               call prolong_it (target, source, jt, pt, all_cells_l)
+             else
+               call different_prolong (self, target, source, jt, pt, all_cells_l, only=only)
+             end if
            case default
              call io%abort ('unknown use_prolong='//trim(use_prolong))
            end select
@@ -432,6 +455,30 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     call validate%check (target%link, d, ' after download')
   call trace%end (itimer)
 END SUBROUTINE download_link
+
+!===============================================================================
+SUBROUTINE prolong_it (target, source, jt, pt, all)
+  class(patch_t):: source, target
+  integer:: jt(2)
+  real:: pt(2)
+  logical:: all
+  !.............................................................................
+  integer:: m(3), iv, ipos(3)
+  real, allocatable:: src_mem(:,:,:)
+  logical, save:: first_time=.true.
+  !----------------------------------------------------------------------------
+  call prolng%init (source%mesh(1)%n, source%mesh(1)%ng)
+  m = source%gn
+  allocate (src_mem(m(1),m(2),m(3)))
+  do iv=1,target%nv
+    call source%time_interval (target%time, jt, pt)
+    src_mem = source%mem(:,:,:,iv,jt(1),1)*pt(1) &
+               + source%mem(:,:,:,iv,jt(2),1)*pt(1)
+    ipos = nint(target%distance(source)*2.0/target%size)
+    call prolng%interpolate (src_mem, target%mem(:,:,:,iv,target%it,1), ipos)
+  end do
+  deallocate (src_mem)
+END SUBROUTINE prolong_it
 
 !===============================================================================
 !> Find the target index ranges that correspond to the overlap region, for
@@ -1239,6 +1286,10 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
   else
     call trace%begin('download_t%different', itimer=itimer(2))
   end if
+  write (io_unit%log,'(2(3x,a,":",i5,i3),1x,3f6.1)') &
+   'restrict(all):  target', target%id, target%level, &
+   'source', source%id, source%level, &
+   target%distance(source)*2./target%size
   if (detailed_timer) then
     cells = 0
     start = wallclock()
