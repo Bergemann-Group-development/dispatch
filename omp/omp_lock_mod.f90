@@ -35,7 +35,7 @@ MODULE omp_lock_mod
     integer(8):: n_hold=0_8             ! number of times holding lock
     logical:: links=.false.             ! lock nbor lists
     logical:: tasks=.false.             ! lock task memory updates
-    type(lock_t), pointer:: next => null()
+    class(lock_t), pointer:: next => null()
   contains
     procedure:: init
     procedure:: append
@@ -327,7 +327,7 @@ END SUBROUTINE destroy
 SUBROUTINE info (unit)
   integer:: unit
   real(8):: time
-  type(lock_t), pointer:: lock
+  class(lock_t), pointer:: lock
   !-----------------------------------------------------------------------------
   if (.not.on) return
   if (verbose > 0) then
