@@ -81,6 +81,7 @@ MODULE task_mod
     logical:: periodic(3)=.true.
     logical:: rotated=.false.
     logical:: limit_dtime=.false.
+    logical:: dump_it=.false.
     type(lock_t), pointer:: lock        ! OMP lock
     type(random_t):: random             ! pseudo-random number generator
     type(aux_t):: aux
@@ -146,9 +147,11 @@ SUBROUTINE init (self)
   class (task_t):: self
   character(len=120):: ids= &
     '$Id$ tasks/task_mod.f90'
-  integer:: iostat
+  integer:: iostat, id
+  logical, save:: do_dumps
   integer, save:: id_max=0
-  namelist /task_params/ track_id
+  namelist /task_params/ track_id, do_dumps
+  namelist /dump_params/ id, iostat
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init')
   call trace%print_id (ids)
@@ -160,7 +163,6 @@ SUBROUTINE init (self)
     call io%namelist_warning ('task_params', iostat)
     first_time = .false.
   end if
-  !$omp end critical (input_cr)
   if (self%id == 0) then
     call init_unique (self)
   else
@@ -171,6 +173,28 @@ SUBROUTINE init (self)
     id_max = max(id_max,self%id+1)
     call mpi%id%reset(id_max)
   end if
+  !$omp end critical (input_cr)
+  !-----------------------------------------------------------------------------
+  ! If dumps are requested, read a list of task ids for which dumps should be on
+  !-----------------------------------------------------------------------------
+  if (do_dumps) then
+    !$omp critical (input_cr)
+    rewind (io%input)
+    do
+      iostat = 0
+      read (io%input, dump_params, iostat=iostat)
+      write (io%output, dump_params)
+      if (iostat /= 0) &
+        exit
+      self%dump_it = (id == self%id)
+      if (self%dump_it) &
+        exit
+    end do
+    !$omp end critical (input_cr)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Locks, random numbers, etc
+  !-----------------------------------------------------------------------------
   allocate (self%lock)
   call self%lock%init (self%kind(1:4), id=self%id+2)
   call self%random%init

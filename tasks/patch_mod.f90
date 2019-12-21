@@ -181,6 +181,7 @@ MODULE patch_mod
     procedure:: update_position
     procedure:: get_overlap
     procedure:: init_level
+    procedure:: dump
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -2171,6 +2172,9 @@ SUBROUTINE check_density (self, label)
   panic = .false.
   if (mind <= 0.0) then
     panic = .true.
+    do it=1,self%nt
+      call self%dump (2, .true.)
+    end do
     !---------------------------------------------------------------------------
     ! Negative densities appear to develop at a few points in the guard zones,
     ! so this tries to patch up, sampling densitites in the guard zone.
@@ -2223,18 +2227,6 @@ SUBROUTINE check_density (self, label)
   ! If error indicated by check_density or check_nan, dump the patch and abort
   !-----------------------------------------------------------------------------
   if (panic) then
-    !$omp critical (panic_cr)
-    write (io_unit%dump) self%id, self%gn, self%nv, self%nt, self%nw, self%istep
-    write (io_unit%dump) self%time, self%dtime
-    do iw=1,self%nw
-    do it=1,self%nt
-      !$omp atomic read
-      jt = self%iit(it)
-      !$omp end atomic
-      write (io_unit%dump) self%mem(:,:,:,:,jt,iw)
-    end do
-    end do
-    !$omp end critical (panic_cr)
     if (nins > 0 .or. io%verbose > 0) &
       print *, mpi%rank, self%id, &
       'WARNING: found non-positive density points -- check rank and thread logs'
@@ -2955,5 +2947,45 @@ SUBROUTINE init_level (self)
   self%level = maxval(nint(log(self%box/self%ds) / &
     log(real(self%refine_ratio))), mask=self%n > 1)
 END SUBROUTINE init_level
+
+!===============================================================================
+!> Dump the patch values into data/run/rank_rrrrr,dump
+!===============================================================================
+SUBROUTINE dump (self, id, ad_hoc)
+  class(patch_t):: self
+  integer:: id
+  logical, optional:: ad_hoc
+  !.............................................................................
+  integer:: it, nt, jt
+  !-----------------------------------------------------------------------------
+  if (self%dump_it .or. present(ad_hoc)) then
+    !$omp critical (dump_cr)
+    if (present(ad_hoc)) then
+      nt = self%nt
+    else
+      nt = 1
+    end if
+    !--- integers --------------------------------------------------------------
+    write (io_unit%dump) id, self%id, self%level, self%nv, self%nt, nt, &
+                         self%nw, self%istep, self%it
+    write (io_unit%dump) self%gn
+    write (io_unit%dump) self%n
+    write (io_unit%dump) self%iit
+    !--- floats ----------------------------------------------------------------
+    write (io_unit%dump) self%time, self%dtime
+    write (io_unit%dump) self%position
+    write (io_unit%dump) self%size 
+    write (io_unit%dump) self%t
+    write (io_unit%dump) self%dt
+    !---------------------------------------------------------------------------
+    ! Write nt time slots, in reverse order, starting from the most recent one
+    !---------------------------------------------------------------------------
+    do it=1,nt
+      jt = self%iit(self%nt-it)
+      write (io_unit%dump) self%mem(:,:,:,:,jt,1)
+    end do
+    !$omp end critical (dump_cr)
+  end if
+END SUBROUTINE dump
 
 END MODULE patch_mod

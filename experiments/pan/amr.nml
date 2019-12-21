@@ -9,6 +9,10 @@
 !---------------------------------------------
 &patch_params           nt=5 grace=0.3 n=3*16 no_mans_land=t /
 &out_params             end_time=0.081 out_time=0.010 print_every=100 /
+&task_params            do_dumps=t /
+&dump_params            id=125 /
+&dump_params            id=126 /
+&dump_params            id=45 /
 &io_params              verbose=0 do_trace=f omp_trace=f do_output=t restart=-2
                         task_logging=0 guard_zones=t time_derivs=0
                         method='legacy' format=10 nml_version=3 /
