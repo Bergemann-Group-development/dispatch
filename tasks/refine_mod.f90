@@ -195,7 +195,6 @@ MODULE refine_mod
     procedure:: init
     procedure:: refine_needed
     procedure:: check_current
-    procedure:: check_support
     procedure:: need_to_support
     procedure:: check_cubical
     procedure:: check_jeans
@@ -405,14 +404,14 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   patch => solver%cast2solver (link%task)
   id = patch%id
   if (verbose > 3) &
-    write (io_unit%output,'(i6,2x,a,f12.6,2i4)') &
+    write (io_unit%log,'(i6,2x,a,f12.6,2i4)') &
       link%task%id, 'refine_t%check_current, at t =', &
       link%task%time, link%task%level, self%levelmax
   !----------------------------------------------------------------------------
   dxmin = minval(patch%ds)
   dxmax = maxval(patch%ds)
   if (verbose > 3) then
-    write (io_unit%output,'(a,i6,2i4,l4,1p,4e11.2)') &
+    write (io_unit%log,'(a,i6,2i4,l4,1p,4e11.2)') &
       'refine_t%refine_needed: id, istep, refine_next =', &
       patch%id, patch%istep, patch%check_refine_next, &
       patch%is_set(bits%virtual), min_dx, dxmin, max_dx, dxmax
@@ -451,7 +450,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     !---------------------------------------------------------------------------
     refine = max(refine,self%refine_needed (tasklist, link))
     !---------------------------------------------------------------------------
-    if (verbose > 3) write (io_unit%output,*) &
+    if (verbose > 3) write (io_unit%log,*) &
       patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'mask'
     !---------------------------------------------------------------------------
     ! Apply refinement criteria on potential child patch parts, but only if
@@ -525,8 +524,8 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
         max(0.0,patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)))
       !-------------------------------------------------------------------------
       if (verbose > 2) then
-        write (io_unit%output,'(a,i6,a,i6,2(3x,3i4))') &
-          'derefine?: patch', patch%id, ' contains', nbpatch%id, l, u
+        write (io_unit%log,'(a,i6,a,i6,2(3x,3i4))') &
+          'derefine: patch', patch%id, ' contains', nbpatch%id, l, u
       end if
       !-------------------------------------------------------------------------
     end if
@@ -567,10 +566,11 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
               ! Create a refined patch here
               !-----------------------------------------------------------------
               if (verbose > 1) &
-                write (io_unit%output,'(a,i6,1p2g16.5,2x,3(i4,":",i2))') 'refine', &
-                  patch%id, patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
-                  maxval(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3),patch%idx%d,patch%it,1)), &
-                  l(1),u(1),l(2),u(2),l(3),u(3)
+                write (io_unit%log,'(a,i6,1p2g16.5,2x,3(i4,":",i2))') &
+                  'refine', patch%id, &
+                  patch%fmaxval(patch%mem(:,:,:,patch%idx%d,patch%it,1)), &
+                  maxval(patch%mem(l(1):u(1),l(2):u(2),l(3):u(3), patch%idx%d, &
+                  patch%it,1)), l(1),u(1),l(2),u(2),l(3),u(3)
               call make_child_patch (self, tasklist, patch, pos, size, child)
               !-----------------------------------------------------------------
               if (verbose > 0) &
@@ -603,12 +603,10 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
     if (all(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)) == -1.0)) then
       !-----------------------------------------------------------------------
       if (verbose > 1) then
-        associate (unit => merge (stdout, io_unit%output, verbose > 1))
-        write (io_unit%output,'(1x,a,i6,":",i2,2x,"B:",l1,3x,a,i6,3x,a,f12.6)') &
+        write (io_unit%log,'(1x,a,i6,":",i2,2x,"B:",l1,3x,a,i6,3x,a,f12.6)') &
           'derefining!:', patch%id, patch%level, patch%is_set (bits%boundary), &
           'istep:', patch%istep, 'time:', patch%time
-        flush (unit)
-        end associate
+        flush (io_unit%log)
       end if
       if (verbose > 0) &
         write (io_unit%log,'(1x,a,i6,":",i2,16x,a,2l1,1p,e14.5)') &
@@ -630,122 +628,11 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
 END SUBROUTINE selective_refine
 
 !===============================================================================
-!> Check if new%task is a patch, and if it overlaps with other level L-2 patches,
-!> with points not covered by L-1 patches, indicating that a new L-1 patch should
-!> be created from the L-2 patch.
-!>
-!> To implement this, we need to look at the regions that overlap with an L-2
-!> patch, and then run through the nbor list L-1 patches, to see if they cover
-!> the area.  If not, "make an impression" on the L-2 patch, by setting the
-!> corresponding cells in its %xrefine map.
-!>
-!> NOTE: This mechanism is currently NOT used; it is left for now, to be removed
-!> when need_to_support() has been validated as being sufficient -- it looks
-!> at the same issue from the point of view of the L-2 patch, which is better,
-!> since it eliminates the need for synchronizing access to %xrefine.
-!===============================================================================
-SUBROUTINE check_support (self, tlist, new, n_added)
-  class(refine_t):: self
-  class(list_t):: tlist
-  class(link_t), pointer:: new
-  integer:: n_added
-  !.............................................................................
-  class(link_t), pointer:: old, nbor
-  class(patch_t), pointer:: old_patch, new_patch, nbor_patch
-  type(patch_t):: patch
-  integer:: l(3), u(3)
-  logical:: overlap, guards
-  integer, allocatable, dimension(:,:,:):: trefine
-  integer:: itimer=0
-  !-----------------------------------------------------------------------------
-  ! Return if there are less than two levels down to levelmin
-  !-----------------------------------------------------------------------------
-  n_added = 0
-  if (new%task%level <= self%levelmin+1) return
-  !-----------------------------------------------------------------------------
-  call trace%begin ('refine_t%check_support', itimer=itimer, detailed_timer=detailed_timer)
-!write (io_unit%log,*) 'unexpected call to check_support for', new%task%id, &
-!new%task%is_set(bits%boundary),  new%task%is_set(bits%virtual)
-  !-----------------------------------------------------------------------------
-  ! Select patch-based tasks, and assume for now it is OK for updates
-  !-----------------------------------------------------------------------------
-  new_patch => patch%cast2patch (new%task)
-  if (associated(new_patch)) then
-    if (verbose > 2) &
-      write (stdout,*) 'check_support: id =', &
-      new_patch%id, new_patch%is_set (bits%support)
-    !---------------------------------------------------------------------------
-    ! Search task list for patch-based overlapping L-2 patches
-    !---------------------------------------------------------------------------
-    call new_patch%clear (bits%support)
-    call tlist%lock%set ('check_support')
-    old => tlist%head
-    do while (associated(old))
-      if (old%task%level <= new%task%level-2) then
-        old_patch => patch%cast2patch (old%task)
-        guards = .true.
-        if (old_patch%get_overlap (new_patch, guards, l, u)) then
-          if (verbose > 2) &
-            write (stdout,'(a,i6,3(2x,i2,":",i2))') &
-            '  level-2 overlap: id =', old_patch%id, &
-            l(1),u(1), l(2),u(2), l(3),u(3)
-          !---------------------------------------------------------------------
-          ! Allocate a temporary integer mask, to assemble evidence in
-          !---------------------------------------------------------------------
-          allocate (trefine(old_patch%gn(1),old_patch%gn(2),old_patch%gn(3)))
-          trefine = 0
-          trefine (l(1):u(1), l(2):u(2), l(3):u(3)) = 1        
-          !---------------------------------------------------------------------
-          ! Find all L-1 nbors of the new patch, and cancel the refinement
-          !---------------------------------------------------------------------
-          nbor => new%nbor
-          do while (associated(nbor))
-            if (nbor%task%level == new%task%level-1) then
-              nbor_patch => patch%cast2patch (nbor%task)
-              guards = .false.
-              if (old_patch%get_overlap (nbor_patch, guards, l, u)) then
-                if (verbose > 2) &
-                  write (stdout,'(a,i6,3(2x,i2,":",i2))') &
-                    '    level-1 overlap: id =', nbor_patch%id, &
-                         l(1),u(1), l(2),u(2), l(3),u(3)
-                trefine (l(1):u(1), l(2):u(2), l(3):u(3)) = 0    
-              end if
-            end if
-            nbor => nbor%next
-          end do
-          !---------------------------------------------------------------------
-          ! If any refinement marking remains, emit messages, set bits%support
-          !---------------------------------------------------------------------
-          l = old_patch%li
-          u = old_patch%ui
-          if (any(trefine(l(1):u(1), l(2):u(2), l(3):u(3)) == 1)) then
-            call new_patch%set (bits%support)
-            if (verbose > 1) then
-              write (stdout,'(2(a,i6,":",i2,2x))') &
-                'id =', old_patch%id, old_patch%level, 'support request from', &
-                new_patch%id, new_patch%level
-              write (io_unit%log,'(2(a,i6,":",i2,2x))') &
-                'id =', old_patch%id, old_patch%level, 'support request from', &
-                new_patch%id, new_patch%level
-            end if
-          else if (verbose > 3) then
-            write (stdout,'(2(a,i6,":",i2,2x))') &
-              'id =', old_patch%id, old_patch%level, 'support not requested from', &
-              new_patch%id, new_patch%level
-          end if
-          deallocate (trefine)
-        end if
-      end if
-      old => old%next
-    end do
-    call tlist%lock%unset ('check_support')
-  end if
-  !-----------------------------------------------------------------------------
-  call trace%end (itimer, detailed_timer=detailed_timer)
-END SUBROUTINE check_support
-
-!===============================================================================
-!> Decide if there are level L+2 tasks we need to support be refining
+!> Decide if there are level L+2 tasks we need to support be refining, by
+!> using the rank task list.  This is slightly more complicated than to detect
+!> the need from the point of view of the childs, but has the great advantage
+!> that it requires no action on rank nbors, since only active tasks enter this
+!> procedure.
 !===============================================================================
 FUNCTION need_to_support (self, tlist, link) RESULT (refine)
   class(refine_t):: self
@@ -762,7 +649,8 @@ FUNCTION need_to_support (self, tlist, link) RESULT (refine)
   call trace%begin ('refine_t%need_to_support')
   task => patch%cast2patch(link%task)
   !-----------------------------------------------------------------------------
-  ! Find L+2 and higher tasks, and check for overlap of their guard zones
+  ! Find L+2 and higher tasks, and check for overlap of their guard zones;
+  ! these are cells that would be delivering support to L+2 patches
   !-----------------------------------------------------------------------------
   call tlist%lock%set ('need_to_support')
   nbor1 => tlist%head
@@ -777,7 +665,9 @@ FUNCTION need_to_support (self, tlist, link) RESULT (refine)
     nbor1 => nbor1%next
   end do
   !-----------------------------------------------------------------------------
-  ! Find L+1 nbor-nbors, check for overlap of their interiors
+  ! Find L+1 nbors, check for overlap of their interiors, and clear the
+  ! refine flags in those cells; this cancels the flags possibly set above, if
+  ! those L+2 patches have support at L+1
   !-----------------------------------------------------------------------------
   call link%lock%set ('need_to_support')
   nbor1 => link%nbor
@@ -923,6 +813,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   call child%clear (bits%frozen)
   child%level = parent%level + 1                     ! override patch_t%init
   child%time  = parent%time                          ! same time
+  child%dtime = parent%dtime/self%ratio              ! for info only
   child%it    = 1                                    ! time index
   child%new   = 2                                    ! new time slot
   child%iit   = 1                                    ! single time slice
@@ -949,15 +840,6 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
     call child%set (bits%frozen)
   end if
   !-----------------------------------------------------------------------------
-  ! Set the bits%support here, which causes it to be set on the rank nbors
-  ! if this is a boundary task.  There, a check for support is then triggered,
-  ! where the nbor lists also in the virtual nbors are refreshed.  On the owner
-  ! rank the bits%support will remain until next time the task is updated, when 
-  ! code in dispatcher0_t%update() sees the bit, call init_nbors(), and clears
-  ! the bit.
-  !-----------------------------------------------------------------------------
-  call child%set (bits%support)
-  !-----------------------------------------------------------------------------
   ! Make parent a neighbor of the new child patch.  This will be overwritten
   ! in `init_nbor_nbors` but is necessary here to permit interpolation of
   ! values from parent to child.
@@ -967,11 +849,11 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child_nbor%task => parent
   nullify (child_link%nbor)
   child_link%nbors_by_level => child_nbor
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! Download values from parent and neighbors, except at time = 0, to allow
   ! recursive refinement there. If time = 0, patch should have been filled
   ! with values during `child%init()` call.
-  !------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   !$omp atomic update
   parent%n_needed = parent%n_needed + 2
   if (parent%time > 0.0) then
@@ -997,19 +879,22 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
     u = parent%index_only (child%position + child%mesh%uf)
     l = max(l,parent%mesh%li)
     u = min(u,parent%mesh%ui)
-    print 1,'make_child_patch: parent id, level, time, size(3), position(3), max(d) =', &
+    write(io_unit%log,1) &
+     'make_child_patch: parent id, level, time, size(3), position(3), max(d) =', &
       parent%id, parent%level, parent%time, parent%size, parent%position, &
       maxval(parent%mem(l(1):u(1),l(2):u(2),l(3):u(3),parent%idx%d,parent%it,1))
-    print 2,'                      l, u, contains(child) =', &
+    write(io_unit%log,2) &
+     '                      l, u, contains(child) =', &
       l, u, parent%contains(child)
     1 format(a,i6,i3,f9.6,2(1x,3f8.4),1pe12.2)
     2 format(a,2(1x,3i3),l2)
     l(:) = parent%mesh(:)%li
     u(:) = parent%mesh(:)%ui
-    print 1,'                   child id, level, time, size(3), position(3), max(d) =', &
+    write(io_unit%log,1) &
+     '                   child id, level, time, size(3), position(3), max(d) =', &
       child%id, child%level, child%time, child%size, child%position , &
       maxval(child%mem(l(1):u(1),l(2):u(2),l(3):u(3),child%idx%d,child%it,1))
-    flush (io%output)
+    flush (io_unit%log)
   end if
   !-----------------------------------------------------------------------------
   call trace%end (itimer, detailed_timer=detailed_timer)
@@ -1255,9 +1140,9 @@ FUNCTION shock_and_cd_detector (self, patch) RESULT (refine)
   if (patch%level == self%levelmin) refine = max(refine,0)
   if (verbose > 1) then
     if (refine > 0) then
-      write (io%output,*) 'shock_and_cd_detector: refine', patch%id, patch%level, self%levelmax
+      write (io_unit%log,*) 'shock_and_cd_detector: refine', patch%id, patch%level, self%levelmax
     else if (refine < 0) then
-      write (io%output,*) 'shock_and_cd_detector: derefine', patch%id, patch%level, self%levelmin
+      write (io_unit%log,*) 'shock_and_cd_detector: derefine', patch%id, patch%level, self%levelmin
     end if
   end if
   !
@@ -1377,9 +1262,9 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
     end do
     if (verbose > 1) then
       if (refine > 0) then
-        write (io%output,*) 'gradient_detector: refine ', grad_var(n), patch%id
+        write (io_unit%log,*) 'gradient_detector: refine ', grad_var(n), patch%id
       else if (refine < 0) then
-        write (io%output,*) 'gradient_detector: derefine ', grad_var(n), patch%id
+        write (io_unit%log,*) 'gradient_detector: derefine ', grad_var(n), patch%id
       end if
     end if
   end do
@@ -1428,7 +1313,7 @@ SUBROUTINE evaluate (self, label, patch, test, refine_it)
   if (verbose > 2 .or. &
      (verbose > 1 .and. patch%level < self%levelmax .and. refine_it > 0) .or. &
      (verbose > 1 .and. patch%level > self%levelmin .and. refine_it < 0)) then
-    write (io_unit%output,'(a20,3x,a,f12.6,i6,2f7.3,i4,2x,a1)') &
+    write (io_unit%log,'(a22,3x,a,f12.6,i6,2f7.3,i4,2x,a1)') &
       label//' criterion: ', 'time, id, max_test, max_crit, refine', &
       patch%time, patch%id, max_test, max_crit, refine_it, merge ('R',' ',refine_it==1)
   end if

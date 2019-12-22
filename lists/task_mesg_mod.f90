@@ -658,7 +658,7 @@ SUBROUTINE unpack (self, mesg, link)
   class(link_t), pointer:: link1, link2
   class(experiment_t), pointer:: task
   logical:: found, failed, new
-  integer:: id, n_added
+  integer:: id
   integer, save:: itimer=0
   character(len=24):: label
   real(8):: wc
@@ -867,12 +867,6 @@ SUBROUTINE unpack (self, mesg, link)
       flush(io_unit%mpi)
     end if
     call self%add_new_link (link1)
-    !---------------------------------------------------------------------------
-    ! If the task has the %support bit set, call refine_t%check_supprt on it
-    !---------------------------------------------------------------------------
-    if (task%is_set (bits%support)) then
-      call refine%check_support (self, link1, n_added)
-    end if
   else
     !-----------------------------------------------------------------------------
     ! Patches that have the init_nbors bit set should have new nbor lists, in 
