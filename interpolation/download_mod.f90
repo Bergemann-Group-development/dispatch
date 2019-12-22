@@ -473,7 +473,6 @@ SUBROUTINE prolong_it (target, source, jt, pt, all)
   m = source%gn
   allocate (src_mem(m(1),m(2),m(3)))
   do iv=1,target%nv
-    call source%time_interval (target%time, jt, pt)
     src_mem = source%mem(:,:,:,iv,jt(1),1)*pt(1) &
             + source%mem(:,:,:,iv,jt(2),1)*pt(2)
     !---------------------------------------------------------------------------
