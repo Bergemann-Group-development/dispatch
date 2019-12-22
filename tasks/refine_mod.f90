@@ -270,6 +270,7 @@ SUBROUTINE init (self)
     else
       omp_lock%links = .false.
     end if
+    shared%f_zoom = 1.0/ratio
     if (min_jeans     > 0.0) n_criteria = n_criteria+1
     if (max_compress  > 0.0) n_criteria = n_criteria+1
     if (max_vorticity > 0.0) n_criteria = n_criteria+1
@@ -857,6 +858,11 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   !$omp atomic update
   parent%n_needed = parent%n_needed + 2
   if (parent%time > 0.0) then
+    !---------------------------------------------------------------------------
+    ! Make sure the child guard zones have some sensible values, even if only
+    ! the interior cells are filled when all_cells is true
+    !---------------------------------------------------------------------------
+    child%mem(:,:,:,:,child%it,1) = parent%mem(:,:,:,:,parent%it,1)
     call download%download_link (child_link, all_cells=.true.)
     child%dnload_time = -1.0
     if (do_dump) &
