@@ -147,7 +147,7 @@ $(DEPDIR)/%.d: ;
 
 # Prevent deletion of dependency files after successful compilation
 .PRECIOUS: $(DEPDIR)/%.d
-.PHONY: showopt clean cleanlog cleandata clean-deps cleaner cleanest info bitvalidate
+.PHONY: showopt clean cleanlog cleandata cleandeps cleaner cleanest info bitvalidate
 
 $(BUILD):
 	@mkdir -p $(BUILD)
@@ -160,7 +160,7 @@ showopt:
 ## Clean up
 CLEANDIRS = {.,$(BUILD)}
 
-clean:: clean-deps
+clean:: cleandeps
 	rm -f $(CLEANDIRS)/*.o $(CLEANDIRS)/*.$(MOD) *$(CLEANDIRS)/.stackdump
 cleanlog:
 	rm -f *.log log*
@@ -168,11 +168,11 @@ cleandata:
 	rm -f *.dat fort.*
 cleandirs:
 	rm -rf data $(DEPDIR) $(BUILD)
-clean-deps:
-	rm -f .$(DEPDIR)*.*d
+cleandeps:
+	rm -f $(DEPDIR)/*.d
 cleaner: clean cleandata
 	rm -f *.x *.bak *.optrpt *.exe *.pyc
-cleanest: cleaner cleandata cleanlog clean-deps cleandirs
+cleanest: cleaner cleandata cleanlog cleandeps cleandirs
 
 #############################################################################
 # Generate list of source files (requires successful build)
