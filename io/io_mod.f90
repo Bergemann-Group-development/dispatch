@@ -295,7 +295,6 @@ SUBROUTINE open_rank_file (self, unit, ext, form, thread)
   character(len=64):: filename
   !-----------------------------------------------------------------------------
   if (present(thread)) then
-    open (unit=unit, file=trim(filename), form=form, status='unknown')
     write (io_unit%threadbase,'(a,"thread_",i5.5,"_",i3.3)') &
       trim(self%rundir), mpi%rank, thread
     filename = trim(io_unit%threadbase)//ext
