@@ -74,6 +74,7 @@ MODULE prolong_mod
     procedure         :: print
   end type
   logical, save              :: array_notation=.false.
+  logical, save              :: fix_nml=.true.
   integer, save              :: verbose=0
   logical, save, allocatable :: outside(:,:,:)
   logical, save              :: first_time=.true.
@@ -87,8 +88,8 @@ SUBROUTINE init (self, n, ng)
   class(prolong_t):: self
   integer:: n, ng
   !.............................................................................
-  integer:: gn, iostat, uo, i1, i2, i3
-  namelist /prolong_params/ verbose, array_notation
+  integer:: gn, iostat, i1, i2, i3
+  namelist /prolong_params/ verbose, array_notation, fix_nml
   !-----------------------------------------------------------------------------
   if (first_time) then
     !$omp critical (input_cr)
@@ -347,7 +348,7 @@ SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
   l(2)=ls(2); u(2)=us(2)        ! source range in y
   l(3)=ls(3); u(3)=us(3)        ! source range in z
   if (associated(self%w1d)) then
-    call self%x_interp (source , self%w1d, ls(1), target1, l, u)
+    call self%x_interp (source , self%w1d         , ls(1), target1, l, u)
   else
     call self%x_interp (source , self%w3d(:,:,:,1), ls(1), target1, l, u)
   end if
@@ -355,7 +356,7 @@ SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
   l(2)=lt(2); u(2)=ut(2)        ! source range in y
   l(3)=ls(3); u(3)=us(3)        ! source range in z
   if (associated(self%w1d)) then
-    call self%y_interp (target1, self%w1d, ls(2), target2, l, u)
+    call self%y_interp (target1, self%w1d         , ls(2), target2, l, u)
   else
     call self%y_interp (target1, self%w3d(:,:,:,2), ls(2), target2, l, u)
   end if
@@ -370,8 +371,66 @@ SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
       mask=mask)
   end if
   deallocate (target1, target2)
+  ! --- NML fix ----------------------------------------------------------------
+  if (fix_nml) &
+    call nml_fix (self, target, l, u)
   call trace%end ()
 END SUBROUTINE interp
+
+!===============================================================================
+!> Patch up the no-mans-land points, by interpolating btw the next point --
+!> which originates from the proper interior of the nbor -- and the first
+!> interior point
+!===============================================================================
+SUBROUTINE nml_fix (self, out, l, u)
+  class(prolong_t)              :: self
+  real, contiguous, intent(out) :: out(:,:,:)
+  integer, intent(in)           :: l(3), u(3)
+  !.............................................................................
+  integer                       :: i1, i2, i3
+  !-----------------------------------------------------------------------------
+  if      (l(1) == self%lo) then
+    do i3=l(3),u(3)
+    do i2=l(2),u(2)
+      out(self%lo,i2,i3) = 0.5*(out(self%li,i2,i3)+out(self%lo-1,i2,i3))
+    end do
+    end do
+  else if (u(1) == self%uo) then
+    do i3=l(3),u(3)
+    do i2=l(2),u(2)
+      out(self%uo,i2,i3) = 0.5*(out(self%ui,i2,i3)+out(self%uo+1,i2,i3))
+    end do
+    end do
+  end if
+  !-----------------------------------------------------------------------------
+  if (l(2) == self%lo) then
+    do i3=l(3),u(3)
+    do i1=l(1),u(1)
+      out(i1,self%lo,i3) = 0.5*(out(i1,self%li,i3)+out(i1,self%lo-1,i3))
+    end do
+    end do
+  else if (u(2) == self%uo) then
+    do i3=l(3),u(3)
+    do i1=l(1),u(1)
+      out(i1,self%uo,i3) = 0.5*(out(i1,self%ui,i3)+out(i1,self%uo+1,i3))
+    end do
+    end do
+  end if
+  !-----------------------------------------------------------------------------
+  if (l(3) == self%lo) then
+    do i2=l(2),u(2)
+    do i1=l(1),u(1)
+      out(i1,i2,self%lo) = 0.5*(out(i1,i2,self%li)+out(i1,i2,self%lo-1))
+    end do
+    end do
+  else if (u(3) == self%uo) then
+    do i2=l(2),u(2)
+    do i1=l(1),u(1)
+      out(i1,i2,self%uo) = 0.5*(out(i1,i2,self%ui)+out(i1,i2,self%uo+1))
+    end do
+    end do
+  end if
+END SUBROUTINE nml_fix
 
 !===============================================================================
 !> Interpolate in the x-direction
