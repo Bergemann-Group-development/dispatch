@@ -1124,8 +1124,9 @@ SUBROUTINE add_new_link (self, link)
 END SUBROUTINE add_new_link
 
 !===============================================================================
-!> The very first initialization of a neighbor list.  After this, it can be
-!> maintained without searching the entire task list on the rank.
+!> Initialize the nbor list of a task at level L, by searching for overlapping
+!> tasks with levels at most euqal to L+1.  We keep also tasks with levels
+!> below L-1, but mark them to not be used in downloads.
 !===============================================================================
 SUBROUTINE init_nbors (self, link)
   class(list_t):: self
@@ -1247,7 +1248,7 @@ END SUBROUTINE set_init_nbors
 !===============================================================================
 !> Initialize the nbor lists of all nbors of link.  Note that the nbor list of
 !> an nbor starts at nbor%link%nbor.   To prevent other threads from modifying
-!> nbor list we need to loop over, we lock the link in the meantime, and to 
+!> nbor list we need to loop over, we lock the link in the meantime, and to
 !> avoid a possible deadlock caused by having more than one lock active, we use
 !> a copy of the nbor list (cf. check_nbors())  
 !===============================================================================

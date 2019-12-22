@@ -713,11 +713,12 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   !-----------------------------------------------------------------------------
   ! nbor is more than one level different; these are normally not needed,
   ! and are only used in support considerations, so should not take part
-  ! in check_nbors() and check_ready(), but may be downloaded exceptionally
+  ! in check_nbors() and check_ready(), but may be needed exceptionally
   !-----------------------------------------------------------------------------
   if (abs(another%level-self%level) > 1) then
     needed = .false.
     needs_me = .false.
+    download = .false.
   end if
   if (self%verbose > 2) &
     write(io_unit%log,'(a,i6,i4,3x,3l1)') &
