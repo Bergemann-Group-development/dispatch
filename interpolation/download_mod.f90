@@ -466,15 +466,13 @@ SUBROUTINE prolong_it (target, source, jt, pt, all)
   logical, optional:: all
   !.............................................................................
   integer:: m(3), iv, ipos(3), l(3), u(3), i1, i2, i3
-  real, allocatable:: src_mem(:,:,:)
   logical, save:: first_time=.true.
+  integer, save:: itimer=0
   !----------------------------------------------------------------------------
+  call trace%begin ('download__t%prolong_it', itimer=itimer)
   call prolng%init (source%mesh(1)%n, source%mesh(1)%ng)
   m = source%gn
-  allocate (src_mem(m(1),m(2),m(3)))
   do iv=1,target%nv
-    src_mem = source%mem(:,:,:,iv,jt(1),1)*pt(1) &
-            + source%mem(:,:,:,iv,jt(2),1)*pt(2)
     !---------------------------------------------------------------------------
     ! ipos is the relative position source-task, so > 0 when source is to
     ! the right of target
@@ -485,7 +483,8 @@ SUBROUTINE prolong_it (target, source, jt, pt, all)
         'download_t%prolong_it: target, source, ipos =', &
         target%id, source%id, ipos
     end if
-    call prolng%interpolate (src_mem, target%mem(:,:,:,iv,target%it,1), &
+    call prolng%interpolate (source%mem(:,:,:,iv,:,1), jt, pt, &
+      target%mem(:,:,:,iv,target%it,1), &
       ipos, all=all, l=l, u=u)
     if (present(all) .and. all) then
       filled = .true.
@@ -507,7 +506,7 @@ SUBROUTINE prolong_it (target, source, jt, pt, all)
       end do
     end if
   end do
-  deallocate (src_mem)
+  call trace_end (itimer)
 END SUBROUTINE prolong_it
 
 !===============================================================================
@@ -1316,10 +1315,11 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
   else
     call trace%begin('download_t%different', itimer=itimer(2))
   end if
-  write (io_unit%log,'(2(3x,a,":",i5,i3),1x,3f6.1)') &
-   'restrict(all):  target', target%id, target%level, &
-   'source', source%id, source%level, &
-   target%distance(source)*2./target%size
+  if (verbose > 1) & 
+    write (io_unit%log,'(2(3x,a,":",i5,i3),1x,3f6.1)') &
+     'restrict(all):  target', target%id, target%level, &
+     'source', source%id, source%level, &
+     target%distance(source)*2./target%size
   if (detailed_timer) then
     cells = 0
     start = wallclock()

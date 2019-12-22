@@ -219,18 +219,21 @@ END SUBROUTINE
 !> source is given by the integer(3) ipos, where -1 means "left", +1 means
 !> "right", and 0 means the same position.
 !===============================================================================
-SUBROUTINE interpolate (self, source, target, ipos, all, l, u)
+SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
   class(prolong_t):: self
-  real, dimension(:,:,:) :: source, target
-  integer, dimension(3)  :: ipos
-  intent(in)             :: source
-  intent(out)            :: target
-  logical, optional      :: all
-  integer, optional      :: l(3), u(3)
+  real, dimension(:,:,:,:) :: source
+  real, dimension(:,:,:)   :: target
+  integer                  :: jt(2), ipos(3)
+  real                     :: pt(2)
+  intent(in)               :: source, jt, pt, ipos
+  intent(out)              :: target
+  logical, optional        :: all
+  integer, optional        :: l(3), u(3)
   !.............................................................................
-  integer                :: ls(3), us(3), lt(3), ut(3), i
-  integer                :: lb, lo, li, ui, uo, ub, n, ng
-  integer                :: itimer=0
+  integer                  :: ls(3), us(3), lt(3), ut(3), i
+  integer                  :: lb, lo, li, ui, uo, ub, n, ng, gn
+  integer                  :: itimer=0
+  real, allocatable        :: src_mem(:,:,:)
   !-----------------------------------------------------------------------------
   ! Cf. the sketch at top for index choices
   !-----------------------------------------------------------------------------
@@ -239,6 +242,7 @@ SUBROUTINE interpolate (self, source, target, ipos, all, l, u)
     write (io_unit%log,*) 'interpolate', ipos
   n  = self%n
   ng = self%ng
+  gn = n + 2*ng
   lb = 1
   li = lb + ng
   lo = li - 1
@@ -314,11 +318,22 @@ SUBROUTINE interpolate (self, source, target, ipos, all, l, u)
     call self%info
     write (io_unit%log,'(4(3x,a,":",3i4))') 'lt', lt, 'ut', ut, 'ls', ls
   end if
+  !-----------------------------------------------------------------------------
+  ! Interpolate in time, but only in the source region that is used
+  !-----------------------------------------------------------------------------
+  allocate (src_mem(gn,gn,gn))
+  src_mem   (ls(1):us(1),ls(2):us(2),ls(3):us(3)) &
+    = source(ls(1):us(1),ls(2):us(2),ls(3):us(3),jt(1))*pt(1) &
+    + source(ls(1):us(1),ls(2):us(2),ls(3):us(3),jt(2))*pt(2)
+  !-----------------------------------------------------------------------------
+  ! Interpolate in 3-D
+  !-----------------------------------------------------------------------------
   if (present(all) .and. all) then
-    call self%interp (source, ls, us, target, lt, ut, mask=.not.outside)
+    call self%interp (src_mem, ls, us, target, lt, ut, mask=.not.outside)
   else
-    call self%interp (source, ls, us, target, lt, ut, mask=outside)
+    call self%interp (src_mem, ls, us, target, lt, ut, mask=outside)
   end if
+  deallocate (src_mem)
   if (present(l)) then
     l = lt
   end if
@@ -342,7 +357,7 @@ SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
   real, allocatable:: target1(:,:,:), target2(:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin ('prolong_t%interp')
-  m = shape(source)
+  m = shape(target)
   allocate (target1(m(1),m(2),m(3)), target2(m(1),m(2),m(3)))
   l(1)=lt(1); u(1)=ut(1)        ! target range in x
   l(2)=ls(2); u(2)=us(2)        ! source range in y
@@ -440,10 +455,9 @@ SUBROUTINE x_interp1 (self, in, w, ls, out, l, u)
   real, contiguous, intent(in)  :: in(:,:,:), w(:)
   real, contiguous, intent(out) :: out(:,:,:)
   integer, intent(in)           :: l(3), u(3), ls
-  !............................................................................
+  !.............................................................................
   integer                       :: i1, i2, i3, j1, k1
-  !----------------------------------------------------------------------------
-  !--- reset the target output range ------------------------------------------
+  !-----------------------------------------------------------------------------
   j1 = ls
   do i1=l(1),u(1)
     do i3=l(3),u(3)
@@ -743,7 +757,7 @@ SUBROUTINE patch_test (self, n, ng)
   do i2=-3,3,2                          ! varying y-position
   do i1=-3,3,2                          ! varying x-position
     source = (i1+4)
-    call self%interpolate (source, target, [i1,i2,i3])
+    !call self%interpolate (source, target, [i1,i2,i3])
     if (verbose > 5) then
       do k=1,self%gn
         write(stdout,'(1x,20i6)') nint(target(:,k,j))
@@ -812,7 +826,7 @@ SUBROUTINE dnload_test (self, n, ng)
     do i1=-3,3,3
       if (i1==0.and.i2==0.and.i3==0) cycle
       n_dn = n_dn+1
-      call self%interpolate (source(:,:,:,n_dn), target, [i1,i2,i3])
+      !call self%interpolate (source(:,:,:,n_dn), target, [i1,i2,i3])
     end do
     end do
     end do
@@ -833,7 +847,7 @@ SUBROUTINE dnload_test (self, n, ng)
     do i2=-3,3,3
     do i1=-3,3,3
       if (i1==0.and.i2==0.and.i3==0) cycle
-      call self%interpolate (source(:,:,:,n_dn), target, [i1,i2,i3])
+      !call self%interpolate (source(:,:,:,n_dn), target, [i1,i2,i3])
     end do
     end do
     end do
