@@ -1460,6 +1460,8 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%info', itimer=itimer)
+  !$omp atomic write
+  timer%time = self%time
   if (io_unit%do_validate) then
     it0 = merge (self%iit(self%nt-2), 1, self%nt>2)
     it1 = merge (self%iit(self%nt-1), 1, self%nt>1)

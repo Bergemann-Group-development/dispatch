@@ -31,6 +31,7 @@ MODULE timer_mod
     integer:: istack=0
     real(8):: bytes_recv=0.0_8
     real(8):: sec_per_report=10d0
+    real(8):: time, prev=0d0
     integer(8):: n_master(4)=0
     integer(8):: n_update=0
     integer(8):: n_recv=0_8
@@ -297,7 +298,8 @@ contains
     integer:: unit, level, popu
     real:: cost, per_call
     logical:: warn, mesg
-    write (unit,'(23x,a,7x,a,10x,a,7x,a,5x,a)') 'procedure', 'calls', 'time', 'percent', ' s/call'
+    write (unit,'(23x,a,7x,a,10x,a,7x,a,5x,a)') 'procedure', 'calls', 'time', &
+    'percent', ' s/call'
     if (unit==io_unit%output) then
       !$omp atomic write
       timer%n_lines = 1
@@ -337,8 +339,11 @@ contains
     !---------------------------------------------------------------------------
     ! MPI and OMP statistics
     !---------------------------------------------------------------------------
-    write (unit,'(a32,1p,2g15.3,g14.4,2(g12.3,2x,a,5x))') &
-      "TOTAL thread time, calls", calls, total, 100., musppt, 'core-mus/cell-upd', wc, 'wall sec'
+    write (unit,'(a30,1p,6x,3g13.3,g16.2,a,0p,f11.2,a,f9.0,a)') &
+      "TOTAL updates, thread time", updates, total, 100., &
+      self%time-self%prev, ' time advance', &
+      musppt, ' core-mus/cell-upd', wc, ' wall sec'
+    self%prev = self%time
     if (mpi%size>1) then
       timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
       write (unit,'(1x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
