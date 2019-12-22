@@ -126,7 +126,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   class(link_t), pointer:: nbor, sorted_head, nbors
   class(patch_t), pointer:: target, source
   integer:: edges, l(3), u(3), ix, iy, iz, jt(2)
-  integer, save:: itimer=0
+  integer, save:: itimer=0, n_print=30
   real:: pt(2)
   character(len=64):: info
   logical:: all_cells_l, lock_it
@@ -260,9 +260,13 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     !---------------------------------------------------------------------------
     if (nbor%download .and. source%level < target%level-1) then
       nbor%download = .false.
-      !write (stderr,'(2(1x,a,i6,i3,2x))') &
-      !  'preventing download of', source%id, source%level, &
-      !  'to', target%id, target%level
+      if (n_print > 0) then
+        !$omp atomic update
+        n_print = n_print-1
+        write (stderr,'(2(1x,a,i6,i3,2x))') &
+         'WARNING: preventing download of', &
+          source%id, source%level, 'to', target%id, target%level
+      end if
     end if
     if (nbor%download) then
      if (source%nt == 1) &
@@ -295,16 +299,14 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
          else if (source%level==target%level-1 .and. present(all_cells)) then
            select case (trim(use_prolong))
            case ('prolong_mod')
-             call prolong_it (target, source, jt, pt, all_cells_l)
+             call prolong_it (target, source, jt, pt, all_cells)
            case default
              call remesh%prolong (target, source, jt, pt, all_cells_l)
            end select
-           filled = .true.
-         end if
          !----------------------------------------------------------------------
          ! Prolong cases
          !----------------------------------------------------------------------
-         if ((source%level-target%level) <= -1) then
+         else if ((source%level-target%level) <= -1) then
            select case (trim(use_prolong))
            case ('different')
              call different (self, target, source, jt, pt, all_cells_l, only=only)
@@ -318,9 +320,9 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
              call different_prolong (self, target, source, jt, pt, all_cells_l, only=only)
            case ('prolong_mod')
              if (source%level==target%level-1) then
-               call prolong_it (target, source, jt, pt, all_cells_l)
+               call prolong_it (target, source, jt, pt, all_cells)
              else
-               call different_prolong (self, target, source, jt, pt, all_cells_l, only=only)
+               call different_prolong (self, target, source, jt, pt, all_cells, only=only)
              end if
            case default
              call io%abort ('unknown use_prolong='//trim(use_prolong))
@@ -429,11 +431,11 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
         end do
         end do
         if (all_cells_l) then
-          write (io%output,'(i6,2x,a,i6,i4)') &
+          write (io_unit%log,'(i6,2x,a,i6,i4)') &
            n_not, 'internal cells were not filled: id, level =', &
            target%id, target%level
         else
-          write (io%output,'(i6,2x,a,i6,i4)') &
+          write (io_unit%log,'(i6,2x,a,i6,i4)') &
            n_not, 'guard zone cells were not filled: id, level =', &
            target%id, target%level
         end if
@@ -461,9 +463,9 @@ SUBROUTINE prolong_it (target, source, jt, pt, all)
   class(patch_t):: source, target
   integer:: jt(2)
   real:: pt(2)
-  logical:: all
+  logical, optional:: all
   !.............................................................................
-  integer:: m(3), iv, ipos(3)
+  integer:: m(3), iv, ipos(3), l(3), u(3), i1, i2, i3
   real, allocatable:: src_mem(:,:,:)
   logical, save:: first_time=.true.
   !----------------------------------------------------------------------------
@@ -473,9 +475,38 @@ SUBROUTINE prolong_it (target, source, jt, pt, all)
   do iv=1,target%nv
     call source%time_interval (target%time, jt, pt)
     src_mem = source%mem(:,:,:,iv,jt(1),1)*pt(1) &
-               + source%mem(:,:,:,iv,jt(2),1)*pt(1)
-    ipos = nint(target%distance(source)*2.0/target%size)
-    call prolng%interpolate (src_mem, target%mem(:,:,:,iv,target%it,1), ipos)
+            + source%mem(:,:,:,iv,jt(2),1)*pt(2)
+    !---------------------------------------------------------------------------
+    ! ipos is the relative position source-task, so > 0 when source is to
+    ! the right of target
+    !---------------------------------------------------------------------------
+    ipos = nint(source%distance(target)*2.0/target%size)
+    if (verbose > 1) then
+      write (io_unit%log,'(a,2i6,2x,3i4)') &
+        'download_t%prolong_it: target, source, ipos =', &
+        target%id, source%id, ipos
+    end if
+    call prolng%interpolate (src_mem, target%mem(:,:,:,iv,target%it,1), &
+      ipos, all=all, l=l, u=u)
+    if (present(all) .and. all) then
+      filled = .true.
+    else
+      filled(l(1):u(1),l(2):u(2),l(3):u(3),iv) = source%level
+    end if
+    if (verbose > 1 .and. iv==1) then
+      write(io_unit%log,'(a,3(2x,2i4))') &
+      'download_it: intervals =', l(1),u(1),l(2),u(2),l(3),u(3)
+      do i3=l(3),u(3)
+      do i2=l(2),u(2)
+      do i1=l(1),u(1)
+        if (target%mem(i1,i2,i3,iv,target%it,1) <= 0.0) then
+          write(io_unit%log,'(a,2x,3i34)') &
+            'prolong_it: non-positive density in', i1, i2, i3
+        end if
+      end do
+      end do
+      end do
+    end if
   end do
   deallocate (src_mem)
 END SUBROUTINE prolong_it

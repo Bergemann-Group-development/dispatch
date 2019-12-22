@@ -16,12 +16,11 @@
 !>
 !> Example with ng=2, n=4:
 !>          1       2   |   3       4       5       6   |   7       8
-!>      ...-o---+---o---|---o---+---o---+---o---+---o---|---o---+---o-
-!>               -+---+-|-+---+---+---+-          +---+-|-+---+-
-!>                1   2   3   4   5   6           5   6   7   8 
-!>       -+---+-|-+---+---+---+-          +---+-|-+---+-
-!>        3   4   5   6   7   8           5   6   7   8 
-!>                9  10  11  12
+!>      ...-x---+---x---|---o---+---o---+---o---+---o---|---x---+---x-
+!>                x---x-|-o---o---o---o---o---o   o---o-|-x---x-
+!>                1   2   3   4   5   6   7   8   1   2   3   4
+!>               -+---+---o---o-  o---o---o---o---o---o---x---x-
+!>                5   6   7   8   1   2   3   4   5   6   7   8
 !>
 !> At the lower end target index range is [1,2] and the source range is [1,3]
 !> At the upper end target index range is [7,8] and the source range is [6,8]
@@ -46,11 +45,12 @@ MODULE prolong_mod
   type, public:: prolong_t
     integer           :: case=0                         ! mod(ng,2)
     integer           :: ng=2                           ! guard zones
+    integer           :: lb, lo, li, ui, uo, ub         ! convention
     integer           :: n=8                            ! internal
     integer           :: gn=12                          ! total
     real, pointer     :: w1d(:)     => null()           ! 1D weights
-    real, pointer     :: w3d(:,:,:) => null()           ! 3D weights
-    contains
+    real, pointer     :: w3d(:,:,:,:) => null()         ! 3D weights
+  contains
     procedure         :: init
     procedure         :: weights_1d
     procedure         :: weights_3d
@@ -97,25 +97,29 @@ SUBROUTINE init (self, n, ng)
       rewind (io%input)
       read (io%input, prolong_params, iostat=iostat)
       call io%namelist_warning ('prolong_params', iostat)
-      write (stdout, prolong_params)
+      write (io%output, prolong_params)
       !-------------------------------------------------------------------------
       gn = n + ng*2
-      allocate (outside(gn,gn,gn))
-      uo = gn-n+1
-      do i3=1,gn
-      do i2=1,gn
-      do i1=1,gn
-        outside(i1,i2,i3) = i1 <= ng .or. i1 >= uo .or. &
-                            i2 <= ng .or. i2 >= uo .or. &
-                            i3 <= ng .or. i3 >= uo
-      end do
-      end do
-      end do
       self%n  = n
       self%ng = ng
       self%gn = gn
+      self%lb = 1
+      self%li = ng+1
+      self%lo = ng
+      self%ub = gn
+      self%ui = gn-ng
+      self%uo = gn-ng+1
+      !-------------------------------------------------------------------------
+      ! mask(:,:,:) is true only in the guard zones
+      !-------------------------------------------------------------------------
+      allocate (outside(gn,gn,gn))
+      outside = .true.
+      outside(self%li:self%ui,self%li:self%ui,self%li:self%ui) = .false.
+      write (io%output,*) 'inside:', self%li, self%ui, &
+        count(outside), count(.not.outside)
+      flush (io%output)
       self%case = mod(ng,2)
-      call self%weights_3d
+      call self%weights_1d
       call trace%end ()
       first_time = .false.
     end if
@@ -129,7 +133,7 @@ END SUBROUTINE init
 !===============================================================================
 SUBROUTINE weights_1d (self)
   class(prolong_t):: self
-  integer:: i1, gn
+  integer:: i0, i1, gn
   !-----------------------------------------------------------------------------
   ! Case 0 starts with w=0.75, case 1 with 0.25
   !-----------------------------------------------------------------------------
@@ -137,51 +141,37 @@ SUBROUTINE weights_1d (self)
   call self%dealloc
   gn = self%gn
   allocate (self%w1d(gn))
-  select case (mod(self%ng,2))
-  case (0)
-    do i1=1,gn
-      self%w1d(i1) = 0.25 + mod(i1,2)*0.50
-    end do
-  case (1)
-    do i1=1,gn
-      self%w1d(i1) = 0.25 + mod(i1+1,2)*0.50
-    end do
-  end select
+  i0 = mod(self%ng,2)
+  do i1=1,gn
+    self%w1d(i1) = 0.25 + mod(i1+i0,2)*0.50       ! starts with 0.75
+  end do
   call trace%end ()
 END SUBROUTINE weights_1d
 
 !===============================================================================
-!> Initalize weight factors, based on number of total and guard cells.  The
+!> Initialize weight factors, based on number of total and guard cells.  The
 !> arrays are assumed to be cubical, for simplicity and efficiency.
 !===============================================================================
 SUBROUTINE weights_3d (self)
   class(prolong_t):: self
-  integer:: i1, i2, i3, gn
+  integer:: i1, i2, i3, i0, gn
   !-----------------------------------------------------------------------------
   ! Case 0 starts with w=0.75, case 1 with 0.25
   !-----------------------------------------------------------------------------
   call trace%begin ('prolong_t%weights_3d')
   call self%dealloc
   gn = self%gn
-  allocate (self%w3d(gn,gn,gn))
-  select case (mod(self%ng,2))
-  case (0)
-    do i3=1,gn
-    do i2=1,gn
-    do i1=1,gn
-      self%w3d(i1,i2,i3) = 0.25 + mod(i1+i2+i3,2)*0.50
-    end do
-    end do
-    end do
-  case (1)
-    do i3=1,gn
-    do i2=1,gn
-    do i1=1,gn
-      self%w3d(i1,i2,i3) = 0.25 + mod(i1+i2+i3+1,2)*0.50
-    end do
-    end do
-    end do
-  end select
+  allocate (self%w3d(gn,gn,gn,3))
+  i0 = mod(self%ng,2)
+  do i3=1,gn
+  do i2=1,gn
+  do i1=1,gn
+    self%w3d(i1,i2,i3,1) = 0.25 + mod(i1+i0,2)*0.50
+    self%w3d(i1,i2,i3,2) = 0.25 + mod(i2+i0,2)*0.50
+    self%w3d(i1,i2,i3,3) = 0.25 + mod(i3+i0,2)*0.50
+  end do
+  end do
+  end do
   call trace%end ()
 END SUBROUTINE weights_3d
 
@@ -220,7 +210,7 @@ END SUBROUTINE finalize
 !===============================================================================
 SUBROUTINE info (self)
   class(prolong_t):: self
-  write (stdout,'(3(3x,a,":",i4))') 'n', self%n, 'ng', self%ng, 'gn', self%gn
+  write (io_unit%log,'(3(3x,a,":",i4))') 'n', self%n, 'ng', self%ng, 'gn', self%gn
 END SUBROUTINE
 
 !===============================================================================
@@ -228,13 +218,14 @@ END SUBROUTINE
 !> source is given by the integer(3) ipos, where -1 means "left", +1 means
 !> "right", and 0 means the same position.
 !===============================================================================
-SUBROUTINE interpolate (self, source, target, ipos, all_cells)
+SUBROUTINE interpolate (self, source, target, ipos, all, l, u)
   class(prolong_t):: self
   real, dimension(:,:,:) :: source, target
   integer, dimension(3)  :: ipos
   intent(in)             :: source
   intent(out)            :: target
-  logical, optional      :: all_cells
+  logical, optional      :: all
+  integer, optional      :: l(3), u(3)
   !.............................................................................
   integer                :: ls(3), us(3), lt(3), ut(3), i
   integer                :: lb, lo, li, ui, uo, ub, n, ng
@@ -244,7 +235,7 @@ SUBROUTINE interpolate (self, source, target, ipos, all_cells)
   !-----------------------------------------------------------------------------
   call trace%begin ('prolong_t%interpolate',itimer=itimer)
   if (verbose > 0) &
-    print *, 'interpolate', ipos
+    write (io_unit%log,*) 'interpolate', ipos
   n  = self%n
   ng = self%ng
   lb = 1
@@ -260,55 +251,78 @@ SUBROUTINE interpolate (self, source, target, ipos, all_cells)
   !-----------------------------------------------------------------------------
   do i=1,3
     select case (ipos(i))
-    ! -- target is to the left of the source
-    case (-3)
-      if (verbose > 2) &
-        write(stdout,*) 'target in direction', i,' is to the left'
-      lt(i) = uo
-      ut(i) = ub
-      ls(i) = li - (ng/2+1)
-      us(i) = li
-    ! -- target is in the left part of the source
-    case (-1)
-      if (verbose > 2) &
-        write(stdout,*) 'target in direction', i,' is inside left'
-      lt(i) = li
-      ut(i) = li + (n-1)
-      ls(i) = lo
-      us(i) = li + (n/2)
-    case (0)
-      if (verbose > 2) &
-        write(stdout,*) 'target in direction', i,' is inside left'
-      lt(i) = li
-      ut(i) = li + (n-1)
-      ls(i) = lo
-      us(i) = li + (n/2)
-    ! -- target is in the right part of the source
-    case (+1)
-      if (verbose > 2) &
-        write(stdout,*) 'target in direction', i,' is inside right'
-      lt(i) = ui - (n-1)
-      ut(i) = ui
-      ls(i) = ui - (n/2)
-      us(i) = uo
-    ! -- target is to the right of the source
+  !-----------------------------------------------------------------------------
+  ! Target is to the left of the source
+  !-----------------------------------------------------------------------------
+!>          1       2   |   3       4
+!>      ...-x---+---x---|---o---+---o-
+!>               -+---+---o---o-
+!>                5   6   7   8
     case (+3)
       if (verbose > 2) &
-        write(stdout,*) 'target in direction', i,' is to the right'
+        write(io_unit%log,*) 'source in direction', i,' is to the right'
+      lt(i) = uo
+      ut(i) = ub
+      ls(i) = lo               ! = 2
+      us(i) = lo + ng/2 + 1    ! = 2 + 1 + 1 = 4
+  !-----------------------------------------------------------------------------
+  ! Target is in the left part of the source
+  !-----------------------------------------------------------------------------
+!>          1       2   |   3       4       5       6
+!>      ...-x---+---x---|---o---+---o---+---o---+---o--
+!>                x---x-|-o---o---o---o---o---o
+!>                1   2   3   4   5   6   7   8   1   2   3   4
+    case (+1)
+      if (verbose > 2) &
+        write(io_unit%log,*) 'source in direction', i,' is inside right'
+      lt(i) = li
+      ut(i) = ub
+      ls(i) = lo                      ! 2
+      us(i) = lo + ng/2 + 1 + n/2     ! 2 + 1 + 1 + 2 = 6
+  !-----------------------------------------------------------------------------
+  ! Target is in the right part of the source
+  !-----------------------------------------------------------------------------
+!>          1       2   |   3       4       5       6   |   7       8
+!>      ...-x---+---x---|---o---+---o---+---o---+---o---|---x---+---x-
+!>                                o---o---o---o---o---o---x---x-
+!>                                1   2   3   4   5   6   7   8
+    case (-1)
+      if (verbose > 2) &
+        write(io_unit%log,*) 'source in direction', i,' is inside left'
+      lt(i) = lb
+      ut(i) = ui
+      ls(i) = uo - ng/2 - 1 - n/2   ! 7 - 1 - 1 - 2 = 3
+      us(i) = uo                    ! 7
+  !-----------------------------------------------------------------------------
+  ! Target is to the right of the source
+  !-----------------------------------------------------------------------------
+!>          1       2   |   3       4       5       6   |   7       8
+!>      ...-x---+---x---|---o---+---o---+---o---+---o---|---x---+---x-
+!>                      |                         o---o-|-x---x-
+!>                                                1   2   3   4
+    case (-3)
+      if (verbose > 2) &
+        write(io_unit%log,*) 'source in direction', i,' is to the left'
       lt(i) = lb
       ut(i) = lo
-      ls(i) = ui
-      us(i) = ui + (ng/2+1)
+      ls(i) = ui - 1              ! = 5
+      us(i) = ui + ng/2           ! = 6 + 1 = 7
     end select
   end do
   if (verbose > 2) then
     call self%info
-    write (stdout,'(4(3x,a,":",3i4))') 'lt', lt, 'ut', ut, 'ls', ls
+    write (io_unit%log,'(4(3x,a,":",3i4))') 'lt', lt, 'ut', ut, 'ls', ls
   end if
-  if (present(all_cells) .and. all_cells) then
-    call self%interp (source, ls, us, target, lt, ut)
+  if (present(all) .and. all) then
+    call self%interp (source, ls, us, target, lt, ut, mask=.not.outside)
   else
     call self%interp (source, ls, us, target, lt, ut, mask=outside)
+  end if
+  if (present(l)) then
+    l = lt
+  end if
+  if (present(u)) then
+    u = ut
   end if
   call trace%end (itimer)
 END SUBROUTINE interpolate
@@ -327,8 +341,6 @@ SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
   real, allocatable:: target1(:,:,:), target2(:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin ('prolong_t%interp')
-  if (verbose > 3) &
-    print *, 'interp'
   m = shape(source)
   allocate (target1(m(1),m(2),m(3)), target2(m(1),m(2),m(3)))
   l(1)=lt(1); u(1)=ut(1)        ! target range in x
@@ -337,7 +349,7 @@ SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
   if (associated(self%w1d)) then
     call self%x_interp (source , self%w1d, ls(1), target1, l, u)
   else
-    call self%x_interp (source , self%w3d, ls(1), target1, l, u)
+    call self%x_interp (source , self%w3d(:,:,:,1), ls(1), target1, l, u)
   end if
   l(1)=lt(1); u(1)=ut(1)        ! target range in x
   l(2)=lt(2); u(2)=ut(2)        ! source range in y
@@ -345,15 +357,17 @@ SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
   if (associated(self%w1d)) then
     call self%y_interp (target1, self%w1d, ls(2), target2, l, u)
   else
-    call self%y_interp (target1, self%w3d, ls(2), target2, l, u)
+    call self%y_interp (target1, self%w3d(:,:,:,2), ls(2), target2, l, u)
   end if
   l(1)=lt(1); u(1)=ut(1)        ! target range in x
   l(2)=lt(2); u(2)=ut(2)        ! source range in y
   l(3)=lt(3); u(3)=ut(3)        ! source range in z
   if (associated(self%w1d)) then
-    call self%z_interp (target2, self%w1d, ls(3), target , l, u)
+    call self%z_interp (target2, self%w1d         , ls(3), target , l, u, &
+      mask=mask)
   else
-    call self%z_interp (target2, self%w3d, ls(3), target , l, u, mask=mask)
+    call self%z_interp (target2, self%w3d(:,:,:,3), ls(3), target , l, u, &
+      mask=mask)
   end if
   deallocate (target1, target2)
   call trace%end ()
@@ -370,10 +384,7 @@ SUBROUTINE x_interp1 (self, in, w, ls, out, l, u)
   !............................................................................
   integer                       :: i1, i2, i3, j1, k1
   !----------------------------------------------------------------------------
-  if (verbose > 3) &
-    print *, 'x_interp1'
   !--- reset the target output range ------------------------------------------
-  out(l(1):u(1),l(2):u(2),l(3):u(3)) = 0.0
   j1 = ls
   do i1=l(1),u(1)
     do i3=l(3),u(3)
@@ -382,16 +393,18 @@ SUBROUTINE x_interp1 (self, in, w, ls, out, l, u)
                       + in(j1+1,i2,i3)*    w(i1)
       end do
     end do
-    k1 = j1
+    k1 = j1+1
     if (mod(i1,2)==1) &
       j1 = j1+1
   end do
   if (verbose > 3) &
-    write (stdout,'(" X1",5x,4(a,":",2i4,5x),1p,3e11.2)') &
+    write (io_unit%log,'(" X1",5x,4(a,":",2i4,5x),1p,4e11.2)') &
     'xs', ls,k1, 'x', l(1),u(1), 'y', l(2),u(2), 'z',l(3),u(3), &
+    minval(in (ls  :k1  ,l(2):u(2),l(3):u(3))), &
+    maxval(in (ls  :k1  ,l(2):u(2),l(3):u(3))), &
     minval(out(l(1):u(1),l(2):u(2),l(3):u(3))), &
     maxval(out(l(1):u(1),l(2):u(2),l(3):u(3)))
-END SUBROUTINE
+END SUBROUTINE x_interp1
 !===============================================================================
 SUBROUTINE x_interp3 (self, in, w, ls, out, l, u)
   class(prolong_t)              :: self
@@ -401,8 +414,6 @@ SUBROUTINE x_interp3 (self, in, w, ls, out, l, u)
   !.............................................................................
   integer                       :: i1, i2, i3, j1, k1
   !----------------------------------------------------------------------------.
-  if (verbose > 3) &
-    print *, 'x_interp3'
   j1 = ls
   do i1=l(1),u(1)
     do i3=l(3),u(3)
@@ -413,7 +424,7 @@ SUBROUTINE x_interp3 (self, in, w, ls, out, l, u)
     end do
     if (verbose > 5) then
       i2=l(2); i3=l(3)
-      write (stdout,'(3i4,i6,1p,4e10.2)') &
+      write (io_unit%log,'(3i4,i6,1p,4e10.2)') &
         i1,i2,i3,j1,in(j1  ,i2,i3),in(j1+1,i2,i3),w(i1,i2,i3),out(i1,i2,i3)
     end if
     k1 = j1+1
@@ -421,7 +432,7 @@ SUBROUTINE x_interp3 (self, in, w, ls, out, l, u)
       j1 = j1+1
   end do
   if (verbose > 3) &
-    write (stdout,'(" X3",5x,4(a,":",2i4,5x),1p,3e11.2)') &
+    write (io_unit%log,'(" X3",5x,4(a,":",2i4,5x),1p,3e11.2)') &
     'xs', ls,k1, 'x ', l(1),u(1), 'y ', l(2),u(2), 'z ',l(3),u(3), &
     minval(out(l(1):u(1),l(2):u(2),l(3):u(3))), &
     maxval(out(l(1):u(1),l(2):u(2),l(3):u(3)))
@@ -438,26 +449,26 @@ SUBROUTINE y_interp1 (self, in, w, ls, out, l, u)
   !.............................................................................
   integer                       :: i1, i2, i3, j2, k2
   !-----------------------------------------------------------------------------
-  if (verbose > 3) &
-    print *, 'y_interp1'
   j2 = ls
   do i2=l(2),u(2)
     do i3=l(3),u(3)
       do i1=l(1),u(1)
-        out(i1,i2,i3) = in(i1,j2  ,i3)*(1.-w(i1))&
-                      + in(i1,j2+1,i3)*    w(i1)
+        out(i1,i2,i3) = in(i1,j2  ,i3)*(1.-w(i2))&
+                      + in(i1,j2+1,i3)*    w(i2)
       end do
     end do
-    k2 = j2
+    k2 = j2+1
     if (mod(i2,2)==1) &
       j2 = j2+1
   end do
   if (verbose > 3) &
-    write (stdout,'(" Y1",5x,4(a,":",2i4,5x),1p,3e11.2)') &
+    write (io_unit%log,'(" Y1",5x,4(a,":",2i4,5x),1p,4e11.2)') &
     'x', l(1),u(1), 'ys', ls,k2, 'y', l(2),u(2), 'z',l(3),u(3), &
+    minval(in (l(1):u(1),ls  :k2  ,l(3):u(3))), &
+    maxval(in (l(1):u(1),ls  :k2  ,l(3):u(3))), &
     minval(out(l(1):u(1),l(2):u(2),l(3):u(3))), &
     maxval(out(l(1):u(1),l(2):u(2),l(3):u(3)))
-END SUBROUTINE
+END SUBROUTINE y_interp1
 !===============================================================================
 !===============================================================================
 SUBROUTINE y_interp3 (self, in, w, ls, out, l, u)
@@ -469,8 +480,6 @@ SUBROUTINE y_interp3 (self, in, w, ls, out, l, u)
   integer                       :: i1, i2, i3, j2, k2
   !-----------------------------------------------------------------------------
   j2 = ls
-  if (verbose > 3) &
-    print *, 'y_interp3'
   do i2=l(2),u(2)
     if (array_notation) then
       out(:,i2,:) = in(:,j2  ,:)*(1.-w(:,i2,:))&
@@ -485,7 +494,7 @@ SUBROUTINE y_interp3 (self, in, w, ls, out, l, u)
     end if
     if (verbose > 5) then
       i1=l(1); i3=l(3)
-      write (stdout,'(3i4,i6,1p,4e10.2)') &
+      write (io_unit%log,'(3i4,i6,1p,4e10.2)') &
         i1,i2,i3,j2,in(i1,j2,i3),in(i1,j2+1,i3),w(i1,i2,i3),out(i1,i2,i3)
     end if
     k2 = j2+1
@@ -493,7 +502,7 @@ SUBROUTINE y_interp3 (self, in, w, ls, out, l, u)
       j2 = j2+1
   end do
   if (verbose > 3) &
-    write (stdout,'(" Y3",5x,4(a,":",2i4,5x),1p,3e11.2)') &
+    write (io_unit%log,'(" Y3",5x,4(a,":",2i4,5x),1p,3e11.2)') &
     'x ', l(1),u(1), 'ys', ls,k2, 'y ', l(2),u(2), 'z ',l(3),u(3), &
     minval(out(l(1):u(1),l(2):u(2),l(3):u(3))), &
     maxval(out(l(1):u(1),l(2):u(2),l(3):u(3)))
@@ -502,34 +511,60 @@ END SUBROUTINE y_interp3
 !===============================================================================
 !> Interpolate in the z-direction
 !===============================================================================
-SUBROUTINE z_interp1 (self, in, w, ls, out, l, u)
+SUBROUTINE z_interp1 (self, in, w, ls, out, l, u, mask)
   class(prolong_t)              :: self
   real, contiguous, intent(in)  :: in(:,:,:), w(:)
   real, contiguous, intent(out) :: out(:,:,:)
+  logical, intent(in), optional :: mask(:,:,:)
   integer, intent(in)           :: l(3), u(3), ls
   !............................................................................
   integer                       :: i1, i2, i3, j3, k3
   !----------------------------------------------------------------------------
-  if (verbose > 3) &
-    print *, 'z_interp1'
   j3 = ls
   do i3=l(3),u(3)
-    do i2=l(2),u(2)
-      do i1=l(1),u(1)
-        out(i1,i2,i3) = in(i1,i2,j3  )*(1.-w(i1))&
-                      + in(i1,i2,j3+1)*    w(i1)
+    if (present(mask)) then
+      if (array_notation) then
+        where(mask(:,:,i3))
+          out(:,:,i3) = in(:,:,j3  )*(1.-w(i3)) &
+                      + in(:,:,j3+1)*    w(i3)
+        end where
+      else
+        do i2=l(2),u(2)
+          do i1=l(1),u(1)
+             out(i1,i2,i3) = merge(in(i1,i2,j3  )*(1.-w(i3)) &
+                                 + in(i1,i2,j3+1)*    w(i3), &
+                                  out(i1,i2,i3), mask(i1,i2,i3))
+          end do
+        end do
+      end if
+    else if (array_notation) then
+      out(:,:,i3) = in(:,:,j3  )*(1.-w(i3)) &
+                  + in(:,:,j3+1)*    w(i3)
+    else
+      do i2=l(2),u(2)
+        do i1=l(1),u(1)
+          out(i1,i2,i3) = in(i1,i2,j3  )*(1.-w(i3)) &
+                        + in(i1,i2,j3+1)*    w(i3)
+        end do
       end do
-    end do
-    k3 = j3
+    end if
+    if (verbose > 5) then
+      i1=l(1); i2=l(2)
+      write (io_unit%log,'(3i4,i6,1p,4e10.2)') &
+        i1,i2,i3,j3,in(i1,i2,j3),in(i1,i2,j3+1),w(i3),out(i1,i2,i3)
+    end if
+    k3 = j3+1
     if (mod(i3,2)==1) &
       j3 = j3+1
   end do
   if (verbose > 3) &
-    write (stdout, '(" Z1",5x,4(a,":",2i4,5x),1p,3e11.2)') &
-    'x', l(1),u(1), 'y', l(2),u(2), 'zs',ls,k3, 'z', l(3),u(3), &
+    write (io_unit%log, '(" Z1",5x,4(a,":",2i4,4x),1p,4e11.2)') &
+    ' x', l(1),u(1), ' y', l(2),u(2), 'zs',ls,k3, ' z', l(3),u(3), &
+    minval(in (l(1):u(1),l(2):u(2),ls  :k3  )), &
+    maxval(in (l(1):u(1),l(2):u(2),ls  :k3  )), &
     minval(out(l(1):u(1),l(2):u(2),l(3):u(3))), &
     maxval(out(l(1):u(1),l(2):u(2),l(3):u(3)))
-END SUBROUTINE
+END SUBROUTINE z_interp1
 !===============================================================================
 !===============================================================================
 SUBROUTINE z_interp3 (self, in, w, ls, out, l, u, mask)
@@ -542,8 +577,6 @@ SUBROUTINE z_interp3 (self, in, w, ls, out, l, u, mask)
   integer                       :: i1, i2, i3, j3, k3
   real:: tmp
   !-----------------------------------------------------------------------------
-  if (verbose > 3) &
-    print *, 'z_interp3'
   j3 = ls
   do i3=l(3),u(3)
     if (present(mask)) then
@@ -574,7 +607,7 @@ SUBROUTINE z_interp3 (self, in, w, ls, out, l, u, mask)
     end if
     if (verbose > 5) then
       i1=l(1); i2=l(2)
-      write (stdout,'(3i4,i6,1p,4e10.2)') &
+      write (io_unit%log,'(3i4,i6,1p,4e10.2)') &
         i1,i2,i3,j3,in(i1,i2,j3),in(i1,i2,j3+1),w(i1,i2,i3),out(i1,i2,i3)
     end if
     k3 = j3
@@ -582,7 +615,7 @@ SUBROUTINE z_interp3 (self, in, w, ls, out, l, u, mask)
       j3 = j3+1
   end do
   if (verbose > 3) &
-    write (stdout, '(" Z3",5x,4(a,":",2i4,5x),1p,3e11.2)') &
+    write (io_unit%log, '(" Z3",5x,4(a,":",2i4,5x),1p,3e11.2)') &
     'x ', l(1),u(1), 'y ', l(2),u(2), 'zs',ls,k3, 'z ', l(3),u(3), &
     minval(out(l(1):u(1),l(2):u(2),l(3):u(3))), &
     maxval(out(l(1):u(1),l(2):u(2),l(3):u(3)))
@@ -603,7 +636,7 @@ SUBROUTINE print (self, a, label, j)
   !----------------------------------------------------------------------------
   write (fmt,'(a,i2,a)') '(3(4x,',self%gn,'(1x,i3)))'
   if (verbose > 4) then
-    if (present(label)) write (stdout,*) label
+    if (present(label)) write (io_unit%log,*) label
     allocate (ival(self%gn,3))
     do i=1,self%gn
       do idir=1,3
