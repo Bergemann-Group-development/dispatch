@@ -221,6 +221,7 @@ info:
 	@echo "$B  LDFLAGS     $N= $(LDFLAGS)"
 	@echo "$B  DEFS        $N= $(DEFS)"
 	@echo "$B  LIBS        $N= $(LIBS)"
+	@echo "$B  BUILD       $N= $(BUILD)"
 	@echo "$B  EXEC        $N= $(EXEC)"
 compiler:
 	@echo "$(COMPILER)"
