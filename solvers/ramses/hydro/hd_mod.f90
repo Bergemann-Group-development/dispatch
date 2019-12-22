@@ -526,6 +526,7 @@ subroutine unsplit(self)
   call self%extras_t%pre_update       ! Cooling and other extras
   call ctoprim(self)                  ! Primitive variables, sound speeds
   call self%patch_t%courant_condition (detailed_timer)
+  call self%dump (1)                  ! dump, now that dtime is known
   call uslope(self)                   ! TVD slopes
   call trace3d(self)                  ! predictor step
   call cmpflxm(self)                  ! Solve for 1D flux in X direction

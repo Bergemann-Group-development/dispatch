@@ -147,22 +147,15 @@ SUBROUTINE init (self)
   class (task_t):: self
   character(len=120):: ids= &
     '$Id$ tasks/task_mod.f90'
-  integer:: iostat, id
+  integer:: iostat, id, verbose
   logical, save:: do_dumps
   integer, save:: id_max=0
   namelist /task_params/ track_id, do_dumps
-  namelist /dump_params/ id, iostat
+  namelist /dump_params/ id, verbose, iostat
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init')
   call trace%print_id (ids)
   !$omp critical (input_cr)
-  if (first_time) then
-    rewind (io%input)
-    read (io%input, task_params, iostat=iostat)
-    write (io%output, task_params)
-    call io%namelist_warning ('task_params', iostat)
-    first_time = .false.
-  end if
   if (self%id == 0) then
     call init_unique (self)
   else
@@ -173,25 +166,37 @@ SUBROUTINE init (self)
     id_max = max(id_max,self%id+1)
     call mpi%id%reset(id_max)
   end if
-  !$omp end critical (input_cr)
+  !-----------------------------------------------------------------------------
+  ! First thread to enter reads task_params
+  !-----------------------------------------------------------------------------
+  if (first_time) then
+    rewind (io%input)
+    read (io%input, task_params, iostat=iostat)
+    write (io%output, task_params)
+    call io%namelist_warning ('task_params', iostat)
+    first_time = .false.
+  end if
   !-----------------------------------------------------------------------------
   ! If dumps are requested, read a list of task ids for which dumps should be on
   !-----------------------------------------------------------------------------
   if (do_dumps) then
-    !$omp critical (input_cr)
     rewind (io%input)
     do
       iostat = 0
+      verbose = 0
       read (io%input, dump_params, iostat=iostat)
-      write (io%output, dump_params)
-      if (iostat /= 0) &
+      if (iostat /= 0) then
         exit
-      self%dump_it = (id == self%id)
-      if (self%dump_it) &
+      else if (id == self%id) then
+        self%verbose = verbose
+        self%dump_it = .true.
+        write (io_unit%log,*) 'task_t%init: dump_id =', id
+        write (io%output, dump_params)
         exit
+      end if
     end do
-    !$omp end critical (input_cr)
   end if
+  !$omp end critical (input_cr)
   !-----------------------------------------------------------------------------
   ! Locks, random numbers, etc
   !-----------------------------------------------------------------------------

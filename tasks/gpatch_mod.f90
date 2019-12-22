@@ -99,7 +99,6 @@ END SUBROUTINE input
 SUBROUTINE output (self)
   class(gpatch_t):: self
   !-----------------------------------------------------------------------------
-  call self%dump (1)
   call data_io%output (self)
 END SUBROUTINE output
 

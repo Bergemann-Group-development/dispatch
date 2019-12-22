@@ -2951,9 +2951,9 @@ END SUBROUTINE init_level
 !===============================================================================
 !> Dump the patch values into data/run/rank_rrrrr,dump
 !===============================================================================
-SUBROUTINE dump (self, id, ad_hoc)
+SUBROUTINE dump (self, tag, ad_hoc)
   class(patch_t):: self
-  integer:: id
+  integer:: tag
   logical, optional:: ad_hoc
   !.............................................................................
   integer:: it, nt, jt
@@ -2965,8 +2965,11 @@ SUBROUTINE dump (self, id, ad_hoc)
     else
       nt = 1
     end if
+    if (self%verbose > 0) then
+      write (io_unit%log,*) 'patch_t%dump: id, time =', self%id, self%time
+    end if
     !--- integers --------------------------------------------------------------
-    write (io_unit%dump) id, self%id, self%level, self%nv, self%nt, nt, &
+    write (io_unit%dump) tag, self%id, self%level, self%nv, self%nt, nt, &
                          self%nw, self%istep, self%it
     write (io_unit%dump) self%gn
     write (io_unit%dump) self%n
