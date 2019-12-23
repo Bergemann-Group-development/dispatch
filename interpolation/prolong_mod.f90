@@ -40,6 +40,7 @@ MODULE prolong_mod
   USE omp_lib
   USE io_mod
   USE trace_mod
+  USE kinds_mod
   implicit none
   private
   type, public:: prolong_t
@@ -221,8 +222,8 @@ END SUBROUTINE
 !===============================================================================
 SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
   class(prolong_t):: self
-  real, dimension(:,:,:,:) :: source
-  real, dimension(:,:,:)   :: target
+  real(kind=KindScalarVar), dimension(:,:,:,:) :: source
+  real(kind=KindScalarVar), dimension(:,:,:)   :: target
   integer                  :: jt(2), ipos(3)
   real                     :: pt(2)
   intent(in)               :: source, jt, pt, ipos
@@ -233,7 +234,7 @@ SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
   integer                  :: ls(3), us(3), lt(3), ut(3), i
   integer                  :: lb, lo, li, ui, uo, ub, n, ng, gn
   integer                  :: itimer=0
-  real, allocatable        :: src_mem(:,:,:)
+  real(kind=KindScalarVar), allocatable        :: src_mem(:,:,:)
   !-----------------------------------------------------------------------------
   ! Cf. the sketch at top for index choices
   !-----------------------------------------------------------------------------
@@ -348,13 +349,13 @@ END SUBROUTINE interpolate
 !===============================================================================
 SUBROUTINE interp (self, source, ls, us, target, lt, ut, mask)
   class(prolong_t):: self
-  real, intent(in):: source(:,:,:)
-  real, intent(out):: target(:,:,:)
+  real(kind=KindScalarVar), intent(in):: source(:,:,:)
+  real(kind=KindScalarVar), intent(out):: target(:,:,:)
   integer, intent(in):: lt(3), ut(3), ls(3), us(3)
   logical, optional:: mask(:,:,:)
   !.............................................................................
   integer:: m(3), l(3), u(3)
-  real, allocatable:: target1(:,:,:), target2(:,:,:)
+  real(kind=KindScalarVar), allocatable:: target1(:,:,:), target2(:,:,:)
   !-----------------------------------------------------------------------------
   call trace%begin ('prolong_t%interp')
   m = shape(target)
@@ -399,7 +400,7 @@ END SUBROUTINE interp
 !===============================================================================
 SUBROUTINE nml_fix (self, out, l, u)
   class(prolong_t)              :: self
-  real, contiguous, intent(out) :: out(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(out) :: out(:,:,:)
   integer, intent(in)           :: l(3), u(3)
   !.............................................................................
   integer                       :: i1, i2, i3
@@ -452,8 +453,9 @@ END SUBROUTINE nml_fix
 !===============================================================================
 SUBROUTINE x_interp1 (self, in, w, ls, out, l, u)
   class(prolong_t)              :: self
-  real, contiguous, intent(in)  :: in(:,:,:), w(:)
-  real, contiguous, intent(out) :: out(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(in)  :: in(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(out) :: out(:,:,:)
+  real, contiguous, intent(in)  :: w(:)
   integer, intent(in)           :: l(3), u(3), ls
   !.............................................................................
   integer                       :: i1, i2, i3, j1, k1
@@ -481,8 +483,9 @@ END SUBROUTINE x_interp1
 !===============================================================================
 SUBROUTINE x_interp3 (self, in, w, ls, out, l, u)
   class(prolong_t)              :: self
-  real, contiguous, intent(in)  :: in(:,:,:), w(:,:,:)
-  real, contiguous, intent(out) :: out(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(in)  :: in(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(out) :: out(:,:,:)
+  real, contiguous, intent(in)  :: w(:,:,:)
   integer, intent(in)           :: l(3), u(3), ls
   !.............................................................................
   integer                       :: i1, i2, i3, j1, k1
@@ -516,8 +519,9 @@ END SUBROUTINE x_interp3
 !===============================================================================
 SUBROUTINE y_interp1 (self, in, w, ls, out, l, u)
   class(prolong_t)              :: self
-  real, contiguous, intent(in)  :: in(:,:,:), w(:)
-  real, contiguous, intent(out) :: out(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(in)  :: in(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(out) :: out(:,:,:)
+  real, contiguous, intent(in)  :: w(:)
   integer, intent(in)           :: l(3), u(3), ls
   !.............................................................................
   integer                       :: i1, i2, i3, j2, k2
@@ -546,8 +550,9 @@ END SUBROUTINE y_interp1
 !===============================================================================
 SUBROUTINE y_interp3 (self, in, w, ls, out, l, u)
   class(prolong_t)              :: self
-  real, contiguous, intent(in)  :: in(:,:,:), w(:,:,:)
-  real, contiguous, intent(out) :: out(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(in)  :: in(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(out) :: out(:,:,:)
+  real, contiguous, intent(in)  :: w(:,:,:)
   integer, intent(in)           :: l(3), u(3), ls
   !.............................................................................
   integer                       :: i1, i2, i3, j2, k2
@@ -586,8 +591,9 @@ END SUBROUTINE y_interp3
 !===============================================================================
 SUBROUTINE z_interp1 (self, in, w, ls, out, l, u, mask)
   class(prolong_t)              :: self
-  real, contiguous, intent(in)  :: in(:,:,:), w(:)
-  real, contiguous, intent(out) :: out(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(in)  :: in(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(out) :: out(:,:,:)
+  real, contiguous, intent(in)  :: w(:)
   logical, intent(in), optional :: mask(:,:,:)
   integer, intent(in)           :: l(3), u(3), ls
   !............................................................................
@@ -642,8 +648,9 @@ END SUBROUTINE z_interp1
 !===============================================================================
 SUBROUTINE z_interp3 (self, in, w, ls, out, l, u, mask)
   class(prolong_t)              :: self
-  real, contiguous, intent(in)  :: in(:,:,:), w(:,:,:)
-  real, contiguous, intent(out) :: out(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(in)  :: in(:,:,:)
+  real(kind=KindScalarVar), contiguous, intent(out) :: out(:,:,:)
+  real, contiguous, intent(in)  :: w(:,:,:)
   logical, intent(in), optional :: mask(:,:,:)
   integer, intent(in)           :: l(3), u(3), ls
   !.............................................................................
