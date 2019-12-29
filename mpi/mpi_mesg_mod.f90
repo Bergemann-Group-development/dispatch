@@ -1012,11 +1012,12 @@ contains
 END FUNCTION is_complete
 
 !===============================================================================
-!> Issue a message recieve request from a specific rank
+!> Issue a message receive request from a specific rank
 !===============================================================================
-SUBROUTINE irecv (self, rank, id)
+SUBROUTINE irecv (self, rank, id, istep)
   class(mesg_t):: self
   integer:: id
+  integer, optional:: istep
   integer:: rank, tag, ierr, seq
   !-----------------------------------------------------------------------------
   ! Construct a unique tag from the incremented sequence number next seq number
@@ -1029,6 +1030,8 @@ SUBROUTINE irecv (self, rank, id)
   else if (mpi_mesg%tag_type == 2) then
     expected(rank) = expected(rank) + 1
     tag = mod(expected(rank),100) + id*100
+  else if (mpi_mesg%tag_type == 3) then
+    tag = mod(istep+1,100) + id*100
   else
     tag = id
   end if

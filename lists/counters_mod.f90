@@ -19,10 +19,13 @@ MODULE counters_mod
   !-----------------------------------------------------------------------------
   ! counter data type, to keep track of output
   !-----------------------------------------------------------------------------
-  type:: counter_t
+  type, public:: counter_t
     type(counter_t), pointer:: prev=>null(), next=>null()
     integer:: id=0, count=0, start=0
     type(lock_t):: lock
+  contains
+    procedure:: init => init_counter
+    procedure:: update => update_counter
   end type
   type, public:: counters_t
     type(counter_t), pointer:: head=>null(), tail=>null()
@@ -31,14 +34,34 @@ MODULE counters_mod
     type(lock_t):: lock
   contains
     procedure:: init
-    procedure:: decrement ! (id, start)
-    procedure:: increment ! (id, start)
-    procedure:: update    ! (id, incr)
-    procedure:: remove    ! (id)
+    procedure:: decrement       ! (id, start)
+    procedure:: increment       ! (id, start)
+    procedure:: update          ! (id, incr)
+    procedure:: remove          ! (id)
   end type
   integer:: verbose=0
   type(counters_t), public:: counters
 CONTAINS
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE init_counter (self, n)
+  class(counter_t):: self
+  integer:: n
+  !$omp atomic write
+  self%count = n
+END SUBROUTINE init_counter
+
+!===============================================================================
+!===============================================================================
+INTEGER FUNCTION update_counter (self, i)
+  class(counter_t):: self
+  integer:: i
+  !$omp atomic capture
+  self%count = self%count + i
+  update_counter = self%count
+  !$omp end atomic
+END FUNCTION update_counter
 
 !===============================================================================
 !> Allow changing verbosity
@@ -83,17 +106,7 @@ FUNCTION decrement (self, id, start) RESULT (count)
   call self%lock%set ('counters_t%decrement')
   counter => find (self, id, start)
   call self%lock%unset ('counters_t%decrement')
-  !-----------------------------------------------------------------------------
-  ! Decrement to zero
-  !-----------------------------------------------------------------------------
-  if (counter%count>0) then
-    !$omp atomic capture
-    counter%count = counter%count-1    
-    count = counter%count
-    !$omp end atomic
-  else
-    count = counter%count
-  end if
+  count = counter%update (-1)
   if (verbose > 0) &
     write (io_unit%output,*) 'counter_t%decrement: id, count =', counter%id, count
   call trace%end()
@@ -117,13 +130,7 @@ FUNCTION increment (self, id, start) RESULT (count)
   call self%lock%set ('counters_t%increment')
   counter => find (self, id, start)
   call self%lock%unset ('counters_t%increment')
-  !-----------------------------------------------------------------------------
-  ! Increment away from zero
-  !-----------------------------------------------------------------------------
-  !$omp atomic capture
-  counter%count = counter%count+1    
-  count = counter%count
-  !$omp end atomic
+  count = counter%update (+1)
   if (verbose > 0) &
     write (io_unit%output,*) 'counter_t%increment: id, count =', counter%id, count
   call trace%end()
