@@ -263,7 +263,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       if (n_print > 0) then
         !$omp atomic update
         n_print = n_print-1
-        write (stderr,'(2(1x,a,i6,i3,2x))') &
+        write (stdout,'(2(1x,a,i6,i3,2x))') &
          'WARNING: preventing download of', &
           source%id, source%level, 'to', target%id, target%level
       end if
@@ -273,13 +273,15 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
        self%same => same_linear
      if (trim(target%kind) /= 'rt_solver') then
        if (source%is_clear(bits%no_download)) then
+!write (stdout,'(i4,l1,$)') source%id, source%is_set(bits%virtual)
          !----------------------------------------------------------------------
          ! Default same interpolation when target and source levels agree
          !----------------------------------------------------------------------
-         !write (io_unit%log,'(2(a,":",i5,i3,2(1x,3f8.3,2x)),1x,3f8.3)') &
-         !  'target', target%id, target%level, target%position, target%size, &
-         !  'source', source%id, source%level, source%position, source%size, &
-         !  target%distance(source)*2./target%size
+         if (verbose > 1) &
+           write (io_unit%log,'(2(a,":",i5,i3,2(1x,3f8.3,2x)),1x,3f8.3)') &
+           'target', target%id, target%level, target%position, target%size, &
+           'source', source%id, source%level, source%position, source%size, &
+            target%distance(source)*2./target%size
          if (source%level==target%level) then
            select case (trim(use_same))
            case ('different')
@@ -379,7 +381,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     if (jt(2) /= jt(1)) &
       call source%mem_lock(jt(2))%unset ('download_link2')
     call source%mem_lock(jt(1))%unset ('download_link1')
-    if (verbose > 1) then
+    if (verbose > 2) then
       write(io_unit%log,'(f12.6,i6,i3,3x,a,i6,i3,2x,2l1)') wallclock(), target%id, target%level, &
         'download_link: source, level =', source%id, source%level
       flush (io_unit%log)
@@ -479,9 +481,12 @@ SUBROUTINE prolong_it (target, source, jt, pt, all)
     !---------------------------------------------------------------------------
     ipos = nint(source%distance(target)*2.0/target%size)
     if (verbose > 1) then
-      write (io_unit%log,'(a,2i6,2x,3i4)') &
-        'download_t%prolong_it: target, source, ipos =', &
-        target%id, source%id, ipos
+      write (io_unit%log,'(1x,a,3i3,2(3x,a,i6,i3,3(2x,3f10.6)))') &
+        'download_t%prolong_it: ipos =', ipos, &
+        'target: id, level, pos, cen, size =', target%id, target%level, &
+          target%position, target%centre_nat, target%size, &
+        'source: id, level, pos, cen, size =', source%id, source%level, &
+          source%position, source%centre_nat, source%size
     end if
     call prolng%interpolate (source%mem(:,:,:,iv,:,1), jt, pt, &
       target%mem(:,:,:,iv,target%it,1), &
@@ -668,11 +673,11 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
       ' same_linear: target, source, iv1, iv2 =', target%id, source%id, iv1, iv2
   end if
   if (iv2 > source%nv) then
-    write(stderr,*) 'iv loop limit:', iv1, iv2
-    write(stderr,*) 'source: id, nv =', source%id, source%nv
-    write(stderr,*) 'source kind ',source%kind, source%position
-    write(stderr,*) 'target kind ',target%kind, target%position
-    write(stderr,*) 'target: id, nv =', target%id, target%nv
+    write(stdout,*) 'iv loop limit:', iv1, iv2
+    write(stdout,*) 'source: id, nv =', source%id, source%nv
+    write(stdout,*) 'source kind ',source%kind, source%position
+    write(stdout,*) 'target kind ',target%kind, target%position
+    write(stdout,*) 'target: id, nv =', target%id, target%nv
     call io%abort("download::same_linear::iv2 > source%nv")
   end if
   do iv=iv1, iv2

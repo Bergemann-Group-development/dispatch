@@ -313,6 +313,11 @@ SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
       ut(i) = lo
       ls(i) = ui - 1              ! = 5
       us(i) = ui + ng/2           ! = 6 + 1 = 7
+    case default
+      write (io_unit%log,'(1x,a,3i3)') &
+        'prolong_t%interpolat: unexpcted ipos =', ipos
+      call trace%end (itimer)
+      return
     end select
   end do
   if (verbose > 2) then
@@ -323,6 +328,14 @@ SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
   ! Interpolate in time, but only in the source region that is used
   !-----------------------------------------------------------------------------
   allocate (src_mem(gn,gn,gn))
+  if (any(ls < 1) .or. any (us > ub)) then
+    write(io_unit%log,*) ipos, 'ipos'
+    write(io_unit%log,*) ls, 'ls'
+    write(io_unit%log,*) us, 'us'
+    write(io_unit%log,*) n, ng, 'n, ng'
+    write(io_unit%log,*) lb, lo, li, 'lb, lo, li'
+    write(io_unit%log,*) ui, uo, ub, 'ui, uo, ub'
+  end if
   src_mem   (ls(1):us(1),ls(2):us(2),ls(3):us(3)) &
     = source(ls(1):us(1),ls(2):us(2),ls(3):us(3),jt(1))*pt(1) &
     + source(ls(1):us(1),ls(2):us(2),ls(3):us(3),jt(2))*pt(2)
