@@ -194,6 +194,8 @@ SUBROUTINE init (self, name)
     else
       io_unit%verbose = -2
     end if
+    io_unit%do_trace = do_trace
+    io_unit%omp_trace = omp_trace
     io_unit%rundir = self%rundir
     io_unit%inputdir = self%inputdir    
     io_unit%do_validate = do_validate

@@ -4,7 +4,6 @@
 MODULE trace_mod
   USE omp_mod
   USE omp_timer_mod
-  USE io_mod
   USE io_unit_mod
   !USE mpi_mod
   USE timer_mod
@@ -61,7 +60,7 @@ SUBROUTINE trace_begin (id, set_verbose, itimer, detailed_timer)
       call timer%begin (id, itimer)
     end if
   end if
-  if (.not.io%do_trace) return
+  if (.not.io_unit%do_trace) return
   tracing(level) = trim(id)
   if (present(set_verbose)) then
     verbosity(level) = set_verbose
@@ -74,10 +73,10 @@ SUBROUTINE trace_begin (id, set_verbose, itimer, detailed_timer)
     indent = indent + 3
   end if
   write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.6,',indent,'x,a,i5)'
-  if (io%verbose>=verbose) then
+  if (io_unit%verbose>=verbose) then
     wc = wallclock()
     if (io_unit%do_validate) wc = 0d0
-    if (io%omp_trace) then
+    if (io_unit%omp_trace) then
       call print_out (io_unit%log)
     else
       !$omp critical (trace_cr)
@@ -109,19 +108,19 @@ SUBROUTINE trace_tag (id)
   integer:: verbose
   real(8):: wc
   !.............................................................................
-  if (.not.io%do_trace) return
+  if (.not.io_unit%do_trace) return
   verbose = verbosity(level)
-  if (io%verbose>=verbose) then
+  if (io_unit%verbose>=verbose) then
     write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.6,',indent,'x,a)'
     wc = wallclock()
     level  = max(level-1,1)
-    if (io%omp_trace) then
+    if (io_unit%omp_trace) then
       write(io_unit%log,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
       flush(io_unit%log)
     else
       !$omp critical (trace_cr)
-      write(io%output,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
-      flush(io%output)
+      write(io_unit%output,fmt) omp_mythread, wc, trim(tracing(level))//' '//trim(id)
+      flush(io_unit%output)
       !$omp end critical (trace_cr)
     end if
     level  = min(level+1,maxlev)
@@ -149,15 +148,15 @@ SUBROUTINE trace_end (itimer, detailed_timer)
       call timer%end(itimer)
     end if
   end if
-  if (.not.io%do_trace) return
+  if (.not.io_unit%do_trace) return
   level  = max(level-1,1)
   indent = max(indent,4)
   verbose = verbosity(level)
-  if (io%verbose>=verbose) then
+  if (io_unit%verbose>=verbose) then
     write(fmt,'(a,i3.3,a)') '("trace:",i3,f12.6,',indent,'x,a,i5)'
     wc = wallclock()
     if (io_unit%do_validate) wc = 0d0
-    if (io%omp_trace) then
+    if (io_unit%omp_trace) then
       call print_out (io_unit%log)
     else
       !$omp critical (trace_cr)
@@ -182,12 +181,12 @@ end subroutine
 END SUBROUTINE trace_end
 
 !===============================================================================
-!> Write a trace-back to io%output
+!> Write a trace-back to io_unit%output
 !===============================================================================
 SUBROUTINE back
   integer:: l
   do l=level,1,-1
-    write (io%output,*) 'called from', tracing(l)
+    write (io_unit%output,*) 'called from', tracing(l)
   end do
 END SUBROUTINE back
 
@@ -196,7 +195,7 @@ SUBROUTINE print_hl
   character(len=120), save:: hl= &
     '--------------------------------------------------------------------------------'
   !..............................................................................
-  if (io%master) then
+  if (io_unit%master) then
     write (io_unit%output,'(a)') trim(hl)
   end if
 END SUBROUTINE print_hl

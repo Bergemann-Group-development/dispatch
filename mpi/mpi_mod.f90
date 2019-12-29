@@ -28,6 +28,8 @@ MODULE mpi_mod
   USE omp_mod
   USE omp_timer_mod
   USE io_unit_mod
+  USE trace_mod
+  USE shared_mod
   implicit none
   private
 #ifdef MPI
@@ -118,6 +120,9 @@ SUBROUTINE init (self, mpi_dims, dims)
   mpi%comm   = 0
   mpi%master = (mpi_rank==0)
 #endif
+  shared%mpi_rank   = mpi%rank
+  shared%mpi_size   = mpi%size
+  shared%mpi_master = mpi%master
   mpi%ok     = .true.
   if (mpi%master .and. first_time) &
     print'(1x,a)', trim(ids)
@@ -158,6 +163,7 @@ SUBROUTINE barrier_ (self, label, delay)
   real(8):: wc
   !.............................................................................
   if (.not.self%ok) return
+  call trace%begin ('mpi_t%barrier')
   if (present(delay)) then
     wc = wallclock()
     do while (wallclock()-wc < delay)
@@ -168,6 +174,7 @@ SUBROUTINE barrier_ (self, label, delay)
   else
     call barrier_mpi (self, 'mpi%barrier')
   end if
+  call trace%end ()
 END SUBROUTINE barrier_
 
 !===============================================================================
@@ -227,7 +234,8 @@ END SUBROUTINE init_mpi
 SUBROUTINE end_mpi (self, label)
   class(mpi_t):: self
   character(len=*), optional:: label
-!..............................................................................
+!...............................................................................
+  call trace%begin ('mpi_t%end_mpi')
   !call finalize_cart
   if (mpi_rank==0) then
     if (present(label)) then
@@ -242,6 +250,7 @@ SUBROUTINE end_mpi (self, label)
   flush (io_unit%mpi)
 #endif
   !call exit        ! avoid "stop" which may produce one output line per process
+  call trace%end ()
 END SUBROUTINE
 
 !===============================================================================
@@ -304,15 +313,14 @@ SUBROUTINE assert (self, message, code)
   class(mpi_t):: self
   character(len=*):: message
   integer code
-  character (len=16):: codemsg
+  character (len=64):: codemsg
 !..............................................................................
   if (code/=0) then
-    write (codemsg,'("code =",i10)') code
-    write(*,*)      mpi_rank,' error: '//trim(message)
-    if (self%verbose > 1) then
-      write(output,*) mpi_rank,' error: '//trim(message)
-      flush (output)
-    end if
+    write (codemsg,'(2x,a," error: code =",i10)') message, code
+    write (stderr,*)  'rank', mpi_rank, codemsg
+    flush (stderr)
+    write (io_unit%mpi,*) codemsg
+    flush (io_unit%mpi)
   end if
 END SUBROUTINE assert
 

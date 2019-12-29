@@ -9,7 +9,7 @@
 !> ongoing call, so we need a list of active counters.
 !===============================================================================
 MODULE timer_mod
-  USE mpi_mod
+  USE shared_mod
   USE io_unit_mod
   USE omp_mod
   USE omp_timer_mod
@@ -48,6 +48,7 @@ MODULE timer_mod
     integer:: levelmin, levelmax
     real:: dead_mans_hand=0.0
     logical:: detailed=.false.
+    logical:: done=.false.
   contains
     procedure:: init
     procedure:: begin
@@ -130,7 +131,7 @@ SUBROUTINE begin (self, name, itimer)
       end do
       if (ok) then
         ntimer = ntimer+1
-        if (ntimer > maxproc) call mpi%abort ('timer_mod: increase maxproc')
+        if (ntimer > maxproc) call shared%abort ('timer_mod: increase maxproc')
         itimer = ntimer
         names(itimer) = name
       else
@@ -158,7 +159,7 @@ SUBROUTINE begin (self, name, itimer)
   !-----------------------------------------------------------------------------
   timers(thread)%start(itimer) = wc
   istack = istack+1
-  if (istack>maxdepth) call mpi%abort ('too many timer levels;'//trim(name))
+  if (istack>maxdepth) call shared%abort ('too many timer levels;'//trim(name))
   timers(thread)%stack(istack) = itimer
   timers(thread)%istack = istack
   if (verbose > 0) then
@@ -272,7 +273,7 @@ SUBROUTINE real_print (self)
   updates = max(1.0,real(timer%n_update-n_previous))
   musppt = sec*1d6*min(omp%nthreads,omp%ncores)/updates
   n_recv = max(timer%n_recv,1)
-  if (mpi%master) &
+  if (shared%mpi_master) &
     call write_to (io_unit%output)
   call write_to (io_unit%mpi)
   !$omp atomic write
@@ -292,6 +293,11 @@ SUBROUTINE real_print (self)
     timers(:)%total(i) = 0d0
     timers(:)%calls(i) = 0
   end do
+  timer%mpi_hit = 0
+  timer%mpi_test = 0
+  timer%busy_time = 0d0
+  timer%spin_time = 0d0
+  self%n_mhd = 0; self%n_solve=0
   return
 contains
   subroutine write_to (unit)
@@ -344,7 +350,7 @@ contains
       self%time-self%prev, ' time advance', &
       musppt, ' core-mus/cell-upd', wc, ' wall sec'
     self%prev = self%time
-    if (mpi%size>1) then
+    if (shared%mpi_size>1) then
       timer%latency%aver = timer%latency%aver/max(1,timer%latency%n)
       write (unit,'(1x,"MPI recv:",f10.1," MB/s",f11.3," MB/mesg",i8," nq_send_max",i8, &
         " nq_recv_max",2f8.3," max, aver latency",f7.2, " f_unpk",f7.2," f_mem",f8.3," f_q")') &
@@ -353,14 +359,9 @@ contains
         timer%mpi_hit/real(max(1,timer%mpi_test)), &
         timer%mem_hit/real(max(1,timer%mem_test)), &
         timer%busy_time/max(timer%spin_time + timer%busy_time,1d-30)
-      timer%mpi_hit = 0
-      timer%mpi_test = 0
-      timer%busy_time = 0d0
-      timer%spin_time = 0d0
     end if
     call omp_lock%info (unit)
     flush (unit)
-    self%n_mhd = 0; self%n_solve=0
   end subroutine write_to
 END SUBROUTINE real_print
 
@@ -481,27 +482,27 @@ SUBROUTINE toc_r (label, n, time)
   if (n_cores == n_threads) then
     write (io_unit%log,1) label, trim(time_str(dtime)), &
       trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
-      mpi%size, merge('processes,','process,  ',mpi%size>1), &
+      shared%mpi_size, merge('processes,','process,  ',shared%mpi_size>1), &
       n_cores, merge('cores/process','core/process ',n_cores>1)
   else
     write (io_unit%log,1) label, trim(time_str(dtime)), &
       trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
-      mpi%size, merge('processes,','process,  ',mpi%size>1), &
+      shared%mpi_size, merge('processes,','process,  ',shared%mpi_size>1), &
       n_cores, merge('cores/process','core/process ',n_cores>1), &
       n_threads, merge('threads/process','thread/process ',n_threads>1)
   end if
   flush (io_unit%log)
-  if (mpi%rank==0.and.omp%thread==0) then
+  if (shared%mpi_rank==0.and.omp%thread==0) then
     if (n>1.0) then
       if (n_cores == n_threads) then
         print 1, label, trim(time_str(dtime)), &
           trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
-          mpi%size, merge('processes,','process,  ',mpi%size>1), &
+          shared%mpi_size, merge('processes,','process,  ',shared%mpi_size>1), &
           n_cores, merge('cores/process','core/process ',n_cores>1)
       else
         print 1, label, trim(time_str(dtime)), &
           trim(time_str(dtime*n_cores/max(n,1.))), '/upd,', n, 'updates/process,', &
-          mpi%size, merge('processes,','process,  ',mpi%size>1), &
+          shared%mpi_size, merge('processes,','process,  ',shared%mpi_size>1), &
           n_cores, merge('cores/process','core/process ',n_cores>1), &
           n_threads, merge('threads/process','thread/process ',n_threads>1)
       end if
