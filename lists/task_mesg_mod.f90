@@ -71,7 +71,7 @@ CONTAINS
 !> Check for and unpack MPI messages.
 !===============================================================================
 SUBROUTINE init (self, name)
-  class(task_mesg_t):: self
+  class(task_mesg_t), target:: self
   character(len=*), optional:: name
   integer:: iostat
   integer, save:: hash_table_size=10000

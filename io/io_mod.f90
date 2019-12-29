@@ -69,6 +69,7 @@ MODULE io_mod
     real:: dmin=1.0
     real:: dmax=1.0
     real:: gb_out=0.0
+    type(mpi_counter_t):: counter
   contains
     procedure:: init
     procedure:: open_rank_file
@@ -279,6 +280,7 @@ SUBROUTINE init (self, name)
   io_unit%do_validate = do_validate
   stdout = io_unit%output
   call timer%init
+  call io%counter%init (0)
 contains
   !-----------------------------------------------------------------------------
   subroutine ensure_dirname (s)

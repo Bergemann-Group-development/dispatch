@@ -16,7 +16,20 @@ MODULE shared_mod
     integer:: n_add = 0
     integer:: n_patch_total = 0
     integer:: patch_n(3) = 0
+    integer:: n_queue = 0
+    integer:: mpi_size=0, mpi_rank=0
+    logical:: mpi_master=.true.
     real:: f_zoom(3)=1.0
+  contains
+    procedure, nopass:: abort
   end type
   type(shared_t):: shared
+CONTAINS
+
+SUBROUTINE abort (label)
+  character(len=*):: label
+  write (*,*) label
+  stop 'shared%abort'
+END SUBROUTINE abort
+
 END MODULE shared_mod

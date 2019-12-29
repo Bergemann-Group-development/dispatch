@@ -19,6 +19,7 @@ MODULE data_io_mod
   USE os_mod
   !USE aux_mod
   USE mpi_mod
+  USE timer_mod
   USE omp_mod
   USE omp_timer_mod
   USE omp_lock_mod
@@ -180,7 +181,8 @@ SUBROUTINE output (self, patch, experiment_name)
   integer, save:: created=-1
   integer, save:: itimer=0
   logical:: append
-  integer:: it, count, np, prv
+  logical, save:: io_active=.false.
+  integer:: it, count, np, prv, io_count
   real(8):: t
   !-----------------------------------------------------------------------------
   call pdf_io%update (patch)
@@ -276,19 +278,8 @@ SUBROUTINE output (self, patch, experiment_name)
         end if
         !-----------------------------------------------------------------------
         if (count==0 .and. .not.io_unit%do_validate) then
-          if (io%out_time > 0d0) then
-            prv = modulo(patch%it-2,patch%nt) + 1
-            write(io%output,'(1x,a,2x,a,i5.5,6x,a,f9.3,6x,a,1p,3g14.5)') &
-              trim(io%method)//'_io:output', &
-              'snapshot '//trim(io%outputname), patch%iout, &
-              'size(GB):', io%gb_out, &
-              'time:', patch%t(prv), patch%out_next, patch%time
-          else
-            write(io%output,'(1x,a,2x,a,i5.5,6x,a,f9.3,6x,a,1p,g14.5)') &
-              trim(io%method)//'_io:output', &
-              'snapshot '//trim(io%outputname), patch%iout, &
-              'size(GB):', io%gb_out, 'time:', patch%time
-          end if
+          io_count = mod(io%counter%update(1),mpi%size)
+          io_active = .true.
         end if
         !-----------------------------------------------------------------------
         ! Output aux file, and namelist file with metadata 
@@ -311,6 +302,37 @@ SUBROUTINE output (self, patch, experiment_name)
       if (io%verbose > 1) &
         write (io%output,*) wallclock(),' thread',omp%thread,' unlocked output'
       call self%lock%unset ('output2')
+    end if
+    !---------------------------------------------------------------------------
+    ! Detect when an I/O operation is complete on all ranks
+    !---------------------------------------------------------------------------
+    if (io_active) then
+      call self%lock%set ('output3')
+      if (io_active) then
+        io_count = io%counter%update(0)
+        write (io_unit%mpi,*) &
+          wallclock(), 'data_io%output: io_count =', io_count
+        if (mod(io_count,mpi%size) == 0) then
+          !-----------------------------------------------------------------------
+          ! Write a line in the log with snapshot time info
+          !-----------------------------------------------------------------------
+          if (io%out_time > 0d0) then
+            prv = modulo(patch%it-2,patch%nt) + 1
+            write(io%output,'(1x,a,2x,a,i5.5,6x,a,f9.3,6x,a,1p,3g14.5)') &
+              trim(io%method)//'_io:output', &
+              'snapshot '//trim(io%outputname), patch%iout-1, &
+              'size(GB):', io%gb_out, &
+              'time:', patch%t(prv), patch%out_next, patch%time
+          else
+            write(io%output,'(1x,a,2x,a,i5.5,6x,a,f9.3,6x,a,1p,g14.5)') &
+              trim(io%method)//'_io:output', &
+              'snapshot '//trim(io%outputname), patch%iout-1, &
+              'size(GB):', io%gb_out, 'time:', patch%time
+          end if
+          io_active = .false.
+        end if
+      end if
+      call self%lock%unset ('output3')
     end if
   end if    ! (io%needs_check)
   call trace%end (itimer)

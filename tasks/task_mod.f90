@@ -45,6 +45,8 @@ MODULE task_mod
     integer:: seq=0                     ! incremental sequence number
     integer:: n_failed                  ! number of times check_ready() failed
     integer:: logging=0                 ! level of logging
+    integer:: next_lb                   ! next LB step
+    integer:: rank_steps=0              ! steps on rank
     real(8):: time = 0d0
     real(8):: atime = 0d0               ! for active queue
     real(8):: out_next = 0d0
@@ -82,6 +84,7 @@ MODULE task_mod
     logical:: rotated=.false.
     logical:: limit_dtime=.false.
     logical:: dump_it=.false.
+    logical:: finished=.false.
     type(lock_t), pointer:: lock        ! OMP lock
     type(random_t):: random             ! pseudo-random number generator
     type(aux_t):: aux
@@ -123,6 +126,7 @@ MODULE task_mod
   end type
   logical:: first_time=.true.
   integer:: track_id=0
+  integer:: verbose=0
   integer, dimension(:), pointer, save:: id => null()
   type(dll_t), pointer:: deleted_list
 CONTAINS
@@ -147,11 +151,11 @@ SUBROUTINE init (self)
   class (task_t):: self
   character(len=120):: ids= &
     '$Id$ tasks/task_mod.f90'
-  integer:: iostat, id, verbose
+  integer:: iostat, id, id_master
   logical, save:: do_dumps
   integer, save:: id_max=0
-  namelist /task_params/ track_id, do_dumps
-  namelist /dump_params/ id, verbose, iostat
+  namelist /task_params/ track_id, do_dumps, verbose
+  namelist /dump_params/ id, iostat
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init')
   call trace%print_id (ids)
@@ -160,11 +164,14 @@ SUBROUTINE init (self)
     call init_unique (self)
   else
     !---------------------------------------------------------------------------
-    ! If a task already has an id, update the MPI counter to at least that value
+    ! If a task already has an id, update the MPI counter if its value is less.
+    ! The id of a virtual copy of a new AMR task should NOT trigger this.
     !---------------------------------------------------------------------------
-    id_max = mpi%id%update(0)
-    id_max = max(id_max,self%id+1)
-    call mpi%id%reset(id_max)
+    id_master = mpi%id%update(0)
+    if (id_master < self%id) then
+      write (stderr,*) 'task_t%init: updating master id', id_master, self%id
+      id_master = mpi%id%update (self%id-id_master)
+    end if
   end if
   !-----------------------------------------------------------------------------
   ! First thread to enter reads task_params
@@ -172,8 +179,8 @@ SUBROUTINE init (self)
   if (first_time) then
     rewind (io%input)
     read (io%input, task_params, iostat=iostat)
-    write (io%output, task_params)
     call io%namelist_warning ('task_params', iostat)
+    write (io%output, task_params)
     first_time = .false.
   end if
   !-----------------------------------------------------------------------------
@@ -216,31 +223,40 @@ END SUBROUTINE init
 SUBROUTINE init_unique (self, same)
   class (task_t):: self
   logical, optional:: same
-  integer:: id
+  integer:: id, id_master
   integer, save:: id_same=0
   !-----------------------------------------------------------------------------
   ! Ranks that call this routine in sync  with same=.true. get a matching set
-  ! of IDs to prune from, while the master updates the global counter
+  ! of IDs to prune from, while the master rank updates the global counter
   !-----------------------------------------------------------------------------
   call trace_begin ('task_t%init_unique')
   if (present(same) .and. same) then
+    if (mpi%master) &
+      id_master = mpi%id%update (1)
     !$omp atomic capture
     id_same = id_same+1
     id = id_same
     !$omp end atomic
-    if (mpi%rank==0) then               ! on the master rank ..
-      mpi%id%i = id+1                   ! .. update the mpi%id counter directly
-    end if
-    if (io%verbose > 0) &
-      write (io_unit%log,*) 'task_t%init_unique(same): mpi%id, id =', id_same, id
+    if (verbose > 0) &
+      write (io_unit%log,*) 'task_t%init_unique(same): id =', &
+        id, id_same, id_master
   !-----------------------------------------------------------------------------
   ! Calls without the same option return unique IDs, which do not overlap with
   ! matching set of IDs
   !-----------------------------------------------------------------------------
   else
-    id = mpi%id%update (1)
-    if (io%verbose > 0) &
-      write (io_unit%log,*) 'task_t%init_unique(else): mpi%id, id =', id_same, id
+    id_master = mpi%id%update (1)
+    do while (id_master == id_same)
+      write (stderr,*) 'task_t%init_unique ERROR: same value returned', id_same 
+      write (io_unit%mpi,*) 'task_t%init_unique ERROR: same value returned', id_same 
+      id_master = mpi%id%update (1)
+    end do
+    !$omp atomic write
+    id_same = id_master
+    id = id_master
+    if (verbose > 0) &
+      write (io_unit%log,*) 'task_t%init_unique(else): id =', &
+        id, id_same, id_master
   end if
   self%id = id
   call trace%end ()
@@ -357,6 +373,8 @@ SUBROUTINE rotate (self)
   iptr = self%new                                       ! new right-most slot
   !$omp atomic update
   self%istep = self%istep + 1
+  !$omp atomic update
+  self%rank_steps = self%rank_steps + 1
   !$omp atomic write
   self%time = time
   if (io%verbose>2) &
@@ -548,7 +566,6 @@ END FUNCTION
 !===============================================================================
 LOGICAL FUNCTION has_finished (self)
   class (task_t):: self
-  integer:: bit
   !.............................................................................
   has_finished = (self%time > io%end_time)
 END FUNCTION

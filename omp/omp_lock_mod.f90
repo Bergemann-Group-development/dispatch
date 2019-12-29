@@ -44,12 +44,11 @@ MODULE omp_lock_mod
     procedure:: check
     procedure:: unset
     procedure:: destroy
-    procedure, nopass:: info
+    procedure:: info
   end type
   integer, save:: verbose=0
   real, save:: verbose_time=0.0
   integer, save:: id_save=-1, n_lock=0
-  logical, save:: on = .true.
   character(len=6):: log='queue'
   character(len=6):: ext, ext1, ext2
   integer:: unit
@@ -69,11 +68,11 @@ SUBROUTINE init (self, kind, id)
   logical, save:: tasks=.true., links=.false.
   integer:: iostat
   logical:: set_id
-  logical:: first_time=.true.
+  logical, save:: on = .true.
+  logical, save:: first_time=.true.
   namelist /lock_params/ on, verbose, verbose_time, log, tasks, links, &
     alternate_time
   !-----------------------------------------------------------------------------
-  if (.not.on) return
 #ifdef TRACE 
   call trace%begin('lock_t%init')
 #endif
@@ -119,10 +118,11 @@ SUBROUTINE init (self, kind, id)
       write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
         self%kind, self%id, set_id
     omp_lock%on = on
+    self%on  = on
   end if
   !$omp end critical (lock_cr)
   if (omp%nthreads == 1) &
-    on = .false.
+    self%on = .false.
 #ifdef TRACE 
   call trace%end()
 #endif
@@ -134,7 +134,7 @@ END SUBROUTINE init
 SUBROUTINE append (self)
   class(lock_t), target:: self
   !-----------------------------------------------------------------------------
-  if (.not.on) return
+  if (.not.self%on) return
   !$omp critical (lock_cr)
   self%next => omp_lock%next
   omp_lock%next => self
@@ -152,7 +152,7 @@ SUBROUTINE set (self, label)
   integer:: thread, othread, level
   real(8):: wc
   !-----------------------------------------------------------------------------
-  if (.not.on) return
+  if (.not.self%on) return
   if (self%id == -1) call self%init
 #ifdef TRACE 
   call trace%begin('lock_t%set')
@@ -204,6 +204,7 @@ SUBROUTINE alternate_log (self)
   class(lock_t):: self
   real(8):: wc
   !-----------------------------------------------------------------------------
+  if (.not.self%on) return
   if (alternate_time > 0d0) then
     wc = wallclock()
     if (wc > alternate_next) then
@@ -227,7 +228,7 @@ FUNCTION test (self) RESULT (out)
   integer:: thread
   real(8):: wc
   !-----------------------------------------------------------------------------
-  if (.not.on) return
+  if (.not.self%on) return
 #ifdef TRACE 
   call trace%begin('lock_t%test')
 #endif
@@ -268,6 +269,7 @@ FUNCTION check (self) RESULT (out)
   logical:: out
   integer:: thread
   !-----------------------------------------------------------------------------
+  if (.not.self%on) return
   thread = omp_get_thread_num()
   out = (thread == self%thread)
 END FUNCTION check
@@ -281,7 +283,7 @@ SUBROUTINE unset (self, label)
   integer:: thread, level
   real(8):: wc
   !-----------------------------------------------------------------------------
-  if (.not.on) return
+  if (.not.self%on) return
 #ifdef TRACE 
   call trace%begin('lock_t%unset')
 #endif
@@ -318,18 +320,19 @@ END SUBROUTINE unset
 SUBROUTINE destroy (self)
   class(lock_t):: self
   !-----------------------------------------------------------------------------
-  if (.not.on) return
+  if (.not.self%on) return
   call omp_destroy_nest_lock (self%lock)
   self%thread = -1
 END SUBROUTINE destroy
 
 !===============================================================================
-SUBROUTINE info (unit)
+SUBROUTINE info (self, unit)
+  class(lock_t):: self
   integer:: unit
   real(8):: time
   class(lock_t), pointer:: lock
   !-----------------------------------------------------------------------------
-  if (.not.on) return
+  if (.not.self%on) return
   if (verbose > 0) then
     lock => omp_lock%next
     !$omp critical (lock_cr)

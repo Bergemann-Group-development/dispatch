@@ -58,7 +58,7 @@ CONTAINS
 !> neighbor lists, and finally checking if they are ready to execute
 !===============================================================================
 SUBROUTINE init (self, name)
-  class(task_list_t):: self
+  class(task_list_t), target:: self
   character(len=*), optional:: name
   class(link_t), pointer:: link
   integer:: iostat
@@ -86,7 +86,6 @@ SUBROUTINE init (self, name)
   timer%dead_mans_hand = dead_mans_hand
   self%verbose = verbose
   self%detailed_timer = detailed_timer
-  call load_balance%init
   call trace_end
 END SUBROUTINE init
 
@@ -174,8 +173,9 @@ END SUBROUTINE init_levels
 !> everything local to self%update is thread private.
 !===============================================================================
 SUBROUTINE startup (self)
-  class(task_list_t):: self
+  class(task_list_t), target:: self
   !.............................................................................
+  class(list_t), pointer:: task_list
   class(link_t), pointer:: link, rem
   class(task_t), pointer:: task
   real(8):: sec
@@ -204,6 +204,8 @@ SUBROUTINE startup (self)
   call self%init_levels
   call self%task_mesg_t%init
   call validate%init
+  task_list => self
+  call load_balance%init (task_list)
   !-----------------------------------------------------------------------------
   ! When restarting, the virtual tasks need to be received and unpacked before
   ! the first guard zone downloads.  We therefore trigger a send of all bndry
@@ -302,8 +304,10 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   logical, optional:: was_refined, was_derefined
   !.............................................................................
   class(task_t), pointer:: task
-  real(8):: wc, levelstart
+  real(8):: wc, levelstart, time
   logical:: refined, derefined
+  integer:: end_count, io_count, na
+  integer, save:: count=1
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin('task_list_t%update', itimer=itimer)
@@ -343,7 +347,9 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   ! onto the queue, with the same task time; i.e., to the head of the queue.
   ! If the task is virtual, it will not be checked by this rank.
   !-----------------------------------------------------------------------------
+  call load_balance%lock%set ('refine')
   call refine%check_current(self, head, refined, derefined)
+  call load_balance%lock%unset ('refine')
   !-----------------------------------------------------------------------------
   if (present(was_refined)) then
     was_refined = refined
@@ -399,7 +405,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   end if
   !$omp atomic
   mpi_mesg%n_update = mpi_mesg%n_update+1
-  if (self%verbose>1) &
+  if (self%verbose > 1) &
     write (io_unit%log,'(a,i4,2x,a,i7,2x,a,2x,a,i7,2x,a,1p,2g14.6,2x,a,2i5,l3)') &
     'thread', omp_mythread, 'task', task%id, trim(task%type), &
     'step', task%istep, 'dt, time:', task%dtime, task%time, &
@@ -434,17 +440,14 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   ! of its nbors that became new boundary patches over to relevant ranks,
   ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
   !-----------------------------------------------------------------------------
+  call load_balance%lock%set ('task_list')
+  call self%update_status (head)
   if (task%is_set(bits%boundary)) then                ! boundary patch?
     head%task%nq = self%nq                            ! make sure to pass on
-    if (load_balance%check_load (head)) then          ! sell?
-       call self%count_status                         ! cheap & robust overkill
-    end if
-    if (task%id == io%id_debug) &
-      write(io_unit%mpi,*) &
-        'DBG task_list_t%update: calling send_to_vnbors', task%id
-    call task%log ('send')
+    call load_balance%check_queue (head)              ! consider load balance
     call self%send_to_vnbors (head)                   ! send to virtual nbors
   end if
+  call load_balance%lock%unset ('task_list')
   !-----------------------------------------------------------------------------
   ! If the task has bits%init_nbors set, call init_nbors(), which also clears
   ! the bit
@@ -459,41 +462,60 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     end if
   end if
   !-----------------------------------------------------------------------------
-  ! Tasks that have finished are subtracted from the task list count but are
-  ! not removed, since their data may be needed by other tasks (including on
-  ! other ranks). In principle it should not be necessary to put a finished
-  ! task back into the ready queue, since it has a time > end_time, and thus
-  ! should not be able to stop another task from being considered ready.
+  if (task%is_set (bits%update_status)) then
+    call self%update_status (head)
+  end if
   !-----------------------------------------------------------------------------
-  if (task%has_finished()) then                       ! just finished:
-    !---------------------------------------------------------------------------
-    ! Record the time when the first task finishes, and at dead_mans_hand time
-    ! after that force the active task count to zero, which triggers job end
-    !---------------------------------------------------------------------------
+  ! For the purpose of deciding to end the run, we check the task out_next if
+  ! I/O is active, or else just the task time.  This ensures we get a complete 
+  ! last snapshot
+  !-----------------------------------------------------------------------------
+  if (io%do_output) then
+    time = task%out_next-task%dtime
+  else
+    time = task%time
+  end if
+  !-----------------------------------------------------------------------------
+  ! Task that pass the end_time are flagged as finished, but continue updating,
+  ! while load balancing and refinement are turned off.  The number of tasks
+  ! that have finished is counted, and then the number reaches the number of
+  ! active tasks the MPI end_counter is incremented from this rank.  When all
+  ! other ranks have incremented the end_counter, AND have also finished their
+  ! contributions to any active output, the timer%done flag is set, which causes
+  ! exit from the event loop in the dispatcher, and the code exits.
+  !-----------------------------------------------------------------------------
+  if (time > io%end_time .and. .not.task%finished) then
+    !$omp critical (finish_cr)
+    task%finished = .true.
+    call self%count_status                          ! make sure counts are OK
     if (first_finished == 0.0) then
-      !$omp atomic write
-      first_finished = wallclock()                    ! cf. dispatcher
+      first_finished = wallclock()                  ! cf. dispatcher
+      call load_balance%set (active=.false.)        ! turn off load balancing
+      refine%on = .false.                           ! turn off refinement
+      na = self%na
+      if (self%na /= na) &
+        write (io_unit%mpi,*) 'task_list_t%update: na revised', na, self%na
+      count = 0                                     ! start counting tasks
     else if (wallclock() > first_finished+dead_mans_hand) then
       call dead_mans_hand_list (self)
-      self%na = 0
+      timer%done = .true.
     end if
-    call load_balance%active (.false.)                ! turn off load balancing
-    !---------------------------------------------------------------------------
-    ! Use bits%frozen to make sure the task only decrements from self%na once
-    !---------------------------------------------------------------------------
-    if (task%is_clear (bits%frozen)) then
-      call task%set (bits%frozen)
-      call self%count_status ('has_finished')         ! TEST
-      if (self%verbose > 0) then
-        write (io_unit%log,*) task%id, 'has finished, na =', self%na
-        flush (io_unit%log)
-      end if
+    count = count+1                                 ! count finished tasks
+    write (io_unit%mpi,'(f12.6,4x,a,i6,f12.6,2i5)') &
+      wallclock(), 'task_list_t%update: id, time, count =', &
+      task%id, task%time, count, self%na
+    if (count == self%na) then
+      end_count = mpi%end_counter%update(+1)
     end if
+    !$omp end critical (finish_cr)
   end if
-  if (task%time > io%end_time .and. task%is_clear(bits%frozen)) then
-    print *, mpi%rank, omp%thread, 'ERROR: task should be frozen', &
-      task%time, io%end_time, task%is_set(bits%frozen), task%has_finished()
-    call task%set (bits%frozen)
+  if (count >= self%na) then
+    end_count = mpi%end_counter%update(0)
+    io_count = mod(io%counter%update(0),mpi%size)
+    write (io_unit%mpi,'(f12.6,4x,a,i6,f12.6,3i5)') wallclock(), &
+      'id, time, end_count, io_count =', task%id, task%time, count, &
+      end_count, io_count
+    timer%done = (end_count >= mpi%size .and. io_count == 0)
   end if
   !-----------------------------------------------------------------------------
   ! Periodic task syncronization:  The first time a task%time is exactly equal

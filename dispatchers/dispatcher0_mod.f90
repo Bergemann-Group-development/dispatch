@@ -103,7 +103,7 @@ SUBROUTINE execute (self, task_list, test)
   ! Loop over tasks
   !-----------------------------------------------------------------------------
   !$omp parallel
-  do while (task_list%na > 0 .and. wallclock() < io%job_seconds)
+  do while (.not.timer%done .and. wallclock() < io%job_seconds)
     call self%update (task_list, test)
     if (task_list%na == task_list%n_tasks) then
       !$omp atomic
@@ -165,8 +165,8 @@ SUBROUTINE update (self, task_list, test)
   class(task_t), pointer:: task, otask
   class(mesg_t), pointer:: mesg
   logical:: already_busy, was_refined, was_derefined
-  real(8):: wc, start
-  real(8), save:: time, otime=0d0
+  real(8):: wc, start, time_incr
+  real(8), save:: time, otime=0d0, spin_start=0d0
   integer, save:: oid=0
   integer:: i, id, nq, n_unpk
   integer:: stalled_l
@@ -206,6 +206,12 @@ SUBROUTINE update (self, task_list, test)
   !$omp atomic read
   nq = task_list%nq
   if (nq == 0) then
+    if (n_stalled == 0) then
+      !$omp atomic write
+      spin_start = wallclock()
+    end if
+    !$omp atomic update
+    n_stalled = n_stalled + 1
     call stall_handler
     call trace%end(itimer(i))
     return
@@ -412,12 +418,41 @@ SUBROUTINE update (self, task_list, test)
     end if
     !$omp atomic update
     timer%busy_time = timer%busy_time + (wallclock()-start)
+    if (n_stalled > 0) then
+      !-------------------------------------------------------------------------
+      ! We come here the first time the queue is non-empty, after being empty
+      !-------------------------------------------------------------------------
+      time_incr = wallclock()-spin_start
+      !$omp atomic update
+      timer%spin_time = timer%spin_time + time_incr
+      !$omp atomic write
+      n_stalled = 0
+      !$omp atomic write
+      spin_start = 0d0
+    end if
+  else if (n_stalled == 0) then
+    !---------------------------------------------------------------------------
+    ! We come here the first time the queue is empty, after being non-empty,
+    ! since n_stalled remains empty until we come here
+    !---------------------------------------------------------------------------
+    !$omp atomic write
+    spin_start = wallclock()
+    !$omp atomic update
+    n_stalled = n_stalled + 1
   else if (n_stalled >= 10000) then
     call stall_handler
+    time_incr = wallclock()-spin_start
+    !$omp atomic update
+    timer%spin_time = timer%spin_time + time_incr
+    !$omp atomic write
     n_stalled = 0
   else
+    !---------------------------------------------------------------------------
+    ! Continuing empty streak
+    !---------------------------------------------------------------------------
     !$omp atomic update
     n_stalled = n_stalled+1
+write (io_unit%log,*) 'n_stalled(2) =', n_stalled
   end if
   call trace%end (itimer(i))
 contains
@@ -512,13 +547,9 @@ subroutine stall_handler
       end if
       !$omp end critical (stall_cr)
     else if (do_delay) then
-      !$omp atomic update
-      timer%spin_time = timer%spin_time + (wallclock()-start)
       call mpi_mesg%delay (stalled)
       return
     end if
-    !$omp atomic update
-    timer%spin_time = timer%spin_time + (wallclock()-start)
 end subroutine stall_handler
 END SUBROUTINE update
 
