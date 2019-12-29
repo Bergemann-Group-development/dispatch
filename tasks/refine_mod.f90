@@ -221,7 +221,6 @@ MODULE refine_mod
   real, dimension(ngradvar):: max_grad=0.0    ! Tolerance values for gradient detector refinement
   real, dimension(ngradvar):: min_grad=0.0    ! Tolerance values for gradient detector derefinement
   character(len=32), dimension(ngradvar):: grad_var=""
-  logical:: on=.false.                        ! Flag to turn the entire process on or off
   logical:: force_cubical=.false.             ! Force cubical patches
   logical:: detailed_timer=.false.            ! Lump all AMR together when false
   logical:: do_dump=.false.                   ! dump parent & child
@@ -241,6 +240,7 @@ SUBROUTINE init (self)
   integer:: iostat
   integer, save:: levelmin=0, levelmax=0
   integer, save:: ratio=2                     ! How does a patch split when it is refined
+  logical:: on=.false.                        ! Flag to turn the entire process on or off
   logical, save:: first_time = .true.
   namelist /refine_params/ verbose, on, levelmin, levelmax, check_interval, &
     ratio, refine_from_t, refine_until_t, min_dx, max_dx, derefine_limit, &
@@ -309,7 +309,6 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   refine = 0
-  if (.not. on) return
   call trace%begin('refine_t%needed', itimer=itimer, detailed_timer=detailed_timer)
   !----------------------------------------------------------------------------
   ! Refinement criteria, starting with assumed derefinement
@@ -396,10 +395,17 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
   !-----------------------------------------------------------------------------
   ! Punt on refinement if the task is very new, or has the init_nbors bit set
   !-----------------------------------------------------------------------------
-  if (.not.on .or. &
-      link%task%istep < wait_refine_nsteps .or. &
-      link%task%is_set (bits%init_nbors)) &
+  if (.not.self%on .or. &
+      link%task%istep < wait_refine_nsteps) then
         return
+  end if
+  if (verbose > 0) then
+    if (link%task%is_set (bits%init_nbors)) &
+      write(io_unit%log,'(i6,f12.6,4x,a,3x,2l1)') &
+        link%task%id, link%task%time, 'has bits%init_nbors', &
+        link%task%is_set (bits%boundary), &
+        link%task%is_set (bits%virtual)
+  end if
   !---------------------------------------------------------------------------
   call trace%begin('refine_t%check_current', itimer=itimer)
   patch => solver%cast2solver (link%task)
@@ -455,7 +461,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'mask'
     !---------------------------------------------------------------------------
     ! Apply refinement criteria on potential child patch parts, but only if
-    ! either refinement has been indicated, or if derfinement is allowed
+    ! either refinement has been indicated, or if derefinement is allowed
     !---------------------------------------------------------------------------
     if (refine /= 0) then
       call selective_refine (self, tasklist, patch, refine, was_refined, was_derefined)
@@ -469,6 +475,14 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     !---------------------------------------------------------------------------
     patch%check_refine_next = patch%istep + check_interval
     deallocate (patch%irefine)
+  else
+!write(stdout,*) 'SKIP', patch%id, &
+!      patch%is_clear(bits%virtual)  , &
+!      dxmin >  min_dx               , &
+!      dxmax <= max_dx               , &
+!      patch%time >= refine_from_t   , &
+!      patch%time <  refine_until_t  , &
+!      patch%istep >= patch%check_refine_next
   end if
   call trace%end (itimer)
 END SUBROUTINE check_current
@@ -776,6 +790,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child%id = 0                                       ! ensure a new ID
   child%size = child_size                            ! new size
   child%position = pos                               ! patch position
+  child%centre_nat = pos                             ! patch position
   child%llc_cart = child%position - &                ! mid point position
     merge(0.5,0.0,child%n>1) * child%size            ! lower left corner
   child%llc_nat = child%llc_cart                     ! FIXME!: this form only applies for Cartesian coords.
@@ -809,9 +824,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   ! Initialise the new patch
   !-----------------------------------------------------------------------------
   child%level = parent%level + 1                     ! must be set before init!
-  call child%set (bits%frozen)
   call child%init()                                  ! patch, for a new id
-  call child%clear (bits%frozen)
   child%level = parent%level + 1                     ! override patch_t%init
   child%time  = parent%time                          ! same time
   child%dtime = parent%dtime/self%ratio              ! for info only
@@ -827,19 +840,22 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child%out_next = child%iout*io%out_time            ! next output time
   child%dnload_time = -1.0                           ! for duplicate call test
   !-----------------------------------------------------------------------------
+  ! Check consistency
+  !-----------------------------------------------------------------------------
+  if (any(pos /= child%position  )) write (io_unit%log,*) 'ERROR: position'
+  if (any(pos /= child%mesh%p    )) write (io_unit%log,*) 'ERROR: mesh%p'
+  if (any(pos /= child%centre_nat)) write (io_unit%log,*) 'ERROR: centre_nat'
+  if (any(pos /= child%mesh%centre_nat)) write (io_unit%log,*) &
+   'ERROR: mesh%centre_nat'
+  child%position        = pos
+  child%centre_nat      = pos
+  child%mesh%p          = pos
+  child%mesh%centre_nat = pos
+  !-----------------------------------------------------------------------------
   ! Increment I/O write counter, to avoid repeated writing of metadata
   !-----------------------------------------------------------------------------
   call data_io%update_counters (child, +1)
   call child%log ('created')
-  !-----------------------------------------------------------------------------
-  ! Check if the new patch, which might have been created to support another
-  ! patch, possibly should be immediately frozen. If that is the case, it still
-  ! needs to be added to the task list, in case it is needed for support, but by
-  ! setting bits%frozen it is prevented from being added to the ready queue.
-  !-----------------------------------------------------------------------------
-  if (child%time > io%end_time) then
-    call child%set (bits%frozen)
-  end if
   !-----------------------------------------------------------------------------
   ! Make parent a neighbor of the new child patch.  This will be overwritten
   ! in `init_nbor_nbors` but is necessary here to permit interpolation of
@@ -875,7 +891,8 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   end if
   !-----------------------------------------------------------------------------
   ! Add the child task to the task list, including giving it an nbor list etc,
-  ! and add it also to the ready queue
+  ! and add it also to the ready queue.  Since the parent was ready to update,
+  ! so is the child (at the same time, with a sub-set of the nbors).
   !-----------------------------------------------------------------------------
   call tlist%add_new_link (child_link)
   call tlist%queue_by_time (child_link)
