@@ -653,6 +653,9 @@ SUBROUTINE garbage_remove
   class(link_t), pointer:: link, next, prev
   !.............................................................................
   call trace%begin ('link_t%garbage_remove')
+  !$omp atomic
+  timer%levelpop (link%task%level) = &        ! level population count
+  timer%levelpop (link%task%level) - 1
   link => garbage%next
   prev => garbage                             ! in case we remove the 1st link
   do while (associated(link))

@@ -410,15 +410,7 @@ SUBROUTINE update_task (self, head, test, was_refined)
   !-----------------------------------------------------------------------------
   if (task%is_set(bits%boundary)) then                ! boundary patch?
     head%task%nq = self%nq                            ! make sure to pass on
-    if (load_balance%check_load (head)) then          ! sell?
-      !$omp atomic
-       self%na = self%na-1
-      !$omp atomic
-       self%nb = self%nb-1
-      !$omp atomic
-       self%nv = self%nv-1
-       call self%count_status                         ! redundant? (FIXME)
-    end if
+    call load_balance%check_queue (head)              ! load balance
     if (task%id == io%id_debug) &
       write(io_unit%mpi,*) &
         'DBG task_list_t%update: calling send_to_vnbors', task%id
@@ -431,7 +423,7 @@ SUBROUTINE update_task (self, head, test, was_refined)
   !-----------------------------------------------------------------------------
   if (task%has_finished()) then                       ! finished:
     call task%set (bits%frozen)
-    call load_balance%active (.false.)                ! turn off load balancing
+    call load_balance%set (active=.false.)            ! turn off load balancing
     !$omp atomic
     self%na = self%na-1
   end if
@@ -564,10 +556,6 @@ SUBROUTINE unpack (self, mesg, link)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('dispatcher5::unpack', itimer=itimer)
-  if (mesg%nbuf < 40) then
-    call load_balance%unpack (mesg%buffer)
-    return
-  end if
   !$omp critical (unpack_cr)
   task => link%task
   failed = .false.
@@ -633,14 +621,12 @@ SUBROUTINE unpack (self, mesg, link)
         wallclock(),'LB: rank',mpi%rank,' given patch',task%id,' by',mesg%sender
       if (verbose>0) &
         write (io_unit%log,*) 'task_mesg_t%unpack: swapped virtual to boundary:', task%id
-    !---------------------------------------------------------------------------
-    ! If the link has no nbors it is a newly created virtual task. Does it need
-    ! an nbor list?  At least we can use the nbor list to check that the link is
-    ! in its nbors nbor lists.  A new virtual task (where no task existed) means
-    ! that some nbor of it has changed from internal to boundary, which will be
-    ! checked by the test_nbor_status call below, but only if an nbor list exists.
-    !---------------------------------------------------------------------------
-    !else if (.not.associated(link%nbor)) then
+    else if (.not.associated(link%nbor)) then
+      !-------------------------------------------------------------------------
+      ! If the link has no nbors it is a newly created virtual task
+      !-------------------------------------------------------------------------
+      call self%init_nbors (link)
+      call self%set_init_nbors (link)
     else if (task%is_set(bits%swap_request) .and. task%is_set(bits%virtual)) then
       if (verbose>0) &
         write (io_unit%log,*) 'task_mesg_t%unpack: new virtual patch:', task%id

@@ -53,6 +53,7 @@ MODULE patch_mod
     real(8):: gamma=1.4                 ! gas gamma
     real(8):: dt_fixed                  ! for fixed time step Courant condition
     real:: u_fixed, u_max               ! for fixed time step Courant condition
+    real:: d_min, d_max                 ! for info
     integer:: ndim = ndim               ! number of dimensions
     integer:: nv=0                      ! number of variables
     integer:: nw=2                      ! number of work indices
@@ -182,6 +183,7 @@ MODULE patch_mod
     procedure:: get_overlap
     procedure:: init_level
     procedure:: dump
+    procedure:: cost
   end type
   !-----------------------------------------------------------------------------
   ! Sequential header, for MPI and I/O
@@ -202,7 +204,7 @@ MODULE patch_mod
     integer:: nv                        ! number of variables
     integer:: it
     integer:: nq=0
-    integer:: npad=0
+    integer:: rank_steps=0
     real(8):: time
     real(8):: out_next
     real(8):: print_next
@@ -263,7 +265,8 @@ SUBROUTINE patch_to_header (self, head)
   head%t(1:nt)    = self%t
   head%dt(1:nt)   = self%dt
   head%iit(1:nt)  = self%iit
-  head%nq         = self%nq
+  head%nq         = shared%n_queue
+  head%rank_steps = self%rank_steps
   head%send_time  = wallclock()
   if (io%verbose > 1) &
     write (io_unit%log,'(f12.6,3x,a,i7,i4,l3,2i4,f8.4)') &
@@ -330,6 +333,7 @@ SUBROUTINE header_to_patch (self, head)
   self%position   = head%position
   self%velocity   = head%velocity
   self%size       = head%size
+  self%rank_steps = head%rank_steps
   !$omp atomic write
   self%it         = head%it
   new             = mod(head%it,head%nt) + 1
@@ -1442,22 +1446,23 @@ END SUBROUTINE unpack
 !>   verbose==3:        print iv=1,nv to stdout and io_unit%log for all id
 !===============================================================================
 SUBROUTINE info (self, nq, ntask, experiment_name)
-  class(patch_t):: self
-  integer, optional:: nq, ntask
-  character(len=64), optional:: experiment_name
+  class(patch_t)     :: self
+  integer            :: nq, ntask
+  character(len=64)  :: experiment_name
+  optional           :: nq, ntask, experiment_name
   !.............................................................................
-  integer:: iv, nv, iprint_l
-  integer:: it0, it1, it
-  real:: fmin, fmax
-  real, dimension(:,:,:), pointer:: df
-  integer, parameter:: max_lines=50
-  integer, save:: counts(6)=0, id_prv=0
-  integer:: counts_l(6), i
-  character(len=120):: fmt
-  real(8):: time, print_next
-  logical:: print_it
-  type(lock_t), save:: lock
-  integer, save:: itimer=0
+  type(lock_t), save :: lock
+  integer, parameter :: max_lines=50
+  integer, save      :: itimer=0
+  integer, save      :: counts(6)=0, id_prv=0
+  integer            :: counts_l(6), i
+  integer            :: it0, it1, it, iv, nv, iprint_l
+  real, save         :: d_min=0.0, d_max=huge(1.)
+  real               :: fmin, fmax
+  real, pointer      :: df(:,:,:)
+  real(8)            :: time, print_next
+  logical            :: print_it
+  character(len=120) :: fmt
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%info', itimer=itimer)
   !$omp atomic write
@@ -1492,18 +1497,16 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     call trace%end (itimer)
     return
   end if
-  1 format(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,9i5,2i4,l3,l1,o12)
-  if (self%time < 1d4) then
-    fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,2i4,l3,l1,o12)'
-  else
-    fmt = '(a,i8,2i4,i3,1p,2e12.5,     0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,2i4,l3,l1,o12)'
-  end if
   !-----------------------------------------------------------------------------
-  if ((io%verbose>=0).and.(self%is_clear(bits%no_density))) then
+  if ((io%verbose >= 0) .and. self%is_clear(bits%no_density)) then
+    !call self%mem_lock(self%it)%set ('info')
+    self%d_min = self%fminval(self%idx%d)
+    self%d_max = self%fmaxval(self%idx%d)
+    !call self%mem_lock(self%it)%unset ('info')
+     !$omp atomic
+    io%dmin = min(io%dmin, self%d_min)
     !$omp atomic
-    io%dmin = min(io%dmin, real(self%fminval(self%mem(:,:,:,self%idx%d,self%it,1)),kind=4))
-    !$omp atomic
-    io%dmax = max(io%dmax, real(self%fmaxval(self%mem(:,:,:,self%idx%d,self%it,1)),kind=4))
+    io%dmax = max(io%dmax, self%d_max)
     !---------------------------------------------------------------------------
     ! After coming back to the saved ID, reset it, so we stop searching
     !---------------------------------------------------------------------------
@@ -1546,11 +1549,23 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     else if (self%id==io%id) then
       print_it = .true.
     end if
+    !$omp atomic update
+    d_min = min(d_min, self%d_min)
+    !$omp atomic update
+    d_max = min(d_max, self%d_max)
+    !---------------------------------------------------------------------------
+    ! Write info to rank log for every time step if io%verbose > 0
+    !---------------------------------------------------------------------------
+    if (io%verbose > 0) then
+      time = self%time
+      iv = 1
+      call write_info (io_unit%mpi)
+    end if
     !---------------------------------------------------------------------------
     ! Print info for selected task, or tracked task
     !---------------------------------------------------------------------------
     print_it = print_it .or. self%track
-    if (print_it .or. io%verbose>0) then
+    if (print_it) then
       nv = 1
       if (io%verbose>2) nv = self%nv
       !-------------------------------------------------------------------------
@@ -1586,15 +1601,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         time = self%time
       end if
       do iv=1,nv
-        write(io%output,fmt) &
-          'upd',self%id, self%level, iv, omp_mythread, time, &
-          self%dtime, log10(max(self%u_max,1e-30)), &
-          io%dmin, io%dmax, &
-          self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
-          self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
-          real(timer%n_update), ntask, nq, counts, &
-          mpi_mesg%nq_send, mpi_mesg%nq_recv, mpi_mesg%unpk_list%n, &
-          self%is_set(bits%boundary), self%is_set(bits%virtual)
+        call write_info (io%output)
       end do
       flush (io%output)
       !$omp atomic write
@@ -1627,6 +1634,25 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
     end if
   end if
   call trace%end (itimer)
+contains
+  !=============================================================================
+  subroutine write_info (unit)
+    integer:: unit
+    if (self%time < 1d4) then
+      fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,2i4,l3,l1,o12)'
+    else
+      fmt = '(a,i8,2i4,i3,1p,2e12.5,     0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,2i4,l3,l1,o12)'
+    end if
+    write(unit,fmt) &
+      'upd',self%id, self%level, iv, omp_mythread, time, &
+      self%dtime, log10(max(self%u_max,1e-30)), &
+      io%dmin, io%dmax, &
+      self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
+      self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
+      real(timer%n_update), ntask, nq, counts, &
+      mpi_mesg%nq_send, mpi_mesg%nq_recv, mpi_mesg%unpk_list%n, &
+      self%is_set(bits%boundary), self%is_set(bits%virtual)
+  end subroutine write_info 
 END SUBROUTINE info
 
 !===============================================================================
@@ -1729,9 +1755,9 @@ FUNCTION index (self, other, oindex, f)
   real, dimension(3):: position, f, pos, pos_lb
   integer, dimension(3):: index, oindex
   !.............................................................................
-  pos = other%position + (oindex-other%offset)*other%ds         ! position in other
-  pos = pos-self%position                                       ! relative
+  pos = other%position - self%position                          ! relative pos
   pos = modulo (pos+0.5*self%box,self%box) - 0.5*self%box       ! wrap
+  pos = pos + (oindex-other%offset)*other%ds                    ! position in other
   f = self%offset + pos/self%ds                                 ! floating integer
   index = f                                                     ! smaller integer
   f = f - index                                                 ! remainder
@@ -1746,9 +1772,9 @@ FUNCTION nearest (self, other, index) RESULT (out)
   integer, dimension(3):: out, index
   real, dimension(3):: position, pos_lb, f, pos
   !.............................................................................
-  pos = other%position + (index-other%offset)*other%ds          ! position in other
-  pos = pos-self%position                                       ! relative
+  pos = other%position - self%position                          ! relative pos
   pos = modulo (pos+0.5*self%box,self%box) - 0.5*self%box       ! wrap
+  pos = pos + (index-other%offset)*other%ds                     ! position in other
   f = self%offset + pos/self%ds                                 ! floating integer
   out = nint(f)                                                 ! nearest integer
 END FUNCTION nearest
@@ -1761,9 +1787,9 @@ FUNCTION lowest (self, other, index) RESULT (out)
   integer, dimension(3):: out, index
   real, dimension(3):: position, pos_lb, f, pos
   !.............................................................................
-  pos = other%position + (index-other%offset-0.49)*other%ds     ! position in other
-  pos = pos-self%position                                       ! relative
+  pos = other%position - self%position                          ! relative pos
   pos = modulo (pos+0.5*self%box,self%box) - 0.5*self%box       ! wrap
+  pos = pos + (index-other%offset-0.49)*other%ds     ! position in other
   f = self%offset + pos/self%ds                                 ! floating integer
   out = nint(f)                                                 ! lowest integer
 END FUNCTION lowest
@@ -1775,9 +1801,10 @@ FUNCTION highest (self, other, index) RESULT (out)
   integer, dimension(3):: out, index
   real, dimension(3):: position, pos_lb, f, pos
   !.............................................................................
-  pos = other%position + (index-other%offset+0.49)*other%ds     ! position in other
-  pos = pos-self%position                                       ! relative
+  pos = other%position - self%position                          ! relative pos
   pos = modulo (pos+0.5*self%box,self%box) - 0.5*self%box       ! wrap
+  pos = pos + (index-other%offset+0.49)*other%ds                ! position in other
+  pos = pos-self%position                                       ! relative
   f = self%offset + pos/self%ds                                 ! floating integer
   out = nint(f)                                                 ! highest integer
 END FUNCTION highest
@@ -2477,6 +2504,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
       pt(2) = 0.0
     else
       pt(2) = (time-t(j))/dt
+      pt(2) = max(0d0-self%grace, min(1d0+self%grace, pt(2)))
     end if
   end if
   pt(1) = 1.-pt(2)
@@ -2992,5 +3020,19 @@ SUBROUTINE dump (self, tag, ad_hoc)
     !$omp end critical (dump_cr)
   end if
 END SUBROUTINE dump
+
+!===============================================================================
+!> Return a measure of the update cost
+!===============================================================================
+REAL FUNCTION cost (self)
+  class(patch_t):: self
+  !.............................................................................
+  if (self%dtime > 0.0) then
+    cost = product(self%n)/self%dtime
+  else
+    cost = 0.0
+  end if
+END FUNCTION cost
+
 
 END MODULE patch_mod
