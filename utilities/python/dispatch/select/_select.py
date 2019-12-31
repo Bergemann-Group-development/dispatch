@@ -376,12 +376,16 @@ def stat(s,iv=0,i4=0,verbose=0):
     rmax=[p.x[m[0]],p.y[m[1]],p.z[m[2]]]
     m=minloc(d)
     rmin=[p.x[m[0]],p.y[m[1]],p.z[m[2]]]
+    ten=len(pp)//10+2
     for p in pp:
+        if verbose>1:
+            if p.id%ten==0:
+                print('{:.0f}%'.format(100*p.id//len(pp)))
         if iv in p.all_keys:
             data=p.var(iv)
             dv=np.product(p.ds)
-            v=v+dv
             d=data
+            v=v+dv
             dmx=float(d.max())
             dmn=float(d.min())
             if dmx>dmax:
@@ -394,7 +398,7 @@ def stat(s,iv=0,i4=0,verbose=0):
                 m=minloc(d)
                 rmin=[p.xi[m[0]],p.yi[m[1]],p.zi[m[2]]]
                 pmin=p
-            f=f+dv*np.sum(d)
+            f=f+dv*d.mean()
     av=float(f/v)
     f=0.0
     for p in pp:
@@ -409,4 +413,4 @@ def stat(s,iv=0,i4=0,verbose=0):
         print('    rms: {:12.4e}'.format(rm))
         print('    max: {:12.4e}, id={} at {}'.format(dmax,pmax.id,rmax))
         print('    min: {:12.4e}, id={} at {}'.format(dmin,pmin.id,rmin))
-    return {'max':dmax, 'min':dmin, 'maxloc':rmax, 'minloc':rmin, 'pmax':pmax, 'pmin':pmin, 'rms':rm, 'av':av}
+    return {'max':dmax, 'min':dmin, 'maxloc':rmax, 'minloc':rmin, 'pmax':pmax, 'pmin':pmin, 'rms':rm, 'average':av}

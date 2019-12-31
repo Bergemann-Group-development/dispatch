@@ -22,7 +22,7 @@ def aver(s,iv=0):
         f=f+dv*np.sum(data)
     return f/v
 
-def rms(s,iv=0):
+def rms(s,iv=0,verbose=0):
     f=0.0
     v=0.0
     p=s.patches[0]
@@ -30,15 +30,17 @@ def rms(s,iv=0):
         if iv in p.all_keys:
             data=p.var(iv)
             dv=np.product(p.ds)
-            v=v+dv
+            v=v+dv*len(data)
             f=f+dv*np.sum(data)
     fa=f/v
+    if verbose:
+        print('average: {:.3e}'.format(fa))
     f=0.0
     for p in s.patches:
         if iv in p.all_keys:
             data=p.var(iv)
             dv=np.product(p.ds)
-            v=v+dv
+            v=v+dv*len(data)
             f=f+dv*np.sum((data-fa)**2)
     return np.sqrt(f/v)
 
