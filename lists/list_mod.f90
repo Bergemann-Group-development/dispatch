@@ -1280,7 +1280,7 @@ SUBROUTINE prune_nbors (self, link, head, verbose)
               write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
                 'link_t%prune_nbors: removing task, level =', &
                 nbor%task%id, nbor%task%level
-            call link%remove_nbor (head, nbor, nolock=.true.)
+            call nbor%remove_nbor (head, nolock=.true.)
             removed = .true.
             exit
           end if
@@ -1299,7 +1299,7 @@ SUBROUTINE prune_nbors (self, link, head, verbose)
               write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
                 'link_t%prune_nbors: removing task, level =', &
                 nbor%task%id, nbor%task%level
-            call link%remove_nbor (head, nbor, nolock=.true.)
+            call nbor%remove_nbor (head, nolock=.true.)
             removed = .true.
             exit
           end if

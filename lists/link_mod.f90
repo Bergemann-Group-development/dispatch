@@ -99,6 +99,7 @@ SUBROUTINE init_verbose (verb)
   !.............................................................................
   !$omp atomic write
   verbose = verb
+  write (io_unit%log,*) 'link_t%init_verbose: verbose =', verb
 END SUBROUTINE init_verbose
 
 !===============================================================================
@@ -142,18 +143,9 @@ SUBROUTINE make_new_nbor (self, selfp, that)
   class(link_t), pointer:: link1, link2
   !> ...........................................................................
   call trace_begin('list_t%make_new_nbor', 1)
-  allocate (link1)                              ! for our own nbors chain
-  link1%task => that%task                       ! the link points to that task
-  link1%nbor => that                            ! pointer to the nbor link
-  link1%link => that                            ! pointer to the nbor link
-  link1%parent => that%parent                   ! direct link to task parent
-  call self%add_nbor_by_quality (link1)         ! add to that chain in quality order
-  allocate (link2)                              ! for that's nbors chain
-  link2%task => self%task                       ! that's new link points to my task
-  link2%nbor => selfp                           ! pointer back to self
-  link2%link => selfp                           ! pointer back to self
-  link2%parent => selfp%parent                  ! direct link to self parent
-  call that%add_nbor_by_quality (link2)         ! add to my nbors chain in quality order
+  write (stderr,*) 'list_t%make_new_nbor is deprecated - interferes with other tasks!'
+  call self%add_nbor_by_quality (that)
+  call that%add_nbor_by_quality (selfp)
   call trace_end
 END SUBROUTINE make_new_nbor
 
@@ -319,42 +311,45 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
   call trace_end
 END SUBROUTINE add_nbor_by_rank
 
-
 !===============================================================================
-!> Remove this from the nbor list
+!> Remove the nbor with task equals self%task from the nbor list starting at head
 !===============================================================================
-SUBROUTINE remove_nbor (self, this)
+SUBROUTINE remove_nbor (self, head, nolock)
   class(link_t):: self
-  class(link_t), pointer:: this
+  class(link_t), pointer:: head
+  integer:: verbose
+  logical, optional:: nolock
   class(link_t), pointer:: nbor, prev, next
   integer, save:: itimer=0
   !.............................................................................
-  call trace%begin ('link_mod::remove_nbor', 1, itimer=itimer)
-  call self%lock%set ('remove_nbor')
-  if (io%verbose>1) &
-    write (io_unit%log,*) 'removing task', this%task%id,associated(this%link), &
+  call trace%begin ('link_t%remove_nbor', 1, itimer=itimer)
+  if (present(nolock) .and. nolock) &
+    call self%lock%set ('remove_nbor', itimer=itimer)
+  if (verbose > 0) &
+    write (io_unit%log,*) 'link_t%remove_nbor: ', self%task%id, &
       ' from nbor list of', self%task%id
   nullify (prev)
-  nbor => self%nbor
+  nbor => head
   do while (associated(nbor))
     next => nbor%next
-    if (associated(nbor%task,this%task)) then
+    if (associated(nbor%task,self%task)) then
       if (associated(prev)) then
         prev%next => nbor%next
       else
-        self%nbor => nbor%next
+        head => nbor%next
       end if
       deallocate (nbor)
+      nullify (nbor)
       self%task%n_nbors = self%task%n_nbors-1
       goto 9
     end if
     prev => nbor
     nbor => next
   end do
-  if (io%verbose>2) &
-    write (io_unit%log,*) 'WARNING: remove_nbor could not find task', this%task%id
+  write (io_unit%log,*) 'link_t%remove_nbor: WARNING, could not find task', self%task%id
 9 continue
-  call self%lock%unset ('remove_nbor')
+  if (present(nolock) .and. nolock) &
+    call self%lock%unset ('remove_nbor')
   call trace%end (itimer)
 END SUBROUTINE remove_nbor
 
@@ -366,11 +361,12 @@ SUBROUTINE remove_from_nbors (self, this)
   class(link_t), pointer:: this
   class(link_t), pointer:: nbor
   !.............................................................................
-  call trace_begin ('link_mod::remove_from_nbors', 2)
+  call trace_begin ('link_t%remove_from_nbors', 2)
   call self%lock%set ('remove_from_nbors')
+  write (stderr,*) 'link_t%remove_from:nbors is DEPRECATED'
   nbor => self%nbor
   do while (associated(nbor))
-    call nbor%link%remove_nbor (this)
+    call nbor%link%remove_nbor (nbor%link%nbor)
     nbor => nbor%next
   end do
   call self%lock%unset ('remove_from_nbors')
@@ -389,19 +385,23 @@ SUBROUTINE remove_nbor_list (self, nbors)
     call trace%begin ('link_t%remove_nbor_list', itimer=itimer)
   if (verbose > 1) &
     write (io_unit%mpi,'(f12.6,i4,2x,a)') wallclock(), omp%thread, 'remove_nbor_list'
+  if (associated(nbors)) then
     nbor => nbors
-  do while (associated(nbor))
-    next => nbor%next
-    !$omp atomic update
-    nbor%task%n_needed = nbor%task%n_needed - 1
-    if (verbose > 1) then
-      write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
-        nbor%task%id, 'needed by', nbor%task%n_needed, 'remove_nb_list'
-      flush (io_unit%mpi)
-    end if
-    deallocate (nbor)
-    nbor => next
-  end do
+    do while (associated(nbor))
+      next => nbor%next
+      !$omp atomic update
+      nbor%task%n_needed = nbor%task%n_needed - 1
+      if (verbose > 1) then
+        write (io_unit%mpi,'(f12.6,i4,i6,2x,a,i4,2x,a)') wallclock(), omp%thread, &
+          nbor%task%id, 'needed by', nbor%task%n_needed, 'remove_nb_list'
+        flush (io_unit%mpi)
+      end if
+      deallocate (nbor)
+      nbor => next
+    end do
+  else
+    write (io_unit%log,*) 'attempting to remove a non-existing nbor list'
+  end if
   nullify (nbors)
   if (timer%detailed) &
     call trace%end (itimer)
