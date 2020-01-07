@@ -514,45 +514,7 @@ SUBROUTINE reset_status (self, check)
   !-----------------------------------------------------------------------------
   link => self%head
   do while (associated(link))
-    if (link%task%rank == mpi%rank) then
-      !-------------------------------------------------------------------------
-      ! Assume internal -- this may change in set_status_and_flags()
-      !-------------------------------------------------------------------------
-      call link%task%set(bits%internal)
-      call link%task%clear(bits%boundary+bits%virtual+bits%external)
-    else
-      !-------------------------------------------------------------------------
-      ! Assume external -- this may change in set_status_and_flags()
-      !-------------------------------------------------------------------------
-      call link%task%set(bits%external)
-      call link%task%clear(bits%internal+bits%boundary+bits%virtual)
-    end if
-    !---------------------------------------------------------------------------
-    ! Run through nbors and set their status, optionally checking
-    !---------------------------------------------------------------------------
-    nb => link%nbor
-    do while (associated(nb))
-      if (present(check)) then
-        flags(:,1) = [nb%needed, nb%needs_me, nb%download]
-      end if
-      call link%task%nbor_relations (nb%task, nb%needed, nb%needs_me, nb%download)
-      if (present(check)) then
-        flags(:,2) = [nb%needed, nb%needs_me, nb%download]
-        if (.not.all(flags(:,2) .eqv. flags(:,1))) then
-          write (stderr,*) link%task%id, flags(:,1)
-          write (stderr,*)   nb%task%id, flags(:,2)
-          flush (stderr)
-          call io%abort ('nbor_relations() returned value inconsistent with initial values')
-        end if
-      end if
-      nb => nb%next
-    end do
-    if (self%verbose > 1) &
-      write(io_unit%log,'(a,i6,i4,3x,3l1)') &
-        'reset_status: task, rank, IBV =', link%task%id, link%task%rank, &
-        link%task%is_set(bits%internal), &
-        link%task%is_set(bits%boundary), &
-        link%task%is_set(bits%virtual)
+    call link%reset_status (link%nbor)
     n_internal = n_internal + merge(1,0,link%task%is_set(bits%internal))
     n_boundary = n_boundary + merge(1,0,link%task%is_set(bits%boundary))
     n_virtual  = n_virtual  + merge(1,0,link%task%is_set(bits%virtual ))
@@ -1171,7 +1133,11 @@ SUBROUTINE init_nbors (self, link)
   call trace%begin('list_t%init_nbors ', itimer=itimer)
   nullify (new_head, new_sort)
   n_add = 0
-  call self%lock%set ('init_nbors')
+  call self%lock%set ('init_nbors', itimer=itimer)
+  !-----------------------------------------------------------------------------
+  ! A new task, or one that changes from boundary to internal, needs to have the
+  ! internal bit set initially, to be removed if finding a virtual nbor
+  !-----------------------------------------------------------------------------
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
     if (.not.associated(scan,link) .and. associated(scan%task)) then
@@ -1247,6 +1213,11 @@ SUBROUTINE init_nbors (self, link)
   !-----------------------------------------------------------------------------
   if (link%task%is_clear (bits%boundary)) &
     call link%task%clear (bits%init_nbors)
+  !-----------------------------------------------------------------------------
+  ! A task that has a new nbor list needs to be checked to see if is possibly
+  ! is ready to be added to the queue
+  !-----------------------------------------------------------------------------
+  call self%check_ready (link)
   call trace%end (itimer)
 END SUBROUTINE init_nbors
 

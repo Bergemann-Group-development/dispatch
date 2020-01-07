@@ -64,6 +64,7 @@ MODULE link_mod
     procedure:: delete
     procedure:: sort_nbors_by_level
     procedure:: nbor_info
+    procedure:: reset_status
     procedure:: info
   end type
   type(link_t), target, public:: garbage
@@ -819,6 +820,61 @@ contains
     end if
   end subroutine nbor_check
 END SUBROUTINE sort_nbors_by_level
+
+!===============================================================================
+!> Reset the status bits and flags on a linked task and an nbor list
+!===============================================================================
+SUBROUTINE reset_status (self, nbor_list, check)
+  class(link_t):: self
+  class(link_t), pointer:: nbor_list
+  logical, optional:: check
+  !.............................................................................
+  class(link_t), pointer:: nb
+  logical:: flags(3,2)
+  !-----------------------------------------------------------------------------
+  call trace%begin ('link_t%reset_status')
+  if (self%task%rank == mpi%rank) then
+    !---------------------------------------------------------------------------
+    ! Assume internal -- this may change in set_status_and_flags()
+    !---------------------------------------------------------------------------
+    call self%task%set(bits%internal)
+    call self%task%clear(bits%boundary+bits%virtual+bits%external)
+  else
+    !---------------------------------------------------------------------------
+    ! Assume external -- this may change in set_status_and_flags()
+    !---------------------------------------------------------------------------
+    call self%task%set(bits%external)
+    call self%task%clear(bits%internal+bits%boundary+bits%virtual)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Run through nbors and set their status, optionally checking
+  !-----------------------------------------------------------------------------
+  nb => nbor_list
+  do while (associated(nb))
+    if (present(check)) then
+      flags(:,1) = [nb%needed, nb%needs_me, nb%download]
+    end if
+    call self%task%nbor_relations (nb%task, nb%needed, nb%needs_me, nb%download)
+    if (present(check)) then
+      flags(:,2) = [nb%needed, nb%needs_me, nb%download]
+      if (.not.all(flags(:,2) .eqv. flags(:,1))) then
+        write (stderr,*) self%task%id, flags(:,1)
+        write (stderr,*)   nb%task%id, flags(:,2)
+        flush (stderr)
+        call io%abort ('nbor_relations() values inconsistent with initial values')
+      end if
+    end if
+    nb => nb%next
+  end do
+  if (verbose > 1) then
+    write(io_unit%log,'(a,i6,i4,3x,3l1)') &
+      'reset_status: task, rank, IBV =', self%task%id, self%task%rank, &
+      self%task%is_set(bits%internal), &
+      self%task%is_set(bits%boundary), &
+      self%task%is_set(bits%virtual)
+  end if
+  call trace%end ()
+END SUBROUTINE reset_status
 
 !===============================================================================
 !> Info for one nbor
