@@ -142,6 +142,7 @@ SUBROUTINE init (self, kind, id)
     n_lock = n_lock+1
   end if
   !$omp end critical (lock_cr)
+  call self%prepend
 #ifdef TRACE 
   call trace%end()
 #endif
