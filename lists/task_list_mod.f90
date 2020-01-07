@@ -346,9 +346,13 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   ! onto the queue, with the same task time; i.e., to the head of the queue.
   ! If the task is virtual, it will not be checked by this rank.
   !-----------------------------------------------------------------------------
-  call load_balance%lock%set ('refine')
-  call refine%check_current(self, head, refined, derefined)
-  call load_balance%lock%unset ('refine')
+  if (load_balance%is_on) then
+    call load_balance%lock%set ('refine')
+    call refine%check_current(self, head, refined, derefined)
+    call load_balance%lock%unset ('refine')
+  else
+    call refine%check_current(self, head, refined, derefined)
+  end if
   !-----------------------------------------------------------------------------
   if (present(was_refined)) then
     was_refined = refined
@@ -439,27 +443,30 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   ! of its nbors that became new boundary patches over to relevant ranks,
   ! while the patch itself is sent here, with bits%virtual+swap_reqest set.
   !-----------------------------------------------------------------------------
-  call load_balance%lock%set ('task_list')
+  if (load_balance%is_on) &
+    call load_balance%lock%set ('task_list')
   call self%update_status (head)
   if (task%is_set(bits%boundary)) then                ! boundary patch?
     head%task%nq = self%nq                            ! make sure to pass on
     call load_balance%check_queue (head)              ! consider load balance
     call self%send_to_vnbors (head)                   ! send to virtual nbors
   end if
-  call load_balance%lock%unset ('task_list')
+  if (load_balance%is_on) &
+    call load_balance%lock%unset ('task_list')
   !-----------------------------------------------------------------------------
   ! If the task has bits%init_nbors set, call init_nbors(), which also clears
-  ! the bit
+  ! the bit, unless it is a boundary task
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%init_nbors)) then
-    call self%init_nbors (head)
-    call self%check_ready (head)
+    call self%init_nbors (head)                                         ! RULE D
+    call self%check_nbors (head)                                        ! RULE F
     if (self%verbose > 1) then
       call head%info
     else if (self%verbose > 0) then
       write (io_unit%log,*) 'task_list_t%update: init_nbors for task', task%id
     end if
   end if
+  !call self%init_nbors2 (head)                                          ! RULE E
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%update_status)) then
     call self%update_status (head)

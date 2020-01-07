@@ -684,13 +684,13 @@ SUBROUTINE unpack (self, mesg, link)
   if (present(link)) then
     link1 => link
     if (self%verbose > 1) &
-      write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
+      write (io_unit%log,'(f12.6,2x,a,2i5)') &
         wallclock(), 'task_mesg_t%unpack: id =', mesg%id, link1%task%id
   else
     link1 => find_task (self, mesg%id, new)
     if (self%verbose > 1) &
-      write (io_unit%log,'(f12.6,2x,a,2i5,z12)') &
-        wallclock(), 'task_mesg_t%unpack: found id =', mesg%id, link1%task%id
+      write (io_unit%log,'(f12.6,2x,a,2i5,l4)') &
+        wallclock(), 'task_mesg_t%unpack: found id =', mesg%id, link1%task%id, new
   end if
   !-----------------------------------------------------------------------------
   ! Make sure the task pointer has all experiment_t attributes
@@ -831,9 +831,11 @@ SUBROUTINE unpack (self, mesg, link)
       !    unpack procedure already.
       !-------------------------------------------------------------------------
       call self%lock%set ('task_mesg_t%unpack')
-      call load_balance%lock%set ('task_mesg_t%unpack')
+      if (load_balance%is_on) &
+        call load_balance%lock%set ('task_mesg_t%unpack')
       call self%swap (link1, .false.)
-      call load_balance%lock%unset ('task_mesg_t%unpack')
+      if (load_balance%is_on) &
+        call load_balance%lock%unset ('task_mesg_t%unpack')
       call self%lock%unset ('task_mesg_t%unpack')
     else if (new) then
       if (self%verbose > 0) write(io_unit%log,*) link1%task%id, 'new'
