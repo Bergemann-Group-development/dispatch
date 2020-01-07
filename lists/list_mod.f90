@@ -102,6 +102,7 @@ MODULE list_mod
     procedure:: check_queue
     procedure:: add_new_link
     procedure:: init_nbors
+    procedure:: prune_nbors
     procedure:: set_init_nbors
     procedure:: set_update_status
     procedure:: init_nbor_nbors
@@ -1203,6 +1204,7 @@ SUBROUTINE init_nbors (self, link)
     end if
     scan => scan%next                               ! continue search
   end do
+  call self%prune_nbors (link, new_head, self%verbose)
   call self%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
   if (self%verbose > 1 .or. link%task%id == io%id_debug) &
@@ -1247,6 +1249,74 @@ SUBROUTINE init_nbors (self, link)
     call link%task%clear (bits%init_nbors)
   call trace%end (itimer)
 END SUBROUTINE init_nbors
+
+!===============================================================================
+!> Remove nbors at level L+2 that are contained in another nbor at level L+1
+!===============================================================================
+SUBROUTINE prune_nbors (self, link, head, verbose)
+  class(list_t):: self
+  class(link_t), pointer:: link, head
+  integer:: verbose
+  class(link_t), pointer:: nbor, next, nbor2
+  logical:: removed
+  !-----------------------------------------------------------------------------
+  if (verbose > 0) &
+    write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
+      'link_t%prune_nbors: task, level =', &
+      link%task%id, link%task%level
+  removed = .false.
+  nbor => head
+  do while (associated(nbor))
+    next => nbor%next
+    if (nbor%task%level == link%task%level-2) then
+      !-------------------------------------------------------------------------
+      ! Prune level L-2 tasks from nbor list, if it contains an L-1 task
+      !-------------------------------------------------------------------------
+      nbor2 => head
+      do while (associated(nbor2))
+        if (nbor2%task%level == link%task%level-1) then
+          if (nbor%task%contains (nbor2%task)) then
+            if (verbose > 0) &
+              write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
+                'link_t%prune_nbors: removing task, level =', &
+                nbor%task%id, nbor%task%level
+            call link%remove_nbor (head, nbor, nolock=.true.)
+            removed = .true.
+            exit
+          end if
+        end if
+        nbor2 => nbor2%next
+      end do
+    else if (nbor%task%level == link%task%level+2) then
+      !-------------------------------------------------------------------------
+      ! Prune level L+2 tasks from nbor list, if an L+1 task contains it
+      !-------------------------------------------------------------------------
+      nbor2 => head
+      do while (associated(nbor2))
+        if (nbor2%task%level == link%task%level+1) then
+          if (nbor2%task%contains (nbor%task)) then
+            if (verbose > 0) &
+              write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
+                'link_t%prune_nbors: removing task, level =', &
+                nbor%task%id, nbor%task%level
+            call link%remove_nbor (head, nbor, nolock=.true.)
+            removed = .true.
+            exit
+          end if
+        end if
+        nbor2 => nbor2%next
+      end do
+    end if
+    nbor => next
+  end do
+  if (removed) then
+    !---------------------------------------------------------------------------
+    ! If any task was removed, the status bits and flags need to be recompute,
+    ! and the task list counts need to be updated.
+    !---------------------------------------------------------------------------
+    call self%update_status (link)
+  end if
+END SUBROUTINE prune_nbors
 
 !===============================================================================
 !> Set bits%init_nbors on nbor tasks, if the task itself is new (and hence has
