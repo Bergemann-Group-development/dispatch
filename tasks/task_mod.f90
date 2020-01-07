@@ -437,13 +437,34 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
 END SUBROUTINE info
 
 !===============================================================================
+!> Get timeslot info atomically.
+!===============================================================================
+SUBROUTINE timeslots (self, slots, times)
+  class(task_t):: self
+  real(8):: times(self%nt-1)
+  integer:: slots(self%nt-1)
+  integer:: i, j
+  !-----------------------------------------------------------------------------
+  ! Cache the current slot index, and the times.  If the times happen to
+  ! advance in the middle of the loop, the time may jump over one slot
+  !-----------------------------------------------------------------------------
+  do i=1,self%nt-1
+    !$omp atomic read
+    j = self%iit(i)
+    !$omp atomic read
+    times(i)  = self%t(j)
+    slots(i) = j
+  end do
+END SUBROUTINE timeslots
+
+!===============================================================================
 !> Get timeslot info atomically.  Note that, while the thread updating the task
 !> set the time and dtime of slot (nt) which, in terms of the indices retrieved
 !> here is outside the range of concern, in rare cases it may be updated again,
 !> in which case it will access the current slot (1) the next time, then (2)
 !> and so on; therefore, it is prudent to use a task lock shared with rotate
 !===============================================================================
-SUBROUTINE timeslots (self, slots, times)
+SUBROUTINE timeslots2 (self, slots, times)
   class(task_t):: self
   real(8):: times(self%nt-1), t(self%nt)
   integer:: slots(self%nt-1)
@@ -454,9 +475,13 @@ SUBROUTINE timeslots (self, slots, times)
   !-----------------------------------------------------------------------------
   !$omp atomic read
   it = self%it
-  do j=1,self%nt
+  !-----------------------------------------------------------------------------
+  ! Below, index i corresponds to the index into iit(:), and j corresponds to
+  ! iit(i); the index that makes t(iit(i)) monotonous.
+  !-----------------------------------------------------------------------------
+  do i=1,self%nt
     !$omp atomic read
-    t(j)  = self%t(j)
+    t(i)  = self%t(i)
   end do
   nt = self%nt
   i = it                                ! current slot
@@ -473,7 +498,7 @@ SUBROUTINE timeslots (self, slots, times)
       slots(j) = slots(j+1)
     end if
   end do
-END SUBROUTINE timeslots
+END SUBROUTINE timeslots2
 
 !===============================================================================
 !> Check if self (which is a nbor task) is ahead of target (which is the one to
