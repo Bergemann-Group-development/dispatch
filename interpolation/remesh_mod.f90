@@ -61,14 +61,14 @@ SUBROUTINE prolong (self, target, source, jt, pt, all_cells)
   class(patch_t), pointer:: target, source
   integer:: jt(2)
   real:: pt(2)
-  logical:: all_cells
+  logical, optional:: all_cells
   !.............................................................................
   real(8):: pnt(3)
   integer:: ll(3), nn(3)
   !-----------------------------------------------------------------------------
   call trace%begin ('remesh_t%prolong')
   call self%init
-  if (all_cells) then
+  if (present(all_cells) .and. all_cells) then
     pnt = target%myposition (target%mesh%li)
     if (order==0) then
       ll = source%index_only (pnt, roundup=.true.)

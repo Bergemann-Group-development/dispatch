@@ -127,7 +127,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   class(patch_t), pointer:: target, source
   integer:: edges, l(3), u(3), ix, iy, iz, jt(2)
   integer, save:: itimer=0, n_print=30
-  real:: pt(2)
+  real:: pt(2), d_min
   character(len=64):: info
   logical:: all_cells_l, lock_it
   integer:: n_not
@@ -148,12 +148,19 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     return
   end if
   call target%log ('download', 2)
+  !-----------------------------------------------------------------------------
+  ! Avoid downloading values more than once at the same time (unless overruled
+  ! by changing dnload_time)
+  !-----------------------------------------------------------------------------
   if (target%dnload_time >= target%time .or. &
       target%is_set(bits%no_download)) then
     call trace%end (itimer)
     return
   end if
   target%dnload_time = target%time
+  !-----------------------------------------------------------------------------
+  ! If there is a density slot, check initial positivity
+  !-----------------------------------------------------------------------------
   if (target%is_clear(bits%no_density)) then
     d => target%mem(:,:,:,target%idx%d,target%it,1)
     call validate%check (target%link, d, 'before download')
@@ -166,7 +173,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     sorted = .false.
   end if
   !-----------------------------------------------------------------------------
-  ! Allocate and initialise array to track filling of cells.
+  ! Allocate and initialize array to track filling of cells.
   ! A value of `-1` defines unfilled; all other values denote the *level* of the
   ! patch that filled that cell.
   !-----------------------------------------------------------------------------
@@ -188,6 +195,8 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
       filled(l(1):u(1),l(2):u(2),l(3):u(3),:) = target%level
       if (verbose > 0) &
         src(l(1):u(1),l(2):u(2),l(3):u(3)) = target%id
+      if (verbose > 0) &
+        write (io_unit%log,*) target%id, 'target filled in', l, u
     end if
   end if
   if (target%is_clear(bits%no_density) .and. .not.all_cells_l) &
@@ -198,7 +207,10 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   ! level that supplied values, and skipping nbor contributions from lower levels.
   ! To avoid dead-lock, make a copy of it, and release the lock
   !-----------------------------------------------------------------------------
-  nbor => link%nbors_by_level
+  call link%lock%set ('dnload')
+  call link%copy_nbor_list (link%nbors_by_level, nbors)
+  call link%lock%unset ('dnload')
+  nbor => nbors
   !-----------------------------------------------------------------------------
   ! Insert a value only if "filled" indicates that one is missing.  With the 
   ! nbor list sorted in decreasing level order, values are only computed where
@@ -277,6 +289,24 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
          !----------------------------------------------------------------------
          ! Default same interpolation when target and source levels agree
          !----------------------------------------------------------------------
+          if (verbose > 0) then
+            l = source%li
+            u = source%ui
+            d_min = min(minval(source%mem(l(1):u(1),l(2):u(2),l(3):u(3),source%idx%d,jt(1),1)), &
+                        minval(source%mem(l(1):u(1),l(2):u(2),l(3):u(3),source%idx%d,jt(1),1)))
+            if (d_min <= 0.0) then
+              write(io_unit%mpi,'(f12.6,1x,a,i6,i3,i4,f12.5,2i4,2f7.3,1p,2e12.3,0p,2x)') &
+                wallclock(), 'download_link ERROR: src, lvl, istp, t, jt, pt, minval1, minval2 =', &
+                source%id, source%level, source%istep, source%time, jt, pt, &
+                minval(source%mem(l(1):u(1),l(2):u(2),l(3):u(3),source%idx%d,jt(1),1)), &
+                minval(source%mem(l(1):u(1),l(2):u(2),l(3):u(3),source%idx%d,jt(2),1))
+              write(io_unit%mpi,'(1x,a,2i5,2x,9i5)') &
+                'download_link ERROR:, it, new, iit =', source%it, source%new, source%iit
+              write(io_unit%mpi,'(1x,a,f12.5,2x,9f10.5)') &
+                'download_link ERROR:, time, t =', source%time, source%t
+              flush (io_unit%mpi)
+            end if
+          end if
          if (verbose > 1) &
            write (io_unit%log,'(2(a,":",i5,i3,2(1x,3f8.3,2x)),1x,3f8.3)') &
            'target', target%id, target%level, target%position, target%size, &
@@ -296,7 +326,9 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
              call io%abort ('unknown use_same ='//trim(use_same))
            end select
          !----------------------------------------------------------------------
-         ! Prolong with one level difference and all_cells
+         ! Prolong with one level difference and all_cells; this happens only
+         ! when tasks are refined, at which time one can pick up both internal
+         ! and guard zone cell values from the parent patch
          !----------------------------------------------------------------------
          else if (source%level==target%level-1 .and. present(all_cells)) then
            select case (trim(use_prolong))
@@ -306,25 +338,26 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
              call remesh%prolong (target, source, jt, pt, all_cells_l)
            end select
          !----------------------------------------------------------------------
-         ! Prolong cases
+         ! Prolong cases where all_cells is not set correspond to cases where
+         ! refined patches pick up guard zone values from lower level nbors
          !----------------------------------------------------------------------
          else if ((source%level-target%level) <= -1) then
            select case (trim(use_prolong))
            case ('different')
-             call different (self, target, source, jt, pt, all_cells_l, only=only)
+             call different (self, target, source, jt, pt, only=only)
            case ('prolong')
-             call prolong (self, target, source, jt, pt, all_cells_l, only=only)
+             call prolong (self, target, source, jt, pt, only=only)
            case ('guard_zones')
              call guard_zones%method (target, source, jt, pt)
            case ('remesh')
-             call remesh%prolong (target, source, jt, pt, all_cells_l)
+             call remesh%prolong (target, source, jt, pt)
            case ('different_prolong')
-             call different_prolong (self, target, source, jt, pt, all_cells_l, only=only)
+             call different_prolong (self, target, source, jt, pt, only=only)
            case ('prolong_mod')
              if (source%level==target%level-1) then
-               call prolong_it (target, source, jt, pt, all_cells)
+               call prolong_it (target, source, jt, pt)
              else
-               call different_prolong (self, target, source, jt, pt, all_cells, only=only)
+               call different_prolong (self, target, source, jt, pt, only=only)
              end if
            case default
              call io%abort ('unknown use_prolong='//trim(use_prolong))
@@ -378,16 +411,17 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
        end if
      end if
     end if
-    if (jt(2) /= jt(1)) &
-      call source%mem_lock(jt(2))%unset ('download_link2')
-    call source%mem_lock(jt(1))%unset ('download_link1')
     if (verbose > 2) then
       write(io_unit%log,'(f12.6,i6,i3,3x,a,i6,i3,2x,2l1)') wallclock(), target%id, target%level, &
         'download_link: source, level =', source%id, source%level
       flush (io_unit%log)
     end if
+    if (jt(2) /= jt(1)) &
+      call source%mem_lock(jt(2))%unset ('download_link2')
+    call source%mem_lock(jt(1))%unset ('download_link1')
     nbor => nbor%next
   end do
+  call link%remove_nbor_list (nbors)
   if (verbose > 1) then
     write(io_unit%log,'(f12.6,3x,a,i6,i3,f12.5,1p,2e12.3)') &
       wallclock(), 'download_link: target, level, time, fminval, minval =', &
@@ -467,12 +501,14 @@ SUBROUTINE prolong_it (target, source, jt, pt, all)
   real:: pt(2)
   logical, optional:: all
   !.............................................................................
+  logical:: all_l
   integer:: m(3), iv, ipos(3), l(3), u(3), i1, i2, i3
   logical, save:: first_time=.true.
   integer, save:: itimer=0
   !----------------------------------------------------------------------------
   call trace%begin ('download__t%prolong_it', itimer=itimer)
   call prolng%init (source%mesh(1)%n, source%mesh(1)%ng)
+  all_l = merge (all, .false., present(all))
   m = source%gn
   do iv=1,target%nv
     !---------------------------------------------------------------------------
@@ -492,13 +528,14 @@ SUBROUTINE prolong_it (target, source, jt, pt, all)
       target%mem(:,:,:,iv,target%it,1), &
       ipos, all=all, l=l, u=u)
     if (present(all) .and. all) then
-      filled = .true.
+      filled = source%level
     else
       filled(l(1):u(1),l(2):u(2),l(3):u(3),iv) = source%level
     end if
     if (verbose > 1 .and. iv==1) then
-      write(io_unit%log,'(a,3(2x,2i4))') &
-      'download_it: intervals =', l(1),u(1),l(2),u(2),l(3),u(3)
+      write(io_unit%log,'(a,l2,3(2x,i2,";":i2))') &
+      'download_it: all, filled, intervals =', all_l, &
+      l(1),u(1),l(2),u(2),l(3),u(3)
       do i3=l(3),u(3)
       do i2=l(2),u(2)
       do i1=l(1),u(1)
@@ -1357,6 +1394,7 @@ SUBROUTINE different (self, target, source, jt, pt, all_cells, only)
       write (io_unit%log,1) &
         source%id, (source%position-target%position)/target%size, l, u, all_cells_l
       1 format("DBG download_t%different:", i6,"  displ:",3f11.6,"  l,u:",2(3i4,2x),l3)
+    flush (io_unit%log)
     associate (q1 => source%mem(:,:,:,:,jt(1),1), q2 => source%mem(:,:,:,:,jt(2),1))
     do iz=l(3),u(3)
       do iy=l(2),u(2)
