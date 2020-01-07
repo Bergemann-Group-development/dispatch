@@ -1218,14 +1218,6 @@ SUBROUTINE add_new_link (self, link)
     task%link => link
   end select
   !-----------------------------------------------------------------------------
-  ! Add an nbor list, and set status bits and flags.  Add the task to the
-  ! task_list, and if it turns out to be a boundary task, send it to rank nbors.
-  !-----------------------------------------------------------------------------
-  call self%init_nbors (link)
-  call self%append (link)
-  if (link%task%is_set (bits%boundary)) &
-    call self%send_to_vnbors (link)
-  !-----------------------------------------------------------------------------
   ! Increment task counters on the rank
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%virtual)) then
@@ -1234,16 +1226,24 @@ SUBROUTINE add_new_link (self, link)
     timer%levelpop (task%level) + 1
   end if
   !-----------------------------------------------------------------------------
-  ! Set the flag init_nbors in the nbor tasks, so the next time they are being
-  ! updated, they obtain updated nbor lists
+  ! Generate a new nbor list -- which includes running update_status() and
+  ! check_ready() on it
   !-----------------------------------------------------------------------------
-  call self%set_init_nbors (link)
+  call self%init_nbors (link)                                           ! RULE B
   !-----------------------------------------------------------------------------
-  ! Check the ready state of the new task, which already knows its nbors.
-  ! The nbors do not have the new task in their nbor lists yet, but will check
-  ! correspondingly when the new task has been added.
+  ! Add the task to the task_list, and if it turns out to be a boundary task,
+  ! send it to rank nbors.
+  !-----------------------------------------------------------------------------
+  call self%append (link)
+  if (link%task%is_set (bits%boundary)) &
+    call self%send_to_vnbors (link)
+  call self%set_init_nbors (link)                                       ! RULE C
+  !-----------------------------------------------------------------------------
+  ! A task that has a new nbor list needs to be checked to see if is possibly
+  ! is ready to be added to the queue
   !-----------------------------------------------------------------------------
   call self%check_ready (link)
+!  call self%check_nbors (link)                                          ! RULE D
   call trace%end ()
 END SUBROUTINE add_new_link
 
@@ -1258,9 +1258,14 @@ SUBROUTINE init_nbors (self, link)
   class(link_t), pointer:: nbor, scan, new_head, new_sort, old_head, old_sort, nbors
   integer:: n_add
   logical:: overlaps
+  real(8):: time
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin('list_t%init_nbors ', itimer=itimer)
+  if (self%verbose > 0) then
+    write (io_unit%log,'(f12.6,2x,a,2i6)') wallclock(), &
+     'list_t%init_nbors: task', link%task%id
+  end if
   nullify (new_head, new_sort)
   n_add = 0
   call self%lock%set ('init_nbors', itimer=itimer)
@@ -1271,18 +1276,11 @@ SUBROUTINE init_nbors (self, link)
   scan => self%head                                   ! scan all links (FIXME)
   do while (associated(scan))                         ! until end
     if (.not.associated(scan,link) .and. associated(scan%task)) then
-      overlaps = scan%task%overlaps(link%task) &
-           .and. abs(scan%task%level - link%task%level) <= 1
       !-------------------------------------------------------------------------
       ! Potential nbors are other patches that overlap
       !-------------------------------------------------------------------------
-      if (io%verbose>2 .or. link%task%id==io%id_debug) &
-        write (io_unit%log, '(a,3(i6,2(3f7.4,1x)),2x,2l2)') &
-        'init_nbors:', &
-        link%task%id, link%task%position, link%task%size, &
-        scan%task%id, scan%task%position, scan%task%size, &
-        0, scan%task%distance (link%task), self%size, &
-        overlaps, scan%task%is_set(bits%virtual)
+      overlaps = scan%task%overlaps(link%task) &
+           .and. abs(scan%task%level - link%task%level) <= 2
       if (overlaps) then  ! if its task overlaps
         !-----------------------------------------------------------------------
         ! The ifs select to add nbors to a patch if either the patch is not a
@@ -1290,6 +1288,14 @@ SUBROUTINE init_nbors (self, link)
         ! adding virtual patches as nbors to virtual patches
         !-----------------------------------------------------------------------
         call link%add_nbor_by_rank (new_head, scan) ! add in rank order
+        !-----------------------------------------------------------------------
+        ! Set status bits and flags, but note that these may have to be reset
+        ! after pruning, since that may for example remove the only virtual
+        ! nbor, which means the task that the list belongs to changes from a
+        ! boundary task to an internal task.
+        !-----------------------------------------------------------------------
+        call link%task%nbor_relations (scan%task, scan%needed, &
+          scan%needs_me, scan%download)             ! set flags and status bits
         n_add = n_add+1
         if (self%verbose > 1 .or. link%task%id == io%id_debug) &
           write (io_unit%log, '(a,i6,i4,3x,4l1)') &
@@ -1319,19 +1325,18 @@ SUBROUTINE init_nbors (self, link)
   !-----------------------------------------------------------------------------
   nullify (new_sort)
   call link%sort_nbors_by_level (new_head, new_sort)
-  call link%lock%set ('init_nbors')
+  call link%lock%set ('init_nbors', itimer=itimer)
   old_head => link%nbor
   old_sort => link%nbors_by_level
   link%nbor => new_head                               ! switch nbor list
   link%nbors_by_level => new_sort
-  !-----------------------------------------------------------------------------
-  ! Remove the two previous nbor lists
  !call self%lock%set ('update_status')                ! FIXME: check if needed!
   call self%update_status (link)                      ! based on new list
  !call self%lock%unset ('update_status')              ! FIXME: check if needed!
   !-----------------------------------------------------------------------------
   call link%remove_nbor_list (old_head)               ! recover nbor list mem
   call link%remove_nbor_list (old_sort)
+  call link%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
   link%task%n_nbors = n_add                           ! remember n_nbors
   !-----------------------------------------------------------------------------
@@ -1343,11 +1348,6 @@ SUBROUTINE init_nbors (self, link)
   !-----------------------------------------------------------------------------
   if (link%task%is_clear (bits%boundary)) &
     call link%task%clear (bits%init_nbors)
-  !-----------------------------------------------------------------------------
-  ! A task that has a new nbor list needs to be checked to see if is possibly
-  ! is ready to be added to the queue
-  !-----------------------------------------------------------------------------
-  call self%check_ready (link)
   call trace%end (itimer)
 END SUBROUTINE init_nbors
 
@@ -1428,9 +1428,10 @@ SUBROUTINE set_init_nbors (self, link)
   class(link_t), pointer:: link, nbor
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%set_init_nbors')
-  if (self%verbose > 0) &
-    write (io_unit%log,*) &
-      'set_init_nbors: ', link%task%id
+  if (self%verbose > 0) then
+    write (io_unit%log,'(f12.6,2x,a,2i6)') wallclock(), &
+     'list_t%set_init_nbors: task', link%task%id
+  end if
   nbor => link%nbor
   do while (associated(nbor))
     !call nbor%link%lock%set ('set_init_nbors')
