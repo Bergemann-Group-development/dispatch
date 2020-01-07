@@ -215,7 +215,19 @@ SUBROUTINE init (self)
     call self%lock%init (self%kind(1:4), id=self%id+2)
   end if
   call self%random%init
-  allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
+  !-----------------------------------------------------------------------------
+  ! Only initialize time slot values when first allocated
+  !-----------------------------------------------------------------------------
+  if (.not.associated(self%t)) then
+    allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
+    self%dt = -1d0                                ! mark as "not known"
+    self%t  = 0d0                                 ! initial time
+    self%iit = 1                                  ! initial slots
+    self%it = 1                                   ! slot for current values
+    self%new = min(2,self%nt)                     ! slot for new values
+    self%iit(self%nt) = self%new                  ! slot for new values
+    self%time = self%t(self%it)                   ! initial time
+  end if
   if (self%id == track_id) then
     self%track = .true.
   end if
@@ -700,6 +712,7 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   ! task is real
   !-----------------------------------------------------------------------------
   if (self%rank == mpi%rank) then
+    call self%clear(bits%external)
     !---------------------------------------------------------------------------
     ! nbor is frozen
     !---------------------------------------------------------------------------
@@ -764,8 +777,8 @@ SUBROUTINE nbor_relations (self, another, needed, needs_me, download)
   ! in check_nbors() and check_ready(), but may be needed exceptionally
   !-----------------------------------------------------------------------------
   if (abs(another%level-self%level) > 1) then
-    needed = .false.
-    needs_me = .false.
+  !  needed = .false.
+  !  needs_me = .false.
     download = .false.
   end if
   if (self%verbose > 2) &

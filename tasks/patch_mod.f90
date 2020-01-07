@@ -692,17 +692,8 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     self%unsigned (:) = .false.
     self%pervolume(:) = .false.
   end if
-  self%dt = 0.0
-  self%t = -1.0                                 ! mark as "no guard zones"
-  self%time = -1.0                              ! mark as "no guard zones"
-  self%iit = 1                                  ! initial memory slots
-  self%it = 1                                   ! short-hand (=1 initially)
-  self%new = min(2,self%nt)                     ! slot for updates
-  self%iit(self%nt) = self%new                  ! first output slot
-  self%new = self%iit(self%nt)                  ! short-hand
-  self%t(self%it) = 0.0                         ! the only valid slot (no. 1)
   self%wallclock = wallclock()                  ! starting time
-  n_header = storage_size(header)/32             ! 32 bits per word
+  n_header = storage_size(header)/32            ! 32 bits per word
   if (n_header*4 /= storage_size(header)/8) then
     write(io%output,*) n_header*4, storage_size(header)/8
     call mpi%abort ('n_header is incorrect')
@@ -2473,6 +2464,26 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
     pt(2) = 0.0
   else
     call self%timeslots (iit, t)
+    if (io%verbose > 0) then
+      !-------------------------------------------------------------------------
+      ! Self test
+      !-------------------------------------------------------------------------
+      call self%lock%set ('time_interval')
+      call self%timeslots (iit, t)
+      if (self%verbose > 2) then
+        do i=1,self%nt-1
+          if (iit(i) /= self%iit(i)) then
+            write (stderr,*) 'patch_t%time_interval ERROR: i, iit, self%iit =', &
+            i, iit(i), self%iit(i)
+          end if
+          if (t(i) /= self%t(self%iit(i))) then
+            write (stderr,*) 'patch_t%time_interval ERROR: i, times(i), iit(i), t', &
+              i, t(i), self%iit(i), self%t(self%iit(i))
+          end if
+        end do
+      end if
+      call self%lock%unset ('time_interval')
+    end if
     j = 1
     n = self%nt-2
     !---------------------------------------------------------------------------
@@ -2756,6 +2767,19 @@ SUBROUTINE interpolate (self, target, ii, iv, jt, pt)
     k1 = merge(1,0,size(self%mem,3) > 1)
     pos = target%myposition (ii, iv)
     call self%index_space (pos, iv, j, p)
+    if (any(j < self%li .or. j > self%ui-[i1,j1,k1])) then
+      write (io_unit%mpi,'(1x,a,3i4,2x,3f6.3)') &
+        'patch_t%interpolate ERROR: j, p =', j, p
+      where (j < self%li)
+        p = p + (j-self%li)
+        j = self%li
+      end where
+      where (j > self%ui-[i1,j1,k1])
+        p = p + (j-(self%ui-[i1,j1,k1]))
+        j = (self%ui-[i1,j1,k1])
+      end where
+      p = max(0.0,min(1.0,p))
+    end if
     q = 1.0-p
     !if (io%verbose > 1) &
     !  write(io_unit%log,'(a,2i6,2x,3i4,2x,3f7.3)') &

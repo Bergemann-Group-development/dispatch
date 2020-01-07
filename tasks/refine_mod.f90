@@ -785,6 +785,9 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   nullify (child%mesh)                               ! .. new mesh
   nullify (child%lock)                               ! .. new lock
   nullify (child%mem_lock)                           ! .. new mem_lock
+  nullify (child%t)                                  ! .. new t
+  nullify (child%dt)                                 ! .. new dt
+  nullify (child%iit)                                ! .. new iit
   if (allocated(child%force_per_unit_volume)) deallocate(child%force_per_unit_volume)
   if (allocated(child%force_per_unit_mass)) deallocate(child%force_per_unit_mass)
   child%id = 0                                       ! ensure a new ID
@@ -806,13 +809,14 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   !-----------------------------------------------------------------------------
   !child%status = 0
   call child%clear(bits%root_grid)
+  call child%clear(bits%boundary)
   call child%clear(bits%ready)
   call child%clear(bits%busy)
   call child%clear(bits%frozen)
   child%boundaries%bits = 0
   !-----------------------------------------------------------------------------
   ! Append links to the new patch in the patch list, sorted by quality
-  ! Neighbour lists are constructed at the end of `split_patch`.
+  ! Neighbor lists are constructed at the end of `split_patch`.
   !-----------------------------------------------------------------------------
   allocate (child_link)
   call child_link%init                               ! initialise the lock
@@ -828,12 +832,12 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   child%level = parent%level + 1                     ! override patch_t%init
   child%time  = parent%time                          ! same time
   child%dtime = parent%dtime/self%ratio              ! for info only
-  child%it    = 1                                    ! time index
-  child%new   = 2                                    ! new time slot
-  child%iit   = 1                                    ! single time slice
-  child%iit(child%nt) = child%new                    ! new slot
-  child%dt(:) = parent%dt(parent%it) / self%ratio    ! reset the time-step
-  child%t(:) = child%time                            ! sinle time
+  child%dt    = child%dtime                          ! copy to all
+  child%t     = child%time                           ! copy to all
+  child%iit   = 1                                    ! initial slots
+  child%it    = 1                                    ! slot for current values
+  child%new   = 2                                    ! slot for new values
+  child%iit(child%nt) = child%new                    ! slot for new values
   child%parentid = parent%id                         ! for debugging
   child%check_refine_next = 0                        ! allow recursive refine
   child%iout = child%time/io%out_time+1              ! previous output index
