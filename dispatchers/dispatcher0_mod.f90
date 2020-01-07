@@ -77,7 +77,7 @@ SUBROUTINE init (self, name)
   write (io%namelist, dispatcher0_params)
   call mpi_mesg%init
   call self%lock%init ('disp')
-  call self%lock%append
+  call self%lock%prepend
   call trace_end
 END SUBROUTINE init
 

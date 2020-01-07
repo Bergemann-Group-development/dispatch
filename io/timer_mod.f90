@@ -27,6 +27,7 @@ MODULE timer_mod
   type:: timer_t
     integer(8):: calls(maxproc)=0
     real(8), dimension(maxproc):: start=0d0, total=0d0
+    real(8), dimension(maxproc):: start_lock=0d0, total_lock=0d0
     integer, dimension(maxdepth):: stack
     integer:: istack=0
     real(8):: bytes_recv=0.0_8
@@ -53,6 +54,8 @@ MODULE timer_mod
     procedure:: init
     procedure:: begin
     procedure:: end
+    procedure:: begin_lock
+    procedure:: end_lock
     procedure:: print
     procedure, nopass:: tic
     procedure, nopass:: toc_1
@@ -232,6 +235,28 @@ SUBROUTINE end (self, itimer)
 END SUBROUTINE end
 
 !===============================================================================
+!> At begin, set a lock_start for the thread and timer
+!===============================================================================
+SUBROUTINE begin_lock (self, itimer)
+  class(timer_t):: self
+  integer:: itimer
+  !-----------------------------------------------------------------------------
+  timers(omp_get_thread_num())%start_lock(itimer) = wallclock()
+END SUBROUTINE begin_lock
+
+!===============================================================================
+!> At end call, increment total time for the active timer
+!===============================================================================
+SUBROUTINE end_lock (self, itimer)
+  class(timer_t):: self
+  integer:: itimer
+  !-----------------------------------------------------------------------------
+  timers(omp%thread)%total_lock(itimer) = &
+  timers(omp%thread)%total_lock(itimer) + &
+    (wallclock() - timers(omp%thread)%start_lock(itimer))
+END SUBROUTINE end_lock
+
+!===============================================================================
 !> Printout times used in routines using more than 0.05% of the time, and reset
 !> counters.
 !===============================================================================
@@ -241,8 +266,8 @@ SUBROUTINE print (self)
 END SUBROUTINE print
 SUBROUTINE real_print (self)
   class(timer_t):: self
-  real(8):: total, proc(maxproc), ncalls(maxproc)
-  real(8):: updates, musppt, calls
+  real(8):: proc(maxproc), ncalls(maxproc), lock(maxproc)
+  real(8):: updates, musppt, calls, total, total_locks
   real(8), save:: n_previous=0
   real(8):: wc, sec
   integer:: i, n_recv, lntimer
@@ -254,15 +279,19 @@ SUBROUTINE real_print (self)
   wc = wallclock()
   sec = wc - prev2
   total = 0d0
+  total_locks = 0d0
   calls = 0d0
   !$omp atomic read
   lntimer = ntimer
   do i=1,lntimer
     proc(i) = sum(timers(:)%total(i))
+    lock(i) = omp_lock%time (i)
     ncalls(i) = sum(timers(:)%calls(i))
     total = total + proc(i)
+    total_locks = total_locks + lock(i)
     calls = calls + ncalls(i)
   end do
+  total_locks = max(total_locks,tiny(1d0))
   !-----------------------------------------------------------------------------
   ! 'sec' measure wall clock time on a single thread, while 'total' is a sum over
   ! all procedures being measured, over all threads.
@@ -276,6 +305,7 @@ SUBROUTINE real_print (self)
   if (shared%mpi_master) &
     call write_to (io_unit%output)
   call write_to (io_unit%mpi)
+  call omp_lock%info (io_unit%output, 1)
   !$omp atomic write
   timer%n_lines = 1
   timer%bytes_recv = 0.0_8
@@ -298,14 +328,15 @@ SUBROUTINE real_print (self)
   timer%busy_time = 0d0
   timer%spin_time = 0d0
   self%n_mhd = 0; self%n_solve=0
+  omp_lock%time = 0d0
   return
 contains
   subroutine write_to (unit)
     integer:: unit, level, popu
     real:: cost, per_call
     logical:: warn, mesg
-    write (unit,'(23x,a,7x,a,10x,a,7x,a,5x,a)') 'procedure', 'calls', 'time', &
-    'percent', ' s/call'
+    write (unit,'(23x,a,7x,a,10x,a,7x,a,6x,a,5x,a)') 'procedure', 'calls', &
+    'time', 'percent', 's/call', 'locks'
     if (unit==io_unit%output) then
       !$omp atomic write
       timer%n_lines = 1
@@ -317,9 +348,9 @@ contains
           per_call = proc(i)/max(ncalls(i),1d0)
           warn = per_call < 0.5e-6
           mesg = mesg .or. warn
-          write (unit,'(a32,1p,2g15.3,0p,f10.1,0p,f12.6,1x,a1)') &
+          write (unit,'(a32,1p,2g15.3,0p,f10.1,f12.6,f10.1,1x,a1)') &
             trim(names(i)), ncalls(i), proc(i), proc(i)/total*100., &
-            per_call, merge('W',' ',warn)
+            per_call, lock(i)/total_locks*100, merge('W',' ',warn)
         end if
       end do
       if (mesg) &
@@ -360,7 +391,6 @@ contains
         timer%mem_hit/real(max(1,timer%mem_test)), &
         timer%busy_time/max(timer%spin_time + timer%busy_time,1d-30)
     end if
-    call omp_lock%info (unit)
     flush (unit)
   end subroutine write_to
 END SUBROUTINE real_print
