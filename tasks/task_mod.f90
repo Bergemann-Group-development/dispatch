@@ -214,6 +214,7 @@ SUBROUTINE init (self)
   if (self%id == track_id) then
     self%track = .true.
   end if
+  call self%log ('init', 2)
   call trace_end ()
 END SUBROUTINE init
 
@@ -875,8 +876,9 @@ SUBROUTINE log (self, label, level)
       end if
       last = now
     end if
-    write(io_unit%task,'(f12.6,i4,i6,i4,f12.6,1p,e11.2,4x,a)') &
-      wallclock(), omp%thread, self%id, self%level, self%time, self%dtime, trim(label)
+    write(io_unit%task,'(f12.6,i5,i4,i6,i4,f12.6,1p,e11.2,4x,a)') &
+      wallclock(), mpi%rank, omp%thread, self%id, self%level, &
+      self%time, self%dtime, trim(label)
     !$omp end critical (tasklog_cr)
   end if
 END SUBROUTINE log

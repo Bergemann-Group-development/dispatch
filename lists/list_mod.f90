@@ -2467,8 +2467,8 @@ SUBROUTINE send_to_vnbors (self, link)
         !$omp end atomic
         tag = mod(seq,100) + 100*task%id
       end if
-      if (task%logging > 1) then
-        write (label,'(a,i4,i8)') 'vnbor  ', rank, tag
+      if (io%task_logging > 1) then
+        write (label,'(a,i4,i8)') 'send   ', rank, mod(tag,100)
         call task%log (label)
       end if
       call mesg%send (rank, tag=tag)                            ! send it

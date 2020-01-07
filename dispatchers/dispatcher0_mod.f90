@@ -263,8 +263,8 @@ SUBROUTINE update (self, task_list, test)
     call task%log ('dispatcher')
     if (debug) then
       !$omp critical (wrt_cr)
-      write (io_unit%queue,'(f12.6,2i7,3i5,f12.6,i6,2i9,7i7)') &
-        wallclock(), task%id, task%istep, task%it, task%new, omp%thread, &
+      write (io_unit%queue,'("a",f12.6,i4,2i7,3i5,f12.6,i6,2i9,7i7)') &
+        wallclock(), mpi%rank, task%id, task%istep, task%it, task%new, omp%thread, &
         task%time, task_list%nq, n_spin, timer%n_master
       timer%n_master(:) = 0
       n_spin = 0

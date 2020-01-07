@@ -702,8 +702,8 @@ SUBROUTINE unpack (self, mesg, link)
   end select
   end associate
   !-----------------------------------------------------------------------------
-  if (task%logging > 1) then
-    write (label,'(a,i4,i8)') 'unpack ', mesg%sender, mesg%id
+  if (io%task_logging > 1) then
+    write (label,'(a,i4,i8)') 'unpack ', mesg%sender, mesg%seq
     call task%log (label)
   end if
   !-----------------------------------------------------------------------------

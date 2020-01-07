@@ -920,6 +920,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
     flush (io_unit%log)
   end if
   !-----------------------------------------------------------------------------
+  call child%log ('refine', 2)
   call trace%end (itimer, detailed_timer=detailed_timer)
 END SUBROUTINE make_child_patch
 

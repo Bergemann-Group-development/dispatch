@@ -79,7 +79,7 @@ SUBROUTINE task_log (self, l)
   real:: vmin(self%nv)
   integer:: iv
   !----------------------------------------------------------------------------
-  if (io%task_logging > 0) then
+  if (io%task_logging > 3) then
     do iv=1,self%nv
         vmax(iv) = self%fmaxval(self%mem(:,:,:,iv,self%it,1))
         vmin(iv) = self%fminval(self%mem(:,:,:,iv,self%it,1))
