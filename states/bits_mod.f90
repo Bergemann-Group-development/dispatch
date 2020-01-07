@@ -43,7 +43,7 @@ MODULE bits_mod
     integer:: not_leaf     = leaf_bit
     integer:: frozen       = frozen_bit
     integer:: swap_request = swap_request_bit
-    integer:: support      = support_bit
+    integer:: no_support   = support_bit
     integer:: particle     = particle_bit
     integer:: star         = star_bit
     integer:: planet       = planet_bit
