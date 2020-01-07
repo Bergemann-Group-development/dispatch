@@ -121,6 +121,9 @@ MODULE task_mod
     procedure:: test_update
     procedure:: solver_is
     procedure:: debug
+    procedure, private:: contains1      ! patch contains a point
+    procedure, private:: contains2      ! patch contains a patch
+    generic:: contains => contains1, contains2
     procedure:: task_info
     procedure:: log
   end type
@@ -207,8 +210,10 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   ! Locks, random numbers, etc
   !-----------------------------------------------------------------------------
-  allocate (self%lock)
-  call self%lock%init (self%kind(1:4), id=self%id+2)
+  if (.not.associated(self%lock)) then
+    allocate (self%lock)
+    call self%lock%init (self%kind(1:4), id=self%id+2)
+  end if
   call self%random%init
   allocate (self%t(self%nt), self%dt(self%nt), self%iit(self%nt))
   if (self%id == track_id) then
@@ -328,7 +333,7 @@ SUBROUTINE rotate (self)
     flush (io_unit%log)
   end if
   if (omp_lock%tasks) then
-    call self%lock%set ('rotate')
+    call self%lock%set ('rotate', itimer=itimer)
   end if
   !-----------------------------------------------------------------------------
   ! If this task has self%syncing set, then the time step has been set so as to
@@ -827,6 +832,23 @@ FUNCTION solver_is (self, kind)
   character(len=*):: kind
   solver_is = self%kind(1:len(kind)) == kind
 END FUNCTION solver_is
+
+!===============================================================================
+!> Return true if a point is inside the self interior
+!===============================================================================
+LOGICAL FUNCTION contains1 (self, point)
+  class(task_t):: self
+  real(8):: point(3)
+  contains1 = all(abs(point-self%position) < 0.5_8*self%size)
+END FUNCTION contains1
+
+!===============================================================================
+!> Return true if a patch position is inside the self interior
+!===============================================================================
+LOGICAL FUNCTION contains2 (self, patch)
+  class(task_t):: self, patch
+  contains2 = contains1 (self, patch%position)
+END FUNCTION contains2
 
 !===============================================================================
 !> Turn on debug output at and beyond a given level, and for id_debug task

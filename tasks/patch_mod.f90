@@ -121,9 +121,6 @@ MODULE patch_mod
     procedure, nopass:: unpack_id       ! unpack patch id
     procedure:: unpack                  ! unpack buffer into patch
     procedure:: info                    ! print info to stdout
-    procedure, private:: contains1      ! patch contains a point
-    procedure, private:: contains2      ! patch contains a patch
-    generic:: contains => contains1, contains2
     procedure:: overlaps                ! patch overlaps test
     procedure:: index                   ! compute the index for a single point
     procedure:: nearest                 ! the nearest index that maps to patch point
@@ -349,6 +346,14 @@ SUBROUTINE header_to_patch (self, head)
   else
     write (io_unit%log,*) omp%thread,'header_to_patch WARNING: nt non-positive', nt
     flush (io_unit%log)
+  end if
+  if (head%istep == 0) then
+    write (io_unit%log,'(1x,a,i6,f12.6,2x,9f12.6)') &
+      'patch_t%header_to_patch: id, time, t =', &
+      self%id, self%time, self%t
+    write (io_unit%log,'(1x,a,i6,2x,3i4,2x,9i4)') &
+      'patch_t%header_to_patch: id, istep, it, new, iit =', &
+      self%id, self%istep, self%it, self%new, self%iit
   end if
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
@@ -678,8 +683,7 @@ SUBROUTINE setup (self, position, size, n, ng, nt, nv, nw)
     self%u_phase = 0.0
     allocate (self%mem_lock(self%nt))
     do i=1,self%nt
-      write (kind,'("mem",i1)') i
-      call self%mem_lock(i)%init (kind)
+      call self%mem_lock(i)%init ('meml')
     end do
     self%mem_allocated = .true.               ! mark
     call io%bits_mem (storage_size(self%mem), product(shape(self%mem)), 'mem')
@@ -1656,23 +1660,6 @@ contains
 END SUBROUTINE info
 
 !===============================================================================
-!> Return true if a point is inside the self interior
-!===============================================================================
-LOGICAL FUNCTION contains1 (self, point)
-  class(patch_t):: self
-  real(8):: point(3)
-  contains1 = all(abs(point-self%position) < 0.5_8*self%size)
-END FUNCTION contains1
-
-!===============================================================================
-!> Return true if a patch position is inside the self interior
-!===============================================================================
-LOGICAL FUNCTION contains2 (self, patch)
-  class(patch_t):: self, patch
-  contains2 = contains1 (self, patch%position)
-END FUNCTION contains2
-
-!===============================================================================
 !> Check if there is overlap, using the size plus an extra cell margin. The
 !> definition of overlap MUST be symmetric, since it is being used to define
 !> neighbor relations.  This function overloads task_t%overlaps, in order to
@@ -2437,20 +2424,20 @@ FUNCTION beyond_patch_edge (self, idir, position) result (outside)
   end select
 END FUNCTION beyond_patch_edge
 
-!=======================================================================
+!===============================================================================
 !> Interpolate -- only in time for now -- from the MHD time slots save in
 !> this module to the time requested from the solve procedure
-!=======================================================================
+!===============================================================================
 SUBROUTINE log_interpolate (self, time, i, a)
   class (patch_t)                 :: self
   real(8)                         :: time
   integer                         :: i
   real(kind=KindScalarVar), dimension(:,:,:), pointer :: a, b
-  !.....................................................................
+  !.............................................................................
   integer                         :: jt(2)
   real                            :: pt(2)
   integer, save                   :: itimer=0
-  ! --------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%log_interpolate', itimer=itimer)
   call self%time_interval (time, jt, pt)
   if (io%verbose > 1) then
@@ -2465,21 +2452,21 @@ SUBROUTINE log_interpolate (self, time, i, a)
   call trace%end (itimer)
 END SUBROUTINE log_interpolate
 
-!=======================================================================
+!===============================================================================
 !> Search for a time interval to interpolate in, and return the time
 !> slot indices and weight factors
-!=======================================================================
+!===============================================================================
 SUBROUTINE time_interval (self, time, jt, pt, all)
   class (patch_t)                 :: self
   real(8)                         :: time
   integer                         :: jt(2)
   real                            :: pt(2)
   logical, optional               :: all
-  !.....................................................................
+  !.............................................................................
   integer                         :: i, j, n, iit(self%nt-1)
   real(8)                         :: t(self%nt-1), dt
   integer, save                   :: itimer=0
-  ! --------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   !call trace%begin ('patch_t%time_interval', 2, itimer=itimer)
   if (self%nt==1) then
     jt = 1
@@ -2488,13 +2475,13 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
     call self%timeslots (iit, t)
     j = 1
     n = self%nt-2
-    !-------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     ! Seach and set the j index to the last point that has t(j)<time.
     ! Note that this does NOT guarantee that t(j+1) >= time.  In cases
     ! where both t(nt-2) < time and t(n-1) < time, extrapolation in time
     ! will result.  What should NOT happen is that a memory slot that
     ! has not yet received an update is chosen.
-    !-------------------------------------------------------------------
+    !---------------------------------------------------------------------------
     do i=1,n
       if (t(i) < time) j=i
     end do
@@ -2914,7 +2901,7 @@ END SUBROUTINE custom_refine
 !===============================================================================
 FUNCTION get_overlap (self, patch, guards, l, u) RESULT(overlap)
   class (patch_t):: self
-  class (patch_t), pointer:: patch
+  class (patch_t):: patch
   integer:: l(3), u(3)
   logical:: guards, overlap
   !.............................................................................
