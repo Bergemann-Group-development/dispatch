@@ -1192,13 +1192,13 @@ SUBROUTINE init_nbors (self, link)
         ! virtual patch, or the nbor is not a virtual patch, thus excluding
         ! adding virtual patches as nbors to virtual patches
         !-----------------------------------------------------------------------
-        allocate (nbor)
-        nbor%task => scan%task                      ! pointer to task
-        nbor%link => scan                           ! pointer to task link
-        call link%add_nbor_by_rank (new_head, nbor) ! add in rank order
-        call link%task%nbor_relations (nbor%task, nbor%needed, &
-          nbor%needs_me, nbor%download)             ! set flags and status bits
+        call link%add_nbor_by_rank (new_head, scan) ! add in rank order
         n_add = n_add+1
+        if (self%verbose > 1 .or. link%task%id == io%id_debug) &
+          write (io_unit%log, '(a,i6,i4,3x,4l1)') &
+          'init_nbors: nbor, level, NMDV =', &
+          scan%task%id, scan%task%level, scan%needed, scan%needs_me, &
+          scan%download, scan%task%is_set(bits%virtual)
       end if
     end if
     scan => scan%next                               ! continue search
@@ -1226,9 +1226,11 @@ SUBROUTINE init_nbors (self, link)
   old_sort => link%nbors_by_level
   link%nbor => new_head                               ! switch nbor list
   link%nbors_by_level => new_sort
-  call link%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
   ! Remove the two previous nbor lists
+ !call self%lock%set ('update_status')                ! FIXME: check if needed!
+  call self%update_status (link)                      ! based on new list
+ !call self%lock%unset ('update_status')              ! FIXME: check if needed!
   !-----------------------------------------------------------------------------
   call link%remove_nbor_list (old_head)               ! recover nbor list mem
   call link%remove_nbor_list (old_sort)
@@ -2280,11 +2282,8 @@ SUBROUTINE update_nbor_status (self, link)
       write (io_unit%log,*) 'update_nbor_status:', nbor%task%id, &
       nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual)
     status = nbor%task%status                           ! current status
-    call nbor%link%remove_nbor (link)                   ! remove out-of-order
-    allocate (this)                                     ! new nbor link
-    this%link => link                                   ! attach task link
-    this%task => link%task                              ! attach task
-    call nbor%link%add_nbor_by_rank (link%nbor, this)   ! add in rank order
+    call link%remove_nbor (link%nbor)                   ! remove out-of-order
+    call nbor%link%add_nbor_by_rank (link%nbor, link)   ! add in rank order
     call self%update_status (nbor%link)                 ! new status
     if (nbor%task%is_set (bits%boundary).and.iand(status,bits%boundary)==0) then
       if (io%verbose>0) &

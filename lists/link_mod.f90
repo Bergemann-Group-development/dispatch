@@ -48,7 +48,6 @@ MODULE link_mod
     procedure, nopass:: init_verbose
     procedure:: add_nbor_by_quality
     procedure:: add_nbor_by_rank
-    procedure:: add_nbor_link_by_rank
     procedure:: remove_nbor
     procedure:: remove_from_nbors
     procedure:: remove_nbor_list
@@ -165,10 +164,15 @@ END SUBROUTINE make_new_nbor
 SUBROUTINE add_nbor_by_quality (self, this)
   class(link_t):: self
   class(link_t), pointer:: this
-  class(link_t), pointer:: next, prev
+  class(link_t), pointer:: next, prev, nbor
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_quality')
   call self%lock%set ('add_nbor_by_quality')
+  allocate (nbor)
+  nbor%link => this
+  nbor%task => this%task
+  call self%task%nbor_relations (nbor%task, nbor%needed, nbor%needs_me, &
+                                 nbor%download)
   !$omp atomic update
   this%task%n_needed = this%task%n_needed + 1   ! because linked task derefined
   if (verbose > 1) &
@@ -183,11 +187,11 @@ SUBROUTINE add_nbor_by_quality (self, this)
         !-------------------------------------------------------------------------
         ! Found a task we should be ahead of, so insert here
         !-------------------------------------------------------------------------
-        this%next => next
+        nbor%next => next
         if (associated(prev)) then
-          prev%next => this
+          prev%next => nbor
         else
-          self%nbor => this
+          self%nbor => nbor
         end if
         self%task%n_nbors = self%task%n_nbors+1
         call trace_end
@@ -238,35 +242,21 @@ SUBROUTINE check_level_sort (self)
 END SUBROUTINE check_level_sort
 
 !===============================================================================
-!> Add a task link to an nbor list, setting also the nbor relations, based on
-!> the ranks of the link%task and the self%task (which must be the "owner" of
-!> the nbor_list)
-!===============================================================================
-SUBROUTINE add_nbor_link_by_rank (self, nbor_list, link)
-  class(link_t):: self
-  class(link_t), pointer:: nbor_list, link
-  class(link_t), pointer:: nbor
-  !-----------------------------------------------------------------------------
-  call trace%begin ('link_t%add_nbor_link_by_rank')
-  allocate (nbor)
-  nbor%link => link
-  nbor%task => link%task
-  call self%add_nbor_by_rank (nbor_list, nbor)
-  call self%task%nbor_relations (nbor%task, nbor%needed, nbor%needs_me, &
-    nbor%download)
-  call trace%end ()
-END SUBROUTINE add_nbor_link_by_rank
-
-!===============================================================================
 !> Add a link node into the nbors list of self, in increasing rank order.
-!> self must be a link whose 'nbors' points to a chain of nbors
+!> self must be a link whose 'nbors' points to a chain of nbors, and 'this'
+!> must be an nbor with both a link and task pointer set.
 !===============================================================================
 SUBROUTINE add_nbor_by_rank (self, nbors, this)
   class(link_t):: self
   class(link_t), pointer:: nbors, this
-  class(link_t), pointer:: next, prev
+  class(link_t), pointer:: next, prev, nbor
   !.............................................................................
   call trace_begin ('list_t%add_nbor_by_rank', 3)
+  allocate (nbor)
+  nbor%link => this
+  nbor%task => this%task
+  call self%task%nbor_relations (nbor%task, nbor%needed, nbor%needs_me, &
+    nbor%download)
   !$omp atomic update
   this%task%n_needed = this%task%n_needed + 1   ! because linked task derefined
   if (verbose > 1) &
@@ -303,11 +293,11 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
       !-------------------------------------------------------------------------
       ! Found a task we should be ahead of, so insert here
       !-------------------------------------------------------------------------
-      this%next => next
+      nbor%next => next
       if (associated(prev)) then
-        prev%next => this
+        prev%next => nbor
       else
-        nbors => this
+        nbors => nbor
       end if
       self%task%n_nbors = self%task%n_nbors+1
       goto 9
@@ -316,13 +306,13 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
     next => next%next
   end do
   !-----------------------------------------------------------------------------
-  ! This task has the highest rank, so append it
+  ! This task has the highest rank, so append it's nbor link
   !-----------------------------------------------------------------------------
   if (associated(prev)) then
-    prev%next => this
-    nullify (this%next)
+    prev%next => nbor
+    nullify (nbor%next)
   else
-    nbors => this
+    nbors => nbor
   end if
   self%task%n_nbors = self%task%n_nbors+1
 9 continue
