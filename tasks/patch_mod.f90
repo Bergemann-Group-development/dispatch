@@ -67,7 +67,7 @@ MODULE patch_mod
     logical:: mem_allocated=.false.
     logical:: do_pebbles=.false.
     logical:: staggered=.true.
-    logical:: no_mans_land=.false.
+    logical:: no_mans_land=.true.
     logical:: use_data_hub=.false.
     logical:: manual_refine=.false.
     logical:: get_umax_location=.false.
@@ -451,7 +451,7 @@ SUBROUTINE init_default (self)
   class(patch_t):: self
   !.............................................................................
   integer, save:: n(3)=16, ng(3)=2, nv=5, nt=5, nw, max_files=1000
-  logical, save:: no_mans_land=.false., use_data_hub=.false., limit_dtime=.false.
+  logical, save:: no_mans_land=.true., use_data_hub=.false., limit_dtime=.false.
   real, save:: u_fixed=-1.0, grace=0.0
   real(8), save:: end_time=1.0, out_time=0.1, print_time=0.0, dt_fixed=-1.0
   real(8):: position(3), size(3)
@@ -2921,7 +2921,10 @@ SUBROUTINE custom_refine (self)
 END SUBROUTINE custom_refine
 
 !===============================================================================
-!> Check overlap and return overlap range in a patch, in terms self indices
+!> Check overlap and return overlap range in a patch, in terms interior region
+!> self indices.  In other words:  Get the self index range that the interior 
+!> of patch covers.  If guards==.true., then include also the guard zones of
+!> the patch.
 !===============================================================================
 FUNCTION get_overlap (self, patch, guards, l, u) RESULT(overlap)
   class (patch_t):: self
@@ -2948,16 +2951,19 @@ FUNCTION get_overlap (self, patch, guards, l, u) RESULT(overlap)
     ! is legal
     !---------------------------------------------------------------------------
     if (guards) then
-      la = dist - patch%size/2d0 - (patch%mesh%ng+1)*patch%mesh%d
-      ua = dist + patch%size/2d0 + (patch%mesh%ng+1)*patch%mesh%d
+      la = dist - patch%size/2d0 - (patch%mesh%ng-0.5d0)*patch%mesh%d
+      ua = dist + patch%size/2d0 + (patch%mesh%ng-0.5d0)*patch%mesh%d
     else
       la = dist - patch%size/2d0
       ua = dist + patch%size/2d0
     end if
+    !---------------------------------------------------------------------------
+    ! This works for both NML and NNML meshes: 
+    !---------------------------------------------------------------------------
     l =   floor(la/self%mesh%d + self%mesh%o)
     u = ceiling(ua/self%mesh%d + self%mesh%o)
-    l = max(l,self%mesh%lb)
-    u = min(u,self%mesh%ub)
+    l = min(max(l,self%mesh%li),self%mesh%ub)
+    u = min(max(u,self%mesh%lb),self%mesh%ui)
     !---------------------------------------------------------------------------
     ! Check that there really is overlap with the authoritative region
     !---------------------------------------------------------------------------

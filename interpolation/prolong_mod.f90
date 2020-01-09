@@ -343,7 +343,8 @@ SUBROUTINE interpolate (self, source, jt, pt, target, ipos, all, l, u)
   ! Interpolate in 3-D
   !-----------------------------------------------------------------------------
   if (present(all) .and. all) then
-    call self%interp (src_mem, ls, us, target, lt, ut, mask=.not.outside)
+    !call self%interp (src_mem, ls, us, target, lt, ut, mask=.not.outside)
+    call self%interp (src_mem, ls, us, target, lt, ut)
   else
     call self%interp (src_mem, ls, us, target, lt, ut, mask=outside)
   end if

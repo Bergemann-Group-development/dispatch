@@ -308,11 +308,12 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   integer:: end_count, io_count, na
   integer, save:: count=1
   integer, save:: itimer=0
-  !----------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   call trace%begin('task_list_t%update', itimer=itimer)
-  !-------------------------------------------------------------------------
+  nullify (head%next_time)
+  !-----------------------------------------------------------------------------
   ! Cost counter for AMR
-  !-------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   levelstart = wallclock()
   task => head%task
   call io%check_flags
@@ -320,9 +321,9 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     task%track =  .not.task%track
     io%id_track = 0
   end if
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   ! If the task is frozen, make sure it is marked "not ready", and then return
-  !---------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------
   if (task%is_set (bits%frozen)) then
     call task%clear (bits%ready)
     call trace%end (itimer)

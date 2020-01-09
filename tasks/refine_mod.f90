@@ -362,7 +362,7 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'user'
   !
   ! Check if support constraints require refinement
-  refine = max (refine, need_to_support (self, tasklist, link))
+  refine = max (refine, tasklist%check_support (link, +1))
   if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'need to support'
   !
@@ -399,7 +399,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
       link%task%istep < wait_refine_nsteps) then
         return
   end if
-  if (verbose > 0) then
+  if (verbose > 1) then
     if (link%task%is_set (bits%init_nbors)) &
       write(io_unit%log,'(i6,f12.6,4x,a,3x,2l1)') &
         link%task%id, link%task%time, 'has bits%init_nbors', &
@@ -439,8 +439,10 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     ! set to -derefine_limit, where the value should be less than 1.0, to give
     ! some hysteresis to refinement/derefinement
     !---------------------------------------------------------------------------
-    if (.not.allocated(patch%irefine)) &
+    if (.not.allocated(patch%irefine)) then
       allocate (patch%irefine(patch%gn(1),patch%gn(2),patch%gn(3)))
+      write (io_unit%log,*) 'allocated irefine in refine', mpi%rank, patch%id
+    end if
     patch%irefine = -derefine_limit
     l = patch%mesh%li
     u = patch%mesh%ui
@@ -475,6 +477,7 @@ SUBROUTINE check_current (self, tasklist, link, was_refined, was_derefined)
     !---------------------------------------------------------------------------
     patch%check_refine_next = patch%istep + check_interval
     deallocate (patch%irefine)
+    write (io_unit%log,*) 'deallocated irefine in refine', mpi%rank, patch%id
   else
 !write(stdout,*) 'SKIP', patch%id, &
 !      patch%is_clear(bits%virtual)  , &
@@ -567,7 +570,8 @@ SUBROUTINE selective_refine (self, tasklist, patch, refine, was_refined, was_der
             l = patch%mesh%li + ([i,j,k]-1)*n
             u = max(1, l + n - 1)
             !-------------------------------------------------------------------
-            ! Should this part be refined or not?
+            ! Should this part be refined or not, according to patch%irefine
+            ! accumulated from all active conditions?
             !-------------------------------------------------------------------
             refine_it = maxval (patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)))
             !-------------------------------------------------------------------

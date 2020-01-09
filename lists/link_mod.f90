@@ -313,44 +313,47 @@ SUBROUTINE add_nbor_by_rank (self, nbors, this)
 END SUBROUTINE add_nbor_by_rank
 
 !===============================================================================
-!> Remove the nbor with task equals self%task from the nbor list starting at head
+!> Remove the this task from links nbor list 
 !===============================================================================
-SUBROUTINE remove_nbor (self, head, nolock)
+SUBROUTINE remove_nbor (self, this, nbor_list)
   class(link_t):: self
-  class(link_t), pointer:: head
-  integer:: verbose
-  logical, optional:: nolock
-  class(link_t), pointer:: nbor, prev, next
-  integer, save:: itimer=0
+  class(task_t), pointer:: this
+  class(link_t), pointer:: nbor_list
   !.............................................................................
+  class(link_t), pointer:: nbor, prev, next
+  logical:: failed
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
   call trace%begin ('link_t%remove_nbor', 1, itimer=itimer)
-  if (present(nolock) .and. nolock) &
-    call self%lock%set ('remove_nbor', itimer=itimer)
+  !.............................................................................
   if (verbose > 0) &
-    write (io_unit%log,*) 'link_t%remove_nbor: ', self%task%id, &
+    write (io_unit%log,*) 'link_t%remove_nbor: ', this%id, &
       ' from nbor list of', self%task%id
+  !.............................................................................
   nullify (prev)
-  nbor => head
+  failed = .true.
+  nbor => nbor_list
   do while (associated(nbor))
     next => nbor%next
-    if (associated(nbor%task,self%task)) then
+    if (associated(nbor%task,this)) then
       if (associated(prev)) then
         prev%next => nbor%next
       else
-        head => nbor%next
+        nbor_list => nbor%next
       end if
+      self%task%n_nbors = self%task%n_nbors-1
       deallocate (nbor)
       nullify (nbor)
-      self%task%n_nbors = self%task%n_nbors-1
-      goto 9
+      failed = .false.
+      exit
     end if
     prev => nbor
     nbor => next
   end do
-  write (io_unit%log,*) 'link_t%remove_nbor: WARNING, could not find task', self%task%id
-9 continue
-  if (present(nolock) .and. nolock) &
-    call self%lock%unset ('remove_nbor')
+  if (failed) then
+    write (io_unit%log,*) &
+      'link_t%remove_nbor: WARNING, could not find task', this%id
+  end if
   call trace%end (itimer)
 END SUBROUTINE remove_nbor
 
@@ -367,7 +370,7 @@ SUBROUTINE remove_from_nbors (self, this)
   write (stderr,*) 'link_t%remove_from:nbors is DEPRECATED'
   nbor => self%nbor
   do while (associated(nbor))
-    call nbor%link%remove_nbor (nbor%link%nbor)
+    call nbor%link%remove_nbor (this%task, nbor%link%nbor)
     nbor => nbor%next
   end do
   call self%lock%unset ('remove_from_nbors')
@@ -719,7 +722,7 @@ SUBROUTINE sort_nbors_by_level (self, old_head, new_head)
   integer:: n_nbors
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (timer%detailed) &
+  if (timer%detailed .or. verbose > 0) &
     call trace%begin ('link_t%sort_nbors_by_level', itimer=itimer)
   if (verbose > 3) call nbor_print (old_head)
   nullify (head)
@@ -734,7 +737,7 @@ SUBROUTINE sort_nbors_by_level (self, old_head, new_head)
   !-----------------------------------------------------------------------------
   if (verbose > 2) call nbor_print (head)
   if (verbose > 0) call nbor_check (new_head)
-  if (timer%detailed) &
+  if (timer%detailed .or. verbose > 0) &
     call trace%end (itimer)
 contains
   !-----------------------------------------------------------------------------

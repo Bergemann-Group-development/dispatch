@@ -260,6 +260,7 @@ SUBROUTINE update (self, task_list, test)
       task => head%task
     end if
     call task%log ('dispatcher')
+    !...........................................................................
     if (debug) then
       !$omp critical (wrt_cr)
       write (io_unit%queue,'("a",f12.6,i4,2i7,3i5,f12.6,i6,2i9,7i7)') &
@@ -268,15 +269,13 @@ SUBROUTINE update (self, task_list, test)
       timer%n_master(:) = 0
       n_spin = 0
       !$omp end critical (wrt_cr)
-    end if
-    !---------------------------------------------------------------------------
-    if (debug) then
       !$omp atomic read
       stalled_l = stalled
       if (stalled_l > 0) then
         write (io_unit%log,*) wallclock(), '  stall ended', stalled_l
       end if
     end if
+    !...........................................................................
     !$omp atomic write
     stalled = 0
     !$omp atomic write
@@ -389,6 +388,7 @@ SUBROUTINE update (self, task_list, test)
   ! it as soon as all other ranks have arrived at the same time.
   !-----------------------------------------------------------------------------
   if (associated(head)) then
+    nullify (head%next_time)
     if (detailed_timer) then
       call trace%end (itimer(i))
       i = i+1
