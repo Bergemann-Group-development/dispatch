@@ -1357,16 +1357,8 @@ SUBROUTINE init_nbors (self, link)
   call self%update_status (link)                      ! based on new list
  !call self%lock%unset ('update_status')              ! FIXME: check if needed!
   !-----------------------------------------------------------------------------
-  if (associated(old_head)) then
-    call link%remove_nbor_list (old_head)             ! recover nbor list mem
-  else
-    write (io_unit%log,*) 'WARNING: old_head missing', link%task%id
-  end if
-  if (associated(old_sort)) then
-    call link%remove_nbor_list (old_sort)
-  else
-    write (io_unit%log,*) 'WARNING: old_sort missing', link%task%id
-  end if
+  call link%remove_nbor_list (old_head)               ! recover nbor list mem
+  call link%remove_nbor_list (old_sort)
   call link%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
   link%task%n_nbors = n_add                           ! remember n_nbors
@@ -2848,23 +2840,24 @@ END SUBROUTINE info
 !===============================================================================
 !> Check refinement support.  When sign is +1 it checks if an overlapping level
 !> L+2 task requires the level L link task to split to provide support.  When
-!> sign is -1 it checks if a level L task has support at level L-1.
+!> sign is -1 it checks if the level L link task has support at level L-1.
 !>
 !> The use of a bitmap to reveal if a task lacks support is general; it does not
 !> require stationary patches, or exact Cartesian overlap.  It only requires
 !> that the source index regions computed are correct, so the bitmap is correct.
 !===============================================================================
-FUNCTION check_support (self, link, sign) RESULT (refine)
+FUNCTION check_support (self, link, sign, test) RESULT (refine)
   class(list_t):: self
   class(link_t), pointer:: link
   integer, intent(in):: sign
+  real, pointer, optional:: test(:,:,:)
   integer:: refine
   !-----------------------------------------------------------------------------
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
   logical:: guards, check
   integer:: l(3), u(3)
-  real, allocatable:: irefine(:,:,:)
+  real, pointer:: irefine(:,:,:)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%check_support', itimer=itimer)
@@ -2874,9 +2867,14 @@ FUNCTION check_support (self, link, sign) RESULT (refine)
   select type (task)
   class is (patch_t)
     !---------------------------------------------------------------------------
-    ! Make sure irefine is allocated
+    ! Use an external test array when called from refine_t, and a local one
+    ! when called stand-alone
     !---------------------------------------------------------------------------
-    allocate (irefine(task%gn(1),task%gn(2),task%gn(3)))
+    if (present(test)) then
+      irefine => test
+    else
+      allocate (irefine(task%gn(1),task%gn(2),task%gn(3)))
+    end if
     irefine = 0.0
     !---------------------------------------------------------------------------
     ! Find L+-2 tasks, and check for overlap of their guard zones
@@ -2904,7 +2902,7 @@ FUNCTION check_support (self, link, sign) RESULT (refine)
                   'nbtask, level, needs  l, u =', &
                   nbtask%id, nbtask%level, l, u
               end if
-              irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 1
+              irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 2.0
               check = .true.
             end if
           else
@@ -2922,7 +2920,7 @@ FUNCTION check_support (self, link, sign) RESULT (refine)
                   'nbtask, level, needs  l, u =', &
                   nbtask%id, nbtask%level, l, u
               end if
-              irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 1
+              irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 2.0
               check = .true.
             end if
           end if
@@ -2945,15 +2943,16 @@ FUNCTION check_support (self, link, sign) RESULT (refine)
           class is (patch_t)
             guards = .false.
             if (task%get_overlap (nbtask, guards, l, u)) then
+              irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 0.0
               if (self%verbose > 1) then
-                write (io_unit%log,'(f12.6,2(1x,a,i6,i4),2(2x,3i4))') &
+                write (io_unit%log,'(f12.6,2(1x,a,i6,i4),2(2x,3i4),f5.1)') &
                   wallclock(), &
                   'list_t%check_support: task, level =', &
                   task%id, task%level, &
-                  'nbtask, level, covers l, u =', &
-                  nbtask%id, nbtask%level, l, u
+                  'nbtask, level, covers l, u, max =', &
+                  nbtask%id, nbtask%level, l, u, &
+                  maxval(irefine)
               end if
-              irefine(l(1):u(1),l(2):u(2),l(3):u(3)) = 0
             end if
           end select
         end if
@@ -2971,7 +2970,9 @@ FUNCTION check_support (self, link, sign) RESULT (refine)
     if (allocated(task%irefine)) then
       task%irefine = task%irefine + irefine
     end if
-    deallocate (irefine)
+    if (.not. present(test)) then
+      deallocate (irefine)
+    end if
     call self%lock%unset ('check_support')
   end select
   !.............................................................................

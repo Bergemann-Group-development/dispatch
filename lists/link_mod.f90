@@ -403,10 +403,8 @@ SUBROUTINE remove_nbor_list (self, nbors)
       deallocate (nbor)
       nbor => next
     end do
-  else
-    write (io_unit%log,*) 'attempting to remove a non-existing nbor list'
+    nullify (nbors)
   end if
-  nullify (nbors)
   if (timer%detailed) &
     call trace%end (itimer)
 END SUBROUTINE remove_nbor_list

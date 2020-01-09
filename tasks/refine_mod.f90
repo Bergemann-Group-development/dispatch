@@ -182,6 +182,8 @@ MODULE refine_mod
   USE download_mod
   USE timer_mod
   USE data_io_mod
+  USE math_mod
+  USE scaling_mod
   implicit none
   private
   !
@@ -202,6 +204,7 @@ MODULE refine_mod
     procedure:: evaluate
     procedure:: refine_region
     procedure:: gradient_detector
+    procedure, private:: check_support
   end type
   !
   integer:: check_interval=10                 ! Number of steps betwen checks
@@ -362,7 +365,7 @@ FUNCTION refine_needed (self, tasklist, link) RESULT (refine)
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'user'
   !
   ! Check if support constraints require refinement
-  refine = max (refine, tasklist%check_support (link, +1))
+  refine = max (refine, self%check_support (tasklist, patch))
   if (verbose > 3) write (io_unit%output,*) &
     patch%id, refine, minval(patch%irefine), maxval(patch%irefine), 'need to support'
   !
@@ -882,11 +885,11 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   !$omp atomic update
   parent%n_needed = parent%n_needed + 2
   if (parent%time > 0.0) then
-    !---------------------------------------------------------------------------
-    ! Make sure the child guard zones have some sensible values, even if only
-    ! the interior cells are filled when all_cells is true
-    !---------------------------------------------------------------------------
-    child%mem(:,:,:,:,child%it,1) = parent%mem(:,:,:,:,parent%it,1)
+    !!---------------------------------------------------------------------------
+    !! Make sure the child guard zones have some sensible values, even if only
+    !! the interior cells are filled when all_cells is true
+    !!---------------------------------------------------------------------------
+    !child%mem(:,:,:,:,child%it,1) = parent%mem(:,:,:,:,parent%it,1)
     call download%download_link (child_link, all_cells=.true.)
     child%dnload_time = -1.0
     if (do_dump) &
@@ -952,8 +955,6 @@ END FUNCTION check_cubical
 !> Refine / derefine on ratio of Jeans length to cell size
 !===============================================================================
 FUNCTION check_Jeans (self, patch) RESULT(refine_it)
-  USE math_mod
-  USE scaling_mod
   class(refine_t):: self
   class(solver_t), pointer:: patch
   integer:: refine_it
@@ -962,7 +963,7 @@ FUNCTION check_Jeans (self, patch) RESULT(refine_it)
   real:: Jeans_num, dmin, ds, c
   real, dimension(:,:,:), allocatable:: pg
   real(kind=KindScalarVar), dimension(:,:,:), pointer:: d, e
-  real(kind=KindScalarVar), allocatable:: test(:,:,:)
+  real, pointer:: test(:,:,:)
   logical:: masked
   !-----------------------------------------------------------------------------
   call trace%begin ('refine_t%check_jeans')
@@ -1003,15 +1004,13 @@ END FUNCTION check_Jeans
 !> Refine / derefine on vorticity (velocity difference per cell)
 !===============================================================================
 FUNCTION check_compress (self, patch) RESULT(refine_it)
-  USE math_mod
-  USE scaling_mod
   class(refine_t):: self
   class(solver_t), pointer:: patch
   integer:: refine_it
   !.............................................................................
   integer:: imin(3), l(3), u(3)
   real:: w_num, wmin, c, ds, cut_off
-  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: test
+  real, pointer:: test(:,:,:)
   logical:: masked
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -1041,18 +1040,16 @@ FUNCTION check_compress (self, patch) RESULT(refine_it)
 END FUNCTION check_compress
 
 !===============================================================================
-!> Refine / derefine on vorticity (velocity difference per cell)
+!> Refine on support
 !===============================================================================
 FUNCTION check_vorticity (self, patch) RESULT(refine_it)
-  USE math_mod
-  USE scaling_mod
   class(refine_t):: self
   class(solver_t), pointer:: patch
   integer:: refine_it
   !.............................................................................
   integer:: imin(3), l(3), u(3)
   real:: w_num, wmin, c, ds, max_test
-  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: test
+  real, pointer:: test(:,:,:)
   logical:: masked
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -1305,6 +1302,31 @@ FUNCTION gradient_detector (self, patch) RESULT (refine)
 END FUNCTION gradient_detector
 
 !===============================================================================
+!> Refine on support criteria, interfacing to list_t%check_support
+!===============================================================================
+FUNCTION check_support (self, tasklist, patch) RESULT(refine_it)
+  class(refine_t):: self
+  class(list_t):: tasklist
+  class(solver_t), pointer:: patch
+  integer:: refine_it
+  !.............................................................................
+  real, dimension(:,:,:), pointer:: test
+  integer, save:: itimer=0
+  !-----------------------------------------------------------------------------
+  call trace%begin ('refine_t%check_support', itimer=itimer, detailed_timer=detailed_timer)
+  !---------------------------------------------------------------------------
+  ! Compute support bitmap
+  !---------------------------------------------------------------------------
+  allocate (test(patch%gn(1),patch%gn(2),patch%gn(3)))
+  refine_it = tasklist%check_support (patch%link, +1, test=test)
+  !---------------------------------------------------------------------------
+  ! Combine with previous tests and evaluate
+  !---------------------------------------------------------------------------
+  call self%evaluate ('support', patch, test, refine_it)
+  call trace%end (itimer, detailed_timer=detailed_timer)
+END FUNCTION check_support
+
+!===============================================================================
 !> Add test and evaluate, renormalizing with (by default) a factor 2.5,
 !> allowing derefine below 0.0 and refininig for values above 1.5, on a scale
 !> starting at -1.0
@@ -1313,7 +1335,7 @@ SUBROUTINE evaluate (self, label, patch, test, refine_it)
   class(refine_t):: self
   character(len=*):: label
   class(solver_t), pointer:: patch
-  real(kind=KindScalarVar), dimension(:,:,:), allocatable:: test
+  real, pointer:: test(:,:,:)
   integer:: refine_it
   !...........................................................................
   real:: max_crit, max_test, norm
@@ -1334,8 +1356,8 @@ SUBROUTINE evaluate (self, label, patch, test, refine_it)
     patch%irefine = patch%irefine + norm*test
   end if
   !---------------------------------------------------------------------------
-  ! Starting out at 0.0. as long as refine remains < 0.4 derefinement is
-  ! allowed, and if it exceeds 1.0, refinement is needed
+  ! As refine remains <= 0.0 derefinement is allowed, and if it 
+  ! exceeds 1.0, refinement is needed
   !---------------------------------------------------------------------------
   max_crit = maxval(patch%irefine(l(1):u(1),l(2):u(2),l(3):u(3)))
   refine_it = 0
