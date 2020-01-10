@@ -398,11 +398,11 @@ SUBROUTINE wait_all (self)
   if (verbose >= 0) wc = wallclock()
 #ifdef MPI
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call MPI_WAITALL (self%nreq, self%reqs, MPI_STATUSES_IGNORE, ierr)
+  else
     !$omp critical (mpi_cr)
     call MPI_WAITALL (self%nreq, self%reqs, MPI_STATUSES_IGNORE, ierr)
     !$omp end critical (mpi_cr)
-  else
-    call MPI_WAITALL (self%nreq, self%reqs, MPI_STATUSES_IGNORE, ierr)
   end if
 #endif MPI
   if (verbose >= 0) then
