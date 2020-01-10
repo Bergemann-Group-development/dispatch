@@ -192,7 +192,7 @@ SUBROUTINE init (self, name)
     !$omp critical (open_cr)
     if (omp%master) then
       io_unit%verbose = verbose
-    else
+    else if (.not. omp_trace) then
       io_unit%verbose = -2
     end if
     io_unit%do_trace = do_trace
