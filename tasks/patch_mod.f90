@@ -1613,7 +1613,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       !-----------------------------------------------------------------------
       mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0
       mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_unpk=0
-      mpi_mesg%n_delay=0
+      mpi_mesg%n_delay=0; mpi_mesg%nq_recv=-1
     end if
     !---------------------------------------------------------------------------
     ! Keep track of the shortest times step between updates of the io%id local

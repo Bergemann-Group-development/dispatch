@@ -288,6 +288,11 @@ SUBROUTINE recv_irecv (self, n_unpk)
   !-----------------------------------------------------------------------------
   ! Refill the list
   !-----------------------------------------------------------------------------
+  if (mpi_mesg%nq_recv < 0) then
+    mpi_mesg%nq_recv = mpi_mesg%recv_list%n
+  else
+    mpi_mesg%nq_recv = min (mpi_mesg%nq_recv, mpi_mesg%recv_list%n)
+  end if
   do while (mpi_mesg%recv_list%n < mpi_mesg%max_recv)
     call mpi_mesg%iget (mesg)
     if (mesg%is_complete('recv_irecv')) then

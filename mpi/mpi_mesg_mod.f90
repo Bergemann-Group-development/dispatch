@@ -1,5 +1,16 @@
 !===============================================================================
-!> $Id$
+!> SENDING: Each message sent is added to a thread-private sent_list, which is
+!> then checked for completed messages later, to allow deallocating the send
+!> buffer.  Since this is not urgent, the sent_list doesn't have to be checked
+!> very often.
+!>
+!> RECEIVING: With the (preferred) 'isend' method, each thread (or only the
+!> master thread) handles a thread-private list of 'irecv' requests, which
+!> accept messages of a predetermined size from any rank.  With the 'improbe'
+!> method, the size does not have to be predetermined, but can vary from case
+!> to case.  With the 'irecv' method, the thread goes through the list, looking
+!> for completed messages, moving them to an unpack queue, and then refills the
+!> list of irecv requests.
 !===============================================================================
 MODULE mpi_mesg_mod
   USE trace_mod
@@ -73,7 +84,7 @@ MODULE mpi_mesg_mod
     integer:: n_delay=0
     integer:: n_unpk=0
     integer:: nq_send=0
-    integer:: nq_recv=0
+    integer:: nq_recv=-1
     integer:: max_recv
     integer:: max_probe
     integer:: min_nq
