@@ -1350,7 +1350,7 @@ SUBROUTINE init_nbors (self, link)
     scan => scan%next                               ! continue search
   end do
   call self%prune_nbors (link, new_head, status)
-  call self%lock%unset ('init_nbors')
+  !call self%lock%unset ('init_nbors')
   !.............................................................................
   if (self%verbose > 0 .or. link%task%id == io%id_debug) then
     write(io_unit%log,'(f12.6,1x,a,i6,i4,3x,3l1,2i4)') wallclock(), &
@@ -1367,18 +1367,23 @@ SUBROUTINE init_nbors (self, link)
   !-----------------------------------------------------------------------------
   nullify (new_sort)
   call link%sort_nbors_by_level (new_head, new_sort)
+  !-----------------------------------------------------------------------------
+  ! Under a brief link lock, swap the nbor lists, and update the status bits, in
+  ! case for example an internal task became a boundary task
+  !-----------------------------------------------------------------------------
   call link%lock%set ('init_nbors', itimer=itimer)
   old_head => link%nbor
   old_sort => link%nbors_by_level
   link%nbor => new_head                               ! switch nbor list
   link%nbors_by_level => new_sort
- !call self%lock%set ('update_status')                ! FIXME: check if needed!
   call self%update_status (link)                      ! based on new list
- !call self%lock%unset ('update_status')              ! FIXME: check if needed!
+  call link%lock%unset ('init_nbors')
+  call self%lock%unset ('init_nbors')
+  !-----------------------------------------------------------------------------
+  ! Remove the two released nbor lists, to recover the memory
   !-----------------------------------------------------------------------------
   call link%remove_nbor_list (old_head)               ! recover nbor list mem
   call link%remove_nbor_list (old_sort)
-  call link%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
   link%task%n_nbors = n_add                           ! remember n_nbors
   !-----------------------------------------------------------------------------
@@ -2604,8 +2609,7 @@ SUBROUTINE update_status (self, link)
   integer:: n
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%update_status')
-  call link%lock%set ('update_status')
-  !call link%task%set (bits%internal+bits%external)
+  !call link%lock%set ('update_status')
   nbor => link%nbor
   do while (associated(nbor))
     old%status = link%task%status
@@ -2626,7 +2630,7 @@ SUBROUTINE update_status (self, link)
   !-----------------------------------------------------------------------------
   if (link%task%is_clear (bits%boundary)) &
     call link%task%clear (bits%update_status)
-  call link%lock%unset ('update_status')
+  !call link%lock%unset ('update_status')
   call trace%end ()
 contains
   subroutine update_count (old, new, bit, count)
