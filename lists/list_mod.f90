@@ -2898,9 +2898,9 @@ FUNCTION check_support (self, link, sign, test) RESULT (refine)
     !---------------------------------------------------------------------------
     ! Find L+-2 tasks, and check for overlap of their guard zones
     !---------------------------------------------------------------------------
-    call self%lock%set ('check_support', itimer)
     check = .false.
-    nbor => self%head
+    call link%lock%set ('check_support', itimer)
+    nbor => link%nbor
     do while (associated(nbor))
       if (nbor%task%level == link%task%level+sign*2) then
         nbtask => nbor%task
@@ -2954,7 +2954,7 @@ FUNCTION check_support (self, link, sign, test) RESULT (refine)
     ! have or provide support at L+-1
     !---------------------------------------------------------------------------
     if (check) then
-      nbor => self%head
+      nbor => link%nbor
       do while (associated(nbor))
         if (nbor%task%level == link%task%level+sign*1) then
           nbtask => nbor%task
@@ -2977,11 +2977,11 @@ FUNCTION check_support (self, link, sign, test) RESULT (refine)
         end if
         nbor => nbor%next
       end do
-      call self%lock%unset ('check_support')
       l = task%mesh%li
       u = task%mesh%ui
       refine = maxval(irefine(l(1):u(1),l(2):u(2),l(3):u(3)))
     end if
+    call link%lock%unset ('check_support')
     !---------------------------------------------------------------------------
     ! Task%irefine is used additively, so make sure refinement happen if and
     ! where the local irefine is still set    
@@ -2992,7 +2992,6 @@ FUNCTION check_support (self, link, sign, test) RESULT (refine)
     if (.not. present(test)) then
       deallocate (irefine)
     end if
-    call self%lock%unset ('check_support')
   end select
   !.............................................................................
   if (self%verbose > 0) then
