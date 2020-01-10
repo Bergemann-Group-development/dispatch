@@ -710,7 +710,8 @@ SUBROUTINE unpack (self, mesg, link)
   bonafide = .true.
   if (associated(link1%task)) then
    if (verbose > 1) &
-    write (io_unit%log,'(a,i6,2x,5l1)') 'unpack: id, bits BVRES =', mesg%id, &
+    write (io_unit%log,'(a,i6,2x,6l1)') 'unpack: id, bits IBVRES =', mesg%id, &
+      task%is_set (bits%internal), &
       task%is_set (bits%boundary), &
       task%is_set (bits%virtual), &
       task%is_set (bits%ready), &
@@ -760,9 +761,10 @@ SUBROUTINE unpack (self, mesg, link)
     bonafide = .false.
   end if
   if (verbose > 1) then
-    write (io_unit%mpi,'(f12.6,3x,a,3i6,f12.6,2x,3f10.4,2x,5l1)') &
+    write (io_unit%mpi,'(f12.6,3x,a,3i6,f12.6,2x,3f10.4,2x,6l1)') &
       wallclock(), 'unpack: after task%unpack BVRES =', &
       id, mesg%id, task%id, task%time, task%position, &
+      task%is_set (bits%internal), &
       task%is_set (bits%boundary), &
       task%is_set (bits%virtual), &
       task%is_set (bits%ready), &

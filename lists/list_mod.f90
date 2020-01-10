@@ -424,16 +424,18 @@ SUBROUTINE update_counts (self, link, delta)
     na = self%na
     call self%count_status ()
     if (n /= self%n .or. na /= self%na) then
-      write (stdout,'(a,2(2i6,2x),a,i6,i3,2x,2l1)') &
+      write (stdout,'(a,2(2i6,2x),a,i6,i3,2x,3l1)') &
         'list_t%update_counts WARNING: inconsistent counts', &
         n, self%n, na, self%na, &
-        'after updating task, delta =', link%task%id, delta, &
+        'after updating task, delta, IBV =', link%task%id, delta, &
+        link%task%is_set(bits%internal), &
         link%task%is_set(bits%boundary), &
         link%task%is_set(bits%virtual)
-      write (io_unit%mpi,'(a,2(2i6,2x),a,i6,i3,2x,2l1)') &
+      write (io_unit%mpi,'(a,2(2i6,2x),a,i6,i3,2x,3l1)') &
         'list_t%update_counts WARNING: inconsistent counts', &
         n, self%n, na, self%na, &
-        'after updating task, delta =', link%task%id, delta, &
+        'after updating task, delta, IBV =', link%task%id, delta, &
+        link%task%is_set(bits%internal), &
         link%task%is_set(bits%boundary), &
         link%task%is_set(bits%virtual)
     end if

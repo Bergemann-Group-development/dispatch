@@ -401,13 +401,13 @@ contains
 subroutine write (unit)
   integer:: unit
   real(8):: wait_sum, hold_sum
-  write (stdout,'(11x,a,a)') '  i  lock       wait      wait(%)     mus/n', &
+  write (unit,'(11x,a,a)') '  i  lock       wait      wait(%)     mus/n', &
                                      '       hold      hold(%)     mus/n           n'
   wait_sum = max(sum(wait_time(1:nkinds)),tiny(1.0))
   hold_sum = max(sum(hold_time(1:nkinds)),tiny(1.0))
   do i=1,nkinds
     if (wait_time(i) > 0d0) then
-      write (stdout,'(11x,i3,2x,a4,2(2x,1p,e12.3,2p,f10.1,6p,f10.1,0p),i12)') i, kinds(i), &
+      write (unit,'(11x,i3,2x,a4,2(2x,1p,e12.3,2p,f10.1,6p,f10.1,0p),i12)') i, kinds(i), &
       wait_time(i), wait_time(i)/wait_sum, wait_time(i)/max(n_hold(i),1_8), &
       hold_time(i), hold_time(i)/hold_sum, hold_time(i)/max(n_hold(i),1_8), &
       n_hold(i)
