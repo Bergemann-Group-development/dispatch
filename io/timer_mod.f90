@@ -335,8 +335,8 @@ contains
     integer:: unit, level, popu
     real:: cost, per_call
     logical:: warn, mesg
-    write (unit,'(23x,a,7x,a,10x,a,7x,a,6x,a,5x,a)') 'procedure', 'calls', &
-    'time', 'percent', 's/call', 'locks'
+    write (unit,'(23x,a,7x,a,10x,a,7x,a,6x,a,2x,a)') 'procedure', 'calls', &
+    'time', 'time(%)', 's/call', 'locks(%)'
     if (unit==io_unit%output) then
       !$omp atomic write
       timer%n_lines = 1

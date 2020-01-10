@@ -394,8 +394,9 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
       call self%check_mulligan (head)                 ! check for nbor do-over
     if (self%verbose > 0) then
       associate (unit => merge (io_unit%log, io_unit%mpi, self%verbose > 1))
-      write (unit,'(f12.6,2x,a,i6,1p,g14.6)') &
-        wallclock(), 'update:', task%id, task%time+task%dtime
+      write (unit,'(f12.6,2x,a,i6,1p,g14.6,l4)') &
+        wallclock(), 'update:', task%id, task%time+task%dtime, &
+        task%is_set (bits%boundary)
       flush (unit)
       end associate
     end if
@@ -446,7 +447,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   !-----------------------------------------------------------------------------
   if (load_balance%is_on) &
     call load_balance%lock%set ('task_list')
-  call self%update_status (head)
+  !call self%update_status (head)
   if (task%is_set(bits%boundary)) then                ! boundary patch?
     head%task%nq = self%nq                            ! make sure to pass on
     call load_balance%check_queue (head)              ! consider load balance

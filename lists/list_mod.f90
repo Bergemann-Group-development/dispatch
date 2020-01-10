@@ -29,6 +29,24 @@
 !>     send_to_vnbors
 !>     set_init_nbors
 !>     check_ready
+!>
+!> update_status calls:
+!> task_list%update
+!>   ...
+!>   task%update
+!>     refine%check_current
+!>       make_child_patch
+!>         add_new_link
+!>           init_nbors
+!>             update_status
+!>           update_status
+!>   update_status
+!>   check_mpi
+!>     unpack
+!>       add_new_link
+!>           init_nbord
+!>             update_status
+!>           update_status
 !*******************************************************************************
 MODULE list_mod
   USE io_mod
@@ -591,9 +609,6 @@ END SUBROUTINE check_nbor_nbors
 !>
 !> The link pointer and everything it points to are private to this task, and
 !> are not at this point in time accessible from the ready queue.
-!>
-!> To prevent AMR from changing the nbor lists while they are being accessed,
-!> it is necessary (and sufficient) to lock the current link
 !===============================================================================
 SUBROUTINE check_nbors (self, link)
   class(list_t):: self
@@ -980,7 +995,8 @@ SUBROUTINE check_ready (self, link, lock, status)
       call link%task%clear (bits%no_support)
       !.........................................................................
       if (self%verbose > 0) &
-        write (io_unit%log,*) 'list_t%check_ready: queue_by_time', task%id
+        write (io_unit%log,'(f12.6,1x,a,i6,f12.6)') wallclock(), &
+        'list_t%check_ready: queue_by_time', task%id, task%time
       !.........................................................................
       call self%queue_by_time (link)                      ! add task to queue
     else
@@ -992,8 +1008,9 @@ SUBROUTINE check_ready (self, link, lock, status)
       ! every 10000 failures
       !-------------------------------------------------------------------------
       if (self%verbose > 0) then
-        write (io_unit%log,'(f12.6,i6,1x,a,i6,f12.6,i5,l4)') wallclock(), task%id, &
-         'list_t%check_ready: failed with id, time, rank, V =', &
+        write (io_unit%log,'(f12.6,i6,l3,f12.6,1x,a,i6,f12.6,i5,l3)') &
+          wallclock(), task%id, task%is_set(bits%boundary), task%time, &
+          'list_t%check_ready: failed with id, time, rank, V =', &
           oldest%task%id, t_oldest, oldest%task%rank, &
           oldest%task%is_set(bits%virtual)
       end if

@@ -765,16 +765,17 @@ SUBROUTINE unpack (self, mesg, link)
     write(io%output,*) 'unpack ERROR: wrong mesg%id', id, task%id, mesg%id
     bonafide = .false.
   end if
-  if (verbose > 1) then
-    write (io_unit%mpi,'(f12.6,3x,a,3i6,f12.6,2x,3f10.4,2x,6l1)') &
-      wallclock(), 'unpack: after task%unpack BVRES =', &
+  if (self%verbose > 0) then
+    write (io_unit%log,'(f12.6,3x,a,3i6,f12.6,2x,3f10.4,2x,7l1)') &
+      wallclock(), 'unpack: after task%unpack IBVrRSN =', &
       id, mesg%id, task%id, task%time, task%position, &
       task%is_set (bits%internal), &
       task%is_set (bits%boundary), &
       task%is_set (bits%virtual), &
       task%is_set (bits%ready), &
       task%is_set (bits%remove), &
-      task%is_set (bits%swap_request)
+      task%is_set (bits%swap_request), &
+      new
     flush (io_unit%mpi)
   end if
   !-----------------------------------------------------------------------------
@@ -856,9 +857,9 @@ SUBROUTINE unpack (self, mesg, link)
       call self%add_new_link (link1)
     else
       if (self%verbose > 1) write(io_unit%log,*) link1%task%id, 'update'
-      !-----------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       ! 4) task was updated, so check nbors for ready tasks
-      !-----------------------------------------------------------------------------
+      !-------------------------------------------------------------------------
       call self%check_nbors (link1)
     end if
   else
