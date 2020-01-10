@@ -360,26 +360,24 @@ SUBROUTINE info (self, unit, p_verbose)
     hold_time = 0d0
     lock => omp_lock%next
     do while (associated(lock))
-      if (omp_lock%verbose >= p_verbose) then
-        nkinds = 1
-        kinds(1) = 'void'
-        do i=1,mkinds
-          if (lock%kind(1:4) == kinds(i)) then
-            exit
-          else if (kinds(i) == '    ') then
-            kinds(i) = lock%kind(1:4)
-            nkinds = i
-            exit
-          end if
-        end do
-        wait_time(i) = wait_time(i) + sum(lock%wait_time)
-        hold_time(i) = hold_time(i) + sum(lock%hold_time)
-        n_hold(i)    = n_hold(i)    + sum(lock%n_hold)
-        lock%start_time = 0.0_8
-        lock%wait_time = 0.0_8
-        lock%hold_time = 0.0_8
-        lock%n_hold = 0_8
-      end if
+      nkinds = 1
+      kinds(1) = 'void'
+      do i=1,mkinds
+        if (lock%kind(1:4) == kinds(i)) then
+          exit
+        else if (kinds(i) == '    ') then
+          kinds(i) = lock%kind(1:4)
+          nkinds = i
+          exit
+        end if
+      end do
+      wait_time(i) = wait_time(i) + sum(lock%wait_time)
+      hold_time(i) = hold_time(i) + sum(lock%hold_time)
+      n_hold(i)    = n_hold(i)    + sum(lock%n_hold)
+      lock%start_time = 0.0_8
+      lock%wait_time = 0.0_8
+      lock%hold_time = 0.0_8
+      lock%n_hold = 0_8
       lock => lock%next
     end do
     time = sum(wait_time)
@@ -389,7 +387,7 @@ SUBROUTINE info (self, unit, p_verbose)
       hold_time = 0d0
       n_hold = 0
     end if
-    write (stdout,'(a,f10.3,a)') ' total lock waiting time =', time, ' s'
+    write (stdout,'(a,1p,g11.2,a)') ' total lock waiting time =', time, ' s'
   end if
   !!omp end critical (lock_info_cr)
   return
