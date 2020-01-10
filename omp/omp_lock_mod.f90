@@ -39,7 +39,7 @@ MODULE omp_lock_mod
     class(lock_t), pointer:: next => null()
   contains
     procedure:: init
-    procedure:: prepend
+    procedure, private:: prepend
     procedure:: set
     procedure:: test
     procedure:: check
@@ -105,9 +105,11 @@ SUBROUTINE init (self, kind, id)
       omp_lock%links = links
       if (omp%nthreads == 1) then
         on = .false.
-        omp_lock%on = on
       end if
+      omp_lock%on = on
       first_time = .false.
+    else
+      call self%prepend
     end if
     call omp_init_nest_lock (self%lock)
     if (present(id)) then
@@ -127,7 +129,6 @@ SUBROUTINE init (self, kind, id)
     if (wallclock() < verbose_time .or. omp_lock%verbose > 1) &
       write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
         self%kind, self%id, set_id
-    omp_lock%on = on
     self%on  = on
     allocate (self%start_time(0:omp%nthreads-1))
     allocate (self%wait_time (0:omp%nthreads-1))
@@ -137,12 +138,9 @@ SUBROUTINE init (self, kind, id)
     self%wait_time = 0d0
     self%hold_time = 0d0
     self%n_hold = 0
-    self%next => omp_lock%next
-    omp_lock%next => self
     n_lock = n_lock+1
   end if
   !$omp end critical (lock_cr)
-  call self%prepend
 #ifdef TRACE 
   call trace%end()
 #endif
@@ -155,11 +153,9 @@ SUBROUTINE prepend (self)
   class(lock_t), target:: self
   !-----------------------------------------------------------------------------
   if (.not.omp_lock%on) return
-  !$omp critical (lock_cr)
   self%next => omp_lock%next
   omp_lock%next => self
   n_lock = n_lock+1
-  !$omp end critical (lock_cr)
 END SUBROUTINE prepend
 
 !===============================================================================
