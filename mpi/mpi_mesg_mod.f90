@@ -37,6 +37,7 @@ MODULE mpi_mesg_mod
     integer:: tag=2**30
     real(8):: test_next=0d0
     real:: test_time=0.0
+    logical:: anonymous=.true.
   contains
     procedure:: send
     procedure:: recv
@@ -58,7 +59,7 @@ MODULE mpi_mesg_mod
     class(mesg_t), pointer:: head => null()
     class(mesg_t), pointer:: tail => null()
     character(len=16):: name='mesg_list'
-    integer:: n=0
+    integer:: n=0, na=0
     integer:: id=0
   contains
     procedure:: add
@@ -326,7 +327,7 @@ SUBROUTINE check_priv
 logical:: debug
   !-----------------------------------------------------------------------------
 debug = (verbose > 0) .and. (sent_list%n > 0)
-if (debug) &
+if (verbose > 0) &
 write (io_unit%log,*) wallclock(), omp%thread, &
 'check_priv: n =', sent_list%n, associated(sent_list%head)
   if (mpi%size <= 1 .or. .not.associated(sent_list%head)) return
@@ -439,6 +440,16 @@ SUBROUTINE add (self, mesg)
   self%tail => mesg                             ! tail points to it
   !$omp atomic
   self%n = self%n+1                             ! increment counter
+  if (mesg%tag == MPI_ANY_TAG) then
+    !$omp atomic
+    self%na = self%na+1
+    !...........................................................................
+    if (verbose > 0) then
+      write (io_unit%log,'(f12.6,1x,a,i6)') wallclock(), &
+      'mesg_t%add: increased na =', self%na
+    end if
+    !...........................................................................
+  end if
   if (verbose > 1) then
     write (io_unit%log,*) trim(self%name)//' added mesg', mesg%id, self%n
     flush (io_unit%log)
@@ -479,6 +490,11 @@ SUBROUTINE delete (self, mesg, send)
   class(mesg_t), pointer:: mesg
   logical, optional:: send
   !.............................................................................
+  if (verbose > 0) then
+    write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
+      'mesg_list_t%delete: id, sender, tag =', &
+      mesg%id, mesg%sender, mesg%tag
+  end if
   if (associated(mesg%buffer)) then
     call io%bits_mem (-storage_size(mesg%buffer), product(shape(mesg%buffer)), 'mem')
     deallocate (mesg%buffer)
@@ -791,25 +807,53 @@ END SUBROUTINE get
 !> messages just before doing a task update, and then check afterwards, so that
 !> if the delay doing the work is enough, some probed messages will have arrived.
 !> This procedure returns flag=.true. as long as there are incoming messages,
-!> and returns the message if comlete.   If not, the message is added to the
+!> and returns the message if complete.   If not, the message is added to the
 !> recv_list, to be check later.
 !===============================================================================
 SUBROUTINE iget (self, mesg)
   class(mpi_mesg_t):: self
   class(mesg_t), pointer:: mesg
-  integer:: nbuf
   !.............................................................................
   logical:: flag
-  integer:: msg ,ierr, req
+  integer:: msg ,ierr, req, nbuf
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  nullify(mesg)
+  nullify (mesg)    !XX
   if (mpi%size <= 1) return
   call trace%begin ('mpi_mesg_t%get', itimer=itimer)
-  !-----------------------------------------------------------------------------
-  ! Probe for incoming messages
-  !-----------------------------------------------------------------------------
 #ifdef MPI
+  if (associated(mesg)) then
+    !---------------------------------------------------------------------------
+    ! If the mesg has been used before, make a pointed request
+    !---------------------------------------------------------------------------
+    mesg%tag = expected(mesg%sender) + 100*mesg%sender
+    !...........................................................................
+    if (verbose > 0) then
+      write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
+        'mesg_list_t%iget: reuse id, sender, tag =', &
+        mesg%id, mesg%sender, mesg%tag
+    end if
+    !...........................................................................
+  else
+    !---------------------------------------------------------------------------
+    ! If not, allocate a new message, accepting input from any source
+    !---------------------------------------------------------------------------
+    allocate (mesg)
+    mesg%nbuf = mpi_mesg%nbuf
+    allocate (mesg%buffer(mesg%nbuf))
+    call io%bits_mem (storage_size(mesg%buffer),product(shape(mesg%buffer)), 'buf')
+    mesg%tag = MPI_ANY_TAG
+    mesg%sender = MPI_ANY_SOURCE
+    !...........................................................................
+    if (verbose > 0) then
+      write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
+        'mesg_list_t%iget: anonymous irecv request'
+    end if
+    !...........................................................................
+  end if
+  !-----------------------------------------------------------------------------
+  ! Single- or multi-threaded MPI call
+  !-----------------------------------------------------------------------------
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
     call probe_for
   else
@@ -827,13 +871,9 @@ contains
   subroutine probe_for
     logical:: complete
 #ifdef MPI
-    allocate (mesg)
-    mesg%nbuf = mpi_mesg%nbuf
-    allocate (mesg%buffer(mesg%nbuf))
-    call io%bits_mem (storage_size(mesg%buffer),product(shape(mesg%buffer)), 'buf')
     !call mesg%get_id (stat)
-    call MPI_IRECV (mesg%buffer, mesg%nbuf, MPI_INT, MPI_ANY_SOURCE, &
-                    MPI_ANY_TAG, mpi%comm, mesg%req, ierr)
+    call MPI_IRECV (mesg%buffer, mesg%nbuf, MPI_INT, mesg%sender, mesg%tag, &
+                    mpi%comm, mesg%req, ierr)
     !$omp atomic
     mpi_mesg%nq_recv = mpi_mesg%nq_recv+1
     !$omp atomic

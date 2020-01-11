@@ -20,15 +20,20 @@
 !>
 !> Important call hierarchies:
 !>   add_new_link
-!>     init_nbors 
-!>       link%task%add_nbor_by_rank
-!>       link%task%nbor_relations
-!>       link%sort_nbors_by_level
-!>     append
-!>       update_counts(+1)
-!>     send_to_vnbors
-!>     set_init_nbors
-!>     check_ready
+!>     init_nbors                    [ accesses task_list ]
+!>       link%task%add_nbor_by_rank  [ accesses own nbor list ]
+!>       link%task%nbor_relations    [ accesses own nbor list ]
+!>       link%sort_nbors_by_level    [ accesses own nbor list ]
+!>     append                        [ accesses task_list ]
+!>       link%init                   [ redundant, benign ]
+!>       update_counts(+1)           [ accesses own nbor list ]
+!>     send_to_vnbors                [ accesses own nbor list ]
+!>       task%pack
+!>       mesg%send
+!>     set_init_nbors                [ accesses own nbor list ]
+!>       nbor%task%set
+!>     check_ready                   [ accesses own nbor list ]
+!>       queue_by_time               [ accesses task_list ]
 !>
 !> update_status calls:
 !> task_list%update

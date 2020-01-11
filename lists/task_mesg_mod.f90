@@ -163,6 +163,7 @@ SUBROUTINE check_mpi (self, n_unpk)
   !-----------------------------------------------------------------------------
   ! Check recv messages
   !-----------------------------------------------------------------------------
+write (io_unit%log,*) 'method: '//trim(method)
   select case (trim(method))
   case ('improbe')
     if (omp%master) &
@@ -277,16 +278,17 @@ SUBROUTINE recv_irecv (self, n_unpk)
   integer:: n
   logical:: ok
   !.............................................................................
+write (io_unit%log,*) 'recv_irecv: thread, nbuf', omp%thread, mpi_mesg%nbuf
   if (omp%thread > 0) return
   if (mpi_mesg%nbuf == 0) return
-  call trace%begin ('task_mesg_t%recv_irecv', 1, itimer=itimer)
+  call trace%begin ('task_mesg_t%recv_irecv', itimer=itimer)
   mpi_mesg%uniq_mesg = .true.
   !-----------------------------------------------------------------------------
   ! Check existing recv_list for completed messages
   !-----------------------------------------------------------------------------
   call self%move_mesgs (mpi_mesg%recv_list)
   !-----------------------------------------------------------------------------
-  ! Refill the list
+  ! Refill the list with new, anonymous requests
   !-----------------------------------------------------------------------------
   if (mpi_mesg%nq_recv < 0) then
     mpi_mesg%nq_recv = mpi_mesg%recv_list%n
@@ -294,11 +296,26 @@ SUBROUTINE recv_irecv (self, n_unpk)
     mpi_mesg%nq_recv = min (mpi_mesg%nq_recv, mpi_mesg%recv_list%n)
   end if
   do while (mpi_mesg%recv_list%n < mpi_mesg%max_recv)
+    nullify (mesg)
     call mpi_mesg%iget (mesg)
     if (mesg%is_complete('recv_irecv')) then
       call mpi_mesg%unpk_list%add (mesg)
+      !.........................................................................
+      if (verbose > 0) then
+        write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
+          'task_mesg_t%recv_irecv: got id, sender, tag =', &
+          mesg%id, mesg%sender, mesg%tag, mpi_mesg%recv_list%n
+      end if
+      !.........................................................................
     else
       call mpi_mesg%recv_list%add (mesg)
+      !.........................................................................
+      if (verbose > 0) then
+        write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
+          'task_mesg_t%recv_irecv: anonymous req added, na, n =', &
+          mpi_mesg%recv_list%na, mpi_mesg%recv_list%n
+      end if
+      !.........................................................................
     end if
   end do
   !-----------------------------------------------------------------------------
@@ -379,6 +396,21 @@ SUBROUTINE move_mesgs (self, msg_list)
   do while (associated(mesg))
     next => mesg%next
     if (mesg%is_complete('recv_improbe')) then
+      !-------------------------------------------------------------------------
+      ! The mesg%anonymous flag is (only) used to keep track of how many mesg
+      ! requests that are directed and how many are still anonymous
+      !-------------------------------------------------------------------------
+      if (mesg%anonymous) then
+        mesg%anonymous = .false.
+        !$omp atomic update
+        msg_list%na = msg_list%na - 1
+        !.......................................................................
+        if (verbose > 0) then
+          write (io_unit%log,'(f12.6,1x,a,2i6)') wallclock(), &
+          'mesg_t%get_id: reduced na, n =', msg_list%na, msg_list%n
+        end if
+        !.......................................................................
+      end if
       !$omp atomic update
       timer%n_master(2) = timer%n_master(2) + 1
       if (verbose > 1) &
@@ -396,7 +428,9 @@ SUBROUTINE move_mesgs (self, msg_list)
 END SUBROUTINE move_mesgs
 
 !===============================================================================
-!> Step 3: Unpack in correct order
+!> Step 3: Unpack in correct order.  Do NOT delete the mesg after it has been
+!> unpacked; the self%unpack() procedure is responsible for either reissuing the
+!> request, or deleting it
 !===============================================================================
 SUBROUTINE unpk_mesgs (self, n)
   class(task_mesg_t):: self
@@ -414,7 +448,6 @@ SUBROUTINE unpk_mesgs (self, n)
         write (io_unit%log,*) 'recv_improbe: unpacked from list:', &
           mesg%id, mesg%seq
       call mpi_mesg%unpk_list%remove (mesg)
-      call mpi_mesg%unpk_list%delete (mesg, .false.)
       n = n+1
     else
       if (verbose > 2) &
@@ -827,16 +860,17 @@ SUBROUTINE unpack (self, mesg, link)
     if (task%is_set(bits%remove)) then
       if (self%verbose > 0) write(io_unit%log,*) task%id, 'remove'
       !-------------------------------------------------------------------------
-      ! 1) Suicide note
+      ! 1) Suicide note, remove the task and delete the message
       !-------------------------------------------------------------------------
       call self%remove_and_reset (link1)
+      !XX call mpi_mesg%unpk_list%delete (mesg, .false.)
     else if (task%is_set(bits%swap_request)) then
       if (self%verbose > 0) write(io_unit%log,*) task%id, 'swap'
       !-------------------------------------------------------------------------
       ! 2) swap_request bit set; the task has just changed owner, and the task
       !    should become a boundary task on this rank.  Indeed, since it was
       !    sent as a virtual task, the flipping should have been done in the
-      !    unpack procedure already.
+      !    unpack procedure already.   Delete the message.
       !-------------------------------------------------------------------------
       call self%lock%set ('task_mesg_t%unpack')
       if (load_balance%is_on) &
@@ -845,20 +879,29 @@ SUBROUTINE unpack (self, mesg, link)
       if (load_balance%is_on) &
         call load_balance%lock%unset ('task_mesg_t%unpack')
       call self%lock%unset ('task_mesg_t%unpack')
+      !XX call mpi_mesg%unpk_list%delete (mesg, .false.)
     else if (new) then
       if (self%verbose > 0) write(io_unit%log,*) link1%task%id, 'new'
       !-------------------------------------------------------------------------
       ! 3) the task is a new virtual task.  It has the init_nbors bit set, and
       !    since it is a virtual task that bit should be cleared the next time
       !    the task is updated, coming back not as new task but as a virtual
-      !    task update.
+      !    task update.  But first, issue a request for the next message.
       !-------------------------------------------------------------------------
+      !XX call mpi_mesg%iget (mesg)
+      !XX call mpi_mesg%recv_list%add (mesg)
       call task%setup
       call self%add_new_link (link1)
     else
       if (self%verbose > 1) write(io_unit%log,*) link1%task%id, 'update'
       !-------------------------------------------------------------------------
-      ! 4) task was updated, so check nbors for ready tasks
+      ! Get a new message from the same source
+      !-------------------------------------------------------------------------
+      !XX call mpi_mesg%iget (mesg)
+      !XX call mpi_mesg%recv_list%add (mesg)
+      !-------------------------------------------------------------------------
+      ! 4) task was updated, so check nbors for ready tasks, after issuing a
+      !    request for the next message.
       !-------------------------------------------------------------------------
       call self%check_nbors (link1)
     end if
