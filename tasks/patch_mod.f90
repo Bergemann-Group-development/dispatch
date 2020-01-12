@@ -1261,10 +1261,10 @@ END SUBROUTINE allocate_mesg
 !===============================================================================
 !> Pack patch info into a buffer, for MPI communication
 !===============================================================================
-SUBROUTINE pack (self, mesg)
+SUBROUTINE pack (self)
   class(patch_t):: self
-  class(mesg_t), pointer:: mesg
   !.............................................................................
+  class(mesg_t), pointer:: mesg
   type(header_t):: header
   integer:: n_buf, ibuf, iv, it
   real:: pt
@@ -1274,6 +1274,7 @@ SUBROUTINE pack (self, mesg)
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%pack', itimer=itimer)
   allocate (mesg)
+  self%mesg => mesg
   n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
   if (kind(self%mem)==8) &
     n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!

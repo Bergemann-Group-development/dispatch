@@ -71,6 +71,7 @@ MODULE task_mod
     character(len=64), pointer:: name    => null()
     class(task_t), pointer:: parent      => null()
     class(mesg_t), pointer:: mesg        => null()
+    class(mesg_list_t), pointer:: sent_list => null()
     character(len=64):: kind='task'     ! solver name
     character(len=12):: type='task_t'   ! task type
     real:: latency=0.0                  ! MPI message latency
@@ -831,9 +832,8 @@ FUNCTION point_distance (self, point1, point2) RESULT (out)
   call trace%end()
 END FUNCTION point_distance
 
-SUBROUTINE pack (self, mesg)
+SUBROUTINE pack (self)
   class(task_t):: self
-  class(mesg_t), pointer:: mesg
   call mpi%abort ('task_t%pack called')
 END SUBROUTINE
 

@@ -29,10 +29,11 @@ MODULE mpi_mesg_mod
   type, public:: mesg_t
     class(mesg_t), pointer:: next => null()
     class(mesg_t), pointer:: prev => null()
-    integer, dimension(:), pointer:: buffer
+    integer, dimension(:), pointer:: buffer => null()
     integer, pointer:: reqs(:) => null()
     integer:: nbuf, nreq, req=0, sender, id, ntry=0
     integer:: n_failed=0
+    integer:: i=0
     integer:: seq=0
     integer:: tag=2**30
     real(8):: test_next=0d0
@@ -42,6 +43,7 @@ MODULE mpi_mesg_mod
     procedure:: send
     procedure:: recv
     procedure:: test_all
+    procedure:: test_sent
     procedure:: wait_all
     procedure:: wait_for_completion
     procedure:: is_complete
@@ -50,10 +52,12 @@ MODULE mpi_mesg_mod
     procedure:: all_completed
     procedure:: irecv
     procedure:: is_in_order
+    procedure:: request
   end type
   integer, dimension(:), allocatable, save:: expected
   integer(8) :: n_wait_all=0  , n_wait_for=0
   real(8)    :: t_wait_all=0d0, t_wait_for=0d0
+  integer, save:: ident=0
   !
   type, public:: mesg_list_t
     class(mesg_t), pointer:: head => null()
@@ -387,6 +391,16 @@ SUBROUTINE test_all (self, flag)
 END SUBROUTINE test_all
 
 !===============================================================================
+!> Logical function interface to mesg_t%test_all()
+!===============================================================================
+FUNCTION test_sent (self) RESULT (flag)
+  class(mesg_t):: self
+  logical:: flag
+  !.............................................................................
+  call self%test_all (flag)
+END FUNCTION test_sent
+
+!===============================================================================
 !> Wait for all requests related to this mesg to complete
 !===============================================================================
 SUBROUTINE wait_all (self)
@@ -490,6 +504,8 @@ SUBROUTINE delete (self, mesg, send)
   class(mesg_t), pointer:: mesg
   logical, optional:: send
   !.............................................................................
+  if (.not. associated(mesg)) &
+    return
   if (verbose > 0) then
     write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
       'mesg_list_t%delete: id, sender, tag =', &
@@ -500,6 +516,8 @@ SUBROUTINE delete (self, mesg, send)
     deallocate (mesg%buffer)
   end if
   if (associated(mesg%reqs)) deallocate (mesg%reqs)
+if (mesg%i > 0) &
+write (stdout,*) 'deallocate mesg', mesg%i
   deallocate (mesg)
   if (present(send)) then
     if (send) then
@@ -777,6 +795,10 @@ contains
     call MPI_IMPROBE (MPI_ANY_SOURCE, MPI_ANY_TAG, mpi%comm, flag, msg, stat, ierr)
     if (flag) then
       allocate (mesg)
+!$omp atomic update
+ident = ident+1
+mesg%i = ident
+write (stdout,*) '  allocate mesg', mesg%i
       call MPI_GET_COUNT (stat, MPI_INT, nbuf, ierr)
       allocate (mesg%buffer(nbuf))
       call io%bits_mem (storage_size(mesg%buffer),product(shape(mesg%buffer)), 'buf')
@@ -818,15 +840,20 @@ SUBROUTINE iget (self, mesg)
   integer:: msg ,ierr, req, nbuf
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  nullify (mesg)    !XX
+  !nullify (mesg)    !XX
   if (mpi%size <= 1) return
-  call trace%begin ('mpi_mesg_t%get', itimer=itimer)
+  call trace%begin ('mpi_mesg_t%iget', itimer=itimer)
 #ifdef MPI
   if (associated(mesg)) then
     !---------------------------------------------------------------------------
-    ! If the mesg has been used before, make a pointed request
+    ! If the mesg has been used before, make a direct request.  The sequence
+    ! number expected from the sender was updated by mesg%is_in_order() when the
+    ! previous message was received.
     !---------------------------------------------------------------------------
-    mesg%tag = expected(mesg%sender) + 100*mesg%sender
+write (stdout,*) '     reuse mesg', mesg%i, mesg%tag
+    mesg%tag = expected(mesg%sender)
+    mesg%seq = mesg%tag
+write (stdout,*) '     reuse mesg', mesg%i, mesg%tag
     !...........................................................................
     if (verbose > 0) then
       write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
@@ -839,6 +866,11 @@ SUBROUTINE iget (self, mesg)
     ! If not, allocate a new message, accepting input from any source
     !---------------------------------------------------------------------------
     allocate (mesg)
+!$omp atomic update
+ident = ident+1
+mesg%i = ident
+write (stdout,*) '  allocate mesg', mesg%i
+write (io_unit%log,*) '  allocate mesg', mesg%i
     mesg%nbuf = mpi_mesg%nbuf
     allocate (mesg%buffer(mesg%nbuf))
     call io%bits_mem (storage_size(mesg%buffer),product(shape(mesg%buffer)), 'buf')
@@ -887,21 +919,24 @@ contains
 END SUBROUTINE iget
 
 !===============================================================================
-!> Get mesg%id, mesg%sender, mesg%seq
+!> Get mesg%id, mesg%sender, mesg%seq.  This set self%seq to the message 
+!> sequence number, whether or net the task ID part is included in the tag.
+!> For messages where the tag does not encode the task ID, mesg%id is set to 0.
 !===============================================================================
 SUBROUTINE get_id (self, stat)
   class(mesg_t):: self
   integer:: stat(:)
 #ifdef MPI
-  self%id = stat(MPI_TAG)
+  self%tag = stat(MPI_TAG)
   self%sender = stat(MPI_SOURCE)
   if (mpi_mesg%uniq_mesg) then
-    self%seq = mod(self%id,100)
-    self%id = self%id/100
+    self%seq = mod(self%tag,100)
+    self%id = self%tag/100
     if (verbose > 1) &
       write (io_unit%log,*) 'mpi_mesg_t%get_id: id, sender, seq =', &
         self%id, self%sender, self%seq
   else if (verbose > 1) then
+    self%id = self%tag
     write (io_unit%log,*) 'mpi_mesg_t%get_id: id, sender      =', &
       self%id, self%sender
   end if
@@ -1012,6 +1047,7 @@ FUNCTION is_complete (self, parentname)
     ! In cases when MPI_IMPROBE has not already done so, get ID and sequence
     !---------------------------------------------------------------------------
     call self%get_id (stat)
+write (stdout,*) '  received mesg', self%i, self%tag, self%seq
     self%n_failed = 0
   else
     self%n_failed = self%n_failed+1
@@ -1214,5 +1250,46 @@ LOGICAL FUNCTION is_in_order (self)
     expected(self%sender) = mod(expected(self%sender)+1,100)
   end if
 END FUNCTION is_in_order
+
+!===============================================================================
+!> Issue a request for the next message, with the given tag
+!===============================================================================
+SUBROUTINE request (self, tag)
+  class(mesg_t):: self
+  integer:: tag
+  !-----------------------------------------------------------------------------
+  ! Make the call in a critical region, or not
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mesg_t%request')
+write (io_unit%log,*) 1,associated(self%buffer); flush(io_unit%log)
+write (io_unit%log,*) 2,self%nbuf,self%req; flush(io_unit%log)
+write (io_unit%log,*) 3,self%sender,tag
+  if (mpi%mode == MPI_THREAD_MULTIPLE) then
+    call irecv
+  else
+    !$omp critical (mpi_cr)
+    call irecv
+    !$omp end critical (mpi_cr)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Increment counters for number of requests queued, number received,
+  ! bytes received, and total number of packages received
+  !-----------------------------------------------------------------------------
+  !$omp atomic
+  mpi_mesg%nq_recv = mpi_mesg%nq_recv+1
+  !$omp atomic
+  mpi_mesg%n_recv = mpi_mesg%n_recv+1
+  !$omp atomic
+  timer%bytes_recv = timer%bytes_recv + 4.0_8*self%nbuf
+  !$omp atomic
+  timer%n_recv = timer%n_recv + 1_8
+  call trace%end ()
+contains
+  subroutine irecv
+    integer:: ierr
+    call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, self%sender, tag, &
+                    mpi%comm, self%req, ierr)
+  end subroutine irecv
+END SUBROUTINE request
 
 END MODULE mpi_mesg_mod

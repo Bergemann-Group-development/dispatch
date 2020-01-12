@@ -2680,13 +2680,14 @@ END SUBROUTINE update_status
 SUBROUTINE send_to_vnbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
+  !.............................................................................
   class(link_t), pointer:: nbor
   class(task_t), pointer:: task, nbtask
   class(mesg_t), pointer:: mesg
   character(len=24):: label
-  integer:: ierr, rank, tag, seq
+  integer:: ierr, rank, tag
   integer, save:: itimer=0
-  !.............................................................................
+  !-----------------------------------------------------------------------------
   task => link%task
   if (task%is_clear (bits%boundary)) then
     if (task%is_clear (bits%swap_request)) then
@@ -2709,15 +2710,19 @@ SUBROUTINE send_to_vnbors (self, link)
      'list_t%send_to_vnbors: task', link%task%id
   end if
   !-----------------------------------------------------------------------------
-  ! Pack task into mesg
+  ! Pack task into mesg, this also allocates task%send_mesg
   !-----------------------------------------------------------------------------
   select type (task)
   class is (patch_t)
-  call task%pack (mesg)
+  call task%pack ()
+  mesg => task%mesg
   end select
+  !-----------------------------------------------------------------------------
+  ! The first time a task is sent it has tag = task%id*100 + 1
+  !-----------------------------------------------------------------------------
   if (mpi_mesg%uniq_mesg .and. mpi_mesg%tag_type == 1) then
     task%seq = task%seq + 1
-    tag = mod(task%seq,100) + 100*task%id
+    tag = task%id*100 + mod(task%seq,100)
   else
     tag = task%id
   end if
@@ -2742,9 +2747,10 @@ SUBROUTINE send_to_vnbors (self, link)
       if (mpi_mesg%uniq_mesg .and. mpi_mesg%tag_type == 2) then
         !$omp atomic capture
         sequence(rank) = sequence(rank)+1
-        seq = sequence(rank)
+        mesg%seq = sequence(rank)
         !$omp end atomic
-        tag = mod(seq,100) + 100*task%id
+        tag = mod(mesg%seq,100)
+        mesg%tag = tag
       end if
       if (io%task_logging > 1) then
         write (label,'(a,i4,i8)') 'send   ', rank, mod(tag,100)
@@ -2769,8 +2775,7 @@ SUBROUTINE send_to_vnbors (self, link)
   !-----------------------------------------------------------------------------
   ! Add the message to mesg%sent_list, if it was sent, and clear the swap bit
   !-----------------------------------------------------------------------------
-  !-----------------------------------------------------------------------------
-  call mpi_mesg%sent (mesg)                                     ! add to sent_list
+!  call mpi_mesg%sent (mesg)                                     ! add to sent_list
   call task%clear (bits%swap_request)
   !-----------------------------------------------------------------------------
   call trace%end (itimer)

@@ -211,7 +211,7 @@ SUBROUTINE startup (self)
   ! patches, initialize the recv mechanism, and check for corresponding incoming
   ! messages.
   !-----------------------------------------------------------------------------
-  call self%task_mesg_t%init_virtual ()
+  !call self%task_mesg_t%init_virtual ()
   if (io%restart >= 0) then
     call self%resend_bdry ()
   end if
@@ -303,6 +303,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   logical, optional:: was_refined, was_derefined
   !.............................................................................
   class(task_t), pointer:: task
+  class(link_t), pointer:: nbor
   real(8):: wc, levelstart, time
   logical:: refined, derefined
   integer:: end_count, io_count, na
@@ -461,7 +462,7 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%init_nbors)) then
     call self%init_nbors (head)                                         ! RULE D
-    call self%check_nbors (head)                                        ! RULE F
+    call self%recv_from_vnbors (head)                                   ! RULE F
     if (self%verbose > 1) then
       call head%info
     else if (self%verbose > 0) then
@@ -473,6 +474,31 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
   if (task%is_set (bits%update_status)) then
     call self%update_status (head)
   end if
+  !-----------------------------------------------------------------------------
+  ! If this is boundary task, check all virtual nbors for incoming messages.
+  ! Also, as preparation for the check_nbors() call that immediately follows
+  ! the task_list%update(), do the same for all boundary nbors
+  !-----------------------------------------------------------------------------
+  if (task%is_set(bits%boundary)) then
+    call self%recv_from_vnbors (head)
+  end if
+  !-----------------------------------------------------------------------------
+  ! As preparation for the check_nbors() call that immediately follows the
+  ! task_list%update(), check incoming messages for all boundary nbors
+  !-----------------------------------------------------------------------------
+  nbor => head%nbor
+  do while (associated(nbor))
+    write (io_unit%log,*) 4,associated(nbor%task); flush (io_unit%log)
+    if (nbor%task%is_set (bits%boundary)) then
+      write (io_unit%log,*) 5,associated(nbor%link); flush (io_unit%log)
+      call nbor%link%lock%set ('check_vnbors')
+      write (io_unit%log,*) 6,associated(nbor%link); flush (io_unit%log)
+      call self%check_vnbors (nbor%link)
+      write (io_unit%log,*) 7,associated(nbor%link); flush (io_unit%log)
+      call nbor%link%lock%unset ('check_vnbors')
+    end if
+    nbor => nbor%next
+  end do
   !-----------------------------------------------------------------------------
   ! For the purpose of deciding to end the run, we check the task out_next if
   ! I/O is active, or else just the task time.  This ensures we get a complete 
