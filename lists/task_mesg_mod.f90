@@ -117,7 +117,8 @@ SUBROUTINE init (self, name)
 END SUBROUTINE init
 
 !===============================================================================
-!> Check all virtual tasks
+!> Check all virtual tasks.  Note that in this context, the same virtual task
+!> may be investigated by separate threads simultaneously, so locks are needed
 !===============================================================================
 SUBROUTINE check_mpi (self, n)
   class(task_mesg_t):: self
@@ -131,7 +132,9 @@ SUBROUTINE check_mpi (self, n)
   link => self%head
   do while (associated(link))
     if (link%task%is_set(bits%virtual)) then
+      call link%task%mesg%lock%set ('check_mpi')
       call check_received (self, link%task)
+      call link%task%mesg%lock%unset ('check_mpi')
     end if
     link => link%next
   end do
@@ -242,7 +245,6 @@ SUBROUTINE check_received (self, task)
         task%seq = task%seq + 1
         task%mesg%tag = task%id*100 + mod(task%seq,100)
         task%mesg%sender = task%rank
-write (io_unit%log,*) task%rank, task%mesg%sender, 'request'
         call task%mesg%request
         !$omp atomic
         mpi_mesg%nq_recv = mpi_mesg%nq_recv+1
@@ -252,11 +254,11 @@ write (io_unit%log,*) task%rank, task%mesg%sender, 'request'
     ! If a message is complete, unpack and issue a new request
     !---------------------------------------------------------------------------
     if (task%mesg%is_complete()) then
-write (io_unit%log,*) task%rank, task%mesg%sender, 'request'
+write (io_unit%log,'(f12.6,2i6,1x,a)') &
+wallclock(), task%mesg%sender, task%mesg%tag, 'Unpack'
       call unpack (self, task%mesg, task%link)
       task%seq = task%seq + 1
       task%mesg%tag = task%id*100 + mod(task%seq,100)
-write (io_unit%log,*) task%rank, task%mesg%sender, 'request'
       call task%mesg%request
     end if
   end select
@@ -418,9 +420,9 @@ SUBROUTINE unpack (self, mesg, link1)
   !$omp atomic
   mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
   if (self%verbose > 0) then
-    write (io_unit%log,'(f12.6,3x,a,2i6,f12.6,2x,3f10.4,2x,7l1)') &
-      wallclock(), 'unpack: after task%unpack IBVrRSN =', &
-      id, task%id, task%time, task%position, &
+    write (io_unit%log,'(f12.6,3x,a,2i6,f12.6,2x,7l1)') &
+      wallclock(), 'task_mesg_t%unpack: id, task%id, time, IBVrRSN =', &
+      id, task%id, task%time, &
       task%is_set (bits%internal), &
       task%is_set (bits%boundary), &
       task%is_set (bits%virtual), &
