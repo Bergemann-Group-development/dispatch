@@ -483,23 +483,6 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     call self%recv_from_vnbors (head)
   end if
   !-----------------------------------------------------------------------------
-  ! As preparation for the check_nbors() call that immediately follows the
-  ! task_list%update(), check incoming messages for all boundary nbors
-  !-----------------------------------------------------------------------------
-  nbor => head%nbor
-  do while (associated(nbor))
-    write (io_unit%log,*) 4,associated(nbor%task); flush (io_unit%log)
-    if (nbor%task%is_set (bits%boundary)) then
-      write (io_unit%log,*) 5,associated(nbor%link); flush (io_unit%log)
-      call nbor%link%lock%set ('check_vnbors')
-      write (io_unit%log,*) 6,associated(nbor%link); flush (io_unit%log)
-      call self%check_vnbors (nbor%link)
-      write (io_unit%log,*) 7,associated(nbor%link); flush (io_unit%log)
-      call nbor%link%lock%unset ('check_vnbors')
-    end if
-    nbor => nbor%next
-  end do
-  !-----------------------------------------------------------------------------
   ! For the purpose of deciding to end the run, we check the task out_next if
   ! I/O is active, or else just the task time.  This ensures we get a complete 
   ! last snapshot

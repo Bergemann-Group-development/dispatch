@@ -19,6 +19,7 @@ MODULE mpi_mesg_mod
   USE io_unit_mod
   USE omp_mod
   USE omp_timer_mod
+  USE omp_lock_mod
   USE timer_mod
   implicit none
   private
@@ -39,6 +40,7 @@ MODULE mpi_mesg_mod
     real(8):: test_next=0d0
     real:: test_time=0.0
     logical:: anonymous=.true.
+    type(lock_t):: lock
   contains
     procedure:: send
     procedure:: recv
@@ -89,7 +91,7 @@ MODULE mpi_mesg_mod
     integer:: n_delay=0
     integer:: n_unpk=0
     integer:: nq_send=0
-    integer:: nq_recv=-1
+    integer:: nq_recv=0
     integer:: max_recv
     integer:: max_probe
     integer:: min_nq
@@ -850,10 +852,8 @@ SUBROUTINE iget (self, mesg)
     ! number expected from the sender was updated by mesg%is_in_order() when the
     ! previous message was received.
     !---------------------------------------------------------------------------
-write (stdout,*) '     reuse mesg', mesg%i, mesg%tag
     mesg%tag = expected(mesg%sender)
     mesg%seq = mesg%tag
-write (stdout,*) '     reuse mesg', mesg%i, mesg%tag
     !...........................................................................
     if (verbose > 0) then
       write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
@@ -1047,7 +1047,6 @@ FUNCTION is_complete (self, parentname)
     ! In cases when MPI_IMPROBE has not already done so, get ID and sequence
     !---------------------------------------------------------------------------
     call self%get_id (stat)
-write (stdout,*) '  received mesg', self%i, self%tag, self%seq
     self%n_failed = 0
   else
     self%n_failed = self%n_failed+1
@@ -1254,16 +1253,19 @@ END FUNCTION is_in_order
 !===============================================================================
 !> Issue a request for the next message, with the given tag
 !===============================================================================
-SUBROUTINE request (self, tag)
+SUBROUTINE request (self, any)
   class(mesg_t):: self
-  integer:: tag
+  logical, optional:: any
+  !-----------------------------------------------------------------------------
+  ! Make a request, optionally allowing any source
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mesg_t%request')
+  if (present(any)) then
+    self%sender = MPI_ANY_SOURCE
+  end if
   !-----------------------------------------------------------------------------
   ! Make the call in a critical region, or not
   !-----------------------------------------------------------------------------
-  call trace%begin ('mesg_t%request')
-write (io_unit%log,*) 1,associated(self%buffer); flush(io_unit%log)
-write (io_unit%log,*) 2,self%nbuf,self%req; flush(io_unit%log)
-write (io_unit%log,*) 3,self%sender,tag
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
     call irecv
   else
@@ -1276,8 +1278,6 @@ write (io_unit%log,*) 3,self%sender,tag
   ! bytes received, and total number of packages received
   !-----------------------------------------------------------------------------
   !$omp atomic
-  mpi_mesg%nq_recv = mpi_mesg%nq_recv+1
-  !$omp atomic
   mpi_mesg%n_recv = mpi_mesg%n_recv+1
   !$omp atomic
   timer%bytes_recv = timer%bytes_recv + 4.0_8*self%nbuf
@@ -1287,7 +1287,7 @@ write (io_unit%log,*) 3,self%sender,tag
 contains
   subroutine irecv
     integer:: ierr
-    call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, self%sender, tag, &
+    call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, self%sender, self%tag, &
                     mpi%comm, self%req, ierr)
   end subroutine irecv
 END SUBROUTINE request

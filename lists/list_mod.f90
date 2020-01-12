@@ -2721,7 +2721,6 @@ SUBROUTINE send_to_vnbors (self, link)
   ! The first time a task is sent it has tag = task%id*100 + 1
   !-----------------------------------------------------------------------------
   if (mpi_mesg%uniq_mesg .and. mpi_mesg%tag_type == 1) then
-    task%seq = task%seq + 1
     tag = task%id*100 + mod(task%seq,100)
   else
     tag = task%id

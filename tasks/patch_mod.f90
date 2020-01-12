@@ -1249,6 +1249,7 @@ END SUBROUTINE extrapolate_guards
 SUBROUTINE allocate_mesg (self)
   class(patch_t):: self
   !-----------------------------------------------------------------------------
+  call trace%begin ('patch_t%allocate_mesg')
   allocate (self%mesg)
   self%mesg%nbuf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
   if (kind(self%mem)==8) &
@@ -1256,6 +1257,7 @@ SUBROUTINE allocate_mesg (self)
   self%mesg%nbuf = n_header + self%nv*self%mesg%nbuf
   allocate (self%mesg%buffer(self%mesg%nbuf))
   call io%bits_mem (storage_size(self%mesg%buffer), product(shape(self%mesg%buffer)))
+  call trace%end ()
 END SUBROUTINE allocate_mesg
 
 !===============================================================================
@@ -1582,7 +1584,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
         write(io%output,'(a)') &
         '0....+....1....+....2....+....3....+....4....+....5....+....' &
         //'6....+....7....+....8....+....9....+....0....+....1  ntsk   nq ' &
-        //' chk  rdy   upd  snt  prb  unp  snq rcq unq  BV'
+        //' chk  rdy   upd  snd  rcv  unp  snq rcq  BV'
         !$omp end critical (info_cr2)
       end if
       !-----------------------------------------------------------------------
@@ -1614,7 +1616,7 @@ SUBROUTINE info (self, nq, ntask, experiment_name)
       !-----------------------------------------------------------------------
       mpi_mesg%n_check=0; mpi_mesg%n_ready=0; mpi_mesg%n_update=0
       mpi_mesg%n_send=0 ; mpi_mesg%n_recv=0 ; mpi_mesg%n_unpk=0
-      mpi_mesg%n_delay=0; mpi_mesg%nq_recv=-1
+      mpi_mesg%n_delay=0
     end if
     !---------------------------------------------------------------------------
     ! Keep track of the shortest times step between updates of the io%id local
@@ -1635,9 +1637,9 @@ contains
   subroutine write_info (unit)
     integer:: unit
     if (self%time < 1d4) then
-      fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,2i4,l3,l1,o12)'
+      fmt = '(a,i8,2i4,i3,f12.6,1p,e12.4,0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,i4,l3,l1,o12)'
     else
-      fmt = '(a,i8,2i4,i3,1p,2e12.5,     0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,2i4,l3,l1,o12)'
+      fmt = '(a,i8,2i4,i3,1p,2e12.5,     0p,f7.2,2x,1p,2e10.2,2x,2e11.3,2x,e10.2,i6,3i5,i6,4i5,i4,l3,l1,o12)'
     end if
     write(unit,fmt) &
       'upd',self%id, self%level, iv, omp_mythread, time, &
@@ -1646,7 +1648,7 @@ contains
       self%fminval(self%mem(:,:,:,iv,self%it ,1)), &
       self%fmaxval(self%mem(:,:,:,iv,self%it ,1)), &
       real(timer%n_update), ntask, nq, counts, &
-      mpi_mesg%nq_send, mpi_mesg%nq_recv, mpi_mesg%unpk_list%n, &
+      mpi_mesg%nq_send, mpi_mesg%nq_recv, &
       self%is_set(bits%boundary), self%is_set(bits%virtual)
   end subroutine write_info 
 END SUBROUTINE info
