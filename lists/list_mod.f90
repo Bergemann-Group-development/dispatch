@@ -230,6 +230,12 @@ SUBROUTINE append_task (self, task, nbor, needed, needs_me)
   allocate (link)
   call link%init
   link%task => task
+  !-----------------------------------------------------------------------------
+  ! Note that adding a task to more than one list requires care; the task%link
+  ! must remain a pointer to the link that has the nbor list, and the nbor list
+  ! head must be accesses as task%link%nbor, not as link%nbor, for links in the
+  ! 2nd task list.
+  !-----------------------------------------------------------------------------
   if (present(nbor))     link%nbor     => nbor
   if (present(needed))   link%needed   = needed
   if (present(needs_me)) link%needs_me = needs_me
@@ -1340,29 +1346,31 @@ SUBROUTINE init_nbors (self, link)
       ! virtual patch, or the nbor is not a virtual patch, thus excluding
       ! adding virtual patches as nbors to virtual patches
       !-------------------------------------------------------------------------
-      overlaps = scan%task%overlaps(link%task) &
-           .and. abs(scan%task%level - link%task%level) <= 2
-      if (overlaps) then  ! if its task overlaps
-        call link%add_nbor_by_rank (new_head, scan) ! add in rank order
+      if (link%task%rank == mpi%rank .or. scan%task%rank == mpi%rank) then   
         !-----------------------------------------------------------------------
         ! Potential nbors are other patches that overlap
         !-----------------------------------------------------------------------
-        call link%task%nbor_relations (scan%task, scan%needed, &
-          scan%needs_me, scan%download)             ! set flags and status bits
-        n_add = n_add+1
-        if (self%verbose > 1 .or. link%task%id == io%id_debug) &
-          write (io_unit%log, '(2x,a,i6,i4,3x,4l1)') &
-          'init_nbors: nbor, level, NMDV =', &
-          scan%task%id, scan%task%level, scan%needed, scan%needs_me, &
-          scan%download, scan%task%is_set(bits%virtual)
+        overlaps = scan%task%overlaps(link%task) &
+             .and. abs(scan%task%level - link%task%level) <= 2
+        if (overlaps) then  ! if its task overlaps
+         call link%add_nbor_by_rank (new_head, scan) ! add in rank order
           !---------------------------------------------------------------------
           ! Set status bits and flags, but note that these may have to be reset
           ! after pruning, since that may for example remove the only virtual
           ! nbor, which means the task that the list belongs to changes from a
           ! boundary task to an internal task.
           !---------------------------------------------------------------------
+          call link%task%nbor_relations (scan%task, scan%needed, &
+            scan%needs_me, scan%download)             ! set flags and status bits
           !.....................................................................
+          n_add = n_add+1
+          if (self%verbose > 1 .or. link%task%id == io%id_debug) &
+            write (io_unit%log, '(2x,a,i6,i4,3x,4l1)') &
+            'init_nbors: nbor, level, NMDV =', &
+            scan%task%id, scan%task%level, scan%needed, scan%needs_me, &
+            scan%download, scan%task%is_set(bits%virtual)
           !.....................................................................
+        end if
       end if
     end if
     scan => scan%next                               ! continue search
@@ -1395,6 +1403,7 @@ SUBROUTINE init_nbors (self, link)
   link%nbor => new_head                               ! switch nbor list
   link%nbors_by_level => new_sort
   call self%update_status (link)                      ! based on new list
+  link%task%n_nbors = n_add                           ! remember n_nbors
   call link%lock%unset ('init_nbors')
   call self%lock%unset ('init_nbors')
   !-----------------------------------------------------------------------------
@@ -1402,8 +1411,6 @@ SUBROUTINE init_nbors (self, link)
   !-----------------------------------------------------------------------------
   call link%remove_nbor_list (old_head)               ! recover nbor list mem
   call link%remove_nbor_list (old_sort)
-  !-----------------------------------------------------------------------------
-  link%task%n_nbors = n_add                           ! remember n_nbors
   !-----------------------------------------------------------------------------
   ! Clear the init_nbors bit, unless the task is a boundary task, in which
   ! case the bit needs to be present also on the nbor ranks, where it will be
