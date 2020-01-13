@@ -332,11 +332,12 @@ END SUBROUTINE check_new
 !> come in as virtual tasks and are transformed into boundary tasks, so it is
 !> OK to modify task memory and generate new nbor lists, etc.
 !===============================================================================
-SUBROUTINE unpack (self, mesg, link1)
+SUBROUTINE unpack (self, mesg, link)
   class(task_mesg_t):: self
   class(mesg_t), pointer:: mesg
-  class(link_t), pointer:: link1, link2
-  class(experiment_t), pointer:: task
+  class(link_t), pointer:: link
+  !.............................................................................
+  class(task_t), pointer:: task
   logical:: found, bonafide, new
   integer:: id
   integer, save:: itimer=0
@@ -345,6 +346,9 @@ SUBROUTINE unpack (self, mesg, link1)
   real(8):: wc
   !-----------------------------------------------------------------------------
   call trace%begin ('task_mesg_t%unpack', itimer=itimer)
+  task => link%task
+  select type (task)
+  class is (experiment_t)
   !-----------------------------------------------------------------------------
   ! This entire operation should be threadsafe, since no other thread should be
   ! working on the same message and the same patch. And find_task uses only the
@@ -354,22 +358,13 @@ SUBROUTINE unpack (self, mesg, link1)
   new = .false.
   id = patch%unpack_id (mesg)
   !-----------------------------------------------------------------------------
-  ! Make sure the task pointer has all experiment_t attributes
-  !-----------------------------------------------------------------------------
-  associate (ltask=>link1%task)
-  select type (ltask)
-  class is (experiment_t)
-  task => ltask
-  end select
-  end associate
-  !-----------------------------------------------------------------------------
   if (io%task_logging > 1) then
     write (label,'(a,i4,i8)') 'unpack ', mesg%sender, mesg%seq
     call task%log (label)
   end if
   !-----------------------------------------------------------------------------
   bonafide = .true.
-  if (associated(link1%task)) then
+  if (associated(task)) then
    if (verbose > 1) &
     write (io_unit%log,'(a,i6,2x,6l1)') 'unpack: id, bits IBVRES =', mesg%id, &
       task%is_set (bits%internal), &
@@ -383,17 +378,9 @@ SUBROUTINE unpack (self, mesg, link1)
   ! Guard against lingering extra messages to a swapped patch
   !-----------------------------------------------------------------------------
   if (task%is_set (bits%ready)) then
-    found = .false.
-    link2 => self%queue
-    do while (associated(link2))
-      if (link2%task%id == task%id) then
-        found = .true.
-        exit
-      end if
-      link2 => link2%next_time
-    end do
     write (io_unit%log,'(f12.6,2x,a,i9,l3,3x,5l1)') wallclock(), &
-      'task_mesg_mod::unpack ERROR, received mpi_mesg for task with ready bit:', task%id, found, &
+     'task_mesg_mod::unpack ERROR, received mpi_mesg for task with ready bit:',&
+      task%id, found, &
       task%is_set(bits%internal), &
       task%is_set(bits%boundary), &
       task%is_set(bits%virtual), &
@@ -435,7 +422,8 @@ SUBROUTINE unpack (self, mesg, link1)
   if (io%log_sent > 0) then
     !$omp critical (log_sent_cr)
     call mpi_mesg%log_files()
-    write (io_unit%sent,'(f16.6,i4,2x,a,i6,f16.6,8i5)') wallclock(), omp%thread, 'unp', task%id, task%time, task%rank
+    write (io_unit%sent,'(f16.6,i4,2x,a,i6,f16.6,8i5)') wallclock(), &
+      omp%thread, 'unp', task%id, task%time, task%rank
     flush (io_unit%sent)
     !$omp end critical (log_sent_cr)
   end if
@@ -466,22 +454,22 @@ SUBROUTINE unpack (self, mesg, link1)
       !-------------------------------------------------------------------------
       if (self%verbose > 1) write(io_unit%log,*) task%id, 'init_nbors', &
         task%is_set(bits%boundary)
-      call self%init_nbors (link1)
-      call link1%task%clear (bits%init_nbors)
+      call self%init_nbors (link)
+      call task%clear (bits%init_nbors)
     end if
     if (task%is_set(bits%update_status)) then
       !-------------------------------------------------------------------------
       ! If the task has the update_status bit set, re-evaluate status bits
       !-------------------------------------------------------------------------
       if (self%verbose > 1) write(io_unit%log,*) task%id, 'update_nbors'
-      call self%update_status (link1)
+      call self%update_status (task%link)
     end if
     if (task%is_set(bits%remove)) then
       if (self%verbose > 0) write(io_unit%log,*) task%id, 'remove'
       !-------------------------------------------------------------------------
       ! 1) Suicide note, remove the task and delete the message
       !-------------------------------------------------------------------------
-      call self%remove_and_reset (link1)
+      call self%remove_and_reset (link)
     else if (task%is_set(bits%swap_request)) then
       if (self%verbose > 0) write(io_unit%log,*) task%id, 'swap'
       !-------------------------------------------------------------------------
@@ -493,12 +481,12 @@ SUBROUTINE unpack (self, mesg, link1)
       call self%lock%set ('task_mesg_t%unpack')
       if (load_balance%is_on) &
         call load_balance%lock%set ('task_mesg_t%unpack')
-      call self%swap (link1, .false.)
+      call self%swap (link, .false.)
       if (load_balance%is_on) &
         call load_balance%lock%unset ('task_mesg_t%unpack')
       call self%lock%unset ('task_mesg_t%unpack')
     else if (new) then
-      if (self%verbose > 0) write(io_unit%log,*) link1%task%id, 'new'
+      if (self%verbose > 0) write(io_unit%log,*) task%id, 'new'
       !-------------------------------------------------------------------------
       ! 3) the task is a new virtual task.  It has the init_nbors bit set, and
       !    since it is a virtual task that bit should be cleared the next time
@@ -506,22 +494,22 @@ SUBROUTINE unpack (self, mesg, link1)
       !    task update.  But first, issue a request for the next message.
       !-------------------------------------------------------------------------
       call task%setup
-      call self%add_new_link (link1)
+      call self%add_new_link (link)
     else
-      if (self%verbose > 1) write(io_unit%log,*) link1%task%id, 'update'
+      if (self%verbose > 1) write(io_unit%log,*) task%id, 'update'
       !-------------------------------------------------------------------------
       ! 4) task was updated, so check nbors for ready tasks, after issuing a
       !    request for the next message.
       !-------------------------------------------------------------------------
-      call self%check_nbors (link1)
+      call self%check_nbors (link)
     end if
   else
-    if (self%verbose > 1) write(io_unit%log,*) link1%task%id, 'crap'
+    if (self%verbose > 1) write(io_unit%log,*) task%id, 'crap'
     !---------------------------------------------------------------------------
     ! 5) not bonafide, so ignore
     !---------------------------------------------------------------------------
-    continue
   end if
+  end select
   call trace%end (itimer)
 END SUBROUTINE unpack
 
