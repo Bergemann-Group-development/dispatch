@@ -194,7 +194,9 @@ SUBROUTINE set (self, label, itimer)
   end if
   thread = omp_get_thread_num()
   self%start_time(thread) = wallclock()
+  !$omp flush
   call omp_set_nest_lock (self%lock)
+  !$omp flush
   wc = wallclock() - self%start_time(thread)
   self%wait_time(thread) = self%wait_time(thread) + wc
   self%n_hold(thread) = self%n_hold(thread) + 1
@@ -302,6 +304,7 @@ SUBROUTINE unset (self, label)
   level = self%level
   !$omp flush
   call omp_unset_nest_lock (self%lock)
+  !$omp flush
   wc = wallclock()
   thread = omp_get_thread_num()
   used = wc - self%start_time(thread)
