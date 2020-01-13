@@ -125,17 +125,13 @@ SUBROUTINE check_mpi (self, n)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('task_mesg_t%check_mpi', itimer=itimer)
-  !call self%lock%set ('check_mpi', itimer)
   link => self%head
   do while (associated(link))
     if (link%task%is_set(bits%virtual)) then
-      call link%task%mesg%lock%set ('check_mpi')
-      call check_received (self, link%task)
-      call link%task%mesg%lock%unset ('check_mpi')
+      call check_recv (self, link%task)
     end if
     link => link%next
   end do
-  !call self%lock%unset ('check_mpi')
   call check_new(self)
   call trace%end (itimer)
 END SUBROUTINE check_mpi
@@ -214,58 +210,64 @@ SUBROUTINE recv_from_vnbors (self, link)
   nbor => link%nbor
   do while (associated(nbor))
     if (nbor%task%is_set (bits%virtual)) then
-      call check_received (self, nbor%task)
+      call check_recv (self, nbor%task)
     end if
     nbor => nbor%next
   end do
-  call link%lock%unset ('recv_from_vnbors')
   call check_new (self)
+  call link%lock%unset ('recv_from_vnbors')
   call trace%end ()
 END SUBROUTINE recv_from_vnbors
 
 !===============================================================================
-!> Check a virtual task for completed messages
+!> Check a virtual task for completed messages.  Note that the procedure that
+!> creates the task must make sure to also create a task message instance.
 !===============================================================================
-SUBROUTINE check_received (self, task)
+SUBROUTINE check_recv (self, task)
   class(task_mesg_t):: self
   class(task_t), pointer:: task
   !.............................................................................
+  integer:: seq, tag
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  ! The first time a task is checked there is no active request, try to 
-  ! allocate one, punting if the buffer size (computed in patch%pack()) is 
-  ! not yet available.
+  call trace%begin ('task_mesg_t%check_recv', itimer=itimer)
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_mesg_t%check_received', itimer=itimer)
+  ! If the task has no pending request, issue one
+  !-----------------------------------------------------------------------------
+  call task%mesg%lock%set ('check_recv')
+  if (task%mesg%req == 0) then
+    call new_request (task)
+    !$omp atomic update
+    mpi_mesg%nq_recv = mpi_mesg%nq_recv+1
+  end if
+  !-----------------------------------------------------------------------------
+  ! If a message is complete, unpack and issue a new request
+  !-----------------------------------------------------------------------------
+  if (task%mesg%is_complete()) then
+    select type (task)
+    class is (patch_t)
+      call unpack (self, task%mesg, task%link)
+    end select
+    call new_request (task)
+  end if
+  call task%mesg%lock%unset ('check_recv')
+  call trace%end (itimer)
+END SUBROUTINE check_recv
+
+!===============================================================================
+!> Increment sequence value and issue a new request
+!===============================================================================
+SUBROUTINE new_request (task)
+  class(task_t), pointer:: task
+  !-----------------------------------------------------------------------------
   select type (task)
   class is (patch_t)
-    !---------------------------------------------------------------------------
-    ! If the task has no pending request, issue one
-    !---------------------------------------------------------------------------
-    if (task%mesg%req == 0) then
-      if (task%mesg%req == 0) then
-        task%seq = task%seq + 1
-        task%mesg%tag = task%id*100 + mod(task%seq,100)
-        task%mesg%sender = task%rank
-        call task%mesg%request
-        !$omp atomic
-        mpi_mesg%nq_recv = mpi_mesg%nq_recv+1
-      end if
-    end if
-    !---------------------------------------------------------------------------
-    ! If a message is complete, unpack and issue a new request
-    !---------------------------------------------------------------------------
-    if (task%mesg%is_complete()) then
-write (io_unit%log,'(f12.6,2i6,1x,a)') &
-wallclock(), task%mesg%sender, task%mesg%tag, 'Unpack'
-      call unpack (self, task%mesg, task%link)
-      task%seq = task%seq + 1
-      task%mesg%tag = task%id*100 + mod(task%seq,100)
-      call task%mesg%request
-    end if
+    task%seq = task%seq + 1
+    task%mesg%tag = task%id*100 + mod(task%seq,100)
+    task%mesg%sender = task%rank
+    call task%mesg%request
   end select
-  call trace%end (itimer)
-END SUBROUTINE check_received
+END SUBROUTINE new_request
 
 !===============================================================================
 !> Check for new virtual tasks
