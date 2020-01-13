@@ -142,14 +142,15 @@ END SUBROUTINE check_mpi
 
 !===============================================================================
 !> Send copies of boundary tasks to all rank nbors that should have a copy,
-!> appending the message to a message list with sent messages.   After sending,
-!> check the list for completed messages, and remove and delete them.  Since
-!> only one thread at a time is accessing the task here, this is thread-safe,
-!> and no locks are required to handle the sending of messages.
+!> appending the message to a task-private message list with sent messages.
+!> After sending, check the list for completed messages, and remove and delete 
+!> them.  Since only one thread at a time is accessing the task here, this is
+!> thread-safe, and no locks are required to handle the sending of messages.
 !===============================================================================
 SUBROUTINE send_to_vnbors (self, link)
   class(task_mesg_t):: self
   class(link_t), pointer:: link
+  class(mesg_t), pointer:: mesg, next
   !-----------------------------------------------------------------------------
   ! Sending the task creates a task%mesg instance, which is appended to
   ! the task%sent_list -- created on the fly if not existing
@@ -158,41 +159,45 @@ SUBROUTINE send_to_vnbors (self, link)
   link%task%seq = link%task%seq + 1
   call self%list_t%send_to_vnbors (link)
   if (.not.associated(link%task%sent_list)) then
+    if (verbose > 0) then
+      write (io_unit%log,'(f12.6,1x,a,2i6)') wallclock(), &
+        'task_mesg_t%send_to_vnbors: send_list added to task', link%task%id
+    end if
     allocate (link%task%sent_list)
   end if
   call link%task%sent_list%add (link%task%mesg)
   !$omp atomic update
   mpi_mesg%nq_send = mpi_mesg%nq_send+1
-  call check_sent (self, link)
+  !-----------------------------------------------------------------------------
+  ! Check the list of sent messages
+  !-----------------------------------------------------------------------------
+  mesg => link%task%sent_list%head
+  do while (associated(mesg))
+    next => mesg%next
+    !---------------------------------------------------------------------------
+    ! The function mesg%test_sent() returns true when all ranks have received
+    ! the message, which can then be removed and deleted
+    !---------------------------------------------------------------------------
+    if (mesg%test_sent()) then
+      if (verbose > 0) then
+        write (io_unit%log,'(f12.6,1x,a,2i6)') wallclock(), &
+          'task_mesg_t%send_to_vnbors: remove and delete task id, mesg', &
+          link%task%id, mesg%i
+      end if
+      call link%task%sent_list%remove (mesg)
+      call link%task%sent_list%delete (mesg, send=.true.)
+      !--- the %delete() also decrements mpi_mesg%nq_send ---
+    else
+      if (verbose > 1) then
+        write (io_unit%log,'(f12.6,1x,a,2i6)') wallclock(), &
+          'task_mesg_t%send_to_vnbors: task id, mesg send not complete', &
+          link%task%id, mesg%i
+      end if
+    end if
+    mesg => next
+  end do
   call trace%end ()
 END SUBROUTINE send_to_vnbors
-
-!===============================================================================
-!> Check recv messages on all virtual task nbors
-!===============================================================================
-SUBROUTINE check_sent (self, link)
-  class(task_mesg_t):: self
-  class(link_t), pointer:: link
-  !.............................................................................
-  class(mesg_t), pointer:: mesg, next
-  !-----------------------------------------------------------------------------
-  ! The function mesg%test_sent() returns true when all ranks have received
-  ! the message, which can then be removed and deleted, thus reclaiming memory.
-  !-----------------------------------------------------------------------------
-  call trace%begin ('task_mesg_t%check_vnbors')
-  if (associated(link%task%sent_list)) then
-    mesg => link%task%sent_list%head
-    do while (associated(mesg))
-      next => mesg%next
-      if (mesg%test_sent()) then
-        call link%task%sent_list%remove (mesg)
-        call link%task%sent_list%delete (mesg, send=.true.)
-      end if
-      mesg => next
-    end do
-  end if
-  call trace%end()
-END SUBROUTINE check_sent
 
 !===============================================================================
 !> Check the virtual nbors of a boundary task link for completed messages,
