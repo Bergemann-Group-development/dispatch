@@ -274,7 +274,7 @@ SUBROUTINE check_new (self)
   class(task_mesg_t):: self
   !.............................................................................
   class(mesg_t), pointer:: mesg
-  class(experiment_t), pointer:: task => null()
+  class(task_t), pointer:: task => null()
   !$omp threadprivate(task)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -282,18 +282,21 @@ SUBROUTINE check_new (self)
   ! next new virtual task, distinguished by having tag=MPI_ANY_TAG
   !-----------------------------------------------------------------------------
   call trace%begin ('task_mesg_t%check_new', itimer=itimer)
-  if (.not.associated(task)) then
-    call create_new (task)
-    task%mesg%tag = 0
-    call task%mesg%request (any=.true.)
-  end if
-  if (task%mesg%is_complete()) then
-    task%id = task%unpack_id (task%mesg)
-    task%rank = task%mesg%sender
-    call unpack (self, task%mesg, task%link)
-    call self%add_new_link (task%link)
-    nullify(task)
-  end if
+  select type (task)
+  class is (experiment_t)
+    if (.not.associated(task)) then
+      call create_new (task)
+      task%mesg%tag = 0
+      call task%mesg%request (any=.true.)
+    end if
+    if (task%mesg%is_complete()) then
+      task%id = task%unpack_id (task%mesg)
+      task%rank = task%mesg%sender
+      call unpack (self, task%mesg, task%link)
+      call self%add_new_link (task%link)
+      nullify(task)
+    end if
+  end select
   call trace%end (itimer)
 contains
   !=============================================================================
