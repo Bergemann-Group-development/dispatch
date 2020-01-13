@@ -104,8 +104,6 @@ MODULE mpi_mesg_mod
     procedure:: log_files
   end type
   type(mpi_mesg_t), public:: mpi_mesg
-  type(mesg_list_t), save, public:: unpk_list, sent_list, recv_list
-  !$omp threadprivate (unpk_list,sent_list,recv_list)
   real, save:: delay_ms=0.0                     ! allow automatic setting
   integer, save:: min_nq=10                     ! min ready q size for MPI_Test
   integer, save:: max_sent=10                   ! max outstanding patch sends

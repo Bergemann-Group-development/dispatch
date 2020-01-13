@@ -627,21 +627,27 @@ SUBROUTINE check_nbors (self, link)
   itr = 1
   call trace%begin('list_t%check_nbors', itimer=itimer)
   if (self%verbose > 0) then
-    write (io_unit%log,'(f12.6,1x,a,2i6)') wallclock(), &
-     'list_t%check_nbors: task', link%task%id, link%task%level
+    write (io_unit%log,'(f12.6,1x,a,i6,i4,f12.6,2x,4l1)') wallclock(), &
+    'list_t%check_nbors: task', link%task%id, link%task%level, link%task%time, &
+     link%task%is_set(bits%boundary), link%task%is_set(bits%virtual), &
+     associated(link%nbor), associated(link%nbors_by_level)
   end if
   !-----------------------------------------------------------------------------
   ! Lock the other task link while accessing its nbor list, to prevent changes
   !-----------------------------------------------------------------------------
   nbor => link%nbor                                     ! first nbor
   do while (associated (nbor))                          ! keep going until end
-    if (self%verbose>0 .and. nbor%task%id==io%id_debug) print *, &
-      'task', task%id,' needs task ', nbor%task%id, nbor%needs_me
     !---------------------------------------------------------------------------
     ! If the nbor needs this task, and isn't busy updating, check it.  For
     ! thread safety, the busy bit must NOT be cleared before a task has done
     ! a check_ready() on itself, lest an opportunity could be missed.
     !---------------------------------------------------------------------------
+    if (self%verbose > 1) then
+      write (io_unit%log,'(f12.6,1x,a,i6,i4,f12.6,2x,2l1)') wallclock(), &
+        'list_t%check_nbors: nbor, level, NB =', nbor%task%id, &
+        nbor%task%level, nbor%task%time, nbor%needs_me, &
+        nbor%task%is_clear(bits%busy)
+    end if
     if (nbor%needs_me .and. nbor%task%is_clear(bits%busy)) then
       call self%check_ready (nbor%link, .true., status) ! pointer back
       if (self%verbose > 1) &
@@ -807,13 +813,15 @@ SUBROUTINE check_oldest (self)
   end if
   if (associated(oldest)) then
     nbor => oldest%nbor
-    write (io_unit%log,2) oldest%task%id, oldest%task%time, oldest%task%rank, oldest%task%level, &
-      oldest%needed, oldest%needs_me, oldest%task%is_set(bits%boundary), oldest%task%is_set(bits%virtual)
+    write (io_unit%log,2) oldest%task%id, oldest%task%time, oldest%task%rank, &
+      oldest%task%level, oldest%needed, oldest%needs_me, &
+      oldest%task%is_set(bits%boundary), oldest%task%is_set(bits%virtual)
   2 format(i6,f12.6,2i4,5L3,f12.6)
     write (io_unit%log,*) 'nbor list:'
     do while (associated(nbor))
-      write (io_unit%log,2) nbor%task%id, nbor%task%time, nbor%task%rank, nbor%task%level, &
-        nbor%needed, nbor%needs_me, nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual), &
+      write (io_unit%log,2) nbor%task%id, nbor%task%time, nbor%task%rank, &
+        nbor%task%level, nbor%needed, nbor%needs_me, &
+        nbor%task%is_set(bits%boundary), nbor%task%is_set(bits%virtual), &
         nbor%task%is_ahead_of (oldest%task), nbor%task%unpack_time
       nbor => nbor%next
     end do
@@ -856,10 +864,11 @@ SUBROUTINE check_oldest (self)
      'nbor:', oldestnb%task%id, oldestnb%task%rank, oldestnb%task%time, &
      oldestnb%task%is_set(bits%internal), oldestnb%task%is_set(bits%boundary), &
      oldestnb%task%is_set(bits%virtual), oldestnb%task%is_set(bits%external), &
-     self%nq, sent_list%n, recv_list%n, unpk_list%n
+     self%nq
     flush (io_unit%log)
     if (associated(oldestv)) then
-      write (io_unit%log,*) 'the oldest virtual task is ', oldestv%task%id, oldestv%task%time
+      write (io_unit%log,*) 'the oldest virtual task is ', oldestv%task%id, &
+        oldestv%task%time
       write (io_unit%log,*) 'check_oldest: phase 3', associated(oldestv)
       write (io_unit%log,1) 'the oldest virtual task is', oldestv%task%id, &
         'rank', oldestv%task%rank, oldestv%task%time, &
@@ -924,9 +933,9 @@ SUBROUTINE check_ready (self, link, lock, status)
     ignore = bits%frozen + bits%remove
     ok = .true.
     status_l = 0
-    nbor => link%nbor                                     ! use original nbor list
+    nbor => link%nbor                                   ! use original nbor list
     t_oldest = huge(1d0)
-    do while (associated (nbor))                          ! keep going until end
+    do while (associated (nbor))                        ! keep going until end
       !-------------------------------------------------------------------------
       ! Check for any non-supported nbors and nix on them, setting also a bit
       ! that marks them to be ignored when checking nbors for readiness.  The
@@ -952,7 +961,7 @@ SUBROUTINE check_ready (self, link, lock, status)
         if (self%verbose > 1) &
           write (io_unit%log,'(f12.6,1x,a,i6,1x,a,i6,i4,f12.6)') wallclock(), &
             'list_t%check_ready:', link%task%id, &
-            'skip no support id, level, time =', nbor%task%id, nbor%task%level, &
+            'skip no support id, level, time =', nbor%task%id, nbor%task%level,&
             nbor%task%time         
         !.......................................................................
       else if (nbor%task%level - link%task%level > 1) then
@@ -970,9 +979,9 @@ SUBROUTINE check_ready (self, link, lock, status)
           status_l = max(1,status_l)
           !.....................................................................
           if (self%verbose > 2) &
-            write (io_unit%log,'(f12.6,1x,a,i6,1x,a,i6,i4,f12.6)') wallclock(), &
+            write (io_unit%log,'(f12.6,1x,a,i6,1x,a,i6,i4,f12.6)') wallclock(),&
               'list_t%check_ready:', link%task%id, &
-              'fails on nbor, level, delta_t =', nbor%task%id, nbor%task%level, &
+              'fails on nbor, level, delta_t =', nbor%task%id, nbor%task%level,&
               (nbor%task%time-task%time)/max(task%dtime,tiny(1d0))
           !.....................................................................
         end if
@@ -1119,7 +1128,8 @@ SUBROUTINE qconsistency (self, ident)
     end if
     if (task%time < time) then
       write (io_unit%log,'(a,i4,2(i9,1p,g15.6,3x))') &
-        'ERROR: queue out of order ident, prev%id, time, task%id', ident, prev%id, time, task%id, task%time
+        'ERROR: queue out of order ident, prev%id, time, task%id', &
+        ident, prev%id, time, task%id, task%time
     end if
     prev => task
     link => link%next_time
@@ -1168,7 +1178,7 @@ SUBROUTINE aconsistency (self, ident)
     if (n > self%nac) exit
     if (task%atime < time) then
       write (io_unit%log,'(a,i4,2(i9,1p,g15.6,3x),i5)') &
-        'ERROR: active queue out of order ident, prev%id, time, task%id, task%atime =', &
+        'ERROR: active queue ident, prev%id, time, task%id, task%atime =', &
         ident, prev%id, time, task%id, task%atime, self%nac
       n = 0
       link => self%active
@@ -1223,10 +1233,12 @@ SUBROUTINE init_nonleaf (self)
         .not.scan%task%is_set(bits%not_leaf)) then      ! skip non-leaf patch
         if (scan%task%overlaps(link%task)) then         ! if patches overlap
           if (scan%task%level==link%task%level-1) then  ! and level is one below
-            if (all(abs(scan%task%position-link%task%position) < scan%task%size*0.55d0)) then
+            if (all(abs(scan%task%position-link%task%position) &
+                < scan%task%size*0.55d0)) then
               call scan%task%set (bits%not_leaf)        ! mark non-leaf
-              if (io%verbose>0) &
-                write (io_unit%log,*) 'patch', link%task%id, ' parent:', scan%task%id
+              if (io%verbose > 0) &
+                write (io_unit%log,*) 'patch:', link%task%id, &
+                                      ' parent:', scan%task%id
             end if
           end if
         end if
@@ -1300,7 +1312,8 @@ SUBROUTINE init_nbors (self, link)
   class(list_t):: self
   class(link_t), pointer:: link
   !.............................................................................
-  class(link_t), pointer:: nbor, scan, new_head, new_sort, old_head, old_sort, nbors
+  class(link_t), pointer:: nbor, scan, new_head, new_sort, old_head, old_sort, &
+                           nbors
   integer:: n_add, status
   logical:: overlaps
   real(8):: time
@@ -1323,33 +1336,33 @@ SUBROUTINE init_nbors (self, link)
   do while (associated(scan))                         ! until end
     if (.not.associated(scan,link) .and. associated(scan%task)) then
       !-------------------------------------------------------------------------
-      ! Potential nbors are other patches that overlap
+      ! The ifs select to add nbors to a patch if either the patch is not a
+      ! virtual patch, or the nbor is not a virtual patch, thus excluding
+      ! adding virtual patches as nbors to virtual patches
       !-------------------------------------------------------------------------
       overlaps = scan%task%overlaps(link%task) &
            .and. abs(scan%task%level - link%task%level) <= 2
       if (overlaps) then  ! if its task overlaps
-        !-----------------------------------------------------------------------
-        ! The ifs select to add nbors to a patch if either the patch is not a
-        ! virtual patch, or the nbor is not a virtual patch, thus excluding
-        ! adding virtual patches as nbors to virtual patches
-        !-----------------------------------------------------------------------
         call link%add_nbor_by_rank (new_head, scan) ! add in rank order
         !-----------------------------------------------------------------------
-        ! Set status bits and flags, but note that these may have to be reset
-        ! after pruning, since that may for example remove the only virtual
-        ! nbor, which means the task that the list belongs to changes from a
-        ! boundary task to an internal task.
+        ! Potential nbors are other patches that overlap
         !-----------------------------------------------------------------------
         call link%task%nbor_relations (scan%task, scan%needed, &
           scan%needs_me, scan%download)             ! set flags and status bits
-        !.......................................................................
         n_add = n_add+1
         if (self%verbose > 1 .or. link%task%id == io%id_debug) &
           write (io_unit%log, '(2x,a,i6,i4,3x,4l1)') &
           'init_nbors: nbor, level, NMDV =', &
           scan%task%id, scan%task%level, scan%needed, scan%needs_me, &
           scan%download, scan%task%is_set(bits%virtual)
-        !.......................................................................
+          !---------------------------------------------------------------------
+          ! Set status bits and flags, but note that these may have to be reset
+          ! after pruning, since that may for example remove the only virtual
+          ! nbor, which means the task that the list belongs to changes from a
+          ! boundary task to an internal task.
+          !---------------------------------------------------------------------
+          !.....................................................................
+          !.....................................................................
       end if
     end if
     scan => scan%next                               ! continue search
@@ -1913,15 +1926,17 @@ end if
         return
       end if
       if (associated(next%task, task)) then
-        write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, ' is already in ready queue'
+        write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, &
+          ' is already in ready queue'
         go to 9
       else if (next%task%time > task%time) then
         this%next_time => next
         if (associated(prev)) then
           if (self%verbose > 1) then
             write (io_unit%log,'(i4,2x,a,i6,a,i6,i5,1p,3g16.6)') &
-              omp%thread, 'task',task%id,' in ready queue between',prev%task%id,next%task%id, &
-              prev%task%time, this%task%time, next%task%time
+              omp%thread, 'task',task%id,' in ready queue between', &
+              prev%task%id,next%task%id, prev%task%time, this%task%time, &
+              next%task%time
           end if
           !call prev%qlock%set ('queue_by_time')
           prev%next_time => this
@@ -1958,7 +1973,7 @@ end if
     end if
     nullify (this%next_time)
   9 continue
-    call self%remove_active (this)                      ! remove from active_queue
+    call self%remove_active (this)                    ! remove from active_queue
   !-----------------------------------------------------------------------------
   ! Since we clear the ready bit in task_list%update, outside of any critical
   ! region, it is perfectly normal that several threads compete about putting
@@ -1998,13 +2013,15 @@ SUBROUTINE queue_active (self, this)
   next => self%active
   do while (associated(next))
     if (associated(next%task, task)) then
-      write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, ' is already in active queue'
+      write (io_unit%log,*) omp_mythread, ' WARNING: task', task%id, &
+        ' is already in active queue'
       exit
     else if (next%task%atime > task%atime) then
       this%next_active => next
       if (associated(prev)) then
         if (io%verbose > 1) then
-          write (io_unit%log,*) 'task',task%id,' in active queue after',prev%task%id,self%nac
+          write (io_unit%log,*) 'task',task%id,' in active queue after', &
+            prev%task%id,self%nac
         end if
         prev%next_active => this
       else
@@ -2021,12 +2038,13 @@ SUBROUTINE queue_active (self, this)
   if (.not.associated(next)) then
     if (associated(prev)) then
       if (io%verbose > 1) then
-        write (io_unit%log,*) 'task',task%id,' at active queue tail',prev%task%id,self%nac
+        write (io_unit%log,*) 'task',task%id,' at active queue tail', &
+          prev%task%id,self%nac
       end if
       prev%next_active => this
     else
       if (io%verbose > 1) then
-        write (io_unit%log,*) 'task',task%id,' at active queue head',self%nac
+        write (io_unit%log,*) 'task',task%id,' at active queue head', self%nac
       end if
       self%active => this
     end if
@@ -2093,7 +2111,8 @@ print *,'remove_from_queue: found it'
       end if
       self%nq = self%nq-1
       !if (io%verbose > 1) &
-        write (io_unit%mpi,*) 'remove_from_queue: id, nq =', this%task%id, self%nq
+        write (io_unit%mpi,*) &
+         'remove_from_queue: id, nq =', this%task%id, self%nq
       exit
     end if
     prev => next
@@ -2117,7 +2136,8 @@ SUBROUTINE add_by_quality (self, this)
   next => self%head
   do while (associated(next))
     if (associated(next%task,this%task)) then
-      write (io_unit%log,*)'ERROR: Trying to add task', this%task%id, ' which is already there'
+      write (io_unit%log,*)'ERROR: Trying to add task', this%task%id, &
+        ' which is already there'
       goto 9
     end if
     if (next%task%level >= this%task%level) then
@@ -2251,8 +2271,8 @@ SUBROUTINE print_queue_times (self, label)
      write (io_unit%log,*)'print_queue_times:'
   end if
   do while (associated(link))
-    write (io_unit%log,'("queue: id, time =",i7,1p,g14.5,l5)') link%task%id, link%task%time, &
-      link%task%is_set(bits%ready)
+    write (io_unit%log,'("queue: id, time =",i7,1p,g14.5,l5)') link%task%id, &
+      link%task%time, link%task%is_set(bits%ready)
     link => link%next_time
   end do
   call self%lock%unset ('print_queue_times')
@@ -2389,21 +2409,24 @@ SUBROUTINE check_nbor_list (link, label, verbose)
         select type (task)
         class is (patch_t)
           if (.not.associated(task%link,nbor%link)) then
-            print *, label, link%task%id, task%id, &
+            write (io_unit%log,*) label, link%task%id, task%id, &
               'ERROR: nbor%link, task%link not associated'
           end if
         end select
       else
-        print *, label, link%task%id, 'ERROR: nbor%task not associated'
+        write (io_unit%log,*) &
+          label, link%task%id, 'ERROR: nbor%task not associated'
       end if
     else
-      print *, label, link%task%id, 'ERROR: nbor%link not associated'
+      write (io_unit%log,*) &
+        label, link%task%id, 'ERROR: nbor%link not associated'
     end if
     if (present(verbose)) then
       task => nbor%link%task
       select type (task)
       class is (patch_t)
-      print *, link%task%id, nbor%task%id, task%id, associated(task%link,nbor%link)
+        write (io_unit%log,*) link%task%id, nbor%task%id, task%id, &
+        associated(task%link,nbor%link)
       end select
     end if
     nbor => nbor%next
@@ -2938,10 +2961,10 @@ FUNCTION check_support (self, link, sign, test) RESULT (refine)
               check = .true.
             end if
           else
-            !---------------------------------------------------------------------
+            !-------------------------------------------------------------------
             ! Find the index range in the L+2 task that would be needed from the
             ! the level L task, not counting guard zones
-            !---------------------------------------------------------------------
+            !-------------------------------------------------------------------
             guards = .false.
             if (task%get_overlap (nbtask, guards, l, u)) then
               if (self%verbose > 1) then

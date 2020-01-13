@@ -23,14 +23,14 @@
 !> Call hierarchy:          accesses                locks
 !> --------------------------------------------------------------
 !> check_mpi                entire task_list        task_list
-!>   check_received         task%mesg
+!>   check_recv             task%mesg
 !>     unpack               task%mem()              task%mem_lock 
 !>   check_new              threadprivate (new)
 !>     create_new_task
 !> send_to_vnbors           nbor list               link
 !>   check_sent             task%sent_list
 !> recv_from_vnbords        nbor list               link
-!>   check_received         task%mesg               
+!>   check_recv             task%mesg               
 !>     unpack               task%mem()
 !===============================================================================
 MODULE task_mesg_mod
@@ -59,9 +59,6 @@ MODULE task_mesg_mod
   end type
   integer, save:: verbose=0
   logical, save:: use_hashtable=.true.
-  type(mesg_list_t), save:: priv_list
-  type(task_mesg_t), save:: private_list, master_list, remove_list
-  !$omp threadprivate (private_list,priv_list)
   character(len=8), save:: method='irecv'
   public:: task2patch
   type(task_mesg_t), public:: task_mesg
@@ -454,7 +451,8 @@ SUBROUTINE unpack (self, mesg, link1)
     !$omp end critical (debug_cr)
   end if
   if (mpi_mesg%debug) &
-    write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6)') wallclock(), 'unpk: id, time =', task%id, task%time
+    write (io_unit%log,'(f12.6,2x,a,i9,1p,e18.6)') wallclock(), &
+      'unpk: id, time =', task%id, task%time
   !-----------------------------------------------------------------------------
   if (bonafide) then
     if (self%verbose > 1) write(io_unit%log,*) 'bonafide', new, &
