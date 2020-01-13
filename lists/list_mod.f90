@@ -2764,6 +2764,7 @@ SUBROUTINE send_to_vnbors (self, link)
   ! Send to all unique ranks in the nbor list (which is sorted by rank).
   !-----------------------------------------------------------------------------
   rank = -1                                                     ! previous rank
+  call link%lock%set ('send_to_vnbors')
   nbor => link%nbor                                             ! first nbor
   if (self%verbose > 1) &
     write (io_unit%log,*) link%task%id, 'associated', associated(nbor)
@@ -2801,6 +2802,7 @@ SUBROUTINE send_to_vnbors (self, link)
     end if
     nbor => nbor%next                                           ! next nbor
   end do
+  call link%lock%unset ('send_to_vnbors')
   !-----------------------------------------------------------------------------
   ! Add the message to mesg%sent_list, if it was sent, and clear the swap bit
   !-----------------------------------------------------------------------------
