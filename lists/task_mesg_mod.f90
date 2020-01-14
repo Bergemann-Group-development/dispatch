@@ -128,7 +128,9 @@ SUBROUTINE check_mpi (self, n)
   link => self%head
   do while (associated(link))
     if (link%task%is_set(bits%virtual)) then
-      call check_recv (self, link%task)
+      if (mod(link%task%id,omp%nthreads) == omp%thread) then
+        call check_recv (self, link%task)
+      end if
     end if
     link => link%next
   end do
@@ -138,62 +140,80 @@ END SUBROUTINE check_mpi
 
 !===============================================================================
 !> Send copies of boundary tasks to all rank nbors that should have a copy,
-!> appending the message to a task-private message list with sent messages.
-!> After sending, check the list for completed messages, and remove and delete 
-!> them.  Since only one thread at a time is accessing the task here, this is
-!> thread-safe, and no locks are required to handle the sending of messages.
+!> appending the message to a message list with sent messages.   After sending,
+!> check the list for completed messages, and remove and delete them.  Since
+!> only one thread at a time is accessing the task here, this is thread-safe,
+!> and no locks are required to handle the sending of messages.
 !===============================================================================
 SUBROUTINE send_to_vnbors (self, link)
   class(task_mesg_t):: self
   class(link_t), pointer:: link
+  !.............................................................................
+  class(task_t), pointer:: task
   class(mesg_t), pointer:: mesg, next
+  class(mesg_list_t), pointer:: sent_list
+  integer:: req
   !-----------------------------------------------------------------------------
   ! Sending the task creates a task%mesg instance, which is appended to
   ! the task%sent_list -- created on the fly if not existing
   !-----------------------------------------------------------------------------
   call trace%begin ('task_mesg_t%send_to_vnbors')
-  link%task%seq = link%task%seq + 1
+  task => link%task
+  task%seq = task%seq + 1
+write (io_unit%log,*) link%task%seq, 'calling list_t%send_to_vnbors'  
   call self%list_t%send_to_vnbors (link)
-  if (.not.associated(link%task%sent_list)) then
+write (io_unit%log,*) '      sent', task%id, task%mesg%id, task%mesg%tag 
+  if (associated(task%sent_list)) then
+    sent_list => task%sent_list
+  else
     if (verbose > 0) then
       write (io_unit%log,'(f12.6,1x,a,2i6)') wallclock(), &
-        'task_mesg_t%send_to_vnbors: send_list added to task', link%task%id
+        'task_mesg_t%send_to_vnbors: sent_list added to task', link%task%id
     end if
-    allocate (link%task%sent_list)
+    allocate (sent_list)
+    call sent_list%lock%init
+    task%sent_list => sent_list
   end if
-  call link%task%sent_list%add (link%task%mesg)
+  call sent_list%lock%set
+  call sent_list%add (link%task%mesg)
   !$omp atomic update
   mpi_mesg%nq_send = mpi_mesg%nq_send+1
-  !-----------------------------------------------------------------------------
-  ! Check the list of sent messages
-  !-----------------------------------------------------------------------------
-  mesg => link%task%sent_list%head
-  do while (associated(mesg))
-    next => mesg%next
-    !---------------------------------------------------------------------------
-    ! The function mesg%test_sent() returns true when all ranks have received
-    ! the message, which can then be removed and deleted
-    !---------------------------------------------------------------------------
-    if (mesg%test_sent()) then
-      if (verbose > 0) then
-        write (io_unit%log,'(f12.6,1x,a,2i6)') wallclock(), &
-          'task_mesg_t%send_to_vnbors: remove and delete task id, mesg', &
-          link%task%id, mesg%i
-      end if
-      call link%task%sent_list%remove (mesg)
-      call link%task%sent_list%delete (mesg, send=.true.)
-      !--- the %delete() also decrements mpi_mesg%nq_send ---
-    else
-      if (verbose > 1) then
-        write (io_unit%log,'(f12.6,1x,a,2i6)') wallclock(), &
-          'task_mesg_t%send_to_vnbors: task id, mesg send not complete', &
-          link%task%id, mesg%i
-      end if
-    end if
-    mesg => next
-  end do
+  call check_sent (self, task)
+  call sent_list%lock%unset
   call trace%end ()
 END SUBROUTINE send_to_vnbors
+
+!===============================================================================
+!> Check recv messages on all virtual task nbors
+!===============================================================================
+SUBROUTINE check_sent (self, task)
+  class(task_mesg_t):: self
+  class(task_t), pointer:: task
+  !.............................................................................
+  class(mesg_t), pointer:: mesg, next
+  !-----------------------------------------------------------------------------
+  ! The function mesg%test_sent() returns true when all ranks have received
+  ! the message, which can then be removed and deleted, thus reclaiming memory.
+  !-----------------------------------------------------------------------------
+  call trace%begin ('task_mesg_t%check_sent')
+  if (associated(task%sent_list)) then
+    mesg => task%sent_list%head
+    do while (associated(mesg))
+      next => mesg%next
+      if (mesg%test_sent()) then
+write (io_unit%log,*) '   deleted', task%id, mesg%id, mesg%tag, task%sent_list%n
+!write (io_unit%log,*) mesg%id, mesg%nreq, mesg%req, task%sent_list%n, mpi_mesg%nq_send, 'delete'
+        call task%sent_list%remove (mesg)
+        call task%sent_list%delete (mesg, send=.true.)
+      else
+write (io_unit%log,*) '      kept', task%id, mesg%id, mesg%tag
+!write (io_unit%log,*) mesg%id, mesg%nreq, mesg%req, task%sent_list%n, mpi_mesg%nq_send, 'keep'
+      end if
+      mesg => next
+    end do
+  end if
+  call trace%end()
+END SUBROUTINE check_sent
 
 !===============================================================================
 !> Check the virtual nbors of a boundary task link for completed messages,
@@ -244,6 +264,8 @@ SUBROUTINE check_recv (self, task)
   ! If a message is complete, unpack and issue a new request
   !-----------------------------------------------------------------------------
   if (task%mesg%is_complete()) then
+!if (mpi%rank==1) &
+write (io_unit%log,*) '  received', task%id, task%mesg%id, task%mesg%tag 
     select type (task)
     class is (patch_t)
       call unpack (self, task%mesg, task%link)
@@ -265,6 +287,8 @@ SUBROUTINE new_request (task)
     task%seq = task%seq + 1
     task%mesg%tag = task%id*100 + mod(task%seq,100)
     task%mesg%sender = task%rank
+!if (mpi%rank==1) &
+write (io_unit%log,*) ' requested', task%id, task%mesg%id, task%mesg%tag 
     call task%mesg%request
   end select
 END SUBROUTINE new_request
@@ -276,7 +300,7 @@ SUBROUTINE check_new (self)
   class(task_mesg_t):: self
   !.............................................................................
   class(mesg_t), pointer:: mesg
-  class(task_t), pointer:: task => null()
+  class(experiment_t), pointer:: task => null()
   !$omp threadprivate(task)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
@@ -284,21 +308,37 @@ SUBROUTINE check_new (self)
   ! next new virtual task, distinguished by having tag=MPI_ANY_TAG
   !-----------------------------------------------------------------------------
   call trace%begin ('task_mesg_t%check_new', itimer=itimer)
-  select type (task)
-  class is (experiment_t)
-    if (.not.associated(task)) then
-      call create_new (task)
-      task%mesg%tag = 0
-      call task%mesg%request (any=.true.)
+  if (.not.associated(task)) then
+    call create_new (task)
+    task%mesg%tag = 0
+    task%id = 0
+    call task%mesg%request (any=.true.)
+    if (verbose > 0) then
+      write (io_unit%log,'(f12.6,1x,a,3i6)') wallclock(), &
+        'task_mesg_t%check_new: requested id, sender, tag =', &
+        task%id, task%rank, task%mesg%tag
     end if
-    if (task%mesg%is_complete()) then
-      task%id = task%unpack_id (task%mesg)
-      task%rank = task%mesg%sender
-      call unpack (self, task%mesg, task%link)
-      call self%add_new_link (task%link)
-      nullify(task)
+  end if
+  if (task%mesg%is_complete()) then
+    task%id = task%unpack_id (task%mesg)
+    task%rank = task%mesg%sender
+    if (verbose > 1) then
+      write (io_unit%log,'(f12.6,1x,a,2i6)') wallclock(), &
+        'task_mesg_t%check_new: message id, rank =', &
+        task%id, task%rank
     end if
-  end select
+    call unpack (self, task%mesg, task%link)
+    call self%add_new_link (task%link)
+    nullify(task)
+    call create_new (task)
+    task%mesg%tag = 0
+    call task%mesg%request (any=.true.)
+  else
+    if (verbose > 1) then
+      write (io_unit%log,'(f12.6,1x,a)') wallclock(), &
+        'task_mesg_t%check_new: no message'
+    end if
+  end if
   call trace%end (itimer)
 contains
   !=============================================================================
@@ -317,9 +357,9 @@ contains
     call task%init
     call task_link%init
     call task%allocate_mesg
-write (stderr,*) mpi%rank,' created new task', task%id
+write (io_unit%log,*) mpi%rank,' created new task', task%id
     task%rank = -1
-    task%seq = 1
+    task%seq = 0
     call task%set (bits%virtual)
     call trace%end ()
   end subroutine create_new

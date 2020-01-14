@@ -32,7 +32,7 @@ MODULE mpi_mesg_mod
     class(mesg_t), pointer:: prev => null()
     integer, dimension(:), pointer:: buffer => null()
     integer, pointer:: reqs(:) => null()
-    integer:: nbuf, nreq, req=0, sender, id, ntry=0
+    integer:: nbuf, nreq=0, req=0, sender, id, ntry=0
     integer:: n_failed=0
     integer:: i=0
     integer:: seq=0
@@ -149,6 +149,7 @@ SUBROUTINE send (self, rank, tag)
       mpi%comm, req, ierr)
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
+write(io_unit%log,*) self%nreq, self%reqs(self%nreq), 'send'
     !$omp end critical (mpi_cr)
   end if
 #else
@@ -233,14 +234,18 @@ SUBROUTINE test_all (self, flag)
     call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
   else
     !$omp critical (mpi_cr)
+write(io_unit%log,*) self%nreq, self%reqs(1:self%nreq), 'test_all'
+req = self%reqs(1)
     call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
+write(io_unit%log,*) self%nreq, req, 'test_all', flag
     !$omp end critical (mpi_cr)
   end if
 #else
   flag = .true.
 #endif MPI
-  if (verbose>2) then
-    write (io_unit%log,*) wallclock(), self%id, ' test_all flag =', flag
+  if (verbose > 1) then
+    write (io_unit%log,'(f12.6,1x,a,i6,l4)') wallclock(), &
+      'mpi_mesg_t%test_all: id, nreq, flag =', self%id, self%nreq, flag
     flush (io_unit%log)
   end if
 END SUBROUTINE test_all
@@ -437,24 +442,33 @@ SUBROUTINE delete (self, mesg, send)
       mesg%id, mesg%sender, mesg%tag
   end if
   if (associated(mesg%buffer)) then
-    call io%bits_mem (-storage_size(mesg%buffer), product(shape(mesg%buffer)), 'mem')
+    call io%bits_mem (-storage_size(mesg%buffer), &
+                      product(shape(mesg%buffer)), 'mesg')
     deallocate (mesg%buffer)
   end if
-  if (associated(mesg%reqs)) deallocate (mesg%reqs)
-if (mesg%i > 0) &
-write (stdout,*) 'deallocate mesg', mesg%i
+  if (associated(mesg%reqs)) then
+    call io%bits_mem (-storage_size(mesg%reqs), &
+                      product(shape(mesg%reqs)), 'reqs')
+    deallocate (mesg%reqs)
+  end if
+block
+integer:: mid
+write (stdout,*) 'deallocate mesg', mesg%id
+mid=mesg%id
   deallocate (mesg)
   if (present(send)) then
     if (send) then
       timer%nq_send_max = max(timer%nq_send_max,mpi_mesg%nq_send)
       !$omp atomic
       mpi_mesg%nq_send = mpi_mesg%nq_send-1
+write (stdout,*) '       rem', mid, mpi_mesg%nq_send
     else
       timer%nq_recv_max = max(timer%nq_recv_max,mpi_mesg%nq_recv)
       !$omp atomic
       mpi_mesg%nq_recv = mpi_mesg%nq_recv-1
     end if
   end if
+end block
 END SUBROUTINE delete
 
 !===============================================================================

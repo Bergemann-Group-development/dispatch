@@ -2740,7 +2740,7 @@ SUBROUTINE send_to_vnbors (self, link)
      'list_t%send_to_vnbors: task', link%task%id
   end if
   !-----------------------------------------------------------------------------
-  ! Pack task into mesg, this also allocates task%send_mesg
+  ! Pack task into mesg, this also allocates task%mesg
   !-----------------------------------------------------------------------------
   select type (task)
   class is (patch_t)

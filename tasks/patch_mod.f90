@@ -1248,15 +1248,39 @@ END SUBROUTINE extrapolate_guards
 !===============================================================================
 SUBROUTINE allocate_mesg (self)
   class(patch_t):: self
+  class(mesg_t), pointer:: mesg
+  integer:: n_buf
   !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%allocate_mesg')
   allocate (self%mesg)
-  self%mesg%nbuf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
+  mesg => self%mesg
+  mesg%id = self%id
+write (stdout,*) '  allocate', mesg%id
+  !-----------------------------------------------------------------------------
+  ! Store the standard buffer size (not valid for swap requests!)
+  !-----------------------------------------------------------------------------
+  n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
   if (kind(self%mem)==8) &
-    self%mesg%nbuf = self%mesg%nbuf * 2  ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
-  self%mesg%nbuf = n_header + self%nv*self%mesg%nbuf
-  allocate (self%mesg%buffer(self%mesg%nbuf))
-  call io%bits_mem (storage_size(self%mesg%buffer), product(shape(self%mesg%buffer)))
+    n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
+  mesg%nbuf = n_header + self%nv*n_buf
+  if (mpi_mesg%nbuf==0) then
+    !$omp critical (nbuf_cr)
+    if (mpi_mesg%nbuf==0) then
+      mpi_mesg%nbuf = mesg%nbuf
+      write (io_unit%log,*) &
+        'patch_t%pack: setting mpi_mesg%nbuf =', mpi_mesg%nbuf
+    end if
+    !$omp end critical (nbuf_cr)
+  end if
+  !-----------------------------------------------------------------------------
+  ! Add extra space in the buffer for swap requests, and allocate
+  !-----------------------------------------------------------------------------
+  if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
+    mesg%nbuf = mesg%nbuf+ self%nv*n_buf
+  end if
+  allocate (mesg%buffer(mesg%nbuf))
+  call io%bits_mem (storage_size(self%mesg%buffer), &
+                    product(shape(self%mesg%buffer)))
   call trace%end ()
 END SUBROUTINE allocate_mesg
 
@@ -1272,32 +1296,15 @@ SUBROUTINE pack (self)
   real:: pt
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  ! Compute size of buffer and allocate -- it will be freed by the writer
-  !-----------------------------------------------------------------------------
   call trace%begin ('patch_t%pack', itimer=itimer)
-  allocate (mesg)
-  self%mesg => mesg
-  n_buf = product(self%gn)      ! 4-bytes per element; `anonymous_copy` also uses 4-bytes.
-  if (kind(self%mem)==8) &
-    n_buf = n_buf * 2           ! 8-bytes per element, but `anonymous_copy` uses 4-bytes!
-  mesg%nbuf = n_header + self%nv*n_buf
-  if (self%is_set(bits%swap_request) .and. self%is_set(bits%boundary)) then
-    mesg%nbuf = mesg%nbuf+ self%nv*n_buf
-  end if
-  allocate (mesg%buffer(mesg%nbuf))
-  if (mpi_mesg%nbuf==0) then
-    !$omp critical (nbuf_cr)
-    if (mpi_mesg%nbuf==0) then
-      mpi_mesg%nbuf = mesg%nbuf
-      write (io_unit%log,*) &
-        'patch_t%pack: setting mpi_mesg%nbuf =', mpi_mesg%nbuf
-    end if
-    !$omp end critical (nbuf_cr)
-  end if
-  call io%bits_mem (storage_size(mesg%buffer), product(shape(mesg%buffer)))
-  allocate (mesg%reqs(self%n_nbors))
-  mesg%id = self%id                                             ! MPI message tag
-  mesg%nreq = 0                                                 ! reset counter
+  !-----------------------------------------------------------------------------
+  ! Allocate a task%mesg instance and mesg%reqs() array
+  !-----------------------------------------------------------------------------
+  call self%allocate_mesg
+  mesg => self%mesg 
+  allocate (mesg%reqs(mpi%size))
+  call io%bits_mem (storage_size(mesg%reqs), &
+                    product(shape(mesg%reqs)))
   !-----------------------------------------------------------------------------
   ! Copy relevant patch info to sequenced header, and copy that to the buffer
   !-----------------------------------------------------------------------------
@@ -1321,6 +1328,8 @@ SUBROUTINE pack (self)
   ! Copy the variables to the output buffer.  If the bdry+swap bit are set,
   ! copy as a minimum also the previous time slot
   !-----------------------------------------------------------------------------
+  n_buf = product(self%gn)
+  if (kind(self%mem)==8) n_buf = n_buf*2
   do iv=1,self%nv
     call anonymous_copy (n_buf, self%mem(:,:,:,iv,self%it,1), mesg%buffer(ibuf))
     ibuf = ibuf + n_buf
