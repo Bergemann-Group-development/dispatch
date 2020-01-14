@@ -1298,6 +1298,7 @@ SUBROUTINE add_new_link (self, link)
   ! send it to rank nbors.
   !-----------------------------------------------------------------------------
   call self%append (link)
+write (io_unit%log,*) link%task%seq, 'calling send_to_vnbors'  
   if (link%task%is_set (bits%boundary)) &
     call self%send_to_vnbors (link)
   call self%set_init_nbors (link)                                       ! RULE C
@@ -2750,8 +2751,16 @@ SUBROUTINE send_to_vnbors (self, link)
   !-----------------------------------------------------------------------------
   ! The first time a task is sent it has tag = task%id*100 + 1
   !-----------------------------------------------------------------------------
+write (io_unit%log,*) link%task%seq, 'in send_to_vnbors'  
   if (mpi_mesg%uniq_mesg .and. mpi_mesg%tag_type == 1) then
-    tag = task%id*100 + mod(task%seq,100)
+    !---------------------------------------------------------------------------
+    ! A new child task has task%seq=-1, which becomes 0 in task_mesg_t%send_to..
+    !---------------------------------------------------------------------------
+    if (task%seq == 0) then
+      tag = 0
+    else
+      tag = task%id*100 + mod(task%seq,100)
+    end if
   else
     tag = task%id
   end if
@@ -2780,8 +2789,8 @@ SUBROUTINE send_to_vnbors (self, link)
         mesg%seq = sequence(rank)
         !$omp end atomic
         tag = mod(mesg%seq,100)
-        mesg%tag = tag
       end if
+      mesg%tag = tag
       if (io%task_logging > 1) then
         write (label,'(a,i4,i8)') 'send   ', rank, mod(tag,100)
         call task%log (label)

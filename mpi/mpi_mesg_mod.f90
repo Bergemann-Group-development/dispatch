@@ -61,6 +61,7 @@ MODULE mpi_mesg_mod
     character(len=16):: name='mesg_list'
     integer:: n=0, na=0
     integer:: id=0
+    type(lock_t):: lock
   contains
     procedure:: add
     procedure:: remove
@@ -141,15 +142,16 @@ SUBROUTINE send (self, rank, tag)
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
     call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, ltag, &
       mpi%comm, req, ierr)
+    call mpi%assert ('mesg_t%send: MPI_ISEND', ierr)
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
   else
     !$omp critical (mpi_cr)
     call MPI_ISEND (self%buffer, self%nbuf, MPI_INTEGER, rank, ltag, &
       mpi%comm, req, ierr)
+    call mpi%assert ('mesg_t%send: MPI_ISEND', ierr)
     self%nreq = self%nreq+1                                 ! count reqs
     self%reqs(self%nreq) = req                              ! collect reqs
-write(io_unit%log,*) self%nreq, self%reqs(self%nreq), 'send'
     !$omp end critical (mpi_cr)
   end if
 #else
@@ -207,6 +209,7 @@ contains
     integer:: ierr
     call MPI_IRECV (self%buffer, self%nbuf, MPI_INT, self%sender, self%tag, &
                     mpi%comm, self%req, ierr)
+    call mpi%assert ('mesg_t%request: MPI_IRECV', ierr)
   end subroutine irecv
 END SUBROUTINE request
 
@@ -451,24 +454,18 @@ SUBROUTINE delete (self, mesg, send)
                       product(shape(mesg%reqs)), 'reqs')
     deallocate (mesg%reqs)
   end if
-block
-integer:: mid
-write (stdout,*) 'deallocate mesg', mesg%id
-mid=mesg%id
   deallocate (mesg)
   if (present(send)) then
     if (send) then
       timer%nq_send_max = max(timer%nq_send_max,mpi_mesg%nq_send)
       !$omp atomic
       mpi_mesg%nq_send = mpi_mesg%nq_send-1
-write (stdout,*) '       rem', mid, mpi_mesg%nq_send
     else
       timer%nq_recv_max = max(timer%nq_recv_max,mpi_mesg%nq_recv)
       !$omp atomic
       mpi_mesg%nq_recv = mpi_mesg%nq_recv-1
     end if
   end if
-end block
 END SUBROUTINE delete
 
 !===============================================================================

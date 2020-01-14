@@ -1255,7 +1255,6 @@ SUBROUTINE allocate_mesg (self)
   allocate (self%mesg)
   mesg => self%mesg
   mesg%id = self%id
-write (stdout,*) '  allocate', mesg%id
   !-----------------------------------------------------------------------------
   ! Store the standard buffer size (not valid for swap requests!)
   !-----------------------------------------------------------------------------

@@ -271,7 +271,7 @@ SUBROUTINE init_unique (self, same)
       id_master = mpi%id%update (1)
     end do
     !$omp atomic write
-    id_same = id_master
+    id_same = id_master-1
     id = id_master
     if (verbose > 0) &
       write (io_unit%log,*) 'task_t%init_unique(else): id =', &

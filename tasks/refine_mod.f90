@@ -788,16 +788,26 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   call child%clone_mem_accounting
  !-----------------------------------------------------------------------------
   child%mem_allocated = .false.                      ! make sure to get ..
-  nullify (child%mem)                                ! .. new mem
-  nullify (child%mesh)                               ! .. new mesh
   nullify (child%lock)                               ! .. new lock
-  nullify (child%mem_lock)                           ! .. new mem_lock
   nullify (child%t)                                  ! .. new t
   nullify (child%dt)                                 ! .. new dt
   nullify (child%iit)                                ! .. new iit
-  if (allocated(child%force_per_unit_volume)) deallocate(child%force_per_unit_volume)
-  if (allocated(child%force_per_unit_mass)) deallocate(child%force_per_unit_mass)
+  nullify (child%mesg)                               ! .. new message
+  nullify (child%sent_list)                          ! .. new message list
+  !--- patch pointers ---
+  nullify (child%mem)                                ! .. new mem
+  nullify (child%mem_lock)                           ! .. new mem_lock
+  nullify (child%mesh)                               ! .. new mesh
+  nullify (child%density)
+  nullify (child%pressure)
+  nullify (child%vgas)
+  nullify (child%u_phase)
+  if (allocated(child%force_per_unit_volume  )) deallocate(child%force_per_unit_volume)
+  if (allocated(child%force_per_unit_mass    )) deallocate(child%force_per_unit_mass)
+  if (allocated(child%heating_per_unit_volume)) deallocate(child%heating_per_unit_volume)
+  if (allocated(child%heating_per_unit_mass  )) deallocate(child%heating_per_unit_mass)
   child%id = 0                                       ! ensure a new ID
+  child%seq = -1                                     ! triggers tag=0 in send
   child%size = child_size                            ! new size
   child%position = pos                               ! patch position
   child%centre_nat = pos                             ! patch position
@@ -905,6 +915,7 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   ! and add it also to the ready queue.  Since the parent was ready to update,
   ! so is the child (at the same time, with a sub-set of the nbors).
   !-----------------------------------------------------------------------------
+write (io_unit%log,*) child%seq, 'calling add_new_link'
   call tlist%add_new_link (child_link)
   call tlist%queue_by_time (child_link)
   !-----------------------------------------------------------------------------
