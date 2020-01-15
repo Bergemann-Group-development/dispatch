@@ -84,7 +84,7 @@ INTEGER FUNCTION omp_numthreads()
   if (omp_in_parallel()) then
     omp_numthreads = omp_get_num_threads()
   else
-    omp_numthreads = 1
+    omp_numthreads = omp%nthreads
   end if
 #else
   omp_numthreads = 1

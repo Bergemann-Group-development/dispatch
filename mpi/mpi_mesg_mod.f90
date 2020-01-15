@@ -42,6 +42,8 @@ MODULE mpi_mesg_mod
     logical:: anonymous=.true.
     type(lock_t):: lock
   contains
+    procedure:: init => init_mesg
+    procedure:: dealloc
     procedure:: send
     procedure:: irecv
     procedure, private:: test_all
@@ -120,6 +122,35 @@ MODULE mpi_mesg_mod
 CONTAINS
 
 !===============================================================================
+!===============================================================================
+SUBROUTINE init_mesg (self)
+  class(mesg_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mesg_t%init')
+  call self%lock%init
+  call trace%end ()
+END SUBROUTINE init_mesg
+
+!===============================================================================
+SUBROUTINE dealloc (self)
+  class(mesg_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('mesg_t%dealloc')
+  call self%lock%destroy
+  if (associated(self%buffer)) then
+    call io%bits_mem (-storage_size(self%buffer), &
+                      product(shape(self%buffer)), '-buffer')
+    deallocate (self%buffer)
+  end if
+  if (associated(self%reqs)) then
+    call io%bits_mem (-storage_size(self%reqs), &
+                      product(shape(self%reqs)), '-reqs')
+    deallocate (self%reqs)
+  end if
+  call trace%end ()
+END SUBROUTINE dealloc
+
+!===============================================================================
 !> Send a buffer, already prepared with size and id tag, returning a request id
 !===============================================================================
 SUBROUTINE send (self, rank, tag)
@@ -134,9 +165,9 @@ SUBROUTINE send (self, rank, tag)
     ltag = self%id
   end if
   self%tag = ltag
-  if (verbose>0 .or. self%id==io%id_debug) then
+  if (verbose > 0 .or. self%id==io%id_debug) then
     write (io_unit%log,'(f12.6,1x,a,4i6)') wallclock(), &
-      'mpi_mesg_t%send id, tag, nbuf, to =', self%id, ltag, self%nbuf, rank
+      'mpi_mesg_t%send id, nbuf, to, tag =', self%id, self%nbuf, rank, ltag
   end if
 #ifdef MPI
   if (mpi%mode == MPI_THREAD_MULTIPLE) then
@@ -444,16 +475,7 @@ SUBROUTINE delete (self, mesg, send)
       'mesg_list_t%delete: id, sender, tag =', &
       mesg%id, mesg%sender, mesg%tag
   end if
-  if (associated(mesg%buffer)) then
-    call io%bits_mem (-storage_size(mesg%buffer), &
-                      product(shape(mesg%buffer)), 'mesg')
-    deallocate (mesg%buffer)
-  end if
-  if (associated(mesg%reqs)) then
-    call io%bits_mem (-storage_size(mesg%reqs), &
-                      product(shape(mesg%reqs)), 'reqs')
-    deallocate (mesg%reqs)
-  end if
+  call mesg%dealloc
   deallocate (mesg)
   if (present(send)) then
     if (send) then
@@ -647,11 +669,11 @@ SUBROUTINE delay (self, n, ms)
     ms_l = mpi_mesg%delay_ms
   end if
   if (ms_l==0.0) return
-  call trace%begin ('mpi_mesg_t%no_queue', itimer=itimer)
+  call trace%begin ('mpi_mesg_t%no_queue') !, itimer=itimer)
   call mpi%delay (ms_l)
   !$omp atomic
   self%n_delay = self%n_delay + 1
-  call trace%end (itimer)
+  call trace%end () !itimer)
 END SUBROUTINE delay
 
 !===============================================================================

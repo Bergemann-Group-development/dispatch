@@ -246,14 +246,14 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
     ! the source will have to wait until after the source update.
     !-------------------------------------------------------------------------
     call source%time_interval (target%time, jt, pt)
-    call source%mem_lock(jt(1))%set ('download_link1', itimer)
-    if (jt(2) /= jt(1)) &
-      call source%mem_lock(jt(2))%set ('download_link2', itimer)
     if (verbose > 1) &
       write (io_unit%log,'(a,2i3,1x,2i3,2x,2f6.3,i5,f12.6,i5,10f12.6)') &
         'download_link: it, new, jt, pt, tgt, time, src, t =', &
         source%it, source%new, jt, pt, target%id, target%time, &
         source%id, source%t
+    call source%mem_lock(jt(1))%set ('download_link1', itimer)
+    if (jt(2) /= jt(1)) &
+      call source%mem_lock(jt(2))%set ('download_link2', itimer)
     if (verbose > 1) then
       write(io_unit%log,'(f12.6,i6,i3,3x,a,i6,i3,2x,2l1,i4,1p,2e10.2)') &
         wallclock(), target%id, target%level, &

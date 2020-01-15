@@ -32,11 +32,34 @@
 !> recv_from_vnbords        nbor list               link
 !>   check_recv             task%mesg               
 !>     unpack               task%mem()
+!>
+!> Task locking:
+!> -------------
+!> No locking is needed in connection with sending messages, since the
+!> messages are added to a task private message list, which is checked later
+!> by a single thread, which is the only one that can access the message.
+!> 
+!> The receive process needs locking, unless one decides to use thread-specific
+!> sets of messages (e.g. using modulo(mpi%size)).  One thread may be trying to
+!> checking a message for completeness, while another one is actually already
+!> unpacking the message buffer.  Therefore, a message lock must be used while
+!> checking and unpacking.
+!>
+!> While unpacking, the header_to_patch procedure modifies the task metadata,
+!> which should be done under a task%lock, which could also be used by e.g.
+!> check_ready() by other threads at the same time.   This could possibly be
+!> protected instead by atomic constructs.
+!>
+!> Subsequently, the patch%unpack() procedure writes to a memory slot, which
+!> must be protected by a task%mem_lock() for that slot, thus locking out access
+!> by download_link, using the patch as a source, or by the solver (in case of
+!> real tasks -- real or virtual tasks could collide with download).
 !===============================================================================
 MODULE task_mesg_mod
   USE io_mod
   USE trace_mod
   USE omp_mod
+  USE omp_lock_mod
   USE omp_timer_mod
   USE mpi_mod
   USE mpi_mesg_mod
@@ -100,7 +123,6 @@ SUBROUTINE init (self, name)
       class is (patch_t)
         if (.not.associated(task%mesg)) then
           call task%allocate_mesg
-          call task%mesg%lock%init ('mesg')
           task%mesg%sender = task%rank
           task%seq = 0
         end if
@@ -114,8 +136,8 @@ SUBROUTINE init (self, name)
 END SUBROUTINE init
 
 !===============================================================================
-!> Check all virtual tasks.  Note that in this context, the same virtual task
-!> may be investigated by separate threads simultaneously, so locks are needed
+!> Check all virtual tasks.  Note that the accesses are grouped by thread, so
+!> no mesg%lock is needed
 !===============================================================================
 SUBROUTINE check_mpi (self, n)
   class(task_mesg_t):: self
@@ -125,16 +147,16 @@ SUBROUTINE check_mpi (self, n)
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
   call trace%begin ('task_mesg_t%check_mpi', itimer=itimer)
+  !call self%lock%set ('check_mpi')
   link => self%head
   do while (associated(link))
     if (link%task%is_set(bits%virtual)) then
-      if (mod(link%task%id,omp%nthreads) == omp%thread) then
-        call check_recv (self, link%task)
-      end if
+      call check_recv (self, link%task)
     end if
     link => link%next
   end do
-  call check_new(self)
+  !call check_new(self)
+  !call self%lock%unset ('check_mpi')
   call trace%end (itimer)
 END SUBROUTINE check_mpi
 
@@ -202,11 +224,13 @@ SUBROUTINE check_sent (self, task)
       next => mesg%next
       if (mesg%test_sent()) then
 write (io_unit%log,*) '   deleted', task%id, mesg%id, mesg%tag, task%sent_list%n
+flush (io_unit%log)
 !write (io_unit%log,*) mesg%id, mesg%nreq, mesg%req, task%sent_list%n, mpi_mesg%nq_send, 'delete'
         call task%sent_list%remove (mesg)
         call task%sent_list%delete (mesg, send=.true.)
       else
 write (io_unit%log,*) '      kept', task%id, mesg%id, mesg%tag
+flush (io_unit%log)
 !write (io_unit%log,*) mesg%id, mesg%nreq, mesg%req, task%sent_list%n, mpi_mesg%nq_send, 'keep'
       end if
       mesg => next
@@ -250,11 +274,11 @@ SUBROUTINE check_recv (self, task)
   integer:: seq, tag
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_mesg_t%check_recv', itimer=itimer)
+  call trace%begin ('task_mesg_t%check_recv')
   !-----------------------------------------------------------------------------
   ! If the task has no pending request, issue one
   !-----------------------------------------------------------------------------
-  call task%mesg%lock%set ('check_recv')
+  call task%mesg%lock%set
   if (task%mesg%req == 0) then
     call new_request (task)
     !$omp atomic update
@@ -265,16 +289,26 @@ SUBROUTINE check_recv (self, task)
   !-----------------------------------------------------------------------------
   if (task%mesg%is_complete()) then
 !if (mpi%rank==1) &
-write (io_unit%log,*) '  received', task%id, task%mesg%id, task%mesg%tag 
+write (io_unit%log,*) '  received', task%id, task%mesg%id, task%mesg%tag
+flush (io_unit%log)
     select type (task)
     class is (patch_t)
       call unpack (self, task%mesg, task%link)
     end select
     call new_request (task)
+  else
+write (io_unit%log,*) '  nothing', task%id, task%mesg%id, task%mesg%tag
+flush (io_unit%log)
   end if
-  call task%mesg%lock%unset ('check_recv')
-  call trace%end (itimer)
+  call task%mesg%lock%unset
+write (io_unit%log,*) '  lock%unset'
+flush (io_unit%log)
+  call trace%end ()
+write (io_unit%log,*) '  trace%end'
+flush (io_unit%log)
 END SUBROUTINE check_recv
+
+
 
 !===============================================================================
 !> Increment sequence value and issue a new request
@@ -328,6 +362,7 @@ SUBROUTINE check_new (self)
         task%id, task%rank
     end if
     call unpack (self, task%mesg, task%link)
+    call omp_lock%check_pointer (task%lock, 'task_mesg_t%check_new', task%id)
     call self%add_new_link (task%link)
     nullify(task)
     call create_new (task)
@@ -355,6 +390,8 @@ contains
     task%link => task_link
     task_link%task => task
     call task%init
+    call omp_lock%check_pointer (task%lock, &
+      'task_mesg_t%create_new task%lock', task%id)
     call task_link%init
     call task%allocate_mesg
 write (io_unit%log,*) mpi%rank,' created new task', task%id

@@ -273,6 +273,8 @@ SUBROUTINE real_print (self)
   integer:: i, n_recv, lntimer
   !.............................................................................
   if (io_unit%do_validate) return
+write (io_unit%log,*) 'timer_t%print'
+flush (io_unit%log)
   !-----------------------------------------------------------------------------
   ! Prevent several treads from printing at the same time
   !-----------------------------------------------------------------------------

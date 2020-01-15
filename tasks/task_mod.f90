@@ -65,15 +65,16 @@ MODULE task_mod
     real(8):: unpack_time=0d0
     real(8):: dnload_time=-1d0          ! last dnload time
     real(4):: quality = 0.0
-    integer, dimension(:), pointer:: iit => null()
-    real(8), dimension(:), pointer:: t   => null()
-    real(8), dimension(:), pointer:: dt  => null()
-    character(len=64), pointer:: name    => null()
-    class(task_t), pointer:: parent      => null()
-    class(mesg_t), pointer:: mesg        => null()
-    class(mesg_list_t), pointer:: sent_list => null()
     character(len=64):: kind='task'     ! solver name
     character(len=12):: type='task_t'   ! task type
+    character(len=64),     pointer:: name      => null()
+    class(task_t),         pointer:: parent    => null()
+    class(mesg_t),         pointer:: mesg      => null()
+    class(mesg_list_t),    pointer:: sent_list => null()
+    type(lock_t),          pointer:: lock      => null()
+    integer, dimension(:), pointer:: iit       => null()
+    real(8), dimension(:), pointer:: t         => null()
+    real(8), dimension(:), pointer:: dt        => null()
     real:: latency=0.0                  ! MPI message latency
     real(8):: wc_last=0.0_8
     real(8):: sync_time=0d0
@@ -86,7 +87,6 @@ MODULE task_mod
     logical:: limit_dtime=.false.
     logical:: dump_it=.false.
     logical:: finished=.false.
-    type(lock_t), pointer:: lock        ! OMP lock
     type(random_t):: random             ! pseudo-random number generator
     type(aux_t):: aux
     integer(8):: amr_offset=0_8         ! byte offset in amr_io
@@ -213,6 +213,8 @@ SUBROUTINE init (self)
   !-----------------------------------------------------------------------------
   if (.not.associated(self%lock)) then
     allocate (self%lock)
+  end if
+  if (.not.self%lock%initialized) then
     call self%lock%init (self%kind(1:4), id=self%id+2)
   end if
   call self%random%init

@@ -29,6 +29,7 @@ MODULE omp_lock_mod
     character(len=4):: kind = 'void'
     integer:: level=0
     logical:: on
+    logical:: initialized=.false.
     real(8), pointer::  wait_time(:) => null()    ! time waiting for lock
     real(8), pointer::  hold_time(:) => null()    ! time holding lock
     real(8), pointer::  start_time(:) => null()   ! start time
@@ -39,6 +40,7 @@ MODULE omp_lock_mod
     class(lock_t), pointer:: next => null()
   contains
     procedure:: init
+    procedure, nopass:: check_pointer
     procedure, private:: prepend
     procedure:: set
     procedure:: test
@@ -78,7 +80,7 @@ SUBROUTINE init (self, kind, id)
   call trace%begin('lock_t%init')
 #endif
   !$omp critical (lock_cr)
-  if (self%id == -1) then
+  if (.not.self%initialized) then
     if (first_time) then
       rewind (io_unit%input)
       read (io_unit%input, lock_params, iostat=iostat)
@@ -130,6 +132,11 @@ SUBROUTINE init (self, kind, id)
       write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
         self%kind, self%id, set_id
     self%on  = on
+    if (omp%nthreads /= 2) then
+      write (io_unit%log,*) 'ERROR: inconsistent nthreads =', &
+      omp%nthreads, omp%numthreads()
+    end if
+    write(io_unit%log,*) 'omp_lock_t%set: using size =', omp%nthreads
     allocate (self%start_time(0:omp%nthreads-1))
     allocate (self%wait_time (0:omp%nthreads-1))
     allocate (self%hold_time (0:omp%nthreads-1))
@@ -139,12 +146,37 @@ SUBROUTINE init (self, kind, id)
     self%hold_time = 0d0
     self%n_hold = 0
     n_lock = n_lock+1
+    self%initialized = .true.
   end if
   !$omp end critical (lock_cr)
 #ifdef TRACE 
   call trace%end()
 #endif
 END SUBROUTINE init
+
+!===============================================================================
+!===============================================================================
+SUBROUTINE check_pointer (lock, label, id)
+  type(lock_t), pointer:: lock
+  character(len=*):: label
+  integer:: id
+  !-----------------------------------------------------------------------------
+  if (.not. associated(lock)) then
+    write (io_unit%log,*) label//' ERROR: lock not assoc', id
+    allocate (lock)
+    call lock%init
+  end if
+  if (.not. lock%initialized) then
+    write (io_unit%log,*) label//' ERROR: lock not initialized', id
+    allocate (lock)
+    call lock%init
+  end if
+  if (.not. associated(lock%start_time)) then
+    write (io_unit%log,*) label//' ERROR: start_time not associated', id
+    lock%initialized = .false.
+    call lock%init
+  end if
+END SUBROUTINE check_pointer
 
 !===============================================================================
 !> Append a lock to a simple linked list
@@ -171,7 +203,7 @@ SUBROUTINE set (self, label, itimer)
   logical:: log
   !-----------------------------------------------------------------------------
   if (.not.omp_lock%on) return
-  if (self%id == -1) call self%init
+  if (.not.self%initialized) call self%init
 #ifdef TRACE 
   call trace%begin('lock_t%set')
 #endif
@@ -193,6 +225,21 @@ SUBROUTINE set (self, label, itimer)
     end if
   end if
   thread = omp_get_thread_num()
+  if (.not.associated(self%start_time)) then
+    write(io_unit%log,*) 'omp_lock_t%set: ERROR: start_time not allocated'
+    flush(io_unit%log)
+    self%initialized = .false.
+    call self%init
+    write(io_unit%log,*) 'omp_lock_t%set: size =', size(self%start_time)
+  end if
+  if (size(self%start_time) /= omp%nthreads) then
+    write(io_unit%log,*) 'omp_lock_t%set: ERROR: start_time wrong size', &
+      size(self%start_time), omp%nthreads, associated(self%start_time)
+    flush(io_unit%log)
+    self%initialized = .false.
+    call self%init
+    write(io_unit%log,*) 'omp_lock_t%set: size =', size(self%start_time)
+  end if
   self%start_time(thread) = wallclock()
   !$omp flush
   call omp_set_nest_lock (self%lock)

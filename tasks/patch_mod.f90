@@ -278,13 +278,14 @@ END SUBROUTINE patch_to_header
 SUBROUTINE header_to_patch (self, head)
   class(patch_t):: self
   type(header_t):: head
-  integer:: nt, new
+  integer:: nt, new, i
   !-----------------------------------------------------------------------------
   ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
   ! ready bit, which is an indicator of a patch being in the ready queue, which
   ! an incoming patch is not.  By doing this here, we avoid having to do it in
   ! a critical region, otherwise needed to protect an operation on the patch
   !-----------------------------------------------------------------------------
+  call trace%begin ('patch_t%header_to_patch')
   if (iand(head%status, bits%boundary) /= 0) then
     head%status = ior(head%status, bits%virtual)
     head%status = iand(head%status, not(bits%boundary))
@@ -297,12 +298,17 @@ SUBROUTINE header_to_patch (self, head)
       write (io_unit%mpi, *) head%id, 'swapping to boundary'
   end if
   head%status = iand(head%status, not(bits%ready+bits%busy))
-  if (head%id /= self%id) then
-    call io%abort('wrong message ID unpacked')
-  end if
+  !-----------------------------------------------------------------------------
+  ! Lock task while modifying metadata
+  !-----------------------------------------------------------------------------
+  call omp_lock%check_pointer (self%lock, 'header_to_patch', self%id)
+  call self%lock%set ('header_to_patch')
   !-----------------------------------------------------------------------------
   ! Except for the first and last appearance, istep should increase be one
   !-----------------------------------------------------------------------------
+  if (head%id /= self%id) then
+    call io%abort('wrong message ID unpacked')
+  end if
   if ((self%istep > 0) .and. (iand(head%status, bits%remove) == 0)) then
     if (head%istep > self%istep+1) then
       write(io_unit%log,1) &
@@ -339,10 +345,15 @@ SUBROUTINE header_to_patch (self, head)
   self%nt         = head%nt
   nt              = head%nt
   if (nt > 0) then
-    self%t          = head%t(1:nt)
-    self%dt         = head%dt(1:nt)
-    self%iit        = head%iit(1:nt)
-    !self%new        = head%iit(nt)
+    do i=1,nt
+      !$omp atomic write
+      self%t(i)   = head%t(i)
+      !$omp atomic write
+      self%dt(i)  = head%dt(i)
+      !$omp atomic write
+      self%iit(i) = head%iit(i)
+    end do
+    !self%new      = head%iit(nt)
   else
     write (io_unit%log,*) omp%thread,'header_to_patch WARNING: nt non-positive', nt
     flush (io_unit%log)
@@ -355,8 +366,16 @@ SUBROUTINE header_to_patch (self, head)
       'patch_t%header_to_patch: id, istep, it, new, iit =', &
       self%id, self%istep, self%it, self%new, self%iit
   end if
+  if (self%it > self%nt .or. self%it < 1) then
+    write (io_unit%log,*) 'header_to_patch ERROR: it =', self%it, self%iit(nt-1)
+    self%it = self%iit(nt-1)
+  end if
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
+  call self%lock%unset ('header_to_patch')
+  !-----------------------------------------------------------------------------
+  ! Latency stats
+  !-----------------------------------------------------------------------------
   !$omp atomic
   timer%latency%max  = max(timer%latency%max,self%latency)
   !$omp atomic
@@ -364,6 +383,7 @@ SUBROUTINE header_to_patch (self, head)
   !$omp atomic
   timer%latency%n    = timer%latency%n+1
   !.............................................................................
+  call trace%end ()
 END SUBROUTINE header_to_patch
 
 !===============================================================================
@@ -763,6 +783,10 @@ SUBROUTINE dealloc (self)
     call io%bits_mem (-storage_size(self%irefine), &
                       product(shape(self%irefine)), '-irefine')
     deallocate (self%irefine)
+  end if
+  if (associated(self%mesg)) then
+    call self%mesg%dealloc
+    deallocate (self%mesg)
   end if
   call self%task_t%dealloc
   call trace%end()
@@ -1255,6 +1279,7 @@ SUBROUTINE allocate_mesg (self)
   allocate (self%mesg)
   mesg => self%mesg
   mesg%id = self%id
+  call mesg%init
   !-----------------------------------------------------------------------------
   ! Store the standard buffer size (not valid for swap requests!)
   !-----------------------------------------------------------------------------
@@ -1371,6 +1396,7 @@ SUBROUTINE unpack (self, mesg)
   class(mesg_t), pointer:: mesg
   !.............................................................................
   type(header_t):: header
+  type(lock_t), pointer:: lock
   integer:: n_buf, ibuf, iv, it
   integer, dimension(:), pointer:: buffer
   integer, save:: itimer=0
@@ -1403,19 +1429,22 @@ SUBROUTINE unpack (self, mesg)
       self%is_set(bits%swap_request), &
       mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, self%latency, self%time
   self%wc_last = wallclock()
-  if (io%verbose > 1) write (io_unit%log,1) 'patch_mod::unpk id, nq, time  after:', &
-    self%id, self%nq, self%time, &
+  if (io%verbose > 0) write (io_unit%log,1) &
+    'patch_mod::unpk id, it, nq, time  after:', &
+    self%id, self%it, self%nq, self%time, &
     self%is_set (bits%internal), &
     self%is_set (bits%boundary), &
     self%is_set (bits%virtual), &
     self%is_set (bits%external), &
     self%is_set (bits%swap_request), &
     self%wc_last
-    1 format(a,2i9,f12.6,2x,5l1,f12.1)
+    1 format(a,3i6,f12.6,2x,5l1,f12.1)
   !-----------------------------------------------------------------------------
   ! Copy the variables from the output buffer.  If this is swap of patch roles
   ! expect at least one more time slot.
   !-----------------------------------------------------------------------------
+  lock => self%mem_lock(self%it)
+  call omp_lock%check_pointer (lock, 'mem_lock', self%id)
   call self%mem_lock(self%it)%set ('unpack')
   do iv=1,self%nv
     call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
@@ -2479,6 +2508,7 @@ SUBROUTINE time_interval (self, time, jt, pt, all)
       !-------------------------------------------------------------------------
       ! Self test
       !-------------------------------------------------------------------------
+      call omp_lock%check_pointer (self%lock, 'time_interval', self%id)
       call self%lock%set ('time_interval')
       call self%timeslots (iit, t)
       if (self%verbose > 2) then
