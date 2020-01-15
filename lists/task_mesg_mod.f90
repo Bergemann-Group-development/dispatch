@@ -193,7 +193,7 @@ write (io_unit%log,*) '      sent', task%id, task%mesg%id, task%mesg%tag
         'task_mesg_t%send_to_vnbors: sent_list added to task', link%task%id
     end if
     allocate (sent_list)
-    call sent_list%lock%init
+    call sent_list%init
     task%sent_list => sent_list
   end if
   call sent_list%lock%set

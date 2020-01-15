@@ -273,7 +273,7 @@ SUBROUTINE real_print (self)
   integer:: i, n_recv, lntimer
   !.............................................................................
   if (io_unit%do_validate) return
-write (io_unit%log,*) 'timer_t%print'
+write (io_unit%log,*) 'timer_t%print begin'
 flush (io_unit%log)
   !-----------------------------------------------------------------------------
   ! Prevent several treads from printing at the same time
@@ -304,10 +304,15 @@ flush (io_unit%log)
   updates = max(1.0,real(timer%n_update-n_previous))
   musppt = sec*1d6*min(omp%nthreads,omp%ncores)/updates
   n_recv = max(timer%n_recv,1)
-  if (shared%mpi_master) &
+  if (shared%mpi_master) then
     call write_to (io_unit%output)
+  end if
+write (io_unit%log,*) 'timer_t%print 4'
+flush (io_unit%log)
   call write_to (io_unit%mpi)
   call omp_lock%info (io_unit%output, 1)
+write (io_unit%log,*) 'timer_t%print 5'
+flush (io_unit%log)
   !$omp atomic write
   timer%n_lines = 1
   timer%bytes_recv = 0.0_8
@@ -331,6 +336,8 @@ flush (io_unit%log)
   timer%spin_time = 0d0
   self%n_mhd = 0; self%n_solve=0
   omp_lock%time = 0d0
+write (io_unit%log,*) 'timer_t%print end'
+flush (io_unit%log)
   return
 contains
   subroutine write_to (unit)

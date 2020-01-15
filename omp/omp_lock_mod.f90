@@ -26,7 +26,7 @@ MODULE omp_lock_mod
     integer:: verbose=0
     integer(kind=omp_nest_lock_kind):: lock
     integer:: thread=-1
-    character(len=4):: kind = 'void'
+    character(len=4):: kind = 'orig'
     integer:: level=0
     logical:: on
     logical:: initialized=.false.
@@ -46,7 +46,7 @@ MODULE omp_lock_mod
     procedure:: test
     procedure:: check
     procedure:: unset
-    procedure:: destroy
+    procedure, nopass:: destroy
     procedure:: info
   end type
   real, save:: verbose_time=0.0
@@ -82,34 +82,38 @@ SUBROUTINE init (self, kind, id)
   !$omp critical (lock_cr)
   if (.not.self%initialized) then
     if (first_time) then
-      rewind (io_unit%input)
-      read (io_unit%input, lock_params, iostat=iostat)
-      write (io_unit%output, lock_params)
-      if (trim(log)=='queue') then
-        unit = io_unit%queue
-      else if (trim(log)=='log') then
-        unit = io_unit%log
-      else
-        unit = io_unit%output
+      !$omp critical (input_cr)
+      if (first_time) then
+        rewind (io_unit%input)
+        read (io_unit%input, lock_params, iostat=iostat)
+        write (io_unit%output, lock_params)
+        if (trim(log)=='queue') then
+          unit = io_unit%queue
+        else if (trim(log)=='log') then
+          unit = io_unit%log
+        else
+          unit = io_unit%output
+        end if
+        if (alternate_time > 0d0) then
+          close (unit)
+          ext = '.lock1'
+          ext1 = '.lock1'
+          ext2 = '.lock2'
+          filename = trim(io_unit%rankbase)//ext
+          open (unit, file=trim(filename), form='formatted', &
+                status='unknown')
+          alternate_next = wallclock() + alternate_time
+        end if
+        omp_lock%verbose = verbose
+        omp_lock%tasks = tasks
+        omp_lock%links = links
+        if (omp%nthreads == 1) then
+          on = .false.
+        end if
+        omp_lock%on = on
+        first_time = .false.
       end if
-      if (alternate_time > 0d0) then
-        close (unit)
-        ext = '.lock1'
-        ext1 = '.lock1'
-        ext2 = '.lock2'
-        filename = trim(io_unit%rankbase)//ext
-        open (unit, file=trim(filename), form='formatted', &
-              status='unknown')
-        alternate_next = wallclock() + alternate_time
-      end if
-      omp_lock%verbose = verbose
-      omp_lock%tasks = tasks
-      omp_lock%links = links
-      if (omp%nthreads == 1) then
-        on = .false.
-      end if
-      omp_lock%on = on
-      first_time = .false.
+      !$omp end critical (input_cr)
     else
       call self%prepend
     end if
@@ -155,6 +159,20 @@ SUBROUTINE init (self, kind, id)
 END SUBROUTINE init
 
 !===============================================================================
+!> Prepend a lock to a simple linked list.  The first lock added will inherit
+!> the null pointer that ends the list, from the original omp_lock%next.
+!===============================================================================
+SUBROUTINE prepend (self)
+  class(lock_t), target:: self
+  !-----------------------------------------------------------------------------
+  if (.not.omp_lock%on) return
+  self%next => omp_lock%next
+  omp_lock%next => self
+  n_lock = n_lock+1
+END SUBROUTINE prepend
+
+!===============================================================================
+!> Check a pointer to a lock
 !===============================================================================
 SUBROUTINE check_pointer (lock, label, id)
   type(lock_t), pointer:: lock
@@ -177,18 +195,6 @@ SUBROUTINE check_pointer (lock, label, id)
     call lock%init
   end if
 END SUBROUTINE check_pointer
-
-!===============================================================================
-!> Append a lock to a simple linked list
-!===============================================================================
-SUBROUTINE prepend (self)
-  class(lock_t), target:: self
-  !-----------------------------------------------------------------------------
-  if (.not.omp_lock%on) return
-  self%next => omp_lock%next
-  omp_lock%next => self
-  n_lock = n_lock+1
-END SUBROUTINE prepend
 
 !===============================================================================
 !> Return with the lock, waiting if necessary, and creating the lock if needed
@@ -375,13 +381,34 @@ SUBROUTINE unset (self, label)
 END SUBROUTINE unset
 
 !===============================================================================
-SUBROUTINE destroy (self)
-  class(lock_t):: self
+SUBROUTINE destroy (this)
+  type(lock_t), pointer:: this
   !-----------------------------------------------------------------------------
   if (.not.omp_lock%on) return
-  call omp_destroy_nest_lock (self%lock)
-  self%thread = -1
+  call remove (this)
+  call omp_destroy_nest_lock (this%lock)
+  deallocate (this)
 END SUBROUTINE destroy
+
+!===============================================================================
+SUBROUTINE remove (this)
+  type(lock_t), pointer:: this, lock, prev
+  !-----------------------------------------------------------------------------
+  if (.not.omp_lock%on) return
+  nullify (prev)
+  lock => omp_lock%next
+  do while (associated(lock))
+    if (associated(this,lock)) then
+      if (associated(prev)) then
+        prev%next => lock%next
+      else
+        omp_lock%next => lock%next
+      end if
+    end if
+    prev => lock
+    lock => lock%next
+  end do
+END SUBROUTINE remove
 
 !===============================================================================
 SUBROUTINE info (self, unit, p_verbose)
@@ -400,11 +427,15 @@ SUBROUTINE info (self, unit, p_verbose)
   if (omp_lock%verbose > -1) then
     write (io_unit%log,*) 'lock_t%info'
     !---------------------------------------------------------------------------
-    ! Find the kind of
+    ! Find the kind of locks that exist
     !---------------------------------------------------------------------------
+write (io_unit%log,*) 'omp_lock_t%info 1'
+flush (io_unit%log)
     do i=1,mkinds
       kinds(i) = '    '
     end do
+write (io_unit%log,*) 'omp_lock_t%info 2'
+flush (io_unit%log)
     n_hold = 0
     wait_time = 0d0
     hold_time = 0d0
@@ -412,6 +443,8 @@ SUBROUTINE info (self, unit, p_verbose)
     do while (associated(lock))
       nkinds = 1
       kinds(1) = 'void'
+write (io_unit%log,*) 'omp_lock_t%info 3', lock%id, ':'//trim(lock%kind)//':'
+flush (io_unit%log)
       do i=1,mkinds
         if (lock%kind(1:4) == kinds(i)) then
           exit

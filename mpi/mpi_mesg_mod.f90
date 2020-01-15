@@ -40,10 +40,10 @@ MODULE mpi_mesg_mod
     real(8):: test_next=0d0
     real:: test_time=0.0
     logical:: anonymous=.true.
-    type(lock_t):: lock
+    type(lock_t), pointer:: lock
   contains
     procedure:: init => init_mesg
-    procedure:: dealloc
+    procedure:: dealloc => dealloc_mesg
     procedure:: send
     procedure:: irecv
     procedure, private:: test_all
@@ -63,8 +63,10 @@ MODULE mpi_mesg_mod
     character(len=16):: name='mesg_list'
     integer:: n=0, na=0
     integer:: id=0
-    type(lock_t):: lock
+    type(lock_t), pointer:: lock
   contains
+    procedure:: init => init_list
+    procedure:: dealloc => dealloc_list
     procedure:: add
     procedure:: remove
     procedure:: delete
@@ -127,16 +129,17 @@ SUBROUTINE init_mesg (self)
   class(mesg_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('mesg_t%init')
+  allocate (self%lock)
   call self%lock%init
   call trace%end ()
 END SUBROUTINE init_mesg
 
 !===============================================================================
-SUBROUTINE dealloc (self)
+SUBROUTINE dealloc_mesg (self)
   class(mesg_t):: self
   !-----------------------------------------------------------------------------
-  call trace%begin ('mesg_t%dealloc')
-  call self%lock%destroy
+  call trace%begin ('mesg_t%dealloc_mesg')
+  call omp_lock%destroy (self%lock)
   if (associated(self%buffer)) then
     call io%bits_mem (-storage_size(self%buffer), &
                       product(shape(self%buffer)), '-buffer')
@@ -148,7 +151,7 @@ SUBROUTINE dealloc (self)
     deallocate (self%reqs)
   end if
   call trace%end ()
-END SUBROUTINE dealloc
+END SUBROUTINE dealloc_mesg
 
 !===============================================================================
 !> Send a buffer, already prepared with size and id tag, returning a request id
@@ -391,6 +394,25 @@ FUNCTION is_complete (self, parentname)
     call trace%end ()
   end if
 END FUNCTION is_complete
+
+!===============================================================================
+SUBROUTINE init_list (self)
+  class(mesg_list_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('msg_list_t%init_list')
+  allocate (self%lock)
+  call self%lock%init
+  call trace%end ()
+END SUBROUTINE init_list
+
+!===============================================================================
+SUBROUTINE dealloc_list (self)
+  class(mesg_list_t):: self
+  !-----------------------------------------------------------------------------
+  call trace%begin ('msg_list_t%init_list')
+  call omp_lock%destroy (self%lock)
+  call trace%end ()
+END SUBROUTINE dealloc_list
 
 !===============================================================================
 !> Append a mesg at the end of the message list.  Since adding and removing use
