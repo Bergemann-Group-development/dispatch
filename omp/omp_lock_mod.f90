@@ -95,6 +95,7 @@ SUBROUTINE init (self, kind, id)
           unit = io_unit%output
         end if
         if (alternate_time > 0d0) then
+          unit = io_unit%queue
           close (unit)
           ext = '.lock1'
           ext1 = '.lock1'
@@ -136,11 +137,6 @@ SUBROUTINE init (self, kind, id)
       write(unit,*) omp_get_thread_num(), 'initialized lock kind, id ', &
         self%kind, self%id, set_id
     self%on  = on
-    if (omp%nthreads /= 2) then
-      write (io_unit%log,*) 'ERROR: inconsistent nthreads =', &
-      omp%nthreads, omp%numthreads()
-    end if
-    write(io_unit%log,*) 'omp_lock_t%set: using size =', omp%nthreads
     allocate (self%start_time(0:omp%nthreads-1))
     allocate (self%wait_time (0:omp%nthreads-1))
     allocate (self%hold_time (0:omp%nthreads-1))
@@ -216,7 +212,7 @@ SUBROUTINE set (self, label, itimer)
   !-----------------------------------------------------------------------------
   ! Must print log info before the lock, to reveal dead-locks
   !-----------------------------------------------------------------------------
-  !call alternate_log (self)
+  call alternate_log (self)
   wc = wallclock()
   log = wc < verbose_time .or. omp_lock%verbose > 1
   if (log) then
@@ -229,6 +225,7 @@ SUBROUTINE set (self, label, itimer)
         ' lock kind, id, level, thread = ', self%kind, self%id, &
         self%level, omp%thread, '   get'
     end if
+    flush (unit)
   end if
   thread = omp_get_thread_num()
   if (.not.associated(self%start_time)) then
@@ -281,13 +278,22 @@ SUBROUTINE alternate_log (self)
   if (alternate_time > 0d0) then
     wc = wallclock()
     if (wc > alternate_next) then
-      ext = ext2
-      ext2 = ext1
-      ext1 = ext
-      close (unit)
-      open (unit, file=trim(io_unit%rankbase)//ext, form='formatted', &
-            status='unknown')
-      alternate_next = wc + alternate_time
+      write (io_unit%log,*) omp%thread,'waiting at lock_cr'
+      flush (io_unit%log)
+      !$omp critical (lock_cr)
+      write (io_unit%log,*) omp%thread,'in lock_cr'
+      if (wc > alternate_next) then
+        flush (io_unit%log)
+        ext = ext2
+        ext2 = ext1
+        ext1 = ext
+        close (unit)
+        open (unit, file=trim(io_unit%rankbase)//ext, form='formatted', &
+              status='unknown')
+        alternate_next = wc + alternate_time
+      end if
+      write (io_unit%log,*) omp%thread,'exit lock_cr'
+      !$omp end critical (lock_cr)
     end if
   end if
 END SUBROUTINE alternate_log
@@ -429,13 +435,9 @@ SUBROUTINE info (self, unit, p_verbose)
     !---------------------------------------------------------------------------
     ! Find the kind of locks that exist
     !---------------------------------------------------------------------------
-write (io_unit%log,*) 'omp_lock_t%info 1'
-flush (io_unit%log)
     do i=1,mkinds
       kinds(i) = '    '
     end do
-write (io_unit%log,*) 'omp_lock_t%info 2'
-flush (io_unit%log)
     n_hold = 0
     wait_time = 0d0
     hold_time = 0d0
@@ -443,8 +445,6 @@ flush (io_unit%log)
     do while (associated(lock))
       nkinds = 1
       kinds(1) = 'void'
-write (io_unit%log,*) 'omp_lock_t%info 3', lock%id, ':'//trim(lock%kind)//':'
-flush (io_unit%log)
       do i=1,mkinds
         if (lock%kind(1:4) == kinds(i)) then
           exit

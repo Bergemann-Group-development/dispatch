@@ -271,10 +271,7 @@ SUBROUTINE test_all (self, flag)
     call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
   else
     !$omp critical (mpi_cr)
-write(io_unit%log,*) self%nreq, self%reqs(1:self%nreq), 'test_all'
-req = self%reqs(1)
     call MPI_TESTALL (self%nreq, self%reqs, flag, MPI_STATUSES_IGNORE, ierr)
-write(io_unit%log,*) self%nreq, req, 'test_all', flag
     !$omp end critical (mpi_cr)
   end if
 #else
@@ -401,7 +398,7 @@ SUBROUTINE init_list (self)
   !-----------------------------------------------------------------------------
   call trace%begin ('msg_list_t%init_list')
   allocate (self%lock)
-  call self%lock%init
+  call self%lock%init ('mlist')
   call trace%end ()
 END SUBROUTINE init_list
 

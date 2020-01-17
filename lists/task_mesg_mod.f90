@@ -81,7 +81,7 @@ MODULE task_mesg_mod
     procedure:: recv_from_vnbors
   end type
   integer, save:: verbose=0
-  logical, save:: use_hashtable=.true.
+  logical, save:: lock_recv=.false.
   character(len=8), save:: method='irecv'
   public:: task2patch
   type(task_mesg_t), public:: task_mesg
@@ -95,7 +95,7 @@ SUBROUTINE init (self, name)
   character(len=*), optional:: name
   integer:: iostat
   class(link_t), pointer:: link
-  namelist /task_mesg_params/ verbose, method
+  namelist /task_mesg_params/ verbose, method, lock_recv
   character(len=120):: id = &
     '$Id$ lists/task_mesg_mod.f90'
   !-----------------------------------------------------------------------------
@@ -182,9 +182,9 @@ SUBROUTINE send_to_vnbors (self, link)
   call trace%begin ('task_mesg_t%send_to_vnbors')
   task => link%task
   task%seq = task%seq + 1
-write (io_unit%log,*) link%task%seq, 'calling list_t%send_to_vnbors'  
+!write (io_unit%log,*) link%task%seq, 'calling list_t%send_to_vnbors'  
   call self%list_t%send_to_vnbors (link)
-write (io_unit%log,*) '      sent', task%id, task%mesg%id, task%mesg%tag 
+!write (io_unit%log,*) '      sent', task%id, task%mesg%id, task%mesg%tag 
   if (associated(task%sent_list)) then
     sent_list => task%sent_list
   else
@@ -196,17 +196,17 @@ write (io_unit%log,*) '      sent', task%id, task%mesg%id, task%mesg%tag
     call sent_list%init
     task%sent_list => sent_list
   end if
-  call sent_list%lock%set
+  call sent_list%lock%set ('send_to_vnbors')
   call sent_list%add (link%task%mesg)
   !$omp atomic update
   mpi_mesg%nq_send = mpi_mesg%nq_send+1
   call check_sent (self, task)
-  call sent_list%lock%unset
+  call sent_list%lock%unset ('send_to_vnbors')
   call trace%end ()
 END SUBROUTINE send_to_vnbors
 
 !===============================================================================
-!> Check recv messages on all virtual task nbors
+!> Check sent messages for this task
 !===============================================================================
 SUBROUTINE check_sent (self, task)
   class(task_mesg_t):: self
@@ -223,14 +223,14 @@ SUBROUTINE check_sent (self, task)
     do while (associated(mesg))
       next => mesg%next
       if (mesg%test_sent()) then
-write (io_unit%log,*) '   deleted', task%id, mesg%id, mesg%tag, task%sent_list%n
-flush (io_unit%log)
+!write (io_unit%log,*) '   deleted', task%id, mesg%id, mesg%tag, task%sent_list%n
+!flush (io_unit%log)
 !write (io_unit%log,*) mesg%id, mesg%nreq, mesg%req, task%sent_list%n, mpi_mesg%nq_send, 'delete'
         call task%sent_list%remove (mesg)
         call task%sent_list%delete (mesg, send=.true.)
       else
-write (io_unit%log,*) '      kept', task%id, mesg%id, mesg%tag
-flush (io_unit%log)
+!write (io_unit%log,*) '      kept', task%id, mesg%id, mesg%tag
+!flush (io_unit%log)
 !write (io_unit%log,*) mesg%id, mesg%nreq, mesg%req, task%sent_list%n, mpi_mesg%nq_send, 'keep'
       end if
       mesg => next
@@ -274,11 +274,17 @@ SUBROUTINE check_recv (self, task)
   integer:: seq, tag
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  call trace%begin ('task_mesg_t%check_recv')
+  if (lock_recv) then
+    call task%mesg%lock%set ('check_recv')
+  else
+    if (mod(task%id,omp%nthreads) /= omp%thread) then
+      return
+    end if
+  end if
+call trace%begin ('task_mesg_t%check_recv')
   !-----------------------------------------------------------------------------
   ! If the task has no pending request, issue one
   !-----------------------------------------------------------------------------
-  call task%mesg%lock%set
   if (task%mesg%req == 0) then
     call new_request (task)
     !$omp atomic update
@@ -289,26 +295,22 @@ SUBROUTINE check_recv (self, task)
   !-----------------------------------------------------------------------------
   if (task%mesg%is_complete()) then
 !if (mpi%rank==1) &
-write (io_unit%log,*) '  received', task%id, task%mesg%id, task%mesg%tag
-flush (io_unit%log)
+!write (io_unit%log,*) '  received', task%id, task%mesg%id, task%mesg%tag
+!flush (io_unit%log)
     select type (task)
     class is (patch_t)
       call unpack (self, task%mesg, task%link)
     end select
     call new_request (task)
   else
-write (io_unit%log,*) '  nothing', task%id, task%mesg%id, task%mesg%tag
-flush (io_unit%log)
+!write (io_unit%log,*) '  nothing', task%id, task%mesg%id, task%mesg%tag
+!flush (io_unit%log)
   end if
-  call task%mesg%lock%unset
-write (io_unit%log,*) '  lock%unset'
-flush (io_unit%log)
+  if (lock_recv) then
+    call task%mesg%lock%unset ('check_recv')
+  end if
   call trace%end ()
-write (io_unit%log,*) '  trace%end'
-flush (io_unit%log)
 END SUBROUTINE check_recv
-
-
 
 !===============================================================================
 !> Increment sequence value and issue a new request
@@ -322,7 +324,7 @@ SUBROUTINE new_request (task)
     task%mesg%tag = task%id*100 + mod(task%seq,100)
     task%mesg%sender = task%rank
 !if (mpi%rank==1) &
-write (io_unit%log,*) ' requested', task%id, task%mesg%id, task%mesg%tag 
+!write (io_unit%log,*) ' requested', task%id, task%mesg%id, task%mesg%tag 
     call task%mesg%request
   end select
 END SUBROUTINE new_request
@@ -362,7 +364,6 @@ SUBROUTINE check_new (self)
         task%id, task%rank
     end if
     call unpack (self, task%mesg, task%link)
-    call omp_lock%check_pointer (task%lock, 'task_mesg_t%check_new', task%id)
     call self%add_new_link (task%link)
     nullify(task)
     call create_new (task)
@@ -390,11 +391,9 @@ contains
     task%link => task_link
     task_link%task => task
     call task%init
-    call omp_lock%check_pointer (task%lock, &
-      'task_mesg_t%create_new task%lock', task%id)
     call task_link%init
     call task%allocate_mesg
-write (io_unit%log,*) mpi%rank,' created new task', task%id
+!write (io_unit%log,*) mpi%rank,' created new task', task%id
     task%rank = -1
     task%seq = 0
     call task%set (bits%virtual)

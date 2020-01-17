@@ -451,7 +451,7 @@ SUBROUTINE update (self, task_list, test)
     !---------------------------------------------------------------------------
     !$omp atomic update
     n_stalled = n_stalled+1
-write (io_unit%log,*) 'n_stalled(2) =', n_stalled
+!write (io_unit%log,*) 'n_stalled(2) =', n_stalled
   end if
   call trace%end (itimer(i))
 contains

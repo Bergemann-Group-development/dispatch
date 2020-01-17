@@ -915,7 +915,6 @@ SUBROUTINE make_child_patch (self, tlist, parent, pos, child_size, &
   ! and add it also to the ready queue.  Since the parent was ready to update,
   ! so is the child (at the same time, with a sub-set of the nbors).
   !-----------------------------------------------------------------------------
-write (io_unit%log,*) child%seq, 'calling add_new_link'
   call tlist%add_new_link (child_link)
   call tlist%queue_by_time (child_link)
   !-----------------------------------------------------------------------------

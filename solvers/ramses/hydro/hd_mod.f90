@@ -234,17 +234,17 @@ SUBROUTINE update (self)
   ! Deallocate
   !-----------------------------------------------------------------------------
   call self%counter_update
-write (io_unit%log,*) &
-associated(self%q), &
-associated(self%qp), &
-associated(self%qm), &
-associated(self%dq), &
-associated(self%fl), &
-associated(self%s)
-flush(io_unit%log)
+!write (io_unit%log,*) &
+!associated(self%q), &
+!associated(self%qp), &
+!associated(self%qm), &
+!associated(self%dq), &
+!associated(self%fl), &
+!associated(self%s)
+!flush(io_unit%log)
   deallocate (self%q,self%qp,self%qm,self%dq,self%fl,self%s)
-write (io_unit%log,*) 'deallocated'
-flush(io_unit%log)
+!write (io_unit%log,*) 'deallocated'
+!flush(io_unit%log)
   call trace%end (itimer)
 END SUBROUTINE update
 

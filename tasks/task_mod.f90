@@ -523,19 +523,21 @@ SUBROUTINE timeslots2 (self, slots, times)
 END SUBROUTINE timeslots2
 
 !===============================================================================
-!> Check if self (which is a nbor task) is ahead of target (which is the one to
+!> Check if self (which is an nbor task) is ahead of target (which is the one to
 !> possibly move to the ready queue), using self%dtime*target%grace as the grace
 !> period, since we want to limit the extrapolation in the nbor task to at most
 !> target%grace*self%dtime.
 !===============================================================================
 LOGICAL FUNCTION is_ahead_of (self, target)
   class (task_t):: self, target
-  real(8):: nbtime, nbdtime
+  real(8):: nbtime, nbdtime, tgtime
   !.............................................................................
   !$omp atomic read
   nbtime = self%time
   !$omp atomic read
   nbdtime = self%dtime
+  !$omp atomic read
+  tgtime = target%dtime
   ! -- if a task is frozen (in time) assume it is forever ahead of other tasks
   if (self%is_set(bits%frozen)) then
     is_ahead_of = .true.
@@ -544,10 +546,10 @@ LOGICAL FUNCTION is_ahead_of (self, target)
 !    is_ahead_of = .false.
   ! -- do not use a grace interval for the first few steps
   else if (self%istep < 3) then
-    is_ahead_of = nbtime >= target%time
+    is_ahead_of = nbtime >= tgtime
   ! -- use a grace interval that is fraction of the nbor time step
   else
-    is_ahead_of = nbtime + nbdtime*self%grace > target%time
+    is_ahead_of = nbtime + nbdtime*self%grace > tgtime
   end if
   if (io_unit%verbose>1) then
     if (target%id==io%id_debug.or.io_unit%verbose>4) &

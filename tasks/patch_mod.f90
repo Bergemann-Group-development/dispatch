@@ -301,7 +301,6 @@ SUBROUTINE header_to_patch (self, head)
   !-----------------------------------------------------------------------------
   ! Lock task while modifying metadata
   !-----------------------------------------------------------------------------
-  call omp_lock%check_pointer (self%lock, 'header_to_patch', self%id)
   call self%lock%set ('header_to_patch')
   !-----------------------------------------------------------------------------
   ! Except for the first and last appearance, istep should increase be one
@@ -1429,7 +1428,7 @@ SUBROUTINE unpack (self, mesg)
       self%is_set(bits%swap_request), &
       mpi_mesg%sent_list%n, mpi_mesg%recv_list%n, self%latency, self%time
   self%wc_last = wallclock()
-  if (io%verbose > 0) write (io_unit%log,1) &
+  if (io%verbose > 1) write (io_unit%log,1) &
     'patch_mod::unpk id, it, nq, time  after:', &
     self%id, self%it, self%nq, self%time, &
     self%is_set (bits%internal), &
@@ -1445,7 +1444,7 @@ SUBROUTINE unpack (self, mesg)
   !-----------------------------------------------------------------------------
   lock => self%mem_lock(self%it)
   call omp_lock%check_pointer (lock, 'mem_lock', self%id)
-  call self%mem_lock(self%it)%set ('unpack')
+  call lock%set ('unpack')
   do iv=1,self%nv
     call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,self%it,1))
 !write(io_unit%log,'(a,i6,2i4,1p,e14.5)') &
@@ -1453,10 +1452,11 @@ SUBROUTINE unpack (self, mesg)
 !self%id, iv, self%it, minval(self%mem(:,:,:,iv,it,1))
     ibuf = ibuf + n_buf
   end do
-  call self%mem_lock(self%it)%unset ('unpack')
+  call lock%unset ('unpack2')
   if (self%is_set(bits%swap_request) .and. self%is_set(bits%virtual)) then
     it = mod(self%it-1+self%nt-1,self%nt)+1
-    call self%mem_lock(it)%set ('unpack')
+    lock => self%mem_lock(it)
+    call lock%set ('unpack')
     if (io%verbose>0) then
       write (io_unit%log,*) self%id, 'extra time slot unpacked', it
       flush (io_unit%log)
@@ -1465,7 +1465,7 @@ SUBROUTINE unpack (self, mesg)
       call anonymous_copy (n_buf, buffer(ibuf), self%mem(:,:,:,iv,it,1))
       ibuf = ibuf + n_buf
     end do
-    call self%mem_lock(it)%unset ('unpack')
+    call lock%unset ('unpack2')
   end if
   if (io%verbose > 2) &
     write (io_unit%log,*) self%id, 'after unpack', minval(self%mem(:,:,:,1,self%it,1))

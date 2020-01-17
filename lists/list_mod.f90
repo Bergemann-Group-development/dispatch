@@ -1298,7 +1298,7 @@ SUBROUTINE add_new_link (self, link)
   ! send it to rank nbors.
   !-----------------------------------------------------------------------------
   call self%append (link)
-write (io_unit%log,*) link%task%seq, 'calling send_to_vnbors'  
+!write (io_unit%log,*) link%task%seq, 'calling send_to_vnbors'  
   if (link%task%is_set (bits%boundary)) &
     call self%send_to_vnbors (link)
   call self%set_init_nbors (link)                                       ! RULE C
@@ -2751,7 +2751,7 @@ SUBROUTINE send_to_vnbors (self, link)
   !-----------------------------------------------------------------------------
   ! The first time a task is sent it has tag = task%id*100 + 1
   !-----------------------------------------------------------------------------
-write (io_unit%log,*) link%task%seq, 'in send_to_vnbors'  
+!write (io_unit%log,*) link%task%seq, 'in send_to_vnbors'  
   if (mpi_mesg%uniq_mesg .and. mpi_mesg%tag_type == 1) then
     !---------------------------------------------------------------------------
     ! A new child task has task%seq=-1, which becomes 0 in task_mesg_t%send_to..
