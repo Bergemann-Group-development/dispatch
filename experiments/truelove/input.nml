@@ -7,10 +7,10 @@
  do_trace=f
  do_debug=f
  do_output=t
- do_legacy=t
  omp_trace=f
  namelist_errors=t
  guard_zones=t
+ method='parallel'
 /
 
 &cartesian_params
@@ -23,7 +23,7 @@
 &out_params
  end_time=0.511
  !end_time=0.611
- out_time=0.005
+ out_time=0.05
  print_time=0.001
 /
 
@@ -85,9 +85,9 @@
 /
 
 &refine_params
- do_refine=t
+ on=t
  min_jeans=0.25
- refinement_ratio=3
+ ratio=3
  check_interval=8
  refine_from_t=0.0
  refine_until_t=99.0
@@ -122,20 +122,20 @@
 /
 
 &ramses_params
- courant_factor=0.8
+ courant_factor=0.2666667
  gamma=1.0001
  slope_type=2
  smallr=1e-4
  smallc=5e-1
  riemann='hllc'
- do_isothermal=t
+ isothermal=t
 /
 
 &stagger_params
  gamma=1.0
- !csound=0.077746 ! non-rotating case
+ csound=0.077746 ! non-rotating case
  !csound=0.08451 ! rotating case
- csound=0.1829 ! rotating, perturbed case
+ !csound=0.1829 ! rotating, perturbed case
  nu=  0.20, 1.0, 1.0, 0.2, 1.0, 1.0
  !     cs    pa  ofd  mas  kap  eta
 /

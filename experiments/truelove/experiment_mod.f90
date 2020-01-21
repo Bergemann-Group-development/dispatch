@@ -45,7 +45,9 @@ SUBROUTINE update_experiment (self)
   integer:: m
   !----------------------------------------------------------------------------
   call trace%begin('experiment_t%update')
+  call pboundaries%conditions(self, self%it)
   call self%solver_t%update()
+  call pboundaries%conditions(self, self%new)
   call trace%end()
 END SUBROUTINE update_experiment
 
