@@ -191,7 +191,7 @@ SUBROUTINE update (self, task_list, test)
   ! harm is done if that makes the thread hangs for a while; other threads work
   !-----------------------------------------------------------------------------
   call data_io%open_and_close ()
-  if (task_list%verbose > 2) &
+  if (task_list%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' waiting for tasklist(1)'
   if (detailed_timer) then
     call trace%end (itimer(i))
@@ -332,6 +332,7 @@ SUBROUTINE update (self, task_list, test)
         !call task_list%queue%qlock%unset ('dipatcher0')
       end if
       call task%clear (bits%ready)                           ! not in queue
+write(io_unit%log,*) task%id, 'clear ready bit'
       if (track_active) &
         call task_list%queue_active (head)
       !$omp atomic
@@ -380,7 +381,7 @@ SUBROUTINE update (self, task_list, test)
       write(io_unit%log,'(f12.6,i6,2x,a)') wallclock(), task_list%na, 'no queue'
   end if
   call task_list%lock%unset ('dispatch0_t%update 1')
-  if (task_list%verbose > 2) &
+  if (task_list%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(1)'
   !-----------------------------------------------------------------------------
   ! As long as we are syncing, skip the update and come back.  The on thread

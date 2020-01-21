@@ -278,7 +278,7 @@ END SUBROUTINE patch_to_header
 SUBROUTINE header_to_patch (self, head)
   class(patch_t):: self
   type(header_t):: head
-  integer:: nt, new, i
+  integer:: nt, new, i, save_bits
   !-----------------------------------------------------------------------------
   ! Swap the roles of boundary and virtual on incoming patches.  Also clear the
   ! ready bit, which is an indicator of a patch being in the ready queue, which
@@ -301,7 +301,8 @@ SUBROUTINE header_to_patch (self, head)
   !-----------------------------------------------------------------------------
   ! Lock task while modifying metadata
   !-----------------------------------------------------------------------------
-  call self%lock%set ('header_to_patch')
+  if (omp_lock%tasks) &
+    call self%lock%set ('header_to_patch')
   !-----------------------------------------------------------------------------
   ! Except for the first and last appearance, istep should increase be one
   !-----------------------------------------------------------------------------
@@ -322,8 +323,17 @@ SUBROUTINE header_to_patch (self, head)
       flush (io_unit%log)
     end if
   end if
+  !-----------------------------------------------------------------------------
+  ! If the task is virtual, preserve bits%init_nbors and bits%update_status
+  ! across the task update
+  !-----------------------------------------------------------------------------
+  if (self%is_set(bits%virtual)) then
+    save_bits = iand(self%status,bits%init_nbors+bits%update_status)
+    self%status = ior(self%status,save_bits)
+  else
+    self%status     = head%status
+  end if
   self%id         = head%id
-  self%status     = head%status
   self%rank       = head%rank
   self%istep      = head%istep
   self%iout       = head%iout
@@ -371,7 +381,8 @@ SUBROUTINE header_to_patch (self, head)
   end if
   self%nq         = head%nq
   self%latency    = wallclock() - head%send_time
-  call self%lock%unset ('header_to_patch')
+  if (omp_lock%tasks) &
+    call self%lock%unset ('header_to_patch')
   !-----------------------------------------------------------------------------
   ! Latency stats
   !-----------------------------------------------------------------------------

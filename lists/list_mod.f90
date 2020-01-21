@@ -255,10 +255,10 @@ SUBROUTINE append_link (self, link)
   !.............................................................................
   call trace%begin ('list_t%append_link ')
   call link%init
-  if (self%verbose > 2) &
+  if (self%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' wait for tasklist(2)'
   call self%lock%set ('list_t%append_link')
-  if (self%verbose > 2) &
+  if (self%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(2)'
   nullify(link%next)
   if (associated(self%tail)) then
@@ -289,7 +289,7 @@ SUBROUTINE append_link (self, link)
     write (io_unit%log,*) 'list_t%append: (2) n =', &
       trim(self%name), self%n, link%task%id
   call self%lock%unset ('list_t%append_link')
-  if (self%verbose > 2) &
+  if (self%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' unlocked tasklist(2)'
   call trace%end()
 END SUBROUTINE append_link
@@ -918,8 +918,9 @@ SUBROUTINE check_ready (self, link, lock, status)
   if (task%is_clear (ignore)) then
     !...........................................................................
     if (self%verbose > 2) then
-      write (io_unit%log,'(f12.6,1x,a,i6,l4)') wallclock(), &
-       'list_t%check_ready: task', link%task%id, present(lock)
+      write (io_unit%log,'(f12.6,1x,a,i6,2l3)') wallclock(), &
+       'list_t%check_ready: task, lock, nbors', link%task%id, present(lock), &
+       associated(link%nbor)
     end if
     !---------------------------------------------------------------------------
     ! Since only this thread can change the nbor list we are free to use it w/o
@@ -942,6 +943,7 @@ SUBROUTINE check_ready (self, link, lock, status)
     nbor => link%nbor                                   ! use original nbor list
     t_oldest = huge(1d0)
     do while (associated (nbor))                        ! keep going until end
+      write (io_unit%log,*) nbor%task%id, nbor%task%time
       !-------------------------------------------------------------------------
       ! Check for any non-supported nbors and nix on them, setting also a bit
       ! that marks them to be ignored when checking nbors for readiness.  The
@@ -983,14 +985,28 @@ SUBROUTINE check_ready (self, link, lock, status)
         if (.not. nbor%task%is_ahead_of(task)) then       ! and is ahead in time
           ok = .false.
           status_l = max(1,status_l)
-          !.....................................................................
-          if (self%verbose > 2) &
-            write (io_unit%log,'(f12.6,1x,a,i6,1x,a,i6,i4,f12.6)') wallclock(),&
-              'list_t%check_ready:', link%task%id, &
-              'fails on nbor, level, delta_t =', nbor%task%id, nbor%task%level,&
-              (nbor%task%time-task%time)/max(task%dtime,tiny(1d0))
-          !.....................................................................
         end if
+        !.......................................................................
+        if (self%verbose > 1) &
+          write (io_unit%log,'(f12.6,1x,a,i6,1x,a,i6,i4,f12.6,l2)') &
+            wallclock(), &
+            'list_t%check_ready:', link%task%id, &
+            'nbor, level, delta_t, ahead =', nbor%task%id, nbor%task%level, &
+            (nbor%task%time-task%time)/max(task%dtime,tiny(1d0)), &
+            nbor%task%is_ahead_of(task)
+        !.......................................................................
+      else
+        !.......................................................................
+        if (self%verbose > 1) &
+          write (io_unit%log,'(f12.6,1x,a,i6,1x,a,i6,i4,2x,4l1)') &
+            wallclock(), &
+            'list_t%check_ready:', link%task%id, &
+            'skips nbor, level, NIRF =', &
+            nbor%task%id, nbor%task%level, &
+            nbor%needed, nbor%task%is_set (ignore), &
+            nbor%task%is_set (bits%remove ), &
+            nbor%task%is_set (bits%frozen )
+        !.......................................................................
       end if
       if (.not.ok) then
         if (nbor%task%time < t_oldest) then
@@ -1312,8 +1328,22 @@ SUBROUTINE add_new_link (self, link)
 END SUBROUTINE add_new_link
 
 !===============================================================================
-!> Initialize the nbor list of a task at level L, by searching for overlapping
-!> tasks with levels at most differing by one.  
+!> Initialize the nbor list of a task at level L:  
+!> 1) Initially, levels L+-2 are entered into the nbor list, and are 
+!>    subsequently checked by prune_nbors(), which removes nbors at L+2 that
+!>    have support at L+1, and nbors at L-2, if the current task has support
+!>    at L-1.
+!> 2) Tasks that have nbors at level L-2 lack support, and should be rejected
+!>    when tested by check_ready(). The bits%no_support are set for such tasks.
+!> 3) Task with bits%no_support set are not counted when check_ready loops over
+!>    nbors to other tasks
+!> 4) When a level L task that has a level L+2 nbor is checked by refine_mod,
+!>    it will be refined, creating an L+1 nbor that provides support for the
+!>    L+2 task.  When the last level L nbor of the L+2 task is refined, the
+!>    level L+2 task has support, and the bits%no_support should be cleared.
+!> 5) Level L task with level L+2 nbors are fine, and need no special treatment,
+!>    except they should not download data from its L+2 nbors; this is enforced
+!>    by giving any L+-2 nbor a setting nbor%download=.false.
 !===============================================================================
 SUBROUTINE init_nbors (self, link)
   class(list_t):: self
@@ -1439,40 +1469,43 @@ SUBROUTINE prune_nbors (self, link, head, status)
   !.............................................................................
   class(link_t), pointer:: nbor, next, nbor2
   logical:: removed
-  integer:: n
+  integer:: n(2)
   !-----------------------------------------------------------------------------
   call trace%begin ('list_t%prune_nbors')
   removed = .false.
   n = 0
-  nbor => head
-  do while (associated(nbor))
-    next => nbor%next
-    if (nbor%task%level == link%task%level-2) then
-      !-------------------------------------------------------------------------
-      if (self%verbose > 1) then
-        write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
-          'list_t%prune_nbors: L-2 task id, level =', &
-          nbor%task%id, nbor%task%level
-        flush (io_unit%log)
-      end if
-      !-------------------------------------------------------------------------
-      ! Prune level L-2 tasks from nbor list, if it contains an L-1 task
-      !-------------------------------------------------------------------------
-      n = n+1
-      if (self%check_support (nbor%link, -1) <= 0) then
-        !...................................................................
+  !-----------------------------------------------------------------------------
+  ! If link%task has support, then remove any L-2 nbors
+  !-----------------------------------------------------------------------------
+  if (check_support (self, link, -1) <= 0) then
+    nbor => head
+    do while (associated(nbor))
+      next => nbor%next
+      if (nbor%task%level == link%task%level-2) then
+        !-------------------------------------------------------------------------
         if (self%verbose > 1) then
           write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
-            'list_t%prune_nbors: removing L-2 id, level =', &
+            'list_t%prune_nbors: L-2 task id, level =', &
             nbor%task%id, nbor%task%level
           flush (io_unit%log)
         end if
-        !...................................................................
         call link%remove_nbor (nbor%task, head)
-        n = n-1
         removed = .true.
       end if
-    else if (nbor%task%level == link%task%level+2) then
+      nbor => next
+    end do
+    call link%task%clear (bits%no_support)  
+  else
+    call link%task%set (bits%no_support)
+  end if
+  !-----------------------------------------------------------------------------
+  ! If the task has L+2 nbors, check if those tasks have support, and remove
+  ! them if they do
+  !-----------------------------------------------------------------------------
+  nbor => head
+  do while (associated(nbor))
+    next => nbor%next
+    if (nbor%task%level == link%task%level+2) then
       !.........................................................................
       if (self%verbose > 1) then
         write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
@@ -1481,20 +1514,20 @@ SUBROUTINE prune_nbors (self, link, head, status)
         flush (io_unit%log)
       end if
       !-------------------------------------------------------------------------
-      ! Prune level L+2 tasks from nbor list, if an L+1 task contains it
+      ! Prune any level L+2 task from nbor list, if it has support
       !-------------------------------------------------------------------------
-      n = n+1
-      if (self%check_support (nbor%link, +1) <= 0) then
-        !...................................................................
+      n(2) = n(2)+1
+      if (self%check_support (nbor%link, -1) <= 0) then
+        !.......................................................................
         if (self%verbose > 1) then
           write (io_unit%log,'(f12.6,1x,a,i6,i4)') wallclock(), &
             'list_t%prune_nbors: removing L+2 id, level =', &
             nbor%task%id, nbor%task%level
           flush (io_unit%log)
         end if
-        !...................................................................
+        !.......................................................................
         call link%remove_nbor (nbor%task, head)
-        n = n-1
+        n(2) = n(2)-1
         removed = .true.
       end if
     end if
@@ -1508,11 +1541,11 @@ SUBROUTINE prune_nbors (self, link, head, status)
     call self%update_status (link)
   end if
   if (present(status)) then
-    status = n
+    status = n(1)
   end if
   !.............................................................................
   if (self%verbose > 0) then
-    write (io_unit%log,'(f12.6,1x,a,i6,2i4)') wallclock(), &
+    write (io_unit%log,'(f12.6,1x,a,i6,3i4)') wallclock(), &
       'list_t%prune_nbors: id, level, n =', &
       link%task%id, link%task%level, n
     flush (io_unit%log)
@@ -1784,10 +1817,10 @@ SUBROUTINE remove_task (self, task)
   class(link_t), pointer:: link, prev
   !.............................................................................
   call trace%begin('list_t%remove_task')
-  if (self%verbose > 2) &
+  if (self%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' wait for tasklist(3)'
   call self%lock%set ('remove_task')
-  if (self%verbose > 2) &
+  if (self%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(3)'
   link => self%head
   nullify (prev)
@@ -1827,7 +1860,7 @@ SUBROUTINE remove_task (self, task)
   !-----------------------------------------------------------------------------
   call self%count_status()
   call self%lock%unset ('remove_task')
-  if (self%verbose > 1) &
+  if (self%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(3)'
   call trace%end()
 END SUBROUTINE remove_task
@@ -1859,13 +1892,15 @@ SUBROUTINE queue_by_time (self, this)
   !-----------------------------------------------------------------------------
   if (self%detailed_timer) then
     call trace%begin ('list_t%queue_by_time ', itimer=itimer)
+    if (self%verbose > 3) &
+      write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(4)'
     call self%lock%set ('queue_by_time', itimer=itimer)
   else
+    if (self%verbose > 3) &
+      write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(4)'
     call self%lock%set ('queue_by_time')
   end if
-  if (self%verbose > 2) &
-    write (io%output,*) wallclock(),' thread',omp%thread,' waitfor tasklist(4)'
-  if (self%verbose > 2) &
+  if (self%verbose > 3) &
     write (io%output,*) wallclock(),' thread',omp%thread,' locked tasklist(4)'
   call real_queue_by_time (self, this, error)
   if (error) then
@@ -1919,6 +1954,7 @@ end if
   !-----------------------------------------------------------------------------
   if (task%is_clear (bits%ready+bits%busy)) then
     call task%set(bits%ready)
+write(io_unit%log,*) task%id, '  set ready bit'
     if (self%verbose > 1) &
       write (io_unit%log,'(f12.6,i5,1x,a,i9,a,f12.6,2x,a,i5)') wallclock(), omp%thread, &
         'list_t%queue_by_time: adding task', task%id, ' at time', task%time, &
@@ -3047,6 +3083,17 @@ FUNCTION check_support (self, link, sign, test) RESULT (refine)
       deallocate (irefine)
     end if
   end select
+  !-----------------------------------------------------------------------------
+  ! If sign is negative then the task lack support if refine > 0 and otherwise
+  ! has support.  The bits%no_support is set accordingly
+  !-----------------------------------------------------------------------------
+  if (sign < 0) then
+    if (refine > 0) then
+      call task%set (bits%no_support)
+    else
+      call task%clear (bits%no_support)
+    end if
+  end if
   !.............................................................................
   if (self%verbose > 0) then
     write (io_unit%log,'(f12.6,1x,a,i6,3i4)') wallclock(), &

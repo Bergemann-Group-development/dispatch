@@ -278,7 +278,7 @@ SUBROUTINE test_all (self, flag)
   flag = .true.
 #endif MPI
   if (verbose > 1) then
-    write (io_unit%log,'(f12.6,1x,a,i6,l4)') wallclock(), &
+    write (io_unit%log,'(f12.6,1x,a,2i6,l4)') wallclock(), &
       'mpi_mesg_t%test_all: id, nreq, flag =', self%id, self%nreq, flag
     flush (io_unit%log)
   end if

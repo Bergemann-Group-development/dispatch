@@ -715,7 +715,8 @@ END FUNCTION need_to_support
 !> To check if a patch at level L may be removed w/o patches at level L+1 loosing
 !> support it is enough to check if there are nbors at level L+1, because if
 !> there are they would have, at the place where it had level L support, instead
-!> only a level L-1 patch.  
+!> only a level L-1 patch.  No locking is needed, since the link task is the one
+!> being updated, and on other thread is allowed to change the nbor list.
 !===============================================================================
 FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
   USE task_mod
@@ -734,7 +735,7 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
     return
   call trace%begin('refine_t%check_derefine_support', itimer=itimer, detailed_timer=detailed_timer)
   !-----------------------------------------------------------------------------
-  call tlist%lock%set ('check_derefine_support')
+  !call link%lock%set ('check_derefine_support')
   nbor => link%nbor
   do while (associated(nbor))
     if (nbor%task%level == link%task%level+1) then
@@ -748,7 +749,7 @@ FUNCTION check_derefine_support (self, tlist, link, check_only) RESULT (refine)
   !-----------------------------------------------------------------------------
   ! Release lock
   !-----------------------------------------------------------------------------
-  call tlist%lock%unset ('check_derefine_support')
+  !call link%lock%unset ('check_derefine_support')
   !-----------------------------------------------------------------------------
   call trace%end (itimer, detailed_timer=detailed_timer)
 END FUNCTION check_derefine_support

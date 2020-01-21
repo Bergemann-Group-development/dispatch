@@ -146,6 +146,7 @@ SUBROUTINE check_mpi (self, n)
   class(link_t), pointer:: link
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  if (mpi%size == 1) return
   call trace%begin ('task_mesg_t%check_mpi', itimer=itimer)
   !call self%lock%set ('check_mpi')
   link => self%head
@@ -179,6 +180,7 @@ SUBROUTINE send_to_vnbors (self, link)
   ! Sending the task creates a task%mesg instance, which is appended to
   ! the task%sent_list -- created on the fly if not existing
   !-----------------------------------------------------------------------------
+  if (mpi%size == 1) return
   call trace%begin ('task_mesg_t%send_to_vnbors')
   task => link%task
   task%seq = task%seq + 1
@@ -249,6 +251,7 @@ SUBROUTINE recv_from_vnbors (self, link)
   !.............................................................................
   class(link_t), pointer:: nbor
   !-----------------------------------------------------------------------------
+  if (mpi%size == 1) return
   call trace%begin ('task_mesg_t%recv_from_vnbors')
   call link%lock%set ('recv_from_vnbors')
   nbor => link%nbor
@@ -274,6 +277,7 @@ SUBROUTINE check_recv (self, task)
   integer:: seq, tag
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
+  if (mpi%size == 1) return
   if (lock_recv) then
     call task%mesg%lock%set ('check_recv')
   else
@@ -425,7 +429,7 @@ SUBROUTINE unpack (self, mesg, link)
   !.............................................................................
   class(task_t), pointer:: task
   logical:: found, bonafide, new
-  integer:: id
+  integer:: id, save_bits
   integer, save:: itimer=0
   character(len=24):: label
   type(patch_t):: patch
@@ -482,13 +486,17 @@ SUBROUTINE unpack (self, mesg, link)
   task%update_last = wc
   !-----------------------------------------------------------------------------
   ! Unpack a patch message (which includes swapping the roles of boundary bits).
+  !-----------------------------------------------------------------------------
+  save_bits = iand (task%status, bits%init_nbors+bits%update_status)
+  call task%unpack (mesg)
+  task%status = ior (task%status, save_bits)
+  !$omp atomic
+  mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
+  !-----------------------------------------------------------------------------
   ! Since an already existing patch may, at any one time, be under investigation
   ! by check_nbors, it must be protected by a critical region (or an OMP
   ! lock) while it is being updated here
   !-----------------------------------------------------------------------------
-  call task%unpack (mesg)
-  !$omp atomic
-  mpi_mesg%n_unpk = mpi_mesg%n_unpk+1
   if (self%verbose > 0) then
     write (io_unit%log,'(f12.6,3x,a,2i6,f12.6,2x,7l1)') &
       wallclock(), 'task_mesg_t%unpack: id, task%id, time, IBVrRSN =', &

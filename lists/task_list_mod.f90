@@ -475,13 +475,11 @@ SUBROUTINE update (self, head, test, was_refined, was_derefined)
     call self%update_status (head)
   end if
   !-----------------------------------------------------------------------------
-  ! If this is boundary task, check all virtual nbors for incoming messages.
-  ! Also, as preparation for the check_nbors() call that immediately follows
-  ! the task_list%update(), do the same for all boundary nbors
+  ! If this is boundary task, check all virtual nbors for incoming messages
   !-----------------------------------------------------------------------------
-  if (task%is_set(bits%boundary)) then
-    call self%recv_from_vnbors (head)
-  end if
+  !if (task%is_set(bits%boundary)) then
+  !  call self%recv_from_vnbors (head)
+  !end if
   !-----------------------------------------------------------------------------
   ! For the purpose of deciding to end the run, we check the task out_next if
   ! I/O is active, or else just the task time.  This ensures we get a complete 

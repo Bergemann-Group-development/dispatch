@@ -537,7 +537,7 @@ LOGICAL FUNCTION is_ahead_of (self, target)
   !$omp atomic read
   nbdtime = self%dtime
   !$omp atomic read
-  tgtime = target%dtime
+  tgtime = target%time
   ! -- if a task is frozen (in time) assume it is forever ahead of other tasks
   if (self%is_set(bits%frozen)) then
     is_ahead_of = .true.
