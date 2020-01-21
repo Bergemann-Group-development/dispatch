@@ -129,8 +129,8 @@ SUBROUTINE init_mesg (self)
   class(mesg_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('mesg_t%init')
-  allocate (self%lock)
-  call self%lock%init
+  !allocate (self%lock)
+  !call self%lock%init ('mesg')
   call trace%end ()
 END SUBROUTINE init_mesg
 
@@ -397,8 +397,8 @@ SUBROUTINE init_list (self)
   class(mesg_list_t):: self
   !-----------------------------------------------------------------------------
   call trace%begin ('msg_list_t%init_list')
-  allocate (self%lock)
-  call self%lock%init ('mlist')
+  !allocate (self%lock)
+  !call self%lock%init ('mlist')
   call trace%end ()
 END SUBROUTINE init_list
 

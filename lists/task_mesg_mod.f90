@@ -198,12 +198,12 @@ SUBROUTINE send_to_vnbors (self, link)
     call sent_list%init
     task%sent_list => sent_list
   end if
-  call sent_list%lock%set ('send_to_vnbors')
+  !call sent_list%lock%set ('send_to_vnbors')
   call sent_list%add (link%task%mesg)
   !$omp atomic update
   mpi_mesg%nq_send = mpi_mesg%nq_send+1
   call check_sent (self, task)
-  call sent_list%lock%unset ('send_to_vnbors')
+  !call sent_list%lock%unset ('send_to_vnbors')
   call trace%end ()
 END SUBROUTINE send_to_vnbors
 
@@ -397,6 +397,10 @@ contains
     call task%init
     call task_link%init
     call task%allocate_mesg
+    if (lock_recv) then
+      allocate (task%mesg%lock)
+      call task%mesg%lock%init ('mesg')
+    end if
 !write (io_unit%log,*) mpi%rank,' created new task', task%id
     task%rank = -1
     task%seq = 0

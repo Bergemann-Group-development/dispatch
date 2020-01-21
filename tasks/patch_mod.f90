@@ -1335,6 +1335,8 @@ SUBROUTINE pack (self)
   ! Allocate a task%mesg instance and mesg%reqs() array
   !-----------------------------------------------------------------------------
   call self%allocate_mesg
+  allocate (self%mesg%lock)
+  call self%mesg%lock%init ('smsg')
   mesg => self%mesg 
   allocate (mesg%reqs(mpi%size))
   call io%bits_mem (storage_size(mesg%reqs), &
