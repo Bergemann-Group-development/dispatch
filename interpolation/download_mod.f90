@@ -125,7 +125,7 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
   !.............................................................................
   class(link_t), pointer:: nbor, sorted_head, nbors
   class(patch_t), pointer:: target, source
-  integer:: edges, l(3), u(3), ix, iy, iz, jt(2)
+  integer:: edges, l(3), u(3), ix, iy, iz, jt(2), iv
   integer, save:: itimer=0, n_print=30
   real:: pt(2), d_min
   character(len=64):: info
@@ -251,9 +251,34 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
         'download_link: it, new, jt, pt, tgt, time, src, t =', &
         source%it, source%new, jt, pt, target%id, target%time, &
         source%id, source%t
+    !---------------------------------------------------------------------------
+    ! Lock, interpolate to the target%new time slot, and release the locks
+    !---------------------------------------------------------------------------
     call source%mem_lock(jt(1))%set ('download_link1', itimer)
     if (jt(2) /= jt(1)) &
       call source%mem_lock(jt(2))%set ('download_link2', itimer)
+    do iv=1,target%nv
+      if (target%unsigned(iv)) then
+        target%mem(:,:,:,iv,target%new,1) = exp( &
+          log(source%mem(:,:,:,iv,jt(1),1))*pt(1) + &
+          log(source%mem(:,:,:,iv,jt(2),1))*pt(2))
+      else if (target%pervolume(iv)) then
+        associate (id => target%idx%d)
+        target%mem(:,:,:,iv,target%new,1) = ( &
+          source%mem(:,:,:,iv,jt(1),1)/source%mem(:,:,:,id,jt(1),1)*pt(1) + &
+          source%mem(:,:,:,iv,jt(2),1)/source%mem(:,:,:,id,jt(2),1)*pt(2) &
+          )*target%mem(:,:,:,id,target%new,1)
+        end associate
+      else
+        target%mem(:,:,:,iv,target%new,1) = &
+          source%mem(:,:,:,iv,jt(1),1)*pt(1) + &
+          source%mem(:,:,:,iv,jt(2),1)*pt(2)
+      end if
+    end do
+    if (jt(2) /= jt(1)) &
+      call source%mem_lock(jt(2))%unset ('download_link2')
+    call source%mem_lock(jt(1))%unset ('download_link1')
+    !...........................................................................
     if (verbose > 1) then
       write(io_unit%log,'(f12.6,i6,i3,3x,a,i6,i3,2x,2l1,i4,1p,2e10.2)') &
         wallclock(), target%id, target%level, &
@@ -416,9 +441,6 @@ SUBROUTINE download_link (self, link, all_cells, only, all_times)
         'download_link: source, level =', source%id, source%level
       flush (io_unit%log)
     end if
-    if (jt(2) /= jt(1)) &
-      call source%mem_lock(jt(2))%unset ('download_link2')
-    call source%mem_lock(jt(1))%unset ('download_link1')
     nbor => nbor%next
   end do
   call link%remove_nbor_list (nbors)
@@ -861,88 +883,9 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
               end if
             end do
           end do
-        end if      
-      !-------------------------------------------------------------------------
-      ! Unsigned values; interpolated in the log
-      !-------------------------------------------------------------------------
-      else if (source%unsigned(iv)) then
-        !-----------------------------------------------------------------------
-        ! Fill all cells, even interior ones, when all_cells==.true., but only
-        ! for cells that are not already filled.  The filling is expensive in
-        ! this case, so use an if test.
-        !-----------------------------------------------------------------------
-        if (all_cells_l) then
-          do iz=l(3),u(3)
-            do iy=l(2),u(2)
-              if (self%check_filled) then
-                do ix=l(1),u(1)
-                  if (filled(ix,iy,iz,iv) < source%level) then
-                    target%mem(ix,iy,iz,iv,target%it,1) = exp( &
-                      pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
-                      pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
-                    filled(ix,iy,iz,iv) = source%level
-                    if (verbose > 0) &
-                      src(ix,iy,iz) = source%id
-                  else
-                    write (io_unit%log,*)'WARNING: prevented overwrite', target%id, &
-                      source%id, ix,iy,iz,o,iv, filled(ix,iy,iz,iv), src(ix,iy,iz)
-                  end if
-                end do
-              else
-                do ix=l(1),u(1)
-                  target%mem(ix,iy,iz,iv,target%it,1) = exp( &
-                    pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
-                    pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)))
-                end do
-              end if
-            end do
-          end do
-        !-----------------------------------------------------------------------
-        ! Make sure to change only guard cells, when all_cells==.false..  Here
-        ! the calculation is cheap, so we use a merge to allow vectorization.
-        !-----------------------------------------------------------------------
-        else
-          do iz=l(3),u(3)
-            do iy=l(2),u(2)
-              do ix=l(1),u(1)
-                ii = [ix,iy,iz]
-!                if (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) <= 0.0) then
-!                  write (io_unit%log,9) wallclock(), &
-!                    l,u,ix,iy,iz,o,iv,source%it,source%new,1,jt, &
-!                    source%id,source%time,target%id,target%time,source%iit
-!                9 format(f12.6,6(3i4,2x),2(i6,f12.6),7i3)
-!                end if
-!                if (source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1) <= 0.0) then
-!                  write (io_unit%log,9) wallclock(), &
-!                    l,u,ix,iy,iz,o,iv,source%it,source%new,2,jt, &
-!                    source%id,source%time,target%id,target%time,source%iit
-!                end if
-                target%mem(ix,iy,iz,iv,target%it,1) = &
-                  merge(target%mem(ix,iy,iz,iv,target%it,1), &
-                    exp(pt(1)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1)) + &
-                        pt(2)*log(source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1))), &
-                    all((ii>=li).and.(ii<=ui)))
-              end do
-              if (self%check_filled) then
-                do ix=l(1),u(1)
-                  ii = [ix,iy,iz]
-                  no = all((ii>=li).and.(ii<=ui))
-                  filled(ix,iy,iz,iv) = merge(filled(ix,iy,iz,iv), &
-                    int(source%level,kind=int8), no)
-                end do
-                if (verbose > 0) then
-                  do ix=l(1),u(1)
-                    ii = [ix,iy,iz]
-                    no = all((ii>=li).and.(ii<=ui))
-                    src(ix,iy,iz) = merge(src(ix,iy,iz), source%id, no)
-                  end do
-                end if
-              end if
-            end do
-          end do
         end if
       !-------------------------------------------------------------------------
-      ! Signed values
+      ! General case
       !-------------------------------------------------------------------------
       else
         !-----------------------------------------------------------------------
@@ -957,10 +900,9 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
               if (self%check_filled) then
                 do ix=l(1),u(1)
                   no = filled(ix,iy,iz,iv) > source%level
-                  target%mem(ix,iy,iz,iv,target%it,1) =  &
-                    merge (target%mem(ix,iy,iz,iv,target%it,1), &
-                      pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
-                      pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
+                  target%mem(ix,iy,iz,iv,target%it,1) = merge( &
+                    target%mem(ix     ,iy     ,iz     ,iv,target%it ,1), &
+                    target%mem(ix+o(1),iy+o(2),iz+o(3),iv,target%new,1), &
                       no)
                   filled(ix,iy,iz,iv) = merge (filled(ix,iy,iz,iv), &
                     int(source%level, kind=int8), no)
@@ -976,9 +918,8 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
               !-----------------------------------------------------------------
               else
                 do ix=l(1),u(1)
-                  target%mem(ix,iy,iz,iv,target%it,1) =  &
-                    pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
-                    pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1)
+                  target%mem(ix     ,iy     ,iz     ,iv,target%it ,1) =  &
+                  target%mem(ix+o(1),iy+o(2),iz+o(3),iv,target%new,1)
                 end do
               end if
             end do
@@ -991,10 +932,9 @@ SUBROUTINE same_linear (self, target, source, jt, pt, all_cells, only, all_times
             do iy=l(2),u(2)
               do ix=l(1),u(1)
                 ii = [ix,iy,iz]
-                target%mem(ix,iy,iz,iv,target%it,1) = &
-                  merge(target%mem(ix,iy,iz,iv,target%it,1), &
-                    pt(1)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(1),1) + &
-                    pt(2)*source%mem(ix+o(1),iy+o(2),iz+o(3),iv,jt(2),1), &
+                target%mem(ix,iy,iz,iv,target%it,1) = merge( &
+                  target%mem(ix     ,iy     ,iz,iv,target%it,1), &
+                  target%mem(ix+o(1),iy+o(2),iz+o(3),iv,target%new,1), &
                     all((ii>=li).and.(ii<=ui)))
               end do
               if (self%check_filled) then
