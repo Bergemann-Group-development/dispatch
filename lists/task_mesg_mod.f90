@@ -35,6 +35,19 @@
 !>
 !> Task locking:
 !> -------------
+!> Task execution on a single rank requires locking of the task list while it
+!> is being manipulated, which for each task happens 1) when it is added to
+!> the ready queue, and when it is taken off the ready queue.  Optionally, one
+!> can lock access to the task time information, which is modified in task_t%
+!> rotate(), and used in task_t%ahead_of(), but accessing this data atomically
+!> should in principle be sufficient.  Patch data cubes need to be locked when
+!> modified in the solver, and when being accessed in guard zone loading.  This
+!> should normally not cause much contention, since modifications only happen
+!> to a time slice that is about to be reused.  Immediately after update, the
+!> time slots are rotated and the new slot is free to be used.  If significant
+!> contention is measured, it may be reduced by increasing the number of time
+!> slots.
+!>
 !> No locking is needed in connection with sending messages, since the
 !> messages are added to a task private message list, which is checked later
 !> by a single thread, which is the only one that can access the message.
@@ -144,21 +157,27 @@ SUBROUTINE check_mpi (self, n)
   integer, optional:: n
   !.............................................................................
   class(link_t), pointer:: link
+  integer:: n_unpk
   integer, save:: itimer=0
   !-----------------------------------------------------------------------------
-  if (mpi%size == 1) return
-  call trace%begin ('task_mesg_t%check_mpi', itimer=itimer)
-  !call self%lock%set ('check_mpi')
-  link => self%head
-  do while (associated(link))
-    if (link%task%is_set(bits%virtual)) then
-      call check_recv (self, link%task)
-    end if
-    link => link%next
-  end do
-  !call check_new(self)
-  !call self%lock%unset ('check_mpi')
-  call trace%end (itimer)
+  n_unpk = 0
+  if (mpi%size > 1) then
+    call trace%begin ('task_mesg_t%check_mpi', itimer=itimer)
+    call self%lock%set ('check_mpi')
+    link => self%head
+    do while (associated(link))
+      if (link%task%is_set(bits%virtual)) then
+        call check_recv (self, link%task, n_unpk)
+      end if
+      link => link%next
+    end do
+    call check_new(self)
+    call self%lock%unset ('check_mpi')
+    call trace%end (itimer)
+  end if
+  if (present(n)) then
+    n = n_unpk
+  end if
 END SUBROUTINE check_mpi
 
 !===============================================================================
@@ -245,9 +264,10 @@ END SUBROUTINE check_sent
 !> Check the virtual nbors of a boundary task link for completed messages,
 !> unpack the ones that are complete, and issue new requests for those task.
 !===============================================================================
-SUBROUTINE recv_from_vnbors (self, link)
+SUBROUTINE recv_from_vnbors (self, link, n_unpk)
   class(task_mesg_t):: self
   class(link_t), pointer:: link
+  integer:: n_unpk
   !.............................................................................
   class(link_t), pointer:: nbor
   !-----------------------------------------------------------------------------
@@ -257,7 +277,7 @@ SUBROUTINE recv_from_vnbors (self, link)
   nbor => link%nbor
   do while (associated(nbor))
     if (nbor%task%is_set (bits%virtual)) then
-      call check_recv (self, nbor%task)
+      call check_recv (self, nbor%task, n_unpk)
     end if
     nbor => nbor%next
   end do
@@ -270,9 +290,10 @@ END SUBROUTINE recv_from_vnbors
 !> Check a virtual task for completed messages.  Note that the procedure that
 !> creates the task must make sure to also create a task message instance.
 !===============================================================================
-SUBROUTINE check_recv (self, task)
+SUBROUTINE check_recv (self, task, n_unpk)
   class(task_mesg_t):: self
   class(task_t), pointer:: task
+  integer:: n_unpk
   !.............................................................................
   integer:: seq, tag
   integer, save:: itimer=0
@@ -304,6 +325,11 @@ call trace%begin ('task_mesg_t%check_recv')
     select type (task)
     class is (patch_t)
       call unpack (self, task%mesg, task%link)
+      n_unpk = n_unpk+1
+      if (verbose > 1) then
+        write (io_unit%queue,'(f12.6,i4,1x,a12,i6,f12.6,i4)') &
+          wallclock(), omp%thread, 'unpacked', task%id, task%time, n_unpk
+      end if
     end select
     call new_request (task)
   else

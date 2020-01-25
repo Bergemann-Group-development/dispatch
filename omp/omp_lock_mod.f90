@@ -51,7 +51,7 @@ MODULE omp_lock_mod
   end type
   real, save:: verbose_time=0.0
   integer, save:: id_save=-1, n_lock=0
-  character(len=6):: log='queue'
+  character(len=6):: log='lock'
   character(len=6):: ext, ext1, ext2
   integer:: unit
   real(8):: alternate_time=0d0, alternate_next=0d0
@@ -92,7 +92,7 @@ SUBROUTINE init (self, kind, id)
         else if (trim(log)=='log') then
           unit = io_unit%log
         else
-          unit = io_unit%output
+          unit = io_unit%lock
         end if
         if (alternate_time > 0d0) then
           unit = io_unit%queue
@@ -465,17 +465,18 @@ SUBROUTINE info (self, unit, p_verbose)
     end do
     time = sum(wait_time)
     if (omp_lock%verbose >= p_verbose) then
-      call write (stdout)
-      wait_time = 0d0
-      hold_time = 0d0
-      n_hold = 0
+      call write_table (stdout)
     end if
-    write (stdout,'(a,1p,g11.2,a)') ' total lock waiting time =', time, ' s'
+    write (stdout,'(a,1p,g11.2,a,10f8.1)') ' total lock waiting time =', &
+      time, ' s', wait_time
+    wait_time = 0d0
+    hold_time = 0d0
+    n_hold = 0
   end if
   !!omp end critical (lock_info_cr)
   return
 contains
-subroutine write (unit)
+subroutine write_table (unit)
   integer:: unit
   real(8):: wait_sum, hold_sum
   write (unit,'(11x,a,a)') '  i  lock       wait      wait(%)     mus/n', &
@@ -490,7 +491,7 @@ subroutine write (unit)
       n_hold(i)
     end if
   end do
-end subroutine
+end subroutine write_table
 END SUBROUTINE info
 
 !===============================================================================
